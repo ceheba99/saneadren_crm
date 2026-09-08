@@ -1,0 +1,20 @@
+/* Contactos y registros comerciales tienen contextos y acciones separados. */
+.flujo-ayuda{padding:16px 18px;background:#fff7d9;border:1px solid #ecd28b;border-radius:10px;margin:16px 0;display:flex;flex-direction:column;gap:5px;}
+.flujo-ayuda span{font-size:13px;color:var(--texto-sec);}
+.flujo-kicker{font-size:10px;font-weight:800;letter-spacing:1px;margin-bottom:6px;color:var(--amarillo);}
+.contacto-identidad{display:flex;align-items:center;gap:18px;padding:4px 0 22px;margin-bottom:24px;border-bottom:1px solid var(--gris-200);}
+.contacto-identidad h3{margin:6px 0;font-size:23px;}.contacto-identidad p{margin:3px 0;}.contacto-identidad small{color:var(--texto-sec);}
+.contacto-avatar{width:64px;height:64px;flex-shrink:0;display:grid;place-items:center;border-radius:16px;background:var(--amarillo);color:var(--azul-950);font-size:30px;font-weight:800;}
+.etiqueta-contacto{display:inline-block;color:var(--azul-800);background:var(--gris-100);border:1px solid var(--gris-200);border-radius:20px;font-size:10px;padding:5px 10px;font-weight:700;}
+.contacto-resumen{display:flex;align-items:center;justify-content:space-between;gap:14px;background:#f3f5f7;border:1px solid var(--gris-200);border-radius:12px;padding:16px;margin-bottom:18px;}
+.contacto-resumen .flujo-kicker{color:var(--texto-sec);}.contacto-resumen strong,.contacto-resumen span{display:block;}.contacto-resumen strong{font-size:18px;}.contacto-resumen span{font-size:12px;}
+.relacion-registros{display:flex;flex-direction:column;gap:4px;padding:4px 0 20px;}
+#overlay-ficha-cliente .modal-header{background:#263847;}
+#overlay-ficha-cliente .modal-body>.modal-section:first-child{border-bottom:6px solid var(--gris-200);}
+#overlay-ficha-cliente .modal-body>.modal-section:last-child{background:#fafbfc;}
+.estado-guardado{display:block;font-size:12px;color:var(--texto-sec);align-self:center;}.estado-guardado.pendiente{color:#865c00;font-weight:700;}
+.contacto-relacion{display:block;font-size:11px;color:var(--texto-sec);margin-top:4px;}
+#registro-contacto + .ficha-meta{margin-bottom:0;}
+.tabla-clientes tbody tr:focus-visible{outline:3px solid var(--amarillo);outline-offset:-3px;}
+#overlay-generar-cotizacion .modal{max-width:720px;}
+@media(max-width:600px){.contacto-resumen{align-items:stretch;flex-direction:column;}.contacto-identidad{align-items:flex-start;gap:12px;}.contacto-identidad h3{font-size:20px;}.contacto-avatar{width:44px;height:44px;font-size:23px;}.relacion-registros .btn-group{flex-direction:column;}.relacion-registros .btn-group>.btn{flex:auto;}.flujo-ayuda{padding:12px;}}

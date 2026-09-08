@@ -1,0 +1,653 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Saneadren · Cotizaciones y Servicios</title>
+<link rel="stylesheet" href="styles.css">
+<link rel="stylesheet" href="servicios-tabla.css">
+<link rel="stylesheet" href="flujo.css">
+</head>
+<body>
+
+<header class="app">
+  <div class="marca">
+
+    <div>
+      <h1><img class="logo-saneadren" src="logo-saneadren.png" alt="SANEADREN SA DE CV" width="943" height="265"></h1>
+      <div class="sub">Ingeniería sanitaria — captación y seguimiento</div>
+    </div>
+  </div>
+  <nav>
+    <button data-vista="alta" class="activa">Nuevo contacto</button>
+    <button data-vista="leads">Cotizaciones</button>
+    <button data-vista="clientes">Contactos y clientes</button>
+    <button data-vista="pendientes">Pendientes <span id="badge-pendientes">0</span></button>
+    <button data-vista="resultados">Resultados</button>
+    <button class="diseno-nav-usuarios" data-vista="usuarios" id="nav-usuarios">Usuarios</button>
+  </nav>
+  <div class="util-2">
+    <span>👤 <b id="sesion-nombre"></b></span>
+    <button id="btn-logout" class="btn btn-outline diseno-btn-logout">Salir</button>
+  </div>
+</header>
+
+<main>
+
+  <!-- ====== VISTA: ALTA RÁPIDA (pantalla principal) ====== -->
+  <section class="vista activa" id="vista-alta">
+    <div class="panel-alta">
+      <h2>Crear un contacto</h2>
+      <p class="ayuda">El contacto es la persona o empresa. Un prospecto (lead) todavía no ha contratado; se convierte en cliente cuando contrata un servicio.</p>
+      <div class="form-grid">
+        <div class="campo span-2">
+          <label>Teléfono</label>
+          <input type="tel" id="in-telefono" placeholder="10 dígitos" autocomplete="off">
+        </div>
+        <div class="campo span-2">
+          <label>Nombre del contacto</label>
+          <input type="text" id="in-nombre" placeholder="Nombre completo">
+        </div>
+        <div class="campo span-2">
+          <label>Nombre de la empresa (opcional)</label>
+          <input type="text" id="in-empresa" placeholder="Si aplica">
+        </div>
+        <div class="campo span-2">
+          <label>Correo electrónico (opcional)</label>
+          <input type="email" id="in-correo" placeholder="correo@ejemplo.com">
+        </div>
+        <div class="campo">
+          <label>Tipo de cliente (opcional)</label>
+          <select id="in-giro">
+            <option value="">Sin especificar</option>
+            <option value="residencial">Residencial</option>
+            <option value="comercial">Comercial</option>
+            <option value="industrial">Industrial</option>
+          </select>
+        </div>
+        <div class="campo span-3">
+          <label>Dirección</label>
+          <input type="text" id="in-direccion" placeholder="Calle, número, colonia...">
+        </div>
+        <div class="campo">
+          <label>Canal de esta cotización (opcional)</label>
+          <select id="in-canal"></select>
+        </div>
+        <div class="campo">
+          <label>Servicio de interés</label>
+          <select id="in-servicio"></select>
+        </div>
+        <div class="campo">
+          <label>Cotización estimada (MXN, opcional)</label>
+          <input type="number" id="in-valor" min="0" step="0.01" placeholder="Si ya se conoce">
+        </div>
+        <div class="campo span-4">
+          <label>Notas iniciales (opcional)</label>
+          <textarea id="in-notas" rows="2" placeholder="Detalle breve de lo que pide el cliente..."></textarea>
+        </div>
+      </div>
+      <div class="alerta-duplicado" id="alerta-dup">
+        <div id="dup-titulo"></div>
+        <div id="dup-lista"></div>
+        <div class="fila-dup">
+          <button class="btn btn-outline" id="btn-cancelar-dup">Cancelar</button>
+          <button class="btn btn-secundario" id="btn-crear-duplicado">Crear de todos modos (caso distinto)</button>
+        </div>
+      </div>
+      <div class="util-4">
+        <button class="btn btn-primario" id="btn-guardar-contacto-nuevo">Crear solo contacto</button>
+        <button class="btn btn-secundario" id="btn-guardar-lead">Crear contacto y primera cotización</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ====== VISTA: COTIZACIONES (Pipeline Kanban) ====== -->
+  <section class="vista" id="vista-leads">
+    <p class="ayuda util-5">Pipeline de cotizaciones abiertas. Haz clic en una tarjeta para ver la ficha completa. Los KPIs filtran por etapa. Arrastra tarjetas entre columnas para avanzar de etapa.</p>
+    <div class="util-6">
+      <span class="tabla-conteo diseno-tabla-leads-conteo" id="tabla-leads-conteo">0 cotizaciones</span>
+    </div>
+    <div class="filtros">
+      <input type="text" id="f-buscar" placeholder="Buscar por nombre, teléfono o ID de cliente...">
+      <select id="f-responsable"><option value="">Todos los responsables</option></select>
+      <span class="filtro-fecha-label">Desde</span>
+      <input type="date" id="f-desde" title="Filtrar desde esta fecha de creación">
+      <span class="filtro-fecha-label">Hasta</span>
+      <input type="date" id="f-hasta" title="Filtrar hasta esta fecha de creación">
+      <button class="btn btn-outline util-8" onclick="limpiarFiltros()">Limpiar filtros</button>
+      <button class="btn btn-secundario" id="btn-exportar-leads">📥 Exportar a Excel</button>
+    </div>
+
+    <div class="kpi-grid" id="kpi-leads">
+      <div class="kpi-card" data-etapa="1" id="kpi-1">
+        <div class="kpi-etapa">Etapa 1</div>
+        <div class="kpi-nombre">Recolección de datos</div>
+        <div class="kpi-total" id="kpi-1-total">0</div>
+        <div class="kpi-total-label">cotizaciones en esta etapa</div>
+        <div class="kpi-desglose" id="kpi-1-desglose"></div>
+        <div class="kpi-valor" id="kpi-1-valor"></div>
+        <div class="kpi-dias" id="kpi-1-dias"></div>
+      </div>
+      <div class="kpi-card" data-etapa="2" id="kpi-2">
+        <div class="kpi-etapa">Etapa 2</div>
+        <div class="kpi-nombre">Cotización / Visita</div>
+        <div class="kpi-total" id="kpi-2-total">0</div>
+        <div class="kpi-total-label">cotizaciones en esta etapa</div>
+        <div class="kpi-desglose" id="kpi-2-desglose"></div>
+        <div class="kpi-valor" id="kpi-2-valor"></div>
+        <div class="kpi-dias" id="kpi-2-dias"></div>
+      </div>
+      <div class="kpi-card" data-etapa="3" id="kpi-3">
+        <div class="kpi-etapa">Etapa 3</div>
+        <div class="kpi-nombre">Cierre / Programación</div>
+        <div class="kpi-total" id="kpi-3-total">0</div>
+        <div class="kpi-total-label">cotizaciones en esta etapa</div>
+        <div class="kpi-desglose" id="kpi-3-desglose"></div>
+        <div class="kpi-valor" id="kpi-3-valor"></div>
+        <div class="kpi-dias" id="kpi-3-dias"></div>
+      </div>
+      <div class="kpi-card" data-etapa="4" id="kpi-4">
+        <div class="kpi-etapa">Etapa 4</div>
+        <div class="kpi-nombre">Post-venta</div>
+        <div class="kpi-total" id="kpi-4-total">0</div>
+        <div class="kpi-total-label">cotizaciones en esta etapa</div>
+        <div class="kpi-desglose" id="kpi-4-desglose"></div>
+        <div class="kpi-valor" id="kpi-4-valor"></div>
+        <div class="kpi-dias" id="kpi-4-dias"></div>
+      </div>
+    </div>
+
+    <div class="kanban-board" id="kanban-leads">
+      <div class="kanban-col" data-etapa="1" ondragover="dragOver(event)" ondragleave="dragLeave(event)" ondrop="drop(event, 1)">
+        <div class="kanban-col-header">
+          <h3>📋 Recolección de datos</h3>
+          <span class="count" id="count-1">0</span>
+        </div>
+        <div class="kanban-cards" id="col-1"></div>
+        <div class="kanban-col-footer" id="footer-1"></div>
+      </div>
+      <div class="kanban-col" data-etapa="2" ondragover="dragOver(event)" ondragleave="dragLeave(event)" ondrop="drop(event, 2)">
+        <div class="kanban-col-header">
+          <h3>💰 Cotización / Visita</h3>
+          <span class="count" id="count-2">0</span>
+        </div>
+        <div class="kanban-cards" id="col-2"></div>
+        <div class="kanban-col-footer" id="footer-2"></div>
+      </div>
+      <div class="kanban-col" data-etapa="3" ondragover="dragOver(event)" ondragleave="dragLeave(event)" ondrop="drop(event, 3)">
+        <div class="kanban-col-header">
+          <h3>✅ Cierre / Programación</h3>
+          <span class="count" id="count-3">0</span>
+        </div>
+        <div class="kanban-cards" id="col-3"></div>
+        <div class="kanban-col-footer" id="footer-3"></div>
+      </div>
+      <div class="kanban-col" data-etapa="4" ondragover="dragOver(event)" ondragleave="dragLeave(event)" ondrop="drop(event, 4)">
+        <div class="kanban-col-header">
+          <h3>🤝 Post-venta</h3>
+          <span class="count" id="count-4">0</span>
+        </div>
+        <div class="kanban-cards" id="col-4"></div>
+        <div class="kanban-col-footer" id="footer-4"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ====== VISTA: CLIENTES (servicios ganados — separados del pipeline) ====== -->
+  <section class="vista" id="vista-clientes">
+    <p class="ayuda util-9">Directorio de personas y empresas. Abre un contacto para editar sus datos o consultar todas sus cotizaciones y servicios contratados.</p>
+
+    <div class="rc-grid">
+      <div class="rc-card">
+        <div class="rc-num" id="rc-total">0</div>
+        <div class="rc-label">Total de contactos únicos</div>
+      </div>
+      <div class="rc-card prospecto">
+        <div class="rc-num" id="rc-prospectos">0</div>
+        <div class="rc-label">Prospectos (nunca han comprado)</div>
+      </div>
+      <div class="rc-card cliente">
+        <div class="rc-num" id="rc-activos">0</div>
+        <div class="rc-label">Ya son clientes (1+ servicio ganado)</div>
+      </div>
+      <div class="rc-card recurrente">
+        <div class="rc-num" id="rc-recurrentes">0</div>
+        <div class="rc-label">Clientes recurrentes (2+ servicios)</div>
+      </div>
+      <div class="rc-card valor">
+        <div class="rc-num" id="rc-valor">$0</div>
+        <div class="rc-label">Valor histórico ganado</div>
+      </div>
+    </div>
+
+    <div class="filtros">
+      <input type="text" id="fc-buscar" aria-label="Buscar contacto" placeholder="Nombre, teléfono o ID del contacto">
+      <select id="fc-tipo" aria-label="Tipo de contacto"><option value="todos">Todos los contactos</option><option value="prospectos">Prospectos · sin servicios contratados</option><option value="clientes">Clientes · con servicios contratados</option></select>
+      <span class="filtro-fecha-label">Desde</span>
+      <input type="date" id="fc-desde" title="Filtrar desde esta fecha">
+      <span class="filtro-fecha-label">Hasta</span>
+      <input type="date" id="fc-hasta" title="Filtrar hasta esta fecha">
+      <button class="btn btn-secundario" id="btn-exportar-clientes">📥 Exportar a Excel</button>
+    </div>
+
+    <div class="tabla-clientes-wrap">
+      <div class="tabla-header">
+        <h3>Directorio de contactos</h3>
+        <span class="tabla-conteo" id="tabla-conteo-clientes">0 registros</span>
+      </div>
+      <div class="tabla-scroll">
+        <table class="tabla-clientes">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Teléfono</th>
+              <th>Contacto / relación</th>
+              <th>Empresa</th>
+              <th>Dirección</th>
+              <th>Servicios contratados</th>
+              <th>Valor histórico ganado</th>
+              <th>Solicitudes abiertas</th>
+              <th>Última actividad</th>
+            </tr>
+          </thead>
+          <tbody id="tabla-clientes-reales-body"></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- ====== VISTA: PENDIENTES (Recompras + Alertas juntas) ====== -->
+  <section class="vista" id="vista-pendientes">
+    <h2 class="util-10">Pendientes</h2>
+    <p class="ayuda util-11">Aquí se juntan las <b>recompras sugeridas</b> (servicios recurrentes por vencer) y las <b>alertas y recordatorios</b>. Cada tarjeta indica de qué tipo es.</p>
+    <div class="pendientes-filtros">
+      <button type="button" class="activo" data-filtro-pendiente="todos">Todos</button>
+      <button type="button" data-filtro-pendiente="recompra">🔁 Recompras</button>
+      <button type="button" data-filtro-pendiente="alerta">⏰ Alertas</button>
+    </div>
+    <div class="lista-alertas" id="lista-pendientes"></div>
+  </section>
+
+  <!-- ====== VISTA: RESULTADOS ====== -->
+  <section class="vista" id="vista-resultados">
+    <p class="ayuda util-5">Análisis de desempeño del pipeline de cotizaciones y cartera de clientes. Se actualiza en tiempo real.</p>
+
+    <div class="res-grid" id="res-kpis">
+      <div class="res-card">
+        <div class="res-num" id="res-ingresos">$0</div>
+        <div class="res-label">Ingresos históricos ganados</div>
+      </div>
+      <div class="res-card">
+        <div class="res-num" id="res-leads-total">0</div>
+        <div class="res-label">Cotizaciones registradas (total)</div>
+      </div>
+      <div class="res-card">
+        <div class="res-num" id="res-tasa">0%</div>
+        <div class="res-label">Tasa de conversión</div>
+      </div>
+      <div class="res-card">
+        <div class="res-num" id="res-ticket">$0</div>
+        <div class="res-label">Ticket promedio ganado</div>
+      </div>
+    </div>
+
+    <div class="res-two-col">
+      <div class="res-section">
+        <h3>🏆 Top 10 clientes por valor ganado</h3>
+        <div class="bar-chart" id="res-top-clientes"></div>
+      </div>
+      <div class="res-section">
+        <h3>🔧 Servicios más solicitados</h3>
+        <div class="bar-chart" id="res-top-servicios"></div>
+      </div>
+    </div>
+
+    <div class="res-two-col">
+      <div class="res-section">
+        <h3>📣 Cotizaciones por canal de contacto</h3>
+        <div class="bar-chart" id="res-por-canal"></div>
+      </div>
+      <div class="res-section">
+        <h3>📅 Evolución mensual (servicios ganados)</h3>
+        <div class="evo-chart" id="res-evolucion"></div>
+      </div>
+    </div>
+
+    <div class="res-section">
+      <h3>📊 Resumen mensual de actividad</h3>
+      <div class="tabla-scroll">
+        <table class="tabla-resumen">
+          <thead>
+            <tr>
+              <th>Mes</th>
+              <th>Cotizaciones creadas</th>
+              <th>Ganados</th>
+              <th>Perdidos</th>
+              <th>Ingresos ganados</th>
+              <th>Tasa de conversión</th>
+            </tr>
+          </thead>
+          <tbody id="res-tabla-mensual"></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- ====== VISTA: USUARIOS (solo admin) ====== -->
+  <section class="vista" id="vista-usuarios">
+    <div class="panel-alta">
+      <h2>Respaldo de la base de datos</h2>
+      <p class="ayuda">Descarga una copia del archivo de la base de datos con todo el historial (contactos, cotizaciones y servicios). Guárdala en un lugar seguro; hazlo con regularidad, sobre todo antes de cualquier cambio importante.</p>
+      <button class="btn btn-secundario" id="btn-descargar-respaldo">⬇ Descargar respaldo de la base de datos</button>
+    </div>
+    <div class="panel-alta">
+      <h2>Crear nuevo usuario</h2>
+      <p class="ayuda">Se usará este nombre y contraseña para iniciar sesión.</p>
+      <div class="form-grid">
+        <div class="campo">
+          <label>Nombre</label>
+          <input type="text" id="nu-nombre" placeholder="Nombre del usuario">
+        </div>
+        <div class="campo">
+          <label>Contraseña</label>
+          <input type="password" id="nu-password" placeholder="Mínimo 4 caracteres">
+        </div>
+        <div class="campo">
+          <label>Rol</label>
+          <select id="nu-rol">
+            <option value="admin">admin</option>
+            <option value="ventas">ventas</option>
+            <option value="atencion">atencion</option>
+            <option value="tecnico">tecnico</option>
+          </select>
+        </div>
+        <div class="campo">
+          <label>&nbsp;</label>
+          <button class="btn btn-primario" id="btn-crear-usuario">Crear usuario</button>
+        </div>
+      </div>
+    </div>
+    <h3 class="util-13">Usuarios activos</h3>
+    <div id="lista-usuarios"></div>
+
+    <h3 class="util-14">Catálogo de servicios — descripciones y recurrencia</h3>
+    <p class="ayuda util-15">Cada cuántos días conviene volver a ofrecerle este servicio a un cliente que ya lo tuvo. Déjalo vacío si es un servicio de una sola vez (sin recompra periódica). Esto alimenta la vista "Recompras".</p>
+    <p class="ayuda">Guarda aquí la descripción base de cada servicio. Al elegirlo en una cotización se precarga y puedes editarla solo para ese documento, sin cambiar el catálogo.</p>
+    <div id="lista-servicios-catalogo"></div>
+    <div class="panel-alta">
+      <h2>Agregar servicio nuevo</h2>
+      <div class="form-grid">
+        <div class="campo">
+          <label>Nombre del servicio</label>
+          <input type="text" id="ns-nombre" placeholder="Ej. Renta de maquinaria">
+          <label for="ns-descripcion">Descripción predeterminada</label>
+          <textarea id="ns-descripcion" rows="3" maxlength="10000" placeholder="Texto editable que aparecerá en la cotización"></textarea>
+        </div>
+        <div class="campo">
+          <label>Recompra cada (días, opcional)</label>
+          <input type="number" id="ns-dias" min="1" step="1" placeholder="Sin recompra">
+        </div>
+        <div class="campo">
+          <label>&nbsp;</label>
+          <button class="btn btn-primario" id="btn-crear-servicio">Agregar servicio</button>
+        </div>
+      </div>
+    </div>
+
+    <h3 class="util-14">Canales de contacto</h3>
+    <p class="ayuda util-15">Por dónde llegan los leads (llamada, WhatsApp, redes, publicidad, etc.).</p>
+    <div id="lista-canales-catalogo"></div>
+    <div class="panel-alta">
+      <h2>Agregar canal nuevo</h2>
+      <div class="form-grid">
+        <div class="campo">
+          <label>Nombre del canal</label>
+          <input type="text" id="nc-nombre" placeholder="Ej. Google Ads">
+        </div>
+        <div class="campo">
+          <label>&nbsp;</label>
+          <button class="btn btn-primario" id="btn-crear-canal">Agregar canal</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<!-- ====== MODAL FICHA DE LEAD ====== -->
+<div class="overlay" id="overlay-ficha">
+  <div class="modal">
+    <div class="modal-header">
+      <div><div class="flujo-kicker" id="registro-tipo">EDITAR COTIZACIÓN</div><h2 id="ficha-titulo">Cotización</h2></div>
+      <button class="close-btn" id="btn-cerrar-modal">✕</button>
+    </div>
+    <div class="modal-body">
+
+      <div class="modal-section">
+        <div id="registro-contacto" class="contacto-resumen"></div>
+        <div class="ficha-meta" id="ficha-meta"></div>
+      </div>
+
+      <div class="modal-section">
+        <div class="seccion-tit" id="registro-etapas-titulo">Seguimiento de esta cotización</div>
+        <div class="pipeline-track" id="pipeline-track">
+          <div class="pipeline-step" data-step="1"><span class="step-num">1</span>Datos</div>
+          <div class="pipeline-step" data-step="2"><span class="step-num">2</span>Cotización</div>
+          <div class="pipeline-step" data-step="3"><span class="step-num">3</span>Cierre</div>
+          <div class="pipeline-step" data-step="4"><span class="step-num">4</span>Post-venta</div>
+        </div>
+      </div>
+
+      <div class="modal-section">
+        <div class="seccion-tit" id="registro-datos-titulo">Datos de esta cotización</div>
+        <p class="ayuda">Los cambios de esta sección afectan únicamente a este registro. Los datos de contacto se editan desde su ficha.</p>
+        <div class="form-grid-2">
+          <div class="campo-modal"><label>Ubicación de este servicio</label><input type="text" id="ed-direccion"></div>
+          <div class="campo-modal">
+            <label>Canal</label><select id="ed-canal"></select>
+          </div>
+          <div class="campo-modal">
+            <label>Servicio</label><select id="ed-servicio"></select>
+          </div>
+          <div class="campo-modal">
+            <label>Responsable</label><select id="ed-responsable"></select>
+          </div>
+          <div class="campo-modal"><label>Valor del servicio (MXN)</label><input type="number" id="ed-valor" min="0" step="0.01" placeholder="0.00"></div>
+          <div class="campo-modal"><label>Fecha del servicio</label><input type="date" id="ed-fecha-servicio"></div>
+          <div class="campo-modal full"><label>Notas de la cotización</label><textarea id="ed-notas" rows="2" placeholder="Notas capturadas al registrar la cotización..."></textarea></div>
+        </div>
+        <div class="util-16">
+          <span class="chip util-17">Creado por: <b id="ed-creado-por">—</b></span>
+          <span class="chip util-17">Fecha de creación: <b id="ed-created-at">—</b></span>
+          <span class="chip util-17">Estatus de cotización: <b id="ed-estatus-actual">—</b></span>
+        </div>
+        <div class="btn-group">
+          <span id="estado-guardado-registro" class="estado-guardado" role="status"></span>
+          <button class="btn btn-secundario" id="btn-guardar-ficha">Guardar cambios de este registro</button>
+          <button class="btn btn-ghost diseno-nav-usuarios" id="btn-recomprar">Registrar otro servicio contratado</button>
+          <button class="btn btn-verde" id="btn-convertir-cliente">Aceptar cotización y contratar servicio</button>
+          <button class="btn btn-outline diseno-nav-usuarios" id="btn-reabrir">↺ Reabrir cotización</button>
+          <button class="btn btn-primario" id="btn-generar-cotizacion">📄 Generar cotización (PDF/Word)</button>
+        </div>
+        <div class="zona-peligro util-18">
+          <button class="btn btn-peligro diseno-btn-marcar-perdido" id="btn-marcar-perdido">✕ Descartar cotización</button>
+          <button class="btn-eliminar" id="btn-eliminar-lead">Eliminar este registro</button>
+        </div>
+      </div>
+
+      <div class="modal-section">
+        <div class="seccion-tit">Agregar observación o alerta</div>
+        <div class="obs-form">
+          <textarea id="obs-texto" placeholder="Escribe una observación..."></textarea>
+          <div class="util-20">
+            <label class="obs-check"><input type="checkbox" id="obs-es-alerta"> Es alerta / recordatorio</label>
+            <div class="obs-fecha-rapida" id="obs-fecha-rapida">
+              <button type="button" data-rapido="manana">Mañana 9am</button>
+              <button type="button" data-rapido="3dias">En 3 días</button>
+              <button type="button" data-rapido="semana">En 1 semana</button>
+            </div>
+            <input type="datetime-local" id="obs-fecha">
+            <button class="btn btn-primario diseno-btn-agregar-obs" id="btn-agregar-obs">Agregar</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-section">
+        <div class="seccion-tit">Historial comercial del contacto</div>
+        <p class="ayuda util-22">Cada fila tiene su propio número. Abrir otra fila cambia el registro que estás editando.</p>
+        <div class="servicios-list" id="ficha-anteriores"></div>
+      </div>
+
+
+    </div>
+  </div>
+</div>
+
+<!-- ====== MODAL FICHA DE CLIENTE ====== -->
+<div class="overlay" id="overlay-ficha-cliente">
+  <div class="modal">
+    <div class="modal-header">
+      <div><div class="flujo-kicker">FICHA DEL CONTACTO</div><h2 id="fc-titulo">Contacto</h2></div>
+      <button class="close-btn" id="btn-cerrar-modal-cliente">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="modal-section">
+        <div id="contacto-identidad" class="contacto-identidad"></div>
+        <div class="seccion-tit">Datos del contacto</div>
+        <p class="ayuda">Esta ficha pertenece a la persona o empresa. Guardar aquí no modifica importes, fechas ni ubicaciones de cotizaciones anteriores.</p>
+        <div class="form-grid-2">
+          <div class="campo-modal"><label>Teléfono</label><input type="tel" id="fc-ed-telefono"></div>
+          <div class="campo-modal"><label>Teléfono alterno (opcional)</label><input type="tel" id="fc-ed-telefono-alterno"></div>
+          <div class="campo-modal"><label>Nombre / contacto</label><input type="text" id="fc-ed-nombre"></div>
+          <div class="campo-modal"><label>Correo electrónico (opcional)</label><input type="email" id="fc-ed-correo" placeholder="correo@ejemplo.com"></div>
+          <div class="campo-modal"><label>Empresa</label><input type="text" id="fc-ed-empresa"></div>
+          <div class="campo-modal"><label>RFC (opcional, para facturación)</label><input type="text" id="fc-ed-rfc" maxlength="13" placeholder="XAXX010101000"></div>
+          <div class="campo-modal"><label>Dirección habitual del contacto</label><input type="text" id="fc-ed-direccion"></div>
+          <div class="campo-modal">
+            <label>Tipo de cliente</label>
+            <select id="fc-ed-giro">
+              <option value="">Sin especificar</option>
+              <option value="residencial">Residencial</option>
+              <option value="comercial">Comercial</option>
+              <option value="industrial">Industrial</option>
+            </select>
+          </div>
+          <div class="campo-modal full"><label>Notas generales del contacto (opcional)</label><textarea id="fc-ed-notas-generales" rows="2" placeholder="Información permanente sobre este contacto: acceso al predio, preferencias, referencias, etc."></textarea></div>
+        </div>
+        <div class="btn-group">
+          <button class="btn btn-primario" id="btn-guardar-cliente">Guardar datos del contacto</button>
+          <span id="estado-guardado-contacto" class="estado-guardado" role="status"></span>
+          
+        </div>
+      </div>
+
+      <div class="modal-section">
+        <div class="relacion-registros"><div><div class="seccion-tit">Cotizaciones y servicios de este contacto</div><p class="ayuda">Una cotización abierta es una propuesta. Al aceptarla, el mismo registro pasa a servicio contratado; conserva su número e importe.</p></div>
+        <div class="btn-group"><button class="btn btn-primario" id="btn-contacto-cotizar">Nueva cotización</button><button class="btn btn-outline" id="btn-recapturar-servicio">Registrar servicio contratado</button></div></div>
+        <div class="ficha-meta" id="fc-meta"></div>
+        <div id="fc-servicios" class="servicios-list"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<!-- ====== OVERLAY: LOGIN ====== -->
+<div class="overlay diseno-overlay-login" id="overlay-login">
+  <div class="modal util-24">
+    <div class="modal-header"><h2>Iniciar sesión</h2></div>
+    <div class="modal-body">
+      <form id="form-login">
+        <div class="form-grid util-25">
+          <div class="campo">
+            <label>Usuario</label>
+            <input type="text" id="login-nombre" autocomplete="username" required>
+          </div>
+          <div class="campo">
+            <label>Contraseña</label>
+            <input type="password" id="login-password" autocomplete="current-password" required>
+          </div>
+        </div>
+        <div class="diseno-login-error" id="login-error"></div>
+        <button type="submit" class="btn btn-primario util-27">Entrar</button>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- ====== OVERLAY: CAPTURAR SERVICIO NUEVO ====== -->
+<div class="overlay diseno-overlay-login" id="overlay-servicio-nuevo">
+  <div class="modal util-28">
+    <div class="modal-header">
+      <h2 id="sn-titulo">Registrar servicio o cotización</h2>
+      <button class="close-btn" onclick="document.getElementById('overlay-servicio-nuevo').classList.remove('mostrar')">✕</button>
+    </div>
+    <div class="modal-body util-29">
+      <div class="chip diseno-sn-cliente-info" id="sn-cliente-info"></div>
+      <p class="ayuda diseno-sn-ayuda" id="sn-ayuda"></p>
+      <div class="form-grid util-25">
+        <div class="campo">
+          <label>Servicio</label>
+          <select id="sn-servicio"></select>
+        </div>
+        <div class="campo">
+          <label id="sn-label-valor">Costo del servicio (MXN, opcional)</label>
+          <input type="number" id="sn-valor" min="0" step="0.01" placeholder="Si ya se conoce">
+        </div>
+        <div class="campo">
+          <label id="sn-label-fecha">Fecha del servicio (opcional)</label>
+          <input type="date" id="sn-fecha">
+        </div>
+        <div class="campo">
+          <label>Notas (opcional)</label>
+          <textarea id="sn-notas" rows="2"></textarea>
+        </div>
+      </div>
+      <div class="campo"><label for="sn-ubicacion">Ubicación de este servicio</label><input id="sn-ubicacion" type="text"></div>
+      <span id="estado-guardado-nuevo" class="estado-guardado" role="status"></span>
+      <button class="btn btn-primario diseno-btn-guardar-servicio-nuevo" id="btn-guardar-servicio-nuevo">Crear registro</button>
+    </div>
+  </div>
+</div>
+
+<!-- ====== OVERLAY: GENERAR COTIZACIÓN (PDF o Word, uno o varios servicios) ====== -->
+<div class="overlay diseno-overlay-login" id="overlay-generar-cotizacion">
+  <div class="modal util-28">
+    <div class="modal-header">
+      <h2>Generar documento de cotización</h2>
+      <button class="close-btn" onclick="document.getElementById('overlay-generar-cotizacion').classList.remove('mostrar')">✕</button>
+    </div>
+    <div class="modal-body util-29">
+      <div class="campo">
+        <p class="ayuda">Exporta una propuesta a partir del registro abierto. Los servicios que agregues aquí solo se incluyen en el documento; no crean ni modifican registros del CRM.</p>
+        <label>Formato del documento</label>
+        <div class="util-20">
+          <label><input type="radio" name="gc-formato" id="gc-formato-pdf" value="pdf" checked> PDF</label>
+          <label><input type="radio" name="gc-formato" value="word"> Word (.docx)</label>
+        </div>
+      </div>
+
+      <div class="seccion-tit util-16">Servicios cotizados</div>
+      <div id="gc-items"></div>
+      <button type="button" class="btn btn-ghost" id="btn-gc-agregar-servicio">+ Agregar otro servicio</button>
+
+      <div class="util-16"><span class="chip valor-chip">Total: <b id="gc-total">$0.00</b></span></div>
+
+      <button class="btn btn-primario diseno-btn-guardar-servicio-nuevo" id="btn-gc-generar">Generar documento</button>
+    </div>
+  </div>
+</div>
+
+<!-- Librerías para generar el documento de cotización (PDF y Word) -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+<script src="https://unpkg.com/docx@8.5.0/build/index.umd.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/1.3.8/FileSaver.js"></script>
+
+<script src="ui.js"></script>
+<script src="servicios-tabla.js"></script>
+<script src="flujo.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

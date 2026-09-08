@@ -1,0 +1,28 @@
+/* Tablas de servicios en las fichas de Leads y Clientes. */
+#overlay-ficha>.modal,#overlay-ficha-cliente>.modal{max-width:1240px;}
+.servicios-tabla{display:block;min-width:0;}
+.servicios-filtros{display:flex;align-items:flex-end;flex-wrap:wrap;gap:12px;padding:16px;background:var(--gris-100);border:1px solid var(--gris-200);border-radius:10px;}
+.servicios-filtros label{display:flex;flex-direction:column;gap:5px;font-size:12px;font-weight:600;color:var(--texto-sec);min-width:0;}
+.servicios-filtros .servicios-busqueda{flex:1 1 210px;}
+.servicios-filtros input,.servicios-filtros select{min-height:40px;padding:8px 10px;border:1px solid var(--gris-300);border-radius:6px;font:inherit;color:var(--texto);background:white;min-width:0;}
+.servicios-filtros input:focus,.servicios-filtros select:focus{outline:2px solid var(--azul-500);outline-offset:1px;}
+.servicios-resumen{padding:12px 0;font-size:13px;font-weight:700;color:var(--azul-800);}
+.servicios-error{padding:10px 12px;color:var(--rojo);border-left:3px solid var(--rojo);background:#fbe9e7;}
+.servicios-scroll{overflow:auto;max-height:460px;max-width:100%;border:1px solid var(--gris-300);border-radius:8px;overscroll-behavior:contain;}
+.tabla-servicios{border-collapse:separate;border-spacing:0;min-width:1130px;width:100%;font-size:13px;line-height:1.5;}
+.tabla-servicios caption{text-align:left;padding:10px 12px;background:var(--gris-100);font-weight:600;}
+.tabla-servicios th{position:sticky;top:0;background:#fff3ca;color:var(--azul-950);z-index:1;white-space:nowrap;text-align:left;}
+.tabla-servicios th,.tabla-servicios td{padding:10px 12px;border-right:1px solid var(--gris-200);border-bottom:1px solid var(--gris-200);vertical-align:top;}
+.tabla-servicios th:last-child,.tabla-servicios td:last-child{border-right:0;}
+.tabla-servicios th button{border:0;background:transparent;font:inherit;font-weight:700;color:inherit;cursor:pointer;padding:3px 0;text-align:left;}
+.tabla-servicios tbody tr:nth-child(even){background:#f7f8fa;}
+.tabla-servicios tbody tr:hover{background:#fffae9;}
+.tabla-servicios .servicio-nombre{min-width:170px;max-width:250px;font-weight:600;overflow-wrap:anywhere;}
+.tabla-servicios .servicio-importe{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums;}
+.tabla-servicios .servicio-notas{min-width:150px;max-width:230px;overflow-wrap:anywhere;white-space:pre-line;}
+.tabla-servicios small{display:block;color:var(--texto-sec);font-size:11px;margin-top:6px;font-weight:400;}
+.tabla-servicios .tag-estatus{margin:0;}
+.servicios-acciones{display:flex;flex-wrap:wrap;gap:6px;min-width:160px;}
+.servicios-acciones .btn{font-size:12px;padding:6px 8px;min-height:34px;}
+.servicios-vacio{text-align:center;padding:26px!important;color:var(--texto-sec);}
+@media(max-width:600px){.servicios-filtros{padding:12px;gap:10px;}.servicios-filtros label{flex:1 1 120px;}.servicios-filtros .servicios-busqueda{flex-basis:100%;}.servicios-filtros input,.servicios-filtros select{width:100%;font-size:16px;}.servicios-scroll{max-height:380px;}.servicios-resumen{font-size:12px;}.servicios-acciones .btn{min-height:40px;}}
