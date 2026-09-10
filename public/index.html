@@ -21,6 +21,7 @@
   <nav>
     <button data-vista="alta" class="activa">Nuevo contacto</button>
     <button data-vista="leads">Cotizaciones</button>
+    <button data-vista="prospeccion">Prospección</button>
     <button data-vista="clientes">Contactos y clientes</button>
     <button data-vista="pendientes">Pendientes <span id="badge-pendientes">0</span></button>
     <button data-vista="resultados">Resultados</button>
@@ -38,65 +39,20 @@
   <section class="vista activa" id="vista-alta">
     <div class="panel-alta">
       <h2>Crear un contacto</h2>
-      <p class="ayuda">El contacto es la persona o empresa. Un prospecto (lead) todavía no ha contratado; se convierte en cliente cuando contrata un servicio.</p>
-      <div class="form-grid">
-        <div class="campo span-2">
-          <label>Teléfono</label>
-          <input type="tel" id="in-telefono" placeholder="10 dígitos" autocomplete="off">
-        </div>
-        <div class="campo span-2">
-          <label>Nombre del contacto</label>
-          <input type="text" id="in-nombre" placeholder="Nombre completo">
-        </div>
-        <div class="campo span-2">
-          <label>Nombre de la empresa (opcional)</label>
-          <input type="text" id="in-empresa" placeholder="Si aplica">
-        </div>
-        <div class="campo span-2">
-          <label>Correo electrónico (opcional)</label>
-          <input type="email" id="in-correo" placeholder="correo@ejemplo.com">
-        </div>
-        <div class="campo">
-          <label>Tipo de cliente (opcional)</label>
-          <select id="in-giro">
-            <option value="">Sin especificar</option>
-            <option value="residencial">Residencial</option>
-            <option value="comercial">Comercial</option>
-            <option value="industrial">Industrial</option>
-          </select>
-        </div>
-        <div class="campo span-3">
-          <label>Dirección</label>
-          <input type="text" id="in-direccion" placeholder="Calle, número, colonia...">
-        </div>
-        <div class="campo">
-          <label>Canal de esta cotización (opcional)</label>
-          <select id="in-canal"></select>
-        </div>
-        <div class="campo">
-          <label>Servicio de interés</label>
-          <select id="in-servicio"></select>
-        </div>
-        <div class="campo">
-          <label>Cotización estimada (MXN, opcional)</label>
-          <input type="number" id="in-valor" min="0" step="0.01" placeholder="Si ya se conoce">
-        </div>
-        <div class="campo span-4">
-          <label>Notas iniciales (opcional)</label>
-          <textarea id="in-notas" rows="2" placeholder="Detalle breve de lo que pide el cliente..."></textarea>
-        </div>
-      </div>
-      <div class="alerta-duplicado" id="alerta-dup">
-        <div id="dup-titulo"></div>
-        <div id="dup-lista"></div>
-        <div class="fila-dup">
-          <button class="btn btn-outline" id="btn-cancelar-dup">Cancelar</button>
-          <button class="btn btn-secundario" id="btn-crear-duplicado">Crear de todos modos (caso distinto)</button>
-        </div>
-      </div>
+      <p class="ayuda">Primero busca por teléfono. Para un contacto nuevo, captura nombre y teléfono.</p>
+<div class="captura-contacto-grid">
+<div class="campo"><label for="in-telefono">Teléfono (obligatorio)</label><input type="tel" id="in-telefono" placeholder="10 dígitos" autocomplete="tel" required></div>
+<div class="campo"><label for="in-nombre">Nombre del contacto (obligatorio)</label><input type="text" id="in-nombre" placeholder="Nombre completo" autocomplete="name" required></div>
+<div class="alerta-duplicado captura-ancha" id="alerta-dup"><div id="dup-titulo"></div><div id="dup-lista"></div><div class="fila-dup"><button class="btn btn-outline" id="btn-cancelar-dup">Buscar otro teléfono</button></div></div>
+<div class="campo"><label for="in-origen">¿Cómo se enteró de nosotros? (obligatorio)</label><select id="in-origen" required><option value="">Selecciona una opción</option></select></div>
+<div class="campo"><label for="in-giro">Tipo de cliente (opcional)</label><select id="in-giro"><option value="">Sin especificar</option></select></div>
+<div class="campo"><label for="in-empresa">Empresa (opcional)</label><input type="text" id="in-empresa" placeholder="Si aplica" autocomplete="organization"></div>
+<div class="campo"><label for="in-correo">Correo electrónico (opcional)</label><input type="email" id="in-correo" placeholder="correo@ejemplo.com" autocomplete="email"></div>
+<div class="campo captura-ancha"><label for="in-direccion">Domicilio del contacto (opcional)</label><input type="text" id="in-direccion" placeholder="Calle, número, colonia, municipio..." autocomplete="street-address"></div>
+</div>
       <div class="util-4">
-        <button class="btn btn-primario" id="btn-guardar-contacto-nuevo">Crear solo contacto</button>
-        <button class="btn btn-secundario" id="btn-guardar-lead">Crear contacto y primera cotización</button>
+        <button class="btn btn-primario" id="btn-guardar-contacto-nuevo">Guardar contacto</button>
+        <button class="btn btn-secundario" id="btn-guardar-lead">Guardar y cotizar</button>
       </div>
     </div>
   </section>
@@ -270,69 +226,29 @@
 
   <!-- ====== VISTA: RESULTADOS ====== -->
   <section class="vista" id="vista-resultados">
-    <p class="ayuda util-5">Análisis de desempeño del pipeline de cotizaciones y cartera de clientes. Se actualiza en tiempo real.</p>
-
-    <div class="res-grid" id="res-kpis">
-      <div class="res-card">
-        <div class="res-num" id="res-ingresos">$0</div>
-        <div class="res-label">Ingresos históricos ganados</div>
-      </div>
-      <div class="res-card">
-        <div class="res-num" id="res-leads-total">0</div>
-        <div class="res-label">Cotizaciones registradas (total)</div>
-      </div>
-      <div class="res-card">
-        <div class="res-num" id="res-tasa">0%</div>
-        <div class="res-label">Tasa de conversión</div>
-      </div>
-      <div class="res-card">
-        <div class="res-num" id="res-ticket">$0</div>
-        <div class="res-label">Ticket promedio ganado</div>
-      </div>
-    </div>
-
+    <h2>Resultados comerciales</h2>
+    <div class="filtros"><label>Desde <input type="date" id="res-desde"></label><label>Hasta <input type="date" id="res-hasta"></label><button class="btn btn-primario" id="res-aplicar">Consultar</button><button class="btn btn-outline" id="res-todo">Todo el historial</button><button class="btn btn-outline" id="res-exportar">Exportar canales a Excel</button></div>
+    <p class="ayuda">Contactos nuevos: fecha de registro. Importe contratado: fecha acordada del servicio. Cada contacto y sus servicios se atribuyen a “Cómo se enteró de nosotros”. El importe contratado no equivale a cobros ni utilidad.</p>
+    <p id="res-estado" role="status"></p><div class="res-grid" id="res-kpis"></div>
+    <div class="res-section"><h3>¿Qué canales traen contactos y generan contrataciones?</h3><p class="ayuda">Conversión: contactos nuevos del periodo que ya han contratado al día de hoy / contactos nuevos del periodo. Las contrataciones pueden provenir de contactos registrados antes.</p><div class="tabla-scroll"><table class="tabla-resumen"><thead><tr><th>Canal de origen</th><th>Leads nuevos (contactos)</th><th>Convertidos a cliente</th><th>Conversión</th><th>Clientes con servicio</th><th>Servicios contratados</th><th>Importe contratado</th><th>Promedio por servicio</th><th>Propuestas abiertas</th><th>Importe abierto</th></tr></thead><tbody id="res-canales"></tbody></table></div></div>
+    <div class="res-two-col"><div class="res-section"><h3>Importe contratado por canal</h3><div id="res-dinero-canal" class="bar-chart"></div></div><div class="res-section"><h3>Contactos nuevos por canal</h3><div id="res-contactos-canal" class="bar-chart"></div></div></div>
+    <div id="res-kpis-extra" class="res-grid"></div>
+    <div class="res-section"><h3>Evolución mensual del importe contratado</h3><p class="ayuda">Por fecha acordada del servicio. Los meses intermedios sin contrataciones se muestran en cero. El rango seleccionado puede incluir meses parciales.</p><div id="res-tendencia"></div></div>
     <div class="res-two-col">
-      <div class="res-section">
-        <h3>🏆 Top 10 clientes por valor ganado</h3>
-        <div class="bar-chart" id="res-top-clientes"></div>
-      </div>
-      <div class="res-section">
-        <h3>🔧 Servicios más solicitados</h3>
-        <div class="bar-chart" id="res-top-servicios"></div>
-      </div>
+      <div class="res-section"><h3>Conversión por canal</h3><p class="ayuda">Contactos nuevos del periodo que ya contrataron / contactos nuevos. Compara también el volumen: 1 de 1 no es igual de representativo que 80 de 100.</p><div id="res-conversion" class="bar-chart"></div></div>
+      <div class="res-section"><h3>¿Qué clientes generan más importe contratado?</h3><p class="ayuda">Los 10 primeros del periodo. El indicador de concentración muestra cuánto aportan los 3 principales al total.</p><div id="res-top-valor" class="bar-chart"></div></div>
+      <div class="res-section"><h3>Antigüedad de propuestas abiertas</h3><p class="ayuda">Días desde su creación hasta hoy. Incluye las propuestas creadas dentro del periodo seleccionado que siguen abiertas.</p><div id="res-antiguedad" class="bar-chart"></div></div>
+      <div class="res-section"><h3>Clientes de una compra y recurrentes</h3><p class="ayuda">Clientes con servicio en el periodo, clasificados por su número de contrataciones histórico.</p><div id="res-repeticion" class="bar-chart"></div></div>
     </div>
-
-    <div class="res-two-col">
-      <div class="res-section">
-        <h3>📣 Cotizaciones por canal de contacto</h3>
-        <div class="bar-chart" id="res-por-canal"></div>
-      </div>
-      <div class="res-section">
-        <h3>📅 Evolución mensual (servicios ganados)</h3>
-        <div class="evo-chart" id="res-evolucion"></div>
-      </div>
-    </div>
-
-    <div class="res-section">
-      <h3>📊 Resumen mensual de actividad</h3>
-      <div class="tabla-scroll">
-        <table class="tabla-resumen">
-          <thead>
-            <tr>
-              <th>Mes</th>
-              <th>Cotizaciones creadas</th>
-              <th>Ganados</th>
-              <th>Perdidos</th>
-              <th>Ingresos ganados</th>
-              <th>Tasa de conversión</th>
-            </tr>
-          </thead>
-          <tbody id="res-tabla-mensual"></tbody>
-        </table>
-      </div>
-    </div>
+    <div class="res-section"><h3>Evaluación de clientes y prospectos</h3><p class="ayuda">Ordenados por importe contratado del periodo. Recurrente: tiene más de un servicio contratado en todo su historial. Última fecha: fecha acordada más reciente, puede ser futura.</p><div class="tabla-scroll"><table class="tabla-resumen"><thead><tr><th>Contacto</th><th>Canal</th><th>Relación</th><th>Servicios del periodo</th><th>Contratado del periodo</th><th>Contratado histórico</th><th>Propuestas abiertas del periodo</th><th>Última fecha de servicio</th><th>Ficha</th></tr></thead><tbody id="res-clientes"></tbody></table></div></div>
   </section>
 
+<section class="vista" id="vista-prospeccion">
+<h2>Prospección de establecimientos</h2><p class="ayuda">Investiga restaurantes, hoteles y hospitales sin crear cotizaciones vacías. Sector describe el negocio; el estado indica tu seguimiento comercial.</p>
+<div class="filtros"><input id="pr-buscar" aria-label="Buscar establecimiento" placeholder="Establecimiento, zona, persona o teléfono"><select id="pr-f-sector" aria-label="Sector"></select><select id="pr-f-estado" aria-label="Seguimiento"></select><select id="pr-f-responsable" aria-label="Responsable"></select><label><input type="checkbox" id="pr-vencidos"> Seguimiento para hoy o vencido</label><button class="btn btn-primario" id="pr-nuevo">Registrar establecimiento</button><button class="btn btn-outline" id="pr-exportar">Exportar selección</button></div>
+<p id="pr-resumen" role="status"></p><div class="tabla-scroll"><table class="tabla-resumen"><thead><tr><th>Establecimiento</th><th>Sector / zona</th><th>Persona / teléfono</th><th>Seguimiento</th><th>Responsable</th><th>Próximo contacto</th><th>Contacto CRM</th><th>Ficha</th></tr></thead><tbody id="pr-tabla"></tbody></table></div>
+<details id="pr-admin" hidden><summary>Administrar sectores</summary><p class="ayuda">Renombrar conserva los establecimientos asociados.</p><div id="pr-sectores"></div><label for="pr-sector-nuevo">Nuevo sector</label><input id="pr-sector-nuevo" maxlength="80"><button class="btn btn-outline" id="pr-agregar-sector">Agregar sector</button></details>
+</section>
   <!-- ====== VISTA: USUARIOS (solo admin) ====== -->
   <section class="vista" id="vista-usuarios">
     <div class="panel-alta">
@@ -370,6 +286,10 @@
     <h3 class="util-13">Usuarios activos</h3>
     <div id="lista-usuarios"></div>
 
+    <h3 class="util-14">Tipos de cliente</h3>
+    <p class="ayuda">Agrega tipos o cambia sus nombres. Renombrar conserva la clasificación de los contactos existentes.</p>
+    <div id="lista-tipos-cliente"></div>
+    <div class="campo"><label for="nuevo-tipo-cliente">Nuevo tipo de cliente</label><input id="nuevo-tipo-cliente" maxlength="80" placeholder="Ej. Gobierno"><button type="button" class="btn btn-primario" id="btn-agregar-tipo">Agregar tipo</button></div>
     <h3 class="util-14">Catálogo de servicios — descripciones y recurrencia</h3>
     <p class="ayuda util-15">Cada cuántos días conviene volver a ofrecerle este servicio a un cliente que ya lo tuvo. Déjalo vacío si es un servicio de una sola vez (sin recompra periódica). Esto alimenta la vista "Recompras".</p>
     <p class="ayuda">Guarda aquí la descripción base de cada servicio. Al elegirlo en una cotización se precarga y puedes editarla solo para ese documento, sin cambiar el catálogo.</p>
@@ -467,7 +387,7 @@
           <button class="btn btn-ghost diseno-nav-usuarios" id="btn-recomprar">Registrar otro servicio contratado</button>
           <button class="btn btn-verde" id="btn-convertir-cliente">Aceptar cotización y contratar servicio</button>
           <button class="btn btn-outline diseno-nav-usuarios" id="btn-reabrir">↺ Reabrir cotización</button>
-          <button class="btn btn-primario" id="btn-generar-cotizacion">📄 Generar cotización (PDF/Word)</button>
+          <span id="btn-generar-cotizacion" hidden></span>
         </div>
         <div class="zona-peligro util-18">
           <button class="btn btn-peligro diseno-btn-marcar-perdido" id="btn-marcar-perdido">✕ Descartar cotización</button>
@@ -527,9 +447,7 @@
             <label>Tipo de cliente</label>
             <select id="fc-ed-giro">
               <option value="">Sin especificar</option>
-              <option value="residencial">Residencial</option>
-              <option value="comercial">Comercial</option>
-              <option value="industrial">Industrial</option>
+              
             </select>
           </div>
           <div class="campo-modal full"><label>Notas generales del contacto (opcional)</label><textarea id="fc-ed-notas-generales" rows="2" placeholder="Información permanente sobre este contacto: acceso al predio, preferencias, referencias, etc."></textarea></div>
@@ -604,50 +522,38 @@
           <textarea id="sn-notas" rows="2"></textarea>
         </div>
       </div>
-      <div class="campo"><label for="sn-ubicacion">Ubicación de este servicio</label><input id="sn-ubicacion" type="text"></div>
-      <span id="estado-guardado-nuevo" class="estado-guardado" role="status"></span>
+      <div class="campo"><label for="sn-ubicacion">Ubicación de este servicio (puedes cambiar el domicilio propuesto)</label><input id="sn-ubicacion" type="text"></div>
+      <div id="editor-nuevo-destino"></div><span id="estado-guardado-nuevo" class="estado-guardado" role="status"></span>
       <button class="btn btn-primario diseno-btn-guardar-servicio-nuevo" id="btn-guardar-servicio-nuevo">Crear registro</button>
     </div>
   </div>
 </div>
 
 <!-- ====== OVERLAY: GENERAR COTIZACIÓN (PDF o Word, uno o varios servicios) ====== -->
-<div class="overlay diseno-overlay-login" id="overlay-generar-cotizacion">
-  <div class="modal util-28">
-    <div class="modal-header">
-      <h2>Generar documento de cotización</h2>
-      <button class="close-btn" onclick="document.getElementById('overlay-generar-cotizacion').classList.remove('mostrar')">✕</button>
-    </div>
-    <div class="modal-body util-29">
-      <div class="campo">
-        <p class="ayuda">Exporta una propuesta a partir del registro abierto. Los servicios que agregues aquí solo se incluyen en el documento; no crean ni modifican registros del CRM.</p>
-        <label>Formato del documento</label>
-        <div class="util-20">
-          <label><input type="radio" name="gc-formato" id="gc-formato-pdf" value="pdf" checked> PDF</label>
-          <label><input type="radio" name="gc-formato" value="word"> Word (.docx)</label>
-        </div>
-      </div>
-
-      <div class="seccion-tit util-16">Servicios cotizados</div>
-      <div id="gc-items"></div>
-      <button type="button" class="btn btn-ghost" id="btn-gc-agregar-servicio">+ Agregar otro servicio</button>
-
-      <div class="util-16"><span class="chip valor-chip">Total: <b id="gc-total">$0.00</b></span></div>
-
-      <button class="btn btn-primario diseno-btn-guardar-servicio-nuevo" id="btn-gc-generar">Generar documento</button>
-    </div>
-  </div>
+<div id="editor-cotizacion" hidden>
+  <div class="seccion-tit">Contenido de la cotización</div>
+  <p class="ayuda">Edita servicios, descripciones e importes. Se guardan con esta cotización y se usan en la descarga.</p>
+  <div id="gc-items"></div><button type="button" class="btn btn-outline" id="btn-gc-agregar-servicio">+ Agregar servicio</button>
+  <p>Total: <b id="gc-total">$0.00</b></p>
+  <label><input type="radio" name="gc-formato" id="gc-formato-pdf" value="pdf" checked> PDF</label>
+  <label><input type="radio" name="gc-formato" value="word"> Word</label>
+  <button type="button" class="btn btn-primario" id="btn-gc-generar">Guardar y descargar cotización</button>
 </div>
-
 <!-- Librerías para generar el documento de cotización (PDF y Word) -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 <script src="https://unpkg.com/docx@8.5.0/build/index.umd.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/1.3.8/FileSaver.js"></script>
 
+<div class="overlay" id="overlay-prospeccion"><div class="modal" style="max-width:920px"><div class="modal-header"><h2 id="pr-titulo">Establecimiento</h2><button class="close-btn" id="pr-cerrar" aria-label="Cerrar establecimiento">✕</button></div><div class="modal-body"><div class="modal-section"><p class="ayuda">Para investigar solo necesitas nombre, sector y ciudad o zona. Completa el teléfono cuando lo consigas. Guardar aquí no crea un cliente ni una cotización.</p><div class="form-grid-2">
+<div class="campo-modal"><label for="pr-nombre">Nombre del establecimiento o sucursal *</label><input id="pr-nombre" maxlength="500"></div><div class="campo-modal"><label for="pr-sector_id">Sector *</label><select id="pr-sector_id"></select></div><div class="campo-modal"><label for="pr-zona">Ciudad / zona *</label><input id="pr-zona" maxlength="500"></div><div class="campo-modal"><label for="pr-direccion">Domicilio (opcional)</label><input id="pr-direccion" maxlength="500"></div><div class="campo-modal"><label for="pr-telefono">Teléfono (opcional)</label><input id="pr-telefono" type="tel"></div><div class="campo-modal"><label for="pr-correo">Correo (opcional)</label><input id="pr-correo" type="email"></div><div class="campo-modal"><label for="pr-persona">Persona de contacto (opcional)</label><input id="pr-persona" maxlength="500"></div><div class="campo-modal"><label for="pr-cargo">Cargo / área (opcional)</label><input id="pr-cargo" maxlength="500"></div><div class="campo-modal"><label for="pr-fuente">Fuente de investigación / enlace (opcional)</label><input id="pr-fuente" maxlength="500"></div><div class="campo-modal"><label for="pr-estado">Estado del seguimiento</label><select id="pr-estado"></select></div><div class="campo-modal"><label for="pr-responsable_id">Responsable *</label><select id="pr-responsable_id"></select></div><div class="campo-modal"><label for="pr-proximo_contacto">Próxima fecha de contacto (opcional)</label><input id="pr-proximo_contacto" type="date"></div>
+</div><div class="campo-modal"><label for="pr-necesidades">Necesidades y notas de investigación</label><textarea id="pr-necesidades" rows="3" maxlength="5000"></textarea></div><p id="pr-aviso" role="status"></p><div class="btn-group"><button class="btn btn-primario" id="pr-guardar">Guardar establecimiento</button><button class="btn btn-outline" id="pr-vincular">Guardar y preparar cotización</button></div><p class="ayuda">Preparar cotización requiere teléfono. Si ya existe un contacto, podrás confirmar su vinculación. Los establecimientos pueden compartir contacto; su domicilio se propone en la nueva cotización.</p></div></div></div></div>
+
+
 <script src="ui.js"></script>
 <script src="servicios-tabla.js"></script>
 <script src="flujo.js"></script>
 <script src="app.js"></script>
+<script src="prospeccion.js"></script>
 </body>
 </html>

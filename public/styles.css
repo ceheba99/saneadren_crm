@@ -565,3 +565,15 @@ body.modal-abierta{overflow:hidden;}
 header.app .marca{min-width:0;}
 header.app .logo-saneadren{display:block;width:250px;max-width:100%;height:auto;object-fit:contain;}
 @media(max-width:600px){header.app .logo-saneadren{width:210px;}}
+
+/* Captura del contacto: un campo por celda, aviso visible bajo el teléfono. */
+.captura-contacto-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px 20px;align-items:start;}
+.captura-contacto-grid .captura-ancha{grid-column:1/-1;}
+.captura-contacto-grid .alerta-duplicado{margin:0;}
+@media(max-width:600px){.captura-contacto-grid{grid-template-columns:minmax(0,1fr);}}
+
+#editor-cotizacion{margin:18px 0;padding:18px;border:1px solid #e1e4e7;border-radius:10px;background:#fff;}
+#editor-cotizacion .gc-fila{display:flex;align-items:flex-start;gap:12px;padding:12px 0;border-bottom:1px solid #e1e4e7;}
+#editor-cotizacion .gc-fila>.form-grid-2{flex:1;}
+#editor-cotizacion .gc-quitar{align-self:flex-start;white-space:nowrap;}
+@media(max-width:600px){#editor-cotizacion .gc-fila{flex-direction:column;}#editor-cotizacion .gc-fila>.form-grid-2{width:100%;}}

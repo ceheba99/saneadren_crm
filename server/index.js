@@ -112,6 +112,8 @@ app.use('/api', (req, res, next) => {
   requireAuth(req, res, next);
 });
 
+require('./prospeccion')(app,db,h);
+
 // ---------- Catálogos ----------
 app.get('/api/usuarios', h((req, res) => {
   res.json(db.prepare('SELECT id, nombre, rol, activo FROM usuarios WHERE activo = 1 ORDER BY nombre').all());
@@ -216,6 +218,23 @@ app.post('/api/servicios', h((req, res) => {
   res.status(201).json(db.prepare('SELECT * FROM catalogo_servicios WHERE id = ?').get(info.lastInsertRowid));
 }));
 
+app.get('/api/tipos-cliente', h((req,res)=>res.json(db.prepare('SELECT * FROM tipos_cliente ORDER BY nombre').all())));
+app.post('/api/tipos-cliente', h((req,res)=>{
+  if(req.usuarioSesion.rol!=='admin')return res.status(403).json({error:'Solo un administrador puede modificar los tipos de cliente'});
+  const nombre=typeof req.body.nombre==='string'?req.body.nombre.trim():'';
+  if(!nombre || nombre.length>80)return res.status(400).json({error:'Escribe un nombre de hasta 80 caracteres'});
+  if(db.prepare('SELECT clave FROM tipos_cliente WHERE nombre = ?').get(nombre))return res.status(409).json({error:'Ya existe ese tipo de cliente'});
+  const clave=crypto.randomUUID();db.prepare('INSERT INTO tipos_cliente (clave,nombre) VALUES (?,?)').run(clave,nombre);
+  res.status(201).json({clave,nombre});
+}));
+app.put('/api/tipos-cliente/:clave', h((req,res)=>{
+  if(req.usuarioSesion.rol!=='admin')return res.status(403).json({error:'Solo un administrador puede modificar los tipos de cliente'});
+  const nombre=typeof req.body.nombre==='string'?req.body.nombre.trim():'';
+  if(!nombre || nombre.length>80)return res.status(400).json({error:'Escribe un nombre de hasta 80 caracteres'});
+  if(!db.prepare('SELECT clave FROM tipos_cliente WHERE clave = ?').get(req.params.clave))return res.status(404).json({error:'Tipo no encontrado'});
+  if(db.prepare('SELECT clave FROM tipos_cliente WHERE nombre = ? AND clave <> ?').get(nombre,req.params.clave))return res.status(409).json({error:'Ya existe ese tipo de cliente'});
+  db.prepare('UPDATE tipos_cliente SET nombre = ? WHERE clave = ?').run(nombre,req.params.clave);res.json({clave:req.params.clave,nombre});
+}));
 app.get('/api/canales', h((req, res) => {
   res.json(db.prepare('SELECT * FROM canales ORDER BY orden').all());
 }));
@@ -310,12 +329,32 @@ app.get('/api/leads/:id', h((req, res) => {
 }));
 
 // ---------- Alta rápida de cotización / servicio ----------
-app.post('/api/leads', h((req, res) => {
+function fechaServicioValida(valor){
+  if(valor===null||valor===undefined||valor==='')return true;
+  if(typeof valor!=='string'||!/^\d{4}-\d{2}-\d{2}$/.test(valor))return false;
+  const fecha=new Date(valor+'T00:00:00Z');return !isNaN(fecha)&&fecha.toISOString().slice(0,10)===valor;
+}
+function validarRegistro(req,res,next){
+  if(!fechaServicioValida(req.body.fecha_servicio))return res.status(400).json({error:'La fecha del servicio no es válida'});
+  if(req.body.valor!==undefined&&req.body.valor!==null&&(typeof req.body.valor!=='number'||!Number.isFinite(req.body.valor)||req.body.valor<0||req.body.valor>1e12))return res.status(400).json({error:'El importe debe ser un número válido entre 0 y 1 billón'});
+  if(req.body.etapa!==undefined&&(!Number.isInteger(req.body.etapa)||req.body.etapa<1||req.body.etapa>4))return res.status(400).json({error:'Etapa inválida'});
+  next();
+}
+function validarPartidas(req,res,next){
+  if(req.body.partidas_json===undefined)return next();
+  let items;try{items=JSON.parse(req.body.partidas_json);}catch{return res.status(400).json({error:'Partidas inválidas'});}
+  if(!Array.isArray(items)||!items.length||items.length>100||items.some(i=>!i||typeof i.servicio!=='string'||!i.servicio.trim()||typeof i.leyenda!=='string'||i.leyenda.length>10000||typeof i.importe!=='number'||!Number.isFinite(i.importe)||i.importe<0||i.importe>1e12))return res.status(400).json({error:'Revisa servicios, descripciones e importes'});
+  if(items.some(i=>!db.prepare('SELECT id FROM catalogo_servicios WHERE nombre = ?').get(i.servicio)))return res.status(400).json({error:'Todas las partidas deben tener un servicio del catálogo'});
+  const primero=db.prepare('SELECT id FROM catalogo_servicios WHERE nombre = ?').get(items[0].servicio);
+  if(!primero)return res.status(400).json({error:'Selecciona un servicio del catálogo'});
+  req.body.servicio_id=primero.id;req.body.valor=items.reduce((t,i)=>t+Math.round(i.importe*100),0)/100;req.body.partidas_json=JSON.stringify(items);next();
+}
+app.post('/api/leads', validarPartidas, validarRegistro, h((req, res) => {
   let { telefono, nombre, empresa_contacto, direccion } = req.body;
   const { cliente_id, canal_id, servicio_id, notas_iniciales, responsable_id, forzar_duplicado, valor, fecha_servicio, correo, giro } = req.body;
   const creado_por = req.usuarioSesion.nombre; // nunca se confía en el valor que mande el navegador
   if (!validarCorreo(correo)) return res.status(400).json({ error: 'El correo electrónico no es válido' });
-  if (giro && !GIROS_VALIDOS.includes(giro)) return res.status(400).json({ error: 'Giro inválido' });
+  if (giro && !tipoClienteValido(giro)) return res.status(400).json({ error: 'Giro inválido' });
   const contactoElegido = cliente_id ? db.prepare('SELECT * FROM clientes WHERE id = ?').get(cliente_id) : null;
   if (cliente_id && !contactoElegido) return res.status(404).json({error:'Contacto no encontrado'});
   if (contactoElegido) { telefono=contactoElegido.telefono;nombre=contactoElegido.nombre;empresa_contacto=contactoElegido.empresa_contacto; }
@@ -334,12 +373,13 @@ app.post('/api/leads', h((req, res) => {
   if (estatus !== undefined && !['abierto', 'ganado'].includes(estatus)) {
     return res.status(400).json({ error: 'Estatus inválido: use "abierto" para cotizaciones o "ganado" para servicios directos' });
   }
+  if (!servicio_id) return res.status(400).json({error:'Selecciona un servicio para crear la cotización'});
   let fechaServicioFinal = fecha_servicio || null;
   if (estatus === 'ganado') {
     if (valor === null || valor === undefined || valor === '') {
       return res.status(400).json({ error: 'Se requiere el costo del servicio para registrarlo directamente como ganado' });
     }
-    if (!fechaServicioFinal) fechaServicioFinal = new Date().toISOString().slice(0, 10);
+    if (!fechaServicioFinal) return res.status(400).json({error:'Indica la fecha acordada del servicio'});
   }
   estatus = estatus || 'abierto';
 
@@ -354,6 +394,8 @@ app.post('/api/leads', h((req, res) => {
     if (abierta) return res.status(409).json({ error: 'duplicado', lead_id: abierta.id });
   }
 
+  if(req.body.establecimiento_id && !db.prepare("SELECT id FROM establecimientos WHERE id=? AND cliente_id=? AND estado<>'no_contactar'").get(req.body.establecimiento_id,cliente_id))return res.status(400).json({error:'El establecimiento no está vinculado a este contacto o está marcado como no contactar'});
+  const creado=db.transaction(()=>{
   if (!cliente) {
     const infoC = db.prepare(`INSERT INTO clientes (telefono, telefono_normalizado, nombre, empresa_contacto, direccion, correo, giro)
       VALUES (?, ?, ?, ?, ?, ?, ?)`).run(telefono, norm, nombre || null, empresa_contacto || null, direccion || null, correo?.trim() || null, giro || null);
@@ -379,13 +421,17 @@ app.post('/api/leads', h((req, res) => {
     estatus
   );
 
+  if(req.body.partidas_json!==undefined)db.prepare('UPDATE leads SET partidas_json = ? WHERE id = ?').run(req.body.partidas_json,info.lastInsertRowid);
+  if(req.body.establecimiento_id)db.prepare('UPDATE leads SET establecimiento_id=? WHERE id=?').run(req.body.establecimiento_id,info.lastInsertRowid);
   // Crear una cotización nunca modifica los datos maestros del contacto.
 
-  res.status(201).json(db.prepare('SELECT * FROM leads WHERE id = ?').get(info.lastInsertRowid));
+  return db.prepare('SELECT * FROM leads WHERE id = ?').get(info.lastInsertRowid);
+  })();
+  res.status(201).json(creado);
 }));
 
 // ---------- Editar lead (datos, etapa, responsable, estatus) ----------
-app.put('/api/leads/:id', h((req, res) => {
+app.put('/api/leads/:id', validarPartidas, validarRegistro, h((req, res) => {
   const id = req.params.id;
   const actual = db.prepare('SELECT * FROM leads WHERE id = ?').get(id);
   if (!actual) return res.status(404).json({ error: 'Cotización no encontrada' });
@@ -402,19 +448,23 @@ app.put('/api/leads/:id', h((req, res) => {
   // Reglas de negocio al cerrar una cotización como GANADA (servicio confirmado): sin esto, un lead pasaba a "cliente"
   // sin valor registrado (rompe los reportes de ingresos) y sin fecha de cierre real
   // (el resumen mensual de Clientes terminaba usando la fecha de creación del lead).
-  if (req.body.estatus === 'ganado' && actual.estatus !== 'ganado') {
+  if ((req.body.estatus || actual.estatus) === 'ganado') {
     const valorEfectivo = req.body.valor !== undefined ? req.body.valor : actual.valor;
     if (valorEfectivo === null || valorEfectivo === undefined || valorEfectivo === '') {
       return res.status(400).json({ error: 'Se requiere el costo del servicio para cerrar la cotización como ganada' });
     }
-    if (req.body.fecha_servicio === undefined && !actual.fecha_servicio) {
-      req.body.fecha_servicio = new Date().toISOString().slice(0, 10);
-    }
+    if (!(req.body.fecha_servicio !== undefined ? req.body.fecha_servicio : actual.fecha_servicio)) return res.status(400).json({error:'Indica la fecha acordada del servicio'});
+    if (!(req.body.servicio_id !== undefined ? req.body.servicio_id : actual.servicio_id)) return res.status(400).json({error:'Selecciona el servicio que se contratará'});
+    if (!String(req.body.direccion !== undefined ? req.body.direccion : actual.direccion || '').trim()) return res.status(400).json({error:'Indica la ubicación del servicio'});
   }
 
+  if(actual.partidas_json && req.body.partidas_json===undefined && (req.body.valor!==undefined || req.body.servicio_id!==undefined)){
+    const partidas=JSON.parse(actual.partidas_json),total=partidas.reduce((t,i)=>t+Math.round(i.importe*100),0)/100;
+    if((req.body.valor!==undefined && req.body.valor!==total)||(req.body.servicio_id!==undefined && Number(req.body.servicio_id)!==actual.servicio_id))return res.status(400).json({error:'Edita las partidas de la cotización para cambiar su importe o servicio'});
+  }
   if (['nombre','telefono','empresa_contacto'].some(c=>req.body[c]!==undefined)) return res.status(400).json({error:'Edita los datos de contacto desde su ficha; esta acción modifica solo la cotización o servicio.'});
 
-  const campos = ['direccion', 'canal_id', 'servicio_id', 'responsable_id', 'etapa', 'estatus', 'valor', 'fecha_servicio', 'notas_iniciales'];
+  const campos = ['partidas_json', 'direccion', 'canal_id', 'servicio_id', 'responsable_id', 'etapa', 'estatus', 'valor', 'fecha_servicio', 'notas_iniciales'];
   const set = [];
   const params = [];
   campos.forEach(c => {
@@ -476,7 +526,7 @@ app.delete('/api/leads/:id', h((req, res) => {
 // Un "cliente" aquí es alguien con AL MENOS un servicio en estatus 'ganado' (servicio confirmado y realizado) (servicio realizado/cerrado).
 // El pipeline de cotizaciones queda exclusivo para estatus 'abierto'; en cuanto una se marca 'ganado',
 // deja de aparecer ahí y el cliente (con todo su historial) vive en este apartado.
-const GIROS_VALIDOS = ['residencial', 'comercial', 'industrial'];
+function tipoClienteValido(clave) { return !!db.prepare('SELECT clave FROM tipos_cliente WHERE clave = ?').get(clave); }
 function validarCorreo(correo) {
   if (correo === undefined || correo === null || correo === '') return true;
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(correo).trim());
@@ -488,11 +538,12 @@ app.post('/api/contactos', h((req,res)=>{
   const norm=normalizarTelefono(telefono);
   if(norm.length!==10) return res.status(400).json({error:'El teléfono debe tener 10 dígitos'});
   if (!validarCorreo(correo)) return res.status(400).json({error:'El correo electrónico no es válido'});
-  if (giro && !GIROS_VALIDOS.includes(giro)) return res.status(400).json({error:'Giro inválido'});
+  if (giro && !tipoClienteValido(giro)) return res.status(400).json({error:'Giro inválido'});
   const existente=db.prepare('SELECT id FROM clientes WHERE telefono_normalizado = ?').get(norm);
   if(existente) return res.status(409).json({error:'Este contacto ya existe',cliente_id:existente.id});
-  const info=db.prepare(`INSERT INTO clientes (nombre,telefono,telefono_normalizado,empresa_contacto,direccion,correo,telefono_alterno,giro,rfc,notas_generales)
-    VALUES (?,?,?,?,?,?,?,?,?,?)`).run(String(nombre).trim(),telefono,norm,empresa_contacto||null,direccion||null,correo?.trim()||null,telefono_alterno||null,giro||null,rfc?.trim()||null,notas_generales||null);
+  if (!req.body.canal_origen_id || !db.prepare('SELECT id FROM canales WHERE id = ?').get(req.body.canal_origen_id)) return res.status(400).json({error:'Selecciona cómo se enteró de nosotros'});
+  const info=db.prepare(`INSERT INTO clientes (nombre,telefono,telefono_normalizado,empresa_contacto,direccion,correo,telefono_alterno,giro,rfc,notas_generales,canal_origen_id)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?)`).run(String(nombre).trim(),telefono,norm,empresa_contacto||null,direccion||null,correo?.trim()||null,telefono_alterno||null,giro||null,rfc?.trim()||null,notas_generales||null,req.body.canal_origen_id);
   res.status(201).json(db.prepare('SELECT * FROM clientes WHERE id = ?').get(info.lastInsertRowid));
 }));
 
@@ -565,7 +616,7 @@ app.get('/api/clientes/:id', h((req, res) => {
 app.put('/api/clientes/:id', h((req, res) => {
   if (req.body.nombre !== undefined && !String(req.body.nombre).trim()) return res.status(400).json({error:'El nombre del contacto es obligatorio'});
   if (req.body.correo !== undefined && !validarCorreo(req.body.correo)) return res.status(400).json({ error: 'El correo electrónico no es válido' });
-  if (req.body.giro !== undefined && req.body.giro !== null && req.body.giro !== '' && !GIROS_VALIDOS.includes(req.body.giro)) return res.status(400).json({ error: 'Giro inválido' });
+  if (req.body.giro !== undefined && req.body.giro !== null && req.body.giro !== '' && !tipoClienteValido(req.body.giro)) return res.status(400).json({ error: 'Giro inválido' });
   const id = req.params.id;
   const cliente = db.prepare('SELECT * FROM clientes WHERE id = ?').get(id);
   if (!cliente) return res.status(404).json({ error: 'Cliente no encontrado' });
@@ -717,6 +768,35 @@ app.get('/api/alertas', h((req, res) => {
 }));
 
 // ---------- Análisis y métricas (vista Resultados) ----------
+app.get('/api/analisis/comercial', h((req,res)=>{
+  const desde=req.query.desde||null,hasta=req.query.hasta||null;
+  const fechaValida=v=>!v||(/^\d{4}-\d{2}-\d{2}$/.test(v)&&!isNaN(Date.parse(v)));
+  if(!fechaValida(desde)||!fechaValida(hasta)||(desde&&hasta&&desde>hasta))return res.status(400).json({error:'Revisa el rango de fechas'});
+  const clientes=db.prepare(`SELECT c.id,c.nombre,c.telefono,c.canal_origen_id,COALESCE(ca.nombre,'Sin origen registrado') canal,c.created_at,
+    CASE WHEN (? IS NULL OR date(c.created_at)>=?) AND (? IS NULL OR date(c.created_at)<=?) THEN 1 ELSE 0 END nuevo,
+    COALESCE(a.ganados_historicos,0) ganados_historicos,COALESCE(a.total_historico,0) total_historico,
+    COALESCE(a.servicios,0) servicios,COALESCE(a.contratado,0) contratado,COALESCE(a.registros,0) registros,
+    COALESCE(a.abiertas,0) abiertas,COALESCE(a.propuesto,0) propuesto,a.ultima_fecha
+    FROM clientes c LEFT JOIN canales ca ON ca.id=c.canal_origen_id
+    LEFT JOIN (SELECT cliente_id,
+      SUM(CASE WHEN estatus='ganado' THEN 1 ELSE 0 END) ganados_historicos,
+      SUM(CASE WHEN estatus='ganado' THEN COALESCE(valor,0) ELSE 0 END) total_historico,
+      SUM(CASE WHEN estatus='ganado' AND (? IS NULL OR date(fecha_servicio)>=?) AND (? IS NULL OR date(fecha_servicio)<=?) THEN 1 ELSE 0 END) servicios,
+      SUM(CASE WHEN estatus='ganado' AND (? IS NULL OR date(fecha_servicio)>=?) AND (? IS NULL OR date(fecha_servicio)<=?) THEN COALESCE(valor,0) ELSE 0 END) contratado,
+      SUM(CASE WHEN (? IS NULL OR date(created_at)>=?) AND (? IS NULL OR date(created_at)<=?) THEN 1 ELSE 0 END) registros,
+      SUM(CASE WHEN estatus='abierto' AND (? IS NULL OR date(created_at)>=?) AND (? IS NULL OR date(created_at)<=?) THEN 1 ELSE 0 END) abiertas,
+      SUM(CASE WHEN estatus='abierto' AND (? IS NULL OR date(created_at)>=?) AND (? IS NULL OR date(created_at)<=?) THEN COALESCE(valor,0) ELSE 0 END) propuesto,
+      MAX(CASE WHEN estatus='ganado' THEN fecha_servicio END) ultima_fecha
+      FROM leads GROUP BY cliente_id) a ON a.cliente_id=c.id`).all(...Array.from({length:6},()=>[desde,desde,hasta,hasta]).flat());
+  const canales=new Map();
+  for(const c of clientes){const k=c.canal_origen_id||0;if(!canales.has(k))canales.set(k,{canal:c.canal,nuevos:0,convertidos:0,clientes:0,recurrentes:0,servicios:0,contratado:0,registros:0,abiertas:0,propuesto:0});const r=canales.get(k);r.nuevos+=c.nuevo;r.convertidos+=c.nuevo&&c.ganados_historicos>0?1:0;r.clientes+=c.servicios>0?1:0;r.recurrentes+=c.servicios>0&&c.ganados_historicos>1?1:0;for(const campo of ['servicios','contratado','registros','abiertas','propuesto'])r[campo]+=c[campo];}
+  const filas=[...canales.values()].sort((a,b)=>b.contratado-a.contratado);
+  const resumen={nuevos:0,convertidos:0,clientes:0,recurrentes:0,servicios:0,contratado:0,registros:0,abiertas:0,propuesto:0};for(const r of filas)for(const k of Object.keys(resumen))resumen[k]+=r[k];
+  const sinFecha=db.prepare("SELECT COUNT(*) total FROM leads WHERE estatus='ganado' AND fecha_servicio IS NULL").get().total;
+  const mensual=db.prepare("SELECT strftime('%Y-%m',fecha_servicio) mes,COUNT(*) servicios,SUM(COALESCE(valor,0)) importe FROM leads WHERE estatus='ganado' AND date(fecha_servicio) IS NOT NULL AND (? IS NULL OR date(fecha_servicio)>=?) AND (? IS NULL OR date(fecha_servicio)<=?) GROUP BY mes ORDER BY mes").all(desde,desde,hasta,hasta);
+  const antiguedad=db.prepare(`SELECT CASE WHEN julianday(date('now','localtime'))-julianday(date(created_at))<=7 THEN 0 WHEN julianday(date('now','localtime'))-julianday(date(created_at))<=30 THEN 1 WHEN julianday(date('now','localtime'))-julianday(date(created_at))<=60 THEN 2 ELSE 3 END grupo,COUNT(*) cantidad,SUM(COALESCE(valor,0)) importe FROM leads WHERE estatus='abierto' AND (? IS NULL OR date(created_at)>=?) AND (? IS NULL OR date(created_at)<=?) GROUP BY grupo ORDER BY grupo`).all(desde,desde,hasta,hasta);
+  res.json({resumen,mensual,antiguedad,canales:filas,clientes:clientes.filter(c=>c.nuevo||c.registros||c.servicios).sort((a,b)=>b.contratado-a.contratado),sinFecha});
+}));
 app.get('/api/analisis/top-clientes', h((req, res) => {
   const rows = db.prepare(`
     SELECT c.id, c.nombre, c.telefono,

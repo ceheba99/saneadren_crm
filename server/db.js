@@ -4,6 +4,8 @@ const path = require('path');
 const db = new Database(path.join(__dirname, '..', 'saneadren.db'));
 db.pragma('journal_mode = WAL');
 db.pragma('foreign_keys = ON');
+db.pragma('busy_timeout = 5000');
+db.pragma('synchronous = FULL');
 
 db.exec(`
 CREATE TABLE IF NOT EXISTS usuarios (
@@ -213,4 +215,21 @@ function normalizarTelefono(tel) {
   return (tel || '').replace(/\D/g, '').slice(-10);
 }
 
+if (!db.prepare('PRAGMA table_info(clientes)').all().some(c => c.name === 'canal_origen_id')) {
+  db.exec('ALTER TABLE clientes ADD COLUMN canal_origen_id INTEGER REFERENCES canales(id)');
+}
+db.exec('CREATE TABLE IF NOT EXISTS tipos_cliente (clave TEXT PRIMARY KEY, nombre TEXT NOT NULL COLLATE NOCASE UNIQUE)');
+const insertarTipo = db.prepare('INSERT OR IGNORE INTO tipos_cliente (clave,nombre) VALUES (?,?)');
+[['residencial','Residencial'],['comercial','Comercial'],['industrial','Industrial']].forEach(t=>insertarTipo.run(...t));
+if(!db.prepare('PRAGMA table_info(leads)').all().some(c=>c.name==='partidas_json'))db.exec('ALTER TABLE leads ADD COLUMN partidas_json TEXT');
+// Restricciones para escrituras nuevas; no se modifican registros históricos.
+db.transaction(()=>{
+  db.exec('CREATE INDEX IF NOT EXISTS idx_leads_estado_fecha ON leads(estatus,fecha_servicio)');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_clientes_origen_fecha ON clientes(canal_origen_id,created_at)');
+  for(const operacion of ['INSERT','UPDATE'])db.exec(`CREATE TRIGGER IF NOT EXISTS validar_lead_${operacion.toLowerCase()} BEFORE ${operacion} ON leads BEGIN
+    SELECT CASE WHEN NEW.valor IS NOT NULL AND (typeof(NEW.valor) NOT IN ('integer','real') OR NEW.valor<0 OR NEW.valor>1000000000000) THEN RAISE(ABORT,'Importe inválido') END;
+    SELECT CASE WHEN NEW.fecha_servicio IS NOT NULL AND (length(NEW.fecha_servicio)<>10 OR date(NEW.fecha_servicio,'+0 days') IS NULL OR date(NEW.fecha_servicio,'+0 days')<>NEW.fecha_servicio) THEN RAISE(ABORT,'Fecha inválida') END;
+    SELECT CASE WHEN NEW.partidas_json IS NOT NULL AND NOT json_valid(NEW.partidas_json) THEN RAISE(ABORT,'Partidas inválidas') END;
+  END`);
+})();
 module.exports = { db, normalizarTelefono };
