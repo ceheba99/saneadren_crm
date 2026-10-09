@@ -94,7 +94,7 @@
       <input type="date" id="f-hasta" title="Filtrar hasta esta fecha de creación">
       <label><input type="checkbox" id="f-urgente"> Solo urgentes</label>
       <button class="btn btn-outline util-8" onclick="limpiarFiltros()">Limpiar filtros</button>
-      <button class="btn btn-secundario" id="btn-exportar-leads">📥 Exportar a Excel</button>
+      <button class="btn btn-secundario solo-admin" id="btn-exportar-leads">📥 Exportar a Excel</button>
     </div>
 
     <div class="kpi-grid" id="kpi-leads">
@@ -206,7 +206,7 @@
       <input type="date" id="fc-desde" title="Filtrar desde esta fecha">
       <span class="filtro-fecha-label">Hasta</span>
       <input type="date" id="fc-hasta" title="Filtrar hasta esta fecha">
-      <button class="btn btn-secundario" id="btn-exportar-clientes">📥 Exportar a Excel</button>
+      <button class="btn btn-secundario solo-admin" id="btn-exportar-clientes">📥 Exportar a Excel</button>
     </div>
 
     <div class="tabla-clientes-wrap">
@@ -250,7 +250,7 @@
   <!-- ====== VISTA: RESULTADOS ====== -->
   <section class="vista" id="vista-resultados">
     <h2>Resultados comerciales</h2>
-    <div class="filtros"><label>Desde <input type="date" id="res-desde"></label><label>Hasta <input type="date" id="res-hasta"></label><button class="btn btn-primario" id="res-aplicar">Consultar</button><button class="btn btn-outline" id="res-todo">Todo el historial</button><button class="btn btn-outline" id="res-exportar">Exportar canales a Excel</button></div>
+    <div class="filtros"><label>Desde <input type="date" id="res-desde"></label><label>Hasta <input type="date" id="res-hasta"></label><button class="btn btn-primario" id="res-aplicar">Consultar</button><button class="btn btn-outline" id="res-todo">Todo el historial</button><button class="btn btn-outline solo-admin" id="res-exportar">Exportar canales a Excel</button></div>
     <p class="ayuda">Contactos nuevos: fecha de registro. Importe contratado: fecha acordada del servicio. Cada contacto y sus servicios se atribuyen a “Cómo se enteró de nosotros”. El importe contratado no equivale a cobros ni utilidad.</p>
     <p id="res-estado" role="status"></p><div class="res-grid" id="res-kpis"></div>
     <div class="res-section"><h3>¿Qué canales traen contactos y generan contrataciones?</h3><p class="ayuda">Conversión: contactos nuevos del periodo que ya han contratado al día de hoy / contactos nuevos del periodo. Las contrataciones pueden provenir de contactos registrados antes.</p><div class="tabla-scroll"><table class="tabla-resumen"><thead><tr><th>Canal de origen</th><th>Leads nuevos (contactos)</th><th>Convertidos a cliente</th><th>Conversión</th><th>Clientes con servicio</th><th>Servicios contratados</th><th>Importe contratado</th><th>Promedio por servicio</th><th>Propuestas abiertas</th><th>Importe abierto</th></tr></thead><tbody id="res-canales"></tbody></table></div></div>
@@ -268,7 +268,7 @@
 
 <section class="vista" id="vista-prospeccion">
 <h2>Prospección de establecimientos</h2><p class="ayuda">Investiga restaurantes, hoteles y hospitales sin crear cotizaciones vacías. Sector describe el negocio; el estado indica tu seguimiento comercial.</p>
-<div class="filtros"><input id="pr-buscar" aria-label="Buscar establecimiento" placeholder="Establecimiento, zona, persona o teléfono"><select id="pr-f-sector" aria-label="Sector"></select><select id="pr-f-estado" aria-label="Seguimiento"></select><select id="pr-f-responsable" aria-label="Responsable"></select><label><input type="checkbox" id="pr-vencidos"> Seguimiento para hoy o vencido</label><button class="btn btn-primario" id="pr-nuevo">Registrar establecimiento</button><button class="btn btn-outline" id="pr-exportar">Exportar selección</button></div>
+<div class="filtros"><input id="pr-buscar" aria-label="Buscar establecimiento" placeholder="Establecimiento, zona, persona o teléfono"><select id="pr-f-sector" aria-label="Sector"></select><select id="pr-f-estado" aria-label="Seguimiento"></select><select id="pr-f-responsable" aria-label="Responsable"></select><label><input type="checkbox" id="pr-vencidos"> Seguimiento para hoy o vencido</label><button class="btn btn-primario" id="pr-nuevo">Registrar establecimiento</button><button class="btn btn-outline solo-admin" id="pr-exportar">Exportar selección</button></div>
 <p id="pr-resumen" role="status"></p><div class="tabla-scroll"><table class="tabla-resumen"><thead><tr><th>Establecimiento</th><th>Sector / zona</th><th>Persona / teléfono</th><th>Seguimiento</th><th>Responsable</th><th>Próximo contacto</th><th>Contacto CRM</th><th>Ficha</th></tr></thead><tbody id="pr-tabla"></tbody></table></div>
 <details id="pr-admin" hidden><summary>Administrar sectores</summary><p class="ayuda">Renombrar conserva los establecimientos asociados.</p><div id="pr-sectores"></div><label for="pr-sector-nuevo">Nuevo sector</label><input id="pr-sector-nuevo" maxlength="80"><button class="btn btn-outline" id="pr-agregar-sector">Agregar sector</button></details>
 </section>

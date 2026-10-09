@@ -1181,7 +1181,9 @@ on('btn-gc-generar','click',async e=>{
 });
 
 // ---------- Exportar a Excel (CSV con BOM, se abre directo con Excel) ----------
+// Exportar a Excel es solo para administradores (los botones también se ocultan con .solo-admin).
 function descargarCSV(nombreArchivo, columnas, filas) {
+  if (USUARIO_ACTUAL?.rol !== 'admin') { toast('Solo un administrador puede exportar a Excel'); return; }
   const escaparCelda = valor => {
     const texto = String(valor ?? '');
     return /[",\n;]/.test(texto) ? '"' + texto.replace(/"/g, '""') + '"' : texto;
