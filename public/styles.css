@@ -183,6 +183,7 @@ main{max-width:1400px;margin:0 auto;padding:22px 24px 60px;}
 .lead-card[data-etapa="3"]{border-left-color:var(--amarillo);}
 .lead-card[data-etapa="4"]{border-left-color:var(--verde);}
 .lead-card .lead-tel{font-size:14px;font-weight:700;color:var(--azul-950);margin-bottom:2px;}
+.lead-card .lead-folio{font-size:10.5px;font-weight:700;letter-spacing:.3px;color:var(--acero);text-transform:uppercase;margin-bottom:3px;}
 .lead-card .lead-nombre{font-size:13px;color:var(--texto);margin-bottom:8px;font-weight:500;}
 .lead-card .lead-servicio{
   display:inline-block;font-size:11px;background:var(--gris-100);color:var(--texto-sec);
@@ -246,6 +247,19 @@ main{max-width:1400px;margin:0 auto;padding:22px 24px 60px;}
 .fila-alerta.tipo-recompra{border-left-color:var(--amarillo);}
 .fila-alerta.tipo-alerta{border-left-color:var(--azul-500);}
 .fila-alerta.vencido{border-left-color:var(--rojo);}
+.tipo-tag.estancada{background:#eaf2fb;color:var(--azul-600);}
+.fila-alerta.tipo-estancada{border-left-color:var(--azul-500);}
+
+/* Panel de Inicio: dos zonas con el mismo color que ya usamos en todo el sistema para
+   cada proceso — azul para cotización (necesita seguimiento), verde para lo que arranca
+   un servicio nuevo (recompra). Reforzamos la distinción en la primera pantalla que ve
+   cualquiera al entrar, no solo dentro de cada ficha. */
+.inicio-saludo{margin-bottom:18px;}
+.inicio-bloque{margin-bottom:28px;padding:16px;border-radius:var(--radio);background:#fff;border:1px solid var(--gris-200);}
+.inicio-bloque h3{display:flex;align-items:center;gap:8px;font-size:15px;margin:0 0 4px;}
+.inicio-bloque-cotizacion{border-top:3px solid var(--azul-500);}
+.inicio-bloque-servicio{border-top:3px solid var(--verde);}
+.inicio-lista{display:flex;flex-direction:column;gap:8px;margin-top:10px;}
 
 /* ---------- Modal mejorado ---------- */
 .overlay{display:none;position:fixed;inset:0;background:rgba(11,31,43,.6);z-index:50;align-items:flex-start;justify-content:center;padding:30px 16px;overflow-y:auto;backdrop-filter:blur(3px);}
@@ -306,7 +320,7 @@ main{max-width:1400px;margin:0 auto;padding:22px 24px 60px;}
   font-size:14px;font-family:inherit;color:var(--texto);background:var(--blanco);transition:border-color .15s,box-shadow .15s;
 }
 .campo-modal input:focus,.campo-modal select:focus,.campo-modal textarea:focus{outline:none;border-color:var(--azul-500);box-shadow:0 0 0 3px rgba(43,110,147,.12);}
-.campo-modal.full{grid-column:1/-1;}
+.campo-modal.full,.ayuda.full{grid-column:1/-1;}
 
 .btn-group{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px;}
 .zona-peligro{margin-top:16px;padding-top:16px;border-top:1px dashed var(--gris-300);display:flex;justify-content:flex-end;}
@@ -348,6 +362,37 @@ main{max-width:1400px;margin:0 auto;padding:22px 24px 60px;}
 .tag-estatus.abierto{background:var(--gris-200);color:var(--texto-sec);}
 .tag-estatus.ganado{background:#e4f2ea;color:var(--verde);}
 .tag-estatus.perdido{background:#fbe9e7;color:var(--rojo);}
+
+/* Cadena de documentos: liga visual y navegable entre la cotización y la orden de
+   servicio que nace de ella (mismo lead, dos documentos). No es solo un badge de
+   estado: el nodo de la cotización es clicable y descarga ese documento. */
+.cadena-documentos{display:flex;align-items:center;gap:6px;margin-top:6px;flex-wrap:wrap;}
+.cadena-nodo{display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700;letter-spacing:.2px;background:var(--gris-200);color:var(--texto-sec);}
+.cadena-nodo.activo{background:#e4f2ea;color:var(--verde);}
+.cadena-nodo.pasado{cursor:pointer;background:#eaf1fb;color:var(--azul-600);border:1px solid transparent;}
+.cadena-nodo.pasado:hover{border-color:var(--azul-500);background:#dbe8f8;}
+.cadena-flecha{color:var(--gris-400);font-size:12px;}
+
+/* Bitácora de actividad: timeline con eventos del sistema (gris/neutro) y notas
+   manuales (azul), y alertas en naranja/verde según estén pendientes o resueltas. */
+.bitacora-lista{display:flex;flex-direction:column;gap:2px;max-height:280px;overflow-y:auto;}
+.bitacora-item{display:flex;gap:10px;padding:8px 4px;border-bottom:1px solid var(--gris-200);font-size:13px;align-items:flex-start;}
+.bitacora-item:last-child{border-bottom:none;}
+.bitacora-icono{flex:0 0 auto;width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;background:var(--gris-200);}
+.bitacora-item.sistema .bitacora-icono{background:var(--gris-200);color:var(--texto-sec);}
+.bitacora-item.nota .bitacora-icono{background:#eaf1fb;color:var(--azul-600);}
+.bitacora-item.alerta-pendiente .bitacora-icono{background:#fff3e0;color:#b26a00;}
+.bitacora-item.alerta-resuelta .bitacora-icono{background:#e4f2ea;color:var(--verde);}
+.bitacora-texto{flex:1;}
+.bitacora-meta{color:var(--texto-sec);font-size:11px;margin-top:2px;}
+.bitacora-vacio{color:var(--texto-sec);font-size:13px;padding:8px 4px;}
+
+/* Borde de color por tipo de proceso en la tabla de servicios: mismo lenguaje visual
+   que ya usas en el Kanban para "urgente" (border-left), aplicado aquí para distinguir
+   cotización abierta / servicio ganado / cotización perdida de un vistazo, sin leer texto. */
+.tabla-servicios tbody tr.fila-abierto{border-left:4px solid var(--gris-400);}
+.tabla-servicios tbody tr.fila-ganado{border-left:4px solid var(--verde);}
+.tabla-servicios tbody tr.fila-perdido{border-left:4px solid var(--rojo);}
 
 .toast{
   position:fixed;bottom:24px;left:50%;transform:translateX(-50%);
@@ -414,8 +459,13 @@ table.tabla-clientes td.tel{font-weight:700;}
 .util-24{max-width:340px;}
 .util-25{grid-template-columns:1fr;}
 .diseno-login-error{display:none;color:var(--rojo);font-size:13px;margin-top:10px;}
+.cuenta-enlaces{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-top:12px;}
+.enlace{background:none;border:0;padding:4px 0;color:var(--azul-600,#1d4ed8);font:inherit;font-size:13px;cursor:pointer;text-decoration:underline;}
+.cuenta-aviso{background:#eaf3f0;border:1px solid var(--verde,#2f855a);border-radius:8px;padding:10px 12px;font-size:13px;margin:0 0 12px;}
+.cuenta-aviso.error{background:#fdecec;border-color:var(--rojo,#c53030);}
+#form-registro .form-grid,#form-nueva-password{gap:10px;}
 .util-27{width:100%;margin-top:14px;}
-.util-28{max-width:440px;}
+.util-28{max-width:860px;}
 .util-29{padding:20px 24px;}
 .diseno-sn-cliente-info{display:inline-flex;margin-bottom:10px;max-width:100%;}
 .diseno-sn-ayuda{margin:0 0 16px;background:var(--gris-100);padding:10px 12px;border-radius:var(--radio);border:1px solid var(--gris-200);}
@@ -577,3 +627,15 @@ header.app .logo-saneadren{display:block;width:250px;max-width:100%;height:auto;
 #editor-cotizacion .gc-fila>.form-grid-2{flex:1;}
 #editor-cotizacion .gc-quitar{align-self:flex-start;white-space:nowrap;}
 @media(max-width:600px){#editor-cotizacion .gc-fila{flex-direction:column;}#editor-cotizacion .gc-fila>.form-grid-2{width:100%;}}
+
+/* Elementos solo para administradores (el servidor también lo valida). */
+body:not(.es-admin) .solo-admin{display:none !important;}
+.fila-catalogo{display:grid;grid-template-columns:auto 1fr auto;gap:10px;align-items:start;}
+.orden-btns{display:flex;flex-direction:column;gap:4px;}
+.orden-btns .btn{padding:2px 10px;min-width:0;line-height:1.2;}
+.fila-catalogo .acciones-catalogo{display:flex;gap:6px;align-items:center;flex-wrap:wrap;justify-content:flex-end;}
+.fila-usuario{display:grid;grid-template-columns:minmax(140px,1.2fr) minmax(180px,1.5fr) 130px auto;gap:8px;align-items:end;}
+.fila-usuario label{font-size:11px;color:var(--gris-600,#6b7280);display:block;}
+.fila-usuario input,.fila-usuario select{width:100%;}
+.fila-usuario .acciones-catalogo{display:flex;gap:6px;flex-wrap:wrap;}
+@media(max-width:720px){.fila-usuario{grid-template-columns:1fr;}.fila-catalogo{grid-template-columns:auto 1fr;}.fila-catalogo .acciones-catalogo{grid-column:1/-1;justify-content:flex-start;}}

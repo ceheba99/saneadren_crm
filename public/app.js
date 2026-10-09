@@ -38,7 +38,7 @@ async function login(nombre, password) {
   if (!res.ok) throw new Error(data.error || 'No se pudo iniciar sesión');
   return data; // incluye { token, id, nombre, rol }
 }
-const NOMBRE_ETAPA = { 1: 'Recolección de datos', 2: 'Cotización / Visita', 3: 'Cierre / Programación', 4: 'Post-venta' };
+const NOMBRE_ETAPA = { 1: 'Recolección de datos', 2: 'Cotización enviada', 3: 'Seguimiento / Negociación', 4: 'Cierre' };
 
 // ---------- Utilidades ----------
 function on(id, evento, fn) {
@@ -63,6 +63,10 @@ async function api(path, opts) {
     },
     ...opts
   });
+  if (res.status === 403 && USUARIO_ACTUAL?.token) {
+    const j = await res.clone().json().catch(() => ({}));
+    if (j.codigo === 'CAMBIAR_PASSWORD') { Cuentas.pedirCambioObligatorio(); const err = new Error(j.error); err.status = 403; throw err; }
+  }
   if (res.status === 401 && path !== '/login') {
     // Sesión expirada o inválida: no tiene caso seguir mostrando datos ni pedir de nuevo.
     localStorage.removeItem('usuario_actual');
@@ -91,15 +95,18 @@ document.querySelectorAll('header nav button').forEach(btn => {
   btn.addEventListener('click', () => cambiarVista(btn.dataset.vista));
 });
 function cambiarVista(v) {
+  if (v === 'usuarios' && USUARIO_ACTUAL?.rol !== 'admin') v = 'inicio';
   document.querySelectorAll('.vista').forEach(s => s.classList.remove('activa'));
   document.getElementById('vista-' + v).classList.add('activa');
   document.querySelectorAll('header nav button').forEach(b => b.classList.toggle('activa', b.dataset.vista === v));
+  if (v === 'inicio') cargarInicio();
   if (v === 'leads') cargarLeads();
   if (v === 'clientes') cargarClientes();
   if (v === 'prospeccion') Prospeccion.cargar();
   if (v === 'pendientes') cargarPendientes();
   if (v === 'resultados') cargarResultados();
-  if (v === 'usuarios') { cargarUsuarios(); cargarTiposCliente(); cargarCatalogoServicios(); cargarCanalesCatalogo(); }
+  if (v === 'usuarios') cargarUsuarios();
+  if (v === 'catalogos') { cargarTiposCliente(); cargarCatalogoServicios(); cargarCanalesCatalogo(); }
 }
 
 // ---------- Cargar catálogos ----------
@@ -116,8 +123,8 @@ async function cargarCatalogos() {
   origen.innerHTML = '<option value="">Selecciona una opción</option>' + c.map(x=>`<option value="${x.id}">${escaparHtml(x.nombre)}</option>`).join('');
   origen.value = origenPrevio;
 
-  const optU = u.map(x => `<option value="${x.id}">${x.nombre} (${x.rol})</option>`).join('');
-  const optS = s.map(x => `<option value="${x.id}">${x.nombre}</option>`).join('');
+  const optU = u.map(x => `<option value="${x.id}">${escaparHtml(x.nombre)} (${escaparHtml(x.rol)})</option>`).join('');
+  const optS = s.map(x => `<option value="${x.id}">${escaparHtml(x.nombre)}</option>`).join('');
   const optC = c.map(x => `<option value="${x.id}">${x.nombre}</option>`).join('');
 
 
@@ -165,33 +172,54 @@ on('btn-cancelar-dup', 'click', () => {
 // - 'pipeline': viene del aviso de duplicado al capturar (cliente con otra solicitud abierta
 //   pide un servicio distinto) — es una oportunidad nueva y sí debe pasar por Leads.
 let MODO_SERVICIO_NUEVO = 'pipeline';
-function abrirServicioNuevo(modo) {
+let DUPLICADO_DE = null; // id de la orden de servicio que se está duplicando (si aplica)
+function abrirServicioNuevo(modo, prefill) {
   if (!CLIENTE_DUP) return;
+  actualizarBotonesEstatusFicha(null);
   MODO_SERVICIO_NUEVO = modo || 'pipeline';
   const esDirecto = MODO_SERVICIO_NUEVO === 'directo';
-  document.getElementById('sn-titulo').innerHTML = esDirecto
-    ? '<span class="tag-estatus ganado">🟢 Servicio</span> Registrar servicio contratado · NUEVO'
+  DUPLICADO_DE = esDirecto && prefill?.duplicado_de ? prefill.duplicado_de : null;
+  document.getElementById('sn-titulo').innerHTML = DUPLICADO_DE
+    ? `<span class="tag-estatus ganado">🧾 Orden de servicio</span> Duplicar orden · copia de ${escaparHtml(prefill.folio || '#' + DUPLICADO_DE)}`
+    : esDirecto
+    ? '<span class="tag-estatus ganado">🧾 Orden de servicio</span> Crear orden de servicio · NUEVA'
     : '<span class="tag-estatus abierto">🔵 Cotización</span> Crear cotización · NUEVA';
-  document.getElementById('sn-ayuda').innerHTML = esDirecto
+  document.getElementById('sn-ayuda').innerHTML = DUPLICADO_DE
+    ? 'Se copiaron las partidas, importe, ubicación y notas de la orden original. Indica la nueva fecha acordada y ajusta lo que cambie. No se crea ninguna cotización.'
+    : esDirecto
     ? 'Úsalo cuando el cliente ya confirmó. Indica el importe y la fecha acordados; aparecerá como contratado en su historial.'
     : 'Completa la propuesta y pulsa Crear cotización. Cerrar esta ventana no crea ningún registro.';
   document.getElementById('sn-label-valor').textContent = esDirecto ? 'Importe contratado (MXN)' : 'Importe propuesto (MXN, opcional)';
-  document.getElementById('sn-label-fecha').textContent = esDirecto ? 'Fecha acordada del servicio' : 'Fecha propuesta (opcional)';
+  document.getElementById('sn-label-fecha').textContent = esDirecto ? 'Fecha acordada del servicio' : 'Fecha del servicio (si ya se sabe)';
   document.getElementById('sn-cliente-info').innerHTML =
     `<b>${CLIENTE_DUP.nombre || 'Sin nombre'}</b> · ${CLIENTE_DUP.telefono}${CLIENTE_DUP.direccion ? ' · ' + CLIENTE_DUP.direccion : ''}`;
   document.getElementById('sn-servicio').innerHTML = '<option value="">Selecciona un servicio</option>' + CATALOGOS.servicios.map(s=>`<option value="${s.id}">${escaparHtml(s.nombre)}</option>`).join('');
-  document.getElementById('sn-servicio').value = CLIENTE_DUP.servicio_id || '';
-  document.getElementById('sn-valor').value = '';
-  document.getElementById('sn-ubicacion').value = CLIENTE_DUP.direccion || '';
-  document.getElementById('btn-guardar-servicio-nuevo').textContent = esDirecto ? 'Crear servicio contratado' : 'Crear cotización';
+  document.getElementById('sn-ubicacion').value = prefill?.direccion || CLIENTE_DUP.direccion || '';
+  document.getElementById('btn-guardar-servicio-nuevo').textContent = DUPLICADO_DE ? 'Guardar orden duplicada' : esDirecto ? 'Crear orden de servicio' : 'Crear cotización';
+  rotularEditorContenido(esDirecto);
   document.getElementById('sn-valor').placeholder = CLIENTE_DUP.ultimo_valor
     ? `Última vez: ${formatoMoneda(CLIENTE_DUP.ultimo_valor)}`
     : 'Si ya se conoce';
   document.getElementById('sn-fecha').value = '';
-  document.getElementById('sn-notas').value = '';
-  prepararEditorCotizacion(null,'nuevo');
+  document.getElementById('sn-notas').value = prefill?.notas_iniciales || '';
+  document.getElementById('sn-urgente').checked = !!prefill?.urgente;
+  document.getElementById('sn-datos-orden').hidden = !esDirecto;
+  document.getElementById('sn-equipo').value = prefill?.equipo || '';
+  document.getElementById('sn-operador').value = prefill?.operador || '';
+  document.getElementById('sn-observaciones').value = '';
+  // El prellenado pasa por prepararEditorCotizacion para que también arme la tabla de
+  // partidas real (gc-items) — de otro modo, al validar/guardar se recalcula desde ahí
+  // y borraría cualquier valor puesto solo en sn-servicio/sn-valor.
+  prepararEditorCotizacion(prefill ? { partidas_json: prefill.partidas_json, servicio_nombre: prefill.servicio_nombre, valor: prefill.valor } : null, 'nuevo');
   abrirVentana('overlay-servicio-nuevo');
   FlujoCRM.marcarGuardado('overlay-servicio-nuevo');
+}
+// El editor de partidas es el mismo para cotización y orden de servicio; solo cambia el rótulo.
+function rotularEditorContenido(esOrden) {
+  const doc = esOrden ? 'orden de servicio' : 'cotización';
+  document.getElementById('gc-titulo-contenido').textContent = 'Contenido de la ' + doc;
+  document.getElementById('gc-ayuda-contenido').textContent = `Edita servicios, descripciones e importes. Se guardan con esta ${doc} y se usan en la descarga.`;
+  document.getElementById('btn-gc-generar').textContent = 'Guardar y descargar ' + doc;
 }
 async function guardarServicioNuevo(descargar=false) {
   if(!validarEditorCotizacion())return;
@@ -225,13 +253,18 @@ async function guardarServicioNuevo(descargar=false) {
     fecha_servicio: document.getElementById('sn-fecha').value || null,
     creado_por: USUARIO_ACTUAL.nombre,
     forzar_duplicado: true,
-    estatus: esDirecto ? 'ganado' : undefined
+    estatus: esDirecto ? 'ganado' : undefined,
+    duplicado_de: esDirecto ? DUPLICADO_DE : null,
+    equipo: esDirecto ? document.getElementById('sn-equipo').value.trim() : null,
+    operador: esDirecto ? document.getElementById('sn-operador').value.trim() : null,
+    observaciones: esDirecto ? document.getElementById('sn-observaciones').value.trim() : null,
+    urgente: document.getElementById('sn-urgente').checked
   };
   botonGuardar.disabled = true;
   try {
     const creado = await api('/leads', { method: 'POST', body: JSON.stringify(payload) }).then(r => r.json());
     FlujoCRM.marcarGuardado('overlay-servicio-nuevo');
-    toast(esDirecto ? 'Servicio registrado como ganado' : 'Nueva cotización registrada correctamente');
+    toast(DUPLICADO_DE ? 'Orden de servicio duplicada correctamente' : esDirecto ? 'Orden de servicio creada' : 'Nueva cotización registrada correctamente');
     document.getElementById('overlay-servicio-nuevo').classList.remove('mostrar');
     document.getElementById('alerta-dup').classList.remove('mostrar');
     limpiarFormAlta();
@@ -244,7 +277,7 @@ async function guardarServicioNuevo(descargar=false) {
       await abrirFicha(creado.id);
     }
     await ServiciosTabla.refrescar();
-    if(descargar)await descargarCotizacionActual();
+    if(descargar)await (esDirecto ? descargarOrdenServicioActual('Orden de servicio guardada y descargada') : descargarCotizacionActual());
   } catch (err) {
     toast('No se pudo guardar: ' + err.message);
   } finally {
@@ -271,17 +304,55 @@ function limpiarFormAlta() {
 // ---------- Vista Cotizaciones (Kanban) ----------
 let ETAPA_FILTRO = null;
 
+// ---------- Inicio (panel del día: alertas + cotizaciones estancadas + recompras) ----------
+async function cargarInicio() {
+  const [alertas, recompras, abiertas] = await Promise.all([
+    api('/alertas').then(r => r.json()),
+    api('/recompras').then(r => r.json()),
+    api('/leads?estatus=abierto').then(r => r.json())
+  ]);
+  const estancadas = abiertas
+    .filter(l => diasSinMovimiento(l.updated_at) > 7)
+    .sort((a, b) => diasSinMovimiento(b.updated_at) - diasSinMovimiento(a.updated_at));
+
+  const contCot = document.getElementById('inicio-cotizaciones');
+  const filasCot = [...alertas.map(filaAlerta), ...estancadas.map(filaEstancada)];
+  contCot.innerHTML = filasCot.length ? filasCot.join('') : '<p class="util-45">Ninguna cotización necesita seguimiento en este momento. 🎉</p>';
+
+  const contRec = document.getElementById('inicio-recompras');
+  contRec.innerHTML = recompras.length
+    ? recompras.map(r => filaRecompra(r, r.dias_restantes <= 0)).join('')
+    : '<p class="util-45">No hay recompras próximas todavía.</p>';
+}
+function filaEstancada(l) {
+  const dias = diasSinMovimiento(l.updated_at);
+  return `
+    <div class="fila-alerta tipo-estancada">
+      <div class="info">
+        <span class="tipo-tag estancada">📄 Sin movimiento</span>
+        <div><b>${l.nombre || 'Sin nombre'} · ${l.telefono}</b></div>
+        <div class="txt">${l.servicio_nombre || 'Servicio por definir'} · ${folioCotizacion(l)}</div>
+        <div class="fecha">${dias} días sin actualizarse</div>
+      </div>
+      <div class="util-46">
+        <button class="btn btn-outline" onclick="abrirFicha(${l.id})">Abrir cotización</button>
+      </div>
+    </div>`;
+}
+
 async function cargarLeads() {
   const params = new URLSearchParams();
   const resp = document.getElementById('f-responsable').value;
   const q = document.getElementById('f-buscar').value;
   const desde = document.getElementById('f-desde').value;
   const hasta = document.getElementById('f-hasta').value;
+  const soloUrgentes = document.getElementById('f-urgente').checked;
   params.set('estatus', 'abierto');
   if (resp) params.set('responsable_id', resp);
   if (q) params.set('q', q);
   if (desde) params.set('desde', desde);
   if (hasta) params.set('hasta', hasta);
+  if (soloUrgentes) params.set('urgente', '1');
   if (ETAPA_FILTRO) params.set('etapa', ETAPA_FILTRO);
 
   const [leads, kpis] = await Promise.all([
@@ -294,7 +365,54 @@ async function cargarLeads() {
 }
 
 function formatoMoneda(n) {
-  return '$' + (Number(n) || 0).toLocaleString('es-MX', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+  return '$' + (Number(n) || 0).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+// Convierte un importe a su representación en letras, formato usado en documentos
+// formales en México ("MIL QUINIENTOS PESOS 50/100 M.N."). Simplificación aceptada:
+// siempre usa "PESOS" en plural (incluso para $1.00), como hacen la mayoría de los
+// sistemas de facturación; no ajusta género/plural más allá de eso.
+function numeroALetras(monto) {
+  const UNIDADES = ['', 'UN', 'DOS', 'TRES', 'CUATRO', 'CINCO', 'SEIS', 'SIETE', 'OCHO', 'NUEVE'];
+  const ESPECIALES = ['DIEZ','ONCE','DOCE','TRECE','CATORCE','QUINCE','DIECISÉIS','DIECISIETE','DIECIOCHO','DIECINUEVE',
+    'VEINTE','VEINTIUNO','VEINTIDÓS','VEINTITRÉS','VEINTICUATRO','VEINTICINCO','VEINTISÉIS','VEINTISIETE','VEINTIOCHO','VEINTINUEVE'];
+  const DECENAS = ['','','','TREINTA','CUARENTA','CINCUENTA','SESENTA','SETENTA','OCHENTA','NOVENTA'];
+  const CENTENAS = ['','CIENTO','DOSCIENTOS','TRESCIENTOS','CUATROCIENTOS','QUINIENTOS','SEISCIENTOS','SETECIENTOS','OCHOCIENTOS','NOVECIENTOS'];
+  function seccion(n) {
+    let letras = '';
+    const c = Math.floor(n / 100), resto = n % 100;
+    if (c > 0) letras += (n === 100 ? 'CIEN' : CENTENAS[c]) + (resto > 0 ? ' ' : '');
+    if (resto > 0) {
+      if (resto < 10) letras += UNIDADES[resto];
+      else if (resto < 30) letras += ESPECIALES[resto - 10];
+      else {
+        const d = Math.floor(resto / 10), u = resto % 10;
+        letras += DECENAS[d] + (u > 0 ? ' Y ' + UNIDADES[u] : '');
+      }
+    }
+    return letras;
+  }
+  function miles(n) {
+    const m = Math.floor(n / 1000), resto = n % 1000;
+    let letras = '';
+    if (m > 0) letras += (m === 1 ? 'MIL' : seccion(m) + ' MIL');
+    if (resto > 0) letras += (letras ? ' ' : '') + seccion(resto);
+    return letras;
+  }
+  function millones(n) {
+    const mm = Math.floor(n / 1000000), resto = n % 1000000;
+    let letras = '';
+    if (mm > 0) letras += (mm === 1 ? 'UN MILLÓN' : seccion(mm) + ' MILLONES');
+    if (resto > 0) letras += (letras ? ' ' : '') + miles(resto);
+    return letras;
+  }
+  const entero = Math.floor(Math.abs(Number(monto) || 0));
+  const centavos = Math.round((Math.abs(Number(monto) || 0) - entero) * 100);
+  let letras = entero === 0 ? 'CERO' : millones(entero);
+  // Apócope: "UNO"/"VEINTIUNO" antes de un sustantivo se dice "UN"/"VEINTIÚN" —
+  // aplica tanto al final (antes de "PESOS") como antes de "MIL" o "MILLONES".
+  letras = letras.replace(/\bVEINTIUNO\b/g, 'VEINTIÚN').replace(/\bUNO\b/g, 'UN');
+  return `${letras} PESOS ${String(centavos).padStart(2, '0')}/100 M.N.`;
 }
 
 function renderKpis(kpis) {
@@ -378,15 +496,17 @@ function renderKanbanLeads(leads) {
       if (dias > 7) diasClass = 'critico';
       else if (dias > 3) diasClass = 'urgente';
       return `
-      <div class="lead-card" data-etapa="${l.etapa}" draggable="true" ondragstart="dragStart(event, ${l.id})" ondragend="dragEnd(event)" onclick="abrirFicha(${l.id})">
+      <div class="lead-card" data-etapa="${l.etapa}" draggable="true" ondragstart="dragStart(event, ${l.id})" ondragend="dragEnd(event)" onclick="abrirFicha(${l.id})" ${l.urgente ? 'style="border-left:4px solid #e63946"' : ''}>
+        ${l.urgente ? `<div class="lead-alertas" title="Solicitud urgente" style="background:#e63946">🔴 Urgente</div>` : ''}
         ${l.alertas_pendientes > 0 ? `<div class="lead-alertas">⏰ ${l.alertas_pendientes}</div>` : ''}
         ${dias > 2 ? `<div class="lead-dias ${diasClass}">⏱ ${dias}d</div>` : ''}
         ${l.etapa < 4 ? `<button class="btn-avanzar" title="Mover a ${NOMBRE_ETAPA[l.etapa + 1]}" onclick="event.stopPropagation();avanzarEtapa(${l.id}, ${l.etapa + 1})">›</button>` : ''}
+        <div class="lead-folio">${folioCotizacion(l)}</div>
         <div class="lead-tel">${l.telefono}</div>
         <div class="lead-nombre">${l.nombre || 'Sin nombre'}</div>
         <div class="lead-servicio">${l.servicio_nombre || 'Sin servicio'}</div>
         <div class="lead-meta">
-          <span class="lead-resp">${l.responsable_nombre || '—'}</span>
+          <span class="lead-resp">${escaparHtml(l.responsable_nombre || '—')}</span>
           <span class="lead-valor">${l.valor != null ? formatoMoneda(l.valor) : '—'}</span>
         </div>
         <div class="lead-fecha">${fechaCorta(l.updated_at)}</div>
@@ -399,6 +519,7 @@ on('f-buscar', 'input', debounce(cargarLeads, 350));
 on('f-responsable', 'change', cargarLeads);
 on('f-desde', 'change', cargarLeads);
 on('f-hasta', 'change', cargarLeads);
+on('f-urgente', 'change', cargarLeads);
 function debounce(fn, ms) { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; }
 
 // ---------- Drag & Drop Kanban + utilidades ----------
@@ -430,7 +551,9 @@ async function drop(e, etapa) {
 }
 async function avanzarEtapa(leadId, etapa) {
   try {
-    await api('/leads/' + leadId, { method: 'PUT', body: JSON.stringify({ etapa, usuario: USUARIO_ACTUAL ? USUARIO_ACTUAL.nombre : null }) });
+    const res = await api('/leads/' + leadId, { method: 'PUT', body: JSON.stringify({ etapa, usuario: USUARIO_ACTUAL ? USUARIO_ACTUAL.nombre : null }) });
+    const datos = await res.json();
+    if (!res.ok) { toast(datos.error || 'No se pudo cambiar de etapa'); cargarLeads(); return; }
     toast('Etapa actualizada: ' + NOMBRE_ETAPA[etapa]);
     cargarLeads();
     if (LEAD_ACTUAL && LEAD_ACTUAL.id == leadId) {
@@ -449,6 +572,7 @@ function limpiarFiltros() {
   document.getElementById('f-responsable').value = '';
   document.getElementById('f-desde').value = '';
   document.getElementById('f-hasta').value = '';
+  document.getElementById('f-urgente').checked = false;
   ETAPA_FILTRO = null;
   document.querySelectorAll('.kpi-card').forEach(c => c.classList.remove('activa'));
   cargarLeads();
@@ -501,41 +625,6 @@ function renderBarChart(id, datos, labelKey, valueKey, fmt) {
   }).join('');
 }
 
-function renderEvolucion(id, datos) {
-  const cont = document.getElementById(id);
-  if (!datos.length) { cont.innerHTML = '<p class="util-36">Sin datos mensuales.</p>'; return; }
-  const max = Math.max(...datos.map(d => d.ganados));
-  cont.innerHTML = datos.map(d => {
-    const h = max > 0 ? (d.ganados / max) * 100 : 0;
-    return `
-      <div class="evo-col">
-        <div class="evo-bar" style="height:${Math.max(h, 4)}%">
-          <div class="evo-tooltip">${d.mes}: ${d.ganados} ganados · ${formatoMoneda(d.ingresos || 0)}</div>
-        </div>
-        <div class="evo-label">${d.mes_corto}</div>
-      </div>
-    `;
-  }).join('');
-}
-
-function renderTablaMensual(id, datos) {
-  const body = document.getElementById(id);
-  if (!datos.length) { body.innerHTML = '<tr><td colspan="6" class="util-36">Sin datos mensuales disponibles.</td></tr>'; return; }
-  body.innerHTML = datos.map(d => {
-    const tasa = d.creados > 0 ? Math.round((d.ganados / d.creados) * 100) : 0;
-    return `
-      <tr>
-        <td><b>${d.mes}</b></td>
-        <td>${d.creados}</td>
-        <td><span style="color:var(--verde);font-weight:700;">${d.ganados}</span></td>
-        <td><span style="color:var(--rojo);">${d.perdidos}</span></td>
-        <td>${formatoMoneda(d.ingresos || 0)}</td>
-        <td><b>${tasa}%</b></td>
-      </tr>
-    `;
-  }).join('');
-}
-
 function escaparHtml(text) {
   const div = document.createElement('div');
   div.textContent = text;
@@ -574,12 +663,23 @@ function nombreArchivoCotizacion(datos, extension) {
 
 function datosCotizacionDesdeLead(lead, items) {
   const emision = new Date();
-  const vencimiento = new Date(emision);
-  vencimiento.setDate(vencimiento.getDate() + EMPRESA_COTIZACION.vigenciaDias);
+  const total = items.reduce((suma, item) => suma + (Number(item.importe) || 0), 0);
+  let vigenciaTexto = null;
+  if (lead.incluye_vigencia !== 0) {
+    if (lead.vigencia_hasta) {
+      vigenciaTexto = new Date(lead.vigencia_hasta + 'T00:00:00').toLocaleDateString('es-MX', { year: 'numeric', month: 'long', day: 'numeric' });
+    } else {
+      const vencimiento = new Date(emision);
+      vencimiento.setDate(vencimiento.getDate() + EMPRESA_COTIZACION.vigenciaDias);
+      vigenciaTexto = vencimiento.toLocaleDateString('es-MX', { year: 'numeric', month: 'long', day: 'numeric' });
+    }
+  }
   return {
     folio: folioCotizacion(lead),
     fechaEmision: emision.toLocaleDateString('es-MX', { year: 'numeric', month: 'long', day: 'numeric' }),
-    fechaVencimiento: vencimiento.toLocaleDateString('es-MX', { year: 'numeric', month: 'long', day: 'numeric' }),
+    fechaCotizacion: new Date((lead.fecha_cotizacion || lead.created_at.slice(0,10)) + 'T00:00:00').toLocaleDateString('es-MX', { year: 'numeric', month: 'long', day: 'numeric' }),
+    vigenciaTexto,
+    atendioPor: lead.responsable_nombre || 'Por asignar',
     cliente: {
       nombre: lead.nombre || 'Cliente',
       empresa: lead.empresa_contacto || '',
@@ -587,19 +687,35 @@ function datosCotizacionDesdeLead(lead, items) {
       direccion: lead.direccion || ''
     },
     items,
-    total: items.reduce((suma, item) => suma + (Number(item.importe) || 0), 0)
+    total,
+    totalLetras: numeroALetras(total)
   };
 }
 
-let membreteCotizacionCache;
-async function cargarMembreteCotizacion() {
-  if (!membreteCotizacionCache) {
-    membreteCotizacionCache = fetch('/membrete-cotizacion.png').then(async respuesta => {
+// Cada documento tiene su propio membrete (generado con herramientas/membretes/membretes.html):
+// ya trae el tipo de documento en el encabezado, por eso el cuerpo solo muestra el folio.
+const membretesCache = {};
+function cargarMembrete(archivo) {
+  if (!membretesCache[archivo]) {
+    membretesCache[archivo] = fetch('/' + archivo).then(async respuesta => {
       if (!respuesta.ok) throw new Error('No se pudo cargar el membrete');
       return new Uint8Array(await respuesta.arrayBuffer());
-    }).catch(error => { membreteCotizacionCache = null; throw error; });
+    }).catch(error => { delete membretesCache[archivo]; throw error; });
   }
-  return membreteCotizacionCache;
+  return membretesCache[archivo];
+}
+const cargarMembreteCotizacion = () => cargarMembrete('membrete-cotizacion.png');
+const cargarMembreteOrdenServicio = () => cargarMembrete('membrete-orden-servicio.png');
+
+let qrEncuestaCache;
+async function cargarQREncuesta() {
+  if (!qrEncuestaCache) {
+    qrEncuestaCache = fetch('/QR_Encuesta_Calidad_Saneadren.png').then(async respuesta => {
+      if (!respuesta.ok) throw new Error('No se pudo cargar el QR de la encuesta');
+      return new Uint8Array(await respuesta.arrayBuffer());
+    }).catch(error => { qrEncuestaCache = null; throw error; });
+  }
+  return qrEncuestaCache;
 }
 
 async function generarPDFCotizacion(datos) {
@@ -617,8 +733,9 @@ async function generarPDFCotizacion(datos) {
     const lineas=doc.splitTextToSize(String(contenido),516);
     for(const linea of lineas){if(y+tamano>limite)pagina();doc.text(linea,margen,y);y+=tamano+5;}
   };
-  texto('COTIZACIÓN '+datos.folio,15,true);
-  texto('Fecha: '+datos.fechaEmision+'   |   Vigencia hasta: '+datos.fechaVencimiento);
+  texto('Folio: '+datos.folio,15,true);
+  texto('Fecha de cotización: '+datos.fechaCotizacion+(datos.vigenciaTexto?'   |   Vigencia hasta: '+datos.vigenciaTexto:''));
+  texto('Atendió: '+datos.atendioPor);
   y+=10;
   texto('CLIENTE',10,true);
   texto(datos.cliente.nombre);
@@ -638,7 +755,9 @@ async function generarPDFCotizacion(datos) {
     willDrawPage:()=>{if(doc.internal.getCurrentPageInfo().pageNumber>1)fondo();}
   });
   y=doc.lastAutoTable.finalY+24;
-  texto('Esta cotización tiene una vigencia de '+EMPRESA_COTIZACION.vigenciaDias+' días a partir de su fecha de emisión.',9);
+  texto('Son: '+datos.totalLetras,9,true);
+  y+=4;
+  if(datos.vigenciaTexto)texto('Esta cotización tiene vigencia hasta el '+datos.vigenciaTexto+'.',9);
   const paginas=doc.getNumberOfPages();
   for(let i=1;i<=paginas;i++){doc.setPage(i);doc.setFontSize(8);doc.setTextColor(90);doc.text('Cotización '+datos.folio+' · Página '+i+' de '+paginas,564,722,{align:'right'});}
   doc.save(nombreArchivoCotizacion(datos,'pdf'));
@@ -658,18 +777,282 @@ async function generarWordCotizacion(datos) {
     properties:{page:{size:{width:12240,height:18360},margin:{top:2640,bottom:4160,left:960,right:960,header:0,footer:0}}},
     headers:{default:new Header({children:[new Paragraph({children:[new ImageRun({data:membrete,type:'png',transformation:{width:816,height:1224},floating:{horizontalPosition:{relative:'page',offset:0},verticalPosition:{relative:'page',offset:0},behindDocument:true,allowOverlap:true,layoutInCell:false}})]})]})},
     children:[
-      new Paragraph({spacing:{after:160},children:[new TextRun({text:'COTIZACIÓN '+datos.folio,bold:true,size:30})]}),
-      parrafo('Fecha: '+datos.fechaEmision+'   |   Vigencia hasta: '+datos.fechaVencimiento),
+      new Paragraph({spacing:{after:160},children:[new TextRun({text:'Folio: '+datos.folio,bold:true,size:30})]}),
+      parrafo('Fecha de cotización: '+datos.fechaCotizacion+(datos.vigenciaTexto?'   |   Vigencia hasta: '+datos.vigenciaTexto:'')),
+      parrafo('Atendió: '+datos.atendioPor),
       parrafo('CLIENTE',true),parrafo(datos.cliente.nombre),
       ...(datos.cliente.empresa?[parrafo(datos.cliente.empresa)]:[]),
       ...(datos.cliente.telefono?[parrafo('Tel: '+datos.cliente.telefono)]:[]),
       ...(datos.cliente.direccion?[parrafo('Ubicación del servicio: '+datos.cliente.direccion)]:[]),
-      tabla,parrafo(''),parrafo('Esta cotización tiene una vigencia de '+EMPRESA_COTIZACION.vigenciaDias+' días a partir de su fecha de emisión.')
+      tabla,parrafo('Son: '+datos.totalLetras,true),parrafo(''),
+      ...(datos.vigenciaTexto?[parrafo('Esta cotización tiene vigencia hasta el '+datos.vigenciaTexto+'.')]:[])
     ]
   }]});
   saveAs(await Packer.toBlob(documento),nombreArchivoCotizacion(datos,'docx'));
 }
 
+// ---------- Generar documento de Orden de Servicio (PDF o Word) ----------
+// Se entrega al cliente cuando acepta el servicio (lead.estatus === 'ganado'). A diferencia
+// de la cotización (que es una propuesta con vigencia), esta formaliza el trabajo acordado:
+// fecha del servicio, responsable asignado y espacio de firma de conformidad.
+// TODO: ajusta este texto con las condiciones, alcance y garantía reales de Saneadren.
+const CONDICIONES_ORDEN_SERVICIO = 'El presente documento formaliza el servicio aceptado por el cliente en los términos y el importe aquí descritos. Cualquier trabajo adicional no listado en esta orden se cotizará por separado.';
+
+function folioOrdenServicio(lead) {
+  const fecha = new Date(lead.created_at || Date.now());
+  const yyyy = fecha.getFullYear();
+  const mm = String(fecha.getMonth() + 1).padStart(2, '0');
+  return `OS-${yyyy}${mm}-${String(lead.id).padStart(4, '0')}`;
+}
+
+function nombreArchivoOrdenServicio(datos, extension) {
+  const cliente = (datos.cliente.nombre || 'cliente').toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+  return `orden_servicio_${datos.folio}_${cliente}.${extension}`;
+}
+
+function datosOrdenServicioDesdeLead(lead, items) {
+  const total = items.reduce((suma, item) => suma + (Number(item.importe) || 0), 0);
+  return {
+    folio: folioOrdenServicio(lead),
+    // Solo se cita la cotización si la orden realmente salió de una (no en directas ni duplicadas).
+    folioCotizacion: lead.origen === 'directo' ? '' : folioCotizacion(lead),
+    fechaServicio: lead.fecha_servicio ? lead.fecha_servicio.split('-').reverse().join('/') : 'Por confirmar',
+    cliente: {
+      nombre: lead.nombre || 'Cliente',
+      empresa: lead.empresa_contacto || '',
+      telefono: lead.telefono || '',
+      direccion: lead.direccion || ''
+    },
+    equipo: lead.equipo || '',
+    operador: lead.operador || '',
+    observaciones: lead.observaciones || '',
+    items,
+    total,
+    totalLetras: numeroALetras(total)
+  };
+}
+
+// Mismo orden de conceptos que el formato impreso "ORDENES DE SERVICIO" de Saneadren:
+// Empresa/Fecha, Ubicación, Equipo, Operador → Descripción → Importe → Observaciones →
+// Ejecutor / Vo.Bo. → Nombre y firma del operador / del cliente. Diseño ligero: etiquetas
+// pequeñas sobre cada dato y líneas finas (sin cuadrícula pesada), para que respire sobre el membrete.
+function camposOrden(datos) {
+  return [
+    [['Empresa', datos.cliente.empresa || datos.cliente.nombre], ['Contacto', [datos.cliente.empresa ? datos.cliente.nombre : '', datos.cliente.telefono].filter(Boolean).join(' · ') || '—']],
+    [['Ubicación', datos.cliente.direccion || '—']],
+    [['Equipo', datos.equipo || ''], ['Operador(es)', datos.operador || '']]
+  ];
+}
+const COLOR_ORDEN = { oscuro: [26, 29, 35], amarillo: [246, 177, 3], gris: [107, 114, 128], linea: [214, 217, 222], fondo: [246, 247, 249] };
+
+async function generarPDFOrdenServicio(datos) {
+  const membrete = await cargarMembreteOrdenServicio();
+  const qr = await cargarQREncuesta().catch(() => null);
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({unit:'pt', format:[612,918]});
+  const C = COLOR_ORDEN, margen = 48, derecha = 564, ancho = 516, inicio = 126, limite = 706;
+  let y = inicio;
+  const fondo = () => doc.addImage(membrete,'PNG',0,0,612,918,'membrete');
+  const pagina = () => { doc.addPage(); fondo(); y = inicio; };
+  const asegurar = alto => { if (y + alto > limite) pagina(); };
+  const fuente = (tam, negrita = false, color = C.oscuro) => { doc.setFont('helvetica', negrita ? 'bold' : 'normal'); doc.setFontSize(tam); doc.setTextColor(...color); };
+  const linea = (x1, y1, x2, color = C.linea, grosor = 0.6) => { doc.setDrawColor(...color); doc.setLineWidth(grosor); doc.line(x1, y1, x2, y1); };
+  const seccion = titulo => {
+    asegurar(40);
+    doc.setFillColor(...C.amarillo); doc.rect(margen, y - 8, 3, 11, 'F');
+    fuente(9, true); doc.text(titulo, margen + 9, y + 1);
+    linea(margen + 9 + doc.getTextWidth(titulo) + 8, y - 2, derecha);
+    y += 14;
+  };
+  // Campo: etiqueta pequeña en gris y el dato debajo, con una línea fina como renglón.
+  const campo = (etiqueta, valor, x, w) => {
+    fuente(6.8, true, C.gris); doc.text(etiqueta.toUpperCase(), x, y);
+    fuente(10); const lineas = doc.splitTextToSize(String(valor || ' '), w - 4);
+    doc.text(lineas, x, y + 13);
+    return 13 + (lineas.length - 1) * 12;
+  };
+  fondo();
+
+  // Folio y fecha
+  fuente(7, true, C.gris); doc.text('FOLIO', margen, y);
+  fuente(14, true); doc.text(datos.folio, margen, y + 16);
+  fuente(7, true, C.gris); doc.text('FECHA DEL SERVICIO', derecha, y, { align: 'right' });
+  fuente(14, true); doc.text(datos.fechaServicio, derecha, y + 16, { align: 'right' });
+  if (datos.folioCotizacion) { fuente(8, false, C.gris); doc.text('Cotización de referencia: ' + datos.folioCotizacion, margen + 160, y + 16); }
+  y += 34;
+
+  seccion('DATOS DEL SERVICIO');
+  const gap = 20, mitad = (ancho - gap) / 2;
+  for (const fila of camposOrden(datos)) {
+    asegurar(34);
+    const alto = Math.max(...fila.map(([e, v], i) => campo(e, v, margen + i * (mitad + gap), fila.length === 1 ? ancho : mitad)));
+    fila.forEach((_, i) => linea(margen + i * (mitad + gap), y + alto + 5, margen + i * (mitad + gap) + (fila.length === 1 ? ancho : mitad)));
+    y += alto + 19;
+  }
+  y += 4;
+
+  seccion('DESCRIPCIÓN DEL TRABAJO');
+  doc.autoTable({
+    startY: y - 4, margin: { left: margen, right: margen, top: inicio, bottom: 212 }, theme: 'plain',
+    head: [['Servicio', 'Descripción', 'Importe']],
+    body: datos.items.map(item => [item.servicio, item.leyenda || '—', formatoMoneda(item.importe)]),
+    rowPageBreak: 'avoid',
+    styles: { fontSize: 9.5, cellPadding: { top: 6, bottom: 6, left: 7, right: 7 }, textColor: C.oscuro, lineColor: C.linea, overflow: 'linebreak' },
+    headStyles: { fillColor: C.oscuro, textColor: 255, fontStyle: 'bold', fontSize: 8.5 },
+    alternateRowStyles: { fillColor: C.fondo },
+    columnStyles: { 0: { cellWidth: 140, fontStyle: 'bold' }, 2: { cellWidth: 90, halign: 'right' } },
+    didParseCell: d => { if (d.section === 'head' && d.column.index === 2) d.cell.styles.halign = 'right'; },
+    didDrawCell: d => { if (d.section === 'body') { doc.setDrawColor(...C.linea); doc.setLineWidth(0.5); doc.line(d.cell.x, d.cell.y + d.cell.height, d.cell.x + d.cell.width, d.cell.y + d.cell.height); } },
+    willDrawPage: () => { if (doc.internal.getCurrentPageInfo().pageNumber > 1) fondo(); }
+  });
+  y = doc.lastAutoTable.finalY + 10;
+  // Total: recuadro a la derecha con acento amarillo, y el importe con letra a la izquierda.
+  asegurar(40);
+  const anchoTotal = 190;
+  doc.setFillColor(...C.fondo); doc.rect(derecha - anchoTotal, y, anchoTotal, 30, 'F');
+  doc.setFillColor(...C.amarillo); doc.rect(derecha - anchoTotal, y, 4, 30, 'F');
+  fuente(8, true, C.gris); doc.text('IMPORTE TOTAL', derecha - anchoTotal + 14, y + 19);
+  fuente(14, true); doc.text(formatoMoneda(datos.total), derecha - 10, y + 20, { align: 'right' });
+  fuente(8, false, C.gris);
+  doc.text(doc.splitTextToSize('Son: ' + datos.totalLetras, ancho - anchoTotal - 20), margen, y + 13);
+  y += 50;
+
+  seccion('OBSERVACIONES');
+  asegurar(56);
+  doc.setFillColor(...C.fondo); doc.roundedRect(margen, y - 6, ancho, 48, 4, 4, 'F');
+  if (datos.observaciones) { fuente(9.5); doc.text(doc.splitTextToSize(datos.observaciones, ancho - 20).slice(0, 3), margen + 10, y + 9); }
+  else { [y + 12, y + 28].forEach(yy => linea(margen + 10, yy, derecha - 10, [200, 204, 210], 0.4)); } // renglones para escribir a mano
+  y += 60;
+
+  // Firmas: cuatro líneas como en el formato en papel.
+  asegurar(110);
+  const firma = (etiqueta, x, yy, nombre) => {
+    if (nombre) { fuente(9.5); doc.text(nombre, x + mitad / 2, yy - 6, { align: 'center' }); }
+    linea(x, yy, x + mitad, C.oscuro, 0.8);
+    fuente(7, true, C.gris); doc.text(etiqueta, x + mitad / 2, yy + 11, { align: 'center' });
+  };
+  firma('EJECUTOR', margen, y + 20); firma('Vo.Bo.', margen + mitad + gap, y + 20);
+  firma('NOMBRE Y FIRMA DEL OPERADOR', margen, y + 70, datos.operador); firma('NOMBRE Y FIRMA DEL CLIENTE', margen + mitad + gap, y + 70);
+  y += 112;
+
+  fuente(7.5, false, C.gris);
+  doc.text(doc.splitTextToSize(CONDICIONES_ORDEN_SERVICIO, ancho - 80), margen, y);
+  // Encuesta con QR a la derecha, alineada con las condiciones.
+  if (qr) {
+    const tamanoQR = 54;
+    if (y + tamanoQR > limite + 4) pagina();
+    doc.addImage(qr, 'PNG', derecha - tamanoQR, y - 8, tamanoQR, tamanoQR, 'qr');
+    fuente(7, true); doc.text('CALIFICA EL SERVICIO', derecha - tamanoQR - 8, y + 14, { align: 'right' });
+    fuente(7, false, C.gris); doc.text('Escanea el código', derecha - tamanoQR - 8, y + 24, { align: 'right' });
+  }
+  const paginas = doc.getNumberOfPages();
+  for (let i = 1; i <= paginas; i++) { doc.setPage(i); fuente(7.5, false, C.gris); doc.text('Orden de servicio ' + datos.folio + ' · Página ' + i + ' de ' + paginas, derecha, 724, { align: 'right' }); }
+  doc.save(nombreArchivoOrdenServicio(datos,'pdf'));
+}
+
+async function generarWordOrdenServicio(datos) {
+  const membrete=await cargarMembreteOrdenServicio();
+  const qr=await cargarQREncuesta().catch(()=>null);
+  const {Document,Packer,Paragraph,TextRun,Table,TableRow,TableCell,WidthType,Header,ImageRun,AlignmentType,HeightRule,VerticalAlign,BorderStyle,TabStopType}=docx;
+  const OSC='1A1D23',AMA='F6B103',GRI='6B7280',LIN='D6D9DE',FON='F6F7F9';
+  const nada={style:BorderStyle.NONE,size:0,color:'FFFFFF'};
+  const sinBordes={top:nada,bottom:nada,left:nada,right:nada,insideHorizontal:nada,insideVertical:nada};
+  const lineaAbajo=(color=LIN,size=4)=>({top:nada,left:nada,right:nada,bottom:{style:BorderStyle.SINGLE,size,color}});
+  const run=(t,o={})=>new TextRun({text:String(t??''),bold:!!o.bold,size:o.size||20,color:o.color||OSC});
+  const p=(hijos,o={})=>new Paragraph({spacing:{before:o.antes||0,after:o.despues??60},alignment:o.centro?AlignmentType.CENTER:o.derecha?AlignmentType.RIGHT:undefined,tabStops:o.tabs,children:[].concat(hijos)});
+  const celda=(hijos,o={})=>new TableCell({columnSpan:o.span,borders:o.bordes||sinBordes,shading:o.fondo?{fill:o.fondo}:undefined,verticalAlign:o.abajo?VerticalAlign.BOTTOM:undefined,
+    margins:{top:o.mv??60,bottom:o.mv??60,left:o.mh??100,right:o.mh??100},children:[].concat(hijos)});
+  const tabla=(filas,anchos,o={})=>new Table({width:{size:100,type:WidthType.PERCENTAGE},columnWidths:anchos,borders:o.bordes||sinBordes,rows:filas});
+  const fila=(celdas,alto)=>new TableRow({height:alto?{value:alto,rule:HeightRule.ATLEAST}:undefined,children:celdas});
+  const seccion=t=>p([run('▌ ',{color:AMA,bold:true,size:20}),run(t,{bold:true,size:18})],{antes:220,despues:80});
+  const campo=(etiqueta,valor,span)=>celda([p(run(etiqueta.toUpperCase(),{bold:true,size:14,color:GRI}),{despues:20}),p(run(valor||' '))],{span,bordes:lineaAbajo(),mh:40});
+  const sep=()=>celda(p(run('')),{mh:0});
+
+  const cabecera=tabla([fila([
+    celda([p(run('FOLIO',{bold:true,size:14,color:GRI}),{despues:0}),p(run(datos.folio,{bold:true,size:28}))],{mh:0}),
+    celda(datos.folioCotizacion?p(run('Cotización de referencia: '+datos.folioCotizacion,{size:16,color:GRI})):p(run('')),{abajo:true}),
+    celda([p(run('FECHA DEL SERVICIO',{bold:true,size:14,color:GRI}),{derecha:true,despues:0}),p(run(datos.fechaServicio,{bold:true,size:28}),{derecha:true})],{mh:0})
+  ])],[3300,3720,3300]);
+  const datosServicio=tabla(camposOrden(datos).map(f=>fila(f.length===1?[campo(f[0][0],f[0][1],3)]:[campo(f[0][0],f[0][1]),sep(),campo(f[1][0],f[1][1])])),[5000,320,5000]);
+  const trabajo=tabla([
+    fila(['Servicio','Descripción','Importe'].map((t,i)=>celda(p(run(t,{bold:true,size:17,color:'FFFFFF'}),{derecha:i===2}),{fondo:OSC}))),
+    ...datos.items.map((item,n)=>fila([
+      celda(p(run(item.servicio,{bold:true,size:19})),{fondo:n%2?FON:undefined,bordes:lineaAbajo()}),
+      celda(p(run(item.leyenda||'—',{size:19})),{fondo:n%2?FON:undefined,bordes:lineaAbajo()}),
+      celda(p(run(formatoMoneda(item.importe),{size:19}),{derecha:true}),{fondo:n%2?FON:undefined,bordes:lineaAbajo()})]))
+  ],[2800,5720,1800]);
+  const total=tabla([fila([
+    celda(p(run('Son: '+datos.totalLetras,{size:16,color:GRI})),{mh:0}),
+    celda(p([run('IMPORTE TOTAL   ',{bold:true,size:15,color:GRI}),run(formatoMoneda(datos.total),{bold:true,size:28})],{derecha:true}),{fondo:FON,bordes:{top:nada,bottom:nada,right:nada,left:{style:BorderStyle.SINGLE,size:24,color:AMA}}})
+  ])],[6120,4200]);
+  const observaciones=tabla([fila([celda(datos.observaciones?p(run(datos.observaciones)):p(run('')),{fondo:FON,mv:120})],900)],[10320]);
+  const firma=(etiqueta,nombre)=>celda([p(run(nombre||' '),{centro:true,despues:0})].concat(p(run(etiqueta,{bold:true,size:14,color:GRI}),{centro:true})),{bordes:{top:nada,left:nada,right:nada,bottom:nada},mh:0});
+  const lineaFirma=()=>celda(p(run('')),{bordes:lineaAbajo(OSC,8),mh:0});
+  const firmas=tabla([
+    fila([lineaFirma(),sep(),lineaFirma()],650),
+    fila([firma('EJECUTOR'),sep(),firma('Vo.Bo.')]),
+    fila([celda(p(run(datos.operador||' '),{centro:true}),{bordes:lineaAbajo(OSC,8),abajo:true,mh:0}),sep(),lineaFirma()],750),
+    fila([firma('NOMBRE Y FIRMA DEL OPERADOR'),sep(),firma('NOMBRE Y FIRMA DEL CLIENTE')])
+  ],[5000,320,5000]);
+
+  const documento=new Document({styles:{default:{document:{run:{font:'Arial',size:20,color:OSC},paragraph:{spacing:{after:60}}}}},sections:[{
+    properties:{page:{size:{width:12240,height:18360},margin:{top:2520,bottom:4240,left:960,right:960,header:0,footer:0}}},
+    headers:{default:new Header({children:[new Paragraph({children:[new ImageRun({data:membrete,type:'png',transformation:{width:816,height:1224},floating:{horizontalPosition:{relative:'page',offset:0},verticalPosition:{relative:'page',offset:0},behindDocument:true,allowOverlap:true,layoutInCell:false}})]})]})},
+    children:[
+      cabecera,
+      seccion('DATOS DEL SERVICIO'),datosServicio,
+      seccion('DESCRIPCIÓN DEL TRABAJO'),trabajo,p(run(''),{despues:80}),total,
+      seccion('OBSERVACIONES'),observaciones,
+      p(run(''),{despues:200}),firmas,
+      p(run(CONDICIONES_ORDEN_SERVICIO,{size:15,color:GRI}),{antes:240}),
+      ...(qr?[p([new ImageRun({data:qr,type:'png',transformation:{width:72,height:72}}),run('   Califica el servicio: escanea el código',{size:16,color:GRI})],{antes:80})]:[])
+    ]
+  }]});
+  saveAs(await Packer.toBlob(documento),nombreArchivoOrdenServicio(datos,'docx'));
+}
+
+async function descargarOrdenServicioActual(mensaje){
+  const formato=document.querySelector('input[name="gc-formato"]:checked').value;
+  const datos=datosOrdenServicioDesdeLead(LEAD_ACTUAL,recolectarItemsCotizacion());
+  if(formato==='pdf')await generarPDFOrdenServicio(datos);else await generarWordOrdenServicio(datos);
+  registrarEventoSistema(LEAD_ACTUAL.id, 'Orden de servicio descargada ('+formato.toUpperCase()+').');
+  toast(mensaje || 'Orden de servicio generada');
+}
+on('btn-generar-orden-servicio','click',async e=>{
+  if(!validarEditorCotizacion())return;
+  const cerrando = LEAD_ACTUAL.estatus === 'abierto';
+  if (cerrando) {
+    sincronizarEditor();
+    if(!document.getElementById('ed-servicio').value){toast('Selecciona el servicio que se contratará');document.getElementById('ed-servicio').focus();return;}
+    if(!document.getElementById('ed-direccion').value.trim()){toast('Indica la ubicación del servicio');document.getElementById('ed-direccion').focus();return;}
+    if(!document.getElementById('ed-fecha-servicio').value){toast('Indica la fecha acordada del servicio antes de generar la orden');document.getElementById('ed-fecha-servicio').focus();return;}
+    // Un lead "ganado" sin costo rompería los reportes de ingresos en Clientes — se exige aquí
+    // (el backend también lo valida).
+    if(document.getElementById('ed-valor').value===''){toast('Ingresa el costo del servicio antes de generar la orden');document.getElementById('ed-valor').focus();return;}
+  }
+  const btn=e.currentTarget;btn.disabled=true;
+  try{
+    const payload = cerrando ? { ...recolectarPayloadFicha(), estatus: 'ganado' } : recolectarPayloadFicha();
+    if(!await guardarLeadExistente(payload))return;
+    FlujoCRM.marcarGuardado('overlay-ficha');
+    await descargarOrdenServicioActual(cerrando ? 'Cotización cerrada: servicio contratado y orden de servicio generada' : undefined);
+    if (cerrando) {
+      // La cotización acaba de cerrarse como servicio contratado: refrescamos toda la ficha
+      // (botones, bitácora, cadena de documentos, pipeline) para que reflejen el nuevo estatus.
+      await abrirFicha(LEAD_ACTUAL.id);
+      await ServiciosTabla.refrescar();
+    }
+  }
+  catch(err){toast('No se pudo generar la orden de servicio: '+err.message);}
+  finally{btn.disabled=false;}
+});
+document.getElementById('cadena-documentos').addEventListener('click',async e=>{
+  if(!e.target.closest('[data-ver-cotizacion]'))return;
+  if(!validarEditorCotizacion())return;
+  try{ await descargarCotizacionActual(); }
+  catch(err){toast('No se pudo generar la cotización: '+err.message);}
+});
 
 // ---------- Ventana emergente: armar la cotización (varios servicios, leyenda y formato) ----------
 let GC_CONTADOR = 0;
@@ -750,6 +1133,7 @@ async function descargarCotizacionActual(){
   const formato=document.querySelector('input[name="gc-formato"]:checked').value;
   const datos=datosCotizacionDesdeLead(LEAD_ACTUAL,recolectarItemsCotizacion());
   if(formato==='pdf')await generarPDFCotizacion(datos);else await generarWordCotizacion(datos);
+  registrarEventoSistema(LEAD_ACTUAL.id, 'Cotización descargada ('+formato.toUpperCase()+').');
   toast('Cotización guardada y descargada');
 }
 on('btn-gc-agregar-servicio', 'click', () => { agregarFilaCotizacion(); });
@@ -783,10 +1167,16 @@ on('btn-gc-generar','click',async e=>{
   const btn=e.currentTarget;btn.disabled=true;
   try{
     if(EDITOR_MODO==='nuevo'){await guardarServicioNuevo(true);return;}
-    const respuesta=await api('/leads/'+LEAD_ACTUAL.id,{method:'PUT',body:JSON.stringify(recolectarPayloadFicha())});
-    LEAD_ACTUAL={...LEAD_ACTUAL,...await respuesta.json()};
+    // La primera cotización descargada es la señal de que ya se le envió una propuesta al
+    // cliente: el lead avanza de "Recolección de datos" a "Cotización enviada" sin que haya
+    // que arrastrar la tarjeta a mano.
+    const payload=recolectarPayloadFicha();
+    if(LEAD_ACTUAL.etapa===1)payload.etapa=2;
+    if(!await guardarLeadExistente(payload))return;
     FlujoCRM.marcarGuardado('overlay-ficha');
-    await descargarCotizacionActual();
+    // En una orden de servicio el documento que se entrega es la orden, no la cotización.
+    if(LEAD_ACTUAL.estatus==='ganado')await descargarOrdenServicioActual('Orden de servicio guardada y descargada');
+    else await descargarCotizacionActual();
   }catch(err){toast('No se pudo guardar o descargar: '+err.message);}finally{btn.disabled=false;}
 });
 
@@ -833,7 +1223,7 @@ on('btn-exportar-leads', 'click', async () => {
     { titulo: 'Dirección', valor: l => l.direccion || '' },
     { titulo: 'Canal', valor: l => l.canal_nombre || '' },
     { titulo: 'Servicio', valor: l => l.servicio_nombre || '' },
-    { titulo: 'Responsable', valor: l => l.responsable_nombre || '' },
+    { titulo: 'Atendido por', valor: l => l.responsable_nombre || '' },
     { titulo: 'Etapa', valor: l => l.etapa },
     { titulo: 'Estatus', valor: l => l.estatus },
     { titulo: 'Servicio cotizado o contratado', valor: l => l.estatus === 'ganado' ? 'Contratado' : 'Cotizado' },
@@ -957,18 +1347,6 @@ function renderServiciosCliente(servicios) {
   ServiciosTabla.render('fc-servicios', servicios, CLIENTE_ACTUAL.id, 'cliente');
 }
 
-async function cambiarEstatusServicio(leadId, estatus) {
-  try {
-    const body = { estatus, usuario: USUARIO_ACTUAL ? USUARIO_ACTUAL.nombre : null };
-    await api('/leads/' + leadId, { method: 'PUT', body: JSON.stringify(body) });
-    toast(estatus === 'ganado' ? 'Servicio contratado. El contacto ya aparece como cliente.' : estatus === 'perdido' ? 'Cotización no aceptada; conservada en el historial.' : 'Cotización reabierta');
-  } catch (err) {
-    toast('No se pudo cambiar el estatus: ' + err.message);
-    return;
-  }
-  try { await ServiciosTabla.refrescar(); } catch (err) { toast('Estatus guardado; recarga para actualizar las tablas.'); }
-}
-
 // Chips de la ficha de cliente, incluyendo la próxima recompra sugerida (si aplica) —
 // es la pieza que convierte a un cliente ya ganado en la siguiente oportunidad de venta.
 function metaClienteHTML(cliente) {
@@ -1037,18 +1415,23 @@ async function abrirFicha(id) {
   document.getElementById('ed-responsable').value = lead.responsable_id || '';
   document.getElementById('ed-valor').value = lead.valor != null ? lead.valor : '';
   document.getElementById('ed-fecha-servicio').value = lead.fecha_servicio || '';
+  document.getElementById('ed-fecha-cotizacion').value = lead.fecha_cotizacion || '';
+  document.getElementById('ed-incluye-vigencia').checked = lead.incluye_vigencia !== 0;
+  document.getElementById('ed-vigencia-hasta').value = lead.vigencia_hasta || '';
   document.getElementById('ed-notas').value = lead.notas_iniciales || '';
+  document.getElementById('ed-urgente').checked = !!lead.urgente;
+  document.getElementById('ed-equipo').value = lead.equipo || '';
+  document.getElementById('ed-operador').value = lead.operador || '';
+  document.getElementById('ed-observaciones').value = lead.observaciones || '';
+  document.getElementById('ed-encuesta-calificacion').value = lead.encuesta_calificacion ?? '';
+  document.getElementById('ed-encuesta-comentario').value = lead.encuesta_comentario || '';
   document.getElementById('ed-creado-por').textContent = lead.creado_por || '—';
   document.getElementById('ed-created-at').textContent = fechaCorta(lead.created_at) || '—';
   document.getElementById('ed-estatus-actual').textContent = lead.estatus || '—';
 
-  document.getElementById('btn-recomprar').style.display = lead.cliente_id ? 'inline-flex' : 'none';
 
   // Mostrar/ocultar botones según estatus actual
-  const esAbierto = lead.estatus === 'abierto';
-  document.getElementById('btn-convertir-cliente').style.display = esAbierto ? 'inline-flex' : 'none';
-  document.getElementById('btn-marcar-perdido').style.display = esAbierto ? 'inline-flex' : 'none';
-  document.getElementById('btn-reabrir').style.display = !esAbierto ? 'inline-flex' : 'none';
+  actualizarBotonesEstatusFicha(lead);
 
   actualizarPipeline();
 
@@ -1070,7 +1453,7 @@ async function cambiarEstatusLeadActual(estatus) {
     // acaba de escribir la cotización final y da clic en "Convertir a Cliente" sin guardar
     // primero, ese dato no se pierde.
     const body = { ...recolectarPayloadFicha(), estatus, usuario: USUARIO_ACTUAL ? USUARIO_ACTUAL.nombre : null };
-    await api('/leads/' + LEAD_ACTUAL.id, { method: 'PUT', body: JSON.stringify(body) });
+    if (!await guardarLeadExistente(body)) return;
     toast('Cotización ' + (estatus === 'ganado' ? 'cerrada como servicio' : estatus === 'perdido' ? 'descartada' : 'reabierta'));
     FlujoCRM.marcarGuardado('overlay-ficha');
     await abrirFicha(LEAD_ACTUAL.id);
@@ -1079,24 +1462,6 @@ async function cambiarEstatusLeadActual(estatus) {
     toast('No se pudo cambiar el estatus: ' + err.message);
   }
 }
-on('btn-convertir-cliente', 'click', () => {
-  if(!validarEditorCotizacion())return;sincronizarEditor();
-  if(!document.getElementById('ed-servicio').value){toast('Selecciona el servicio que se contratará');document.getElementById('ed-servicio').focus();return;}
-  if(!document.getElementById('ed-direccion').value.trim()){toast('Indica la ubicación del servicio');document.getElementById('ed-direccion').focus();return;}
-  if (!document.getElementById('ed-fecha-servicio').value) {
-    toast('Indica la fecha acordada del servicio antes de aceptar la cotización');
-    document.getElementById('ed-fecha-servicio').focus();
-    return;
-  }
-  // Un lead "ganado" sin cotización rompería los reportes de ingresos en Clientes —
-  // se exige antes de dejar pasar la conversión (el backend también lo valida).
-  if (document.getElementById('ed-valor').value === '') {
-    toast('Ingresa el costo del servicio antes de cerrar esta cotización como ganada');
-    document.getElementById('ed-valor').focus();
-    return;
-  }
-  cambiarEstatusLeadActual('ganado');
-});
 on('btn-marcar-perdido', 'click', () => cambiarEstatusLeadActual('perdido'));
 on('btn-reabrir', 'click', () => cambiarEstatusLeadActual('abierto'));
 
@@ -1105,9 +1470,80 @@ on('btn-cerrar-modal', 'click', () => {
   cargarLeads();
 });
 
+// Única fuente de verdad para mostrar/ocultar estos tres botones según el estatus del
+// lead. Antes esta misma regla vivía repetida en abrirFicha() y en refrescar(), y se
+// desincronizaron en cuanto una de las dos copias cambió sin tocar la otra. lead=null
+// significa "no hay ningún registro existente todavía" (formulario de servicio nuevo).
+function actualizarBotonesEstatusFicha(lead) {
+  const esAbierto = !!lead && lead.estatus === 'abierto';
+  document.getElementById('btn-marcar-perdido').style.display = esAbierto ? 'inline-flex' : 'none';
+  // Una orden directa/duplicada nunca fue cotización: no se puede "reabrir" ni descartar como tal.
+  document.getElementById('btn-reabrir').style.display = (lead && !esAbierto && lead.origen !== 'directo') ? 'inline-flex' : 'none';
+  // Solo las órdenes de servicio se duplican (servicio recurrente); las cotizaciones no.
+  document.getElementById('btn-recomprar').style.display = (lead && lead.estatus === 'ganado' && lead.cliente_id) ? 'inline-flex' : 'none';
+  document.getElementById('btn-generar-orden-servicio').hidden = !lead;
+}
+
+// Registra un evento de sistema en la bitácora sin interrumpir al usuario si falla
+// (nunca debe bloquear una descarga o un guardado por un problema de red al loguear).
+async function registrarEventoSistema(leadId, texto) {
+  try {
+    await api('/leads/' + leadId + '/historial', { method: 'POST', body: JSON.stringify({ tipo: 'observacion', texto, origen: 'sistema' }) });
+    if (LEAD_ACTUAL?.id === leadId) {
+      const lead = await api('/leads/' + leadId).then(r => r.json());
+      if (LEAD_ACTUAL?.id === leadId) { LEAD_ACTUAL = lead; renderBitacora(lead); }
+    }
+  } catch (err) { /* no interrumpir el flujo principal por esto */ }
+}
+
 function renderFichaMeta(lead) {
   document.getElementById('ficha-meta').innerHTML = '<span class="chip">Registro: <b>#'+lead.id+'</b></span><span class="chip">Estado: <b>'+FlujoCRM.estado(lead.estatus)+'</b></span><span class="chip">Creado: <b>'+fechaCorta(lead.created_at)+'</b></span>';
+  renderBitacora(lead);
 }
+
+// Bitácora de actividad: combina, en un solo timeline cronológico, los eventos que el
+// propio sistema registra automáticamente (origen 'sistema': creación, cambios de
+// estatus) con las observaciones y alertas que escribe el equipo (origen 'manual').
+// Mismo patrón que el "activity timeline" de CRMs como HubSpot o Pipedrive.
+function iconoBitacora(item) {
+  if (item.origen === 'sistema') return { clase: 'sistema', icono: '⚙️' };
+  if (item.tipo === 'alerta') return item.resuelta ? { clase: 'alerta-resuelta', icono: '✅' } : { clase: 'alerta-pendiente', icono: '⏰' };
+  return { clase: 'nota', icono: '📝' };
+}
+function renderBitacora(lead) {
+  const cont = document.getElementById('bitacora-lista');
+  const items = lead.historial || [];
+  if (!items.length) { cont.innerHTML = '<p class="bitacora-vacio">Sin actividad registrada todavía.</p>'; return; }
+  cont.innerHTML = items.map(item => {
+    const { clase, icono } = iconoBitacora(item);
+    const meta = item.tipo === 'alerta'
+      ? `Para: ${fechaCorta(item.fecha_alerta)}${item.resuelta ? ' · Resuelta' : ' · Pendiente'}`
+      : fechaCorta(item.created_at);
+    const accion = (item.tipo === 'alerta' && !item.resuelta)
+      ? `<button class="btn btn-outline" data-resolver-obs="${item.id}">Resuelta</button>`
+      : '';
+    return `<div class="bitacora-item ${clase}">
+      <div class="bitacora-icono">${icono}</div>
+      <div class="bitacora-texto">${escaparHtml(item.texto)}<div class="bitacora-meta">${meta}${item.usuario ? ' · ' + escaparHtml(item.usuario) : ''}</div></div>
+      ${accion}
+    </div>`;
+  }).join('');
+}
+document.getElementById('bitacora-lista').addEventListener('click', async e => {
+  const btn = e.target.closest('[data-resolver-obs]');
+  if (!btn || !LEAD_ACTUAL) return;
+  btn.disabled = true;
+  try {
+    await api('/historial/' + btn.dataset.resolverObs + '/resolver', { method: 'PUT' });
+    const lead = await api('/leads/' + LEAD_ACTUAL.id).then(r => r.json());
+    LEAD_ACTUAL = lead;
+    renderBitacora(lead);
+    toast('Marcada como resuelta');
+  } catch (err) {
+    toast('No se pudo resolver: ' + err.message);
+    btn.disabled = false;
+  }
+});
 
 // Pipeline visual clickeable
 function actualizarPipeline() {
@@ -1119,48 +1555,73 @@ function actualizarPipeline() {
 
 document.querySelectorAll('.pipeline-step').forEach(btn => {
   btn.addEventListener('click', async () => {
+    const etapaAnterior = LEAD_ACTUAL.etapa;
     ETAPA_FICHA = Number(btn.dataset.step);
     actualizarPipeline();
     try {
-      await api('/leads/' + LEAD_ACTUAL.id, { method: 'PUT', body: JSON.stringify({ etapa: ETAPA_FICHA, usuario: 'Web' }) });
+      if (!await guardarLeadExistente({ etapa: ETAPA_FICHA, usuario: 'Web' })) {
+        ETAPA_FICHA = etapaAnterior;
+        actualizarPipeline();
+        return;
+      }
       toast('Etapa actualizada: ' + NOMBRE_ETAPA[ETAPA_FICHA]);
-      const lead = await api('/leads/' + LEAD_ACTUAL.id).then(r => r.json());
-      LEAD_ACTUAL = lead;
-
       cargarLeads();
     } catch (err) {
       toast('No se pudo cambiar de etapa: ' + err.message);
-      ETAPA_FICHA = LEAD_ACTUAL.etapa;
+      ETAPA_FICHA = etapaAnterior;
       actualizarPipeline();
     }
   });
 });
+
+// Guarda los cambios de la cotización/servicio en la ficha. Es la ÚNICA puerta de guardado
+// para los botones que modifican el registro: si el servidor lo rechaza (por ejemplo,
+// porque otra persona lo actualizó mientras estaba abierto) muestra el aviso y devuelve
+// null, para que ningún botón siga adelante como si todo hubiera salido bien.
+async function guardarLeadExistente(payload) {
+  const res = await api('/leads/' + LEAD_ACTUAL.id, { method: 'PUT', body: JSON.stringify(payload) });
+  const datos = await res.json();
+  if (!res.ok) { toast(datos.error || 'No se pudo guardar el registro'); return null; }
+  LEAD_ACTUAL = { ...LEAD_ACTUAL, ...datos };
+  return datos;
+}
 
 function recolectarPayloadFicha() {
   sincronizarEditor();
   const valorRaw = document.getElementById('ed-valor').value;
   return {
     partidas_json: JSON.stringify(recolectarItemsCotizacion()),
+    version: LEAD_ACTUAL?.version,
     direccion: document.getElementById('ed-direccion').value.trim(),
     canal_id: document.getElementById('ed-canal').value || null,
     servicio_id: document.getElementById('ed-servicio').value || null,
     responsable_id: document.getElementById('ed-responsable').value || null,
     valor: valorRaw === '' ? null : Number(valorRaw),
     fecha_servicio: document.getElementById('ed-fecha-servicio').value || null,
-    notas_iniciales: document.getElementById('ed-notas').value.trim() || null
+    fecha_cotizacion: document.getElementById('ed-fecha-cotizacion').value || null,
+    incluye_vigencia: document.getElementById('ed-incluye-vigencia').checked,
+    vigencia_hasta: document.getElementById('ed-incluye-vigencia').checked ? (document.getElementById('ed-vigencia-hasta').value || null) : null,
+    notas_iniciales: document.getElementById('ed-notas').value.trim() || null,
+    urgente: document.getElementById('ed-urgente').checked,
+    equipo: document.getElementById('ed-equipo').value.trim(),
+    operador: document.getElementById('ed-operador').value.trim(),
+    observaciones: document.getElementById('ed-observaciones').value.trim(),
+    encuesta_calificacion: document.getElementById('ed-encuesta-calificacion').value || null,
+    encuesta_comentario: document.getElementById('ed-encuesta-comentario').value.trim() || null
   };
 }
 on('btn-guardar-ficha', 'click', async () => {
   if(!validarEditorCotizacion())return;
+  const calificacionAntes = LEAD_ACTUAL.encuesta_calificacion ?? '';
+  const calificacionNueva = document.getElementById('ed-encuesta-calificacion').value;
   try {
-    const res = await api('/leads/' + LEAD_ACTUAL.id, { method: 'PUT', body: JSON.stringify(recolectarPayloadFicha()) });
-    if (res.status === 409) {
-      const data = await res.json();
-      toast(data.error || 'Ese teléfono ya pertenece a otro cliente');
-      return;
-    }
+    if (!await guardarLeadExistente(recolectarPayloadFicha())) return;
     toast('Cambios guardados en este registro');
     FlujoCRM.marcarGuardado('overlay-ficha');
+    if (String(calificacionAntes) !== String(calificacionNueva) && calificacionNueva) {
+      const etiqueta = {4:'Excelente',3:'Bueno',2:'Regular',1:'Malo'}[Number(calificacionNueva)];
+      await registrarEventoSistema(LEAD_ACTUAL.id, 'Encuesta de calidad registrada: ' + etiqueta + '.');
+    }
     const lead = await api('/leads/' + LEAD_ACTUAL.id).then(r => r.json());
     LEAD_ACTUAL = lead;
     renderFichaMeta(lead);
@@ -1170,7 +1631,7 @@ on('btn-guardar-ficha', 'click', async () => {
   }
 });
 
-on('btn-recomprar', 'click', () => FlujoCRM.nuevoRegistro(LEAD_ACTUAL.cliente_id, 'directo'));
+on('btn-recomprar', 'click', () => duplicarRegistro(LEAD_ACTUAL.id));
 
 
 on('btn-eliminar-lead', 'click', async () => {
@@ -1179,6 +1640,15 @@ on('btn-eliminar-lead', 'click', async () => {
   catch (err) { toast('No se pudo eliminar: ' + err.message); }
 });
 
+on('ed-incluye-vigencia', 'change', e => {
+  document.getElementById('wrap-vigencia-hasta').hidden = !e.target.checked;
+  const campoFecha = document.getElementById('ed-vigencia-hasta');
+  if (e.target.checked && !campoFecha.value) {
+    const sugerida = new Date();
+    sugerida.setDate(sugerida.getDate() + 15);
+    campoFecha.value = sugerida.toISOString().slice(0, 10);
+  }
+});
 on('obs-es-alerta', 'change', e => {
   document.getElementById('obs-fecha').classList.toggle('show', e.target.checked);
   document.getElementById('obs-fecha-rapida').classList.toggle('show', e.target.checked);
@@ -1221,8 +1691,10 @@ on('btn-agregar-obs', 'click', async () => {
   document.getElementById('obs-texto').value = '';
   document.getElementById('obs-es-alerta').checked = false;
   document.getElementById('obs-fecha').classList.remove('show');
+  document.getElementById('obs-fecha-rapida').classList.remove('show');
   const lead = await api('/leads/' + LEAD_ACTUAL.id).then(r => r.json());
   LEAD_ACTUAL = lead;
+  renderBitacora(lead);
 
   toast(esAlerta ? 'Recordatorio agregado' : 'Observación agregada');
 });
@@ -1269,7 +1741,7 @@ function filaRecompra(r, vencido) {
       </div>
       <div class="util-46">
         <button class="btn btn-outline" onclick="abrirFichaCliente(${r.cliente_id})">Ver cliente</button>
-        <button class="btn btn-primario" onclick='recontactarRecompra(${r.cliente_id},"${encodeURIComponent(r.telefono || '')}","${encodeURIComponent(r.nombre || '')}","${encodeURIComponent(r.empresa_contacto || '')}","${encodeURIComponent(r.direccion || '')}",${r.servicio_id},${r.ultimo_valor == null ? 'null' : r.ultimo_valor})'>➕ Registrar servicio nuevo</button>
+        <button class="btn btn-primario" onclick="duplicarRegistro(${r.ultimo_lead_id})">➕ Registrar servicio nuevo</button>
       </div>
     </div>`;
 }
@@ -1280,7 +1752,7 @@ function filaAlerta(r) {
         <span class="tipo-tag alerta">⏰ Alerta</span>
         <div><b>${r.lead_nombre || 'Sin nombre'} · ${r.telefono}</b></div>
         <div class="txt">${r.texto}</div>
-        <div class="fecha">Para: ${fechaCorta(r.fecha_alerta)} · Responsable: ${r.responsable_nombre || '—'}</div>
+        <div class="fecha">Para: ${fechaCorta(r.fecha_alerta)} · Responsable: ${escaparHtml(r.responsable_nombre || '—')}</div>
       </div>
       <div class="util-46">
         <button class="btn btn-outline" onclick="abrirFicha(${r.lead_id})">Ver ficha</button>
@@ -1288,8 +1760,32 @@ function filaAlerta(r) {
       </div>
     </div>`;
 }
-async function recontactarRecompra(id, telefono, nombre, empresa_contacto, direccion, servicio_id, ultimo_valor) {
-  await FlujoCRM.nuevoRegistro(id, 'directo');
+async function duplicarRegistro(leadId) {
+  try {
+    const lead = await api('/leads/' + leadId).then(r => r.json());
+    if (!lead.cliente_id) { toast('Este registro no tiene un cliente asociado; no se puede duplicar.'); return; }
+    if (lead.estatus !== 'ganado') { toast('Solo puedes duplicar órdenes de servicio ya contratadas.'); return; }
+    const ok = await solicitarDialogo({
+      titulo: 'Duplicar orden de servicio',
+      mensaje: `Se abrirá una nueva orden de servicio para ${lead.nombre || lead.telefono}, copiando ${folioOrdenServicio(lead)} (servicio, importe, dirección y notas) — pensado para clientes con servicio recurrente. No se crea ninguna cotización; solo falta indicar la nueva fecha acordada antes de guardarla.`,
+      aceptar: 'Duplicar'
+    });
+    if (!ok) return;
+    await FlujoCRM.nuevoRegistro(lead.cliente_id, 'directo', {
+      direccion: lead.direccion,
+      partidas_json: lead.partidas_json,
+      servicio_nombre: lead.servicio_nombre,
+      valor: lead.valor,
+      notas_iniciales: lead.notas_iniciales,
+      equipo: lead.equipo,
+      operador: lead.operador,
+      duplicado_de: lead.id,
+      folio: folioOrdenServicio(lead)
+    });
+    toast('Indica la nueva fecha de la orden y guarda');
+  } catch (err) {
+    toast('No se pudo duplicar: ' + err.message);
+  }
 }
 async function resolverAlertaGlobal(id) {
   await api('/historial/' + id + '/resolver', { method: 'PUT' });
@@ -1318,6 +1814,8 @@ on('form-login', 'submit', async e => {
   try {
     const usuario = await login(nombre, password);
     guardarSesion(usuario);
+    document.getElementById('login-password').value = '';
+    if (usuario.cambiar_password) { Cuentas.pedirCambioObligatorio(); return; }
     document.getElementById('overlay-login').classList.remove('mostrar');
     iniciarApp();
   } catch (err) {
@@ -1344,40 +1842,107 @@ on('btn-descargar-respaldo', 'click', async () => {
 
 function mostrarUsuarioEnHeader() {
   document.getElementById('sesion-nombre').textContent = USUARIO_ACTUAL.nombre;
+  document.body.classList.toggle('es-admin', USUARIO_ACTUAL.rol === 'admin');
   document.getElementById('nav-usuarios').style.display = USUARIO_ACTUAL.rol === 'admin' ? 'inline-block' : 'none';
 }
 
-// ---------- Gestión de usuarios ----------
-async function cargarUsuarios() {  const usuarios = await api('/usuarios').then(r => r.json());  const cont = document.getElementById('lista-usuarios');  cont.innerHTML = usuarios.map(u => `    <div class="servicio-row util-47">      <div class="info"><div class="tit">${u.nombre}</div><div class="sub">${u.rol}</div></div>      <div class="actions">        <button class="btn btn-peligro" onclick="eliminarUsuario(${u.id}, '${u.nombre.replace(/'/g, "&#39;")}')"           ${u.rol === 'admin' && usuarios.filter(x=>x.rol==='admin').length===1 ? 'disabled title="Último admin"' : ''}>          Eliminar        </button>      </div>    </div>  `).join('');}async function eliminarUsuario(id, nombre) {  const confirmado = await solicitarDialogo({    titulo: 'Eliminar usuario',    aceptar: 'Eliminar',    mensaje: `¿Eliminar al usuario "${nombre}"?\n\nSus leads históricos se conservarán, pero ya no podrá iniciar sesión.`  });  if (!confirmado) return;  try {    await api('/usuarios/' + id, { method: 'DELETE', body: JSON.stringify({ solicitante_id: USUARIO_ACTUAL.id }) });    toast('Usuario eliminado');    cargarUsuarios();    cargarCatalogos(); /* Actualiza selects de responsables */  } catch (err) {    toast('No se pudo eliminar: ' + err.message);  }}
+// ---------- Gestión de usuarios (solo admin) ----------
+const ROLES = ['admin', 'ventas', 'atencion', 'tecnico'];
+async function cargarUsuarios() {
+  const usuarios = await api('/usuarios').then(r => r.json());
+  const admins = usuarios.filter(x => x.rol === 'admin').length;
+  document.getElementById('lista-usuarios').innerHTML = usuarios.map(u => {
+    const id = Number(u.id), propio = id === USUARIO_ACTUAL.id;
+    return `<div class="servicio-row fila-usuario" data-usuario="${id}">
+      <div><label for="usr-nombre-${id}">Nombre${propio ? ' (tú)' : ''}</label><input id="usr-nombre-${id}" value="${escaparHtml(u.nombre)}" maxlength="60"></div>
+      <div><label for="usr-correo-${id}">Correo${u.correo && !u.correo_verificado ? ' · sin confirmar' : ''}</label><input id="usr-correo-${id}" type="email" value="${escaparHtml(u.correo || '')}" placeholder="nombre@saneadren.com.mx" maxlength="254"></div>
+      <div><label for="usr-rol-${id}">Rol</label><select id="usr-rol-${id}" ${u.rol === 'admin' && admins === 1 ? 'disabled title="Debe quedar al menos un administrador"' : ''}>${ROLES.map(r => `<option value="${r}" ${r === u.rol ? 'selected' : ''}>${r}</option>`).join('')}</select></div>
+      <div class="acciones-catalogo">
+        <button type="button" class="btn btn-secundario" data-accion="guardar">Guardar</button>
+        <button type="button" class="btn btn-outline" data-accion="password">Nueva contraseña</button>
+        <button type="button" class="btn btn-peligro" data-accion="desactivar" ${propio || (u.rol === 'admin' && admins === 1) ? 'disabled title="No disponible para esta cuenta"' : ''}>Desactivar</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+on('lista-usuarios', 'click', async e => {
+  const btn = e.target.closest('[data-accion]'); if (!btn) return;
+  const fila = btn.closest('[data-usuario]'), id = Number(fila.dataset.usuario);
+  const nombre = document.getElementById('usr-nombre-' + id).value.trim();
+  btn.disabled = true;
+  try {
+    if (btn.dataset.accion === 'guardar') {
+      await api('/usuarios/' + id, { method: 'PUT', body: JSON.stringify({ nombre, correo: document.getElementById('usr-correo-' + id).value.trim() || null, rol: document.getElementById('usr-rol-' + id).value }) });
+      toast('Usuario actualizado');
+      if (id === USUARIO_ACTUAL.id) { guardarSesion({ ...USUARIO_ACTUAL, nombre }); mostrarUsuarioEnHeader(); }
+    } else if (btn.dataset.accion === 'password') {
+      const password = await solicitarDialogo({ titulo: 'Nueva contraseña para ' + nombre, mensaje: 'Mínimo 10 caracteres, con letras y números. Compártela por un medio privado: deberá cambiarla al iniciar sesión.', aceptar: 'Asignar', campo: { tipo: 'password' } });
+      if (!password) return;
+      await api('/usuarios/' + id + '/password', { method: 'POST', body: JSON.stringify({ password }) });
+      toast('Contraseña asignada; se cerraron sus sesiones abiertas');
+    } else if (btn.dataset.accion === 'desactivar') {
+      if (!await solicitarDialogo({ titulo: 'Desactivar usuario', aceptar: 'Desactivar', mensaje: `¿Desactivar a "${nombre}"?\n\nSus registros históricos se conservan, pero ya no podrá iniciar sesión.` })) return;
+      await api('/usuarios/' + id, { method: 'DELETE' });
+      toast('Usuario desactivado');
+    }
+    await cargarUsuarios();
+    cargarCatalogos();
+  } catch (err) { toast('No se pudo completar: ' + err.message); }
+  finally { btn.disabled = false; }
+});
+// Mueve un elemento de una lista y guarda el nuevo orden en el servidor.
+async function moverEnCatalogo(ruta, ids, id, delta) {
+  const i = ids.indexOf(id), j = i + delta;
+  if (i < 0 || j < 0 || j >= ids.length) return false;
+  [ids[i], ids[j]] = [ids[j], ids[i]];
+  await api(ruta, { method: 'PUT', body: JSON.stringify({ ids }) });
+  return true;
+}
+let IDS_SERVICIOS = [];
 async function cargarCatalogoServicios() {
   const cont = document.getElementById('lista-servicios-catalogo');
   if (!cont) return;
   const servicios = await api('/servicios').then(r => r.json());
-  cont.innerHTML = servicios.map(s => `
-    <div class="servicio-row util-47">
+  IDS_SERVICIOS = servicios.map(s => s.id);
+  const admin = USUARIO_ACTUAL.rol === 'admin';
+  cont.innerHTML = servicios.map((s, i) => `
+    <div class="servicio-row fila-catalogo" data-servicio="${Number(s.id)}">
+      <div class="orden-btns"><button type="button" class="btn btn-outline" data-mover="-1" ${i === 0 ? 'disabled' : ''} aria-label="Subir ${escaparHtml(s.nombre)}">↑</button><button type="button" class="btn btn-outline" data-mover="1" ${i === servicios.length - 1 ? 'disabled' : ''} aria-label="Bajar ${escaparHtml(s.nombre)}">↓</button></div>
       <div class="info"><div class="tit">${escaparHtml(s.nombre)}</div><label for="desc-${s.id}">Descripción predeterminada para cotizaciones</label><textarea id="desc-${s.id}" rows="3" maxlength="10000" placeholder="Descripción que se precargará al elegir este servicio">${escaparHtml(s.descripcion || '')}</textarea></div>
-      <div class="actions diseno-overlay-login">
-        <input class="util-48" type="number" min="1" step="1" placeholder="Sin recompra" value="${s.dias_recurrencia != null ? s.dias_recurrencia : ''}"
-          id="rec-${s.id}">
-        <span class="util-49">días</span>
-        <button class="btn btn-secundario" onclick="guardarRecurrenciaServicio(${s.id})">Guardar</button>
+      <div class="acciones-catalogo">
+        <span class="solo-admin"><input class="util-48" type="number" min="1" step="1" placeholder="Sin recompra" value="${s.dias_recurrencia != null ? s.dias_recurrencia : ''}" id="rec-${s.id}" aria-label="Recompra cada (días)"> <span class="util-49">días</span></span>
+        <button type="button" class="btn btn-secundario" data-guardar>Guardar</button>
+        ${admin ? '<button type="button" class="btn btn-peligro" data-eliminar>Eliminar</button>' : ''}
       </div>
-    </div>
-  `).join('');
+    </div>`).join('');
 }
-async function guardarRecurrenciaServicio(id) {
-  const valor = document.getElementById('rec-' + id).value;
+on('lista-servicios-catalogo', 'click', async e => {
+  const fila = e.target.closest('[data-servicio]'); if (!fila) return;
+  const id = Number(fila.dataset.servicio);
+  const btn = e.target.closest('button'); if (!btn) return;
+  btn.disabled = true;
   try {
-    await api('/servicios/' + id, {
-      method: 'PUT',
-      body: JSON.stringify({ dias_recurrencia: valor === '' ? null : Number(valor), descripcion: document.getElementById('desc-' + id).value, solicitante_id: USUARIO_ACTUAL.id })
-    });
-    toast('Descripción y recurrencia guardadas');
-    cargarCatalogos();
-  } catch (err) {
-    toast('No se pudo guardar: ' + err.message);
-  }
-}
+    if (btn.dataset.mover) {
+      if (await moverEnCatalogo('/servicios/orden', [...IDS_SERVICIOS], id, Number(btn.dataset.mover))) { await cargarCatalogoServicios(); cargarCatalogos(); }
+      return;
+    }
+    if (btn.hasAttribute('data-guardar')) {
+      const cuerpo = { descripcion: document.getElementById('desc-' + id).value };
+      if (USUARIO_ACTUAL.rol === 'admin') { const v = document.getElementById('rec-' + id).value; cuerpo.dias_recurrencia = v === '' ? null : Number(v); }
+      await api('/servicios/' + id, { method: 'PUT', body: JSON.stringify(cuerpo) });
+      toast('Servicio guardado');
+      cargarCatalogos();
+    }
+    if (btn.hasAttribute('data-eliminar')) {
+      const nombre = fila.querySelector('.tit').textContent;
+      if (!await solicitarDialogo({ titulo: 'Eliminar servicio', aceptar: 'Eliminar', mensaje: `¿Eliminar "${nombre}" del catálogo?\n\nLas cotizaciones y órdenes que ya lo usan lo conservan; solo dejará de aparecer para registros nuevos.` })) return;
+      await api('/servicios/' + id, { method: 'DELETE' });
+      toast('Servicio eliminado del catálogo');
+      await cargarCatalogoServicios(); cargarCatalogos();
+    }
+  } catch (err) { toast('No se pudo guardar: ' + err.message); }
+  finally { btn.disabled = false; }
+});
 
 on('btn-crear-servicio', 'click', async () => {
   const nombre = document.getElementById('ns-nombre').value.trim();
@@ -1386,7 +1951,7 @@ on('btn-crear-servicio', 'click', async () => {
   try {
     const res = await api('/servicios', {
       method: 'POST',
-      body: JSON.stringify({ nombre, descripcion: document.getElementById('ns-descripcion').value, dias_recurrencia: dias === '' ? null : Number(dias), solicitante_id: USUARIO_ACTUAL.id })
+      body: JSON.stringify({ nombre, descripcion: document.getElementById('ns-descripcion').value, dias_recurrencia: dias === '' ? null : Number(dias) })
     });
     if (res.status === 409) {
       const data = await res.json();
@@ -1404,16 +1969,36 @@ on('btn-crear-servicio', 'click', async () => {
   }
 });
 
+let IDS_CANALES = [];
 async function cargarCanalesCatalogo() {
   const cont = document.getElementById('lista-canales-catalogo');
   if (!cont) return;
   const canales = await api('/canales').then(r => r.json());
-  cont.innerHTML = canales.map(c => `
-    <div class="servicio-row util-47">
-      <div class="info"><div class="tit">${c.nombre}</div></div>
-    </div>
-  `).join('');
+  IDS_CANALES = canales.map(c => c.id);
+  cont.innerHTML = canales.map((c, i) => `
+    <div class="servicio-row fila-catalogo" data-canal="${Number(c.id)}">
+      <div class="orden-btns"><button type="button" class="btn btn-outline" data-mover="-1" ${i === 0 ? 'disabled' : ''} aria-label="Subir ${escaparHtml(c.nombre)}">↑</button><button type="button" class="btn btn-outline" data-mover="1" ${i === canales.length - 1 ? 'disabled' : ''} aria-label="Bajar ${escaparHtml(c.nombre)}">↓</button></div>
+      <div class="info"><label for="canal-${Number(c.id)}">Nombre del canal</label><input id="canal-${Number(c.id)}" value="${escaparHtml(c.nombre)}" maxlength="80"></div>
+      <div class="acciones-catalogo"><button type="button" class="btn btn-secundario" data-guardar>Guardar nombre</button></div>
+    </div>`).join('');
 }
+on('lista-canales-catalogo', 'click', async e => {
+  const fila = e.target.closest('[data-canal]'); const btn = e.target.closest('button');
+  if (!fila || !btn) return;
+  const id = Number(fila.dataset.canal);
+  btn.disabled = true;
+  try {
+    if (btn.dataset.mover) {
+      if (await moverEnCatalogo('/canales/orden', [...IDS_CANALES], id, Number(btn.dataset.mover))) { await cargarCanalesCatalogo(); cargarCatalogos(); }
+    } else {
+      const r = await api('/canales/' + id, { method: 'PUT', body: JSON.stringify({ nombre: document.getElementById('canal-' + id).value }) });
+      if (r.status === 409) throw new Error((await r.json()).error);
+      toast('Canal actualizado; los contactos conservan su canal');
+      cargarCatalogos();
+    }
+  } catch (err) { toast('No se pudo guardar: ' + err.message); }
+  finally { btn.disabled = false; }
+});
 
 on('btn-crear-canal', 'click', async () => {
   const nombre = document.getElementById('nc-nombre').value.trim();
@@ -1421,7 +2006,7 @@ on('btn-crear-canal', 'click', async () => {
   try {
     const res = await api('/canales', {
       method: 'POST',
-      body: JSON.stringify({ nombre, solicitante_id: USUARIO_ACTUAL.id })
+      body: JSON.stringify({ nombre })
     });
     if (res.status === 409) {
       const data = await res.json();
@@ -1441,12 +2026,13 @@ on('btn-crear-usuario', 'click', async () => {
   const nombre = document.getElementById('nu-nombre').value.trim();
   const password = document.getElementById('nu-password').value;
   const rol = document.getElementById('nu-rol').value;
+  const correo = document.getElementById('nu-correo').value.trim();
   if (!nombre) { toast('Escribe un nombre'); return; }
-  if (!password || password.length < 4) { toast('La contraseña debe tener al menos 4 caracteres'); return; }
+  if (!password || password.length < 10) { toast('La contraseña debe tener al menos 10 caracteres, con letras y números'); return; }
   try {
     const res = await api('/usuarios', {
       method: 'POST',
-      body: JSON.stringify({ nombre, password, rol, solicitante_id: USUARIO_ACTUAL.id })
+      body: JSON.stringify({ nombre, password, rol, correo: correo || null })
     });
     if (res.status === 409) {
       const data = await res.json();
@@ -1456,6 +2042,7 @@ on('btn-crear-usuario', 'click', async () => {
     toast('Usuario creado correctamente');
     document.getElementById('nu-nombre').value = '';
     document.getElementById('nu-password').value = '';
+    document.getElementById('nu-correo').value = '';
     cargarUsuarios();
     cargarCatalogos();
   } catch (err) {
@@ -1468,11 +2055,14 @@ async function iniciarApp() {
   mostrarUsuarioEnHeader();
   await cargarCatalogos();
   await cargarLeads();
+  await cargarInicio();
   actualizarBadgePendientes();
   setInterval(actualizarBadgePendientes, 60000);
 }
 cargarSesion();
-if (USUARIO_ACTUAL) {
+if (Cuentas.atenderEnlace()) {
+  // Se abrió desde un enlace de correo (confirmar cuenta / restablecer contraseña).
+} else if (USUARIO_ACTUAL) {
   iniciarApp();
 } else {
   abrirVentana('overlay-login');

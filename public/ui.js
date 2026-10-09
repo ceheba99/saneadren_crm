@@ -3,18 +3,24 @@
   const layer = document.createElement('div');
   layer.className = 'overlay';
   layer.id = 'overlay-confirmacion';
-  layer.innerHTML = `<div class="modal dialogo-confirmacion"><div class="modal-header"><h2 id="dialogo-titulo"></h2><button class="close-btn" type="button" aria-label="Cerrar ventana">✕</button></div><div class="modal-body dialogo-contenido"><p class="dialogo-mensaje" id="dialogo-mensaje"></p><div class="dialogo-acciones"><button class="btn btn-secundario" id="dialogo-cancelar">Cancelar</button><button class="btn btn-peligro" id="dialogo-aceptar"></button></div></div></div>`;
+  layer.innerHTML = `<div class="modal dialogo-confirmacion"><div class="modal-header"><h2 id="dialogo-titulo"></h2><button class="close-btn" type="button" aria-label="Cerrar ventana">✕</button></div><div class="modal-body dialogo-contenido"><p class="dialogo-mensaje" id="dialogo-mensaje"></p><div class="campo" id="dialogo-campo-wrap" hidden><label for="dialogo-campo">Valor</label><input id="dialogo-campo" autocomplete="new-password" maxlength="128"></div><div class="dialogo-acciones"><button class="btn btn-secundario" id="dialogo-cancelar">Cancelar</button><button class="btn btn-peligro" id="dialogo-aceptar"></button></div></div></div>`;
   document.body.append(layer);
   let resolver = null;
   const finish = value => { layer.classList.remove('mostrar'); const done = resolver; resolver = null; if(done) done(value); };
   layer.querySelector('.close-btn').onclick = () => finish(null);
   document.getElementById('dialogo-cancelar').onclick = () => finish(null);
-  window.solicitarDialogo = ({titulo,mensaje,aceptar='Confirmar'}) => {
+  // Con `campo` el diálogo pide un dato (p. ej. { tipo: 'password' }) y resuelve con lo escrito.
+  window.solicitarDialogo = ({titulo,mensaje,aceptar='Confirmar',campo=null}) => {
     if(resolver) return Promise.resolve(null);
     document.getElementById('dialogo-titulo').textContent = titulo;
     document.getElementById('dialogo-mensaje').textContent = mensaje;
     document.getElementById('dialogo-aceptar').textContent = aceptar;
-    document.getElementById('dialogo-aceptar').onclick = () => finish(true);
+    const wrap = document.getElementById('dialogo-campo-wrap'), input = document.getElementById('dialogo-campo');
+    wrap.hidden = !campo; input.value = ''; input.type = campo?.tipo || 'text';
+    wrap.querySelector('label').textContent = campo?.etiqueta || (campo?.tipo === 'password' ? 'Contraseña' : 'Valor');
+    document.getElementById('dialogo-aceptar').onclick = () => finish(campo ? (input.value || null) : true);
+    input.onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); document.getElementById('dialogo-aceptar').click(); } };
+    if (campo) setTimeout(() => input.focus(), 0);
     layer.classList.add('mostrar');
     return new Promise(resolve => { resolver = resolve; });
   };

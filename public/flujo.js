@@ -4,9 +4,9 @@ const FlujoCRM = (() => {
   const baselines = new Map();
   const listasGuardadas = new Map();
   const campos = {
-    'overlay-ficha':'#gc-items input,#gc-items select,#gc-items textarea,#ed-direccion,#ed-canal,#ed-servicio,#ed-responsable,#ed-valor,#ed-fecha-servicio,#ed-notas',
+    'overlay-ficha':'#gc-items input,#gc-items select,#gc-items textarea,#ed-direccion,#ed-canal,#ed-servicio,#ed-responsable,#ed-valor,#ed-fecha-servicio,#ed-fecha-cotizacion,#ed-incluye-vigencia,#ed-vigencia-hasta,#ed-notas,#ed-urgente,#ed-encuesta-calificacion,#ed-encuesta-comentario,#ed-equipo,#ed-operador,#ed-observaciones',
     'overlay-ficha-cliente':'#fc-ed-telefono,#fc-ed-telefono-alterno,#fc-ed-nombre,#fc-ed-correo,#fc-ed-empresa,#fc-ed-rfc,#fc-ed-direccion,#fc-ed-giro,#fc-ed-notas-generales',
-    'overlay-servicio-nuevo':'#gc-items input,#gc-items select,#gc-items textarea,#sn-servicio,#sn-valor,#sn-fecha,#sn-notas,#sn-ubicacion',
+    'overlay-servicio-nuevo':'#gc-items input,#gc-items select,#gc-items textarea,#sn-servicio,#sn-valor,#sn-fecha,#sn-notas,#sn-ubicacion,#sn-urgente,#sn-equipo,#sn-operador,#sn-observaciones',
 
   };
   const estado = s => ({abierto:'Cotización abierta',ganado:'Servicio contratado',perdido:'Cotización no aceptada'}[s]||s);
@@ -41,22 +41,36 @@ const FlujoCRM = (() => {
     const nombre=contratado?'servicio contratado':'cotización';
     const icono=contratado?'🟢':'🔵';
     $('registro-tipo').innerHTML=`<span class="tag-estatus ${escapar(lead.estatus)}">${icono} ${escapar(estado(lead.estatus))}</span> · EDITAR ${nombre.toUpperCase()} · REGISTRO EXISTENTE`;
-    $('ficha-titulo').textContent=`${contratado?'Servicio':'Cotización'} #${lead.id} · ${lead.servicio_nombre||'Servicio por definir'}`;
+    $('ficha-titulo').textContent=`${contratado?'Servicio':'Cotización'} ${contratado?folioOrdenServicio(lead):folioCotizacion(lead)} · ${lead.servicio_nombre||'Servicio por definir'}`;
+    // Una orden registrada directo o duplicada no tiene cotización detrás: no se muestra un folio COT inexistente.
+    const nodoOrden=`<span class="cadena-nodo activo">🧾 ${folioOrdenServicio(lead)}</span>`;
+    $('cadena-documentos').innerHTML=!contratado
+      ?`<span class="cadena-nodo activo">📄 ${folioCotizacion(lead)}</span>`
+      :lead.origen==='directo'
+        ?(lead.duplicado_de?`<span class="cadena-nodo pasado" title="Orden de servicio de la que se copió">🧾 Copia del registro #${Number(lead.duplicado_de)}</span><span class="cadena-flecha">→</span>`:'')+nodoOrden
+        :`<span class="cadena-nodo pasado" data-ver-cotizacion title="Ver la cotización de la que viene este servicio">📄 ${folioCotizacion(lead)}</span><span class="cadena-flecha">→</span>`+nodoOrden;
     $('registro-datos-titulo').textContent='Datos de este '+(contratado?'servicio':'registro de cotización');
     $('btn-guardar-ficha').textContent=contratado?'Guardar cambios del servicio':'Guardar cambios de la cotización';
     $('btn-eliminar-lead').textContent=contratado?'Eliminar este servicio':'Eliminar esta cotización';
     $('ed-estatus-actual').textContent=estado(lead.estatus);
     $('btn-generar-cotizacion').textContent='Exportar propuesta PDF / Word';
+    const btnOrden=$('btn-generar-orden-servicio');
+    if(btnOrden)btnOrden.textContent='Generar orden de servicio';
     $('ed-valor').closest('.campo-modal').querySelector('label').textContent=contratado?'Importe contratado (MXN)':'Importe propuesto (MXN)';
-    $('ed-fecha-servicio').closest('.campo-modal').querySelector('label').textContent=contratado?'Fecha acordada del servicio':'Fecha propuesta / acordada';
     $('ed-notas').closest('.campo-modal').querySelector('label').textContent=contratado?'Notas de este servicio':'Notas de esta cotización';
+    $('ed-fecha-cotizacion').closest('.campo-modal').hidden=contratado;
+    $('ed-incluye-vigencia').closest('.campo-modal').hidden=contratado;
+    $('wrap-vigencia-hasta').hidden=contratado || !$('ed-incluye-vigencia').checked;
     $('registro-etapas-titulo').closest('.modal-section').hidden=lead.estatus!=='abierto';
+    $('seccion-encuesta').hidden=!contratado;
+    rotularEditorContenido(contratado);
+    document.querySelectorAll('#overlay-ficha .solo-orden').forEach(e=>e.hidden=!contratado);
     const c=contacto||{id:lead.cliente_id,nombre:lead.nombre,telefono:lead.telefono,empresa_contacto:lead.empresa_contacto};
     $('registro-contacto').innerHTML=`<div><span class="flujo-kicker">CONTACTO ASOCIADO · SOLO CONSULTA</span><strong>${escapar(c.nombre||'Sin nombre')}</strong><span>${escapar(c.telefono||'')} ${c.empresa_contacto?'· '+escapar(c.empresa_contacto):''}</span></div>${c.id?`<button type="button" class="btn btn-outline" data-abrir-contacto="${Number(c.id)}">Ver / editar contacto #${Number(c.id)}</button>`:''}`;
   }
-  async function nuevoRegistro(id,modo){
+  async function nuevoRegistro(id,modo,prefill){
     if(!await permitirCambio('overlay-ficha') || !await permitirCambio('overlay-ficha-cliente') || !await permitirCambio('overlay-servicio-nuevo'))return;
-    try { CLIENTE_DUP=await api('/clientes/'+id).then(r=>r.json()); $('overlay-ficha').classList.remove('mostrar'); abrirServicioNuevo(modo); }
+    try { CLIENTE_DUP=await api('/clientes/'+id).then(r=>r.json()); $('overlay-ficha').classList.remove('mostrar'); abrirServicioNuevo(modo,prefill); }
     catch(err){toast('No se pudo abrir el contacto: '+err.message);}
   }
   document.addEventListener('click',e=>{if(e.target.closest('#btn-gc-agregar-servicio,.gc-quitar')){const id=e.target.closest('.overlay')?.id;if(campos[id])setTimeout(()=>actualizarAviso(id),0);}},true);

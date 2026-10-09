@@ -4,32 +4,19 @@ const fs = require('fs');
 const crypto = require('crypto');
 const { db, normalizarTelefono } = require('./db');
 
-// ---------- Contraseñas (hash + verificación) ----------
-// Antes las contraseñas se guardaban y comparaban en texto plano. Ahora se
-// almacenan como "salt:hash" usando scrypt. verificarPassword() sigue
-// aceptando contraseñas antiguas en texto plano (compatibilidad con datos
-// existentes) y, si el login es correcto, la re-guarda ya cifrada.
-function hashPassword(password) {
-  const salt = crypto.randomBytes(16).toString('hex');
-  const hash = crypto.scryptSync(password, salt, 64).toString('hex');
-  return `${salt}:${hash}`;
-}
-function verificarPassword(password, guardado) {
-  if (!guardado) return false;
-  if (guardado.includes(':')) {
-    const [salt, hash] = guardado.split(':');
-    const intento = crypto.scryptSync(password, salt, 64).toString('hex');
-    const bufGuardado = Buffer.from(hash, 'hex');
-    const bufIntento = Buffer.from(intento, 'hex');
-    if (bufGuardado.length !== bufIntento.length) return false;
-    return crypto.timingSafeEqual(bufGuardado, bufIntento);
-  }
-  // Contraseña heredada sin cifrar (p. ej. el '1234' de seed inicial)
-  return guardado === password;
-}
+const { problemaNombre, hashPassword, verificarPassword, problemaPassword, normalizarCorreo, correoPermitido, DOMINIO, encabezadosSeguridad } = require('./seguridad');
+const crearAlmacenSesiones = require('./sesiones');
+const PORT = process.env.PORT || 3210;
+// URL pública del CRM; se usa en los enlaces de los correos (nunca se toma del encabezado Host).
+const URL_BASE = (process.env.APP_URL || `http://localhost:${PORT}`).replace(/\/+$/, '');
 
 const app = express();
-app.use(express.json());
+// Detrás de un proxy (Nginx, Cloudflare, etc.) define TRUST_PROXY=1 para que req.ip sea la IP real
+// del cliente; sin proxy NO se activa, porque cualquiera podría falsificar X-Forwarded-For.
+if (process.env.TRUST_PROXY) app.set('trust proxy', Number(process.env.TRUST_PROXY) || process.env.TRUST_PROXY);
+app.disable('x-powered-by');
+app.use(encabezadosSeguridad);
+app.use(express.json({ limit: '1mb' }));
 app.use(express.static(path.join(__dirname, '..', 'public')));
 
 // ---------- Sesiones (token) ----------
@@ -39,7 +26,9 @@ app.use(express.static(path.join(__dirname, '..', 'public')));
 // en cada petición (vía encabezado Authorization), y las rutas leen req.usuarioSesion en vez de creer
 // cualquier id que venga en el body.
 const SESSION_TTL_MS = 12 * 60 * 60 * 1000; // 12 horas de inactividad
-const sesiones = new Map(); // token -> { usuarioId, expira }
+// Se guardan en la base (solo el hash SHA-256 del token): sobreviven a reinicios del servidor y
+// se pueden revocar todas las de un usuario (al cambiar contraseña o desactivarlo).
+const sesiones = crearAlmacenSesiones(db);
 function crearSesion(usuarioId) {
   const token = crypto.randomBytes(32).toString('hex');
   sesiones.set(token, { usuarioId, expira: Date.now() + SESSION_TTL_MS });
@@ -53,9 +42,13 @@ function requireAuth(req, res, next) {
     if (sesion) sesiones.delete(token);
     return res.status(401).json({ error: 'Sesión inválida o expirada. Inicia sesión de nuevo.' });
   }
-  const usuario = db.prepare('SELECT id, nombre, rol FROM usuarios WHERE id = ? AND activo = 1').get(sesion.usuarioId);
+  const usuario = db.prepare('SELECT id, nombre, rol, debe_cambiar_password FROM usuarios WHERE id = ? AND activo = 1').get(sesion.usuarioId);
   if (!usuario) { sesiones.delete(token); return res.status(401).json({ error: 'Usuario no válido' }); }
-  sesion.expira = Date.now() + SESSION_TTL_MS; // renueva la sesión mientras siga activo
+  // Renueva la sesión mientras siga activa (se escribe como máximo una vez por minuto).
+  if (sesion.expira - Date.now() < SESSION_TTL_MS - 60000) sesiones.set(token, { usuarioId: sesion.usuarioId, expira: Date.now() + SESSION_TTL_MS });
+  if (usuario.debe_cambiar_password && !['/cambiar-password', '/logout'].includes(req.path)) {
+    return res.status(403).json({ error: 'Debes cambiar tu contraseña antes de continuar.', codigo: 'CAMBIAR_PASSWORD' });
+  }
   req.usuarioSesion = usuario;
   next();
 }
@@ -92,7 +85,7 @@ function h(fn) {
     } catch (err) {
       console.error(`Error en ${req.method} ${req.originalUrl}:`, err.message);
       if (err.code && err.code.startsWith('SQLITE_CONSTRAINT')) {
-        return res.status(400).json({ error: 'Datos inválidos (referencia inexistente o restricción de base de datos)', detalle: err.message });
+        return res.status(400).json({ error: 'Datos inválidos (referencia inexistente o restricción de base de datos)' });
       }
       res.status(500).json({ error: 'Error interno del servidor' });
     }
@@ -107,8 +100,10 @@ function existe(tabla, id) {
 // A partir de aquí, toda ruta /api/* requiere sesión válida — excepto /api/login, que es
 // justamente donde se obtiene el token. Colocar esto antes de registrar el resto de las
 // rutas asegura que ninguna quede expuesta sin querer (como pasaba antes con /api/usuarios).
+const RUTAS_PUBLICAS = new Set(['/login', '/registro', '/verificar-correo', '/olvide-password', '/restablecer-password']);
+require('./cuentas')(app, db, h, { sesiones, urlBase: URL_BASE });
 app.use('/api', (req, res, next) => {
-  if (req.path === '/login') return next();
+  if (RUTAS_PUBLICAS.has(req.path)) return next();
   requireAuth(req, res, next);
 });
 
@@ -116,25 +111,41 @@ require('./prospeccion')(app,db,h);
 
 // ---------- Catálogos ----------
 app.get('/api/usuarios', h((req, res) => {
-  res.json(db.prepare('SELECT id, nombre, rol, activo FROM usuarios WHERE activo = 1 ORDER BY nombre').all());
+  // El correo solo lo ve el administrador (para gestionar cuentas).
+  const columnas = req.usuarioSesion.rol === 'admin' ? 'id, nombre, rol, activo, correo, correo_verificado' : 'id, nombre, rol, activo';
+  res.json(db.prepare(`SELECT ${columnas} FROM usuarios WHERE activo = 1 ORDER BY nombre`).all());
 }));
 
 // ---------- Login ----------
 app.post('/api/login', limitarLogin, h((req, res) => {
   const { nombre, password } = req.body;
   if (!nombre || !password) return res.status(400).json({ error: 'Usuario y contraseña requeridos' });
-  const usuario = db.prepare('SELECT * FROM usuarios WHERE nombre = ? AND activo = 1').get(nombre);
-  if (!usuario || !verificarPassword(password, usuario.password)) {
+  if (typeof nombre !== 'string' || typeof password !== 'string' || password.length > 128) return res.status(400).json({ error: 'Usuario y contraseña requeridos' });
+  // Se puede entrar con el nombre de usuario o con el correo.
+  const usuario = nombre.includes('@')
+    ? db.prepare('SELECT * FROM usuarios WHERE correo = ? AND activo = 1').get(normalizarCorreo(nombre))
+    : db.prepare('SELECT * FROM usuarios WHERE nombre = ? AND activo = 1').get(nombre.trim());
+  if (!verificarPassword(password, usuario?.password)) {
     registrarLoginFallido(req);
     return res.status(401).json({ error: 'Usuario o contraseña incorrectos' });
   }
   limpiarLoginFallidos(req);
+  // La contraseña inicial de fábrica la conoce cualquiera: con ella NO se entrega sesión (si no,
+  // quien la supiera podría entrar y fijar su propia contraseña con el cambio obligatorio).
+  if (password === '1234') {
+    return res.status(403).json({ error: usuario.correo && usuario.correo_verificado
+      ? 'Esta cuenta tiene la contraseña inicial y quedó bloqueada. Usa "¿Olvidaste tu contraseña?" para crear una nueva.'
+      : 'Esta cuenta tiene la contraseña inicial y quedó bloqueada. Pide al administrador que le asigne una contraseña nueva.' });
+  }
+  if (usuario.correo && !usuario.correo_verificado) return res.status(403).json({ error: 'Confirma tu correo con el enlace que te enviamos antes de iniciar sesión.' });
   // Migración transparente: si la contraseña seguía en texto plano, se re-guarda cifrada.
   if (!usuario.password.includes(':')) {
     db.prepare('UPDATE usuarios SET password = ? WHERE id = ?').run(hashPassword(password), usuario.id);
   }
+  const debil = !!problemaPassword(password, { nombre: usuario.nombre, correo: usuario.correo || '' });
+  if (debil && !usuario.debe_cambiar_password) db.prepare('UPDATE usuarios SET debe_cambiar_password = 1 WHERE id = ?').run(usuario.id);
   const token = crearSesion(usuario.id);
-  res.json({ token, id: usuario.id, nombre: usuario.nombre, rol: usuario.rol });
+  res.json({ token, id: usuario.id, nombre: usuario.nombre, rol: usuario.rol, cambiar_password: debil || !!usuario.debe_cambiar_password });
 }));
 app.post('/api/logout', h((req, res) => {
   const encabezado = req.headers.authorization || '';
@@ -143,24 +154,84 @@ app.post('/api/logout', h((req, res) => {
   res.json({ ok: true });
 }));
 
+// ---------- Cambiar mi contraseña (con sesión) ----------
+// Cierra todas las demás sesiones del usuario y entrega un token nuevo para esta.
+app.post('/api/cambiar-password', h((req, res) => {
+  const { actual, nueva } = req.body;
+  const usuario = db.prepare('SELECT * FROM usuarios WHERE id = ?').get(req.usuarioSesion.id);
+  if (!verificarPassword(String(actual || ''), usuario.password)) return res.status(400).json({ error: 'La contraseña actual no es correcta' });
+  const problema = problemaPassword(nueva, { nombre: usuario.nombre, correo: usuario.correo || '' });
+  if (problema) return res.status(400).json({ error: problema });
+  if (nueva === actual) return res.status(400).json({ error: 'La contraseña nueva debe ser distinta de la actual' });
+  db.prepare('UPDATE usuarios SET password = ?, debe_cambiar_password = 0 WHERE id = ?').run(hashPassword(nueva), usuario.id);
+  sesiones.revocarUsuario(usuario.id);
+  res.json({ ok: true, token: crearSesion(usuario.id) });
+}));
+
 // ---------- Crear usuario (solo admin) ----------
 app.post('/api/usuarios', h((req, res) => {
   const { nombre, password, rol } = req.body;
   if (req.usuarioSesion.rol !== 'admin') return res.status(403).json({ error: 'Solo un administrador puede crear usuarios' });
-  if (!nombre || !nombre.trim()) return res.status(400).json({ error: 'El nombre es requerido' });
-  if (!password || password.length < 4) return res.status(400).json({ error: 'La contraseña debe tener al menos 4 caracteres' });
+  const problemaN = problemaNombre(nombre);
+  if (problemaN) return res.status(400).json({ error: problemaN });
+  const correo = req.body.correo ? normalizarCorreo(req.body.correo) : null;
+  if (correo && !correoPermitido(correo)) return res.status(400).json({ error: `El correo debe ser @${DOMINIO}` });
+  if (correo && db.prepare('SELECT id FROM usuarios WHERE correo = ?').get(correo)) return res.status(409).json({ error: 'Ya existe un usuario con ese correo' });
+  const problema = problemaPassword(password, { nombre, correo: correo || '' });
+  if (problema) return res.status(400).json({ error: problema });
   if (!['admin', 'ventas', 'atencion', 'tecnico'].includes(rol)) return res.status(400).json({ error: 'Rol inválido' });
 
   const existente = db.prepare('SELECT id FROM usuarios WHERE nombre = ?').get(nombre.trim());
   if (existente) return res.status(409).json({ error: 'Ya existe un usuario con ese nombre' });
 
-  const info = db.prepare('INSERT INTO usuarios (nombre, password, rol) VALUES (?, ?, ?)').run(nombre.trim(), hashPassword(password), rol);
-  res.status(201).json({ id: info.lastInsertRowid, nombre: nombre.trim(), rol });
+  // El correo que captura un admin se da por confirmado (el admin responde por él).
+  const info = db.prepare('INSERT INTO usuarios (nombre, password, rol, correo, correo_verificado) VALUES (?, ?, ?, ?, ?)').run(nombre.trim(), hashPassword(password), rol, correo, correo ? 1 : 0);
+  res.status(201).json({ id: info.lastInsertRowid, nombre: nombre.trim(), rol, correo });
 }));
 
 app.get('/api/servicios', h((req, res) => {
   res.json(db.prepare('SELECT * FROM catalogo_servicios WHERE activo = 1 ORDER BY orden').all());
 })); 
+// ---------- Administrar un usuario (solo admin): nombre, correo y rol ----------
+app.put('/api/usuarios/:id', h((req, res) => {
+  if (soloAdmin(req, res, 'Solo un administrador puede administrar usuarios')) return;
+  const usuario = db.prepare('SELECT * FROM usuarios WHERE id = ? AND activo = 1').get(req.params.id);
+  if (!usuario) return res.status(404).json({ error: 'Usuario no encontrado' });
+  const nombre = req.body.nombre !== undefined ? String(req.body.nombre).trim().replace(/\s+/g, ' ') : usuario.nombre;
+  const problemaN = problemaNombre(nombre);
+  if (problemaN) return res.status(400).json({ error: problemaN });
+  if (db.prepare('SELECT id FROM usuarios WHERE lower(nombre) = lower(?) AND id <> ?').get(nombre, usuario.id)) return res.status(409).json({ error: 'Ya existe un usuario con ese nombre' });
+  const rol = req.body.rol !== undefined ? req.body.rol : usuario.rol;
+  if (!['admin', 'ventas', 'atencion', 'tecnico'].includes(rol)) return res.status(400).json({ error: 'Rol inválido' });
+  if (usuario.rol === 'admin' && rol !== 'admin' && db.prepare("SELECT COUNT(*) c FROM usuarios WHERE rol = 'admin' AND activo = 1").get().c <= 1) {
+    return res.status(400).json({ error: 'Debe quedar al menos un administrador' });
+  }
+  let correo = usuario.correo, verificado = usuario.correo_verificado;
+  if (req.body.correo !== undefined) {
+    correo = req.body.correo ? normalizarCorreo(req.body.correo) : null;
+    if (correo && !correoPermitido(correo)) return res.status(400).json({ error: `El correo debe ser @${DOMINIO}` });
+    if (correo && db.prepare('SELECT id FROM usuarios WHERE correo = ? AND id <> ?').get(correo, usuario.id)) return res.status(409).json({ error: 'Ese correo ya pertenece a otro usuario' });
+    if (correo !== usuario.correo) verificado = correo ? 1 : 0; // el admin responde por el correo que captura
+  }
+  db.prepare('UPDATE usuarios SET nombre = ?, rol = ?, correo = ?, correo_verificado = ? WHERE id = ?').run(nombre, rol, correo, verificado, usuario.id);
+  if (rol !== usuario.rol) sesiones.revocarUsuario(usuario.id); // que el nuevo rol aplique de inmediato
+  res.json(db.prepare('SELECT id, nombre, rol, correo, correo_verificado FROM usuarios WHERE id = ?').get(usuario.id));
+}));
+
+// Asignar una contraseña temporal (solo admin). El usuario deberá cambiarla al entrar y se
+// cierran sus sesiones abiertas.
+app.post('/api/usuarios/:id/password', h((req, res) => {
+  if (soloAdmin(req, res, 'Solo un administrador puede asignar contraseñas')) return;
+  const usuario = db.prepare('SELECT * FROM usuarios WHERE id = ? AND activo = 1').get(req.params.id);
+  if (!usuario) return res.status(404).json({ error: 'Usuario no encontrado' });
+  const problema = problemaPassword(req.body.password, { nombre: usuario.nombre, correo: usuario.correo || '' });
+  if (problema) return res.status(400).json({ error: problema });
+  const propio = usuario.id === req.usuarioSesion.id;
+  db.prepare('UPDATE usuarios SET password = ?, debe_cambiar_password = ? WHERE id = ?').run(hashPassword(req.body.password), propio ? 0 : 1, usuario.id);
+  if (!propio) sesiones.revocarUsuario(usuario.id);
+  res.json({ ok: true });
+}));
+
 /* ---------- Eliminar usuario (soft delete, solo admin) ---------- */
 app.delete('/api/usuarios/:id', h((req, res) => {
   if (req.usuarioSesion.rol !== 'admin') {
@@ -168,6 +239,7 @@ app.delete('/api/usuarios/:id', h((req, res) => {
   }
   const usuario = db.prepare('SELECT * FROM usuarios WHERE id = ?').get(req.params.id);
   if (!usuario) return res.status(404).json({ error: 'Usuario no encontrado' });
+  if (usuario.id === req.usuarioSesion.id) return res.status(400).json({ error: 'No puedes desactivar tu propia cuenta' });
   if (usuario.rol === 'admin') {
     const totalAdmins = db.prepare('SELECT COUNT(*) c FROM usuarios WHERE rol = ? AND activo = 1').get('admin').c;
     if (totalAdmins <= 1) {
@@ -177,18 +249,39 @@ app.delete('/api/usuarios/:id', h((req, res) => {
   /* Soft delete: marcar como inactivo en lugar de borrar físicamente.
      Esto preserva el historial de quién creó/atendió cada lead. */
   db.prepare('UPDATE usuarios SET activo = 0 WHERE id = ?').run(req.params.id);
+  sesiones.revocarUsuario(Number(req.params.id));
   /* Opcional: reasignar leads abiertos a un usuario "Sin asignar" o al admin.
   db.prepare('UPDATE leads SET responsable_id = ? WHERE responsable_id = ? AND estatus = ?')
     .run(solicitante_id, req.params.id, 'abierto'); */
   res.json({ ok: true, id: Number(req.params.id), nombre: usuario.nombre });
 }));
 
-// Ajustar la recurrencia sugerida de un servicio (cada cuántos días conviene recontactar
-// al cliente para volver a ofrecérselo). Solo admin, igual que la creación de usuarios.
+// ---------- Permisos de catálogos ----------
+// Todos: editar la descripción de los servicios, tipos de cliente y canales ("cómo se enteró"),
+// y reordenar servicios y canales. Solo admin: dar de alta / eliminar servicios, la recurrencia
+// de recompra y todo lo de usuarios y respaldos.
+const esAdmin = req => req.usuarioSesion.rol === 'admin';
+const soloAdmin = (req, res, mensaje) => { if (esAdmin(req)) return false; res.status(403).json({ error: mensaje }); return true; };
+
+// Reordenar un catálogo: recibe la lista completa de ids en el nuevo orden.
+function reordenar(tabla, req, res) {
+  const ids = Array.isArray(req.body.ids) ? req.body.ids.map(Number) : null;
+  const actuales = db.prepare(`SELECT id FROM ${tabla}${tabla === 'catalogo_servicios' ? ' WHERE activo = 1' : ''}`).all().map(x => x.id);
+  if (!ids || ids.length !== actuales.length || new Set(ids).size !== ids.length || !ids.every(id => actuales.includes(id))) {
+    return res.status(400).json({ error: 'La lista no coincide con el catálogo actual; recarga la página e inténtalo de nuevo' });
+  }
+  const upd = db.prepare(`UPDATE ${tabla} SET orden = ? WHERE id = ?`);
+  db.transaction(() => ids.forEach((id, i) => upd.run(i + 1, id)))();
+  res.json({ ok: true });
+}
+app.put('/api/servicios/orden', h((req, res) => reordenar('catalogo_servicios', req, res)));
+app.put('/api/canales/orden', h((req, res) => reordenar('canales', req, res)));
+
+// Editar un servicio: la descripción la puede cambiar cualquiera; la recurrencia solo un admin.
 app.put('/api/servicios/:id', h((req, res) => {
   const { dias_recurrencia } = req.body;
-  if (req.usuarioSesion.rol !== 'admin') return res.status(403).json({ error: 'Solo un administrador puede editar el catálogo de servicios' });
-  const servicio = db.prepare('SELECT * FROM catalogo_servicios WHERE id = ?').get(req.params.id);
+  if (dias_recurrencia !== undefined && soloAdmin(req, res, 'Solo un administrador puede cambiar la recurrencia de un servicio')) return;
+  const servicio = db.prepare('SELECT * FROM catalogo_servicios WHERE id = ? AND activo = 1').get(req.params.id);
   if (!servicio) return res.status(404).json({ error: 'Servicio no encontrado' });
   let dias = null;
   if (dias_recurrencia !== null && dias_recurrencia !== '' && dias_recurrencia !== undefined) {
@@ -200,13 +293,24 @@ app.put('/api/servicios/:id', h((req, res) => {
   res.json(db.prepare('SELECT * FROM catalogo_servicios WHERE id = ?').get(req.params.id));
 }));
 
-// Agregar un servicio nuevo al catálogo (solo admin).
+// Eliminar un servicio del catálogo (solo admin). Es una baja lógica: las cotizaciones y
+// órdenes que ya lo usan lo conservan; solo deja de ofrecerse en las nuevas.
+app.delete('/api/servicios/:id', h((req, res) => {
+  if (soloAdmin(req, res, 'Solo un administrador puede eliminar servicios')) return;
+  const servicio = db.prepare('SELECT * FROM catalogo_servicios WHERE id = ? AND activo = 1').get(req.params.id);
+  if (!servicio) return res.status(404).json({ error: 'Servicio no encontrado' });
+  if (db.prepare('SELECT COUNT(*) c FROM catalogo_servicios WHERE activo = 1').get().c <= 1) return res.status(400).json({ error: 'Debe quedar al menos un servicio en el catálogo' });
+  db.prepare('UPDATE catalogo_servicios SET activo = 0 WHERE id = ?').run(servicio.id);
+  res.json({ ok: true, id: servicio.id, nombre: servicio.nombre });
+}));
+
+// Agregar un servicio nuevo al catálogo (solo admin). Si existía y se había eliminado, se reactiva.
 app.post('/api/servicios', h((req, res) => {
   const { nombre, dias_recurrencia } = req.body;
-  if (req.usuarioSesion.rol !== 'admin') return res.status(403).json({ error: 'Solo un administrador puede agregar servicios' });
-  if (!nombre || !nombre.trim()) return res.status(400).json({ error: 'El nombre del servicio es requerido' });
-  const existente = db.prepare('SELECT id FROM catalogo_servicios WHERE nombre = ?').get(nombre.trim());
-  if (existente) return res.status(409).json({ error: 'Ya existe un servicio con ese nombre' });
+  if (soloAdmin(req, res, 'Solo un administrador puede agregar servicios')) return;
+  if (typeof nombre !== 'string' || !nombre.trim() || nombre.trim().length > 120) return res.status(400).json({ error: 'El nombre del servicio es requerido (máximo 120 caracteres)' });
+  const existente = db.prepare('SELECT id, activo FROM catalogo_servicios WHERE nombre = ?').get(nombre.trim());
+  if (existente?.activo) return res.status(409).json({ error: 'Ya existe un servicio con ese nombre' });
   let dias = null;
   if (dias_recurrencia !== null && dias_recurrencia !== '' && dias_recurrencia !== undefined) {
     dias = Number(dias_recurrencia);
@@ -214,13 +318,16 @@ app.post('/api/servicios', h((req, res) => {
   }
   const orden = (db.prepare('SELECT MAX(orden) m FROM catalogo_servicios').get().m || 0) + 1;
   if (req.body.descripcion !== undefined && (typeof req.body.descripcion !== 'string' || req.body.descripcion.length > 10000)) return res.status(400).json({ error: 'La descripción debe ser texto de hasta 10000 caracteres' });
+  if (existente) {
+    db.prepare('UPDATE catalogo_servicios SET activo = 1, orden = ?, dias_recurrencia = ?, descripcion = ? WHERE id = ?').run(orden, dias, (req.body.descripcion || '').trim(), existente.id);
+    return res.status(201).json(db.prepare('SELECT * FROM catalogo_servicios WHERE id = ?').get(existente.id));
+  }
   const info = db.prepare('INSERT INTO catalogo_servicios (nombre, orden, dias_recurrencia, descripcion) VALUES (?, ?, ?, ?)').run(nombre.trim(), orden, dias, (req.body.descripcion || '').trim());
   res.status(201).json(db.prepare('SELECT * FROM catalogo_servicios WHERE id = ?').get(info.lastInsertRowid));
 }));
 
 app.get('/api/tipos-cliente', h((req,res)=>res.json(db.prepare('SELECT * FROM tipos_cliente ORDER BY nombre').all())));
 app.post('/api/tipos-cliente', h((req,res)=>{
-  if(req.usuarioSesion.rol!=='admin')return res.status(403).json({error:'Solo un administrador puede modificar los tipos de cliente'});
   const nombre=typeof req.body.nombre==='string'?req.body.nombre.trim():'';
   if(!nombre || nombre.length>80)return res.status(400).json({error:'Escribe un nombre de hasta 80 caracteres'});
   if(db.prepare('SELECT clave FROM tipos_cliente WHERE nombre = ?').get(nombre))return res.status(409).json({error:'Ya existe ese tipo de cliente'});
@@ -228,7 +335,6 @@ app.post('/api/tipos-cliente', h((req,res)=>{
   res.status(201).json({clave,nombre});
 }));
 app.put('/api/tipos-cliente/:clave', h((req,res)=>{
-  if(req.usuarioSesion.rol!=='admin')return res.status(403).json({error:'Solo un administrador puede modificar los tipos de cliente'});
   const nombre=typeof req.body.nombre==='string'?req.body.nombre.trim():'';
   if(!nombre || nombre.length>80)return res.status(400).json({error:'Escribe un nombre de hasta 80 caracteres'});
   if(!db.prepare('SELECT clave FROM tipos_cliente WHERE clave = ?').get(req.params.clave))return res.status(404).json({error:'Tipo no encontrado'});
@@ -239,11 +345,20 @@ app.get('/api/canales', h((req, res) => {
   res.json(db.prepare('SELECT * FROM canales ORDER BY orden').all());
 }));
 
-// Agregar un canal nuevo (solo admin).
+// Renombrar un canal ("cómo se enteró de nosotros"). Los contactos conservan su canal.
+app.put('/api/canales/:id', h((req, res) => {
+  const nombre = typeof req.body.nombre === 'string' ? req.body.nombre.trim() : '';
+  if (!nombre || nombre.length > 80) return res.status(400).json({ error: 'Escribe un nombre de hasta 80 caracteres' });
+  if (!db.prepare('SELECT id FROM canales WHERE id = ?').get(req.params.id)) return res.status(404).json({ error: 'Canal no encontrado' });
+  if (db.prepare('SELECT id FROM canales WHERE nombre = ? AND id <> ?').get(nombre, req.params.id)) return res.status(409).json({ error: 'Ya existe un canal con ese nombre' });
+  db.prepare('UPDATE canales SET nombre = ? WHERE id = ?').run(nombre, req.params.id);
+  res.json(db.prepare('SELECT * FROM canales WHERE id = ?').get(req.params.id));
+}));
+
+// Agregar un canal nuevo (cualquier usuario).
 app.post('/api/canales', h((req, res) => {
   const { nombre } = req.body;
-  if (req.usuarioSesion.rol !== 'admin') return res.status(403).json({ error: 'Solo un administrador puede agregar canales' });
-  if (!nombre || !nombre.trim()) return res.status(400).json({ error: 'El nombre del canal es requerido' });
+  if (typeof nombre !== 'string' || !nombre.trim() || nombre.trim().length > 80) return res.status(400).json({ error: 'El nombre del canal es requerido (máximo 80 caracteres)' });
   const existente = db.prepare('SELECT id FROM canales WHERE nombre = ?').get(nombre.trim());
   if (existente) return res.status(409).json({ error: 'Ya existe un canal con ese nombre' });
   const orden = (db.prepare('SELECT MAX(orden) m FROM canales').get().m || 0) + 1;
@@ -273,7 +388,7 @@ app.get('/api/leads/buscar-telefono/:telefono', h((req, res) => {
 
 // ---------- Listado / tablero ----------
 app.get('/api/leads', h((req, res) => {
-  const { etapa, responsable_id, estatus, q, desde, hasta } = req.query;
+  const { etapa, responsable_id, estatus, q, desde, hasta, urgente } = req.query;
   let sql = `
     SELECT l.*, s.nombre AS servicio_nombre, u.nombre AS responsable_nombre, ca.nombre AS canal_nombre,
       (SELECT COUNT(*) FROM historial h WHERE h.lead_id = l.id AND h.tipo='alerta' AND h.resuelta=0 AND h.fecha_alerta <= datetime('now','localtime')) AS alertas_pendientes,
@@ -291,7 +406,8 @@ app.get('/api/leads', h((req, res) => {
   if (q) { sql += ' AND (l.nombre LIKE ? OR l.telefono LIKE ? OR CAST(l.cliente_id AS TEXT) = ?)'; params.push(`%${q}%`, `%${q}%`, q); }
   if (desde) { sql += " AND date(l.created_at) >= date(?)"; params.push(desde); }
   if (hasta) { sql += " AND date(l.created_at) <= date(?)"; params.push(hasta); }
-  sql += ' ORDER BY l.updated_at DESC';
+  if (urgente === '1') { sql += ' AND l.urgente = 1'; }
+  sql += ' ORDER BY l.urgente DESC, l.updated_at DESC';
   res.json(db.prepare(sql).all(...params));
 }));
 
@@ -319,8 +435,9 @@ app.get('/api/leads/:id', h((req, res) => {
       COALESCE(SUM(CASE WHEN estatus = 'ganado' THEN valor ELSE 0 END), 0) AS valor_ganado_total
     FROM leads WHERE cliente_id = ?
   `).get(lead.cliente_id) : { valor_cotizado_total: 0, valor_ganado_total: 0 };
+  const historial = db.prepare('SELECT * FROM historial WHERE lead_id = ? ORDER BY created_at DESC, id DESC').all(lead.id);
   res.json({
-    ...lead, otras_solicitudes,
+    ...lead, otras_solicitudes, historial,
     veces_contratado: otras_solicitudes.length + 1,
     primer_contacto,
     valor_cotizado_total: valorCliente.valor_cotizado_total,
@@ -349,9 +466,21 @@ function validarPartidas(req,res,next){
   if(!primero)return res.status(400).json({error:'Selecciona un servicio del catálogo'});
   req.body.servicio_id=primero.id;req.body.valor=items.reduce((t,i)=>t+Math.round(i.importe*100),0)/100;req.body.partidas_json=JSON.stringify(items);next();
 }
+// Equipo / operador / observaciones de la orden de servicio: texto libre con tope de longitud.
+const LIMITES_ORDEN = { equipo: 200, operador: 300, observaciones: 3000 };
+function validarDatosOrden(body) {
+  for (const [campo, max] of Object.entries(LIMITES_ORDEN)) {
+    if (body[campo] === undefined || body[campo] === null) continue;
+    if (typeof body[campo] !== 'string') return `El campo ${campo} no es válido`;
+    if (body[campo].length > max) return `El campo ${campo} admite máximo ${max} caracteres`;
+  }
+  return null;
+}
+const textoOrden = v => (typeof v === 'string' && v.trim()) ? v.trim() : null;
 app.post('/api/leads', validarPartidas, validarRegistro, h((req, res) => {
   let { telefono, nombre, empresa_contacto, direccion } = req.body;
-  const { cliente_id, canal_id, servicio_id, notas_iniciales, responsable_id, forzar_duplicado, valor, fecha_servicio, correo, giro } = req.body;
+  const { cliente_id, canal_id, servicio_id, notas_iniciales, responsable_id, forzar_duplicado, valor, fecha_servicio, correo, giro, urgente } = req.body;
+  const fechaCotizacionFinal = req.body.fecha_cotizacion || new Date().toISOString().slice(0, 10);
   const creado_por = req.usuarioSesion.nombre; // nunca se confía en el valor que mande el navegador
   if (!validarCorreo(correo)) return res.status(400).json({ error: 'El correo electrónico no es válido' });
   if (giro && !tipoClienteValido(giro)) return res.status(400).json({ error: 'Giro inválido' });
@@ -394,6 +523,18 @@ app.post('/api/leads', validarPartidas, validarRegistro, h((req, res) => {
     if (abierta) return res.status(409).json({ error: 'duplicado', lead_id: abierta.id });
   }
 
+  // Duplicar solo aplica a órdenes de servicio (ganadas) del mismo contacto; las cotizaciones no se duplican.
+  const duplicadoDe = req.body.duplicado_de ? Number(req.body.duplicado_de) : null;
+  if (duplicadoDe) {
+    if (estatus !== 'ganado') return res.status(400).json({ error: 'Solo se pueden duplicar órdenes de servicio' });
+    const original = db.prepare('SELECT id, cliente_id, estatus FROM leads WHERE id = ?').get(duplicadoDe);
+    if (!original || original.estatus !== 'ganado') return res.status(400).json({ error: 'Solo se pueden duplicar órdenes de servicio ya contratadas' });
+    if (cliente && original.cliente_id !== cliente.id) return res.status(400).json({ error: 'La orden a duplicar pertenece a otro contacto' });
+  }
+  const origen = estatus === 'ganado' ? 'directo' : 'cotizacion';
+  const errorOrden = validarDatosOrden(req.body);
+  if (errorOrden) return res.status(400).json({ error: errorOrden });
+
   if(req.body.establecimiento_id && !db.prepare("SELECT id FROM establecimientos WHERE id=? AND cliente_id=? AND estado<>'no_contactar'").get(req.body.establecimiento_id,cliente_id))return res.status(400).json({error:'El establecimiento no está vinculado a este contacto o está marcado como no contactar'});
   const creado=db.transaction(()=>{
   if (!cliente) {
@@ -408,8 +549,8 @@ app.post('/api/leads', validarPartidas, validarRegistro, h((req, res) => {
   const resp = responsable_id;
 
   const info = db.prepare(`
-    INSERT INTO leads (cliente_id, telefono, telefono_normalizado, nombre, empresa_contacto, direccion, canal_id, servicio_id, responsable_id, notas_iniciales, creado_por, valor, fecha_servicio, estatus)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO leads (cliente_id, telefono, telefono_normalizado, nombre, empresa_contacto, direccion, canal_id, servicio_id, responsable_id, notas_iniciales, creado_por, valor, fecha_servicio, fecha_cotizacion, estatus, urgente, origen, duplicado_de)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     cliente.id, telefono, norm,
     cliente.nombre || null,
@@ -418,12 +559,19 @@ app.post('/api/leads', validarPartidas, validarRegistro, h((req, res) => {
     canal_id || null, servicio_id || null, resp || null, notas_iniciales || null, creado_por || null,
     valor !== undefined && valor !== null ? Number(valor) : null,
     fechaServicioFinal,
-    estatus
+    origen === 'cotizacion' ? fechaCotizacionFinal : null,
+    estatus,
+    urgente ? 1 : 0,
+    origen,
+    duplicadoDe
   );
 
   if(req.body.partidas_json!==undefined)db.prepare('UPDATE leads SET partidas_json = ? WHERE id = ?').run(req.body.partidas_json,info.lastInsertRowid);
+  db.prepare('UPDATE leads SET equipo = ?, operador = ?, observaciones = ? WHERE id = ?').run(textoOrden(req.body.equipo), textoOrden(req.body.operador), textoOrden(req.body.observaciones), info.lastInsertRowid);
   if(req.body.establecimiento_id)db.prepare('UPDATE leads SET establecimiento_id=? WHERE id=?').run(req.body.establecimiento_id,info.lastInsertRowid);
   // Crear una cotización nunca modifica los datos maestros del contacto.
+  db.prepare(`INSERT INTO historial (lead_id, tipo, texto, usuario, origen) VALUES (?, 'observacion', ?, ?, 'sistema')`)
+    .run(info.lastInsertRowid, duplicadoDe ? `Orden de servicio duplicada a partir del registro #${duplicadoDe}.` : estatus === 'ganado' ? 'Servicio registrado directamente como contratado.' : 'Cotización creada.', creado_por || null);
 
   return db.prepare('SELECT * FROM leads WHERE id = ?').get(info.lastInsertRowid);
   })();
@@ -435,7 +583,12 @@ app.put('/api/leads/:id', validarPartidas, validarRegistro, h((req, res) => {
   const id = req.params.id;
   const actual = db.prepare('SELECT * FROM leads WHERE id = ?').get(id);
   if (!actual) return res.status(404).json({ error: 'Cotización no encontrada' });
+  if (req.body.version !== undefined && Number(req.body.version) !== actual.version) {
+    return res.status(409).json({ error: 'Otra persona actualizó esta cotización mientras la tenías abierta. Ciérrala y vuelve a abrirla para ver los cambios antes de guardar los tuyos.' });
+  }
 
+  if (req.body.urgente !== undefined) req.body.urgente = req.body.urgente ? 1 : 0;
+  if (req.body.incluye_vigencia !== undefined) req.body.incluye_vigencia = req.body.incluye_vigencia ? 1 : 0;
   if (req.body.canal_id !== undefined && !existe('canales', req.body.canal_id)) return res.status(400).json({ error: 'El canal indicado no existe' });
   if (req.body.servicio_id !== undefined && !existe('catalogo_servicios', req.body.servicio_id)) return res.status(400).json({ error: 'El servicio indicado no existe' });
   if (req.body.responsable_id !== undefined && !existe('usuarios', req.body.responsable_id)) return res.status(400).json({ error: 'El responsable indicado no existe' });
@@ -448,6 +601,9 @@ app.put('/api/leads/:id', validarPartidas, validarRegistro, h((req, res) => {
   // Reglas de negocio al cerrar una cotización como GANADA (servicio confirmado): sin esto, un lead pasaba a "cliente"
   // sin valor registrado (rompe los reportes de ingresos) y sin fecha de cierre real
   // (el resumen mensual de Clientes terminaba usando la fecha de creación del lead).
+  if (actual.origen === 'directo' && req.body.estatus !== undefined && req.body.estatus !== 'ganado') {
+    return res.status(400).json({ error: 'Esta orden de servicio no viene de una cotización; no puede reabrirse ni descartarse como cotización. Si fue un error, elimínala.' });
+  }
   if ((req.body.estatus || actual.estatus) === 'ganado') {
     const valorEfectivo = req.body.valor !== undefined ? req.body.valor : actual.valor;
     if (valorEfectivo === null || valorEfectivo === undefined || valorEfectivo === '') {
@@ -456,6 +612,11 @@ app.put('/api/leads/:id', validarPartidas, validarRegistro, h((req, res) => {
     if (!(req.body.fecha_servicio !== undefined ? req.body.fecha_servicio : actual.fecha_servicio)) return res.status(400).json({error:'Indica la fecha acordada del servicio'});
     if (!(req.body.servicio_id !== undefined ? req.body.servicio_id : actual.servicio_id)) return res.status(400).json({error:'Selecciona el servicio que se contratará'});
     if (!String(req.body.direccion !== undefined ? req.body.direccion : actual.direccion || '').trim()) return res.status(400).json({error:'Indica la ubicación del servicio'});
+    // Al aceptar la cotización, el lead llega al final del embudo de decisión ("Cierre") aunque
+    // el usuario no haya movido la tarjeta manualmente; así el kanban refleja el estado real.
+    // (La tarjeta de todas formas sale del tablero de inmediato, porque este solo muestra
+    // cotizaciones con estatus 'abierto' — el seguimiento posterior lo lleva el sistema de recompras.)
+    if (req.body.etapa === undefined && actual.etapa < 4) req.body.etapa = 4;
   }
 
   if(actual.partidas_json && req.body.partidas_json===undefined && (req.body.valor!==undefined || req.body.servicio_id!==undefined)){
@@ -464,7 +625,14 @@ app.put('/api/leads/:id', validarPartidas, validarRegistro, h((req, res) => {
   }
   if (['nombre','telefono','empresa_contacto'].some(c=>req.body[c]!==undefined)) return res.status(400).json({error:'Edita los datos de contacto desde su ficha; esta acción modifica solo la cotización o servicio.'});
 
-  const campos = ['partidas_json', 'direccion', 'canal_id', 'servicio_id', 'responsable_id', 'etapa', 'estatus', 'valor', 'fecha_servicio', 'notas_iniciales'];
+  if (req.body.encuesta_calificacion !== undefined && req.body.encuesta_calificacion !== null && !(Number(req.body.encuesta_calificacion) >= 1 && Number(req.body.encuesta_calificacion) <= 4)) {
+    return res.status(400).json({ error: 'Calificación inválida (1 a 4)' });
+  }
+
+  const errorOrden = validarDatosOrden(req.body);
+  if (errorOrden) return res.status(400).json({ error: errorOrden });
+  ['equipo', 'operador', 'observaciones'].forEach(c => { if (req.body[c] !== undefined) req.body[c] = textoOrden(req.body[c]); });
+  const campos = ['equipo', 'operador', 'observaciones', 'partidas_json', 'direccion', 'canal_id', 'servicio_id', 'responsable_id', 'etapa', 'estatus', 'valor', 'fecha_servicio', 'notas_iniciales', 'urgente', 'encuesta_calificacion', 'encuesta_comentario', 'fecha_cotizacion', 'incluye_vigencia', 'vigencia_hasta'];
   const set = [];
   const params = [];
   campos.forEach(c => {
@@ -472,6 +640,7 @@ app.put('/api/leads/:id', validarPartidas, validarRegistro, h((req, res) => {
   });
   if (set.length === 0) return res.status(400).json({ error: 'Sin cambios' });
   set.push("updated_at = datetime('now','localtime')");
+  set.push('version = version + 1');
   params.push(id);
 
   db.prepare(`UPDATE leads SET ${set.join(', ')} WHERE id = ?`).run(...params);
@@ -484,6 +653,9 @@ app.put('/api/leads/:id', validarPartidas, validarRegistro, h((req, res) => {
     if (req.body.estatus === 'ganado' || req.body.estatus === 'perdido') {
       db.prepare(`UPDATE historial SET resuelta = 1 WHERE lead_id = ? AND tipo = 'alerta' AND resuelta = 0`).run(id);
     }
+    const textoEvento = { ganado: 'Cotización marcada como ganada (servicio contratado).', perdido: 'Cotización marcada como no aceptada.', abierto: 'Cotización reabierta.' }[req.body.estatus] || ('Estatus cambiado a ' + req.body.estatus + '.');
+    db.prepare(`INSERT INTO historial (lead_id, tipo, texto, usuario, origen) VALUES (?, 'observacion', ?, ?, 'sistema')`)
+      .run(id, textoEvento, req.usuarioSesion?.nombre || null);
   }
   res.json(db.prepare('SELECT * FROM leads WHERE id = ?').get(id));
 }));
@@ -492,6 +664,7 @@ app.put('/api/leads/:id', validarPartidas, validarRegistro, h((req, res) => {
 app.post('/api/leads/:id/historial', h((req, res) => {
   const { tipo, texto, fecha_alerta } = req.body;
   const usuario = req.usuarioSesion.nombre; // nunca se confía en el valor que mande el navegador
+  const origen = req.body.origen === 'sistema' ? 'sistema' : 'manual'; // cualquier otro valor cae en 'manual'
   if (!texto || !texto.trim()) return res.status(400).json({ error: 'Texto requerido' });
   const tipoFinal = tipo || 'observacion';
   if (!['observacion', 'alerta'].includes(tipoFinal)) return res.status(400).json({ error: 'Tipo inválido' });
@@ -500,9 +673,9 @@ app.post('/api/leads/:id/historial', h((req, res) => {
   if (!lead) return res.status(404).json({ error: 'Cotización no encontrada' });
 
   const info = db.prepare(`
-    INSERT INTO historial (lead_id, tipo, texto, fecha_alerta, usuario)
-    VALUES (?, ?, ?, ?, ?)
-  `).run(req.params.id, tipoFinal, texto, fecha_alerta || null, usuario || null);
+    INSERT INTO historial (lead_id, tipo, texto, fecha_alerta, usuario, origen)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `).run(req.params.id, tipoFinal, texto, fecha_alerta || null, usuario || null, origen);
   db.prepare("UPDATE leads SET updated_at = datetime('now','localtime') WHERE id = ?").run(req.params.id);
   res.status(201).json(db.prepare('SELECT * FROM historial WHERE id = ?').get(info.lastInsertRowid));
 }));
@@ -899,5 +1072,4 @@ app.use((err, req, res, next) => {
 process.on('uncaughtException', err => console.error('uncaughtException (servidor sigue vivo):', err));
 process.on('unhandledRejection', err => console.error('unhandledRejection (servidor sigue vivo):', err));
 
-const PORT = process.env.PORT || 3210;
 app.listen(PORT, () => console.log(`Saneadren CRM corriendo en http://localhost:${PORT}`));

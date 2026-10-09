@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Generador de membretes · Saneadren</title>
+<style>
+  body{margin:0;padding:16px;background:#888;font-family:Segoe UI,Arial,sans-serif;color:#fff}
+  canvas{display:block;margin:12px 0;max-width:100%;height:auto;box-shadow:0 2px 12px rgba(0,0,0,.4)}
+  button{font:inherit;padding:8px 14px;margin-right:8px}
+</style>
+</head>
+<body>
+<!--
+  Dibuja los membretes de Cotización y Orden de servicio sobre la hoja que usan el PDF y el
+  Word del CRM: 612 × 918 pt (8.5 × 12.75 in). Se exportan a 2 px por punto (1224 × 1836 px).
+
+  Zonas que respeta (las usa public/app.js):
+    0 – 112 pt   encabezado del membrete
+    122 – 710 pt área de contenido (margen izq./der. 48 pt)
+    714 – 730 pt franja libre para "Página X de Y" (alineado a la derecha en x = 564)
+    740 – 918 pt pie del membrete
+  Ejecuta:  node herramientas/membretes/servidor.js  y abre http://localhost:3301
+-->
+<p>Vista previa. "Guardar en public/" sobrescribe los PNG que usa el CRM.</p>
+<button id="guardar">Guardar en public/</button><span id="estado"></span>
+<div id="lienzos"></div>
+<script>
+const CONTACTO = {
+  web: 'www.saneadren.com.mx',
+  correo: 'ventas@saneadren.com.mx',
+  cobertura: 'Cobertura en todo México',
+  atencion: 'Atención 24/7 · 365 días'
+};
+const DOCUMENTOS = [
+  { archivo: 'membrete-cotizacion.png', titulo: 'COTIZACIÓN', subtitulo: 'Propuesta técnica y económica',
+    franja: ['INGENIERÍA SANITARIA', 'DESAZOLVE', 'VIDEOINSPECCIÓN', 'TRANSPORTE DE AGUAS', 'REHABILITACIÓN'] },
+  { archivo: 'membrete-orden-servicio.png', titulo: 'ORDEN DE SERVICIO', subtitulo: 'Comprobante de trabajo realizado',
+    leyenda: ['En Saneadren contamos con el equipo de la más alta tecnología.',
+              'Servicio los 365 días del año, las 24 hrs. del día, en toda la república.'] }
+];
+const AMARILLO = '#F6B103', OSCURO = '#1A1D23', GRIS = '#4A505A', GRIS_CLARO = '#D9DCE1';
+const W = 612, H = 918, ESCALA = 2, FUENTE = '"Segoe UI", Arial, sans-serif', FUENTE_TIT = 'Bahnschrift, "Segoe UI", Arial, sans-serif';
+
+const cargarImagen = src => new Promise((ok, mal) => { const i = new Image(); i.onload = () => ok(i); i.onerror = mal; i.src = src; });
+
+function texto(ctx, t, x, y, { tam = 9, peso = 400, color = GRIS, alin = 'left', fuente = FUENTE, espaciado = 0 } = {}) {
+  ctx.font = `${peso} ${tam}px ${fuente}`;
+  ctx.fillStyle = color; ctx.textAlign = alin; ctx.textBaseline = 'alphabetic';
+  if ('letterSpacing' in ctx) ctx.letterSpacing = espaciado + 'px';
+  ctx.fillText(t, x, y);
+  if ('letterSpacing' in ctx) ctx.letterSpacing = '0px';
+  ctx.font = `${peso} ${tam}px ${fuente}`;
+  return ctx.measureText(t).width + espaciado * t.length;
+}
+
+// Marca de agua: tuberías tipo plano (arriba izq.) y aro amarillo (abajo der.), muy tenues
+// para no competir con las tablas del contenido.
+function marcaDeAgua(ctx) {
+  ctx.save();
+  ctx.globalAlpha = 0.06; ctx.strokeStyle = '#2b2f36'; ctx.lineWidth = 1.2;
+  const tubo = (x1, y1, x2, y2, g = 14) => {
+    const hor = y1 === y2;
+    ctx.beginPath();
+    if (hor) { ctx.moveTo(x1, y1 - g / 2); ctx.lineTo(x2, y2 - g / 2); ctx.moveTo(x1, y1 + g / 2); ctx.lineTo(x2, y2 + g / 2); }
+    else { ctx.moveTo(x1 - g / 2, y1); ctx.lineTo(x2 - g / 2, y2); ctx.moveTo(x1 + g / 2, y1); ctx.lineTo(x2 + g / 2, y2); }
+    ctx.stroke();
+  };
+  // Red de tuberías en "L" con coples en cada codo.
+  tubo(0, 170, 110, 170); tubo(110, 170, 110, 330); tubo(110, 330, 180, 330);
+  tubo(0, 240, 55, 240); tubo(55, 240, 55, 430); tubo(0, 430, 140, 430);
+  [[110, 170], [110, 330], [55, 240], [55, 430]].forEach(([x, y]) => { ctx.strokeRect(x - 11, y - 11, 22, 22); });
+  ctx.beginPath(); ctx.arc(180, 330, 9, 0, 7); ctx.stroke();
+  // Aro de la marca: termina antes de 700 pt para no tocar la franja inferior.
+  ctx.globalAlpha = 0.07; ctx.strokeStyle = AMARILLO; ctx.lineWidth = 30;
+  ctx.beginPath(); ctx.arc(600, 560, 130, Math.PI * 0.5, Math.PI * 1.6); ctx.stroke();
+  ctx.globalAlpha = 0.05; ctx.strokeStyle = OSCURO; ctx.lineWidth = 9;
+  ctx.beginPath(); ctx.arc(600, 560, 94, Math.PI * 0.55, Math.PI * 1.55); ctx.stroke();
+  ctx.restore();
+}
+
+function icono(ctx, tipo, x, y) {
+  ctx.save(); ctx.strokeStyle = AMARILLO; ctx.fillStyle = AMARILLO; ctx.lineWidth = 1.3;
+  if (tipo === 'web') {
+    ctx.beginPath(); ctx.arc(x, y, 6, 0, 7); ctx.stroke();
+    ctx.beginPath(); ctx.ellipse(x, y, 2.6, 6, 0, 0, 7); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(x - 6, y); ctx.lineTo(x + 6, y); ctx.stroke();
+  } else if (tipo === 'correo') {
+    ctx.strokeRect(x - 7, y - 4.5, 14, 9);
+    ctx.beginPath(); ctx.moveTo(x - 7, y - 4.5); ctx.lineTo(x, y + 1); ctx.lineTo(x + 7, y - 4.5); ctx.stroke();
+  } else if (tipo === 'ubicacion') {
+    ctx.beginPath(); ctx.arc(x, y - 2, 4.6, Math.PI, 0); ctx.lineTo(x, y + 7); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = OSCURO; ctx.beginPath(); ctx.arc(x, y - 2, 1.8, 0, 7); ctx.fill();
+  } else if (tipo === 'reloj') {
+    ctx.beginPath(); ctx.arc(x, y, 6, 0, 7); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(x, y - 3.5); ctx.lineTo(x, y); ctx.lineTo(x + 3, y + 2); ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function dibujar(ctx, logo, d) {
+  ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, W, H);
+  marcaDeAgua(ctx);
+
+  // ---- Encabezado (0–112 pt)
+  ctx.fillStyle = AMARILLO; ctx.fillRect(0, 0, W, 5);
+  ctx.fillStyle = OSCURO; ctx.fillRect(W - 170, 0, 170, 5);
+  const altoLogo = 62, anchoLogo = altoLogo * logo.width / logo.height;
+  ctx.drawImage(logo, 42, 22, anchoLogo, altoLogo);
+  // Bloque derecho: tipo de documento
+  texto(ctx, d.titulo, 564, 52, { tam: d.titulo.length > 12 ? 19 : 22, peso: 700, color: OSCURO, alin: 'right', fuente: FUENTE_TIT, espaciado: 0.6 });
+  ctx.fillStyle = AMARILLO; ctx.fillRect(564 - 46, 59, 46, 3.5);
+  texto(ctx, d.subtitulo, 564, 76, { tam: 8.5, color: GRIS, alin: 'right' });
+  texto(ctx, 'Ingeniería sanitaria especializada', 564, 88, { tam: 8.5, peso: 600, color: OSCURO, alin: 'right' });
+  // Separador
+  ctx.fillStyle = OSCURO; ctx.fillRect(48, 103, 380, 1.6);
+  ctx.fillStyle = AMARILLO; ctx.fillRect(428, 102.2, 136, 3.2);
+
+  // ---- Franja inferior (740–790 pt): servicios o leyenda; 714–730 queda libre para el número de página.
+  ctx.fillStyle = GRIS_CLARO; ctx.fillRect(48, 742, 516, 0.8);
+  if (d.franja) {
+    ctx.font = `600 7.6px ${FUENTE}`;
+    const sep = 16, anchos = d.franja.map(t => ctx.measureText(t).width + t.length * 0.8);
+    let x = (W - (anchos.reduce((a, b) => a + b, 0) + sep * (d.franja.length - 1))) / 2;
+    d.franja.forEach((t, i) => {
+      texto(ctx, t, x, 768, { tam: 7.6, peso: 600, color: GRIS, espaciado: 0.8 });
+      x += anchos[i];
+      if (i < d.franja.length - 1) { ctx.fillStyle = AMARILLO; ctx.beginPath(); ctx.arc(x + sep / 2, 765.3, 1.8, 0, 7); ctx.fill(); x += sep; }
+    });
+  } else {
+    texto(ctx, d.leyenda[0], W / 2, 762, { tam: 8, peso: 600, color: OSCURO, alin: 'center' });
+    texto(ctx, d.leyenda[1], W / 2, 775, { tam: 8, color: GRIS, alin: 'center' });
+  }
+
+  // ---- Pie oscuro (800–918 pt) con pestaña amarilla
+  ctx.fillStyle = AMARILLO;
+  ctx.beginPath(); ctx.moveTo(0, 806); ctx.lineTo(450, 806); ctx.lineTo(468, 794); ctx.lineTo(W, 794); ctx.lineTo(W, 812); ctx.lineTo(0, 812); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = OSCURO; ctx.fillRect(0, 810, W, H - 810);
+  const items = [['web', CONTACTO.web], ['correo', CONTACTO.correo], ['reloj', CONTACTO.atencion], ['ubicacion', CONTACTO.cobertura]];
+  const col = (W - 96) / items.length;
+  items.forEach(([ic, t], i) => {
+    const cx = 48 + col * i;
+    icono(ctx, ic, cx + 8, 858);
+    texto(ctx, t, cx + 20, 861, { tam: 7.8, color: '#E9EBEE' });
+    if (i) { ctx.fillStyle = 'rgba(246,177,3,.55)'; ctx.fillRect(cx - 8, 846, 0.9, 24); }
+  });
+  texto(ctx, 'SANEADREN · SANEAMIENTO DE DRENAJES', W / 2, 896, { tam: 6.8, peso: 600, color: '#8A9099', alin: 'center', espaciado: 1.4 });
+}
+
+const lienzos = [];
+(async () => {
+  const logo = await cargarImagen('/logo-saneadren.png');
+  await document.fonts.ready;
+  for (const d of DOCUMENTOS) {
+    const c = document.createElement('canvas'); c.width = W * ESCALA; c.height = H * ESCALA;
+    const ctx = c.getContext('2d'); ctx.scale(ESCALA, ESCALA);
+    dibujar(ctx, logo, d);
+    document.getElementById('lienzos').appendChild(c);
+    lienzos.push([d.archivo, c]);
+  }
+  window.MEMBRETES_LISTOS = true;
+})();
+
+async function guardar() {
+  for (const [archivo, c] of lienzos) {
+    const blob = await new Promise(r => c.toBlob(r, 'image/png'));
+    const resp = await fetch('/guardar/' + archivo, { method: 'POST', body: blob });
+    if (!resp.ok) throw new Error(await resp.text());
+  }
+  return lienzos.map(l => l[0]);
+}
+document.getElementById('guardar').onclick = async () => {
+  const estado = document.getElementById('estado');
+  try { estado.textContent = ' Guardado: ' + (await guardar()).join(', '); }
+  catch (e) { estado.textContent = ' Error: ' + e.message; }
+};
+</script>
+</body>
+</html>

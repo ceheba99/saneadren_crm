@@ -1,7 +1,9 @@
 const Database = require('better-sqlite3');
 const path = require('path');
 
-const db = new Database(path.join(__dirname, '..', 'saneadren.db'));
+// DB_PATH permite guardar la base en un disco persistente (p. ej. /var/data/saneadren.db en Render);
+// sin él se usa saneadren.db junto al proyecto.
+const db = new Database(process.env.DB_PATH || path.join(__dirname, '..', 'saneadren.db'));
 db.pragma('journal_mode = WAL');
 db.pragma('foreign_keys = ON');
 db.pragma('busy_timeout = 5000');
@@ -95,6 +97,11 @@ if (!columnasLeads.includes('valor')) {
 }
 if (!columnasLeads.includes('fecha_servicio')) {
   db.exec('ALTER TABLE leads ADD COLUMN fecha_servicio TEXT');
+}
+// Muchas solicitudes entran con urgencia (el cliente necesita el servicio el mismo día o al
+// siguiente); esta bandera permite priorizarlas en el pipeline sin depender de leerlo en notas.
+if (!columnasLeads.includes('urgente')) {
+  db.exec('ALTER TABLE leads ADD COLUMN urgente INTEGER NOT NULL DEFAULT 0');
 }
 // Recurrencia por servicio: un CRM de saneamiento vive de las recompras (fosas, trampas de
 // grasa, mantenimiento a plantas), no solo de leads nuevos. dias_recurrencia indica cada
@@ -222,14 +229,57 @@ db.exec('CREATE TABLE IF NOT EXISTS tipos_cliente (clave TEXT PRIMARY KEY, nombr
 const insertarTipo = db.prepare('INSERT OR IGNORE INTO tipos_cliente (clave,nombre) VALUES (?,?)');
 [['residencial','Residencial'],['comercial','Comercial'],['industrial','Industrial']].forEach(t=>insertarTipo.run(...t));
 if(!db.prepare('PRAGMA table_info(leads)').all().some(c=>c.name==='partidas_json'))db.exec('ALTER TABLE leads ADD COLUMN partidas_json TEXT');
+// Bitácora de actividad: distingue eventos que el propio sistema registra automáticamente
+// (cotización creada, cambios de estatus) de las notas/alertas que escribe el equipo.
+// No toca el CHECK de "tipo" (evita recrear la tabla); es una columna aditiva simple.
+if(!db.prepare('PRAGMA table_info(historial)').all().some(c=>c.name==='origen'))db.exec("ALTER TABLE historial ADD COLUMN origen TEXT NOT NULL DEFAULT 'manual'");
+// Encuesta de calidad: se responde cuando el servicio ya se hizo, por eso vive en el lead
+// (no en el cliente) — cada servicio contratado tiene su propia calificación. Escala
+// 1=Malo .. 4=Excelente (número más alto = mejor, para poder promediarla en reportes).
+if(!db.prepare('PRAGMA table_info(leads)').all().some(c=>c.name==='encuesta_calificacion'))db.exec('ALTER TABLE leads ADD COLUMN encuesta_calificacion INTEGER');
+if(!db.prepare('PRAGMA table_info(leads)').all().some(c=>c.name==='encuesta_comentario'))db.exec('ALTER TABLE leads ADD COLUMN encuesta_comentario TEXT');
+// Fecha de la cotización (documento) es un dato distinto de fecha_servicio (cuándo se
+// hace el trabajo, para la orden de servicio) — por eso van en columnas separadas y no
+// se reutiliza una sola fecha con dos significados. incluye_vigencia por default en 1
+// para no cambiar el comportamiento de las cotizaciones ya existentes.
+if(!db.prepare('PRAGMA table_info(leads)').all().some(c=>c.name==='fecha_cotizacion'))db.exec('ALTER TABLE leads ADD COLUMN fecha_cotizacion TEXT');
+if(!db.prepare('PRAGMA table_info(leads)').all().some(c=>c.name==='incluye_vigencia'))db.exec('ALTER TABLE leads ADD COLUMN incluye_vigencia INTEGER NOT NULL DEFAULT 1');
+if(!db.prepare('PRAGMA table_info(leads)').all().some(c=>c.name==='vigencia_hasta'))db.exec('ALTER TABLE leads ADD COLUMN vigencia_hasta TEXT');
+// Control de concurrencia: sin esto, si dos personas abren la misma cotización a la vez,
+// la segunda en guardar borra los cambios de la primera sin ningún aviso. Mismo patrón
+// que ya usa establecimientos (prospección) — version por default 1 para no romper leads
+// ya existentes; se compara y se incrementa en cada PUT /leads/:id.
+if(!db.prepare('PRAGMA table_info(leads)').all().some(c=>c.name==='version'))db.exec('ALTER TABLE leads ADD COLUMN version INTEGER NOT NULL DEFAULT 1');
+// Origen del registro: 'cotizacion' = nació como cotización (puede terminar en orden de
+// servicio); 'directo' = orden de servicio registrada o duplicada sin pasar por cotización,
+// así que NO tiene folio de cotización. duplicado_de apunta a la orden de la que se copió.
+if(!db.prepare('PRAGMA table_info(leads)').all().some(c=>c.name==='origen')){
+  db.exec("ALTER TABLE leads ADD COLUMN origen TEXT NOT NULL DEFAULT 'cotizacion'");
+  db.exec(`UPDATE leads SET origen='directo' WHERE id IN (SELECT lead_id FROM historial WHERE origen='sistema' AND texto='Servicio registrado directamente como contratado.')`);
+}
+if(!db.prepare('PRAGMA table_info(leads)').all().some(c=>c.name==='duplicado_de'))db.exec('ALTER TABLE leads ADD COLUMN duplicado_de INTEGER REFERENCES leads(id) ON DELETE SET NULL');
+// Datos propios de la orden de servicio (los mismos del formato en papel): unidad/equipo
+// que se envía, operador(es) que lo ejecutan y observaciones del trabajo realizado.
+for(const c of ['equipo','operador','observaciones'])if(!db.prepare('PRAGMA table_info(leads)').all().some(x=>x.name===c))db.exec(`ALTER TABLE leads ADD COLUMN ${c} TEXT`);
 // Restricciones para escrituras nuevas; no se modifican registros históricos.
 db.transaction(()=>{
   db.exec('CREATE INDEX IF NOT EXISTS idx_leads_estado_fecha ON leads(estatus,fecha_servicio)');
   db.exec('CREATE INDEX IF NOT EXISTS idx_clientes_origen_fecha ON clientes(canal_origen_id,created_at)');
-  for(const operacion of ['INSERT','UPDATE'])db.exec(`CREATE TRIGGER IF NOT EXISTS validar_lead_${operacion.toLowerCase()} BEFORE ${operacion} ON leads BEGIN
+  // DROP + CREATE (no "IF NOT EXISTS"): un trigger ya creado en una base existente se
+  // queda con el cuerpo de la primera vez que se creó, aunque el código de este archivo
+  // cambie después — "IF NOT EXISTS" lo deja huérfano de las reglas nuevas para siempre.
+  // Recrearlo en cada arranque asegura que las bases ya existentes reciban las reglas
+  // agregadas más tarde (fecha_cotizacion, vigencia_hasta, encuesta_calificacion, etc.).
+  for(const operacion of ['INSERT','UPDATE']){
+    db.exec(`DROP TRIGGER IF EXISTS validar_lead_${operacion.toLowerCase()}`);
+    db.exec(`CREATE TRIGGER validar_lead_${operacion.toLowerCase()} BEFORE ${operacion} ON leads BEGIN
     SELECT CASE WHEN NEW.valor IS NOT NULL AND (typeof(NEW.valor) NOT IN ('integer','real') OR NEW.valor<0 OR NEW.valor>1000000000000) THEN RAISE(ABORT,'Importe inválido') END;
     SELECT CASE WHEN NEW.fecha_servicio IS NOT NULL AND (length(NEW.fecha_servicio)<>10 OR date(NEW.fecha_servicio,'+0 days') IS NULL OR date(NEW.fecha_servicio,'+0 days')<>NEW.fecha_servicio) THEN RAISE(ABORT,'Fecha inválida') END;
+    SELECT CASE WHEN NEW.fecha_cotizacion IS NOT NULL AND (length(NEW.fecha_cotizacion)<>10 OR date(NEW.fecha_cotizacion,'+0 days') IS NULL OR date(NEW.fecha_cotizacion,'+0 days')<>NEW.fecha_cotizacion) THEN RAISE(ABORT,'Fecha de cotización inválida') END;
+    SELECT CASE WHEN NEW.vigencia_hasta IS NOT NULL AND (length(NEW.vigencia_hasta)<>10 OR date(NEW.vigencia_hasta,'+0 days') IS NULL OR date(NEW.vigencia_hasta,'+0 days')<>NEW.vigencia_hasta) THEN RAISE(ABORT,'Fecha de vigencia inválida') END;
     SELECT CASE WHEN NEW.partidas_json IS NOT NULL AND NOT json_valid(NEW.partidas_json) THEN RAISE(ABORT,'Partidas inválidas') END;
+    SELECT CASE WHEN NEW.encuesta_calificacion IS NOT NULL AND NEW.encuesta_calificacion NOT BETWEEN 1 AND 4 THEN RAISE(ABORT,'Calificación inválida') END;
   END`);
+  }
 })();
 module.exports = { db, normalizarTelefono };

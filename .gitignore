@@ -3,3 +3,6 @@ saneadren.db
 saneadren.db-shm
 saneadren.db-wal
 *.log
+.env
+*.rar
+test-simulacion.mjs

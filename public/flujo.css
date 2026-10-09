@@ -16,5 +16,4 @@
 .contacto-relacion{display:block;font-size:11px;color:var(--texto-sec);margin-top:4px;}
 #registro-contacto + .ficha-meta{margin-bottom:0;}
 .tabla-clientes tbody tr:focus-visible{outline:3px solid var(--amarillo);outline-offset:-3px;}
-#overlay-generar-cotizacion .modal{max-width:720px;}
 @media(max-width:600px){.contacto-resumen{align-items:stretch;flex-direction:column;}.contacto-identidad{align-items:flex-start;gap:12px;}.contacto-identidad h3{font-size:20px;}.contacto-avatar{width:44px;height:44px;font-size:23px;}.relacion-registros .btn-group{flex-direction:column;}.relacion-registros .btn-group>.btn{flex:auto;}.flujo-ayuda{padding:12px;}}

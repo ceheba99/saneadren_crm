@@ -19,13 +19,15 @@
     </div>
   </div>
   <nav>
-    <button data-vista="alta" class="activa">Nuevo contacto</button>
+    <button data-vista="inicio" class="activa">Inicio</button>
+    <button data-vista="alta">Nuevo contacto</button>
     <button data-vista="leads">Cotizaciones</button>
     <button data-vista="prospeccion">Prospección</button>
     <button data-vista="clientes">Contactos y clientes</button>
     <button data-vista="pendientes">Pendientes <span id="badge-pendientes">0</span></button>
     <button data-vista="resultados">Resultados</button>
-    <button class="diseno-nav-usuarios" data-vista="usuarios" id="nav-usuarios">Usuarios</button>
+    <button data-vista="catalogos" id="nav-catalogos">Catálogos</button>
+    <button class="diseno-nav-usuarios solo-admin" data-vista="usuarios" id="nav-usuarios">Usuarios</button>
   </nav>
   <div class="util-2">
     <span>👤 <b id="sesion-nombre"></b></span>
@@ -35,8 +37,28 @@
 
 <main>
 
-  <!-- ====== VISTA: ALTA RÁPIDA (pantalla principal) ====== -->
-  <section class="vista activa" id="vista-alta">
+  <!-- ====== VISTA: INICIO (pantalla principal, lo urgente del día) ====== -->
+  <section class="vista activa" id="vista-inicio">
+    <div class="inicio-saludo">
+      <h2>Lo que necesita atención hoy</h2>
+      <p class="ayuda">Todo lo que ya vencido o toca hoy, junto en un solo lugar. Cada tarjeta te lleva directo al registro — no hace falta buscarlo.</p>
+    </div>
+
+    <div class="inicio-bloque inicio-bloque-cotizacion">
+      <h3><span class="cadena-nodo pasado">📄 Cotizaciones</span> que necesitan seguimiento</h3>
+      <p class="ayuda">Alertas vencidas y cotizaciones abiertas sin movimiento hace más de 7 días.</p>
+      <div id="inicio-cotizaciones" class="inicio-lista"></div>
+    </div>
+
+    <div class="inicio-bloque inicio-bloque-servicio">
+      <h3><span class="cadena-nodo activo">🧾 Recompras</span> listas para registrar como nuevo servicio</h3>
+      <p class="ayuda">Clientes que ya contrataron antes y, según el ciclo del servicio, probablemente ya lo necesiten otra vez.</p>
+      <div id="inicio-recompras" class="inicio-lista"></div>
+    </div>
+  </section>
+
+  <!-- ====== VISTA: ALTA RÁPIDA ====== -->
+  <section class="vista" id="vista-alta">
     <div class="panel-alta">
       <h2>Crear un contacto</h2>
       <p class="ayuda">Primero busca por teléfono. Para un contacto nuevo, captura nombre y teléfono.</p>
@@ -70,6 +92,7 @@
       <input type="date" id="f-desde" title="Filtrar desde esta fecha de creación">
       <span class="filtro-fecha-label">Hasta</span>
       <input type="date" id="f-hasta" title="Filtrar hasta esta fecha de creación">
+      <label><input type="checkbox" id="f-urgente"> Solo urgentes</label>
       <button class="btn btn-outline util-8" onclick="limpiarFiltros()">Limpiar filtros</button>
       <button class="btn btn-secundario" id="btn-exportar-leads">📥 Exportar a Excel</button>
     </div>
@@ -86,7 +109,7 @@
       </div>
       <div class="kpi-card" data-etapa="2" id="kpi-2">
         <div class="kpi-etapa">Etapa 2</div>
-        <div class="kpi-nombre">Cotización / Visita</div>
+        <div class="kpi-nombre">Cotización enviada</div>
         <div class="kpi-total" id="kpi-2-total">0</div>
         <div class="kpi-total-label">cotizaciones en esta etapa</div>
         <div class="kpi-desglose" id="kpi-2-desglose"></div>
@@ -95,7 +118,7 @@
       </div>
       <div class="kpi-card" data-etapa="3" id="kpi-3">
         <div class="kpi-etapa">Etapa 3</div>
-        <div class="kpi-nombre">Cierre / Programación</div>
+        <div class="kpi-nombre">Seguimiento / Negociación</div>
         <div class="kpi-total" id="kpi-3-total">0</div>
         <div class="kpi-total-label">cotizaciones en esta etapa</div>
         <div class="kpi-desglose" id="kpi-3-desglose"></div>
@@ -104,7 +127,7 @@
       </div>
       <div class="kpi-card" data-etapa="4" id="kpi-4">
         <div class="kpi-etapa">Etapa 4</div>
-        <div class="kpi-nombre">Post-venta</div>
+        <div class="kpi-nombre">Cierre</div>
         <div class="kpi-total" id="kpi-4-total">0</div>
         <div class="kpi-total-label">cotizaciones en esta etapa</div>
         <div class="kpi-desglose" id="kpi-4-desglose"></div>
@@ -124,7 +147,7 @@
       </div>
       <div class="kanban-col" data-etapa="2" ondragover="dragOver(event)" ondragleave="dragLeave(event)" ondrop="drop(event, 2)">
         <div class="kanban-col-header">
-          <h3>💰 Cotización / Visita</h3>
+          <h3>💰 Cotización enviada</h3>
           <span class="count" id="count-2">0</span>
         </div>
         <div class="kanban-cards" id="col-2"></div>
@@ -132,7 +155,7 @@
       </div>
       <div class="kanban-col" data-etapa="3" ondragover="dragOver(event)" ondragleave="dragLeave(event)" ondrop="drop(event, 3)">
         <div class="kanban-col-header">
-          <h3>✅ Cierre / Programación</h3>
+          <h3>✅ Seguimiento / Negociación</h3>
           <span class="count" id="count-3">0</span>
         </div>
         <div class="kanban-cards" id="col-3"></div>
@@ -140,7 +163,7 @@
       </div>
       <div class="kanban-col" data-etapa="4" ondragover="dragOver(event)" ondragleave="dragLeave(event)" ondrop="drop(event, 4)">
         <div class="kanban-col-header">
-          <h3>🤝 Post-venta</h3>
+          <h3>🤝 Cierre</h3>
           <span class="count" id="count-4">0</span>
         </div>
         <div class="kanban-cards" id="col-4"></div>
@@ -258,7 +281,7 @@
     </div>
     <div class="panel-alta">
       <h2>Crear nuevo usuario</h2>
-      <p class="ayuda">Se usará este nombre y contraseña para iniciar sesión.</p>
+      <p class="ayuda">Podrá iniciar sesión con su nombre o su correo. El personal también puede registrarse solo desde la pantalla de inicio de sesión con su correo @saneadren.com.mx.</p>
       <div class="form-grid">
         <div class="campo">
           <label>Nombre</label>
@@ -266,7 +289,11 @@
         </div>
         <div class="campo">
           <label>Contraseña</label>
-          <input type="password" id="nu-password" placeholder="Mínimo 4 caracteres">
+          <input type="password" id="nu-password" placeholder="Mínimo 10 caracteres, letras y números" autocomplete="new-password">
+        </div>
+        <div class="campo">
+          <label>Correo (opcional)</label>
+          <input type="email" id="nu-correo" placeholder="nombre@saneadren.com.mx" autocomplete="off">
         </div>
         <div class="campo">
           <label>Rol</label>
@@ -284,17 +311,22 @@
       </div>
     </div>
     <h3 class="util-13">Usuarios activos</h3>
+    <p class="ayuda">Cambia nombre, correo o rol y pulsa Guardar. "Nueva contraseña" asigna una temporal que la persona deberá cambiar al entrar; al cambiar el rol o la contraseña se cierran sus sesiones abiertas.</p>
     <div id="lista-usuarios"></div>
 
+  </section>
+
+  <section class="vista" id="vista-catalogos">
+    <h2 class="util-13">Catálogos</h2>
     <h3 class="util-14">Tipos de cliente</h3>
     <p class="ayuda">Agrega tipos o cambia sus nombres. Renombrar conserva la clasificación de los contactos existentes.</p>
     <div id="lista-tipos-cliente"></div>
     <div class="campo"><label for="nuevo-tipo-cliente">Nuevo tipo de cliente</label><input id="nuevo-tipo-cliente" maxlength="80" placeholder="Ej. Gobierno"><button type="button" class="btn btn-primario" id="btn-agregar-tipo">Agregar tipo</button></div>
-    <h3 class="util-14">Catálogo de servicios — descripciones y recurrencia</h3>
-    <p class="ayuda util-15">Cada cuántos días conviene volver a ofrecerle este servicio a un cliente que ya lo tuvo. Déjalo vacío si es un servicio de una sola vez (sin recompra periódica). Esto alimenta la vista "Recompras".</p>
+    <h3 class="util-14">Catálogo de servicios</h3>
+    <p class="ayuda util-15">Usa ↑ ↓ para cambiar el orden en que aparecen en las listas. <span class="solo-admin">La recompra (cada cuántos días volver a ofrecer el servicio) alimenta la vista "Recompras"; déjala vacía si es de una sola vez.</span></p>
     <p class="ayuda">Guarda aquí la descripción base de cada servicio. Al elegirlo en una cotización se precarga y puedes editarla solo para ese documento, sin cambiar el catálogo.</p>
     <div id="lista-servicios-catalogo"></div>
-    <div class="panel-alta">
+    <div class="panel-alta solo-admin">
       <h2>Agregar servicio nuevo</h2>
       <div class="form-grid">
         <div class="campo">
@@ -314,8 +346,8 @@
       </div>
     </div>
 
-    <h3 class="util-14">Canales de contacto</h3>
-    <p class="ayuda util-15">Por dónde llegan los leads (llamada, WhatsApp, redes, publicidad, etc.).</p>
+    <h3 class="util-14">Cómo se enteraron de nosotros (canales)</h3>
+    <p class="ayuda util-15">Por dónde llegan los contactos (llamada, WhatsApp, redes, publicidad, etc.). Renombrar conserva el canal de los contactos existentes. Usa ↑ ↓ para cambiar el orden.</p>
     <div id="lista-canales-catalogo"></div>
     <div class="panel-alta">
       <h2>Agregar canal nuevo</h2>
@@ -338,7 +370,7 @@
 <div class="overlay" id="overlay-ficha">
   <div class="modal">
     <div class="modal-header">
-      <div><div class="flujo-kicker" id="registro-tipo">EDITAR COTIZACIÓN</div><h2 id="ficha-titulo">Cotización</h2></div>
+      <div><div class="flujo-kicker" id="registro-tipo">EDITAR COTIZACIÓN</div><h2 id="ficha-titulo">Cotización</h2><div class="cadena-documentos" id="cadena-documentos"></div></div>
       <button class="close-btn" id="btn-cerrar-modal">✕</button>
     </div>
     <div class="modal-body">
@@ -353,8 +385,8 @@
         <div class="pipeline-track" id="pipeline-track">
           <div class="pipeline-step" data-step="1"><span class="step-num">1</span>Datos</div>
           <div class="pipeline-step" data-step="2"><span class="step-num">2</span>Cotización</div>
-          <div class="pipeline-step" data-step="3"><span class="step-num">3</span>Cierre</div>
-          <div class="pipeline-step" data-step="4"><span class="step-num">4</span>Post-venta</div>
+          <div class="pipeline-step" data-step="3"><span class="step-num">3</span>Seguimiento</div>
+          <div class="pipeline-step" data-step="4"><span class="step-num">4</span>Cierre</div>
         </div>
       </div>
 
@@ -370,22 +402,47 @@
             <label>Servicio</label><select id="ed-servicio"></select>
           </div>
           <div class="campo-modal">
-            <label>Responsable</label><select id="ed-responsable"></select>
+            <label>Atendido por</label><select id="ed-responsable"></select>
           </div>
           <div class="campo-modal"><label>Valor del servicio (MXN)</label><input type="number" id="ed-valor" min="0" step="0.01" placeholder="0.00"></div>
+          <div class="campo-modal"><label>Fecha de la cotización</label><input type="date" id="ed-fecha-cotizacion"></div>
           <div class="campo-modal"><label>Fecha del servicio</label><input type="date" id="ed-fecha-servicio"></div>
+          <div class="campo-modal">
+            <label class="diseno-campo-checkbox"><input type="checkbox" id="ed-incluye-vigencia" checked> Incluir vigencia en la cotización</label>
+          </div>
+          <div class="campo-modal" id="wrap-vigencia-hasta"><label>Vigencia hasta</label><input type="date" id="ed-vigencia-hasta"></div>
           <div class="campo-modal full"><label>Notas de la cotización</label><textarea id="ed-notas" rows="2" placeholder="Notas capturadas al registrar la cotización..."></textarea></div>
+          <div class="campo-modal"><label class="diseno-campo-checkbox"><input type="checkbox" id="ed-urgente"> 🔴 Solicitud urgente</label></div>
+          <div class="campo-modal solo-orden"><label for="ed-equipo">Equipo</label><input type="text" id="ed-equipo" maxlength="200" placeholder="Ej. E-37-04"></div>
+          <div class="campo-modal solo-orden"><label for="ed-operador">Operador(es)</label><input type="text" id="ed-operador" maxlength="300" placeholder="Nombre de quien ejecuta el servicio"></div>
+          <div class="campo-modal full solo-orden"><label for="ed-observaciones">Observaciones de la orden</label><textarea id="ed-observaciones" rows="2" maxlength="3000" placeholder="Se imprimen en la orden de servicio; también puedes capturar lo que anotó el operador"></textarea></div>
         </div>
         <div class="util-16">
           <span class="chip util-17">Creado por: <b id="ed-creado-por">—</b></span>
           <span class="chip util-17">Fecha de creación: <b id="ed-created-at">—</b></span>
           <span class="chip util-17">Estatus de cotización: <b id="ed-estatus-actual">—</b></span>
         </div>
+        <div class="modal-section" id="seccion-encuesta" hidden>
+          <div class="seccion-tit">Encuesta de calidad del servicio</div>
+          <p class="ayuda">Se imprime en la orden de servicio para que el cliente la conteste en papel; regístrala aquí cuando el técnico la traiga de vuelta. Se guarda con el mismo botón de "Guardar cambios" de abajo.</p>
+          <div class="form-grid-2">
+            <div class="campo-modal">
+              <label>Calificación del cliente</label>
+              <select id="ed-encuesta-calificacion">
+                <option value="">Sin registrar todavía</option>
+                <option value="4">Excelente</option>
+                <option value="3">Bueno</option>
+                <option value="2">Regular</option>
+                <option value="1">Malo</option>
+              </select>
+            </div>
+            <div class="campo-modal"><label>Comentario del cliente (opcional)</label><input type="text" id="ed-encuesta-comentario" placeholder="Lo que el cliente escribió o comentó..."></div>
+          </div>
+        </div>
         <div class="btn-group">
           <span id="estado-guardado-registro" class="estado-guardado" role="status"></span>
           <button class="btn btn-secundario" id="btn-guardar-ficha">Guardar cambios de este registro</button>
-          <button class="btn btn-ghost diseno-nav-usuarios" id="btn-recomprar">Registrar otro servicio contratado</button>
-          <button class="btn btn-verde" id="btn-convertir-cliente">Aceptar cotización y contratar servicio</button>
+          <button class="btn btn-ghost diseno-nav-usuarios" id="btn-recomprar" title="Crea otra orden de servicio con los mismos datos — útil para servicio recurrente">⧉ Duplicar esta orden de servicio</button>
           <button class="btn btn-outline diseno-nav-usuarios" id="btn-reabrir">↺ Reabrir cotización</button>
           <span id="btn-generar-cotizacion" hidden></span>
         </div>
@@ -410,6 +467,12 @@
             <button class="btn btn-primario diseno-btn-agregar-obs" id="btn-agregar-obs">Agregar</button>
           </div>
         </div>
+      </div>
+
+      <div class="modal-section">
+        <div class="seccion-tit">Bitácora de actividad</div>
+        <p class="ayuda">Todo lo que le ha pasado a este registro: eventos automáticos del sistema y notas del equipo, de lo más reciente a lo más antiguo.</p>
+        <div id="bitacora-lista" class="bitacora-lista"></div>
       </div>
 
       <div class="modal-section">
@@ -461,7 +524,7 @@
 
       <div class="modal-section">
         <div class="relacion-registros"><div><div class="seccion-tit">Cotizaciones y servicios de este contacto</div><p class="ayuda">Una cotización abierta es una propuesta. Al aceptarla, el mismo registro pasa a servicio contratado; conserva su número e importe.</p></div>
-        <div class="btn-group"><button class="btn btn-primario" id="btn-contacto-cotizar">Nueva cotización</button><button class="btn btn-outline" id="btn-recapturar-servicio">Registrar servicio contratado</button></div></div>
+        <div class="btn-group"><button class="btn btn-primario" id="btn-contacto-cotizar">📄 Crear cotización</button><button class="btn btn-secundario" id="btn-recapturar-servicio" title="Para cuando el cliente ya confirmó: registra el servicio sin pasar por cotización">🧾 Crear orden de servicio</button></div></div>
         <div class="ficha-meta" id="fc-meta"></div>
         <div id="fc-servicios" class="servicios-list"></div>
       </div>
@@ -474,21 +537,50 @@
 <!-- ====== OVERLAY: LOGIN ====== -->
 <div class="overlay diseno-overlay-login" id="overlay-login">
   <div class="modal util-24">
-    <div class="modal-header"><h2>Iniciar sesión</h2></div>
+    <div class="modal-header"><h2 id="cuenta-titulo">Iniciar sesión</h2></div>
     <div class="modal-body">
-      <form id="form-login">
+      <p class="cuenta-aviso" id="cuenta-aviso" role="status" hidden></p>
+      <form id="form-login" data-vista="login">
         <div class="form-grid util-25">
           <div class="campo">
-            <label>Usuario</label>
-            <input type="text" id="login-nombre" autocomplete="username" required>
+            <label for="login-nombre">Usuario o correo</label>
+            <input type="text" id="login-nombre" autocomplete="username" required maxlength="254">
           </div>
           <div class="campo">
-            <label>Contraseña</label>
-            <input type="password" id="login-password" autocomplete="current-password" required>
+            <label for="login-password">Contraseña</label>
+            <input type="password" id="login-password" autocomplete="current-password" required maxlength="128">
           </div>
         </div>
         <div class="diseno-login-error" id="login-error"></div>
         <button type="submit" class="btn btn-primario util-27">Entrar</button>
+        <div class="cuenta-enlaces"><button type="button" class="enlace" data-ir="olvide">¿Olvidaste tu contraseña?</button><button type="button" class="enlace" data-ir="registro">Crear cuenta</button></div>
+      </form>
+      <form id="form-registro" data-vista="registro" hidden>
+        <p class="ayuda">Solo para personal con correo <b>@saneadren.com.mx</b>. Te enviaremos un enlace para confirmar tu correo.</p>
+        <div class="form-grid util-25">
+          <div class="campo"><label for="reg-nombre">Nombre y apellido</label><input type="text" id="reg-nombre" autocomplete="name" required minlength="3" maxlength="60"></div>
+          <div class="campo"><label for="reg-correo">Correo de la empresa</label><input type="email" id="reg-correo" autocomplete="email" required maxlength="254" placeholder="nombre@saneadren.com.mx"></div>
+          <div class="campo"><label for="reg-password">Contraseña</label><input type="password" id="reg-password" autocomplete="new-password" required minlength="10" maxlength="128"><small class="ayuda">Mínimo 10 caracteres, con letras y números.</small></div>
+          <div class="campo"><label for="reg-password2">Repite la contraseña</label><input type="password" id="reg-password2" autocomplete="new-password" required minlength="10" maxlength="128"></div>
+        </div>
+        <div class="diseno-login-error" id="registro-error"></div>
+        <button type="submit" class="btn btn-primario util-27">Crear cuenta</button>
+        <div class="cuenta-enlaces"><button type="button" class="enlace" data-ir="login">Ya tengo cuenta</button></div>
+      </form>
+      <form id="form-olvide" data-vista="olvide" hidden>
+        <p class="ayuda">Escribe el correo de tu cuenta y te enviaremos un enlace para crear una contraseña nueva.</p>
+        <div class="campo"><label for="olv-correo">Correo</label><input type="email" id="olv-correo" autocomplete="email" required maxlength="254" placeholder="nombre@saneadren.com.mx"></div>
+        <div class="diseno-login-error" id="olvide-error"></div>
+        <button type="submit" class="btn btn-primario util-27">Enviar enlace</button>
+        <div class="cuenta-enlaces"><button type="button" class="enlace" data-ir="login">Volver a iniciar sesión</button></div>
+      </form>
+      <form id="form-nueva-password" data-vista="nueva" hidden>
+        <p class="ayuda" id="nueva-ayuda">Elige tu contraseña nueva: mínimo 10 caracteres, con letras y números.</p>
+        <div class="campo" id="wrap-pass-actual" hidden><label for="np-actual">Contraseña actual</label><input type="password" id="np-actual" autocomplete="current-password" maxlength="128"></div>
+        <div class="campo"><label for="np-password">Contraseña nueva</label><input type="password" id="np-password" autocomplete="new-password" required minlength="10" maxlength="128"></div>
+        <div class="campo"><label for="np-password2">Repite la contraseña nueva</label><input type="password" id="np-password2" autocomplete="new-password" required minlength="10" maxlength="128"></div>
+        <div class="diseno-login-error" id="nueva-error"></div>
+        <button type="submit" class="btn btn-primario util-27">Guardar contraseña</button>
       </form>
     </div>
   </div>
@@ -521,8 +613,17 @@
           <label>Notas (opcional)</label>
           <textarea id="sn-notas" rows="2"></textarea>
         </div>
+        <div class="campo">
+          <label>&nbsp;</label>
+          <label class="diseno-campo-checkbox"><input type="checkbox" id="sn-urgente"> 🔴 Solicitud urgente</label>
+        </div>
       </div>
       <div class="campo"><label for="sn-ubicacion">Ubicación de este servicio (puedes cambiar el domicilio propuesto)</label><input id="sn-ubicacion" type="text"></div>
+      <div id="sn-datos-orden" hidden>
+        <div class="campo"><label for="sn-equipo">Equipo</label><input type="text" id="sn-equipo" maxlength="200" placeholder="Ej. E-37-04"></div>
+        <div class="campo"><label for="sn-operador">Operador(es)</label><input type="text" id="sn-operador" maxlength="300" placeholder="Nombre de quien ejecuta el servicio"></div>
+        <div class="campo"><label for="sn-observaciones">Observaciones de la orden (opcional)</label><textarea id="sn-observaciones" rows="2" maxlength="3000"></textarea></div>
+      </div>
       <div id="editor-nuevo-destino"></div><span id="estado-guardado-nuevo" class="estado-guardado" role="status"></span>
       <button class="btn btn-primario diseno-btn-guardar-servicio-nuevo" id="btn-guardar-servicio-nuevo">Crear registro</button>
     </div>
@@ -531,13 +632,14 @@
 
 <!-- ====== OVERLAY: GENERAR COTIZACIÓN (PDF o Word, uno o varios servicios) ====== -->
 <div id="editor-cotizacion" hidden>
-  <div class="seccion-tit">Contenido de la cotización</div>
-  <p class="ayuda">Edita servicios, descripciones e importes. Se guardan con esta cotización y se usan en la descarga.</p>
+  <div class="seccion-tit" id="gc-titulo-contenido">Contenido de la cotización</div>
+  <p class="ayuda" id="gc-ayuda-contenido">Edita servicios, descripciones e importes. Se guardan con esta cotización y se usan en la descarga.</p>
   <div id="gc-items"></div><button type="button" class="btn btn-outline" id="btn-gc-agregar-servicio">+ Agregar servicio</button>
   <p>Total: <b id="gc-total">$0.00</b></p>
   <label><input type="radio" name="gc-formato" id="gc-formato-pdf" value="pdf" checked> PDF</label>
   <label><input type="radio" name="gc-formato" value="word"> Word</label>
   <button type="button" class="btn btn-primario" id="btn-gc-generar">Guardar y descargar cotización</button>
+  <button type="button" class="btn btn-verde" id="btn-generar-orden-servicio" hidden>Generar orden de servicio</button>
 </div>
 <!-- Librerías para generar el documento de cotización (PDF y Word) -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
@@ -553,6 +655,7 @@
 <script src="ui.js"></script>
 <script src="servicios-tabla.js"></script>
 <script src="flujo.js"></script>
+<script src="cuentas.js"></script>
 <script src="app.js"></script>
 <script src="prospeccion.js"></script>
 </body>

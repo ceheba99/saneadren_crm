@@ -10,7 +10,8 @@ const ServiciosTabla = (() => {
     if(f.desde && f.hasta && f.desde>f.hasta) return [];
     return datos.filter(s=>{
       const d=dia(s[f.fecha]);
-      return (!f.estatus || s.estatus===f.estatus) && (!f.busqueda || normalizar([s.id,s.servicio_nombre,s.responsable_nombre,s.notas_iniciales].join(' ')).includes(normalizar(f.busqueda))) && (!f.desde || (d && d>=f.desde)) && (!f.hasta || (d && d<=f.hasta));
+      const folio=s.estatus==='ganado'?folioOrdenServicio(s):folioCotizacion(s);
+      return (!f.estatus || s.estatus===f.estatus) && (!f.busqueda || normalizar([s.id,folio,s.servicio_nombre,s.responsable_nombre,s.notas_iniciales].join(' ')).includes(normalizar(f.busqueda))) && (!f.desde || (d && d>=f.desde)) && (!f.hasta || (d && d<=f.hasta));
     });
   }
   function ordenar(datos,col,dir) {
@@ -23,7 +24,7 @@ const ServiciosTabla = (() => {
     });
   }
   function inicial(tipo) {return {busqueda:'',estatus:'',fecha:'created_at',desde:'',hasta:''};}
-  const columnas=[['id','ID'],['servicio_nombre','Servicio'],['estatus','Estatus'],['valor','Importe (MXN)'],['created_at','Registro'],['fecha_servicio','Fecha del servicio'],['responsable_nombre','Responsable']];
+  const columnas=[['id','Folio'],['servicio_nombre','Servicio'],['estatus','Estatus'],['valor','Importe (MXN)'],['created_at','Registro'],['fecha_servicio','Fecha del servicio'],['responsable_nombre','Responsable']];
   function render(id,datos,propietario,tipo) {
     let st=estados.get(id);
     const cont=document.getElementById(id);
@@ -57,12 +58,13 @@ const ServiciosTabla = (() => {
     const sinImporte=rows.filter(s=>s.valor==null).length;
     cont.querySelector('.servicios-resumen').textContent=`${rows.length} de ${st.datos.length} registros · Total filtrado: ${formatoMoneda(total)}${sinImporte ? ` · ${sinImporte} sin importe` : ''}`;
     cont.querySelectorAll('[data-col]').forEach(th=>{const actual=th.dataset.col===st.col;th.setAttribute('aria-sort',actual?(st.dir===1?'ascending':'descending'):'none');th.querySelector('span').textContent=actual?(st.dir===1?' ↑':' ↓'):' ↕';});
-    cont.querySelector('tbody').innerHTML=rows.length ? rows.map(s=>`<tr>
-      <td>#${Number(s.id)}</td><td class="servicio-nombre">${escapar(s.servicio_nombre||'Servicio')}${st.tipo==='lead' && s.id===LEAD_ACTUAL?.id?'<small>Ficha actual</small>':''}</td>
+    cont.querySelector('tbody').innerHTML=rows.length ? rows.map(s=>`<tr class="fila-${Object.hasOwn(nombres,s.estatus)?s.estatus:'abierto'}">
+      <td>${escapar(s.estatus==='ganado'?folioOrdenServicio(s):folioCotizacion(s))}</td><td class="servicio-nombre">${escapar(s.servicio_nombre||'Servicio')}${st.tipo==='lead' && s.id===LEAD_ACTUAL?.id?'<small>Ficha actual</small>':''}</td>
       <td><span class="tag-estatus ${Object.hasOwn(nombres,s.estatus)?s.estatus:'abierto'}">${escapar(nombres[s.estatus]||s.estatus)}</span></td>
       <td class="servicio-importe">${s.valor==null?'Sin importe':formatoMoneda(s.valor)}</td><td>${fecha(s.created_at)}</td><td>${fecha(s.fecha_servicio)}</td>
       <td>${escapar(s.responsable_nombre||'Sin asignar')}</td><td class="servicio-notas">${escapar(s.notas_iniciales||'—')}</td>
       <td><div class="servicios-acciones"><button type="button" class="btn btn-outline" data-accion="abrir" data-id="${Number(s.id)}" aria-label="Abrir ${s.estatus==='ganado'?'servicio':'cotización'} ${Number(s.id)}">${s.estatus==='ganado'?'Ver servicio':'Ver cotización'}</button>
+      ${s.estatus==='ganado'?`<button type="button" class="btn btn-outline" data-accion="duplicar" data-id="${Number(s.id)}" aria-label="Duplicar orden de servicio ${Number(s.id)}" title="Crea otra orden de servicio con los mismos datos — útil para clientes con servicio recurrente">Duplicar</button>`:''}
       <button type="button" class="btn btn-eliminar" data-accion="eliminar" data-id="${Number(s.id)}" aria-label="Eliminar servicio ${Number(s.id)}">Eliminar</button></div></td>
     </tr>`).join('') : `<tr><td colspan="9" class="servicios-vacio">${error?'Corrige las fechas para consultar servicios.':st.datos.length?'No hay servicios con estos filtros. Puedes seleccionar Todos o limpiar los filtros.':'Este contacto aún no tiene cotizaciones ni servicios registrados.'}</td></tr>`;
   }
@@ -75,8 +77,8 @@ const ServiciosTabla = (() => {
     btn.disabled=true;
     try {
       if(btn.dataset.accion==='abrir'){await abrirFicha(s.id);return;}
+      if(btn.dataset.accion==='duplicar'){await duplicarRegistro(s.id);return;}
       if(btn.dataset.accion==='eliminar') await eliminar(s);
-      else await cambiarEstatusServicio(s.id,btn.dataset.accion);
     } catch(err){toast('No se pudo completar: '+err.message);}
     finally{btn.disabled=false;}
   }
@@ -95,8 +97,7 @@ const ServiciosTabla = (() => {
       const cliente=lead.cliente_id?await api('/clientes/'+lead.cliente_id).then(r=>r.json()):null;
       if(LEAD_ACTUAL?.id===id){LEAD_ACTUAL={...lead,servicios_cliente:cliente?.servicios||[lead]};renderFichaMeta(lead);renderServiciosAnteriores();FlujoCRM.presentarRegistro(lead,cliente);ETAPA_FICHA=lead.etapa;actualizarPipeline();
         document.getElementById('ed-estatus-actual').textContent=FlujoCRM.estado(lead.estatus);
-        ['btn-convertir-cliente','btn-marcar-perdido'].forEach(id=>document.getElementById(id).style.display=lead.estatus==='abierto'?'inline-flex':'none');
-        document.getElementById('btn-reabrir').style.display=lead.estatus==='abierto'?'none':'inline-flex';
+        actualizarBotonesEstatusFicha(lead);
       }
     }
     if(CLIENTE_ACTUAL && document.getElementById('overlay-ficha-cliente').classList.contains('mostrar')){
