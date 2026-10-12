@@ -549,5 +549,243 @@ const Finanzas = (() => {
     if (r.gasto_por_categoria?.length && typeof renderBarChart === 'function') renderBarChart('res-gasto-categoria', r.gasto_por_categoria, 'nombre', 'total', formatoMoneda);
   }
 
+  // ===================== Plantillas de Excel para carga masiva (solo admin) =====================
+  // ExcelJS se descarga solo cuando se usa, con verificación de integridad (SRI).
+  let excelJs = null;
+  function cargarExcelJS() {
+    if (window.ExcelJS) return Promise.resolve(window.ExcelJS);
+    if (!excelJs) excelJs = new Promise((ok, mal) => {
+      const s = document.createElement('script');
+      s.src = 'https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js';
+      s.integrity = 'sha512-dlPw+ytv/6JyepmelABrgeYgHI0O+frEwgfnPdXDTOIZz+eDgfW07QXG02/O8COfivBdGNINy+Vex+lYmJ5rxw==';
+      s.crossOrigin = 'anonymous';
+      s.onload = () => ok(window.ExcelJS);
+      s.onerror = () => { excelJs = null; mal(new Error('No se pudo cargar el lector de Excel. Revisa tu conexión.')); };
+      document.head.appendChild(s);
+    });
+    return excelJs;
+  }
+  // tipo: texto | fecha | dinero | entero | lista. 'lista' toma sus opciones de la hoja Listas.
+  const PLANTILLAS = {
+    cxc: {
+      titulo: 'Cuentas por cobrar', archivo: 'plantilla_cuentas_por_cobrar.xlsx', ruta: '/finanzas/importar/cxc',
+      ayuda: 'Cada renglón crea una orden de servicio con su saldo. Si el teléfono ya existe se usa ese cliente (sus datos no se modifican); si no, se crea.',
+      columnas: [
+        { key: 'telefono', titulo: 'Teléfono del cliente', req: true, tipo: 'texto', ancho: 16, nota: '10 dígitos. Identifica al cliente.', ej: '4426164961' },
+        { key: 'nombre', titulo: 'Nombre del cliente', req: true, tipo: 'texto', ancho: 26, nota: 'Obligatorio si el cliente es nuevo.', ej: 'Jorge Cisneros' },
+        { key: 'empresa', titulo: 'Empresa', tipo: 'texto', ancho: 22, nota: 'Opcional.', ej: 'Empresa Salia' },
+        { key: 'direccion', titulo: 'Dirección del servicio', req: true, tipo: 'texto', ancho: 32, nota: 'Dónde se hizo el servicio.', ej: 'Carpinteros 9, Peñuelas, Qro.' },
+        { key: 'servicio', titulo: 'Servicio', req: true, tipo: 'lista', lista: 'servicios', ancho: 30, nota: 'Elige de la lista (catálogo del CRM).', ej: 'Desazolve de drenaje' },
+        { key: 'descripcion', titulo: 'Descripción del trabajo', tipo: 'texto', ancho: 32, nota: 'Opcional.', ej: 'Limpieza de rejillas con equipo Vactor' },
+        { key: 'fecha_servicio', titulo: 'Fecha del servicio', req: true, tipo: 'fecha', ancho: 14, nota: 'Fecha en que se hizo (o se hará) el servicio.', ej: '2026-09-15' },
+        { key: 'importe', titulo: 'Importe total (MXN)', req: true, tipo: 'dinero', ancho: 14, nota: 'Importe de la orden.', ej: 3500 },
+        { key: 'dias_credito', titulo: 'Días de crédito', tipo: 'entero', ancho: 10, nota: '0 = contado. De 0 a 180.', ej: 15 },
+        { key: 'factura_folio', titulo: 'Folio de factura', tipo: 'texto', ancho: 14, nota: 'Si ya se facturó.', ej: 'A-123' },
+        { key: 'factura_fecha', titulo: 'Fecha de factura', tipo: 'fecha', ancho: 14, nota: 'El vencimiento se cuenta desde aquí (si no, desde la fecha del servicio).', ej: '2026-09-16' },
+        { key: 'factura_total', titulo: 'Total facturado con IVA', tipo: 'dinero', ancho: 14, nota: 'Si lo facturado (con IVA) es distinto del importe.', ej: 4060 },
+        { key: 'pagado', titulo: 'Ya pagado (MXN)', tipo: 'dinero', ancho: 14, nota: 'Lo que el cliente ya pagó antes de importar. Vacío = nada.', ej: 1000 },
+        { key: 'notas', titulo: 'Notas', tipo: 'texto', ancho: 28, nota: 'Opcional.', ej: '' },
+      ],
+    },
+    cxp: {
+      titulo: 'Cuentas por pagar', archivo: 'plantilla_cuentas_por_pagar.xlsx', ruta: '/finanzas/importar/cxp',
+      ayuda: 'Cada renglón crea una factura o gasto de proveedor. Si el proveedor no existe se crea (con crédito 0; ajústalo después en Proveedores).',
+      columnas: [
+        { key: 'proveedor', titulo: 'Proveedor', req: true, tipo: 'texto', ancho: 28, nota: 'Nombre exacto. Si no existe, se crea.', ej: 'Disposición del Bajío' },
+        { key: 'categoria', titulo: 'Categoría', req: true, tipo: 'lista', lista: 'categorias', ancho: 26, nota: 'Elige de la lista.', ej: 'Disposición de residuos' },
+        { key: 'concepto', titulo: 'Concepto', req: true, tipo: 'texto', ancho: 32, nota: 'Qué se compró o qué servicio dio.', ej: 'Disposición 12 m3 de lodos' },
+        { key: 'factura_folio', titulo: 'Folio de factura', tipo: 'texto', ancho: 14, nota: 'Evita registrar dos veces la misma factura.', ej: 'F-77' },
+        { key: 'fecha_documento', titulo: 'Fecha de factura o gasto', req: true, tipo: 'fecha', ancho: 14, nota: '', ej: '2026-10-01' },
+        { key: 'fecha_vencimiento', titulo: 'Fecha de vencimiento', tipo: 'fecha', ancho: 14, nota: 'Vacío = fecha + días de crédito del proveedor.', ej: '2026-10-31' },
+        { key: 'total', titulo: 'Total con IVA (MXN)', req: true, tipo: 'dinero', ancho: 14, nota: 'Lo que hay que pagar.', ej: 2400.5 },
+        { key: 'pagado', titulo: 'Ya pagado (MXN)', tipo: 'dinero', ancho: 14, nota: 'Lo ya pagado antes de importar. Vacío = nada.', ej: 400.5 },
+        { key: 'metodo', titulo: 'Método de pago', tipo: 'lista', lista: 'metodos', ancho: 16, nota: 'Si hay algo ya pagado. Vacío = transferencia.', ej: 'Transferencia' },
+        { key: 'orden', titulo: 'Orden de servicio relacionada', tipo: 'texto', ancho: 18, nota: 'Opcional: folio OS-AAAAMM-0000 o número.', ej: '' },
+        { key: 'equipo', titulo: 'Equipo', tipo: 'texto', ancho: 14, nota: 'Opcional.', ej: 'E-37-04' },
+        { key: 'notas', titulo: 'Notas', tipo: 'texto', ancho: 28, nota: 'Opcional.', ej: '' },
+      ],
+    },
+  };
+  const FILAS_PLANTILLA = 500;
+  const sinAcentos = t => String(t || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[*()]/g, '').replace(/\s+/g, ' ').trim();
+
+  async function descargarPlantilla(tipo) {
+    const def = PLANTILLAS[tipo];
+    let ExcelJS;
+    try { ExcelJS = await cargarExcelJS(); } catch (err) { toast(err.message); return; }
+    let listas;
+    try {
+      listas = {
+        servicios: tipo === 'cxc' ? (await api('/servicios').then(json)).map(s => s.nombre) : [],
+        categorias: tipo === 'cxp' ? (await api('/finanzas/categorias').then(json)).map(c => c.nombre) : [],
+        metodos: METODOS.map(m => m[1]),
+      };
+    } catch (err) { toast('No se pudo preparar la plantilla: ' + err.message); return; }
+    const wb = new ExcelJS.Workbook();
+    wb.creator = 'Saneadren CRM';
+    const amarillo = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF6B103' } };
+    // Hoja de datos (la que se llena)
+    const ws = wb.addWorksheet('Datos', { views: [{ state: 'frozen', ySplit: 1 }] });
+    ws.columns = def.columnas.map(c => ({ header: c.titulo + (c.req ? ' *' : ''), key: c.key, width: c.ancho }));
+    ws.getRow(1).eachCell((cell, i) => {
+      const c = def.columnas[i - 1];
+      cell.font = { bold: true, color: { argb: 'FF1A1D23' } };
+      cell.fill = c.req ? amarillo : { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE4E8EA' } };
+      cell.alignment = { wrapText: true, vertical: 'middle' };
+      if (c.nota) cell.note = c.nota;
+    });
+    ws.getRow(1).height = 32;
+    // Hoja oculta con las listas de los desplegables
+    const wl = wb.addWorksheet('Listas', { state: 'hidden' });
+    const rangos = {};
+    ['servicios', 'categorias', 'metodos'].forEach((nombre, idx) => {
+      const col = String.fromCharCode(65 + idx);
+      wl.getCell(col + '1').value = nombre;
+      listas[nombre].forEach((v, i) => { wl.getCell(col + (i + 2)).value = v; });
+      rangos[nombre] = `Listas!$${col}$2:$${col}$${Math.max(2, listas[nombre].length + 1)}`;
+    });
+    def.columnas.forEach((c, i) => {
+      const col = ws.getColumn(i + 1);
+      if (c.tipo === 'fecha') col.numFmt = 'dd/mm/yyyy';
+      if (c.tipo === 'dinero') col.numFmt = '#,##0.00';
+      if (c.tipo === 'texto') col.numFmt = '@';
+      for (let r = 2; r <= FILAS_PLANTILLA + 1; r++) {
+        const celdaX = ws.getCell(r, i + 1);
+        if (c.tipo === 'lista') celdaX.dataValidation = { type: 'list', allowBlank: !c.req, formulae: [rangos[c.lista]], showErrorMessage: true, errorTitle: c.titulo, error: 'Elige un valor de la lista.' };
+        else if (c.tipo === 'fecha') celdaX.dataValidation = { type: 'date', operator: 'greaterThan', allowBlank: true, formulae: [new Date(Date.UTC(2000, 0, 1))], showErrorMessage: true, errorTitle: c.titulo, error: 'Escribe una fecha (día/mes/año).' };
+        else if (c.tipo === 'dinero') celdaX.dataValidation = { type: 'decimal', operator: 'between', allowBlank: true, formulae: [0.01, 100000000], showErrorMessage: true, errorTitle: c.titulo, error: 'Escribe un monto mayor a 0.' };
+        else if (c.tipo === 'entero') celdaX.dataValidation = { type: 'whole', operator: 'between', allowBlank: true, formulae: [0, 180], showErrorMessage: true, errorTitle: c.titulo, error: 'Número entero de 0 a 180.' };
+      }
+    });
+    // Hoja de instrucciones con ejemplo
+    const wi = wb.addWorksheet('Instrucciones');
+    wi.getColumn(1).width = 30; wi.getColumn(2).width = 14; wi.getColumn(3).width = 60; wi.getColumn(4).width = 30;
+    wi.addRow([`Plantilla de ${def.titulo} · Saneadren CRM`]).font = { bold: true, size: 14 };
+    wi.addRow([def.ayuda]);
+    wi.addRow(['1. Llena la hoja "Datos" (un renglón por registro, sin dejar renglones vacíos en medio). 2. Guarda como .xlsx. 3. En el CRM: Cuentas → "Subir plantilla". Verás una vista previa con los errores por renglón antes de importar; si hay errores no se importa nada.']);
+    wi.addRow(['Las columnas con * (en amarillo) son obligatorias. No cambies los títulos de la primera fila. Máximo 1,000 renglones por archivo.']);
+    wi.addRow([]);
+    const enc = wi.addRow(['Columna', 'Obligatoria', 'Qué poner', 'Ejemplo']);
+    enc.font = { bold: true }; enc.eachCell(c => { c.fill = amarillo; });
+    def.columnas.forEach(c => wi.addRow([c.titulo, c.req ? 'Sí' : 'No', c.nota || '', c.ej === '' ? '' : String(c.ej)]));
+    [2, 3, 4].forEach(r => { wi.getRow(r).alignment = { wrapText: true }; wi.mergeCells(r, 1, r, 4); wi.getRow(r).height = 30; });
+    wb.views = [{ activeTab: 0 }];
+    const buffer = await wb.xlsx.writeBuffer();
+    saveAs(new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), def.archivo);
+    toast('Plantilla descargada');
+  }
+
+  // Convierte el valor de una celda de ExcelJS a texto o número simple.
+  function valorCelda(v) {
+    if (v === null || v === undefined) return '';
+    // Celda con error de Excel (#N/A, #¡REF!…): se marca para que el servidor la reporte, no se toma como vacía.
+    if (typeof v === 'object' && !(v instanceof Date) && (v.error || v.result?.error)) return '#ERROR_EXCEL:' + (v.error || v.result.error);
+    if (v instanceof Date) return `${v.getUTCFullYear()}-${String(v.getUTCMonth() + 1).padStart(2, '0')}-${String(v.getUTCDate()).padStart(2, '0')}`;
+    if (typeof v === 'object') {
+      if (v.result !== undefined) return valorCelda(v.result);                    // fórmula
+      if (Array.isArray(v.richText)) return v.richText.map(t => t.text).join(''); // texto con formato
+      if (v.text !== undefined) return valorCelda(v.text);                        // hipervínculo
+      return '';
+    }
+    return v;
+  }
+  // Fechas escritas como texto: dd/mm/aaaa o d-m-aaaa → AAAA-MM-DD.
+  function fechaTexto(v) {
+    const t = String(v).trim();
+    const m = t.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})$/);
+    return m ? `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}` : t;
+  }
+
+  let IMPORTACION = null; // { tipo, filas }
+  async function leerArchivo(tipo, archivo) {
+    const def = PLANTILLAS[tipo];
+    const ExcelJS = await cargarExcelJS();
+    if (archivo.size > 5 * 1024 * 1024) throw new Error('El archivo es demasiado grande (máximo 5 MB)');
+    const wb = new ExcelJS.Workbook();
+    // Límites de lectura: un archivo pequeño con rangos enormes podría congelar el navegador.
+    try { await wb.xlsx.load(await archivo.arrayBuffer(), { ignoreNodes: ['dataValidations', 'conditionalFormatting', 'hyperlinks'], maxRows: 5000, maxCols: 100 }); }
+    catch (err) { throw new Error(/max (row|column)/i.test(err?.message || '') ? 'El archivo tiene demasiados renglones o columnas. Usa la plantilla y máximo 1,000 renglones.' : 'No se pudo leer el archivo. Guárdalo como Excel (.xlsx) e inténtalo de nuevo.'); }
+    const ws = wb.getWorksheet('Datos') || wb.worksheets[0];
+    if (!ws) throw new Error('El archivo no tiene hojas');
+    // Localiza cada columna por su título (aunque las hayan movido de lugar).
+    const posicion = {};
+    ws.getRow(1).eachCell((cell, i) => {
+      const t = sinAcentos(valorCelda(cell.value));
+      const c = def.columnas.find(x => sinAcentos(x.titulo) === t);
+      if (c) posicion[c.key] = i;
+    });
+    const faltan = def.columnas.filter(c => c.req && !posicion[c.key]).map(c => c.titulo);
+    if (faltan.length) throw new Error('Faltan columnas en la plantilla: ' + faltan.join(', ') + '. Descarga la plantilla de nuevo.');
+    const filas = [];
+    ws.eachRow({ includeEmpty: false }, (row, n) => {
+      if (n === 1) return;
+      const f = { fila: n };
+      let algo = false;
+      for (const c of def.columnas) {
+        if (!posicion[c.key]) continue;
+        let v = valorCelda(row.getCell(posicion[c.key]).value);
+        if (c.tipo === 'fecha' && typeof v === 'string') v = fechaTexto(v);
+        if (typeof v === 'string' && v.startsWith('#ERROR_EXCEL:')) v += '@' + c.titulo; // para que el mensaje diga la columna
+        if (typeof v === 'number' && c.tipo === 'texto') v = String(v);
+        // Montos calculados con fórmula (p. ej. con IVA) pueden traer residuos como 4060.0000001.
+        if (typeof v === 'number' && c.tipo === 'dinero') v = Math.round(v * 100) / 100;
+        if (v !== '' && v !== null) algo = true;
+        f[c.key] = v;
+      }
+      if (algo) filas.push(f);
+    });
+    if (!filas.length) throw new Error('La hoja "Datos" no tiene renglones con información');
+    if (filas.length > 1000) throw new Error(`El archivo tiene ${filas.length} renglones; el máximo es 1,000. Divídelo en varios archivos.`);
+    return filas;
+  }
+
+  async function simularImportacion(tipo, filas) {
+    const def = PLANTILLAS[tipo];
+    $('importar-titulo').textContent = 'Importar ' + def.titulo.toLowerCase();
+    $('importar-resumen').textContent = 'Revisando ' + filas.length + ' renglones…';
+    $('importar-errores').innerHTML = ''; $('importar-tabla').innerHTML = ''; $('importar-confirmar').hidden = true;
+    abrirVentana('overlay-importar');
+    let r;
+    try { r = await api(def.ruta + '?simular=1', { method: 'POST', body: JSON.stringify({ filas }) }).then(json); }
+    catch (err) { $('importar-resumen').textContent = 'No se pudo revisar: ' + err.message; return; }
+    IMPORTACION = { tipo, filas };
+    const nuevos = r.resumen.filter(x => x.cliente_nuevo || x.proveedor_nuevo).length;
+    const total = r.resumen.reduce((t, x) => t + (x.total || 0), 0), pagado = r.resumen.reduce((t, x) => t + (x.pagado || 0), 0);
+    $('importar-resumen').innerHTML = r.errores.length
+      ? `<b>${Number(r.errores.length)} de ${Number(r.total)} renglones tienen errores.</b> Corrígelos en el Excel y vuelve a subirlo: no se importará nada mientras haya errores.`
+      : `<b>Todo listo:</b> ${Number(r.total)} renglones · total ${formatoMoneda(total)} · ya pagado ${formatoMoneda(pagado)} · saldo ${formatoMoneda(total - pagado)}${nuevos ? ` · ${nuevos} ${tipo === 'cxc' ? 'clientes' : 'proveedores'} nuevos` : ''}.`;
+    $('importar-errores').innerHTML = r.errores.length ? '<div class="importar-errores">' + r.errores.slice(0, 200).map(e => `<div class="pago-fila"><div><b>Renglón ${Number(e.fila)}</b><small class="motivo">${e.errores.map(esc).join(' · ')}</small></div></div>`).join('') + (r.errores.length > 200 ? '<p class="ayuda">…y más.</p>' : '') + '</div>' : '';
+    const primeros = r.resumen.slice(0, 100);
+    $('importar-tabla').innerHTML = `<div class="importar-tabla"><table><thead><tr><th>Renglón</th><th>${tipo === 'cxc' ? 'Cliente' : 'Proveedor'}</th><th>${tipo === 'cxc' ? 'Servicio' : 'Concepto'}</th><th>Total</th><th>Pagado</th></tr></thead><tbody>`
+      + primeros.map(x => `<tr><td>${Number(x.fila)}</td><td>${esc(x.cliente || x.proveedor || '')}${x.cliente_nuevo || x.proveedor_nuevo ? ' <span class="estado-cxc programada">nuevo</span>' : ''}</td><td>${esc(x.servicio || x.concepto || '')}</td><td>${x.total == null ? '—' : formatoMoneda(x.total)}</td><td>${formatoMoneda(x.pagado || 0)}</td></tr>`).join('')
+      + '</tbody></table></div>' + (r.resumen.length > 100 ? `<p class="ayuda">Se muestran los primeros 100 de ${Number(r.resumen.length)} renglones.</p>` : '');
+    if (!r.errores.length) { $('importar-confirmar').hidden = false; $('importar-confirmar').textContent = `Importar ${Number(r.total)} renglones`; }
+  }
+  $('importar-confirmar').addEventListener('click', e => conBoton(e.currentTarget, async () => {
+    if (!IMPORTACION) return;
+    const def = PLANTILLAS[IMPORTACION.tipo];
+    const r = await api(def.ruta, { method: 'POST', body: JSON.stringify({ filas: IMPORTACION.filas }) }).then(json);
+    if (r.errores.length) { toast('No se importó nada: aparecieron errores. Revísalos.'); return simularImportacion(IMPORTACION.tipo, IMPORTACION.filas); }
+    const tipo = IMPORTACION.tipo; IMPORTACION = null;
+    $('overlay-importar').classList.remove('mostrar');
+    toast(`Importación lista: ${r.importadas} renglones`);
+    cargar({ pestana: tipo === 'cxc' ? 'cobrar' : 'pagar' });
+  }));
+  $('overlay-importar').querySelector('.close-btn').addEventListener('click', () => { $('overlay-importar').classList.remove('mostrar'); IMPORTACION = null; });
+
+  let TIPO_SUBIDA = null;
+  document.addEventListener('click', e => {
+    const d = e.target.closest('[data-plantilla-descargar]');
+    if (d) { if (!esAdmin()) return; return conBoton(d, () => descargarPlantilla(d.dataset.plantillaDescargar)); }
+    const u = e.target.closest('[data-plantilla-subir]');
+    if (u) { if (!esAdmin()) return; TIPO_SUBIDA = u.dataset.plantillaSubir; $('importar-archivo').value = ''; $('importar-archivo').click(); }
+  });
+  $('importar-archivo').addEventListener('change', async () => {
+    const archivo = $('importar-archivo').files[0];
+    if (!archivo || !TIPO_SUBIDA) return;
+    try { await simularImportacion(TIPO_SUBIDA, await leerArchivo(TIPO_SUBIDA, archivo)); }
+    catch (err) { toast(err.message); }
+  });
+
   return { cargar, pintarCobranzaOrden, pintarInicio, abrirCobro, pintarCliente, avisoAdeudo, pintarResultados };
 })();

@@ -229,7 +229,71 @@ const espera = ms => new Promise(r => setTimeout(r, ms));
   for (let i = 0; i < 45; i++) { const [st] = await pedir('POST', '/login', null, { nombre: 'inventado' + i, password: 'NoExiste-123x' }); if (st === 429) { bloqueoPorFallo = true; break; } }
   ok(bloqueoPorFallo, 'muchos intentos fallidos con usuarios distintos sí se bloquean por IP');
 
-  seccion('10. Seguridad general');
+  seccion('10. Carga masiva desde plantilla de Excel');
+  const filasCxc = [
+    { fila: 2, telefono: '442 555 0101', nombre: 'Hotel Importado', empresa: 'Hotel Centro', direccion: 'Av. Zaragoza 1', servicio: servicios[0].nombre, fecha_servicio: '2026-09-01', importe: 5000, dias_credito: 30, factura_folio: 'B-1', factura_fecha: '2026-09-02', factura_total: 5800, pagado: 800 },
+    { fila: 3, telefono: '4425550101', nombre: '', direccion: 'Bodega 2', servicio: servicios[0].nombre.toUpperCase(), fecha_servicio: '2026-09-10', importe: '1,250.50' },
+  ];
+  [s] = await pedir('POST', '/finanzas/importar/cxc?simular=1', L, { filas: filasCxc }); ok(s === 403, 'ventas NO puede importar');
+  [s, j] = await pedir('POST', '/finanzas/importar/cxc?simular=1', A, { filas: [...filasCxc, { fila: 4, telefono: '123', servicio: 'No existe', fecha_servicio: '31/02/2026', importe: -5 }] });
+  ok(s === 200 && j.errores.length === 1 && j.errores[0].fila === 4 && j.errores[0].errores.length >= 4, 'la simulación marca los errores por renglón', j.errores);
+  [s, j] = await pedir('POST', '/finanzas/importar/cxc', A, { filas: [...filasCxc, { fila: 4, telefono: '123' }] });
+  ok(j.importadas === 0, 'con un renglón con error no se importa nada (todo o nada)');
+  [s, j] = await pedir('GET', '/finanzas/cartera?q=Hotel Importado', A);
+  ok(!j.length, 'tras el intento fallido no quedó nada guardado');
+  [s, j] = await pedir('POST', '/finanzas/importar/cxc?simular=1', A, { filas: filasCxc });
+  ok(s === 200 && !j.errores.length && j.resumen[0].cliente_nuevo === true, 'simulación correcta: avisa que el cliente es nuevo', j);
+  [s, j] = await pedir('POST', '/finanzas/importar/cxc', A, { filas: filasCxc });
+  ok(s === 201 && j.importadas === 2, 'se importan 2 órdenes', j);
+  [s, j] = await pedir('GET', '/finanzas/cartera?vista=orden&filtro=todas&q=Hotel Importado', A);
+  const imp = j.find(c => c.factura_folio === 'B-1');
+  ok(j.length === 2 && imp && imp.total === 5800 && imp.cobrado === 800 && imp.saldo === 5000 && imp.vence === '2026-10-02', 'saldos, factura y vencimiento importados correctamente', j);
+  ok(j.every(c => c.cliente_id === j[0].cliente_id), 'los dos renglones con el mismo teléfono usan un solo cliente');
+  [s, j] = await pedir('POST', '/finanzas/importar/cxc?simular=1', A, { filas: filasCxc });
+  ok(j.errores.length === 2 && /ya se importó/.test(j.errores[0].errores.join()), 'subir el mismo archivo otra vez se detecta como duplicado', j.errores);
+
+  const filasCxp = [
+    { fila: 2, proveedor: 'Refaccionaria Vactor', categoria: 'Refacciones y mantenimiento', concepto: 'Manguera', factura_folio: 'R-10', fecha_documento: '2026-10-01', total: 3000, pagado: 1000, metodo: 'Efectivo', equipo: 'E-37-04' },
+    { fila: 3, proveedor: 'refaccionaria vactor', categoria: 'refacciones', concepto: 'Filtro', factura_folio: 'R-11', fecha_documento: '2026-10-02', fecha_vencimiento: '2026-11-01', total: 450 },
+    { fila: 4, proveedor: 'Disposición del Bajío', categoria: '', concepto: 'Lodos', fecha_documento: '2026-10-03', total: 900, orden: imp.folio },
+  ];
+  [s, j] = await pedir('POST', '/finanzas/importar/cxp?simular=1', A, { filas: [...filasCxp, { fila: 5, proveedor: 'X', categoria: 'Inventada', concepto: 'Y', fecha_documento: '2026-10-05', fecha_vencimiento: '2026-09-01', total: 10, pagado: 20, orden: 'OS-202610-9999' }] });
+  ok(j.errores.length === 1 && j.errores[0].fila === 5 && j.errores[0].errores.length >= 4, 'CxP: errores por renglón (categoría, vencimiento, pagado > total, orden)', j.errores);
+  [s, j] = await pedir('POST', '/finanzas/importar/cxp', A, { filas: filasCxp });
+  ok(s === 201 && j.importadas === 3, 'se importan 3 cuentas por pagar', j);
+  [s, j] = await pedir('GET', '/finanzas/cxp?vista=todas', A);
+  const manguera = j.find(x => x.concepto === 'Manguera'), lodos = j.find(x => x.concepto === 'Lodos');
+  ok(manguera && manguera.saldo === 2000 && manguera.categoria === 'refacciones', 'saldo y categoría de la factura importada', manguera);
+  ok(lodos && lodos.lead_id === imp.lead_id && lodos.fecha_vencimiento === '2026-11-02', 'proveedor existente con 30 días de crédito y orden ligada por folio', lodos);
+  [s, j] = await pedir('GET', '/finanzas/proveedores', A);
+  ok(j.filter(p => /refaccionaria vactor/i.test(p.nombre)).length === 1, 'el proveedor nuevo se creó una sola vez (sin importar mayúsculas)');
+  [s, j] = await pedir('POST', '/finanzas/importar/cxp?simular=1', A, { filas: filasCxp });
+  ok(j.errores.some(e => /ya está registrada/.test(e.errores.join())), 'subir otra vez las mismas facturas se detecta');
+  [s, j] = await pedir('POST', '/finanzas/importar/cxc?simular=1', A, { filas: Array.from({ length: 1001 }, (_, i) => ({ fila: i + 2 })) });
+  ok(s === 400, 'más de 1,000 renglones se rechaza');
+
+  // Correcciones de la revisión de la importación
+  [s, j] = await pedir('POST', '/finanzas/importar/cxp?simular=1', A, { filas: [{ fila: 2, proveedor: 'DISPOSICIÓN DEL BAJÍO', concepto: 'Lodos', factura_folio: 'F-77', fecha_documento: '2026-10-01', total: 900 }] });
+  ok(j.resumen[0].proveedor_nuevo === false && j.errores.some(e => /ya está registrada/.test(e.errores.join())), 'proveedor con acentos y mayúsculas distintas se reconoce (y su factura repetida también)', j);
+  [s, j] = await pedir('POST', '/finanzas/proveedores', A, { nombre: 'DISPOSICION DEL BAJIO' });
+  ok(s === 409, 'tampoco se puede dar de alta a mano el mismo proveedor sin acentos');
+  [s, j] = await pedir('POST', '/finanzas/importar/cxc?simular=1', A, { filas: [{ fila: 2, telefono: '4429990001', nombre: 'Coma Decimal', direccion: 'x', servicio: servicios[0].nombre, fecha_servicio: '2026-09-01', importe: '3500,50' }] });
+  ok(j.errores.length === 1 && /formato no válido/.test(j.errores[0].errores.join()), '"3500,50" (coma decimal) se rechaza en vez de guardarse como $350,050', j.errores);
+  [s, j] = await pedir('POST', '/finanzas/importar/cxc?simular=1', A, { filas: [{ fila: 2, telefono: '4429990001', nombre: 'Error Excel', direccion: 'x', servicio: servicios[0].nombre, fecha_servicio: '2026-09-01', importe: 1000, pagado: '#ERROR_EXCEL:#N/A' }] });
+  ok(j.errores.length === 1 && /error de Excel \(#N\/A\)/.test(j.errores[0].errores.join()), 'una celda con #N/A se reporta como error (no como vacía)', j.errores);
+  [s, j] = await pedir('POST', '/finanzas/importar/cxc', A, { filas: [
+    { fila: 2, telefono: '4429990002', nombre: 'Sucursales SA', direccion: 'Sucursal Norte', servicio: servicios[0].nombre, fecha_servicio: '2026-10-03', importe: 2000, factura_folio: 'S-1', pagado: 2000 },
+    { fila: 3, telefono: '4429990002', direccion: 'Sucursal Sur', servicio: servicios[0].nombre, fecha_servicio: '2026-10-03', importe: 2000, factura_folio: 'S-2' }] });
+  ok(s === 201 && j.importadas === 2, 'dos sucursales con el mismo servicio, fecha e importe (distinta factura) se importan', j);
+  [s, j] = await pedir('GET', '/finanzas/periodo?desde=2026-10-03&hasta=2026-10-03', A);
+  ok(j.cobrado >= 2000, 'lo "ya pagado" importado cuenta como cobrado en Resultados', j);
+  [s, j] = await pedir('POST', '/finanzas/importar/cxp?simular=1', A, { filas: [null] });
+  ok(s === 400, 'un renglón inválido responde 400 (no tumba el servidor)');
+  const mil = Array.from({ length: 1000 }, (_, i) => ({ fila: i + 2, proveedor: 'Proveedor de prueba con nombre largo para llenar', categoria: 'Otro', concepto: 'Concepto de prueba bastante descriptivo número ' + i, factura_folio: 'MIL-' + i, fecha_documento: '2026-10-01', total: 100 + i, notas: 'n'.repeat(400) }));
+  [s, j] = await pedir('POST', '/finanzas/importar/cxp?simular=1', A, { filas: mil });
+  ok(s === 200 && j.total === 1000 && !j.errores.length, '1,000 renglones (más de 1 MB) se procesan sin error interno', { s, total: j.total, err: j.error });
+
+  seccion('11. Seguridad general');
   const raiz = await fetch(`http://localhost:${PUERTO}/`);
   ok(raiz.headers.get('content-security-policy') && raiz.headers.get('x-frame-options') === 'DENY' && !raiz.headers.get('x-powered-by'), 'encabezados de seguridad');
   [s] = await pedir('GET', '/leads', 'token-inventado'); ok(s === 401, 'token inventado rechazado');
