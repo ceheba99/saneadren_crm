@@ -91,7 +91,33 @@ const espera = ms => new Promise(r => setTimeout(r, ms));
   [s, j] = await pedir('POST', '/leads', L, { cliente_id: clienteId, direccion: 'x', responsable_id: usuarioL.id, partidas_json: partidas, duplicado_de: cot.id, forzar_duplicado: true });
   ok(s === 400, 'no se pueden duplicar cotizaciones');
 
-  seccion('5. Seguridad general');
+  seccion('5. Recompras, fechas y borrado');
+  const recurrente = servicios.find(x => x.dias_recurrencia);
+  const partidasRec = JSON.stringify([{ servicio: recurrente.nombre, leyenda: 'Servicio periódico', importe: 2000 }]);
+  [s, j] = await pedir('POST', '/contactos', L, { nombre: 'Hotel Recompra', telefono: '4421112233', direccion: 'Av. Constituyentes 10', canal_origen_id: canales[0].id });
+  const clienteRec = j.id;
+  [s, j] = await pedir('POST', '/leads', L, { cliente_id: clienteRec, direccion: 'Av. Constituyentes 10', responsable_id: usuarioL.id, partidas_json: partidasRec, estatus: 'ganado', fecha_servicio: '2025-01-15', forzar_duplicado: true });
+  const ordenVieja = j;
+  [s, j] = await pedir('GET', '/recompras', L);
+  const rec = (j || []).find(x => x.cliente_id === clienteRec && x.servicio_id === recurrente.id);
+  ok(rec && rec.ultimo_lead_id === ordenVieja.id, 'la recompra trae la orden que se va a duplicar (botón "Registrar servicio nuevo")', rec);
+  const hoy = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Mexico_City', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+  ok(cot.fecha_cotizacion === hoy, 'la fecha de la cotización es la de hoy en México', { fecha: cot.fecha_cotizacion, hoy });
+  [s, j] = await pedir('GET', '/salud', null);
+  ok(s === 200 && j.ok && j.hoy === hoy, 'ruta de salud pública con la fecha de México', j);
+  [s] = await pedir('DELETE', '/leads/' + ordenVieja.id, L); ok(s === 403, 'ventas NO puede borrar una orden');
+  [s] = await pedir('DELETE', '/leads/' + ordenVieja.id, A); ok(s === 200, 'admin sí puede borrarla');
+  [s] = await pedir('PUT', '/servicios/' + recurrente.id, A, { dias_recurrencia: 99999999 }); ok(s === 400, 'recurrencia absurda rechazada');
+
+  seccion('6. Datos que no se aceptan');
+  [s, j] = await pedir('POST', '/contactos', L, { nombre: 'Prueba Tel', telefono: '<img src=x onerror=alert(1)>4426160000', canal_origen_id: canales[0].id });
+  ok(s === 400, 'teléfono con código o letras rechazado', j);
+  [s] = await pedir('POST', '/leads/' + cot.id + '/historial', L, { tipo: 'observacion', texto: 'x'.repeat(5000) });
+  ok(s === 400, 'nota de 5,000 caracteres rechazada');
+  [s] = await pedir('POST', '/leads/' + cot.id + '/historial', L, { tipo: 'observacion', texto: 'Llamar el lunes' });
+  ok(s === 201 || s === 200, 'nota normal aceptada');
+
+  seccion('7. Seguridad general');
   const raiz = await fetch(`http://localhost:${PUERTO}/`);
   ok(raiz.headers.get('content-security-policy') && raiz.headers.get('x-frame-options') === 'DENY' && !raiz.headers.get('x-powered-by'), 'encabezados de seguridad');
   [s] = await pedir('GET', '/leads', 'token-inventado'); ok(s === 401, 'token inventado rechazado');

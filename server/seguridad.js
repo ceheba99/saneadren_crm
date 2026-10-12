@@ -90,6 +90,31 @@ function limitador({ max, ventanaMs, clave, mensaje }) {
   };
 }
 
+// ---------- Límites de texto y formato de teléfono para todo /api ----------
+// Evita notas de cientos de KB (lentitud, respaldos inflados, PDFs rotos) y teléfonos con
+// letras o símbolos (que además servían para esconder código en la página).
+const LIMITES_TEXTO = {
+  nombre: 120, empresa_contacto: 120, direccion: 300, correo: 254, rfc: 20, giro: 80,
+  notas_iniciales: 3000, notas_generales: 3000, notas: 3000, observaciones: 3000, necesidades: 5000,
+  texto: 2000, motivo: 500, persona: 120, cargo: 120, zona: 120, fuente: 120,
+  equipo: 200, operador: 300, encuesta_comentario: 1000, referencia: 120, concepto: 300,
+};
+const TELEFONO = /^[\d\s()+.\-]{7,25}$/;
+function limitarCampos(req, res, next) {
+  const body = req.body;
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return next();
+  for (const [campo, max] of Object.entries(LIMITES_TEXTO)) {
+    const v = body[campo];
+    if (typeof v === 'string' && v.length > max) return res.status(400).json({ error: `El campo "${campo}" admite máximo ${max} caracteres` });
+  }
+  for (const campo of ['telefono', 'telefono_alterno']) {
+    const v = body[campo];
+    if (v === undefined || v === null || v === '') continue;
+    if (typeof v !== 'string' || !TELEFONO.test(v.trim())) return res.status(400).json({ error: 'El teléfono solo puede llevar números, espacios, guiones, paréntesis y +' });
+  }
+  next();
+}
+
 // ---------- Encabezados de seguridad HTTP ----------
 function encabezadosSeguridad(req, res, next) {
   res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -115,4 +140,4 @@ function encabezadosSeguridad(req, res, next) {
   next();
 }
 
-module.exports = { problemaNombre, hashPassword, verificarPassword, problemaPassword, normalizarCorreo, correoPermitido, DOMINIO, hashToken, nuevoToken, limitador, encabezadosSeguridad };
+module.exports = { limitarCampos, problemaNombre, hashPassword, verificarPassword, problemaPassword, normalizarCorreo, correoPermitido, DOMINIO, hashToken, nuevoToken, limitador, encabezadosSeguridad };

@@ -65,7 +65,7 @@ const ServiciosTabla = (() => {
       <td>${escapar(s.responsable_nombre||'Sin asignar')}</td><td class="servicio-notas">${escapar(s.notas_iniciales||'—')}</td>
       <td><div class="servicios-acciones"><button type="button" class="btn btn-outline" data-accion="abrir" data-id="${Number(s.id)}" aria-label="Abrir ${s.estatus==='ganado'?'servicio':'cotización'} ${Number(s.id)}">${s.estatus==='ganado'?'Ver servicio':'Ver cotización'}</button>
       ${s.estatus==='ganado'?`<button type="button" class="btn btn-outline" data-accion="duplicar" data-id="${Number(s.id)}" aria-label="Duplicar orden de servicio ${Number(s.id)}" title="Crea otra orden de servicio con los mismos datos — útil para clientes con servicio recurrente">Duplicar</button>`:''}
-      <button type="button" class="btn btn-eliminar" data-accion="eliminar" data-id="${Number(s.id)}" aria-label="Eliminar servicio ${Number(s.id)}">Eliminar</button></div></td>
+      <button type="button" class="btn btn-eliminar solo-admin" data-accion="eliminar" data-id="${Number(s.id)}" aria-label="Eliminar servicio ${Number(s.id)}">Eliminar</button></div></td>
     </tr>`).join('') : `<tr><td colspan="9" class="servicios-vacio">${error?'Corrige las fechas para consultar servicios.':st.datos.length?'No hay servicios con estos filtros. Puedes seleccionar Todos o limpiar los filtros.':'Este contacto aún no tiene cotizaciones ni servicios registrados.'}</td></tr>`;
   }
   async function manejarClick(e) {

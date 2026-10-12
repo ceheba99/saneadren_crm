@@ -1,14 +1,24 @@
+// Zona horaria del negocio. En servidores como Render el reloj está en UTC (6 h adelante de
+// México): sin esto, lo capturado después de las 6 pm quedaba con fecha del día siguiente.
+// Va antes de abrir la base para que SQLite ('localtime') también la use. TZ en el entorno manda.
+// En Windows no se toca: su CRT no entiende nombres tipo America/Mexico_City y ya usa la hora del equipo.
+if (!process.env.TZ && process.platform !== 'win32') process.env.TZ = 'America/Mexico_City';
 const express = require('express');
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
 const { db, normalizarTelefono } = require('./db');
 
-const { problemaNombre, hashPassword, verificarPassword, problemaPassword, normalizarCorreo, correoPermitido, DOMINIO, encabezadosSeguridad } = require('./seguridad');
+const { limitador, limitarCampos, problemaNombre, hashPassword, verificarPassword, problemaPassword, normalizarCorreo, correoPermitido, DOMINIO, encabezadosSeguridad } = require('./seguridad');
 const crearAlmacenSesiones = require('./sesiones');
 const PORT = process.env.PORT || 3210;
 // URL pública del CRM; se usa en los enlaces de los correos (nunca se toma del encabezado Host).
 const URL_BASE = (process.env.APP_URL || `http://localhost:${PORT}`).replace(/\/+$/, '');
+
+// Fecha de hoy (AAAA-MM-DD) en la hora de México, sin depender del reloj del servidor.
+function hoyMexico() {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Mexico_City', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+}
 
 const app = express();
 // Detrás de un proxy (Nginx, Cloudflare, etc.) define TRUST_PROXY=1 para que req.ip sea la IP real
@@ -17,6 +27,7 @@ if (process.env.TRUST_PROXY) app.set('trust proxy', Number(process.env.TRUST_PRO
 app.disable('x-powered-by');
 app.use(encabezadosSeguridad);
 app.use(express.json({ limit: '1mb' }));
+app.use('/api', limitarCampos);
 app.use(express.static(path.join(__dirname, '..', 'public')));
 
 // ---------- Sesiones (token) ----------
@@ -57,6 +68,8 @@ function requireAuth(req, res, next) {
 const intentosLogin = new Map(); // clave "ip|usuario" -> { fallos, bloqueadoHasta }
 const LOGIN_MAX_INTENTOS = 6;
 const LOGIN_BLOQUEO_MS = 5 * 60 * 1000;
+// Limpieza periódica: sin esto el registro de intentos crece sin límite con nombres inventados.
+setInterval(() => { const ahora = Date.now(); for (const [k, v] of intentosLogin) if (!v.bloqueadoHasta || v.bloqueadoHasta < ahora) intentosLogin.delete(k); }, LOGIN_BLOQUEO_MS).unref();
 function limitarLogin(req, res, next) {
   const clave = req.ip + '|' + String(req.body?.nombre || '').toLowerCase();
   const estado = intentosLogin.get(clave);
@@ -100,7 +113,11 @@ function existe(tabla, id) {
 // A partir de aquí, toda ruta /api/* requiere sesión válida — excepto /api/login, que es
 // justamente donde se obtiene el token. Colocar esto antes de registrar el resto de las
 // rutas asegura que ninguna quede expuesta sin querer (como pasaba antes con /api/usuarios).
-const RUTAS_PUBLICAS = new Set(['/login', '/registro', '/verificar-correo', '/olvide-password', '/restablecer-password']);
+// Salud del servicio (pública, sin datos del negocio): para Render o un monitor externo.
+app.get('/api/salud', (req, res) => {
+  res.json({ ok: true, hoy: hoyMexico(), zona: process.env.TZ || Intl.DateTimeFormat().resolvedOptions().timeZone, base_persistente: !!process.env.DB_PATH || !process.env.RENDER });
+});
+const RUTAS_PUBLICAS = new Set(['/salud', '/login', '/registro', '/verificar-correo', '/olvide-password', '/restablecer-password']);
 require('./cuentas')(app, db, h, { sesiones, urlBase: URL_BASE });
 app.use('/api', (req, res, next) => {
   if (RUTAS_PUBLICAS.has(req.path)) return next();
@@ -117,7 +134,10 @@ app.get('/api/usuarios', h((req, res) => {
 }));
 
 // ---------- Login ----------
-app.post('/api/login', limitarLogin, h((req, res) => {
+// Además del bloqueo por usuario, un tope por IP: evita que un desconocido pruebe miles de
+// nombres distintos (cada intento cuesta un cálculo de contraseña y frena al servidor).
+const limitarLoginPorIp = limitador({ max: 40, ventanaMs: 15 * 60 * 1000, clave: req => req.ip, mensaje: 'Demasiados intentos de inicio de sesión desde esta conexión. Espera 15 minutos.' });
+app.post('/api/login', limitarLoginPorIp, limitarLogin, h((req, res) => {
   const { nombre, password } = req.body;
   if (!nombre || !password) return res.status(400).json({ error: 'Usuario y contraseña requeridos' });
   if (typeof nombre !== 'string' || typeof password !== 'string' || password.length > 128) return res.status(400).json({ error: 'Usuario y contraseña requeridos' });
@@ -286,7 +306,7 @@ app.put('/api/servicios/:id', h((req, res) => {
   let dias = null;
   if (dias_recurrencia !== null && dias_recurrencia !== '' && dias_recurrencia !== undefined) {
     dias = Number(dias_recurrencia);
-    if (isNaN(dias) || dias <= 0) return res.status(400).json({ error: 'Los días de recurrencia deben ser un número mayor a 0 (o vacío para servicio de una sola vez)' });
+    if (!Number.isInteger(dias) || dias < 1 || dias > 3650) return res.status(400).json({ error: 'Los días de recurrencia deben ser un número entero entre 1 y 3650 (o vacío para servicio de una sola vez)' });
   }
   if (req.body.descripcion !== undefined && (typeof req.body.descripcion !== 'string' || req.body.descripcion.length > 10000)) return res.status(400).json({ error: 'La descripción debe ser texto de hasta 10000 caracteres' });
   db.prepare('UPDATE catalogo_servicios SET dias_recurrencia = ?, descripcion = ? WHERE id = ?').run(dias_recurrencia === undefined ? servicio.dias_recurrencia : dias, req.body.descripcion === undefined ? servicio.descripcion : req.body.descripcion.trim(), req.params.id);
@@ -314,7 +334,7 @@ app.post('/api/servicios', h((req, res) => {
   let dias = null;
   if (dias_recurrencia !== null && dias_recurrencia !== '' && dias_recurrencia !== undefined) {
     dias = Number(dias_recurrencia);
-    if (isNaN(dias) || dias <= 0) return res.status(400).json({ error: 'Los días de recurrencia deben ser un número mayor a 0 (o vacío para servicio de una sola vez)' });
+    if (!Number.isInteger(dias) || dias < 1 || dias > 3650) return res.status(400).json({ error: 'Los días de recurrencia deben ser un número entero entre 1 y 3650 (o vacío para servicio de una sola vez)' });
   }
   const orden = (db.prepare('SELECT MAX(orden) m FROM catalogo_servicios').get().m || 0) + 1;
   if (req.body.descripcion !== undefined && (typeof req.body.descripcion !== 'string' || req.body.descripcion.length > 10000)) return res.status(400).json({ error: 'La descripción debe ser texto de hasta 10000 caracteres' });
@@ -480,7 +500,7 @@ const textoOrden = v => (typeof v === 'string' && v.trim()) ? v.trim() : null;
 app.post('/api/leads', validarPartidas, validarRegistro, h((req, res) => {
   let { telefono, nombre, empresa_contacto, direccion } = req.body;
   const { cliente_id, canal_id, servicio_id, notas_iniciales, responsable_id, forzar_duplicado, valor, fecha_servicio, correo, giro, urgente } = req.body;
-  const fechaCotizacionFinal = req.body.fecha_cotizacion || new Date().toISOString().slice(0, 10);
+  const fechaCotizacionFinal = req.body.fecha_cotizacion || hoyMexico();
   const creado_por = req.usuarioSesion.nombre; // nunca se confía en el valor que mande el navegador
   if (!validarCorreo(correo)) return res.status(400).json({ error: 'El correo electrónico no es válido' });
   if (giro && !tipoClienteValido(giro)) return res.status(400).json({ error: 'Giro inválido' });
@@ -687,9 +707,12 @@ app.put('/api/historial/:id/resolver', h((req, res) => {
 }));
 
 // ---------- Eliminar cotización ----------
+// Borrar es definitivo (se pierden importe, notas y bitácora): solo un administrador puede hacerlo.
 app.delete('/api/leads/:id', h((req, res) => {
+  if (req.usuarioSesion.rol !== 'admin') return res.status(403).json({ error: 'Solo un administrador puede eliminar cotizaciones u órdenes de servicio' });
   const lead = db.prepare('SELECT * FROM leads WHERE id = ?').get(req.params.id);
   if (!lead) return res.status(404).json({ error: 'Cotización no encontrada' });
+  console.log(`[eliminado] registro #${lead.id} (${lead.estatus}, ${lead.valor ?? 'sin importe'}) de cliente #${lead.cliente_id} por ${req.usuarioSesion.nombre}`);
   // El historial se borra en cascada (ON DELETE CASCADE). El cliente y sus otros servicios/cotizaciones no se tocan.
   db.prepare('DELETE FROM leads WHERE id = ?').run(req.params.id);
   res.json({ ok: true, id: Number(req.params.id) });
@@ -897,7 +920,10 @@ app.get('/api/recompras', h((req, res) => {
       MAX(COALESCE(l.fecha_servicio, date(l.created_at))) AS ultima_fecha,
       (SELECT COUNT(*) FROM leads l2 WHERE l2.cliente_id = c.id AND l2.servicio_id = s.id AND l2.estatus = 'abierto') AS ya_en_leads,
       (SELECT l3.valor FROM leads l3 WHERE l3.cliente_id = c.id AND l3.servicio_id = s.id AND l3.estatus = 'ganado'
-        ORDER BY COALESCE(l3.fecha_servicio, date(l3.created_at)) DESC LIMIT 1) AS ultimo_valor
+        ORDER BY COALESCE(l3.fecha_servicio, date(l3.created_at)) DESC LIMIT 1) AS ultimo_valor,
+      -- La última orden de ese servicio: el botón "Registrar servicio nuevo" la duplica.
+      (SELECT l4.id FROM leads l4 WHERE l4.cliente_id = c.id AND l4.servicio_id = s.id AND l4.estatus = 'ganado'
+        ORDER BY COALESCE(l4.fecha_servicio, date(l4.created_at)) DESC, l4.id DESC LIMIT 1) AS ultimo_lead_id
     FROM leads l
     JOIN clientes c ON c.id = l.cliente_id
     JOIN catalogo_servicios s ON s.id = l.servicio_id
@@ -911,17 +937,18 @@ app.get('/api/recompras', h((req, res) => {
     .map(f => {
       const ultima = new Date(f.ultima_fecha + 'T00:00:00');
       const sugerida = new Date(ultima.getTime() + f.dias_recurrencia * 86400000);
+      if (Number.isNaN(sugerida.getTime())) return null; // fecha o recurrencia inválida: se omite en vez de tumbar la lista
       const dias_restantes = Math.round((sugerida - hoy) / 86400000);
       return {
         cliente_id: f.cliente_id, telefono: f.telefono, nombre: f.nombre,
         empresa_contacto: f.empresa_contacto, direccion: f.direccion,
         servicio_id: f.servicio_id, servicio_nombre: f.servicio_nombre,
-        ultima_fecha: f.ultima_fecha, ultimo_valor: f.ultimo_valor,
+        ultima_fecha: f.ultima_fecha, ultimo_valor: f.ultimo_valor, ultimo_lead_id: f.ultimo_lead_id,
         fecha_sugerida: sugerida.toISOString().slice(0, 10),
         dias_restantes
       };
     })
-    .filter(r => r.dias_restantes <= 30) // vencidos o próximos a vencer en 30 días
+    .filter(r => r && r.dias_restantes <= 30) // vencidos o próximos a vencer en 30 días
     .sort((a, b) => a.dias_restantes - b.dias_restantes);
 
   res.json(resultado);
@@ -1053,7 +1080,7 @@ app.get('/api/admin/backup', async (req, res) => {
     if (!req.usuarioSesion || req.usuarioSesion.rol !== 'admin') {
       return res.status(403).json({ error: 'Solo un administrador puede respaldar la base de datos' });
     }
-    const nombreArchivo = `saneadren_backup_${new Date().toISOString().slice(0, 10)}.db`;
+    const nombreArchivo = `saneadren_backup_${hoyMexico()}.db`;
     const destino = path.join(__dirname, '..', nombreArchivo);
     await db.backup(destino);
     res.download(destino, nombreArchivo, () => fs.unlink(destino, () => {}));

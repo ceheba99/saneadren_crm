@@ -49,34 +49,56 @@ function on(id, evento, fn) {
   }
   el.addEventListener(evento, fn);
 }
+// Los avisos de error se quedan más tiempo en pantalla para que alcancen a leerse.
+let TOAST_TIMER = null;
 function toast(msg) {
   const t = document.getElementById('toast');
   t.textContent = msg;
   t.style.display = 'block';
-  setTimeout(() => t.style.display = 'none', 2600);
+  if (TOAST_TIMER) clearTimeout(TOAST_TIMER);
+  const esError = /no se pudo|error|sin conexi|no tienes|solo un/i.test(String(msg));
+  TOAST_TIMER = setTimeout(() => t.style.display = 'none', esError ? 7000 : 3500);
+}
+function errorConEstado(mensaje, status, codigo) {
+  const err = new Error(mensaje);
+  err.status = status;
+  if (codigo) err.codigo = codigo;
+  return err;
 }
 async function api(path, opts) {
-  const res = await fetch(API + path, {
-    headers: {
-      'Content-Type': 'application/json',
-      ...(USUARIO_ACTUAL?.token ? { Authorization: 'Bearer ' + USUARIO_ACTUAL.token } : {})
-    },
-    ...opts
-  });
-  if (res.status === 403 && USUARIO_ACTUAL?.token) {
-    const j = await res.clone().json().catch(() => ({}));
-    if (j.codigo === 'CAMBIAR_PASSWORD') { Cuentas.pedirCambioObligatorio(); const err = new Error(j.error); err.status = 403; throw err; }
-  }
-  if (res.status === 401 && path !== '/login') {
-    // Sesión expirada o inválida: no tiene caso seguir mostrando datos ni pedir de nuevo.
-    localStorage.removeItem('usuario_actual');
-    USUARIO_ACTUAL = null;
-    toast('Tu sesión expiró. Vuelve a iniciar sesión.');
+  // Sin sesión no se intenta nada: evita peticiones repetidas tras un 401 y pantallas a medias.
+  const token = USUARIO_ACTUAL?.token;
+  if (!token) {
     document.getElementById('overlay-login')?.classList.add('mostrar');
-    throw new Error('Sesión expirada');
+    throw errorConEstado('Inicia sesión para continuar.', 401);
+  }
+  let res;
+  try {
+    res = await fetch(API + path, {
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+      ...opts
+    });
+  } catch (e) {
+    // Sin internet o servidor caído: la sesión se conserva y el mensaje es comprensible.
+    throw errorConEstado('Sin conexión con el servidor. Revisa tu internet e inténtalo de nuevo.', 0, 'SIN_CONEXION');
+  }
+  if (res.status === 403) {
+    const j = await res.clone().json().catch(() => ({}));
+    if (j.codigo === 'CAMBIAR_PASSWORD') { Cuentas.pedirCambioObligatorio(); throw errorConEstado(j.error, 403, j.codigo); }
+  }
+  if (res.status === 401) {
+    // Solo se cierra la sesión con la que se hizo la petición: si mientras tanto alguien inició
+    // sesión de nuevo, una respuesta tardía no debe sacarlo.
+    if (USUARIO_ACTUAL?.token === token) {
+      localStorage.removeItem('usuario_actual');
+      USUARIO_ACTUAL = null;
+      toast('Tu sesión expiró. Vuelve a iniciar sesión.');
+      document.getElementById('overlay-login')?.classList.add('mostrar');
+    }
+    throw errorConEstado('Sesión expirada', 401);
   }
   if (!res.ok && res.status !== 409) {
-    let msg = 'Error de red';
+    let msg = 'No se pudo completar la operación (código ' + res.status + ')';
     try { const j = await res.clone().json(); if (j && j.error) msg = j.error; } catch (e) {}
     const err = new Error(msg);
     err.status = res.status;
@@ -125,7 +147,7 @@ async function cargarCatalogos() {
 
   const optU = u.map(x => `<option value="${x.id}">${escaparHtml(x.nombre)} (${escaparHtml(x.rol)})</option>`).join('');
   const optS = s.map(x => `<option value="${x.id}">${escaparHtml(x.nombre)}</option>`).join('');
-  const optC = c.map(x => `<option value="${x.id}">${x.nombre}</option>`).join('');
+  const optC = c.map(x => `<option value="${Number(x.id)}">${escaparHtml(x.nombre)}</option>`).join('');
 
 
   document.getElementById('ed-servicio').innerHTML = optS;
@@ -192,7 +214,7 @@ function abrirServicioNuevo(modo, prefill) {
   document.getElementById('sn-label-valor').textContent = esDirecto ? 'Importe contratado (MXN)' : 'Importe propuesto (MXN, opcional)';
   document.getElementById('sn-label-fecha').textContent = esDirecto ? 'Fecha acordada del servicio' : 'Fecha del servicio (si ya se sabe)';
   document.getElementById('sn-cliente-info').innerHTML =
-    `<b>${CLIENTE_DUP.nombre || 'Sin nombre'}</b> · ${CLIENTE_DUP.telefono}${CLIENTE_DUP.direccion ? ' · ' + CLIENTE_DUP.direccion : ''}`;
+    `<b>${escaparHtml(CLIENTE_DUP.nombre || 'Sin nombre')}</b> · ${escaparHtml(CLIENTE_DUP.telefono)}${CLIENTE_DUP.direccion ? ' · ' + escaparHtml(CLIENTE_DUP.direccion) : ''}`;
   document.getElementById('sn-servicio').innerHTML = '<option value="">Selecciona un servicio</option>' + CATALOGOS.servicios.map(s=>`<option value="${s.id}">${escaparHtml(s.nombre)}</option>`).join('');
   document.getElementById('sn-ubicacion').value = prefill?.direccion || CLIENTE_DUP.direccion || '';
   document.getElementById('btn-guardar-servicio-nuevo').textContent = DUPLICADO_DE ? 'Guardar orden duplicada' : esDirecto ? 'Crear orden de servicio' : 'Crear cotización';
@@ -305,12 +327,33 @@ function limpiarFormAlta() {
 let ETAPA_FILTRO = null;
 
 // ---------- Inicio (panel del día: alertas + cotizaciones estancadas + recompras) ----------
+// Muestra "Cargando…" y, si falla, un aviso con botón Reintentar en vez de dejar la lista vacía
+// (una lista vacía se confunde con "no hay pendientes").
+function estadoCarga(ids, estado, reintentar) {
+  ids.forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    if (estado === 'cargando') el.innerHTML = '<p class="util-45" role="status">Cargando…</p>';
+    else {
+      el.innerHTML = `<div class="aviso-error-carga" role="alert"><p>${escaparHtml(estado)}</p><button type="button" class="btn btn-outline">Reintentar</button></div>`;
+      el.querySelector('button').onclick = reintentar;
+    }
+  });
+}
 async function cargarInicio() {
-  const [alertas, recompras, abiertas] = await Promise.all([
-    api('/alertas').then(r => r.json()),
-    api('/recompras').then(r => r.json()),
-    api('/leads?estatus=abierto').then(r => r.json())
-  ]);
+  const listas = ['inicio-cotizaciones', 'inicio-recompras'];
+  estadoCarga(listas, 'cargando');
+  let alertas, recompras, abiertas;
+  try {
+    [alertas, recompras, abiertas] = await Promise.all([
+      api('/alertas').then(r => r.json()),
+      api('/recompras').then(r => r.json()),
+      api('/leads?estatus=abierto').then(r => r.json())
+    ]);
+  } catch (err) {
+    if (err.status !== 401) estadoCarga(listas, 'No se pudo cargar: ' + err.message, cargarInicio);
+    return;
+  }
   const estancadas = abiertas
     .filter(l => diasSinMovimiento(l.updated_at) > 7)
     .sort((a, b) => diasSinMovimiento(b.updated_at) - diasSinMovimiento(a.updated_at));
@@ -330,8 +373,8 @@ function filaEstancada(l) {
     <div class="fila-alerta tipo-estancada">
       <div class="info">
         <span class="tipo-tag estancada">📄 Sin movimiento</span>
-        <div><b>${l.nombre || 'Sin nombre'} · ${l.telefono}</b></div>
-        <div class="txt">${l.servicio_nombre || 'Servicio por definir'} · ${folioCotizacion(l)}</div>
+        <div><b>${escaparHtml(l.nombre || 'Sin nombre')} · ${escaparHtml(l.telefono)}</b></div>
+        <div class="txt">${escaparHtml(l.servicio_nombre || 'Servicio por definir')} · ${folioCotizacion(l)}</div>
         <div class="fecha">${dias} días sin actualizarse</div>
       </div>
       <div class="util-46">
@@ -502,9 +545,9 @@ function renderKanbanLeads(leads) {
         ${dias > 2 ? `<div class="lead-dias ${diasClass}">⏱ ${dias}d</div>` : ''}
         ${l.etapa < 4 ? `<button class="btn-avanzar" title="Mover a ${NOMBRE_ETAPA[l.etapa + 1]}" onclick="event.stopPropagation();avanzarEtapa(${l.id}, ${l.etapa + 1})">›</button>` : ''}
         <div class="lead-folio">${folioCotizacion(l)}</div>
-        <div class="lead-tel">${l.telefono}</div>
-        <div class="lead-nombre">${l.nombre || 'Sin nombre'}</div>
-        <div class="lead-servicio">${l.servicio_nombre || 'Sin servicio'}</div>
+        <div class="lead-tel">${escaparHtml(l.telefono)}</div>
+        <div class="lead-nombre">${escaparHtml(l.nombre || 'Sin nombre')}</div>
+        <div class="lead-servicio">${escaparHtml(l.servicio_nombre || 'Sin servicio')}</div>
         <div class="lead-meta">
           <span class="lead-resp">${escaparHtml(l.responsable_nombre || '—')}</span>
           <span class="lead-valor">${l.valor != null ? formatoMoneda(l.valor) : '—'}</span>
@@ -625,10 +668,10 @@ function renderBarChart(id, datos, labelKey, valueKey, fmt) {
   }).join('');
 }
 
+// Escapa también comillas: el resultado es seguro tanto dentro de etiquetas como dentro de
+// atributos (value="…", title="…"). Usarla con TODO dato que venga de la base o del usuario.
 function escaparHtml(text) {
-  const div = document.createElement('div');
-  div.textContent = text;
-  return div.innerHTML;
+  return String(text ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 
 // ---------- Generar documento de cotización (PDF o Word) desde la ficha del lead ----------
@@ -1309,10 +1352,10 @@ function renderTablaClientesReales(clientes) {
   body.innerHTML = clientes.map(c => `
     <tr onclick="abrirFichaCliente(${c.id})">
       <td>#${c.id}</td>
-      <td class="tel">${c.telefono}</td>
+      <td class="tel">${escaparHtml(c.telefono)}</td>
       <td><b>${escaparHtml(c.nombre || '—')}</b><small class="contacto-relacion">${c.servicios_ganados > 0 ? 'Cliente' : 'Prospecto · aún no ha contratado'}</small></td>
-      <td>${c.empresa_contacto || '—'}</td>
-      <td>${c.direccion || '—'}</td>
+      <td>${escaparHtml(c.empresa_contacto || '—')}</td>
+      <td>${escaparHtml(c.direccion || '—')}</td>
       <td><span class="tag-alerta-tabla util-38">${c.servicios_ganados} servicio${c.servicios_ganados === 1 ? '' : 's'}</span></td>
       <td>${formatoMoneda(c.valor_ganado_total)}</td>
       <td>${c.solicitudes_abiertas > 0 ? `<span class="tag-estatus abierto">${c.solicitudes_abiertas} en leads</span>` : '—'}</td>
@@ -1737,9 +1780,9 @@ function filaRecompra(r, vencido) {
     <div class="fila-alerta tipo-recompra ${vencido ? 'vencido' : ''}">
       <div class="info">
         <span class="tipo-tag recompra">🔁 Recompra</span>
-        <div><b>${r.nombre || 'Sin nombre'} · ${r.telefono}</b></div>
-        <div class="txt">${r.servicio_nombre} — última vez: ${r.ultima_fecha}</div>
-        <div class="fecha" style="color:${vencido ? 'var(--rojo)' : 'var(--azul-600)'};">${texto} (sugerido: ${r.fecha_sugerida})</div>
+        <div><b>${escaparHtml(r.nombre || 'Sin nombre')} · ${escaparHtml(r.telefono)}</b></div>
+        <div class="txt">${escaparHtml(r.servicio_nombre)} — última vez: ${escaparHtml(r.ultima_fecha)}</div>
+        <div class="fecha" style="color:${vencido ? 'var(--rojo)' : 'var(--azul-600)'};">${texto} (sugerido: ${escaparHtml(r.fecha_sugerida)})</div>
       </div>
       <div class="util-46">
         <button class="btn btn-outline" onclick="abrirFichaCliente(${r.cliente_id})">Ver cliente</button>
@@ -1752,8 +1795,8 @@ function filaAlerta(r) {
     <div class="fila-alerta tipo-alerta">
       <div class="info">
         <span class="tipo-tag alerta">⏰ Alerta</span>
-        <div><b>${r.lead_nombre || 'Sin nombre'} · ${r.telefono}</b></div>
-        <div class="txt">${r.texto}</div>
+        <div><b>${escaparHtml(r.lead_nombre || 'Sin nombre')} · ${escaparHtml(r.telefono)}</b></div>
+        <div class="txt">${escaparHtml(r.texto)}</div>
         <div class="fecha">Para: ${fechaCorta(r.fecha_alerta)} · Responsable: ${escaparHtml(r.responsable_nombre || '—')}</div>
       </div>
       <div class="util-46">

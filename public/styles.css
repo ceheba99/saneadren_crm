@@ -639,3 +639,7 @@ body:not(.es-admin) .solo-admin{display:none !important;}
 .fila-usuario input,.fila-usuario select{width:100%;}
 .fila-usuario .acciones-catalogo{display:flex;gap:6px;flex-wrap:wrap;}
 @media(max-width:720px){.fila-usuario{grid-template-columns:1fr;}.fila-catalogo{grid-template-columns:auto 1fr;}.fila-catalogo .acciones-catalogo{grid-column:1/-1;justify-content:flex-start;}}
+
+/* Aviso de error de carga con botón Reintentar */
+.aviso-error-carga{border:1px solid var(--rojo,#c53030);background:#fdecec;border-radius:8px;padding:10px 12px;display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap;}
+.aviso-error-carga p{margin:0;}
