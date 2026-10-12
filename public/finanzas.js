@@ -124,7 +124,16 @@ const Finanzas = (() => {
   }
   $('cobranza-orden').addEventListener('click', async e => {
     const btn = e.target.closest('button'); if (!btn || !ORDEN_ACTUAL) return;
-    const id = ORDEN_ACTUAL, recargar = () => pintarCobranzaOrden({ id, estatus: 'ganado' });
+    const id = ORDEN_ACTUAL;
+    // Tras un movimiento: repinta la cobranza, la bitácora de la ficha y las vistas de dinero abiertas.
+    const recargar = async () => {
+      await pintarCobranzaOrden({ id, estatus: 'ganado' });
+      try {
+        const lead = await api('/leads/' + id).then(r => r.json());
+        if (LEAD_ACTUAL?.id === id) { LEAD_ACTUAL.historial = lead.historial; renderBitacora(lead); }
+      } catch { /* la bitácora se verá al reabrir la ficha */ }
+      refrescarVistasDinero();
+    };
     if (btn.dataset.cobranza === 'registrar') return abrirCobro(id, recargar);
     if (btn.dataset.cobranza === 'guardar-factura') return conBoton(btn, async () => {
       await json(await api('/leads/' + id + '/facturacion', { method: 'PUT', body: JSON.stringify({
@@ -138,6 +147,11 @@ const Finanzas = (() => {
       return conBoton(btn, async () => { await json(await api('/finanzas/cobros/' + Number(btn.dataset.cobroCancelar) + '/cancelar', { method: 'POST', body: JSON.stringify({ motivo }) })); toast('Pago cancelado; el saldo se actualizó'); await recargar(); });
     }
   });
+
+  function refrescarVistasDinero() {
+    if ($('vista-cuentas')?.classList.contains('activa')) cargar();
+    if ($('vista-inicio')?.classList.contains('activa')) pintarInicio();
+  }
 
   // ===================== Vista Cuentas =====================
   let PESTANA = 'cobrar', FILTRO = 'con_saldo', RESUMEN = null, CARTERA = [];
@@ -160,6 +174,7 @@ const Finanzas = (() => {
 
   async function cargar(opciones = {}) {
     if (!puedeCartera()) return;
+    if (opciones.filtro || opciones.pestana) $('cobrar-buscar').value = '';
     if (opciones.filtro) {
       FILTRO = opciones.filtro;
       document.querySelectorAll('[data-filtro-cobro]').forEach(x => x.classList.toggle('activo', x.dataset.filtroCobro === FILTRO));
@@ -468,7 +483,7 @@ const Finanzas = (() => {
     try { r = await api('/finanzas/resumen').then(json); }
     catch (err) { if (err.status !== 401) cont.innerHTML = `<div class="aviso-error-carga" role="alert"><p>No se pudo cargar: ${esc(err.message)}</p><button type="button" class="btn btn-outline" data-inicio-dinero="reintentar">Reintentar</button></div>`; return; }
     const fila = (accion, texto, detalle, clase = '') => `<button type="button" class="fila-alerta fila-dinero-inicio ${clase}" data-inicio-dinero="${accion}"><span class="info"><b>${texto}</b><span class="txt">${detalle}</span></span><span aria-hidden="true">›</span></button>`;
-    let html = fila('vencido', `Te deben ${formatoMoneda(r.por_cobrar)}`, r.vencido > 0 ? `Vencido: ${formatoMoneda(r.vencido)} · ${Number(r.clientes_con_vencido)} clientes` : 'Nada vencido', r.vencido > 0 ? 'vencido' : '');
+    let html = fila(r.vencido > 0 ? 'vencido' : 'con_saldo', `Te deben ${formatoMoneda(r.por_cobrar)}`, r.vencido > 0 ? `Vencido: ${formatoMoneda(r.vencido)} · ${Number(r.clientes_con_vencido)} clientes` : 'Nada vencido', r.vencido > 0 ? 'vencido' : '');
     if (r.por_confirmar?.cantidad) html += fila('cobrar', `Pagos por confirmar: ${Number(r.por_confirmar.cantidad)}`, `${formatoMoneda(r.por_confirmar.monto)} registrados por vendedores o técnicos`, 'aviso');
     if (r.pagar_semana !== undefined) html += fila('pagar', `Pagar esta semana: ${formatoMoneda(r.pagar_semana)}`, `${Number(r.facturas_semana)} facturas de proveedores (incluye vencidas)`, r.pagar_semana > 0 ? 'aviso' : '');
     if (esAdmin() && r.por_revisar) html += fila('cobrar', `Revisión inicial pendiente: ${Number(r.por_revisar)} órdenes`, 'Indica cuáles ya se cobraron para que la cartera sea real', 'aviso');
@@ -478,7 +493,7 @@ const Finanzas = (() => {
     const b = e.target.closest('[data-inicio-dinero]'); if (!b) return;
     const a = b.dataset.inicioDinero;
     if (a === 'reintentar') return pintarInicio();
-    cambiarVista('cuentas', { pestana: a === 'pagar' ? 'pagar' : 'cobrar', filtro: a === 'vencido' ? 'vencido' : undefined });
+    cambiarVista('cuentas', { pestana: a === 'pagar' ? 'pagar' : 'cobrar', filtro: a === 'vencido' ? 'vencido' : a === 'con_saldo' ? 'con_saldo' : undefined });
   });
 
   // ===================== Ficha del contacto: estado de cuenta =====================

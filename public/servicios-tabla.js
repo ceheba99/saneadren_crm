@@ -85,7 +85,9 @@ const ServiciosTabla = (() => {
   async function eliminar(s) {
     const confirmado=await solicitarDialogo({titulo:'Eliminar servicio',aceptar:'Eliminar servicio',mensaje:`¿Eliminar el servicio #${s.id}: ${s.servicio_nombre||'Servicio'}?\nRegistro: ${fecha(s.created_at)} · Importe: ${s.valor==null?'Sin importe':formatoMoneda(s.valor)}\n\nSe eliminarán esta solicitud, sus observaciones y sus alertas. No se puede deshacer. El contacto y sus demás servicios se conservarán.${s.estatus==='ganado'?'\nEl importe se descontará del total ganado. El contacto seguirá disponible en el directorio, aunque ya no tenga servicios contratados.':''}`});
     if(!confirmado)return;
-    await api('/leads/'+s.id,{method:'DELETE'});
+    let r;
+    try { r=await api('/leads/'+s.id,{method:'DELETE'}); } catch(err) { toast('No se pudo eliminar: '+err.message); return; }
+    if(!r.ok){ const j=await r.json().catch(()=>({})); toast(j.error||'No se pudo eliminar'); return; }
     toast('Servicio eliminado');
     try {await refrescar(s.id);}catch(err){toast('Servicio eliminado, pero no se pudo actualizar la vista. Recarga la página.');}
   }

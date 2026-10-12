@@ -9,7 +9,7 @@ const fs = require('fs');
 const crypto = require('crypto');
 const { db, normalizarTelefono } = require('./db');
 
-const { limitador, limitarCampos, problemaNombre, hashPassword, verificarPassword, problemaPassword, normalizarCorreo, correoPermitido, DOMINIO, encabezadosSeguridad } = require('./seguridad');
+const { limitarCampos, problemaNombre, hashPassword, verificarPassword, problemaPassword, normalizarCorreo, correoPermitido, DOMINIO, encabezadosSeguridad } = require('./seguridad');
 const crearAlmacenSesiones = require('./sesiones');
 const PORT = process.env.PORT || 3210;
 // URL pública del CRM; se usa en los enlaces de los correos (nunca se toma del encabezado Host).
@@ -77,6 +77,7 @@ function limitarLogin(req, res, next) {
   next();
 }
 function registrarLoginFallido(req) {
+  if (typeof contarFalloPorIp === 'function') contarFalloPorIp(req);
   const clave = req.ip + '|' + String(req.body?.nombre || '').toLowerCase();
   const estado = intentosLogin.get(clave) || { fallos: 0, bloqueadoHasta: 0 };
   estado.fallos += 1;
@@ -135,7 +136,25 @@ app.get('/api/usuarios', h((req, res) => {
 // ---------- Login ----------
 // Además del bloqueo por usuario, un tope por IP: evita que un desconocido pruebe miles de
 // nombres distintos (cada intento cuesta un cálculo de contraseña y frena al servidor).
-const limitarLoginPorIp = limitador({ max: 40, ventanaMs: 15 * 60 * 1000, clave: req => req.ip, mensaje: 'Demasiados intentos de inicio de sesión desde esta conexión. Espera 15 minutos.' });
+// Solo cuentan los intentos FALLIDOS: así, aunque varias personas compartan IP (oficina, túnel
+// sin TRUST_PROXY), sus inicios de sesión correctos nunca agotan el tope.
+const fallosPorIp = new Map(); // ip -> { fallos, reinicia }
+const FALLOS_IP_MAX = 40, FALLOS_IP_VENTANA_MS = 15 * 60 * 1000;
+setInterval(() => { const ahora = Date.now(); for (const [k, v] of fallosPorIp) if (v.reinicia <= ahora) fallosPorIp.delete(k); }, FALLOS_IP_VENTANA_MS).unref();
+function limitarLoginPorIp(req, res, next) {
+  const r = fallosPorIp.get(req.ip);
+  if (r && r.reinicia > Date.now() && r.fallos >= FALLOS_IP_MAX) {
+    return res.status(429).json({ error: 'Demasiados intentos fallidos desde esta conexión. Espera 15 minutos.' });
+  }
+  next();
+}
+function contarFalloPorIp(req) {
+  const ahora = Date.now();
+  let r = fallosPorIp.get(req.ip);
+  if (!r || r.reinicia <= ahora) { r = { fallos: 0, reinicia: ahora + FALLOS_IP_VENTANA_MS }; fallosPorIp.set(req.ip, r); }
+  r.fallos++;
+}
+if (process.env.RENDER && !process.env.TRUST_PROXY) console.warn('[aviso] En Render define TRUST_PROXY=1 para que los límites de intentos vean la IP real de cada persona.');
 app.post('/api/login', limitarLoginPorIp, limitarLogin, h((req, res) => {
   const { nombre, password } = req.body;
   if (!nombre || !password) return res.status(400).json({ error: 'Usuario y contraseña requeridos' });

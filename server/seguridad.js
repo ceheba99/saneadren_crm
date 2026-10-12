@@ -101,7 +101,9 @@ const LIMITES_TEXTO = {
   texto: 2000, motivo: 500, persona: 500, cargo: 500, zona: 500, fuente: 500,
   equipo: 200, operador: 300, encuesta_comentario: 1000, referencia: 120, concepto: 300, factura_folio: 60,
 };
-const TELEFONO = /^[\d\s()+.\-]{7,25}$/;
+// Teléfono: se aceptan extensiones y varios números ("442 123 4567 ext. 3", "4421… / 4427…"),
+// pero nunca caracteres que sirvan para meter código (< > " ' ` \ { }).
+const TELEFONO = /^[\p{L}\d\s()+.,:;\/#*\-]{0,40}$/u;
 function limitarCampos(req, res, next) {
   const body = req.body;
   if (!body || typeof body !== 'object' || Array.isArray(body)) return next();
@@ -112,7 +114,7 @@ function limitarCampos(req, res, next) {
   for (const campo of ['telefono', 'telefono_alterno']) {
     const v = body[campo];
     if (v === undefined || v === null || v === '') continue;
-    if (typeof v !== 'string' || !TELEFONO.test(v.trim())) return res.status(400).json({ error: 'El teléfono solo puede llevar números, espacios, guiones, paréntesis y +' });
+    if (typeof v !== 'string' || !TELEFONO.test(v.trim())) return res.status(400).json({ error: 'El teléfono admite máximo 40 caracteres: números, letras (p. ej. "ext."), espacios y los signos + ( ) - . , / #' });
   }
   next();
 }

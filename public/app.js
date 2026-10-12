@@ -1680,6 +1680,7 @@ on('btn-guardar-ficha', 'click', async () => {
     const lead = await api('/leads/' + LEAD_ACTUAL.id).then(r => r.json());
     LEAD_ACTUAL = lead;
     renderFichaMeta(lead);
+    Finanzas.pintarCobranzaOrden(lead);
     await ServiciosTabla.refrescar();
   } catch (err) {
     toast('No se pudo guardar: ' + err.message);
@@ -2109,9 +2110,11 @@ on('btn-crear-usuario', 'click', async () => {
 // ---------- Inicio ----------
 async function iniciarApp() {
   mostrarUsuarioEnHeader();
+  // Si otra persona inicia sesión en el mismo navegador, no debe quedar a la vista lo del usuario anterior.
+  for (const id of ['cuentas-tarjetas', 'cobrar-lista', 'pagar-lista', 'prov-lista', 'cuentas-por-confirmar', 'fc-cobranza', 'inicio-dinero']) { const el = document.getElementById(id); if (el) el.innerHTML = ''; }
+  cambiarVista('inicio'); // también carga Inicio
   await cargarCatalogos();
   await cargarLeads();
-  await cargarInicio();
   actualizarBadgePendientes();
   setInterval(actualizarBadgePendientes, 60000);
 }

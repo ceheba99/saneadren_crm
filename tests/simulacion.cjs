@@ -216,7 +216,20 @@ const espera = ms => new Promise(r => setTimeout(r, ms));
   [s, j] = await pedir('POST', '/prospeccion', A, { nombre: 'Restaurante La Fuente', sector_id: 1, zona: 'Centro', responsable_id: adminId, fuente: 'https://www.google.com/maps/place/' + 'x'.repeat(150) });
   ok(s === 201 || s === 200, 'prospección acepta enlaces largos en "fuente" (como antes)', j);
 
-  seccion('9. Seguridad general');
+  seccion('9. Correcciones de la revisión');
+  [s, j] = await pedir('POST', '/contactos', L, { nombre: 'Oficina Ext', telefono: '442 123 4567 ext. 3', canal_origen_id: canales[0].id });
+  ok(s === 201 || s === 409, 'se aceptan teléfonos con extensión (datos que antes eran válidos)', j);
+  [s, j] = await pedir('POST', '/contactos', L, { nombre: 'Varios Tel', telefono: '4421234567 / 4427654321', canal_origen_id: canales[0].id });
+  ok(s !== 400 || !/teléfono admite/.test(j.error || ''), 'se aceptan dos teléfonos separados por /', j);
+  // 45 inicios de sesión CORRECTOS seguidos desde la misma IP no deben bloquear a nadie.
+  let bloqueoPorExito = false;
+  for (let i = 0; i < 45; i++) { const [st] = await pedir('POST', '/login', null, { nombre: ADMIN.correo, password: ADMIN.password }); if (st === 429) { bloqueoPorExito = true; break; } }
+  ok(!bloqueoPorExito, 'los inicios de sesión correctos no cuentan para el tope por IP');
+  let bloqueoPorFallo = false;
+  for (let i = 0; i < 45; i++) { const [st] = await pedir('POST', '/login', null, { nombre: 'inventado' + i, password: 'NoExiste-123x' }); if (st === 429) { bloqueoPorFallo = true; break; } }
+  ok(bloqueoPorFallo, 'muchos intentos fallidos con usuarios distintos sí se bloquean por IP');
+
+  seccion('10. Seguridad general');
   const raiz = await fetch(`http://localhost:${PUERTO}/`);
   ok(raiz.headers.get('content-security-policy') && raiz.headers.get('x-frame-options') === 'DENY' && !raiz.headers.get('x-powered-by'), 'encabezados de seguridad');
   [s] = await pedir('GET', '/leads', 'token-inventado'); ok(s === 401, 'token inventado rechazado');
