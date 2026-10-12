@@ -91,7 +91,145 @@ const espera = ms => new Promise(r => setTimeout(r, ms));
   [s, j] = await pedir('POST', '/leads', L, { cliente_id: clienteId, direccion: 'x', responsable_id: usuarioL.id, partidas_json: partidas, duplicado_de: cot.id, forzar_duplicado: true });
   ok(s === 400, 'no se pueden duplicar cotizaciones');
 
-  seccion('5. Seguridad general');
+  seccion('5. Recompras, fechas y borrado');
+  const recurrente = servicios.find(x => x.dias_recurrencia);
+  const partidasRec = JSON.stringify([{ servicio: recurrente.nombre, leyenda: 'Servicio periódico', importe: 2000 }]);
+  [s, j] = await pedir('POST', '/contactos', L, { nombre: 'Hotel Recompra', telefono: '4421112233', direccion: 'Av. Constituyentes 10', canal_origen_id: canales[0].id });
+  const clienteRec = j.id;
+  [s, j] = await pedir('POST', '/leads', L, { cliente_id: clienteRec, direccion: 'Av. Constituyentes 10', responsable_id: usuarioL.id, partidas_json: partidasRec, estatus: 'ganado', fecha_servicio: '2025-01-15', forzar_duplicado: true });
+  const ordenVieja = j;
+  [s, j] = await pedir('GET', '/recompras', L);
+  const rec = (j || []).find(x => x.cliente_id === clienteRec && x.servicio_id === recurrente.id);
+  ok(rec && rec.ultimo_lead_id === ordenVieja.id, 'la recompra trae la orden que se va a duplicar (botón "Registrar servicio nuevo")', rec);
+  const hoy = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Mexico_City', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+  ok(cot.fecha_cotizacion === hoy, 'la fecha de la cotización es la de hoy en México', { fecha: cot.fecha_cotizacion, hoy });
+  [s, j] = await pedir('GET', '/salud', null);
+  ok(s === 200 && j.ok && j.hoy === hoy, 'ruta de salud pública con la fecha de México', j);
+  [s] = await pedir('DELETE', '/leads/' + ordenVieja.id, L); ok(s === 403, 'ventas NO puede borrar una orden');
+  [s] = await pedir('DELETE', '/leads/' + ordenVieja.id, A); ok(s === 200, 'admin sí puede borrarla');
+  [s] = await pedir('PUT', '/servicios/' + recurrente.id, A, { dias_recurrencia: 99999999 }); ok(s === 400, 'recurrencia absurda rechazada');
+
+  seccion('6. Datos que no se aceptan');
+  [s, j] = await pedir('POST', '/contactos', L, { nombre: 'Prueba Tel', telefono: '<img src=x onerror=alert(1)>4426160000', canal_origen_id: canales[0].id });
+  ok(s === 400, 'teléfono con código o letras rechazado', j);
+  [s] = await pedir('POST', '/leads/' + cot.id + '/historial', L, { tipo: 'observacion', texto: 'x'.repeat(5000) });
+  ok(s === 400, 'nota de 5,000 caracteres rechazada');
+  [s] = await pedir('POST', '/leads/' + cot.id + '/historial', L, { tipo: 'observacion', texto: 'Llamar el lunes' });
+  ok(s === 201 || s === 200, 'nota normal aceptada');
+
+  seccion('7. Cuentas por cobrar');
+  // La orden convertida (cot) y su duplicado nacieron con el módulo instalado: entran directo a la cartera.
+  [s, j] = await pedir('GET', '/leads/' + cot.id + '/cobros', L);
+  ok(s === 200 && j.cuenta.total === 3500 && j.cuenta.saldo === 3500 && j.cuenta.estado === 'pendiente', 'la orden es una cuenta por cobrar de $3,500 pendiente', j.cuenta);
+  [s] = await pedir('GET', '/finanzas/cartera', L); ok(s === 403, 'ventas NO ve la cartera completa');
+  [s, j] = await pedir('POST', '/leads/' + cot.id + '/cobros', L, { monto: 1000, metodo: 'efectivo' });
+  ok(s === 201 && j.confirmado === false && j.cuenta.saldo === 2500 && j.cuenta.estado === 'parcial', 'ventas registra un anticipo en campo: queda por confirmar y baja el saldo', j);
+  const cobroVentas = j.id;
+  [s, j] = await pedir('POST', '/leads/' + cot.id + '/cobros', L, { monto: 1000, metodo: 'efectivo' });
+  ok(s === 409 && j.codigo === 'POSIBLE_DUPLICADO', 'doble toque detectado');
+  [s, j] = await pedir('POST', '/leads/' + cot.id + '/cobros', A, { monto: 9999, metodo: 'transferencia' });
+  ok(s === 400, 'un pago mayor al saldo se rechaza', j);
+  [s, j] = await pedir('POST', '/leads/' + cot.id + '/cobros', A, { monto: '10.555', metodo: 'transferencia' });
+  ok(s === 400, 'montos con más de 2 decimales se rechazan');
+  [s, j] = await pedir('POST', '/leads/' + cot.id + '/cobros', A, { monto: 100, metodo: 'transferencia', fecha: '2099-01-01' });
+  ok(s === 400, 'no se aceptan pagos con fecha futura');
+  [s] = await pedir('POST', '/finanzas/cobros/' + cobroVentas + '/confirmar', L); ok(s === 403, 'ventas NO confirma pagos');
+  [s] = await pedir('POST', '/finanzas/cobros/' + cobroVentas + '/confirmar', A); ok(s === 200, 'admin confirma el pago de ventas');
+  [s, j] = await pedir('PUT', '/leads/' + cot.id + '/facturacion', A, { dias_credito: 15, factura_folio: 'A-123', factura_fecha: '2026-11-16', factura_total: 4060 });
+  ok(s === 200 && j.cuenta.total === 4060 && j.cuenta.saldo === 3060 && j.cuenta.vence === '2026-12-01', 'factura con IVA: el total pasa a $4,060 y vence en 15 días', j.cuenta);
+  [s, j] = await pedir('PUT', '/leads/' + cot.id + '/facturacion', A, { factura_total: 500 });
+  ok(s === 400, 'el total facturado no puede quedar debajo de lo cobrado');
+  [s, j] = await pedir('POST', '/leads/' + cot.id + '/cobros', A, { monto: 3060, metodo: 'transferencia', referencia: 'SPEI 99' });
+  ok(s === 201 && j.cuenta.estado === 'pagada' && j.cuenta.saldo === 0, 'pago final: la orden queda pagada', j.cuenta);
+  [s, j] = await pedir('PUT', '/leads/' + cot.id, A, { version: (await pedir('GET', '/leads/' + cot.id, A))[1].version, estatus: 'abierto' });
+  ok(s === 409, 'una orden con pagos no puede volver a ser cotización');
+  [s] = await pedir('DELETE', '/leads/' + cot.id, A); ok(s === 409, 'una orden con pagos no se puede borrar');
+  [s, j] = await pedir('POST', '/finanzas/cobros/' + cobroVentas + '/cancelar', A, { motivo: 'no' });
+  ok(s === 400, 'cancelar exige un motivo');
+  [s, j] = await pedir('POST', '/finanzas/cobros/' + cobroVentas + '/cancelar', A, { motivo: 'Era un pago de otra orden' });
+  ok(s === 200 && j.cuenta.saldo === 1000 && j.cuenta.estado === 'parcial', 'cancelar un pago devuelve el saldo', j.cuenta);
+  [s, j] = await pedir('GET', '/leads/' + cot.id, A);
+  ok((j.historial || []).some(x => /CANCELADO/.test(x.texto)) && (j.historial || []).some(x => /Facturación/.test(x.texto)), 'la bitácora registra pagos, cancelaciones y facturación');
+  [s, j] = await pedir('GET', '/finanzas/cartera?vista=cliente', A);
+  ok(s === 200 && j.some(c => c.cliente_id === clienteId && c.saldo > 0), 'la cartera por cliente muestra el saldo', j);
+  [s, j] = await pedir('GET', '/finanzas/resumen', A);
+  ok(s === 200 && j.por_cobrar > 0 && j.cobrado_mes > 0, 'resumen de cobranza para Inicio', j);
+
+  // Órdenes programadas (servicio futuro, sin factura): no cuentan como "te deben".
+  [s, j] = await pedir('POST', '/leads', A, { cliente_id: clienteRec, direccion: 'Av. Constituyentes 10', responsable_id: usuarioL.id, partidas_json: partidasRec, estatus: 'ganado', fecha_servicio: '2099-06-01', forzar_duplicado: true });
+  const programada = j;
+  [s, j] = await pedir('GET', '/leads/' + programada.id + '/cobros', A);
+  ok(j.cuenta.programada === true && j.cuenta.tramo === null && j.cuenta.folio && /^OS-\d{6}-\d{4}$/.test(j.cuenta.folio), 'una orden con servicio futuro queda como programada y con folio OS', j.cuenta);
+  [s, j] = await pedir('GET', '/finanzas/cartera?filtro=programadas', A);
+  ok(j.some(c => c.lead_id === programada.id), 'filtro Programadas la muestra');
+  [s, j] = await pedir('GET', '/finanzas/cartera', A);
+  ok(!j.some(c => c.lead_id === programada.id), 'no aparece en "con saldo" (todavía no se hace el trabajo)');
+  [s, j] = await pedir('GET', '/finanzas/resumen', A);
+  ok(j.programado >= 2000, 'el resumen la suma aparte como "programado"', j);
+
+  // Estado de cuenta: importes para admin/atención; ventas solo ve el aviso.
+  [s, j] = await pedir('GET', '/finanzas/clientes/' + clienteId + '/estado-cuenta', A);
+  ok(s === 200 && j.saldo !== undefined && Array.isArray(j.ordenes) && Array.isArray(j.ultimos_cobros), 'estado de cuenta completo para admin', j);
+  [s, j] = await pedir('GET', '/finanzas/clientes/' + clienteId + '/estado-cuenta', L);
+  ok(s === 200 && j.saldo === undefined && 'tiene_vencido' in j, 'ventas solo recibe el aviso de adeudo, sin importes', j);
+  [s, j] = await pedir('GET', '/finanzas/periodo?desde=2026-01-01&hasta=' + hoy, A);
+  ok(s === 200 && j.cobrado > 0 && j.pagado !== undefined, 'cobrado y pagado del periodo para Resultados', j);
+  [s] = await pedir('GET', '/finanzas/periodo?desde=2026-12-01&hasta=2026-01-01', A); ok(s === 400, 'periodo al revés rechazado');
+
+  // Importe de una orden: ventas no lo puede bajar (antes "saldaba" la deuda editando partidas).
+  const otra = (await pedir('GET', '/leads/' + programada.id, A))[1];
+  [s, j] = await pedir('PUT', '/leads/' + programada.id, L, { version: otra.version, partidas_json: JSON.stringify([{ servicio: recurrente.nombre, leyenda: 'x', importe: 1 }]) });
+  ok(s === 403, 'ventas NO puede cambiar el importe de una orden de servicio', j);
+  [s, j] = await pedir('PUT', '/leads/' + programada.id, L, { version: otra.version, operador: 'Fernando Lecón' });
+  ok(s === 200, 'ventas sí puede editar otros datos de la orden (operador)');
+  [s, j] = await pedir('PUT', '/leads/' + programada.id, A, { version: j.version, partidas_json: JSON.stringify([{ servicio: recurrente.nombre, leyenda: 'x', importe: 1800 }]) });
+  ok(s === 200, 'admin sí puede cambiar el importe');
+  [s, j] = await pedir('GET', '/leads/' + programada.id, A);
+  ok((j.historial || []).some(x => /Importe de la orden cambiado: \$2,000\.00 → \$1,800\.00/.test(x.texto)), 'el cambio de importe queda en la bitácora');
+
+  seccion('8. Cuentas por pagar');
+  [s] = await pedir('GET', '/finanzas/cxp', L); ok(s === 403, 'ventas NO ve cuentas por pagar');
+  [s, j] = await pedir('POST', '/finanzas/proveedores', A, { nombre: 'Disposición del Bajío', categoria: 'residuos', dias_credito: 30 });
+  ok(s === 201, 'proveedor creado');
+  const prov = j;
+  [s, j] = await pedir('POST', '/finanzas/cxp', A, { proveedor_id: prov.id, concepto: 'Disposición 12 m3 lodos', total: 2400.5, fecha_documento: '2026-10-01', lead_id: cot.id });
+  ok(s === 201, 'factura de proveedor a 30 días ligada a la orden');
+  const cxp1 = j.id;
+  [s, j] = await pedir('GET', '/finanzas/cxp', A);
+  const c1 = j.find(x => x.id === cxp1);
+  ok(c1 && c1.fecha_vencimiento === '2026-10-31' && c1.saldo === 2400.5, 'vencimiento calculado con el crédito del proveedor', c1);
+  [s, j] = await pedir('POST', '/finanzas/cxp/' + cxp1 + '/pagos', A, { monto: 400.5, metodo: 'transferencia' });
+  ok(s === 201, 'pago parcial al proveedor');
+  [s] = await pedir('POST', '/finanzas/cxp/' + cxp1 + '/cancelar', A, { motivo: 'Factura duplicada' });
+  ok(s === 409, 'no se cancela una cuenta con pagos activos');
+  [s, j] = await pedir('POST', '/finanzas/cxp', A, { proveedor_id: prov.id, categoria: 'combustible', concepto: 'Diésel pipa', total: 1800, ya_pagado: true, metodo: 'efectivo' });
+  ok(s === 201, 'gasto de contado ("ya lo pagué") en un solo paso');
+  [s, j] = await pedir('GET', '/finanzas/cxp', A);
+  ok(!j.some(x => x.concepto === 'Diésel pipa'), 'el gasto de contado no queda como pendiente');
+  [s, j] = await pedir('GET', '/finanzas/resumen', A);
+  ok(j.por_pagar === 2000 && j.pagado_mes >= 1800, 'resumen de pagos: $2,000 por pagar', j);
+  [s, j] = await pedir('POST', '/finanzas/cxp', A, { proveedor_id: prov.id, concepto: 'Disposición octubre', total: 500, factura_folio: 'F-77' });
+  ok(s === 201, 'factura F-77 registrada');
+  [s, j] = await pedir('POST', '/finanzas/cxp', A, { proveedor_id: prov.id, concepto: 'Disposición octubre', total: 500, factura_folio: 'F-77' });
+  ok(s === 409 && j.codigo === 'POSIBLE_DUPLICADO', 'la misma factura del mismo proveedor avisa que está repetida');
+  const adminId = (await pedir('GET', '/usuarios', A))[1].find(u => u.rol === 'admin').id;
+  [s, j] = await pedir('POST', '/prospeccion', A, { nombre: 'Restaurante La Fuente', sector_id: 1, zona: 'Centro', responsable_id: adminId, fuente: 'https://www.google.com/maps/place/' + 'x'.repeat(150) });
+  ok(s === 201 || s === 200, 'prospección acepta enlaces largos en "fuente" (como antes)', j);
+
+  seccion('9. Correcciones de la revisión');
+  [s, j] = await pedir('POST', '/contactos', L, { nombre: 'Oficina Ext', telefono: '442 123 4567 ext. 3', canal_origen_id: canales[0].id });
+  ok(s === 201 || s === 409, 'se aceptan teléfonos con extensión (datos que antes eran válidos)', j);
+  [s, j] = await pedir('POST', '/contactos', L, { nombre: 'Varios Tel', telefono: '4421234567 / 4427654321', canal_origen_id: canales[0].id });
+  ok(s !== 400 || !/teléfono admite/.test(j.error || ''), 'se aceptan dos teléfonos separados por /', j);
+  // 45 inicios de sesión CORRECTOS seguidos desde la misma IP no deben bloquear a nadie.
+  let bloqueoPorExito = false;
+  for (let i = 0; i < 45; i++) { const [st] = await pedir('POST', '/login', null, { nombre: ADMIN.correo, password: ADMIN.password }); if (st === 429) { bloqueoPorExito = true; break; } }
+  ok(!bloqueoPorExito, 'los inicios de sesión correctos no cuentan para el tope por IP');
+  let bloqueoPorFallo = false;
+  for (let i = 0; i < 45; i++) { const [st] = await pedir('POST', '/login', null, { nombre: 'inventado' + i, password: 'NoExiste-123x' }); if (st === 429) { bloqueoPorFallo = true; break; } }
+  ok(bloqueoPorFallo, 'muchos intentos fallidos con usuarios distintos sí se bloquean por IP');
+
+  seccion('10. Seguridad general');
   const raiz = await fetch(`http://localhost:${PUERTO}/`);
   ok(raiz.headers.get('content-security-policy') && raiz.headers.get('x-frame-options') === 'DENY' && !raiz.headers.get('x-powered-by'), 'encabezados de seguridad');
   [s] = await pedir('GET', '/leads', 'token-inventado'); ok(s === 401, 'token inventado rechazado');

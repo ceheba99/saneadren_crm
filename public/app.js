@@ -49,34 +49,56 @@ function on(id, evento, fn) {
   }
   el.addEventListener(evento, fn);
 }
+// Los avisos de error se quedan más tiempo en pantalla para que alcancen a leerse.
+let TOAST_TIMER = null;
 function toast(msg) {
   const t = document.getElementById('toast');
   t.textContent = msg;
   t.style.display = 'block';
-  setTimeout(() => t.style.display = 'none', 2600);
+  if (TOAST_TIMER) clearTimeout(TOAST_TIMER);
+  const esError = /no se pudo|error|sin conexi|no tienes|solo un/i.test(String(msg));
+  TOAST_TIMER = setTimeout(() => t.style.display = 'none', esError ? 7000 : 3500);
+}
+function errorConEstado(mensaje, status, codigo) {
+  const err = new Error(mensaje);
+  err.status = status;
+  if (codigo) err.codigo = codigo;
+  return err;
 }
 async function api(path, opts) {
-  const res = await fetch(API + path, {
-    headers: {
-      'Content-Type': 'application/json',
-      ...(USUARIO_ACTUAL?.token ? { Authorization: 'Bearer ' + USUARIO_ACTUAL.token } : {})
-    },
-    ...opts
-  });
-  if (res.status === 403 && USUARIO_ACTUAL?.token) {
-    const j = await res.clone().json().catch(() => ({}));
-    if (j.codigo === 'CAMBIAR_PASSWORD') { Cuentas.pedirCambioObligatorio(); const err = new Error(j.error); err.status = 403; throw err; }
-  }
-  if (res.status === 401 && path !== '/login') {
-    // Sesión expirada o inválida: no tiene caso seguir mostrando datos ni pedir de nuevo.
-    localStorage.removeItem('usuario_actual');
-    USUARIO_ACTUAL = null;
-    toast('Tu sesión expiró. Vuelve a iniciar sesión.');
+  // Sin sesión no se intenta nada: evita peticiones repetidas tras un 401 y pantallas a medias.
+  const token = USUARIO_ACTUAL?.token;
+  if (!token) {
     document.getElementById('overlay-login')?.classList.add('mostrar');
-    throw new Error('Sesión expirada');
+    throw errorConEstado('Inicia sesión para continuar.', 401);
+  }
+  let res;
+  try {
+    res = await fetch(API + path, {
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+      ...opts
+    });
+  } catch (e) {
+    // Sin internet o servidor caído: la sesión se conserva y el mensaje es comprensible.
+    throw errorConEstado('Sin conexión con el servidor. Revisa tu internet e inténtalo de nuevo.', 0, 'SIN_CONEXION');
+  }
+  if (res.status === 403) {
+    const j = await res.clone().json().catch(() => ({}));
+    if (j.codigo === 'CAMBIAR_PASSWORD') { Cuentas.pedirCambioObligatorio(); throw errorConEstado(j.error, 403, j.codigo); }
+  }
+  if (res.status === 401) {
+    // Solo se cierra la sesión con la que se hizo la petición: si mientras tanto alguien inició
+    // sesión de nuevo, una respuesta tardía no debe sacarlo.
+    if (USUARIO_ACTUAL?.token === token) {
+      localStorage.removeItem('usuario_actual');
+      USUARIO_ACTUAL = null;
+      toast('Tu sesión expiró. Vuelve a iniciar sesión.');
+      document.getElementById('overlay-login')?.classList.add('mostrar');
+    }
+    throw errorConEstado('Sesión expirada', 401);
   }
   if (!res.ok && res.status !== 409) {
-    let msg = 'Error de red';
+    let msg = 'No se pudo completar la operación (código ' + res.status + ')';
     try { const j = await res.clone().json(); if (j && j.error) msg = j.error; } catch (e) {}
     const err = new Error(msg);
     err.status = res.status;
@@ -94,8 +116,9 @@ function fechaCorta(iso) {
 document.querySelectorAll('header nav button').forEach(btn => {
   btn.addEventListener('click', () => cambiarVista(btn.dataset.vista));
 });
-function cambiarVista(v) {
+function cambiarVista(v, opciones) {
   if (v === 'usuarios' && USUARIO_ACTUAL?.rol !== 'admin') v = 'inicio';
+  if (v === 'cuentas' && !['admin', 'atencion'].includes(USUARIO_ACTUAL?.rol)) v = 'inicio';
   document.querySelectorAll('.vista').forEach(s => s.classList.remove('activa'));
   document.getElementById('vista-' + v).classList.add('activa');
   document.querySelectorAll('header nav button').forEach(b => b.classList.toggle('activa', b.dataset.vista === v));
@@ -106,6 +129,7 @@ function cambiarVista(v) {
   if (v === 'pendientes') cargarPendientes();
   if (v === 'resultados') cargarResultados();
   if (v === 'usuarios') cargarUsuarios();
+  if (v === 'cuentas') Finanzas.cargar(opciones);
   if (v === 'catalogos') { cargarTiposCliente(); cargarCatalogoServicios(); cargarCanalesCatalogo(); }
 }
 
@@ -125,7 +149,7 @@ async function cargarCatalogos() {
 
   const optU = u.map(x => `<option value="${x.id}">${escaparHtml(x.nombre)} (${escaparHtml(x.rol)})</option>`).join('');
   const optS = s.map(x => `<option value="${x.id}">${escaparHtml(x.nombre)}</option>`).join('');
-  const optC = c.map(x => `<option value="${x.id}">${x.nombre}</option>`).join('');
+  const optC = c.map(x => `<option value="${Number(x.id)}">${escaparHtml(x.nombre)}</option>`).join('');
 
 
   document.getElementById('ed-servicio').innerHTML = optS;
@@ -192,7 +216,8 @@ function abrirServicioNuevo(modo, prefill) {
   document.getElementById('sn-label-valor').textContent = esDirecto ? 'Importe contratado (MXN)' : 'Importe propuesto (MXN, opcional)';
   document.getElementById('sn-label-fecha').textContent = esDirecto ? 'Fecha acordada del servicio' : 'Fecha del servicio (si ya se sabe)';
   document.getElementById('sn-cliente-info').innerHTML =
-    `<b>${CLIENTE_DUP.nombre || 'Sin nombre'}</b> · ${CLIENTE_DUP.telefono}${CLIENTE_DUP.direccion ? ' · ' + CLIENTE_DUP.direccion : ''}`;
+    `<b>${escaparHtml(CLIENTE_DUP.nombre || 'Sin nombre')}</b> · ${escaparHtml(CLIENTE_DUP.telefono)}${CLIENTE_DUP.direccion ? ' · ' + escaparHtml(CLIENTE_DUP.direccion) : ''}`;
+  Finanzas.avisoAdeudo(CLIENTE_DUP.id, 'sn-aviso-adeudo');
   document.getElementById('sn-servicio').innerHTML = '<option value="">Selecciona un servicio</option>' + CATALOGOS.servicios.map(s=>`<option value="${s.id}">${escaparHtml(s.nombre)}</option>`).join('');
   document.getElementById('sn-ubicacion').value = prefill?.direccion || CLIENTE_DUP.direccion || '';
   document.getElementById('btn-guardar-servicio-nuevo').textContent = DUPLICADO_DE ? 'Guardar orden duplicada' : esDirecto ? 'Crear orden de servicio' : 'Crear cotización';
@@ -305,12 +330,33 @@ function limpiarFormAlta() {
 let ETAPA_FILTRO = null;
 
 // ---------- Inicio (panel del día: alertas + cotizaciones estancadas + recompras) ----------
+// Muestra "Cargando…" y, si falla, un aviso con botón Reintentar en vez de dejar la lista vacía
+// (una lista vacía se confunde con "no hay pendientes").
+function estadoCarga(ids, estado, reintentar) {
+  ids.forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    if (estado === 'cargando') el.innerHTML = '<p class="util-45" role="status">Cargando…</p>';
+    else {
+      el.innerHTML = `<div class="aviso-error-carga" role="alert"><p>${escaparHtml(estado)}</p><button type="button" class="btn btn-outline">Reintentar</button></div>`;
+      el.querySelector('button').onclick = reintentar;
+    }
+  });
+}
 async function cargarInicio() {
-  const [alertas, recompras, abiertas] = await Promise.all([
-    api('/alertas').then(r => r.json()),
-    api('/recompras').then(r => r.json()),
-    api('/leads?estatus=abierto').then(r => r.json())
-  ]);
+  const listas = ['inicio-cotizaciones', 'inicio-recompras'];
+  estadoCarga(listas, 'cargando');
+  let alertas, recompras, abiertas;
+  try {
+    [alertas, recompras, abiertas] = await Promise.all([
+      api('/alertas').then(r => r.json()),
+      api('/recompras').then(r => r.json()),
+      api('/leads?estatus=abierto').then(r => r.json())
+    ]);
+  } catch (err) {
+    if (err.status !== 401) estadoCarga(listas, 'No se pudo cargar: ' + err.message, cargarInicio);
+    return;
+  }
   const estancadas = abiertas
     .filter(l => diasSinMovimiento(l.updated_at) > 7)
     .sort((a, b) => diasSinMovimiento(b.updated_at) - diasSinMovimiento(a.updated_at));
@@ -323,6 +369,7 @@ async function cargarInicio() {
   contRec.innerHTML = recompras.length
     ? recompras.map(r => filaRecompra(r, r.dias_restantes <= 0)).join('')
     : '<p class="util-45">No hay recompras próximas todavía.</p>';
+  Finanzas.pintarInicio();
 }
 function filaEstancada(l) {
   const dias = diasSinMovimiento(l.updated_at);
@@ -330,8 +377,8 @@ function filaEstancada(l) {
     <div class="fila-alerta tipo-estancada">
       <div class="info">
         <span class="tipo-tag estancada">📄 Sin movimiento</span>
-        <div><b>${l.nombre || 'Sin nombre'} · ${l.telefono}</b></div>
-        <div class="txt">${l.servicio_nombre || 'Servicio por definir'} · ${folioCotizacion(l)}</div>
+        <div><b>${escaparHtml(l.nombre || 'Sin nombre')} · ${escaparHtml(l.telefono)}</b></div>
+        <div class="txt">${escaparHtml(l.servicio_nombre || 'Servicio por definir')} · ${folioCotizacion(l)}</div>
         <div class="fecha">${dias} días sin actualizarse</div>
       </div>
       <div class="util-46">
@@ -502,9 +549,9 @@ function renderKanbanLeads(leads) {
         ${dias > 2 ? `<div class="lead-dias ${diasClass}">⏱ ${dias}d</div>` : ''}
         ${l.etapa < 4 ? `<button class="btn-avanzar" title="Mover a ${NOMBRE_ETAPA[l.etapa + 1]}" onclick="event.stopPropagation();avanzarEtapa(${l.id}, ${l.etapa + 1})">›</button>` : ''}
         <div class="lead-folio">${folioCotizacion(l)}</div>
-        <div class="lead-tel">${l.telefono}</div>
-        <div class="lead-nombre">${l.nombre || 'Sin nombre'}</div>
-        <div class="lead-servicio">${l.servicio_nombre || 'Sin servicio'}</div>
+        <div class="lead-tel">${escaparHtml(l.telefono)}</div>
+        <div class="lead-nombre">${escaparHtml(l.nombre || 'Sin nombre')}</div>
+        <div class="lead-servicio">${escaparHtml(l.servicio_nombre || 'Sin servicio')}</div>
         <div class="lead-meta">
           <span class="lead-resp">${escaparHtml(l.responsable_nombre || '—')}</span>
           <span class="lead-valor">${l.valor != null ? formatoMoneda(l.valor) : '—'}</span>
@@ -592,6 +639,7 @@ async function cargarResultados(){
     RESULTADOS_ACTUALES=d;document.getElementById('res-exportar').disabled=false;
     const r=d.resumen,pct=(a,b)=>b?(100*a/b).toFixed(1)+'%':'—';
     const tarjetas=[['Contactos nuevos',r.nuevos],['Clientes con servicios en el periodo',r.clientes],['Importe contratado',formatoMoneda(r.contratado)],['Servicios contratados',r.servicios],['Conversión de contactos nuevos',pct(r.convertidos,r.nuevos)],['Promedio por servicio',r.servicios?formatoMoneda(r.contratado/r.servicios):'—'],['Clientes recurrentes activos',r.recurrentes],['Importe en propuestas abiertas',formatoMoneda(r.propuesto)]];
+    Finanzas.pintarResultados(desde, hasta);
     document.getElementById('res-kpis').innerHTML=tarjetas.map(([label,value])=>`<div class="res-card"><div class="res-num">${value}</div><div class="res-label">${label}</div></div>`).join('');
     document.getElementById('res-canales').innerHTML=d.canales.map(c=>`<tr><td>${escaparHtml(c.canal)}</td><td>${c.nuevos}</td><td>${c.convertidos}</td><td>${pct(c.convertidos,c.nuevos)}</td><td>${c.clientes}</td><td>${c.servicios}</td><td>${formatoMoneda(c.contratado)}</td><td>${c.servicios?formatoMoneda(c.contratado/c.servicios):'—'}</td><td>${c.abiertas}</td><td>${formatoMoneda(c.propuesto)}</td></tr>`).join('')||'<tr><td colspan="10">Sin datos.</td></tr>';
     document.getElementById('res-clientes').innerHTML=d.clientes.map(c=>`<tr><td>${escaparHtml(c.nombre||c.telefono)}</td><td>${escaparHtml(c.canal)}</td><td>${c.ganados_historicos>1?'Cliente recurrente':c.ganados_historicos?'Cliente':'Prospecto'}</td><td>${c.servicios}</td><td>${formatoMoneda(c.contratado)}</td><td>${formatoMoneda(c.total_historico)}</td><td>${c.abiertas}</td><td>${escaparHtml(c.ultima_fecha||'Sin fecha')}</td><td><button class="btn btn-outline" data-resultado-cliente="${Number(c.id)}">Abrir ficha</button></td></tr>`).join('')||'<tr><td colspan="9">Sin contactos ni actividad en el periodo.</td></tr>';
@@ -625,10 +673,10 @@ function renderBarChart(id, datos, labelKey, valueKey, fmt) {
   }).join('');
 }
 
+// Escapa también comillas: el resultado es seguro tanto dentro de etiquetas como dentro de
+// atributos (value="…", title="…"). Usarla con TODO dato que venga de la base o del usuario.
 function escaparHtml(text) {
-  const div = document.createElement('div');
-  div.textContent = text;
-  return div.innerHTML;
+  return String(text ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 
 // ---------- Generar documento de cotización (PDF o Word) desde la ficha del lead ----------
@@ -1181,9 +1229,14 @@ on('btn-gc-generar','click',async e=>{
 });
 
 // ---------- Exportar a Excel (CSV con BOM, se abre directo con Excel) ----------
+// Exportar a Excel es solo para administradores (los botones también se ocultan con .solo-admin).
 function descargarCSV(nombreArchivo, columnas, filas) {
+  if (USUARIO_ACTUAL?.rol !== 'admin') { toast('Solo un administrador puede exportar a Excel'); return; }
   const escaparCelda = valor => {
-    const texto = String(valor ?? '');
+    let texto = String(valor ?? '');
+    // Un texto que empieza con = + - @ Excel lo ejecuta como fórmula (p. ej. =HYPERLINK que manda
+    // datos fuera). Se antepone un apóstrofo, salvo que sea un número.
+    if (/^[=+\-@\t\r]/.test(texto) && !/^-?\d+(\.\d+)?$/.test(texto)) texto = "'" + texto;
     return /[",\n;]/.test(texto) ? '"' + texto.replace(/"/g, '""') + '"' : texto;
   };
   const encabezado = columnas.map(c => escaparCelda(c.titulo)).join(',');
@@ -1307,10 +1360,10 @@ function renderTablaClientesReales(clientes) {
   body.innerHTML = clientes.map(c => `
     <tr onclick="abrirFichaCliente(${c.id})">
       <td>#${c.id}</td>
-      <td class="tel">${c.telefono}</td>
+      <td class="tel">${escaparHtml(c.telefono)}</td>
       <td><b>${escaparHtml(c.nombre || '—')}</b><small class="contacto-relacion">${c.servicios_ganados > 0 ? 'Cliente' : 'Prospecto · aún no ha contratado'}</small></td>
-      <td>${c.empresa_contacto || '—'}</td>
-      <td>${c.direccion || '—'}</td>
+      <td>${escaparHtml(c.empresa_contacto || '—')}</td>
+      <td>${escaparHtml(c.direccion || '—')}</td>
       <td><span class="tag-alerta-tabla util-38">${c.servicios_ganados} servicio${c.servicios_ganados === 1 ? '' : 's'}</span></td>
       <td>${formatoMoneda(c.valor_ganado_total)}</td>
       <td>${c.solicitudes_abiertas > 0 ? `<span class="tag-estatus abierto">${c.solicitudes_abiertas} en leads</span>` : '—'}</td>
@@ -1327,6 +1380,7 @@ async function abrirFichaCliente(id) {
 
   document.getElementById('fc-titulo').textContent = `${cliente.telefono} · ${cliente.nombre || 'Sin nombre'}`;
   document.getElementById('fc-meta').innerHTML = metaClienteHTML(cliente);
+  Finanzas.pintarCliente(cliente);
   document.getElementById('fc-ed-telefono').value = cliente.telefono || '';
   document.getElementById('fc-ed-telefono-alterno').value = cliente.telefono_alterno || '';
   document.getElementById('fc-ed-nombre').value = cliente.nombre || '';
@@ -1438,6 +1492,7 @@ async function abrirFicha(id) {
   renderServiciosAnteriores(lead.otras_solicitudes || []);
   abrirVentana('overlay-ficha');
   FlujoCRM.presentarRegistro(lead, clienteServicios);
+  Finanzas.pintarCobranzaOrden(lead);
   prepararEditorCotizacion(lead,'existente');
   FlujoCRM.marcarGuardado('overlay-ficha');
 }
@@ -1625,6 +1680,7 @@ on('btn-guardar-ficha', 'click', async () => {
     const lead = await api('/leads/' + LEAD_ACTUAL.id).then(r => r.json());
     LEAD_ACTUAL = lead;
     renderFichaMeta(lead);
+    Finanzas.pintarCobranzaOrden(lead);
     await ServiciosTabla.refrescar();
   } catch (err) {
     toast('No se pudo guardar: ' + err.message);
@@ -1735,9 +1791,9 @@ function filaRecompra(r, vencido) {
     <div class="fila-alerta tipo-recompra ${vencido ? 'vencido' : ''}">
       <div class="info">
         <span class="tipo-tag recompra">🔁 Recompra</span>
-        <div><b>${r.nombre || 'Sin nombre'} · ${r.telefono}</b></div>
-        <div class="txt">${r.servicio_nombre} — última vez: ${r.ultima_fecha}</div>
-        <div class="fecha" style="color:${vencido ? 'var(--rojo)' : 'var(--azul-600)'};">${texto} (sugerido: ${r.fecha_sugerida})</div>
+        <div><b>${escaparHtml(r.nombre || 'Sin nombre')} · ${escaparHtml(r.telefono)}</b></div>
+        <div class="txt">${escaparHtml(r.servicio_nombre)} — última vez: ${escaparHtml(r.ultima_fecha)}</div>
+        <div class="fecha" style="color:${vencido ? 'var(--rojo)' : 'var(--azul-600)'};">${texto} (sugerido: ${escaparHtml(r.fecha_sugerida)})</div>
       </div>
       <div class="util-46">
         <button class="btn btn-outline" onclick="abrirFichaCliente(${r.cliente_id})">Ver cliente</button>
@@ -1750,8 +1806,8 @@ function filaAlerta(r) {
     <div class="fila-alerta tipo-alerta">
       <div class="info">
         <span class="tipo-tag alerta">⏰ Alerta</span>
-        <div><b>${r.lead_nombre || 'Sin nombre'} · ${r.telefono}</b></div>
-        <div class="txt">${r.texto}</div>
+        <div><b>${escaparHtml(r.lead_nombre || 'Sin nombre')} · ${escaparHtml(r.telefono)}</b></div>
+        <div class="txt">${escaparHtml(r.texto)}</div>
         <div class="fecha">Para: ${fechaCorta(r.fecha_alerta)} · Responsable: ${escaparHtml(r.responsable_nombre || '—')}</div>
       </div>
       <div class="util-46">
@@ -1843,6 +1899,7 @@ on('btn-descargar-respaldo', 'click', async () => {
 function mostrarUsuarioEnHeader() {
   document.getElementById('sesion-nombre').textContent = USUARIO_ACTUAL.nombre;
   document.body.classList.toggle('es-admin', USUARIO_ACTUAL.rol === 'admin');
+  document.body.classList.toggle('puede-cobranza', ['admin', 'atencion'].includes(USUARIO_ACTUAL.rol));
   document.getElementById('nav-usuarios').style.display = USUARIO_ACTUAL.rol === 'admin' ? 'inline-block' : 'none';
 }
 
@@ -2053,9 +2110,11 @@ on('btn-crear-usuario', 'click', async () => {
 // ---------- Inicio ----------
 async function iniciarApp() {
   mostrarUsuarioEnHeader();
+  // Si otra persona inicia sesión en el mismo navegador, no debe quedar a la vista lo del usuario anterior.
+  for (const id of ['cuentas-tarjetas', 'cobrar-lista', 'pagar-lista', 'prov-lista', 'cuentas-por-confirmar', 'fc-cobranza', 'inicio-dinero']) { const el = document.getElementById(id); if (el) el.innerHTML = ''; }
+  cambiarVista('inicio'); // también carga Inicio
   await cargarCatalogos();
   await cargarLeads();
-  await cargarInicio();
   actualizarBadgePendientes();
   setInterval(actualizarBadgePendientes, 60000);
 }

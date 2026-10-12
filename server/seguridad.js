@@ -90,6 +90,35 @@ function limitador({ max, ventanaMs, clave, mensaje }) {
   };
 }
 
+// ---------- Límites de texto y formato de teléfono para todo /api ----------
+// Evita notas de cientos de KB (lentitud, respaldos inflados, PDFs rotos) y teléfonos con
+// letras o símbolos (que además servían para esconder código en la página).
+const LIMITES_TEXTO = {
+  // Topes holgados: deben ser >= a los que ya aceptaban las pantallas (p. ej. prospección, 500)
+  // para no impedir editar registros existentes.
+  nombre: 500, empresa_contacto: 300, direccion: 500, correo: 254, rfc: 20, giro: 80,
+  notas_iniciales: 10000, notas_generales: 10000, notas: 3000, observaciones: 3000, necesidades: 5000,
+  texto: 2000, motivo: 500, persona: 500, cargo: 500, zona: 500, fuente: 500,
+  equipo: 200, operador: 300, encuesta_comentario: 1000, referencia: 120, concepto: 300, factura_folio: 60,
+};
+// Teléfono: se aceptan extensiones y varios números ("442 123 4567 ext. 3", "4421… / 4427…"),
+// pero nunca caracteres que sirvan para meter código (< > " ' ` \ { }).
+const TELEFONO = /^[\p{L}\d\s()+.,:;\/#*\-]{0,40}$/u;
+function limitarCampos(req, res, next) {
+  const body = req.body;
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return next();
+  for (const [campo, max] of Object.entries(LIMITES_TEXTO)) {
+    const v = body[campo];
+    if (typeof v === 'string' && v.length > max) return res.status(400).json({ error: `El campo "${campo}" admite máximo ${max} caracteres` });
+  }
+  for (const campo of ['telefono', 'telefono_alterno']) {
+    const v = body[campo];
+    if (v === undefined || v === null || v === '') continue;
+    if (typeof v !== 'string' || !TELEFONO.test(v.trim())) return res.status(400).json({ error: 'El teléfono admite máximo 40 caracteres: números, letras (p. ej. "ext."), espacios y los signos + ( ) - . , / #' });
+  }
+  next();
+}
+
 // ---------- Encabezados de seguridad HTTP ----------
 function encabezadosSeguridad(req, res, next) {
   res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -115,4 +144,4 @@ function encabezadosSeguridad(req, res, next) {
   next();
 }
 
-module.exports = { problemaNombre, hashPassword, verificarPassword, problemaPassword, normalizarCorreo, correoPermitido, DOMINIO, hashToken, nuevoToken, limitador, encabezadosSeguridad };
+module.exports = { limitarCampos, problemaNombre, hashPassword, verificarPassword, problemaPassword, normalizarCorreo, correoPermitido, DOMINIO, hashToken, nuevoToken, limitador, encabezadosSeguridad };
