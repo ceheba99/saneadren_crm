@@ -22,7 +22,7 @@ const FlujoCRM = (() => {
   async function permitirCambio(id){
     if(!$(id)?.classList.contains('mostrar') || !dirty(id))return true;
     const ok=await solicitarDialogo({titulo:'Hay cambios sin guardar',mensaje:'Puedes volver para guardarlos, o descartar estos cambios y continuar.',aceptar:'Descartar cambios'});
-    if(!ok)return false;
+    if(!ok){window.Plegables?.mostrarCambios($(id));return false;}
     const lista=$(id).querySelector('#gc-items');if(lista && listasGuardadas.has(id))lista.innerHTML=listasGuardadas.get(id);
     const saved=baselines.get(id);elementos(id).forEach((e,i)=>{if(saved[i]){e.value=saved[i].value;if('checked' in e)e.checked=saved[i].checked;}});
     if(lista){actualizarTotalCotizacion();sincronizarEditor();}

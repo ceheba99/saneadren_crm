@@ -719,3 +719,75 @@ body:not(.puede-cobranza) .solo-cobranza{display:none !important;}
 /* Los filtros de cuentas son muchos: que bajen de renglón en vez de ensanchar la página. */
 #cobrar-filtros{flex-wrap:wrap;}
 #cobrar-filtros button{flex:0 0 auto;}
+
+/* ===================== Menú principal agrupado ===================== */
+header.app nav.menu-principal{display:flex;align-items:center;gap:6px;}
+.menu-movil{display:none;}
+.menu-items{display:flex;align-items:center;gap:6px;flex-wrap:wrap;}
+header.app nav.menu-principal .menu-item,header.app nav.menu-principal .menu-grupo-btn{
+  display:inline-flex;align-items:center;gap:7px;background:transparent;border:1px solid rgba(255,255,255,.18);
+  color:var(--blanco);padding:8px 14px;border-radius:999px;font:inherit;font-size:13.5px;cursor:pointer;min-height:40px;
+  transition:background .15s,border-color .15s;white-space:nowrap;}
+header.app nav.menu-principal .menu-item:hover,header.app nav.menu-principal .menu-grupo-btn:hover{background:rgba(255,255,255,.1);border-color:rgba(255,255,255,.35);}
+header.app nav.menu-principal .menu-item.activa,header.app nav.menu-principal .menu-grupo.activa>.menu-grupo-btn{
+  background:var(--amarillo);border-color:var(--amarillo);color:#191b1e;font-weight:700;}
+.menu-icono{font-size:15px;line-height:1;}
+.menu-flecha{font-size:10px;opacity:.8;transition:transform .2s;}
+.menu-grupo{position:relative;}
+.menu-grupo.abierto .menu-flecha{transform:rotate(180deg);}
+.menu-sub{display:none;position:absolute;top:calc(100% + 8px);left:0;min-width:230px;background:#fff;border-radius:14px;
+  box-shadow:0 14px 40px rgba(11,31,43,.28);padding:6px;z-index:60;flex-direction:column;gap:2px;}
+.menu-sub::before{content:'';position:absolute;top:-6px;left:22px;width:12px;height:12px;background:#fff;transform:rotate(45deg);border-radius:2px;}
+.menu-grupo.abierto .menu-sub{display:flex;}
+header.app nav.menu-principal .menu-sub .menu-item{width:100%;justify-content:flex-start;border:0;border-radius:10px;color:var(--texto);padding:11px 12px;font-size:14px;background:transparent;}
+header.app nav.menu-principal .menu-sub .menu-item:hover{background:var(--gris-100);}
+header.app nav.menu-principal .menu-sub .menu-item.activa{background:#fff3cd;color:var(--texto);font-weight:700;}
+.menu-badge{background:var(--rojo);color:#fff;border-radius:999px;font-size:11px;font-weight:700;padding:1px 7px;}
+
+@media(max-width:900px){
+  header.app nav.menu-principal{order:3;flex-basis:100%;display:block;position:relative;}
+  header.app nav.menu-principal .menu-movil{display:flex;width:100%;align-items:center;gap:10px;background:rgba(255,255,255,.07);
+    border:1px solid rgba(255,255,255,.2);color:#fff;border-radius:14px;padding:10px 14px;font:inherit;font-size:15px;min-height:48px;cursor:pointer;}
+  .menu-hamburguesa{font-size:20px;line-height:1;}
+  .menu-actual{margin-left:auto;font-weight:700;color:var(--amarillo);}
+  .menu-items{display:none;}
+  nav.menu-principal.abierta .menu-items{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px;padding:12px;
+    background:var(--azul-800);border-radius:14px;box-shadow:0 14px 40px rgba(0,0,0,.35);}
+  nav.menu-principal.abierta .menu-grupo{grid-column:1/-1;}
+  /* En el panel del celular los grupos van abiertos: su botón es solo un título. */
+  header.app nav.menu-principal .menu-grupo-btn{border:0;background:none;padding:6px 2px 0;min-height:0;font-size:11.5px;
+    text-transform:uppercase;letter-spacing:.6px;color:var(--gris-400);pointer-events:none;}
+  header.app nav.menu-principal .menu-grupo.activa>.menu-grupo-btn{background:none;color:var(--amarillo);}
+  .menu-grupo-btn .menu-flecha{display:none;}
+  .menu-sub,.menu-grupo.abierto .menu-sub{display:grid;position:static;grid-template-columns:1fr 1fr;gap:8px;background:none;box-shadow:none;padding:6px 0 0;min-width:0;}
+  .menu-sub::before{display:none;}
+  header.app nav.menu-principal .menu-item,header.app nav.menu-principal .menu-sub .menu-item{
+    width:100%;justify-content:flex-start;min-height:52px;border-radius:12px;font-size:14.5px;color:#fff;
+    background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.14);padding:10px 12px;white-space:normal;text-align:left;}
+  header.app nav.menu-principal .menu-item.activa,header.app nav.menu-principal .menu-sub .menu-item.activa{background:var(--amarillo);border-color:var(--amarillo);color:#191b1e;}
+  .menu-icono{font-size:18px;}
+}
+
+/* ===================== Secciones plegables ===================== */
+.plegable-cabecera{cursor:pointer;user-select:none;border-radius:8px;}
+.plegable-cabecera:hover{background:rgba(0,0,0,.025);}
+.seccion-tit.plegable-cabecera::after,.plegable-cabecera .seccion-tit::after{content:'▾';margin-left:auto;font-size:13px;color:var(--texto-sec);transition:transform .2s;}
+.seccion-tit.plegable-cabecera,.plegable-cabecera .seccion-tit{padding:6px 4px;}
+.plegada .seccion-tit.plegable-cabecera::after,.plegada>.plegable-cabecera .seccion-tit::after{transform:rotate(-90deg);}
+.modal-section.plegada>:not(.plegable-cabecera):not(.plegable-fila):not(.plegable-resumen){display:none !important;}
+.plegable-resumen.pendiente{background:#fff3cd;border:1px solid var(--amarillo);color:var(--amarillo-texto);font-weight:600;}
+.modal-section.plegada{padding-top:12px;padding-bottom:12px;}
+.plegable-resumen{font-size:13.5px;color:var(--texto);background:var(--gris-100);border:1px dashed var(--gris-300);border-radius:10px;padding:9px 12px;cursor:pointer;margin-top:4px;}
+.plegable-resumen:hover{border-color:var(--amarillo);}
+@media(max-width:900px){
+  /* Panel del celular: accesos directos (Inicio, Pendientes, Clientes) en una fila y luego los grupos. */
+  nav.menu-principal.abierta .menu-items{grid-template-columns:repeat(3,minmax(0,1fr));}
+  header.app nav.menu-principal .menu-items>.menu-item{flex-direction:column;align-items:center;justify-content:center;text-align:center;gap:4px;font-size:13px;padding:8px 4px;}
+}
+/* Identidad del contacto sola en su sección: sin hueco abajo. */
+#overlay-ficha-cliente .modal-body>.modal-section:first-child{padding-bottom:6px;}
+#overlay-ficha-cliente .contacto-identidad{margin-bottom:0;}
+
+/* Anillo de foco visible sobre el submenú blanco (el amarillo casi no contrasta ahí). */
+header.app nav.menu-principal .menu-sub .menu-item:focus-visible{outline:3px solid var(--azul-600);outline-offset:1px;}
+@media(max-width:900px){header.app nav.menu-principal .menu-sub .menu-item:focus-visible{outline-color:var(--amarillo-vivo);}}
