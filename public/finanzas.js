@@ -678,6 +678,8 @@ const Finanzas = (() => {
   // Convierte el valor de una celda de ExcelJS a texto o número simple.
   function valorCelda(v) {
     if (v === null || v === undefined) return '';
+    // Celda con error de Excel (#N/A, #¡REF!…): se marca para que el servidor la reporte, no se toma como vacía.
+    if (typeof v === 'object' && !(v instanceof Date) && (v.error || v.result?.error)) return '#ERROR_EXCEL:' + (v.error || v.result.error);
     if (v instanceof Date) return `${v.getUTCFullYear()}-${String(v.getUTCMonth() + 1).padStart(2, '0')}-${String(v.getUTCDate()).padStart(2, '0')}`;
     if (typeof v === 'object') {
       if (v.result !== undefined) return valorCelda(v.result);                    // fórmula
@@ -700,7 +702,9 @@ const Finanzas = (() => {
     const ExcelJS = await cargarExcelJS();
     if (archivo.size > 5 * 1024 * 1024) throw new Error('El archivo es demasiado grande (máximo 5 MB)');
     const wb = new ExcelJS.Workbook();
-    try { await wb.xlsx.load(await archivo.arrayBuffer()); } catch { throw new Error('No se pudo leer el archivo. Guárdalo como Excel (.xlsx) e inténtalo de nuevo.'); }
+    // Límites de lectura: un archivo pequeño con rangos enormes podría congelar el navegador.
+    try { await wb.xlsx.load(await archivo.arrayBuffer(), { ignoreNodes: ['dataValidations', 'conditionalFormatting', 'hyperlinks'], maxRows: 5000, maxCols: 100 }); }
+    catch (err) { throw new Error(/max (row|column)/i.test(err?.message || '') ? 'El archivo tiene demasiados renglones o columnas. Usa la plantilla y máximo 1,000 renglones.' : 'No se pudo leer el archivo. Guárdalo como Excel (.xlsx) e inténtalo de nuevo.'); }
     const ws = wb.getWorksheet('Datos') || wb.worksheets[0];
     if (!ws) throw new Error('El archivo no tiene hojas');
     // Localiza cada columna por su título (aunque las hayan movido de lugar).
@@ -721,13 +725,17 @@ const Finanzas = (() => {
         if (!posicion[c.key]) continue;
         let v = valorCelda(row.getCell(posicion[c.key]).value);
         if (c.tipo === 'fecha' && typeof v === 'string') v = fechaTexto(v);
+        if (typeof v === 'string' && v.startsWith('#ERROR_EXCEL:')) v += '@' + c.titulo; // para que el mensaje diga la columna
         if (typeof v === 'number' && c.tipo === 'texto') v = String(v);
+        // Montos calculados con fórmula (p. ej. con IVA) pueden traer residuos como 4060.0000001.
+        if (typeof v === 'number' && c.tipo === 'dinero') v = Math.round(v * 100) / 100;
         if (v !== '' && v !== null) algo = true;
         f[c.key] = v;
       }
       if (algo) filas.push(f);
     });
     if (!filas.length) throw new Error('La hoja "Datos" no tiene renglones con información');
+    if (filas.length > 1000) throw new Error(`El archivo tiene ${filas.length} renglones; el máximo es 1,000. Divídelo en varios archivos.`);
     return filas;
   }
 

@@ -166,6 +166,9 @@ function sumarDias(fecha, dias) {
   d.setUTCDate(d.getUTCDate() + (Number(dias) || 0));
   return d.toISOString().slice(0, 10);
 }
+// Clave para comparar nombres de proveedor: sin acentos, sin mayúsculas y con espacios simples
+// (COLLATE NOCASE de SQLite solo ignora mayúsculas ASCII: "DISPOSICIÓN" ≠ "Disposición").
+const claveNombre = t => String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
 const diasEntre = (desde, hasta) => Math.round((new Date(hasta + 'T00:00:00Z') - new Date(desde + 'T00:00:00Z')) / 86400000);
 const texto = (v, max) => (typeof v === 'string' && v.trim() ? v.trim().slice(0, max) : null);
 // Mismo folio que el documento impreso (public/app.js folioOrdenServicio): OS-AAAAMM-0000.
@@ -532,7 +535,7 @@ module.exports = function finanzas(app, db, h) {
     if (!soloAdmin(req, res)) return;
     const d = datosProveedor(req.body);
     if (d.error) return res.status(400).json(d);
-    if (db.prepare('SELECT id FROM proveedores WHERE nombre = ?').get(d.nombre)) return res.status(409).json({ error: 'Ya existe un proveedor con ese nombre' });
+    if (db.prepare('SELECT nombre FROM proveedores').all().some(x => claveNombre(x.nombre) === claveNombre(d.nombre))) return res.status(409).json({ error: 'Ya existe un proveedor con ese nombre' });
     const info = db.prepare('INSERT INTO proveedores (nombre, categoria, rfc, telefono, contacto, dias_credito, notas) VALUES (?, ?, ?, ?, ?, ?, ?)')
       .run(d.nombre, d.categoria, d.rfc, d.telefono, d.contacto, d.dias_credito, d.notas);
     res.status(201).json(db.prepare('SELECT * FROM proveedores WHERE id = ?').get(info.lastInsertRowid));
@@ -543,7 +546,7 @@ module.exports = function finanzas(app, db, h) {
     if (!p) return res.status(404).json({ error: 'Proveedor no encontrado' });
     const d = datosProveedor({ ...p, ...req.body });
     if (d.error) return res.status(400).json(d);
-    if (db.prepare('SELECT id FROM proveedores WHERE nombre = ? AND id <> ?').get(d.nombre, p.id)) return res.status(409).json({ error: 'Ya existe un proveedor con ese nombre' });
+    if (db.prepare('SELECT id, nombre FROM proveedores WHERE id <> ?').all(p.id).some(x => claveNombre(x.nombre) === claveNombre(d.nombre))) return res.status(409).json({ error: 'Ya existe un proveedor con ese nombre' });
     const activo = req.body.activo === undefined ? p.activo : (req.body.activo ? 1 : 0);
     db.prepare('UPDATE proveedores SET nombre = ?, categoria = ?, rfc = ?, telefono = ?, contacto = ?, dias_credito = ?, notas = ?, activo = ? WHERE id = ?')
       .run(d.nombre, d.categoria, d.rfc, d.telefono, d.contacto, d.dias_credito, d.notas, activo, p.id);
@@ -661,8 +664,11 @@ module.exports = function finanzas(app, db, h) {
   }
   // Monto opcional: '' → null; inválido → error.
   function montoCent(v, campo, errores, requerido) {
-    const t = celda(v);
+    let t = celda(v);
     if (!t) { if (requerido) errores.push(`${campo} es obligatorio`); return null; }
+    // Texto: solo comas de miles (1,234.50) o sin comas (1234.50). "3500,50" es ambiguo y se rechaza.
+    t = t.replace(/^\$\s*/, '');
+    if (!/^\d{1,3}(,\d{3})+(\.\d+)?$/.test(t) && !/^\d+(\.\d+)?$/.test(t)) { errores.push(`${campo}: formato no válido ("${celda(v)}"); usa punto para decimales, p. ej. 3500.50`); return null; }
     const c = aCentavos(t);
     if (!c) errores.push(`${campo}: escribe un monto mayor a 0 con máximo 2 decimales`);
     return c;
@@ -678,7 +684,17 @@ module.exports = function finanzas(app, db, h) {
     const filas = req.body?.filas;
     if (!Array.isArray(filas) || !filas.length) { res.status(400).json({ error: 'La plantilla no tiene filas con datos' }); return null; }
     if (filas.length > MAX_FILAS) { res.status(400).json({ error: `Máximo ${MAX_FILAS} filas por archivo; divide la plantilla` }); return null; }
+    if (!filas.every(f => f && typeof f === 'object' && !Array.isArray(f))) { res.status(400).json({ error: 'Formato de renglones inválido' }); return null; }
     return filas;
+  }
+  // El navegador marca las celdas con error de Excel (#N/A, #¡REF!…) como "#ERROR_EXCEL:<código>".
+  function erroresExcel(f, errores) {
+    for (const [k, v] of Object.entries(f)) {
+      if (typeof v === 'string' && v.startsWith('#ERROR_EXCEL:')) {
+        const [codigo, columna] = v.slice(13).split('@');
+        errores.push(`Columna "${(columna || k).slice(0, 60)}": la celda tiene un error de Excel (${(codigo || 'error').slice(0, 20)})`); f[k] = '';
+      }
+    }
   }
   const responder = (res, simular, resultado) => {
     const conError = resultado.filter(x => x.errores.length);
@@ -702,6 +718,7 @@ module.exports = function finanzas(app, db, h) {
     const resultado = filas.map((f, i) => {
       const errores = [];
       const fila = Number(f.fila) || i + 2;
+      erroresExcel(f, errores);
       const telefono = celda(f.telefono);
       const tel = telefono.replace(/\D/g, '').slice(-10);
       if (tel.length !== 10) errores.push('Teléfono: deben ser 10 dígitos');
@@ -729,11 +746,12 @@ module.exports = function finanzas(app, db, h) {
       const total = totalFact ?? importe;
       if (pagado && total && pagado > total) errores.push('Ya pagado no puede ser mayor que el total');
       // Evita importar dos veces lo mismo (en el archivo o contra lo que ya existe).
-      const llave = [tel, servicio?.id, fechaServ, importe].join('|');
+      // Mismo cliente, servicio, fecha, importe, factura y dirección = el mismo registro.
+      const llave = [tel, servicio?.id, fechaServ, importe, folio || '', claveNombre(direccion)].join('|');
       if (importe && servicio && fechaServ) {
         if (vistos.has(llave)) errores.push('Fila repetida dentro del archivo');
         vistos.add(llave);
-        if (existente && db.prepare("SELECT 1 FROM leads WHERE cliente_id = ? AND servicio_id = ? AND fecha_servicio = ? AND estatus = 'ganado' AND CAST(ROUND(valor * 100) AS INTEGER) = ?").get(existente.id, servicio.id, fechaServ, importe)) {
+        if (existente && db.prepare("SELECT 1 FROM leads WHERE cliente_id = ? AND servicio_id = ? AND fecha_servicio = ? AND estatus = 'ganado' AND CAST(ROUND(valor * 100) AS INTEGER) = ? AND COALESCE(factura_folio, '') = ? AND lower(trim(COALESCE(direccion, ''))) = lower(trim(?))").get(existente.id, servicio.id, fechaServ, importe, folio || '', direccion || '')) {
           errores.push('Ya existe una orden igual para este cliente (¿ya se importó?)');
         }
       }
@@ -747,8 +765,10 @@ module.exports = function finanzas(app, db, h) {
       const insLead = db.prepare(`INSERT INTO leads (cliente_id, telefono, telefono_normalizado, nombre, empresa_contacto, direccion, servicio_id, responsable_id,
           notas_iniciales, creado_por, valor, fecha_servicio, estatus, etapa, origen, partidas_json, dias_credito, factura_folio, factura_fecha, factura_total_cent)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ganado', 4, 'directo', ?, ?, ?, ?, ?)`);
+      // Lo ya pagado es dinero que sí entró: se registra como pago (o anticipo si el servicio es futuro),
+      // igual que en cuentas por pagar, para que Resultados cuadre.
       const insCobro = db.prepare(`INSERT INTO cobros (lead_id, fecha, monto_cent, tipo, metodo, notas, confirmado, confirmado_por, confirmado_at, registrado_por)
-        VALUES (?, ?, ?, 'ajuste', 'otro', 'Pagado antes de la importación (plantilla de Excel)', 1, ?, datetime('now','localtime'), ?)`);
+        VALUES (?, ?, ?, ?, 'otro', 'Pagado antes de la importación (plantilla de Excel)', 1, ?, datetime('now','localtime'), ?)`);
       const creados = new Map(); // teléfono → cliente creado en esta misma importación
       for (const { datos: d } of resultado) {
         let cli = d.existente || creados.get(d.tel);
@@ -760,7 +780,7 @@ module.exports = function finanzas(app, db, h) {
         const partidas = JSON.stringify([{ servicio: d.servicio.nombre, leyenda: d.descripcion || '', importe: d.importe / 100 }]);
         const leadId = insLead.run(cli.id, cli.telefono, cli.telefono_normalizado, cli.nombre, cli.empresa_contacto, d.direccion, d.servicio.id, req.usuarioSesion.id,
           d.notas, req.usuarioSesion.nombre, d.importe / 100, d.fechaServ, partidas, d.dias ?? cli.dias_credito ?? null, d.folio, d.fechaFact, d.totalFact).lastInsertRowid;
-        if (d.pagado) insCobro.run(leadId, d.fechaServ <= hoy ? d.fechaServ : hoy, d.pagado, req.usuarioSesion.id, req.usuarioSesion.id);
+        if (d.pagado) insCobro.run(leadId, d.fechaServ <= hoy ? d.fechaServ : hoy, d.pagado, d.fechaServ > hoy ? 'anticipo' : 'pago', req.usuarioSesion.id, req.usuarioSesion.id);
         bitacora(leadId, 'Orden importada desde la plantilla de Excel de cuentas por cobrar.' + (d.pagado ? ` Ya pagado: ${fmt(d.pagado)}.` : ''), req);
       }
     })();
@@ -774,14 +794,15 @@ module.exports = function finanzas(app, db, h) {
     const hoy = hoyMexico();
     const nombreCategoria = new Map(Object.entries(CATEGORIAS).flatMap(([k, n]) => [[k, k], [n.toLowerCase(), k]]));
     const nombreMetodo = new Map(METODOS.map(m => [m, m]).concat([['depósito', 'deposito']]));
-    const buscarProv = db.prepare('SELECT * FROM proveedores WHERE nombre = ?');
+    const provPorClave = new Map(db.prepare('SELECT * FROM proveedores').all().map(x => [claveNombre(x.nombre), x]));
     const vistos = new Set();
     const resultado = filas.map((f, i) => {
       const errores = [];
       const fila = Number(f.fila) || i + 2;
+      erroresExcel(f, errores);
       const proveedor = textoMax(f.proveedor, LIM.proveedor, 'Proveedor', errores);
       if (!proveedor) errores.push('Proveedor es obligatorio');
-      const prov = proveedor ? buscarProv.get(proveedor) : null;
+      const prov = proveedor ? provPorClave.get(claveNombre(proveedor)) || null : null;
       if (prov && !prov.activo) errores.push('El proveedor está desactivado; actívalo en la pestaña Proveedores');
       const categoria = nombreCategoria.get(celda(f.categoria).toLowerCase()) || (celda(f.categoria) ? null : prov?.categoria || 'otro');
       if (!categoria) errores.push(`Categoría "${celda(f.categoria)}" no es válida`);
@@ -807,7 +828,7 @@ module.exports = function finanzas(app, db, h) {
       const equipo = textoMax(f.equipo, LIM.equipo, 'Equipo', errores);
       const notas = textoMax(f.notas, LIM.notas, 'Notas', errores);
       if (proveedor && folio) {
-        const llave = proveedor.toLowerCase() + '|' + folio;
+        const llave = claveNombre(proveedor) + '|' + folio;
         if (vistos.has(llave)) errores.push('Factura repetida dentro del archivo');
         vistos.add(llave);
         if (prov && db.prepare('SELECT 1 FROM cuentas_por_pagar WHERE proveedor_id = ? AND factura_folio = ? AND cancelada = 0').get(prov.id, folio)) errores.push(`La factura ${folio} de ${prov.nombre} ya está registrada`);
@@ -824,8 +845,8 @@ module.exports = function finanzas(app, db, h) {
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
       const insPago = db.prepare('INSERT INTO pagos_proveedor (cxp_id, fecha, monto_cent, metodo, referencia, registrado_por) VALUES (?, ?, ?, ?, ?, ?)');
       for (const { datos: d } of resultado) {
-        let provId = d.prov?.id || nuevos.get(d.proveedor.toLowerCase());
-        if (!provId) { provId = insProv.run(d.proveedor, d.categoria).lastInsertRowid; nuevos.set(d.proveedor.toLowerCase(), provId); }
+        let provId = d.prov?.id || nuevos.get(claveNombre(d.proveedor));
+        if (!provId) { provId = insProv.run(d.proveedor, d.categoria).lastInsertRowid; nuevos.set(claveNombre(d.proveedor), provId); }
         const id = insCxp.run(provId, d.categoria, d.concepto, d.folio, d.fecha, d.vence, d.total, d.leadId, d.equipo, d.notas, req.usuarioSesion.id).lastInsertRowid;
         if (d.pagado) insPago.run(id, d.fecha <= hoy ? d.fecha : hoy, d.pagado, d.metodo, 'Importado desde plantilla de Excel', req.usuarioSesion.id);
       }

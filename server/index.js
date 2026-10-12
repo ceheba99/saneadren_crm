@@ -23,6 +23,9 @@ const app = express();
 if (process.env.TRUST_PROXY) app.set('trust proxy', Number(process.env.TRUST_PROXY) || process.env.TRUST_PROXY);
 app.disable('x-powered-by');
 app.use(encabezadosSeguridad);
+// Las plantillas de Excel pueden traer hasta 1,000 renglones: esas rutas aceptan un cuerpo mayor.
+// El parser global se salta las peticiones que ya se leyeron aquí.
+app.use('/api/finanzas/importar', express.json({ limit: '5mb' }));
 app.use(express.json({ limit: '1mb' }));
 app.use('/api', limitarCampos);
 app.use(express.static(path.join(__dirname, '..', 'public')));
@@ -1137,6 +1140,8 @@ app.get('/api/admin/backup', async (req, res) => {
 
 // Red de seguridad final: cualquier error no capturado responde 500 en vez de tumbar el proceso.
 app.use((err, req, res, next) => {
+  if (err?.type === 'entity.too.large') return res.status(413).json({ error: 'El archivo o los datos son demasiado grandes. Divídelos en partes más pequeñas.' });
+  if (err?.type === 'entity.parse.failed') return res.status(400).json({ error: 'Los datos enviados no tienen un formato válido.' });
   console.error('Error no manejado:', err);
   if (res.headersSent) return next(err);
   res.status(500).json({ error: 'Error interno del servidor' });

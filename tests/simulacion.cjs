@@ -272,6 +272,27 @@ const espera = ms => new Promise(r => setTimeout(r, ms));
   [s, j] = await pedir('POST', '/finanzas/importar/cxc?simular=1', A, { filas: Array.from({ length: 1001 }, (_, i) => ({ fila: i + 2 })) });
   ok(s === 400, 'más de 1,000 renglones se rechaza');
 
+  // Correcciones de la revisión de la importación
+  [s, j] = await pedir('POST', '/finanzas/importar/cxp?simular=1', A, { filas: [{ fila: 2, proveedor: 'DISPOSICIÓN DEL BAJÍO', concepto: 'Lodos', factura_folio: 'F-77', fecha_documento: '2026-10-01', total: 900 }] });
+  ok(j.resumen[0].proveedor_nuevo === false && j.errores.some(e => /ya está registrada/.test(e.errores.join())), 'proveedor con acentos y mayúsculas distintas se reconoce (y su factura repetida también)', j);
+  [s, j] = await pedir('POST', '/finanzas/proveedores', A, { nombre: 'DISPOSICION DEL BAJIO' });
+  ok(s === 409, 'tampoco se puede dar de alta a mano el mismo proveedor sin acentos');
+  [s, j] = await pedir('POST', '/finanzas/importar/cxc?simular=1', A, { filas: [{ fila: 2, telefono: '4429990001', nombre: 'Coma Decimal', direccion: 'x', servicio: servicios[0].nombre, fecha_servicio: '2026-09-01', importe: '3500,50' }] });
+  ok(j.errores.length === 1 && /formato no válido/.test(j.errores[0].errores.join()), '"3500,50" (coma decimal) se rechaza en vez de guardarse como $350,050', j.errores);
+  [s, j] = await pedir('POST', '/finanzas/importar/cxc?simular=1', A, { filas: [{ fila: 2, telefono: '4429990001', nombre: 'Error Excel', direccion: 'x', servicio: servicios[0].nombre, fecha_servicio: '2026-09-01', importe: 1000, pagado: '#ERROR_EXCEL:#N/A' }] });
+  ok(j.errores.length === 1 && /error de Excel \(#N\/A\)/.test(j.errores[0].errores.join()), 'una celda con #N/A se reporta como error (no como vacía)', j.errores);
+  [s, j] = await pedir('POST', '/finanzas/importar/cxc', A, { filas: [
+    { fila: 2, telefono: '4429990002', nombre: 'Sucursales SA', direccion: 'Sucursal Norte', servicio: servicios[0].nombre, fecha_servicio: '2026-10-03', importe: 2000, factura_folio: 'S-1', pagado: 2000 },
+    { fila: 3, telefono: '4429990002', direccion: 'Sucursal Sur', servicio: servicios[0].nombre, fecha_servicio: '2026-10-03', importe: 2000, factura_folio: 'S-2' }] });
+  ok(s === 201 && j.importadas === 2, 'dos sucursales con el mismo servicio, fecha e importe (distinta factura) se importan', j);
+  [s, j] = await pedir('GET', '/finanzas/periodo?desde=2026-10-03&hasta=2026-10-03', A);
+  ok(j.cobrado >= 2000, 'lo "ya pagado" importado cuenta como cobrado en Resultados', j);
+  [s, j] = await pedir('POST', '/finanzas/importar/cxp?simular=1', A, { filas: [null] });
+  ok(s === 400, 'un renglón inválido responde 400 (no tumba el servidor)');
+  const mil = Array.from({ length: 1000 }, (_, i) => ({ fila: i + 2, proveedor: 'Proveedor de prueba con nombre largo para llenar', categoria: 'Otro', concepto: 'Concepto de prueba bastante descriptivo número ' + i, factura_folio: 'MIL-' + i, fecha_documento: '2026-10-01', total: 100 + i, notas: 'n'.repeat(400) }));
+  [s, j] = await pedir('POST', '/finanzas/importar/cxp?simular=1', A, { filas: mil });
+  ok(s === 200 && j.total === 1000 && !j.errores.length, '1,000 renglones (más de 1 MB) se procesan sin error interno', { s, total: j.total, err: j.error });
+
   seccion('11. Seguridad general');
   const raiz = await fetch(`http://localhost:${PUERTO}/`);
   ok(raiz.headers.get('content-security-policy') && raiz.headers.get('x-frame-options') === 'DENY' && !raiz.headers.get('x-powered-by'), 'encabezados de seguridad');
