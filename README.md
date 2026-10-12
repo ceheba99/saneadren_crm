@@ -26,10 +26,11 @@
   | Dar de alta / eliminar servicios y cambiar su recurrencia | | ✔ |
   | Agregar, renombrar y reordenar canales ("cómo se enteró") | ✔ | |
   | Agregar y renombrar tipos de cliente | ✔ | |
-  | Ver cuentas por cobrar, crédito y facturas | (admin y atención) | |
-  | Registrar un pago de cliente desde la orden | ✔ (ventas/técnico: queda por confirmar) | |
-  | Confirmar o cancelar pagos, revisión inicial | | ✔ |
-  | Cuentas por pagar y proveedores | | ✔ |
+  | Ver Cuentas (por cobrar, por pagar, proveedores) | ✔ | |
+  | Registrar pagos de clientes (ventas/técnico: quedan por confirmar), confirmarlos o cancelarlos con motivo | ✔ | |
+  | Crédito y datos de factura de una orden | ✔ | |
+  | Gastos, pagos a proveedores, proveedores e importar plantillas de Excel | ✔ | |
+  | Ajustes o descuentos a una cuenta y revisión inicial | | ✔ |
   | Borrar cotizaciones u órdenes (sin pagos) | | ✔ |
   El servidor valida los permisos de cada acción de la tabla. Ojo: las pantallas de trabajo (contactos, cotizaciones) muestran sus datos a todos los usuarios con sesión, así que ocultar "Exportar a Excel" evita la descarga masiva con un clic, pero no impide que alguien copie lo que ve.
 - **Vista de alertas**: todas las alertas vencidas o de hoy, con acceso directo a la ficha del lead y botón para resolverlas.
@@ -64,6 +65,7 @@ El correo de saneadren.com.mx está en **Google Workspace**. Copia `.env.example
 | `SMTP_USER` / `SMTP_PASS` | `servicios@saneadren.com.mx` / contraseña de aplicación | Cuenta que envía los correos. |
 | `CORREO_REMITENTE` | `Saneadren CRM <servicios@saneadren.com.mx>` | Remitente visible. |
 | `DOMINIO_CORREO` | `saneadren.com.mx` | Único dominio que puede registrarse (valor por defecto). |
+| `USUARIO_PRUEBA_NOMBRE` / `USUARIO_PRUEBA_PASSWORD` | `Karla` / (la contraseña) | Opcional: usuario de pruebas que se crea solo al arrancar (útil en Render sin disco, donde la base se borra en cada despliegue). `USUARIO_PRUEBA_ROL` (ventas por defecto) y `USUARIO_PRUEBA_CORREO` son opcionales. |
 
 Sin `SMTP_HOST` los correos **no se envían**: se imprimen en la consola del servidor con su enlace (útil para probar). Nunca guardes `SMTP_PASS` en el repositorio.
 

@@ -47,9 +47,31 @@ function asegurarAdminInicial(db, { verificarPassword }) {
   }
 }
 
+// Usuario de prueba desde variables de entorno (USUARIO_PRUEBA_NOMBRE, USUARIO_PRUEBA_PASSWORD y,
+// opcionales, USUARIO_PRUEBA_ROL y USUARIO_PRUEBA_CORREO). Útil en un servidor de pruebas cuya base se
+// borra en cada despliegue. La contraseña NUNCA va en el código (el repositorio es público).
+// Igual que el admin inicial: solo se crea si no existe; si ya existe no se toca su contraseña.
+function asegurarUsuarioPrueba(db) {
+  const nombre = (process.env.USUARIO_PRUEBA_NOMBRE || '').trim().replace(/\s+/g, ' '), password = process.env.USUARIO_PRUEBA_PASSWORD || '';
+  if (!nombre || !password) return;
+  const rol = (process.env.USUARIO_PRUEBA_ROL || 'ventas').trim().toLowerCase();
+  const correo = process.env.USUARIO_PRUEBA_CORREO ? normalizarCorreo(process.env.USUARIO_PRUEBA_CORREO) : null;
+  const problema = problemaNombre(nombre)
+    || (['admin', 'ventas', 'atencion', 'tecnico'].includes(rol) ? null : 'USUARIO_PRUEBA_ROL debe ser admin, ventas, atencion o tecnico')
+    || (correo && !correoPermitido(correo) ? 'USUARIO_PRUEBA_CORREO debe ser @' + DOMINIO : null)
+    || problemaPassword(password, { nombre, correo: correo || '' });
+  if (problema) { console.error('[usuario de prueba] No se aplicó:', problema); return; }
+  const existente = db.prepare('SELECT id FROM usuarios WHERE lower(nombre) = lower(?)').get(nombre)
+    || (correo ? db.prepare('SELECT id FROM usuarios WHERE correo = ?').get(correo) : null);
+  if (existente) return;
+  db.prepare('INSERT INTO usuarios (nombre, password, rol, correo, correo_verificado) VALUES (?, ?, ?, ?, ?)').run(nombre, hashPassword(password), rol, correo, correo ? 1 : 0);
+  console.log(`[usuario de prueba] Creado "${nombre}" con rol ${rol}.`);
+}
+
 module.exports = function cuentas(app, db, h, { sesiones, urlBase }) {
   migrarCuentas(db);
   asegurarAdminInicial(db, require('./seguridad'));
+  asegurarUsuarioPrueba(db);
   db.prepare('DELETE FROM tokens_cuenta WHERE expira < ? OR usado = 1').run(Date.now() - VIGENCIA_VERIFICACION_MS);
 
   const porIp = (max, minutos) => limitador({ max, ventanaMs: minutos * 60000, clave: req => req.ip });

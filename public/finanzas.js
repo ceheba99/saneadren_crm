@@ -7,7 +7,11 @@ const Finanzas = (() => {
   const METODOS = [['transferencia', 'Transferencia'], ['efectivo', 'Efectivo'], ['deposito', 'Depósito'], ['cheque', 'Cheque'], ['tarjeta', 'Tarjeta'], ['otro', 'Otro']];
   const NOMBRE_METODO = Object.fromEntries(METODOS);
   const esAdmin = () => USUARIO_ACTUAL?.rol === 'admin';
-  const puedeCartera = () => ['admin', 'atencion'].includes(USUARIO_ACTUAL?.rol);
+  // Todos los usuarios con sesión ven las cuentas; crédito y factura los cambian admin y atención.
+  const puedeCartera = () => !!USUARIO_ACTUAL;
+  const puedeEditarFactura = () => !!USUARIO_ACTUAL;
+  // Todos operan las cuentas; los pagos que registran ventas o técnicos quedan "por confirmar".
+  const cobroQuedaConfirmado = () => ['admin', 'atencion'].includes(USUARIO_ACTUAL?.rol);
   const hoy = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Mexico_City', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
   const sumarDias = (f, d) => { const x = new Date(f + 'T00:00:00Z'); x.setUTCDate(x.getUTCDate() + (Number(d) || 0)); return x.toISOString().slice(0, 10); };
   const fechaTxt = f => (f ? new Date(f + 'T12:00:00').toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' }) : '—');
@@ -61,7 +65,7 @@ const Finanzas = (() => {
     $('cobro-fecha').value = hoy(); $('cobro-fecha').max = hoy();
     $('cobro-tipo').value = ''; $('cobro-referencia').value = ''; $('cobro-notas').value = '';
     $('cobro-aviso').textContent = c.saldo <= 0 ? 'Esta orden ya está pagada.'
-      : (puedeCartera() ? '' : 'Quedará "por confirmar" hasta que administración verifique que el dinero llegó.');
+      : (cobroQuedaConfirmado() ? '' : 'Quedará "por confirmar" hasta que alguien verifique que el dinero llegó.');
     $('cobro-guardar').disabled = c.saldo <= 0;
     abrirVentana('overlay-cobro');
     setTimeout(() => $('cobro-monto').select(), 50);
@@ -107,7 +111,7 @@ const Finanzas = (() => {
           <small>Registró ${esc(k.registrado_por_nombre || '—')}${k.referencia ? ' · Ref. ' + esc(k.referencia) : ''}${k.notas ? ' · ' + esc(k.notas) : ''}</small>
           ${k.cancelado ? `<small class="motivo">Cancelado: ${esc(k.motivo_cancelacion || '')}</small>` : (!k.confirmado ? '<span class="estado-cxc por-confirmar">Por confirmar</span>' : '')}
         </div>
-        ${r.es_admin && !k.cancelado ? `<div class="btn-group">${!k.confirmado ? `<button type="button" class="btn btn-outline" data-cobro-confirmar="${Number(k.id)}">Confirmar</button>` : ''}<button type="button" class="btn btn-outline" data-cobro-cancelar="${Number(k.id)}">Cancelar</button></div>` : ''}
+        ${r.puede_operar && !k.cancelado ? `<div class="btn-group">${!k.confirmado ? `<button type="button" class="btn btn-outline" data-cobro-confirmar="${Number(k.id)}">Confirmar</button>` : ''}<button type="button" class="btn btn-outline" data-cobro-cancelar="${Number(k.id)}">Cancelar</button></div>` : ''}
       </div>`).join('') : '<p class="util-45">Sin pagos registrados.</p>';
     cont.innerHTML = `
       ${c.por_revisar ? '<p class="cuentas-aviso">Orden anterior al módulo de cuentas: está pendiente de la revisión inicial (Cuentas → Por cobrar).</p>' : ''}
@@ -157,7 +161,6 @@ const Finanzas = (() => {
   let PESTANA = 'cobrar', FILTRO = 'con_saldo', RESUMEN = null, CARTERA = [];
   document.querySelectorAll('[data-pestana]').forEach(b => b.addEventListener('click', () => irPestana(b.dataset.pestana)));
   function irPestana(p) {
-    if (p !== 'cobrar' && !esAdmin()) p = 'cobrar';
     PESTANA = p;
     document.querySelectorAll('[data-pestana]').forEach(b => { b.classList.toggle('activo', b.dataset.pestana === p); b.setAttribute('aria-selected', String(b.dataset.pestana === p)); });
     document.querySelectorAll('.cuentas-panel').forEach(x => { x.hidden = x.dataset.panel !== p; });
@@ -225,7 +228,6 @@ const Finanzas = (() => {
   });
   async function pintarPorConfirmar() {
     const cont = $('cuentas-por-confirmar');
-    if (!esAdmin()) { cont.innerHTML = ''; return; }
     const lista = await api('/finanzas/por-confirmar').then(json).catch(() => []);
     cont.innerHTML = lista.length ? `<div class="inicio-bloque inicio-bloque-aviso"><h3>Pagos por confirmar</h3><p class="ayuda">Los registraron vendedores o técnicos. Confírmalos cuando verifiques que el dinero llegó.</p>
       ${lista.map(k => `<div class="pago-fila"><div><b>${formatoMoneda(k.monto)}</b> · ${esc(NOMBRE_METODO[k.metodo] || k.metodo)} · ${esc(fechaTxt(k.fecha))}<small>${esc(k.cliente_nombre)} · ${esc(folioOrdenServicio({ id: k.lead_id, created_at: k.lead_created_at }))} · registró ${esc(k.registrado_por_nombre || '—')}</small></div>
@@ -268,7 +270,7 @@ const Finanzas = (() => {
         <div class="montos"><b>${formatoMoneda(g.saldo)}</b>${g.vencido > 0 ? `<small class="rojo">Vencido ${formatoMoneda(g.vencido)}</small>` : ''}</div>
         <div class="btn-group">
           ${wa ? `<a class="btn btn-outline" href="${esc(wa)}" target="_blank" rel="noopener noreferrer">Recordar por WhatsApp</a>` : ''}
-          <button type="button" class="btn btn-outline" data-credito-cliente="${Number(g.cliente_id)}" data-credito-actual="${Number(g.dias_credito)}">Crédito</button>
+          ${puedeEditarFactura() ? `<button type="button" class="btn btn-outline" data-credito-cliente="${Number(g.cliente_id)}" data-credito-actual="${Number(g.dias_credito)}">Crédito</button>` : ''}
           <button type="button" class="btn btn-secundario" data-ver-ordenes="${esc(g.telefono || g.cliente_nombre || '')}">Ver órdenes</button>
         </div></div>`;
     }).join('') : CARTERA.map(c => `<div class="fila-dinero${c.vencida ? ' vencida' : ''}">
@@ -776,9 +778,9 @@ const Finanzas = (() => {
   let TIPO_SUBIDA = null;
   document.addEventListener('click', e => {
     const d = e.target.closest('[data-plantilla-descargar]');
-    if (d) { if (!esAdmin()) return; return conBoton(d, () => descargarPlantilla(d.dataset.plantillaDescargar)); }
+    if (d) return conBoton(d, () => descargarPlantilla(d.dataset.plantillaDescargar));
     const u = e.target.closest('[data-plantilla-subir]');
-    if (u) { if (!esAdmin()) return; TIPO_SUBIDA = u.dataset.plantillaSubir; $('importar-archivo').value = ''; $('importar-archivo').click(); }
+    if (u) { TIPO_SUBIDA = u.dataset.plantillaSubir; $('importar-archivo').value = ''; $('importar-archivo').click(); }
   });
   $('importar-archivo').addEventListener('change', async () => {
     const archivo = $('importar-archivo').files[0];

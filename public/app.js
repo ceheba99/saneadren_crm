@@ -118,7 +118,6 @@ document.querySelectorAll('header nav button').forEach(btn => {
 });
 function cambiarVista(v, opciones) {
   if (v === 'usuarios' && USUARIO_ACTUAL?.rol !== 'admin') v = 'inicio';
-  if (v === 'cuentas' && !['admin', 'atencion'].includes(USUARIO_ACTUAL?.rol)) v = 'inicio';
   document.querySelectorAll('.vista').forEach(s => s.classList.remove('activa'));
   document.getElementById('vista-' + v).classList.add('activa');
   document.querySelectorAll('header nav button').forEach(b => b.classList.toggle('activa', b.dataset.vista === v));
@@ -1899,7 +1898,8 @@ on('btn-descargar-respaldo', 'click', async () => {
 function mostrarUsuarioEnHeader() {
   document.getElementById('sesion-nombre').textContent = USUARIO_ACTUAL.nombre;
   document.body.classList.toggle('es-admin', USUARIO_ACTUAL.rol === 'admin');
-  document.body.classList.toggle('puede-cobranza', ['admin', 'atencion'].includes(USUARIO_ACTUAL.rol));
+  // Todos los usuarios ven Cuentas; las acciones delicadas se ocultan con .solo-admin (y el servidor las valida).
+  document.body.classList.toggle('puede-cobranza', !!USUARIO_ACTUAL);
   document.getElementById('nav-usuarios').style.display = USUARIO_ACTUAL.rol === 'admin' ? 'inline-block' : 'none';
 }
 
