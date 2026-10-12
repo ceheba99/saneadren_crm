@@ -13,7 +13,8 @@ const ADMIN = { usuario: 'admin', correo: 'marketing@saneadren.com.mx', password
 let salida = '';
 const srv = spawn(process.execPath, [path.join(__dirname, '..', 'server', 'index.js')], {
   env: { ...process.env, PORT: PUERTO, DB_PATH: path.join(dir, 'sim.db'), APP_URL: 'http://localhost:' + PUERTO,
-    ADMIN_USUARIO: ADMIN.usuario, ADMIN_CORREO: ADMIN.correo, ADMIN_PASSWORD: ADMIN.password, SMTP_HOST: '' }
+    ADMIN_USUARIO: ADMIN.usuario, ADMIN_CORREO: ADMIN.correo, ADMIN_PASSWORD: ADMIN.password, SMTP_HOST: '',
+    USUARIO_PRUEBA_NOMBRE: 'Karla Prueba', USUARIO_PRUEBA_PASSWORD: 'Pruebas-Campo-31', USUARIO_PRUEBA_ROL: 'tecnico' }
 });
 srv.stdout.on('data', d => salida += d); srv.stderr.on('data', d => salida += d);
 
@@ -38,6 +39,10 @@ const espera = ms => new Promise(r => setTimeout(r, ms));
   [s, j] = await pedir('POST', '/login', null, { nombre: ADMIN.correo, password: ADMIN.password });
   ok(s === 200 && j.rol === 'admin' && !j.cambiar_password, 'admin entra con su correo', j);
   const A = j.token;
+
+  ok(salida.includes('[usuario de prueba] Creado "Karla Prueba" con rol tecnico'), 'el usuario de prueba se crea desde variables de entorno');
+  [s, j] = await pedir('POST', '/login', null, { nombre: 'Karla Prueba', password: 'Pruebas-Campo-31' });
+  ok(s === 200 && j.rol === 'tecnico' && !j.cambiar_password, 'el usuario de prueba entra con su rol', j);
 
   seccion('2. Registro de personal y recuperación de contraseña');
   [s] = await pedir('POST', '/registro', null, { nombre: 'Laura Pérez', correo: 'laura@sanedaren.com.mx', password: 'Desazolve-2026' });
@@ -121,7 +126,9 @@ const espera = ms => new Promise(r => setTimeout(r, ms));
   // La orden convertida (cot) y su duplicado nacieron con el módulo instalado: entran directo a la cartera.
   [s, j] = await pedir('GET', '/leads/' + cot.id + '/cobros', L);
   ok(s === 200 && j.cuenta.total === 3500 && j.cuenta.saldo === 3500 && j.cuenta.estado === 'pendiente', 'la orden es una cuenta por cobrar de $3,500 pendiente', j.cuenta);
-  [s] = await pedir('GET', '/finanzas/cartera', L); ok(s === 403, 'ventas NO ve la cartera completa');
+  [s] = await pedir('GET', '/finanzas/cartera', L); ok(s === 200, 'ventas SÍ ve la cartera (todos ven Cuentas)');
+  [s] = await pedir('GET', '/finanzas/por-confirmar', L); ok(s === 200, 'ventas SÍ ve la bandeja de pagos por confirmar');
+  [s] = await pedir('GET', '/finanzas/revision-inicial', L); ok(s === 403, 'ventas NO hace la revisión inicial (solo admin)');
   [s, j] = await pedir('POST', '/leads/' + cot.id + '/cobros', L, { monto: 1000, metodo: 'efectivo' });
   ok(s === 201 && j.confirmado === false && j.cuenta.saldo === 2500 && j.cuenta.estado === 'parcial', 'ventas registra un anticipo en campo: queda por confirmar y baja el saldo', j);
   const cobroVentas = j.id;
@@ -133,8 +140,9 @@ const espera = ms => new Promise(r => setTimeout(r, ms));
   ok(s === 400, 'montos con más de 2 decimales se rechazan');
   [s, j] = await pedir('POST', '/leads/' + cot.id + '/cobros', A, { monto: 100, metodo: 'transferencia', fecha: '2099-01-01' });
   ok(s === 400, 'no se aceptan pagos con fecha futura');
-  [s] = await pedir('POST', '/finanzas/cobros/' + cobroVentas + '/confirmar', L); ok(s === 403, 'ventas NO confirma pagos');
-  [s] = await pedir('POST', '/finanzas/cobros/' + cobroVentas + '/confirmar', A); ok(s === 200, 'admin confirma el pago de ventas');
+  [s, j] = await pedir('POST', '/finanzas/cobros/' + cobroVentas + '/confirmar', L); ok(s === 200, 'ventas (p. ej. facturación) SÍ puede confirmar pagos');
+  [s, j] = await pedir('GET', '/leads/' + cot.id + '/cobros', A); ok(j.cobros.find(k => k.id === cobroVentas)?.confirmado === 1, 'el pago quedó confirmado');
+  [s] = await pedir('POST', '/leads/' + cot.id + '/cobros', L, { monto: 1, metodo: 'efectivo', tipo: 'ajuste' }); ok(s === 403, 'los ajustes o descuentos siguen siendo solo del admin');
   [s, j] = await pedir('PUT', '/leads/' + cot.id + '/facturacion', A, { dias_credito: 15, factura_folio: 'A-123', factura_fecha: '2026-11-16', factura_total: 4060 });
   ok(s === 200 && j.cuenta.total === 4060 && j.cuenta.saldo === 3060 && j.cuenta.vence === '2026-12-01', 'factura con IVA: el total pasa a $4,060 y vence en 15 días', j.cuenta);
   [s, j] = await pedir('PUT', '/leads/' + cot.id + '/facturacion', A, { factura_total: 500 });
@@ -171,7 +179,8 @@ const espera = ms => new Promise(r => setTimeout(r, ms));
   [s, j] = await pedir('GET', '/finanzas/clientes/' + clienteId + '/estado-cuenta', A);
   ok(s === 200 && j.saldo !== undefined && Array.isArray(j.ordenes) && Array.isArray(j.ultimos_cobros), 'estado de cuenta completo para admin', j);
   [s, j] = await pedir('GET', '/finanzas/clientes/' + clienteId + '/estado-cuenta', L);
-  ok(s === 200 && j.saldo === undefined && 'tiene_vencido' in j, 'ventas solo recibe el aviso de adeudo, sin importes', j);
+  ok(s === 200 && j.saldo !== undefined, 'ventas también ve el estado de cuenta completo', j);
+  [s] = await pedir('PUT', '/finanzas/clientes/' + clienteId + '/credito', L, { dias_credito: 30 }); ok(s === 200, 'ventas SÍ puede cambiar el crédito del cliente');
   [s, j] = await pedir('GET', '/finanzas/periodo?desde=2026-01-01&hasta=' + hoy, A);
   ok(s === 200 && j.cobrado > 0 && j.pagado !== undefined, 'cobrado y pagado del periodo para Resultados', j);
   [s] = await pedir('GET', '/finanzas/periodo?desde=2026-12-01&hasta=2026-01-01', A); ok(s === 400, 'periodo al revés rechazado');
@@ -188,7 +197,11 @@ const espera = ms => new Promise(r => setTimeout(r, ms));
   ok((j.historial || []).some(x => /Importe de la orden cambiado: \$2,000\.00 → \$1,800\.00/.test(x.texto)), 'el cambio de importe queda en la bitácora');
 
   seccion('8. Cuentas por pagar');
-  [s] = await pedir('GET', '/finanzas/cxp', L); ok(s === 403, 'ventas NO ve cuentas por pagar');
+  [s] = await pedir('GET', '/finanzas/cxp', L); ok(s === 200, 'ventas SÍ ve cuentas por pagar');
+  [s, j] = await pedir('POST', '/finanzas/proveedores', L, { nombre: 'Proveedor de ventas', categoria: 'otro' }); ok(s === 201, 'ventas SÍ da de alta proveedores');
+  const provVentas = j;
+  [s, j] = await pedir('POST', '/finanzas/cxp', L, { proveedor_id: provVentas.id, concepto: 'Gasto de ventas', total: 10, ya_pagado: true, metodo: 'efectivo' }); ok(s === 201, 'ventas SÍ registra gastos y pagos a proveedores');
+  [s] = await pedir('GET', '/admin/backup', L); ok(s === 403, 'ventas sigue SIN poder descargar la base de datos');
   [s, j] = await pedir('POST', '/finanzas/proveedores', A, { nombre: 'Disposición del Bajío', categoria: 'residuos', dias_credito: 30 });
   ok(s === 201, 'proveedor creado');
   const prov = j;
@@ -234,7 +247,7 @@ const espera = ms => new Promise(r => setTimeout(r, ms));
     { fila: 2, telefono: '442 555 0101', nombre: 'Hotel Importado', empresa: 'Hotel Centro', direccion: 'Av. Zaragoza 1', servicio: servicios[0].nombre, fecha_servicio: '2026-09-01', importe: 5000, dias_credito: 30, factura_folio: 'B-1', factura_fecha: '2026-09-02', factura_total: 5800, pagado: 800 },
     { fila: 3, telefono: '4425550101', nombre: '', direccion: 'Bodega 2', servicio: servicios[0].nombre.toUpperCase(), fecha_servicio: '2026-09-10', importe: '1,250.50' },
   ];
-  [s] = await pedir('POST', '/finanzas/importar/cxc?simular=1', L, { filas: filasCxc }); ok(s === 403, 'ventas NO puede importar');
+  [s] = await pedir('POST', '/finanzas/importar/cxc?simular=1', L, { filas: filasCxc }); ok(s === 200, 'ventas SÍ puede importar plantillas (simulación)');
   [s, j] = await pedir('POST', '/finanzas/importar/cxc?simular=1', A, { filas: [...filasCxc, { fila: 4, telefono: '123', servicio: 'No existe', fecha_servicio: '31/02/2026', importe: -5 }] });
   ok(s === 200 && j.errores.length === 1 && j.errores[0].fila === 4 && j.errores[0].errores.length >= 4, 'la simulación marca los errores por renglón', j.errores);
   [s, j] = await pedir('POST', '/finanzas/importar/cxc', A, { filas: [...filasCxc, { fila: 4, telefono: '123' }] });

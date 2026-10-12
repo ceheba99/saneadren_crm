@@ -21,7 +21,14 @@ const CATEGORIAS = {
   servicios_oficina: 'Oficina y servicios', otro: 'Otro',
 };
 // Quién ve qué. Ocultar botones en pantalla es solo comodidad: esto es lo que manda.
-const PUEDE_VER_CARTERA = ['admin', 'atencion'];   // cartera completa, estados de cuenta, crédito y facturas
+// Todos los usuarios con sesión pueden VER las cuentas (por cobrar y por pagar). Lo que no pueden:
+// descargar la base ni exportar a Excel (rutas aparte, solo admin) ni las acciones delicadas.
+const TODOS = ['admin', 'ventas', 'atencion', 'tecnico'];
+const PUEDE_VER_CARTERA = TODOS;                   // cartera, estados de cuenta, resúmenes y cuentas por pagar
+const PUEDE_EDITAR_FACTURA = TODOS;               // días de crédito y datos de la factura
+// Operar las cuentas: confirmar/cancelar pagos, gastos y pagos a proveedores, proveedores e importar
+// plantillas. Solo admin: ajustes o descuentos, revisión inicial, exportar a Excel y respaldo de la base.
+const PUEDE_OPERAR = TODOS;
 const PUEDE_REGISTRAR_COBRO = ['admin', 'atencion', 'ventas', 'tecnico'];
 const COBRO_CONFIRMADO_AL_REGISTRAR = ['admin', 'atencion']; // los demás quedan "por confirmar"
 
@@ -220,6 +227,7 @@ module.exports = function finanzas(app, db, h) {
     return false;
   };
   const soloAdmin = (req, res) => permitido(req, res, ['admin'], 'Solo un administrador puede hacer esto');
+  const puedeOperar = (req, res) => permitido(req, res, PUEDE_OPERAR, 'No tienes permiso para esta acción');
   const bitacora = (leadId, textoEvento, req) => db.prepare(
     "INSERT INTO historial (lead_id, tipo, texto, usuario, origen) VALUES (?, 'observacion', ?, ?, 'sistema')"
   ).run(leadId, textoEvento, req.usuarioSesion.nombre);
@@ -258,9 +266,11 @@ module.exports = function finanzas(app, db, h) {
       cobrado_mes: aPesos(db.prepare("SELECT COALESCE(SUM(monto_cent), 0) t FROM cobros WHERE cancelado = 0 AND tipo <> 'ajuste' AND substr(fecha, 1, 7) = ?").get(mes).t),
       por_revisar: db.prepare("SELECT COUNT(*) n FROM leads WHERE estatus = 'ganado' AND cobranza_por_revisar = 1").get().n,
     };
-    if (rol(req) === 'admin') {
+    {
       const pc = db.prepare('SELECT COUNT(*) n, COALESCE(SUM(monto_cent), 0) t FROM cobros WHERE cancelado = 0 AND confirmado = 0').get();
       r.por_confirmar = { cantidad: pc.n, monto: aPesos(pc.t) };
+    }
+    {
       const domingo = sumarDias(hoy, (7 - new Date(hoy + 'T00:00:00Z').getUTCDay()) % 7);
       const cxp = cuentasPorPagar();
       const pend = cxp.filter(x => x.saldo > 0);
@@ -311,7 +321,7 @@ module.exports = function finanzas(app, db, h) {
     const lead = db.prepare('SELECT estatus FROM leads WHERE id = ?').get(req.params.id);
     if (!lead || lead.estatus !== 'ganado') return res.status(404).json({ error: 'Solo las órdenes de servicio tienen cobranza' });
     const cuenta = cuentaDeOrden(req.params.id);
-    res.json({ cuenta, cobros: cobrosDeOrden(req.params.id), puede_editar_factura: PUEDE_VER_CARTERA.includes(rol(req)), es_admin: rol(req) === 'admin' });
+    res.json({ cuenta, cobros: cobrosDeOrden(req.params.id), puede_editar_factura: PUEDE_EDITAR_FACTURA.includes(rol(req)), puede_operar: PUEDE_OPERAR.includes(rol(req)), es_admin: rol(req) === 'admin' });
   }));
 
   app.post('/api/leads/:id/cobros', h((req, res) => {
@@ -354,7 +364,7 @@ module.exports = function finanzas(app, db, h) {
   }));
 
   app.post('/api/finanzas/cobros/:id/confirmar', h((req, res) => {
-    if (!soloAdmin(req, res)) return;
+    if (!puedeOperar(req, res)) return;
     const c = db.prepare('SELECT * FROM cobros WHERE id = ?').get(req.params.id);
     if (!c || c.cancelado) return res.status(404).json({ error: 'Pago no encontrado' });
     if (c.confirmado) return res.json({ ok: true });
@@ -366,7 +376,7 @@ module.exports = function finanzas(app, db, h) {
   }));
 
   app.post('/api/finanzas/cobros/:id/cancelar', h((req, res) => {
-    if (!soloAdmin(req, res)) return;
+    if (!puedeOperar(req, res)) return;
     const motivo = texto(req.body.motivo, 300);
     if (!motivo || motivo.length < 5) return res.status(400).json({ error: 'Escribe el motivo de la cancelación (mínimo 5 caracteres)' });
     const c = db.prepare('SELECT * FROM cobros WHERE id = ?').get(req.params.id);
@@ -380,7 +390,7 @@ module.exports = function finanzas(app, db, h) {
   }));
 
   app.get('/api/finanzas/por-confirmar', h((req, res) => {
-    if (!soloAdmin(req, res)) return;
+    if (!puedeOperar(req, res)) return;
     res.json(db.prepare(`SELECT k.*, u.nombre AS registrado_por_nombre, c.nombre AS cliente_nombre, l.created_at AS lead_created_at
       FROM cobros k JOIN leads l ON l.id = k.lead_id JOIN clientes c ON c.id = l.cliente_id LEFT JOIN usuarios u ON u.id = k.registrado_por
       WHERE k.cancelado = 0 AND k.confirmado = 0 ORDER BY k.fecha, k.id`).all().map(k => ({ ...k, monto: aPesos(k.monto_cent) })));
@@ -388,7 +398,7 @@ module.exports = function finanzas(app, db, h) {
 
   // Crédito y datos de la factura de una orden (va aparte de "Guardar cambios" de la orden).
   app.put('/api/leads/:id/facturacion', h((req, res) => {
-    if (!permitido(req, res, PUEDE_VER_CARTERA, 'Solo administración o atención pueden cambiar crédito y factura')) return;
+    if (!permitido(req, res, PUEDE_EDITAR_FACTURA, 'Solo administración o atención pueden cambiar crédito y factura')) return;
     const lead = db.prepare('SELECT * FROM leads WHERE id = ?').get(req.params.id);
     if (!lead || lead.estatus !== 'ganado') return res.status(400).json({ error: 'Solo las órdenes de servicio tienen facturación' });
     const b = req.body;
@@ -419,7 +429,7 @@ module.exports = function finanzas(app, db, h) {
 
   // Días de crédito predeterminados del cliente (se copian a sus órdenes nuevas).
   app.put('/api/finanzas/clientes/:id/credito', h((req, res) => {
-    if (!permitido(req, res, PUEDE_VER_CARTERA)) return;
+    if (!permitido(req, res, PUEDE_EDITAR_FACTURA, 'Solo administración o atención pueden cambiar el crédito')) return;
     if (!diasCreditoValidos(req.body.dias_credito)) return res.status(400).json({ error: 'Los días de crédito deben ser un número entero de 0 a 180' });
     const info = db.prepare('UPDATE clientes SET dias_credito = ? WHERE id = ?').run(req.body.dias_credito === '' || req.body.dias_credito == null ? null : Number(req.body.dias_credito), req.params.id);
     if (!info.changes) return res.status(404).json({ error: 'Cliente no encontrado' });
@@ -454,7 +464,7 @@ module.exports = function finanzas(app, db, h) {
     if (!fechaValida(desde) || !fechaValida(hasta) || desde > hasta) return res.status(400).json({ error: 'Revisa el rango de fechas' });
     const c = db.prepare("SELECT COUNT(*) n, COALESCE(SUM(monto_cent), 0) t FROM cobros WHERE cancelado = 0 AND tipo <> 'ajuste' AND fecha BETWEEN ? AND ?").get(desde, hasta);
     const r = { desde, hasta, cobrado: aPesos(c.t), cobros_n: c.n };
-    if (rol(req) === 'admin') {
+    {
       r.pagado = aPesos(db.prepare('SELECT COALESCE(SUM(monto_cent), 0) t FROM pagos_proveedor WHERE cancelado = 0 AND fecha BETWEEN ? AND ?').get(desde, hasta).t);
       const gastos = db.prepare('SELECT categoria, SUM(total_cent) t FROM cuentas_por_pagar WHERE cancelada = 0 AND fecha_documento BETWEEN ? AND ? GROUP BY categoria ORDER BY t DESC').all(desde, hasta);
       r.gasto_por_categoria = gastos.map(g => ({ categoria: g.categoria, nombre: CATEGORIAS[g.categoria] || g.categoria, total: aPesos(g.t) }));
@@ -512,12 +522,12 @@ module.exports = function finanzas(app, db, h) {
   }
 
   app.get('/api/finanzas/categorias', h((req, res) => {
-    if (!soloAdmin(req, res)) return;
+    if (!permitido(req, res, PUEDE_VER_CARTERA)) return;
     res.json(Object.entries(CATEGORIAS).map(([clave, nombre]) => ({ clave, nombre })));
   }));
 
   app.get('/api/finanzas/proveedores', h((req, res) => {
-    if (!soloAdmin(req, res)) return;
+    if (!permitido(req, res, PUEDE_VER_CARTERA)) return;
     const saldos = new Map();
     for (const x of cuentasPorPagar()) saldos.set(x.proveedor_id, Math.round(((saldos.get(x.proveedor_id) || 0) + x.saldo) * 100) / 100);
     res.json(db.prepare('SELECT * FROM proveedores ORDER BY activo DESC, nombre').all().map(p => ({ ...p, saldo: saldos.get(p.id) || 0 })));
@@ -532,7 +542,7 @@ module.exports = function finanzas(app, db, h) {
     return { nombre, categoria, rfc: texto(b.rfc, 13), telefono: texto(b.telefono, 25), contacto: texto(b.contacto, 120), dias_credito: Number(b.dias_credito) || 0, notas: texto(b.notas, 1000) };
   }
   app.post('/api/finanzas/proveedores', h((req, res) => {
-    if (!soloAdmin(req, res)) return;
+    if (!puedeOperar(req, res)) return;
     const d = datosProveedor(req.body);
     if (d.error) return res.status(400).json(d);
     if (db.prepare('SELECT nombre FROM proveedores').all().some(x => claveNombre(x.nombre) === claveNombre(d.nombre))) return res.status(409).json({ error: 'Ya existe un proveedor con ese nombre' });
@@ -541,7 +551,7 @@ module.exports = function finanzas(app, db, h) {
     res.status(201).json(db.prepare('SELECT * FROM proveedores WHERE id = ?').get(info.lastInsertRowid));
   }));
   app.put('/api/finanzas/proveedores/:id', h((req, res) => {
-    if (!soloAdmin(req, res)) return;
+    if (!puedeOperar(req, res)) return;
     const p = db.prepare('SELECT * FROM proveedores WHERE id = ?').get(req.params.id);
     if (!p) return res.status(404).json({ error: 'Proveedor no encontrado' });
     const d = datosProveedor({ ...p, ...req.body });
@@ -554,7 +564,7 @@ module.exports = function finanzas(app, db, h) {
   }));
 
   app.get('/api/finanzas/cxp', h((req, res) => {
-    if (!soloAdmin(req, res)) return;
+    if (!permitido(req, res, PUEDE_VER_CARTERA)) return;
     const vista = String(req.query.vista || 'pendientes');
     let lista = cuentasPorPagar();
     if (vista !== 'todas') lista = lista.filter(x => x.saldo > 0);
@@ -565,7 +575,7 @@ module.exports = function finanzas(app, db, h) {
 
   // Registrar una factura o gasto de proveedor. Con ya_pagado se crea también su pago (gasto de contado).
   app.post('/api/finanzas/cxp', h((req, res) => {
-    if (!soloAdmin(req, res)) return;
+    if (!puedeOperar(req, res)) return;
     const b = req.body;
     const prov = db.prepare('SELECT * FROM proveedores WHERE id = ? AND activo = 1').get(b.proveedor_id);
     if (!prov) return res.status(400).json({ error: 'Elige un proveedor' });
@@ -603,7 +613,7 @@ module.exports = function finanzas(app, db, h) {
   }));
 
   app.post('/api/finanzas/cxp/:id/pagos', h((req, res) => {
-    if (!soloAdmin(req, res)) return;
+    if (!puedeOperar(req, res)) return;
     const x = cuentasPorPagar().find(c => c.id === Number(req.params.id));
     if (!x) return res.status(404).json({ error: 'Cuenta por pagar no encontrada' });
     const monto = aCentavos(req.body.monto);
@@ -622,13 +632,13 @@ module.exports = function finanzas(app, db, h) {
   }));
 
   app.get('/api/finanzas/cxp/:id/pagos', h((req, res) => {
-    if (!soloAdmin(req, res)) return;
+    if (!permitido(req, res, PUEDE_VER_CARTERA)) return;
     res.json(db.prepare(`SELECT g.*, u.nombre AS registrado_por_nombre FROM pagos_proveedor g LEFT JOIN usuarios u ON u.id = g.registrado_por
       WHERE g.cxp_id = ? ORDER BY g.fecha DESC, g.id DESC`).all(req.params.id).map(g => ({ ...g, monto: aPesos(g.monto_cent) })));
   }));
 
   app.post('/api/finanzas/pagos-proveedor/:id/cancelar', h((req, res) => {
-    if (!soloAdmin(req, res)) return;
+    if (!puedeOperar(req, res)) return;
     const motivo = texto(req.body.motivo, 300);
     if (!motivo || motivo.length < 5) return res.status(400).json({ error: 'Escribe el motivo de la cancelación (mínimo 5 caracteres)' });
     const info = db.prepare("UPDATE pagos_proveedor SET cancelado = 1, cancelado_por = ?, cancelado_at = datetime('now','localtime'), motivo_cancelacion = ? WHERE id = ? AND cancelado = 0")
@@ -638,7 +648,7 @@ module.exports = function finanzas(app, db, h) {
   }));
 
   app.post('/api/finanzas/cxp/:id/cancelar', h((req, res) => {
-    if (!soloAdmin(req, res)) return;
+    if (!puedeOperar(req, res)) return;
     const motivo = texto(req.body.motivo, 300);
     if (!motivo || motivo.length < 5) return res.status(400).json({ error: 'Escribe el motivo de la cancelación (mínimo 5 caracteres)' });
     const pagos = db.prepare('SELECT COUNT(*) n FROM pagos_proveedor WHERE cxp_id = ? AND cancelado = 0').get(req.params.id).n;
@@ -680,7 +690,7 @@ module.exports = function finanzas(app, db, h) {
     return t;
   }
   function leerFilas(req, res) {
-    if (!soloAdmin(req, res)) return null;
+    if (!puedeOperar(req, res)) return null;
     const filas = req.body?.filas;
     if (!Array.isArray(filas) || !filas.length) { res.status(400).json({ error: 'La plantilla no tiene filas con datos' }); return null; }
     if (filas.length > MAX_FILAS) { res.status(400).json({ error: `Máximo ${MAX_FILAS} filas por archivo; divide la plantilla` }); return null; }

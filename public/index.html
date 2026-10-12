@@ -329,13 +329,13 @@
     <div class="cuentas-tarjetas" id="cuentas-tarjetas"></div>
     <div class="cuentas-pestanas" role="tablist">
       <button type="button" role="tab" class="activo" data-pestana="cobrar">Por cobrar</button>
-      <button type="button" role="tab" class="solo-admin" data-pestana="pagar">Por pagar</button>
-      <button type="button" role="tab" class="solo-admin" data-pestana="proveedores">Proveedores</button>
+      <button type="button" role="tab" data-pestana="pagar">Por pagar</button>
+      <button type="button" role="tab" data-pestana="proveedores">Proveedores</button>
     </div>
 
     <div class="cuentas-panel" data-panel="cobrar">
       <div id="cuentas-revision" class="cuentas-aviso solo-admin" hidden></div>
-      <div id="cuentas-por-confirmar" class="solo-admin"></div>
+      <div id="cuentas-por-confirmar"></div>
       <div class="pendientes-filtros" id="cobrar-filtros">
         <button type="button" class="activo" data-filtro-cobro="con_saldo">Con saldo</button>
         <button type="button" data-filtro-cobro="vencido">Vencido</button>
@@ -352,24 +352,24 @@
         <select id="cobrar-vista" aria-label="Agrupar"><option value="cliente">Por cliente</option><option value="orden">Por orden</option></select>
         <input type="text" id="cobrar-buscar" placeholder="Cliente, empresa, teléfono, servicio o factura" aria-label="Buscar en cuentas por cobrar">
         <button type="button" class="btn btn-outline solo-admin" id="cobrar-exportar">📥 Exportar a Excel</button>
-        <button type="button" class="btn btn-outline solo-admin" data-plantilla-descargar="cxc">📄 Descargar plantilla</button>
-        <button type="button" class="btn btn-secundario solo-admin" data-plantilla-subir="cxc">📤 Subir plantilla</button>
+        <button type="button" class="btn btn-outline" data-plantilla-descargar="cxc">📄 Descargar plantilla</button>
+        <button type="button" class="btn btn-secundario" data-plantilla-subir="cxc">📤 Subir plantilla</button>
       </div>
       <div id="cobrar-lista" class="inicio-lista"></div>
     </div>
 
-    <div class="cuentas-panel solo-admin" data-panel="pagar" hidden>
+    <div class="cuentas-panel" data-panel="pagar" hidden>
       <div class="filtros">
         <button type="button" class="btn btn-primario" id="pagar-nuevo">+ Registrar gasto o factura</button>
         <select id="pagar-vista" aria-label="Mostrar"><option value="pendientes">Por pagar</option><option value="todas">Todas (incluye pagadas)</option></select>
-        <button type="button" class="btn btn-outline" id="pagar-exportar">📥 Exportar a Excel</button>
+        <button type="button" class="btn btn-outline solo-admin" id="pagar-exportar">📥 Exportar a Excel</button>
         <button type="button" class="btn btn-outline" data-plantilla-descargar="cxp">📄 Descargar plantilla</button>
         <button type="button" class="btn btn-secundario" data-plantilla-subir="cxp">📤 Subir plantilla</button>
       </div>
       <div id="pagar-lista"></div>
     </div>
 
-    <div class="cuentas-panel solo-admin" data-panel="proveedores" hidden>
+    <div class="cuentas-panel" data-panel="proveedores" hidden>
       <div class="panel-alta">
         <h2 id="prov-form-titulo">Agregar proveedor</h2>
         <div class="form-grid">
