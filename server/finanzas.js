@@ -646,6 +646,193 @@ module.exports = function finanzas(app, db, h) {
     res.json({ ok: true });
   }));
 
+  // ===================== CARGA MASIVA DESDE EXCEL (solo admin) =====================
+  // El navegador lee la plantilla y manda las filas ya convertidas a texto/números.
+  // ?simular=1 solo valida y devuelve los errores por fila; sin simular, importa TODO o NADA
+  // (si una sola fila tiene error no se guarda ninguna), dentro de una transacción.
+  const MAX_FILAS = 1000;
+  const celda = v => (v === null || v === undefined ? '' : String(v).trim());
+  const LIM = { nombre: 120, empresa: 120, direccion: 300, descripcion: 2000, folio: 60, notas: 1000, proveedor: 120, concepto: 200, equipo: 200 };
+  function textoMax(v, max, campo, errores) {
+    const t = celda(v);
+    if (t.length > max) errores.push(`${campo}: máximo ${max} caracteres`);
+    if (/[<>]/.test(t)) errores.push(`${campo}: no puede llevar los signos < o >`);
+    return t || null;
+  }
+  // Monto opcional: '' → null; inválido → error.
+  function montoCent(v, campo, errores, requerido) {
+    const t = celda(v);
+    if (!t) { if (requerido) errores.push(`${campo} es obligatorio`); return null; }
+    const c = aCentavos(t);
+    if (!c) errores.push(`${campo}: escribe un monto mayor a 0 con máximo 2 decimales`);
+    return c;
+  }
+  function fechaCelda(v, campo, errores, requerido) {
+    const t = celda(v);
+    if (!t) { if (requerido) errores.push(`${campo} es obligatoria`); return null; }
+    if (!fechaValida(t)) errores.push(`${campo}: fecha no válida (usa el formato de fecha de Excel o AAAA-MM-DD)`);
+    return t;
+  }
+  function leerFilas(req, res) {
+    if (!soloAdmin(req, res)) return null;
+    const filas = req.body?.filas;
+    if (!Array.isArray(filas) || !filas.length) { res.status(400).json({ error: 'La plantilla no tiene filas con datos' }); return null; }
+    if (filas.length > MAX_FILAS) { res.status(400).json({ error: `Máximo ${MAX_FILAS} filas por archivo; divide la plantilla` }); return null; }
+    return filas;
+  }
+  const responder = (res, simular, resultado) => {
+    const conError = resultado.filter(x => x.errores.length);
+    res.status(conError.length || simular ? 200 : 201).json({
+      simulacion: simular, total: resultado.length, validas: resultado.length - conError.length,
+      importadas: !simular && !conError.length ? resultado.length : 0,
+      errores: conError.map(x => ({ fila: x.fila, errores: x.errores })),
+      resumen: resultado.map(x => ({ fila: x.fila, ...x.resumen })),
+    });
+  };
+
+  // ---------- Cuentas por cobrar: cada fila crea (o reutiliza) el cliente y una orden de servicio ----------
+  app.post('/api/finanzas/importar/cxc', h((req, res) => {
+    const filas = leerFilas(req, res); if (!filas) return;
+    const simular = req.query.simular === '1';
+    const hoy = hoyMexico();
+    const servicios = new Map(db.prepare('SELECT id, nombre FROM catalogo_servicios WHERE activo = 1').all().map(x => [x.nombre.toLowerCase(), x]));
+    const buscarCliente = db.prepare('SELECT * FROM clientes WHERE telefono_normalizado = ?');
+    const vistos = new Set();
+    const nuevosEnArchivo = new Map(); // teléfono → nombre del cliente nuevo definido en un renglón anterior
+    const resultado = filas.map((f, i) => {
+      const errores = [];
+      const fila = Number(f.fila) || i + 2;
+      const telefono = celda(f.telefono);
+      const tel = telefono.replace(/\D/g, '').slice(-10);
+      if (tel.length !== 10) errores.push('Teléfono: deben ser 10 dígitos');
+      const nombre = textoMax(f.nombre, LIM.nombre, 'Nombre', errores);
+      const existente = tel.length === 10 ? buscarCliente.get(tel) : null;
+      const previo = !existente && tel.length === 10 ? nuevosEnArchivo.get(tel) : null;
+      if (!nombre && !existente && !previo) errores.push('Nombre del cliente es obligatorio (el teléfono no corresponde a un cliente existente)');
+      if (!existente && nombre && tel.length === 10 && !previo) nuevosEnArchivo.set(tel, nombre);
+      const empresa = textoMax(f.empresa, LIM.empresa, 'Empresa', errores);
+      const direccion = textoMax(f.direccion, LIM.direccion, 'Dirección', errores) || existente?.direccion || null;
+      if (!direccion) errores.push('Dirección del servicio es obligatoria');
+      const servicio = servicios.get(celda(f.servicio).toLowerCase());
+      if (!servicio) errores.push(`Servicio "${celda(f.servicio) || '(vacío)'}" no está en el catálogo`);
+      const descripcion = textoMax(f.descripcion, LIM.descripcion, 'Descripción', errores);
+      const fechaServ = fechaCelda(f.fecha_servicio, 'Fecha del servicio', errores, true);
+      const importe = montoCent(f.importe, 'Importe', errores, true);
+      const diasTxt = celda(f.dias_credito);
+      const dias = diasTxt === '' ? null : Number(diasTxt);
+      if (dias !== null && !(Number.isInteger(dias) && dias >= 0 && dias <= 180)) errores.push('Días de crédito: entero de 0 a 180');
+      const folio = textoMax(f.factura_folio, LIM.folio, 'Folio de factura', errores);
+      const fechaFact = fechaCelda(f.factura_fecha, 'Fecha de factura', errores, false);
+      const totalFact = montoCent(f.factura_total, 'Total facturado', errores, false);
+      const pagado = montoCent(f.pagado, 'Ya pagado', errores, false);
+      const notas = textoMax(f.notas, LIM.notas, 'Notas', errores);
+      const total = totalFact ?? importe;
+      if (pagado && total && pagado > total) errores.push('Ya pagado no puede ser mayor que el total');
+      // Evita importar dos veces lo mismo (en el archivo o contra lo que ya existe).
+      const llave = [tel, servicio?.id, fechaServ, importe].join('|');
+      if (importe && servicio && fechaServ) {
+        if (vistos.has(llave)) errores.push('Fila repetida dentro del archivo');
+        vistos.add(llave);
+        if (existente && db.prepare("SELECT 1 FROM leads WHERE cliente_id = ? AND servicio_id = ? AND fecha_servicio = ? AND estatus = 'ganado' AND CAST(ROUND(valor * 100) AS INTEGER) = ?").get(existente.id, servicio.id, fechaServ, importe)) {
+          errores.push('Ya existe una orden igual para este cliente (¿ya se importó?)');
+        }
+      }
+      return { fila, errores, datos: { tel, telefono, nombre, empresa, direccion, servicio, descripcion, fechaServ, importe, dias, folio, fechaFact, totalFact, pagado, notas, existente },
+        resumen: { cliente: existente?.nombre || previo || nombre, servicio: servicio?.nombre || celda(f.servicio), total: total ? aPesos(total) : null, pagado: pagado ? aPesos(pagado) : 0, cliente_nuevo: !existente && !previo } };
+    });
+    if (simular || resultado.some(x => x.errores.length)) return responder(res, simular, resultado);
+
+    db.transaction(() => {
+      const insCliente = db.prepare('INSERT INTO clientes (telefono, telefono_normalizado, nombre, empresa_contacto, direccion) VALUES (?, ?, ?, ?, ?)');
+      const insLead = db.prepare(`INSERT INTO leads (cliente_id, telefono, telefono_normalizado, nombre, empresa_contacto, direccion, servicio_id, responsable_id,
+          notas_iniciales, creado_por, valor, fecha_servicio, estatus, etapa, origen, partidas_json, dias_credito, factura_folio, factura_fecha, factura_total_cent)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ganado', 4, 'directo', ?, ?, ?, ?, ?)`);
+      const insCobro = db.prepare(`INSERT INTO cobros (lead_id, fecha, monto_cent, tipo, metodo, notas, confirmado, confirmado_por, confirmado_at, registrado_por)
+        VALUES (?, ?, ?, 'ajuste', 'otro', 'Pagado antes de la importación (plantilla de Excel)', 1, ?, datetime('now','localtime'), ?)`);
+      const creados = new Map(); // teléfono → cliente creado en esta misma importación
+      for (const { datos: d } of resultado) {
+        let cli = d.existente || creados.get(d.tel);
+        if (!cli) {
+          const id = insCliente.run(d.tel, d.tel, d.nombre, d.empresa, d.direccion).lastInsertRowid; // teléfono limpio: solo los 10 dígitos
+          cli = db.prepare('SELECT * FROM clientes WHERE id = ?').get(id);
+          creados.set(d.tel, cli);
+        }
+        const partidas = JSON.stringify([{ servicio: d.servicio.nombre, leyenda: d.descripcion || '', importe: d.importe / 100 }]);
+        const leadId = insLead.run(cli.id, cli.telefono, cli.telefono_normalizado, cli.nombre, cli.empresa_contacto, d.direccion, d.servicio.id, req.usuarioSesion.id,
+          d.notas, req.usuarioSesion.nombre, d.importe / 100, d.fechaServ, partidas, d.dias ?? cli.dias_credito ?? null, d.folio, d.fechaFact, d.totalFact).lastInsertRowid;
+        if (d.pagado) insCobro.run(leadId, d.fechaServ <= hoy ? d.fechaServ : hoy, d.pagado, req.usuarioSesion.id, req.usuarioSesion.id);
+        bitacora(leadId, 'Orden importada desde la plantilla de Excel de cuentas por cobrar.' + (d.pagado ? ` Ya pagado: ${fmt(d.pagado)}.` : ''), req);
+      }
+    })();
+    responder(res, false, resultado);
+  }));
+
+  // ---------- Cuentas por pagar: cada fila crea una factura o gasto (y el proveedor si no existe) ----------
+  app.post('/api/finanzas/importar/cxp', h((req, res) => {
+    const filas = leerFilas(req, res); if (!filas) return;
+    const simular = req.query.simular === '1';
+    const hoy = hoyMexico();
+    const nombreCategoria = new Map(Object.entries(CATEGORIAS).flatMap(([k, n]) => [[k, k], [n.toLowerCase(), k]]));
+    const nombreMetodo = new Map(METODOS.map(m => [m, m]).concat([['depósito', 'deposito']]));
+    const buscarProv = db.prepare('SELECT * FROM proveedores WHERE nombre = ?');
+    const vistos = new Set();
+    const resultado = filas.map((f, i) => {
+      const errores = [];
+      const fila = Number(f.fila) || i + 2;
+      const proveedor = textoMax(f.proveedor, LIM.proveedor, 'Proveedor', errores);
+      if (!proveedor) errores.push('Proveedor es obligatorio');
+      const prov = proveedor ? buscarProv.get(proveedor) : null;
+      if (prov && !prov.activo) errores.push('El proveedor está desactivado; actívalo en la pestaña Proveedores');
+      const categoria = nombreCategoria.get(celda(f.categoria).toLowerCase()) || (celda(f.categoria) ? null : prov?.categoria || 'otro');
+      if (!categoria) errores.push(`Categoría "${celda(f.categoria)}" no es válida`);
+      const concepto = textoMax(f.concepto, LIM.concepto, 'Concepto', errores);
+      if (!concepto) errores.push('Concepto es obligatorio');
+      const folio = textoMax(f.factura_folio, LIM.folio, 'Folio de factura', errores);
+      const fecha = fechaCelda(f.fecha_documento, 'Fecha de factura o gasto', errores, true);
+      let vence = fechaCelda(f.fecha_vencimiento, 'Fecha de vencimiento', errores, false);
+      if (!vence && fecha && fechaValida(fecha)) vence = sumarDias(fecha, prov?.dias_credito || 0);
+      if (vence && fecha && vence < fecha) errores.push('El vencimiento no puede ser antes de la fecha de la factura');
+      const total = montoCent(f.total, 'Total', errores, true);
+      const pagado = montoCent(f.pagado, 'Ya pagado', errores, false);
+      if (pagado && total && pagado > total) errores.push('Ya pagado no puede ser mayor que el total');
+      const metodo = nombreMetodo.get(celda(f.metodo).toLowerCase() || 'transferencia');
+      if (pagado && !metodo) errores.push(`Método de pago "${celda(f.metodo)}" no es válido`);
+      let leadId = null;
+      const orden = celda(f.orden);
+      if (orden) {
+        const m = orden.match(/(\d+)\s*$/);
+        const l = m ? db.prepare("SELECT id FROM leads WHERE id = ? AND estatus = 'ganado'").get(Number(m[1])) : null;
+        if (!l) errores.push(`Orden "${orden}" no existe o no es una orden de servicio`); else leadId = l.id;
+      }
+      const equipo = textoMax(f.equipo, LIM.equipo, 'Equipo', errores);
+      const notas = textoMax(f.notas, LIM.notas, 'Notas', errores);
+      if (proveedor && folio) {
+        const llave = proveedor.toLowerCase() + '|' + folio;
+        if (vistos.has(llave)) errores.push('Factura repetida dentro del archivo');
+        vistos.add(llave);
+        if (prov && db.prepare('SELECT 1 FROM cuentas_por_pagar WHERE proveedor_id = ? AND factura_folio = ? AND cancelada = 0').get(prov.id, folio)) errores.push(`La factura ${folio} de ${prov.nombre} ya está registrada`);
+      }
+      return { fila, errores, datos: { proveedor, prov, categoria, concepto, folio, fecha, vence, total, pagado, metodo, leadId, equipo, notas },
+        resumen: { proveedor: prov?.nombre || proveedor, concepto, total: total ? aPesos(total) : null, pagado: pagado ? aPesos(pagado) : 0, proveedor_nuevo: !prov } };
+    });
+    if (simular || resultado.some(x => x.errores.length)) return responder(res, simular, resultado);
+
+    db.transaction(() => {
+      const nuevos = new Map();
+      const insProv = db.prepare('INSERT INTO proveedores (nombre, categoria, dias_credito) VALUES (?, ?, 0)');
+      const insCxp = db.prepare(`INSERT INTO cuentas_por_pagar (proveedor_id, categoria, concepto, factura_folio, fecha_documento, fecha_vencimiento, total_cent, lead_id, equipo, notas, registrado_por)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+      const insPago = db.prepare('INSERT INTO pagos_proveedor (cxp_id, fecha, monto_cent, metodo, referencia, registrado_por) VALUES (?, ?, ?, ?, ?, ?)');
+      for (const { datos: d } of resultado) {
+        let provId = d.prov?.id || nuevos.get(d.proveedor.toLowerCase());
+        if (!provId) { provId = insProv.run(d.proveedor, d.categoria).lastInsertRowid; nuevos.set(d.proveedor.toLowerCase(), provId); }
+        const id = insCxp.run(provId, d.categoria, d.concepto, d.folio, d.fecha, d.vence, d.total, d.leadId, d.equipo, d.notas, req.usuarioSesion.id).lastInsertRowid;
+        if (d.pagado) insPago.run(id, d.fecha <= hoy ? d.fecha : hoy, d.pagado, d.metodo, 'Importado desde plantilla de Excel', req.usuarioSesion.id);
+      }
+    })();
+    responder(res, false, resultado);
+  }));
+
   // ---------- Ganchos para las rutas de órdenes (server/index.js) ----------
   return {
     // Centavos cobrados (no cancelados) de una orden.

@@ -352,6 +352,8 @@
         <select id="cobrar-vista" aria-label="Agrupar"><option value="cliente">Por cliente</option><option value="orden">Por orden</option></select>
         <input type="text" id="cobrar-buscar" placeholder="Cliente, empresa, teléfono, servicio o factura" aria-label="Buscar en cuentas por cobrar">
         <button type="button" class="btn btn-outline solo-admin" id="cobrar-exportar">📥 Exportar a Excel</button>
+        <button type="button" class="btn btn-outline solo-admin" data-plantilla-descargar="cxc">📄 Descargar plantilla</button>
+        <button type="button" class="btn btn-secundario solo-admin" data-plantilla-subir="cxc">📤 Subir plantilla</button>
       </div>
       <div id="cobrar-lista" class="inicio-lista"></div>
     </div>
@@ -361,6 +363,8 @@
         <button type="button" class="btn btn-primario" id="pagar-nuevo">+ Registrar gasto o factura</button>
         <select id="pagar-vista" aria-label="Mostrar"><option value="pendientes">Por pagar</option><option value="todas">Todas (incluye pagadas)</option></select>
         <button type="button" class="btn btn-outline" id="pagar-exportar">📥 Exportar a Excel</button>
+        <button type="button" class="btn btn-outline" data-plantilla-descargar="cxp">📄 Descargar plantilla</button>
+        <button type="button" class="btn btn-secundario" data-plantilla-subir="cxp">📤 Subir plantilla</button>
       </div>
       <div id="pagar-lista"></div>
     </div>
@@ -701,6 +705,20 @@
     </div>
   </div>
 </div>
+
+<!-- ====== OVERLAY: IMPORTAR PLANTILLA DE EXCEL ====== -->
+<div class="overlay" id="overlay-importar">
+  <div class="modal modal-dinero modal-importar">
+    <div class="modal-header"><h2 id="importar-titulo">Importar plantilla</h2><button class="close-btn" type="button">✕</button></div>
+    <div class="modal-body">
+      <p id="importar-resumen" role="status"></p>
+      <div id="importar-errores"></div>
+      <div id="importar-tabla"></div>
+      <button type="button" class="btn btn-primario btn-ancho" id="importar-confirmar" hidden>Importar</button>
+    </div>
+  </div>
+</div>
+<input type="file" id="importar-archivo" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" hidden>
 
 <!-- ====== OVERLAY: PAGAR A PROVEEDOR ====== -->
 <div class="overlay" id="overlay-pago-prov">

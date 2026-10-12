@@ -707,6 +707,12 @@ body:not(.puede-cobranza) .solo-cobranza{display:none !important;}
   .tarjeta-dinero b{font-size:18px;}
 }
 .fila-dinero-inicio .info{display:flex;flex-direction:column;gap:2px;}
+.modal-importar{max-width:760px;}
+.importar-errores{display:flex;flex-direction:column;gap:6px;max-height:240px;overflow:auto;margin:10px 0;}
+.importar-tabla{max-height:320px;overflow:auto;border:1px solid var(--gris-200);border-radius:8px;margin:10px 0;}
+.importar-tabla table{width:100%;border-collapse:collapse;font-size:13px;}
+.importar-tabla th,.importar-tabla td{padding:6px 8px;border-bottom:1px solid var(--gris-200);text-align:left;}
+.importar-tabla th{position:sticky;top:0;background:var(--gris-100);}
 .fila-dinero-inicio .txt{color:var(--texto-sec);font-size:13px;}
 .modal-dinero .modal-body{padding:16px 20px 20px;}
 @media(max-width:600px){.modal-dinero .modal-body{padding:14px;}}
