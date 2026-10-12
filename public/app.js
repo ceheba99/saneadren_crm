@@ -113,14 +113,14 @@ function fechaCorta(iso) {
 }
 
 // ---------- Navegación entre vistas ----------
-document.querySelectorAll('header nav button').forEach(btn => {
+document.querySelectorAll('header nav [data-vista]').forEach(btn => {
   btn.addEventListener('click', () => cambiarVista(btn.dataset.vista));
 });
 function cambiarVista(v, opciones) {
   if (v === 'usuarios' && USUARIO_ACTUAL?.rol !== 'admin') v = 'inicio';
   document.querySelectorAll('.vista').forEach(s => s.classList.remove('activa'));
   document.getElementById('vista-' + v).classList.add('activa');
-  document.querySelectorAll('header nav button').forEach(b => b.classList.toggle('activa', b.dataset.vista === v));
+  window.MenuPrincipal?.marcar(v);
   if (v === 'inicio') cargarInicio();
   if (v === 'leads') cargarLeads();
   if (v === 'clientes') cargarClientes();
@@ -1857,6 +1857,9 @@ async function actualizarBadgePendientes(n) {
   }
   b.textContent = n;
   b.style.display = n > 0 ? 'inline-block' : 'none';
+  // En celular el menú está cerrado: el contador también se muestra en el botón "☰ Menú".
+  const bm = document.getElementById('badge-menu');
+  if (bm) { bm.textContent = n; bm.hidden = !(n > 0); }
 }
 
 // ---------- Login ----------
@@ -1900,7 +1903,6 @@ function mostrarUsuarioEnHeader() {
   document.body.classList.toggle('es-admin', USUARIO_ACTUAL.rol === 'admin');
   // Todos los usuarios ven Cuentas; las acciones delicadas se ocultan con .solo-admin (y el servidor las valida).
   document.body.classList.toggle('puede-cobranza', !!USUARIO_ACTUAL);
-  document.getElementById('nav-usuarios').style.display = USUARIO_ACTUAL.rol === 'admin' ? 'inline-block' : 'none';
 }
 
 // ---------- Gestión de usuarios (solo admin) ----------

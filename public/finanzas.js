@@ -513,11 +513,12 @@ const Finanzas = (() => {
     }
     const ordenes = r.ordenes.map(c => `<div class="pago-fila"><div><b>${esc(c.folio)}</b> · ${esc(c.servicio_nombre || 'Servicio')} ${etiquetaEstado(c)}<small>Saldo ${formatoMoneda(c.saldo)} de ${formatoMoneda(c.total)} · vence ${esc(fechaTxt(c.vence))}</small></div>
       <button type="button" class="btn btn-outline" data-fc-pagar="${Number(c.lead_id)}">Registrar pago</button></div>`).join('');
-    cont.innerHTML = `<div class="modal-section"><div class="seccion-tit">Estado de cuenta</div>
+    cont.innerHTML = `<div class="modal-section" data-plegable="estado-cuenta"><div class="seccion-tit">💰 Estado de cuenta</div>
       <div class="cobranza-resumen"><div><small>Saldo</small><b>${formatoMoneda(r.saldo)}</b></div><div><small>Vencido</small><b class="${r.vencido > 0 ? 'rojo' : ''}">${formatoMoneda(r.vencido)}</b></div>
         <div><small>Programado</small><b>${formatoMoneda(r.programado)}</b></div><div><small>Crédito</small><b>${Number(r.dias_credito)} días</b></div></div>
       ${r.por_revisar_n ? `<p class="ayuda">${Number(r.por_revisar_n)} órdenes anteriores al módulo están pendientes de la revisión inicial.</p>` : ''}
       <div class="pagos-lista">${ordenes || '<p class="util-45">Sin saldos pendientes. 🎉</p>'}</div></div>`;
+    window.Plegables?.preparar(cont);
   }
   $('fc-cobranza')?.addEventListener('click', e => {
     const b = e.target.closest('[data-fc-pagar]'); if (!b || !CLIENTE_ACTUAL_ID) return;

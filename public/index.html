@@ -18,17 +18,39 @@
       <div class="sub">Ingeniería sanitaria — captación y seguimiento</div>
     </div>
   </div>
-  <nav>
-    <button data-vista="inicio" class="activa">Inicio</button>
-    <button data-vista="alta">Nuevo contacto</button>
-    <button data-vista="leads">Cotizaciones</button>
-    <button data-vista="prospeccion">Prospección</button>
-    <button data-vista="clientes">Contactos y clientes</button>
-    <button data-vista="pendientes">Pendientes <span id="badge-pendientes">0</span></button>
-    <button data-vista="resultados">Resultados</button>
-    <button class="solo-cobranza" data-vista="cuentas" id="nav-cuentas">Cuentas</button>
-    <button data-vista="catalogos" id="nav-catalogos">Catálogos</button>
-    <button class="diseno-nav-usuarios solo-admin" data-vista="usuarios" id="nav-usuarios">Usuarios</button>
+  <nav class="menu-principal" id="menu-principal" aria-label="Menú principal">
+    <!-- En celular: un solo botón que abre el panel; en escritorio se oculta y se ve la barra. -->
+    <button type="button" class="menu-movil" id="menu-movil" aria-expanded="false" aria-controls="menu-items">
+      <span class="menu-hamburguesa" aria-hidden="true">☰</span><span class="menu-movil-texto">Menú</span>
+      <span class="menu-actual" id="menu-actual">Inicio</span><span class="menu-badge" id="badge-menu" hidden></span>
+    </button>
+    <div class="menu-items" id="menu-items">
+      <button type="button" class="menu-item activa" data-vista="inicio"><span class="menu-icono" aria-hidden="true">🏠</span>Inicio</button>
+      <button type="button" class="menu-item" data-vista="pendientes"><span class="menu-icono" aria-hidden="true">⏰</span>Pendientes <span id="badge-pendientes" style="display:none">0</span></button>
+      <button type="button" class="menu-item" data-vista="clientes"><span class="menu-icono" aria-hidden="true">👥</span>Clientes</button>
+      <div class="menu-grupo" data-grupo="ventas">
+        <button type="button" class="menu-grupo-btn" aria-expanded="false"><span class="menu-icono" aria-hidden="true">💼</span>Ventas<span class="menu-flecha" aria-hidden="true">▾</span></button>
+        <div class="menu-sub">
+          <button type="button" class="menu-item" data-vista="alta"><span class="menu-icono" aria-hidden="true">➕</span>Nuevo contacto</button>
+          <button type="button" class="menu-item" data-vista="leads"><span class="menu-icono" aria-hidden="true">📄</span>Cotizaciones</button>
+          <button type="button" class="menu-item" data-vista="prospeccion"><span class="menu-icono" aria-hidden="true">🔎</span>Prospección</button>
+        </div>
+      </div>
+      <div class="menu-grupo" data-grupo="dinero">
+        <button type="button" class="menu-grupo-btn" aria-expanded="false"><span class="menu-icono" aria-hidden="true">💰</span>Dinero<span class="menu-flecha" aria-hidden="true">▾</span></button>
+        <div class="menu-sub">
+          <button type="button" class="menu-item solo-cobranza" data-vista="cuentas" id="nav-cuentas"><span class="menu-icono" aria-hidden="true">💳</span>Cuentas</button>
+          <button type="button" class="menu-item" data-vista="resultados"><span class="menu-icono" aria-hidden="true">📊</span>Resultados</button>
+        </div>
+      </div>
+      <div class="menu-grupo" data-grupo="ajustes">
+        <button type="button" class="menu-grupo-btn" aria-expanded="false"><span class="menu-icono" aria-hidden="true">⚙️</span>Ajustes<span class="menu-flecha" aria-hidden="true">▾</span></button>
+        <div class="menu-sub">
+          <button type="button" class="menu-item" data-vista="catalogos" id="nav-catalogos"><span class="menu-icono" aria-hidden="true">📚</span>Catálogos</button>
+          <button type="button" class="menu-item solo-admin" data-vista="usuarios" id="nav-usuarios"><span class="menu-icono" aria-hidden="true">👤</span>Usuarios</button>
+        </div>
+      </div>
+    </div>
   </nav>
   <div class="util-2">
     <span>👤 <b id="sesion-nombre"></b></span>
@@ -450,7 +472,7 @@
         <div class="ficha-meta" id="ficha-meta"></div>
       </div>
 
-      <div class="modal-section">
+      <div class="modal-section" data-plegable="seguimiento">
         <div class="seccion-tit" id="registro-etapas-titulo">Seguimiento de esta cotización</div>
         <div class="pipeline-track" id="pipeline-track">
           <div class="pipeline-step" data-step="1"><span class="step-num">1</span>Datos</div>
@@ -460,7 +482,7 @@
         </div>
       </div>
 
-      <div class="modal-section">
+      <div class="modal-section" data-plegable="datos-registro">
         <div class="seccion-tit" id="registro-datos-titulo">Datos de esta cotización</div>
         <p class="ayuda">Los cambios de esta sección afectan únicamente a este registro. Los datos de contacto se editan desde su ficha.</p>
         <div class="form-grid-2">
@@ -492,11 +514,7 @@
           <span class="chip util-17">Fecha de creación: <b id="ed-created-at">—</b></span>
           <span class="chip util-17">Estatus de cotización: <b id="ed-estatus-actual">—</b></span>
         </div>
-        <div class="modal-section" id="seccion-cobranza" hidden>
-          <div class="seccion-tit">Cobranza de esta orden</div>
-          <div id="cobranza-orden"></div>
-        </div>
-        <div class="modal-section" id="seccion-encuesta" hidden>
+        <div class="modal-section" id="seccion-encuesta" data-plegable="encuesta" hidden>
           <div class="seccion-tit">Encuesta de calidad del servicio</div>
           <p class="ayuda">Se imprime en la orden de servicio para que el cliente la conteste en papel; regístrala aquí cuando el técnico la traiga de vuelta. Se guarda con el mismo botón de "Guardar cambios" de abajo.</p>
           <div class="form-grid-2">
@@ -526,7 +544,12 @@
         </div>
       </div>
 
-      <div class="modal-section">
+      <div class="modal-section" id="seccion-cobranza" data-plegable="cobranza" hidden>
+        <div class="seccion-tit">💵 Cobranza de esta orden</div>
+        <div id="cobranza-orden"></div>
+      </div>
+
+      <div class="modal-section" data-plegable="observacion">
         <div class="seccion-tit">Agregar observación o alerta</div>
         <div class="obs-form">
           <textarea id="obs-texto" placeholder="Escribe una observación..."></textarea>
@@ -543,13 +566,13 @@
         </div>
       </div>
 
-      <div class="modal-section">
+      <div class="modal-section" data-plegable="bitacora">
         <div class="seccion-tit">Bitácora de actividad</div>
         <p class="ayuda">Todo lo que le ha pasado a este registro: eventos automáticos del sistema y notas del equipo, de lo más reciente a lo más antiguo.</p>
         <div id="bitacora-lista" class="bitacora-lista"></div>
       </div>
 
-      <div class="modal-section">
+      <div class="modal-section" data-plegable="historial-contacto">
         <div class="seccion-tit">Historial comercial del contacto</div>
         <p class="ayuda util-22">Cada fila tiene su propio número. Abrir otra fila cambia el registro que estás editando.</p>
         <div class="servicios-list" id="ficha-anteriores"></div>
@@ -570,7 +593,9 @@
     <div class="modal-body">
       <div class="modal-section">
         <div id="contacto-identidad" class="contacto-identidad"></div>
-        <div class="seccion-tit">Datos del contacto</div>
+      </div>
+      <div class="modal-section" data-plegable="datos-contacto" data-plegado-defecto="1" data-resumen-campos="fc-ed-nombre,fc-ed-telefono,fc-ed-direccion">
+        <div class="seccion-tit">✏️ Datos del contacto</div>
         <p class="ayuda">Esta ficha pertenece a la persona o empresa. Guardar aquí no modifica importes, fechas ni ubicaciones de cotizaciones anteriores.</p>
         <div class="form-grid-2">
           <div class="campo-modal"><label>Teléfono</label><input type="tel" id="fc-ed-telefono"></div>
@@ -596,8 +621,8 @@
         </div>
       </div>
 
-      <div class="modal-section">
-        <div class="relacion-registros"><div><div class="seccion-tit">Cotizaciones y servicios de este contacto</div><p class="ayuda">Una cotización abierta es una propuesta. Al aceptarla, el mismo registro pasa a servicio contratado; conserva su número e importe.</p></div>
+      <div class="modal-section" data-plegable="registros-contacto">
+        <div class="relacion-registros"><div><div class="seccion-tit" data-plegable-cabecera>Cotizaciones y servicios de este contacto</div><p class="ayuda">Una cotización abierta es una propuesta. Al aceptarla, el mismo registro pasa a servicio contratado; conserva su número e importe.</p></div>
         <div class="btn-group"><button class="btn btn-primario" id="btn-contacto-cotizar">📄 Crear cotización</button><button class="btn btn-secundario" id="btn-recapturar-servicio" title="Para cuando el cliente ya confirmó: registra el servicio sin pasar por cotización">🧾 Crear orden de servicio</button></div></div>
         <div class="ficha-meta" id="fc-meta"></div>
         <div id="fc-cobranza"></div>
