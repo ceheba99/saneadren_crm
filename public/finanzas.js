@@ -1,0 +1,538 @@
+/* Cuentas por cobrar y por pagar. Usa api(), toast(), escaparHtml(), formatoMoneda(),
+   solicitarDialogo(), abrirVentana(), descargarCSV(), abrirFicha() y USUARIO_ACTUAL de app.js/ui.js.
+   Todo dato se escapa con escaparHtml y los botones usan data-*, sin onclick en línea. */
+const Finanzas = (() => {
+  const $ = id => document.getElementById(id);
+  const esc = v => escaparHtml(v);
+  const METODOS = [['transferencia', 'Transferencia'], ['efectivo', 'Efectivo'], ['deposito', 'Depósito'], ['cheque', 'Cheque'], ['tarjeta', 'Tarjeta'], ['otro', 'Otro']];
+  const NOMBRE_METODO = Object.fromEntries(METODOS);
+  const esAdmin = () => USUARIO_ACTUAL?.rol === 'admin';
+  const puedeCartera = () => ['admin', 'atencion'].includes(USUARIO_ACTUAL?.rol);
+  const hoy = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Mexico_City', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+  const sumarDias = (f, d) => { const x = new Date(f + 'T00:00:00Z'); x.setUTCDate(x.getUTCDate() + (Number(d) || 0)); return x.toISOString().slice(0, 10); };
+  const fechaTxt = f => (f ? new Date(f + 'T12:00:00').toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' }) : '—');
+  const folioOS = c => folioOrdenServicio({ id: c.lead_id, created_at: c.created_at });
+  const json = async res => { const j = await res.json().catch(() => ({})); if (!res.ok) throw Object.assign(new Error(j.error || 'No se pudo completar'), { status: res.status, codigo: j.codigo }); return j; };
+  // POST/PUT que puede responder 409 "posible duplicado": pregunta y reintenta con forzar.
+  async function enviar(ruta, metodo, cuerpo) {
+    let res = await api(ruta, { method: metodo, body: JSON.stringify(cuerpo) });
+    if (res.status === 409) {
+      const j = await res.clone().json().catch(() => ({}));
+      if (j.codigo === 'POSIBLE_DUPLICADO' && await solicitarDialogo({ titulo: 'Posible registro repetido', mensaje: j.error + '\n\nSi no es un duplicado, confirma para guardarlo.', aceptar: 'Sí, guardarlo' })) {
+        res = await api(ruta, { method: metodo, body: JSON.stringify({ ...cuerpo, forzar: true }) });
+      } else if (j.codigo === 'POSIBLE_DUPLICADO') return null;
+    }
+    return json(res);
+  }
+  function etiquetaEstado(c) {
+    if (c.estado === 'pagada') return '<span class="estado-cxc pagada">Pagada</span>';
+    if (c.vencida) return `<span class="estado-cxc vencida">Vencida hace ${Number(c.dias_vencido)} d</span>`;
+    if (c.programada) return '<span class="estado-cxc programada">Servicio programado</span>';
+    return `<span class="estado-cxc ${esc(c.estado)}">${c.estado === 'parcial' ? 'Pago parcial' : 'Pendiente'}</span>`;
+  }
+  function pintarMetodos(contId, seleccionado) {
+    $(contId).innerHTML = METODOS.map(([k, n]) => `<button type="button" class="metodo${k === seleccionado ? ' activo' : ''}" data-metodo="${k}" aria-pressed="${k === seleccionado}">${n}</button>`).join('');
+  }
+  document.addEventListener('click', e => {
+    const b = e.target.closest('.metodos .metodo');
+    if (!b) return;
+    b.parentElement.querySelectorAll('.metodo').forEach(x => { x.classList.toggle('activo', x === b); x.setAttribute('aria-pressed', String(x === b)); });
+  });
+  const metodoElegido = contId => $(contId).querySelector('.metodo.activo')?.dataset.metodo;
+  for (const id of ['overlay-cobro', 'overlay-gasto', 'overlay-pago-prov']) {
+    $(id).querySelector('.close-btn').addEventListener('click', () => $(id).classList.remove('mostrar'));
+  }
+  const conBoton = async (btn, fn) => { if (btn.disabled) return; btn.disabled = true; try { await fn(); } catch (err) { toast('No se pudo guardar: ' + err.message); } finally { btn.disabled = false; } };
+  async function pedirMotivo(titulo) {
+    return solicitarDialogo({ titulo, mensaje: 'Queda registrado quién lo canceló, cuándo y por qué. No se puede deshacer.', aceptar: 'Cancelar el registro', campo: { tipo: 'text', etiqueta: 'Motivo' } });
+  }
+
+  // ===================== Registrar pago de un cliente =====================
+  let COBRO = null;
+  async function abrirCobro(leadId, despues) {
+    let r;
+    try { r = await api('/leads/' + Number(leadId) + '/cobros').then(json); } catch (err) { toast('No se pudo abrir: ' + err.message); return; }
+    const c = r.cuenta;
+    COBRO = { leadId: Number(leadId), despues };
+    $('cobro-titulo').textContent = 'Registrar pago · ' + folioOS(c);
+    $('cobro-info').textContent = `${c.cliente_nombre || 'Cliente'} · Total ${formatoMoneda(c.total)} · Saldo ${formatoMoneda(c.saldo)}`;
+    $('cobro-monto').value = c.saldo > 0 ? c.saldo.toFixed(2) : '';
+    pintarMetodos('cobro-metodos', 'transferencia');
+    $('cobro-fecha').value = hoy(); $('cobro-fecha').max = hoy();
+    $('cobro-tipo').value = ''; $('cobro-referencia').value = ''; $('cobro-notas').value = '';
+    $('cobro-aviso').textContent = c.saldo <= 0 ? 'Esta orden ya está pagada.'
+      : (puedeCartera() ? '' : 'Quedará "por confirmar" hasta que administración verifique que el dinero llegó.');
+    $('cobro-guardar').disabled = c.saldo <= 0;
+    abrirVentana('overlay-cobro');
+    setTimeout(() => $('cobro-monto').select(), 50);
+  }
+  $('cobro-guardar').addEventListener('click', e => conBoton(e.currentTarget, async () => {
+    if (!COBRO) return;
+    const cuerpo = { monto: $('cobro-monto').value.trim(), metodo: metodoElegido('cobro-metodos'), fecha: $('cobro-fecha').value,
+      referencia: $('cobro-referencia').value, notas: $('cobro-notas').value };
+    if (esAdmin() && $('cobro-tipo').value) cuerpo.tipo = $('cobro-tipo').value;
+    const r = await enviar('/leads/' + COBRO.leadId + '/cobros', 'POST', cuerpo);
+    if (!r) return;
+    $('overlay-cobro').classList.remove('mostrar');
+    toast(r.confirmado ? `Pago guardado. Saldo: ${formatoMoneda(r.cuenta.saldo)}` : 'Pago guardado; queda por confirmar por administración');
+    const despues = COBRO.despues; COBRO = null;
+    if (despues) await despues();
+  }));
+
+  // ===================== Sección "Cobranza" en la ficha de la orden =====================
+  let ORDEN_ACTUAL = null;
+  async function pintarCobranzaOrden(lead) {
+    const sec = $('seccion-cobranza'), cont = $('cobranza-orden');
+    if (!lead || lead.estatus !== 'ganado') { sec.hidden = true; ORDEN_ACTUAL = null; return; }
+    sec.hidden = false; ORDEN_ACTUAL = lead.id;
+    cont.innerHTML = '<p class="util-45" role="status">Cargando…</p>';
+    let r;
+    try { r = await api('/leads/' + Number(lead.id) + '/cobros').then(json); }
+    catch (err) { cont.innerHTML = `<div class="aviso-error-carga" role="alert"><p>No se pudo cargar la cobranza: ${esc(err.message)}</p></div>`; return; }
+    if (ORDEN_ACTUAL !== lead.id) return; // se abrió otra ficha mientras cargaba
+    const c = r.cuenta;
+    const fact = r.puede_editar_factura ? `
+      <details class="cobranza-facturacion"><summary>Crédito y factura</summary>
+        <div class="form-grid-2">
+          <div class="campo-modal"><label for="fact-credito">Días de crédito</label><input id="fact-credito" type="number" min="0" max="180" step="1" value="${Number(c.dias_credito) || 0}"></div>
+          <div class="campo-modal"><label for="fact-folio">Folio de factura (CFDI)</label><input id="fact-folio" maxlength="60" value="${esc(c.factura_folio || '')}"></div>
+          <div class="campo-modal"><label for="fact-fecha">Fecha de factura</label><input id="fact-fecha" type="date" value="${esc(c.factura_fecha || '')}"></div>
+          <div class="campo-modal"><label for="fact-total">Total facturado con IVA (vacío = importe de la orden)</label><input id="fact-total" type="text" inputmode="decimal" value="${c.factura_total == null ? '' : Number(c.factura_total).toFixed(2)}"></div>
+        </div>
+        <button type="button" class="btn btn-secundario" data-cobranza="guardar-factura">Guardar crédito y factura</button>
+      </details>` : (c.factura_folio ? `<p class="ayuda">Factura ${esc(c.factura_folio)}${c.factura_fecha ? ' del ' + esc(fechaTxt(c.factura_fecha)) : ''}</p>` : '');
+    const pagos = r.cobros.length ? r.cobros.map(k => `
+      <div class="pago-fila${k.cancelado ? ' cancelado' : ''}">
+        <div><b>${formatoMoneda(k.monto)}</b> · ${esc(NOMBRE_METODO[k.metodo] || k.metodo)} · ${esc(fechaTxt(k.fecha))}${k.tipo !== 'pago' ? ' · ' + esc(k.tipo) : ''}
+          <small>Registró ${esc(k.registrado_por_nombre || '—')}${k.referencia ? ' · Ref. ' + esc(k.referencia) : ''}${k.notas ? ' · ' + esc(k.notas) : ''}</small>
+          ${k.cancelado ? `<small class="motivo">Cancelado: ${esc(k.motivo_cancelacion || '')}</small>` : (!k.confirmado ? '<span class="estado-cxc por-confirmar">Por confirmar</span>' : '')}
+        </div>
+        ${r.es_admin && !k.cancelado ? `<div class="btn-group">${!k.confirmado ? `<button type="button" class="btn btn-outline" data-cobro-confirmar="${Number(k.id)}">Confirmar</button>` : ''}<button type="button" class="btn btn-outline" data-cobro-cancelar="${Number(k.id)}">Cancelar</button></div>` : ''}
+      </div>`).join('') : '<p class="util-45">Sin pagos registrados.</p>';
+    cont.innerHTML = `
+      ${c.por_revisar ? '<p class="cuentas-aviso">Orden anterior al módulo de cuentas: está pendiente de la revisión inicial (Cuentas → Por cobrar).</p>' : ''}
+      <div class="cobranza-resumen">
+        <div>${etiquetaEstado(c)}</div>
+        <div><small>Total</small><b>${formatoMoneda(c.total)}</b></div>
+        <div><small>Cobrado</small><b>${formatoMoneda(c.cobrado)}</b></div>
+        <div><small>Saldo</small><b>${formatoMoneda(c.saldo)}</b></div>
+        <div><small>Vence</small><b>${esc(fechaTxt(c.vence))}</b></div>
+      </div>
+      <button type="button" class="btn btn-primario" data-cobranza="registrar" ${c.saldo <= 0 ? 'disabled' : ''}>💵 Registrar pago</button>
+      ${fact}
+      <div class="pagos-lista">${pagos}</div>`;
+  }
+  $('cobranza-orden').addEventListener('click', async e => {
+    const btn = e.target.closest('button'); if (!btn || !ORDEN_ACTUAL) return;
+    const id = ORDEN_ACTUAL, recargar = () => pintarCobranzaOrden({ id, estatus: 'ganado' });
+    if (btn.dataset.cobranza === 'registrar') return abrirCobro(id, recargar);
+    if (btn.dataset.cobranza === 'guardar-factura') return conBoton(btn, async () => {
+      await json(await api('/leads/' + id + '/facturacion', { method: 'PUT', body: JSON.stringify({
+        dias_credito: $('fact-credito').value, factura_folio: $('fact-folio').value, factura_fecha: $('fact-fecha').value || null,
+        factura_total: $('fact-total').value.trim() === '' ? null : $('fact-total').value.trim() }) }));
+      toast('Crédito y factura guardados'); await recargar();
+    });
+    if (btn.dataset.cobroConfirmar) return conBoton(btn, async () => { await json(await api('/finanzas/cobros/' + Number(btn.dataset.cobroConfirmar) + '/confirmar', { method: 'POST' })); toast('Pago confirmado'); await recargar(); });
+    if (btn.dataset.cobroCancelar) {
+      const motivo = await pedirMotivo('Cancelar pago'); if (!motivo) return;
+      return conBoton(btn, async () => { await json(await api('/finanzas/cobros/' + Number(btn.dataset.cobroCancelar) + '/cancelar', { method: 'POST', body: JSON.stringify({ motivo }) })); toast('Pago cancelado; el saldo se actualizó'); await recargar(); });
+    }
+  });
+
+  // ===================== Vista Cuentas =====================
+  let PESTANA = 'cobrar', FILTRO = 'con_saldo', RESUMEN = null, CARTERA = [];
+  document.querySelectorAll('[data-pestana]').forEach(b => b.addEventListener('click', () => irPestana(b.dataset.pestana)));
+  function irPestana(p) {
+    if (p !== 'cobrar' && !esAdmin()) p = 'cobrar';
+    PESTANA = p;
+    document.querySelectorAll('[data-pestana]').forEach(b => { b.classList.toggle('activo', b.dataset.pestana === p); b.setAttribute('aria-selected', String(b.dataset.pestana === p)); });
+    document.querySelectorAll('.cuentas-panel').forEach(x => { x.hidden = x.dataset.panel !== p; });
+    if (p === 'cobrar') cargarCobrar(); else if (p === 'pagar') cargarPagar(); else cargarProveedores();
+  }
+  document.querySelectorAll('[data-filtro-cobro]').forEach(b => b.addEventListener('click', () => {
+    FILTRO = b.dataset.filtroCobro;
+    document.querySelectorAll('[data-filtro-cobro]').forEach(x => x.classList.toggle('activo', x === b));
+    cargarLista();
+  }));
+  let tBuscar;
+  $('cobrar-buscar').addEventListener('input', () => { clearTimeout(tBuscar); tBuscar = setTimeout(cargarLista, 300); });
+  $('cobrar-vista').addEventListener('change', cargarLista);
+
+  async function cargar(opciones = {}) {
+    if (!puedeCartera()) return;
+    if (opciones.filtro) {
+      FILTRO = opciones.filtro;
+      document.querySelectorAll('[data-filtro-cobro]').forEach(x => x.classList.toggle('activo', x.dataset.filtroCobro === FILTRO));
+    }
+    pintarTarjetas();
+    irPestana(opciones.pestana || PESTANA);
+  }
+  async function pintarTarjetas() {
+    const cont = $('cuentas-tarjetas');
+    try { RESUMEN = await api('/finanzas/resumen').then(json); } catch (err) { cont.innerHTML = `<div class="aviso-error-carga" role="alert"><p>No se pudo cargar el resumen: ${esc(err.message)}</p></div>`; return; }
+    const r = RESUMEN, t = (titulo, valor, detalle, clase = '') => `<div class="tarjeta-dinero ${clase}"><small>${titulo}</small><b>${valor}</b>${detalle ? `<span>${detalle}</span>` : ''}</div>`;
+    cont.innerHTML = t('Te deben', formatoMoneda(r.por_cobrar), `${Number(r.cuentas_con_saldo)} órdenes con saldo`)
+      + t('Vencido', formatoMoneda(r.vencido), `${Number(r.clientes_con_vencido)} clientes`, r.vencido > 0 ? 'alerta' : '')
+      + (r.programado > 0 ? t('Programado', formatoMoneda(r.programado), `${Number(r.ordenes_programadas)} servicios aún no realizados`) : '')
+      + t('Cobrado este mes', formatoMoneda(r.cobrado_mes), '')
+      + (r.por_confirmar ? t('Por confirmar', formatoMoneda(r.por_confirmar.monto), `${Number(r.por_confirmar.cantidad)} pagos`, r.por_confirmar.cantidad ? 'aviso' : '') : '')
+      + (r.pagar_semana !== undefined ? t('Pagar esta semana', formatoMoneda(r.pagar_semana), `${Number(r.facturas_semana)} facturas (incluye vencidas)`, r.pagar_semana > 0 ? 'aviso' : '') : '')
+      + (r.por_pagar !== undefined ? t('Total por pagar', formatoMoneda(r.por_pagar), `Pagado este mes ${formatoMoneda(r.pagado_mes)}`) : '');
+    pintarRevision();
+  }
+
+  // ---------- Por cobrar ----------
+  async function cargarCobrar() {
+    pintarPorConfirmar();
+    cargarLista();
+  }
+  function pintarRevision() {
+    const cont = $('cuentas-revision');
+    if (!esAdmin() || !RESUMEN?.por_revisar) { cont.hidden = true; return; }
+    cont.hidden = false;
+    cont.innerHTML = `<p><b>Revisión inicial:</b> ${Number(RESUMEN.por_revisar)} órdenes anteriores al módulo todavía no cuentan en la cartera. Indica cuáles ya se cobraron para que los saldos sean reales.</p><button type="button" class="btn btn-secundario" data-revision="abrir">Revisar ahora</button><div id="revision-lista"></div>`;
+  }
+  $('cuentas-revision').addEventListener('click', async e => {
+    const btn = e.target.closest('button'); if (!btn) return;
+    if (btn.dataset.revision === 'abrir') {
+      const lista = await api('/finanzas/revision-inicial').then(json).catch(err => { toast(err.message); return []; });
+      $('revision-lista').innerHTML = `<div class="revision-tabla">${lista.map(c => `
+        <label class="revision-fila"><span><b>${esc(folioOS(c))}</b> · ${esc(c.cliente_nombre)} · ${esc(c.servicio_nombre || '')} · ${esc(fechaTxt(c.fecha_servicio))} · ${formatoMoneda(c.total)}</span>
+          <select data-revision-lead="${Number(c.lead_id)}"><option value="cobrada">Ya está cobrada</option><option value="pendiente">Sigue pendiente de cobro</option></select></label>`).join('')}</div>
+        <button type="button" class="btn btn-primario" data-revision="guardar">Guardar revisión</button>`;
+    }
+    if (btn.dataset.revision === 'guardar') conBoton(btn, async () => {
+      const cobradas = [], pendientes = [];
+      document.querySelectorAll('[data-revision-lead]').forEach(s => (s.value === 'cobrada' ? cobradas : pendientes).push(Number(s.dataset.revisionLead)));
+      const r = await json(await api('/finanzas/revision-inicial', { method: 'POST', body: JSON.stringify({ cobradas, pendientes }) }));
+      toast(`Revisión guardada: ${r.revisadas} órdenes`); await cargar();
+    });
+  });
+  async function pintarPorConfirmar() {
+    const cont = $('cuentas-por-confirmar');
+    if (!esAdmin()) { cont.innerHTML = ''; return; }
+    const lista = await api('/finanzas/por-confirmar').then(json).catch(() => []);
+    cont.innerHTML = lista.length ? `<div class="inicio-bloque inicio-bloque-aviso"><h3>Pagos por confirmar</h3><p class="ayuda">Los registraron vendedores o técnicos. Confírmalos cuando verifiques que el dinero llegó.</p>
+      ${lista.map(k => `<div class="pago-fila"><div><b>${formatoMoneda(k.monto)}</b> · ${esc(NOMBRE_METODO[k.metodo] || k.metodo)} · ${esc(fechaTxt(k.fecha))}<small>${esc(k.cliente_nombre)} · ${esc(folioOrdenServicio({ id: k.lead_id, created_at: k.lead_created_at }))} · registró ${esc(k.registrado_por_nombre || '—')}</small></div>
+        <div class="btn-group"><button type="button" class="btn btn-outline" data-confirmar="${Number(k.id)}">Confirmar</button><button type="button" class="btn btn-outline" data-cancelar="${Number(k.id)}">Cancelar</button></div></div>`).join('')}</div>` : '';
+  }
+  $('cuentas-por-confirmar').addEventListener('click', async e => {
+    const btn = e.target.closest('button'); if (!btn) return;
+    if (btn.dataset.confirmar) conBoton(btn, async () => { await json(await api('/finanzas/cobros/' + Number(btn.dataset.confirmar) + '/confirmar', { method: 'POST' })); toast('Pago confirmado'); cargar(); });
+    if (btn.dataset.cancelar) {
+      const motivo = await pedirMotivo('Cancelar pago'); if (!motivo) return;
+      conBoton(btn, async () => { await json(await api('/finanzas/cobros/' + Number(btn.dataset.cancelar) + '/cancelar', { method: 'POST', body: JSON.stringify({ motivo }) })); toast('Pago cancelado'); cargar(); });
+    }
+  });
+
+  function textoWhatsApp(g) {
+    // Texto plano para WhatsApp (va codificado en la dirección, no como HTML).
+    const folios = (g.folios || []).slice(0, 5).join(', ');
+    return 'Hola ' + (g.cliente_nombre || '') + ', le saludamos de Saneadren. Le recordamos su saldo pendiente de ' + formatoMoneda(g.saldo)
+      + (folios ? ' por los servicios ' + folios : '')
+      + (g.vencido > 0 ? ' (vencido: ' + formatoMoneda(g.vencido) + ')' : g.proximo_vence ? ', con vencimiento el ' + fechaTxt(g.proximo_vence) : '')
+      + '. Quedamos atentos a cualquier duda. ¡Gracias!';
+  }
+  function enlaceWhatsApp(telefono, textoMsg) {
+    let d = String(telefono || '').replace(/\D/g, '');
+    if (d.length === 10) d = '52' + d;
+    return d.length >= 12 ? `https://wa.me/${d}?text=${encodeURIComponent(textoMsg)}` : '';
+  }
+  async function cargarLista() {
+    const cont = $('cobrar-lista'), vista = $('cobrar-vista').value;
+    cont.innerHTML = '<p class="util-45" role="status">Cargando…</p>';
+    const params = new URLSearchParams({ vista, filtro: FILTRO, q: $('cobrar-buscar').value.trim() });
+    try { CARTERA = await api('/finanzas/cartera?' + params).then(json); }
+    catch (err) { cont.innerHTML = `<div class="aviso-error-carga" role="alert"><p>No se pudo cargar: ${esc(err.message)}</p></div>`; return; }
+    if (!CARTERA.length) { cont.innerHTML = '<p class="util-45">No hay cuentas con este filtro. 🎉</p>'; return; }
+    cont.innerHTML = vista === 'cliente' ? CARTERA.map(g => {
+      const wa = enlaceWhatsApp(g.telefono, textoWhatsApp(g));
+      return `<div class="fila-dinero${g.vencido > 0 ? ' vencida' : ''}">
+        <div class="info"><b>${esc(g.cliente_nombre || 'Sin nombre')}</b>${g.empresa_contacto ? ` · ${esc(g.empresa_contacto)}` : ''}
+          <small>${esc(g.telefono || '')} · ${Number(g.ordenes)} órdenes · crédito ${Number(g.dias_credito)} días${g.max_dias_vencido > 0 ? ` · hasta ${Number(g.max_dias_vencido)} días vencido` : ''}</small></div>
+        <div class="montos"><b>${formatoMoneda(g.saldo)}</b>${g.vencido > 0 ? `<small class="rojo">Vencido ${formatoMoneda(g.vencido)}</small>` : ''}</div>
+        <div class="btn-group">
+          ${wa ? `<a class="btn btn-outline" href="${esc(wa)}" target="_blank" rel="noopener noreferrer">Recordar por WhatsApp</a>` : ''}
+          <button type="button" class="btn btn-outline" data-credito-cliente="${Number(g.cliente_id)}" data-credito-actual="${Number(g.dias_credito)}">Crédito</button>
+          <button type="button" class="btn btn-secundario" data-ver-ordenes="${esc(g.telefono || g.cliente_nombre || '')}">Ver órdenes</button>
+        </div></div>`;
+    }).join('') : CARTERA.map(c => `<div class="fila-dinero${c.vencida ? ' vencida' : ''}">
+        <div class="info"><b>${esc(folioOS(c))}</b> · ${esc(c.cliente_nombre || 'Sin nombre')} ${etiquetaEstado(c)}
+          <small>${esc(c.servicio_nombre || 'Servicio')} · servicio ${esc(fechaTxt(c.fecha_servicio))} · vence ${esc(fechaTxt(c.vence))}${c.factura_folio ? ' · factura ' + esc(c.factura_folio) : ' · sin factura'}</small></div>
+        <div class="montos"><b>${formatoMoneda(c.saldo)}</b><small>de ${formatoMoneda(c.total)}</small></div>
+        <div class="btn-group">
+          ${c.saldo > 0 ? `<button type="button" class="btn btn-primario" data-pagar-orden="${Number(c.lead_id)}">Registrar pago</button>` : ''}
+          <button type="button" class="btn btn-outline" data-abrir-orden="${Number(c.lead_id)}">Abrir orden</button>
+        </div></div>`).join('');
+  }
+  $('cobrar-lista').addEventListener('click', async e => {
+    const btn = e.target.closest('button'); if (!btn) return;
+    if (btn.dataset.pagarOrden) return abrirCobro(Number(btn.dataset.pagarOrden), () => cargar());
+    if (btn.dataset.abrirOrden) return abrirFicha(Number(btn.dataset.abrirOrden));
+    if (btn.dataset.verOrdenes !== undefined) { $('cobrar-vista').value = 'orden'; $('cobrar-buscar').value = btn.dataset.verOrdenes; return cargarLista(); }
+    if (btn.dataset.creditoCliente) {
+      const dias = await solicitarDialogo({ titulo: 'Días de crédito del cliente', mensaje: 'Se aplica a sus órdenes NUEVAS (0 = contado). Las órdenes existentes conservan el suyo; cámbialo en cada orden si hace falta.', aceptar: 'Guardar', campo: { tipo: 'number', etiqueta: 'Días (0 a 180)' } });
+      if (dias === null) return;
+      conBoton(btn, async () => { await json(await api('/finanzas/clientes/' + Number(btn.dataset.creditoCliente) + '/credito', { method: 'PUT', body: JSON.stringify({ dias_credito: dias }) })); toast('Crédito del cliente actualizado'); cargarLista(); });
+    }
+  });
+  $('cobrar-exportar').addEventListener('click', () => {
+    if (!CARTERA.length) { toast('No hay datos con este filtro para exportar'); return; }
+    if ($('cobrar-vista').value === 'cliente') {
+      descargarCSV('cuentas_por_cobrar_clientes_' + hoy() + '.csv', [
+        { titulo: 'Cliente', valor: g => g.cliente_nombre }, { titulo: 'Empresa', valor: g => g.empresa_contacto }, { titulo: 'Teléfono', valor: g => g.telefono },
+        { titulo: 'Órdenes con saldo', valor: g => g.ordenes }, { titulo: 'Saldo', valor: g => g.saldo.toFixed(2) }, { titulo: 'Vencido', valor: g => g.vencido.toFixed(2) },
+        { titulo: 'Máx. días vencido', valor: g => g.max_dias_vencido }, { titulo: 'Días de crédito', valor: g => g.dias_credito }], CARTERA);
+    } else {
+      descargarCSV('cuentas_por_cobrar_ordenes_' + hoy() + '.csv', [
+        { titulo: 'Folio', valor: folioOS }, { titulo: 'Cliente', valor: c => c.cliente_nombre }, { titulo: 'Servicio', valor: c => c.servicio_nombre },
+        { titulo: 'Fecha del servicio', valor: c => c.fecha_servicio }, { titulo: 'Factura', valor: c => c.factura_folio }, { titulo: 'Total', valor: c => c.total.toFixed(2) },
+        { titulo: 'Cobrado', valor: c => c.cobrado.toFixed(2) }, { titulo: 'Saldo', valor: c => c.saldo.toFixed(2) }, { titulo: 'Vence', valor: c => c.vence },
+        { titulo: 'Días vencido', valor: c => c.dias_vencido }, { titulo: 'Estado', valor: c => (c.vencida ? 'vencida' : c.estado) }], CARTERA);
+    }
+  });
+
+  // ---------- Por pagar ----------
+  let CXP = [], PAGO_PROV = null, PROVEEDORES = [], CATEGORIAS = [];
+  async function catalogosPagos() {
+    [PROVEEDORES, CATEGORIAS] = await Promise.all([api('/finanzas/proveedores').then(json), CATEGORIAS.length ? CATEGORIAS : api('/finanzas/categorias').then(json)]);
+    const opts = CATEGORIAS.map(c => `<option value="${esc(c.clave)}">${esc(c.nombre)}</option>`).join('');
+    $('gasto-categoria').innerHTML = opts; $('prov-categoria').innerHTML = opts;
+  }
+  async function cargarPagar() {
+    const cont = $('pagar-lista');
+    cont.innerHTML = '<p class="util-45" role="status">Cargando…</p>';
+    try { CXP = await api('/finanzas/cxp?vista=' + encodeURIComponent($('pagar-vista').value)).then(json); }
+    catch (err) { cont.innerHTML = `<div class="aviso-error-carga" role="alert"><p>No se pudo cargar: ${esc(err.message)}</p></div>`; return; }
+    const h = hoy(), dow = new Date(h + 'T00:00:00Z').getUTCDay(), domingo = sumarDias(h, (7 - dow) % 7), domingoSig = sumarDias(domingo, 7);
+    const grupos = [['Vencidas', x => x.saldo > 0 && x.fecha_vencimiento < h], ['Esta semana', x => x.saldo > 0 && x.fecha_vencimiento >= h && x.fecha_vencimiento <= domingo],
+      ['Próxima semana', x => x.saldo > 0 && x.fecha_vencimiento > domingo && x.fecha_vencimiento <= domingoSig], ['Después', x => x.saldo > 0 && x.fecha_vencimiento > domingoSig], ['Pagadas', x => x.saldo <= 0]];
+    const html = grupos.map(([titulo, f]) => {
+      const items = CXP.filter(f);
+      if (!items.length) return '';
+      const subtotal = items.reduce((t, x) => t + x.saldo, 0);
+      return `<h3 class="grupo-pagos">${titulo} <small>${items.length} · ${formatoMoneda(subtotal)}</small></h3>` + items.map(x => `
+        <div class="fila-dinero${titulo === 'Vencidas' ? ' vencida' : ''}">
+          <div class="info"><b>${esc(x.proveedor_nombre)}</b> · ${esc(x.concepto)}
+            <small>${esc(x.categoria_nombre)} · vence ${esc(fechaTxt(x.fecha_vencimiento))}${x.factura_folio ? ' · factura ' + esc(x.factura_folio) : ''}${x.lead_id ? ' · orden #' + Number(x.lead_id) : ''}${x.equipo ? ' · ' + esc(x.equipo) : ''}</small></div>
+          <div class="montos"><b>${formatoMoneda(x.saldo)}</b><small>de ${formatoMoneda(x.total)}</small></div>
+          <div class="btn-group">${x.saldo > 0 ? `<button type="button" class="btn btn-primario" data-pagar-cxp="${Number(x.id)}">Pagar</button>` : ''}<button type="button" class="btn btn-outline" data-detalle-cxp="${Number(x.id)}">Pagos</button>
+            ${x.pagado === 0 ? `<button type="button" class="btn btn-outline" data-cancelar-cxp="${Number(x.id)}">Cancelar</button>` : ''}</div>
+        </div>`).join('');
+    }).join('');
+    cont.innerHTML = html || '<p class="util-45">No hay cuentas por pagar. 🎉</p>';
+  }
+  $('pagar-vista').addEventListener('change', cargarPagar);
+  $('pagar-lista').addEventListener('click', async e => {
+    const btn = e.target.closest('button'); if (!btn) return;
+    const id = Number(btn.dataset.pagarCxp || btn.dataset.detalleCxp || btn.dataset.cancelarCxp);
+    if (btn.dataset.cancelarCxp) {
+      const motivo = await pedirMotivo('Cancelar cuenta por pagar'); if (!motivo) return;
+      return conBoton(btn, async () => { await json(await api('/finanzas/cxp/' + id + '/cancelar', { method: 'POST', body: JSON.stringify({ motivo }) })); toast('Cuenta cancelada'); cargar({ pestana: 'pagar' }); });
+    }
+    abrirPagoProveedor(id, !!btn.dataset.pagarCxp);
+  });
+  async function abrirPagoProveedor(id, paraPagar) {
+    const x = CXP.find(c => c.id === id); if (!x) return;
+    PAGO_PROV = x;
+    $('pagoprov-info').textContent = `${x.proveedor_nombre} · ${x.concepto} · Saldo ${formatoMoneda(x.saldo)}`;
+    $('pagoprov-monto').value = x.saldo > 0 ? x.saldo.toFixed(2) : '';
+    pintarMetodos('pagoprov-metodos', 'transferencia');
+    $('pagoprov-fecha').value = hoy(); $('pagoprov-fecha').max = hoy(); $('pagoprov-referencia').value = '';
+    $('pagoprov-guardar').disabled = x.saldo <= 0;
+    [$('pagoprov-monto'), $('pagoprov-fecha'), $('pagoprov-referencia'), $('pagoprov-guardar')].forEach(el => { el.closest('.campo') ? (el.closest('.campo').hidden = !paraPagar) : (el.hidden = !paraPagar); });
+    $('pagoprov-metodos').closest('.campo').hidden = !paraPagar;
+    $('pagoprov-historial').innerHTML = '<p class="util-45">Cargando pagos…</p>';
+    abrirVentana('overlay-pago-prov');
+    const pagos = await api('/finanzas/cxp/' + id + '/pagos').then(json).catch(() => []);
+    $('pagoprov-historial').innerHTML = pagos.length ? '<div class="seccion-tit">Pagos registrados</div>' + pagos.map(g => `
+      <div class="pago-fila${g.cancelado ? ' cancelado' : ''}"><div><b>${formatoMoneda(g.monto)}</b> · ${esc(NOMBRE_METODO[g.metodo] || g.metodo)} · ${esc(fechaTxt(g.fecha))}
+        <small>Registró ${esc(g.registrado_por_nombre || '—')}${g.referencia ? ' · Ref. ' + esc(g.referencia) : ''}</small>${g.cancelado ? `<small class="motivo">Cancelado: ${esc(g.motivo_cancelacion || '')}</small>` : ''}</div>
+        ${!g.cancelado ? `<button type="button" class="btn btn-outline" data-cancelar-pagoprov="${Number(g.id)}">Cancelar</button>` : ''}</div>`).join('') : '<p class="util-45">Sin pagos registrados.</p>';
+  }
+  $('pagoprov-historial').addEventListener('click', async e => {
+    const btn = e.target.closest('[data-cancelar-pagoprov]'); if (!btn) return;
+    const motivo = await pedirMotivo('Cancelar pago a proveedor'); if (!motivo) return;
+    conBoton(btn, async () => { await json(await api('/finanzas/pagos-proveedor/' + Number(btn.dataset.cancelarPagoprov) + '/cancelar', { method: 'POST', body: JSON.stringify({ motivo }) }));
+      toast('Pago cancelado'); $('overlay-pago-prov').classList.remove('mostrar'); cargar({ pestana: 'pagar' }); });
+  });
+  $('pagoprov-guardar').addEventListener('click', e => conBoton(e.currentTarget, async () => {
+    if (!PAGO_PROV) return;
+    const r = await enviar('/finanzas/cxp/' + PAGO_PROV.id + '/pagos', 'POST', { monto: $('pagoprov-monto').value.trim(), metodo: metodoElegido('pagoprov-metodos'), fecha: $('pagoprov-fecha').value, referencia: $('pagoprov-referencia').value });
+    if (!r) return;
+    $('overlay-pago-prov').classList.remove('mostrar'); toast('Pago a proveedor guardado'); cargar({ pestana: 'pagar' });
+  }));
+
+  // Nuevo gasto o factura
+  $('pagar-nuevo').addEventListener('click', async () => {
+    try { await catalogosPagos(); } catch (err) { toast('No se pudo cargar: ' + err.message); return; }
+    const activos = PROVEEDORES.filter(p => p.activo);
+    if (!activos.length) { toast('Primero agrega un proveedor'); irPestana('proveedores'); return; }
+    llenarProveedoresGasto();
+    ['gasto-concepto', 'gasto-total', 'gasto-folio', 'gasto-orden', 'gasto-equipo'].forEach(id => { $(id).value = ''; });
+    $('gasto-fecha').value = hoy(); $('gasto-vence').value = hoy(); $('gasto-pagado').checked = false; $('gasto-metodo-wrap').hidden = true;
+    $('gasto-categoria').value = 'otro';
+    pintarMetodos('gasto-metodos', 'efectivo');
+    abrirVentana('overlay-gasto');
+  });
+  function llenarProveedoresGasto(seleccionado) {
+    $('gasto-proveedor').innerHTML = '<option value="">Selecciona…</option>' + PROVEEDORES.filter(p => p.activo).map(p => `<option value="${Number(p.id)}">${esc(p.nombre)}</option>`).join('')
+      + '<option value="__nuevo">+ Nuevo proveedor…</option>';
+    if (seleccionado) $('gasto-proveedor').value = String(seleccionado);
+  }
+  const recalcularVence = () => {
+    const p = PROVEEDORES.find(x => x.id === Number($('gasto-proveedor').value));
+    if (p && $('gasto-fecha').value) $('gasto-vence').value = sumarDias($('gasto-fecha').value, p.dias_credito);
+  };
+  $('gasto-proveedor').addEventListener('change', async () => {
+    if ($('gasto-proveedor').value === '__nuevo') {
+      $('gasto-proveedor').value = '';
+      const nombre = await solicitarDialogo({ titulo: 'Nuevo proveedor', mensaje: 'Se crea con la categoría elegida y sin crédito (contado). Puedes completar sus datos después en la pestaña Proveedores.', aceptar: 'Agregar', campo: { tipo: 'text', etiqueta: 'Nombre del proveedor' } });
+      if (!nombre) return;
+      try {
+        const p = await json(await api('/finanzas/proveedores', { method: 'POST', body: JSON.stringify({ nombre, categoria: $('gasto-categoria').value || 'otro', dias_credito: 0 }) }));
+        await catalogosPagos(); llenarProveedoresGasto(p.id); toast('Proveedor agregado');
+      } catch (err) { toast('No se pudo agregar: ' + err.message); }
+    }
+    const p = PROVEEDORES.find(x => x.id === Number($('gasto-proveedor').value)); if (p) $('gasto-categoria').value = p.categoria; recalcularVence();
+  });
+  $('gasto-fecha').addEventListener('change', recalcularVence);
+  $('gasto-pagado').addEventListener('change', () => { $('gasto-metodo-wrap').hidden = !$('gasto-pagado').checked; });
+  $('gasto-guardar').addEventListener('click', e => conBoton(e.currentTarget, async () => {
+    const orden = $('gasto-orden').value.trim();
+    const leadId = orden ? Number((orden.match(/(\d+)\s*$/) || [])[1]) : null;
+    if (orden && !leadId) { toast('Escribe el folio de la orden (OS-AAAAMM-0000) o su número'); return; }
+    const r = await enviar('/finanzas/cxp', 'POST', {
+      proveedor_id: Number($('gasto-proveedor').value) || null, categoria: $('gasto-categoria').value, concepto: $('gasto-concepto').value,
+      total: $('gasto-total').value.trim(), fecha_documento: $('gasto-fecha').value, fecha_vencimiento: $('gasto-vence').value,
+      factura_folio: $('gasto-folio').value, lead_id: leadId, equipo: $('gasto-equipo').value,
+      ya_pagado: $('gasto-pagado').checked, metodo: metodoElegido('gasto-metodos') });
+    if (!r) return;
+    $('overlay-gasto').classList.remove('mostrar'); toast($('gasto-pagado').checked ? 'Gasto registrado como pagado' : 'Cuenta por pagar registrada'); cargar({ pestana: 'pagar' });
+  }));
+  $('pagar-exportar').addEventListener('click', () => {
+    if (!CXP.length) { toast('No hay datos para exportar'); return; }
+    descargarCSV('cuentas_por_pagar_' + hoy() + '.csv', [
+      { titulo: 'Proveedor', valor: x => x.proveedor_nombre }, { titulo: 'Concepto', valor: x => x.concepto }, { titulo: 'Categoría', valor: x => x.categoria_nombre },
+      { titulo: 'Factura', valor: x => x.factura_folio }, { titulo: 'Fecha', valor: x => x.fecha_documento }, { titulo: 'Vence', valor: x => x.fecha_vencimiento },
+      { titulo: 'Total', valor: x => x.total.toFixed(2) }, { titulo: 'Pagado', valor: x => x.pagado.toFixed(2) }, { titulo: 'Saldo', valor: x => x.saldo.toFixed(2) },
+      { titulo: 'Orden', valor: x => x.lead_id || '' }, { titulo: 'Equipo', valor: x => x.equipo || '' }], CXP);
+  });
+
+  // ---------- Proveedores ----------
+  let PROV_EDITANDO = null;
+  async function cargarProveedores() {
+    const cont = $('prov-lista');
+    try { await catalogosPagos(); } catch (err) { cont.innerHTML = `<div class="aviso-error-carga" role="alert"><p>No se pudo cargar: ${esc(err.message)}</p></div>`; return; }
+    const cat = Object.fromEntries(CATEGORIAS.map(c => [c.clave, c.nombre]));
+    cont.innerHTML = PROVEEDORES.length ? PROVEEDORES.map(p => `
+      <div class="fila-dinero${p.activo ? '' : ' inactivo'}"><div class="info"><b>${esc(p.nombre)}</b>${p.activo ? '' : ' · inactivo'}
+        <small>${esc(cat[p.categoria] || p.categoria)} · crédito ${Number(p.dias_credito)} días${p.telefono ? ' · ' + esc(p.telefono) : ''}${p.rfc ? ' · RFC ' + esc(p.rfc) : ''}</small></div>
+        <div class="montos"><b>${formatoMoneda(p.saldo)}</b><small>por pagar</small></div>
+        <div class="btn-group"><button type="button" class="btn btn-outline" data-editar-prov="${Number(p.id)}">Editar</button>
+          <button type="button" class="btn btn-outline" data-activo-prov="${Number(p.id)}">${p.activo ? 'Desactivar' : 'Activar'}</button></div></div>`).join('')
+      : '<p class="util-45">Aún no hay proveedores. Agrega el primero arriba.</p>';
+    limpiarFormProveedor();
+  }
+  function limpiarFormProveedor() {
+    PROV_EDITANDO = null;
+    ['prov-nombre', 'prov-rfc', 'prov-telefono', 'prov-contacto'].forEach(id => { $(id).value = ''; });
+    $('prov-credito').value = 0; $('prov-categoria').value = 'otro';
+    $('prov-form-titulo').textContent = 'Agregar proveedor'; $('prov-cancelar').hidden = true;
+  }
+  $('prov-cancelar').addEventListener('click', limpiarFormProveedor);
+  $('prov-lista').addEventListener('click', async e => {
+    const btn = e.target.closest('button'); if (!btn) return;
+    const p = PROVEEDORES.find(x => x.id === Number(btn.dataset.editarProv || btn.dataset.activoProv)); if (!p) return;
+    if (btn.dataset.editarProv) {
+      PROV_EDITANDO = p.id;
+      $('prov-nombre').value = p.nombre; $('prov-categoria').value = p.categoria; $('prov-credito').value = p.dias_credito;
+      $('prov-rfc').value = p.rfc || ''; $('prov-telefono').value = p.telefono || ''; $('prov-contacto').value = p.contacto || '';
+      $('prov-form-titulo').textContent = 'Editar proveedor'; $('prov-cancelar').hidden = false; $('prov-nombre').focus();
+      return;
+    }
+    conBoton(btn, async () => { await json(await api('/finanzas/proveedores/' + p.id, { method: 'PUT', body: JSON.stringify({ activo: !p.activo }) })); cargarProveedores(); });
+  });
+  $('prov-guardar').addEventListener('click', e => conBoton(e.currentTarget, async () => {
+    const cuerpo = { nombre: $('prov-nombre').value, categoria: $('prov-categoria').value, dias_credito: $('prov-credito').value,
+      rfc: $('prov-rfc').value, telefono: $('prov-telefono').value, contacto: $('prov-contacto').value };
+    await json(await api('/finanzas/proveedores' + (PROV_EDITANDO ? '/' + PROV_EDITANDO : ''), { method: PROV_EDITANDO ? 'PUT' : 'POST', body: JSON.stringify(cuerpo) }));
+    toast(PROV_EDITANDO ? 'Proveedor actualizado' : 'Proveedor agregado'); cargarProveedores();
+  }));
+
+  // ===================== Inicio: bloque "Dinero" =====================
+  async function pintarInicio() {
+    const cont = $('inicio-dinero');
+    if (!cont || !puedeCartera()) return;
+    let r;
+    try { r = await api('/finanzas/resumen').then(json); }
+    catch (err) { if (err.status !== 401) cont.innerHTML = `<div class="aviso-error-carga" role="alert"><p>No se pudo cargar: ${esc(err.message)}</p><button type="button" class="btn btn-outline" data-inicio-dinero="reintentar">Reintentar</button></div>`; return; }
+    const fila = (accion, texto, detalle, clase = '') => `<button type="button" class="fila-alerta fila-dinero-inicio ${clase}" data-inicio-dinero="${accion}"><span class="info"><b>${texto}</b><span class="txt">${detalle}</span></span><span aria-hidden="true">›</span></button>`;
+    let html = fila('vencido', `Te deben ${formatoMoneda(r.por_cobrar)}`, r.vencido > 0 ? `Vencido: ${formatoMoneda(r.vencido)} · ${Number(r.clientes_con_vencido)} clientes` : 'Nada vencido', r.vencido > 0 ? 'vencido' : '');
+    if (r.por_confirmar?.cantidad) html += fila('cobrar', `Pagos por confirmar: ${Number(r.por_confirmar.cantidad)}`, `${formatoMoneda(r.por_confirmar.monto)} registrados por vendedores o técnicos`, 'aviso');
+    if (r.pagar_semana !== undefined) html += fila('pagar', `Pagar esta semana: ${formatoMoneda(r.pagar_semana)}`, `${Number(r.facturas_semana)} facturas de proveedores (incluye vencidas)`, r.pagar_semana > 0 ? 'aviso' : '');
+    if (esAdmin() && r.por_revisar) html += fila('cobrar', `Revisión inicial pendiente: ${Number(r.por_revisar)} órdenes`, 'Indica cuáles ya se cobraron para que la cartera sea real', 'aviso');
+    cont.innerHTML = html;
+  }
+  $('inicio-dinero')?.addEventListener('click', e => {
+    const b = e.target.closest('[data-inicio-dinero]'); if (!b) return;
+    const a = b.dataset.inicioDinero;
+    if (a === 'reintentar') return pintarInicio();
+    cambiarVista('cuentas', { pestana: a === 'pagar' ? 'pagar' : 'cobrar', filtro: a === 'vencido' ? 'vencido' : undefined });
+  });
+
+  // ===================== Ficha del contacto: estado de cuenta =====================
+  let CLIENTE_ACTUAL_ID = null;
+  async function pintarCliente(cliente) {
+    const cont = $('fc-cobranza'); if (!cont) return;
+    cont.innerHTML = ''; CLIENTE_ACTUAL_ID = cliente?.id || null;
+    if (!CLIENTE_ACTUAL_ID) return;
+    let r;
+    try { r = await api('/finanzas/clientes/' + Number(cliente.id) + '/estado-cuenta').then(json); } catch { return; }
+    if (CLIENTE_ACTUAL_ID !== cliente.id) return;
+    if (r.saldo === undefined) { // ventas / técnico: solo el aviso, sin importes
+      if (r.tiene_vencido) cont.innerHTML = `<p class="cuentas-aviso">⚠ Este cliente tiene pagos vencidos (hasta ${Number(r.dias_max_vencido)} días). Consulta con administración antes de comprometer crédito.</p>`;
+      return;
+    }
+    const ordenes = r.ordenes.map(c => `<div class="pago-fila"><div><b>${esc(c.folio)}</b> · ${esc(c.servicio_nombre || 'Servicio')} ${etiquetaEstado(c)}<small>Saldo ${formatoMoneda(c.saldo)} de ${formatoMoneda(c.total)} · vence ${esc(fechaTxt(c.vence))}</small></div>
+      <button type="button" class="btn btn-outline" data-fc-pagar="${Number(c.lead_id)}">Registrar pago</button></div>`).join('');
+    cont.innerHTML = `<div class="modal-section"><div class="seccion-tit">Estado de cuenta</div>
+      <div class="cobranza-resumen"><div><small>Saldo</small><b>${formatoMoneda(r.saldo)}</b></div><div><small>Vencido</small><b class="${r.vencido > 0 ? 'rojo' : ''}">${formatoMoneda(r.vencido)}</b></div>
+        <div><small>Programado</small><b>${formatoMoneda(r.programado)}</b></div><div><small>Crédito</small><b>${Number(r.dias_credito)} días</b></div></div>
+      ${r.por_revisar_n ? `<p class="ayuda">${Number(r.por_revisar_n)} órdenes anteriores al módulo están pendientes de la revisión inicial.</p>` : ''}
+      <div class="pagos-lista">${ordenes || '<p class="util-45">Sin saldos pendientes. 🎉</p>'}</div></div>`;
+  }
+  $('fc-cobranza')?.addEventListener('click', e => {
+    const b = e.target.closest('[data-fc-pagar]'); if (!b || !CLIENTE_ACTUAL_ID) return;
+    const id = CLIENTE_ACTUAL_ID;
+    abrirCobro(Number(b.dataset.fcPagar), () => pintarCliente({ id }));
+  });
+
+  // Aviso al cotizar o registrar un servicio para un cliente con pagos vencidos (sin importes).
+  async function avisoAdeudo(clienteId, contenedorId) {
+    const el = $(contenedorId); if (!el) return;
+    el.hidden = true; el.textContent = '';
+    if (!clienteId) return;
+    try {
+      const r = await api('/finanzas/clientes/' + Number(clienteId) + '/estado-cuenta').then(json);
+      if (r.tiene_vencido) { el.textContent = `⚠ Este cliente tiene pagos vencidos (hasta ${Number(r.dias_max_vencido)} días).` + (r.vencido ? ' Vencido: ' + formatoMoneda(r.vencido) + '.' : ''); el.hidden = false; }
+    } catch { /* el aviso es opcional: si falla no se interrumpe la captura */ }
+  }
+
+  // Resultados: cobrado y pagado en el periodo (admin y atención; gasto solo admin).
+  async function pintarResultados(desde, hasta) {
+    const cont = $('res-dinero-periodo'); if (!cont) return;
+    cont.innerHTML = '';
+    if (!puedeCartera()) return;
+    const params = new URLSearchParams({ desde: desde || '2000-01-01', hasta: hasta || hoy() });
+    let r;
+    try { r = await api('/finanzas/periodo?' + params).then(json); } catch (err) { cont.innerHTML = `<p class="ayuda">No se pudo cargar lo cobrado: ${esc(err.message)}</p>`; return; }
+    const card = (v, l) => `<div class="res-card"><div class="res-num">${v}</div><div class="res-label">${l}</div></div>`;
+    cont.innerHTML = `<div class="res-grid">${card(formatoMoneda(r.cobrado), 'Cobrado en el periodo (' + Number(r.cobros_n) + ' pagos, por fecha de pago)')}`
+      + (r.pagado !== undefined ? card(formatoMoneda(r.pagado), 'Pagado a proveedores') + card(formatoMoneda(r.gasto_total), 'Gastos registrados (por fecha de factura)') : '') + '</div>'
+      + (r.gasto_por_categoria?.length ? '<div class="res-section"><h3>Gasto por categoría</h3><div id="res-gasto-categoria" class="bar-chart"></div></div>' : '');
+    if (r.gasto_por_categoria?.length && typeof renderBarChart === 'function') renderBarChart('res-gasto-categoria', r.gasto_por_categoria, 'nombre', 'total', formatoMoneda);
+  }
+
+  return { cargar, pintarCobranzaOrden, pintarInicio, abrirCobro, pintarCliente, avisoAdeudo, pintarResultados };
+})();

@@ -643,3 +643,73 @@ body:not(.es-admin) .solo-admin{display:none !important;}
 /* Aviso de error de carga con botón Reintentar */
 .aviso-error-carga{border:1px solid var(--rojo,#c53030);background:#fdecec;border-radius:8px;padding:10px 12px;display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap;}
 .aviso-error-carga p{margin:0;}
+
+/* ===================== Cuentas por cobrar y por pagar ===================== */
+body:not(.puede-cobranza) .solo-cobranza{display:none !important;}
+.inicio-bloque-dinero{border-top:3px solid var(--amarillo);}
+.cuentas-tarjetas{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin:8px 0 16px;}
+.tarjeta-dinero{background:#fff;border:1px solid var(--gris-200);border-radius:var(--radio);padding:12px 14px;display:flex;flex-direction:column;gap:2px;box-shadow:var(--sombra);}
+.tarjeta-dinero small{color:var(--texto-sec);font-size:12px;text-transform:uppercase;letter-spacing:.03em;}
+.tarjeta-dinero b{font-size:20px;}
+.tarjeta-dinero span{color:var(--texto-sec);font-size:12px;}
+.tarjeta-dinero.alerta{border-left:4px solid var(--rojo);}
+.tarjeta-dinero.aviso{border-left:4px solid var(--amarillo);}
+.cuentas-pestanas{display:flex;gap:6px;border-bottom:2px solid var(--gris-200);margin-bottom:14px;overflow-x:auto;}
+.cuentas-pestanas button{background:none;border:0;border-bottom:3px solid transparent;padding:10px 14px;font:inherit;font-weight:600;color:var(--texto-sec);cursor:pointer;white-space:nowrap;margin-bottom:-2px;}
+.cuentas-pestanas button.activo{color:var(--texto);border-bottom-color:var(--amarillo);}
+.cuentas-aviso{background:#fff8dc;border:1px solid var(--amarillo);border-radius:var(--radio);padding:10px 12px;margin:0 0 12px;}
+.cuentas-aviso p{margin:0 0 8px;}
+.fila-dinero{display:grid;grid-template-columns:1fr auto auto;gap:12px;align-items:center;background:#fff;border:1px solid var(--gris-200);border-radius:var(--radio);padding:10px 12px;}
+.fila-dinero.vencida{border-left:4px solid var(--rojo);}
+.fila-dinero.inactivo{opacity:.6;}
+.fila-dinero .info small,.pago-fila small{display:block;color:var(--texto-sec);font-size:12px;margin-top:2px;}
+.fila-dinero .montos{text-align:right;display:flex;flex-direction:column;}
+.fila-dinero .montos b{font-size:17px;}
+.fila-dinero .montos small{color:var(--texto-sec);font-size:12px;}
+.fila-dinero .btn-group{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;}
+.rojo{color:var(--rojo) !important;}
+.estado-cxc{display:inline-block;font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px;margin-left:4px;background:var(--gris-200);color:var(--texto);vertical-align:middle;}
+.estado-cxc.pagada{background:#e3f1ea;color:var(--verde);}
+.estado-cxc.vencida{background:#fbe6e3;color:var(--rojo);}
+.estado-cxc.parcial,.estado-cxc.por-confirmar{background:#fff3cd;color:var(--amarillo-texto);}
+.estado-cxc.programada{background:#e3eef5;color:var(--azul-600);}
+.grupo-pagos{font-size:15px;margin:16px 0 8px;display:flex;gap:8px;align-items:baseline;}
+.grupo-pagos small{color:var(--texto-sec);font-weight:400;}
+#pagar-lista .fila-dinero{margin-bottom:8px;}
+.cobranza-resumen{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:10px;align-items:center;background:var(--gris-100);border-radius:var(--radio);padding:10px 12px;margin-bottom:10px;}
+.cobranza-resumen small{display:block;color:var(--texto-sec);font-size:11px;text-transform:uppercase;}
+.cobranza-resumen b{font-size:16px;}
+.cobranza-facturacion{margin:12px 0;}
+.cobranza-facturacion summary,.modal-dinero details summary{cursor:pointer;font-weight:600;padding:6px 0;}
+.pagos-lista{display:flex;flex-direction:column;gap:6px;margin-top:10px;}
+.pago-fila{display:flex;justify-content:space-between;gap:10px;align-items:center;border:1px solid var(--gris-200);border-radius:8px;padding:8px 10px;background:#fff;}
+.pago-fila.cancelado{opacity:.65;}
+.pago-fila.cancelado b{text-decoration:line-through;}
+.pago-fila .motivo{color:var(--rojo);}
+.metodos{display:flex;flex-wrap:wrap;gap:6px;}
+.metodo{border:1px solid var(--gris-300);background:#fff;border-radius:999px;padding:9px 14px;font:inherit;cursor:pointer;min-height:40px;}
+.metodo.activo{background:var(--azul-600);border-color:var(--azul-600);color:#fff;}
+.etiqueta-campo{display:block;font-size:13px;font-weight:600;margin-bottom:6px;}
+.modal-dinero{max-width:520px;}
+.modal-dinero .campo{margin-bottom:12px;}
+.modal-dinero input[type=text],.modal-dinero input[type=date],.modal-dinero input[type=number],.modal-dinero select{width:100%;font-size:16px;}
+.btn-ancho{width:100%;margin-top:8px;min-height:46px;font-size:16px;}
+.revision-tabla{display:flex;flex-direction:column;gap:6px;margin:10px 0;}
+.revision-fila{display:flex;justify-content:space-between;gap:10px;align-items:center;background:#fff;border:1px solid var(--gris-200);border-radius:8px;padding:8px 10px;}
+.fila-dinero-inicio{width:100%;text-align:left;cursor:pointer;font:inherit;display:flex;justify-content:space-between;align-items:center;}
+.fila-dinero-inicio.vencido{border-left:4px solid var(--rojo);}
+.fila-dinero-inicio.aviso{border-left:4px solid var(--amarillo);}
+@media(max-width:720px){
+  .fila-dinero{grid-template-columns:1fr auto;}
+  .fila-dinero .btn-group{grid-column:1/-1;justify-content:stretch;}
+  .fila-dinero .btn-group .btn{flex:1;}
+  .pago-fila,.revision-fila{flex-direction:column;align-items:stretch;}
+  .tarjeta-dinero b{font-size:18px;}
+}
+.fila-dinero-inicio .info{display:flex;flex-direction:column;gap:2px;}
+.fila-dinero-inicio .txt{color:var(--texto-sec);font-size:13px;}
+.modal-dinero .modal-body{padding:16px 20px 20px;}
+@media(max-width:600px){.modal-dinero .modal-body{padding:14px;}}
+/* Los filtros de cuentas son muchos: que bajen de renglón en vez de ensanchar la página. */
+#cobrar-filtros{flex-wrap:wrap;}
+#cobrar-filtros button{flex:0 0 auto;}

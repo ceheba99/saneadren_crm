@@ -26,6 +26,7 @@
     <button data-vista="clientes">Contactos y clientes</button>
     <button data-vista="pendientes">Pendientes <span id="badge-pendientes">0</span></button>
     <button data-vista="resultados">Resultados</button>
+    <button class="solo-cobranza" data-vista="cuentas" id="nav-cuentas">Cuentas</button>
     <button data-vista="catalogos" id="nav-catalogos">Catálogos</button>
     <button class="diseno-nav-usuarios solo-admin" data-vista="usuarios" id="nav-usuarios">Usuarios</button>
   </nav>
@@ -42,6 +43,11 @@
     <div class="inicio-saludo">
       <h2>Lo que necesita atención hoy</h2>
       <p class="ayuda">Todo lo que ya vencido o toca hoy, junto en un solo lugar. Cada tarjeta te lleva directo al registro — no hace falta buscarlo.</p>
+    </div>
+
+    <div class="inicio-bloque inicio-bloque-dinero solo-cobranza">
+      <h3>💰 Dinero</h3>
+      <div id="inicio-dinero" class="inicio-lista"></div>
     </div>
 
     <div class="inicio-bloque inicio-bloque-cotizacion">
@@ -253,6 +259,7 @@
     <div class="filtros"><label>Desde <input type="date" id="res-desde"></label><label>Hasta <input type="date" id="res-hasta"></label><button class="btn btn-primario" id="res-aplicar">Consultar</button><button class="btn btn-outline" id="res-todo">Todo el historial</button><button class="btn btn-outline solo-admin" id="res-exportar">Exportar canales a Excel</button></div>
     <p class="ayuda">Contactos nuevos: fecha de registro. Importe contratado: fecha acordada del servicio. Cada contacto y sus servicios se atribuyen a “Cómo se enteró de nosotros”. El importe contratado no equivale a cobros ni utilidad.</p>
     <p id="res-estado" role="status"></p><div class="res-grid" id="res-kpis"></div>
+    <div class="solo-cobranza" id="res-dinero-periodo"></div>
     <div class="res-section"><h3>¿Qué canales traen contactos y generan contrataciones?</h3><p class="ayuda">Conversión: contactos nuevos del periodo que ya han contratado al día de hoy / contactos nuevos del periodo. Las contrataciones pueden provenir de contactos registrados antes.</p><div class="tabla-scroll"><table class="tabla-resumen"><thead><tr><th>Canal de origen</th><th>Leads nuevos (contactos)</th><th>Convertidos a cliente</th><th>Conversión</th><th>Clientes con servicio</th><th>Servicios contratados</th><th>Importe contratado</th><th>Promedio por servicio</th><th>Propuestas abiertas</th><th>Importe abierto</th></tr></thead><tbody id="res-canales"></tbody></table></div></div>
     <div class="res-two-col"><div class="res-section"><h3>Importe contratado por canal</h3><div id="res-dinero-canal" class="bar-chart"></div></div><div class="res-section"><h3>Contactos nuevos por canal</h3><div id="res-contactos-canal" class="bar-chart"></div></div></div>
     <div id="res-kpis-extra" class="res-grid"></div>
@@ -314,6 +321,65 @@
     <p class="ayuda">Cambia nombre, correo o rol y pulsa Guardar. "Nueva contraseña" asigna una temporal que la persona deberá cambiar al entrar; al cambiar el rol o la contraseña se cierran sus sesiones abiertas.</p>
     <div id="lista-usuarios"></div>
 
+  </section>
+
+  <!-- ====== VISTA: CUENTAS POR COBRAR Y POR PAGAR (admin y atención; por pagar solo admin) ====== -->
+  <section class="vista" id="vista-cuentas">
+    <h2 class="util-13">Cuentas</h2>
+    <div class="cuentas-tarjetas" id="cuentas-tarjetas"></div>
+    <div class="cuentas-pestanas" role="tablist">
+      <button type="button" role="tab" class="activo" data-pestana="cobrar">Por cobrar</button>
+      <button type="button" role="tab" class="solo-admin" data-pestana="pagar">Por pagar</button>
+      <button type="button" role="tab" class="solo-admin" data-pestana="proveedores">Proveedores</button>
+    </div>
+
+    <div class="cuentas-panel" data-panel="cobrar">
+      <div id="cuentas-revision" class="cuentas-aviso solo-admin" hidden></div>
+      <div id="cuentas-por-confirmar" class="solo-admin"></div>
+      <div class="pendientes-filtros" id="cobrar-filtros">
+        <button type="button" class="activo" data-filtro-cobro="con_saldo">Con saldo</button>
+        <button type="button" data-filtro-cobro="vencido">Vencido</button>
+        <button type="button" data-filtro-cobro="por_vencer">Por vencer</button>
+        <button type="button" data-filtro-cobro="programadas">Programadas</button>
+        <button type="button" data-filtro-cobro="1-15">1-15 días</button>
+        <button type="button" data-filtro-cobro="16-30">16-30</button>
+        <button type="button" data-filtro-cobro="31-60">31-60</button>
+        <button type="button" data-filtro-cobro="60+">Más de 60</button>
+        <button type="button" data-filtro-cobro="sin_factura">Sin factura</button>
+        <button type="button" data-filtro-cobro="todas">Todas</button>
+      </div>
+      <div class="filtros">
+        <select id="cobrar-vista" aria-label="Agrupar"><option value="cliente">Por cliente</option><option value="orden">Por orden</option></select>
+        <input type="text" id="cobrar-buscar" placeholder="Cliente, empresa, teléfono, servicio o factura" aria-label="Buscar en cuentas por cobrar">
+        <button type="button" class="btn btn-outline solo-admin" id="cobrar-exportar">📥 Exportar a Excel</button>
+      </div>
+      <div id="cobrar-lista" class="inicio-lista"></div>
+    </div>
+
+    <div class="cuentas-panel solo-admin" data-panel="pagar" hidden>
+      <div class="filtros">
+        <button type="button" class="btn btn-primario" id="pagar-nuevo">+ Registrar gasto o factura</button>
+        <select id="pagar-vista" aria-label="Mostrar"><option value="pendientes">Por pagar</option><option value="todas">Todas (incluye pagadas)</option></select>
+        <button type="button" class="btn btn-outline" id="pagar-exportar">📥 Exportar a Excel</button>
+      </div>
+      <div id="pagar-lista"></div>
+    </div>
+
+    <div class="cuentas-panel solo-admin" data-panel="proveedores" hidden>
+      <div class="panel-alta">
+        <h2 id="prov-form-titulo">Agregar proveedor</h2>
+        <div class="form-grid">
+          <div class="campo"><label for="prov-nombre">Nombre</label><input id="prov-nombre" maxlength="120" placeholder="Ej. Disposición del Bajío"></div>
+          <div class="campo"><label for="prov-categoria">Categoría de sus gastos</label><select id="prov-categoria"></select></div>
+          <div class="campo"><label for="prov-credito">Días de crédito que nos da</label><input id="prov-credito" type="number" min="0" max="180" step="1" value="0"></div>
+          <div class="campo"><label for="prov-rfc">RFC (opcional)</label><input id="prov-rfc" maxlength="13"></div>
+          <div class="campo"><label for="prov-telefono">Teléfono (opcional)</label><input id="prov-telefono" maxlength="25" inputmode="tel"></div>
+          <div class="campo"><label for="prov-contacto">Contacto (opcional)</label><input id="prov-contacto" maxlength="120"></div>
+        </div>
+        <div class="btn-group"><button type="button" class="btn btn-primario" id="prov-guardar">Guardar proveedor</button><button type="button" class="btn btn-outline" id="prov-cancelar" hidden>Cancelar edición</button></div>
+      </div>
+      <div id="prov-lista" class="inicio-lista"></div>
+    </div>
   </section>
 
   <section class="vista" id="vista-catalogos">
@@ -422,6 +488,10 @@
           <span class="chip util-17">Fecha de creación: <b id="ed-created-at">—</b></span>
           <span class="chip util-17">Estatus de cotización: <b id="ed-estatus-actual">—</b></span>
         </div>
+        <div class="modal-section" id="seccion-cobranza" hidden>
+          <div class="seccion-tit">Cobranza de esta orden</div>
+          <div id="cobranza-orden"></div>
+        </div>
         <div class="modal-section" id="seccion-encuesta" hidden>
           <div class="seccion-tit">Encuesta de calidad del servicio</div>
           <p class="ayuda">Se imprime en la orden de servicio para que el cliente la conteste en papel; regístrala aquí cuando el técnico la traiga de vuelta. Se guarda con el mismo botón de "Guardar cambios" de abajo.</p>
@@ -526,6 +596,7 @@
         <div class="relacion-registros"><div><div class="seccion-tit">Cotizaciones y servicios de este contacto</div><p class="ayuda">Una cotización abierta es una propuesta. Al aceptarla, el mismo registro pasa a servicio contratado; conserva su número e importe.</p></div>
         <div class="btn-group"><button class="btn btn-primario" id="btn-contacto-cotizar">📄 Crear cotización</button><button class="btn btn-secundario" id="btn-recapturar-servicio" title="Para cuando el cliente ya confirmó: registra el servicio sin pasar por cotización">🧾 Crear orden de servicio</button></div></div>
         <div class="ficha-meta" id="fc-meta"></div>
+        <div id="fc-cobranza"></div>
         <div id="fc-servicios" class="servicios-list"></div>
       </div>
     </div>
@@ -586,6 +657,67 @@
   </div>
 </div>
 
+<!-- ====== OVERLAY: REGISTRAR PAGO DE CLIENTE ====== -->
+<div class="overlay" id="overlay-cobro">
+  <div class="modal modal-dinero">
+    <div class="modal-header"><h2 id="cobro-titulo">Registrar pago</h2><button class="close-btn" type="button">✕</button></div>
+    <div class="modal-body">
+      <p class="chip" id="cobro-info"></p>
+      <div class="campo"><label for="cobro-monto">Monto (MXN)</label><input id="cobro-monto" type="text" inputmode="decimal" autocomplete="off"></div>
+      <div class="campo"><span class="etiqueta-campo">¿Cómo pagó?</span><div class="metodos" id="cobro-metodos"></div></div>
+      <div class="campo"><label for="cobro-fecha">Fecha en que llegó el dinero</label><input id="cobro-fecha" type="date"></div>
+      <div class="campo solo-admin"><label for="cobro-tipo">Tipo</label><select id="cobro-tipo"><option value="">Automático (anticipo o pago)</option><option value="anticipo">Anticipo</option><option value="pago">Pago</option><option value="ajuste">Ajuste o descuento</option></select></div>
+      <details><summary>Más datos (referencia y nota)</summary>
+        <div class="campo"><label for="cobro-referencia">Referencia (núm. de transferencia o cheque)</label><input id="cobro-referencia" maxlength="120"></div>
+        <div class="campo"><label for="cobro-notas">Nota</label><input id="cobro-notas" maxlength="500"></div>
+      </details>
+      <p class="ayuda" id="cobro-aviso"></p>
+      <button type="button" class="btn btn-primario btn-ancho" id="cobro-guardar">Guardar pago</button>
+    </div>
+  </div>
+</div>
+
+<!-- ====== OVERLAY: REGISTRAR GASTO O FACTURA DE PROVEEDOR ====== -->
+<div class="overlay" id="overlay-gasto">
+  <div class="modal modal-dinero">
+    <div class="modal-header"><h2>Registrar gasto o factura</h2><button class="close-btn" type="button">✕</button></div>
+    <div class="modal-body">
+      <div class="campo"><label for="gasto-proveedor">Proveedor</label><select id="gasto-proveedor"></select><small class="ayuda">¿No está? Agrégalo en la pestaña Proveedores.</small></div>
+      <div class="campo"><label for="gasto-categoria">Categoría</label><select id="gasto-categoria"></select></div>
+      <div class="campo"><label for="gasto-concepto">Concepto</label><input id="gasto-concepto" maxlength="200" placeholder="Ej. Disposición 12 m3 de lodos"></div>
+      <div class="campo"><label for="gasto-total">Total a pagar con IVA (MXN)</label><input id="gasto-total" type="text" inputmode="decimal" autocomplete="off"></div>
+      <div class="form-grid-2">
+        <div class="campo"><label for="gasto-fecha">Fecha de la factura o gasto</label><input id="gasto-fecha" type="date"></div>
+        <div class="campo"><label for="gasto-vence">Vence (según crédito del proveedor)</label><input id="gasto-vence" type="date"></div>
+      </div>
+      <details><summary>Factura, orden y equipo (opcional)</summary>
+        <div class="campo"><label for="gasto-folio">Folio de la factura del proveedor</label><input id="gasto-folio" maxlength="60"></div>
+        <div class="campo"><label for="gasto-orden">Orden de servicio relacionada (folio OS o número)</label><input id="gasto-orden" type="text" maxlength="20" placeholder="Ej. OS-202610-0051"></div>
+        <div class="campo"><label for="gasto-equipo">Equipo</label><input id="gasto-equipo" maxlength="200" placeholder="Ej. E-37-04"></div>
+      </details>
+      <label class="diseno-campo-checkbox"><input type="checkbox" id="gasto-pagado"> Ya lo pagué (gasto de contado)</label>
+      <div class="campo" id="gasto-metodo-wrap" hidden><span class="etiqueta-campo">¿Cómo se pagó?</span><div class="metodos" id="gasto-metodos"></div></div>
+      <button type="button" class="btn btn-primario btn-ancho" id="gasto-guardar">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ====== OVERLAY: PAGAR A PROVEEDOR ====== -->
+<div class="overlay" id="overlay-pago-prov">
+  <div class="modal modal-dinero">
+    <div class="modal-header"><h2>Pagar a proveedor</h2><button class="close-btn" type="button">✕</button></div>
+    <div class="modal-body">
+      <p class="chip" id="pagoprov-info"></p>
+      <div class="campo"><label for="pagoprov-monto">Monto (MXN)</label><input id="pagoprov-monto" type="text" inputmode="decimal" autocomplete="off"></div>
+      <div class="campo"><span class="etiqueta-campo">¿Cómo se pagó?</span><div class="metodos" id="pagoprov-metodos"></div></div>
+      <div class="campo"><label for="pagoprov-fecha">Fecha del pago</label><input id="pagoprov-fecha" type="date"></div>
+      <div class="campo"><label for="pagoprov-referencia">Referencia (opcional)</label><input id="pagoprov-referencia" maxlength="120"></div>
+      <div id="pagoprov-historial"></div>
+      <button type="button" class="btn btn-primario btn-ancho" id="pagoprov-guardar">Guardar pago</button>
+    </div>
+  </div>
+</div>
+
 <!-- ====== OVERLAY: CAPTURAR SERVICIO NUEVO ====== -->
 <div class="overlay diseno-overlay-login" id="overlay-servicio-nuevo">
   <div class="modal util-28">
@@ -595,6 +727,7 @@
     </div>
     <div class="modal-body util-29">
       <div class="chip diseno-sn-cliente-info" id="sn-cliente-info"></div>
+      <p class="cuentas-aviso" id="sn-aviso-adeudo" role="status" hidden></p>
       <p class="ayuda diseno-sn-ayuda" id="sn-ayuda"></p>
       <div class="form-grid util-25">
         <div class="campo">
@@ -656,6 +789,7 @@
 <script src="servicios-tabla.js"></script>
 <script src="flujo.js"></script>
 <script src="cuentas.js"></script>
+<script src="finanzas.js"></script>
 <script src="app.js"></script>
 <script src="prospeccion.js"></script>
 </body>

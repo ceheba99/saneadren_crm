@@ -15,10 +15,7 @@ const PORT = process.env.PORT || 3210;
 // URL pública del CRM; se usa en los enlaces de los correos (nunca se toma del encabezado Host).
 const URL_BASE = (process.env.APP_URL || `http://localhost:${PORT}`).replace(/\/+$/, '');
 
-// Fecha de hoy (AAAA-MM-DD) en la hora de México, sin depender del reloj del servidor.
-function hoyMexico() {
-  return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Mexico_City', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
-}
+const { hoyMexico } = require('./fechas');
 
 const app = express();
 // Detrás de un proxy (Nginx, Cloudflare, etc.) define TRUST_PROXY=1 para que req.ip sea la IP real
@@ -125,6 +122,8 @@ app.use('/api', (req, res, next) => {
 });
 
 require('./prospeccion')(app,db,h);
+// Cuentas por cobrar y por pagar. Devuelve ganchos que usan las rutas de órdenes de abajo.
+const finanzas = require('./finanzas')(app, db, h);
 
 // ---------- Catálogos ----------
 app.get('/api/usuarios', h((req, res) => {
@@ -593,6 +592,7 @@ app.post('/api/leads', validarPartidas, validarRegistro, h((req, res) => {
   db.prepare(`INSERT INTO historial (lead_id, tipo, texto, usuario, origen) VALUES (?, 'observacion', ?, ?, 'sistema')`)
     .run(info.lastInsertRowid, duplicadoDe ? `Orden de servicio duplicada a partir del registro #${duplicadoDe}.` : estatus === 'ganado' ? 'Servicio registrado directamente como contratado.' : 'Cotización creada.', creado_por || null);
 
+  if (estatus === 'ganado') finanzas.copiarCredito(info.lastInsertRowid);
   return db.prepare('SELECT * FROM leads WHERE id = ?').get(info.lastInsertRowid);
   })();
   res.status(201).json(creado);
@@ -623,6 +623,22 @@ app.put('/api/leads/:id', validarPartidas, validarRegistro, h((req, res) => {
   // (el resumen mensual de Clientes terminaba usando la fecha de creación del lead).
   if (actual.origen === 'directo' && req.body.estatus !== undefined && req.body.estatus !== 'ganado') {
     return res.status(400).json({ error: 'Esta orden de servicio no viene de una cotización; no puede reabrirse ni descartarse como cotización. Si fue un error, elimínala.' });
+  }
+  // Una orden con pagos registrados no puede volver a ser cotización, ni bajar su importe por
+  // debajo de lo ya cobrado (si no hay total facturado que mande sobre el importe).
+  if (actual.estatus === 'ganado' && req.body.estatus !== undefined && req.body.estatus !== 'ganado' && finanzas.tieneCobros(actual.id)) {
+    return res.status(409).json({ error: 'Esta orden tiene pagos registrados: no puede reabrirse ni descartarse. Si fue un error, un administrador debe cancelar primero esos pagos.' });
+  }
+  // El importe de una orden de servicio es lo que el cliente debe: solo administración o atención
+  // pueden cambiarlo (un vendedor o técnico podría, si no, "saldar" una deuda editando las partidas).
+  const cambiaImporte = actual.estatus === 'ganado' && req.body.valor !== undefined && req.body.valor !== null
+    && Math.round(Number(req.body.valor) * 100) !== Math.round(Number(actual.valor || 0) * 100);
+  if (cambiaImporte && !['admin', 'atencion'].includes(req.usuarioSesion.rol)) {
+    return res.status(403).json({ error: 'Solo administración o atención pueden cambiar el importe de una orden de servicio. Para un descuento, pide un ajuste al administrador.' });
+  }
+  if (actual.estatus === 'ganado' && actual.factura_total_cent == null && req.body.valor !== undefined && req.body.valor !== null
+    && Math.round(Number(req.body.valor) * 100) < finanzas.cobradoCent(actual.id)) {
+    return res.status(400).json({ error: 'El importe no puede quedar por debajo de lo que el cliente ya pagó.' });
   }
   if ((req.body.estatus || actual.estatus) === 'ganado') {
     const valorEfectivo = req.body.valor !== undefined ? req.body.valor : actual.valor;
@@ -676,6 +692,12 @@ app.put('/api/leads/:id', validarPartidas, validarRegistro, h((req, res) => {
     const textoEvento = { ganado: 'Cotización marcada como ganada (servicio contratado).', perdido: 'Cotización marcada como no aceptada.', abierto: 'Cotización reabierta.' }[req.body.estatus] || ('Estatus cambiado a ' + req.body.estatus + '.');
     db.prepare(`INSERT INTO historial (lead_id, tipo, texto, usuario, origen) VALUES (?, 'observacion', ?, ?, 'sistema')`)
       .run(id, textoEvento, req.usuarioSesion?.nombre || null);
+    if (req.body.estatus === 'ganado') finanzas.copiarCredito(id);
+  }
+  if (cambiaImporte) {
+    const fmt = v => '$' + Number(v || 0).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    db.prepare(`INSERT INTO historial (lead_id, tipo, texto, usuario, origen) VALUES (?, 'observacion', ?, ?, 'sistema')`)
+      .run(id, `Importe de la orden cambiado: ${fmt(actual.valor)} → ${fmt(req.body.valor)}.`, req.usuarioSesion.nombre);
   }
   res.json(db.prepare('SELECT * FROM leads WHERE id = ?').get(id));
 }));
@@ -712,6 +734,10 @@ app.delete('/api/leads/:id', h((req, res) => {
   if (req.usuarioSesion.rol !== 'admin') return res.status(403).json({ error: 'Solo un administrador puede eliminar cotizaciones u órdenes de servicio' });
   const lead = db.prepare('SELECT * FROM leads WHERE id = ?').get(req.params.id);
   if (!lead) return res.status(404).json({ error: 'Cotización no encontrada' });
+  // Los pagos son el rastro del dinero: una orden que alguna vez tuvo pagos no se borra.
+  if (db.prepare('SELECT 1 FROM cobros WHERE lead_id = ? LIMIT 1').get(lead.id)) {
+    return res.status(409).json({ error: 'Esta orden tiene pagos registrados y no se puede eliminar, para conservar el rastro del dinero.' });
+  }
   console.log(`[eliminado] registro #${lead.id} (${lead.estatus}, ${lead.valor ?? 'sin importe'}) de cliente #${lead.cliente_id} por ${req.usuarioSesion.nombre}`);
   // El historial se borra en cascada (ON DELETE CASCADE). El cliente y sus otros servicios/cotizaciones no se tocan.
   db.prepare('DELETE FROM leads WHERE id = ?').run(req.params.id);

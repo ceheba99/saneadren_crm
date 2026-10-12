@@ -94,10 +94,12 @@ function limitador({ max, ventanaMs, clave, mensaje }) {
 // Evita notas de cientos de KB (lentitud, respaldos inflados, PDFs rotos) y teléfonos con
 // letras o símbolos (que además servían para esconder código en la página).
 const LIMITES_TEXTO = {
-  nombre: 120, empresa_contacto: 120, direccion: 300, correo: 254, rfc: 20, giro: 80,
-  notas_iniciales: 3000, notas_generales: 3000, notas: 3000, observaciones: 3000, necesidades: 5000,
-  texto: 2000, motivo: 500, persona: 120, cargo: 120, zona: 120, fuente: 120,
-  equipo: 200, operador: 300, encuesta_comentario: 1000, referencia: 120, concepto: 300,
+  // Topes holgados: deben ser >= a los que ya aceptaban las pantallas (p. ej. prospección, 500)
+  // para no impedir editar registros existentes.
+  nombre: 500, empresa_contacto: 300, direccion: 500, correo: 254, rfc: 20, giro: 80,
+  notas_iniciales: 10000, notas_generales: 10000, notas: 3000, observaciones: 3000, necesidades: 5000,
+  texto: 2000, motivo: 500, persona: 500, cargo: 500, zona: 500, fuente: 500,
+  equipo: 200, operador: 300, encuesta_comentario: 1000, referencia: 120, concepto: 300, factura_folio: 60,
 };
 const TELEFONO = /^[\d\s()+.\-]{7,25}$/;
 function limitarCampos(req, res, next) {

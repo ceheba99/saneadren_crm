@@ -10,6 +10,12 @@
   - *Orden de servicio* (folio `OS-`): sale de una cotización aceptada, o se registra directo cuando el cliente ya confirmó. Solo las órdenes se pueden **duplicar** (servicio recurrente): se copian partidas, importe, ubicación y notas, y solo se pide la nueva fecha. Una orden directa o duplicada no muestra folio de cotización ni se puede "reabrir" como cotización.
 - **Membretes**: `public/membrete-cotizacion.png` y `public/membrete-orden-servicio.png` se generan con `node herramientas/membretes/servidor.js` → http://localhost:3301 → "Guardar en public/". Los datos de contacto y textos están al inicio de `herramientas/membretes/membretes.html`.
 - **Cuentas y seguridad**: el personal se registra solo con correo `@saneadren.com.mx` (debe confirmar el correo antes de entrar), puede restablecer su contraseña por correo y se le pide cambiar contraseñas débiles heredadas (p. ej. `1234`) al iniciar sesión. Ver "Configuración de correo" abajo.
+- **Cuentas por cobrar y por pagar** (pestaña **Cuentas**, admin y atención):
+  - *Por cobrar*: cada orden de servicio es una cuenta por cobrar. Saldo = total (o total facturado con IVA, si se captura) − pagos. Antigüedad (por vencer, 1-15, 16-30, 31-60, +60), vista por cliente u orden, recordatorio por WhatsApp, días de crédito por cliente y por orden, folio y fecha de factura CFDI (emitida fuera del sistema).
+  - Los pagos se registran desde la lista o desde la ficha de la orden. Ventas y técnicos pueden registrarlos en campo, pero quedan **por confirmar** hasta que el admin los valida. Los pagos **no se borran**: el admin los cancela con motivo y queda en la bitácora.
+  - *Revisión inicial*: las órdenes que ya existían al instalar el módulo no cuentan como deuda hasta que el admin indica cuáles ya se cobraron.
+  - *Por pagar* y *Proveedores* (solo admin): facturas o gastos de proveedores con vencimiento según su crédito, gasto de contado ("ya lo pagué"), pagos parciales, agrupado por vencidas / esta semana / próxima semana, y relación opcional con una orden y un equipo.
+  - Inicio muestra el bloque **Dinero** (te deben, vencido, por confirmar, pagar esta semana).
 - **Permisos**:
   | Acción | Todos | Solo admin |
   |---|---|---|
@@ -19,12 +25,17 @@
   | Dar de alta / eliminar servicios y cambiar su recurrencia | | ✔ |
   | Agregar, renombrar y reordenar canales ("cómo se enteró") | ✔ | |
   | Agregar y renombrar tipos de cliente | ✔ | |
-  El servidor valida cada permiso; ocultar botones en pantalla es solo comodidad.
+  | Ver cuentas por cobrar, crédito y facturas | (admin y atención) | |
+  | Registrar un pago de cliente desde la orden | ✔ (ventas/técnico: queda por confirmar) | |
+  | Confirmar o cancelar pagos, revisión inicial | | ✔ |
+  | Cuentas por pagar y proveedores | | ✔ |
+  | Borrar cotizaciones u órdenes (sin pagos) | | ✔ |
+  El servidor valida los permisos de cada acción de la tabla. Ojo: las pantallas de trabajo (contactos, cotizaciones) muestran sus datos a todos los usuarios con sesión, así que ocultar "Exportar a Excel" evita la descarga masiva con un clic, pero no impide que alguien copie lo que ve.
 - **Vista de alertas**: todas las alertas vencidas o de hoy, con acceso directo a la ficha del lead y botón para resolverlas.
 - **Filtros**: por responsable, por estatus (abierto/ganado/perdido) y búsqueda por nombre o teléfono.
 
 ## Requisitos
-- Node.js 18+
+- Node.js 22.12 o superior
 
 ## Instalación
 ```bash
@@ -61,7 +72,9 @@ Edita el bloque `seed()` en `server/db.js`:
 - **Servicios**: lista de servicios que ofrece Saneadren (ya precargada con desazolve, retiro de agua, fosas, trampas de grasa, video inspección, CIPP, plantas de tratamiento, industrial).
 - **Canales**: cada canal apunta a un `responsable_default_id` (el índice del usuario en el array, empezando en 1). Cambia esos números para asignar quién atiende cada canal.
 
-Después de editar, borra `saneadren.db` (o las tablas correspondientes) para que se vuelva a poblar, o inserta manualmente con SQL.
+Estos catálogos iniciales solo se cargan en una base nueva. **Nunca borres `saneadren.db`**: ahí están todos los clientes, cotizaciones, órdenes y pagos. Para cambiar catálogos de una base en uso, hazlo desde la pestaña **Catálogos** del CRM.
+
+**Respaldo:** usa **Usuarios → Descargar respaldo** (genera una copia completa y consistente). No copies solo `saneadren.db` a mano con el servidor encendido: parte de los datos recientes vive en `saneadren.db-wal`.
 
 ## Estructura
 ```

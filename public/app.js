@@ -116,8 +116,9 @@ function fechaCorta(iso) {
 document.querySelectorAll('header nav button').forEach(btn => {
   btn.addEventListener('click', () => cambiarVista(btn.dataset.vista));
 });
-function cambiarVista(v) {
+function cambiarVista(v, opciones) {
   if (v === 'usuarios' && USUARIO_ACTUAL?.rol !== 'admin') v = 'inicio';
+  if (v === 'cuentas' && !['admin', 'atencion'].includes(USUARIO_ACTUAL?.rol)) v = 'inicio';
   document.querySelectorAll('.vista').forEach(s => s.classList.remove('activa'));
   document.getElementById('vista-' + v).classList.add('activa');
   document.querySelectorAll('header nav button').forEach(b => b.classList.toggle('activa', b.dataset.vista === v));
@@ -128,6 +129,7 @@ function cambiarVista(v) {
   if (v === 'pendientes') cargarPendientes();
   if (v === 'resultados') cargarResultados();
   if (v === 'usuarios') cargarUsuarios();
+  if (v === 'cuentas') Finanzas.cargar(opciones);
   if (v === 'catalogos') { cargarTiposCliente(); cargarCatalogoServicios(); cargarCanalesCatalogo(); }
 }
 
@@ -215,6 +217,7 @@ function abrirServicioNuevo(modo, prefill) {
   document.getElementById('sn-label-fecha').textContent = esDirecto ? 'Fecha acordada del servicio' : 'Fecha del servicio (si ya se sabe)';
   document.getElementById('sn-cliente-info').innerHTML =
     `<b>${escaparHtml(CLIENTE_DUP.nombre || 'Sin nombre')}</b> · ${escaparHtml(CLIENTE_DUP.telefono)}${CLIENTE_DUP.direccion ? ' · ' + escaparHtml(CLIENTE_DUP.direccion) : ''}`;
+  Finanzas.avisoAdeudo(CLIENTE_DUP.id, 'sn-aviso-adeudo');
   document.getElementById('sn-servicio').innerHTML = '<option value="">Selecciona un servicio</option>' + CATALOGOS.servicios.map(s=>`<option value="${s.id}">${escaparHtml(s.nombre)}</option>`).join('');
   document.getElementById('sn-ubicacion').value = prefill?.direccion || CLIENTE_DUP.direccion || '';
   document.getElementById('btn-guardar-servicio-nuevo').textContent = DUPLICADO_DE ? 'Guardar orden duplicada' : esDirecto ? 'Crear orden de servicio' : 'Crear cotización';
@@ -366,6 +369,7 @@ async function cargarInicio() {
   contRec.innerHTML = recompras.length
     ? recompras.map(r => filaRecompra(r, r.dias_restantes <= 0)).join('')
     : '<p class="util-45">No hay recompras próximas todavía.</p>';
+  Finanzas.pintarInicio();
 }
 function filaEstancada(l) {
   const dias = diasSinMovimiento(l.updated_at);
@@ -635,6 +639,7 @@ async function cargarResultados(){
     RESULTADOS_ACTUALES=d;document.getElementById('res-exportar').disabled=false;
     const r=d.resumen,pct=(a,b)=>b?(100*a/b).toFixed(1)+'%':'—';
     const tarjetas=[['Contactos nuevos',r.nuevos],['Clientes con servicios en el periodo',r.clientes],['Importe contratado',formatoMoneda(r.contratado)],['Servicios contratados',r.servicios],['Conversión de contactos nuevos',pct(r.convertidos,r.nuevos)],['Promedio por servicio',r.servicios?formatoMoneda(r.contratado/r.servicios):'—'],['Clientes recurrentes activos',r.recurrentes],['Importe en propuestas abiertas',formatoMoneda(r.propuesto)]];
+    Finanzas.pintarResultados(desde, hasta);
     document.getElementById('res-kpis').innerHTML=tarjetas.map(([label,value])=>`<div class="res-card"><div class="res-num">${value}</div><div class="res-label">${label}</div></div>`).join('');
     document.getElementById('res-canales').innerHTML=d.canales.map(c=>`<tr><td>${escaparHtml(c.canal)}</td><td>${c.nuevos}</td><td>${c.convertidos}</td><td>${pct(c.convertidos,c.nuevos)}</td><td>${c.clientes}</td><td>${c.servicios}</td><td>${formatoMoneda(c.contratado)}</td><td>${c.servicios?formatoMoneda(c.contratado/c.servicios):'—'}</td><td>${c.abiertas}</td><td>${formatoMoneda(c.propuesto)}</td></tr>`).join('')||'<tr><td colspan="10">Sin datos.</td></tr>';
     document.getElementById('res-clientes').innerHTML=d.clientes.map(c=>`<tr><td>${escaparHtml(c.nombre||c.telefono)}</td><td>${escaparHtml(c.canal)}</td><td>${c.ganados_historicos>1?'Cliente recurrente':c.ganados_historicos?'Cliente':'Prospecto'}</td><td>${c.servicios}</td><td>${formatoMoneda(c.contratado)}</td><td>${formatoMoneda(c.total_historico)}</td><td>${c.abiertas}</td><td>${escaparHtml(c.ultima_fecha||'Sin fecha')}</td><td><button class="btn btn-outline" data-resultado-cliente="${Number(c.id)}">Abrir ficha</button></td></tr>`).join('')||'<tr><td colspan="9">Sin contactos ni actividad en el periodo.</td></tr>';
@@ -1228,7 +1233,10 @@ on('btn-gc-generar','click',async e=>{
 function descargarCSV(nombreArchivo, columnas, filas) {
   if (USUARIO_ACTUAL?.rol !== 'admin') { toast('Solo un administrador puede exportar a Excel'); return; }
   const escaparCelda = valor => {
-    const texto = String(valor ?? '');
+    let texto = String(valor ?? '');
+    // Un texto que empieza con = + - @ Excel lo ejecuta como fórmula (p. ej. =HYPERLINK que manda
+    // datos fuera). Se antepone un apóstrofo, salvo que sea un número.
+    if (/^[=+\-@\t\r]/.test(texto) && !/^-?\d+(\.\d+)?$/.test(texto)) texto = "'" + texto;
     return /[",\n;]/.test(texto) ? '"' + texto.replace(/"/g, '""') + '"' : texto;
   };
   const encabezado = columnas.map(c => escaparCelda(c.titulo)).join(',');
@@ -1372,6 +1380,7 @@ async function abrirFichaCliente(id) {
 
   document.getElementById('fc-titulo').textContent = `${cliente.telefono} · ${cliente.nombre || 'Sin nombre'}`;
   document.getElementById('fc-meta').innerHTML = metaClienteHTML(cliente);
+  Finanzas.pintarCliente(cliente);
   document.getElementById('fc-ed-telefono').value = cliente.telefono || '';
   document.getElementById('fc-ed-telefono-alterno').value = cliente.telefono_alterno || '';
   document.getElementById('fc-ed-nombre').value = cliente.nombre || '';
@@ -1483,6 +1492,7 @@ async function abrirFicha(id) {
   renderServiciosAnteriores(lead.otras_solicitudes || []);
   abrirVentana('overlay-ficha');
   FlujoCRM.presentarRegistro(lead, clienteServicios);
+  Finanzas.pintarCobranzaOrden(lead);
   prepararEditorCotizacion(lead,'existente');
   FlujoCRM.marcarGuardado('overlay-ficha');
 }
@@ -1888,6 +1898,7 @@ on('btn-descargar-respaldo', 'click', async () => {
 function mostrarUsuarioEnHeader() {
   document.getElementById('sesion-nombre').textContent = USUARIO_ACTUAL.nombre;
   document.body.classList.toggle('es-admin', USUARIO_ACTUAL.rol === 'admin');
+  document.body.classList.toggle('puede-cobranza', ['admin', 'atencion'].includes(USUARIO_ACTUAL.rol));
   document.getElementById('nav-usuarios').style.display = USUARIO_ACTUAL.rol === 'admin' ? 'inline-block' : 'none';
 }
 

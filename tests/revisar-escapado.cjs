@@ -4,12 +4,12 @@
 const fs = require('fs');
 const path = require('path');
 
-const ARCHIVOS = ['app.js', 'flujo.js', 'servicios-tabla.js', 'prospeccion.js', 'cuentas.js', 'ui.js', 'cuentas-dinero.js']
+const ARCHIVOS = ['app.js', 'flujo.js', 'servicios-tabla.js', 'prospeccion.js', 'cuentas.js', 'ui.js', 'finanzas.js']
   .map(f => path.join(__dirname, '..', 'public', f)).filter(f => fs.existsSync(f));
 // Funciones que devuelven texto ya seguro (escapan o solo producen números/fechas/folios).
 const SEGURAS = /^(escaparHtml|escapar|esc|Number|formatoMoneda|fechaCorta|fechaLarga|folioCotizacion|folioOrdenServicio|encodeURIComponent|Math\.|String\(Number|diasTexto|\d)/;
 // Campos con texto libre que vienen de la base o del usuario.
-const CAMPOS = /\.(nombre|telefono|telefono_alterno|texto|direccion|empresa|empresa_contacto|notas|notas_iniciales|notas_generales|servicio_nombre|correo|canal|canal_nombre|responsable_nombre|lead_nombre|usuario|descripcion|leyenda|servicio|giro|rfc|persona|cargo|zona|sector|fuente|estado|creado_por|operador|equipo|observaciones|encuesta_comentario|motivo|necesidades|referencia|concepto|proveedor|proveedor_nombre|cliente_nombre|categoria|metodo|factura|ultima_fecha|fecha_sugerida)\b/;
+const CAMPOS = /\.(nombre|telefono|telefono_alterno|texto|direccion|empresa|empresa_contacto|notas|notas_iniciales|notas_generales|servicio_nombre|correo|canal|canal_nombre|responsable_nombre|lead_nombre|usuario|descripcion|leyenda|servicio|giro|rfc|persona|cargo|zona|sector|fuente|estado|creado_por|operador|equipo|observaciones|encuesta_comentario|motivo|necesidades|referencia|concepto|proveedor|proveedor_nombre|cliente_nombre|categoria|metodo|factura|ultima_fecha|fecha_sugerida|factura_folio|motivo_cancelacion|registrado_por_nombre|categoria_nombre)\b/;
 
 let hallazgos = 0;
 for (const archivo of ARCHIVOS) {
