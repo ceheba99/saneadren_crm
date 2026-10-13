@@ -516,6 +516,15 @@ function validarPartidas(req,res,next){
     if(items.some(i=>!db.prepare('SELECT id FROM catalogo_servicios WHERE nombre = ?').get(i.servicio)))return res.status(400).json({error:'Todas las partidas deben tener un servicio del catálogo'});
     const primero=db.prepare('SELECT id FROM catalogo_servicios WHERE nombre = ?').get(items[0].servicio);
     if(!primero)return res.status(400).json({error:'Selecciona un servicio del catálogo'});
+    // Cantidad × precio unitario (opcionales): el importe de la partida lo calcula el servidor.
+    for(const i of items){
+      if(i.cantidad===undefined&&i.precio===undefined)continue;
+      const cantidad=i.cantidad===undefined?1:i.cantidad,precio=i.precio===undefined?i.importe:i.precio;
+      if(typeof cantidad!=='number'||!Number.isFinite(cantidad)||cantidad<=0||cantidad>1e6||Math.round(cantidad*1000)!==cantidad*1000)return res.status(400).json({error:'La cantidad debe ser mayor a 0 (hasta 3 decimales)'});
+      if(typeof precio!=='number'||!Number.isFinite(precio)||precio<0||precio>1e12)return res.status(400).json({error:'Revisa el precio unitario'});
+      i.cantidad=cantidad;i.precio=precio;i.importe=Importes.importeDe(cantidad,precio);
+      if(i.importe>1e12)return res.status(400).json({error:'El importe de una partida es demasiado alto'});
+    }
     req.body.servicio_id=primero.id;req.body.partidas_json=JSON.stringify(items);
   }else{
     // Solo cambia el IVA: se recalcula con las partidas guardadas.
@@ -542,7 +551,7 @@ function validarPartidas(req,res,next){
   next();
 }
 // Equipo / operador / observaciones de la orden de servicio: texto libre con tope de longitud.
-const LIMITES_ORDEN = { equipo: 200, operador: 300, observaciones: 3000 };
+const LIMITES_ORDEN = { equipo: 200, operador: 300, observaciones: 3000, proyecto: 200 };
 function validarDatosOrden(body) {
   for (const [campo, max] of Object.entries(LIMITES_ORDEN)) {
     if (body[campo] === undefined || body[campo] === null) continue;
@@ -642,7 +651,7 @@ app.post('/api/leads', validarPartidas, validarRegistro, h((req, res) => {
   );
 
   if(req.body.partidas_json!==undefined)db.prepare('UPDATE leads SET partidas_json = ?, iva_modo = ?, iva_tasa = ?, iva_cent = ? WHERE id = ?').run(req.body.partidas_json,req.body.iva_modo??null,req.body.iva_tasa??null,req.body.iva_cent??null,info.lastInsertRowid);
-  db.prepare('UPDATE leads SET equipo = ?, operador = ?, observaciones = ? WHERE id = ?').run(textoOrden(req.body.equipo), textoOrden(req.body.operador), textoOrden(req.body.observaciones), info.lastInsertRowid);
+  db.prepare('UPDATE leads SET equipo = ?, operador = ?, observaciones = ?, proyecto = ? WHERE id = ?').run(textoOrden(req.body.equipo), textoOrden(req.body.operador), textoOrden(req.body.observaciones), textoOrden(req.body.proyecto), info.lastInsertRowid);
   if(req.body.establecimiento_id)db.prepare('UPDATE leads SET establecimiento_id=? WHERE id=?').run(req.body.establecimiento_id,info.lastInsertRowid);
   // Crear una cotización nunca modifica los datos maestros del contacto.
   db.prepare(`INSERT INTO historial (lead_id, tipo, texto, usuario, origen) VALUES (?, 'observacion', ?, ?, 'sistema')`)
@@ -731,8 +740,8 @@ app.put('/api/leads/:id', validarPartidas, validarRegistro, h((req, res) => {
 
   const errorOrden = validarDatosOrden(req.body);
   if (errorOrden) return res.status(400).json({ error: errorOrden });
-  ['equipo', 'operador', 'observaciones'].forEach(c => { if (req.body[c] !== undefined) req.body[c] = textoOrden(req.body[c]); });
-  const campos = ['equipo', 'operador', 'observaciones', 'partidas_json', 'iva_modo', 'iva_tasa', 'iva_cent','direccion', 'canal_id', 'servicio_id', 'responsable_id', 'etapa', 'estatus', 'valor', 'fecha_servicio', 'notas_iniciales', 'urgente', 'encuesta_calificacion', 'encuesta_comentario', 'fecha_cotizacion', 'incluye_vigencia', 'vigencia_hasta'];
+  ['equipo', 'operador', 'observaciones', 'proyecto'].forEach(c => { if (req.body[c] !== undefined) req.body[c] = textoOrden(req.body[c]); });
+  const campos = ['equipo', 'operador', 'observaciones', 'proyecto', 'partidas_json', 'iva_modo', 'iva_tasa', 'iva_cent','direccion', 'canal_id', 'servicio_id', 'responsable_id', 'etapa', 'estatus', 'valor', 'fecha_servicio', 'notas_iniciales', 'urgente', 'encuesta_calificacion', 'encuesta_comentario', 'fecha_cotizacion', 'incluye_vigencia', 'vigencia_hasta'];
   const set = [];
   const params = [];
   campos.forEach(c => {
@@ -1080,6 +1089,47 @@ app.get('/api/alertas', h((req, res) => {
     ORDER BY h.fecha_alerta ASC
   `).all();
   res.json(rows);
+}));
+
+// ---------- Generador: ventas por servicio (una fila por partida de cada orden de servicio) ----------
+// Columnas del generador de ventas de Saneadren: mes, fecha, orden, factura, producto, precios
+// unitarios con y sin IVA, cantidad, subtotal, IVA, total, canal, cliente, proyecto, unidad y empleado.
+// El subtotal, IVA y total de cada partida suman exactamente los de la orden (public/importes.js).
+const MESES_LETRA = ['ENERO', 'FEBRERO', 'MARZO', 'ABRIL', 'MAYO', 'JUNIO', 'JULIO', 'AGOSTO', 'SEPTIEMBRE', 'OCTUBRE', 'NOVIEMBRE', 'DICIEMBRE'];
+app.get('/api/generador', h((req, res) => {
+  const desde = req.query.desde || null, hasta = req.query.hasta || null;
+  const fechaOk = v => !v || (/^\d{4}-\d{2}-\d{2}$/.test(v) && !isNaN(Date.parse(v)));
+  if (!fechaOk(desde) || !fechaOk(hasta) || (desde && hasta && desde > hasta)) return res.status(400).json({ error: 'Revisa el rango de fechas' });
+  const q = String(req.query.q || '').trim().toLowerCase();
+  const ordenes = db.prepare(`SELECT l.id, l.created_at, l.fecha_servicio, l.factura_folio, l.partidas_json, l.valor, l.iva_modo, l.iva_tasa, l.iva_cent,
+      l.proyecto, l.equipo, l.operador, COALESCE(c.empresa_contacto, c.nombre, l.empresa_contacto, l.nombre) AS cliente,
+      COALESCE(cl.nombre, cc.nombre) AS canal, s.nombre AS servicio_nombre,
+      COALESCE(l.fecha_servicio, date(l.created_at)) AS fecha
+    FROM leads l LEFT JOIN clientes c ON c.id = l.cliente_id LEFT JOIN canales cl ON cl.id = l.canal_id
+    LEFT JOIN canales cc ON cc.id = c.canal_origen_id LEFT JOIN catalogo_servicios s ON s.id = l.servicio_id
+    WHERE l.estatus = 'ganado' AND (? IS NULL OR COALESCE(l.fecha_servicio, date(l.created_at)) >= ?) AND (? IS NULL OR COALESCE(l.fecha_servicio, date(l.created_at)) <= ?)
+    ORDER BY fecha DESC, l.id DESC`).all(desde, desde, hasta, hasta);
+  const pesos = cent => cent == null ? null : Math.round(cent) / 100;
+  const filas = [];
+  for (const o of ordenes) {
+    let items; try { items = JSON.parse(o.partidas_json || 'null'); } catch { items = null; }
+    if (!Array.isArray(items) || !items.length) items = [{ servicio: o.servicio_nombre || '', importe: o.valor || 0 }];
+    const lineas = Importes.desglosarPartidas(items, o.iva_modo, o.iva_tasa);
+    const folio = 'OS-' + String(o.created_at).slice(0, 7).replace('-', '') + '-' + String(o.id).padStart(4, '0');
+    items.forEach((it, n) => {
+      const l = lineas[n], cantidad = Importes.cantidadDe(it);
+      filas.push({
+        lead_id: o.id, mes: MESES_LETRA[Number(String(o.fecha).slice(5, 7)) - 1] || '', fecha: o.fecha, orden: folio, factura: o.factura_folio || '',
+        producto: it.servicio || o.servicio_nombre || 'Servicio', cantidad,
+        precio_con_iva: Math.round(l.total_cent / cantidad) / 100, precio_sin_iva: Math.round(l.subtotal_cent / cantidad) / 100,
+        subtotal: pesos(l.subtotal_cent), iva: pesos(l.iva_cent), total: pesos(l.total_cent), iva_por_definir: !o.iva_modo,
+        canal: o.canal || '', cliente: o.cliente || '', proyecto: o.proyecto || '', unidad: o.equipo || '', empleado: o.operador || '',
+      });
+    });
+  }
+  const visibles = q ? filas.filter(f => [f.orden, f.factura, f.producto, f.cliente, f.proyecto, f.unidad, f.empleado, f.canal, f.mes].some(v => String(v).toLowerCase().includes(q))) : filas;
+  const suma = k => Math.round(visibles.reduce((t, f) => t + (f[k] || 0) * 100, 0)) / 100;
+  res.json({ filas: visibles, totales: { subtotal: suma('subtotal'), iva: suma('iva'), total: suma('total'), ordenes: new Set(visibles.map(f => f.lead_id)).size } });
 }));
 
 // ---------- Análisis y métricas (vista Resultados) ----------

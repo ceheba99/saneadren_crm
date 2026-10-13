@@ -31,6 +31,7 @@
         <div class="menu-sub">
           <button type="button" class="menu-item" data-vista="alta"><span class="menu-icono" aria-hidden="true">➕</span>Nuevo contacto</button>
           <button type="button" class="menu-item" data-vista="clientes"><span class="menu-icono" aria-hidden="true">👥</span>Contactos</button>
+          <button type="button" class="menu-item" data-vista="generador"><span class="menu-icono" aria-hidden="true">📒</span>Generador</button>
           <button type="button" class="menu-item" data-vista="leads"><span class="menu-icono" aria-hidden="true">📄</span>Cotizaciones</button>
           <button type="button" class="menu-item" data-vista="prospeccion"><span class="menu-icono" aria-hidden="true">🔎</span>Prospección</button>
         </div>
@@ -265,6 +266,26 @@
   </section>
 
   <!-- ====== VISTA: PENDIENTES (Recompras + Alertas juntas) ====== -->
+  <!-- ====== VISTA: GENERADOR (ventas por servicio de cada orden) ====== -->
+  <section class="vista" id="vista-generador">
+    <div class="vista-encabezado">
+      <div><h2>Generador</h2><p class="ayuda">Ventas de las órdenes de servicio, un renglón por cada servicio. Toca un renglón para abrir su orden.</p></div>
+      <button type="button" class="btn btn-outline solo-admin" id="gen-exportar">📥 Exportar a Excel</button>
+    </div>
+    <div class="filtros">
+      <label>Desde <input type="date" id="gen-desde"></label>
+      <label>Hasta <input type="date" id="gen-hasta"></label>
+      <button type="button" class="btn btn-outline" id="gen-mes">Este mes</button>
+      <button type="button" class="btn btn-outline" id="gen-todo">Todo</button>
+      <input type="search" id="gen-buscar" aria-label="Buscar en el generador" placeholder="Cliente, orden, factura, producto, proyecto, unidad o empleado">
+    </div>
+    <p class="gen-resumen" id="gen-resumen" role="status"></p>
+    <div class="tabla-scroll"><table class="tabla-resumen tabla-generador">
+      <thead><tr><th>Mes</th><th>Fecha</th><th>No. orden</th><th>No. factura</th><th>Producto</th><th class="st-num">Precio unitario c/IVA</th><th class="st-num">Cantidad</th><th class="st-num">Precio unitario s/IVA</th><th class="st-num">Subtotal</th><th class="st-num">IVA</th><th class="st-num">Total</th><th>Canal de venta</th><th>Cliente</th><th>Proyecto</th><th>Unidad</th><th>Empleado</th></tr></thead>
+      <tbody id="gen-tabla"></tbody>
+    </table></div>
+  </section>
+
   <!-- ====== VISTA: RESULTADOS ====== -->
   <section class="vista" id="vista-resultados">
     <h2>Resultados comerciales</h2>
@@ -486,6 +507,7 @@
           <div class="campo-modal" id="wrap-vigencia-hasta"><label>Vigencia hasta</label><input type="date" id="ed-vigencia-hasta"></div>
           <div class="campo-modal solo-orden"><label for="ed-equipo">Equipo</label><input type="text" id="ed-equipo" maxlength="200" placeholder="Ej. E-37-04"></div>
           <div class="campo-modal solo-orden"><label for="ed-operador">Operador(es)</label><input type="text" id="ed-operador" maxlength="300" placeholder="Nombre de quien ejecuta el servicio"></div>
+          <div class="campo-modal solo-orden"><label for="ed-proyecto">Proyecto</label><input type="text" id="ed-proyecto" maxlength="200" placeholder="Ej. Mantenimiento planta 2026"></div>
           <div class="campo-modal full solo-orden"><label for="ed-observaciones">Observaciones de la orden</label><textarea id="ed-observaciones" rows="2" maxlength="3000" placeholder="Se imprimen en la orden de servicio; también puedes capturar lo que anotó el operador"></textarea></div>
         </div>
         <div class="util-16">
@@ -756,6 +778,7 @@
       <div id="sn-datos-orden" hidden>
         <div class="campo"><label for="sn-equipo">Equipo</label><input type="text" id="sn-equipo" maxlength="200" placeholder="Ej. E-37-04"></div>
         <div class="campo"><label for="sn-operador">Operador(es)</label><input type="text" id="sn-operador" maxlength="300" placeholder="Nombre de quien ejecuta el servicio"></div>
+        <div class="campo"><label for="sn-proyecto">Proyecto (opcional)</label><input type="text" id="sn-proyecto" maxlength="200" placeholder="Ej. Mantenimiento planta 2026"></div>
         <div class="campo"><label for="sn-observaciones">Observaciones de la orden (opcional)</label><textarea id="sn-observaciones" rows="2" maxlength="3000"></textarea></div>
       </div>
       <div id="editor-nuevo-destino"></div><span id="estado-guardado-nuevo" class="estado-guardado" role="status"></span>

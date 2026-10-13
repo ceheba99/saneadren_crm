@@ -130,6 +130,7 @@ function cambiarVista(v, opciones) {
   if (v === 'clientes') cargarClientes();
   if (v === 'prospeccion') Prospeccion.cargar();
   if (v === 'resultados') cargarResultados();
+  if (v === 'generador') cargarGenerador();
   if (v === 'usuarios') cargarUsuarios();
   if (seccionCuentas) Finanzas.cargar({ ...opciones, seccion: seccionCuentas });
   if (v === 'catalogos') { cargarTiposCliente(); cargarCatalogoServicios(); cargarCanalesCatalogo(); }
@@ -250,6 +251,7 @@ function abrirServicioNuevo(modo, prefill) {
   document.getElementById('sn-equipo').value = prefill?.equipo || '';
   document.getElementById('sn-operador').value = prefill?.operador || '';
   document.getElementById('sn-observaciones').value = CONVERTIR_ID ? (prefill?.observaciones || '') : '';
+  document.getElementById('sn-proyecto').value = esDirecto ? (prefill?.proyecto || '') : '';
   // El prellenado pasa por prepararEditorCotizacion para que también arme la tabla de
   // partidas real (gc-items) — de otro modo, al validar/guardar se recalcula desde ahí
   // y borraría cualquier valor puesto solo en sn-servicio/sn-valor.
@@ -302,6 +304,7 @@ async function guardarServicioNuevo(descargar=false) {
     equipo: esDirecto ? document.getElementById('sn-equipo').value.trim() : null,
     operador: esDirecto ? document.getElementById('sn-operador').value.trim() : null,
     observaciones: esDirecto ? document.getElementById('sn-observaciones').value.trim() : null,
+    proyecto: esDirecto ? document.getElementById('sn-proyecto').value.trim() : null,
     ...ivaPayload()
   };
   botonGuardar.disabled = true;
@@ -313,7 +316,7 @@ async function guardarServicioNuevo(descargar=false) {
       if (actual.estatus !== 'abierto') { toast('Esta cotización ya no está abierta; vuelve a abrirla para revisar.'); return; }
       const res = await api('/leads/' + CONVERTIR_ID, { method: 'PUT', body: JSON.stringify({
         version: actual.version, estatus: 'ganado', partidas_json: payload.partidas_json, servicio_id: payload.servicio_id, direccion: payload.direccion,
-        fecha_servicio: payload.fecha_servicio, equipo: payload.equipo, operador: payload.operador, observaciones: payload.observaciones, ...ivaPayload() }) });
+        fecha_servicio: payload.fecha_servicio, equipo: payload.equipo, operador: payload.operador, observaciones: payload.observaciones, proyecto: payload.proyecto, ...ivaPayload() }) });
       creado = await res.json();
       if (!res.ok) { toast(creado.error || 'No se pudo convertir la cotización'); return; }
     } else {
@@ -651,6 +654,44 @@ function limpiarFiltros() {
   cargarLeads();
 }
 
+// ---------- Vista Generador: ventas por servicio de cada orden ----------
+let GENERADOR = null, consultaGenerador = 0;
+async function cargarGenerador() {
+  const consulta = ++consultaGenerador, cuerpo = document.getElementById('gen-tabla'), resumen = document.getElementById('gen-resumen');
+  const desde = document.getElementById('gen-desde').value, hasta = document.getElementById('gen-hasta').value;
+  if (desde && hasta && desde > hasta) { resumen.textContent = 'La fecha Desde no puede ser posterior a Hasta.'; cuerpo.innerHTML = ''; return; }
+  resumen.textContent = 'Cargando…';
+  const params = new URLSearchParams({ desde, hasta, q: document.getElementById('gen-buscar').value.trim() });
+  let r;
+  try { r = await api('/generador?' + params).then(x => x.json()); } catch (err) { if (consulta === consultaGenerador) resumen.textContent = 'No se pudo cargar el generador: ' + err.message; return; }
+  if (consulta !== consultaGenerador) return;
+  GENERADOR = r;
+  const m = v => v == null ? '—' : formatoMoneda(v), t = r.totales;
+  resumen.textContent = `${r.filas.length} ${r.filas.length === 1 ? 'renglón' : 'renglones'} de ${t.ordenes} orden${t.ordenes === 1 ? '' : 'es'} · Subtotal ${formatoMoneda(t.subtotal)} · IVA ${formatoMoneda(t.iva)} · Total ${formatoMoneda(t.total)}`
+    + (r.filas.some(f => f.iva_por_definir) ? ' · Las órdenes con IVA por definir se muestran como se capturaron.' : '');
+  cuerpo.innerHTML = r.filas.length ? r.filas.map(f => `<tr data-gen-orden="${Number(f.lead_id)}">
+      <td>${escaparHtml(f.mes)}</td><td class="st-fecha">${escaparHtml(f.fecha.split('-').reverse().join('/'))}</td><td class="st-folio">${escaparHtml(f.orden)}</td><td>${escaparHtml(f.factura || '—')}</td>
+      <td>${escaparHtml(f.producto)}</td><td class="st-num">${m(f.precio_con_iva)}</td><td class="st-num">${Number(f.cantidad)}</td><td class="st-num">${m(f.precio_sin_iva)}</td>
+      <td class="st-num">${m(f.subtotal)}</td><td class="st-num">${f.iva_por_definir ? '<small>Por definir</small>' : m(f.iva)}</td><td class="st-num"><b>${m(f.total)}</b></td>
+      <td>${escaparHtml(f.canal || '—')}</td><td>${escaparHtml(f.cliente || '—')}</td><td>${escaparHtml(f.proyecto || '—')}</td><td>${escaparHtml(f.unidad || '—')}</td><td>${escaparHtml(f.empleado || '—')}</td>
+    </tr>`).join('') : '<tr><td colspan="16" class="servicios-vacio">No hay órdenes de servicio en este periodo.</td></tr>';
+}
+on('gen-desde', 'change', cargarGenerador);
+on('gen-hasta', 'change', cargarGenerador);
+on('gen-buscar', 'input', debounce(cargarGenerador, 350));
+on('gen-mes', 'click', () => { const h = new Date(), p = n => String(n).padStart(2, '0'); document.getElementById('gen-desde').value = `${h.getFullYear()}-${p(h.getMonth() + 1)}-01`; document.getElementById('gen-hasta').value = `${h.getFullYear()}-${p(h.getMonth() + 1)}-${p(new Date(h.getFullYear(), h.getMonth() + 1, 0).getDate())}`; cargarGenerador(); });
+on('gen-todo', 'click', () => { document.getElementById('gen-desde').value = ''; document.getElementById('gen-hasta').value = ''; cargarGenerador(); });
+on('gen-tabla', 'click', e => { const fila = e.target.closest('[data-gen-orden]'); if (fila) abrirFicha(Number(fila.dataset.genOrden)); });
+on('gen-exportar', 'click', () => {
+  if (!GENERADOR?.filas.length) { toast('No hay renglones para exportar'); return; }
+  descargarCSV('generador_saneadren_' + new Date().toISOString().slice(0, 10) + '.csv', [
+    { titulo: 'MES LETRA', valor: f => f.mes }, { titulo: 'FECHA', valor: f => f.fecha }, { titulo: 'NO. ORDEN', valor: f => f.orden }, { titulo: 'NO. FACTURA', valor: f => f.factura },
+    { titulo: 'PRODUCTO', valor: f => f.producto }, { titulo: 'PRECIO UNITARIO C/IVA', valor: f => f.precio_con_iva }, { titulo: 'CANTIDAD', valor: f => f.cantidad },
+    { titulo: 'PRECIO UNITARIO S/IVA', valor: f => f.precio_sin_iva }, { titulo: 'SUBTOTAL', valor: f => f.subtotal }, { titulo: 'IVA', valor: f => f.iva ?? '' }, { titulo: 'TOTAL', valor: f => f.total },
+    { titulo: 'CANAL DE VENTA', valor: f => f.canal }, { titulo: 'CLIENTE', valor: f => f.cliente }, { titulo: 'PROYECTO', valor: f => f.proyecto }, { titulo: 'UNIDAD', valor: f => f.unidad }, { titulo: 'EMPLEADO', valor: f => f.empleado }
+  ], GENERADOR.filas);
+});
+
 // ---------- Vista Resultados (Análisis) ----------
 let RESULTADOS_ACTUALES=null,consultaResultados=0;
 async function cargarResultados(){
@@ -736,6 +777,9 @@ function nombreArchivoCotizacion(datos, extension) {
   return `cotizacion_${datos.folio}_${cliente}.${extension}`;
 }
 
+// Columnas de cantidad y precio unitario de una partida (solo si el documento las usa).
+const colsCantidad = (datos, item) => datos.conCantidad ? [String(Importes.cantidadDe(item)), formatoMoneda(Importes.precioDe(item))] : [];
+const titulosCantidad = datos => datos.conCantidad ? ['Cant.', 'P. unitario'] : [];
 // Importes del documento con el IVA elegido en el editor (el que se acaba de guardar).
 function importesDocumento(items) {
   const modo = modoIvaEditor(), tasa = IVA_TASA;
@@ -743,7 +787,9 @@ function importesDocumento(items) {
   return {
     modo, total: r.total_cent / 100, totalLetras: Importes.enLetras(r.total_cent),
     totales: Importes.filasTotales(r, modo, tasa), leyendaIva: Importes.leyenda(modo, tasa),
-    encabezadoImporte: Importes.encabezadoImporte(modo) + ' (MXN)'
+    encabezadoImporte: Importes.encabezadoImporte(modo) + ' (MXN)',
+    // Si algún servicio lleva cantidad distinta de 1, los documentos muestran Cant. y P. unitario.
+    conCantidad: items.some(i => Importes.cantidadDe(i) !== 1)
   };
 }
 
@@ -830,15 +876,16 @@ async function generarPDFCotizacion(datos) {
   if(y>limite-70)pagina();
   doc.autoTable({
     startY:y, margin:{left:margen,right:margen,top:inicio,bottom:208},
-    head:[['Servicio','Descripción / leyenda',datos.encabezadoImporte]],
-    body:datos.items.map(item=>[item.servicio,item.leyenda||'—',formatoMoneda(item.importe)]),
+    head:[['Servicio','Descripción / leyenda',...titulosCantidad(datos),datos.encabezadoImporte]],
+    body:datos.items.map(item=>[item.servicio,item.leyenda||'—',...colsCantidad(datos,item),formatoMoneda(item.importe)]),
     // Con IVA: Subtotal / IVA / Total; solo el total va en negritas.
-    foot:datos.totales.map(([etiqueta,cent])=>['',etiqueta,formatoMoneda(cent/100)]),showFoot:'lastPage',rowPageBreak:'avoid',columnStyles:{0:{cellWidth:125},2:{cellWidth:95,halign:'right'}},
+    foot:datos.totales.map(([etiqueta,cent])=>['',{content:etiqueta,colSpan:datos.conCantidad?3:1},formatoMoneda(cent/100)]),showFoot:'lastPage',rowPageBreak:'avoid',
+    columnStyles:datos.conCantidad?{0:{cellWidth:110},2:{cellWidth:40,halign:'right'},3:{cellWidth:75,halign:'right'},4:{cellWidth:85,halign:'right'}}:{0:{cellWidth:125},2:{cellWidth:95,halign:'right'}},
     styles:{fontSize:10,cellPadding:6,overflow:'linebreak'},
     headStyles:{fillColor:[246,177,3],textColor:20},
     footStyles:{fillColor:[245,245,245],textColor:20,fontStyle:'bold'},
     didParseCell:d=>{
-      if(d.section==='head'&&d.column.index===2)d.cell.styles.halign='right';
+      if(d.section==='head'&&d.column.index>=2)d.cell.styles.halign='right';
       if(d.section==='foot'){d.cell.styles.halign=d.column.index===0?'left':'right';if(d.row.index<datos.totales.length-1)d.cell.styles.fontStyle='normal';}
     },
     willDrawPage:()=>{if(doc.internal.getCurrentPageInfo().pageNumber>1)fondo();}
@@ -859,10 +906,10 @@ async function generarWordCotizacion(datos) {
   const parrafo=(texto,bold=false)=>new Paragraph({spacing:{after:100},children:[new TextRun({text:String(texto),bold})]});
   const celda=(texto,bold=false)=>new TableCell({children:[parrafo(texto,bold)],shading:bold?{fill:'F6B103'}:undefined});
   const tabla=new Table({width:{size:100,type:WidthType.PERCENTAGE},rows:[
-    new TableRow({tableHeader:true,children:[celda('Servicio',true),celda('Descripción / leyenda',true),celda(datos.encabezadoImporte,true)]}),
-    ...datos.items.map(item=>new TableRow({children:[celda(item.servicio),celda(item.leyenda||'—'),celda(formatoMoneda(item.importe))]})),
+    new TableRow({tableHeader:true,children:[celda('Servicio',true),celda('Descripción / leyenda',true),...titulosCantidad(datos).map(t=>celda(t,true)),celda(datos.encabezadoImporte,true)]}),
+    ...datos.items.map(item=>new TableRow({children:[celda(item.servicio),celda(item.leyenda||'—'),...colsCantidad(datos,item).map(t=>celda(t)),celda(formatoMoneda(item.importe))]})),
     // Con IVA: Subtotal / IVA / Total; solo el total va resaltado.
-    ...datos.totales.map(([etiqueta,cent],i)=>{const total=i===datos.totales.length-1;return new TableRow({children:[celda(''),celda(etiqueta,total),celda(formatoMoneda(cent/100),total)]});})
+    ...datos.totales.map(([etiqueta,cent],i)=>{const total=i===datos.totales.length-1;return new TableRow({children:[celda(''),...(datos.conCantidad?[celda(''),celda('')]:[]),celda(etiqueta,total),celda(formatoMoneda(cent/100),total)]});})
   ]});
   const documento=new Document({styles:{default:{document:{run:{font:'Arial',size:20,color:'222222'},paragraph:{spacing:{after:100}}}}},sections:[{
     properties:{page:{size:{width:12240,height:18360},margin:{top:2640,bottom:4160,left:960,right:960,header:0,footer:0}}},
@@ -916,6 +963,7 @@ function datosOrdenServicioDesdeLead(lead, items) {
     },
     equipo: lead.equipo || '',
     operador: lead.operador || '',
+    proyecto: lead.proyecto || '',
     observaciones: lead.observaciones || '',
     items,
     ...importesDocumento(items)
@@ -932,7 +980,8 @@ function camposOrden(datos) {
   return [
     [['Empresa', datos.cliente.empresa || datos.cliente.nombre], ['Contacto', [datos.cliente.empresa ? datos.cliente.nombre : '', datos.cliente.telefono].filter(Boolean).join(' · ') || '—']],
     [['Ubicación', datos.cliente.direccion || '—']],
-    [['Equipo', datos.equipo || ''], ['Operador(es)', datos.operador || '']]
+    [['Equipo', datos.equipo || ''], ['Operador(es)', datos.operador || '']],
+    ...(datos.proyecto ? [[['Proyecto', datos.proyecto]]] : [])
   ];
 }
 const COLOR_ORDEN = { oscuro: [26, 29, 35], amarillo: [246, 177, 3], gris: [107, 114, 128], linea: [214, 217, 222], fondo: [246, 247, 249] };
@@ -986,14 +1035,16 @@ async function generarPDFOrdenServicio(datos) {
   seccion('DESCRIPCIÓN DEL TRABAJO');
   doc.autoTable({
     startY: y - 4, margin: { left: margen, right: margen, top: inicio, bottom: 212 }, theme: 'plain',
-    head: [['Servicio', 'Descripción', Importes.encabezadoImporte(datos.modo)]],
-    body: datos.items.map(item => [item.servicio, item.leyenda || '—', formatoMoneda(item.importe)]),
+    head: [['Servicio', 'Descripción', ...titulosCantidad(datos), Importes.encabezadoImporte(datos.modo)]],
+    body: datos.items.map(item => [item.servicio, item.leyenda || '—', ...colsCantidad(datos, item), formatoMoneda(item.importe)]),
     rowPageBreak: 'avoid',
     styles: { fontSize: 9.5, cellPadding: { top: 6, bottom: 6, left: 7, right: 7 }, textColor: C.oscuro, lineColor: C.linea, overflow: 'linebreak' },
     headStyles: { fillColor: C.oscuro, textColor: 255, fontStyle: 'bold', fontSize: 8.5 },
     alternateRowStyles: { fillColor: C.fondo },
-    columnStyles: { 0: { cellWidth: 140, fontStyle: 'bold' }, 2: { cellWidth: 90, halign: 'right' } },
-    didParseCell: d => { if (d.section === 'head' && d.column.index === 2) d.cell.styles.halign = 'right'; },
+    columnStyles: datos.conCantidad
+      ? { 0: { cellWidth: 120, fontStyle: 'bold' }, 2: { cellWidth: 38, halign: 'right' }, 3: { cellWidth: 72, halign: 'right' }, 4: { cellWidth: 82, halign: 'right' } }
+      : { 0: { cellWidth: 140, fontStyle: 'bold' }, 2: { cellWidth: 90, halign: 'right' } },
+    didParseCell: d => { if (d.section === 'head' && d.column.index >= 2) d.cell.styles.halign = 'right'; },
     didDrawCell: d => { if (d.section === 'body') { doc.setDrawColor(...C.linea); doc.setLineWidth(0.5); doc.line(d.cell.x, d.cell.y + d.cell.height, d.cell.x + d.cell.width, d.cell.y + d.cell.height); } },
     willDrawPage: () => { if (doc.internal.getCurrentPageInfo().pageNumber > 1) fondo(); }
   });
@@ -1075,12 +1126,13 @@ async function generarWordOrdenServicio(datos) {
   ])],[3300,3720,3300]);
   const datosServicio=tabla(camposOrden(datos).map(f=>fila(f.length===1?[campo(f[0][0],f[0][1],3)]:[campo(f[0][0],f[0][1]),sep(),campo(f[1][0],f[1][1])])),[5000,320,5000]);
   const trabajo=tabla([
-    fila(['Servicio','Descripción',Importes.encabezadoImporte(datos.modo)].map((t,i)=>celda(p(run(t,{bold:true,size:17,color:'FFFFFF'}),{derecha:i===2}),{fondo:OSC}))),
+    fila(['Servicio','Descripción',...titulosCantidad(datos),Importes.encabezadoImporte(datos.modo)].map((t,i)=>celda(p(run(t,{bold:true,size:17,color:'FFFFFF'}),{derecha:i>=2}),{fondo:OSC}))),
     ...datos.items.map((item,n)=>fila([
       celda(p(run(item.servicio,{bold:true,size:19})),{fondo:n%2?FON:undefined,bordes:lineaAbajo()}),
       celda(p(run(item.leyenda||'—',{size:19})),{fondo:n%2?FON:undefined,bordes:lineaAbajo()}),
+      ...colsCantidad(datos,item).map(t=>celda(p(run(t,{size:19}),{derecha:true}),{fondo:n%2?FON:undefined,bordes:lineaAbajo()})),
       celda(p(run(formatoMoneda(item.importe),{size:19}),{derecha:true}),{fondo:n%2?FON:undefined,bordes:lineaAbajo()})]))
-  ],[2800,5720,1800]);
+  ],datos.conCantidad?[2400,4120,800,1200,1800]:[2800,5720,1800]);
   // Con IVA, Subtotal e IVA van en renglones chicos encima del total, dentro del mismo recuadro.
   const desglose=datos.totales.slice(0,-1).map(([etiqueta,cent])=>p([run(etiqueta.toUpperCase()+'   ',{bold:true,size:14,color:GRI}),run(formatoMoneda(cent/100),{size:18})],{derecha:true,despues:20}));
   const total=tabla([fila([
@@ -1130,7 +1182,7 @@ on('btn-generar-orden-servicio','click',async()=>{
   const items=recolectarItemsCotizacion();
   const prefill={convertir_de:lead.id,folio:folioCotizacion(lead),partidas_json:JSON.stringify(items),servicio_nombre:items[0]?.servicio,
     iva_modo:modoIvaEditor(),iva_tasa:IVA_TASA,direccion:document.getElementById('ed-direccion').value.trim()||lead.direccion,
-    equipo:lead.equipo,operador:lead.operador,observaciones:lead.observaciones};
+    equipo:lead.equipo,operador:lead.operador,observaciones:lead.observaciones,proyecto:lead.proyecto};
   FlujoCRM.marcarGuardado('overlay-ficha'); // lo capturado en la ficha pasa a la ventana
   await FlujoCRM.nuevoRegistro(lead.cliente_id,'convertir',prefill);
 });
@@ -1159,9 +1211,13 @@ function crearFilaServicioHTML(item) {
             ${opciones}
           </select>
         </div>
-        <div class="campo-modal">
-          <label class="gc-etiqueta-importe" for="gc-importe-${id}">${Importes.encabezadoImporte(modoIvaEditor())} (MXN)</label>
-          <input type="number" class="gc-importe" id="gc-importe-${id}" data-fila="${id}" min="0" step="0.01" value="${item.importe ?? ''}">
+        <div class="gc-cantidades">
+          <div class="campo-modal"><label for="gc-cantidad-${id}">Cantidad</label>
+            <input type="number" class="gc-cantidad" id="gc-cantidad-${id}" data-fila="${id}" min="0.001" step="any" value="${Number(Importes.cantidadDe(item))}"></div>
+          <div class="campo-modal"><label class="gc-etiqueta-importe" for="gc-precio-${id}">${etiquetaPrecio(modoIvaEditor())}</label>
+            <input type="number" class="gc-precio" id="gc-precio-${id}" data-fila="${id}" min="0" step="0.01" value="${item.importe === undefined && item.precio === undefined ? '' : Number(Importes.precioDe(item))}"></div>
+          <div class="campo-modal"><label for="gc-importe-${id}">Importe (MXN)</label>
+            <input type="number" class="gc-importe" id="gc-importe-${id}" data-fila="${id}" readonly tabindex="-1" value="${item.importe ?? ''}"></div>
         </div>
         <div class="campo-modal full">
           <label>Descripción / leyenda</label>
@@ -1173,6 +1229,8 @@ function crearFilaServicioHTML(item) {
   `;
 }
 
+// Rótulo del precio unitario según el IVA del documento.
+const etiquetaPrecio = modo => 'Precio unitario' + (modo === 'incluido' ? ' con IVA' : modo === 'mas_iva' ? ' sin IVA' : '') + ' (MXN)';
 function agregarFilaCotizacion(item = {}) {
   document.getElementById('gc-items').insertAdjacentHTML('beforeend', crearFilaServicioHTML(item));
 }
@@ -1202,7 +1260,7 @@ function pintarIvaEditor() {
       + (IVA_BLOQUEADO ? ' Solo administración o atención pueden cambiar el IVA o los importes de una orden de servicio.' : '');
   // En una orden, quien no puede cambiar lo que se cobra tampoco puede editar importes ni partidas
   // (antes podía escribirlos y el error salía hasta guardar).
-  document.querySelectorAll('#gc-items .gc-importe').forEach(i => { i.readOnly = IVA_BLOQUEADO; });
+  document.querySelectorAll('#gc-items .gc-cantidad, #gc-items .gc-precio').forEach(i => { i.readOnly = IVA_BLOQUEADO; });
   document.querySelectorAll('#gc-items .gc-quitar').forEach(b => { b.disabled = IVA_BLOQUEADO; });
   document.getElementById('btn-gc-agregar-servicio').disabled = IVA_BLOQUEADO;
   document.getElementById('gc-iva-aviso').hidden = !!modo;
@@ -1211,7 +1269,7 @@ function pintarIvaEditor() {
       ? 'IVA por definir: este registro es anterior al IVA. Lo indica administración o atención.'
       : 'IVA por definir: este registro es anterior al IVA. Elige cómo va el importe que se le dio al cliente: más IVA, IVA incluido o sin IVA.';
   }
-  document.querySelectorAll('#gc-items .gc-etiqueta-importe').forEach(l => { l.textContent = Importes.encabezadoImporte(modo) + ' (MXN)'; });
+  document.querySelectorAll('#gc-items .gc-etiqueta-importe').forEach(l => { l.textContent = etiquetaPrecio(modo); });
 }
 document.querySelectorAll('input[name="gc-iva-opcion"]').forEach(r => r.addEventListener('change', () => { if (r.checked) fijarModoIva(r.value); }));
 
@@ -1240,6 +1298,8 @@ function recolectarItemsCotizacion() {
     .map(fila => ({
       servicio: fila.querySelector('.gc-servicio').value,
       leyenda: fila.querySelector('.gc-leyenda').value.trim(),
+      cantidad: Number(fila.querySelector('.gc-cantidad').value) || 1,
+      precio: Number(fila.querySelector('.gc-precio').value) || 0,
       importe: Number(fila.querySelector('.gc-importe').value) || 0
     }))
     .filter(item => item.servicio || item.importe || item.leyenda);
@@ -1278,7 +1338,7 @@ function sincronizarEditor(){
 }
 function validarEditorCotizacion(){
   const filas=[...document.querySelectorAll('#gc-items .gc-fila')];
-  if(!filas.length||filas.some(f=>!f.querySelector('.gc-servicio').value||f.querySelector('.gc-importe').value===''||!Number.isFinite(Number(f.querySelector('.gc-importe').value))||Number(f.querySelector('.gc-importe').value)<0)){toast('Selecciona un servicio e importe válido en cada partida');return false;}
+  if(!filas.length||filas.some(f=>!f.querySelector('.gc-servicio').value||f.querySelector('.gc-precio').value===''||!(Number(f.querySelector('.gc-precio').value)>=0)||!(Number(f.querySelector('.gc-cantidad').value)>0))){toast('Selecciona un servicio y escribe cantidad y precio unitario en cada partida');return false;}
   // Un registro nuevo o una cotización abierta deben decir si sus importes llevan IVA.
   if(!modoIvaEditor()&&(EDITOR_MODO==='nuevo'||LEAD_ACTUAL?.estatus==='abierto')){
     toast('Indica el IVA: elige Más IVA, IVA incluido o Sin IVA');
@@ -1306,7 +1366,12 @@ on('gc-items', 'change', async e => {
   }
 });
 on('gc-items', 'input', e => {
-  if (e.target.classList.contains('gc-importe')) actualizarTotalCotizacion();
+  // Importe de la partida = cantidad × precio unitario.
+  if (e.target.classList.contains('gc-cantidad') || e.target.classList.contains('gc-precio')) {
+    const fila = e.target.closest('.gc-fila'), precio = fila.querySelector('.gc-precio').value;
+    fila.querySelector('.gc-importe').value = precio === '' ? '' : Importes.importeDe(fila.querySelector('.gc-cantidad').value, precio);
+    actualizarTotalCotizacion();
+  }
 });
 on('gc-items', 'click', e => {
   if (e.target.classList.contains('gc-quitar')) {
@@ -1590,6 +1655,7 @@ async function abrirFicha(id) {
   document.getElementById('ed-urgente').checked = !!lead.urgente;
   document.getElementById('ed-equipo').value = lead.equipo || '';
   document.getElementById('ed-operador').value = lead.operador || '';
+  document.getElementById('ed-proyecto').value = lead.proyecto || '';
   document.getElementById('ed-observaciones').value = lead.observaciones || '';
   document.getElementById('ed-creado-por').textContent = lead.creado_por || '—';
   document.getElementById('ed-created-at').textContent = fechaCorta(lead.created_at) || '—';
@@ -1745,6 +1811,7 @@ function recolectarPayloadFicha() {
     vigencia_hasta: document.getElementById('ed-incluye-vigencia').checked ? (document.getElementById('ed-vigencia-hasta').value || null) : null,
     equipo: document.getElementById('ed-equipo').value.trim(),
     operador: document.getElementById('ed-operador').value.trim(),
+    proyecto: document.getElementById('ed-proyecto').value.trim(),
     observaciones: document.getElementById('ed-observaciones').value.trim(),
     ...ivaPayload()
   };
@@ -1887,6 +1954,7 @@ async function duplicarRegistro(leadId) {
       iva_tasa: lead.iva_tasa,
       equipo: lead.equipo,
       operador: lead.operador,
+      proyecto: lead.proyecto,
       duplicado_de: lead.id,
       folio: folioOrdenServicio(lead)
     });
