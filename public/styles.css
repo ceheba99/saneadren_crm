@@ -623,10 +623,18 @@ header.app .logo-saneadren{display:block;width:250px;max-width:100%;height:auto;
 @media(max-width:600px){.captura-contacto-grid{grid-template-columns:minmax(0,1fr);}}
 
 #editor-cotizacion{margin:18px 0;padding:18px;border:1px solid #e1e4e7;border-radius:10px;background:#fff;}
-#editor-cotizacion .gc-fila{display:flex;align-items:flex-start;gap:12px;padding:12px 0;border-bottom:1px solid #e1e4e7;}
-#editor-cotizacion .gc-fila>.form-grid-2{flex:1;}
-#editor-cotizacion .gc-quitar{align-self:flex-start;white-space:nowrap;}
-@media(max-width:600px){#editor-cotizacion .gc-fila{flex-direction:column;}#editor-cotizacion .gc-fila>.form-grid-2{width:100%;}}
+/* Cada servicio: una tarjeta con cabecera (número + quitar) y una cuadrícula alineada. */
+#gc-items{counter-reset:gc-fila;display:flex;flex-direction:column;gap:12px;margin-bottom:12px;}
+#editor-cotizacion .gc-fila{counter-increment:gc-fila;border:1px solid var(--gris-200);border-radius:10px;padding:12px 14px 14px;background:#fcfcfd;}
+.gc-fila-cab{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;}
+.gc-fila-num::before{content:"Servicio " counter(gc-fila);font-size:12px;font-weight:700;color:var(--azul-600);text-transform:uppercase;letter-spacing:.4px;}
+#editor-cotizacion .gc-quitar{white-space:nowrap;padding:5px 10px;font-size:12.5px;}
+.gc-fila-grid{display:grid;grid-template-columns:minmax(0,1.7fr) minmax(76px,.5fr) minmax(0,1fr) minmax(0,1fr);gap:10px 12px;align-items:end;}
+.gc-fila-grid .campo-modal label{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.gc-fila-grid .gc-c-leyenda{grid-column:1/-1;}
+.gc-fila-grid .gc-c-leyenda textarea{min-height:60px;resize:vertical;}
+.gc-fila-grid input,.gc-fila-grid select{width:100%;}
+@media(max-width:600px){.gc-fila-grid{grid-template-columns:1fr 1fr;}.gc-fila-grid .gc-c-servicio{grid-column:1/-1;}}
 
 /* Elementos solo para administradores (el servidor también lo valida). */
 body:not(.es-admin) .solo-admin{display:none !important;}
@@ -884,9 +892,7 @@ header.app nav.menu-principal .menu-sub .menu-item:focus-visible{outline:3px sol
 .gc-iva-opcion:has(input:disabled){cursor:not-allowed;opacity:.7;}
 
 /* Partida: cantidad × precio unitario = importe. */
-.gc-cantidades{display:grid;grid-template-columns:minmax(70px,.6fr) 1.2fr 1fr;gap:10px;}
 .gc-importe[readonly]{background:var(--gris-100);font-weight:700;}
-@media(max-width:600px){.gc-cantidades{grid-template-columns:1fr 1fr;}.gc-cantidades .campo-modal:last-child{grid-column:1/-1;}}
 
 /* Generador de ventas. */
 .gen-resumen{font-size:13.5px;color:var(--texto-sec);margin:8px 0;}
@@ -1024,3 +1030,36 @@ header.app nav.menu-principal .menu-sub .menu-item:focus-visible{outline:3px sol
 .btn-chico{padding:4px 9px;font-size:12px;min-height:0;}
 .tabla-dinero .rojo{color:var(--rojo);}
 button.enlace{background:none;border:0;padding:0;color:var(--azul-600);text-decoration:underline;cursor:pointer;font:inherit;}
+/* Casilla que acompaña a un campo de fecha: alineada con el renglón del campo. */
+.campo-modal.campo-check{justify-content:flex-end;}
+.campo-modal.campo-check .diseno-campo-checkbox{min-height:44px;display:flex;align-items:center;gap:8px;text-transform:none;font-size:14px;font-weight:600;color:var(--texto);letter-spacing:0;}
+/* Ventana de crear: fecha de la cotización y vigencia lado a lado. */
+.sn-vigencia{display:grid;grid-template-columns:1fr 1fr;gap:0 16px;align-items:start;}
+.sn-vigencia-check{display:flex !important;align-items:center;gap:6px;cursor:pointer;}
+.sn-vigencia-check input{margin:0;width:auto;min-height:0;}
+.sn-sin-vigencia{margin:0;min-height:44px;display:flex;align-items:center;padding:0 12px;border:1px dashed var(--gris-300);border-radius:8px;color:var(--texto-sec);font-size:14px;}
+.label-nota{font-weight:400;text-transform:none;letter-spacing:0;color:var(--texto-sec);}
+@media(max-width:600px){.sn-vigencia{grid-template-columns:1fr;}}
+/* Ventana de crear cotización u orden: un espacio parejo entre cada bloque. */
+#overlay-servicio-nuevo .modal-body{display:flex;flex-direction:column;gap:14px;}
+#overlay-servicio-nuevo .modal-body>*{margin-top:0;margin-bottom:0;}
+#overlay-servicio-nuevo .diseno-sn-cliente-info{align-self:flex-start;}
+#overlay-servicio-nuevo #editor-cotizacion{margin:4px 0 0;}
+#sn-datos-orden{display:flex;flex-direction:column;gap:14px;}
+#sn-datos-orden[hidden]{display:none;}
+/* Etiquetas uniformes: las de grupos de botones se ven igual que las de los campos. */
+.etiqueta-campo{font-size:11px;font-weight:700;color:var(--texto-sec);text-transform:uppercase;letter-spacing:.4px;}
+/* En renglones de dos o tres campos, la etiqueta va en un renglón para que los campos queden alineados. */
+.form-grid-2>.campo>label,.form-grid-3>.campo>label,.form-grid-2>.campo-modal>label,.form-grid-3>.campo-modal>label{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+/* Opciones tipo píldora dentro de un campo: texto normal, no como etiqueta en mayúsculas. */
+.campo label.gc-iva-opcion,.campo-modal label.gc-iva-opcion{font-size:14px;font-weight:600;text-transform:none;letter-spacing:0;color:var(--texto);white-space:normal;}
+/* Barras de filtros: buscador, listas y botones a la misma altura y alineados. */
+.filtros{align-items:center;}
+.filtros input:not([type=checkbox]):not([type=radio]),.filtros select,.filtros .btn{height:40px;min-height:40px;box-sizing:border-box;padding-top:0;padding-bottom:0;}
+.filtros .btn{display:inline-flex;align-items:center;}
+.filtros label{display:inline-flex;align-items:center;gap:6px;}
+@media(max-width:600px){
+  .gc-fila-grid .campo-modal label{white-space:normal;}
+  .gc-fila-grid .gc-c-importe{grid-column:1/-1;}
+}
+#sn-wrap-vigencia input{width:100%;box-sizing:border-box;}
