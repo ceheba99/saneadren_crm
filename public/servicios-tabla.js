@@ -41,7 +41,7 @@ const ServiciosTabla = (() => {
       <p class="ayuda">Haz clic en un encabezado para ordenar. Las fechas Desde y Hasta se incluyen. Los servicios sin fecha se excluyen al filtrar por un periodo.</p>
       <div class="servicios-resumen" role="status" aria-live="polite"></div>
       <div class="servicios-scroll" tabindex="0" role="region" aria-label="Tabla de servicios con desplazamiento horizontal">
-        <table class="tabla-servicios"><caption>Historial comercial del contacto</caption><thead><tr>${columnas.map(([key,label])=>`<th scope="col" data-col="${key}" aria-sort="none"><button type="button" data-orden="${key}">${label}<span aria-hidden="true"></span></button></th>`).join('')}<th scope="col">Notas</th><th scope="col">Acciones</th></tr></thead><tbody></tbody></table>
+        <table class="tabla-servicios"><caption>Historial comercial del contacto</caption><thead><tr>${columnas.map(([key,label])=>`<th scope="col" data-col="${key}" aria-sort="none"><button type="button" data-orden="${key}">${label}<span aria-hidden="true"></span></button></th>`).join('')}<th scope="col">Acciones</th></tr></thead><tbody></tbody></table>
       </div>`;
       cont.querySelectorAll('[data-filtro]').forEach(el=>{el.setAttribute('aria-label',{busqueda:'Buscar servicio',estatus:'Estatus',fecha:'Filtrar por',desde:'Desde',hasta:'Hasta'}[el.dataset.filtro]);el.value=st.f[el.dataset.filtro];el.addEventListener(el.type==='search'?'input':'change',()=>{st.f[el.dataset.filtro]=el.value;pintar(id);});});
       cont.addEventListener('click', manejarClick);
@@ -62,11 +62,11 @@ const ServiciosTabla = (() => {
       <td>${escapar(s.estatus==='ganado'?folioOrdenServicio(s):folioCotizacion(s))}</td><td class="servicio-nombre">${escapar(s.servicio_nombre||'Servicio')}${st.tipo==='lead' && s.id===LEAD_ACTUAL?.id?'<small>Ficha actual</small>':''}</td>
       <td><span class="tag-estatus ${Object.hasOwn(nombres,s.estatus)?s.estatus:'abierto'}">${escapar(nombres[s.estatus]||s.estatus)}</span></td>
       <td class="servicio-importe">${s.valor==null?'Sin importe':formatoMoneda(s.valor)}${s.valor!=null&&!s.iva_modo?'<small>IVA por definir</small>':''}</td><td>${fecha(s.created_at)}</td><td>${fecha(s.fecha_servicio)}</td>
-      <td>${escapar(s.responsable_nombre||'Sin asignar')}</td><td class="servicio-notas">${escapar(s.notas_iniciales||'—')}</td>
+      <td>${escapar(s.responsable_nombre||'Sin asignar')}</td>
       <td><div class="servicios-acciones"><button type="button" class="btn btn-outline" data-accion="abrir" data-id="${Number(s.id)}" aria-label="Abrir ${s.estatus==='ganado'?'servicio':'cotización'} ${Number(s.id)}">${s.estatus==='ganado'?'Ver servicio':'Ver cotización'}</button>
       ${s.estatus==='ganado'?`<button type="button" class="btn btn-outline" data-accion="duplicar" data-id="${Number(s.id)}" aria-label="Duplicar orden de servicio ${Number(s.id)}" title="Crea otra orden de servicio con los mismos datos — útil para clientes con servicio recurrente">Duplicar</button>`:''}
       <button type="button" class="btn btn-eliminar solo-admin" data-accion="eliminar" data-id="${Number(s.id)}" aria-label="Eliminar servicio ${Number(s.id)}">Eliminar</button></div></td>
-    </tr>`).join('') : `<tr><td colspan="9" class="servicios-vacio">${error?'Corrige las fechas para consultar servicios.':st.datos.length?'No hay servicios con estos filtros. Puedes seleccionar Todos o limpiar los filtros.':'Este contacto aún no tiene cotizaciones ni servicios registrados.'}</td></tr>`;
+    </tr>`).join('') : `<tr><td colspan="8" class="servicios-vacio">${error?'Corrige las fechas para consultar servicios.':st.datos.length?'No hay servicios con estos filtros. Puedes seleccionar Todos o limpiar los filtros.':'Este contacto aún no tiene cotizaciones ni servicios registrados.'}</td></tr>`;
   }
   async function manejarClick(e) {
     const cont=e.currentTarget,st=estados.get(cont.id),btn=e.target.closest('button');if(!btn)return;
@@ -108,7 +108,7 @@ const ServiciosTabla = (() => {
     }
     await cargarLeads();
     if(document.getElementById('vista-clientes').classList.contains('activa'))await cargarClientes();
-    if(document.getElementById('vista-pendientes').classList.contains('activa'))await cargarPendientes();
+    if(document.getElementById('vista-inicio').classList.contains('activa'))await cargarInicio();
     await actualizarBadgePendientes();
   }
   return {render,refrescar,eliminar,filtrar,ordenar,fecha,escapar};

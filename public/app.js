@@ -118,6 +118,7 @@ document.querySelectorAll('header nav [data-vista]').forEach(btn => {
 });
 function cambiarVista(v, opciones) {
   if (v === 'usuarios' && USUARIO_ACTUAL?.rol !== 'admin') v = 'inicio';
+  if (v === 'pendientes') v = 'inicio'; // Pendientes ahora es parte de Inicio
   // Cuentas por cobrar y por pagar son dos secciones del menú Finanzas que usan la misma pantalla.
   if (v === 'cuentas') v = ['pagar', 'proveedores'].includes(opciones?.pestana) ? 'pagar' : 'cobrar';
   const seccionCuentas = ['cobrar', 'pagar'].includes(v) ? v : null;
@@ -128,7 +129,6 @@ function cambiarVista(v, opciones) {
   if (v === 'leads') cargarLeads();
   if (v === 'clientes') cargarClientes();
   if (v === 'prospeccion') Prospeccion.cargar();
-  if (v === 'pendientes') cargarPendientes();
   if (v === 'resultados') cargarResultados();
   if (v === 'usuarios') cargarUsuarios();
   if (seccionCuentas) Finanzas.cargar({ ...opciones, seccion: seccionCuentas });
@@ -217,7 +217,7 @@ function abrirServicioNuevo(modo, prefill) {
     ? 'Úsalo cuando el cliente ya confirmó. Indica el importe y la fecha acordados; aparecerá como contratado en su historial.'
     : 'Completa la propuesta y pulsa Crear cotización. Cerrar esta ventana no crea ningún registro.';
   document.getElementById('sn-label-valor').textContent = esDirecto ? 'Importe contratado (MXN)' : 'Importe propuesto (MXN, opcional)';
-  document.getElementById('sn-label-fecha').textContent = esDirecto ? 'Fecha acordada del servicio' : 'Fecha del servicio (si ya se sabe)';
+  document.getElementById('sn-campo-fecha').hidden = !esDirecto;
   document.getElementById('sn-cliente-info').innerHTML =
     `<b>${escaparHtml(CLIENTE_DUP.nombre || 'Sin nombre')}</b> · ${escaparHtml(CLIENTE_DUP.telefono)}${CLIENTE_DUP.direccion ? ' · ' + escaparHtml(CLIENTE_DUP.direccion) : ''}`;
   Finanzas.avisoAdeudo(CLIENTE_DUP.id, 'sn-aviso-adeudo');
@@ -232,8 +232,6 @@ function abrirServicioNuevo(modo, prefill) {
     ? `Última vez: ${formatoMoneda(CLIENTE_DUP.ultimo_valor)}`
     : 'Si ya se conoce';
   document.getElementById('sn-fecha').value = '';
-  document.getElementById('sn-notas').value = prefill?.notas_iniciales || '';
-  document.getElementById('sn-urgente').checked = !!prefill?.urgente;
   document.getElementById('sn-datos-orden').hidden = !esDirecto;
   document.getElementById('sn-equipo').value = prefill?.equipo || '';
   document.getElementById('sn-operador').value = prefill?.operador || '';
@@ -281,9 +279,8 @@ async function guardarServicioNuevo(descargar=false) {
     direccion: document.getElementById('sn-ubicacion').value.trim(),
     servicio_id: document.getElementById('sn-servicio').value || null,
     responsable_id: USUARIO_ACTUAL.id,
-    notas_iniciales: document.getElementById('sn-notas').value.trim(),
     valor: valorRaw === '' ? null : Number(valorRaw),
-    fecha_servicio: document.getElementById('sn-fecha').value || null,
+    fecha_servicio: esDirecto ? (document.getElementById('sn-fecha').value || null) : null,
     creado_por: USUARIO_ACTUAL.nombre,
     forzar_duplicado: true,
     estatus: esDirecto ? 'ganado' : undefined,
@@ -291,7 +288,6 @@ async function guardarServicioNuevo(descargar=false) {
     equipo: esDirecto ? document.getElementById('sn-equipo').value.trim() : null,
     operador: esDirecto ? document.getElementById('sn-operador').value.trim() : null,
     observaciones: esDirecto ? document.getElementById('sn-observaciones').value.trim() : null,
-    urgente: document.getElementById('sn-urgente').checked,
     ...ivaPayload()
   };
   botonGuardar.disabled = true;
@@ -372,7 +368,7 @@ async function cargarInicio() {
 
   const contCot = document.getElementById('inicio-cotizaciones');
   const filasCot = [...alertas.map(filaAlerta), ...estancadas.map(filaEstancada)];
-  contCot.innerHTML = filasCot.length ? filasCot.join('') : '<p class="util-45">Ninguna cotización necesita seguimiento en este momento. 🎉</p>';
+  contCot.innerHTML = filasCot.length ? filasCot.join('') : '<p class="util-45">No hay avisos ni cotizaciones pendientes por ahora. 🎉</p>';
 
   const contRec = document.getElementById('inicio-recompras');
   contRec.innerHTML = recompras.length
@@ -1094,10 +1090,16 @@ async function descargarOrdenServicioActual(mensaje){
   toast(mensaje || 'Orden de servicio generada');
 }
 on('btn-generar-orden-servicio','click',async e=>{
+  const btn=e.currentTarget; // antes de cualquier await: después currentTarget ya es null
   if(!validarEditorCotizacion())return;
   const cerrando = LEAD_ACTUAL.estatus === 'abierto';
   if (cerrando) {
     sincronizarEditor();
+    if (!document.getElementById('ed-fecha-servicio').value) {
+      const fecha = await solicitarDialogo({ titulo: 'Convertir en orden de servicio', mensaje: 'El cliente aceptó la cotización. ¿Qué fecha quedó acordada para el servicio?', aceptar: 'Crear orden de servicio', campo: { tipo: 'date', etiqueta: 'Fecha acordada del servicio' } });
+      if (!fecha) return;
+      document.getElementById('ed-fecha-servicio').value = fecha;
+    }
     if(!document.getElementById('ed-servicio').value){toast('Selecciona el servicio que se contratará');document.getElementById('ed-servicio').focus();return;}
     if(!document.getElementById('ed-direccion').value.trim()){toast('Indica la ubicación del servicio');document.getElementById('ed-direccion').focus();return;}
     if(!document.getElementById('ed-fecha-servicio').value){toast('Indica la fecha acordada del servicio antes de generar la orden');document.getElementById('ed-fecha-servicio').focus();return;}
@@ -1105,7 +1107,7 @@ on('btn-generar-orden-servicio','click',async e=>{
     // (el backend también lo valida).
     if(document.getElementById('ed-valor').value===''){toast('Ingresa el costo del servicio antes de generar la orden');document.getElementById('ed-valor').focus();return;}
   }
-  const btn=e.currentTarget;btn.disabled=true;
+  btn.disabled=true;
   try{
     const payload = cerrando ? { ...recolectarPayloadFicha(), estatus: 'ganado' } : recolectarPayloadFicha();
     if(!await guardarLeadExistente(payload))return;
@@ -1233,7 +1235,7 @@ function prepararEditorCotizacion(lead,modo){
   EDITOR_MODO=modo;
   const editor=document.getElementById('editor-cotizacion');
   if(modo==='nuevo')document.getElementById('editor-nuevo-destino').append(editor);
-  else document.getElementById('ed-notas').closest('.form-grid-2').after(editor);
+  else document.getElementById('ed-direccion').closest('.form-grid-2').after(editor);
   editor.hidden=false;
   ['sn-servicio','sn-valor','ed-servicio','ed-valor','ed-canal'].forEach(id=>document.getElementById(id).parentElement.hidden=true);
   // IVA: un registro nuevo empieza "más IVA" (casilla sin marcar); los demás traen el suyo.
@@ -1559,7 +1561,9 @@ async function abrirFicha(id) {
   document.getElementById('ed-fecha-cotizacion').value = lead.fecha_cotizacion || '';
   document.getElementById('ed-incluye-vigencia').checked = lead.incluye_vigencia !== 0;
   document.getElementById('ed-vigencia-hasta').value = lead.vigencia_hasta || '';
-  document.getElementById('ed-notas').value = lead.notas_iniciales || '';
+  const notasIniciales = document.getElementById('ed-notas-iniciales');
+  notasIniciales.hidden = !lead.notas_iniciales;
+  notasIniciales.textContent = lead.notas_iniciales ? 'Nota al crear este registro: ' + lead.notas_iniciales : '';
   document.getElementById('ed-urgente').checked = !!lead.urgente;
   document.getElementById('ed-equipo').value = lead.equipo || '';
   document.getElementById('ed-operador').value = lead.operador || '';
@@ -1717,8 +1721,6 @@ function recolectarPayloadFicha() {
     fecha_cotizacion: document.getElementById('ed-fecha-cotizacion').value || null,
     incluye_vigencia: document.getElementById('ed-incluye-vigencia').checked,
     vigencia_hasta: document.getElementById('ed-incluye-vigencia').checked ? (document.getElementById('ed-vigencia-hasta').value || null) : null,
-    notas_iniciales: document.getElementById('ed-notas').value.trim() || null,
-    urgente: document.getElementById('ed-urgente').checked,
     equipo: document.getElementById('ed-equipo').value.trim(),
     operador: document.getElementById('ed-operador').value.trim(),
     observaciones: document.getElementById('ed-observaciones').value.trim(),
@@ -1817,34 +1819,7 @@ on('btn-agregar-obs', 'click', async () => {
   toast(esAlerta ? 'Recordatorio agregado' : 'Observación agregada');
 });
 
-// ---------- Vista Pendientes: recompras (servicios por vencer) + alertas, juntas ----------
-let FILTRO_PENDIENTE = 'todos';
-document.querySelectorAll('[data-filtro-pendiente]').forEach(btn => {
-  btn.addEventListener('click', () => {
-    FILTRO_PENDIENTE = btn.dataset.filtroPendiente;
-    document.querySelectorAll('[data-filtro-pendiente]').forEach(b => b.classList.toggle('activo', b === btn));
-    pintarPendientes();
-  });
-});
-let PENDIENTES_DATOS = [];
-async function cargarPendientes() {
-  const [recompras, alertas] = await Promise.all([
-    api('/recompras').then(r => r.json()),
-    api('/alertas').then(r => r.json())
-  ]);
-  actualizarBadgePendientes(recompras.length + alertas.length);
-  PENDIENTES_DATOS = [
-    ...recompras.map(r => ({ tipo: 'recompra', vencido: r.dias_restantes <= 0, datos: r })),
-    ...alertas.map(r => ({ tipo: 'alerta', vencido: false, datos: r }))
-  ];
-  pintarPendientes();
-}
-function pintarPendientes() {
-  const cont = document.getElementById('lista-pendientes');
-  const items = PENDIENTES_DATOS.filter(p => FILTRO_PENDIENTE === 'todos' || p.tipo === FILTRO_PENDIENTE);
-  if (!items.length) { cont.innerHTML = '<p class="util-45">No hay pendientes con este filtro por ahora.</p>'; return; }
-  cont.innerHTML = items.map(p => p.tipo === 'recompra' ? filaRecompra(p.datos, p.vencido) : filaAlerta(p.datos)).join('');
-}
+// ---------- Pendientes (en Inicio): recompras y avisos ----------
 function filaRecompra(r, vencido) {
   const texto = vencido
     ? `Vencido hace ${Math.abs(r.dias_restantes)} día${Math.abs(r.dias_restantes) === 1 ? '' : 's'}`
@@ -1896,7 +1871,6 @@ async function duplicarRegistro(leadId) {
       valor: lead.valor,
       iva_modo: lead.iva_modo,
       iva_tasa: lead.iva_tasa,
-      notas_iniciales: lead.notas_iniciales,
       equipo: lead.equipo,
       operador: lead.operador,
       duplicado_de: lead.id,
@@ -1909,8 +1883,21 @@ async function duplicarRegistro(leadId) {
 }
 async function resolverAlertaGlobal(id) {
   await api('/historial/' + id + '/resolver', { method: 'PUT' });
-  cargarPendientes();
+  cargarInicio();
+  actualizarBadgePendientes();
 }
+
+// "Urgente" está en Avisos y notas del registro: se guarda al marcarlo (no espera a "Guardar cambios").
+on('ed-urgente', 'change', async e => {
+  if (!LEAD_ACTUAL) return;
+  const urgente = e.target.checked;
+  try {
+    if (!await guardarLeadExistente({ version: LEAD_ACTUAL.version, urgente })) { e.target.checked = !urgente; return; }
+    await registrarEventoSistema(LEAD_ACTUAL.id, urgente ? 'Marcado como urgente.' : 'Ya no está marcado como urgente.');
+    toast(urgente ? 'Marcado como urgente' : 'Ya no es urgente');
+    if (document.getElementById('vista-leads').classList.contains('activa')) cargarLeads();
+  } catch (err) { e.target.checked = !urgente; toast('No se pudo guardar: ' + err.message); }
+});
 async function actualizarBadgePendientes(n) {
   const b = document.getElementById('badge-pendientes');
   if (n === undefined) {

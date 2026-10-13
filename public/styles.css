@@ -780,8 +780,8 @@ header.app nav.menu-principal .menu-sub .menu-item.activa{background:#fff3cd;col
 .plegable-resumen{font-size:13.5px;color:var(--texto);background:var(--gris-100);border:1px dashed var(--gris-300);border-radius:10px;padding:9px 12px;cursor:pointer;margin-top:4px;}
 .plegable-resumen:hover{border-color:var(--amarillo);}
 @media(max-width:900px){
-  /* Panel del celular: accesos directos (Inicio, Pendientes, Clientes) en una fila y luego los grupos. */
-  nav.menu-principal.abierta .menu-items{grid-template-columns:repeat(3,minmax(0,1fr));}
+  /* Panel del celular: Inicio arriba y luego los grupos (Ventas, Finanzas, Ajustes). */
+  nav.menu-principal.abierta .menu-items{grid-template-columns:minmax(0,1fr);}
   header.app nav.menu-principal .menu-items>.menu-item{flex-direction:column;align-items:center;justify-content:center;text-align:center;gap:4px;font-size:13px;padding:8px 4px;}
 }
 /* Identidad del contacto sola en su sección: sin hueco abajo. */
@@ -813,3 +813,8 @@ header.app nav.menu-principal .menu-sub .menu-item:focus-visible{outline:3px sol
 .lead-card.contacto-card .lead-folio{color:var(--texto-sec);}
 .lead-card.contacto-card .lead-resp{color:var(--amarillo-texto);font-weight:700;}
 .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0;}
+
+/* Ficha del registro: "urgente" y las notas iniciales viven en Avisos y notas. */
+.aviso-urgente{display:flex;align-items:center;gap:8px;margin:2px 0 10px;font-weight:700;}
+.aviso-urgente .ayuda{font-weight:400;margin:0;}
+.notas-iniciales{background:var(--gris-100);border-left:3px solid var(--gris-400);padding:8px 10px;border-radius:6px;white-space:pre-wrap;margin:0 0 10px;}

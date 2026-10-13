@@ -4,9 +4,9 @@ const FlujoCRM = (() => {
   const baselines = new Map();
   const listasGuardadas = new Map();
   const campos = {
-    'overlay-ficha':'#gc-iva-modo,#gc-items input,#gc-items select,#gc-items textarea,#ed-direccion,#ed-canal,#ed-servicio,#ed-responsable,#ed-valor,#ed-fecha-servicio,#ed-fecha-cotizacion,#ed-incluye-vigencia,#ed-vigencia-hasta,#ed-notas,#ed-urgente,#ed-encuesta-calificacion,#ed-encuesta-comentario,#ed-equipo,#ed-operador,#ed-observaciones',
+    'overlay-ficha':'#gc-iva-modo,#gc-items input,#gc-items select,#gc-items textarea,#ed-direccion,#ed-canal,#ed-servicio,#ed-responsable,#ed-valor,#ed-fecha-servicio,#ed-fecha-cotizacion,#ed-incluye-vigencia,#ed-vigencia-hasta,#ed-encuesta-calificacion,#ed-encuesta-comentario,#ed-equipo,#ed-operador,#ed-observaciones',
     'overlay-ficha-cliente':'#fc-ed-telefono,#fc-ed-telefono-alterno,#fc-ed-nombre,#fc-ed-correo,#fc-ed-empresa,#fc-ed-rfc,#fc-ed-direccion,#fc-ed-giro,#fc-ed-notas-generales',
-    'overlay-servicio-nuevo':'#gc-iva-modo,#gc-items input,#gc-items select,#gc-items textarea,#sn-servicio,#sn-valor,#sn-fecha,#sn-notas,#sn-ubicacion,#sn-urgente,#sn-equipo,#sn-operador,#sn-observaciones',
+    'overlay-servicio-nuevo':'#gc-iva-modo,#gc-items input,#gc-items select,#gc-items textarea,#sn-servicio,#sn-valor,#sn-fecha,#sn-ubicacion,#sn-equipo,#sn-operador,#sn-observaciones',
 
   };
   const estado = s => ({abierto:'Cotización abierta',ganado:'Servicio contratado',perdido:'Cotización no aceptada'}[s]||s);
@@ -57,10 +57,9 @@ const FlujoCRM = (() => {
     const btnOrden=$('btn-generar-orden-servicio');
     if(btnOrden)btnOrden.textContent='Generar orden de servicio';
     $('ed-valor').closest('.campo-modal').querySelector('label').textContent=contratado?'Importe contratado (MXN)':'Importe propuesto (MXN)';
-    $('ed-notas').closest('.campo-modal').querySelector('label').textContent=contratado?'Notas internas de esta orden (se guardan con «Guardar cambios»)':'Notas internas de esta cotización (se guardan con «Guardar cambios»)';
     // Las notas con fecha dicen a qué registro pertenecen, para no confundirlas con el contacto.
     const folio=contratado?folioOrdenServicio(lead):folioCotizacion(lead),doc=contratado?'la orden':'la cotización';
-    $('bitacora-titulo').textContent=`Notas y bitácora de ${doc} ${folio}`;
+    $('bitacora-titulo').textContent=`Avisos y notas de ${doc} ${folio}`;
     $('obs-ayuda').textContent=`La nota se guarda solo en ${doc} ${folio}, con fecha y quién la escribió. No se agrega al contacto ni a sus otros servicios.`;
     $('obs-texto').placeholder=`Escribe una nota sobre ${doc} ${folio}...`;
     $('ed-fecha-cotizacion').closest('.campo-modal').hidden=contratado;

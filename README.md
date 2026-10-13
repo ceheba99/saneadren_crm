@@ -41,7 +41,8 @@
   | Ajustes o descuentos a una cuenta y revisión inicial | | ✔ |
   | Borrar cotizaciones u órdenes (sin pagos) | | ✔ |
   El servidor valida los permisos de cada acción de la tabla. Ojo: las pantallas de trabajo (contactos, cotizaciones) muestran sus datos a todos los usuarios con sesión, así que ocultar "Exportar a Excel" evita la descarga masiva con un clic, pero no impide que alguien copie lo que ve.
-- **Vista de alertas**: todas las alertas vencidas o de hoy, con acceso directo a la ficha del lead y botón para resolverlas.
+- **Inicio = pendientes**: avisos y recordatorios vencidos o de hoy, cotizaciones sin movimiento y recompras, con acceso directo a cada registro (ya no hay una pestaña Pendientes aparte).
+- **Flujo cotización vs. orden**: la cotización no lleva fecha de servicio; al convertirla en orden se pide la fecha acordada. Notas, recordatorios y "urgente" van en *Avisos y notas* de cada cotización u orden.
 - **Filtros**: por responsable, por estatus (abierto/ganado/perdido) y búsqueda por nombre o teléfono.
 
 ## Requisitos

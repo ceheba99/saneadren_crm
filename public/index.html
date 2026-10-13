@@ -25,13 +25,12 @@
       <span class="menu-actual" id="menu-actual">Inicio</span><span class="menu-badge" id="badge-menu" hidden></span>
     </button>
     <div class="menu-items" id="menu-items">
-      <button type="button" class="menu-item activa" data-vista="inicio"><span class="menu-icono" aria-hidden="true">🏠</span>Inicio</button>
-      <button type="button" class="menu-item" data-vista="pendientes"><span class="menu-icono" aria-hidden="true">⏰</span>Pendientes <span id="badge-pendientes" style="display:none">0</span></button>
-      <button type="button" class="menu-item" data-vista="clientes"><span class="menu-icono" aria-hidden="true">👥</span>Clientes</button>
+      <button type="button" class="menu-item activa" data-vista="inicio"><span class="menu-icono" aria-hidden="true">🏠</span>Inicio <span id="badge-pendientes" style="display:none">0</span></button>
       <div class="menu-grupo" data-grupo="ventas">
         <button type="button" class="menu-grupo-btn" aria-expanded="false"><span class="menu-icono" aria-hidden="true">💼</span>Ventas<span class="menu-flecha" aria-hidden="true">▾</span></button>
         <div class="menu-sub">
           <button type="button" class="menu-item" data-vista="alta"><span class="menu-icono" aria-hidden="true">➕</span>Nuevo contacto</button>
+          <button type="button" class="menu-item" data-vista="clientes"><span class="menu-icono" aria-hidden="true">👥</span>Contactos</button>
           <button type="button" class="menu-item" data-vista="leads"><span class="menu-icono" aria-hidden="true">📄</span>Cotizaciones</button>
           <button type="button" class="menu-item" data-vista="prospeccion"><span class="menu-icono" aria-hidden="true">🔎</span>Prospección</button>
         </div>
@@ -65,7 +64,7 @@
   <section class="vista activa" id="vista-inicio">
     <div class="inicio-saludo">
       <h2>Lo que necesita atención hoy</h2>
-      <p class="ayuda">Todo lo que ya vencido o toca hoy, junto en un solo lugar. Cada tarjeta te lleva directo al registro — no hace falta buscarlo.</p>
+      <p class="ayuda">Tus pendientes en un solo lugar: avisos y recordatorios que vencen hoy, cotizaciones sin movimiento y recompras. Cada tarjeta te lleva directo al registro.</p>
     </div>
 
     <div class="inicio-bloque inicio-bloque-dinero solo-cobranza">
@@ -74,8 +73,8 @@
     </div>
 
     <div class="inicio-bloque inicio-bloque-cotizacion">
-      <h3><span class="cadena-nodo pasado">📄 Cotizaciones</span> que necesitan seguimiento</h3>
-      <p class="ayuda">Alertas vencidas y cotizaciones abiertas sin movimiento hace más de 7 días.</p>
+      <h3>⏰ Avisos y seguimiento</h3>
+      <p class="ayuda">Recordatorios de cotizaciones u órdenes que vencen hoy o ya vencieron, y cotizaciones abiertas sin movimiento hace más de 7 días.</p>
       <div id="inicio-cotizaciones" class="inicio-lista"></div>
     </div>
 
@@ -265,17 +264,6 @@
   </section>
 
   <!-- ====== VISTA: PENDIENTES (Recompras + Alertas juntas) ====== -->
-  <section class="vista" id="vista-pendientes">
-    <h2 class="util-10">Pendientes</h2>
-    <p class="ayuda util-11">Aquí se juntan las <b>recompras sugeridas</b> (servicios recurrentes por vencer) y las <b>alertas y recordatorios</b>. Cada tarjeta indica de qué tipo es.</p>
-    <div class="pendientes-filtros">
-      <button type="button" class="activo" data-filtro-pendiente="todos">Todos</button>
-      <button type="button" data-filtro-pendiente="recompra">🔁 Recompras</button>
-      <button type="button" data-filtro-pendiente="alerta">⏰ Alertas</button>
-    </div>
-    <div class="lista-alertas" id="lista-pendientes"></div>
-  </section>
-
   <!-- ====== VISTA: RESULTADOS ====== -->
   <section class="vista" id="vista-resultados">
     <h2>Resultados comerciales</h2>
@@ -490,13 +478,11 @@
           </div>
           <div class="campo-modal"><label>Valor del servicio (MXN)</label><input type="number" id="ed-valor" min="0" step="0.01" placeholder="0.00"></div>
           <div class="campo-modal"><label>Fecha de la cotización</label><input type="date" id="ed-fecha-cotizacion"></div>
-          <div class="campo-modal"><label>Fecha del servicio</label><input type="date" id="ed-fecha-servicio"></div>
+          <div class="campo-modal solo-orden"><label>Fecha acordada del servicio</label><input type="date" id="ed-fecha-servicio"></div>
           <div class="campo-modal">
             <label class="diseno-campo-checkbox"><input type="checkbox" id="ed-incluye-vigencia" checked> Incluir vigencia en la cotización</label>
           </div>
           <div class="campo-modal" id="wrap-vigencia-hasta"><label>Vigencia hasta</label><input type="date" id="ed-vigencia-hasta"></div>
-          <div class="campo-modal full"><label>Notas de la cotización</label><textarea id="ed-notas" rows="2" placeholder="Notas capturadas al registrar la cotización..."></textarea></div>
-          <div class="campo-modal"><label class="diseno-campo-checkbox"><input type="checkbox" id="ed-urgente"> 🔴 Solicitud urgente</label></div>
           <div class="campo-modal solo-orden"><label for="ed-equipo">Equipo</label><input type="text" id="ed-equipo" maxlength="200" placeholder="Ej. E-37-04"></div>
           <div class="campo-modal solo-orden"><label for="ed-operador">Operador(es)</label><input type="text" id="ed-operador" maxlength="300" placeholder="Nombre de quien ejecuta el servicio"></div>
           <div class="campo-modal full solo-orden"><label for="ed-observaciones">Observaciones de la orden</label><textarea id="ed-observaciones" rows="2" maxlength="3000" placeholder="Se imprimen en la orden de servicio; también puedes capturar lo que anotó el operador"></textarea></div>
@@ -543,8 +529,10 @@
 
       <!-- Notas con fecha y la bitácora van juntas y dicen de qué registro son (no del contacto ni de sus otros servicios). -->
       <div class="modal-section" data-plegable="bitacora">
-        <div class="seccion-tit" id="bitacora-titulo">Notas y bitácora de este registro</div>
+        <div class="seccion-tit" id="bitacora-titulo">Avisos y notas de este registro</div>
+        <label class="diseno-campo-checkbox aviso-urgente"><input type="checkbox" id="ed-urgente"> 🔴 Urgente <span class="ayuda">(se guarda al marcarlo y se ve en el Pipeline)</span></label>
         <p class="ayuda" id="obs-ayuda">La nota se guarda solo en este registro, con fecha y quién la escribió.</p>
+        <p class="notas-iniciales" id="ed-notas-iniciales" hidden></p>
         <div class="obs-form">
           <label class="sr-only" for="obs-texto">Nota para este registro</label>
           <textarea id="obs-texto" placeholder="Escribe una nota sobre este registro..."></textarea>
@@ -772,17 +760,11 @@
           <label id="sn-label-valor">Costo del servicio (MXN, opcional)</label>
           <input type="number" id="sn-valor" min="0" step="0.01" placeholder="Si ya se conoce">
         </div>
-        <div class="campo">
-          <label id="sn-label-fecha">Fecha del servicio (opcional)</label>
+        <!-- La fecha del servicio es solo de la orden de servicio (una cotización todavía no tiene fecha acordada).
+             Notas, recordatorios y "urgente" se ponen después en Avisos y notas del registro. -->
+        <div class="campo" id="sn-campo-fecha">
+          <label id="sn-label-fecha">Fecha acordada del servicio</label>
           <input type="date" id="sn-fecha">
-        </div>
-        <div class="campo">
-          <label>Notas (opcional)</label>
-          <textarea id="sn-notas" rows="2"></textarea>
-        </div>
-        <div class="campo">
-          <label>&nbsp;</label>
-          <label class="diseno-campo-checkbox"><input type="checkbox" id="sn-urgente"> 🔴 Solicitud urgente</label>
         </div>
       </div>
       <div class="campo"><label for="sn-ubicacion">Ubicación de este servicio (puedes cambiar el domicilio propuesto)</label><input id="sn-ubicacion" type="text"></div>
