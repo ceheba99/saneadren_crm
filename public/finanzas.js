@@ -30,10 +30,17 @@ const Finanzas = (() => {
     }
     return json(res);
   }
+  // De dónde sale la cuenta: servicio realizado (fecha y quién), por concluir o solo programado.
+  function textoEjecucion(c) {
+    if (c.ejecucion === 'realizado') return 'realizado el ' + fechaTxt(c.fecha_realizado || c.fecha_servicio) + (c.realizado_por === 'subcontratado' ? ' (subcontratado)' : '');
+    if (c.ejecucion === 'no_realizado') return 'no realizado';
+    return (c.por_concluir ? 'por concluir · servicio ' : 'servicio ') + fechaTxt(c.fecha_servicio);
+  }
   function etiquetaEstado(c) {
     if (c.estado === 'pagada') return '<span class="estado-cxc pagada">Pagada</span>';
     if (c.vencida) return `<span class="estado-cxc vencida">Vencida hace ${Number(c.dias_vencido)} d</span>`;
     if (c.programada) return '<span class="estado-cxc programada">Servicio programado</span>';
+    if (c.ejecucion === 'no_realizado') return '<span class="estado-cxc vencida">No realizado</span>';
     return `<span class="estado-cxc ${esc(c.estado)}">${c.estado === 'parcial' ? 'Pago parcial' : 'Pendiente'}</span>`;
   }
   function pintarMetodos(contId, seleccionado, lista = METODOS) {
@@ -296,7 +303,7 @@ const Finanzas = (() => {
         </div></div>`;
     }).join('') : CARTERA.map(c => `<div class="fila-dinero${c.vencida ? ' vencida' : ''}">
         <div class="info"><b>${esc(folioOS(c))}</b> · ${esc(c.cliente_nombre || 'Sin nombre')} ${etiquetaEstado(c)}
-          <small>${esc(c.servicio_nombre || 'Servicio')} · servicio ${esc(fechaTxt(c.fecha_servicio))} · vence ${esc(fechaTxt(c.vence))}${c.factura_folio ? ' · factura ' + esc(c.factura_folio) : ' · sin factura'}</small></div>
+          <small>${esc(c.servicio_nombre || 'Servicio')} · ${esc(textoEjecucion(c))} · vence ${esc(fechaTxt(c.vence))}${c.factura_folio ? ' · factura ' + esc(c.factura_folio) : ' · sin factura'}</small></div>
         <div class="montos"><b>${formatoMoneda(c.saldo)}</b><small>de ${formatoMoneda(c.total)}</small></div>
         <div class="btn-group">
           ${c.saldo > 0 ? `<button type="button" class="btn btn-primario" data-pagar-orden="${Number(c.lead_id)}">Registrar pago</button>` : ''}
@@ -324,7 +331,11 @@ const Finanzas = (() => {
     } else {
       descargarCSV('cuentas_por_cobrar_ordenes_' + hoy() + '.csv', [
         { titulo: 'Folio', valor: folioOS }, { titulo: 'Cliente', valor: c => c.cliente_nombre }, { titulo: 'Servicio', valor: c => c.servicio_nombre },
-        { titulo: 'Fecha del servicio', valor: c => c.fecha_servicio }, { titulo: 'Factura', valor: c => c.factura_folio }, { titulo: 'Total', valor: c => c.total.toFixed(2) },
+        { titulo: 'Fecha del servicio', valor: c => c.fecha_servicio },
+        { titulo: 'Ejecución', valor: c => (c.ejecucion === 'realizado' ? 'Realizado' : c.ejecucion === 'no_realizado' ? 'No realizado' : c.por_concluir ? 'Por concluir' : 'Programado') },
+        { titulo: 'Fecha realizado', valor: c => c.fecha_realizado }, { titulo: 'Realizado por', valor: c => (c.realizado_por === 'subcontratado' ? 'Subcontratado' : c.realizado_por === 'propio' ? 'Equipo propio' : '') },
+        { titulo: 'Unidad', valor: c => c.equipo }, { titulo: 'Operador', valor: c => c.operador }, { titulo: 'Proyecto', valor: c => c.proyecto },
+        { titulo: 'Factura', valor: c => c.factura_folio }, { titulo: 'Total', valor: c => c.total.toFixed(2) },
         { titulo: 'Cobrado', valor: c => c.cobrado.toFixed(2) }, { titulo: 'Saldo', valor: c => c.saldo.toFixed(2) }, { titulo: 'Vence', valor: c => c.vence },
         { titulo: 'Días vencido', valor: c => c.dias_vencido }, { titulo: 'Estado', valor: c => (c.vencida ? 'vencida' : c.estado) }], CARTERA);
     }

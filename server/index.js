@@ -525,6 +525,8 @@ function validarPartidas(req,res,next){
       i.cantidad=cantidad;i.precio=precio;i.importe=Importes.importeDe(cantidad,precio);
       if(i.importe>1e12)return res.status(400).json({error:'El importe de una partida es demasiado alto'});
     }
+    // Ninguna cotización u orden sale en ceros: cada servicio lleva su precio.
+    if(items.some(i=>!(Importes.importeDe(1,i.importe)>0)))return res.status(400).json({error:'Ningún servicio puede ir en $0.00: escribe su precio'});
     req.body.servicio_id=primero.id;req.body.partidas_json=JSON.stringify(items);
   }else{
     // Solo cambia el IVA: se recalcula con las partidas guardadas.
@@ -586,7 +588,12 @@ app.post('/api/leads', validarPartidas, validarRegistro, h((req, res) => {
   if (estatus !== undefined && !['abierto', 'ganado'].includes(estatus)) {
     return res.status(400).json({ error: 'Estatus inválido: use "abierto" para cotizaciones o "ganado" para servicios directos' });
   }
+  if (req.body.partidas_json === undefined) return res.status(400).json({ error: 'Agrega al menos un servicio con su precio' });
   if (!servicio_id) return res.status(400).json({error:'Selecciona un servicio para crear la cotización'});
+  // Vigencia de la cotización (solo cotizaciones): si aplica y hasta qué fecha.
+  const incluyeVigencia = estatus === 'ganado' ? 1 : (req.body.incluye_vigencia === undefined ? 1 : (req.body.incluye_vigencia ? 1 : 0));
+  const vigenciaHasta = incluyeVigencia && estatus !== 'ganado' ? (req.body.vigencia_hasta || null) : null;
+  if (vigenciaHasta && (!/^\d{4}-\d{2}-\d{2}$/.test(vigenciaHasta) || Number.isNaN(Date.parse(vigenciaHasta + 'T00:00:00Z')) || vigenciaHasta < fechaCotizacionFinal)) return res.status(400).json({ error: 'La vigencia debe ser una fecha igual o posterior a la fecha de la cotización' });
   let fechaServicioFinal = fecha_servicio || null;
   if (estatus === 'ganado') {
     if (valor === null || valor === undefined || valor === '') {
@@ -654,6 +661,7 @@ app.post('/api/leads', validarPartidas, validarRegistro, h((req, res) => {
   );
 
   if(req.body.partidas_json!==undefined)db.prepare('UPDATE leads SET partidas_json = ?, iva_modo = ?, iva_tasa = ?, iva_cent = ? WHERE id = ?').run(req.body.partidas_json,req.body.iva_modo??null,req.body.iva_tasa??null,req.body.iva_cent??null,info.lastInsertRowid);
+  db.prepare('UPDATE leads SET incluye_vigencia = ?, vigencia_hasta = ? WHERE id = ?').run(incluyeVigencia, vigenciaHasta, info.lastInsertRowid);
   db.prepare('UPDATE leads SET equipo = ?, operador = ?, observaciones = ?, proyecto = ?, manifiestos = ?, tiros = ? WHERE id = ?').run(textoOrden(req.body.equipo), textoOrden(req.body.operador), textoOrden(req.body.observaciones), textoOrden(req.body.proyecto), textoOrden(req.body.manifiestos), textoOrden(req.body.tiros), info.lastInsertRowid);
   if(req.body.establecimiento_id)db.prepare('UPDATE leads SET establecimiento_id=? WHERE id=?').run(req.body.establecimiento_id,info.lastInsertRowid);
   // Crear una cotización nunca modifica los datos maestros del contacto.
