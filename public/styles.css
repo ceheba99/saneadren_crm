@@ -988,3 +988,39 @@ header.app nav.menu-principal .menu-sub .menu-item:focus-visible{outline:3px sol
 .btn-whatsapp:hover{background:#e8f9ef;border-color:#128c4a;color:#0b6b37;}
 .gc-notas{margin-top:14px;}
 .gc-notas textarea{width:100%;resize:vertical;min-height:90px;}
+
+/* ====== Tablas de Cuentas por cobrar y por pagar ====== */
+.tabla-barra{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:6px 0 8px;}
+.segmentado{display:inline-flex;border:1px solid var(--gris-300);border-radius:8px;overflow:hidden;}
+.segmentado button{border:0;background:var(--blanco);padding:6px 12px;font:inherit;font-size:13px;cursor:pointer;color:var(--texto-sec);}
+.segmentado button+button{border-left:1px solid var(--gris-300);}
+.segmentado button[aria-pressed="true"]{background:var(--azul-600);color:#fff;}
+.tabla-columnas{position:relative;}
+.tabla-columnas summary{cursor:pointer;list-style:none;border:1px solid var(--gris-300);border-radius:8px;padding:6px 12px;font-size:13px;background:var(--blanco);}
+.tabla-columnas summary::-webkit-details-marker{display:none;}
+.tabla-columnas summary::after{content:' ▾';}
+.tabla-columnas-lista{position:absolute;z-index:20;top:calc(100% + 4px);left:0;background:var(--blanco);border:1px solid var(--gris-300);border-radius:10px;box-shadow:var(--sombra-hover);padding:10px 12px;display:grid;grid-template-columns:repeat(2,minmax(150px,1fr));gap:4px 14px;min-width:330px;max-width:calc(100vw - 32px);}
+.tabla-columnas-lista label{display:flex;gap:6px;align-items:center;font-size:13px;white-space:nowrap;}
+.tabla-columnas-lista .btn{grid-column:1/-1;justify-self:start;margin-top:4px;}
+.tabla-dinero-caja{max-height:calc(100vh - 260px);min-height:220px;border:1px solid var(--gris-200);border-radius:10px;background:var(--blanco);}
+.tabla-dinero{border-collapse:separate;border-spacing:0;width:100%;font-size:13px;}
+.tabla-dinero th,.tabla-dinero td,.tabla-dinero td:nth-child(n),.tabla-dinero th:nth-child(n){text-align:left;}
+.tabla-dinero th,.tabla-dinero td{padding:7px 10px;border-bottom:1px solid var(--gris-200);white-space:nowrap;vertical-align:middle;}
+.tabla-dinero thead th{position:sticky;top:0;z-index:2;background:#f3f5f6;font-size:12px;text-transform:uppercase;letter-spacing:.02em;color:var(--texto-sec);text-align:left;}
+.tabla-dinero th.st-num,.tabla-dinero td.st-num,.tabla-dinero td.celda-acciones{text-align:right;}
+.tabla-dinero th.ordenable{cursor:pointer;user-select:none;}
+.tabla-dinero th.ordenable:hover{color:var(--texto);}
+.tabla-dinero tbody tr:nth-child(even){background:#fafbfc;}
+.tabla-dinero tbody tr:hover{background:#f1f6fa;}
+.tabla-dinero tbody tr.fila-vencida td:first-child{box-shadow:inset 3px 0 0 var(--rojo);}
+.tabla-dinero tfoot td{position:sticky;bottom:0;background:#eef1f3;border-top:2px solid var(--gris-300);}
+.tabla-dinero .celda-sub{display:block;color:var(--texto-sec);font-size:11px;}
+.tabla-dinero .celda-notas{white-space:normal;min-width:180px;max-width:280px;font-size:12px;color:var(--texto-sec);}
+.tabla-dinero .celda-acciones{position:sticky;right:0;background:inherit;}
+.tabla-dinero tbody tr .celda-acciones{background:var(--blanco);box-shadow:-6px 0 8px -6px rgba(0,0,0,.15);}
+.tabla-dinero tbody tr:nth-child(even) .celda-acciones{background:#fafbfc;}
+.tabla-dinero .estado-cxc{margin-left:0;white-space:nowrap;}
+.acciones-fila{display:flex;gap:4px;justify-content:flex-end;}
+.btn-chico{padding:4px 9px;font-size:12px;min-height:0;}
+.tabla-dinero .rojo{color:var(--rojo);}
+button.enlace{background:none;border:0;padding:0;color:var(--azul-600);text-decoration:underline;cursor:pointer;font:inherit;}

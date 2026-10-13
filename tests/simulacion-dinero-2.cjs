@@ -54,6 +54,10 @@ const HOY = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Mexico_City' }
   const rs = (await pedir('GET', '/finanzas/resumen', A))[1];
   revisa(rs.cobrado_mes === 3000, 'resumen "Cobrado este mes" sin el descuento', rs.cobrado_mes);
 
+  const fila1 = (await cartera()).find(c => c.lead_id === o1.id);
+  revisa(fila1 && fila1.ultimo_pago && fila1.ultimo_pago.startsWith(HOY + '|transferencia') && fila1.pagos_n === 2, 'la tabla trae el último pago (sin contar el descuento) y el número de pagos', fila1 && [fila1.ultimo_pago, fila1.pagos_n]);
+  const porCliente = (await pedir('GET', '/finanzas/cartera?filtro=todas&vista=cliente', A))[1].find(g => g.cliente_id === C);
+  revisa(porCliente && porCliente.total >= 3480 && porCliente.cobrado >= 3480 && 'rfc' in porCliente && porCliente.ultimo_pago, 'la vista por cliente trae total, cobrado, RFC y último pago', porCliente);
   sec('3. Orden con pagos no se descarta / conflicto de versiones');
   [s, j] = await alta({ partidas_json: P(partida(1000)) });
   const cot = j;
