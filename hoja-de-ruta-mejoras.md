@@ -193,6 +193,7 @@ Auditoría del 11/10/2026: 6 revisiones en paralelo, 56 hallazgos verificados co
 - **Qué se haría:** agregar a cada partida cantidad, unidad y precio unitario, elegir "más IVA" o "IVA incluido", imprimir el RFC y dar a cada servicio del catálogo un precio base que se cargue solo.
 - **Esfuerzo:** medio. Conviene hacer antes M6, porque esto toca los 4 generadores de documentos.
 - **Referencia:** `server/index.js:463`
+- **Avance (octubre 2026):** ya está el IVA (casilla "IVA incluido", 16 %, desglose en documentos y cuentas por cobrar; ver README). Faltan cantidad y precio unitario, RFC en los documentos y precios en el catálogo.
 
 **N6. Mantener al día los datos del contacto en cotizaciones, alertas y PDF**
 - **Por qué importa:** si se corrige el teléfono en la ficha del cliente, las alertas, el tablero y el PDF siguen mostrando el número viejo, y se llama al número equivocado.
@@ -253,6 +254,7 @@ Auditoría del 11/10/2026: 6 revisiones en paralelo, 56 hallazgos verificados co
 - **Qué se haría:** una sola función de total redondeada a centavos, corregir las centésimas y el "DE PESOS" en el importe en letras, y cubrirlo con 8 a 10 casos de prueba.
 - **Esfuerzo:** bajo
 - **Referencia:** `public/app.js:410`
+- **Hecho (octubre 2026):** `public/importes.js` calcula total, IVA e importe en letras desde centavos (incluye "UN MILLÓN DE PESOS"), con pruebas en `tests/importes.test.cjs`.
 
 **M4. Una ruta de "salud" y mejores registros de errores**
 - **Por qué importa:** ni Render ni un monitor externo pueden saber si el CRM está funcionando ni si la base es persistente, y cuando algo falla el registro no dice dónde.
