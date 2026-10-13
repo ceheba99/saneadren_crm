@@ -472,16 +472,7 @@
         <div class="ficha-meta" id="ficha-meta"></div>
       </div>
 
-      <div class="modal-section" data-plegable="seguimiento">
-        <div class="seccion-tit" id="registro-etapas-titulo">Seguimiento de esta cotización</div>
-        <div class="pipeline-track" id="pipeline-track">
-          <div class="pipeline-step" data-step="1"><span class="step-num">1</span>Datos</div>
-          <div class="pipeline-step" data-step="2"><span class="step-num">2</span>Cotización</div>
-          <div class="pipeline-step" data-step="3"><span class="step-num">3</span>Seguimiento</div>
-          <div class="pipeline-step" data-step="4"><span class="step-num">4</span>Cierre</div>
-        </div>
-      </div>
-
+      <!-- La etapa de una cotización se mueve solo en el Pipeline (tablero), no desde cada ficha. -->
       <div class="modal-section" data-plegable="datos-registro">
         <div class="seccion-tit" id="registro-datos-titulo">Datos de esta cotización</div>
         <p class="ayuda">Los cambios de esta sección afectan únicamente a este registro. Los datos de contacto se editan desde su ficha.</p>
@@ -549,10 +540,13 @@
         <div id="cobranza-orden"></div>
       </div>
 
-      <div class="modal-section" data-plegable="observacion">
-        <div class="seccion-tit">Agregar observación o alerta</div>
+      <!-- Notas con fecha y la bitácora van juntas y dicen de qué registro son (no del contacto ni de sus otros servicios). -->
+      <div class="modal-section" data-plegable="bitacora">
+        <div class="seccion-tit" id="bitacora-titulo">Notas y bitácora de este registro</div>
+        <p class="ayuda" id="obs-ayuda">La nota se guarda solo en este registro, con fecha y quién la escribió.</p>
         <div class="obs-form">
-          <textarea id="obs-texto" placeholder="Escribe una observación..."></textarea>
+          <label class="sr-only" for="obs-texto">Nota para este registro</label>
+          <textarea id="obs-texto" placeholder="Escribe una nota sobre este registro..."></textarea>
           <div class="util-20">
             <label class="obs-check"><input type="checkbox" id="obs-es-alerta"> Es alerta / recordatorio</label>
             <div class="obs-fecha-rapida" id="obs-fecha-rapida">
@@ -561,20 +555,16 @@
               <button type="button" data-rapido="semana">En 1 semana</button>
             </div>
             <input type="datetime-local" id="obs-fecha">
-            <button class="btn btn-primario diseno-btn-agregar-obs" id="btn-agregar-obs">Agregar</button>
+            <button class="btn btn-primario diseno-btn-agregar-obs" id="btn-agregar-obs">Agregar nota</button>
           </div>
         </div>
-      </div>
-
-      <div class="modal-section" data-plegable="bitacora">
-        <div class="seccion-tit">Bitácora de actividad</div>
-        <p class="ayuda">Todo lo que le ha pasado a este registro: eventos automáticos del sistema y notas del equipo, de lo más reciente a lo más antiguo.</p>
+        <p class="ayuda">Abajo: todo lo que le ha pasado a este registro (eventos del sistema y notas del equipo), de lo más reciente a lo más antiguo.</p>
         <div id="bitacora-lista" class="bitacora-lista"></div>
       </div>
 
-      <div class="modal-section" data-plegable="historial-contacto">
-        <div class="seccion-tit">Historial comercial del contacto</div>
-        <p class="ayuda util-22">Cada fila tiene su propio número. Abrir otra fila cambia el registro que estás editando.</p>
+      <div class="modal-section" data-plegable="historial-contacto" data-plegado-defecto="1">
+        <div class="seccion-tit">Otros registros de este contacto (solo consulta)</div>
+        <p class="ayuda util-22">Lista de todas las cotizaciones y órdenes del contacto. Aquí no se escriben notas: abrir otra fila cambia el registro que estás editando.</p>
         <div class="servicios-list" id="ficha-anteriores"></div>
       </div>
 

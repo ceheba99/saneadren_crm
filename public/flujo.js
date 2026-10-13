@@ -57,11 +57,15 @@ const FlujoCRM = (() => {
     const btnOrden=$('btn-generar-orden-servicio');
     if(btnOrden)btnOrden.textContent='Generar orden de servicio';
     $('ed-valor').closest('.campo-modal').querySelector('label').textContent=contratado?'Importe contratado (MXN)':'Importe propuesto (MXN)';
-    $('ed-notas').closest('.campo-modal').querySelector('label').textContent=contratado?'Notas de este servicio':'Notas de esta cotización';
+    $('ed-notas').closest('.campo-modal').querySelector('label').textContent=contratado?'Notas internas de esta orden (se guardan con «Guardar cambios»)':'Notas internas de esta cotización (se guardan con «Guardar cambios»)';
+    // Las notas con fecha dicen a qué registro pertenecen, para no confundirlas con el contacto.
+    const folio=contratado?folioOrdenServicio(lead):folioCotizacion(lead),doc=contratado?'la orden':'la cotización';
+    $('bitacora-titulo').textContent=`Notas y bitácora de ${doc} ${folio}`;
+    $('obs-ayuda').textContent=`La nota se guarda solo en ${doc} ${folio}, con fecha y quién la escribió. No se agrega al contacto ni a sus otros servicios.`;
+    $('obs-texto').placeholder=`Escribe una nota sobre ${doc} ${folio}...`;
     $('ed-fecha-cotizacion').closest('.campo-modal').hidden=contratado;
     $('ed-incluye-vigencia').closest('.campo-modal').hidden=contratado;
     $('wrap-vigencia-hasta').hidden=contratado || !$('ed-incluye-vigencia').checked;
-    $('registro-etapas-titulo').closest('.modal-section').hidden=lead.estatus!=='abierto';
     $('seccion-encuesta').hidden=!contratado;
     rotularEditorContenido(contratado);
     document.querySelectorAll('#overlay-ficha .solo-orden').forEach(e=>e.hidden=!contratado);

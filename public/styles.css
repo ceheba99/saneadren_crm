@@ -807,3 +807,9 @@ header.app nav.menu-principal .menu-sub .menu-item:focus-visible{outline:3px sol
 .gc-totales .gc-fila-total th,.gc-totales .gc-fila-total td{border-top:1px solid var(--gris-300);padding-top:6px;color:var(--texto);font-size:15px;}
 .servicio-importe small{display:block;color:var(--amarillo-texto);font-size:11px;}
 .cobranza-iva{margin:4px 0 10px;}
+
+/* Pipeline: contactos sin cotización (abren su ficha; no se arrastran). */
+.lead-card.contacto-card{border:1px dashed var(--gris-400);background:var(--gris-100);cursor:pointer;}
+.lead-card.contacto-card .lead-folio{color:var(--texto-sec);}
+.lead-card.contacto-card .lead-resp{color:var(--amarillo-texto);font-weight:700;}
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0;}

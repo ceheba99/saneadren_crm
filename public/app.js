@@ -295,20 +295,20 @@ async function guardarServicioNuevo(descargar=false) {
   try {
     const creado = await api('/leads', { method: 'POST', body: JSON.stringify(payload) }).then(r => r.json());
     FlujoCRM.marcarGuardado('overlay-servicio-nuevo');
-    toast(DUPLICADO_DE ? 'Orden de servicio duplicada correctamente' : esDirecto ? 'Orden de servicio creada' : 'Nueva cotización registrada correctamente');
+    const folio = esDirecto ? folioOrdenServicio(creado) : folioCotizacion(creado);
+    const hecho = (DUPLICADO_DE ? 'Orden de servicio duplicada' : esDirecto ? 'Orden de servicio creada' : 'Cotización creada') + ': ' + folio;
+    // El documento se arma con lo capturado en esta ventana, antes de cerrarla.
+    if (descargar) {
+      LEAD_ACTUAL = await api('/leads/' + creado.id).then(r => r.json());
+      await (esDirecto ? descargarOrdenServicioActual(hecho + ' y descargada') : descargarCotizacionActual());
+    }
+    // Al guardar no se cambia de pantalla: se cierra la ventana y se vuelve a donde estabas
+    // (ficha del contacto, Pipeline o Pendientes), con su lista ya actualizada.
     document.getElementById('overlay-servicio-nuevo').classList.remove('mostrar');
     document.getElementById('alerta-dup').classList.remove('mostrar');
     limpiarFormAlta();
-    if (esDirecto) {
-      cambiarVista('clientes');
-      await cargarClientes();
-      await abrirFicha(creado.id);
-    } else {
-      cambiarVista('leads');
-      await abrirFicha(creado.id);
-    }
     await ServiciosTabla.refrescar();
-    if(descargar)await (esDirecto ? descargarOrdenServicioActual('Orden de servicio guardada y descargada') : descargarCotizacionActual());
+    toast(hecho + '. Ya aparece en los registros del contacto.');
   } catch (err) {
     toast('No se pudo guardar: ' + err.message);
   } finally {
@@ -408,13 +408,33 @@ async function cargarLeads() {
   if (soloUrgentes) params.set('urgente', '1');
   if (ETAPA_FILTRO) params.set('etapa', ETAPA_FILTRO);
 
-  const [leads, kpis] = await Promise.all([
+  // Contactos sin ninguna cotización: van en "Recolección de datos". No tienen responsable ni
+  // urgencia, así que se ocultan al filtrar por esos datos o por otra etapa.
+  const conContactos = !resp && !soloUrgentes && (!ETAPA_FILTRO || ETAPA_FILTRO === 1);
+  const pc = new URLSearchParams();
+  if (q) pc.set('q', q);
+  if (desde) pc.set('desde', desde);
+  if (hasta) pc.set('hasta', hasta);
+  const [leads, kpis, contactos] = await Promise.all([
     api('/leads?' + params.toString()).then(r => r.json()),
-    api('/kpis' + (resp ? '?responsable_id=' + resp : '')).then(r => r.json())
+    api('/kpis' + (resp ? '?responsable_id=' + resp : '')).then(r => r.json()),
+    conContactos ? api('/contactos/sin-cotizacion?' + pc.toString()).then(r => r.json()) : []
   ]);
 
-  renderKpis(kpis);
-  renderKanbanLeads(leads);
+  renderKpis(kpis, contactos.length);
+  renderKanbanLeads(leads, contactos);
+}
+// Tarjeta de un contacto sin cotización: abre su ficha en Crear cotización / Crear orden de servicio.
+function tarjetaContacto(c) {
+  return `
+      <div class="lead-card contacto-card" data-etapa="1" role="button" tabindex="0" onclick="FlujoCRM.irACotizar(${Number(c.id)})" onkeydown="if(event.key==='Enter')FlujoCRM.irACotizar(${Number(c.id)})" title="Abrir su ficha para crear la cotización">
+        <div class="lead-folio">Contacto · sin cotización</div>
+        <div class="lead-tel">${escaparHtml(c.telefono)}</div>
+        <div class="lead-nombre">${escaparHtml(c.nombre || 'Sin nombre')}</div>
+        <div class="lead-servicio">${escaparHtml(c.empresa_contacto || c.canal_nombre || 'Pendiente de cotizar')}</div>
+        <div class="lead-meta"><span class="lead-resp">📄 Crear cotización</span></div>
+        <div class="lead-fecha">${fechaCorta(c.created_at)}</div>
+      </div>`;
 }
 
 function formatoMoneda(n) {
@@ -427,15 +447,16 @@ function numeroALetras(monto) {
   return Importes.enLetras(Math.round((Number(monto) || 0) * 100));
 }
 
-function renderKpis(kpis) {
+function renderKpis(kpis, contactos = 0) {
   const porEtapa = kpis.etapas || {};
   for (let e = 1; e <= 4; e++) {
     const k = porEtapa[e] || { total: 0, abiertos: 0, ganados: 0, perdidos: 0, con_alertas: 0, valor_total: 0, dias_promedio: null };
-    document.getElementById(`kpi-${e}-total`).textContent = k.total;
+    document.getElementById(`kpi-${e}-total`).textContent = k.total + (e === 1 ? contactos : 0);
     const chips = [];
     if (k.abiertos > 0) chips.push(`<span class="kpi-chip">${k.abiertos} abierto${k.abiertos === 1 ? '' : 's'}</span>`);
     if (k.ganados > 0) chips.push(`<span class="kpi-chip ganado">${k.ganados} ganado${k.ganados === 1 ? '' : 's'}</span>`);
     if (k.perdidos > 0) chips.push(`<span class="kpi-chip perdido">${k.perdidos} perdido${k.perdidos === 1 ? '' : 's'}</span>`);
+    if (e === 1 && contactos > 0) chips.push(`<span class="kpi-chip">${contactos} contacto${contactos === 1 ? '' : 's'} sin cotización</span>`);
     if (k.con_alertas > 0) chips.push(`<span class="kpi-chip alerta">⏰ ${k.con_alertas} con alerta</span>`);
     document.getElementById(`kpi-${e}-desglose`).innerHTML = chips.join('') || '<span class="kpi-chip">Sin registros</span>';
     document.getElementById(`kpi-${e}-valor`).innerHTML = k.valor_total > 0
@@ -479,18 +500,19 @@ function importeTarjeta(l) {
   if (l.iva_modo === 'incluido') return formatoMoneda((Math.round(l.valor * 100) + (l.iva_cent || 0)) / 100) + ' IVA incl.';
   return formatoMoneda(l.valor);
 }
-function renderKanbanLeads(leads) {
+function renderKanbanLeads(leads, contactos = []) {
   const etiquetaFiltro = ETAPA_FILTRO ? ` · filtrando etapa ${ETAPA_FILTRO}` : '';
   const conteoEl = document.getElementById('tabla-leads-conteo');
-  if (conteoEl) conteoEl.textContent = leads.length + (leads.length === 1 ? ' cotización' : ' cotizaciones') + etiquetaFiltro;
+  if (conteoEl) conteoEl.textContent = leads.length + (leads.length === 1 ? ' cotización' : ' cotizaciones')
+    + (contactos.length ? ` · ${contactos.length} contacto${contactos.length === 1 ? '' : 's'} sin cotización` : '') + etiquetaFiltro;
 
   for (let e = 1; e <= 4; e++) {
     document.getElementById('col-' + e).innerHTML = '';
     document.getElementById('footer-' + e).innerHTML = '';
   }
 
-  if (!leads.length) {
-    document.getElementById('col-1').innerHTML = '<p class="util-36">Sin cotizaciones abiertas con estos filtros.</p>';
+  if (!leads.length && !contactos.length) {
+    document.getElementById('col-1').innerHTML = '<p class="util-36">Sin contactos ni cotizaciones abiertas con estos filtros.</p>';
     for (let e = 1; e <= 4; e++) document.getElementById('count-' + e).textContent = '0';
     return;
   }
@@ -502,7 +524,7 @@ function renderKanbanLeads(leads) {
 
   for (let e = 1; e <= 4; e++) {
     const lista = porEtapa[e];
-    document.getElementById('count-' + e).textContent = lista.length;
+    document.getElementById('count-' + e).textContent = lista.length + (e === 1 ? contactos.length : 0);
 
     const valorColumna = lista.reduce((sum, l) => sum + (l.valor || 0), 0);
     if (valorColumna > 0) {
@@ -532,6 +554,8 @@ function renderKanbanLeads(leads) {
       </div>
     `}).join('');
   }
+  // Contactos sin cotización: arriba de la primera etapa.
+  if (contactos.length) document.getElementById('col-1').insertAdjacentHTML('afterbegin', contactos.map(tarjetaContacto).join(''));
 }
 
 on('f-buscar', 'input', debounce(cargarLeads, 350));
@@ -1660,34 +1684,8 @@ document.getElementById('bitacora-lista').addEventListener('click', async e => {
   }
 });
 
-// Pipeline visual clickeable
-function actualizarPipeline() {
-  document.querySelectorAll('.pipeline-step').forEach(b => {
-    const step = Number(b.dataset.step);
-    b.classList.toggle('active', step === ETAPA_FICHA);
-  });
-}
-
-document.querySelectorAll('.pipeline-step').forEach(btn => {
-  btn.addEventListener('click', async () => {
-    const etapaAnterior = LEAD_ACTUAL.etapa;
-    ETAPA_FICHA = Number(btn.dataset.step);
-    actualizarPipeline();
-    try {
-      if (!await guardarLeadExistente({ etapa: ETAPA_FICHA, usuario: 'Web' })) {
-        ETAPA_FICHA = etapaAnterior;
-        actualizarPipeline();
-        return;
-      }
-      toast('Etapa actualizada: ' + NOMBRE_ETAPA[ETAPA_FICHA]);
-      cargarLeads();
-    } catch (err) {
-      toast('No se pudo cambiar de etapa: ' + err.message);
-      ETAPA_FICHA = etapaAnterior;
-      actualizarPipeline();
-    }
-  });
-});
+// La etapa se mueve solo desde el Pipeline (tablero); la ficha ya no tiene barra de etapas.
+function actualizarPipeline() {}
 
 // Guarda los cambios de la cotización/servicio en la ficha. Es la ÚNICA puerta de guardado
 // para los botones que modifican el registro: si el servidor lo rechaza (por ejemplo,

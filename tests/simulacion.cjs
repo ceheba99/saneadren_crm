@@ -407,7 +407,18 @@ const espera = ms => new Promise(r => setTimeout(r, ms));
   [s, j] = await pedir('GET', '/analisis/comercial', A);
   ok(s === 200 && j.ivaPorDefinir && j.ivaPorDefinir.servicios >= 1, 'Resultados cuenta los servicios con IVA por definir', j.ivaPorDefinir);
 
-  seccion('12. Seguridad general');
+  seccion('12. Pipeline: contactos sin cotización');
+  [s, j] = await pedir('POST', '/contactos', L, { nombre: 'Solo Contacto', telefono: '4427770099', canal_origen_id: canales[0].id });
+  const soloId = j.id;
+  [s, j] = await pedir('GET', '/contactos/sin-cotizacion?q=Solo Contacto', L);
+  ok(s === 200 && j.length === 1 && j[0].id === soloId, 'un contacto guardado sin cotización aparece para el Pipeline', j);
+  [s, j] = await pedir('GET', '/contactos/sin-cotizacion', L);
+  ok(!j.some(c => c.id === clienteId), 'un contacto con cotizaciones u órdenes no aparece como "sin cotización"');
+  await pedir('POST', '/leads', L, { cliente_id: soloId, direccion: 'x', responsable_id: usuarioL.id, partidas_json: part(500), iva_modo: 'mas_iva' });
+  [s, j] = await pedir('GET', '/contactos/sin-cotizacion?q=Solo Contacto', L);
+  ok(s === 200 && j.length === 0, 'al crearle su cotización deja de aparecer como contacto (ya está como cotización)');
+
+  seccion('13. Seguridad general');
   const raiz = await fetch(`http://localhost:${PUERTO}/`);
   ok(raiz.headers.get('content-security-policy') && raiz.headers.get('x-frame-options') === 'DENY' && !raiz.headers.get('x-powered-by'), 'encabezados de seguridad');
   [s] = await pedir('GET', '/leads', 'token-inventado'); ok(s === 401, 'token inventado rechazado');

@@ -820,6 +820,20 @@ function validarCorreo(correo) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(correo).trim());
 }
 
+// Contactos guardados que aún no tienen ninguna cotización ni orden: el Pipeline los muestra en
+// "Recolección de datos" para que nadie se quede sin seguimiento.
+app.get('/api/contactos/sin-cotizacion', h((req,res)=>{
+  const { q, desde, hasta } = req.query;
+  let sql = `SELECT c.id, c.nombre, c.telefono, c.empresa_contacto, c.created_at, c.updated_at, ca.nombre AS canal_nombre
+    FROM clientes c LEFT JOIN canales ca ON ca.id = c.canal_origen_id
+    WHERE NOT EXISTS (SELECT 1 FROM leads l WHERE l.cliente_id = c.id)`;
+  const params = [];
+  if (q) { sql += ' AND (c.nombre LIKE ? OR c.telefono LIKE ? OR c.empresa_contacto LIKE ?)'; params.push(`%${q}%`, `%${q}%`, `%${q}%`); }
+  if (desde) { sql += ' AND date(c.created_at) >= date(?)'; params.push(desde); }
+  if (hasta) { sql += ' AND date(c.created_at) <= date(?)'; params.push(hasta); }
+  sql += ' ORDER BY c.created_at DESC LIMIT 500';
+  res.json(db.prepare(sql).all(...params));
+}));
 app.post('/api/contactos', h((req,res)=>{
   const {nombre,telefono,empresa_contacto,direccion,correo,telefono_alterno,giro,rfc,notas_generales}=req.body;
   if (!nombre || !String(nombre).trim()) return res.status(400).json({error:'El nombre del contacto es obligatorio'});
