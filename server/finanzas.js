@@ -193,7 +193,9 @@ const SQL_TOTAL_ORDEN = 'CAST(ROUND(COALESCE(l.valor, 0) * 100) AS INTEGER) + CO
 const SQL_CUENTA = `
   SELECT l.id, l.cliente_id, l.created_at, l.fecha_servicio, l.valor, l.dias_credito, l.factura_folio, l.factura_fecha,
     l.factura_total_cent, l.cobranza_por_revisar, l.servicio_id, l.estatus, l.iva_modo, l.iva_tasa, l.iva_cent,
-    l.ejecucion, l.realizado_por, l.fecha_realizado, l.equipo, l.operador, l.proyecto,
+    l.ejecucion, l.realizado_por, l.fecha_realizado, l.equipo, l.operador, l.proyecto, l.notas_iniciales,
+    (SELECT k.fecha || '|' || k.metodo || '|' || COALESCE(k.referencia, '') FROM cobros k WHERE k.lead_id = l.id AND k.cancelado = 0 AND k.tipo <> 'ajuste' ORDER BY k.fecha DESC, k.id DESC LIMIT 1) AS ultimo_pago,
+    (SELECT COUNT(*) FROM cobros k WHERE k.lead_id = l.id AND k.cancelado = 0) AS pagos_n,
     c.nombre AS cliente_nombre, c.empresa_contacto, c.telefono, c.rfc,
     s.nombre AS servicio_nombre,
     ${SQL_TOTAL_ORDEN} AS total_orden_cent,
@@ -232,6 +234,7 @@ function describirCuenta(f, hoy) {
     ejecucion: f.ejecucion || null, realizado_por: f.realizado_por || null, fecha_realizado: f.fecha_realizado || null,
     por_concluir: !f.ejecucion && !!f.fecha_servicio && f.fecha_servicio <= hoy,
     equipo: f.equipo || null, operador: f.operador || null, proyecto: f.proyecto || null,
+    ultimo_pago: f.ultimo_pago || null, pagos_n: f.pagos_n || 0, notas: f.notas_iniciales || null,
     iva_modo: f.iva_modo, iva_tasa: f.iva_tasa, subtotal: aPesos(f.total_orden_cent - (f.iva_cent || 0)),
     iva: f.iva_cent == null ? null : aPesos(f.iva_cent), total_orden: aPesos(f.total_orden_cent),
     // CFDI distinto del total de la orden (retención, descuento o centavos): solo informativo.
@@ -327,7 +330,9 @@ module.exports = function finanzas(app, db, h) {
       const porCliente = new Map();
       for (const c of cuentas) {
         const g = porCliente.get(c.cliente_id) || { cliente_id: c.cliente_id, cliente_nombre: c.cliente_nombre, empresa_contacto: c.empresa_contacto,
-          telefono: c.telefono, saldo: 0, vencido: 0, ordenes: 0, max_dias_vencido: 0, lead_ids: [], folios: [], proximo_vence: null };
+          telefono: c.telefono, rfc: c.rfc, saldo: 0, vencido: 0, total: 0, cobrado: 0, ordenes: 0, max_dias_vencido: 0, lead_ids: [], folios: [], proximo_vence: null, ultimo_pago: null };
+        g.total = Math.round((g.total + c.total) * 100) / 100; g.cobrado = Math.round((g.cobrado + c.cobrado) * 100) / 100;
+        if (c.ultimo_pago && (!g.ultimo_pago || c.ultimo_pago > g.ultimo_pago)) g.ultimo_pago = c.ultimo_pago;
         g.saldo = Math.round((g.saldo + c.saldo) * 100) / 100;
         if (c.vencida) g.vencido = Math.round((g.vencido + c.saldo) * 100) / 100;
         g.ordenes++; g.max_dias_vencido = Math.max(g.max_dias_vencido, c.dias_vencido); g.lead_ids.push(c.lead_id); g.folios.push(c.folio);

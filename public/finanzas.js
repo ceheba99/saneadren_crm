@@ -316,6 +316,141 @@ const Finanzas = (() => {
     if (d.length === 10) d = '52' + d;
     return d.length >= 12 ? `https://wa.me/${d}?text=${encodeURIComponent(textoMsg)}` : '';
   }
+
+  // ===================== Tablas de Cuentas por cobrar y por pagar =====================
+  // Cada columna: { k, t: título, v(fila) → HTML ya escapado, s(fila) → valor para ordenar, n: numérica,
+  // sum(fila) → se suma en el pie, fija: no se puede ocultar, sinOrden }. Las preferencias (columnas
+  // ocultas, tabla o tarjetas) se recuerdan en el equipo.
+  const TABLAS = {};
+  const leerPref = (clave, def) => { try { const v = JSON.parse(localStorage.getItem(clave)); return v ?? def; } catch { return def; } };
+  const guardarPref = (clave, v) => { try { localStorage.setItem(clave, JSON.stringify(v)); } catch { /* sin almacenamiento */ } };
+  const modoDe = id => leerPref('tabla-modo-' + id, matchMedia('(max-width:700px)').matches ? 'tarjetas' : 'tabla');
+  const ocultasDe = id => new Set(leerPref('tabla-ocultas-' + id, TABLAS[id]?.ocultasDef || []));
+  const ultimoPagoTxt = u => { if (!u) return '—'; const [f, m, r] = String(u).split('|'); return [fechaTxt(f), NOMBRE_METODO[m] || m, r].filter(Boolean).join(' · '); };
+  function tablaHTML(id, columnas, filas, claseFila) {
+    const ocultas = ocultasDe(id), visibles = columnas.filter(c => c.fija || !ocultas.has(c.k)), orden = TABLAS[id].orden;
+    if (orden) {
+      const col = columnas.find(c => c.k === orden.k);
+      if (col) filas = [...filas].sort((a, b) => { const x = (col.s || col.v)(a), y = (col.s || col.v)(b); return (x > y ? 1 : x < y ? -1 : 0) * orden.dir; });
+    }
+    const celdaPie = (c, i) => {
+      if (c.sum) { const total = filas.reduce((t, f) => t + (Number(c.sum(f)) || 0), 0); return '<b>' + formatoMoneda(total) + '</b>'; }
+      return i === 0 ? '<b>Totales · ' + filas.length + '</b>' : '';
+    };
+    const encabezado = c => {
+      const flecha = orden && orden.k === c.k ? (orden.dir > 0 ? ' ▲' : ' ▼') : '';
+      const sort = orden && orden.k === c.k ? (orden.dir > 0 ? 'ascending' : 'descending') : 'none';
+      return c.sinOrden ? '<th>' + esc(c.t) + '</th>' : '<th class="ordenable' + (c.n ? ' st-num' : '') + '" data-orden="' + esc(c.k) + '" aria-sort="' + sort + '" tabindex="0">' + esc(c.t) + flecha + '</th>';
+    };
+    const celda = (c, f) => '<td class="' + (c.n ? 'st-num' : '') + (c.clase ? ' ' + c.clase : '') + '">' + c.v(f) + '</td>';
+    return '<div class="tabla-scroll tabla-dinero-caja"><table class="tabla-resumen tabla-dinero" data-tabla="' + esc(id) + '">'
+      + '<thead><tr>' + visibles.map(encabezado).join('') + '</tr></thead>'
+      + '<tbody>' + filas.map(f => '<tr class="' + (claseFila ? claseFila(f) : '') + '">' + visibles.map(c => celda(c, f)).join('') + '</tr>').join('') + '</tbody>'
+      + (visibles.some(c => c.sum) ? '<tfoot><tr>' + visibles.map((c, i) => '<td class="' + (c.n ? 'st-num' : '') + '">' + celdaPie(c, i) + '</td>').join('') + '</tr></tfoot>' : '')
+      + '</table></div>';
+  }
+  // Barra (Tabla / Tarjetas y Columnas) + la tabla o las tarjetas de siempre.
+  function vistaDinero(id, { columnas, filas, claseFila, tarjetas, ocultasDef }) {
+    TABLAS[id] = { ...TABLAS[id], columnas, filas, claseFila, tarjetas, ocultasDef };
+    const modo = modoDe(id), ocultas = ocultasDe(id);
+    const opciones = columnas.filter(c => !c.fija && c.t).map(c => '<label><input type="checkbox" data-tabla-col="' + esc(c.k) + '"' + (ocultas.has(c.k) ? '' : ' checked') + '> ' + esc(c.t) + '</label>').join('');
+    const barra = '<div class="tabla-barra" data-tabla-barra="' + esc(id) + '">'
+      + '<div class="segmentado" role="group" aria-label="Cómo ver la lista">'
+      + '<button type="button" data-tabla-modo="tabla" aria-pressed="' + (modo === 'tabla') + '">▦ Tabla</button>'
+      + '<button type="button" data-tabla-modo="tarjetas" aria-pressed="' + (modo === 'tarjetas') + '">☰ Tarjetas</button></div>'
+      + (modo === 'tabla' ? '<details class="tabla-columnas"><summary>Columnas</summary><div class="tabla-columnas-lista">' + opciones + '<button type="button" class="btn btn-outline" data-tabla-cols-todas>Mostrar todas</button></div></details><span class="ayuda">Toca un título para ordenar.</span>' : '')
+      + '</div>';
+    return barra + (modo === 'tabla' ? tablaHTML(id, columnas, filas, claseFila) : tarjetas());
+  }
+  function repintarTabla(id) {
+    const t = TABLAS[id]; if (!t) return;
+    $(t.contenedor).innerHTML = vistaDinero(id, t);
+  }
+  document.addEventListener('click', e => {
+    const caja = e.target.closest('[data-tabla-barra], .tabla-dinero'); if (!caja) return;
+    const id = caja.dataset.tablaBarra || caja.dataset.tabla;
+    const th = e.target.closest('th[data-orden]');
+    if (th) { const o = TABLAS[id].orden; TABLAS[id].orden = { k: th.dataset.orden, dir: o && o.k === th.dataset.orden ? -o.dir : 1 }; repintarTabla(id); return; }
+    const m = e.target.closest('[data-tabla-modo]');
+    if (m) { guardarPref('tabla-modo-' + id, m.dataset.tablaModo); repintarTabla(id); return; }
+    if (e.target.closest('[data-tabla-cols-todas]')) { guardarPref('tabla-ocultas-' + id, []); repintarTabla(id); }
+  });
+  document.addEventListener('keydown', e => {
+    const th = e.target.closest?.('.tabla-dinero th[data-orden]');
+    if (th && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); th.click(); }
+  });
+  document.addEventListener('change', e => {
+    const cb = e.target.closest('[data-tabla-col]'); if (!cb) return;
+    const id = cb.closest('[data-tabla-barra]').dataset.tablaBarra, ocultas = ocultasDe(id);
+    if (cb.checked) ocultas.delete(cb.dataset.tablaCol); else ocultas.add(cb.dataset.tablaCol);
+    guardarPref('tabla-ocultas-' + id, [...ocultas]);
+    const abierto = true; repintarTabla(id);
+    const det = document.querySelector('[data-tabla-barra="' + id + '"] .tabla-columnas'); if (det && abierto) det.open = true;
+  });
+
+  // Días: vencido (rojo), vence hoy o en N días; nada si no se cobra todavía o ya está pagado.
+  const diasCobro = c => {
+    if (c.saldo <= 0 || c.programada) return '—';
+    if (c.dias_vencido > 0) return '<b class="rojo">' + Number(c.dias_vencido) + '</b>';
+    return c.dias_vencido === 0 ? 'Vence hoy' : 'en ' + Number(-c.dias_vencido) + ' d';
+  };
+  const ejecucionCorta = c => c.ejecucion === 'realizado' ? 'Realizado ' + fechaTxt(c.fecha_realizado || c.fecha_servicio) + (c.realizado_por === 'subcontratado' ? ' (subcontratado)' : '')
+    : c.ejecucion === 'no_realizado' ? 'No realizado' : c.por_concluir ? 'Falta marcar' : 'Programado';
+  const COLS_COBRAR = [
+    { k: 'estado', t: 'Estado', fija: true, v: c => etiquetaEstado(c), s: c => textoEstado(c)[1] },
+    { k: 'folio', t: 'OS', fija: true, v: c => '<b>' + esc(folioOS(c)) + '</b>', s: c => c.lead_id },
+    { k: 'factura', t: 'Factura', v: c => esc(c.factura_folio || '—'), s: c => c.factura_folio || '' },
+    { k: 'factura_fecha', t: 'Fecha factura', v: c => esc(c.factura_fecha ? fechaTxt(c.factura_fecha) : '—'), s: c => c.factura_fecha || '' },
+    { k: 'cliente', t: 'Cliente', fija: true, v: c => esc(c.cliente_nombre || 'Sin nombre') + (c.empresa_contacto ? '<small class="celda-sub">' + esc(c.empresa_contacto) + '</small>' : ''), s: c => String(c.cliente_nombre || '').toLowerCase() },
+    { k: 'rfc', t: 'RFC', v: c => esc(c.rfc || '—'), s: c => c.rfc || '' },
+    { k: 'telefono', t: 'Teléfono', v: c => esc(c.telefono || '—'), s: c => c.telefono || '' },
+    { k: 'servicio', t: 'Servicio', v: c => esc(c.servicio_nombre || '—'), s: c => c.servicio_nombre || '' },
+    { k: 'fecha_servicio', t: 'Fecha servicio', v: c => esc(fechaTxt(c.fecha_servicio)), s: c => c.fecha_servicio || '' },
+    { k: 'ejecucion', t: 'Ejecución', v: c => esc(ejecucionCorta(c)), s: c => ejecucionCorta(c) },
+    { k: 'equipo', t: 'Unidad', v: c => esc(c.equipo || '—'), s: c => c.equipo || '' },
+    { k: 'operador', t: 'Operador', v: c => esc(c.operador || '—'), s: c => c.operador || '' },
+    { k: 'proyecto', t: 'Proyecto', v: c => esc(c.proyecto || '—'), s: c => c.proyecto || '' },
+    { k: 'subtotal', t: 'Subtotal', n: true, v: c => formatoMoneda(c.subtotal), s: c => c.subtotal, sum: c => c.subtotal },
+    { k: 'iva', t: 'IVA', n: true, v: c => (c.iva == null ? '<small>Por definir</small>' : formatoMoneda(c.iva)), s: c => c.iva || 0, sum: c => c.iva || 0 },
+    { k: 'total', t: 'Total', n: true, v: c => formatoMoneda(c.total), s: c => c.total, sum: c => c.total },
+    { k: 'credito', t: 'Crédito', n: true, v: c => Number(c.dias_credito) + ' d', s: c => c.dias_credito },
+    { k: 'vence', t: 'Vence', v: c => (c.programada ? '—' : esc(fechaTxt(c.vence))), s: c => (c.programada ? '9999' : c.vence) },
+    { k: 'dias', t: 'Días vencido', n: true, v: diasCobro, s: c => (c.saldo > 0 && !c.programada ? c.dias_vencido : -99999) },
+    { k: 'cobrado', t: 'Cobrado (A/C)', n: true, v: c => formatoMoneda(c.cobrado), s: c => c.cobrado, sum: c => c.cobrado },
+    { k: 'saldo', t: 'Saldo', n: true, fija: true, v: c => '<b>' + formatoMoneda(c.saldo) + '</b>', s: c => c.saldo, sum: c => c.saldo },
+    { k: 'a_favor', t: 'A favor', n: true, v: c => (c.a_favor > 0 ? formatoMoneda(c.a_favor) : '—'), s: c => c.a_favor || 0, sum: c => c.a_favor || 0 },
+    { k: 'ultimo_pago', t: 'Último pago', v: c => esc(ultimoPagoTxt(c.ultimo_pago)), s: c => c.ultimo_pago || '' },
+    { k: 'pagos_n', t: 'Pagos', n: true, v: c => String(Number(c.pagos_n || 0)), s: c => c.pagos_n || 0 },
+    { k: 'notas', t: 'Observaciones', clase: 'celda-notas', v: c => esc(c.notas || ''), s: c => c.notas || '' },
+    { k: 'acciones', t: '', fija: true, sinOrden: true, clase: 'celda-acciones', v: c => accionesOrden(c) },
+  ];
+  const accionesOrden = c => '<div class="acciones-fila">' + waOrdenCorto(c)
+    + (c.saldo > 0 ? '<button type="button" class="btn btn-primario btn-chico" data-pagar-orden="' + Number(c.lead_id) + '">Registrar pago</button>' : '')
+    + '<button type="button" class="btn btn-outline btn-chico" data-abrir-orden="' + Number(c.lead_id) + '">Abrir</button></div>';
+  const COLS_CLIENTES = [
+    { k: 'cliente', t: 'Cliente', fija: true, v: g => '<b>' + esc(g.cliente_nombre || 'Sin nombre') + '</b>' + (g.empresa_contacto ? '<small class="celda-sub">' + esc(g.empresa_contacto) + '</small>' : ''), s: g => String(g.cliente_nombre || '').toLowerCase() },
+    { k: 'telefono', t: 'Teléfono', v: g => esc(g.telefono || '—'), s: g => g.telefono || '' },
+    { k: 'rfc', t: 'RFC', v: g => esc(g.rfc || '—'), s: g => g.rfc || '' },
+    { k: 'ordenes', t: 'Órdenes', n: true, v: g => String(Number(g.ordenes)), s: g => g.ordenes },
+    { k: 'folios', t: 'Folios', clase: 'celda-notas', v: g => esc((g.folios || []).join(', ')), s: g => (g.folios || []).join(',') },
+    { k: 'credito', t: 'Crédito', n: true, v: g => Number(g.dias_credito) + ' d', s: g => g.dias_credito },
+    { k: 'total', t: 'Total', n: true, v: g => formatoMoneda(g.total || 0), s: g => g.total || 0, sum: g => g.total || 0 },
+    { k: 'cobrado', t: 'Cobrado (A/C)', n: true, v: g => formatoMoneda(g.cobrado || 0), s: g => g.cobrado || 0, sum: g => g.cobrado || 0 },
+    { k: 'saldo', t: 'Saldo', n: true, fija: true, v: g => '<b>' + formatoMoneda(g.saldo) + '</b>', s: g => g.saldo, sum: g => g.saldo },
+    { k: 'vencido', t: 'Vencido', n: true, v: g => (g.vencido > 0 ? '<b class="rojo">' + formatoMoneda(g.vencido) + '</b>' : '—'), s: g => g.vencido, sum: g => g.vencido },
+    { k: 'max_dias', t: 'Máx. días vencido', n: true, v: g => (g.max_dias_vencido > 0 ? '<b class="rojo">' + Number(g.max_dias_vencido) + '</b>' : '—'), s: g => g.max_dias_vencido },
+    { k: 'proximo', t: 'Próximo vencimiento', v: g => esc(g.proximo_vence ? fechaTxt(g.proximo_vence) : '—'), s: g => g.proximo_vence || '9999' },
+    { k: 'ultimo_pago', t: 'Último pago', v: g => esc(ultimoPagoTxt(g.ultimo_pago)), s: g => g.ultimo_pago || '' },
+    { k: 'acciones', t: '', fija: true, sinOrden: true, clase: 'celda-acciones', v: g => accionesCliente(g) },
+  ];
+  const accionesCliente = g => {
+    const wa = enlaceWhatsApp(g.telefono, textoWhatsApp(g));
+    return '<div class="acciones-fila">' + (wa ? '<a class="btn btn-outline btn-whatsapp btn-chico" href="' + esc(wa) + '" target="_blank" rel="noopener noreferrer" title="Recordar por WhatsApp">💬</a>' : '')
+      + (puedeEditarFactura() ? '<button type="button" class="btn btn-outline btn-chico" data-credito-cliente="' + Number(g.cliente_id) + '" data-credito-actual="' + Number(g.dias_credito) + '">Crédito</button>' : '')
+      + '<button type="button" class="btn btn-secundario btn-chico" data-ver-ordenes="' + esc(g.telefono || g.cliente_nombre || '') + '">Ver órdenes</button></div>';
+  };
+  // WhatsApp de una orden, solo con el ícono (para la tabla).
+  const waOrdenCorto = c => waOrden(c).replace('💬 Recordar por WhatsApp', '💬').replace('class="btn btn-outline btn-whatsapp"', 'class="btn btn-outline btn-whatsapp btn-chico" title="Recordar por WhatsApp"');
   async function cargarLista() {
     const cont = $('cobrar-lista'), vista = $('cobrar-vista').value;
     cont.innerHTML = '<p class="util-45" role="status">Cargando…</p>';
@@ -323,7 +458,14 @@ const Finanzas = (() => {
     try { CARTERA = await api('/finanzas/cartera?' + params).then(json); }
     catch (err) { cont.innerHTML = `<div class="aviso-error-carga" role="alert"><p>No se pudo cargar: ${esc(err.message)}</p></div>`; return; }
     if (!CARTERA.length) { cont.innerHTML = '<p class="util-45">No hay cuentas con este filtro. 🎉</p>'; return; }
-    cont.innerHTML = vista === 'cliente' ? CARTERA.map(g => {
+    const id = vista === 'cliente' ? 'cobrar-clientes' : 'cobrar-ordenes';
+    TABLAS[id] = { ...TABLAS[id], contenedor: 'cobrar-lista' };
+    cont.innerHTML = vistaDinero(id, vista === 'cliente'
+      ? { columnas: COLS_CLIENTES, filas: CARTERA, claseFila: g => (g.vencido > 0 ? 'fila-vencida' : ''), tarjetas: () => tarjetasCobrar('cliente'), ocultasDef: ['rfc', 'folios'] }
+      : { columnas: COLS_COBRAR, filas: CARTERA, claseFila: c => (c.vencida ? 'fila-vencida' : ''), tarjetas: () => tarjetasCobrar('orden'), ocultasDef: ['factura_fecha', 'rfc', 'telefono', 'operador', 'proyecto', 'pagos_n', 'a_favor'] });
+  }
+  function tarjetasCobrar(vista) {
+    return vista === 'cliente' ? CARTERA.map(g => {
       const wa = enlaceWhatsApp(g.telefono, textoWhatsApp(g));
       return `<div class="fila-dinero${g.vencido > 0 ? ' vencida' : ''}">
         <div class="info"><b>${esc(g.cliente_nombre || 'Sin nombre')}</b>${g.empresa_contacto ? ` · ${esc(g.empresa_contacto)}` : ''}
@@ -360,18 +502,25 @@ const Finanzas = (() => {
     if ($('cobrar-vista').value === 'cliente') {
       descargarCSV('cuentas_por_cobrar_clientes_' + hoy() + '.csv', [
         { titulo: 'Cliente', valor: g => g.cliente_nombre }, { titulo: 'Empresa', valor: g => g.empresa_contacto }, { titulo: 'Teléfono', valor: g => g.telefono },
-        { titulo: 'Órdenes con saldo', valor: g => g.ordenes }, { titulo: 'Saldo', valor: g => g.saldo.toFixed(2) }, { titulo: 'Vencido', valor: g => g.vencido.toFixed(2) },
-        { titulo: 'Máx. días vencido', valor: g => g.max_dias_vencido }, { titulo: 'Días de crédito', valor: g => g.dias_credito }], CARTERA);
+        { titulo: 'RFC', valor: g => g.rfc }, { titulo: 'Órdenes', valor: g => g.ordenes }, { titulo: 'Folios', valor: g => (g.folios || []).join(', ') },
+        { titulo: 'Total', valor: g => (g.total || 0).toFixed(2) }, { titulo: 'Cobrado (A/C)', valor: g => (g.cobrado || 0).toFixed(2) },
+        { titulo: 'Saldo', valor: g => g.saldo.toFixed(2) }, { titulo: 'Vencido', valor: g => g.vencido.toFixed(2) },
+        { titulo: 'Máx. días vencido', valor: g => g.max_dias_vencido }, { titulo: 'Próximo vencimiento', valor: g => g.proximo_vence || '' },
+        { titulo: 'Último pago', valor: g => (g.ultimo_pago ? ultimoPagoTxt(g.ultimo_pago) : '') }, { titulo: 'Días de crédito', valor: g => g.dias_credito }], CARTERA);
     } else {
       descargarCSV('cuentas_por_cobrar_ordenes_' + hoy() + '.csv', [
-        { titulo: 'Folio', valor: folioOS }, { titulo: 'Cliente', valor: c => c.cliente_nombre }, { titulo: 'Servicio', valor: c => c.servicio_nombre },
+        { titulo: 'Folio', valor: folioOS }, { titulo: 'Factura', valor: c => c.factura_folio }, { titulo: 'Fecha factura', valor: c => c.factura_fecha },
+        { titulo: 'Cliente', valor: c => c.cliente_nombre }, { titulo: 'Empresa', valor: c => c.empresa_contacto }, { titulo: 'RFC', valor: c => c.rfc }, { titulo: 'Teléfono', valor: c => c.telefono },
+        { titulo: 'Servicio', valor: c => c.servicio_nombre },
         { titulo: 'Fecha del servicio', valor: c => c.fecha_servicio },
         { titulo: 'Ejecución', valor: c => (c.ejecucion === 'realizado' ? 'Realizado' : c.ejecucion === 'no_realizado' ? 'No realizado' : c.por_concluir ? 'Por concluir' : 'Programado') },
         { titulo: 'Fecha realizado', valor: c => c.fecha_realizado }, { titulo: 'Realizado por', valor: c => (c.realizado_por === 'subcontratado' ? 'Subcontratado' : c.realizado_por === 'propio' ? 'Equipo propio' : '') },
         { titulo: 'Unidad', valor: c => c.equipo }, { titulo: 'Operador', valor: c => c.operador }, { titulo: 'Proyecto', valor: c => c.proyecto },
-        { titulo: 'Factura', valor: c => c.factura_folio }, { titulo: 'Total', valor: c => c.total.toFixed(2) },
-        { titulo: 'Cobrado', valor: c => c.cobrado.toFixed(2) }, { titulo: 'Saldo', valor: c => c.saldo.toFixed(2) }, { titulo: 'Vence', valor: c => c.vence },
-        { titulo: 'Días vencido', valor: c => c.dias_vencido }, { titulo: 'Estado', valor: c => textoEstado(c)[1] }], CARTERA);
+        { titulo: 'Subtotal', valor: c => c.subtotal.toFixed(2) }, { titulo: 'IVA', valor: c => (c.iva == null ? '' : c.iva.toFixed(2)) }, { titulo: 'Total', valor: c => c.total.toFixed(2) },
+        { titulo: 'Crédito (días)', valor: c => c.dias_credito }, { titulo: 'Vence', valor: c => c.vence }, { titulo: 'Días vencido', valor: c => c.dias_vencido },
+        { titulo: 'Cobrado (A/C)', valor: c => c.cobrado.toFixed(2) }, { titulo: 'Saldo', valor: c => c.saldo.toFixed(2) }, { titulo: 'A favor', valor: c => (c.a_favor || 0).toFixed(2) },
+        { titulo: 'Último pago', valor: c => (c.ultimo_pago ? ultimoPagoTxt(c.ultimo_pago) : '') }, { titulo: 'Pagos', valor: c => c.pagos_n || 0 },
+        { titulo: 'Estado', valor: c => textoEstado(c)[1] }, { titulo: 'Observaciones', valor: c => c.notas || '' }], CARTERA);
     }
   });
 
@@ -390,6 +539,32 @@ const Finanzas = (() => {
     const h = hoy(), dow = new Date(h + 'T00:00:00Z').getUTCDay(), domingo = sumarDias(h, (7 - dow) % 7), domingoSig = sumarDias(domingo, 7);
     const grupos = [['Vencidas', x => x.saldo > 0 && x.fecha_vencimiento < h], ['Esta semana', x => x.saldo > 0 && x.fecha_vencimiento >= h && x.fecha_vencimiento <= domingo],
       ['Próxima semana', x => x.saldo > 0 && x.fecha_vencimiento > domingo && x.fecha_vencimiento <= domingoSig], ['Después', x => x.saldo > 0 && x.fecha_vencimiento > domingoSig], ['Pagadas', x => x.saldo <= 0]];
+    const cuando = x => (grupos.find(([, f]) => f(x)) || ['Pagadas'])[0];
+    const COLS_PAGAR = [
+      { k: 'cuando', t: 'Cuándo', fija: true, v: x => { const g = cuando(x); const cl = g === 'Vencidas' ? 'vencida' : g === 'Pagadas' ? 'pagada' : g === 'Esta semana' ? 'parcial' : 'programada';
+        return '<span class="estado-cxc ' + cl + '">' + esc(g === 'Vencidas' ? 'Vencida hace ' + Number(-x.dias_para_vencer) + ' d' : g === 'Pagadas' ? 'Pagada ✓' : g) + '</span>'; }, s: x => (x.saldo > 0 ? x.fecha_vencimiento : '9999') },
+      { k: 'proveedor', t: 'Proveedor', fija: true, v: x => '<b>' + esc(x.proveedor_nombre) + '</b>', s: x => String(x.proveedor_nombre).toLowerCase() },
+      { k: 'categoria', t: 'Categoría', v: x => esc(x.categoria_nombre), s: x => x.categoria_nombre },
+      { k: 'concepto', t: 'Concepto', v: x => esc(x.concepto), s: x => x.concepto },
+      { k: 'factura', t: 'Factura', v: x => esc(x.factura_folio || '—'), s: x => x.factura_folio || '' },
+      { k: 'fecha', t: 'Fecha', v: x => esc(fechaTxt(x.fecha_documento)), s: x => x.fecha_documento },
+      { k: 'vence', t: 'Vence', v: x => esc(fechaTxt(x.fecha_vencimiento)), s: x => x.fecha_vencimiento },
+      { k: 'dias', t: 'Días', n: true, v: x => (x.saldo <= 0 ? '—' : x.dias_para_vencer < 0 ? '<b class="rojo">' + Number(-x.dias_para_vencer) + ' vencida</b>' : x.dias_para_vencer === 0 ? 'Hoy' : 'en ' + Number(x.dias_para_vencer) + ' d'), s: x => (x.saldo > 0 ? x.dias_para_vencer : 99999) },
+      { k: 'orden', t: 'Orden', v: x => (x.lead_id ? '<button type="button" class="enlace" data-abrir-orden-cxp="' + Number(x.lead_id) + '">' + esc(x.orden_folio) + '</button>' : '—'), s: x => x.orden_folio || '' },
+      { k: 'equipo', t: 'Unidad', v: x => esc(x.equipo || '—'), s: x => x.equipo || '' },
+      { k: 'total', t: 'Total', n: true, v: x => formatoMoneda(x.total), s: x => x.total, sum: x => x.total },
+      { k: 'pagado', t: 'Pagado', n: true, v: x => formatoMoneda(x.pagado), s: x => x.pagado, sum: x => x.pagado },
+      { k: 'saldo', t: 'Saldo', n: true, fija: true, v: x => '<b>' + formatoMoneda(x.saldo) + '</b>', s: x => x.saldo, sum: x => x.saldo },
+      { k: 'ultimo_pago', t: 'Último pago', v: x => esc(ultimoPagoTxt(x.ultimo_pago)), s: x => x.ultimo_pago || '' },
+      { k: 'notas', t: 'Notas', clase: 'celda-notas', v: x => esc(x.notas || ''), s: x => x.notas || '' },
+      { k: 'acciones', t: '', fija: true, sinOrden: true, clase: 'celda-acciones', v: x => '<div class="acciones-fila">' + (x.saldo > 0 ? '<button type="button" class="btn btn-primario btn-chico" data-pagar-cxp="' + Number(x.id) + '">Pagar</button>' : '')
+        + '<button type="button" class="btn btn-outline btn-chico" data-detalle-cxp="' + Number(x.id) + '">Pagos</button>'
+        + (x.pagado === 0 ? '<button type="button" class="btn btn-outline btn-chico" data-cancelar-cxp="' + Number(x.id) + '">Cancelar</button>' : '') + '</div>' },
+    ];
+    if (!CXP.length) { cont.innerHTML = '<p class="util-45">No hay cuentas por pagar. 🎉</p>'; return; }
+    TABLAS.pagar = { ...TABLAS.pagar, contenedor: 'pagar-lista', orden: TABLAS.pagar?.orden || { k: 'vence', dir: 1 } };
+    cont.innerHTML = vistaDinero('pagar', { columnas: COLS_PAGAR, filas: CXP, claseFila: x => (cuando(x) === 'Vencidas' ? 'fila-vencida' : ''), tarjetas: () => tarjetasPagar(), ocultasDef: ['fecha', 'equipo', 'notas'] });
+    function tarjetasPagar() {
     const html = grupos.map(([titulo, f]) => {
       const items = CXP.filter(f);
       if (!items.length) return '';
@@ -403,11 +578,13 @@ const Finanzas = (() => {
             ${x.pagado === 0 ? `<button type="button" class="btn btn-outline" data-cancelar-cxp="${Number(x.id)}">Cancelar</button>` : ''}</div>
         </div>`).join('');
     }).join('');
-    cont.innerHTML = html || '<p class="util-45">No hay cuentas por pagar. 🎉</p>';
+    return html || '<p class="util-45">No hay cuentas por pagar. 🎉</p>';
+    }
   }
   $('pagar-vista').addEventListener('change', cargarPagar);
   $('pagar-lista').addEventListener('click', async e => {
     const btn = e.target.closest('button'); if (!btn) return;
+    if (btn.dataset.abrirOrdenCxp) return abrirFicha(Number(btn.dataset.abrirOrdenCxp));
     const id = Number(btn.dataset.pagarCxp || btn.dataset.detalleCxp || btn.dataset.cancelarCxp);
     if (btn.dataset.cancelarCxp) {
       const motivo = await pedirMotivo('Cancelar cuenta por pagar'); if (!motivo) return;
@@ -562,7 +739,8 @@ const Finanzas = (() => {
       { titulo: 'Proveedor', valor: x => x.proveedor_nombre }, { titulo: 'Concepto', valor: x => x.concepto }, { titulo: 'Categoría', valor: x => x.categoria_nombre },
       { titulo: 'Factura', valor: x => x.factura_folio }, { titulo: 'Fecha', valor: x => x.fecha_documento }, { titulo: 'Vence', valor: x => x.fecha_vencimiento },
       { titulo: 'Total', valor: x => x.total.toFixed(2) }, { titulo: 'Pagado', valor: x => x.pagado.toFixed(2) }, { titulo: 'Saldo', valor: x => x.saldo.toFixed(2) },
-      { titulo: 'Orden', valor: x => x.lead_id || '' }, { titulo: 'Equipo', valor: x => x.equipo || '' }], CXP);
+      { titulo: 'Días para vencer', valor: x => (x.saldo > 0 ? x.dias_para_vencer : '') }, { titulo: 'Último pago', valor: x => (x.ultimo_pago ? ultimoPagoTxt(x.ultimo_pago) : '') },
+      { titulo: 'Orden', valor: x => x.orden_folio || '' }, { titulo: 'Equipo', valor: x => x.equipo || '' }, { titulo: 'Notas', valor: x => x.notas || '' }], CXP);
   });
 
   // ---------- Proveedores ----------
