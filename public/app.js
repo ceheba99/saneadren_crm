@@ -1452,20 +1452,20 @@ function renderTablaClientesReales(clientes) {
   document.getElementById('tabla-conteo-clientes').textContent =
     clientes.length + (clientes.length === 1 ? ' contacto' : ' contactos');
   if (!clientes.length) {
-    body.innerHTML = '<tr><td class="util-37" colspan="9">No hay contactos con estos filtros. Puedes crear uno desde Nuevo contacto.</td></tr>';
+    body.innerHTML = '<tr><td class="util-37" colspan="7">No hay contactos con estos filtros. Puedes crear uno con Nuevo contacto.</td></tr>';
     return;
   }
+  // Una fila por contacto: quién es, qué tipo de contacto es y cuánto ha contratado.
+  const tipo = c => c.servicios_ganados > 1 ? ['recurrente', 'Recurrente'] : c.servicios_ganados > 0 ? ['cliente', 'Cliente'] : ['prospecto', 'Prospecto'];
   body.innerHTML = clientes.map(c => `
-    <tr onclick="abrirFichaCliente(${c.id})">
-      <td>#${c.id}</td>
-      <td class="tel">${escaparHtml(c.telefono)}</td>
-      <td><b>${escaparHtml(c.nombre || '—')}</b><small class="contacto-relacion">${c.servicios_ganados > 0 ? 'Cliente' : 'Prospecto · aún no ha contratado'}</small></td>
-      <td>${escaparHtml(c.empresa_contacto || '—')}</td>
-      <td>${escaparHtml(c.direccion || '—')}</td>
-      <td><span class="tag-alerta-tabla util-38">${c.servicios_ganados} servicio${c.servicios_ganados === 1 ? '' : 's'}</span></td>
-      <td>${formatoMoneda(c.valor_ganado_total)}</td>
-      <td>${c.solicitudes_abiertas > 0 ? `<span class="tag-estatus abierto">${c.solicitudes_abiertas} en leads</span>` : '—'}</td>
-      <td>${fechaCorta(c.ultima_actividad)}</td>
+    <tr onclick="abrirFichaCliente(${Number(c.id)})">
+      <td data-label="Contacto"><b>${escaparHtml(c.nombre || 'Sin nombre')}</b><small class="contacto-relacion">${escaparHtml([c.empresa_contacto, c.telefono].filter(Boolean).join(' · '))}</small></td>
+      <td data-label="Tipo"><span class="tipo-contacto ${tipo(c)[0]}">${tipo(c)[1]}</span></td>
+      <td data-label="Cotizaciones abiertas" class="st-num">${Number(c.solicitudes_abiertas) || '—'}</td>
+      <td data-label="Órdenes de servicio" class="st-num">${Number(c.servicios_ganados) || '—'}</td>
+      <td data-label="Contratado (sin IVA)" class="st-num">${c.valor_ganado_total ? formatoMoneda(c.valor_ganado_total) : '—'}</td>
+      <td data-label="Última actividad">${fechaCorta(c.ultima_actividad)}</td>
+      <td><button type="button" class="btn btn-outline">Abrir</button></td>
     </tr>
   `).join('');
 }
@@ -1577,8 +1577,6 @@ async function abrirFicha(id) {
   document.getElementById('ed-equipo').value = lead.equipo || '';
   document.getElementById('ed-operador').value = lead.operador || '';
   document.getElementById('ed-observaciones').value = lead.observaciones || '';
-  document.getElementById('ed-encuesta-calificacion').value = lead.encuesta_calificacion ?? '';
-  document.getElementById('ed-encuesta-comentario').value = lead.encuesta_comentario || '';
   document.getElementById('ed-creado-por').textContent = lead.creado_por || '—';
   document.getElementById('ed-created-at').textContent = fechaCorta(lead.created_at) || '—';
   document.getElementById('ed-estatus-actual').textContent = lead.estatus || '—';
@@ -1734,23 +1732,15 @@ function recolectarPayloadFicha() {
     equipo: document.getElementById('ed-equipo').value.trim(),
     operador: document.getElementById('ed-operador').value.trim(),
     observaciones: document.getElementById('ed-observaciones').value.trim(),
-    encuesta_calificacion: document.getElementById('ed-encuesta-calificacion').value || null,
-    encuesta_comentario: document.getElementById('ed-encuesta-comentario').value.trim() || null,
     ...ivaPayload()
   };
 }
 on('btn-guardar-ficha', 'click', async () => {
   if(!validarEditorCotizacion())return;
-  const calificacionAntes = LEAD_ACTUAL.encuesta_calificacion ?? '';
-  const calificacionNueva = document.getElementById('ed-encuesta-calificacion').value;
   try {
     if (!await guardarLeadExistente(recolectarPayloadFicha())) return;
     toast('Cambios guardados en este registro');
     FlujoCRM.marcarGuardado('overlay-ficha');
-    if (String(calificacionAntes) !== String(calificacionNueva) && calificacionNueva) {
-      const etiqueta = {4:'Excelente',3:'Bueno',2:'Regular',1:'Malo'}[Number(calificacionNueva)];
-      await registrarEventoSistema(LEAD_ACTUAL.id, 'Encuesta de calidad registrada: ' + etiqueta + '.');
-    }
     const lead = await api('/leads/' + LEAD_ACTUAL.id).then(r => r.json());
     LEAD_ACTUAL = lead;
     renderFichaMeta(lead);

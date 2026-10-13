@@ -826,3 +826,49 @@ header.app nav.menu-principal .menu-sub .menu-item:focus-visible{outline:3px sol
 .barra-botones{display:flex;gap:10px;flex-wrap:wrap;margin-left:auto;}
 #btn-generar-orden-servicio[hidden]{display:none;}
 @media(max-width:600px){.barra-botones{margin-left:0;width:100%;}.barra-botones .btn{flex:1;}#btn-generar-orden-servicio{width:100%;}}
+
+/* Encabezado de una vista con su acción principal. */
+.vista-encabezado{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;margin-bottom:14px;}
+.vista-encabezado h2{margin:0 0 2px;}
+.vista-encabezado .ayuda{margin:0;}
+/* Contactos: tipo de contacto como etiqueta. */
+.tipo-contacto{display:inline-block;padding:3px 10px;border-radius:999px;font-size:12px;font-weight:700;background:var(--gris-200);color:var(--texto-sec);}
+.tipo-contacto.cliente{background:#e7f6ee;color:#1e7a46;}
+.tipo-contacto.recurrente{background:#fff3cd;color:var(--amarillo-texto);}
+.tabla-clientes td .contacto-relacion{display:block;color:var(--texto-sec);font-size:12px;margin-top:2px;}
+.tabla-clientes tbody tr{cursor:pointer;}
+/* Tabla de cotizaciones y órdenes de un contacto. */
+.st-barra{display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;margin-bottom:8px;}
+.st-pestanas{display:inline-flex;background:var(--gris-100);border:1px solid var(--gris-200);border-radius:999px;padding:3px;gap:2px;flex-wrap:wrap;}
+.st-pestanas button{border:0;background:transparent;border-radius:999px;padding:6px 14px;font:inherit;font-size:13px;color:var(--texto-sec);cursor:pointer;}
+.st-pestanas button.activo{background:var(--blanco);color:var(--texto);font-weight:700;box-shadow:0 1px 3px rgba(0,0,0,.12);}
+.st-conteo{display:inline-block;min-width:18px;padding:0 6px;border-radius:999px;background:var(--gris-200);font-size:11px;font-weight:700;}
+.st-buscar{flex:1 1 200px;max-width:280px;border:1px solid var(--gris-300);border-radius:var(--radio);padding:8px 10px;font:inherit;font-size:13.5px;}
+.st-resumen{font-size:13px;color:var(--texto-sec);margin:0 0 8px;}
+.st-scroll{overflow-x:auto;border:1px solid var(--gris-200);border-radius:10px;background:var(--blanco);}
+.st-tabla{width:100%;border-collapse:collapse;font-size:13.5px;}
+.st-tabla th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:var(--texto-sec);background:var(--gris-100);padding:9px 12px;white-space:nowrap;}
+.st-tabla td{padding:10px 12px;border-top:1px solid var(--gris-200);vertical-align:middle;}
+.st-tabla tbody tr{cursor:pointer;}
+.st-tabla tbody tr:hover{background:#fafbfc;}
+.st-tabla tr.fila-abierto td:first-child{box-shadow:inset 4px 0 0 var(--azul-500);}
+.st-tabla tr.fila-ganado td:first-child{box-shadow:inset 4px 0 0 var(--verde);}
+.st-tabla tr.fila-perdido td:first-child{box-shadow:inset 4px 0 0 var(--rojo);}
+.st-tabla tr.st-actual{background:#fffbea;}
+.st-folio{font-weight:700;white-space:nowrap;}
+.st-folio small,.st-tabla td small{display:block;font-weight:400;font-size:11px;color:var(--texto-sec);}
+.st-fecha{white-space:nowrap;color:var(--texto-sec);}
+.st-num{text-align:right;white-space:nowrap;}
+.st-acciones{white-space:nowrap;text-align:right;}
+.st-acciones .btn{padding:5px 12px;font-size:12.5px;min-height:32px;margin-left:6px;}
+.st-acciones .btn-eliminar{margin-left:10px;font-size:12px;}
+@media(max-width:700px){
+  .st-tabla thead{display:none;}
+  .st-tabla,.st-tabla tbody,.st-tabla tr,.st-tabla td{display:block;width:100%;}
+  .st-tabla tr{border-top:1px solid var(--gris-200);padding:8px 4px;}
+  .st-tabla td{border:0;padding:3px 10px;text-align:left;}
+  .st-tabla td[data-label]::before{content:attr(data-label) ": ";font-size:11px;color:var(--texto-sec);text-transform:uppercase;}
+  .st-acciones{text-align:left;padding-top:8px !important;}
+  .st-acciones .btn:first-child{margin-left:0;}
+}
+.st-tabla th.st-num,.tabla-clientes th.st-num{text-align:right;}

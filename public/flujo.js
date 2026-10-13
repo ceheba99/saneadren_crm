@@ -4,7 +4,7 @@ const FlujoCRM = (() => {
   const baselines = new Map();
   const listasGuardadas = new Map();
   const campos = {
-    'overlay-ficha':'#gc-iva-modo,#gc-items input,#gc-items select,#gc-items textarea,#ed-direccion,#ed-canal,#ed-servicio,#ed-responsable,#ed-valor,#ed-fecha-servicio,#ed-fecha-cotizacion,#ed-incluye-vigencia,#ed-vigencia-hasta,#ed-encuesta-calificacion,#ed-encuesta-comentario,#ed-equipo,#ed-operador,#ed-observaciones',
+    'overlay-ficha':'#gc-iva-modo,#gc-items input,#gc-items select,#gc-items textarea,#ed-direccion,#ed-canal,#ed-servicio,#ed-responsable,#ed-valor,#ed-fecha-servicio,#ed-fecha-cotizacion,#ed-incluye-vigencia,#ed-vigencia-hasta,#ed-equipo,#ed-operador,#ed-observaciones',
     'overlay-ficha-cliente':'#fc-ed-telefono,#fc-ed-telefono-alterno,#fc-ed-nombre,#fc-ed-correo,#fc-ed-empresa,#fc-ed-rfc,#fc-ed-direccion,#fc-ed-giro,#fc-ed-notas-generales',
     'overlay-servicio-nuevo':'#gc-iva-modo,#gc-items input,#gc-items select,#gc-items textarea,#sn-servicio,#sn-valor,#sn-fecha,#sn-ubicacion,#sn-equipo,#sn-operador,#sn-observaciones',
 
@@ -65,7 +65,6 @@ const FlujoCRM = (() => {
     $('ed-fecha-cotizacion').closest('.campo-modal').hidden=contratado;
     $('ed-incluye-vigencia').closest('.campo-modal').hidden=contratado;
     $('wrap-vigencia-hasta').hidden=contratado || !$('ed-incluye-vigencia').checked;
-    $('seccion-encuesta').hidden=!contratado;
     rotularEditorContenido(contratado);
     document.querySelectorAll('#overlay-ficha .solo-orden').forEach(e=>e.hidden=!contratado);
     const c=contacto||{id:lead.cliente_id,nombre:lead.nombre,telefono:lead.telefono,empresa_contacto:lead.empresa_contacto};

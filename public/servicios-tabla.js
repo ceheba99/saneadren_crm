@@ -6,81 +6,87 @@ const ServiciosTabla = (() => {
   const normalizar = value => String(value ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
   const dia = value => /^\d{4}-\d{2}-\d{2}/.test(value || '') ? value.slice(0,10) : '';
   const fecha = value => {const d=dia(value);return d ? d.split('-').reverse().join('/') : 'Sin fecha';};
-  function filtrar(datos,f) {
-    if(f.desde && f.hasta && f.desde>f.hasta) return [];
-    return datos.filter(s=>{
-      const d=dia(s[f.fecha]);
-      const folio=s.estatus==='ganado'?folioOrdenServicio(s):folioCotizacion(s);
-      return (!f.estatus || s.estatus===f.estatus) && (!f.busqueda || normalizar([s.id,folio,s.servicio_nombre,s.responsable_nombre,s.notas_iniciales].join(' ')).includes(normalizar(f.busqueda))) && (!f.desde || (d && d>=f.desde)) && (!f.hasta || (d && d<=f.hasta));
-    });
+  // Cotizaciones y órdenes de servicio se separan con pestañas; la fecha que importa es la de
+  // cada tipo (cotización: cuándo se cotizó; orden: fecha acordada del servicio).
+  const esOrden = s => s.estatus === 'ganado';
+  const folioDe = s => esOrden(s) ? folioOrdenServicio(s) : folioCotizacion(s);
+  const fechaClave = s => esOrden(s) ? (s.fecha_servicio || dia(s.created_at)) : (s.fecha_cotizacion || dia(s.created_at));
+  const VISTAS = { todos: 'Todos', cotizaciones: 'Cotizaciones', ordenes: 'Órdenes de servicio' };
+  function filtrar(datos, f) {
+    const q = normalizar(f.busqueda || '');
+    return datos.filter(s => (f.vista === 'cotizaciones' ? !esOrden(s) : f.vista === 'ordenes' ? esOrden(s) : true)
+      && (!q || normalizar([s.id, folioDe(s), s.servicio_nombre, s.responsable_nombre, s.notas_iniciales].join(' ')).includes(q)));
   }
-  function ordenar(datos,col,dir) {
-    return [...datos].sort((a,b)=>{
-      let x=a[col],y=b[col];
-      if(x==null || x==='') return y==null || y==='' ? a.id-b.id : 1;
-      if(y==null || y==='') return -1;
-      const cmp = ['id','valor'].includes(col) ? Number(x)-Number(y) : String(x).localeCompare(String(y),'es',{numeric:true});
-      return cmp*dir || a.id-b.id;
-    });
-  }
-  function inicial(tipo) {return {busqueda:'',estatus:'',fecha:'created_at',desde:'',hasta:''};}
-  const columnas=[['id','Folio'],['servicio_nombre','Servicio'],['estatus','Estatus'],['valor','Importe sin IVA (MXN)'],['created_at','Registro'],['fecha_servicio','Fecha del servicio'],['responsable_nombre','Responsable']];
-  function render(id,datos,propietario,tipo) {
-    let st=estados.get(id);
-    const cont=document.getElementById(id);
-    if(!st || st.propietario!==propietario) {
-      st={propietario,tipo,f:inicial(tipo),col:'created_at',dir:-1,datos:[]}; estados.set(id,st);
+  function ordenar(datos) { return [...datos].sort((x, y) => String(fechaClave(y)).localeCompare(String(fechaClave(x))) || y.id - x.id); }
+  function inicial() { return { busqueda: '', vista: 'todos' }; }
+  function render(id, datos, propietario, tipo) {
+    let st = estados.get(id);
+    const cont = document.getElementById(id);
+    if (!st || st.propietario !== propietario) {
+      st = { propietario, tipo, f: inicial(), datos: [] }; estados.set(id, st);
       cont.classList.add('servicios-tabla');
-      cont.innerHTML=`<div class="servicios-filtros">
-        <label class="servicios-busqueda">Buscar servicio<input type="search" data-filtro="busqueda" placeholder="Servicio, ID, responsable o notas"></label>
-        <label>Estatus<select data-filtro="estatus"><option value="">Todos</option><option value="abierto">Cotizaciones abiertas</option><option value="ganado">Servicios contratados</option><option value="perdido">Cotizaciones no aceptadas</option></select></label>
-        <label>Filtrar por<select data-filtro="fecha"><option value="created_at">Fecha de registro</option><option value="fecha_servicio">Fecha del servicio</option></select></label>
-        <label>Desde<input type="date" data-filtro="desde"></label><label>Hasta<input type="date" data-filtro="hasta"></label>
-        <button type="button" class="btn btn-outline" data-limpiar>Limpiar filtros</button>
-      </div><p class="servicios-error" role="alert" hidden></p>
-      <p class="ayuda">Haz clic en un encabezado para ordenar. Las fechas Desde y Hasta se incluyen. Los servicios sin fecha se excluyen al filtrar por un periodo.</p>
-      <div class="servicios-resumen" role="status" aria-live="polite"></div>
-      <div class="servicios-scroll" tabindex="0" role="region" aria-label="Tabla de servicios con desplazamiento horizontal">
-        <table class="tabla-servicios"><caption>Historial comercial del contacto</caption><thead><tr>${columnas.map(([key,label])=>`<th scope="col" data-col="${key}" aria-sort="none"><button type="button" data-orden="${key}">${label}<span aria-hidden="true"></span></button></th>`).join('')}<th scope="col">Acciones</th></tr></thead><tbody></tbody></table>
-      </div>`;
-      cont.querySelectorAll('[data-filtro]').forEach(el=>{el.setAttribute('aria-label',{busqueda:'Buscar servicio',estatus:'Estatus',fecha:'Filtrar por',desde:'Desde',hasta:'Hasta'}[el.dataset.filtro]);el.value=st.f[el.dataset.filtro];el.addEventListener(el.type==='search'?'input':'change',()=>{st.f[el.dataset.filtro]=el.value;pintar(id);});});
+      const pestanas = Object.entries(VISTAS).map(([k, t]) => `<button type="button" role="tab" data-vista-st="${k}">${t} <span class="st-conteo"></span></button>`).join('');
+      cont.innerHTML = `<div class="st-barra">
+        <div class="st-pestanas" role="tablist" aria-label="Tipo de registro">${pestanas}</div>
+        <input type="search" class="st-buscar" data-filtro="busqueda" aria-label="Buscar por folio o servicio" placeholder="Buscar folio o servicio">
+      </div>
+      <div class="servicios-resumen st-resumen" role="status" aria-live="polite"></div>
+      <div class="st-scroll"><table class="st-tabla"><thead><tr><th scope="col">Folio</th><th scope="col">Servicio</th><th scope="col">Estado</th><th scope="col">Fecha</th><th scope="col" class="st-num">Importe</th><th scope="col">Atendió</th><th scope="col"><span class="sr-only">Acciones</span></th></tr></thead><tbody></tbody></table></div>`;
+      cont.querySelector('[data-filtro="busqueda"]').addEventListener('input', e => { st.f.busqueda = e.target.value; pintar(id); });
       cont.addEventListener('click', manejarClick);
     }
-    st.datos=datos;
+    st.datos = datos;
     pintar(id);
   }
+  function estadoDe(s) {
+    if (s.estatus === 'perdido') return ['perdido', 'Cotización no aceptada'];
+    if (!esOrden(s)) return ['abierto', 'Cotización abierta'];
+    const hoy = new Date().toISOString().slice(0, 10);
+    return ['ganado', s.fecha_servicio && s.fecha_servicio > hoy ? 'Orden programada' : 'Orden de servicio'];
+  }
+  function filaHTML(s, st) {
+    const [clase, etiqueta] = estadoDe(s);
+    const actual = st.tipo === 'lead' && s.id === LEAD_ACTUAL?.id;
+    const fechaTxt = esOrden(s) ? (s.fecha_servicio ? 'Servicio: ' + fecha(s.fecha_servicio) : 'Servicio sin fecha') : 'Cotizada: ' + fecha(s.fecha_cotizacion || s.created_at);
+    const duplicar = esOrden(s) ? `<button type="button" class="btn btn-outline" data-accion="duplicar" data-id="${Number(s.id)}" title="Crea otra orden de servicio con los mismos datos (servicio recurrente)">Duplicar</button>` : '';
+    return `<tr class="fila-${clase}${actual ? ' st-actual' : ''}" data-abrir-fila="${Number(s.id)}">
+      <td class="st-folio" data-label="Folio">${escapar(folioDe(s))}${actual ? '<small>Abierto ahora</small>' : ''}</td>
+      <td data-label="Servicio">${escapar(s.servicio_nombre || 'Servicio')}</td>
+      <td data-label="Estado"><span class="tag-estatus ${clase}">${escapar(etiqueta)}</span></td>
+      <td data-label="Fecha" class="st-fecha">${escapar(fechaTxt)}</td>
+      <td data-label="Importe" class="st-num servicio-importe">${importeTarjeta(s)}${s.valor != null && !s.iva_modo ? '<small>IVA por definir</small>' : ''}</td>
+      <td data-label="Atendió">${escapar(s.responsable_nombre || 'Sin asignar')}</td>
+      <td class="st-acciones"><button type="button" class="btn btn-outline" data-accion="abrir" data-id="${Number(s.id)}">Abrir</button>${duplicar}<button type="button" class="btn-eliminar solo-admin" data-accion="eliminar" data-id="${Number(s.id)}" aria-label="Eliminar ${escapar(folioDe(s))}">Eliminar</button></td>
+    </tr>`;
+  }
   function pintar(id) {
-    const st=estados.get(id),cont=document.getElementById(id);
-    const error=!!(st.f.desde && st.f.hasta && st.f.desde>st.f.hasta);
-    const aviso=cont.querySelector('.servicios-error');aviso.hidden=!error;aviso.textContent=error?'La fecha Desde no puede ser posterior a Hasta. Corrige el periodo.':'';
-    const rows=ordenar(filtrar(st.datos,st.f),st.col,st.dir);
-    const total=rows.reduce((sum,s)=>sum+(Number(s.valor)||0),0);
-    const sinImporte=rows.filter(s=>s.valor==null).length;
-    cont.querySelector('.servicios-resumen').textContent=`${rows.length} de ${st.datos.length} registros · Total filtrado (sin IVA): ${formatoMoneda(total)}${sinImporte ? ` · ${sinImporte} sin importe` : ''}`;
-    cont.querySelectorAll('[data-col]').forEach(th=>{const actual=th.dataset.col===st.col;th.setAttribute('aria-sort',actual?(st.dir===1?'ascending':'descending'):'none');th.querySelector('span').textContent=actual?(st.dir===1?' ↑':' ↓'):' ↕';});
-    cont.querySelector('tbody').innerHTML=rows.length ? rows.map(s=>`<tr class="fila-${Object.hasOwn(nombres,s.estatus)?s.estatus:'abierto'}">
-      <td>${escapar(s.estatus==='ganado'?folioOrdenServicio(s):folioCotizacion(s))}</td><td class="servicio-nombre">${escapar(s.servicio_nombre||'Servicio')}${st.tipo==='lead' && s.id===LEAD_ACTUAL?.id?'<small>Ficha actual</small>':''}</td>
-      <td><span class="tag-estatus ${Object.hasOwn(nombres,s.estatus)?s.estatus:'abierto'}">${escapar(nombres[s.estatus]||s.estatus)}</span></td>
-      <td class="servicio-importe">${s.valor==null?'Sin importe':formatoMoneda(s.valor)}${s.valor!=null&&!s.iva_modo?'<small>IVA por definir</small>':''}</td><td>${fecha(s.created_at)}</td><td>${fecha(s.fecha_servicio)}</td>
-      <td>${escapar(s.responsable_nombre||'Sin asignar')}</td>
-      <td><div class="servicios-acciones"><button type="button" class="btn btn-outline" data-accion="abrir" data-id="${Number(s.id)}" aria-label="Abrir ${s.estatus==='ganado'?'servicio':'cotización'} ${Number(s.id)}">${s.estatus==='ganado'?'Ver servicio':'Ver cotización'}</button>
-      ${s.estatus==='ganado'?`<button type="button" class="btn btn-outline" data-accion="duplicar" data-id="${Number(s.id)}" aria-label="Duplicar orden de servicio ${Number(s.id)}" title="Crea otra orden de servicio con los mismos datos — útil para clientes con servicio recurrente">Duplicar</button>`:''}
-      <button type="button" class="btn btn-eliminar solo-admin" data-accion="eliminar" data-id="${Number(s.id)}" aria-label="Eliminar servicio ${Number(s.id)}">Eliminar</button></div></td>
-    </tr>`).join('') : `<tr><td colspan="8" class="servicios-vacio">${error?'Corrige las fechas para consultar servicios.':st.datos.length?'No hay servicios con estos filtros. Puedes seleccionar Todos o limpiar los filtros.':'Este contacto aún no tiene cotizaciones ni servicios registrados.'}</td></tr>`;
+    const st = estados.get(id), cont = document.getElementById(id);
+    const n = { todos: st.datos.length, cotizaciones: st.datos.filter(x => !esOrden(x)).length, ordenes: st.datos.filter(esOrden).length };
+    cont.querySelectorAll('[data-vista-st]').forEach(b => { const k = b.dataset.vistaSt; b.classList.toggle('activo', st.f.vista === k); b.setAttribute('aria-selected', String(st.f.vista === k)); b.querySelector('.st-conteo').textContent = n[k]; });
+    const rows = ordenar(filtrar(st.datos, st.f));
+    const abiertas = st.datos.filter(x => x.estatus === 'abierto').length;
+    const contratado = st.datos.filter(esOrden).reduce((t, x) => t + (Number(x.valor) || 0), 0);
+    cont.querySelector('.servicios-resumen').textContent = `${abiertas} cotización${abiertas === 1 ? '' : 'es'} abierta${abiertas === 1 ? '' : 's'} · ${n.ordenes} orden${n.ordenes === 1 ? '' : 'es'} de servicio · Contratado: ${formatoMoneda(contratado)} sin IVA`;
+    const vacio = st.datos.length ? 'No hay registros con este filtro.' : 'Este contacto aún no tiene cotizaciones ni órdenes. Usa Crear cotización o Crear orden de servicio.';
+    cont.querySelector('tbody').innerHTML = rows.length ? rows.map(s => filaHTML(s, st)).join('') : `<tr><td colspan="7" class="servicios-vacio">${vacio}</td></tr>`;
   }
   async function manejarClick(e) {
-    const cont=e.currentTarget,st=estados.get(cont.id),btn=e.target.closest('button');if(!btn)return;
-    if(btn.hasAttribute('data-limpiar')){st.f={...inicial(st.tipo),estatus:''};cont.querySelectorAll('[data-filtro]').forEach(el=>el.value=st.f[el.dataset.filtro]);pintar(cont.id);return;}
-    if(btn.dataset.orden){const col=btn.dataset.orden;st.dir=st.col===col?-st.dir:1;st.col=col;pintar(cont.id);return;}
-    if(!btn.dataset.accion)return;
-    const s=st.datos.find(s=>s.id===Number(btn.dataset.id));if(!s)return;
-    btn.disabled=true;
+    const cont = e.currentTarget, st = estados.get(cont.id);
+    const pestana = e.target.closest('[data-vista-st]');
+    if (pestana) { st.f.vista = pestana.dataset.vistaSt; pintar(cont.id); return; }
+    const btn = e.target.closest('button');
+    // Tocar la fila (fuera de los botones) también abre el registro.
+    const fila = !btn && e.target.closest('[data-abrir-fila]');
+    if (fila) { await abrirFicha(Number(fila.dataset.abrirFila)); return; }
+    if (!btn?.dataset.accion) return;
+    const s = st.datos.find(x => x.id === Number(btn.dataset.id)); if (!s) return;
+    btn.disabled = true;
     try {
-      if(btn.dataset.accion==='abrir'){await abrirFicha(s.id);return;}
-      if(btn.dataset.accion==='duplicar'){await duplicarRegistro(s.id);return;}
-      if(btn.dataset.accion==='eliminar') await eliminar(s);
-    } catch(err){toast('No se pudo completar: '+err.message);}
-    finally{btn.disabled=false;}
+      if (btn.dataset.accion === 'abrir') { await abrirFicha(s.id); return; }
+      if (btn.dataset.accion === 'duplicar') { await duplicarRegistro(s.id); return; }
+      if (btn.dataset.accion === 'eliminar') await eliminar(s);
+    } catch (err) { toast('No se pudo completar: ' + err.message); }
+    finally { btn.disabled = false; }
   }
   async function eliminar(s) {
     const confirmado=await solicitarDialogo({titulo:'Eliminar servicio',aceptar:'Eliminar servicio',mensaje:`¿Eliminar el servicio #${s.id}: ${s.servicio_nombre||'Servicio'}?\nRegistro: ${fecha(s.created_at)} · Importe: ${s.valor==null?'Sin importe':formatoMoneda(s.valor)}\n\nSe eliminarán esta solicitud, sus observaciones y sus alertas. No se puede deshacer. El contacto y sus demás servicios se conservarán.${s.estatus==='ganado'?'\nEl importe se descontará del total ganado. El contacto seguirá disponible en el directorio, aunque ya no tenga servicios contratados.':''}`});

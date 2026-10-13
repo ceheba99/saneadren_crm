@@ -202,28 +202,31 @@
 
   <!-- ====== VISTA: CLIENTES (servicios ganados — separados del pipeline) ====== -->
   <section class="vista" id="vista-clientes">
-    <p class="ayuda util-9">Directorio de personas y empresas. Abre un contacto para editar sus datos o consultar todas sus cotizaciones y servicios contratados.</p>
+    <div class="vista-encabezado">
+      <div><h2>Contactos</h2><p class="ayuda">Personas y empresas. Abre un contacto para ver sus cotizaciones y órdenes, o para crear una nueva.</p></div>
+      <button type="button" class="btn btn-primario" onclick="cambiarVista('alta')">➕ Nuevo contacto</button>
+    </div>
 
     <div class="rc-grid">
       <div class="rc-card">
         <div class="rc-num" id="rc-total">0</div>
-        <div class="rc-label">Total de contactos únicos</div>
+        <div class="rc-label">Contactos</div>
       </div>
       <div class="rc-card prospecto">
         <div class="rc-num" id="rc-prospectos">0</div>
-        <div class="rc-label">Prospectos (nunca han comprado)</div>
+        <div class="rc-label">Prospectos · aún no contratan</div>
       </div>
       <div class="rc-card cliente">
         <div class="rc-num" id="rc-activos">0</div>
-        <div class="rc-label">Ya son clientes (1+ servicio ganado)</div>
+        <div class="rc-label">Clientes · ya contrataron</div>
       </div>
       <div class="rc-card recurrente">
         <div class="rc-num" id="rc-recurrentes">0</div>
-        <div class="rc-label">Clientes recurrentes (2+ servicios)</div>
+        <div class="rc-label">Recurrentes · 2 o más órdenes</div>
       </div>
       <div class="rc-card valor">
         <div class="rc-num" id="rc-valor">$0</div>
-        <div class="rc-label">Valor histórico ganado</div>
+        <div class="rc-label">Contratado histórico (sin IVA)</div>
       </div>
     </div>
 
@@ -239,22 +242,20 @@
 
     <div class="tabla-clientes-wrap">
       <div class="tabla-header">
-        <h3>Directorio de contactos</h3>
+        <h3>Directorio</h3>
         <span class="tabla-conteo" id="tabla-conteo-clientes">0 registros</span>
       </div>
       <div class="tabla-scroll">
         <table class="tabla-clientes">
           <thead>
             <tr>
-              <th>ID</th>
-              <th>Teléfono</th>
-              <th>Contacto / relación</th>
-              <th>Empresa</th>
-              <th>Dirección</th>
-              <th>Servicios contratados</th>
-              <th>Valor histórico ganado</th>
-              <th>Solicitudes abiertas</th>
+              <th>Contacto</th>
+              <th>Tipo</th>
+              <th class="st-num">Cotizaciones abiertas</th>
+              <th class="st-num">Órdenes de servicio</th>
+              <th class="st-num">Contratado (sin IVA)</th>
               <th>Última actividad</th>
+              <th><span class="sr-only">Abrir</span></th>
             </tr>
           </thead>
           <tbody id="tabla-clientes-reales-body"></tbody>
@@ -492,23 +493,7 @@
           <span class="chip util-17">Fecha de creación: <b id="ed-created-at">—</b></span>
           <span class="chip util-17">Estatus de cotización: <b id="ed-estatus-actual">—</b></span>
         </div>
-        <div class="modal-section" id="seccion-encuesta" data-plegable="encuesta" hidden>
-          <div class="seccion-tit">Encuesta de calidad del servicio</div>
-          <p class="ayuda">Se imprime en la orden de servicio para que el cliente la conteste en papel; regístrala aquí cuando el técnico la traiga de vuelta. Se guarda con el mismo botón de "Guardar cambios" de abajo.</p>
-          <div class="form-grid-2">
-            <div class="campo-modal">
-              <label>Calificación del cliente</label>
-              <select id="ed-encuesta-calificacion">
-                <option value="">Sin registrar todavía</option>
-                <option value="4">Excelente</option>
-                <option value="3">Bueno</option>
-                <option value="2">Regular</option>
-                <option value="1">Malo</option>
-              </select>
-            </div>
-            <div class="campo-modal"><label>Comentario del cliente (opcional)</label><input type="text" id="ed-encuesta-comentario" placeholder="Lo que el cliente escribió o comentó..."></div>
-          </div>
-        </div>
+        <!-- La encuesta de calidad se contesta en Google Forms (QR impreso en la orden de servicio). -->
         <div class="btn-group">
           <span id="estado-guardado-registro" class="estado-guardado" role="status"></span>
           <button class="btn btn-secundario" id="btn-guardar-ficha" style="display:none">Guardar cambios de este registro</button>
