@@ -12,6 +12,7 @@
 // - Pagos y gastos no se borran: solo un admin los cancela, con motivo; queda quién y cuándo.
 // - Cada movimiento lo anota el servidor en la bitácora (historial) de la orden.
 const { hoyMexico } = require('./fechas');
+const Importes = require('../public/importes.js');
 
 const METODOS = ['transferencia', 'efectivo', 'deposito', 'cheque', 'tarjeta', 'otro'];
 const TIPOS_COBRO = ['anticipo', 'pago', 'ajuste'];
@@ -183,13 +184,17 @@ const folioOS = (id, createdAt) => 'OS-' + String(createdAt || '').slice(0, 7).r
 const diasCreditoValidos = v => v === null || v === '' || v === undefined || (Number.isInteger(Number(v)) && Number(v) >= 0 && Number(v) <= 180);
 
 // ---------- Cálculo de la cuenta de una orden ----------
-// Total a cobrar = total facturado (con IVA) si ya se capturó; si no, el importe de la orden.
+// Total a cobrar = total facturado (CFDI, con IVA) si ya se capturó; si no, el total de la orden:
+// subtotal + IVA (public/importes.js). En órdenes con IVA por definir, iva_cent es NULL y el
+// total es el importe tal como se capturó.
+const SQL_TOTAL_ORDEN = 'CAST(ROUND(COALESCE(l.valor, 0) * 100) AS INTEGER) + COALESCE(l.iva_cent, 0)';
 const SQL_CUENTA = `
   SELECT l.id, l.cliente_id, l.created_at, l.fecha_servicio, l.valor, l.dias_credito, l.factura_folio, l.factura_fecha,
-    l.factura_total_cent, l.cobranza_por_revisar, l.servicio_id, l.estatus,
+    l.factura_total_cent, l.cobranza_por_revisar, l.servicio_id, l.estatus, l.iva_modo, l.iva_tasa, l.iva_cent,
     c.nombre AS cliente_nombre, c.empresa_contacto, c.telefono, c.rfc,
     s.nombre AS servicio_nombre,
-    COALESCE(l.factura_total_cent, CAST(ROUND(COALESCE(l.valor, 0) * 100) AS INTEGER)) AS total_cent,
+    ${SQL_TOTAL_ORDEN} AS total_orden_cent,
+    COALESCE(l.factura_total_cent, ${SQL_TOTAL_ORDEN}) AS total_cent,
     (SELECT COALESCE(SUM(monto_cent), 0) FROM cobros k WHERE k.lead_id = l.id AND k.cancelado = 0) AS cobrado_cent,
     (SELECT COUNT(*) FROM cobros k WHERE k.lead_id = l.id AND k.cancelado = 0 AND k.confirmado = 0) AS por_confirmar
   FROM leads l
@@ -215,6 +220,10 @@ function describirCuenta(f, hoy) {
     total: aPesos(f.total_cent), cobrado: aPesos(f.cobrado_cent), saldo: aPesos(Math.max(saldo, 0)),
     vence, dias_vencido: saldo > 0 ? diasVencido : 0, estado, vencida, programada, tramo: programada ? null : tramo,
     por_confirmar: f.por_confirmar, por_revisar: !!f.cobranza_por_revisar,
+    iva_modo: f.iva_modo, iva_tasa: f.iva_tasa, subtotal: aPesos(f.total_orden_cent - (f.iva_cent || 0)),
+    iva: f.iva_cent == null ? null : aPesos(f.iva_cent), total_orden: aPesos(f.total_orden_cent),
+    // CFDI distinto del total de la orden (retención, descuento o centavos): solo informativo.
+    dif_cfdi: f.factura_total_cent != null && f.iva_modo ? aPesos(f.factura_total_cent - f.total_orden_cent) : null,
   };
 }
 
@@ -343,7 +352,9 @@ module.exports = function finanzas(app, db, h) {
     const cuenta = cuentaDeOrden(lead.id);
     const saldoCent = Math.round(cuenta.saldo * 100);
     if (monto > saldoCent) {
-      return res.status(400).json({ error: `El pago (${fmt(monto)}) es mayor que el saldo de la orden (${fmt(saldoCent)}). Si el cliente pagó con IVA, captura primero el total facturado.` });
+      return res.status(400).json({ error: `El pago (${fmt(monto)}) es mayor que el saldo de la orden (${fmt(saldoCent)}). ` + (lead.iva_modo
+        ? 'Si la factura salió por otro total (retención o centavos), captúralo primero en Crédito y factura.'
+        : 'Si el cliente pagó con IVA, captura primero el total facturado.') });
     }
     // Doble toque: mismo pago de la misma persona en menos de 2 minutos.
     if (!req.body.forzar) {
@@ -410,7 +421,7 @@ module.exports = function finanzas(app, db, h) {
       if (b.factura_total !== null && b.factura_total !== '' && !totalFactura) return res.status(400).json({ error: 'El total facturado no es válido' });
     }
     const cobrado = db.prepare('SELECT COALESCE(SUM(monto_cent), 0) t FROM cobros WHERE lead_id = ? AND cancelado = 0').get(lead.id).t;
-    const nuevoTotal = totalFactura ?? Math.round((lead.valor || 0) * 100);
+    const nuevoTotal = totalFactura ?? Math.round((lead.valor || 0) * 100) + (lead.iva_cent || 0);
     if (nuevoTotal < cobrado) return res.status(400).json({ error: `El total no puede quedar por debajo de lo ya cobrado (${fmt(cobrado)})` });
     const dias = b.dias_credito === undefined ? lead.dias_credito : (b.dias_credito === null || b.dias_credito === '' ? null : Number(b.dias_credito));
     const folio = b.factura_folio === undefined ? lead.factura_folio : texto(b.factura_folio, 60);
@@ -419,7 +430,7 @@ module.exports = function finanzas(app, db, h) {
     if (dias !== lead.dias_credito) cambios.push(`crédito ${lead.dias_credito || 0} → ${dias || 0} días`);
     if (folio !== lead.factura_folio) cambios.push(`factura ${folio || '(sin folio)'}`);
     if (fechaF !== lead.factura_fecha) cambios.push(`fecha de factura ${fechaF || '(sin fecha)'}`);
-    if (totalFactura !== lead.factura_total_cent) cambios.push(`total facturado ${totalFactura == null ? '(igual al importe)' : fmt(totalFactura)}`);
+    if (totalFactura !== lead.factura_total_cent) cambios.push(`total facturado ${totalFactura == null ? '(igual al total de la orden)' : fmt(totalFactura)}`);
     db.transaction(() => {
       db.prepare('UPDATE leads SET dias_credito = ?, factura_folio = ?, factura_fecha = ?, factura_total_cent = ? WHERE id = ?').run(dias, folio, fechaF, totalFactura, lead.id);
       if (cambios.length) bitacora(lead.id, 'Facturación: ' + cambios.join(', ') + '.', req);
@@ -753,19 +764,25 @@ module.exports = function finanzas(app, db, h) {
       const totalFact = montoCent(f.factura_total, 'Total facturado', errores, false);
       const pagado = montoCent(f.pagado, 'Ya pagado', errores, false);
       const notas = textoMax(f.notas, LIM.notas, 'Notas', errores);
-      const total = totalFact ?? importe;
+      // IVA del importe (columna opcional; vacía = "por definir", como las plantillas anteriores).
+      const ivaTxt = claveNombre(f.iva);
+      const modo = !ivaTxt ? null : ivaTxt.includes('incluido') ? 'incluido' : ivaTxt.startsWith('mas iva') ? 'mas_iva' : undefined;
+      if (modo === undefined) errores.push('IVA: elige "Más IVA 16%" o "IVA incluido 16%" (o déjalo vacío)');
+      const imp = Importes.calcular([{ importe: (importe || 0) / 100 }], modo || null, modo ? Importes.TASA_DEFAULT : null);
+      const total = totalFact ?? (importe ? imp.total_cent : null);
       if (pagado && total && pagado > total) errores.push('Ya pagado no puede ser mayor que el total');
       // Evita importar dos veces lo mismo (en el archivo o contra lo que ya existe).
-      // Mismo cliente, servicio, fecha, importe, factura y dirección = el mismo registro.
-      const llave = [tel, servicio?.id, fechaServ, importe, folio || '', claveNombre(direccion)].join('|');
+      // Mismo cliente, servicio, fecha, importe, factura y dirección = el mismo registro. Contra lo
+      // existente se compara el subtotal guardado o el total con IVA (pudo capturarse de las dos formas).
+      const llave = [tel, servicio?.id, fechaServ, importe, modo || '', folio || '', claveNombre(direccion)].join('|');
       if (importe && servicio && fechaServ) {
         if (vistos.has(llave)) errores.push('Fila repetida dentro del archivo');
         vistos.add(llave);
-        if (existente && db.prepare("SELECT 1 FROM leads WHERE cliente_id = ? AND servicio_id = ? AND fecha_servicio = ? AND estatus = 'ganado' AND CAST(ROUND(valor * 100) AS INTEGER) = ? AND COALESCE(factura_folio, '') = ? AND lower(trim(COALESCE(direccion, ''))) = lower(trim(?))").get(existente.id, servicio.id, fechaServ, importe, folio || '', direccion || '')) {
+        if (existente && db.prepare("SELECT 1 FROM leads WHERE cliente_id = ? AND servicio_id = ? AND fecha_servicio = ? AND estatus = 'ganado' AND (CAST(ROUND(valor * 100) AS INTEGER) = ? OR CAST(ROUND(valor * 100) AS INTEGER) + COALESCE(iva_cent, 0) = ?) AND COALESCE(factura_folio, '') = ? AND lower(trim(COALESCE(direccion, ''))) = lower(trim(?))").get(existente.id, servicio.id, fechaServ, imp.subtotal_cent, imp.total_cent, folio || '', direccion || '')) {
           errores.push('Ya existe una orden igual para este cliente (¿ya se importó?)');
         }
       }
-      return { fila, errores, datos: { tel, telefono, nombre, empresa, direccion, servicio, descripcion, fechaServ, importe, dias, folio, fechaFact, totalFact, pagado, notas, existente },
+      return { fila, errores, datos: { tel, telefono, nombre, empresa, direccion, servicio, descripcion, fechaServ, importe, imp, modo: modo || null, dias, folio, fechaFact, totalFact, pagado, notas, existente },
         resumen: { cliente: existente?.nombre || previo || nombre, servicio: servicio?.nombre || celda(f.servicio), total: total ? aPesos(total) : null, pagado: pagado ? aPesos(pagado) : 0, cliente_nuevo: !existente && !previo } };
     });
     if (simular || resultado.some(x => x.errores.length)) return responder(res, simular, resultado);
@@ -773,8 +790,9 @@ module.exports = function finanzas(app, db, h) {
     db.transaction(() => {
       const insCliente = db.prepare('INSERT INTO clientes (telefono, telefono_normalizado, nombre, empresa_contacto, direccion) VALUES (?, ?, ?, ?, ?)');
       const insLead = db.prepare(`INSERT INTO leads (cliente_id, telefono, telefono_normalizado, nombre, empresa_contacto, direccion, servicio_id, responsable_id,
-          notas_iniciales, creado_por, valor, fecha_servicio, estatus, etapa, origen, partidas_json, dias_credito, factura_folio, factura_fecha, factura_total_cent)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ganado', 4, 'directo', ?, ?, ?, ?, ?)`);
+          notas_iniciales, creado_por, valor, fecha_servicio, estatus, etapa, origen, partidas_json, dias_credito, factura_folio, factura_fecha, factura_total_cent,
+          iva_modo, iva_tasa, iva_cent)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ganado', 4, 'directo', ?, ?, ?, ?, ?, ?, ?, ?)`);
       // Lo ya pagado es dinero que sí entró: se registra como pago (o anticipo si el servicio es futuro),
       // igual que en cuentas por pagar, para que Resultados cuadre.
       const insCobro = db.prepare(`INSERT INTO cobros (lead_id, fecha, monto_cent, tipo, metodo, notas, confirmado, confirmado_por, confirmado_at, registrado_por)
@@ -789,7 +807,8 @@ module.exports = function finanzas(app, db, h) {
         }
         const partidas = JSON.stringify([{ servicio: d.servicio.nombre, leyenda: d.descripcion || '', importe: d.importe / 100 }]);
         const leadId = insLead.run(cli.id, cli.telefono, cli.telefono_normalizado, cli.nombre, cli.empresa_contacto, d.direccion, d.servicio.id, req.usuarioSesion.id,
-          d.notas, req.usuarioSesion.nombre, d.importe / 100, d.fechaServ, partidas, d.dias ?? cli.dias_credito ?? null, d.folio, d.fechaFact, d.totalFact).lastInsertRowid;
+          d.notas, req.usuarioSesion.nombre, d.imp.subtotal_cent / 100, d.fechaServ, partidas, d.dias ?? cli.dias_credito ?? null, d.folio, d.fechaFact, d.totalFact,
+          d.modo, d.modo ? Importes.TASA_DEFAULT : null, d.imp.iva_cent).lastInsertRowid;
         if (d.pagado) insCobro.run(leadId, d.fechaServ <= hoy ? d.fechaServ : hoy, d.pagado, d.fechaServ > hoy ? 'anticipo' : 'pago', req.usuarioSesion.id, req.usuarioSesion.id);
         bitacora(leadId, 'Orden importada desde la plantilla de Excel de cuentas por cobrar.' + (d.pagado ? ` Ya pagado: ${fmt(d.pagado)}.` : ''), req);
       }

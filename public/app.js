@@ -234,7 +234,9 @@ function abrirServicioNuevo(modo, prefill) {
   // El prellenado pasa por prepararEditorCotizacion para que también arme la tabla de
   // partidas real (gc-items) — de otro modo, al validar/guardar se recalcula desde ahí
   // y borraría cualquier valor puesto solo en sn-servicio/sn-valor.
-  prepararEditorCotizacion(prefill ? { partidas_json: prefill.partidas_json, servicio_nombre: prefill.servicio_nombre, valor: prefill.valor } : null, 'nuevo');
+  // Una orden duplicada conserva su IVA (aunque esté por definir); lo demás empieza "más IVA".
+  prepararEditorCotizacion(prefill ? { partidas_json: prefill.partidas_json, servicio_nombre: prefill.servicio_nombre, valor: prefill.valor,
+    ...('iva_modo' in prefill ? { iva_modo: prefill.iva_modo, iva_tasa: prefill.iva_tasa } : {}) } : null, 'nuevo');
   abrirVentana('overlay-servicio-nuevo');
   FlujoCRM.marcarGuardado('overlay-servicio-nuevo');
 }
@@ -282,7 +284,8 @@ async function guardarServicioNuevo(descargar=false) {
     equipo: esDirecto ? document.getElementById('sn-equipo').value.trim() : null,
     operador: esDirecto ? document.getElementById('sn-operador').value.trim() : null,
     observaciones: esDirecto ? document.getElementById('sn-observaciones').value.trim() : null,
-    urgente: document.getElementById('sn-urgente').checked
+    urgente: document.getElementById('sn-urgente').checked,
+    ...ivaPayload()
   };
   botonGuardar.disabled = true;
   try {
@@ -414,51 +417,10 @@ function formatoMoneda(n) {
   return '$' + (Number(n) || 0).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-// Convierte un importe a su representación en letras, formato usado en documentos
-// formales en México ("MIL QUINIENTOS PESOS 50/100 M.N."). Simplificación aceptada:
-// siempre usa "PESOS" en plural (incluso para $1.00), como hacen la mayoría de los
-// sistemas de facturación; no ajusta género/plural más allá de eso.
+// Importe con letra ("MIL QUINIENTOS PESOS 50/100 M.N."): lo calcula public/importes.js
+// desde centavos enteros, igual para todos los documentos.
 function numeroALetras(monto) {
-  const UNIDADES = ['', 'UN', 'DOS', 'TRES', 'CUATRO', 'CINCO', 'SEIS', 'SIETE', 'OCHO', 'NUEVE'];
-  const ESPECIALES = ['DIEZ','ONCE','DOCE','TRECE','CATORCE','QUINCE','DIECISÉIS','DIECISIETE','DIECIOCHO','DIECINUEVE',
-    'VEINTE','VEINTIUNO','VEINTIDÓS','VEINTITRÉS','VEINTICUATRO','VEINTICINCO','VEINTISÉIS','VEINTISIETE','VEINTIOCHO','VEINTINUEVE'];
-  const DECENAS = ['','','','TREINTA','CUARENTA','CINCUENTA','SESENTA','SETENTA','OCHENTA','NOVENTA'];
-  const CENTENAS = ['','CIENTO','DOSCIENTOS','TRESCIENTOS','CUATROCIENTOS','QUINIENTOS','SEISCIENTOS','SETECIENTOS','OCHOCIENTOS','NOVECIENTOS'];
-  function seccion(n) {
-    let letras = '';
-    const c = Math.floor(n / 100), resto = n % 100;
-    if (c > 0) letras += (n === 100 ? 'CIEN' : CENTENAS[c]) + (resto > 0 ? ' ' : '');
-    if (resto > 0) {
-      if (resto < 10) letras += UNIDADES[resto];
-      else if (resto < 30) letras += ESPECIALES[resto - 10];
-      else {
-        const d = Math.floor(resto / 10), u = resto % 10;
-        letras += DECENAS[d] + (u > 0 ? ' Y ' + UNIDADES[u] : '');
-      }
-    }
-    return letras;
-  }
-  function miles(n) {
-    const m = Math.floor(n / 1000), resto = n % 1000;
-    let letras = '';
-    if (m > 0) letras += (m === 1 ? 'MIL' : seccion(m) + ' MIL');
-    if (resto > 0) letras += (letras ? ' ' : '') + seccion(resto);
-    return letras;
-  }
-  function millones(n) {
-    const mm = Math.floor(n / 1000000), resto = n % 1000000;
-    let letras = '';
-    if (mm > 0) letras += (mm === 1 ? 'UN MILLÓN' : seccion(mm) + ' MILLONES');
-    if (resto > 0) letras += (letras ? ' ' : '') + miles(resto);
-    return letras;
-  }
-  const entero = Math.floor(Math.abs(Number(monto) || 0));
-  const centavos = Math.round((Math.abs(Number(monto) || 0) - entero) * 100);
-  let letras = entero === 0 ? 'CERO' : millones(entero);
-  // Apócope: "UNO"/"VEINTIUNO" antes de un sustantivo se dice "UN"/"VEINTIÚN" —
-  // aplica tanto al final (antes de "PESOS") como antes de "MIL" o "MILLONES".
-  letras = letras.replace(/\bVEINTIUNO\b/g, 'VEINTIÚN').replace(/\bUNO\b/g, 'UN');
-  return `${letras} PESOS ${String(centavos).padStart(2, '0')}/100 M.N.`;
+  return Importes.enLetras(Math.round((Number(monto) || 0) * 100));
 }
 
 function renderKpis(kpis) {
@@ -506,6 +468,13 @@ function diasSinMovimiento(updatedAt) {
   return diff;
 }
 
+// Importe de una tarjeta: "más IVA" muestra el subtotal + IVA; "IVA incluido", el total.
+function importeTarjeta(l) {
+  if (l.valor == null) return '—';
+  if (l.iva_modo === 'mas_iva') return formatoMoneda(l.valor) + ' + IVA';
+  if (l.iva_modo === 'incluido') return formatoMoneda((Math.round(l.valor * 100) + (l.iva_cent || 0)) / 100) + ' IVA incl.';
+  return formatoMoneda(l.valor);
+}
 function renderKanbanLeads(leads) {
   const etiquetaFiltro = ETAPA_FILTRO ? ` · filtrando etapa ${ETAPA_FILTRO}` : '';
   const conteoEl = document.getElementById('tabla-leads-conteo');
@@ -533,7 +502,7 @@ function renderKanbanLeads(leads) {
 
     const valorColumna = lista.reduce((sum, l) => sum + (l.valor || 0), 0);
     if (valorColumna > 0) {
-      document.getElementById('footer-' + e).innerHTML = `<div class="kanban-footer-valor">Total: <b>${formatoMoneda(valorColumna)}</b></div>`;
+      document.getElementById('footer-' + e).innerHTML = `<div class="kanban-footer-valor">Total sin IVA: <b>${formatoMoneda(valorColumna)}</b></div>`;
     }
 
     document.getElementById('col-' + e).innerHTML = lista.map(l => {
@@ -553,7 +522,7 @@ function renderKanbanLeads(leads) {
         <div class="lead-servicio">${escaparHtml(l.servicio_nombre || 'Sin servicio')}</div>
         <div class="lead-meta">
           <span class="lead-resp">${escaparHtml(l.responsable_nombre || '—')}</span>
-          <span class="lead-valor">${l.valor != null ? formatoMoneda(l.valor) : '—'}</span>
+          <span class="lead-valor">${importeTarjeta(l)}</span>
         </div>
         <div class="lead-fecha">${fechaCorta(l.updated_at)}</div>
       </div>
@@ -637,20 +606,21 @@ async function cargarResultados(){
     const d=await api('/analisis/comercial?'+new URLSearchParams({desde,hasta})).then(r=>r.json());if(consulta!==consultaResultados)return;
     RESULTADOS_ACTUALES=d;document.getElementById('res-exportar').disabled=false;
     const r=d.resumen,pct=(a,b)=>b?(100*a/b).toFixed(1)+'%':'—';
-    const tarjetas=[['Contactos nuevos',r.nuevos],['Clientes con servicios en el periodo',r.clientes],['Importe contratado',formatoMoneda(r.contratado)],['Servicios contratados',r.servicios],['Conversión de contactos nuevos',pct(r.convertidos,r.nuevos)],['Promedio por servicio',r.servicios?formatoMoneda(r.contratado/r.servicios):'—'],['Clientes recurrentes activos',r.recurrentes],['Importe en propuestas abiertas',formatoMoneda(r.propuesto)]];
+    const tarjetas=[['Contactos nuevos',r.nuevos],['Clientes con servicios en el periodo',r.clientes],['Importe contratado (sin IVA)',formatoMoneda(r.contratado)],['Servicios contratados',r.servicios],['Conversión de contactos nuevos',pct(r.convertidos,r.nuevos)],['Promedio por servicio (sin IVA)',r.servicios?formatoMoneda(r.contratado/r.servicios):'—'],['Clientes recurrentes activos',r.recurrentes],['Importe en propuestas abiertas (sin IVA)',formatoMoneda(r.propuesto)]];
     Finanzas.pintarResultados(desde, hasta);
     document.getElementById('res-kpis').innerHTML=tarjetas.map(([label,value])=>`<div class="res-card"><div class="res-num">${value}</div><div class="res-label">${label}</div></div>`).join('');
     document.getElementById('res-canales').innerHTML=d.canales.map(c=>`<tr><td>${escaparHtml(c.canal)}</td><td>${c.nuevos}</td><td>${c.convertidos}</td><td>${pct(c.convertidos,c.nuevos)}</td><td>${c.clientes}</td><td>${c.servicios}</td><td>${formatoMoneda(c.contratado)}</td><td>${c.servicios?formatoMoneda(c.contratado/c.servicios):'—'}</td><td>${c.abiertas}</td><td>${formatoMoneda(c.propuesto)}</td></tr>`).join('')||'<tr><td colspan="10">Sin datos.</td></tr>';
     document.getElementById('res-clientes').innerHTML=d.clientes.map(c=>`<tr><td>${escaparHtml(c.nombre||c.telefono)}</td><td>${escaparHtml(c.canal)}</td><td>${c.ganados_historicos>1?'Cliente recurrente':c.ganados_historicos?'Cliente':'Prospecto'}</td><td>${c.servicios}</td><td>${formatoMoneda(c.contratado)}</td><td>${formatoMoneda(c.total_historico)}</td><td>${c.abiertas}</td><td>${escaparHtml(c.ultima_fecha||'Sin fecha')}</td><td><button class="btn btn-outline" data-resultado-cliente="${Number(c.id)}">Abrir ficha</button></td></tr>`).join('')||'<tr><td colspan="9">Sin contactos ni actividad en el periodo.</td></tr>';
     renderBarChart('res-dinero-canal',d.canales,'canal','contratado',formatoMoneda);renderBarChart('res-contactos-canal',[...d.canales].sort((a,b)=>b.nuevos-a.nuevos),'canal','nuevos',v=>v+' contactos');
     renderGraficosComerciales(d);
-    estado.textContent=(desde||hasta?'Periodo: '+(desde||'inicio')+' a '+(hasta||'sin límite'):'Todo el historial')+(d.sinFecha?' · '+d.sinFecha+' servicios contratados sin fecha: no se incluyen al filtrar por fechas.':'');
+    estado.textContent=(desde||hasta?'Periodo: '+(desde||'inicio')+' a '+(hasta||'sin límite'):'Todo el historial')+(d.sinFecha?' · '+d.sinFecha+' servicios contratados sin fecha: no se incluyen al filtrar por fechas.':'')
+      +(d.ivaPorDefinir?.servicios?' · '+d.ivaPorDefinir.servicios+' servicio(s) del periodo con IVA por definir ('+formatoMoneda(d.ivaPorDefinir.importe)+'): se suman como se capturaron, con o sin IVA.':'');
   }catch(err){if(consulta!==consultaResultados)return;estado.textContent='No se pudieron cargar los resultados. '+err.message;}
 }
 on('res-aplicar','click',cargarResultados);
 on('res-todo','click',()=>{document.getElementById('res-desde').value='';document.getElementById('res-hasta').value='';cargarResultados();});
 on('res-clientes','click',e=>{const btn=e.target.closest('[data-resultado-cliente]');if(btn)abrirFichaCliente(Number(btn.dataset.resultadoCliente));});
-on('res-exportar','click',()=>{if(!RESULTADOS_ACTUALES)return;descargarCSV('resultados-canales.csv',[{titulo:'Canal de origen',valor:c=>c.canal},{titulo:'Contactos nuevos',valor:c=>c.nuevos},{titulo:'Convertidos',valor:c=>c.convertidos},{titulo:'Servicios contratados',valor:c=>c.servicios},{titulo:'Importe contratado MXN',valor:c=>c.contratado},{titulo:'Propuestas abiertas',valor:c=>c.abiertas},{titulo:'Importe abierto MXN',valor:c=>c.propuesto}],RESULTADOS_ACTUALES.canales);});
+on('res-exportar','click',()=>{if(!RESULTADOS_ACTUALES)return;descargarCSV('resultados-canales.csv',[{titulo:'Canal de origen',valor:c=>c.canal},{titulo:'Contactos nuevos',valor:c=>c.nuevos},{titulo:'Convertidos',valor:c=>c.convertidos},{titulo:'Servicios contratados',valor:c=>c.servicios},{titulo:'Importe contratado sin IVA MXN',valor:c=>c.contratado},{titulo:'Propuestas abiertas',valor:c=>c.abiertas},{titulo:'Importe abierto sin IVA MXN',valor:c=>c.propuesto}],RESULTADOS_ACTUALES.canales);});
 
 function renderBarChart(id, datos, labelKey, valueKey, fmt) {
   const cont = document.getElementById(id);
@@ -708,9 +678,19 @@ function nombreArchivoCotizacion(datos, extension) {
   return `cotizacion_${datos.folio}_${cliente}.${extension}`;
 }
 
+// Importes del documento con el IVA elegido en el editor (el que se acaba de guardar).
+function importesDocumento(items) {
+  const modo = modoIvaEditor(), tasa = IVA_TASA;
+  const r = Importes.calcular(items, modo, tasa);
+  return {
+    modo, total: r.total_cent / 100, totalLetras: Importes.enLetras(r.total_cent),
+    totales: Importes.filasTotales(r, modo, tasa), leyendaIva: Importes.leyenda(modo, tasa),
+    encabezadoImporte: Importes.encabezadoImporte(modo) + ' (MXN)'
+  };
+}
+
 function datosCotizacionDesdeLead(lead, items) {
   const emision = new Date();
-  const total = items.reduce((suma, item) => suma + (Number(item.importe) || 0), 0);
   let vigenciaTexto = null;
   if (lead.incluye_vigencia !== 0) {
     if (lead.vigencia_hasta) {
@@ -734,8 +714,7 @@ function datosCotizacionDesdeLead(lead, items) {
       direccion: lead.direccion || ''
     },
     items,
-    total,
-    totalLetras: numeroALetras(total)
+    ...importesDocumento(items)
   };
 }
 
@@ -793,16 +772,22 @@ async function generarPDFCotizacion(datos) {
   if(y>limite-70)pagina();
   doc.autoTable({
     startY:y, margin:{left:margen,right:margen,top:inicio,bottom:208},
-    head:[['Servicio','Descripción / leyenda','Importe (MXN)']],
+    head:[['Servicio','Descripción / leyenda',datos.encabezadoImporte]],
     body:datos.items.map(item=>[item.servicio,item.leyenda||'—',formatoMoneda(item.importe)]),
-    foot:[['','Total',formatoMoneda(datos.total)]],showFoot:'lastPage',rowPageBreak:'avoid',columnStyles:{0:{cellWidth:125},2:{cellWidth:95}},
+    // Con IVA: Subtotal / IVA / Total; solo el total va en negritas.
+    foot:datos.totales.map(([etiqueta,cent])=>['',etiqueta,formatoMoneda(cent/100)]),showFoot:'lastPage',rowPageBreak:'avoid',columnStyles:{0:{cellWidth:125},2:{cellWidth:95,halign:'right'}},
     styles:{fontSize:10,cellPadding:6,overflow:'linebreak'},
     headStyles:{fillColor:[246,177,3],textColor:20},
     footStyles:{fillColor:[245,245,245],textColor:20,fontStyle:'bold'},
+    didParseCell:d=>{
+      if(d.section==='head'&&d.column.index===2)d.cell.styles.halign='right';
+      if(d.section==='foot'){d.cell.styles.halign=d.column.index===0?'left':'right';if(d.row.index<datos.totales.length-1)d.cell.styles.fontStyle='normal';}
+    },
     willDrawPage:()=>{if(doc.internal.getCurrentPageInfo().pageNumber>1)fondo();}
   });
   y=doc.lastAutoTable.finalY+24;
   texto('Son: '+datos.totalLetras,9,true);
+  if(datos.leyendaIva)texto(datos.leyendaIva,9);
   y+=4;
   if(datos.vigenciaTexto)texto('Esta cotización tiene vigencia hasta el '+datos.vigenciaTexto+'.',9);
   const paginas=doc.getNumberOfPages();
@@ -816,9 +801,10 @@ async function generarWordCotizacion(datos) {
   const parrafo=(texto,bold=false)=>new Paragraph({spacing:{after:100},children:[new TextRun({text:String(texto),bold})]});
   const celda=(texto,bold=false)=>new TableCell({children:[parrafo(texto,bold)],shading:bold?{fill:'F6B103'}:undefined});
   const tabla=new Table({width:{size:100,type:WidthType.PERCENTAGE},rows:[
-    new TableRow({tableHeader:true,children:[celda('Servicio',true),celda('Descripción / leyenda',true),celda('Importe (MXN)',true)]}),
+    new TableRow({tableHeader:true,children:[celda('Servicio',true),celda('Descripción / leyenda',true),celda(datos.encabezadoImporte,true)]}),
     ...datos.items.map(item=>new TableRow({children:[celda(item.servicio),celda(item.leyenda||'—'),celda(formatoMoneda(item.importe))]})),
-    new TableRow({children:[celda(''),celda('Total',true),celda(formatoMoneda(datos.total),true)]})
+    // Con IVA: Subtotal / IVA / Total; solo el total va resaltado.
+    ...datos.totales.map(([etiqueta,cent],i)=>{const total=i===datos.totales.length-1;return new TableRow({children:[celda(''),celda(etiqueta,total),celda(formatoMoneda(cent/100),total)]});})
   ]});
   const documento=new Document({styles:{default:{document:{run:{font:'Arial',size:20,color:'222222'},paragraph:{spacing:{after:100}}}}},sections:[{
     properties:{page:{size:{width:12240,height:18360},margin:{top:2640,bottom:4160,left:960,right:960,header:0,footer:0}}},
@@ -831,7 +817,7 @@ async function generarWordCotizacion(datos) {
       ...(datos.cliente.empresa?[parrafo(datos.cliente.empresa)]:[]),
       ...(datos.cliente.telefono?[parrafo('Tel: '+datos.cliente.telefono)]:[]),
       ...(datos.cliente.direccion?[parrafo('Ubicación del servicio: '+datos.cliente.direccion)]:[]),
-      tabla,parrafo('Son: '+datos.totalLetras,true),parrafo(''),
+      tabla,parrafo('Son: '+datos.totalLetras,true),...(datos.leyendaIva?[parrafo(datos.leyendaIva)]:[]),parrafo(''),
       ...(datos.vigenciaTexto?[parrafo('Esta cotización tiene vigencia hasta el '+datos.vigenciaTexto+'.')]:[])
     ]
   }]});
@@ -859,7 +845,6 @@ function nombreArchivoOrdenServicio(datos, extension) {
 }
 
 function datosOrdenServicioDesdeLead(lead, items) {
-  const total = items.reduce((suma, item) => suma + (Number(item.importe) || 0), 0);
   return {
     folio: folioOrdenServicio(lead),
     // Solo se cita la cotización si la orden realmente salió de una (no en directas ni duplicadas).
@@ -875,10 +860,11 @@ function datosOrdenServicioDesdeLead(lead, items) {
     operador: lead.operador || '',
     observaciones: lead.observaciones || '',
     items,
-    total,
-    totalLetras: numeroALetras(total)
+    ...importesDocumento(items)
   };
 }
+// Rótulo del recuadro del total en la orden de servicio.
+const etiquetaTotalOrden = modo => modo === 'mas_iva' ? 'TOTAL CON IVA' : modo === 'incluido' ? 'TOTAL (IVA INCLUIDO)' : 'IMPORTE TOTAL';
 
 // Mismo orden de conceptos que el formato impreso "ORDENES DE SERVICIO" de Saneadren:
 // Empresa/Fecha, Ubicación, Equipo, Operador → Descripción → Importe → Observaciones →
@@ -942,7 +928,7 @@ async function generarPDFOrdenServicio(datos) {
   seccion('DESCRIPCIÓN DEL TRABAJO');
   doc.autoTable({
     startY: y - 4, margin: { left: margen, right: margen, top: inicio, bottom: 212 }, theme: 'plain',
-    head: [['Servicio', 'Descripción', 'Importe']],
+    head: [['Servicio', 'Descripción', Importes.encabezadoImporte(datos.modo)]],
     body: datos.items.map(item => [item.servicio, item.leyenda || '—', formatoMoneda(item.importe)]),
     rowPageBreak: 'avoid',
     styles: { fontSize: 9.5, cellPadding: { top: 6, bottom: 6, left: 7, right: 7 }, textColor: C.oscuro, lineColor: C.linea, overflow: 'linebreak' },
@@ -955,14 +941,22 @@ async function generarPDFOrdenServicio(datos) {
   });
   y = doc.lastAutoTable.finalY + 10;
   // Total: recuadro a la derecha con acento amarillo, y el importe con letra a la izquierda.
-  asegurar(40);
-  const anchoTotal = 190;
+  // Con IVA, encima del recuadro van Subtotal e IVA en renglones chicos.
+  const desglose = datos.totales.slice(0, -1);
+  asegurar(40 + desglose.length * 14);
+  const anchoTotal = 210;
+  desglose.forEach(([etiqueta, cent]) => {
+    fuente(8, true, C.gris); doc.text(etiqueta.toUpperCase(), derecha - anchoTotal + 14, y + 9);
+    fuente(9.5); doc.text(formatoMoneda(cent / 100), derecha - 10, y + 9, { align: 'right' });
+    y += 14;
+  });
+  if (desglose.length) y += 4;
   doc.setFillColor(...C.fondo); doc.rect(derecha - anchoTotal, y, anchoTotal, 30, 'F');
   doc.setFillColor(...C.amarillo); doc.rect(derecha - anchoTotal, y, 4, 30, 'F');
-  fuente(8, true, C.gris); doc.text('IMPORTE TOTAL', derecha - anchoTotal + 14, y + 19);
+  fuente(8, true, C.gris); doc.text(etiquetaTotalOrden(datos.modo), derecha - anchoTotal + 14, y + 19);
   fuente(14, true); doc.text(formatoMoneda(datos.total), derecha - 10, y + 20, { align: 'right' });
   fuente(8, false, C.gris);
-  doc.text(doc.splitTextToSize('Son: ' + datos.totalLetras, ancho - anchoTotal - 20), margen, y + 13);
+  doc.text(doc.splitTextToSize('Son: ' + datos.totalLetras + (datos.leyendaIva ? ' ' + datos.leyendaIva : ''), ancho - anchoTotal - 20), margen, y + 13);
   y += 50;
 
   seccion('OBSERVACIONES');
@@ -1023,15 +1017,17 @@ async function generarWordOrdenServicio(datos) {
   ])],[3300,3720,3300]);
   const datosServicio=tabla(camposOrden(datos).map(f=>fila(f.length===1?[campo(f[0][0],f[0][1],3)]:[campo(f[0][0],f[0][1]),sep(),campo(f[1][0],f[1][1])])),[5000,320,5000]);
   const trabajo=tabla([
-    fila(['Servicio','Descripción','Importe'].map((t,i)=>celda(p(run(t,{bold:true,size:17,color:'FFFFFF'}),{derecha:i===2}),{fondo:OSC}))),
+    fila(['Servicio','Descripción',Importes.encabezadoImporte(datos.modo)].map((t,i)=>celda(p(run(t,{bold:true,size:17,color:'FFFFFF'}),{derecha:i===2}),{fondo:OSC}))),
     ...datos.items.map((item,n)=>fila([
       celda(p(run(item.servicio,{bold:true,size:19})),{fondo:n%2?FON:undefined,bordes:lineaAbajo()}),
       celda(p(run(item.leyenda||'—',{size:19})),{fondo:n%2?FON:undefined,bordes:lineaAbajo()}),
       celda(p(run(formatoMoneda(item.importe),{size:19}),{derecha:true}),{fondo:n%2?FON:undefined,bordes:lineaAbajo()})]))
   ],[2800,5720,1800]);
+  // Con IVA, Subtotal e IVA van en renglones chicos encima del total, dentro del mismo recuadro.
+  const desglose=datos.totales.slice(0,-1).map(([etiqueta,cent])=>p([run(etiqueta.toUpperCase()+'   ',{bold:true,size:14,color:GRI}),run(formatoMoneda(cent/100),{size:18})],{derecha:true,despues:20}));
   const total=tabla([fila([
-    celda(p(run('Son: '+datos.totalLetras,{size:16,color:GRI})),{mh:0}),
-    celda(p([run('IMPORTE TOTAL   ',{bold:true,size:15,color:GRI}),run(formatoMoneda(datos.total),{bold:true,size:28})],{derecha:true}),{fondo:FON,bordes:{top:nada,bottom:nada,right:nada,left:{style:BorderStyle.SINGLE,size:24,color:AMA}}})
+    celda([p(run('Son: '+datos.totalLetras,{size:16,color:GRI}))].concat(datos.leyendaIva?[p(run(datos.leyendaIva,{size:16,color:GRI}))]:[]),{mh:0}),
+    celda([...desglose,p([run(etiquetaTotalOrden(datos.modo)+'   ',{bold:true,size:15,color:GRI}),run(formatoMoneda(datos.total),{bold:true,size:28})],{derecha:true})],{fondo:FON,bordes:{top:nada,bottom:nada,right:nada,left:{style:BorderStyle.SINGLE,size:24,color:AMA}}})
   ])],[6120,4200]);
   const observaciones=tabla([fila([celda(datos.observaciones?p(run(datos.observaciones)):p(run('')),{fondo:FON,mv:120})],900)],[10320]);
   const firma=(etiqueta,nombre)=>celda([p(run(nombre||' '),{centro:true,despues:0})].concat(p(run(etiqueta,{bold:true,size:14,color:GRI}),{centro:true})),{bordes:{top:nada,left:nada,right:nada,bottom:nada},mh:0});
@@ -1120,8 +1116,8 @@ function crearFilaServicioHTML(item) {
           </select>
         </div>
         <div class="campo-modal">
-          <label>Importe (MXN)</label>
-          <input type="number" class="gc-importe" data-fila="${id}" min="0" step="0.01" value="${item.importe ?? ''}">
+          <label class="gc-etiqueta-importe" for="gc-importe-${id}">${Importes.encabezadoImporte(modoIvaEditor())} (MXN)</label>
+          <input type="number" class="gc-importe" id="gc-importe-${id}" data-fila="${id}" min="0" step="0.01" value="${item.importe ?? ''}">
         </div>
         <div class="campo-modal full">
           <label>Descripción / leyenda</label>
@@ -1137,10 +1133,58 @@ function agregarFilaCotizacion(item = {}) {
   document.getElementById('gc-items').insertAdjacentHTML('beforeend', crearFilaServicioHTML(item));
 }
 
+// ---------- IVA del documento (casilla "IVA incluido") ----------
+// #gc-iva-modo guarda el modo: 'mas_iva' (casilla sin marcar: los importes son sin IVA y se
+// suma el 16 %), 'incluido' (marcada: ya lo traen y se desglosa) o '' = por definir (registros
+// anteriores al IVA). Es un campo oculto para que el aviso de cambios sin guardar lo vigile.
+let IVA_TASA = Importes.TASA_DEFAULT;
+let IVA_BLOQUEADO = false; // orden de servicio: solo administración o atención cambian su IVA
+const modoIvaEditor = () => document.getElementById('gc-iva-modo').value || null;
+const ivaPayload = () => modoIvaEditor() ? { iva_modo: modoIvaEditor(), iva_tasa: IVA_TASA } : {};
+function fijarModoIva(modo) {
+  const campo = document.getElementById('gc-iva-modo');
+  if (campo.value === (modo || '')) return;
+  campo.value = modo || '';
+  campo.dispatchEvent(new Event('change', { bubbles: true })); // aviso de cambios sin guardar
+  actualizarTotalCotizacion();
+}
+function pintarIvaEditor() {
+  const modo = modoIvaEditor();
+  const casilla = document.getElementById('gc-iva-incluido');
+  casilla.checked = modo === 'incluido';
+  casilla.disabled = IVA_BLOQUEADO;
+  document.getElementById('gc-iva-ayuda').textContent = !modo ? ''
+    : (modo === 'incluido' ? `Los importes ya incluyen IVA: el sistema separa el subtotal y el IVA (${IVA_TASA} %).`
+      : `Los importes son sin IVA: se suma el ${IVA_TASA} % de IVA al total. Marca la casilla si el precio ya lo incluye.`)
+      + (IVA_BLOQUEADO ? ' Solo administración o atención pueden cambiarlo en una orden de servicio.' : '');
+  document.getElementById('gc-iva-aviso').hidden = !!modo;
+  if (!modo) {
+    document.getElementById('gc-iva-aviso-texto').textContent = IVA_BLOQUEADO
+      ? 'IVA por definir: este registro es anterior al IVA. Lo indica administración o atención.'
+      : 'IVA por definir: este registro es anterior al IVA. ¿El importe que se le dio al cliente ya incluía IVA? Marca la casilla si sí, o pulsa el botón si es más IVA.';
+    document.getElementById('btn-gc-iva-mas').hidden = IVA_BLOQUEADO;
+  }
+  document.querySelectorAll('#gc-items .gc-etiqueta-importe').forEach(l => { l.textContent = Importes.encabezadoImporte(modo) + ' (MXN)'; });
+}
+on('gc-iva-incluido', 'change', e => fijarModoIva(e.target.checked ? 'incluido' : 'mas_iva'));
+on('btn-gc-iva-mas', 'click', () => fijarModoIva('mas_iva'));
+
 function actualizarTotalCotizacion() {
-  const total = Array.from(document.querySelectorAll('#gc-items .gc-importe'))
-    .reduce((suma, input) => suma + (Number(input.value) || 0), 0);
-  document.getElementById('gc-total').textContent = formatoMoneda(total);
+  pintarIvaEditor();
+  const modo = modoIvaEditor();
+  const items = Array.from(document.querySelectorAll('#gc-items .gc-importe')).map(input => ({ importe: Number(input.value) || 0 }));
+  const r = Importes.calcular(items, modo, IVA_TASA);
+  const filas = Importes.filasTotales(r, modo, IVA_TASA);
+  document.getElementById('gc-fila-subtotal').hidden = !modo;
+  document.getElementById('gc-fila-iva').hidden = !modo;
+  if (modo) {
+    document.getElementById('gc-etiqueta-subtotal').textContent = filas[0][0];
+    document.getElementById('gc-subtotal').textContent = formatoMoneda(filas[0][1] / 100);
+    document.getElementById('gc-etiqueta-iva').textContent = filas[1][0];
+    document.getElementById('gc-iva-monto').textContent = formatoMoneda(filas[1][1] / 100);
+  }
+  document.getElementById('gc-etiqueta-total').textContent = filas.at(-1)[0];
+  document.getElementById('gc-total').textContent = formatoMoneda(r.total_cent / 100);
 }
 
 function recolectarItemsCotizacion() {
@@ -1161,6 +1205,10 @@ function prepararEditorCotizacion(lead,modo){
   else document.getElementById('ed-notas').closest('.form-grid-2').after(editor);
   editor.hidden=false;
   ['sn-servicio','sn-valor','ed-servicio','ed-valor','ed-canal'].forEach(id=>document.getElementById(id).parentElement.hidden=true);
+  // IVA: un registro nuevo empieza "más IVA" (casilla sin marcar); los demás traen el suyo.
+  document.getElementById('gc-iva-modo').value=(lead && 'iva_modo' in lead ? lead.iva_modo : 'mas_iva')||'';
+  IVA_TASA=lead?.iva_tasa||Importes.TASA_DEFAULT;
+  IVA_BLOQUEADO=modo!=='nuevo'&&lead?.estatus==='ganado'&&!['admin','atencion'].includes(USUARIO_ACTUAL?.rol);
   document.getElementById('gc-items').innerHTML='';GC_CONTADOR=0;
   let items;try{items=JSON.parse(lead?.partidas_json||'null');}catch{}
   (items||[{servicio:lead?.servicio_nombre||'',leyenda:descripcionServicio(lead?.servicio_nombre||''),importe:lead?.valor??0}]).forEach(agregarFilaCotizacion);
@@ -1170,11 +1218,17 @@ function sincronizarEditor(){
   const items=recolectarItemsCotizacion(),prefijo=EDITOR_MODO==='nuevo'?'sn':'ed';
   const servicio=CATALOGOS.servicios.find(s=>s.nombre===items[0]?.servicio);
   document.getElementById(prefijo+'-servicio').value=servicio?.id||'';
-  document.getElementById(prefijo+'-valor').value=items.reduce((t,i)=>t+i.importe,0);
+  document.getElementById(prefijo+'-valor').value=Importes.calcular(items,modoIvaEditor(),IVA_TASA).subtotal_cent/100;
 }
 function validarEditorCotizacion(){
   const filas=[...document.querySelectorAll('#gc-items .gc-fila')];
-  if(!filas.length||filas.some(f=>!f.querySelector('.gc-servicio').value||f.querySelector('.gc-importe').value===''||!Number.isFinite(Number(f.querySelector('.gc-importe').value))||Number(f.querySelector('.gc-importe').value)<0)){toast('Selecciona un servicio e importe válido en cada partida');return false;}return true;
+  if(!filas.length||filas.some(f=>!f.querySelector('.gc-servicio').value||f.querySelector('.gc-importe').value===''||!Number.isFinite(Number(f.querySelector('.gc-importe').value))||Number(f.querySelector('.gc-importe').value)<0)){toast('Selecciona un servicio e importe válido en cada partida');return false;}
+  // Un registro nuevo o una cotización abierta deben decir si sus importes llevan IVA.
+  if(!modoIvaEditor()&&(EDITOR_MODO==='nuevo'||LEAD_ACTUAL?.estatus==='abierto')){
+    toast('Indica el IVA: marca «IVA incluido» si el importe ya lo incluye, o pulsa «Los importes son sin IVA»');
+    document.getElementById('gc-iva').scrollIntoView({block:'center',behavior:'smooth'});return false;
+  }
+  return true;
 }
 async function descargarCotizacionActual(){
   const formato=document.querySelector('input[name="gc-formato"]:checked').value;
@@ -1279,7 +1333,10 @@ on('btn-exportar-leads', 'click', async () => {
     { titulo: 'Etapa', valor: l => l.etapa },
     { titulo: 'Estatus', valor: l => l.estatus },
     { titulo: 'Servicio cotizado o contratado', valor: l => l.estatus === 'ganado' ? 'Contratado' : 'Cotizado' },
-    { titulo: 'Valor (MXN)', valor: l => l.valor ?? '' },
+    { titulo: 'Importe sin IVA (MXN)', valor: l => l.valor ?? '' },
+    { titulo: 'IVA (MXN)', valor: l => l.iva_cent == null ? '' : l.iva_cent / 100 },
+    { titulo: 'Total con IVA (MXN)', valor: l => l.valor == null ? '' : (Math.round(l.valor * 100) + (l.iva_cent || 0)) / 100 },
+    { titulo: 'Tipo de precio', valor: l => Importes.etiquetaModo(l.iva_modo, l.iva_tasa) },
     { titulo: 'Fecha del servicio', valor: l => l.fecha_servicio || '' },
     { titulo: 'Notas', valor: l => l.notas_iniciales || '' },
     { titulo: 'Creado por', valor: l => l.creado_por || '' },
@@ -1661,7 +1718,8 @@ function recolectarPayloadFicha() {
     operador: document.getElementById('ed-operador').value.trim(),
     observaciones: document.getElementById('ed-observaciones').value.trim(),
     encuesta_calificacion: document.getElementById('ed-encuesta-calificacion').value || null,
-    encuesta_comentario: document.getElementById('ed-encuesta-comentario').value.trim() || null
+    encuesta_comentario: document.getElementById('ed-encuesta-comentario').value.trim() || null,
+    ...ivaPayload()
   };
 }
 on('btn-guardar-ficha', 'click', async () => {
@@ -1831,6 +1889,8 @@ async function duplicarRegistro(leadId) {
       partidas_json: lead.partidas_json,
       servicio_nombre: lead.servicio_nombre,
       valor: lead.valor,
+      iva_modo: lead.iva_modo,
+      iva_tasa: lead.iva_tasa,
       notas_iniciales: lead.notas_iniciales,
       equipo: lead.equipo,
       operador: lead.operador,

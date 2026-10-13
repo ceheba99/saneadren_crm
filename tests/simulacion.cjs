@@ -306,7 +306,98 @@ const espera = ms => new Promise(r => setTimeout(r, ms));
   [s, j] = await pedir('POST', '/finanzas/importar/cxp?simular=1', A, { filas: mil });
   ok(s === 200 && j.total === 1000 && !j.errores.length, '1,000 renglones (más de 1 MB) se procesan sin error interno', { s, total: j.total, err: j.error });
 
-  seccion('11. Seguridad general');
+  seccion('11. IVA');
+  [s, j] = await pedir('POST', '/contactos', L, { nombre: 'Restaurante IVA', telefono: '4427770001', direccion: 'Calle IVA 16', canal_origen_id: canales[0].id });
+  const clienteIva = j.id;
+  const part = importe => JSON.stringify([{ servicio: servicios[0].nombre, leyenda: 'Servicio con IVA', importe }]);
+  const altaIva = (cuerpo, token = L) => pedir('POST', '/leads', token, { cliente_id: clienteIva, direccion: 'Calle IVA 16', responsable_id: usuarioL.id, forzar_duplicado: true, ...cuerpo });
+  const cuenta = async id => (await pedir('GET', '/leads/' + id + '/cobros', A))[1].cuenta;
+  const verLead = async id => (await pedir('GET', '/leads/' + id, A))[1];
+
+  [s, j] = await altaIva({ partidas_json: part(3500), iva_modo: 'mas_iva', iva_tasa: 16, valor: 99, iva_cent: 1 });
+  ok(s === 201 && j.valor === 3500 && j.iva_cent === 56000 && j.iva_modo === 'mas_iva' && j.iva_tasa === 16, 'cotización "más IVA": $3,500 + IVA $560 (el servidor ignora valor e IVA del navegador)', j);
+  const cotIva = j;
+  [s, j] = await pedir('PUT', '/leads/' + cotIva.id, L, { version: cotIva.version, etapa: 2 });
+  ok(s === 200 && j.iva_cent === 56000 && j.iva_modo === 'mas_iva', 'mover de etapa conserva el IVA', j);
+  [s] = await pedir('PUT', '/leads/' + cotIva.id, L, { version: j.version, valor: 4060 });
+  ok(s === 400, 'el importe no se cambia sin editar las partidas (ni poniendo el total con IVA)');
+  [s, j] = await pedir('PUT', '/leads/' + cotIva.id, L, { version: j.version, estatus: 'ganado', fecha_servicio: '2026-11-20' });
+  ok(s === 200 && j.estatus === 'ganado', 'cotización con IVA convertida en orden');
+  const ordenMas = j;
+  let c = await cuenta(ordenMas.id);
+  ok(c.total === 4060 && c.saldo === 4060 && c.subtotal === 3500 && c.iva === 560 && c.total_orden === 4060 && c.dif_cfdi === null, 'la orden "más IVA" es una cuenta por cobrar de $4,060 sin capturar factura', c);
+
+  [s, j] = await altaIva({ partidas_json: part(1500), iva_modo: 'mas_iva', estatus: 'ganado', fecha_servicio: '2026-11-21' });
+  ok(s === 201 && (await cuenta(j.id)).total === 1740, 'ejemplo del dueño: subtotal $1,500 → total $1,740');
+  [s, j] = await altaIva({ partidas_json: part(1160), iva_modo: 'incluido', estatus: 'ganado', fecha_servicio: '2026-11-22' });
+  c = await cuenta(j.id);
+  ok(s === 201 && j.valor === 1000 && j.iva_cent === 16000 && c.total === 1160, 'ejemplo del dueño: $1,160 con IVA incluido → $1,000 + $160', { j, c });
+  [s, j] = await altaIva({ partidas_json: part(5000), iva_modo: 'incluido', estatus: 'ganado', fecha_servicio: '2026-11-23' });
+  const ordenInc = j;
+  c = await cuenta(ordenInc.id);
+  ok(s === 201 && j.valor === 4310.34 && j.iva_cent === 68966 && c.total === 5000, 'IVA incluido: $5,000 = $4,310.34 + $689.66', { j, c });
+
+  [s] = await altaIva({ partidas_json: part(1000), iva_modo: 'mas_iva', iva_tasa: 8 }); ok(s === 400, 'tasa de 8 % no permitida');
+  [s] = await altaIva({ partidas_json: part(1000), iva_modo: 'raro' }); ok(s === 400, 'modo de IVA inválido rechazado');
+  [s] = await altaIva({ iva_modo: 'mas_iva', valor: 1000 }); ok(s === 400, 'IVA sin partidas rechazado');
+  [s] = await altaIva({ partidas_json: part(100000000), iva_modo: 'mas_iva' }); ok(s === 400, 'documento con IVA de más de $100,000,000 rechazado');
+  [s, j] = await altaIva({ partidas_json: part(900), estatus: 'ganado', fecha_servicio: '2026-11-24' });
+  const ordenSin = j;
+  ok(s === 201 && j.iva_modo === null && j.iva_cent === null && j.valor === 900 && (await cuenta(j.id)).total === 900, 'sin campos de IVA queda "por definir" y se cobra el importe como hoy', j);
+
+  // Permisos: el IVA de una orden lo cambian solo administración o atención.
+  let o = await verLead(ordenMas.id);
+  [s] = await pedir('PUT', '/leads/' + ordenMas.id, L, { version: o.version, iva_modo: 'incluido' });
+  ok(s === 403, 'ventas NO puede cambiar el IVA de una orden');
+  [s] = await pedir('PUT', '/leads/' + ordenSin.id, L, { version: (await verLead(ordenSin.id)).version, iva_modo: 'incluido' });
+  ok(s === 403, 'ventas NO puede indicar el IVA de una orden por definir (aunque el total no cambie)');
+  [s, j] = await pedir('PUT', '/leads/' + ordenMas.id, L, { version: o.version, partidas_json: part(3500), iva_modo: 'mas_iva', iva_tasa: 16, operador: 'Fernando' });
+  ok(s === 200 && j.iva_cent === 56000, 'ventas sí guarda la orden si no cambia el importe ni el IVA');
+  [s, j] = await pedir('PUT', '/leads/' + ordenMas.id, L, { version: j.version, partidas_json: part(3500) });
+  ok(s === 200 && j.iva_modo === 'mas_iva' && j.iva_cent === 56000, 'guardar partidas sin campos de IVA conserva el IVA guardado (pestañas viejas)', j);
+  [s] = await pedir('PUT', '/leads/' + ordenMas.id, A, { version: j.version, iva_modo: null });
+  ok(s === 400, 'un IVA ya indicado no puede volver a "por definir"');
+
+  [s, j] = await pedir('PUT', '/leads/' + ordenSin.id, A, { version: (await verLead(ordenSin.id)).version, iva_modo: 'incluido' });
+  ok(s === 200 && j.valor === 775.86 && j.iva_cent === 12414 && (await cuenta(ordenSin.id)).total === 900, 'admin indica "IVA incluido" en una orden por definir: el total sigue en $900', j);
+  ok((await verLead(ordenSin.id)).historial.some(x => /IVA: IVA por definir → IVA incluido 16% en la orden; el total no cambia \(\$900\.00\)/.test(x.texto)), 'la bitácora registra que se indicó el IVA');
+
+  // Pagos y factura sobre el total con IVA.
+  [s] = await pedir('POST', '/leads/' + ordenMas.id + '/cobros', A, { monto: 4060.01, metodo: 'transferencia' });
+  ok(s === 400, 'un pago mayor al total con IVA se rechaza');
+  [s, j] = await pedir('PUT', '/leads/' + ordenMas.id + '/facturacion', A, { factura_folio: 'IVA-1', factura_total: 4059.99 });
+  ok(s === 200 && j.cuenta.total === 4059.99 && j.cuenta.dif_cfdi === -0.01, 'un CFDI distinto manda y se avisa la diferencia', j.cuenta);
+  [s, j] = await pedir('PUT', '/leads/' + ordenMas.id + '/facturacion', A, { factura_total: '' });
+  ok(s === 200 && j.cuenta.total === 4060 && j.cuenta.dif_cfdi === null, 'sin CFDI capturado vuelve al total de la orden con IVA', j.cuenta);
+  [s, j] = await pedir('POST', '/leads/' + ordenMas.id + '/cobros', A, { monto: 4060, metodo: 'transferencia' });
+  ok(s === 201 && j.cuenta.estado === 'pagada', 'el pago del total con IVA deja la orden pagada', j.cuenta);
+
+  [s] = await pedir('POST', '/leads/' + ordenInc.id + '/cobros', A, { monto: 4000, metodo: 'transferencia' });
+  [s, j] = await pedir('PUT', '/leads/' + ordenInc.id, A, { version: (await verLead(ordenInc.id)).version, iva_modo: 'mas_iva' });
+  ok(s === 200 && (await cuenta(ordenInc.id)).total === 5800, 'admin cambia una orden a "más IVA" solo con el modo: $5,000 + IVA = $5,800');
+  ok((await verLead(ordenInc.id)).historial.some(x => /Importe de la orden cambiado: \$5,000\.00 → \$5,800\.00 \(IVA: IVA incluido 16% → Más IVA 16%\)/.test(x.texto)), 'la bitácora registra el cambio de total y de IVA');
+  [s] = await pedir('PUT', '/leads/' + ordenInc.id, A, { version: (await verLead(ordenInc.id)).version, partidas_json: part(3000) });
+  ok(s === 400, 'el total con IVA ($3,480) no puede quedar debajo de lo cobrado ($4,000)');
+
+  // Carga masiva con la columna de IVA (vacía = por definir, como las plantillas anteriores).
+  const filasIva = [
+    { fila: 2, telefono: '4427770002', nombre: 'Plaza IVA', direccion: 'Local 1', servicio: servicios[0].nombre, fecha_servicio: '2026-09-05', importe: 1000, iva: 'Más IVA 16%' },
+    { fila: 3, telefono: '4427770002', direccion: 'Local 1', servicio: servicios[0].nombre, fecha_servicio: '2026-09-06', importe: 1000, iva: '' },
+    { fila: 4, telefono: '4427770002', direccion: 'Local 1', servicio: servicios[0].nombre, fecha_servicio: '2026-09-07', importe: 1000, iva: 'IVA incluido 16%' },
+  ];
+  [s, j] = await pedir('POST', '/finanzas/importar/cxc?simular=1', A, { filas: [...filasIva, { fila: 5, telefono: '4427770002', direccion: 'Local 1', servicio: servicios[0].nombre, fecha_servicio: '2026-09-08', importe: 1000, iva: 'Sin IVA' }] });
+  ok(j.errores.length === 1 && j.errores[0].fila === 5 && /IVA/.test(j.errores[0].errores.join()), 'un valor de IVA no válido se marca en su renglón', j.errores);
+  [s, j] = await pedir('POST', '/finanzas/importar/cxc', A, { filas: filasIva });
+  ok(s === 201 && j.importadas === 3 && j.resumen.map(x => x.total).join() === '1160,1000,1000', 'importación con IVA: totales $1,160 / $1,000 / $1,000', j);
+  [s, j] = await pedir('GET', '/finanzas/cartera?filtro=todas&q=Plaza IVA', A);
+  ok(j.length === 3 && j.map(x => x.iva_modo || '').sort().join() === ',incluido,mas_iva', 'las órdenes importadas guardan su IVA', j);
+  [s, j] = await pedir('POST', '/finanzas/importar/cxc?simular=1', A, { filas: [{ ...filasIva[0], importe: 1160, iva: '' }] });
+  ok(/ya se importó/.test(j.errores?.[0]?.errores.join()), 'subir la misma orden con el total con IVA también se detecta como duplicada', j);
+
+  [s, j] = await pedir('GET', '/analisis/comercial', A);
+  ok(s === 200 && j.ivaPorDefinir && j.ivaPorDefinir.servicios >= 1, 'Resultados cuenta los servicios con IVA por definir', j.ivaPorDefinir);
+
+  seccion('12. Seguridad general');
   const raiz = await fetch(`http://localhost:${PUERTO}/`);
   ok(raiz.headers.get('content-security-policy') && raiz.headers.get('x-frame-options') === 'DENY' && !raiz.headers.get('x-powered-by'), 'encabezados de seguridad');
   [s] = await pedir('GET', '/leads', 'token-inventado'); ok(s === 401, 'token inventado rechazado');

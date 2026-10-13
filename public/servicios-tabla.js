@@ -24,7 +24,7 @@ const ServiciosTabla = (() => {
     });
   }
   function inicial(tipo) {return {busqueda:'',estatus:'',fecha:'created_at',desde:'',hasta:''};}
-  const columnas=[['id','Folio'],['servicio_nombre','Servicio'],['estatus','Estatus'],['valor','Importe (MXN)'],['created_at','Registro'],['fecha_servicio','Fecha del servicio'],['responsable_nombre','Responsable']];
+  const columnas=[['id','Folio'],['servicio_nombre','Servicio'],['estatus','Estatus'],['valor','Importe sin IVA (MXN)'],['created_at','Registro'],['fecha_servicio','Fecha del servicio'],['responsable_nombre','Responsable']];
   function render(id,datos,propietario,tipo) {
     let st=estados.get(id);
     const cont=document.getElementById(id);
@@ -56,12 +56,12 @@ const ServiciosTabla = (() => {
     const rows=ordenar(filtrar(st.datos,st.f),st.col,st.dir);
     const total=rows.reduce((sum,s)=>sum+(Number(s.valor)||0),0);
     const sinImporte=rows.filter(s=>s.valor==null).length;
-    cont.querySelector('.servicios-resumen').textContent=`${rows.length} de ${st.datos.length} registros · Total filtrado: ${formatoMoneda(total)}${sinImporte ? ` · ${sinImporte} sin importe` : ''}`;
+    cont.querySelector('.servicios-resumen').textContent=`${rows.length} de ${st.datos.length} registros · Total filtrado (sin IVA): ${formatoMoneda(total)}${sinImporte ? ` · ${sinImporte} sin importe` : ''}`;
     cont.querySelectorAll('[data-col]').forEach(th=>{const actual=th.dataset.col===st.col;th.setAttribute('aria-sort',actual?(st.dir===1?'ascending':'descending'):'none');th.querySelector('span').textContent=actual?(st.dir===1?' ↑':' ↓'):' ↕';});
     cont.querySelector('tbody').innerHTML=rows.length ? rows.map(s=>`<tr class="fila-${Object.hasOwn(nombres,s.estatus)?s.estatus:'abierto'}">
       <td>${escapar(s.estatus==='ganado'?folioOrdenServicio(s):folioCotizacion(s))}</td><td class="servicio-nombre">${escapar(s.servicio_nombre||'Servicio')}${st.tipo==='lead' && s.id===LEAD_ACTUAL?.id?'<small>Ficha actual</small>':''}</td>
       <td><span class="tag-estatus ${Object.hasOwn(nombres,s.estatus)?s.estatus:'abierto'}">${escapar(nombres[s.estatus]||s.estatus)}</span></td>
-      <td class="servicio-importe">${s.valor==null?'Sin importe':formatoMoneda(s.valor)}</td><td>${fecha(s.created_at)}</td><td>${fecha(s.fecha_servicio)}</td>
+      <td class="servicio-importe">${s.valor==null?'Sin importe':formatoMoneda(s.valor)}${s.valor!=null&&!s.iva_modo?'<small>IVA por definir</small>':''}</td><td>${fecha(s.created_at)}</td><td>${fecha(s.fecha_servicio)}</td>
       <td>${escapar(s.responsable_nombre||'Sin asignar')}</td><td class="servicio-notas">${escapar(s.notas_iniciales||'—')}</td>
       <td><div class="servicios-acciones"><button type="button" class="btn btn-outline" data-accion="abrir" data-id="${Number(s.id)}" aria-label="Abrir ${s.estatus==='ganado'?'servicio':'cotización'} ${Number(s.id)}">${s.estatus==='ganado'?'Ver servicio':'Ver cotización'}</button>
       ${s.estatus==='ganado'?`<button type="button" class="btn btn-outline" data-accion="duplicar" data-id="${Number(s.id)}" aria-label="Duplicar orden de servicio ${Number(s.id)}" title="Crea otra orden de servicio con los mismos datos — útil para clientes con servicio recurrente">Duplicar</button>`:''}

@@ -83,6 +83,15 @@ const Finanzas = (() => {
     if (despues) await despues();
   }));
 
+  // Cómo se forma el total de la orden (IVA) y aviso si el CFDI capturado no coincide.
+  function desgloseIva(c) {
+    const orden = c.iva_modo === 'mas_iva' ? `Orden: ${formatoMoneda(c.subtotal)} + IVA ${Number(c.iva_tasa)} % ${formatoMoneda(c.iva)} = ${formatoMoneda(c.total_orden)}`
+      : c.iva_modo === 'incluido' ? `Orden con IVA incluido: ${formatoMoneda(c.total_orden)} (subtotal ${formatoMoneda(c.subtotal)} + IVA ${formatoMoneda(c.iva)})`
+      : 'IVA por definir: el total es el importe tal como se capturó. Si el cliente paga con IVA, captura el total del CFDI.';
+    const dif = c.dif_cfdi ? `<p class="cuentas-aviso">El CFDI es ${formatoMoneda(Math.abs(c.dif_cfdi))} ${c.dif_cfdi > 0 ? 'mayor' : 'menor'} que el total de la orden (¿retención, descuento o centavos?). Se cobra el total del CFDI.</p>` : '';
+    return `<p class="ayuda cobranza-iva">${orden}</p>${dif}`;
+  }
+
   // ===================== Sección "Cobranza" en la ficha de la orden =====================
   let ORDEN_ACTUAL = null;
   async function pintarCobranzaOrden(lead) {
@@ -101,7 +110,7 @@ const Finanzas = (() => {
           <div class="campo-modal"><label for="fact-credito">Días de crédito</label><input id="fact-credito" type="number" min="0" max="180" step="1" value="${Number(c.dias_credito) || 0}"></div>
           <div class="campo-modal"><label for="fact-folio">Folio de factura (CFDI)</label><input id="fact-folio" maxlength="60" value="${esc(c.factura_folio || '')}"></div>
           <div class="campo-modal"><label for="fact-fecha">Fecha de factura</label><input id="fact-fecha" type="date" value="${esc(c.factura_fecha || '')}"></div>
-          <div class="campo-modal"><label for="fact-total">Total facturado con IVA (vacío = importe de la orden)</label><input id="fact-total" type="text" inputmode="decimal" value="${c.factura_total == null ? '' : Number(c.factura_total).toFixed(2)}"></div>
+          <div class="campo-modal"><label for="fact-total">Total del CFDI, con IVA (vacío = total de la orden)</label><input id="fact-total" type="text" inputmode="decimal" value="${c.factura_total == null ? '' : Number(c.factura_total).toFixed(2)}"></div>
         </div>
         <button type="button" class="btn btn-secundario" data-cobranza="guardar-factura">Guardar crédito y factura</button>
       </details>` : (c.factura_folio ? `<p class="ayuda">Factura ${esc(c.factura_folio)}${c.factura_fecha ? ' del ' + esc(fechaTxt(c.factura_fecha)) : ''}</p>` : '');
@@ -117,11 +126,12 @@ const Finanzas = (() => {
       ${c.por_revisar ? '<p class="cuentas-aviso">Orden anterior al módulo de cuentas: está pendiente de la revisión inicial (Cuentas → Por cobrar).</p>' : ''}
       <div class="cobranza-resumen">
         <div>${etiquetaEstado(c)}</div>
-        <div><small>Total</small><b>${formatoMoneda(c.total)}</b></div>
+        <div><small>Total${c.factura_total != null ? ' (CFDI)' : ''}</small><b>${formatoMoneda(c.total)}</b></div>
         <div><small>Cobrado</small><b>${formatoMoneda(c.cobrado)}</b></div>
         <div><small>Saldo</small><b>${formatoMoneda(c.saldo)}</b></div>
         <div><small>Vence</small><b>${esc(fechaTxt(c.vence))}</b></div>
       </div>
+      ${desgloseIva(c)}
       <button type="button" class="btn btn-primario" data-cobranza="registrar" ${c.saldo <= 0 ? 'disabled' : ''}>💵 Registrar pago</button>
       ${fact}
       <div class="pagos-lista">${pagos}</div>`;
@@ -546,8 +556,8 @@ const Finanzas = (() => {
     let r;
     try { r = await api('/finanzas/periodo?' + params).then(json); } catch (err) { cont.innerHTML = `<p class="ayuda">No se pudo cargar lo cobrado: ${esc(err.message)}</p>`; return; }
     const card = (v, l) => `<div class="res-card"><div class="res-num">${v}</div><div class="res-label">${l}</div></div>`;
-    cont.innerHTML = `<div class="res-grid">${card(formatoMoneda(r.cobrado), 'Cobrado en el periodo (' + Number(r.cobros_n) + ' pagos, por fecha de pago)')}`
-      + (r.pagado !== undefined ? card(formatoMoneda(r.pagado), 'Pagado a proveedores') + card(formatoMoneda(r.gasto_total), 'Gastos registrados (por fecha de factura)') : '') + '</div>'
+    cont.innerHTML = `<div class="res-grid">${card(formatoMoneda(r.cobrado), 'Cobrado en el periodo, con IVA (' + Number(r.cobros_n) + ' pagos, por fecha de pago)')}`
+      + (r.pagado !== undefined ? card(formatoMoneda(r.pagado), 'Pagado a proveedores (con IVA)') + card(formatoMoneda(r.gasto_total), 'Gastos registrados, con IVA (por fecha de factura)') : '') + '</div>'
       + (r.gasto_por_categoria?.length ? '<div class="res-section"><h3>Gasto por categoría</h3><div id="res-gasto-categoria" class="bar-chart"></div></div>' : '');
     if (r.gasto_por_categoria?.length && typeof renderBarChart === 'function') renderBarChart('res-gasto-categoria', r.gasto_por_categoria, 'nombre', 'total', formatoMoneda);
   }
@@ -581,11 +591,12 @@ const Finanzas = (() => {
         { key: 'servicio', titulo: 'Servicio', req: true, tipo: 'lista', lista: 'servicios', ancho: 30, nota: 'Elige de la lista (catálogo del CRM).', ej: 'Desazolve de drenaje' },
         { key: 'descripcion', titulo: 'Descripción del trabajo', tipo: 'texto', ancho: 32, nota: 'Opcional.', ej: 'Limpieza de rejillas con equipo Vactor' },
         { key: 'fecha_servicio', titulo: 'Fecha del servicio', req: true, tipo: 'fecha', ancho: 14, nota: 'Fecha en que se hizo (o se hará) el servicio.', ej: '2026-09-15' },
-        { key: 'importe', titulo: 'Importe total (MXN)', req: true, tipo: 'dinero', ancho: 14, nota: 'Importe de la orden.', ej: 3500 },
+        { key: 'importe', titulo: 'Importe (MXN)', alias: ['Importe total (MXN)'], req: true, tipo: 'dinero', ancho: 14, nota: 'Importe de la orden, según la columna IVA.', ej: 3500 },
+        { key: 'iva', titulo: 'IVA del importe', tipo: 'lista', lista: 'iva', ancho: 18, nota: 'Más IVA 16%: el importe es sin IVA y se le suma. IVA incluido 16%: el importe ya lo trae. Vacío = IVA por definir.', ej: 'Más IVA 16%' },
         { key: 'dias_credito', titulo: 'Días de crédito', tipo: 'entero', ancho: 10, nota: '0 = contado. De 0 a 180.', ej: 15 },
         { key: 'factura_folio', titulo: 'Folio de factura', tipo: 'texto', ancho: 14, nota: 'Si ya se facturó.', ej: 'A-123' },
         { key: 'factura_fecha', titulo: 'Fecha de factura', tipo: 'fecha', ancho: 14, nota: 'El vencimiento se cuenta desde aquí (si no, desde la fecha del servicio).', ej: '2026-09-16' },
-        { key: 'factura_total', titulo: 'Total facturado con IVA', tipo: 'dinero', ancho: 14, nota: 'Si lo facturado (con IVA) es distinto del importe.', ej: 4060 },
+        { key: 'factura_total', titulo: 'Total facturado con IVA', tipo: 'dinero', ancho: 14, nota: 'Solo si el CFDI salió por otro total (retención, descuento o centavos). Vacío = importe con su IVA.', ej: '' },
         { key: 'pagado', titulo: 'Ya pagado (MXN)', tipo: 'dinero', ancho: 14, nota: 'Lo que el cliente ya pagó antes de importar. Vacío = nada.', ej: 1000 },
         { key: 'notas', titulo: 'Notas', tipo: 'texto', ancho: 28, nota: 'Opcional.', ej: '' },
       ],
@@ -622,6 +633,7 @@ const Finanzas = (() => {
         servicios: tipo === 'cxc' ? (await api('/servicios').then(json)).map(s => s.nombre) : [],
         categorias: tipo === 'cxp' ? (await api('/finanzas/categorias').then(json)).map(c => c.nombre) : [],
         metodos: METODOS.map(m => m[1]),
+        iva: ['Más IVA 16%', 'IVA incluido 16%'],
       };
     } catch (err) { toast('No se pudo preparar la plantilla: ' + err.message); return; }
     const wb = new ExcelJS.Workbook();
@@ -641,7 +653,7 @@ const Finanzas = (() => {
     // Hoja oculta con las listas de los desplegables
     const wl = wb.addWorksheet('Listas', { state: 'hidden' });
     const rangos = {};
-    ['servicios', 'categorias', 'metodos'].forEach((nombre, idx) => {
+    ['servicios', 'categorias', 'metodos', 'iva'].forEach((nombre, idx) => {
       const col = String.fromCharCode(65 + idx);
       wl.getCell(col + '1').value = nombre;
       listas[nombre].forEach((v, i) => { wl.getCell(col + (i + 2)).value = v; });
@@ -714,7 +726,8 @@ const Finanzas = (() => {
     const posicion = {};
     ws.getRow(1).eachCell((cell, i) => {
       const t = sinAcentos(valorCelda(cell.value));
-      const c = def.columnas.find(x => sinAcentos(x.titulo) === t);
+      // Por título o por un título anterior (alias), para que sigan sirviendo plantillas viejas.
+      const c = def.columnas.find(x => [x.titulo, ...(x.alias || [])].some(n => sinAcentos(n) === t));
       if (c) posicion[c.key] = i;
     });
     const faltan = def.columnas.filter(c => c.req && !posicion[c.key]).map(c => c.titulo);

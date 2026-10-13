@@ -4,9 +4,9 @@ const FlujoCRM = (() => {
   const baselines = new Map();
   const listasGuardadas = new Map();
   const campos = {
-    'overlay-ficha':'#gc-items input,#gc-items select,#gc-items textarea,#ed-direccion,#ed-canal,#ed-servicio,#ed-responsable,#ed-valor,#ed-fecha-servicio,#ed-fecha-cotizacion,#ed-incluye-vigencia,#ed-vigencia-hasta,#ed-notas,#ed-urgente,#ed-encuesta-calificacion,#ed-encuesta-comentario,#ed-equipo,#ed-operador,#ed-observaciones',
+    'overlay-ficha':'#gc-iva-modo,#gc-items input,#gc-items select,#gc-items textarea,#ed-direccion,#ed-canal,#ed-servicio,#ed-responsable,#ed-valor,#ed-fecha-servicio,#ed-fecha-cotizacion,#ed-incluye-vigencia,#ed-vigencia-hasta,#ed-notas,#ed-urgente,#ed-encuesta-calificacion,#ed-encuesta-comentario,#ed-equipo,#ed-operador,#ed-observaciones',
     'overlay-ficha-cliente':'#fc-ed-telefono,#fc-ed-telefono-alterno,#fc-ed-nombre,#fc-ed-correo,#fc-ed-empresa,#fc-ed-rfc,#fc-ed-direccion,#fc-ed-giro,#fc-ed-notas-generales',
-    'overlay-servicio-nuevo':'#gc-items input,#gc-items select,#gc-items textarea,#sn-servicio,#sn-valor,#sn-fecha,#sn-notas,#sn-ubicacion,#sn-urgente,#sn-equipo,#sn-operador,#sn-observaciones',
+    'overlay-servicio-nuevo':'#gc-iva-modo,#gc-items input,#gc-items select,#gc-items textarea,#sn-servicio,#sn-valor,#sn-fecha,#sn-notas,#sn-ubicacion,#sn-urgente,#sn-equipo,#sn-operador,#sn-observaciones',
 
   };
   const estado = s => ({abierto:'Cotización abierta',ganado:'Servicio contratado',perdido:'Cotización no aceptada'}[s]||s);

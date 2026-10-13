@@ -16,6 +16,7 @@ const PORT = process.env.PORT || 3210;
 const URL_BASE = (process.env.APP_URL || `http://localhost:${PORT}`).replace(/\/+$/, '');
 
 const { hoyMexico } = require('./fechas');
+const Importes = require('../public/importes.js'); // mismo cálculo de IVA que el navegador
 
 const app = express();
 // Detrás de un proxy (Nginx, Cloudflare, etc.) define TRUST_PROXY=1 para que req.ip sea la IP real
@@ -498,14 +499,43 @@ function validarRegistro(req,res,next){
   if(req.body.etapa!==undefined&&(!Number.isInteger(req.body.etapa)||req.body.etapa<1||req.body.etapa>4))return res.status(400).json({error:'Etapa inválida'});
   next();
 }
+// Partidas e IVA: el servidor siempre recalcula valor (subtotal sin IVA) e iva_cent con
+// public/importes.js; nunca toma los que mande el navegador. Si no llega el modo de IVA se
+// conserva el guardado (PUT) o queda "por definir" (POST), como antes de existir el IVA.
+// Deja en req.totalNuevoCent el total con IVA cuando recalcula.
 function validarPartidas(req,res,next){
-  if(req.body.partidas_json===undefined)return next();
-  let items;try{items=JSON.parse(req.body.partidas_json);}catch{return res.status(400).json({error:'Partidas inválidas'});}
-  if(!Array.isArray(items)||!items.length||items.length>100||items.some(i=>!i||typeof i.servicio!=='string'||!i.servicio.trim()||typeof i.leyenda!=='string'||i.leyenda.length>10000||typeof i.importe!=='number'||!Number.isFinite(i.importe)||i.importe<0||i.importe>1e12))return res.status(400).json({error:'Revisa servicios, descripciones e importes'});
-  if(items.some(i=>!db.prepare('SELECT id FROM catalogo_servicios WHERE nombre = ?').get(i.servicio)))return res.status(400).json({error:'Todas las partidas deben tener un servicio del catálogo'});
-  const primero=db.prepare('SELECT id FROM catalogo_servicios WHERE nombre = ?').get(items[0].servicio);
-  if(!primero)return res.status(400).json({error:'Selecciona un servicio del catálogo'});
-  req.body.servicio_id=primero.id;req.body.valor=items.reduce((t,i)=>t+Math.round(i.importe*100),0)/100;req.body.partidas_json=JSON.stringify(items);next();
+  delete req.body.iva_cent;
+  const tocaIva=req.body.iva_modo!==undefined||req.body.iva_tasa!==undefined;
+  if(req.body.partidas_json===undefined&&!tocaIva)return next();
+  const guardado=req.params.id?db.prepare('SELECT partidas_json, iva_modo, iva_tasa FROM leads WHERE id = ?').get(req.params.id):null;
+  if(req.params.id&&!guardado)return res.status(404).json({error:'Cotización no encontrada'});
+  let items;
+  if(req.body.partidas_json!==undefined){
+    try{items=JSON.parse(req.body.partidas_json);}catch{return res.status(400).json({error:'Partidas inválidas'});}
+    if(!Array.isArray(items)||!items.length||items.length>100||items.some(i=>!i||typeof i.servicio!=='string'||!i.servicio.trim()||typeof i.leyenda!=='string'||i.leyenda.length>10000||typeof i.importe!=='number'||!Number.isFinite(i.importe)||i.importe<0||i.importe>1e12))return res.status(400).json({error:'Revisa servicios, descripciones e importes'});
+    if(items.some(i=>!db.prepare('SELECT id FROM catalogo_servicios WHERE nombre = ?').get(i.servicio)))return res.status(400).json({error:'Todas las partidas deben tener un servicio del catálogo'});
+    const primero=db.prepare('SELECT id FROM catalogo_servicios WHERE nombre = ?').get(items[0].servicio);
+    if(!primero)return res.status(400).json({error:'Selecciona un servicio del catálogo'});
+    req.body.servicio_id=primero.id;req.body.partidas_json=JSON.stringify(items);
+  }else{
+    // Solo cambia el IVA: se recalcula con las partidas guardadas.
+    try{items=JSON.parse(guardado?.partidas_json||'null');}catch{items=null;}
+    if(!Array.isArray(items)||!items.length)return res.status(400).json({error:'Edita las partidas de la cotización para indicar su IVA'});
+  }
+  let modo=req.body.iva_modo!==undefined?req.body.iva_modo:(guardado?.iva_modo??null);
+  if(modo==='')modo=null;
+  if(modo!==null&&!Importes.MODOS.includes(modo))return res.status(400).json({error:'Indica si los importes son más IVA o con IVA incluido'});
+  if(modo===null&&guardado?.iva_modo)return res.status(400).json({error:'El IVA de este registro ya está indicado; no puede volver a quedar por definir'});
+  let tasa=null;
+  if(modo!==null){
+    tasa=req.body.iva_tasa!==undefined&&req.body.iva_tasa!==null&&req.body.iva_tasa!==''?Number(req.body.iva_tasa):(guardado?.iva_tasa??Importes.TASA_DEFAULT);
+    if(!Importes.TASAS_PERMITIDAS.includes(tasa))return res.status(400).json({error:'Tasa de IVA no permitida (solo '+Importes.TASAS_PERMITIDAS.join(', ')+' %)'});
+  }else if(req.body.iva_tasa!==undefined&&req.body.iva_tasa!==null&&req.body.iva_tasa!=='')return res.status(400).json({error:'Indica si los importes son más IVA o con IVA incluido'});
+  const r=Importes.calcular(items,modo,tasa);
+  if(modo!==null&&r.total_cent>Importes.TOPE_CENT)return res.status(400).json({error:'El total del documento no puede pasar de $100,000,000.00'});
+  req.body.valor=r.subtotal_cent/100;req.body.iva_modo=modo;req.body.iva_tasa=tasa;req.body.iva_cent=r.iva_cent;
+  req.totalNuevoCent=r.total_cent;
+  next();
 }
 // Equipo / operador / observaciones de la orden de servicio: texto libre con tope de longitud.
 const LIMITES_ORDEN = { equipo: 200, operador: 300, observaciones: 3000 };
@@ -607,7 +637,7 @@ app.post('/api/leads', validarPartidas, validarRegistro, h((req, res) => {
     duplicadoDe
   );
 
-  if(req.body.partidas_json!==undefined)db.prepare('UPDATE leads SET partidas_json = ? WHERE id = ?').run(req.body.partidas_json,info.lastInsertRowid);
+  if(req.body.partidas_json!==undefined)db.prepare('UPDATE leads SET partidas_json = ?, iva_modo = ?, iva_tasa = ?, iva_cent = ? WHERE id = ?').run(req.body.partidas_json,req.body.iva_modo??null,req.body.iva_tasa??null,req.body.iva_cent??null,info.lastInsertRowid);
   db.prepare('UPDATE leads SET equipo = ?, operador = ?, observaciones = ? WHERE id = ?').run(textoOrden(req.body.equipo), textoOrden(req.body.operador), textoOrden(req.body.observaciones), info.lastInsertRowid);
   if(req.body.establecimiento_id)db.prepare('UPDATE leads SET establecimiento_id=? WHERE id=?').run(req.body.establecimiento_id,info.lastInsertRowid);
   // Crear una cotización nunca modifica los datos maestros del contacto.
@@ -653,13 +683,21 @@ app.put('/api/leads/:id', validarPartidas, validarRegistro, h((req, res) => {
   }
   // El importe de una orden de servicio es lo que el cliente debe: solo administración o atención
   // pueden cambiarlo (un vendedor o técnico podría, si no, "saldar" una deuda editando las partidas).
-  const cambiaImporte = actual.estatus === 'ganado' && req.body.valor !== undefined && req.body.valor !== null
-    && Math.round(Number(req.body.valor) * 100) !== Math.round(Number(actual.valor || 0) * 100);
-  if (cambiaImporte && !['admin', 'atencion'].includes(req.usuarioSesion.rol)) {
-    return res.status(403).json({ error: 'Solo administración o atención pueden cambiar el importe de una orden de servicio. Para un descuento, pide un ajuste al administrador.' });
+  // Se comparan totales con IVA (valor + iva_cent): cambiar solo el IVA también cambia lo que se debe.
+  const totalActualCent = Math.round(Number(actual.valor || 0) * 100) + (actual.iva_cent || 0);
+  const totalNuevoCent = req.totalNuevoCent !== undefined ? req.totalNuevoCent
+    : (req.body.valor !== undefined && req.body.valor !== null ? Math.round(Number(req.body.valor) * 100) + (actual.iva_cent || 0) : null);
+  const cambiaImporte = actual.estatus === 'ganado' && totalNuevoCent !== null && totalNuevoCent !== totalActualCent;
+  // Indicar o cambiar el IVA de una orden cambia cómo se lee su importe: misma regla que el importe.
+  const cambiaIva = actual.estatus === 'ganado' && req.totalNuevoCent !== undefined
+    && (req.body.iva_modo !== actual.iva_modo || req.body.iva_tasa !== actual.iva_tasa);
+  if ((cambiaImporte || cambiaIva) && !['admin', 'atencion'].includes(req.usuarioSesion.rol)) {
+    return res.status(403).json({ error: cambiaImporte
+      ? 'Solo administración o atención pueden cambiar el importe de una orden de servicio. Para un descuento, pide un ajuste al administrador.'
+      : 'Solo administración o atención pueden indicar o cambiar el IVA de una orden de servicio.' });
   }
-  if (actual.estatus === 'ganado' && actual.factura_total_cent == null && req.body.valor !== undefined && req.body.valor !== null
-    && Math.round(Number(req.body.valor) * 100) < finanzas.cobradoCent(actual.id)) {
+  if (actual.estatus === 'ganado' && actual.factura_total_cent == null && totalNuevoCent !== null
+    && totalNuevoCent < finanzas.cobradoCent(actual.id)) {
     return res.status(400).json({ error: 'El importe no puede quedar por debajo de lo que el cliente ya pagó.' });
   }
   if ((req.body.estatus || actual.estatus) === 'ganado') {
@@ -677,9 +715,9 @@ app.put('/api/leads/:id', validarPartidas, validarRegistro, h((req, res) => {
     if (req.body.etapa === undefined && actual.etapa < 4) req.body.etapa = 4;
   }
 
-  if(actual.partidas_json && req.body.partidas_json===undefined && (req.body.valor!==undefined || req.body.servicio_id!==undefined)){
-    const partidas=JSON.parse(actual.partidas_json),total=partidas.reduce((t,i)=>t+Math.round(i.importe*100),0)/100;
-    if((req.body.valor!==undefined && req.body.valor!==total)||(req.body.servicio_id!==undefined && Number(req.body.servicio_id)!==actual.servicio_id))return res.status(400).json({error:'Edita las partidas de la cotización para cambiar su importe o servicio'});
+  if(actual.partidas_json && req.totalNuevoCent===undefined && (req.body.valor!==undefined || req.body.servicio_id!==undefined)){
+    const subtotal=Importes.calcular(JSON.parse(actual.partidas_json),actual.iva_modo,actual.iva_tasa).subtotal_cent;
+    if((req.body.valor!==undefined && (req.body.valor===null || Math.round(Number(req.body.valor)*100)!==subtotal))||(req.body.servicio_id!==undefined && Number(req.body.servicio_id)!==actual.servicio_id))return res.status(400).json({error:'Edita las partidas de la cotización para cambiar su importe o servicio'});
   }
   if (['nombre','telefono','empresa_contacto'].some(c=>req.body[c]!==undefined)) return res.status(400).json({error:'Edita los datos de contacto desde su ficha; esta acción modifica solo la cotización o servicio.'});
 
@@ -690,7 +728,7 @@ app.put('/api/leads/:id', validarPartidas, validarRegistro, h((req, res) => {
   const errorOrden = validarDatosOrden(req.body);
   if (errorOrden) return res.status(400).json({ error: errorOrden });
   ['equipo', 'operador', 'observaciones'].forEach(c => { if (req.body[c] !== undefined) req.body[c] = textoOrden(req.body[c]); });
-  const campos = ['equipo', 'operador', 'observaciones', 'partidas_json', 'direccion', 'canal_id', 'servicio_id', 'responsable_id', 'etapa', 'estatus', 'valor', 'fecha_servicio', 'notas_iniciales', 'urgente', 'encuesta_calificacion', 'encuesta_comentario', 'fecha_cotizacion', 'incluye_vigencia', 'vigencia_hasta'];
+  const campos = ['equipo', 'operador', 'observaciones', 'partidas_json', 'iva_modo', 'iva_tasa', 'iva_cent','direccion', 'canal_id', 'servicio_id', 'responsable_id', 'etapa', 'estatus', 'valor', 'fecha_servicio', 'notas_iniciales', 'urgente', 'encuesta_calificacion', 'encuesta_comentario', 'fecha_cotizacion', 'incluye_vigencia', 'vigencia_hasta'];
   const set = [];
   const params = [];
   campos.forEach(c => {
@@ -716,10 +754,14 @@ app.put('/api/leads/:id', validarPartidas, validarRegistro, h((req, res) => {
       .run(id, textoEvento, req.usuarioSesion?.nombre || null);
     if (req.body.estatus === 'ganado') finanzas.copiarCredito(id);
   }
-  if (cambiaImporte) {
-    const fmt = v => '$' + Number(v || 0).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  if (cambiaImporte || cambiaIva) {
+    const fmt = cent => '$' + (Number(cent || 0) / 100).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const iva = cambiaIva ? `IVA: ${Importes.etiquetaModo(actual.iva_modo, actual.iva_tasa)} → ${Importes.etiquetaModo(req.body.iva_modo, req.body.iva_tasa)}` : '';
+    const texto = cambiaImporte
+      ? `Importe de la orden cambiado: ${fmt(totalActualCent)} → ${fmt(totalNuevoCent)}${iva ? ' (' + iva + ')' : ''}.`
+      : `${iva} en la orden; el total no cambia (${fmt(totalNuevoCent)}).`;
     db.prepare(`INSERT INTO historial (lead_id, tipo, texto, usuario, origen) VALUES (?, 'observacion', ?, ?, 'sistema')`)
-      .run(id, `Importe de la orden cambiado: ${fmt(actual.valor)} → ${fmt(req.body.valor)}.`, req.usuarioSesion.nombre);
+      .run(id, texto, req.usuarioSesion.nombre);
   }
   res.json(db.prepare('SELECT * FROM leads WHERE id = ?').get(id));
 }));
@@ -1043,7 +1085,9 @@ app.get('/api/analisis/comercial', h((req,res)=>{
   const sinFecha=db.prepare("SELECT COUNT(*) total FROM leads WHERE estatus='ganado' AND fecha_servicio IS NULL").get().total;
   const mensual=db.prepare("SELECT strftime('%Y-%m',fecha_servicio) mes,COUNT(*) servicios,SUM(COALESCE(valor,0)) importe FROM leads WHERE estatus='ganado' AND date(fecha_servicio) IS NOT NULL AND (? IS NULL OR date(fecha_servicio)>=?) AND (? IS NULL OR date(fecha_servicio)<=?) GROUP BY mes ORDER BY mes").all(desde,desde,hasta,hasta);
   const antiguedad=db.prepare(`SELECT CASE WHEN julianday(date('now','localtime'))-julianday(date(created_at))<=7 THEN 0 WHEN julianday(date('now','localtime'))-julianday(date(created_at))<=30 THEN 1 WHEN julianday(date('now','localtime'))-julianday(date(created_at))<=60 THEN 2 ELSE 3 END grupo,COUNT(*) cantidad,SUM(COALESCE(valor,0)) importe FROM leads WHERE estatus='abierto' AND (? IS NULL OR date(created_at)>=?) AND (? IS NULL OR date(created_at)<=?) GROUP BY grupo ORDER BY grupo`).all(desde,desde,hasta,hasta);
-  res.json({resumen,mensual,antiguedad,canales:filas,clientes:clientes.filter(c=>c.nuevo||c.registros||c.servicios).sort((a,b)=>b.contratado-a.contratado),sinFecha});
+  // Órdenes anteriores al IVA: su importe se suma como se capturó (puede o no incluir IVA).
+  const ivaPorDefinir=db.prepare("SELECT COUNT(*) servicios,COALESCE(SUM(valor),0) importe FROM leads WHERE estatus='ganado' AND iva_modo IS NULL AND (? IS NULL OR date(fecha_servicio)>=?) AND (? IS NULL OR date(fecha_servicio)<=?)").get(desde,desde,hasta,hasta);
+  res.json({resumen,mensual,antiguedad,canales:filas,clientes:clientes.filter(c=>c.nuevo||c.registros||c.servicios).sort((a,b)=>b.contratado-a.contratado),sinFecha,ivaPorDefinir});
 }));
 app.get('/api/analisis/top-clientes', h((req, res) => {
   const rows = db.prepare(`

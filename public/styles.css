@@ -791,3 +791,19 @@ header.app nav.menu-principal .menu-sub .menu-item.activa{background:#fff3cd;col
 /* Anillo de foco visible sobre el submenú blanco (el amarillo casi no contrasta ahí). */
 header.app nav.menu-principal .menu-sub .menu-item:focus-visible{outline:3px solid var(--azul-600);outline-offset:1px;}
 @media(max-width:900px){header.app nav.menu-principal .menu-sub .menu-item:focus-visible{outline-color:var(--amarillo-vivo);}}
+
+/* IVA en el editor de cotización / orden: casilla, aviso de "por definir" y totales. */
+.gc-iva{margin:6px 0 12px;padding:10px 12px;background:var(--gris-100);border:1px solid var(--gris-200);border-radius:var(--radio);}
+.gc-iva-casilla{display:inline-flex;align-items:center;gap:8px;font-weight:700;cursor:pointer;}
+.gc-iva-casilla input{width:18px;height:18px;margin:0;}
+.gc-iva-casilla:has(input:disabled){cursor:not-allowed;opacity:.75;}
+.gc-iva .ayuda{margin:6px 0 0;}
+.gc-iva-aviso{margin-top:8px;background:#fff8dc;border:1px solid var(--amarillo);border-radius:var(--radio);padding:8px 10px;color:var(--amarillo-texto);font-weight:600;display:flex;flex-wrap:wrap;gap:8px;align-items:center;}
+.gc-iva-aviso[hidden]{display:none;}
+.gc-iva-aviso .btn{font-weight:600;}
+.gc-totales{margin:12px 0 14px auto;border-collapse:collapse;min-width:260px;max-width:100%;}
+.gc-totales th{text-align:left;font-weight:600;color:var(--texto-sec);padding:3px 16px 3px 0;}
+.gc-totales td{text-align:right;padding:3px 0;font-variant-numeric:tabular-nums;}
+.gc-totales .gc-fila-total th,.gc-totales .gc-fila-total td{border-top:1px solid var(--gris-300);padding-top:6px;color:var(--texto);font-size:15px;}
+.servicio-importe small{display:block;color:var(--amarillo-texto);font-size:11px;}
+.cobranza-iva{margin:4px 0 10px;}

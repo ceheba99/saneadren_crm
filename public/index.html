@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Saneadren · Cotizaciones y Servicios</title>
-<link rel="stylesheet" href="styles.css">
+<link rel="stylesheet" href="styles.css?v=iva1">
 <link rel="stylesheet" href="servicios-tabla.css">
 <link rel="stylesheet" href="flujo.css">
 </head>
@@ -279,13 +279,13 @@
   <section class="vista" id="vista-resultados">
     <h2>Resultados comerciales</h2>
     <div class="filtros"><label>Desde <input type="date" id="res-desde"></label><label>Hasta <input type="date" id="res-hasta"></label><button class="btn btn-primario" id="res-aplicar">Consultar</button><button class="btn btn-outline" id="res-todo">Todo el historial</button><button class="btn btn-outline solo-admin" id="res-exportar">Exportar canales a Excel</button></div>
-    <p class="ayuda">Contactos nuevos: fecha de registro. Importe contratado: fecha acordada del servicio. Cada contacto y sus servicios se atribuyen a “Cómo se enteró de nosotros”. El importe contratado no equivale a cobros ni utilidad.</p>
+    <p class="ayuda">Contactos nuevos: fecha de registro. Importe contratado: fecha acordada del servicio. Cada contacto y sus servicios se atribuyen a “Cómo se enteró de nosotros”. El importe contratado no equivale a cobros ni utilidad. Los importes son sin IVA (la venta real); lo cobrado y los gastos sí incluyen IVA.</p>
     <p id="res-estado" role="status"></p><div class="res-grid" id="res-kpis"></div>
     <div class="solo-cobranza" id="res-dinero-periodo"></div>
-    <div class="res-section"><h3>¿Qué canales traen contactos y generan contrataciones?</h3><p class="ayuda">Conversión: contactos nuevos del periodo que ya han contratado al día de hoy / contactos nuevos del periodo. Las contrataciones pueden provenir de contactos registrados antes.</p><div class="tabla-scroll"><table class="tabla-resumen"><thead><tr><th>Canal de origen</th><th>Leads nuevos (contactos)</th><th>Convertidos a cliente</th><th>Conversión</th><th>Clientes con servicio</th><th>Servicios contratados</th><th>Importe contratado</th><th>Promedio por servicio</th><th>Propuestas abiertas</th><th>Importe abierto</th></tr></thead><tbody id="res-canales"></tbody></table></div></div>
-    <div class="res-two-col"><div class="res-section"><h3>Importe contratado por canal</h3><div id="res-dinero-canal" class="bar-chart"></div></div><div class="res-section"><h3>Contactos nuevos por canal</h3><div id="res-contactos-canal" class="bar-chart"></div></div></div>
+    <div class="res-section"><h3>¿Qué canales traen contactos y generan contrataciones?</h3><p class="ayuda">Conversión: contactos nuevos del periodo que ya han contratado al día de hoy / contactos nuevos del periodo. Las contrataciones pueden provenir de contactos registrados antes.</p><div class="tabla-scroll"><table class="tabla-resumen"><thead><tr><th>Canal de origen</th><th>Leads nuevos (contactos)</th><th>Convertidos a cliente</th><th>Conversión</th><th>Clientes con servicio</th><th>Servicios contratados</th><th>Importe contratado (sin IVA)</th><th>Promedio por servicio</th><th>Propuestas abiertas</th><th>Importe abierto (sin IVA)</th></tr></thead><tbody id="res-canales"></tbody></table></div></div>
+    <div class="res-two-col"><div class="res-section"><h3>Importe contratado por canal (sin IVA)</h3><div id="res-dinero-canal" class="bar-chart"></div></div><div class="res-section"><h3>Contactos nuevos por canal</h3><div id="res-contactos-canal" class="bar-chart"></div></div></div>
     <div id="res-kpis-extra" class="res-grid"></div>
-    <div class="res-section"><h3>Evolución mensual del importe contratado</h3><p class="ayuda">Por fecha acordada del servicio. Los meses intermedios sin contrataciones se muestran en cero. El rango seleccionado puede incluir meses parciales.</p><div id="res-tendencia"></div></div>
+    <div class="res-section"><h3>Evolución mensual del importe contratado (sin IVA)</h3><p class="ayuda">Por fecha acordada del servicio. Los meses intermedios sin contrataciones se muestran en cero. El rango seleccionado puede incluir meses parciales.</p><div id="res-tendencia"></div></div>
     <div class="res-two-col">
       <div class="res-section"><h3>Conversión por canal</h3><p class="ayuda">Contactos nuevos del periodo que ya contrataron / contactos nuevos. Compara también el volumen: 1 de 1 no es igual de representativo que 80 de 100.</p><div id="res-conversion" class="bar-chart"></div></div>
       <div class="res-section"><h3>¿Qué clientes generan más importe contratado?</h3><p class="ayuda">Los 10 primeros del periodo. El indicador de concentración muestra cuánto aportan los 3 principales al total.</p><div id="res-top-valor" class="bar-chart"></div></div>
@@ -810,8 +810,22 @@
 <div id="editor-cotizacion" hidden>
   <div class="seccion-tit" id="gc-titulo-contenido">Contenido de la cotización</div>
   <p class="ayuda" id="gc-ayuda-contenido">Edita servicios, descripciones e importes. Se guardan con esta cotización y se usan en la descarga.</p>
+  <!-- IVA: el valor real vive en #gc-iva-modo ('' = por definir, 'mas_iva', 'incluido'); la casilla es la forma de elegirlo. -->
+  <div class="gc-iva" id="gc-iva">
+    <input type="hidden" id="gc-iva-modo">
+    <label class="gc-iva-casilla"><input type="checkbox" id="gc-iva-incluido"> <span>IVA incluido (16 %)</span></label>
+    <p class="ayuda" id="gc-iva-ayuda"></p>
+    <div class="gc-iva-aviso" id="gc-iva-aviso" hidden>
+      <span id="gc-iva-aviso-texto"></span>
+      <button type="button" class="btn btn-outline" id="btn-gc-iva-mas">Los importes son sin IVA (más IVA)</button>
+    </div>
+  </div>
   <div id="gc-items"></div><button type="button" class="btn btn-outline" id="btn-gc-agregar-servicio">+ Agregar servicio</button>
-  <p>Total: <b id="gc-total">$0.00</b></p>
+  <table class="gc-totales" aria-label="Totales">
+    <tr id="gc-fila-subtotal"><th id="gc-etiqueta-subtotal">Subtotal</th><td id="gc-subtotal">$0.00</td></tr>
+    <tr id="gc-fila-iva"><th id="gc-etiqueta-iva">IVA 16%</th><td id="gc-iva-monto">$0.00</td></tr>
+    <tr class="gc-fila-total"><th id="gc-etiqueta-total">Total</th><td><b id="gc-total">$0.00</b></td></tr>
+  </table>
   <label><input type="radio" name="gc-formato" id="gc-formato-pdf" value="pdf" checked> PDF</label>
   <label><input type="radio" name="gc-formato" value="word"> Word</label>
   <button type="button" class="btn btn-primario" id="btn-gc-generar">Guardar y descargar cotización</button>
@@ -828,12 +842,14 @@
 </div><div class="campo-modal"><label for="pr-necesidades">Necesidades y notas de investigación</label><textarea id="pr-necesidades" rows="3" maxlength="5000"></textarea></div><p id="pr-aviso" role="status"></p><div class="btn-group"><button class="btn btn-primario" id="pr-guardar">Guardar establecimiento</button><button class="btn btn-outline" id="pr-vincular">Guardar y preparar cotización</button></div><p class="ayuda">Preparar cotización requiere teléfono. Si ya existe un contacto, podrás confirmar su vinculación. Los establecimientos pueden compartir contacto; su domicilio se propone en la nueva cotización.</p></div></div></div></div>
 
 
-<script src="ui.js"></script>
-<script src="servicios-tabla.js"></script>
-<script src="flujo.js"></script>
-<script src="cuentas.js"></script>
-<script src="finanzas.js"></script>
-<script src="app.js"></script>
-<script src="prospeccion.js"></script>
+<!-- ?v= obliga a los navegadores (sobre todo celulares) a tomar la versión nueva tras publicar. -->
+<script src="ui.js?v=iva1"></script>
+<script src="importes.js?v=iva1"></script>
+<script src="servicios-tabla.js?v=iva1"></script>
+<script src="flujo.js?v=iva1"></script>
+<script src="cuentas.js?v=iva1"></script>
+<script src="finanzas.js?v=iva1"></script>
+<script src="app.js?v=iva1"></script>
+<script src="prospeccion.js?v=iva1"></script>
 </body>
 </html>
