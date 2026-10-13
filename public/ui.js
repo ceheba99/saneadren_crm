@@ -10,8 +10,10 @@
   layer.querySelector('.close-btn').onclick = () => finish(null);
   document.getElementById('dialogo-cancelar').onclick = () => finish(null);
   // Con `campo` el diálogo pide un dato (p. ej. { tipo: 'password' }) y resuelve con lo escrito.
-  window.solicitarDialogo = ({titulo,mensaje,aceptar='Confirmar',campo=null}) => {
+  // Con `soloAviso` es un aviso informativo: solo el botón de aceptar.
+  window.solicitarDialogo = ({titulo,mensaje,aceptar='Confirmar',campo=null,soloAviso=false}) => {
     if(resolver) return Promise.resolve(null);
+    document.getElementById('dialogo-cancelar').hidden = soloAviso;
     document.getElementById('dialogo-titulo').textContent = titulo;
     document.getElementById('dialogo-mensaje').textContent = mensaje;
     document.getElementById('dialogo-aceptar').textContent = aceptar;

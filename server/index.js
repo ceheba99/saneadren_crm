@@ -844,6 +844,10 @@ app.delete('/api/leads/:id', h((req, res) => {
   if (db.prepare('SELECT 1 FROM cobros WHERE lead_id = ? LIMIT 1').get(lead.id)) {
     return res.status(409).json({ error: 'Esta orden tiene pagos registrados y no se puede eliminar, para conservar el rastro del dinero.' });
   }
+  // Tampoco una con gastos en Cuentas por pagar (quedarían sueltos, sin su orden).
+  if (db.prepare('SELECT 1 FROM cuentas_por_pagar WHERE lead_id = ? AND cancelada = 0 LIMIT 1').get(lead.id)) {
+    return res.status(409).json({ error: 'Esta orden tiene gastos en Cuentas por pagar. Cancélalos primero si de verdad quieres eliminarla.' });
+  }
   console.log(`[eliminado] registro #${lead.id} (${lead.estatus}, ${lead.valor ?? 'sin importe'}) de cliente #${lead.cliente_id} por ${req.usuarioSesion.nombre}`);
   // El historial se borra en cascada (ON DELETE CASCADE). El cliente y sus otros servicios/cotizaciones no se tocan.
   db.prepare('DELETE FROM leads WHERE id = ?').run(req.params.id);
