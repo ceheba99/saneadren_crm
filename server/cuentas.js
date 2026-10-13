@@ -51,16 +51,19 @@ function asegurarAdminInicial(db, { verificarPassword }) {
 // opcionales, USUARIO_PRUEBA_ROL y USUARIO_PRUEBA_CORREO). Útil en un servidor de pruebas cuya base se
 // borra en cada despliegue. La contraseña NUNCA va en el código (el repositorio es público).
 // Igual que el admin inicial: solo se crea si no existe; si ya existe no se toca su contraseña.
-function asegurarUsuarioPrueba(db) {
-  const nombre = (process.env.USUARIO_PRUEBA_NOMBRE || '').trim().replace(/\s+/g, ' '), password = process.env.USUARIO_PRUEBA_PASSWORD || '';
+// Mismo mecanismo para más usuarios fijos: USUARIO_2_* (por defecto "Luis Perea"; solo se crea
+// cuando se define USUARIO_2_PASSWORD en el servidor, nunca con una contraseña escrita en el código).
+function asegurarUsuarioPrueba(db, prefijo = 'USUARIO_PRUEBA', nombrePorDefecto = '') {
+  const env = k => process.env[prefijo + '_' + k];
+  const nombre = (env('NOMBRE') || nombrePorDefecto).trim().replace(/\s+/g, ' '), password = env('PASSWORD') || '';
   if (!nombre || !password) return;
-  const rol = (process.env.USUARIO_PRUEBA_ROL || 'ventas').trim().toLowerCase();
-  const correo = process.env.USUARIO_PRUEBA_CORREO ? normalizarCorreo(process.env.USUARIO_PRUEBA_CORREO) : null;
+  const rol = (env('ROL') || 'ventas').trim().toLowerCase();
+  const correo = env('CORREO') ? normalizarCorreo(env('CORREO')) : null;
   const problema = problemaNombre(nombre)
-    || (['admin', 'ventas', 'atencion', 'tecnico'].includes(rol) ? null : 'USUARIO_PRUEBA_ROL debe ser admin, ventas, atencion o tecnico')
-    || (correo && !correoPermitido(correo) ? 'USUARIO_PRUEBA_CORREO debe ser @' + DOMINIO : null)
+    || (['admin', 'ventas', 'atencion', 'tecnico'].includes(rol) ? null : prefijo + '_ROL debe ser admin, ventas, atencion o tecnico')
+    || (correo && !correoPermitido(correo) ? prefijo + '_CORREO debe ser @' + DOMINIO : null)
     || problemaPassword(password, { nombre, correo: correo || '' });
-  if (problema) { console.error('[usuario de prueba] No se aplicó:', problema); return; }
+  if (problema) { console.error(`[usuario ${nombre}] No se aplicó:`, problema); return; }
   const existente = db.prepare('SELECT id FROM usuarios WHERE lower(nombre) = lower(?)').get(nombre)
     || (correo ? db.prepare('SELECT id FROM usuarios WHERE correo = ?').get(correo) : null);
   if (existente) return;
@@ -72,6 +75,7 @@ module.exports = function cuentas(app, db, h, { sesiones, urlBase }) {
   migrarCuentas(db);
   asegurarAdminInicial(db, require('./seguridad'));
   asegurarUsuarioPrueba(db);
+  asegurarUsuarioPrueba(db, 'USUARIO_2', 'Luis Perea');
   db.prepare('DELETE FROM tokens_cuenta WHERE expira < ? OR usado = 1').run(Date.now() - VIGENCIA_VERIFICACION_MS);
 
   const porIp = (max, minutos) => limitador({ max, ventanaMs: minutos * 60000, clave: req => req.ip });

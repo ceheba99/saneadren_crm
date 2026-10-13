@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Saneadren · Cotizaciones y Servicios</title>
-<link rel="stylesheet" href="styles.css">
+<link rel="stylesheet" href="styles.css?v=iva1">
 <link rel="stylesheet" href="servicios-tabla.css">
 <link rel="stylesheet" href="flujo.css">
 </head>
@@ -25,21 +25,21 @@
       <span class="menu-actual" id="menu-actual">Inicio</span><span class="menu-badge" id="badge-menu" hidden></span>
     </button>
     <div class="menu-items" id="menu-items">
-      <button type="button" class="menu-item activa" data-vista="inicio"><span class="menu-icono" aria-hidden="true">🏠</span>Inicio</button>
-      <button type="button" class="menu-item" data-vista="pendientes"><span class="menu-icono" aria-hidden="true">⏰</span>Pendientes <span id="badge-pendientes" style="display:none">0</span></button>
-      <button type="button" class="menu-item" data-vista="clientes"><span class="menu-icono" aria-hidden="true">👥</span>Clientes</button>
+      <button type="button" class="menu-item activa" data-vista="inicio"><span class="menu-icono" aria-hidden="true">🏠</span>Inicio <span id="badge-pendientes" style="display:none">0</span></button>
       <div class="menu-grupo" data-grupo="ventas">
         <button type="button" class="menu-grupo-btn" aria-expanded="false"><span class="menu-icono" aria-hidden="true">💼</span>Ventas<span class="menu-flecha" aria-hidden="true">▾</span></button>
         <div class="menu-sub">
           <button type="button" class="menu-item" data-vista="alta"><span class="menu-icono" aria-hidden="true">➕</span>Nuevo contacto</button>
+          <button type="button" class="menu-item" data-vista="clientes"><span class="menu-icono" aria-hidden="true">👥</span>Contactos</button>
           <button type="button" class="menu-item" data-vista="leads"><span class="menu-icono" aria-hidden="true">📄</span>Cotizaciones</button>
           <button type="button" class="menu-item" data-vista="prospeccion"><span class="menu-icono" aria-hidden="true">🔎</span>Prospección</button>
         </div>
       </div>
       <div class="menu-grupo" data-grupo="dinero">
-        <button type="button" class="menu-grupo-btn" aria-expanded="false"><span class="menu-icono" aria-hidden="true">💰</span>Dinero<span class="menu-flecha" aria-hidden="true">▾</span></button>
+        <button type="button" class="menu-grupo-btn" aria-expanded="false"><span class="menu-icono" aria-hidden="true">💰</span>Finanzas<span class="menu-flecha" aria-hidden="true">▾</span></button>
         <div class="menu-sub">
-          <button type="button" class="menu-item solo-cobranza" data-vista="cuentas" id="nav-cuentas"><span class="menu-icono" aria-hidden="true">💳</span>Cuentas</button>
+          <button type="button" class="menu-item solo-cobranza" data-vista="cobrar" id="nav-cobrar"><span class="menu-icono" aria-hidden="true">📥</span>Cuentas por cobrar</button>
+          <button type="button" class="menu-item solo-cobranza" data-vista="pagar" id="nav-pagar"><span class="menu-icono" aria-hidden="true">📤</span>Cuentas por pagar</button>
           <button type="button" class="menu-item" data-vista="resultados"><span class="menu-icono" aria-hidden="true">📊</span>Resultados</button>
         </div>
       </div>
@@ -64,17 +64,17 @@
   <section class="vista activa" id="vista-inicio">
     <div class="inicio-saludo">
       <h2>Lo que necesita atención hoy</h2>
-      <p class="ayuda">Todo lo que ya vencido o toca hoy, junto en un solo lugar. Cada tarjeta te lleva directo al registro — no hace falta buscarlo.</p>
+      <p class="ayuda">Tus pendientes en un solo lugar: avisos y recordatorios que vencen hoy, cotizaciones sin movimiento y recompras. Cada tarjeta te lleva directo al registro.</p>
     </div>
 
     <div class="inicio-bloque inicio-bloque-dinero solo-cobranza">
-      <h3>💰 Dinero</h3>
+      <h3>💰 Finanzas</h3>
       <div id="inicio-dinero" class="inicio-lista"></div>
     </div>
 
     <div class="inicio-bloque inicio-bloque-cotizacion">
-      <h3><span class="cadena-nodo pasado">📄 Cotizaciones</span> que necesitan seguimiento</h3>
-      <p class="ayuda">Alertas vencidas y cotizaciones abiertas sin movimiento hace más de 7 días.</p>
+      <h3>⏰ Avisos y seguimiento</h3>
+      <p class="ayuda">Recordatorios de cotizaciones u órdenes que vencen hoy o ya vencieron, y cotizaciones abiertas sin movimiento hace más de 7 días.</p>
       <div id="inicio-cotizaciones" class="inicio-lista"></div>
     </div>
 
@@ -102,7 +102,7 @@
 </div>
       <div class="util-4">
         <button class="btn btn-primario" id="btn-guardar-contacto-nuevo">Guardar contacto</button>
-        <button class="btn btn-secundario" id="btn-guardar-lead">Guardar y cotizar</button>
+        <button class="btn btn-secundario" id="btn-guardar-lead" title="Guarda el contacto y abre su ficha, donde están Crear cotización y Crear orden de servicio">Guardar y crear cotización</button>
       </div>
     </div>
   </section>
@@ -202,28 +202,31 @@
 
   <!-- ====== VISTA: CLIENTES (servicios ganados — separados del pipeline) ====== -->
   <section class="vista" id="vista-clientes">
-    <p class="ayuda util-9">Directorio de personas y empresas. Abre un contacto para editar sus datos o consultar todas sus cotizaciones y servicios contratados.</p>
+    <div class="vista-encabezado">
+      <div><h2>Contactos</h2><p class="ayuda">Personas y empresas. Abre un contacto para ver sus cotizaciones y órdenes, o para crear una nueva.</p></div>
+      <button type="button" class="btn btn-primario" onclick="cambiarVista('alta')">➕ Nuevo contacto</button>
+    </div>
 
     <div class="rc-grid">
       <div class="rc-card">
         <div class="rc-num" id="rc-total">0</div>
-        <div class="rc-label">Total de contactos únicos</div>
+        <div class="rc-label">Contactos</div>
       </div>
       <div class="rc-card prospecto">
         <div class="rc-num" id="rc-prospectos">0</div>
-        <div class="rc-label">Prospectos (nunca han comprado)</div>
+        <div class="rc-label">Prospectos · aún no contratan</div>
       </div>
       <div class="rc-card cliente">
         <div class="rc-num" id="rc-activos">0</div>
-        <div class="rc-label">Ya son clientes (1+ servicio ganado)</div>
+        <div class="rc-label">Clientes · ya contrataron</div>
       </div>
       <div class="rc-card recurrente">
         <div class="rc-num" id="rc-recurrentes">0</div>
-        <div class="rc-label">Clientes recurrentes (2+ servicios)</div>
+        <div class="rc-label">Recurrentes · 2 o más órdenes</div>
       </div>
       <div class="rc-card valor">
         <div class="rc-num" id="rc-valor">$0</div>
-        <div class="rc-label">Valor histórico ganado</div>
+        <div class="rc-label">Contratado histórico (sin IVA)</div>
       </div>
     </div>
 
@@ -239,22 +242,20 @@
 
     <div class="tabla-clientes-wrap">
       <div class="tabla-header">
-        <h3>Directorio de contactos</h3>
+        <h3>Directorio</h3>
         <span class="tabla-conteo" id="tabla-conteo-clientes">0 registros</span>
       </div>
       <div class="tabla-scroll">
         <table class="tabla-clientes">
           <thead>
             <tr>
-              <th>ID</th>
-              <th>Teléfono</th>
-              <th>Contacto / relación</th>
-              <th>Empresa</th>
-              <th>Dirección</th>
-              <th>Servicios contratados</th>
-              <th>Valor histórico ganado</th>
-              <th>Solicitudes abiertas</th>
+              <th>Contacto</th>
+              <th>Tipo</th>
+              <th class="st-num">Cotizaciones abiertas</th>
+              <th class="st-num">Órdenes de servicio</th>
+              <th class="st-num">Contratado (sin IVA)</th>
               <th>Última actividad</th>
+              <th><span class="sr-only">Abrir</span></th>
             </tr>
           </thead>
           <tbody id="tabla-clientes-reales-body"></tbody>
@@ -264,28 +265,17 @@
   </section>
 
   <!-- ====== VISTA: PENDIENTES (Recompras + Alertas juntas) ====== -->
-  <section class="vista" id="vista-pendientes">
-    <h2 class="util-10">Pendientes</h2>
-    <p class="ayuda util-11">Aquí se juntan las <b>recompras sugeridas</b> (servicios recurrentes por vencer) y las <b>alertas y recordatorios</b>. Cada tarjeta indica de qué tipo es.</p>
-    <div class="pendientes-filtros">
-      <button type="button" class="activo" data-filtro-pendiente="todos">Todos</button>
-      <button type="button" data-filtro-pendiente="recompra">🔁 Recompras</button>
-      <button type="button" data-filtro-pendiente="alerta">⏰ Alertas</button>
-    </div>
-    <div class="lista-alertas" id="lista-pendientes"></div>
-  </section>
-
   <!-- ====== VISTA: RESULTADOS ====== -->
   <section class="vista" id="vista-resultados">
     <h2>Resultados comerciales</h2>
     <div class="filtros"><label>Desde <input type="date" id="res-desde"></label><label>Hasta <input type="date" id="res-hasta"></label><button class="btn btn-primario" id="res-aplicar">Consultar</button><button class="btn btn-outline" id="res-todo">Todo el historial</button><button class="btn btn-outline solo-admin" id="res-exportar">Exportar canales a Excel</button></div>
-    <p class="ayuda">Contactos nuevos: fecha de registro. Importe contratado: fecha acordada del servicio. Cada contacto y sus servicios se atribuyen a “Cómo se enteró de nosotros”. El importe contratado no equivale a cobros ni utilidad.</p>
+    <p class="ayuda">Contactos nuevos: fecha de registro. Importe contratado: fecha acordada del servicio. Cada contacto y sus servicios se atribuyen a “Cómo se enteró de nosotros”. El importe contratado no equivale a cobros ni utilidad. Los importes son sin IVA (la venta real); lo cobrado y los gastos sí incluyen IVA.</p>
     <p id="res-estado" role="status"></p><div class="res-grid" id="res-kpis"></div>
     <div class="solo-cobranza" id="res-dinero-periodo"></div>
-    <div class="res-section"><h3>¿Qué canales traen contactos y generan contrataciones?</h3><p class="ayuda">Conversión: contactos nuevos del periodo que ya han contratado al día de hoy / contactos nuevos del periodo. Las contrataciones pueden provenir de contactos registrados antes.</p><div class="tabla-scroll"><table class="tabla-resumen"><thead><tr><th>Canal de origen</th><th>Leads nuevos (contactos)</th><th>Convertidos a cliente</th><th>Conversión</th><th>Clientes con servicio</th><th>Servicios contratados</th><th>Importe contratado</th><th>Promedio por servicio</th><th>Propuestas abiertas</th><th>Importe abierto</th></tr></thead><tbody id="res-canales"></tbody></table></div></div>
-    <div class="res-two-col"><div class="res-section"><h3>Importe contratado por canal</h3><div id="res-dinero-canal" class="bar-chart"></div></div><div class="res-section"><h3>Contactos nuevos por canal</h3><div id="res-contactos-canal" class="bar-chart"></div></div></div>
+    <div class="res-section"><h3>¿Qué canales traen contactos y generan contrataciones?</h3><p class="ayuda">Conversión: contactos nuevos del periodo que ya han contratado al día de hoy / contactos nuevos del periodo. Las contrataciones pueden provenir de contactos registrados antes.</p><div class="tabla-scroll"><table class="tabla-resumen"><thead><tr><th>Canal de origen</th><th>Leads nuevos (contactos)</th><th>Convertidos a cliente</th><th>Conversión</th><th>Clientes con servicio</th><th>Servicios contratados</th><th>Importe contratado (sin IVA)</th><th>Promedio por servicio</th><th>Propuestas abiertas</th><th>Importe abierto (sin IVA)</th></tr></thead><tbody id="res-canales"></tbody></table></div></div>
+    <div class="res-two-col"><div class="res-section"><h3>Importe contratado por canal (sin IVA)</h3><div id="res-dinero-canal" class="bar-chart"></div></div><div class="res-section"><h3>Contactos nuevos por canal</h3><div id="res-contactos-canal" class="bar-chart"></div></div></div>
     <div id="res-kpis-extra" class="res-grid"></div>
-    <div class="res-section"><h3>Evolución mensual del importe contratado</h3><p class="ayuda">Por fecha acordada del servicio. Los meses intermedios sin contrataciones se muestran en cero. El rango seleccionado puede incluir meses parciales.</p><div id="res-tendencia"></div></div>
+    <div class="res-section"><h3>Evolución mensual del importe contratado (sin IVA)</h3><p class="ayuda">Por fecha acordada del servicio. Los meses intermedios sin contrataciones se muestran en cero. El rango seleccionado puede incluir meses parciales.</p><div id="res-tendencia"></div></div>
     <div class="res-two-col">
       <div class="res-section"><h3>Conversión por canal</h3><p class="ayuda">Contactos nuevos del periodo que ya contrataron / contactos nuevos. Compara también el volumen: 1 de 1 no es igual de representativo que 80 de 100.</p><div id="res-conversion" class="bar-chart"></div></div>
       <div class="res-section"><h3>¿Qué clientes generan más importe contratado?</h3><p class="ayuda">Los 10 primeros del periodo. El indicador de concentración muestra cuánto aportan los 3 principales al total.</p><div id="res-top-valor" class="bar-chart"></div></div>
@@ -347,11 +337,11 @@
 
   <!-- ====== VISTA: CUENTAS POR COBRAR Y POR PAGAR (admin y atención; por pagar solo admin) ====== -->
   <section class="vista solo-cobranza" id="vista-cuentas">
-    <h2 class="util-13">Cuentas</h2>
+    <h2 class="util-13" id="cuentas-titulo">Cuentas por cobrar</h2>
     <div class="cuentas-tarjetas" id="cuentas-tarjetas"></div>
-    <div class="cuentas-pestanas" role="tablist">
-      <button type="button" role="tab" class="activo" data-pestana="cobrar">Por cobrar</button>
-      <button type="button" role="tab" data-pestana="pagar">Por pagar</button>
+    <!-- Cuentas por cobrar y por pagar son secciones separadas del menú Finanzas; las pestañas solo existen en Por pagar. -->
+    <div class="cuentas-pestanas" role="tablist" id="cuentas-pestanas">
+      <button type="button" role="tab" data-pestana="pagar">Facturas y gastos</button>
       <button type="button" role="tab" data-pestana="proveedores">Proveedores</button>
     </div>
 
@@ -472,16 +462,7 @@
         <div class="ficha-meta" id="ficha-meta"></div>
       </div>
 
-      <div class="modal-section" data-plegable="seguimiento">
-        <div class="seccion-tit" id="registro-etapas-titulo">Seguimiento de esta cotización</div>
-        <div class="pipeline-track" id="pipeline-track">
-          <div class="pipeline-step" data-step="1"><span class="step-num">1</span>Datos</div>
-          <div class="pipeline-step" data-step="2"><span class="step-num">2</span>Cotización</div>
-          <div class="pipeline-step" data-step="3"><span class="step-num">3</span>Seguimiento</div>
-          <div class="pipeline-step" data-step="4"><span class="step-num">4</span>Cierre</div>
-        </div>
-      </div>
-
+      <!-- La etapa de una cotización se mueve solo en el Pipeline (tablero), no desde cada ficha. -->
       <div class="modal-section" data-plegable="datos-registro">
         <div class="seccion-tit" id="registro-datos-titulo">Datos de esta cotización</div>
         <p class="ayuda">Los cambios de esta sección afectan únicamente a este registro. Los datos de contacto se editan desde su ficha.</p>
@@ -498,13 +479,11 @@
           </div>
           <div class="campo-modal"><label>Valor del servicio (MXN)</label><input type="number" id="ed-valor" min="0" step="0.01" placeholder="0.00"></div>
           <div class="campo-modal"><label>Fecha de la cotización</label><input type="date" id="ed-fecha-cotizacion"></div>
-          <div class="campo-modal"><label>Fecha del servicio</label><input type="date" id="ed-fecha-servicio"></div>
+          <div class="campo-modal solo-orden"><label>Fecha acordada del servicio</label><input type="date" id="ed-fecha-servicio"></div>
           <div class="campo-modal">
             <label class="diseno-campo-checkbox"><input type="checkbox" id="ed-incluye-vigencia" checked> Incluir vigencia en la cotización</label>
           </div>
           <div class="campo-modal" id="wrap-vigencia-hasta"><label>Vigencia hasta</label><input type="date" id="ed-vigencia-hasta"></div>
-          <div class="campo-modal full"><label>Notas de la cotización</label><textarea id="ed-notas" rows="2" placeholder="Notas capturadas al registrar la cotización..."></textarea></div>
-          <div class="campo-modal"><label class="diseno-campo-checkbox"><input type="checkbox" id="ed-urgente"> 🔴 Solicitud urgente</label></div>
           <div class="campo-modal solo-orden"><label for="ed-equipo">Equipo</label><input type="text" id="ed-equipo" maxlength="200" placeholder="Ej. E-37-04"></div>
           <div class="campo-modal solo-orden"><label for="ed-operador">Operador(es)</label><input type="text" id="ed-operador" maxlength="300" placeholder="Nombre de quien ejecuta el servicio"></div>
           <div class="campo-modal full solo-orden"><label for="ed-observaciones">Observaciones de la orden</label><textarea id="ed-observaciones" rows="2" maxlength="3000" placeholder="Se imprimen en la orden de servicio; también puedes capturar lo que anotó el operador"></textarea></div>
@@ -514,26 +493,10 @@
           <span class="chip util-17">Fecha de creación: <b id="ed-created-at">—</b></span>
           <span class="chip util-17">Estatus de cotización: <b id="ed-estatus-actual">—</b></span>
         </div>
-        <div class="modal-section" id="seccion-encuesta" data-plegable="encuesta" hidden>
-          <div class="seccion-tit">Encuesta de calidad del servicio</div>
-          <p class="ayuda">Se imprime en la orden de servicio para que el cliente la conteste en papel; regístrala aquí cuando el técnico la traiga de vuelta. Se guarda con el mismo botón de "Guardar cambios" de abajo.</p>
-          <div class="form-grid-2">
-            <div class="campo-modal">
-              <label>Calificación del cliente</label>
-              <select id="ed-encuesta-calificacion">
-                <option value="">Sin registrar todavía</option>
-                <option value="4">Excelente</option>
-                <option value="3">Bueno</option>
-                <option value="2">Regular</option>
-                <option value="1">Malo</option>
-              </select>
-            </div>
-            <div class="campo-modal"><label>Comentario del cliente (opcional)</label><input type="text" id="ed-encuesta-comentario" placeholder="Lo que el cliente escribió o comentó..."></div>
-          </div>
-        </div>
+        <!-- La encuesta de calidad se contesta en Google Forms (QR impreso en la orden de servicio). -->
         <div class="btn-group">
           <span id="estado-guardado-registro" class="estado-guardado" role="status"></span>
-          <button class="btn btn-secundario" id="btn-guardar-ficha">Guardar cambios de este registro</button>
+          <button class="btn btn-secundario" id="btn-guardar-ficha" style="display:none">Guardar cambios de este registro</button>
           <button class="btn btn-ghost diseno-nav-usuarios" id="btn-recomprar" title="Crea otra orden de servicio con los mismos datos — útil para servicio recurrente">⧉ Duplicar esta orden de servicio</button>
           <button class="btn btn-outline diseno-nav-usuarios" id="btn-reabrir">↺ Reabrir cotización</button>
           <span id="btn-generar-cotizacion" hidden></span>
@@ -549,10 +512,15 @@
         <div id="cobranza-orden"></div>
       </div>
 
-      <div class="modal-section" data-plegable="observacion">
-        <div class="seccion-tit">Agregar observación o alerta</div>
+      <!-- Notas con fecha y la bitácora van juntas y dicen de qué registro son (no del contacto ni de sus otros servicios). -->
+      <div class="modal-section" data-plegable="bitacora">
+        <div class="seccion-tit" id="bitacora-titulo">Avisos y notas de este registro</div>
+        <label class="diseno-campo-checkbox aviso-urgente"><input type="checkbox" id="ed-urgente"> 🔴 Urgente <span class="ayuda">(se guarda al marcarlo y se ve en el Pipeline)</span></label>
+        <p class="ayuda" id="obs-ayuda">La nota se guarda solo en este registro, con fecha y quién la escribió.</p>
+        <p class="notas-iniciales" id="ed-notas-iniciales" hidden></p>
         <div class="obs-form">
-          <textarea id="obs-texto" placeholder="Escribe una observación..."></textarea>
+          <label class="sr-only" for="obs-texto">Nota para este registro</label>
+          <textarea id="obs-texto" placeholder="Escribe una nota sobre este registro..."></textarea>
           <div class="util-20">
             <label class="obs-check"><input type="checkbox" id="obs-es-alerta"> Es alerta / recordatorio</label>
             <div class="obs-fecha-rapida" id="obs-fecha-rapida">
@@ -561,20 +529,16 @@
               <button type="button" data-rapido="semana">En 1 semana</button>
             </div>
             <input type="datetime-local" id="obs-fecha">
-            <button class="btn btn-primario diseno-btn-agregar-obs" id="btn-agregar-obs">Agregar</button>
+            <button class="btn btn-primario diseno-btn-agregar-obs" id="btn-agregar-obs">Agregar nota</button>
           </div>
         </div>
-      </div>
-
-      <div class="modal-section" data-plegable="bitacora">
-        <div class="seccion-tit">Bitácora de actividad</div>
-        <p class="ayuda">Todo lo que le ha pasado a este registro: eventos automáticos del sistema y notas del equipo, de lo más reciente a lo más antiguo.</p>
+        <p class="ayuda">Abajo: todo lo que le ha pasado a este registro (eventos del sistema y notas del equipo), de lo más reciente a lo más antiguo.</p>
         <div id="bitacora-lista" class="bitacora-lista"></div>
       </div>
 
-      <div class="modal-section" data-plegable="historial-contacto">
-        <div class="seccion-tit">Historial comercial del contacto</div>
-        <p class="ayuda util-22">Cada fila tiene su propio número. Abrir otra fila cambia el registro que estás editando.</p>
+      <div class="modal-section" data-plegable="historial-contacto" data-plegado-defecto="1">
+        <div class="seccion-tit">Otros registros de este contacto (solo consulta)</div>
+        <p class="ayuda util-22">Lista de todas las cotizaciones y órdenes del contacto. Aquí no se escriben notas: abrir otra fila cambia el registro que estás editando.</p>
         <div class="servicios-list" id="ficha-anteriores"></div>
       </div>
 
@@ -743,7 +707,7 @@
     </div>
   </div>
 </div>
-<input type="file" id="importar-archivo" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" hidden>
+<input type="file" id="importar-archivo" accept=".xlsx,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv" hidden>
 
 <!-- ====== OVERLAY: PAGAR A PROVEEDOR ====== -->
 <div class="overlay" id="overlay-pago-prov">
@@ -781,17 +745,11 @@
           <label id="sn-label-valor">Costo del servicio (MXN, opcional)</label>
           <input type="number" id="sn-valor" min="0" step="0.01" placeholder="Si ya se conoce">
         </div>
-        <div class="campo">
-          <label id="sn-label-fecha">Fecha del servicio (opcional)</label>
+        <!-- La fecha del servicio es solo de la orden de servicio (una cotización todavía no tiene fecha acordada).
+             Notas, recordatorios y "urgente" se ponen después en Avisos y notas del registro. -->
+        <div class="campo" id="sn-campo-fecha">
+          <label id="sn-label-fecha">Fecha acordada del servicio</label>
           <input type="date" id="sn-fecha">
-        </div>
-        <div class="campo">
-          <label>Notas (opcional)</label>
-          <textarea id="sn-notas" rows="2"></textarea>
-        </div>
-        <div class="campo">
-          <label>&nbsp;</label>
-          <label class="diseno-campo-checkbox"><input type="checkbox" id="sn-urgente"> 🔴 Solicitud urgente</label>
         </div>
       </div>
       <div class="campo"><label for="sn-ubicacion">Ubicación de este servicio (puedes cambiar el domicilio propuesto)</label><input id="sn-ubicacion" type="text"></div>
@@ -801,7 +759,7 @@
         <div class="campo"><label for="sn-observaciones">Observaciones de la orden (opcional)</label><textarea id="sn-observaciones" rows="2" maxlength="3000"></textarea></div>
       </div>
       <div id="editor-nuevo-destino"></div><span id="estado-guardado-nuevo" class="estado-guardado" role="status"></span>
-      <button class="btn btn-primario diseno-btn-guardar-servicio-nuevo" id="btn-guardar-servicio-nuevo">Crear registro</button>
+      <button class="btn btn-primario diseno-btn-guardar-servicio-nuevo" id="btn-guardar-servicio-nuevo" style="display:none">Crear registro</button>
     </div>
   </div>
 </div>
@@ -810,12 +768,35 @@
 <div id="editor-cotizacion" hidden>
   <div class="seccion-tit" id="gc-titulo-contenido">Contenido de la cotización</div>
   <p class="ayuda" id="gc-ayuda-contenido">Edita servicios, descripciones e importes. Se guardan con esta cotización y se usan en la descarga.</p>
+  <!-- IVA: el valor real vive en #gc-iva-modo ('' = por definir, 'mas_iva', 'incluido', 'sin_iva'); las tres opciones lo eligen. -->
+  <div class="gc-iva" id="gc-iva">
+    <input type="hidden" id="gc-iva-modo">
+    <div class="gc-iva-opciones" role="radiogroup" aria-label="IVA de los importes">
+      <label class="gc-iva-opcion"><input type="radio" name="gc-iva-opcion" value="mas_iva"> <span>Más IVA 16 %</span></label>
+      <label class="gc-iva-opcion"><input type="radio" name="gc-iva-opcion" value="incluido"> <span>IVA incluido 16 %</span></label>
+      <label class="gc-iva-opcion"><input type="radio" name="gc-iva-opcion" value="sin_iva"> <span>Sin IVA</span></label>
+    </div>
+    <p class="ayuda" id="gc-iva-ayuda"></p>
+    <div class="gc-iva-aviso" id="gc-iva-aviso" hidden>
+      <span id="gc-iva-aviso-texto"></span>
+    </div>
+  </div>
   <div id="gc-items"></div><button type="button" class="btn btn-outline" id="btn-gc-agregar-servicio">+ Agregar servicio</button>
-  <p>Total: <b id="gc-total">$0.00</b></p>
-  <label><input type="radio" name="gc-formato" id="gc-formato-pdf" value="pdf" checked> PDF</label>
-  <label><input type="radio" name="gc-formato" value="word"> Word</label>
-  <button type="button" class="btn btn-primario" id="btn-gc-generar">Guardar y descargar cotización</button>
-  <button type="button" class="btn btn-verde" id="btn-generar-orden-servicio" hidden>Generar orden de servicio</button>
+  <table class="gc-totales" aria-label="Totales">
+    <tr id="gc-fila-subtotal"><th id="gc-etiqueta-subtotal">Subtotal</th><td id="gc-subtotal">$0.00</td></tr>
+    <tr id="gc-fila-iva"><th id="gc-etiqueta-iva">IVA 16%</th><td id="gc-iva-monto">$0.00</td></tr>
+    <tr class="gc-fila-total"><th id="gc-etiqueta-total">Total</th><td><b id="gc-total">$0.00</b></td></tr>
+  </table>
+</div>
+<!-- Única barra para guardar: solo "Guardar" y "Guardar y descargar" (y, en una cotización abierta,
+     "Convertir en orden de servicio", que es otra acción). Se coloca al final de la ventana o de la ficha. -->
+<div class="barra-acciones" id="barra-acciones" hidden>
+  <div class="barra-formato"><span>Descargar en:</span> <label><input type="radio" name="gc-formato" id="gc-formato-pdf" value="pdf" checked> PDF</label> <label><input type="radio" name="gc-formato" value="word"> Word</label></div>
+  <div class="barra-botones">
+    <button type="button" class="btn btn-secundario" id="btn-barra-guardar">Guardar</button>
+    <button type="button" class="btn btn-primario" id="btn-gc-generar">Guardar y descargar</button>
+  </div>
+  <button type="button" class="btn btn-verde" id="btn-generar-orden-servicio" hidden>🧾 Convertir en orden de servicio</button>
 </div>
 <!-- Librerías para generar el documento de cotización (PDF y Word) -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
@@ -825,15 +806,17 @@
 
 <div class="overlay" id="overlay-prospeccion"><div class="modal" style="max-width:920px"><div class="modal-header"><h2 id="pr-titulo">Establecimiento</h2><button class="close-btn" id="pr-cerrar" aria-label="Cerrar establecimiento">✕</button></div><div class="modal-body"><div class="modal-section"><p class="ayuda">Para investigar solo necesitas nombre, sector y ciudad o zona. Completa el teléfono cuando lo consigas. Guardar aquí no crea un cliente ni una cotización.</p><div class="form-grid-2">
 <div class="campo-modal"><label for="pr-nombre">Nombre del establecimiento o sucursal *</label><input id="pr-nombre" maxlength="500"></div><div class="campo-modal"><label for="pr-sector_id">Sector *</label><select id="pr-sector_id"></select></div><div class="campo-modal"><label for="pr-zona">Ciudad / zona *</label><input id="pr-zona" maxlength="500"></div><div class="campo-modal"><label for="pr-direccion">Domicilio (opcional)</label><input id="pr-direccion" maxlength="500"></div><div class="campo-modal"><label for="pr-telefono">Teléfono (opcional)</label><input id="pr-telefono" type="tel"></div><div class="campo-modal"><label for="pr-correo">Correo (opcional)</label><input id="pr-correo" type="email"></div><div class="campo-modal"><label for="pr-persona">Persona de contacto (opcional)</label><input id="pr-persona" maxlength="500"></div><div class="campo-modal"><label for="pr-cargo">Cargo / área (opcional)</label><input id="pr-cargo" maxlength="500"></div><div class="campo-modal"><label for="pr-fuente">Fuente de investigación / enlace (opcional)</label><input id="pr-fuente" maxlength="500"></div><div class="campo-modal"><label for="pr-estado">Estado del seguimiento</label><select id="pr-estado"></select></div><div class="campo-modal"><label for="pr-responsable_id">Responsable *</label><select id="pr-responsable_id"></select></div><div class="campo-modal"><label for="pr-proximo_contacto">Próxima fecha de contacto (opcional)</label><input id="pr-proximo_contacto" type="date"></div>
-</div><div class="campo-modal"><label for="pr-necesidades">Necesidades y notas de investigación</label><textarea id="pr-necesidades" rows="3" maxlength="5000"></textarea></div><p id="pr-aviso" role="status"></p><div class="btn-group"><button class="btn btn-primario" id="pr-guardar">Guardar establecimiento</button><button class="btn btn-outline" id="pr-vincular">Guardar y preparar cotización</button></div><p class="ayuda">Preparar cotización requiere teléfono. Si ya existe un contacto, podrás confirmar su vinculación. Los establecimientos pueden compartir contacto; su domicilio se propone en la nueva cotización.</p></div></div></div></div>
+</div><div class="campo-modal"><label for="pr-necesidades">Necesidades y notas de investigación</label><textarea id="pr-necesidades" rows="3" maxlength="5000"></textarea></div><p id="pr-aviso" role="status"></p><div class="btn-group"><button class="btn btn-primario" id="pr-guardar">Guardar establecimiento</button><button class="btn btn-outline" id="pr-vincular">Guardar y abrir contacto</button></div><p class="ayuda">Abrir contacto requiere teléfono. Si ya existe un contacto, podrás confirmar su vinculación. Desde su ficha usa Crear cotización o Crear orden de servicio; el domicilio del establecimiento se propone como ubicación.</p></div></div></div></div>
 
 
-<script src="ui.js"></script>
-<script src="servicios-tabla.js"></script>
-<script src="flujo.js"></script>
-<script src="cuentas.js"></script>
-<script src="finanzas.js"></script>
-<script src="app.js"></script>
-<script src="prospeccion.js"></script>
+<!-- ?v= obliga a los navegadores (sobre todo celulares) a tomar la versión nueva tras publicar. -->
+<script src="ui.js?v=iva1"></script>
+<script src="importes.js?v=iva1"></script>
+<script src="servicios-tabla.js?v=iva1"></script>
+<script src="flujo.js?v=iva1"></script>
+<script src="cuentas.js?v=iva1"></script>
+<script src="finanzas.js?v=iva1"></script>
+<script src="app.js?v=iva1"></script>
+<script src="prospeccion.js?v=iva1"></script>
 </body>
 </html>

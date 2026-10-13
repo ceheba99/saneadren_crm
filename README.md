@@ -8,15 +8,25 @@
 - **Cotización vs. orden de servicio**:
   - *Cotización* (folio `COT-`): se crea desde "Nueva cotización"; se exporta como propuesta, se descarta o se convierte en orden con "Generar orden de servicio". Las cotizaciones **no** se duplican.
   - *Orden de servicio* (folio `OS-`): sale de una cotización aceptada, o se registra directo cuando el cliente ya confirmó. Solo las órdenes se pueden **duplicar** (servicio recurrente): se copian partidas, importe, ubicación y notas, y solo se pide la nueva fecha. Una orden directa o duplicada no muestra folio de cotización ni se puede "reabrir" como cotización.
+- **IVA**: en el contenido de cada cotización u orden se elige una de tres opciones: **Más IVA 16 %**, **IVA incluido 16 %** o **Sin IVA**.
+  - *Más IVA* (así empieza todo registro nuevo): los importes son sin IVA y se suma el 16 %. Ejemplo: 1,500 → IVA 240 → total 1,740.
+  - *IVA incluido*: los importes ya traen IVA y el sistema lo desglosa. Ejemplo: 1,160 → subtotal 1,000 + IVA 160.
+  - El editor, el PDF y el Word muestran Subtotal, IVA y Total; el importe con letra es el total. El cálculo vive en `public/importes.js` (lo usan el navegador y el servidor, en centavos).
+  - La cuenta por cobrar de una orden es subtotal + IVA, salvo que se capture el **total del CFDI** (por retenciones o centavos), que manda; si no coinciden, la orden lo avisa.
+  - Los registros anteriores al IVA quedan **"IVA por definir"** y no cambian de saldo ni de reportes. Una cotización abierta pide indicarlo al volver a guardarla; en una orden lo indican administración o atención (igual que el importe).
+  - Resultados y el tablero suman importes **sin IVA** (la venta real); lo cobrado y los gastos sí incluyen IVA. La plantilla de Excel de cuentas por cobrar tiene una columna opcional "IVA del importe".
+  - *Sin IVA*: el cliente paga exactamente lo capturado (1,000 → 1,000), sin desglose; se guarda con tasa 0. Conviene confirmarlo con el contador.
+  - La tasa de IVA es 16 %. Otra tasa (p. ej. 8 % fronterizo) se habilita en `TASAS_PERMITIDAS` de `public/importes.js` cuando el contador lo confirme.
 - **Membretes**: `public/membrete-cotizacion.png` y `public/membrete-orden-servicio.png` se generan con `node herramientas/membretes/servidor.js` → http://localhost:3301 → "Guardar en public/". Los datos de contacto y textos están al inicio de `herramientas/membretes/membretes.html`.
 - **Cuentas y seguridad**: el personal se registra solo con correo `@saneadren.com.mx` (debe confirmar el correo antes de entrar), puede restablecer su contraseña por correo y se le pide cambiar contraseñas débiles heredadas (p. ej. `1234`) al iniciar sesión. Ver "Configuración de correo" abajo.
-- **Cuentas por cobrar y por pagar** (pestaña **Cuentas**, admin y atención):
-  - *Por cobrar*: cada orden de servicio es una cuenta por cobrar. Saldo = total (o total facturado con IVA, si se captura) − pagos. Antigüedad (por vencer, 1-15, 16-30, 31-60, +60), vista por cliente u orden, recordatorio por WhatsApp, días de crédito por cliente y por orden, folio y fecha de factura CFDI (emitida fuera del sistema).
+- **Cuentas por cobrar y por pagar** (menú **Finanzas**, dos secciones separadas: *Cuentas por cobrar* y *Cuentas por pagar*, esta última con sus proveedores):
+  - *Por cobrar*: cada orden de servicio es una cuenta por cobrar. Saldo = total de la orden con IVA (o el total del CFDI, si se captura) − pagos. Antigüedad (por vencer, 1-15, 16-30, 31-60, +60), vista por cliente u orden, recordatorio por WhatsApp, días de crédito por cliente y por orden, folio y fecha de factura CFDI (emitida fuera del sistema).
   - Los pagos se registran desde la lista o desde la ficha de la orden. Ventas y técnicos pueden registrarlos en campo, pero quedan **por confirmar** hasta que el admin los valida. Los pagos **no se borran**: el admin los cancela con motivo y queda en la bitácora.
   - *Revisión inicial*: las órdenes que ya existían al instalar el módulo no cuentan como deuda hasta que el admin indica cuáles ya se cobraron.
   - *Por pagar* y *Proveedores* (solo admin): facturas o gastos de proveedores con vencimiento según su crédito, gasto de contado ("ya lo pagué"), pagos parciales, agrupado por vencidas / esta semana / próxima semana, y relación opcional con una orden y un equipo.
-  - Inicio muestra el bloque **Dinero** (te deben, vencido, por confirmar, pagar esta semana).
+  - Inicio muestra el bloque **Finanzas** (te deben, vencido, por confirmar, pagar esta semana).
   - **Carga masiva con plantillas de Excel** (solo admin): en *Por cobrar* y *Por pagar*, "Descargar plantilla" baja un `.xlsx` con hoja de instrucciones, listas desplegables (servicios del catálogo, categorías, métodos de pago) y validaciones. Se llena un renglón por registro y se usa "Subir plantilla": primero aparece una vista previa con los errores por renglón; **si hay un solo error no se importa nada**. Por cobrar crea (o reutiliza por teléfono) el cliente y una orden de servicio con su saldo y lo ya pagado; por pagar crea el proveedor si no existe y la factura o gasto. Subir dos veces el mismo archivo se detecta como duplicado. Máximo 1,000 renglones por archivo.
+  - *Plantilla de cuentas por cobrar*: mismo formato que la hoja de cobranza (SERIE, FOLIO, FECHA, NOMBRE, M,P, SUBTOTAL, IVA, TOTAL, CREDITO, FECHA VENCE, DIAS VENCIDOS, OS, STATUS, PAGO PROGRAMADO, FECHA PAGO, CP, A/C, FLUJO, OBSERVACIONES; opcionales TELÉFONO, SERVICIO y DIRECCIÓN). Se puede subir el .xlsx de la plantilla o el CSV de cobranza tal cual (el título de arriba y el renglón de totales se ignoran). El cliente se busca por nombre; PAGADO registra el pago (A/C o el total) con su fecha, complemento y banco; CANCELADO se omite. Los clientes nuevos se crean sin teléfono: agrégalo en su ficha antes de cotizarles.
 - **Permisos**:
   | Acción | Todos | Solo admin |
   |---|---|---|
@@ -33,7 +43,8 @@
   | Ajustes o descuentos a una cuenta y revisión inicial | | ✔ |
   | Borrar cotizaciones u órdenes (sin pagos) | | ✔ |
   El servidor valida los permisos de cada acción de la tabla. Ojo: las pantallas de trabajo (contactos, cotizaciones) muestran sus datos a todos los usuarios con sesión, así que ocultar "Exportar a Excel" evita la descarga masiva con un clic, pero no impide que alguien copie lo que ve.
-- **Vista de alertas**: todas las alertas vencidas o de hoy, con acceso directo a la ficha del lead y botón para resolverlas.
+- **Inicio = pendientes**: avisos y recordatorios vencidos o de hoy, cotizaciones sin movimiento y recompras, con acceso directo a cada registro (ya no hay una pestaña Pendientes aparte).
+- **Flujo cotización vs. orden**: la cotización no lleva fecha de servicio; al convertirla en orden se pide la fecha acordada. Notas, recordatorios y "urgente" van en *Avisos y notas* de cada cotización u orden.
 - **Filtros**: por responsable, por estatus (abierto/ganado/perdido) y búsqueda por nombre o teléfono.
 
 ## Requisitos
@@ -66,6 +77,7 @@ El correo de saneadren.com.mx está en **Google Workspace**. Copia `.env.example
 | `CORREO_REMITENTE` | `Saneadren CRM <servicios@saneadren.com.mx>` | Remitente visible. |
 | `DOMINIO_CORREO` | `saneadren.com.mx` | Único dominio que puede registrarse (valor por defecto). |
 | `USUARIO_PRUEBA_NOMBRE` / `USUARIO_PRUEBA_PASSWORD` | `Karla` / (la contraseña) | Opcional: usuario de pruebas que se crea solo al arrancar (útil en Render sin disco, donde la base se borra en cada despliegue). `USUARIO_PRUEBA_ROL` (ventas por defecto) y `USUARIO_PRUEBA_CORREO` son opcionales. |
+| `USUARIO_2_PASSWORD` | (la contraseña) | Opcional: crea a **Luis Perea** al arrancar. `USUARIO_2_NOMBRE` (Luis Perea por defecto), `USUARIO_2_ROL` (ventas por defecto) y `USUARIO_2_CORREO` son opcionales. |
 
 Sin `SMTP_HOST` los correos **no se envían**: se imprimen en la consola del servidor con su enlace (útil para probar). Nunca guardes `SMTP_PASS` en el repositorio.
 

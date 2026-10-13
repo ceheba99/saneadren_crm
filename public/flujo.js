@@ -4,9 +4,9 @@ const FlujoCRM = (() => {
   const baselines = new Map();
   const listasGuardadas = new Map();
   const campos = {
-    'overlay-ficha':'#gc-items input,#gc-items select,#gc-items textarea,#ed-direccion,#ed-canal,#ed-servicio,#ed-responsable,#ed-valor,#ed-fecha-servicio,#ed-fecha-cotizacion,#ed-incluye-vigencia,#ed-vigencia-hasta,#ed-notas,#ed-urgente,#ed-encuesta-calificacion,#ed-encuesta-comentario,#ed-equipo,#ed-operador,#ed-observaciones',
+    'overlay-ficha':'#gc-iva-modo,#gc-items input,#gc-items select,#gc-items textarea,#ed-direccion,#ed-canal,#ed-servicio,#ed-responsable,#ed-valor,#ed-fecha-servicio,#ed-fecha-cotizacion,#ed-incluye-vigencia,#ed-vigencia-hasta,#ed-equipo,#ed-operador,#ed-observaciones',
     'overlay-ficha-cliente':'#fc-ed-telefono,#fc-ed-telefono-alterno,#fc-ed-nombre,#fc-ed-correo,#fc-ed-empresa,#fc-ed-rfc,#fc-ed-direccion,#fc-ed-giro,#fc-ed-notas-generales',
-    'overlay-servicio-nuevo':'#gc-items input,#gc-items select,#gc-items textarea,#sn-servicio,#sn-valor,#sn-fecha,#sn-notas,#sn-ubicacion,#sn-urgente,#sn-equipo,#sn-operador,#sn-observaciones',
+    'overlay-servicio-nuevo':'#gc-iva-modo,#gc-items input,#gc-items select,#gc-items textarea,#sn-servicio,#sn-valor,#sn-fecha,#sn-ubicacion,#sn-equipo,#sn-operador,#sn-observaciones',
 
   };
   const estado = s => ({abierto:'Cotización abierta',ganado:'Servicio contratado',perdido:'Cotización no aceptada'}[s]||s);
@@ -55,14 +55,16 @@ const FlujoCRM = (() => {
     $('ed-estatus-actual').textContent=estado(lead.estatus);
     $('btn-generar-cotizacion').textContent='Exportar propuesta PDF / Word';
     const btnOrden=$('btn-generar-orden-servicio');
-    if(btnOrden)btnOrden.textContent='Generar orden de servicio';
+    if(btnOrden)btnOrden.textContent='🧾 Convertir en orden de servicio';
     $('ed-valor').closest('.campo-modal').querySelector('label').textContent=contratado?'Importe contratado (MXN)':'Importe propuesto (MXN)';
-    $('ed-notas').closest('.campo-modal').querySelector('label').textContent=contratado?'Notas de este servicio':'Notas de esta cotización';
+    // Las notas con fecha dicen a qué registro pertenecen, para no confundirlas con el contacto.
+    const folio=contratado?folioOrdenServicio(lead):folioCotizacion(lead),doc=contratado?'la orden':'la cotización';
+    $('bitacora-titulo').textContent=`Avisos y notas de ${doc} ${folio}`;
+    $('obs-ayuda').textContent=`La nota se guarda solo en ${doc} ${folio}, con fecha y quién la escribió. No se agrega al contacto ni a sus otros servicios.`;
+    $('obs-texto').placeholder=`Escribe una nota sobre ${doc} ${folio}...`;
     $('ed-fecha-cotizacion').closest('.campo-modal').hidden=contratado;
     $('ed-incluye-vigencia').closest('.campo-modal').hidden=contratado;
     $('wrap-vigencia-hasta').hidden=contratado || !$('ed-incluye-vigencia').checked;
-    $('registro-etapas-titulo').closest('.modal-section').hidden=lead.estatus!=='abierto';
-    $('seccion-encuesta').hidden=!contratado;
     rotularEditorContenido(contratado);
     document.querySelectorAll('#overlay-ficha .solo-orden').forEach(e=>e.hidden=!contratado);
     const c=contacto||{id:lead.cliente_id,nombre:lead.nombre,telefono:lead.telefono,empresa_contacto:lead.empresa_contacto};
@@ -70,7 +72,13 @@ const FlujoCRM = (() => {
   }
   async function nuevoRegistro(id,modo,prefill){
     if(!await permitirCambio('overlay-ficha') || !await permitirCambio('overlay-ficha-cliente') || !await permitirCambio('overlay-servicio-nuevo'))return;
-    try { CLIENTE_DUP=await api('/clientes/'+id).then(r=>r.json()); $('overlay-ficha').classList.remove('mostrar'); abrirServicioNuevo(modo,prefill); }
+    try {
+      CLIENTE_DUP=await api('/clientes/'+id).then(r=>r.json());
+      // Si se abrió desde la ficha de una orden (p. ej. Duplicar), al terminar se regresa a esa orden:
+      // la ficha se cierra porque el editor de partidas pasa a la ventana nueva.
+      REGRESO_FICHA=$('overlay-ficha').classList.contains('mostrar')?LEAD_ACTUAL?.id??null:null;
+      $('overlay-ficha').classList.remove('mostrar'); abrirServicioNuevo(modo,prefill);
+    }
     catch(err){toast('No se pudo abrir el contacto: '+err.message);}
   }
   document.addEventListener('click',e=>{if(e.target.closest('#btn-gc-agregar-servicio,.gc-quitar')){const id=e.target.closest('.overlay')?.id;if(campos[id])setTimeout(()=>actualizarAviso(id),0);}},true);
@@ -102,10 +110,21 @@ const FlujoCRM = (() => {
       const id=r.status===409?c.cliente_id:c.id;
       if(r.status===409)toast('Usaremos el contacto existente; sus datos se conservan.');
       else toast('Contacto guardado.');
-      limpiarFormAlta();cambiarVista('clientes');await abrirFichaCliente(id);
-      if(cotizar)await nuevoRegistro(id,'pipeline');
+      limpiarFormAlta();
+      // Guardar contacto solo guarda. Para cotizar se abre su ficha: ahí están Crear cotización y
+      // Crear orden de servicio, la única forma de crear registros (evita rutas paralelas).
+      if(cotizar)await irACotizar(id);else $('in-telefono').focus();
     }catch(err){toast(err.message);}finally{botones.forEach(b=>b.disabled=false);}
   }
   $('btn-guardar-contacto-nuevo').addEventListener('click',()=>crearContacto(false));
-  return {crearContacto,estado,presentarContacto,presentarRegistro,nuevoRegistro,marcarGuardado,permitirCambio};
+  // Abre la ficha del contacto y lleva la vista a los botones Crear cotización / Crear orden de servicio.
+  async function irACotizar(id){
+    cambiarVista('clientes');await abrirFichaCliente(id);
+    const sec=document.querySelector('#overlay-ficha-cliente [data-plegable="registros-contacto"]');
+    if(sec?.classList.contains('plegada'))sec.querySelector('.plegable-cabecera')?.click();
+    const btn=$('btn-contacto-cotizar');btn.focus({preventScroll:true});
+    // Tras abrir la ventana (y cargar su contenido) se centra el botón, sin quedar bajo el encabezado.
+    setTimeout(()=>btn.scrollIntoView({block:'center',behavior:'smooth'}),350);
+  }
+  return {crearContacto,irACotizar,estado,presentarContacto,presentarRegistro,nuevoRegistro,marcarGuardado,permitirCambio};
 })();

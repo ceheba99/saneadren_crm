@@ -14,7 +14,7 @@ let salida = '';
 const srv = spawn(process.execPath, [path.join(__dirname, '..', 'server', 'index.js')], {
   env: { ...process.env, PORT: PUERTO, DB_PATH: path.join(dir, 'sim.db'), APP_URL: 'http://localhost:' + PUERTO,
     ADMIN_USUARIO: ADMIN.usuario, ADMIN_CORREO: ADMIN.correo, ADMIN_PASSWORD: ADMIN.password, SMTP_HOST: '',
-    USUARIO_PRUEBA_NOMBRE: 'Karla Prueba', USUARIO_PRUEBA_PASSWORD: 'Pruebas-Campo-31', USUARIO_PRUEBA_ROL: 'tecnico' }
+    USUARIO_PRUEBA_NOMBRE: 'Karla Prueba', USUARIO_PRUEBA_PASSWORD: 'Pruebas-Campo-31', USUARIO_PRUEBA_ROL: 'tecnico', USUARIO_2_PASSWORD: 'Cobranza-Luis-2026' }
 });
 srv.stdout.on('data', d => salida += d); srv.stderr.on('data', d => salida += d);
 
@@ -43,6 +43,8 @@ const espera = ms => new Promise(r => setTimeout(r, ms));
   ok(salida.includes('[usuario de prueba] Creado "Karla Prueba" con rol tecnico'), 'el usuario de prueba se crea desde variables de entorno');
   [s, j] = await pedir('POST', '/login', null, { nombre: 'Karla Prueba', password: 'Pruebas-Campo-31' });
   ok(s === 200 && j.rol === 'tecnico' && !j.cambiar_password, 'el usuario de prueba entra con su rol', j);
+  [s, j] = await pedir('POST', '/login', null, { nombre: 'Luis Perea', password: 'Cobranza-Luis-2026' });
+  ok(s === 200 && j.nombre === 'Luis Perea' && j.rol === 'ventas', 'Luis Perea se crea al definir USUARIO_2_PASSWORD (ventas por defecto)', j);
 
   seccion('2. Registro de personal y recuperación de contraseña');
   [s] = await pedir('POST', '/registro', null, { nombre: 'Laura Pérez', correo: 'laura@sanedaren.com.mx', password: 'Desazolve-2026' });
@@ -243,27 +245,47 @@ const espera = ms => new Promise(r => setTimeout(r, ms));
   ok(bloqueoPorFallo, 'muchos intentos fallidos con usuarios distintos sí se bloquean por IP');
 
   seccion('10. Carga masiva desde plantilla de Excel');
+  // Renglones con el formato de la hoja de cobranza de Saneadren (una factura por renglón).
   const filasCxc = [
-    { fila: 2, telefono: '442 555 0101', nombre: 'Hotel Importado', empresa: 'Hotel Centro', direccion: 'Av. Zaragoza 1', servicio: servicios[0].nombre, fecha_servicio: '2026-09-01', importe: 5000, dias_credito: 30, factura_folio: 'B-1', factura_fecha: '2026-09-02', factura_total: 5800, pagado: 800 },
-    { fila: 3, telefono: '4425550101', nombre: '', direccion: 'Bodega 2', servicio: servicios[0].nombre.toUpperCase(), fecha_servicio: '2026-09-10', importe: '1,250.50' },
+    { fila: 3, serie: 'QR', folio: '2201', fecha: '2025-02-20', nombre: 'CORPORATIVO DE SERVICIOS AMBIENTALES', metodo_pago: 'PPD', subtotal: '491,985.00', iva: '$78,717.60', total: '$570,702.60', credito: 30, fecha_vence: '2025-03-22', dias_vencidos: 'PAGADO', status: 'PAGADO', fecha_pago: '17-July', cp: 'CP 1105', abonado: '491,985.00', flujo: 'QRO', observaciones: 'BANORTE' },
+    { fila: 4, serie: 'QR', folio: '2484', fecha: '2025-06-25', nombre: 'Corporativo de Servicios Ambientales', metodo_pago: 'PPD', subtotal: '290,000.00', iva: '$46,400.00', total: '$336,400.00', credito: 30, fecha_vence: '2025-07-25', dias_vencidos: '-445', status: 'PENDIENTE 2025' },
+    { fila: 5, serie: 'QR', folio: '2786', fecha: '2026-01-12', nombre: 'PREMIUM RESTAURANT BRANDS', metodo_pago: 'PUE', subtotal: '$2150.00', iva: '$344.00', total: '$2,494.00', credito: 30, status: 'PAGADO', fecha_pago: '19-February', cp: '990', abonado: '2,494.00', flujo: 'MX', observaciones: 'SANTANDER' },
+    { fila: 6, serie: 'QR', folio: '2763', fecha: '2025-12-03', nombre: 'YUSEN LOGISTICS (MEXICO)', metodo_pago: 'PPD', subtotal: '1,850,000.00', iva: '296,000.00', status: 'CANCELADO', fecha_pago: '15-ENERO-26 CANCELADO con ACEPTACION' },
+    { fila: 9, iva: '5,376,182.40', total: '36,831,322.40', abonado: '35,987,463.00' }, // renglón de totales
   ];
   [s] = await pedir('POST', '/finanzas/importar/cxc?simular=1', L, { filas: filasCxc }); ok(s === 200, 'ventas SÍ puede importar plantillas (simulación)');
-  [s, j] = await pedir('POST', '/finanzas/importar/cxc?simular=1', A, { filas: [...filasCxc, { fila: 4, telefono: '123', servicio: 'No existe', fecha_servicio: '31/02/2026', importe: -5 }] });
-  ok(s === 200 && j.errores.length === 1 && j.errores[0].fila === 4 && j.errores[0].errores.length >= 4, 'la simulación marca los errores por renglón', j.errores);
-  [s, j] = await pedir('POST', '/finanzas/importar/cxc', A, { filas: [...filasCxc, { fila: 4, telefono: '123' }] });
+  [s, j] = await pedir('POST', '/finanzas/importar/cxc?simular=1', A, { filas: [...filasCxc, { fila: 10, nombre: 'Con Errores', fecha: '2026-02-31', subtotal: -5, status: 'RARO', telefono: '123' }] });
+  ok(s === 200 && j.errores.length === 1 && j.errores[0].fila === 10 && j.errores[0].errores.length >= 4, 'la simulación marca los errores por renglón', j.errores);
+  [s, j] = await pedir('POST', '/finanzas/importar/cxc', A, { filas: [...filasCxc, { fila: 10, nombre: 'Con Errores' }] });
   ok(j.importadas === 0, 'con un renglón con error no se importa nada (todo o nada)');
-  [s, j] = await pedir('GET', '/finanzas/cartera?q=Hotel Importado', A);
+  [s, j] = await pedir('GET', '/finanzas/cartera?filtro=todas&q=CORPORATIVO DE SERVICIOS', A);
   ok(!j.length, 'tras el intento fallido no quedó nada guardado');
   [s, j] = await pedir('POST', '/finanzas/importar/cxc?simular=1', A, { filas: filasCxc });
-  ok(s === 200 && !j.errores.length && j.resumen[0].cliente_nuevo === true, 'simulación correcta: avisa que el cliente es nuevo', j);
+  ok(s === 200 && !j.errores.length && j.omitidas === 2 && j.resumen[0].cliente_nuevo === true && j.resumen[1].cliente_nuevo === false
+    && /cancelada/.test(j.resumen[3].omitida) && /totales/.test(j.resumen[4].omitida), 'simulación: cliente nuevo una sola vez; cancelada y totales se omiten', j);
   [s, j] = await pedir('POST', '/finanzas/importar/cxc', A, { filas: filasCxc });
-  ok(s === 201 && j.importadas === 2, 'se importan 2 órdenes', j);
-  [s, j] = await pedir('GET', '/finanzas/cartera?vista=orden&filtro=todas&q=Hotel Importado', A);
-  const imp = j.find(c => c.factura_folio === 'B-1');
-  ok(j.length === 2 && imp && imp.total === 5800 && imp.cobrado === 800 && imp.saldo === 5000 && imp.vence === '2026-10-02', 'saldos, factura y vencimiento importados correctamente', j);
-  ok(j.every(c => c.cliente_id === j[0].cliente_id), 'los dos renglones con el mismo teléfono usan un solo cliente');
+  ok(s === 201 && j.importadas === 3 && j.omitidas === 2, 'se importan 3 facturas (2 omitidas)', j);
+  [s, j] = await pedir('GET', '/finanzas/cartera?vista=orden&filtro=todas&q=CORPORATIVO DE SERVICIOS', A);
+  const imp = j.find(c => c.factura_folio === 'QR-2201');
+  ok(j.length === 2 && imp && imp.total === 570702.6 && imp.cobrado === 491985 && imp.saldo === 78717.6 && imp.vence === '2025-03-22' && imp.iva_modo === 'mas_iva',
+    'pago parcial: factura de $570,702.60 con $491,985 cobrados deja $78,717.60 de saldo', j);
+  ok(j.every(c => c.cliente_id === j[0].cliente_id), 'el mismo cliente (sin importar mayúsculas) se usa en las dos facturas');
+  // Cliente importado sin teléfono: puede guardar sus demás datos; el RFC se valida.
+  [s, j] = await pedir('PUT', '/clientes/' + imp.cliente_id, A, { telefono: '', nombre: 'CORPORATIVO DE SERVICIOS AMBIENTALES', rfc: 'csa010101ab1' });
+  ok(s === 200 && j.rfc === 'CSA010101AB1' && j.telefono === '', 'un cliente sin teléfono guarda su RFC (en mayúsculas) sin exigir teléfono', j);
+  [s, j] = await pedir('PUT', '/clientes/' + imp.cliente_id, A, { rfc: 'abc' });
+  ok(s === 400 && /RFC/.test(j.error), 'un RFC inválido se rechaza', j);
+  [s, j] = await pedir('POST', '/finanzas/proveedores', A, { nombre: 'Proveedor RFC Malo', rfc: '123' });
+  ok(s === 400 && /RFC/.test(j.error), 'el RFC de un proveedor también se valida', j);
+  [s, j] = await pedir('GET', '/leads/' + imp.lead_id + '/cobros', A);
+  ok(j.cobros.length === 1 && j.cobros[0].fecha === '2025-07-17' && j.cobros[0].referencia === 'CP 1105 · BANORTE' && j.cobros[0].metodo === 'transferencia',
+    'el pago queda con su fecha (17-July → 2025-07-17), complemento y banco', j.cobros);
+  [s, j] = await pedir('GET', '/finanzas/cartera?vista=orden&filtro=todas&q=PREMIUM RESTAURANT', A);
+  ok(j.length === 1 && j[0].estado === 'pagada' && j[0].total === 2494, 'la factura PAGADO queda pagada', j);
+  [s, j] = await pedir('GET', '/leads/' + j[0].lead_id + '/cobros', A);
+  ok(j.cobros[0]?.fecha === '2026-02-19', 'fecha de pago sin año (19-February) toma el año correcto', j.cobros);
   [s, j] = await pedir('POST', '/finanzas/importar/cxc?simular=1', A, { filas: filasCxc });
-  ok(j.errores.length === 2 && /ya se importó/.test(j.errores[0].errores.join()), 'subir el mismo archivo otra vez se detecta como duplicado', j.errores);
+  ok(j.errores.length === 3 && /ya se importó/.test(j.errores[0].errores.join()), 'subir el mismo archivo otra vez se detecta como duplicado', j.errores);
 
   const filasCxp = [
     { fila: 2, proveedor: 'Refaccionaria Vactor', categoria: 'Refacciones y mantenimiento', concepto: 'Manguera', factura_folio: 'R-10', fecha_documento: '2026-10-01', total: 3000, pagado: 1000, metodo: 'Efectivo', equipo: 'E-37-04' },
@@ -290,23 +312,135 @@ const espera = ms => new Promise(r => setTimeout(r, ms));
   ok(j.resumen[0].proveedor_nuevo === false && j.errores.some(e => /ya está registrada/.test(e.errores.join())), 'proveedor con acentos y mayúsculas distintas se reconoce (y su factura repetida también)', j);
   [s, j] = await pedir('POST', '/finanzas/proveedores', A, { nombre: 'DISPOSICION DEL BAJIO' });
   ok(s === 409, 'tampoco se puede dar de alta a mano el mismo proveedor sin acentos');
-  [s, j] = await pedir('POST', '/finanzas/importar/cxc?simular=1', A, { filas: [{ fila: 2, telefono: '4429990001', nombre: 'Coma Decimal', direccion: 'x', servicio: servicios[0].nombre, fecha_servicio: '2026-09-01', importe: '3500,50' }] });
+  [s, j] = await pedir('POST', '/finanzas/importar/cxc?simular=1', A, { filas: [{ fila: 2, nombre: 'Coma Decimal', fecha: '2026-09-01', subtotal: '3500,50' }] });
   ok(j.errores.length === 1 && /formato no válido/.test(j.errores[0].errores.join()), '"3500,50" (coma decimal) se rechaza en vez de guardarse como $350,050', j.errores);
-  [s, j] = await pedir('POST', '/finanzas/importar/cxc?simular=1', A, { filas: [{ fila: 2, telefono: '4429990001', nombre: 'Error Excel', direccion: 'x', servicio: servicios[0].nombre, fecha_servicio: '2026-09-01', importe: 1000, pagado: '#ERROR_EXCEL:#N/A' }] });
+  [s, j] = await pedir('POST', '/finanzas/importar/cxc?simular=1', A, { filas: [{ fila: 2, nombre: 'Error Excel', fecha: '2026-09-01', subtotal: 1000, abonado: '#ERROR_EXCEL:#N/A' }] });
   ok(j.errores.length === 1 && /error de Excel \(#N\/A\)/.test(j.errores[0].errores.join()), 'una celda con #N/A se reporta como error (no como vacía)', j.errores);
   [s, j] = await pedir('POST', '/finanzas/importar/cxc', A, { filas: [
-    { fila: 2, telefono: '4429990002', nombre: 'Sucursales SA', direccion: 'Sucursal Norte', servicio: servicios[0].nombre, fecha_servicio: '2026-10-03', importe: 2000, factura_folio: 'S-1', pagado: 2000 },
-    { fila: 3, telefono: '4429990002', direccion: 'Sucursal Sur', servicio: servicios[0].nombre, fecha_servicio: '2026-10-03', importe: 2000, factura_folio: 'S-2' }] });
-  ok(s === 201 && j.importadas === 2, 'dos sucursales con el mismo servicio, fecha e importe (distinta factura) se importan', j);
+    { fila: 2, serie: 'S', folio: '1', nombre: 'Sucursales SA', fecha: '2026-10-03', subtotal: 2000, status: 'PAGADO', fecha_pago: '2026-10-03', direccion: 'Sucursal Norte' },
+    { fila: 3, serie: 'S', folio: '2', nombre: 'SUCURSALES SA', fecha: '2026-10-03', subtotal: 2000, direccion: 'Sucursal Sur', telefono: '4429990002' }] });
+  ok(s === 201 && j.importadas === 2, 'dos facturas del mismo cliente, fecha e importe (distinto folio) se importan', j);
   [s, j] = await pedir('GET', '/finanzas/periodo?desde=2026-10-03&hasta=2026-10-03', A);
-  ok(j.cobrado >= 2000, 'lo "ya pagado" importado cuenta como cobrado en Resultados', j);
+  ok(j.cobrado >= 2320, 'lo cobrado importado (PAGADO sin A/C = total con IVA) cuenta en Resultados', j);
   [s, j] = await pedir('POST', '/finanzas/importar/cxp?simular=1', A, { filas: [null] });
   ok(s === 400, 'un renglón inválido responde 400 (no tumba el servidor)');
   const mil = Array.from({ length: 1000 }, (_, i) => ({ fila: i + 2, proveedor: 'Proveedor de prueba con nombre largo para llenar', categoria: 'Otro', concepto: 'Concepto de prueba bastante descriptivo número ' + i, factura_folio: 'MIL-' + i, fecha_documento: '2026-10-01', total: 100 + i, notas: 'n'.repeat(400) }));
   [s, j] = await pedir('POST', '/finanzas/importar/cxp?simular=1', A, { filas: mil });
   ok(s === 200 && j.total === 1000 && !j.errores.length, '1,000 renglones (más de 1 MB) se procesan sin error interno', { s, total: j.total, err: j.error });
 
-  seccion('11. Seguridad general');
+  seccion('11. IVA');
+  [s, j] = await pedir('POST', '/contactos', L, { nombre: 'Restaurante IVA', telefono: '4427770001', direccion: 'Calle IVA 16', canal_origen_id: canales[0].id });
+  const clienteIva = j.id;
+  const part = importe => JSON.stringify([{ servicio: servicios[0].nombre, leyenda: 'Servicio con IVA', importe }]);
+  const altaIva = (cuerpo, token = L) => pedir('POST', '/leads', token, { cliente_id: clienteIva, direccion: 'Calle IVA 16', responsable_id: usuarioL.id, forzar_duplicado: true, ...cuerpo });
+  const cuenta = async id => (await pedir('GET', '/leads/' + id + '/cobros', A))[1].cuenta;
+  const verLead = async id => (await pedir('GET', '/leads/' + id, A))[1];
+
+  [s, j] = await altaIva({ partidas_json: part(3500), iva_modo: 'mas_iva', iva_tasa: 16, valor: 99, iva_cent: 1 });
+  ok(s === 201 && j.valor === 3500 && j.iva_cent === 56000 && j.iva_modo === 'mas_iva' && j.iva_tasa === 16, 'cotización "más IVA": $3,500 + IVA $560 (el servidor ignora valor e IVA del navegador)', j);
+  const cotIva = j;
+  [s, j] = await pedir('PUT', '/leads/' + cotIva.id, L, { version: cotIva.version, etapa: 2 });
+  ok(s === 200 && j.iva_cent === 56000 && j.iva_modo === 'mas_iva', 'mover de etapa conserva el IVA', j);
+  [s] = await pedir('PUT', '/leads/' + cotIva.id, L, { version: j.version, valor: 4060 });
+  ok(s === 400, 'el importe no se cambia sin editar las partidas (ni poniendo el total con IVA)');
+  [s, j] = await pedir('PUT', '/leads/' + cotIva.id, L, { version: j.version, estatus: 'ganado', fecha_servicio: '2026-11-20' });
+  ok(s === 200 && j.estatus === 'ganado', 'cotización con IVA convertida en orden');
+  const ordenMas = j;
+  let c = await cuenta(ordenMas.id);
+  ok(c.total === 4060 && c.saldo === 4060 && c.subtotal === 3500 && c.iva === 560 && c.total_orden === 4060 && c.dif_cfdi === null, 'la orden "más IVA" es una cuenta por cobrar de $4,060 sin capturar factura', c);
+
+  [s, j] = await altaIva({ partidas_json: part(1500), iva_modo: 'mas_iva', estatus: 'ganado', fecha_servicio: '2026-11-21' });
+  ok(s === 201 && (await cuenta(j.id)).total === 1740, 'ejemplo del dueño: subtotal $1,500 → total $1,740');
+  [s, j] = await altaIva({ partidas_json: part(1160), iva_modo: 'incluido', estatus: 'ganado', fecha_servicio: '2026-11-22' });
+  c = await cuenta(j.id);
+  ok(s === 201 && j.valor === 1000 && j.iva_cent === 16000 && c.total === 1160, 'ejemplo del dueño: $1,160 con IVA incluido → $1,000 + $160', { j, c });
+  [s, j] = await altaIva({ partidas_json: part(5000), iva_modo: 'incluido', estatus: 'ganado', fecha_servicio: '2026-11-23' });
+  const ordenInc = j;
+  c = await cuenta(ordenInc.id);
+  ok(s === 201 && j.valor === 4310.34 && j.iva_cent === 68966 && c.total === 5000, 'IVA incluido: $5,000 = $4,310.34 + $689.66', { j, c });
+
+  [s, j] = await altaIva({ partidas_json: part(1000), iva_modo: 'sin_iva', iva_tasa: 16, estatus: 'ganado', fecha_servicio: '2026-11-25' });
+  const ordenSinIva = j;
+  ok(s === 201 && j.valor === 1000 && j.iva_cent === 0 && j.iva_tasa === 0 && (await cuenta(j.id)).total === 1000, 'sin IVA: $1,000 se cobran $1,000 (tasa 0)', j);
+  [s, j] = await pedir('PUT', '/leads/' + ordenSinIva.id, A, { version: ordenSinIva.version, iva_modo: 'mas_iva' });
+  ok(s === 200 && j.iva_tasa === 16 && (await cuenta(ordenSinIva.id)).total === 1160, 'pasar una orden de sin IVA a más IVA usa el 16 %', j);
+  [s] = await altaIva({ partidas_json: part(1000), iva_modo: 'mas_iva', iva_tasa: 8 }); ok(s === 400, 'tasa de 8 % no permitida');
+  [s] = await altaIva({ partidas_json: part(1000), iva_modo: 'raro' }); ok(s === 400, 'modo de IVA inválido rechazado');
+  [s] = await altaIva({ iva_modo: 'mas_iva', valor: 1000 }); ok(s === 400, 'IVA sin partidas rechazado');
+  [s] = await altaIva({ partidas_json: part(100000000), iva_modo: 'mas_iva' }); ok(s === 400, 'documento con IVA de más de $100,000,000 rechazado');
+  [s, j] = await altaIva({ partidas_json: part(900), estatus: 'ganado', fecha_servicio: '2026-11-24' });
+  const ordenSin = j;
+  ok(s === 201 && j.iva_modo === null && j.iva_cent === null && j.valor === 900 && (await cuenta(j.id)).total === 900, 'sin campos de IVA queda "por definir" y se cobra el importe como hoy', j);
+
+  // Permisos: el IVA de una orden lo cambian solo administración o atención.
+  let o = await verLead(ordenMas.id);
+  [s] = await pedir('PUT', '/leads/' + ordenMas.id, L, { version: o.version, iva_modo: 'incluido' });
+  ok(s === 403, 'ventas NO puede cambiar el IVA de una orden');
+  [s] = await pedir('PUT', '/leads/' + ordenSin.id, L, { version: (await verLead(ordenSin.id)).version, iva_modo: 'incluido' });
+  ok(s === 403, 'ventas NO puede indicar el IVA de una orden por definir (aunque el total no cambie)');
+  [s, j] = await pedir('PUT', '/leads/' + ordenMas.id, L, { version: o.version, partidas_json: part(3500), iva_modo: 'mas_iva', iva_tasa: 16, operador: 'Fernando' });
+  ok(s === 200 && j.iva_cent === 56000, 'ventas sí guarda la orden si no cambia el importe ni el IVA');
+  [s, j] = await pedir('PUT', '/leads/' + ordenMas.id, L, { version: j.version, partidas_json: part(3500) });
+  ok(s === 200 && j.iva_modo === 'mas_iva' && j.iva_cent === 56000, 'guardar partidas sin campos de IVA conserva el IVA guardado (pestañas viejas)', j);
+  [s] = await pedir('PUT', '/leads/' + ordenMas.id, A, { version: j.version, iva_modo: null });
+  ok(s === 400, 'un IVA ya indicado no puede volver a "por definir"');
+
+  [s, j] = await pedir('PUT', '/leads/' + ordenSin.id, A, { version: (await verLead(ordenSin.id)).version, iva_modo: 'incluido' });
+  ok(s === 200 && j.valor === 775.86 && j.iva_cent === 12414 && (await cuenta(ordenSin.id)).total === 900, 'admin indica "IVA incluido" en una orden por definir: el total sigue en $900', j);
+  ok((await verLead(ordenSin.id)).historial.some(x => /IVA: IVA por definir → IVA incluido 16% en la orden; el total no cambia \(\$900\.00\)/.test(x.texto)), 'la bitácora registra que se indicó el IVA');
+
+  // Pagos y factura sobre el total con IVA.
+  [s] = await pedir('POST', '/leads/' + ordenMas.id + '/cobros', A, { monto: 4060.01, metodo: 'transferencia' });
+  ok(s === 400, 'un pago mayor al total con IVA se rechaza');
+  [s, j] = await pedir('PUT', '/leads/' + ordenMas.id + '/facturacion', A, { factura_folio: 'IVA-1', factura_total: 4059.99 });
+  ok(s === 200 && j.cuenta.total === 4059.99 && j.cuenta.dif_cfdi === -0.01, 'un CFDI distinto manda y se avisa la diferencia', j.cuenta);
+  [s, j] = await pedir('PUT', '/leads/' + ordenMas.id + '/facturacion', A, { factura_total: '' });
+  ok(s === 200 && j.cuenta.total === 4060 && j.cuenta.dif_cfdi === null, 'sin CFDI capturado vuelve al total de la orden con IVA', j.cuenta);
+  [s, j] = await pedir('POST', '/leads/' + ordenMas.id + '/cobros', A, { monto: 4060, metodo: 'transferencia' });
+  ok(s === 201 && j.cuenta.estado === 'pagada', 'el pago del total con IVA deja la orden pagada', j.cuenta);
+
+  [s] = await pedir('POST', '/leads/' + ordenInc.id + '/cobros', A, { monto: 4000, metodo: 'transferencia' });
+  [s, j] = await pedir('PUT', '/leads/' + ordenInc.id, A, { version: (await verLead(ordenInc.id)).version, iva_modo: 'mas_iva' });
+  ok(s === 200 && (await cuenta(ordenInc.id)).total === 5800, 'admin cambia una orden a "más IVA" solo con el modo: $5,000 + IVA = $5,800');
+  ok((await verLead(ordenInc.id)).historial.some(x => /Importe de la orden cambiado: \$5,000\.00 → \$5,800\.00 \(IVA: IVA incluido 16% → Más IVA 16%\)/.test(x.texto)), 'la bitácora registra el cambio de total y de IVA');
+  [s] = await pedir('PUT', '/leads/' + ordenInc.id, A, { version: (await verLead(ordenInc.id)).version, partidas_json: part(3000) });
+  ok(s === 400, 'el total con IVA ($3,480) no puede quedar debajo de lo cobrado ($4,000)');
+
+  // Carga masiva: el IVA sale de las columnas SUBTOTAL / IVA / TOTAL.
+  const filasIva = [
+    { fila: 2, folio: 'P-1', nombre: 'Plaza IVA', fecha: '2026-09-05', subtotal: 1000, iva: 160, total: 1160 },
+    { fila: 3, folio: 'P-2', nombre: 'Plaza IVA', fecha: '2026-09-06', subtotal: 1000, iva: 0, total: 1000 },
+    { fila: 4, folio: 'P-3', nombre: 'Plaza IVA', fecha: '2026-09-07', subtotal: 1000 },
+    { fila: 5, folio: 'P-4', nombre: 'Plaza IVA', fecha: '2026-09-08', subtotal: 1000, iva: 160, total: '1,159.99' },
+  ];
+  [s, j] = await pedir('POST', '/finanzas/importar/cxc', A, { filas: filasIva });
+  ok(s === 201 && j.importadas === 4 && j.resumen.map(x => x.total).join() === '1160,1000,1160,1159.99', 'IVA desde la plantilla: 16 %, IVA 0 = sin IVA, IVA vacío = 16 %, y el TOTAL de la factura manda', j);
+  [s, j] = await pedir('GET', '/finanzas/cartera?filtro=todas&q=Plaza IVA', A);
+  ok(j.length === 4 && j.map(x => x.iva_modo).sort().join() === 'mas_iva,mas_iva,mas_iva,sin_iva' && j.some(x => x.dif_cfdi === -0.01), 'las órdenes importadas guardan su IVA y avisan si el total de la factura difiere', j);
+  [s, j] = await pedir('POST', '/finanzas/importar/cxc?simular=1', A, { filas: [
+    { fila: 2, folio: 'T-1', nombre: 'Tope IVA', fecha: '2026-08-10', subtotal: 90000000, iva: 14400000 },
+    { fila: 3, folio: 'T-2', nombre: 'Tope IVA', fecha: '2026-08-10', subtotal: 100, iva: 'abc' },
+    { fila: 4, folio: 'T-2', nombre: 'Tope IVA', fecha: '2026-08-10', subtotal: 100, status: 'PAGADO', fecha_pago: 'ayer' }] });
+  ok(j.errores?.length === 3 && /100,000,000/.test(j.errores[0].errores.join()) && /IVA/.test(j.errores[1].errores.join()) && /repetida/.test(j.errores[2].errores.join()) && /pago/.test(j.errores[2].errores.join()),
+    'tope del total con IVA, IVA no válido, factura repetida y fecha de pago incomprensible se marcan', j.errores);
+  [s, j] = await altaIva({ partidas_json: part(3500), estatus: 'ganado', fecha_servicio: '2026-12-01', duplicado_de: ordenMas.id });
+  ok(s === 201 && j.iva_modo === 'mas_iva' && j.iva_cent === 56000, 'duplicar sin mandar el IVA (versión anterior) hereda el IVA de la orden original', j);
+
+  [s, j] = await pedir('GET', '/analisis/comercial', A);
+  ok(s === 200 && j.ivaPorDefinir && j.ivaPorDefinir.servicios >= 1, 'Resultados cuenta los servicios con IVA por definir', j.ivaPorDefinir);
+
+  seccion('12. Pipeline: contactos sin cotización');
+  [s, j] = await pedir('POST', '/contactos', L, { nombre: 'Solo Contacto', telefono: '4427770099', canal_origen_id: canales[0].id });
+  const soloId = j.id;
+  [s, j] = await pedir('GET', '/contactos/sin-cotizacion?q=Solo Contacto', L);
+  ok(s === 200 && j.length === 1 && j[0].id === soloId, 'un contacto guardado sin cotización aparece para el Pipeline', j);
+  [s, j] = await pedir('GET', '/contactos/sin-cotizacion', L);
+  ok(!j.some(c => c.id === clienteId), 'un contacto con cotizaciones u órdenes no aparece como "sin cotización"');
+  await pedir('POST', '/leads', L, { cliente_id: soloId, direccion: 'x', responsable_id: usuarioL.id, partidas_json: part(500), iva_modo: 'mas_iva' });
+  [s, j] = await pedir('GET', '/contactos/sin-cotizacion?q=Solo Contacto', L);
+  ok(s === 200 && j.length === 0, 'al crearle su cotización deja de aparecer como contacto (ya está como cotización)');
+
+  seccion('13. Seguridad general');
   const raiz = await fetch(`http://localhost:${PUERTO}/`);
   ok(raiz.headers.get('content-security-policy') && raiz.headers.get('x-frame-options') === 'DENY' && !raiz.headers.get('x-powered-by'), 'encabezados de seguridad');
   [s] = await pedir('GET', '/leads', 'token-inventado'); ok(s === 401, 'token inventado rechazado');

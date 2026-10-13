@@ -83,6 +83,16 @@ const Finanzas = (() => {
     if (despues) await despues();
   }));
 
+  // Cómo se forma el total de la orden (IVA) y aviso si el CFDI capturado no coincide.
+  function desgloseIva(c) {
+    const orden = c.iva_modo === 'mas_iva' ? `Orden: ${formatoMoneda(c.subtotal)} + IVA ${Number(c.iva_tasa)} % ${formatoMoneda(c.iva)} = ${formatoMoneda(c.total_orden)}`
+      : c.iva_modo === 'incluido' ? `Orden con IVA incluido: ${formatoMoneda(c.total_orden)} (subtotal ${formatoMoneda(c.subtotal)} + IVA ${formatoMoneda(c.iva)})`
+      : c.iva_modo === 'sin_iva' ? `Orden sin IVA: el cliente paga ${formatoMoneda(c.total_orden)}.`
+      : 'IVA por definir: el total es el importe tal como se capturó. Si el cliente paga con IVA, captura el total del CFDI.';
+    const dif = c.dif_cfdi ? `<p class="cuentas-aviso">El CFDI es ${formatoMoneda(Math.abs(c.dif_cfdi))} ${c.dif_cfdi > 0 ? 'mayor' : 'menor'} que el total de la orden (¿retención, descuento o centavos?). Se cobra el total del CFDI.</p>` : '';
+    return `<p class="ayuda cobranza-iva">${orden}</p>${dif}`;
+  }
+
   // ===================== Sección "Cobranza" en la ficha de la orden =====================
   let ORDEN_ACTUAL = null;
   async function pintarCobranzaOrden(lead) {
@@ -101,7 +111,7 @@ const Finanzas = (() => {
           <div class="campo-modal"><label for="fact-credito">Días de crédito</label><input id="fact-credito" type="number" min="0" max="180" step="1" value="${Number(c.dias_credito) || 0}"></div>
           <div class="campo-modal"><label for="fact-folio">Folio de factura (CFDI)</label><input id="fact-folio" maxlength="60" value="${esc(c.factura_folio || '')}"></div>
           <div class="campo-modal"><label for="fact-fecha">Fecha de factura</label><input id="fact-fecha" type="date" value="${esc(c.factura_fecha || '')}"></div>
-          <div class="campo-modal"><label for="fact-total">Total facturado con IVA (vacío = importe de la orden)</label><input id="fact-total" type="text" inputmode="decimal" value="${c.factura_total == null ? '' : Number(c.factura_total).toFixed(2)}"></div>
+          <div class="campo-modal"><label for="fact-total">Total del CFDI, con IVA (vacío = total de la orden)</label><input id="fact-total" type="text" inputmode="decimal" value="${c.factura_total == null ? '' : Number(c.factura_total).toFixed(2)}"></div>
         </div>
         <button type="button" class="btn btn-secundario" data-cobranza="guardar-factura">Guardar crédito y factura</button>
       </details>` : (c.factura_folio ? `<p class="ayuda">Factura ${esc(c.factura_folio)}${c.factura_fecha ? ' del ' + esc(fechaTxt(c.factura_fecha)) : ''}</p>` : '');
@@ -114,14 +124,15 @@ const Finanzas = (() => {
         ${r.puede_operar && !k.cancelado ? `<div class="btn-group">${!k.confirmado ? `<button type="button" class="btn btn-outline" data-cobro-confirmar="${Number(k.id)}">Confirmar</button>` : ''}<button type="button" class="btn btn-outline" data-cobro-cancelar="${Number(k.id)}">Cancelar</button></div>` : ''}
       </div>`).join('') : '<p class="util-45">Sin pagos registrados.</p>';
     cont.innerHTML = `
-      ${c.por_revisar ? '<p class="cuentas-aviso">Orden anterior al módulo de cuentas: está pendiente de la revisión inicial (Cuentas → Por cobrar).</p>' : ''}
+      ${c.por_revisar ? '<p class="cuentas-aviso">Orden anterior al módulo de cuentas: está pendiente de la revisión inicial (Finanzas → Cuentas por cobrar).</p>' : ''}
       <div class="cobranza-resumen">
         <div>${etiquetaEstado(c)}</div>
-        <div><small>Total</small><b>${formatoMoneda(c.total)}</b></div>
+        <div><small>Total${c.factura_total != null ? ' (CFDI)' : ''}</small><b>${formatoMoneda(c.total)}</b></div>
         <div><small>Cobrado</small><b>${formatoMoneda(c.cobrado)}</b></div>
         <div><small>Saldo</small><b>${formatoMoneda(c.saldo)}</b></div>
         <div><small>Vence</small><b>${esc(fechaTxt(c.vence))}</b></div>
       </div>
+      ${desgloseIva(c)}
       <button type="button" class="btn btn-primario" data-cobranza="registrar" ${c.saldo <= 0 ? 'disabled' : ''}>💵 Registrar pago</button>
       ${fact}
       <div class="pagos-lista">${pagos}</div>`;
@@ -158,7 +169,8 @@ const Finanzas = (() => {
   }
 
   // ===================== Vista Cuentas =====================
-  let PESTANA = 'cobrar', FILTRO = 'con_saldo', RESUMEN = null, CARTERA = [];
+  // SECCION: 'cobrar' (cuentas por cobrar) o 'pagar' (facturas y gastos + proveedores).
+  let SECCION = 'cobrar', PESTANA = 'cobrar', FILTRO = 'con_saldo', RESUMEN = null, CARTERA = [];
   document.querySelectorAll('[data-pestana]').forEach(b => b.addEventListener('click', () => irPestana(b.dataset.pestana)));
   function irPestana(p) {
     PESTANA = p;
@@ -178,24 +190,31 @@ const Finanzas = (() => {
   async function cargar(opciones = {}) {
     if (!puedeCartera()) return;
     if (opciones.filtro || opciones.pestana) $('cobrar-buscar').value = '';
+    if (opciones.seccion) SECCION = opciones.seccion;
+    else if (opciones.pestana) SECCION = opciones.pestana === 'cobrar' ? 'cobrar' : 'pagar';
+    $('cuentas-titulo').textContent = SECCION === 'cobrar' ? 'Cuentas por cobrar' : 'Cuentas por pagar';
+    $('cuentas-pestanas').hidden = SECCION === 'cobrar';
+    const pestana = SECCION === 'cobrar' ? 'cobrar' : (opciones.pestana && opciones.pestana !== 'cobrar' ? opciones.pestana : (PESTANA === 'cobrar' ? 'pagar' : PESTANA));
     if (opciones.filtro) {
       FILTRO = opciones.filtro;
       document.querySelectorAll('[data-filtro-cobro]').forEach(x => x.classList.toggle('activo', x.dataset.filtroCobro === FILTRO));
     }
     pintarTarjetas();
-    irPestana(opciones.pestana || PESTANA);
+    irPestana(pestana);
   }
   async function pintarTarjetas() {
     const cont = $('cuentas-tarjetas');
     try { RESUMEN = await api('/finanzas/resumen').then(json); } catch (err) { cont.innerHTML = `<div class="aviso-error-carga" role="alert"><p>No se pudo cargar el resumen: ${esc(err.message)}</p></div>`; return; }
     const r = RESUMEN, t = (titulo, valor, detalle, clase = '') => `<div class="tarjeta-dinero ${clase}"><small>${titulo}</small><b>${valor}</b>${detalle ? `<span>${detalle}</span>` : ''}</div>`;
-    cont.innerHTML = t('Te deben', formatoMoneda(r.por_cobrar), `${Number(r.cuentas_con_saldo)} órdenes con saldo`)
+    cont.innerHTML = SECCION === 'pagar'
+      ? (r.pagar_semana !== undefined ? t('Pagar esta semana', formatoMoneda(r.pagar_semana), `${Number(r.facturas_semana)} facturas (incluye vencidas)`, r.pagar_semana > 0 ? 'aviso' : '') : '')
+        + (r.por_pagar !== undefined ? t('Total por pagar', formatoMoneda(r.por_pagar), '') : '')
+        + (r.pagado_mes !== undefined ? t('Pagado este mes', formatoMoneda(r.pagado_mes), '') : '')
+      : t('Te deben', formatoMoneda(r.por_cobrar), `${Number(r.cuentas_con_saldo)} órdenes con saldo`)
       + t('Vencido', formatoMoneda(r.vencido), `${Number(r.clientes_con_vencido)} clientes`, r.vencido > 0 ? 'alerta' : '')
       + (r.programado > 0 ? t('Programado', formatoMoneda(r.programado), `${Number(r.ordenes_programadas)} servicios aún no realizados`) : '')
       + t('Cobrado este mes', formatoMoneda(r.cobrado_mes), '')
-      + (r.por_confirmar ? t('Por confirmar', formatoMoneda(r.por_confirmar.monto), `${Number(r.por_confirmar.cantidad)} pagos`, r.por_confirmar.cantidad ? 'aviso' : '') : '')
-      + (r.pagar_semana !== undefined ? t('Pagar esta semana', formatoMoneda(r.pagar_semana), `${Number(r.facturas_semana)} facturas (incluye vencidas)`, r.pagar_semana > 0 ? 'aviso' : '') : '')
-      + (r.por_pagar !== undefined ? t('Total por pagar', formatoMoneda(r.por_pagar), `Pagado este mes ${formatoMoneda(r.pagado_mes)}`) : '');
+      + (r.por_confirmar ? t('Por confirmar', formatoMoneda(r.por_confirmar.monto), `${Number(r.por_confirmar.cantidad)} pagos`, r.por_confirmar.cantidad ? 'aviso' : '') : '');
     pintarRevision();
   }
 
@@ -266,7 +285,7 @@ const Finanzas = (() => {
       const wa = enlaceWhatsApp(g.telefono, textoWhatsApp(g));
       return `<div class="fila-dinero${g.vencido > 0 ? ' vencida' : ''}">
         <div class="info"><b>${esc(g.cliente_nombre || 'Sin nombre')}</b>${g.empresa_contacto ? ` · ${esc(g.empresa_contacto)}` : ''}
-          <small>${esc(g.telefono || '')} · ${Number(g.ordenes)} órdenes · crédito ${Number(g.dias_credito)} días${g.max_dias_vencido > 0 ? ` · hasta ${Number(g.max_dias_vencido)} días vencido` : ''}</small></div>
+          <small>${esc(g.telefono || '')} · ${Number(g.ordenes)} ${Number(g.ordenes) === 1 ? 'orden' : 'órdenes'} · crédito ${Number(g.dias_credito)} días${g.max_dias_vencido > 0 ? ` · hasta ${Number(g.max_dias_vencido)} días vencido` : ''}</small></div>
         <div class="montos"><b>${formatoMoneda(g.saldo)}</b>${g.vencido > 0 ? `<small class="rojo">Vencido ${formatoMoneda(g.vencido)}</small>` : ''}</div>
         <div class="btn-group">
           ${wa ? `<a class="btn btn-outline" href="${esc(wa)}" target="_blank" rel="noopener noreferrer">Recordar por WhatsApp</a>` : ''}
@@ -546,8 +565,8 @@ const Finanzas = (() => {
     let r;
     try { r = await api('/finanzas/periodo?' + params).then(json); } catch (err) { cont.innerHTML = `<p class="ayuda">No se pudo cargar lo cobrado: ${esc(err.message)}</p>`; return; }
     const card = (v, l) => `<div class="res-card"><div class="res-num">${v}</div><div class="res-label">${l}</div></div>`;
-    cont.innerHTML = `<div class="res-grid">${card(formatoMoneda(r.cobrado), 'Cobrado en el periodo (' + Number(r.cobros_n) + ' pagos, por fecha de pago)')}`
-      + (r.pagado !== undefined ? card(formatoMoneda(r.pagado), 'Pagado a proveedores') + card(formatoMoneda(r.gasto_total), 'Gastos registrados (por fecha de factura)') : '') + '</div>'
+    cont.innerHTML = `<div class="res-grid">${card(formatoMoneda(r.cobrado), 'Cobrado en el periodo, con IVA (' + Number(r.cobros_n) + ' pagos, por fecha de pago)')}`
+      + (r.pagado !== undefined ? card(formatoMoneda(r.pagado), 'Pagado a proveedores (con IVA)') + card(formatoMoneda(r.gasto_total), 'Gastos registrados, con IVA (por fecha de factura)') : '') + '</div>'
       + (r.gasto_por_categoria?.length ? '<div class="res-section"><h3>Gasto por categoría</h3><div id="res-gasto-categoria" class="bar-chart"></div></div>' : '');
     if (r.gasto_por_categoria?.length && typeof renderBarChart === 'function') renderBarChart('res-gasto-categoria', r.gasto_por_categoria, 'nombre', 'total', formatoMoneda);
   }
@@ -572,22 +591,30 @@ const Finanzas = (() => {
   const PLANTILLAS = {
     cxc: {
       titulo: 'Cuentas por cobrar', archivo: 'plantilla_cuentas_por_cobrar.xlsx', ruta: '/finanzas/importar/cxc',
-      ayuda: 'Cada renglón crea una orden de servicio con su saldo. Si el teléfono ya existe se usa ese cliente (sus datos no se modifican); si no, se crea.',
+      ayuda: 'Mismo formato de la hoja de cobranza: una factura por renglón. Cada renglón crea la orden de servicio con su factura y su saldo. El cliente se busca por NOMBRE (o por TELÉFONO si lo pones); si no existe, se crea. PAGADO registra el pago (A/C, o el TOTAL si A/C va vacío). CANCELADO y el renglón de totales se omiten. También puedes subir tu CSV de cobranza tal cual.',
       columnas: [
-        { key: 'telefono', titulo: 'Teléfono del cliente', req: true, tipo: 'texto', ancho: 16, nota: '10 dígitos. Identifica al cliente.', ej: '4426164961' },
-        { key: 'nombre', titulo: 'Nombre del cliente', req: true, tipo: 'texto', ancho: 26, nota: 'Obligatorio si el cliente es nuevo.', ej: 'Jorge Cisneros' },
-        { key: 'empresa', titulo: 'Empresa', tipo: 'texto', ancho: 22, nota: 'Opcional.', ej: 'Empresa Salia' },
-        { key: 'direccion', titulo: 'Dirección del servicio', req: true, tipo: 'texto', ancho: 32, nota: 'Dónde se hizo el servicio.', ej: 'Carpinteros 9, Peñuelas, Qro.' },
-        { key: 'servicio', titulo: 'Servicio', req: true, tipo: 'lista', lista: 'servicios', ancho: 30, nota: 'Elige de la lista (catálogo del CRM).', ej: 'Desazolve de drenaje' },
-        { key: 'descripcion', titulo: 'Descripción del trabajo', tipo: 'texto', ancho: 32, nota: 'Opcional.', ej: 'Limpieza de rejillas con equipo Vactor' },
-        { key: 'fecha_servicio', titulo: 'Fecha del servicio', req: true, tipo: 'fecha', ancho: 14, nota: 'Fecha en que se hizo (o se hará) el servicio.', ej: '2026-09-15' },
-        { key: 'importe', titulo: 'Importe total (MXN)', req: true, tipo: 'dinero', ancho: 14, nota: 'Importe de la orden.', ej: 3500 },
-        { key: 'dias_credito', titulo: 'Días de crédito', tipo: 'entero', ancho: 10, nota: '0 = contado. De 0 a 180.', ej: 15 },
-        { key: 'factura_folio', titulo: 'Folio de factura', tipo: 'texto', ancho: 14, nota: 'Si ya se facturó.', ej: 'A-123' },
-        { key: 'factura_fecha', titulo: 'Fecha de factura', tipo: 'fecha', ancho: 14, nota: 'El vencimiento se cuenta desde aquí (si no, desde la fecha del servicio).', ej: '2026-09-16' },
-        { key: 'factura_total', titulo: 'Total facturado con IVA', tipo: 'dinero', ancho: 14, nota: 'Si lo facturado (con IVA) es distinto del importe.', ej: 4060 },
-        { key: 'pagado', titulo: 'Ya pagado (MXN)', tipo: 'dinero', ancho: 14, nota: 'Lo que el cliente ya pagó antes de importar. Vacío = nada.', ej: 1000 },
-        { key: 'notas', titulo: 'Notas', tipo: 'texto', ancho: 28, nota: 'Opcional.', ej: '' },
+        { key: 'serie', titulo: 'SERIE', tipo: 'texto', ancho: 8, nota: 'Serie de la factura.', ej: 'QR' },
+        { key: 'folio', titulo: 'FOLIO', tipo: 'texto', ancho: 9, nota: 'Folio de la factura. SERIE + FOLIO no se pueden repetir.', ej: '2786' },
+        { key: 'fecha', titulo: 'FECHA', req: true, tipo: 'fecha', ancho: 12, nota: 'Fecha de la factura (también es la fecha del servicio).', ej: '2026-01-12' },
+        { key: 'nombre', titulo: 'NOMBRE', req: true, tipo: 'texto', ancho: 34, nota: 'Cliente (razón social). Si ya existe con ese nombre, se usa ese cliente.', ej: 'PREMIUM RESTAURANT BRANDS' },
+        { key: 'metodo_pago', titulo: 'M,P', tipo: 'lista', lista: 'metodo_pago', ancho: 7, nota: 'Método de pago del CFDI: PPD o PUE.', ej: 'PUE' },
+        { key: 'subtotal', titulo: 'SUBTOTAL', req: true, tipo: 'dinero', ancho: 14, nota: 'Importe antes de IVA.', ej: 2150 },
+        { key: 'iva', titulo: 'IVA', tipo: 'dinero', min: 0, ancho: 12, nota: 'IVA de la factura. 0 = sin IVA. Vacío = 16 %.', ej: 344 },
+        { key: 'total', titulo: 'TOTAL', tipo: 'dinero', ancho: 14, nota: 'Total de la factura. Si no coincide con subtotal + IVA, este total es el que se cobra.', ej: 2494 },
+        { key: 'credito', titulo: 'CREDITO', tipo: 'entero', ancho: 9, nota: 'Días de crédito (0 a 180).', ej: 30 },
+        { key: 'fecha_vence', titulo: 'FECHA VENCE', tipo: 'fecha', ancho: 12, nota: 'Opcional: si CREDITO va vacío, los días se calculan con esta fecha.', ej: '2026-02-11' },
+        { key: 'dias_vencidos', titulo: 'DIAS VENCIDOS', tipo: 'texto', ancho: 10, nota: 'Lo calcula el CRM: puedes dejarlo vacío.', ej: '' },
+        { key: 'os', titulo: 'OS', alias: ['os'], tipo: 'texto', ancho: 9, nota: 'Orden de servicio relacionada (opcional).', ej: '' },
+        { key: 'status', titulo: 'STATUS', tipo: 'lista', lista: 'status', ancho: 14, nota: 'PENDIENTE, PAGADO o CANCELADO (CANCELADO no se importa).', ej: 'PAGADO' },
+        { key: 'pago_programado', titulo: 'PAGO PROGRAMADO', tipo: 'texto', ancho: 14, nota: 'Opcional: se guarda en las notas.', ej: '' },
+        { key: 'fecha_pago', titulo: 'FECHA PAGO', tipo: 'fechaLibre', ancho: 12, nota: 'Fecha en que pagó. Puede ir sin año (19-feb): se toma el año desde la fecha de la factura.', ej: '19-feb' },
+        { key: 'cp', titulo: 'CP', tipo: 'texto', ancho: 10, nota: 'Complemento de pago (se guarda como referencia del pago).', ej: '990' },
+        { key: 'abonado', titulo: 'A/C', tipo: 'dinero', ancho: 14, nota: 'Lo que ya pagó. Vacío con PAGADO = el total.', ej: 2494 },
+        { key: 'flujo', titulo: 'FLUJO', tipo: 'texto', ancho: 8, nota: 'QRO, MX… (se guarda en las notas).', ej: 'MX' },
+        { key: 'observaciones', titulo: 'OBSERVACIONES', tipo: 'texto', ancho: 18, nota: 'Banco u observaciones (se guardan con el pago).', ej: 'SANTANDER' },
+        { key: 'telefono', titulo: 'TELÉFONO (opcional)', alias: ['TELEFONO', 'Teléfono del cliente'], tipo: 'texto', ancho: 14, nota: 'Opcional, 10 dígitos. Si lo pones, el cliente se busca por teléfono.', ej: '' },
+        { key: 'servicio', titulo: 'SERVICIO (opcional)', alias: ['SERVICIO', 'Servicio'], tipo: 'lista', lista: 'servicios', ancho: 26, nota: 'Opcional: servicio del catálogo.', ej: '' },
+        { key: 'direccion', titulo: 'DIRECCIÓN (opcional)', alias: ['DIRECCION', 'Dirección del servicio'], tipo: 'texto', ancho: 28, nota: 'Opcional: dónde se hizo el servicio.', ej: '' },
       ],
     },
     cxp: {
@@ -622,6 +649,8 @@ const Finanzas = (() => {
         servicios: tipo === 'cxc' ? (await api('/servicios').then(json)).map(s => s.nombre) : [],
         categorias: tipo === 'cxp' ? (await api('/finanzas/categorias').then(json)).map(c => c.nombre) : [],
         metodos: METODOS.map(m => m[1]),
+        metodo_pago: ['PPD', 'PUE'],
+        status: ['PENDIENTE', 'PAGADO', 'CANCELADO'],
       };
     } catch (err) { toast('No se pudo preparar la plantilla: ' + err.message); return; }
     const wb = new ExcelJS.Workbook();
@@ -641,7 +670,7 @@ const Finanzas = (() => {
     // Hoja oculta con las listas de los desplegables
     const wl = wb.addWorksheet('Listas', { state: 'hidden' });
     const rangos = {};
-    ['servicios', 'categorias', 'metodos'].forEach((nombre, idx) => {
+    ['servicios', 'categorias', 'metodos', 'metodo_pago', 'status'].forEach((nombre, idx) => {
       const col = String.fromCharCode(65 + idx);
       wl.getCell(col + '1').value = nombre;
       listas[nombre].forEach((v, i) => { wl.getCell(col + (i + 2)).value = v; });
@@ -649,14 +678,15 @@ const Finanzas = (() => {
     });
     def.columnas.forEach((c, i) => {
       const col = ws.getColumn(i + 1);
-      if (c.tipo === 'fecha') col.numFmt = 'dd/mm/yyyy';
+      // fechaLibre: acepta una fecha de Excel o un texto como "9-sep" (sin validación de fecha).
+      if (c.tipo === 'fecha' || c.tipo === 'fechaLibre') col.numFmt = 'dd/mm/yyyy';
       if (c.tipo === 'dinero') col.numFmt = '#,##0.00';
       if (c.tipo === 'texto') col.numFmt = '@';
       for (let r = 2; r <= FILAS_PLANTILLA + 1; r++) {
         const celdaX = ws.getCell(r, i + 1);
         if (c.tipo === 'lista') celdaX.dataValidation = { type: 'list', allowBlank: !c.req, formulae: [rangos[c.lista]], showErrorMessage: true, errorTitle: c.titulo, error: 'Elige un valor de la lista.' };
         else if (c.tipo === 'fecha') celdaX.dataValidation = { type: 'date', operator: 'greaterThan', allowBlank: true, formulae: [new Date(Date.UTC(2000, 0, 1))], showErrorMessage: true, errorTitle: c.titulo, error: 'Escribe una fecha (día/mes/año).' };
-        else if (c.tipo === 'dinero') celdaX.dataValidation = { type: 'decimal', operator: 'between', allowBlank: true, formulae: [0.01, 100000000], showErrorMessage: true, errorTitle: c.titulo, error: 'Escribe un monto mayor a 0.' };
+        else if (c.tipo === 'dinero') celdaX.dataValidation = { type: 'decimal', operator: 'between', allowBlank: true, formulae: [c.min ?? 0.01, 100000000], showErrorMessage: true, errorTitle: c.titulo, error: c.min === 0 ? 'Escribe un monto (0 si no lleva IVA).' : 'Escribe un monto mayor a 0.' };
         else if (c.tipo === 'entero') celdaX.dataValidation = { type: 'whole', operator: 'between', allowBlank: true, formulae: [0, 180], showErrorMessage: true, errorTitle: c.titulo, error: 'Número entero de 0 a 180.' };
       }
     });
@@ -665,7 +695,7 @@ const Finanzas = (() => {
     wi.getColumn(1).width = 30; wi.getColumn(2).width = 14; wi.getColumn(3).width = 60; wi.getColumn(4).width = 30;
     wi.addRow([`Plantilla de ${def.titulo} · Saneadren CRM`]).font = { bold: true, size: 14 };
     wi.addRow([def.ayuda]);
-    wi.addRow(['1. Llena la hoja "Datos" (un renglón por registro, sin dejar renglones vacíos en medio). 2. Guarda como .xlsx. 3. En el CRM: Cuentas → "Subir plantilla". Verás una vista previa con los errores por renglón antes de importar; si hay errores no se importa nada.']);
+    wi.addRow(['1. Llena la hoja "Datos" (un renglón por registro, sin dejar renglones vacíos en medio). 2. Guarda como .xlsx. 3. En el CRM: Finanzas → ' + def.titulo + ' → "Subir plantilla". Verás una vista previa con los errores por renglón antes de importar; si hay errores no se importa nada.']);
     wi.addRow(['Las columnas con * (en amarillo) son obligatorias. No cambies los títulos de la primera fila. Máximo 1,000 renglones por archivo.']);
     wi.addRow([]);
     const enc = wi.addRow(['Columna', 'Obligatoria', 'Qué poner', 'Ejemplo']);
@@ -693,51 +723,94 @@ const Finanzas = (() => {
     return v;
   }
   // Fechas escritas como texto: dd/mm/aaaa o d-m-aaaa → AAAA-MM-DD.
+  // También "3-Dec-2025" o "15-ene-2026" (mes con letra, en español o inglés).
+  const MESES_TXT = { ene: 1, jan: 1, feb: 2, mar: 3, abr: 4, apr: 4, may: 5, jun: 6, jul: 7, ago: 8, aug: 8, sep: 9, set: 9, oct: 10, nov: 11, dic: 12, dec: 12 };
   function fechaTexto(v) {
     const t = String(v).trim();
     const m = t.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})$/);
-    return m ? `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}` : t;
+    if (m) return `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`;
+    const l = t.match(/^(\d{1,2})[\s\-\/.]+([a-záéíóú]+)\.?[\s\-\/.]+(\d{2}|\d{4})$/i);
+    const mes = l && MESES_TXT[sinAcentos(l[2]).slice(0, 3)];
+    if (mes) return `${l[3].length === 2 ? '20' + l[3] : l[3]}-${String(mes).padStart(2, '0')}-${l[1].padStart(2, '0')}`;
+    return t;
   }
 
   let IMPORTACION = null; // { tipo, filas }
-  async function leerArchivo(tipo, archivo) {
-    const def = PLANTILLAS[tipo];
-    const ExcelJS = await cargarExcelJS();
+  // CSV (como lo exporta Excel): separado por comas, con comillas para los valores que llevan comas.
+  function leerCSV(texto) {
+    const filas = []; let fila = [], valor = '', comillas = false;
+    for (let i = 0; i < texto.length; i++) {
+      const ch = texto[i];
+      if (comillas) {
+        if (ch === '"' && texto[i + 1] === '"') { valor += '"'; i++; }
+        else if (ch === '"') comillas = false;
+        else valor += ch;
+      } else if (ch === '"') comillas = true;
+      else if (ch === ',') { fila.push(valor); valor = ''; }
+      else if (ch === '\n' || ch === '\r') { if (ch === '\r' && texto[i + 1] === '\n') i++; fila.push(valor); filas.push(fila); fila = []; valor = ''; }
+      else valor += ch;
+    }
+    if (valor !== '' || fila.length) { fila.push(valor); filas.push(fila); }
+    return filas;
+  }
+  // Devuelve los renglones como arreglos de valores (1 = primera columna), de un .xlsx o un .csv.
+  async function renglonesDelArchivo(archivo) {
     if (archivo.size > 5 * 1024 * 1024) throw new Error('El archivo es demasiado grande (máximo 5 MB)');
+    if (/\.csv$/i.test(archivo.name)) {
+      const bytes = await archivo.arrayBuffer();
+      let texto = new TextDecoder('utf-8').decode(bytes);
+      if (texto.includes('�')) texto = new TextDecoder('windows-1252').decode(bytes); // CSV de Excel en Windows
+      const filas = leerCSV(texto.replace(/^﻿/, ''));
+      if (filas.length > 5000) throw new Error('El archivo tiene demasiados renglones. Máximo 1,000 por archivo.');
+      return filas.map(f => [undefined, ...f.map(v => v.trim())]);
+    }
+    const ExcelJS = await cargarExcelJS();
     const wb = new ExcelJS.Workbook();
     // Límites de lectura: un archivo pequeño con rangos enormes podría congelar el navegador.
     try { await wb.xlsx.load(await archivo.arrayBuffer(), { ignoreNodes: ['dataValidations', 'conditionalFormatting', 'hyperlinks'], maxRows: 5000, maxCols: 100 }); }
-    catch (err) { throw new Error(/max (row|column)/i.test(err?.message || '') ? 'El archivo tiene demasiados renglones o columnas. Usa la plantilla y máximo 1,000 renglones.' : 'No se pudo leer el archivo. Guárdalo como Excel (.xlsx) e inténtalo de nuevo.'); }
+    catch (err) { throw new Error(/max (row|column)/i.test(err?.message || '') ? 'El archivo tiene demasiados renglones o columnas. Usa la plantilla y máximo 1,000 renglones.' : 'No se pudo leer el archivo. Guárdalo como Excel (.xlsx) o CSV e inténtalo de nuevo.'); }
     const ws = wb.getWorksheet('Datos') || wb.worksheets[0];
     if (!ws) throw new Error('El archivo no tiene hojas');
-    // Localiza cada columna por su título (aunque las hayan movido de lugar).
+    const filas = [];
+    ws.eachRow({ includeEmpty: true }, (row, n) => { const v = []; row.eachCell({ includeEmpty: true }, (cell, i) => { v[i] = valorCelda(cell.value); }); filas[n - 1] = v; });
+    return Array.from(filas, f => f || []);
+  }
+  async function leerArchivo(tipo, archivo) {
+    const def = PLANTILLAS[tipo];
+    const renglones = await renglonesDelArchivo(archivo);
+    // El encabezado puede no estar en el primer renglón (p. ej. un título "COBRANZA QR 2026" arriba):
+    // se busca entre los primeros 10 el que más títulos de columna reconoce.
+    const columnaDe = t => def.columnas.find(x => [x.titulo, ...(x.alias || [])].some(n => sinAcentos(n) === sinAcentos(t)));
+    let encabezado = -1, mejor = 0;
+    renglones.slice(0, 10).forEach((r, i) => { const n = r.filter(v => v != null && columnaDe(v)).length; if (n > mejor) { mejor = n; encabezado = i; } });
+    if (encabezado < 0) throw new Error('No se encontraron los títulos de las columnas. Descarga la plantilla de nuevo.');
     const posicion = {};
-    ws.getRow(1).eachCell((cell, i) => {
-      const t = sinAcentos(valorCelda(cell.value));
-      const c = def.columnas.find(x => sinAcentos(x.titulo) === t);
-      if (c) posicion[c.key] = i;
-    });
+    renglones[encabezado].forEach((v, i) => { const c = v != null && columnaDe(v); if (c && !posicion[c.key]) posicion[c.key] = i; });
     const faltan = def.columnas.filter(c => c.req && !posicion[c.key]).map(c => c.titulo);
     if (faltan.length) throw new Error('Faltan columnas en la plantilla: ' + faltan.join(', ') + '. Descarga la plantilla de nuevo.');
     const filas = [];
-    ws.eachRow({ includeEmpty: false }, (row, n) => {
-      if (n === 1) return;
-      const f = { fila: n };
+    renglones.forEach((r, idx) => {
+      if (idx <= encabezado) return;
+      const f = { fila: idx + 1 };
       let algo = false;
       for (const c of def.columnas) {
         if (!posicion[c.key]) continue;
-        let v = valorCelda(row.getCell(posicion[c.key]).value);
-        if (c.tipo === 'fecha' && typeof v === 'string') v = fechaTexto(v);
+        let v = r[posicion[c.key]];
+        if (v === undefined || v === null) v = '';
+        const esFecha = c.tipo === 'fecha' || c.tipo === 'fechaLibre';
+        // Una fecha puede llegar como número de serie de Excel (p. ej. 46296 = 01/10/2026).
+        if (esFecha && typeof v === 'number' && v > 20000 && v < 80000) v = new Date(Date.UTC(1899, 11, 30) + Math.round(v) * 86400000).toISOString().slice(0, 10);
+        if (esFecha && typeof v === 'string') v = fechaTexto(v);
         if (typeof v === 'string' && v.startsWith('#ERROR_EXCEL:')) v += '@' + c.titulo; // para que el mensaje diga la columna
-        if (typeof v === 'number' && c.tipo === 'texto') v = String(v);
+        if (typeof v === 'number' && (c.tipo === 'texto' || c.tipo === 'lista')) v = String(v);
         // Montos calculados con fórmula (p. ej. con IVA) pueden traer residuos como 4060.0000001.
         if (typeof v === 'number' && c.tipo === 'dinero') v = Math.round(v * 100) / 100;
-        if (v !== '' && v !== null) algo = true;
+        if (v !== '') algo = true;
         f[c.key] = v;
       }
       if (algo) filas.push(f);
     });
-    if (!filas.length) throw new Error('La hoja "Datos" no tiene renglones con información');
+    if (!filas.length) throw new Error('El archivo no tiene renglones con información');
     if (filas.length > 1000) throw new Error(`El archivo tiene ${filas.length} renglones; el máximo es 1,000. Divídelo en varios archivos.`);
     return filas;
   }
@@ -752,17 +825,19 @@ const Finanzas = (() => {
     try { r = await api(def.ruta + '?simular=1', { method: 'POST', body: JSON.stringify({ filas }) }).then(json); }
     catch (err) { $('importar-resumen').textContent = 'No se pudo revisar: ' + err.message; return; }
     IMPORTACION = { tipo, filas };
-    const nuevos = r.resumen.filter(x => x.cliente_nuevo || x.proveedor_nuevo).length;
-    const total = r.resumen.reduce((t, x) => t + (x.total || 0), 0), pagado = r.resumen.reduce((t, x) => t + (x.pagado || 0), 0);
+    const nuevos = r.resumen.filter(x => !x.omitida && (x.cliente_nuevo || x.proveedor_nuevo)).length;
+    const validos = r.resumen.filter(x => !x.omitida);
+    const total = validos.reduce((t, x) => t + (x.total || 0), 0), pagado = validos.reduce((t, x) => t + (x.pagado || 0), 0);
+    const omitidas = r.omitidas ? ` · ${Number(r.omitidas)} omitidos (cancelados o sin datos)` : '';
     $('importar-resumen').innerHTML = r.errores.length
       ? `<b>${Number(r.errores.length)} de ${Number(r.total)} renglones tienen errores.</b> Corrígelos en el Excel y vuelve a subirlo: no se importará nada mientras haya errores.`
-      : `<b>Todo listo:</b> ${Number(r.total)} renglones · total ${formatoMoneda(total)} · ya pagado ${formatoMoneda(pagado)} · saldo ${formatoMoneda(total - pagado)}${nuevos ? ` · ${nuevos} ${tipo === 'cxc' ? 'clientes' : 'proveedores'} nuevos` : ''}.`;
+      : `<b>Todo listo:</b> ${Number(r.total - (r.omitidas || 0))} renglones · total ${formatoMoneda(total)} · ya pagado ${formatoMoneda(pagado)} · saldo ${formatoMoneda(total - pagado)}${nuevos ? ` · ${nuevos} ${tipo === 'cxc' ? 'clientes' : 'proveedores'} nuevos` : ''}${omitidas}.`;
     $('importar-errores').innerHTML = r.errores.length ? '<div class="importar-errores">' + r.errores.slice(0, 200).map(e => `<div class="pago-fila"><div><b>Renglón ${Number(e.fila)}</b><small class="motivo">${e.errores.map(esc).join(' · ')}</small></div></div>`).join('') + (r.errores.length > 200 ? '<p class="ayuda">…y más.</p>' : '') + '</div>' : '';
     const primeros = r.resumen.slice(0, 100);
-    $('importar-tabla').innerHTML = `<div class="importar-tabla"><table><thead><tr><th>Renglón</th><th>${tipo === 'cxc' ? 'Cliente' : 'Proveedor'}</th><th>${tipo === 'cxc' ? 'Servicio' : 'Concepto'}</th><th>Total</th><th>Pagado</th></tr></thead><tbody>`
-      + primeros.map(x => `<tr><td>${Number(x.fila)}</td><td>${esc(x.cliente || x.proveedor || '')}${x.cliente_nuevo || x.proveedor_nuevo ? ' <span class="estado-cxc programada">nuevo</span>' : ''}</td><td>${esc(x.servicio || x.concepto || '')}</td><td>${x.total == null ? '—' : formatoMoneda(x.total)}</td><td>${formatoMoneda(x.pagado || 0)}</td></tr>`).join('')
+    $('importar-tabla').innerHTML = `<div class="importar-tabla"><table><thead><tr><th>Renglón</th><th>${tipo === 'cxc' ? 'Cliente' : 'Proveedor'}</th><th>${tipo === 'cxc' ? 'Factura' : 'Concepto'}</th><th>Total</th><th>Pagado</th>${tipo === 'cxc' ? '<th>Estado</th>' : ''}</tr></thead><tbody>`
+      + primeros.map(x => `<tr><td>${Number(x.fila)}</td><td>${esc(x.cliente || x.proveedor || '')}${x.cliente_nuevo || x.proveedor_nuevo ? ' <span class="estado-cxc programada">nuevo</span>' : ''}</td><td>${esc(x.folio || x.concepto || '')}</td><td>${x.total == null ? '—' : formatoMoneda(x.total)}</td><td>${formatoMoneda(x.pagado || 0)}</td>${tipo === 'cxc' ? `<td>${esc(x.omitida || x.estado || '')}</td>` : ''}</tr>`).join('')
       + '</tbody></table></div>' + (r.resumen.length > 100 ? `<p class="ayuda">Se muestran los primeros 100 de ${Number(r.resumen.length)} renglones.</p>` : '');
-    if (!r.errores.length) { $('importar-confirmar').hidden = false; $('importar-confirmar').textContent = `Importar ${Number(r.total)} renglones`; }
+    if (!r.errores.length) { $('importar-confirmar').hidden = false; $('importar-confirmar').textContent = `Importar ${Number(r.total - (r.omitidas || 0))} renglones`; }
   }
   $('importar-confirmar').addEventListener('click', e => conBoton(e.currentTarget, async () => {
     if (!IMPORTACION) return;

@@ -118,17 +118,20 @@ document.querySelectorAll('header nav [data-vista]').forEach(btn => {
 });
 function cambiarVista(v, opciones) {
   if (v === 'usuarios' && USUARIO_ACTUAL?.rol !== 'admin') v = 'inicio';
+  if (v === 'pendientes') v = 'inicio'; // Pendientes ahora es parte de Inicio
+  // Cuentas por cobrar y por pagar son dos secciones del menú Finanzas que usan la misma pantalla.
+  if (v === 'cuentas') v = ['pagar', 'proveedores'].includes(opciones?.pestana) ? 'pagar' : 'cobrar';
+  const seccionCuentas = ['cobrar', 'pagar'].includes(v) ? v : null;
   document.querySelectorAll('.vista').forEach(s => s.classList.remove('activa'));
-  document.getElementById('vista-' + v).classList.add('activa');
+  document.getElementById('vista-' + (seccionCuentas ? 'cuentas' : v)).classList.add('activa');
   window.MenuPrincipal?.marcar(v);
   if (v === 'inicio') cargarInicio();
   if (v === 'leads') cargarLeads();
   if (v === 'clientes') cargarClientes();
   if (v === 'prospeccion') Prospeccion.cargar();
-  if (v === 'pendientes') cargarPendientes();
   if (v === 'resultados') cargarResultados();
   if (v === 'usuarios') cargarUsuarios();
-  if (v === 'cuentas') Finanzas.cargar(opciones);
+  if (seccionCuentas) Finanzas.cargar({ ...opciones, seccion: seccionCuentas });
   if (v === 'catalogos') { cargarTiposCliente(); cargarCatalogoServicios(); cargarCanalesCatalogo(); }
 }
 
@@ -178,7 +181,7 @@ async function verificarDuplicado(telefono) {
   panel.classList.toggle('mostrar',!!data.cliente);
   if (!data.cliente) return;
   document.getElementById('dup-titulo').textContent = 'Este contacto ya existe: ' + (data.cliente.nombre || data.cliente.telefono);
-  document.getElementById('dup-lista').innerHTML = '<p>Abre su ficha para consultar registros anteriores, crear otra cotización o registrar un servicio. Sus datos no se sobrescribirán.</p><button type="button" class="btn btn-primario" onclick="abrirFichaCliente(' + Number(data.cliente.id) + ')">Abrir ficha del contacto</button><button type="button" class="btn btn-outline" onclick="FlujoCRM.nuevoRegistro(' + Number(data.cliente.id) + ', \'pipeline\')">Cotizar a este contacto</button>';
+  document.getElementById('dup-lista').innerHTML = '<p>Abre su ficha para consultar registros anteriores y usar Crear cotización o Crear orden de servicio. Sus datos no se sobrescribirán.</p><button type="button" class="btn btn-primario" onclick="FlujoCRM.irACotizar(' + Number(data.cliente.id) + ')">Abrir ficha del contacto</button>';
 
 }
 
@@ -196,6 +199,14 @@ on('btn-cancelar-dup', 'click', () => {
 //   pide un servicio distinto) — es una oportunidad nueva y sí debe pasar por Leads.
 let MODO_SERVICIO_NUEVO = 'pipeline';
 let DUPLICADO_DE = null; // id de la orden de servicio que se está duplicando (si aplica)
+let ESTABLECIMIENTO_PENDIENTE = null; // { cliente_id, id, direccion } al abrir un contacto desde Prospección
+let REGRESO_FICHA = null; // registro cuya ficha se reabre al terminar la ventana de crear (p. ej. tras Duplicar)
+async function regresarAFicha() {
+  // Si la ventana sigue abierta (p. ej. el usuario eligió volver a sus cambios), no se hace nada todavía.
+  if (!REGRESO_FICHA || document.getElementById('overlay-servicio-nuevo').classList.contains('mostrar')) return;
+  const id = REGRESO_FICHA; REGRESO_FICHA = null;
+  await abrirFicha(id);
+}
 function abrirServicioNuevo(modo, prefill) {
   if (!CLIENTE_DUP) return;
   actualizarBotonesEstatusFicha(null);
@@ -213,20 +224,21 @@ function abrirServicioNuevo(modo, prefill) {
     ? 'Úsalo cuando el cliente ya confirmó. Indica el importe y la fecha acordados; aparecerá como contratado en su historial.'
     : 'Completa la propuesta y pulsa Crear cotización. Cerrar esta ventana no crea ningún registro.';
   document.getElementById('sn-label-valor').textContent = esDirecto ? 'Importe contratado (MXN)' : 'Importe propuesto (MXN, opcional)';
-  document.getElementById('sn-label-fecha').textContent = esDirecto ? 'Fecha acordada del servicio' : 'Fecha del servicio (si ya se sabe)';
+  document.getElementById('sn-campo-fecha').hidden = !esDirecto;
   document.getElementById('sn-cliente-info').innerHTML =
     `<b>${escaparHtml(CLIENTE_DUP.nombre || 'Sin nombre')}</b> · ${escaparHtml(CLIENTE_DUP.telefono)}${CLIENTE_DUP.direccion ? ' · ' + escaparHtml(CLIENTE_DUP.direccion) : ''}`;
   Finanzas.avisoAdeudo(CLIENTE_DUP.id, 'sn-aviso-adeudo');
   document.getElementById('sn-servicio').innerHTML = '<option value="">Selecciona un servicio</option>' + CATALOGOS.servicios.map(s=>`<option value="${s.id}">${escaparHtml(s.nombre)}</option>`).join('');
   document.getElementById('sn-ubicacion').value = prefill?.direccion || CLIENTE_DUP.direccion || '';
+  // Contacto abierto desde Prospección: la cotización se liga al establecimiento y propone su domicilio.
+  const est = !prefill && ESTABLECIMIENTO_PENDIENTE?.cliente_id === CLIENTE_DUP.id ? ESTABLECIMIENTO_PENDIENTE : null;
+  if (est) { CLIENTE_DUP.establecimiento_id = est.id; if (est.direccion) document.getElementById('sn-ubicacion').value = est.direccion; }
   document.getElementById('btn-guardar-servicio-nuevo').textContent = DUPLICADO_DE ? 'Guardar orden duplicada' : esDirecto ? 'Crear orden de servicio' : 'Crear cotización';
   rotularEditorContenido(esDirecto);
   document.getElementById('sn-valor').placeholder = CLIENTE_DUP.ultimo_valor
     ? `Última vez: ${formatoMoneda(CLIENTE_DUP.ultimo_valor)}`
     : 'Si ya se conoce';
   document.getElementById('sn-fecha').value = '';
-  document.getElementById('sn-notas').value = prefill?.notas_iniciales || '';
-  document.getElementById('sn-urgente').checked = !!prefill?.urgente;
   document.getElementById('sn-datos-orden').hidden = !esDirecto;
   document.getElementById('sn-equipo').value = prefill?.equipo || '';
   document.getElementById('sn-operador').value = prefill?.operador || '';
@@ -234,7 +246,9 @@ function abrirServicioNuevo(modo, prefill) {
   // El prellenado pasa por prepararEditorCotizacion para que también arme la tabla de
   // partidas real (gc-items) — de otro modo, al validar/guardar se recalcula desde ahí
   // y borraría cualquier valor puesto solo en sn-servicio/sn-valor.
-  prepararEditorCotizacion(prefill ? { partidas_json: prefill.partidas_json, servicio_nombre: prefill.servicio_nombre, valor: prefill.valor } : null, 'nuevo');
+  // Una orden duplicada conserva su IVA (aunque esté por definir); lo demás empieza "más IVA".
+  prepararEditorCotizacion(prefill ? { partidas_json: prefill.partidas_json, servicio_nombre: prefill.servicio_nombre, valor: prefill.valor,
+    ...('iva_modo' in prefill ? { iva_modo: prefill.iva_modo, iva_tasa: prefill.iva_tasa } : {}) } : null, 'nuevo');
   abrirVentana('overlay-servicio-nuevo');
   FlujoCRM.marcarGuardado('overlay-servicio-nuevo');
 }
@@ -272,9 +286,8 @@ async function guardarServicioNuevo(descargar=false) {
     direccion: document.getElementById('sn-ubicacion').value.trim(),
     servicio_id: document.getElementById('sn-servicio').value || null,
     responsable_id: USUARIO_ACTUAL.id,
-    notas_iniciales: document.getElementById('sn-notas').value.trim(),
     valor: valorRaw === '' ? null : Number(valorRaw),
-    fecha_servicio: document.getElementById('sn-fecha').value || null,
+    fecha_servicio: esDirecto ? (document.getElementById('sn-fecha').value || null) : null,
     creado_por: USUARIO_ACTUAL.nombre,
     forzar_duplicado: true,
     estatus: esDirecto ? 'ganado' : undefined,
@@ -282,26 +295,27 @@ async function guardarServicioNuevo(descargar=false) {
     equipo: esDirecto ? document.getElementById('sn-equipo').value.trim() : null,
     operador: esDirecto ? document.getElementById('sn-operador').value.trim() : null,
     observaciones: esDirecto ? document.getElementById('sn-observaciones').value.trim() : null,
-    urgente: document.getElementById('sn-urgente').checked
+    ...ivaPayload()
   };
   botonGuardar.disabled = true;
   try {
     const creado = await api('/leads', { method: 'POST', body: JSON.stringify(payload) }).then(r => r.json());
     FlujoCRM.marcarGuardado('overlay-servicio-nuevo');
-    toast(DUPLICADO_DE ? 'Orden de servicio duplicada correctamente' : esDirecto ? 'Orden de servicio creada' : 'Nueva cotización registrada correctamente');
+    const folio = esDirecto ? folioOrdenServicio(creado) : folioCotizacion(creado);
+    const hecho = (DUPLICADO_DE ? 'Orden de servicio duplicada' : esDirecto ? 'Orden de servicio creada' : 'Cotización creada') + ': ' + folio;
+    // El documento se arma con lo capturado en esta ventana, antes de cerrarla.
+    if (descargar) {
+      LEAD_ACTUAL = await api('/leads/' + creado.id).then(r => r.json());
+      await (esDirecto ? descargarOrdenServicioActual(hecho + ' y descargada') : descargarCotizacionActual());
+    }
+    // Al guardar no se cambia de pantalla: se cierra la ventana y se vuelve a donde estabas
+    // (ficha del contacto, Pipeline o Pendientes), con su lista ya actualizada.
     document.getElementById('overlay-servicio-nuevo').classList.remove('mostrar');
     document.getElementById('alerta-dup').classList.remove('mostrar');
     limpiarFormAlta();
-    if (esDirecto) {
-      cambiarVista('clientes');
-      await cargarClientes();
-      await abrirFicha(creado.id);
-    } else {
-      cambiarVista('leads');
-      await abrirFicha(creado.id);
-    }
     await ServiciosTabla.refrescar();
-    if(descargar)await (esDirecto ? descargarOrdenServicioActual('Orden de servicio guardada y descargada') : descargarCotizacionActual());
+    await regresarAFicha();
+    toast(hecho + '. Ya aparece en los registros del contacto.');
   } catch (err) {
     toast('No se pudo guardar: ' + err.message);
   } finally {
@@ -309,6 +323,9 @@ async function guardarServicioNuevo(descargar=false) {
   }
 }
 on('btn-guardar-servicio-nuevo','click',()=>guardarServicioNuevo());
+// Cerrar la ventana de crear sin guardar también regresa a la orden de la que se partió.
+document.querySelector('#overlay-servicio-nuevo .close-btn').addEventListener('click', () => setTimeout(regresarAFicha, 0));
+on('btn-barra-guardar','click',()=>EDITOR_MODO==='nuevo'?guardarServicioNuevo():document.getElementById('btn-guardar-ficha').click());
 
 // ---------- Guardar cotización ----------
 on('btn-guardar-lead', 'click', () => FlujoCRM.crearContacto(true));
@@ -362,7 +379,7 @@ async function cargarInicio() {
 
   const contCot = document.getElementById('inicio-cotizaciones');
   const filasCot = [...alertas.map(filaAlerta), ...estancadas.map(filaEstancada)];
-  contCot.innerHTML = filasCot.length ? filasCot.join('') : '<p class="util-45">Ninguna cotización necesita seguimiento en este momento. 🎉</p>';
+  contCot.innerHTML = filasCot.length ? filasCot.join('') : '<p class="util-45">No hay avisos ni cotizaciones pendientes por ahora. 🎉</p>';
 
   const contRec = document.getElementById('inicio-recompras');
   contRec.innerHTML = recompras.length
@@ -401,75 +418,55 @@ async function cargarLeads() {
   if (soloUrgentes) params.set('urgente', '1');
   if (ETAPA_FILTRO) params.set('etapa', ETAPA_FILTRO);
 
-  const [leads, kpis] = await Promise.all([
+  // Contactos sin ninguna cotización: van en "Recolección de datos". No tienen responsable ni
+  // urgencia, así que se ocultan al filtrar por esos datos o por otra etapa.
+  const conContactos = !resp && !soloUrgentes && (!ETAPA_FILTRO || ETAPA_FILTRO === 1);
+  const pc = new URLSearchParams();
+  if (q) pc.set('q', q);
+  if (desde) pc.set('desde', desde);
+  if (hasta) pc.set('hasta', hasta);
+  const [leads, kpis, contactos] = await Promise.all([
     api('/leads?' + params.toString()).then(r => r.json()),
-    api('/kpis' + (resp ? '?responsable_id=' + resp : '')).then(r => r.json())
+    api('/kpis' + (resp ? '?responsable_id=' + resp : '')).then(r => r.json()),
+    conContactos ? api('/contactos/sin-cotizacion?' + pc.toString()).then(r => r.json()) : []
   ]);
 
-  renderKpis(kpis);
-  renderKanbanLeads(leads);
+  renderKpis(kpis, contactos.length);
+  renderKanbanLeads(leads, contactos);
+}
+// Tarjeta de un contacto sin cotización: abre su ficha en Crear cotización / Crear orden de servicio.
+function tarjetaContacto(c) {
+  return `
+      <div class="lead-card contacto-card" data-etapa="1" role="button" tabindex="0" onclick="FlujoCRM.irACotizar(${Number(c.id)})" onkeydown="if(event.key==='Enter')FlujoCRM.irACotizar(${Number(c.id)})" title="Abrir su ficha para crear la cotización">
+        <div class="lead-folio">Contacto · sin cotización</div>
+        <div class="lead-tel">${escaparHtml(c.telefono)}</div>
+        <div class="lead-nombre">${escaparHtml(c.nombre || 'Sin nombre')}</div>
+        <div class="lead-servicio">${escaparHtml(c.empresa_contacto || c.canal_nombre || 'Pendiente de cotizar')}</div>
+        <div class="lead-meta"><span class="lead-resp">📄 Crear cotización</span></div>
+        <div class="lead-fecha">${fechaCorta(c.created_at)}</div>
+      </div>`;
 }
 
 function formatoMoneda(n) {
   return '$' + (Number(n) || 0).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-// Convierte un importe a su representación en letras, formato usado en documentos
-// formales en México ("MIL QUINIENTOS PESOS 50/100 M.N."). Simplificación aceptada:
-// siempre usa "PESOS" en plural (incluso para $1.00), como hacen la mayoría de los
-// sistemas de facturación; no ajusta género/plural más allá de eso.
+// Importe con letra ("MIL QUINIENTOS PESOS 50/100 M.N."): lo calcula public/importes.js
+// desde centavos enteros, igual para todos los documentos.
 function numeroALetras(monto) {
-  const UNIDADES = ['', 'UN', 'DOS', 'TRES', 'CUATRO', 'CINCO', 'SEIS', 'SIETE', 'OCHO', 'NUEVE'];
-  const ESPECIALES = ['DIEZ','ONCE','DOCE','TRECE','CATORCE','QUINCE','DIECISÉIS','DIECISIETE','DIECIOCHO','DIECINUEVE',
-    'VEINTE','VEINTIUNO','VEINTIDÓS','VEINTITRÉS','VEINTICUATRO','VEINTICINCO','VEINTISÉIS','VEINTISIETE','VEINTIOCHO','VEINTINUEVE'];
-  const DECENAS = ['','','','TREINTA','CUARENTA','CINCUENTA','SESENTA','SETENTA','OCHENTA','NOVENTA'];
-  const CENTENAS = ['','CIENTO','DOSCIENTOS','TRESCIENTOS','CUATROCIENTOS','QUINIENTOS','SEISCIENTOS','SETECIENTOS','OCHOCIENTOS','NOVECIENTOS'];
-  function seccion(n) {
-    let letras = '';
-    const c = Math.floor(n / 100), resto = n % 100;
-    if (c > 0) letras += (n === 100 ? 'CIEN' : CENTENAS[c]) + (resto > 0 ? ' ' : '');
-    if (resto > 0) {
-      if (resto < 10) letras += UNIDADES[resto];
-      else if (resto < 30) letras += ESPECIALES[resto - 10];
-      else {
-        const d = Math.floor(resto / 10), u = resto % 10;
-        letras += DECENAS[d] + (u > 0 ? ' Y ' + UNIDADES[u] : '');
-      }
-    }
-    return letras;
-  }
-  function miles(n) {
-    const m = Math.floor(n / 1000), resto = n % 1000;
-    let letras = '';
-    if (m > 0) letras += (m === 1 ? 'MIL' : seccion(m) + ' MIL');
-    if (resto > 0) letras += (letras ? ' ' : '') + seccion(resto);
-    return letras;
-  }
-  function millones(n) {
-    const mm = Math.floor(n / 1000000), resto = n % 1000000;
-    let letras = '';
-    if (mm > 0) letras += (mm === 1 ? 'UN MILLÓN' : seccion(mm) + ' MILLONES');
-    if (resto > 0) letras += (letras ? ' ' : '') + miles(resto);
-    return letras;
-  }
-  const entero = Math.floor(Math.abs(Number(monto) || 0));
-  const centavos = Math.round((Math.abs(Number(monto) || 0) - entero) * 100);
-  let letras = entero === 0 ? 'CERO' : millones(entero);
-  // Apócope: "UNO"/"VEINTIUNO" antes de un sustantivo se dice "UN"/"VEINTIÚN" —
-  // aplica tanto al final (antes de "PESOS") como antes de "MIL" o "MILLONES".
-  letras = letras.replace(/\bVEINTIUNO\b/g, 'VEINTIÚN').replace(/\bUNO\b/g, 'UN');
-  return `${letras} PESOS ${String(centavos).padStart(2, '0')}/100 M.N.`;
+  return Importes.enLetras(Math.round((Number(monto) || 0) * 100));
 }
 
-function renderKpis(kpis) {
+function renderKpis(kpis, contactos = 0) {
   const porEtapa = kpis.etapas || {};
   for (let e = 1; e <= 4; e++) {
     const k = porEtapa[e] || { total: 0, abiertos: 0, ganados: 0, perdidos: 0, con_alertas: 0, valor_total: 0, dias_promedio: null };
-    document.getElementById(`kpi-${e}-total`).textContent = k.total;
+    document.getElementById(`kpi-${e}-total`).textContent = k.total + (e === 1 ? contactos : 0);
     const chips = [];
     if (k.abiertos > 0) chips.push(`<span class="kpi-chip">${k.abiertos} abierto${k.abiertos === 1 ? '' : 's'}</span>`);
     if (k.ganados > 0) chips.push(`<span class="kpi-chip ganado">${k.ganados} ganado${k.ganados === 1 ? '' : 's'}</span>`);
     if (k.perdidos > 0) chips.push(`<span class="kpi-chip perdido">${k.perdidos} perdido${k.perdidos === 1 ? '' : 's'}</span>`);
+    if (e === 1 && contactos > 0) chips.push(`<span class="kpi-chip">${contactos} contacto${contactos === 1 ? '' : 's'} sin cotización</span>`);
     if (k.con_alertas > 0) chips.push(`<span class="kpi-chip alerta">⏰ ${k.con_alertas} con alerta</span>`);
     document.getElementById(`kpi-${e}-desglose`).innerHTML = chips.join('') || '<span class="kpi-chip">Sin registros</span>';
     document.getElementById(`kpi-${e}-valor`).innerHTML = k.valor_total > 0
@@ -506,18 +503,27 @@ function diasSinMovimiento(updatedAt) {
   return diff;
 }
 
-function renderKanbanLeads(leads) {
+// Importe de una tarjeta: "más IVA" muestra el subtotal + IVA; "IVA incluido", el total.
+function importeTarjeta(l) {
+  if (l.valor == null) return '—';
+  if (l.iva_modo === 'mas_iva') return formatoMoneda(l.valor) + ' + IVA';
+  if (l.iva_modo === 'incluido') return formatoMoneda((Math.round(l.valor * 100) + (l.iva_cent || 0)) / 100) + ' IVA incl.';
+  if (l.iva_modo === 'sin_iva') return formatoMoneda(l.valor) + ' sin IVA';
+  return formatoMoneda(l.valor);
+}
+function renderKanbanLeads(leads, contactos = []) {
   const etiquetaFiltro = ETAPA_FILTRO ? ` · filtrando etapa ${ETAPA_FILTRO}` : '';
   const conteoEl = document.getElementById('tabla-leads-conteo');
-  if (conteoEl) conteoEl.textContent = leads.length + (leads.length === 1 ? ' cotización' : ' cotizaciones') + etiquetaFiltro;
+  if (conteoEl) conteoEl.textContent = leads.length + (leads.length === 1 ? ' cotización' : ' cotizaciones')
+    + (contactos.length ? ` · ${contactos.length} contacto${contactos.length === 1 ? '' : 's'} sin cotización` : '') + etiquetaFiltro;
 
   for (let e = 1; e <= 4; e++) {
     document.getElementById('col-' + e).innerHTML = '';
     document.getElementById('footer-' + e).innerHTML = '';
   }
 
-  if (!leads.length) {
-    document.getElementById('col-1').innerHTML = '<p class="util-36">Sin cotizaciones abiertas con estos filtros.</p>';
+  if (!leads.length && !contactos.length) {
+    document.getElementById('col-1').innerHTML = '<p class="util-36">Sin contactos ni cotizaciones abiertas con estos filtros.</p>';
     for (let e = 1; e <= 4; e++) document.getElementById('count-' + e).textContent = '0';
     return;
   }
@@ -529,11 +535,11 @@ function renderKanbanLeads(leads) {
 
   for (let e = 1; e <= 4; e++) {
     const lista = porEtapa[e];
-    document.getElementById('count-' + e).textContent = lista.length;
+    document.getElementById('count-' + e).textContent = lista.length + (e === 1 ? contactos.length : 0);
 
     const valorColumna = lista.reduce((sum, l) => sum + (l.valor || 0), 0);
     if (valorColumna > 0) {
-      document.getElementById('footer-' + e).innerHTML = `<div class="kanban-footer-valor">Total: <b>${formatoMoneda(valorColumna)}</b></div>`;
+      document.getElementById('footer-' + e).innerHTML = `<div class="kanban-footer-valor">Total sin IVA: <b>${formatoMoneda(valorColumna)}</b></div>`;
     }
 
     document.getElementById('col-' + e).innerHTML = lista.map(l => {
@@ -553,12 +559,14 @@ function renderKanbanLeads(leads) {
         <div class="lead-servicio">${escaparHtml(l.servicio_nombre || 'Sin servicio')}</div>
         <div class="lead-meta">
           <span class="lead-resp">${escaparHtml(l.responsable_nombre || '—')}</span>
-          <span class="lead-valor">${l.valor != null ? formatoMoneda(l.valor) : '—'}</span>
+          <span class="lead-valor">${importeTarjeta(l)}</span>
         </div>
         <div class="lead-fecha">${fechaCorta(l.updated_at)}</div>
       </div>
     `}).join('');
   }
+  // Contactos sin cotización: arriba de la primera etapa.
+  if (contactos.length) document.getElementById('col-1').insertAdjacentHTML('afterbegin', contactos.map(tarjetaContacto).join(''));
 }
 
 on('f-buscar', 'input', debounce(cargarLeads, 350));
@@ -637,20 +645,21 @@ async function cargarResultados(){
     const d=await api('/analisis/comercial?'+new URLSearchParams({desde,hasta})).then(r=>r.json());if(consulta!==consultaResultados)return;
     RESULTADOS_ACTUALES=d;document.getElementById('res-exportar').disabled=false;
     const r=d.resumen,pct=(a,b)=>b?(100*a/b).toFixed(1)+'%':'—';
-    const tarjetas=[['Contactos nuevos',r.nuevos],['Clientes con servicios en el periodo',r.clientes],['Importe contratado',formatoMoneda(r.contratado)],['Servicios contratados',r.servicios],['Conversión de contactos nuevos',pct(r.convertidos,r.nuevos)],['Promedio por servicio',r.servicios?formatoMoneda(r.contratado/r.servicios):'—'],['Clientes recurrentes activos',r.recurrentes],['Importe en propuestas abiertas',formatoMoneda(r.propuesto)]];
+    const tarjetas=[['Contactos nuevos',r.nuevos],['Clientes con servicios en el periodo',r.clientes],['Importe contratado (sin IVA)',formatoMoneda(r.contratado)],['Servicios contratados',r.servicios],['Conversión de contactos nuevos',pct(r.convertidos,r.nuevos)],['Promedio por servicio (sin IVA)',r.servicios?formatoMoneda(r.contratado/r.servicios):'—'],['Clientes recurrentes activos',r.recurrentes],['Importe en propuestas abiertas (sin IVA)',formatoMoneda(r.propuesto)]];
     Finanzas.pintarResultados(desde, hasta);
     document.getElementById('res-kpis').innerHTML=tarjetas.map(([label,value])=>`<div class="res-card"><div class="res-num">${value}</div><div class="res-label">${label}</div></div>`).join('');
     document.getElementById('res-canales').innerHTML=d.canales.map(c=>`<tr><td>${escaparHtml(c.canal)}</td><td>${c.nuevos}</td><td>${c.convertidos}</td><td>${pct(c.convertidos,c.nuevos)}</td><td>${c.clientes}</td><td>${c.servicios}</td><td>${formatoMoneda(c.contratado)}</td><td>${c.servicios?formatoMoneda(c.contratado/c.servicios):'—'}</td><td>${c.abiertas}</td><td>${formatoMoneda(c.propuesto)}</td></tr>`).join('')||'<tr><td colspan="10">Sin datos.</td></tr>';
     document.getElementById('res-clientes').innerHTML=d.clientes.map(c=>`<tr><td>${escaparHtml(c.nombre||c.telefono)}</td><td>${escaparHtml(c.canal)}</td><td>${c.ganados_historicos>1?'Cliente recurrente':c.ganados_historicos?'Cliente':'Prospecto'}</td><td>${c.servicios}</td><td>${formatoMoneda(c.contratado)}</td><td>${formatoMoneda(c.total_historico)}</td><td>${c.abiertas}</td><td>${escaparHtml(c.ultima_fecha||'Sin fecha')}</td><td><button class="btn btn-outline" data-resultado-cliente="${Number(c.id)}">Abrir ficha</button></td></tr>`).join('')||'<tr><td colspan="9">Sin contactos ni actividad en el periodo.</td></tr>';
     renderBarChart('res-dinero-canal',d.canales,'canal','contratado',formatoMoneda);renderBarChart('res-contactos-canal',[...d.canales].sort((a,b)=>b.nuevos-a.nuevos),'canal','nuevos',v=>v+' contactos');
     renderGraficosComerciales(d);
-    estado.textContent=(desde||hasta?'Periodo: '+(desde||'inicio')+' a '+(hasta||'sin límite'):'Todo el historial')+(d.sinFecha?' · '+d.sinFecha+' servicios contratados sin fecha: no se incluyen al filtrar por fechas.':'');
+    estado.textContent=(desde||hasta?'Periodo: '+(desde||'inicio')+' a '+(hasta||'sin límite'):'Todo el historial')+(d.sinFecha?' · '+d.sinFecha+' servicios contratados sin fecha: no se incluyen al filtrar por fechas.':'')
+      +(d.ivaPorDefinir?.servicios?' · '+d.ivaPorDefinir.servicios+' servicio(s) del periodo con IVA por definir ('+formatoMoneda(d.ivaPorDefinir.importe)+'): se suman como se capturaron, con o sin IVA.':'');
   }catch(err){if(consulta!==consultaResultados)return;estado.textContent='No se pudieron cargar los resultados. '+err.message;}
 }
 on('res-aplicar','click',cargarResultados);
 on('res-todo','click',()=>{document.getElementById('res-desde').value='';document.getElementById('res-hasta').value='';cargarResultados();});
 on('res-clientes','click',e=>{const btn=e.target.closest('[data-resultado-cliente]');if(btn)abrirFichaCliente(Number(btn.dataset.resultadoCliente));});
-on('res-exportar','click',()=>{if(!RESULTADOS_ACTUALES)return;descargarCSV('resultados-canales.csv',[{titulo:'Canal de origen',valor:c=>c.canal},{titulo:'Contactos nuevos',valor:c=>c.nuevos},{titulo:'Convertidos',valor:c=>c.convertidos},{titulo:'Servicios contratados',valor:c=>c.servicios},{titulo:'Importe contratado MXN',valor:c=>c.contratado},{titulo:'Propuestas abiertas',valor:c=>c.abiertas},{titulo:'Importe abierto MXN',valor:c=>c.propuesto}],RESULTADOS_ACTUALES.canales);});
+on('res-exportar','click',()=>{if(!RESULTADOS_ACTUALES)return;descargarCSV('resultados-canales.csv',[{titulo:'Canal de origen',valor:c=>c.canal},{titulo:'Contactos nuevos',valor:c=>c.nuevos},{titulo:'Convertidos',valor:c=>c.convertidos},{titulo:'Servicios contratados',valor:c=>c.servicios},{titulo:'Importe contratado sin IVA MXN',valor:c=>c.contratado},{titulo:'Propuestas abiertas',valor:c=>c.abiertas},{titulo:'Importe abierto sin IVA MXN',valor:c=>c.propuesto}],RESULTADOS_ACTUALES.canales);});
 
 function renderBarChart(id, datos, labelKey, valueKey, fmt) {
   const cont = document.getElementById(id);
@@ -708,9 +717,19 @@ function nombreArchivoCotizacion(datos, extension) {
   return `cotizacion_${datos.folio}_${cliente}.${extension}`;
 }
 
+// Importes del documento con el IVA elegido en el editor (el que se acaba de guardar).
+function importesDocumento(items) {
+  const modo = modoIvaEditor(), tasa = IVA_TASA;
+  const r = Importes.calcular(items, modo, tasa);
+  return {
+    modo, total: r.total_cent / 100, totalLetras: Importes.enLetras(r.total_cent),
+    totales: Importes.filasTotales(r, modo, tasa), leyendaIva: Importes.leyenda(modo, tasa),
+    encabezadoImporte: Importes.encabezadoImporte(modo) + ' (MXN)'
+  };
+}
+
 function datosCotizacionDesdeLead(lead, items) {
   const emision = new Date();
-  const total = items.reduce((suma, item) => suma + (Number(item.importe) || 0), 0);
   let vigenciaTexto = null;
   if (lead.incluye_vigencia !== 0) {
     if (lead.vigencia_hasta) {
@@ -734,8 +753,7 @@ function datosCotizacionDesdeLead(lead, items) {
       direccion: lead.direccion || ''
     },
     items,
-    total,
-    totalLetras: numeroALetras(total)
+    ...importesDocumento(items)
   };
 }
 
@@ -793,16 +811,22 @@ async function generarPDFCotizacion(datos) {
   if(y>limite-70)pagina();
   doc.autoTable({
     startY:y, margin:{left:margen,right:margen,top:inicio,bottom:208},
-    head:[['Servicio','Descripción / leyenda','Importe (MXN)']],
+    head:[['Servicio','Descripción / leyenda',datos.encabezadoImporte]],
     body:datos.items.map(item=>[item.servicio,item.leyenda||'—',formatoMoneda(item.importe)]),
-    foot:[['','Total',formatoMoneda(datos.total)]],showFoot:'lastPage',rowPageBreak:'avoid',columnStyles:{0:{cellWidth:125},2:{cellWidth:95}},
+    // Con IVA: Subtotal / IVA / Total; solo el total va en negritas.
+    foot:datos.totales.map(([etiqueta,cent])=>['',etiqueta,formatoMoneda(cent/100)]),showFoot:'lastPage',rowPageBreak:'avoid',columnStyles:{0:{cellWidth:125},2:{cellWidth:95,halign:'right'}},
     styles:{fontSize:10,cellPadding:6,overflow:'linebreak'},
     headStyles:{fillColor:[246,177,3],textColor:20},
     footStyles:{fillColor:[245,245,245],textColor:20,fontStyle:'bold'},
+    didParseCell:d=>{
+      if(d.section==='head'&&d.column.index===2)d.cell.styles.halign='right';
+      if(d.section==='foot'){d.cell.styles.halign=d.column.index===0?'left':'right';if(d.row.index<datos.totales.length-1)d.cell.styles.fontStyle='normal';}
+    },
     willDrawPage:()=>{if(doc.internal.getCurrentPageInfo().pageNumber>1)fondo();}
   });
   y=doc.lastAutoTable.finalY+24;
   texto('Son: '+datos.totalLetras,9,true);
+  if(datos.leyendaIva)texto(datos.leyendaIva,9);
   y+=4;
   if(datos.vigenciaTexto)texto('Esta cotización tiene vigencia hasta el '+datos.vigenciaTexto+'.',9);
   const paginas=doc.getNumberOfPages();
@@ -816,9 +840,10 @@ async function generarWordCotizacion(datos) {
   const parrafo=(texto,bold=false)=>new Paragraph({spacing:{after:100},children:[new TextRun({text:String(texto),bold})]});
   const celda=(texto,bold=false)=>new TableCell({children:[parrafo(texto,bold)],shading:bold?{fill:'F6B103'}:undefined});
   const tabla=new Table({width:{size:100,type:WidthType.PERCENTAGE},rows:[
-    new TableRow({tableHeader:true,children:[celda('Servicio',true),celda('Descripción / leyenda',true),celda('Importe (MXN)',true)]}),
+    new TableRow({tableHeader:true,children:[celda('Servicio',true),celda('Descripción / leyenda',true),celda(datos.encabezadoImporte,true)]}),
     ...datos.items.map(item=>new TableRow({children:[celda(item.servicio),celda(item.leyenda||'—'),celda(formatoMoneda(item.importe))]})),
-    new TableRow({children:[celda(''),celda('Total',true),celda(formatoMoneda(datos.total),true)]})
+    // Con IVA: Subtotal / IVA / Total; solo el total va resaltado.
+    ...datos.totales.map(([etiqueta,cent],i)=>{const total=i===datos.totales.length-1;return new TableRow({children:[celda(''),celda(etiqueta,total),celda(formatoMoneda(cent/100),total)]});})
   ]});
   const documento=new Document({styles:{default:{document:{run:{font:'Arial',size:20,color:'222222'},paragraph:{spacing:{after:100}}}}},sections:[{
     properties:{page:{size:{width:12240,height:18360},margin:{top:2640,bottom:4160,left:960,right:960,header:0,footer:0}}},
@@ -831,7 +856,7 @@ async function generarWordCotizacion(datos) {
       ...(datos.cliente.empresa?[parrafo(datos.cliente.empresa)]:[]),
       ...(datos.cliente.telefono?[parrafo('Tel: '+datos.cliente.telefono)]:[]),
       ...(datos.cliente.direccion?[parrafo('Ubicación del servicio: '+datos.cliente.direccion)]:[]),
-      tabla,parrafo('Son: '+datos.totalLetras,true),parrafo(''),
+      tabla,parrafo('Son: '+datos.totalLetras,true),...(datos.leyendaIva?[parrafo(datos.leyendaIva)]:[]),parrafo(''),
       ...(datos.vigenciaTexto?[parrafo('Esta cotización tiene vigencia hasta el '+datos.vigenciaTexto+'.')]:[])
     ]
   }]});
@@ -859,7 +884,6 @@ function nombreArchivoOrdenServicio(datos, extension) {
 }
 
 function datosOrdenServicioDesdeLead(lead, items) {
-  const total = items.reduce((suma, item) => suma + (Number(item.importe) || 0), 0);
   return {
     folio: folioOrdenServicio(lead),
     // Solo se cita la cotización si la orden realmente salió de una (no en directas ni duplicadas).
@@ -875,10 +899,11 @@ function datosOrdenServicioDesdeLead(lead, items) {
     operador: lead.operador || '',
     observaciones: lead.observaciones || '',
     items,
-    total,
-    totalLetras: numeroALetras(total)
+    ...importesDocumento(items)
   };
 }
+// Rótulo del recuadro del total en la orden de servicio.
+const etiquetaTotalOrden = modo => modo === 'mas_iva' ? 'TOTAL CON IVA' : modo === 'incluido' ? 'TOTAL (IVA INCLUIDO)' : modo === 'sin_iva' ? 'TOTAL (SIN IVA)' : 'IMPORTE TOTAL';
 
 // Mismo orden de conceptos que el formato impreso "ORDENES DE SERVICIO" de Saneadren:
 // Empresa/Fecha, Ubicación, Equipo, Operador → Descripción → Importe → Observaciones →
@@ -942,7 +967,7 @@ async function generarPDFOrdenServicio(datos) {
   seccion('DESCRIPCIÓN DEL TRABAJO');
   doc.autoTable({
     startY: y - 4, margin: { left: margen, right: margen, top: inicio, bottom: 212 }, theme: 'plain',
-    head: [['Servicio', 'Descripción', 'Importe']],
+    head: [['Servicio', 'Descripción', Importes.encabezadoImporte(datos.modo)]],
     body: datos.items.map(item => [item.servicio, item.leyenda || '—', formatoMoneda(item.importe)]),
     rowPageBreak: 'avoid',
     styles: { fontSize: 9.5, cellPadding: { top: 6, bottom: 6, left: 7, right: 7 }, textColor: C.oscuro, lineColor: C.linea, overflow: 'linebreak' },
@@ -955,14 +980,22 @@ async function generarPDFOrdenServicio(datos) {
   });
   y = doc.lastAutoTable.finalY + 10;
   // Total: recuadro a la derecha con acento amarillo, y el importe con letra a la izquierda.
-  asegurar(40);
-  const anchoTotal = 190;
+  // Con IVA, encima del recuadro van Subtotal e IVA en renglones chicos.
+  const desglose = datos.totales.slice(0, -1);
+  asegurar(40 + desglose.length * 14);
+  const anchoTotal = 210;
+  desglose.forEach(([etiqueta, cent]) => {
+    fuente(8, true, C.gris); doc.text(etiqueta.toUpperCase(), derecha - anchoTotal + 14, y + 9);
+    fuente(9.5); doc.text(formatoMoneda(cent / 100), derecha - 10, y + 9, { align: 'right' });
+    y += 14;
+  });
+  if (desglose.length) y += 4;
   doc.setFillColor(...C.fondo); doc.rect(derecha - anchoTotal, y, anchoTotal, 30, 'F');
   doc.setFillColor(...C.amarillo); doc.rect(derecha - anchoTotal, y, 4, 30, 'F');
-  fuente(8, true, C.gris); doc.text('IMPORTE TOTAL', derecha - anchoTotal + 14, y + 19);
+  fuente(8, true, C.gris); doc.text(etiquetaTotalOrden(datos.modo), derecha - anchoTotal + 14, y + 19);
   fuente(14, true); doc.text(formatoMoneda(datos.total), derecha - 10, y + 20, { align: 'right' });
   fuente(8, false, C.gris);
-  doc.text(doc.splitTextToSize('Son: ' + datos.totalLetras, ancho - anchoTotal - 20), margen, y + 13);
+  doc.text(doc.splitTextToSize('Son: ' + datos.totalLetras + (datos.leyendaIva ? ' ' + datos.leyendaIva : ''), ancho - anchoTotal - 20), margen, y + 13);
   y += 50;
 
   seccion('OBSERVACIONES');
@@ -1023,15 +1056,17 @@ async function generarWordOrdenServicio(datos) {
   ])],[3300,3720,3300]);
   const datosServicio=tabla(camposOrden(datos).map(f=>fila(f.length===1?[campo(f[0][0],f[0][1],3)]:[campo(f[0][0],f[0][1]),sep(),campo(f[1][0],f[1][1])])),[5000,320,5000]);
   const trabajo=tabla([
-    fila(['Servicio','Descripción','Importe'].map((t,i)=>celda(p(run(t,{bold:true,size:17,color:'FFFFFF'}),{derecha:i===2}),{fondo:OSC}))),
+    fila(['Servicio','Descripción',Importes.encabezadoImporte(datos.modo)].map((t,i)=>celda(p(run(t,{bold:true,size:17,color:'FFFFFF'}),{derecha:i===2}),{fondo:OSC}))),
     ...datos.items.map((item,n)=>fila([
       celda(p(run(item.servicio,{bold:true,size:19})),{fondo:n%2?FON:undefined,bordes:lineaAbajo()}),
       celda(p(run(item.leyenda||'—',{size:19})),{fondo:n%2?FON:undefined,bordes:lineaAbajo()}),
       celda(p(run(formatoMoneda(item.importe),{size:19}),{derecha:true}),{fondo:n%2?FON:undefined,bordes:lineaAbajo()})]))
   ],[2800,5720,1800]);
+  // Con IVA, Subtotal e IVA van en renglones chicos encima del total, dentro del mismo recuadro.
+  const desglose=datos.totales.slice(0,-1).map(([etiqueta,cent])=>p([run(etiqueta.toUpperCase()+'   ',{bold:true,size:14,color:GRI}),run(formatoMoneda(cent/100),{size:18})],{derecha:true,despues:20}));
   const total=tabla([fila([
-    celda(p(run('Son: '+datos.totalLetras,{size:16,color:GRI})),{mh:0}),
-    celda(p([run('IMPORTE TOTAL   ',{bold:true,size:15,color:GRI}),run(formatoMoneda(datos.total),{bold:true,size:28})],{derecha:true}),{fondo:FON,bordes:{top:nada,bottom:nada,right:nada,left:{style:BorderStyle.SINGLE,size:24,color:AMA}}})
+    celda([p(run('Son: '+datos.totalLetras,{size:16,color:GRI}))].concat(datos.leyendaIva?[p(run(datos.leyendaIva,{size:16,color:GRI}))]:[]),{mh:0}),
+    celda([...desglose,p([run(etiquetaTotalOrden(datos.modo)+'   ',{bold:true,size:15,color:GRI}),run(formatoMoneda(datos.total),{bold:true,size:28})],{derecha:true})],{fondo:FON,bordes:{top:nada,bottom:nada,right:nada,left:{style:BorderStyle.SINGLE,size:24,color:AMA}}})
   ])],[6120,4200]);
   const observaciones=tabla([fila([celda(datos.observaciones?p(run(datos.observaciones)):p(run('')),{fondo:FON,mv:120})],900)],[10320]);
   const firma=(etiqueta,nombre)=>celda([p(run(nombre||' '),{centro:true,despues:0})].concat(p(run(etiqueta,{bold:true,size:14,color:GRI}),{centro:true})),{bordes:{top:nada,left:nada,right:nada,bottom:nada},mh:0});
@@ -1067,10 +1102,16 @@ async function descargarOrdenServicioActual(mensaje){
   toast(mensaje || 'Orden de servicio generada');
 }
 on('btn-generar-orden-servicio','click',async e=>{
+  const btn=e.currentTarget; // antes de cualquier await: después currentTarget ya es null
   if(!validarEditorCotizacion())return;
   const cerrando = LEAD_ACTUAL.estatus === 'abierto';
   if (cerrando) {
     sincronizarEditor();
+    if (!document.getElementById('ed-fecha-servicio').value) {
+      const fecha = await solicitarDialogo({ titulo: 'Convertir en orden de servicio', mensaje: 'El cliente aceptó la cotización. ¿Qué fecha quedó acordada para el servicio?', aceptar: 'Crear orden de servicio', campo: { tipo: 'date', etiqueta: 'Fecha acordada del servicio' } });
+      if (!fecha) return;
+      document.getElementById('ed-fecha-servicio').value = fecha;
+    }
     if(!document.getElementById('ed-servicio').value){toast('Selecciona el servicio que se contratará');document.getElementById('ed-servicio').focus();return;}
     if(!document.getElementById('ed-direccion').value.trim()){toast('Indica la ubicación del servicio');document.getElementById('ed-direccion').focus();return;}
     if(!document.getElementById('ed-fecha-servicio').value){toast('Indica la fecha acordada del servicio antes de generar la orden');document.getElementById('ed-fecha-servicio').focus();return;}
@@ -1078,7 +1119,7 @@ on('btn-generar-orden-servicio','click',async e=>{
     // (el backend también lo valida).
     if(document.getElementById('ed-valor').value===''){toast('Ingresa el costo del servicio antes de generar la orden');document.getElementById('ed-valor').focus();return;}
   }
-  const btn=e.currentTarget;btn.disabled=true;
+  btn.disabled=true;
   try{
     const payload = cerrando ? { ...recolectarPayloadFicha(), estatus: 'ganado' } : recolectarPayloadFicha();
     if(!await guardarLeadExistente(payload))return;
@@ -1120,8 +1161,8 @@ function crearFilaServicioHTML(item) {
           </select>
         </div>
         <div class="campo-modal">
-          <label>Importe (MXN)</label>
-          <input type="number" class="gc-importe" data-fila="${id}" min="0" step="0.01" value="${item.importe ?? ''}">
+          <label class="gc-etiqueta-importe" for="gc-importe-${id}">${Importes.encabezadoImporte(modoIvaEditor())} (MXN)</label>
+          <input type="number" class="gc-importe" id="gc-importe-${id}" data-fila="${id}" min="0" step="0.01" value="${item.importe ?? ''}">
         </div>
         <div class="campo-modal full">
           <label>Descripción / leyenda</label>
@@ -1137,10 +1178,62 @@ function agregarFilaCotizacion(item = {}) {
   document.getElementById('gc-items').insertAdjacentHTML('beforeend', crearFilaServicioHTML(item));
 }
 
+// ---------- IVA del documento (casilla "IVA incluido") ----------
+// #gc-iva-modo guarda el modo: 'mas_iva' (casilla sin marcar: los importes son sin IVA y se
+// suma el 16 %), 'incluido' (marcada: ya lo traen y se desglosa) o '' = por definir (registros
+// anteriores al IVA). Es un campo oculto para que el aviso de cambios sin guardar lo vigile.
+let IVA_TASA = Importes.TASA_DEFAULT;
+let IVA_BLOQUEADO = false; // orden de servicio: solo administración o atención cambian su IVA
+const modoIvaEditor = () => document.getElementById('gc-iva-modo').value || null;
+const ivaPayload = () => modoIvaEditor() ? { iva_modo: modoIvaEditor(), iva_tasa: Importes.tasaDe(modoIvaEditor(), IVA_TASA) } : {};
+function fijarModoIva(modo) {
+  const campo = document.getElementById('gc-iva-modo');
+  if (campo.value === (modo || '')) return;
+  campo.value = modo || '';
+  campo.dispatchEvent(new Event('change', { bubbles: true })); // aviso de cambios sin guardar
+  actualizarTotalCotizacion();
+}
+function pintarIvaEditor() {
+  const modo = modoIvaEditor();
+  document.querySelectorAll('input[name="gc-iva-opcion"]').forEach(r => { r.checked = r.value === modo; r.disabled = IVA_BLOQUEADO; });
+  document.getElementById('gc-iva-ayuda').textContent = !modo ? ''
+    : ({ incluido: `Escribe el total que paga el cliente: el sistema separa el subtotal y el IVA (${IVA_TASA} %). Ej.: 1,160 = 1,000 + 160.`,
+      mas_iva: `Escribe el precio sin IVA: el sistema suma el ${IVA_TASA} %. Ej.: 1,000 + 160 = 1,160.`,
+      sin_iva: 'El precio no lleva IVA: el cliente paga exactamente lo que escribes. Ej.: 1,000 = 1,000.' }[modo] || '')
+      + (IVA_BLOQUEADO ? ' Solo administración o atención pueden cambiar el IVA o los importes de una orden de servicio.' : '');
+  // En una orden, quien no puede cambiar lo que se cobra tampoco puede editar importes ni partidas
+  // (antes podía escribirlos y el error salía hasta guardar).
+  document.querySelectorAll('#gc-items .gc-importe').forEach(i => { i.readOnly = IVA_BLOQUEADO; });
+  document.querySelectorAll('#gc-items .gc-quitar').forEach(b => { b.disabled = IVA_BLOQUEADO; });
+  document.getElementById('btn-gc-agregar-servicio').disabled = IVA_BLOQUEADO;
+  document.getElementById('gc-iva-aviso').hidden = !!modo;
+  if (!modo) {
+    document.getElementById('gc-iva-aviso-texto').textContent = IVA_BLOQUEADO
+      ? 'IVA por definir: este registro es anterior al IVA. Lo indica administración o atención.'
+      : 'IVA por definir: este registro es anterior al IVA. Elige cómo va el importe que se le dio al cliente: más IVA, IVA incluido o sin IVA.';
+  }
+  document.querySelectorAll('#gc-items .gc-etiqueta-importe').forEach(l => { l.textContent = Importes.encabezadoImporte(modo) + ' (MXN)'; });
+}
+document.querySelectorAll('input[name="gc-iva-opcion"]').forEach(r => r.addEventListener('change', () => { if (r.checked) fijarModoIva(r.value); }));
+
 function actualizarTotalCotizacion() {
-  const total = Array.from(document.querySelectorAll('#gc-items .gc-importe'))
-    .reduce((suma, input) => suma + (Number(input.value) || 0), 0);
-  document.getElementById('gc-total').textContent = formatoMoneda(total);
+  pintarIvaEditor();
+  const modo = modoIvaEditor();
+  const items = Array.from(document.querySelectorAll('#gc-items .gc-importe')).map(input => ({ importe: Number(input.value) || 0 }));
+  const r = Importes.calcular(items, modo, IVA_TASA);
+  const filas = Importes.filasTotales(r, modo, IVA_TASA);
+  // Con desglose (más IVA o IVA incluido) hay Subtotal / IVA / Total; sin IVA o por definir, solo Total.
+  const conDesglose = filas.length > 1;
+  document.getElementById('gc-fila-subtotal').hidden = !conDesglose;
+  document.getElementById('gc-fila-iva').hidden = !conDesglose;
+  if (conDesglose) {
+    document.getElementById('gc-etiqueta-subtotal').textContent = filas[0][0];
+    document.getElementById('gc-subtotal').textContent = formatoMoneda(filas[0][1] / 100);
+    document.getElementById('gc-etiqueta-iva').textContent = filas[1][0];
+    document.getElementById('gc-iva-monto').textContent = formatoMoneda(filas[1][1] / 100);
+  }
+  document.getElementById('gc-etiqueta-total').textContent = filas.at(-1)[0];
+  document.getElementById('gc-total').textContent = formatoMoneda(r.total_cent / 100);
 }
 
 function recolectarItemsCotizacion() {
@@ -1158,9 +1251,21 @@ function prepararEditorCotizacion(lead,modo){
   EDITOR_MODO=modo;
   const editor=document.getElementById('editor-cotizacion');
   if(modo==='nuevo')document.getElementById('editor-nuevo-destino').append(editor);
-  else document.getElementById('ed-notas').closest('.form-grid-2').after(editor);
+  else document.getElementById('ed-direccion').closest('.form-grid-2').after(editor);
   editor.hidden=false;
+  // La barra de guardado va al final: en la ventana de crear o en la ficha del registro.
+  const barra=document.getElementById('barra-acciones');barra.hidden=false;
+  // El aviso de "cambios sin guardar" va dentro de la barra, junto a los botones.
+  const grupoFicha=document.getElementById('btn-guardar-ficha').closest('.btn-group');
+  const estadoNuevo=document.getElementById('estado-guardado-nuevo'),estadoFicha=document.getElementById('estado-guardado-registro');
+  if(modo==='nuevo'){document.getElementById('btn-guardar-servicio-nuevo').before(barra);grupoFicha.prepend(estadoFicha);barra.prepend(estadoNuevo);}
+  else{grupoFicha.before(barra);document.getElementById('btn-guardar-servicio-nuevo').before(estadoNuevo);barra.prepend(estadoFicha);}
+  document.getElementById('btn-barra-guardar').textContent=modo==='nuevo'?'Guardar':'Guardar cambios';
   ['sn-servicio','sn-valor','ed-servicio','ed-valor','ed-canal'].forEach(id=>document.getElementById(id).parentElement.hidden=true);
+  // IVA: un registro nuevo empieza "más IVA" (casilla sin marcar); los demás traen el suyo.
+  document.getElementById('gc-iva-modo').value=(lead && 'iva_modo' in lead ? lead.iva_modo : 'mas_iva')||'';
+  IVA_TASA=lead?.iva_tasa||Importes.TASA_DEFAULT;
+  IVA_BLOQUEADO=modo!=='nuevo'&&lead?.estatus==='ganado'&&!['admin','atencion'].includes(USUARIO_ACTUAL?.rol);
   document.getElementById('gc-items').innerHTML='';GC_CONTADOR=0;
   let items;try{items=JSON.parse(lead?.partidas_json||'null');}catch{}
   (items||[{servicio:lead?.servicio_nombre||'',leyenda:descripcionServicio(lead?.servicio_nombre||''),importe:lead?.valor??0}]).forEach(agregarFilaCotizacion);
@@ -1170,11 +1275,17 @@ function sincronizarEditor(){
   const items=recolectarItemsCotizacion(),prefijo=EDITOR_MODO==='nuevo'?'sn':'ed';
   const servicio=CATALOGOS.servicios.find(s=>s.nombre===items[0]?.servicio);
   document.getElementById(prefijo+'-servicio').value=servicio?.id||'';
-  document.getElementById(prefijo+'-valor').value=items.reduce((t,i)=>t+i.importe,0);
+  document.getElementById(prefijo+'-valor').value=Importes.calcular(items,modoIvaEditor(),IVA_TASA).subtotal_cent/100;
 }
 function validarEditorCotizacion(){
   const filas=[...document.querySelectorAll('#gc-items .gc-fila')];
-  if(!filas.length||filas.some(f=>!f.querySelector('.gc-servicio').value||f.querySelector('.gc-importe').value===''||!Number.isFinite(Number(f.querySelector('.gc-importe').value))||Number(f.querySelector('.gc-importe').value)<0)){toast('Selecciona un servicio e importe válido en cada partida');return false;}return true;
+  if(!filas.length||filas.some(f=>!f.querySelector('.gc-servicio').value||f.querySelector('.gc-importe').value===''||!Number.isFinite(Number(f.querySelector('.gc-importe').value))||Number(f.querySelector('.gc-importe').value)<0)){toast('Selecciona un servicio e importe válido en cada partida');return false;}
+  // Un registro nuevo o una cotización abierta deben decir si sus importes llevan IVA.
+  if(!modoIvaEditor()&&(EDITOR_MODO==='nuevo'||LEAD_ACTUAL?.estatus==='abierto')){
+    toast('Indica el IVA: elige Más IVA, IVA incluido o Sin IVA');
+    document.getElementById('gc-iva').scrollIntoView({block:'center',behavior:'smooth'});return false;
+  }
+  return true;
 }
 async function descargarCotizacionActual(){
   const formato=document.querySelector('input[name="gc-formato"]:checked').value;
@@ -1279,7 +1390,10 @@ on('btn-exportar-leads', 'click', async () => {
     { titulo: 'Etapa', valor: l => l.etapa },
     { titulo: 'Estatus', valor: l => l.estatus },
     { titulo: 'Servicio cotizado o contratado', valor: l => l.estatus === 'ganado' ? 'Contratado' : 'Cotizado' },
-    { titulo: 'Valor (MXN)', valor: l => l.valor ?? '' },
+    { titulo: 'Importe sin IVA (MXN)', valor: l => l.valor ?? '' },
+    { titulo: 'IVA (MXN)', valor: l => l.iva_cent == null ? '' : l.iva_cent / 100 },
+    { titulo: 'Total con IVA (MXN)', valor: l => l.valor == null ? '' : (Math.round(l.valor * 100) + (l.iva_cent || 0)) / 100 },
+    { titulo: 'Tipo de precio', valor: l => Importes.etiquetaModo(l.iva_modo, l.iva_tasa) },
     { titulo: 'Fecha del servicio', valor: l => l.fecha_servicio || '' },
     { titulo: 'Notas', valor: l => l.notas_iniciales || '' },
     { titulo: 'Creado por', valor: l => l.creado_por || '' },
@@ -1353,20 +1467,20 @@ function renderTablaClientesReales(clientes) {
   document.getElementById('tabla-conteo-clientes').textContent =
     clientes.length + (clientes.length === 1 ? ' contacto' : ' contactos');
   if (!clientes.length) {
-    body.innerHTML = '<tr><td class="util-37" colspan="9">No hay contactos con estos filtros. Puedes crear uno desde Nuevo contacto.</td></tr>';
+    body.innerHTML = '<tr><td class="util-37" colspan="7">No hay contactos con estos filtros. Puedes crear uno con Nuevo contacto.</td></tr>';
     return;
   }
+  // Una fila por contacto: quién es, qué tipo de contacto es y cuánto ha contratado.
+  const tipo = c => c.servicios_ganados > 1 ? ['recurrente', 'Recurrente'] : c.servicios_ganados > 0 ? ['cliente', 'Cliente'] : ['prospecto', 'Prospecto'];
   body.innerHTML = clientes.map(c => `
-    <tr onclick="abrirFichaCliente(${c.id})">
-      <td>#${c.id}</td>
-      <td class="tel">${escaparHtml(c.telefono)}</td>
-      <td><b>${escaparHtml(c.nombre || '—')}</b><small class="contacto-relacion">${c.servicios_ganados > 0 ? 'Cliente' : 'Prospecto · aún no ha contratado'}</small></td>
-      <td>${escaparHtml(c.empresa_contacto || '—')}</td>
-      <td>${escaparHtml(c.direccion || '—')}</td>
-      <td><span class="tag-alerta-tabla util-38">${c.servicios_ganados} servicio${c.servicios_ganados === 1 ? '' : 's'}</span></td>
-      <td>${formatoMoneda(c.valor_ganado_total)}</td>
-      <td>${c.solicitudes_abiertas > 0 ? `<span class="tag-estatus abierto">${c.solicitudes_abiertas} en leads</span>` : '—'}</td>
-      <td>${fechaCorta(c.ultima_actividad)}</td>
+    <tr onclick="abrirFichaCliente(${Number(c.id)})">
+      <td data-label="Contacto"><b>${escaparHtml(c.nombre || 'Sin nombre')}</b><small class="contacto-relacion">${escaparHtml([c.empresa_contacto, c.telefono].filter(Boolean).join(' · '))}</small></td>
+      <td data-label="Tipo"><span class="tipo-contacto ${tipo(c)[0]}">${tipo(c)[1]}</span></td>
+      <td data-label="Cotizaciones abiertas" class="st-num">${Number(c.solicitudes_abiertas) || '—'}</td>
+      <td data-label="Órdenes de servicio" class="st-num">${Number(c.servicios_ganados) || '—'}</td>
+      <td data-label="Contratado (sin IVA)" class="st-num">${c.valor_ganado_total ? formatoMoneda(c.valor_ganado_total) : '—'}</td>
+      <td data-label="Última actividad">${fechaCorta(c.ultima_actividad)}</td>
+      <td><button type="button" class="btn btn-outline">Abrir</button></td>
     </tr>
   `).join('');
 }
@@ -1471,13 +1585,13 @@ async function abrirFicha(id) {
   document.getElementById('ed-fecha-cotizacion').value = lead.fecha_cotizacion || '';
   document.getElementById('ed-incluye-vigencia').checked = lead.incluye_vigencia !== 0;
   document.getElementById('ed-vigencia-hasta').value = lead.vigencia_hasta || '';
-  document.getElementById('ed-notas').value = lead.notas_iniciales || '';
+  const notasIniciales = document.getElementById('ed-notas-iniciales');
+  notasIniciales.hidden = !lead.notas_iniciales;
+  notasIniciales.textContent = lead.notas_iniciales ? 'Nota al crear este registro: ' + lead.notas_iniciales : '';
   document.getElementById('ed-urgente').checked = !!lead.urgente;
   document.getElementById('ed-equipo').value = lead.equipo || '';
   document.getElementById('ed-operador').value = lead.operador || '';
   document.getElementById('ed-observaciones').value = lead.observaciones || '';
-  document.getElementById('ed-encuesta-calificacion').value = lead.encuesta_calificacion ?? '';
-  document.getElementById('ed-encuesta-comentario').value = lead.encuesta_comentario || '';
   document.getElementById('ed-creado-por').textContent = lead.creado_por || '—';
   document.getElementById('ed-created-at').textContent = fechaCorta(lead.created_at) || '—';
   document.getElementById('ed-estatus-actual').textContent = lead.estatus || '—';
@@ -1535,7 +1649,8 @@ function actualizarBotonesEstatusFicha(lead) {
   document.getElementById('btn-reabrir').style.display = (lead && !esAbierto && lead.origen !== 'directo') ? 'inline-flex' : 'none';
   // Solo las órdenes de servicio se duplican (servicio recurrente); las cotizaciones no.
   document.getElementById('btn-recomprar').style.display = (lead && lead.estatus === 'ganado' && lead.cliente_id) ? 'inline-flex' : 'none';
-  document.getElementById('btn-generar-orden-servicio').hidden = !lead;
+  // Solo una cotización abierta se convierte en orden; en la orden ya está "Guardar y descargar".
+  document.getElementById('btn-generar-orden-servicio').hidden = !lead || lead.estatus !== 'abierto';
 }
 
 // Registra un evento de sistema en la bitácora sin interrumpir al usuario si falla
@@ -1599,34 +1714,8 @@ document.getElementById('bitacora-lista').addEventListener('click', async e => {
   }
 });
 
-// Pipeline visual clickeable
-function actualizarPipeline() {
-  document.querySelectorAll('.pipeline-step').forEach(b => {
-    const step = Number(b.dataset.step);
-    b.classList.toggle('active', step === ETAPA_FICHA);
-  });
-}
-
-document.querySelectorAll('.pipeline-step').forEach(btn => {
-  btn.addEventListener('click', async () => {
-    const etapaAnterior = LEAD_ACTUAL.etapa;
-    ETAPA_FICHA = Number(btn.dataset.step);
-    actualizarPipeline();
-    try {
-      if (!await guardarLeadExistente({ etapa: ETAPA_FICHA, usuario: 'Web' })) {
-        ETAPA_FICHA = etapaAnterior;
-        actualizarPipeline();
-        return;
-      }
-      toast('Etapa actualizada: ' + NOMBRE_ETAPA[ETAPA_FICHA]);
-      cargarLeads();
-    } catch (err) {
-      toast('No se pudo cambiar de etapa: ' + err.message);
-      ETAPA_FICHA = etapaAnterior;
-      actualizarPipeline();
-    }
-  });
-});
+// La etapa se mueve solo desde el Pipeline (tablero); la ficha ya no tiene barra de etapas.
+function actualizarPipeline() {}
 
 // Guarda los cambios de la cotización/servicio en la ficha. Es la ÚNICA puerta de guardado
 // para los botones que modifican el registro: si el servidor lo rechaza (por ejemplo,
@@ -1655,27 +1744,18 @@ function recolectarPayloadFicha() {
     fecha_cotizacion: document.getElementById('ed-fecha-cotizacion').value || null,
     incluye_vigencia: document.getElementById('ed-incluye-vigencia').checked,
     vigencia_hasta: document.getElementById('ed-incluye-vigencia').checked ? (document.getElementById('ed-vigencia-hasta').value || null) : null,
-    notas_iniciales: document.getElementById('ed-notas').value.trim() || null,
-    urgente: document.getElementById('ed-urgente').checked,
     equipo: document.getElementById('ed-equipo').value.trim(),
     operador: document.getElementById('ed-operador').value.trim(),
     observaciones: document.getElementById('ed-observaciones').value.trim(),
-    encuesta_calificacion: document.getElementById('ed-encuesta-calificacion').value || null,
-    encuesta_comentario: document.getElementById('ed-encuesta-comentario').value.trim() || null
+    ...ivaPayload()
   };
 }
 on('btn-guardar-ficha', 'click', async () => {
   if(!validarEditorCotizacion())return;
-  const calificacionAntes = LEAD_ACTUAL.encuesta_calificacion ?? '';
-  const calificacionNueva = document.getElementById('ed-encuesta-calificacion').value;
   try {
     if (!await guardarLeadExistente(recolectarPayloadFicha())) return;
     toast('Cambios guardados en este registro');
     FlujoCRM.marcarGuardado('overlay-ficha');
-    if (String(calificacionAntes) !== String(calificacionNueva) && calificacionNueva) {
-      const etiqueta = {4:'Excelente',3:'Bueno',2:'Regular',1:'Malo'}[Number(calificacionNueva)];
-      await registrarEventoSistema(LEAD_ACTUAL.id, 'Encuesta de calidad registrada: ' + etiqueta + '.');
-    }
     const lead = await api('/leads/' + LEAD_ACTUAL.id).then(r => r.json());
     LEAD_ACTUAL = lead;
     renderFichaMeta(lead);
@@ -1754,34 +1834,7 @@ on('btn-agregar-obs', 'click', async () => {
   toast(esAlerta ? 'Recordatorio agregado' : 'Observación agregada');
 });
 
-// ---------- Vista Pendientes: recompras (servicios por vencer) + alertas, juntas ----------
-let FILTRO_PENDIENTE = 'todos';
-document.querySelectorAll('[data-filtro-pendiente]').forEach(btn => {
-  btn.addEventListener('click', () => {
-    FILTRO_PENDIENTE = btn.dataset.filtroPendiente;
-    document.querySelectorAll('[data-filtro-pendiente]').forEach(b => b.classList.toggle('activo', b === btn));
-    pintarPendientes();
-  });
-});
-let PENDIENTES_DATOS = [];
-async function cargarPendientes() {
-  const [recompras, alertas] = await Promise.all([
-    api('/recompras').then(r => r.json()),
-    api('/alertas').then(r => r.json())
-  ]);
-  actualizarBadgePendientes(recompras.length + alertas.length);
-  PENDIENTES_DATOS = [
-    ...recompras.map(r => ({ tipo: 'recompra', vencido: r.dias_restantes <= 0, datos: r })),
-    ...alertas.map(r => ({ tipo: 'alerta', vencido: false, datos: r }))
-  ];
-  pintarPendientes();
-}
-function pintarPendientes() {
-  const cont = document.getElementById('lista-pendientes');
-  const items = PENDIENTES_DATOS.filter(p => FILTRO_PENDIENTE === 'todos' || p.tipo === FILTRO_PENDIENTE);
-  if (!items.length) { cont.innerHTML = '<p class="util-45">No hay pendientes con este filtro por ahora.</p>'; return; }
-  cont.innerHTML = items.map(p => p.tipo === 'recompra' ? filaRecompra(p.datos, p.vencido) : filaAlerta(p.datos)).join('');
-}
+// ---------- Pendientes (en Inicio): recompras y avisos ----------
 function filaRecompra(r, vencido) {
   const texto = vencido
     ? `Vencido hace ${Math.abs(r.dias_restantes)} día${Math.abs(r.dias_restantes) === 1 ? '' : 's'}`
@@ -1831,7 +1884,8 @@ async function duplicarRegistro(leadId) {
       partidas_json: lead.partidas_json,
       servicio_nombre: lead.servicio_nombre,
       valor: lead.valor,
-      notas_iniciales: lead.notas_iniciales,
+      iva_modo: lead.iva_modo,
+      iva_tasa: lead.iva_tasa,
       equipo: lead.equipo,
       operador: lead.operador,
       duplicado_de: lead.id,
@@ -1844,8 +1898,21 @@ async function duplicarRegistro(leadId) {
 }
 async function resolverAlertaGlobal(id) {
   await api('/historial/' + id + '/resolver', { method: 'PUT' });
-  cargarPendientes();
+  cargarInicio();
+  actualizarBadgePendientes();
 }
+
+// "Urgente" está en Avisos y notas del registro: se guarda al marcarlo (no espera a "Guardar cambios").
+on('ed-urgente', 'change', async e => {
+  if (!LEAD_ACTUAL) return;
+  const urgente = e.target.checked;
+  try {
+    if (!await guardarLeadExistente({ version: LEAD_ACTUAL.version, urgente })) { e.target.checked = !urgente; return; }
+    await registrarEventoSistema(LEAD_ACTUAL.id, urgente ? 'Marcado como urgente.' : 'Ya no está marcado como urgente.');
+    toast(urgente ? 'Marcado como urgente' : 'Ya no es urgente');
+    if (document.getElementById('vista-leads').classList.contains('activa')) cargarLeads();
+  } catch (err) { e.target.checked = !urgente; toast('No se pudo guardar: ' + err.message); }
+});
 async function actualizarBadgePendientes(n) {
   const b = document.getElementById('badge-pendientes');
   if (n === undefined) {
