@@ -123,7 +123,7 @@ const Finanzas = (() => {
         ${r.puede_operar && !k.cancelado ? `<div class="btn-group">${!k.confirmado ? `<button type="button" class="btn btn-outline" data-cobro-confirmar="${Number(k.id)}">Confirmar</button>` : ''}<button type="button" class="btn btn-outline" data-cobro-cancelar="${Number(k.id)}">Cancelar</button></div>` : ''}
       </div>`).join('') : '<p class="util-45">Sin pagos registrados.</p>';
     cont.innerHTML = `
-      ${c.por_revisar ? '<p class="cuentas-aviso">Orden anterior al módulo de cuentas: está pendiente de la revisión inicial (Cuentas → Por cobrar).</p>' : ''}
+      ${c.por_revisar ? '<p class="cuentas-aviso">Orden anterior al módulo de cuentas: está pendiente de la revisión inicial (Finanzas → Cuentas por cobrar).</p>' : ''}
       <div class="cobranza-resumen">
         <div>${etiquetaEstado(c)}</div>
         <div><small>Total${c.factura_total != null ? ' (CFDI)' : ''}</small><b>${formatoMoneda(c.total)}</b></div>
@@ -168,7 +168,8 @@ const Finanzas = (() => {
   }
 
   // ===================== Vista Cuentas =====================
-  let PESTANA = 'cobrar', FILTRO = 'con_saldo', RESUMEN = null, CARTERA = [];
+  // SECCION: 'cobrar' (cuentas por cobrar) o 'pagar' (facturas y gastos + proveedores).
+  let SECCION = 'cobrar', PESTANA = 'cobrar', FILTRO = 'con_saldo', RESUMEN = null, CARTERA = [];
   document.querySelectorAll('[data-pestana]').forEach(b => b.addEventListener('click', () => irPestana(b.dataset.pestana)));
   function irPestana(p) {
     PESTANA = p;
@@ -188,24 +189,31 @@ const Finanzas = (() => {
   async function cargar(opciones = {}) {
     if (!puedeCartera()) return;
     if (opciones.filtro || opciones.pestana) $('cobrar-buscar').value = '';
+    if (opciones.seccion) SECCION = opciones.seccion;
+    else if (opciones.pestana) SECCION = opciones.pestana === 'cobrar' ? 'cobrar' : 'pagar';
+    $('cuentas-titulo').textContent = SECCION === 'cobrar' ? 'Cuentas por cobrar' : 'Cuentas por pagar';
+    $('cuentas-pestanas').hidden = SECCION === 'cobrar';
+    const pestana = SECCION === 'cobrar' ? 'cobrar' : (opciones.pestana && opciones.pestana !== 'cobrar' ? opciones.pestana : (PESTANA === 'cobrar' ? 'pagar' : PESTANA));
     if (opciones.filtro) {
       FILTRO = opciones.filtro;
       document.querySelectorAll('[data-filtro-cobro]').forEach(x => x.classList.toggle('activo', x.dataset.filtroCobro === FILTRO));
     }
     pintarTarjetas();
-    irPestana(opciones.pestana || PESTANA);
+    irPestana(pestana);
   }
   async function pintarTarjetas() {
     const cont = $('cuentas-tarjetas');
     try { RESUMEN = await api('/finanzas/resumen').then(json); } catch (err) { cont.innerHTML = `<div class="aviso-error-carga" role="alert"><p>No se pudo cargar el resumen: ${esc(err.message)}</p></div>`; return; }
     const r = RESUMEN, t = (titulo, valor, detalle, clase = '') => `<div class="tarjeta-dinero ${clase}"><small>${titulo}</small><b>${valor}</b>${detalle ? `<span>${detalle}</span>` : ''}</div>`;
-    cont.innerHTML = t('Te deben', formatoMoneda(r.por_cobrar), `${Number(r.cuentas_con_saldo)} órdenes con saldo`)
+    cont.innerHTML = SECCION === 'pagar'
+      ? (r.pagar_semana !== undefined ? t('Pagar esta semana', formatoMoneda(r.pagar_semana), `${Number(r.facturas_semana)} facturas (incluye vencidas)`, r.pagar_semana > 0 ? 'aviso' : '') : '')
+        + (r.por_pagar !== undefined ? t('Total por pagar', formatoMoneda(r.por_pagar), '') : '')
+        + (r.pagado_mes !== undefined ? t('Pagado este mes', formatoMoneda(r.pagado_mes), '') : '')
+      : t('Te deben', formatoMoneda(r.por_cobrar), `${Number(r.cuentas_con_saldo)} órdenes con saldo`)
       + t('Vencido', formatoMoneda(r.vencido), `${Number(r.clientes_con_vencido)} clientes`, r.vencido > 0 ? 'alerta' : '')
       + (r.programado > 0 ? t('Programado', formatoMoneda(r.programado), `${Number(r.ordenes_programadas)} servicios aún no realizados`) : '')
       + t('Cobrado este mes', formatoMoneda(r.cobrado_mes), '')
-      + (r.por_confirmar ? t('Por confirmar', formatoMoneda(r.por_confirmar.monto), `${Number(r.por_confirmar.cantidad)} pagos`, r.por_confirmar.cantidad ? 'aviso' : '') : '')
-      + (r.pagar_semana !== undefined ? t('Pagar esta semana', formatoMoneda(r.pagar_semana), `${Number(r.facturas_semana)} facturas (incluye vencidas)`, r.pagar_semana > 0 ? 'aviso' : '') : '')
-      + (r.por_pagar !== undefined ? t('Total por pagar', formatoMoneda(r.por_pagar), `Pagado este mes ${formatoMoneda(r.pagado_mes)}`) : '');
+      + (r.por_confirmar ? t('Por confirmar', formatoMoneda(r.por_confirmar.monto), `${Number(r.por_confirmar.cantidad)} pagos`, r.por_confirmar.cantidad ? 'aviso' : '') : '');
     pintarRevision();
   }
 
@@ -677,7 +685,7 @@ const Finanzas = (() => {
     wi.getColumn(1).width = 30; wi.getColumn(2).width = 14; wi.getColumn(3).width = 60; wi.getColumn(4).width = 30;
     wi.addRow([`Plantilla de ${def.titulo} · Saneadren CRM`]).font = { bold: true, size: 14 };
     wi.addRow([def.ayuda]);
-    wi.addRow(['1. Llena la hoja "Datos" (un renglón por registro, sin dejar renglones vacíos en medio). 2. Guarda como .xlsx. 3. En el CRM: Cuentas → "Subir plantilla". Verás una vista previa con los errores por renglón antes de importar; si hay errores no se importa nada.']);
+    wi.addRow(['1. Llena la hoja "Datos" (un renglón por registro, sin dejar renglones vacíos en medio). 2. Guarda como .xlsx. 3. En el CRM: Finanzas → ' + def.titulo + ' → "Subir plantilla". Verás una vista previa con los errores por renglón antes de importar; si hay errores no se importa nada.']);
     wi.addRow(['Las columnas con * (en amarillo) son obligatorias. No cambies los títulos de la primera fila. Máximo 1,000 renglones por archivo.']);
     wi.addRow([]);
     const enc = wi.addRow(['Columna', 'Obligatoria', 'Qué poner', 'Ejemplo']);

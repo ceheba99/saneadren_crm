@@ -37,9 +37,10 @@
         </div>
       </div>
       <div class="menu-grupo" data-grupo="dinero">
-        <button type="button" class="menu-grupo-btn" aria-expanded="false"><span class="menu-icono" aria-hidden="true">💰</span>Dinero<span class="menu-flecha" aria-hidden="true">▾</span></button>
+        <button type="button" class="menu-grupo-btn" aria-expanded="false"><span class="menu-icono" aria-hidden="true">💰</span>Finanzas<span class="menu-flecha" aria-hidden="true">▾</span></button>
         <div class="menu-sub">
-          <button type="button" class="menu-item solo-cobranza" data-vista="cuentas" id="nav-cuentas"><span class="menu-icono" aria-hidden="true">💳</span>Cuentas</button>
+          <button type="button" class="menu-item solo-cobranza" data-vista="cobrar" id="nav-cobrar"><span class="menu-icono" aria-hidden="true">📥</span>Cuentas por cobrar</button>
+          <button type="button" class="menu-item solo-cobranza" data-vista="pagar" id="nav-pagar"><span class="menu-icono" aria-hidden="true">📤</span>Cuentas por pagar</button>
           <button type="button" class="menu-item" data-vista="resultados"><span class="menu-icono" aria-hidden="true">📊</span>Resultados</button>
         </div>
       </div>
@@ -68,7 +69,7 @@
     </div>
 
     <div class="inicio-bloque inicio-bloque-dinero solo-cobranza">
-      <h3>💰 Dinero</h3>
+      <h3>💰 Finanzas</h3>
       <div id="inicio-dinero" class="inicio-lista"></div>
     </div>
 
@@ -347,11 +348,11 @@
 
   <!-- ====== VISTA: CUENTAS POR COBRAR Y POR PAGAR (admin y atención; por pagar solo admin) ====== -->
   <section class="vista solo-cobranza" id="vista-cuentas">
-    <h2 class="util-13">Cuentas</h2>
+    <h2 class="util-13" id="cuentas-titulo">Cuentas por cobrar</h2>
     <div class="cuentas-tarjetas" id="cuentas-tarjetas"></div>
-    <div class="cuentas-pestanas" role="tablist">
-      <button type="button" role="tab" class="activo" data-pestana="cobrar">Por cobrar</button>
-      <button type="button" role="tab" data-pestana="pagar">Por pagar</button>
+    <!-- Cuentas por cobrar y por pagar son secciones separadas del menú Finanzas; las pestañas solo existen en Por pagar. -->
+    <div class="cuentas-pestanas" role="tablist" id="cuentas-pestanas">
+      <button type="button" role="tab" data-pestana="pagar">Facturas y gastos</button>
       <button type="button" role="tab" data-pestana="proveedores">Proveedores</button>
     </div>
 

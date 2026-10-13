@@ -165,7 +165,7 @@ const Plegables = (() => {
 window.Plegables = Plegables;
 
 /* ===================== Menú principal =====================
-   Escritorio: barra con grupos desplegables (Ventas, Dinero, Ajustes).
+   Escritorio: barra con grupos desplegables (Ventas, Finanzas, Ajustes).
    Celular: un botón "☰ Menú" que abre un panel con todas las secciones. */
 const MenuPrincipal = (() => {
   const nav = document.getElementById('menu-principal');

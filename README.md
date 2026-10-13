@@ -18,12 +18,12 @@
   - Solo se acepta 16 %. Otra tasa (p. ej. 8 % fronterizo) se habilita en `TASAS_PERMITIDAS` de `public/importes.js` cuando el contador lo confirme.
 - **Membretes**: `public/membrete-cotizacion.png` y `public/membrete-orden-servicio.png` se generan con `node herramientas/membretes/servidor.js` → http://localhost:3301 → "Guardar en public/". Los datos de contacto y textos están al inicio de `herramientas/membretes/membretes.html`.
 - **Cuentas y seguridad**: el personal se registra solo con correo `@saneadren.com.mx` (debe confirmar el correo antes de entrar), puede restablecer su contraseña por correo y se le pide cambiar contraseñas débiles heredadas (p. ej. `1234`) al iniciar sesión. Ver "Configuración de correo" abajo.
-- **Cuentas por cobrar y por pagar** (pestaña **Cuentas**, admin y atención):
+- **Cuentas por cobrar y por pagar** (menú **Finanzas**, dos secciones separadas: *Cuentas por cobrar* y *Cuentas por pagar*, esta última con sus proveedores):
   - *Por cobrar*: cada orden de servicio es una cuenta por cobrar. Saldo = total de la orden con IVA (o el total del CFDI, si se captura) − pagos. Antigüedad (por vencer, 1-15, 16-30, 31-60, +60), vista por cliente u orden, recordatorio por WhatsApp, días de crédito por cliente y por orden, folio y fecha de factura CFDI (emitida fuera del sistema).
   - Los pagos se registran desde la lista o desde la ficha de la orden. Ventas y técnicos pueden registrarlos en campo, pero quedan **por confirmar** hasta que el admin los valida. Los pagos **no se borran**: el admin los cancela con motivo y queda en la bitácora.
   - *Revisión inicial*: las órdenes que ya existían al instalar el módulo no cuentan como deuda hasta que el admin indica cuáles ya se cobraron.
   - *Por pagar* y *Proveedores* (solo admin): facturas o gastos de proveedores con vencimiento según su crédito, gasto de contado ("ya lo pagué"), pagos parciales, agrupado por vencidas / esta semana / próxima semana, y relación opcional con una orden y un equipo.
-  - Inicio muestra el bloque **Dinero** (te deben, vencido, por confirmar, pagar esta semana).
+  - Inicio muestra el bloque **Finanzas** (te deben, vencido, por confirmar, pagar esta semana).
   - **Carga masiva con plantillas de Excel** (solo admin): en *Por cobrar* y *Por pagar*, "Descargar plantilla" baja un `.xlsx` con hoja de instrucciones, listas desplegables (servicios del catálogo, categorías, métodos de pago) y validaciones. Se llena un renglón por registro y se usa "Subir plantilla": primero aparece una vista previa con los errores por renglón; **si hay un solo error no se importa nada**. Por cobrar crea (o reutiliza por teléfono) el cliente y una orden de servicio con su saldo y lo ya pagado; por pagar crea el proveedor si no existe y la factura o gasto. Subir dos veces el mismo archivo se detecta como duplicado. Máximo 1,000 renglones por archivo.
 - **Permisos**:
   | Acción | Todos | Solo admin |

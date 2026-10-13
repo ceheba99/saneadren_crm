@@ -118,8 +118,11 @@ document.querySelectorAll('header nav [data-vista]').forEach(btn => {
 });
 function cambiarVista(v, opciones) {
   if (v === 'usuarios' && USUARIO_ACTUAL?.rol !== 'admin') v = 'inicio';
+  // Cuentas por cobrar y por pagar son dos secciones del menú Finanzas que usan la misma pantalla.
+  if (v === 'cuentas') v = ['pagar', 'proveedores'].includes(opciones?.pestana) ? 'pagar' : 'cobrar';
+  const seccionCuentas = ['cobrar', 'pagar'].includes(v) ? v : null;
   document.querySelectorAll('.vista').forEach(s => s.classList.remove('activa'));
-  document.getElementById('vista-' + v).classList.add('activa');
+  document.getElementById('vista-' + (seccionCuentas ? 'cuentas' : v)).classList.add('activa');
   window.MenuPrincipal?.marcar(v);
   if (v === 'inicio') cargarInicio();
   if (v === 'leads') cargarLeads();
@@ -128,7 +131,7 @@ function cambiarVista(v, opciones) {
   if (v === 'pendientes') cargarPendientes();
   if (v === 'resultados') cargarResultados();
   if (v === 'usuarios') cargarUsuarios();
-  if (v === 'cuentas') Finanzas.cargar(opciones);
+  if (seccionCuentas) Finanzas.cargar({ ...opciones, seccion: seccionCuentas });
   if (v === 'catalogos') { cargarTiposCliente(); cargarCatalogoServicios(); cargarCanalesCatalogo(); }
 }
 
