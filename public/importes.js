@@ -90,5 +90,33 @@
     return `${letras} PESOS ${String(centavos).padStart(2, '0')}/100 M.N.`;
   }
 
-  return { MODOS, TASAS_PERMITIDAS, TASA_DEFAULT, TOPE_CENT, aCent, calcular, etiquetaModo, encabezadoImporte, tasaDe, leyenda, filasTotales, enLetras };
+  // Cantidad y precio unitario de una partida. Las anteriores (solo importe) valen 1 × importe.
+  const cantidadDe = i => (i && Number(i.cantidad) > 0 ? Number(i.cantidad) : 1);
+  const precioDe = i => (i && i.precio !== undefined && i.precio !== null && i.precio !== '' ? Number(i.precio) : Number(i?.importe) || 0);
+  // Importe = cantidad × precio unitario, en centavos enteros.
+  const importeDe = (cantidad, precio) => Math.round((Number(cantidad) || 0) * (Number(precio) || 0) * 100) / 100;
+
+  // Reparte el subtotal, el IVA y el total del documento entre sus partidas (para reportes por
+  // servicio). Cada partida se calcula por su cuenta y la última absorbe la diferencia de redondeo,
+  // así la suma de las partidas es exactamente la del documento.
+  function desglosarPartidas(items, modo, tasa) {
+    const doc = calcular(items, modo, tasa), p = Number(tasa ?? TASA_DEFAULT);
+    const lineas = (items || []).map(i => {
+      const c = aCent(i.importe);
+      if (!modo) return { subtotal_cent: c, iva_cent: null, total_cent: c };
+      if (modo === 'sin_iva') return { subtotal_cent: c, iva_cent: 0, total_cent: c };
+      if (modo === 'incluido') { const sub = Math.round(c * 100 / (100 + p)); return { subtotal_cent: sub, iva_cent: c - sub, total_cent: c }; }
+      const iva = Math.round(c * p / 100); return { subtotal_cent: c, iva_cent: iva, total_cent: c + iva };
+    });
+    if (lineas.length && modo && modo !== 'sin_iva') {
+      const ult = lineas[lineas.length - 1], suma = k => lineas.reduce((t, l) => t + l[k], 0);
+      ult.subtotal_cent += doc.subtotal_cent - suma('subtotal_cent');
+      ult.iva_cent += doc.iva_cent - suma('iva_cent');
+      ult.total_cent = ult.subtotal_cent + ult.iva_cent;
+    }
+    return lineas;
+  }
+
+  return { MODOS, TASAS_PERMITIDAS, TASA_DEFAULT, TOPE_CENT, aCent, calcular, etiquetaModo, encabezadoImporte, tasaDe, leyenda, filasTotales, enLetras,
+    cantidadDe, precioDe, importeDe, desglosarPartidas };
 });

@@ -40,6 +40,21 @@ test('barrido: los centavos siempre cuadran', () => {
   }
 });
 
+test('cantidad × precio unitario y reparto por partida que cuadra con el documento', () => {
+  assert.strictEqual(I.importeDe(3, 1166.67), 3500.01);
+  assert.strictEqual(I.importeDe(2.5, 400), 1000);
+  assert.strictEqual(I.cantidadDe({ importe: 900 }), 1);
+  assert.strictEqual(I.precioDe({ importe: 900 }), 900);
+  for (const modo of ['mas_iva', 'incluido', 'sin_iva', null]) {
+    const items = [{ importe: 1234.57 }, { importe: 800.5 }, { importe: 0.03 }];
+    const doc = I.calcular(items, modo, 16), lineas = I.desglosarPartidas(items, modo, 16);
+    const suma = k => lineas.reduce((t, l) => t + (l[k] || 0), 0);
+    assert.strictEqual(suma('subtotal_cent'), doc.subtotal_cent, 'subtotal ' + modo);
+    assert.strictEqual(suma('total_cent'), doc.total_cent, 'total ' + modo);
+    if (modo) assert.strictEqual(suma('iva_cent'), doc.iva_cent, 'iva ' + modo);
+  }
+});
+
 test('totales del documento según el modo', () => {
   assert.deepStrictEqual(I.filasTotales(c([1500], 'mas_iva'), 'mas_iva', 16).map(f => f[1]), [150000, 24000, 174000]);
   assert.deepStrictEqual(I.filasTotales(c([1160], 'incluido'), 'incluido', 16).map(f => f[0]), ['Subtotal sin IVA', 'IVA 16% (incluido)', 'Total (IVA incluido)']);

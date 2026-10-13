@@ -429,7 +429,26 @@ const espera = ms => new Promise(r => setTimeout(r, ms));
   [s, j] = await pedir('GET', '/analisis/comercial', A);
   ok(s === 200 && j.ivaPorDefinir && j.ivaPorDefinir.servicios >= 1, 'Resultados cuenta los servicios con IVA por definir', j.ivaPorDefinir);
 
-  seccion('12. Pipeline: contactos sin cotización');
+  seccion('12. Cantidad × precio unitario, proyecto y Generador');
+  const partCant = JSON.stringify([
+    { servicio: servicios[0].nombre, leyenda: 'Desazolve', importe: 1, cantidad: 3, precio: 1166.67 },
+    { servicio: servicios[1].nombre, leyenda: 'Bombeo', importe: 1, cantidad: 2.5, precio: 400 }]);
+  [s, j] = await altaIva({ partidas_json: partCant, iva_modo: 'mas_iva', estatus: 'ganado', fecha_servicio: '2026-09-15', proyecto: 'Planta Norte 2026', equipo: 'E-37-04', operador: 'Diego Arturo' });
+  const ordenGen = j;
+  ok(s === 201 && j.valor === 4500.01 && j.iva_cent === 72000 && j.proyecto === 'Planta Norte 2026' && JSON.parse(j.partidas_json)[0].importe === 3500.01,
+    'el servidor calcula importe = cantidad × precio (3 × 1,166.67 + 2.5 × 400 = 4,500.01) y guarda el proyecto', j);
+  [s] = await altaIva({ partidas_json: JSON.stringify([{ servicio: servicios[0].nombre, leyenda: 'x', importe: 1, cantidad: 0, precio: 100 }]), iva_modo: 'mas_iva' });
+  ok(s === 400, 'cantidad 0 se rechaza');
+  [s, j] = await pedir('GET', '/generador?desde=2026-09-15&hasta=2026-09-15&q=Planta Norte', L);
+  const g = j.filas || [];
+  ok(s === 200 && g.length === 2 && g[0].mes === 'SEPTIEMBRE' && g[0].orden === 'OS-' + ordenGen.created_at.slice(0, 7).replace('-', '') + '-' + String(ordenGen.id).padStart(4, '0')
+    && g[0].cantidad === 3 && g[0].precio_sin_iva === 1166.67 && g[0].unidad === 'E-37-04' && g[0].empleado === 'Diego Arturo' && g[0].proyecto === 'Planta Norte 2026' && g[0].cliente === 'Restaurante IVA',
+    'el generador da un renglón por servicio con mes, orden, cantidad, precio, unidad, empleado, proyecto y cliente', g);
+  ok(j.totales.subtotal === 4500.01 && j.totales.iva === 720 && j.totales.total === 5220.01 && Math.round((g[0].total + g[1].total) * 100) === 522001,
+    'los renglones del generador suman exactamente el subtotal, IVA y total de la orden', j.totales);
+  [s] = await pedir('GET', '/generador?desde=2026-12-01&hasta=2026-01-01', L); ok(s === 400, 'generador: periodo al revés rechazado');
+
+  seccion('13. Pipeline: contactos sin cotización');
   [s, j] = await pedir('POST', '/contactos', L, { nombre: 'Solo Contacto', telefono: '4427770099', canal_origen_id: canales[0].id });
   const soloId = j.id;
   [s, j] = await pedir('GET', '/contactos/sin-cotizacion?q=Solo Contacto', L);
@@ -440,7 +459,7 @@ const espera = ms => new Promise(r => setTimeout(r, ms));
   [s, j] = await pedir('GET', '/contactos/sin-cotizacion?q=Solo Contacto', L);
   ok(s === 200 && j.length === 0, 'al crearle su cotización deja de aparecer como contacto (ya está como cotización)');
 
-  seccion('13. Seguridad general');
+  seccion('14. Seguridad general');
   const raiz = await fetch(`http://localhost:${PUERTO}/`);
   ok(raiz.headers.get('content-security-policy') && raiz.headers.get('x-frame-options') === 'DENY' && !raiz.headers.get('x-powered-by'), 'encabezados de seguridad');
   [s] = await pedir('GET', '/leads', 'token-inventado'); ok(s === 401, 'token inventado rechazado');

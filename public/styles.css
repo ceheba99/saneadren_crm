@@ -879,3 +879,16 @@ header.app nav.menu-principal .menu-sub .menu-item:focus-visible{outline:3px sol
 .gc-iva-opcion input{margin:0;accent-color:var(--amarillo);}
 .gc-iva-opcion:has(input:checked){border-color:var(--amarillo);background:#fff8dc;color:var(--texto);}
 .gc-iva-opcion:has(input:disabled){cursor:not-allowed;opacity:.7;}
+
+/* Partida: cantidad × precio unitario = importe. */
+.gc-cantidades{display:grid;grid-template-columns:minmax(70px,.6fr) 1.2fr 1fr;gap:10px;}
+.gc-importe[readonly]{background:var(--gris-100);font-weight:700;}
+@media(max-width:600px){.gc-cantidades{grid-template-columns:1fr 1fr;}.gc-cantidades .campo-modal:last-child{grid-column:1/-1;}}
+
+/* Generador de ventas. */
+.gen-resumen{font-size:13.5px;color:var(--texto-sec);margin:8px 0;}
+.tabla-generador th,.tabla-generador td{white-space:nowrap;}
+.tabla-generador tbody tr{cursor:pointer;}
+.tabla-generador tbody tr:hover{background:#fafbfc;}
+#gen-buscar{flex:1 1 240px;}
+.tabla-generador th.st-num,.tabla-generador td.st-num{text-align:right;}

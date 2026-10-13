@@ -259,8 +259,8 @@ if(!db.prepare('PRAGMA table_info(leads)').all().some(c=>c.name==='origen')){
 }
 if(!db.prepare('PRAGMA table_info(leads)').all().some(c=>c.name==='duplicado_de'))db.exec('ALTER TABLE leads ADD COLUMN duplicado_de INTEGER REFERENCES leads(id) ON DELETE SET NULL');
 // Datos propios de la orden de servicio (los mismos del formato en papel): unidad/equipo
-// que se envía, operador(es) que lo ejecutan y observaciones del trabajo realizado.
-for(const c of ['equipo','operador','observaciones'])if(!db.prepare('PRAGMA table_info(leads)').all().some(x=>x.name===c))db.exec(`ALTER TABLE leads ADD COLUMN ${c} TEXT`);
+// que se envía, operador(es) que lo ejecutan, observaciones del trabajo realizado y proyecto.
+for(const c of ['equipo','operador','observaciones','proyecto'])if(!db.prepare('PRAGMA table_info(leads)').all().some(x=>x.name===c))db.exec(`ALTER TABLE leads ADD COLUMN ${c} TEXT`);
 // IVA del documento (public/importes.js). iva_modo: 'mas_iva' (los importes son sin IVA),
 // 'incluido' (ya lo traen) o 'sin_iva' (no lleva IVA; tasa 0); iva_tasa en porcentaje entero; iva_cent lo calcula el servidor.
 // Los tres en NULL = registro anterior al IVA ("por definir"): valor se interpreta como hoy.
