@@ -200,6 +200,13 @@ on('btn-cancelar-dup', 'click', () => {
 let MODO_SERVICIO_NUEVO = 'pipeline';
 let DUPLICADO_DE = null; // id de la orden de servicio que se está duplicando (si aplica)
 let ESTABLECIMIENTO_PENDIENTE = null; // { cliente_id, id, direccion } al abrir un contacto desde Prospección
+let REGRESO_FICHA = null; // registro cuya ficha se reabre al terminar la ventana de crear (p. ej. tras Duplicar)
+async function regresarAFicha() {
+  // Si la ventana sigue abierta (p. ej. el usuario eligió volver a sus cambios), no se hace nada todavía.
+  if (!REGRESO_FICHA || document.getElementById('overlay-servicio-nuevo').classList.contains('mostrar')) return;
+  const id = REGRESO_FICHA; REGRESO_FICHA = null;
+  await abrirFicha(id);
+}
 function abrirServicioNuevo(modo, prefill) {
   if (!CLIENTE_DUP) return;
   actualizarBotonesEstatusFicha(null);
@@ -307,6 +314,7 @@ async function guardarServicioNuevo(descargar=false) {
     document.getElementById('alerta-dup').classList.remove('mostrar');
     limpiarFormAlta();
     await ServiciosTabla.refrescar();
+    await regresarAFicha();
     toast(hecho + '. Ya aparece en los registros del contacto.');
   } catch (err) {
     toast('No se pudo guardar: ' + err.message);
@@ -315,6 +323,8 @@ async function guardarServicioNuevo(descargar=false) {
   }
 }
 on('btn-guardar-servicio-nuevo','click',()=>guardarServicioNuevo());
+// Cerrar la ventana de crear sin guardar también regresa a la orden de la que se partió.
+document.querySelector('#overlay-servicio-nuevo .close-btn').addEventListener('click', () => setTimeout(regresarAFicha, 0));
 on('btn-barra-guardar','click',()=>EDITOR_MODO==='nuevo'?guardarServicioNuevo():document.getElementById('btn-guardar-ficha').click());
 
 // ---------- Guardar cotización ----------
@@ -1190,7 +1200,12 @@ function pintarIvaEditor() {
     : ({ incluido: `Escribe el total que paga el cliente: el sistema separa el subtotal y el IVA (${IVA_TASA} %). Ej.: 1,160 = 1,000 + 160.`,
       mas_iva: `Escribe el precio sin IVA: el sistema suma el ${IVA_TASA} %. Ej.: 1,000 + 160 = 1,160.`,
       sin_iva: 'El precio no lleva IVA: el cliente paga exactamente lo que escribes. Ej.: 1,000 = 1,000.' }[modo] || '')
-      + (IVA_BLOQUEADO ? ' Solo administración o atención pueden cambiarlo en una orden de servicio.' : '');
+      + (IVA_BLOQUEADO ? ' Solo administración o atención pueden cambiar el IVA o los importes de una orden de servicio.' : '');
+  // En una orden, quien no puede cambiar lo que se cobra tampoco puede editar importes ni partidas
+  // (antes podía escribirlos y el error salía hasta guardar).
+  document.querySelectorAll('#gc-items .gc-importe').forEach(i => { i.readOnly = IVA_BLOQUEADO; });
+  document.querySelectorAll('#gc-items .gc-quitar').forEach(b => { b.disabled = IVA_BLOQUEADO; });
+  document.getElementById('btn-gc-agregar-servicio').disabled = IVA_BLOQUEADO;
   document.getElementById('gc-iva-aviso').hidden = !!modo;
   if (!modo) {
     document.getElementById('gc-iva-aviso-texto').textContent = IVA_BLOQUEADO

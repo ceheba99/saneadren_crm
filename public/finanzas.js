@@ -285,7 +285,7 @@ const Finanzas = (() => {
       const wa = enlaceWhatsApp(g.telefono, textoWhatsApp(g));
       return `<div class="fila-dinero${g.vencido > 0 ? ' vencida' : ''}">
         <div class="info"><b>${esc(g.cliente_nombre || 'Sin nombre')}</b>${g.empresa_contacto ? ` · ${esc(g.empresa_contacto)}` : ''}
-          <small>${esc(g.telefono || '')} · ${Number(g.ordenes)} órdenes · crédito ${Number(g.dias_credito)} días${g.max_dias_vencido > 0 ? ` · hasta ${Number(g.max_dias_vencido)} días vencido` : ''}</small></div>
+          <small>${esc(g.telefono || '')} · ${Number(g.ordenes)} ${Number(g.ordenes) === 1 ? 'orden' : 'órdenes'} · crédito ${Number(g.dias_credito)} días${g.max_dias_vencido > 0 ? ` · hasta ${Number(g.max_dias_vencido)} días vencido` : ''}</small></div>
         <div class="montos"><b>${formatoMoneda(g.saldo)}</b>${g.vencido > 0 ? `<small class="rojo">Vencido ${formatoMoneda(g.vencido)}</small>` : ''}</div>
         <div class="btn-group">
           ${wa ? `<a class="btn btn-outline" href="${esc(wa)}" target="_blank" rel="noopener noreferrer">Recordar por WhatsApp</a>` : ''}
@@ -607,7 +607,7 @@ const Finanzas = (() => {
         { key: 'os', titulo: 'OS', alias: ['os'], tipo: 'texto', ancho: 9, nota: 'Orden de servicio relacionada (opcional).', ej: '' },
         { key: 'status', titulo: 'STATUS', tipo: 'lista', lista: 'status', ancho: 14, nota: 'PENDIENTE, PAGADO o CANCELADO (CANCELADO no se importa).', ej: 'PAGADO' },
         { key: 'pago_programado', titulo: 'PAGO PROGRAMADO', tipo: 'texto', ancho: 14, nota: 'Opcional: se guarda en las notas.', ej: '' },
-        { key: 'fecha_pago', titulo: 'FECHA PAGO', tipo: 'texto', ancho: 12, nota: 'Fecha en que pagó. Puede ir sin año (19-feb): se toma el año desde la fecha de la factura.', ej: '19-feb' },
+        { key: 'fecha_pago', titulo: 'FECHA PAGO', tipo: 'fechaLibre', ancho: 12, nota: 'Fecha en que pagó. Puede ir sin año (19-feb): se toma el año desde la fecha de la factura.', ej: '19-feb' },
         { key: 'cp', titulo: 'CP', tipo: 'texto', ancho: 10, nota: 'Complemento de pago (se guarda como referencia del pago).', ej: '990' },
         { key: 'abonado', titulo: 'A/C', tipo: 'dinero', ancho: 14, nota: 'Lo que ya pagó. Vacío con PAGADO = el total.', ej: 2494 },
         { key: 'flujo', titulo: 'FLUJO', tipo: 'texto', ancho: 8, nota: 'QRO, MX… (se guarda en las notas).', ej: 'MX' },
@@ -678,7 +678,8 @@ const Finanzas = (() => {
     });
     def.columnas.forEach((c, i) => {
       const col = ws.getColumn(i + 1);
-      if (c.tipo === 'fecha') col.numFmt = 'dd/mm/yyyy';
+      // fechaLibre: acepta una fecha de Excel o un texto como "9-sep" (sin validación de fecha).
+      if (c.tipo === 'fecha' || c.tipo === 'fechaLibre') col.numFmt = 'dd/mm/yyyy';
       if (c.tipo === 'dinero') col.numFmt = '#,##0.00';
       if (c.tipo === 'texto') col.numFmt = '@';
       for (let r = 2; r <= FILAS_PLANTILLA + 1; r++) {
@@ -796,7 +797,10 @@ const Finanzas = (() => {
         if (!posicion[c.key]) continue;
         let v = r[posicion[c.key]];
         if (v === undefined || v === null) v = '';
-        if (c.tipo === 'fecha' && typeof v === 'string') v = fechaTexto(v);
+        const esFecha = c.tipo === 'fecha' || c.tipo === 'fechaLibre';
+        // Una fecha puede llegar como número de serie de Excel (p. ej. 46296 = 01/10/2026).
+        if (esFecha && typeof v === 'number' && v > 20000 && v < 80000) v = new Date(Date.UTC(1899, 11, 30) + Math.round(v) * 86400000).toISOString().slice(0, 10);
+        if (esFecha && typeof v === 'string') v = fechaTexto(v);
         if (typeof v === 'string' && v.startsWith('#ERROR_EXCEL:')) v += '@' + c.titulo; // para que el mensaje diga la columna
         if (typeof v === 'number' && (c.tipo === 'texto' || c.tipo === 'lista')) v = String(v);
         // Montos calculados con fórmula (p. ej. con IVA) pueden traer residuos como 4060.0000001.

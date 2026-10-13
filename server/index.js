@@ -836,6 +836,9 @@ app.get('/api/contactos/sin-cotizacion', h((req,res)=>{
   sql += ' ORDER BY c.created_at DESC LIMIT 500';
   res.json(db.prepare(sql).all(...params));
 }));
+// RFC mexicano: 3 letras (moral) o 4 (física), 6 dígitos de fecha y 3 de homoclave. Vacío se permite.
+const RFC = /^[A-ZÑ&]{3,4}\d{6}[A-Z0-9]{3}$/;
+const normalizarRfc = v => (v === undefined || v === null) ? v : String(v).trim().toUpperCase();
 app.post('/api/contactos', h((req,res)=>{
   const {nombre,telefono,empresa_contacto,direccion,correo,telefono_alterno,giro,rfc,notas_generales}=req.body;
   if (!nombre || !String(nombre).trim()) return res.status(400).json({error:'El nombre del contacto es obligatorio'});
@@ -843,11 +846,12 @@ app.post('/api/contactos', h((req,res)=>{
   if(norm.length!==10) return res.status(400).json({error:'El teléfono debe tener 10 dígitos'});
   if (!validarCorreo(correo)) return res.status(400).json({error:'El correo electrónico no es válido'});
   if (giro && !tipoClienteValido(giro)) return res.status(400).json({error:'Giro inválido'});
+  if (normalizarRfc(rfc) && !RFC.test(normalizarRfc(rfc))) return res.status(400).json({error:'El RFC no es válido (p. ej. ABC010101AB1)'});
   const existente=db.prepare('SELECT id FROM clientes WHERE telefono_normalizado = ?').get(norm);
   if(existente) return res.status(409).json({error:'Este contacto ya existe',cliente_id:existente.id});
   if (!req.body.canal_origen_id || !db.prepare('SELECT id FROM canales WHERE id = ?').get(req.body.canal_origen_id)) return res.status(400).json({error:'Selecciona cómo se enteró de nosotros'});
   const info=db.prepare(`INSERT INTO clientes (nombre,telefono,telefono_normalizado,empresa_contacto,direccion,correo,telefono_alterno,giro,rfc,notas_generales,canal_origen_id)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?)`).run(String(nombre).trim(),telefono,norm,empresa_contacto||null,direccion||null,correo?.trim()||null,telefono_alterno||null,giro||null,rfc?.trim()||null,notas_generales||null,req.body.canal_origen_id);
+    VALUES (?,?,?,?,?,?,?,?,?,?,?)`).run(String(nombre).trim(),telefono,norm,empresa_contacto||null,direccion||null,correo?.trim()||null,telefono_alterno||null,giro||null,normalizarRfc(rfc)||null,notas_generales||null,req.body.canal_origen_id);
   res.status(201).json(db.prepare('SELECT * FROM clientes WHERE id = ?').get(info.lastInsertRowid));
 }));
 
@@ -921,10 +925,13 @@ app.put('/api/clientes/:id', h((req, res) => {
   if (req.body.nombre !== undefined && !String(req.body.nombre).trim()) return res.status(400).json({error:'El nombre del contacto es obligatorio'});
   if (req.body.correo !== undefined && !validarCorreo(req.body.correo)) return res.status(400).json({ error: 'El correo electrónico no es válido' });
   if (req.body.giro !== undefined && req.body.giro !== null && req.body.giro !== '' && !tipoClienteValido(req.body.giro)) return res.status(400).json({ error: 'Giro inválido' });
+  if (req.body.rfc !== undefined) { req.body.rfc = normalizarRfc(req.body.rfc) || null; if (req.body.rfc && !RFC.test(req.body.rfc)) return res.status(400).json({ error: 'El RFC no es válido (p. ej. ABC010101AB1)' }); }
   const id = req.params.id;
   const cliente = db.prepare('SELECT * FROM clientes WHERE id = ?').get(id);
   if (!cliente) return res.status(404).json({ error: 'Cliente no encontrado' });
 
+  // Un cliente importado sin teléfono puede guardar sus otros datos mientras el teléfono siga vacío.
+  if (req.body.telefono !== undefined && !String(req.body.telefono).trim() && !cliente.telefono) delete req.body.telefono;
   let nuevoNorm = null;
   if (req.body.telefono !== undefined) {
     nuevoNorm = normalizarTelefono(req.body.telefono);

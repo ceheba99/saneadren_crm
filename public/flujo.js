@@ -72,7 +72,13 @@ const FlujoCRM = (() => {
   }
   async function nuevoRegistro(id,modo,prefill){
     if(!await permitirCambio('overlay-ficha') || !await permitirCambio('overlay-ficha-cliente') || !await permitirCambio('overlay-servicio-nuevo'))return;
-    try { CLIENTE_DUP=await api('/clientes/'+id).then(r=>r.json()); $('overlay-ficha').classList.remove('mostrar'); abrirServicioNuevo(modo,prefill); }
+    try {
+      CLIENTE_DUP=await api('/clientes/'+id).then(r=>r.json());
+      // Si se abrió desde la ficha de una orden (p. ej. Duplicar), al terminar se regresa a esa orden:
+      // la ficha se cierra porque el editor de partidas pasa a la ventana nueva.
+      REGRESO_FICHA=$('overlay-ficha').classList.contains('mostrar')?LEAD_ACTUAL?.id??null:null;
+      $('overlay-ficha').classList.remove('mostrar'); abrirServicioNuevo(modo,prefill);
+    }
     catch(err){toast('No se pudo abrir el contacto: '+err.message);}
   }
   document.addEventListener('click',e=>{if(e.target.closest('#btn-gc-agregar-servicio,.gc-quitar')){const id=e.target.closest('.overlay')?.id;if(campos[id])setTimeout(()=>actualizarAviso(id),0);}},true);

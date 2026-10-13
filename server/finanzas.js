@@ -550,7 +550,9 @@ module.exports = function finanzas(app, db, h) {
     const categoria = b.categoria || 'otro';
     if (!CATEGORIAS[categoria]) return { error: 'Categoría inválida' };
     if (!diasCreditoValidos(b.dias_credito)) return { error: 'Los días de crédito deben ser un número entero de 0 a 180' };
-    return { nombre, categoria, rfc: texto(b.rfc, 13), telefono: texto(b.telefono, 25), contacto: texto(b.contacto, 120), dias_credito: Number(b.dias_credito) || 0, notas: texto(b.notas, 1000) };
+    const rfc = texto(b.rfc, 20)?.toUpperCase() || null;
+    if (rfc && !/^[A-ZÑ&]{3,4}\d{6}[A-Z0-9]{3}$/.test(rfc)) return { error: 'El RFC no es válido (p. ej. ABC010101AB1)' };
+    return { nombre, categoria, rfc, telefono: texto(b.telefono, 25), contacto: texto(b.contacto, 120), dias_credito: Number(b.dias_credito) || 0, notas: texto(b.notas, 1000) };
   }
   app.post('/api/finanzas/proveedores', h((req, res) => {
     if (!puedeOperar(req, res)) return;

@@ -270,6 +270,13 @@ const espera = ms => new Promise(r => setTimeout(r, ms));
   ok(j.length === 2 && imp && imp.total === 570702.6 && imp.cobrado === 491985 && imp.saldo === 78717.6 && imp.vence === '2025-03-22' && imp.iva_modo === 'mas_iva',
     'pago parcial: factura de $570,702.60 con $491,985 cobrados deja $78,717.60 de saldo', j);
   ok(j.every(c => c.cliente_id === j[0].cliente_id), 'el mismo cliente (sin importar mayúsculas) se usa en las dos facturas');
+  // Cliente importado sin teléfono: puede guardar sus demás datos; el RFC se valida.
+  [s, j] = await pedir('PUT', '/clientes/' + imp.cliente_id, A, { telefono: '', nombre: 'CORPORATIVO DE SERVICIOS AMBIENTALES', rfc: 'csa010101ab1' });
+  ok(s === 200 && j.rfc === 'CSA010101AB1' && j.telefono === '', 'un cliente sin teléfono guarda su RFC (en mayúsculas) sin exigir teléfono', j);
+  [s, j] = await pedir('PUT', '/clientes/' + imp.cliente_id, A, { rfc: 'abc' });
+  ok(s === 400 && /RFC/.test(j.error), 'un RFC inválido se rechaza', j);
+  [s, j] = await pedir('POST', '/finanzas/proveedores', A, { nombre: 'Proveedor RFC Malo', rfc: '123' });
+  ok(s === 400 && /RFC/.test(j.error), 'el RFC de un proveedor también se valida', j);
   [s, j] = await pedir('GET', '/leads/' + imp.lead_id + '/cobros', A);
   ok(j.cobros.length === 1 && j.cobros[0].fecha === '2025-07-17' && j.cobros[0].referencia === 'CP 1105 · BANORTE' && j.cobros[0].metodo === 'transferencia',
     'el pago queda con su fecha (17-July → 2025-07-17), complemento y banco', j.cobros);
