@@ -5,7 +5,9 @@ const Finanzas = (() => {
   const $ = id => document.getElementById(id);
   const esc = v => escaparHtml(v);
   const METODOS = [['transferencia', 'Transferencia'], ['efectivo', 'Efectivo'], ['deposito', 'Depósito'], ['cheque', 'Cheque'], ['tarjeta', 'Tarjeta'], ['otro', 'Otro']];
-  const NOMBRE_METODO = Object.fromEntries(METODOS);
+  // A proveedores y terceros también se les paga por nómina.
+  const METODOS_PROV = [...METODOS.slice(0, -1), ['nomina', 'Nómina'], ['otro', 'Otro']];
+  const NOMBRE_METODO = Object.fromEntries(METODOS_PROV);
   const esAdmin = () => USUARIO_ACTUAL?.rol === 'admin';
   // Todos los usuarios con sesión ven las cuentas; crédito y factura los cambian admin y atención.
   const puedeCartera = () => !!USUARIO_ACTUAL;
@@ -34,8 +36,8 @@ const Finanzas = (() => {
     if (c.programada) return '<span class="estado-cxc programada">Servicio programado</span>';
     return `<span class="estado-cxc ${esc(c.estado)}">${c.estado === 'parcial' ? 'Pago parcial' : 'Pendiente'}</span>`;
   }
-  function pintarMetodos(contId, seleccionado) {
-    $(contId).innerHTML = METODOS.map(([k, n]) => `<button type="button" class="metodo${k === seleccionado ? ' activo' : ''}" data-metodo="${k}" aria-pressed="${k === seleccionado}">${n}</button>`).join('');
+  function pintarMetodos(contId, seleccionado, lista = METODOS) {
+    $(contId).innerHTML = lista.map(([k, n]) => `<button type="button" class="metodo${k === seleccionado ? ' activo' : ''}" data-metodo="${k}" aria-pressed="${k === seleccionado}">${n}</button>`).join('');
   }
   document.addEventListener('click', e => {
     const b = e.target.closest('.metodos .metodo');
@@ -350,7 +352,7 @@ const Finanzas = (() => {
       return `<h3 class="grupo-pagos">${titulo} <small>${items.length} · ${formatoMoneda(subtotal)}</small></h3>` + items.map(x => `
         <div class="fila-dinero${titulo === 'Vencidas' ? ' vencida' : ''}">
           <div class="info"><b>${esc(x.proveedor_nombre)}</b> · ${esc(x.concepto)}
-            <small>${esc(x.categoria_nombre)} · vence ${esc(fechaTxt(x.fecha_vencimiento))}${x.factura_folio ? ' · factura ' + esc(x.factura_folio) : ''}${x.lead_id ? ' · orden #' + Number(x.lead_id) : ''}${x.equipo ? ' · ' + esc(x.equipo) : ''}</small></div>
+            <small>${esc(x.categoria_nombre)} · vence ${esc(fechaTxt(x.fecha_vencimiento))}${x.factura_folio ? ' · factura ' + esc(x.factura_folio) : ''}${x.orden_folio ? ' · orden ' + esc(x.orden_folio) : ''}${x.equipo ? ' · ' + esc(x.equipo) : ''}</small></div>
           <div class="montos"><b>${formatoMoneda(x.saldo)}</b><small>de ${formatoMoneda(x.total)}</small></div>
           <div class="btn-group">${x.saldo > 0 ? `<button type="button" class="btn btn-primario" data-pagar-cxp="${Number(x.id)}">Pagar</button>` : ''}<button type="button" class="btn btn-outline" data-detalle-cxp="${Number(x.id)}">Pagos</button>
             ${x.pagado === 0 ? `<button type="button" class="btn btn-outline" data-cancelar-cxp="${Number(x.id)}">Cancelar</button>` : ''}</div>
@@ -373,7 +375,7 @@ const Finanzas = (() => {
     PAGO_PROV = x;
     $('pagoprov-info').textContent = `${x.proveedor_nombre} · ${x.concepto} · Saldo ${formatoMoneda(x.saldo)}`;
     $('pagoprov-monto').value = x.saldo > 0 ? x.saldo.toFixed(2) : '';
-    pintarMetodos('pagoprov-metodos', 'transferencia');
+    pintarMetodos('pagoprov-metodos', 'transferencia', METODOS_PROV);
     $('pagoprov-fecha').value = hoy(); $('pagoprov-fecha').max = hoy(); $('pagoprov-referencia').value = '';
     $('pagoprov-guardar').disabled = x.saldo <= 0;
     [$('pagoprov-monto'), $('pagoprov-fecha'), $('pagoprov-referencia'), $('pagoprov-guardar')].forEach(el => { el.closest('.campo') ? (el.closest('.campo').hidden = !paraPagar) : (el.hidden = !paraPagar); });
@@ -400,17 +402,22 @@ const Finanzas = (() => {
   }));
 
   // Nuevo gasto o factura
-  $('pagar-nuevo').addEventListener('click', async () => {
+  // GASTO_ALGUARDAR: qué refrescar después de guardar (la ficha de la orden o la vista de Cuentas por pagar).
+  let GASTO_ALGUARDAR = null;
+  async function nuevoGasto(prellenado = {}, alGuardar = null) {
     try { await catalogosPagos(); } catch (err) { toast('No se pudo cargar: ' + err.message); return; }
-    const activos = PROVEEDORES.filter(p => p.activo);
-    if (!activos.length) { toast('Primero agrega un proveedor'); irPestana('proveedores'); return; }
     llenarProveedoresGasto();
-    ['gasto-concepto', 'gasto-total', 'gasto-folio', 'gasto-orden', 'gasto-equipo'].forEach(id => { $(id).value = ''; });
-    $('gasto-fecha').value = hoy(); $('gasto-vence').value = hoy(); $('gasto-pagado').checked = false; $('gasto-metodo-wrap').hidden = true;
+    ['gasto-concepto', 'gasto-total', 'gasto-folio', 'gasto-orden', 'gasto-equipo', 'gasto-referencia'].forEach(id => { $(id).value = prellenado[id] || ''; });
+    $('gasto-fecha').value = hoy(); $('gasto-vence').value = hoy(); $('gasto-fecha-pago').value = hoy(); $('gasto-pagado').checked = false; $('gasto-metodo-wrap').hidden = true;
     $('gasto-categoria').value = 'otro';
-    pintarMetodos('gasto-metodos', 'efectivo');
+    // Con orden ligada, la sección de factura/orden se ve abierta para que se note el vínculo.
+    $('gasto-orden').closest('details').open = !!prellenado['gasto-orden'];
+    pintarMetodos('gasto-metodos', 'efectivo', METODOS_PROV);
+    GASTO_ALGUARDAR = alGuardar;
     abrirVentana('overlay-gasto');
-  });
+    if (!PROVEEDORES.some(p => p.activo)) toast('Elige "+ Nuevo proveedor…" para agregar a quien realizó el servicio');
+  }
+  $('pagar-nuevo').addEventListener('click', () => nuevoGasto());
   function llenarProveedoresGasto(seleccionado) {
     $('gasto-proveedor').innerHTML = '<option value="">Selecciona…</option>' + PROVEEDORES.filter(p => p.activo).map(p => `<option value="${Number(p.id)}">${esc(p.nombre)}</option>`).join('')
       + '<option value="__nuevo">+ Nuevo proveedor…</option>';
@@ -442,9 +449,12 @@ const Finanzas = (() => {
       proveedor_id: Number($('gasto-proveedor').value) || null, categoria: $('gasto-categoria').value, concepto: $('gasto-concepto').value,
       total: $('gasto-total').value.trim(), fecha_documento: $('gasto-fecha').value, fecha_vencimiento: $('gasto-vence').value,
       factura_folio: $('gasto-folio').value, lead_id: leadId, equipo: $('gasto-equipo').value,
-      ya_pagado: $('gasto-pagado').checked, metodo: metodoElegido('gasto-metodos') });
+      ya_pagado: $('gasto-pagado').checked, metodo: metodoElegido('gasto-metodos'),
+      fecha_pago: $('gasto-pagado').checked ? $('gasto-fecha-pago').value : null, referencia: $('gasto-pagado').checked ? $('gasto-referencia').value : null });
     if (!r) return;
-    $('overlay-gasto').classList.remove('mostrar'); toast($('gasto-pagado').checked ? 'Gasto registrado como pagado' : 'Cuenta por pagar registrada'); cargar({ pestana: 'pagar' });
+    $('overlay-gasto').classList.remove('mostrar'); toast($('gasto-pagado').checked ? 'Gasto registrado como pagado' : 'Cuenta por pagar registrada');
+    const alGuardar = GASTO_ALGUARDAR; GASTO_ALGUARDAR = null;
+    if (alGuardar) await alGuardar(); else cargar({ pestana: 'pagar' });
   }));
   $('pagar-exportar').addEventListener('click', () => {
     if (!CXP.length) { toast('No hay datos para exportar'); return; }
@@ -648,7 +658,7 @@ const Finanzas = (() => {
       listas = {
         servicios: tipo === 'cxc' ? (await api('/servicios').then(json)).map(s => s.nombre) : [],
         categorias: tipo === 'cxp' ? (await api('/finanzas/categorias').then(json)).map(c => c.nombre) : [],
-        metodos: METODOS.map(m => m[1]),
+        metodos: METODOS_PROV.map(m => m[1]),
         metodo_pago: ['PPD', 'PUE'],
         status: ['PENDIENTE', 'PAGADO', 'CANCELADO'],
       };
@@ -865,5 +875,29 @@ const Finanzas = (() => {
     catch (err) { toast(err.message); }
   });
 
-  return { cargar, pintarCobranzaOrden, pintarInicio, abrirCobro, pintarCliente, avisoAdeudo, pintarResultados };
+  // ===================== Costos con terceros en la ficha de la orden =====================
+  let COSTOS_ORDEN = null;
+  async function pintarCostosOrden(lead) {
+    const sec = $('seccion-costos'), cont = $('costos-orden');
+    if (!lead || lead.estatus !== 'ganado') { sec.hidden = true; COSTOS_ORDEN = null; return; }
+    sec.hidden = false; COSTOS_ORDEN = lead;
+    cont.innerHTML = '<p class="util-45" role="status">Cargando…</p>';
+    let lista;
+    try { lista = await api('/finanzas/cxp?vista=todas&lead_id=' + Number(lead.id)).then(json); }
+    catch (err) { cont.innerHTML = `<p class="ayuda">No se pudieron cargar los costos: ${esc(err.message)}</p>`; return; }
+    if (COSTOS_ORDEN?.id !== lead.id) return;
+    if (!lista.length) { cont.innerHTML = '<p class="util-45">Sin costos con terceros registrados.</p>'; return; }
+    const estado = x => x.saldo <= 0 ? '<span class="estado-cxc pagada">Pagado</span>' : x.pagado > 0 ? '<span class="estado-cxc parcial">Pagado en parte</span>' : '<span class="estado-cxc pendiente">Pendiente de pago</span>';
+    const via = x => { const u = (x.ultimo_pago || '').split('|'); return x.ultimo_pago ? ` · ${esc(NOMBRE_METODO[u[1]] || u[1])}${u[2] ? ' · ' + esc(u[2]) : ''} · ${esc(fechaTxt(u[0]))}` : ''; };
+    cont.innerHTML = '<div class="pagos-lista">' + lista.map(x => `<div class="pago-fila"><div><b>${formatoMoneda(x.total)}</b> · ${esc(x.proveedor_nombre)} · ${esc(x.concepto)} ${estado(x)}
+        <small>${x.factura_folio ? 'Factura ' + esc(x.factura_folio) + ' · ' : ''}Pagado ${formatoMoneda(x.pagado)}${via(x)}</small></div></div>`).join('') + '</div>'
+      + `<p class="ayuda">Total con terceros: ${formatoMoneda(lista.reduce((t, x) => t + x.total, 0))}. Los pagos se registran en Finanzas → Cuentas por pagar.</p>`;
+  }
+  $('btn-costo-tercero').addEventListener('click', () => {
+    const lead = COSTOS_ORDEN; if (!lead) return;
+    nuevoGasto({ 'gasto-orden': folioOrdenServicio(lead), 'gasto-concepto': lead.servicio_nombre || '', 'gasto-equipo': lead.equipo || '' },
+      () => pintarCostosOrden(lead));
+  });
+
+  return { cargar, pintarCobranzaOrden, pintarCostosOrden, nuevoGasto, pintarInicio, abrirCobro, pintarCliente, avisoAdeudo, pintarResultados };
 })();

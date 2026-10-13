@@ -252,6 +252,9 @@ function abrirServicioNuevo(modo, prefill) {
   document.getElementById('sn-operador').value = prefill?.operador || '';
   document.getElementById('sn-observaciones').value = CONVERTIR_ID ? (prefill?.observaciones || '') : '';
   document.getElementById('sn-proyecto').value = esDirecto ? (prefill?.proyecto || '') : '';
+  // Manifiestos y tiros son de cada servicio realizado: no se copian al duplicar.
+  document.getElementById('sn-manifiestos').value = CONVERTIR_ID ? (prefill?.manifiestos || '') : '';
+  document.getElementById('sn-tiros').value = CONVERTIR_ID ? (prefill?.tiros || '') : '';
   // El prellenado pasa por prepararEditorCotizacion para que también arme la tabla de
   // partidas real (gc-items) — de otro modo, al validar/guardar se recalcula desde ahí
   // y borraría cualquier valor puesto solo en sn-servicio/sn-valor.
@@ -305,6 +308,8 @@ async function guardarServicioNuevo(descargar=false) {
     operador: esDirecto ? document.getElementById('sn-operador').value.trim() : null,
     observaciones: esDirecto ? document.getElementById('sn-observaciones').value.trim() : null,
     proyecto: esDirecto ? document.getElementById('sn-proyecto').value.trim() : null,
+    manifiestos: esDirecto ? document.getElementById('sn-manifiestos').value.trim() : null,
+    tiros: esDirecto ? document.getElementById('sn-tiros').value.trim() : null,
     ...ivaPayload()
   };
   botonGuardar.disabled = true;
@@ -316,7 +321,7 @@ async function guardarServicioNuevo(descargar=false) {
       if (actual.estatus !== 'abierto') { toast('Esta cotización ya no está abierta; vuelve a abrirla para revisar.'); return; }
       const res = await api('/leads/' + CONVERTIR_ID, { method: 'PUT', body: JSON.stringify({
         version: actual.version, estatus: 'ganado', partidas_json: payload.partidas_json, servicio_id: payload.servicio_id, direccion: payload.direccion,
-        fecha_servicio: payload.fecha_servicio, equipo: payload.equipo, operador: payload.operador, observaciones: payload.observaciones, proyecto: payload.proyecto, ...ivaPayload() }) });
+        fecha_servicio: payload.fecha_servicio, equipo: payload.equipo, operador: payload.operador, observaciones: payload.observaciones, proyecto: payload.proyecto, manifiestos: payload.manifiestos, tiros: payload.tiros, ...ivaPayload() }) });
       creado = await res.json();
       if (!res.ok) { toast(creado.error || 'No se pudo convertir la cotización'); return; }
     } else {
@@ -667,14 +672,15 @@ async function cargarGenerador() {
   if (consulta !== consultaGenerador) return;
   GENERADOR = r;
   const m = v => v == null ? '—' : formatoMoneda(v), t = r.totales;
-  resumen.textContent = `${r.filas.length} ${r.filas.length === 1 ? 'renglón' : 'renglones'} de ${t.ordenes} orden${t.ordenes === 1 ? '' : 'es'} · Subtotal ${formatoMoneda(t.subtotal)} · IVA ${formatoMoneda(t.iva)} · Total ${formatoMoneda(t.total)}`
+  resumen.textContent = `${r.filas.length} ${r.filas.length === 1 ? 'renglón' : 'renglones'} de ${t.ordenes} orden${t.ordenes === 1 ? '' : 'es'} · Subtotal ${formatoMoneda(t.subtotal)} · IVA ${formatoMoneda(t.iva)} · Total ${formatoMoneda(t.total)}${t.costo ? ` · Costo con terceros ${formatoMoneda(t.costo)}` : ''}`
     + (r.filas.some(f => f.iva_por_definir) ? ' · Las órdenes con IVA por definir se muestran como se capturaron.' : '');
   cuerpo.innerHTML = r.filas.length ? r.filas.map(f => `<tr data-gen-orden="${Number(f.lead_id)}">
       <td>${escaparHtml(f.mes)}</td><td class="st-fecha">${escaparHtml(f.fecha.split('-').reverse().join('/'))}</td><td class="st-folio">${escaparHtml(f.orden)}</td><td>${escaparHtml(f.factura || '—')}</td>
-      <td>${escaparHtml(f.producto)}</td><td class="st-num">${m(f.precio_con_iva)}</td><td class="st-num">${Number(f.cantidad)}</td><td class="st-num">${m(f.precio_sin_iva)}</td>
+      <td>${escaparHtml(f.cliente || '—')}</td><td>${escaparHtml(f.proyecto || '—')}</td><td>${escaparHtml(f.producto)}</td><td class="st-num">${Number(f.cantidad)}</td><td class="st-num">${m(f.precio_sin_iva)}</td><td class="st-num">${m(f.precio_con_iva)}</td>
       <td class="st-num">${m(f.subtotal)}</td><td class="st-num">${f.iva_por_definir ? '<small>Por definir</small>' : m(f.iva)}</td><td class="st-num"><b>${m(f.total)}</b></td>
-      <td>${escaparHtml(f.canal || '—')}</td><td>${escaparHtml(f.cliente || '—')}</td><td>${escaparHtml(f.proyecto || '—')}</td><td>${escaparHtml(f.unidad || '—')}</td><td>${escaparHtml(f.empleado || '—')}</td>
-    </tr>`).join('') : '<tr><td colspan="16" class="servicios-vacio">No hay órdenes de servicio en este periodo.</td></tr>';
+      <td>${escaparHtml(f.canal || '—')}</td><td>${escaparHtml(f.unidad || '—')}</td><td>${escaparHtml(f.empleado || '—')}</td><td>${escaparHtml(f.manifiestos || '—')}</td><td>${escaparHtml(f.tiros || '—')}</td>
+      <td class="gen-costo">${escaparHtml(f.proveedor || '')}</td><td class="gen-costo">${escaparHtml(f.concepto || '')}</td><td class="gen-costo st-num">${f.costo == null ? '' : formatoMoneda(f.costo)}</td><td class="gen-costo">${escaparHtml(f.estatus_pago || '')}</td><td class="gen-costo">${escaparHtml(f.via_pago || '')}</td>
+    </tr>`).join('') : '<tr><td colspan="23" class="servicios-vacio">No hay órdenes de servicio en este periodo.</td></tr>';
 }
 on('gen-desde', 'change', cargarGenerador);
 on('gen-hasta', 'change', cargarGenerador);
@@ -686,9 +692,10 @@ on('gen-exportar', 'click', () => {
   if (!GENERADOR?.filas.length) { toast('No hay renglones para exportar'); return; }
   descargarCSV('generador_saneadren_' + new Date().toISOString().slice(0, 10) + '.csv', [
     { titulo: 'MES LETRA', valor: f => f.mes }, { titulo: 'FECHA', valor: f => f.fecha }, { titulo: 'NO. ORDEN', valor: f => f.orden }, { titulo: 'NO. FACTURA', valor: f => f.factura },
-    { titulo: 'PRODUCTO', valor: f => f.producto }, { titulo: 'PRECIO UNITARIO C/IVA', valor: f => f.precio_con_iva }, { titulo: 'CANTIDAD', valor: f => f.cantidad },
-    { titulo: 'PRECIO UNITARIO S/IVA', valor: f => f.precio_sin_iva }, { titulo: 'SUBTOTAL', valor: f => f.subtotal }, { titulo: 'IVA', valor: f => f.iva ?? '' }, { titulo: 'TOTAL', valor: f => f.total },
-    { titulo: 'CANAL DE VENTA', valor: f => f.canal }, { titulo: 'CLIENTE', valor: f => f.cliente }, { titulo: 'PROYECTO', valor: f => f.proyecto }, { titulo: 'UNIDAD', valor: f => f.unidad }, { titulo: 'EMPLEADO', valor: f => f.empleado }
+    { titulo: 'CLIENTE', valor: f => f.cliente }, { titulo: 'PROYECTO', valor: f => f.proyecto }, { titulo: 'PRODUCTO', valor: f => f.producto }, { titulo: 'CANTIDAD', valor: f => f.cantidad },
+    { titulo: 'PRECIO UNITARIO S/IVA', valor: f => f.precio_sin_iva }, { titulo: 'PRECIO UNITARIO C/IVA', valor: f => f.precio_con_iva }, { titulo: 'SUBTOTAL', valor: f => f.subtotal }, { titulo: 'IVA', valor: f => f.iva ?? '' }, { titulo: 'TOTAL', valor: f => f.total },
+    { titulo: 'CANAL DE VENTA', valor: f => f.canal }, { titulo: 'UNIDAD', valor: f => f.unidad }, { titulo: 'EMPLEADO', valor: f => f.empleado }, { titulo: 'MANIFIESTOS', valor: f => f.manifiestos }, { titulo: 'TIROS', valor: f => f.tiros },
+    { titulo: 'PROVEEDOR', valor: f => f.proveedor }, { titulo: 'CONCEPTO', valor: f => f.concepto }, { titulo: 'COSTO', valor: f => f.costo ?? '' }, { titulo: 'ESTATUS PAGO', valor: f => f.estatus_pago }, { titulo: 'VIA PAGO', valor: f => f.via_pago }
   ], GENERADOR.filas);
 });
 
@@ -1182,7 +1189,7 @@ on('btn-generar-orden-servicio','click',async()=>{
   const items=recolectarItemsCotizacion();
   const prefill={convertir_de:lead.id,folio:folioCotizacion(lead),partidas_json:JSON.stringify(items),servicio_nombre:items[0]?.servicio,
     iva_modo:modoIvaEditor(),iva_tasa:IVA_TASA,direccion:document.getElementById('ed-direccion').value.trim()||lead.direccion,
-    equipo:lead.equipo,operador:lead.operador,observaciones:lead.observaciones,proyecto:lead.proyecto};
+    equipo:lead.equipo,operador:lead.operador,observaciones:lead.observaciones,proyecto:lead.proyecto,manifiestos:lead.manifiestos,tiros:lead.tiros};
   FlujoCRM.marcarGuardado('overlay-ficha'); // lo capturado en la ficha pasa a la ventana
   await FlujoCRM.nuevoRegistro(lead.cliente_id,'convertir',prefill);
 });
@@ -1656,6 +1663,8 @@ async function abrirFicha(id) {
   document.getElementById('ed-equipo').value = lead.equipo || '';
   document.getElementById('ed-operador').value = lead.operador || '';
   document.getElementById('ed-proyecto').value = lead.proyecto || '';
+  document.getElementById('ed-manifiestos').value = lead.manifiestos || '';
+  document.getElementById('ed-tiros').value = lead.tiros || '';
   document.getElementById('ed-observaciones').value = lead.observaciones || '';
   document.getElementById('ed-creado-por').textContent = lead.creado_por || '—';
   document.getElementById('ed-created-at').textContent = fechaCorta(lead.created_at) || '—';
@@ -1671,6 +1680,7 @@ async function abrirFicha(id) {
   abrirVentana('overlay-ficha');
   FlujoCRM.presentarRegistro(lead, clienteServicios);
   Finanzas.pintarCobranzaOrden(lead);
+  Finanzas.pintarCostosOrden(lead);
   prepararEditorCotizacion(lead,'existente');
   FlujoCRM.marcarGuardado('overlay-ficha');
 }
@@ -1812,6 +1822,8 @@ function recolectarPayloadFicha() {
     equipo: document.getElementById('ed-equipo').value.trim(),
     operador: document.getElementById('ed-operador').value.trim(),
     proyecto: document.getElementById('ed-proyecto').value.trim(),
+    manifiestos: document.getElementById('ed-manifiestos').value.trim(),
+    tiros: document.getElementById('ed-tiros').value.trim(),
     observaciones: document.getElementById('ed-observaciones').value.trim(),
     ...ivaPayload()
   };

@@ -447,6 +447,19 @@ const espera = ms => new Promise(r => setTimeout(r, ms));
   ok(j.totales.subtotal === 4500.01 && j.totales.iva === 720 && j.totales.total === 5220.01 && Math.round((g[0].total + g[1].total) * 100) === 522001,
     'los renglones del generador suman exactamente el subtotal, IVA y total de la orden', j.totales);
   [s] = await pedir('GET', '/generador?desde=2026-12-01&hasta=2026-01-01', L); ok(s === 400, 'generador: periodo al revés rechazado');
+  // Servicio realizado por un tercero: gasto ligado a la orden, pagado por nómina.
+  [s, j] = await pedir('PUT', '/leads/' + ordenGen.id, A, { version: (await pedir('GET', '/leads/' + ordenGen.id, A))[1].version, manifiestos: 'M-1020', tiros: '2' });
+  ok(s === 200 && j.manifiestos === 'M-1020' && j.tiros === '2', 'la orden guarda manifiestos y tiros', j);
+  [s, j] = await pedir('POST', '/finanzas/proveedores', A, { nombre: 'Pipas del Centro' });
+  const pipas = j;
+  [s, j] = await pedir('POST', '/finanzas/cxp', A, { proveedor_id: pipas.id, concepto: 'Renta de pipas', total: 7500, fecha_documento: '2026-09-15', lead_id: ordenGen.id, ya_pagado: true, metodo: 'nomina', fecha_pago: '2026-09-17', referencia: 'Semana 38' });
+  ok(s === 201, 'costo con tercero registrado como pagado por nómina', j);
+  [s, j] = await pedir('GET', '/finanzas/cxp?vista=todas&lead_id=' + ordenGen.id, A);
+  ok(j.length === 1 && j[0].saldo === 0 && /^2026-09-17\|nomina\|Semana 38$/.test(j[0].ultimo_pago) && j[0].orden_folio === g[0].orden, 'los costos de una orden se consultan por la orden', j);
+  [s, j] = await pedir('GET', '/generador?desde=2026-09-15&hasta=2026-09-15&q=Planta Norte', L);
+  ok(j.filas[0].proveedor === 'Pipas del Centro' && j.filas[0].concepto === 'Renta de pipas' && j.filas[0].costo === 7500 && j.filas[0].estatus_pago === 'Pagado 17/09/2026'
+    && j.filas[0].via_pago === 'Nómina · Semana 38' && j.filas[0].manifiestos === 'M-1020' && j.filas[0].tiros === '2' && j.filas[1].costo === null && j.totales.costo === 7500,
+    'el generador muestra proveedor, concepto, costo, estatus y vía de pago (una vez por orden)', j.filas);
 
   seccion('13. Pipeline: contactos sin cotización');
   [s, j] = await pedir('POST', '/contactos', L, { nombre: 'Solo Contacto', telefono: '4427770099', canal_origen_id: canales[0].id });

@@ -551,7 +551,7 @@ function validarPartidas(req,res,next){
   next();
 }
 // Equipo / operador / observaciones de la orden de servicio: texto libre con tope de longitud.
-const LIMITES_ORDEN = { equipo: 200, operador: 300, observaciones: 3000, proyecto: 200 };
+const LIMITES_ORDEN = { equipo: 200, operador: 300, observaciones: 3000, proyecto: 200, manifiestos: 200, tiros: 60 };
 function validarDatosOrden(body) {
   for (const [campo, max] of Object.entries(LIMITES_ORDEN)) {
     if (body[campo] === undefined || body[campo] === null) continue;
@@ -651,7 +651,7 @@ app.post('/api/leads', validarPartidas, validarRegistro, h((req, res) => {
   );
 
   if(req.body.partidas_json!==undefined)db.prepare('UPDATE leads SET partidas_json = ?, iva_modo = ?, iva_tasa = ?, iva_cent = ? WHERE id = ?').run(req.body.partidas_json,req.body.iva_modo??null,req.body.iva_tasa??null,req.body.iva_cent??null,info.lastInsertRowid);
-  db.prepare('UPDATE leads SET equipo = ?, operador = ?, observaciones = ?, proyecto = ? WHERE id = ?').run(textoOrden(req.body.equipo), textoOrden(req.body.operador), textoOrden(req.body.observaciones), textoOrden(req.body.proyecto), info.lastInsertRowid);
+  db.prepare('UPDATE leads SET equipo = ?, operador = ?, observaciones = ?, proyecto = ?, manifiestos = ?, tiros = ? WHERE id = ?').run(textoOrden(req.body.equipo), textoOrden(req.body.operador), textoOrden(req.body.observaciones), textoOrden(req.body.proyecto), textoOrden(req.body.manifiestos), textoOrden(req.body.tiros), info.lastInsertRowid);
   if(req.body.establecimiento_id)db.prepare('UPDATE leads SET establecimiento_id=? WHERE id=?').run(req.body.establecimiento_id,info.lastInsertRowid);
   // Crear una cotización nunca modifica los datos maestros del contacto.
   db.prepare(`INSERT INTO historial (lead_id, tipo, texto, usuario, origen) VALUES (?, 'observacion', ?, ?, 'sistema')`)
@@ -740,8 +740,8 @@ app.put('/api/leads/:id', validarPartidas, validarRegistro, h((req, res) => {
 
   const errorOrden = validarDatosOrden(req.body);
   if (errorOrden) return res.status(400).json({ error: errorOrden });
-  ['equipo', 'operador', 'observaciones', 'proyecto'].forEach(c => { if (req.body[c] !== undefined) req.body[c] = textoOrden(req.body[c]); });
-  const campos = ['equipo', 'operador', 'observaciones', 'proyecto', 'partidas_json', 'iva_modo', 'iva_tasa', 'iva_cent','direccion', 'canal_id', 'servicio_id', 'responsable_id', 'etapa', 'estatus', 'valor', 'fecha_servicio', 'notas_iniciales', 'urgente', 'encuesta_calificacion', 'encuesta_comentario', 'fecha_cotizacion', 'incluye_vigencia', 'vigencia_hasta'];
+  ['equipo', 'operador', 'observaciones', 'proyecto', 'manifiestos', 'tiros'].forEach(c => { if (req.body[c] !== undefined) req.body[c] = textoOrden(req.body[c]); });
+  const campos = ['equipo', 'operador', 'observaciones', 'proyecto', 'manifiestos', 'tiros', 'partidas_json', 'iva_modo', 'iva_tasa', 'iva_cent','direccion', 'canal_id', 'servicio_id', 'responsable_id', 'etapa', 'estatus', 'valor', 'fecha_servicio', 'notas_iniciales', 'urgente', 'encuesta_calificacion', 'encuesta_comentario', 'fecha_cotizacion', 'incluye_vigencia', 'vigencia_hasta'];
   const set = [];
   const params = [];
   campos.forEach(c => {
@@ -1102,7 +1102,7 @@ app.get('/api/generador', h((req, res) => {
   if (!fechaOk(desde) || !fechaOk(hasta) || (desde && hasta && desde > hasta)) return res.status(400).json({ error: 'Revisa el rango de fechas' });
   const q = String(req.query.q || '').trim().toLowerCase();
   const ordenes = db.prepare(`SELECT l.id, l.created_at, l.fecha_servicio, l.factura_folio, l.partidas_json, l.valor, l.iva_modo, l.iva_tasa, l.iva_cent,
-      l.proyecto, l.equipo, l.operador, COALESCE(c.empresa_contacto, c.nombre, l.empresa_contacto, l.nombre) AS cliente,
+      l.proyecto, l.equipo, l.operador, l.manifiestos, l.tiros, COALESCE(c.empresa_contacto, c.nombre, l.empresa_contacto, l.nombre) AS cliente,
       COALESCE(cl.nombre, cc.nombre) AS canal, s.nombre AS servicio_nombre,
       COALESCE(l.fecha_servicio, date(l.created_at)) AS fecha
     FROM leads l LEFT JOIN clientes c ON c.id = l.cliente_id LEFT JOIN canales cl ON cl.id = l.canal_id
@@ -1110,12 +1110,34 @@ app.get('/api/generador', h((req, res) => {
     WHERE l.estatus = 'ganado' AND (? IS NULL OR COALESCE(l.fecha_servicio, date(l.created_at)) >= ?) AND (? IS NULL OR COALESCE(l.fecha_servicio, date(l.created_at)) <= ?)
     ORDER BY fecha DESC, l.id DESC`).all(desde, desde, hasta, hasta);
   const pesos = cent => cent == null ? null : Math.round(cent) / 100;
+  // Costos con terceros: gastos de Cuentas por pagar ligados a cada orden (proveedor que hizo el servicio).
+  const METODO_TXT = { transferencia: 'Transferencia', efectivo: 'Efectivo', deposito: 'Depósito', cheque: 'Cheque', tarjeta: 'Tarjeta', otro: 'Otro', nomina: 'Nómina' };
+  const costos = new Map();
+  for (const x of db.prepare(`SELECT x.lead_id, p.nombre AS proveedor, x.concepto, x.total_cent,
+      (SELECT COALESCE(SUM(monto_cent), 0) FROM pagos_proveedor g WHERE g.cxp_id = x.id AND g.cancelado = 0) AS pagado_cent,
+      (SELECT fecha || '|' || metodo || '|' || COALESCE(referencia, '') FROM pagos_proveedor g WHERE g.cxp_id = x.id AND g.cancelado = 0 ORDER BY fecha DESC, id DESC LIMIT 1) AS ultimo_pago
+    FROM cuentas_por_pagar x JOIN proveedores p ON p.id = x.proveedor_id WHERE x.cancelada = 0 AND x.lead_id IS NOT NULL ORDER BY x.id`).all()) {
+    if (!costos.has(x.lead_id)) costos.set(x.lead_id, []);
+    costos.get(x.lead_id).push(x);
+  }
+  function costoDe(leadId) {
+    const lista = costos.get(leadId);
+    if (!lista) return { proveedor: '', concepto: '', costo: null, estatus_pago: '', via_pago: '' };
+    const unicos = a => [...new Set(a.filter(Boolean))].join(' · ');
+    const total = lista.reduce((t, x) => t + x.total_cent, 0), pagado = lista.reduce((t, x) => t + x.pagado_cent, 0);
+    const ultimo = lista.map(x => x.ultimo_pago).filter(Boolean).sort().at(-1)?.split('|');
+    const fecha = ultimo ? ultimo[0].split('-').reverse().join('/') : '';
+    return { proveedor: unicos(lista.map(x => x.proveedor)), concepto: unicos(lista.map(x => x.concepto)), costo: pesos(total),
+      estatus_pago: pagado >= total ? 'Pagado ' + fecha : pagado > 0 ? 'Pagado en parte (' + pesos(pagado).toLocaleString('es-MX', { style: 'currency', currency: 'MXN' }) + ')' : 'Pendiente',
+      via_pago: ultimo ? [METODO_TXT[ultimo[1]] || ultimo[1], ultimo[2]].filter(Boolean).join(' · ') : '' };
+  }
   const filas = [];
   for (const o of ordenes) {
     let items; try { items = JSON.parse(o.partidas_json || 'null'); } catch { items = null; }
     if (!Array.isArray(items) || !items.length) items = [{ servicio: o.servicio_nombre || '', importe: o.valor || 0 }];
     const lineas = Importes.desglosarPartidas(items, o.iva_modo, o.iva_tasa);
     const folio = 'OS-' + String(o.created_at).slice(0, 7).replace('-', '') + '-' + String(o.id).padStart(4, '0');
+    const costo = costoDe(o.id);
     items.forEach((it, n) => {
       const l = lineas[n], cantidad = Importes.cantidadDe(it);
       filas.push({
@@ -1124,12 +1146,15 @@ app.get('/api/generador', h((req, res) => {
         precio_con_iva: Math.round(l.total_cent / cantidad) / 100, precio_sin_iva: Math.round(l.subtotal_cent / cantidad) / 100,
         subtotal: pesos(l.subtotal_cent), iva: pesos(l.iva_cent), total: pesos(l.total_cent), iva_por_definir: !o.iva_modo,
         canal: o.canal || '', cliente: o.cliente || '', proyecto: o.proyecto || '', unidad: o.equipo || '', empleado: o.operador || '',
+        manifiestos: o.manifiestos || '', tiros: o.tiros || '',
+        // El costo con terceros es de la orden: va solo en su primer renglón para no sumarlo dos veces.
+        ...(n === 0 ? costo : { proveedor: '', concepto: '', costo: null, estatus_pago: '', via_pago: '' }),
       });
     });
   }
-  const visibles = q ? filas.filter(f => [f.orden, f.factura, f.producto, f.cliente, f.proyecto, f.unidad, f.empleado, f.canal, f.mes].some(v => String(v).toLowerCase().includes(q))) : filas;
+  const visibles = q ? filas.filter(f => [f.orden, f.factura, f.producto, f.cliente, f.proyecto, f.unidad, f.empleado, f.canal, f.mes, f.proveedor, f.concepto, f.manifiestos].some(v => String(v).toLowerCase().includes(q))) : filas;
   const suma = k => Math.round(visibles.reduce((t, f) => t + (f[k] || 0) * 100, 0)) / 100;
-  res.json({ filas: visibles, totales: { subtotal: suma('subtotal'), iva: suma('iva'), total: suma('total'), ordenes: new Set(visibles.map(f => f.lead_id)).size } });
+  res.json({ filas: visibles, totales: { subtotal: suma('subtotal'), iva: suma('iva'), total: suma('total'), costo: suma('costo'), ordenes: new Set(visibles.map(f => f.lead_id)).size } });
 }));
 
 // ---------- Análisis y métricas (vista Resultados) ----------

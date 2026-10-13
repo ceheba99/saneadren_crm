@@ -892,3 +892,7 @@ header.app nav.menu-principal .menu-sub .menu-item:focus-visible{outline:3px sol
 .tabla-generador tbody tr:hover{background:#fafbfc;}
 #gen-buscar{flex:1 1 240px;}
 .tabla-generador th.st-num,.tabla-generador td.st-num{text-align:right;}
+
+/* Generador: columnas del costo con terceros. */
+.tabla-generador th.gen-costo{background:#e9ecef;}
+.tabla-generador td.gen-costo{background:#f6f7f9;}
