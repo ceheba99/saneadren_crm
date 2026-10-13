@@ -281,6 +281,8 @@ function rotularEditorContenido(esOrden) {
   document.getElementById('gc-titulo-contenido').textContent = 'Contenido de la ' + doc;
   document.getElementById('gc-ayuda-contenido').textContent = `Edita servicios, descripciones e importes. Se guardan con esta ${doc} y se usan en la descarga.`;
   document.getElementById('btn-gc-generar').textContent = 'Guardar y descargar ' + doc;
+  // Las notas y condiciones son de la cotización (la orden tiene sus observaciones).
+  document.getElementById('gc-notas-campo').hidden = esOrden;
 }
 async function guardarServicioNuevo(descargar=false) {
   if(!validarEditorCotizacion())return;
@@ -325,6 +327,7 @@ async function guardarServicioNuevo(descargar=false) {
     manifiestos: esDirecto ? document.getElementById('sn-manifiestos').value.trim() : null,
     tiros: esDirecto ? document.getElementById('sn-tiros').value.trim() : null,
     incluye_vigencia: esDirecto ? undefined : conVigencia,
+    notas_cotizacion: esDirecto ? null : document.getElementById('gc-notas').value.trim(),
     vigencia_hasta: conVigencia ? vigenciaHasta : null,
     ...ivaPayload(),
     ...(DUPLICADO_DE ? { costos_duplicar: costosADuplicar() } : {})
@@ -851,6 +854,7 @@ function datosCotizacionDesdeLead(lead, items) {
     fechaEmision: emision.toLocaleDateString('es-MX', { year: 'numeric', month: 'long', day: 'numeric' }),
     fechaCotizacion: new Date((lead.fecha_cotizacion || lead.created_at.slice(0,10)) + 'T00:00:00').toLocaleDateString('es-MX', { year: 'numeric', month: 'long', day: 'numeric' }),
     vigenciaTexto,
+    notas: lead.notas_cotizacion || '', // ya guardadas: la descarga siempre guarda antes
     atendioPor: lead.responsable_nombre || 'Por asignar',
     cliente: {
       nombre: lead.nombre || 'Cliente',
@@ -935,6 +939,7 @@ async function generarPDFCotizacion(datos) {
   texto('Son: '+datos.totalLetras,9,true);
   if(datos.leyendaIva)texto(datos.leyendaIva,9);
   y+=4;
+  if(datos.notas){y+=6;texto('NOTAS Y CONDICIONES',10,true);texto(datos.notas,9);y+=4;}
   if(datos.vigenciaTexto)texto('Esta cotización tiene vigencia hasta el '+datos.vigenciaTexto+'.',9);
   const paginas=doc.getNumberOfPages();
   for(let i=1;i<=paginas;i++){doc.setPage(i);doc.setFontSize(8);doc.setTextColor(90);doc.text('Cotización '+datos.folio+' · Página '+i+' de '+paginas,564,722,{align:'right'});}
@@ -964,6 +969,7 @@ async function generarWordCotizacion(datos) {
       ...(datos.cliente.telefono?[parrafo('Tel: '+datos.cliente.telefono)]:[]),
       ...(datos.cliente.direccion?[parrafo('Ubicación del servicio: '+datos.cliente.direccion)]:[]),
       tabla,parrafo('Son: '+datos.totalLetras,true),...(datos.leyendaIva?[parrafo(datos.leyendaIva)]:[]),parrafo(''),
+      ...(datos.notas?[parrafo('NOTAS Y CONDICIONES',true),...datos.notas.split('\n').map(l=>parrafo(l))]:[]),
       ...(datos.vigenciaTexto?[parrafo('Esta cotización tiene vigencia hasta el '+datos.vigenciaTexto+'.')]:[])
     ]
   }]});
@@ -1381,6 +1387,7 @@ function prepararEditorCotizacion(lead,modo){
   document.getElementById('gc-iva-modo').value=(lead && 'iva_modo' in lead ? lead.iva_modo : 'mas_iva')||'';
   IVA_TASA=lead?.iva_tasa||Importes.TASA_DEFAULT;
   IVA_BLOQUEADO=modo!=='nuevo'&&lead?.estatus==='ganado'&&!['admin','atencion'].includes(USUARIO_ACTUAL?.rol);
+  document.getElementById('gc-notas').value=lead?.notas_cotizacion||'';
   document.getElementById('gc-items').innerHTML='';GC_CONTADOR=0;
   let items;try{items=JSON.parse(lead?.partidas_json||'null');}catch{}
   (items||[{servicio:lead?.servicio_nombre||'',leyenda:descripcionServicio(lead?.servicio_nombre||''),...(lead?.valor?{importe:lead.valor}:{})}]).forEach(agregarFilaCotizacion); // sin precio: el campo queda vacío, nunca en $0
@@ -1875,6 +1882,7 @@ function recolectarPayloadFicha() {
     manifiestos: document.getElementById('ed-manifiestos').value.trim(),
     tiros: document.getElementById('ed-tiros').value.trim(),
     observaciones: document.getElementById('ed-observaciones').value.trim(),
+    ...(LEAD_ACTUAL?.estatus === 'abierto' ? { notas_cotizacion: document.getElementById('gc-notas').value.trim() } : {}),
     ...ivaPayload()
   };
 }

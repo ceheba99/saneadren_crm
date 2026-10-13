@@ -343,6 +343,14 @@ const espera = ms => new Promise(r => setTimeout(r, ms));
   [s, j] = await altaIva({ partidas_json: JSON.stringify([{ servicio: servicios[0].nombre, leyenda: 'a', importe: 1, cantidad: 2, precio: 0 }]), iva_modo: 'sin_iva', estatus: 'ganado', fecha_servicio: '2026-10-01', valor: 0 });
   ok(s === 400, 'una orden de servicio con precio unitario $0 se rechaza', j);
   [s, j] = await altaIva({}); ok(s === 400 && /servicio con su precio/.test(j.error), 'no se crea una cotización sin servicios ni precio', j);
+  // Notas y condiciones de la cotización (se imprimen en el documento).
+  [s, j] = await altaIva({ partidas_json: part(2500), iva_modo: 'mas_iva', notas_cotizacion: '  Anticipo 50 %.\nNo incluye obra civil.  ' });
+  const cotNotas = j;
+  ok(s === 201 && j.notas_cotizacion === 'Anticipo 50 %.\nNo incluye obra civil.','la cotización guarda sus notas y condiciones', j);
+  [s, j] = await pedir('PUT', '/leads/' + cotNotas.id, L, { version: cotNotas.version, notas_cotizacion: 'Precio especial por volumen.' });
+  ok(s === 200 && j.notas_cotizacion === 'Precio especial por volumen.', 'las notas se pueden editar desde la ficha', j);
+  [s, j] = await altaIva({ partidas_json: part(2500), iva_modo: 'mas_iva', notas_cotizacion: 'x'.repeat(3001) });
+  ok(s === 400, 'notas de más de 3,000 caracteres se rechazan');
   // Vigencia desde la ventana de crear cotización.
   [s, j] = await altaIva({ partidas_json: part(1800), iva_modo: 'mas_iva', incluye_vigencia: true, vigencia_hasta: '2099-12-31' });
   ok(s === 201 && j.incluye_vigencia === 1 && j.vigencia_hasta === '2099-12-31', 'cotización con vigencia hasta la fecha elegida', j);
