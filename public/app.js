@@ -387,14 +387,15 @@ function estadoCarga(ids, estado, reintentar) {
   });
 }
 async function cargarInicio() {
-  const listas = ['inicio-cotizaciones', 'inicio-recompras'];
+  const listas = ['inicio-cotizaciones', 'inicio-concluir', 'inicio-recompras'];
   estadoCarga(listas, 'cargando');
-  let alertas, recompras, abiertas;
+  let alertas, recompras, abiertas, ordenes;
   try {
-    [alertas, recompras, abiertas] = await Promise.all([
+    [alertas, recompras, abiertas, ordenes] = await Promise.all([
       api('/alertas').then(r => r.json()),
       api('/recompras').then(r => r.json()),
-      api('/leads?estatus=abierto').then(r => r.json())
+      api('/leads?estatus=abierto').then(r => r.json()),
+      api('/leads?estatus=ganado').then(r => r.json())
     ]);
   } catch (err) {
     if (err.status !== 401) estadoCarga(listas, 'No se pudo cargar: ' + err.message, cargarInicio);
@@ -407,6 +408,20 @@ async function cargarInicio() {
   const contCot = document.getElementById('inicio-cotizaciones');
   const filasCot = [...alertas.map(filaAlerta), ...estancadas.map(filaEstancada)];
   contCot.innerHTML = filasCot.length ? filasCot.join('') : '<p class="util-45">No hay avisos ni cotizaciones pendientes por ahora. 🎉</p>';
+
+  // Órdenes con fecha ya pasada sin marcar como realizadas o no realizadas.
+  const hoyTxt = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Mexico_City' }).format(new Date());
+  const porConcluir = ordenes.filter(o => !o.ejecucion && o.fecha_servicio && o.fecha_servicio <= hoyTxt).sort((a, b) => a.fecha_servicio.localeCompare(b.fecha_servicio));
+  document.getElementById('inicio-concluir').innerHTML = porConcluir.length ? porConcluir.map(o => `
+    <div class="fila-alerta tipo-estancada">
+      <div class="info">
+        <span class="tipo-tag estancada">🧾 Por concluir</span>
+        <div><b>${escaparHtml(o.empresa_contacto || o.nombre || 'Sin nombre')}</b> · ${folioOrdenServicio(o)}</div>
+        <div class="txt">${escaparHtml(o.servicio_nombre || 'Servicio')}${o.equipo ? ' · Unidad ' + escaparHtml(o.equipo) : ''}</div>
+        <div class="fecha">Servicio del ${escaparHtml(o.fecha_servicio.split('-').reverse().join('/'))}</div>
+      </div>
+      <div class="util-46"><button class="btn btn-outline" onclick="abrirFicha(${Number(o.id)})">Abrir orden</button></div>
+    </div>`).join('') : '<p class="util-45">No hay servicios pendientes de concluir. 🎉</p>';
 
   const contRec = document.getElementById('inicio-recompras');
   contRec.innerHTML = recompras.length
@@ -673,14 +688,15 @@ async function cargarGenerador() {
   GENERADOR = r;
   const m = v => v == null ? '—' : formatoMoneda(v), t = r.totales;
   resumen.textContent = `${r.filas.length} ${r.filas.length === 1 ? 'renglón' : 'renglones'} de ${t.ordenes} orden${t.ordenes === 1 ? '' : 'es'} · Subtotal ${formatoMoneda(t.subtotal)} · IVA ${formatoMoneda(t.iva)} · Total ${formatoMoneda(t.total)}${t.costo ? ` · Costo con terceros ${formatoMoneda(t.costo)}` : ''}`
-    + (r.filas.some(f => f.iva_por_definir) ? ' · Las órdenes con IVA por definir se muestran como se capturaron.' : '');
+    + (r.filas.some(f => f.iva_por_definir) ? ' · Las órdenes con IVA por definir se muestran como se capturaron.' : '')
+    + (r.por_concluir ? ` · ${r.por_concluir} orden${r.por_concluir === 1 ? '' : 'es'} con fecha pasada aún sin marcar como realizada${r.por_concluir === 1 ? '' : 's'} (no aparecen aquí; ve a Inicio).` : '');
   cuerpo.innerHTML = r.filas.length ? r.filas.map(f => `<tr data-gen-orden="${Number(f.lead_id)}">
       <td>${escaparHtml(f.mes)}</td><td class="st-fecha">${escaparHtml(f.fecha.split('-').reverse().join('/'))}</td><td class="st-folio">${escaparHtml(f.orden)}</td><td>${escaparHtml(f.factura || '—')}</td>
       <td>${escaparHtml(f.cliente || '—')}</td><td>${escaparHtml(f.proyecto || '—')}</td><td>${escaparHtml(f.producto)}</td><td class="st-num">${Number(f.cantidad)}</td><td class="st-num">${m(f.precio_sin_iva)}</td><td class="st-num">${m(f.precio_con_iva)}</td>
       <td class="st-num">${m(f.subtotal)}</td><td class="st-num">${f.iva_por_definir ? '<small>Por definir</small>' : m(f.iva)}</td><td class="st-num"><b>${m(f.total)}</b></td>
-      <td>${escaparHtml(f.canal || '—')}</td><td>${escaparHtml(f.unidad || '—')}</td><td>${escaparHtml(f.empleado || '—')}</td><td>${escaparHtml(f.manifiestos || '—')}</td><td>${escaparHtml(f.tiros || '—')}</td>
+      <td>${escaparHtml(f.canal || '—')}</td><td>${escaparHtml(f.unidad || '—')}</td><td>${escaparHtml(f.empleado || '—')}</td><td>${escaparHtml(f.manifiestos || '—')}</td><td>${escaparHtml(f.tiros || '—')}</td><td>${escaparHtml(f.realizado_por)}</td>
       <td class="gen-costo">${escaparHtml(f.proveedor || '')}</td><td class="gen-costo">${escaparHtml(f.concepto || '')}</td><td class="gen-costo st-num">${f.costo == null ? '' : formatoMoneda(f.costo)}</td><td class="gen-costo">${escaparHtml(f.estatus_pago || '')}</td><td class="gen-costo">${escaparHtml(f.via_pago || '')}</td>
-    </tr>`).join('') : '<tr><td colspan="23" class="servicios-vacio">No hay órdenes de servicio en este periodo.</td></tr>';
+    </tr>`).join('') : '<tr><td colspan="24" class="servicios-vacio">No hay servicios realizados en este periodo.</td></tr>';
 }
 on('gen-desde', 'change', cargarGenerador);
 on('gen-hasta', 'change', cargarGenerador);
@@ -694,7 +710,7 @@ on('gen-exportar', 'click', () => {
     { titulo: 'MES LETRA', valor: f => f.mes }, { titulo: 'FECHA', valor: f => f.fecha }, { titulo: 'NO. ORDEN', valor: f => f.orden }, { titulo: 'NO. FACTURA', valor: f => f.factura },
     { titulo: 'CLIENTE', valor: f => f.cliente }, { titulo: 'PROYECTO', valor: f => f.proyecto }, { titulo: 'PRODUCTO', valor: f => f.producto }, { titulo: 'CANTIDAD', valor: f => f.cantidad },
     { titulo: 'PRECIO UNITARIO S/IVA', valor: f => f.precio_sin_iva }, { titulo: 'PRECIO UNITARIO C/IVA', valor: f => f.precio_con_iva }, { titulo: 'SUBTOTAL', valor: f => f.subtotal }, { titulo: 'IVA', valor: f => f.iva ?? '' }, { titulo: 'TOTAL', valor: f => f.total },
-    { titulo: 'CANAL DE VENTA', valor: f => f.canal }, { titulo: 'UNIDAD', valor: f => f.unidad }, { titulo: 'EMPLEADO', valor: f => f.empleado }, { titulo: 'MANIFIESTOS', valor: f => f.manifiestos }, { titulo: 'TIROS', valor: f => f.tiros },
+    { titulo: 'CANAL DE VENTA', valor: f => f.canal }, { titulo: 'UNIDAD', valor: f => f.unidad }, { titulo: 'EMPLEADO', valor: f => f.empleado }, { titulo: 'MANIFIESTOS', valor: f => f.manifiestos }, { titulo: 'TIROS', valor: f => f.tiros }, { titulo: 'REALIZÓ', valor: f => f.realizado_por },
     { titulo: 'PROVEEDOR', valor: f => f.proveedor }, { titulo: 'CONCEPTO', valor: f => f.concepto }, { titulo: 'COSTO', valor: f => f.costo ?? '' }, { titulo: 'ESTATUS PAGO', valor: f => f.estatus_pago }, { titulo: 'VIA PAGO', valor: f => f.via_pago }
   ], GENERADOR.filas);
 });
@@ -1679,6 +1695,7 @@ async function abrirFicha(id) {
   renderServiciosAnteriores(lead.otras_solicitudes || []);
   abrirVentana('overlay-ficha');
   FlujoCRM.presentarRegistro(lead, clienteServicios);
+  Finanzas.pintarEjecucion(lead);
   Finanzas.pintarCobranzaOrden(lead);
   Finanzas.pintarCostosOrden(lead);
   prepararEditorCotizacion(lead,'existente');

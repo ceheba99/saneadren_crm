@@ -1102,12 +1102,12 @@ app.get('/api/generador', h((req, res) => {
   if (!fechaOk(desde) || !fechaOk(hasta) || (desde && hasta && desde > hasta)) return res.status(400).json({ error: 'Revisa el rango de fechas' });
   const q = String(req.query.q || '').trim().toLowerCase();
   const ordenes = db.prepare(`SELECT l.id, l.created_at, l.fecha_servicio, l.factura_folio, l.partidas_json, l.valor, l.iva_modo, l.iva_tasa, l.iva_cent,
-      l.proyecto, l.equipo, l.operador, l.manifiestos, l.tiros, COALESCE(c.empresa_contacto, c.nombre, l.empresa_contacto, l.nombre) AS cliente,
+      l.proyecto, l.equipo, l.operador, l.manifiestos, l.tiros, l.realizado_por, COALESCE(c.empresa_contacto, c.nombre, l.empresa_contacto, l.nombre) AS cliente,
       COALESCE(cl.nombre, cc.nombre) AS canal, s.nombre AS servicio_nombre,
-      COALESCE(l.fecha_servicio, date(l.created_at)) AS fecha
+      COALESCE(l.fecha_realizado, l.fecha_servicio, date(l.created_at)) AS fecha
     FROM leads l LEFT JOIN clientes c ON c.id = l.cliente_id LEFT JOIN canales cl ON cl.id = l.canal_id
     LEFT JOIN canales cc ON cc.id = c.canal_origen_id LEFT JOIN catalogo_servicios s ON s.id = l.servicio_id
-    WHERE l.estatus = 'ganado' AND (? IS NULL OR COALESCE(l.fecha_servicio, date(l.created_at)) >= ?) AND (? IS NULL OR COALESCE(l.fecha_servicio, date(l.created_at)) <= ?)
+    WHERE l.estatus = 'ganado' AND l.ejecucion = 'realizado' AND (? IS NULL OR COALESCE(l.fecha_realizado, l.fecha_servicio, date(l.created_at)) >= ?) AND (? IS NULL OR COALESCE(l.fecha_realizado, l.fecha_servicio, date(l.created_at)) <= ?)
     ORDER BY fecha DESC, l.id DESC`).all(desde, desde, hasta, hasta);
   const pesos = cent => cent == null ? null : Math.round(cent) / 100;
   // Costos con terceros: gastos de Cuentas por pagar ligados a cada orden (proveedor que hizo el servicio).
@@ -1146,7 +1146,7 @@ app.get('/api/generador', h((req, res) => {
         precio_con_iva: Math.round(l.total_cent / cantidad) / 100, precio_sin_iva: Math.round(l.subtotal_cent / cantidad) / 100,
         subtotal: pesos(l.subtotal_cent), iva: pesos(l.iva_cent), total: pesos(l.total_cent), iva_por_definir: !o.iva_modo,
         canal: o.canal || '', cliente: o.cliente || '', proyecto: o.proyecto || '', unidad: o.equipo || '', empleado: o.operador || '',
-        manifiestos: o.manifiestos || '', tiros: o.tiros || '',
+        manifiestos: o.manifiestos || '', tiros: o.tiros || '', realizado_por: o.realizado_por === 'subcontratado' ? 'Subcontratado' : 'Propio',
         // El costo con terceros es de la orden: va solo en su primer renglón para no sumarlo dos veces.
         ...(n === 0 ? costo : { proveedor: '', concepto: '', costo: null, estatus_pago: '', via_pago: '' }),
       });
@@ -1154,7 +1154,9 @@ app.get('/api/generador', h((req, res) => {
   }
   const visibles = q ? filas.filter(f => [f.orden, f.factura, f.producto, f.cliente, f.proyecto, f.unidad, f.empleado, f.canal, f.mes, f.proveedor, f.concepto, f.manifiestos].some(v => String(v).toLowerCase().includes(q))) : filas;
   const suma = k => Math.round(visibles.reduce((t, f) => t + (f[k] || 0) * 100, 0)) / 100;
-  res.json({ filas: visibles, totales: { subtotal: suma('subtotal'), iva: suma('iva'), total: suma('total'), costo: suma('costo'), ordenes: new Set(visibles.map(f => f.lead_id)).size } });
+  // Órdenes con fecha ya pasada que nadie ha marcado: no están en el Generador hasta concluirlas.
+  const porConcluir = db.prepare("SELECT COUNT(*) n FROM leads WHERE estatus = 'ganado' AND ejecucion IS NULL AND fecha_servicio IS NOT NULL AND fecha_servicio <= ?").get(hoyMexico()).n;
+  res.json({ filas: visibles, por_concluir: porConcluir, totales: { subtotal: suma('subtotal'), iva: suma('iva'), total: suma('total'), costo: suma('costo'), ordenes: new Set(visibles.map(f => f.lead_id)).size } });
 }));
 
 // ---------- Análisis y métricas (vista Resultados) ----------
