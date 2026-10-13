@@ -709,15 +709,20 @@
     <div class="modal-body">
       <div class="campo"><label for="gasto-proveedor">Proveedor</label><select id="gasto-proveedor"></select><small class="ayuda">¿No está? Agrégalo en la pestaña Proveedores.</small></div>
       <div class="campo"><label for="gasto-categoria">Categoría</label><select id="gasto-categoria"></select></div>
+      <!-- Orden de servicio relacionada: se busca por folio, número, cliente, servicio o unidad y se muestra su información. -->
+      <div class="campo gasto-orden-campo"><label for="gasto-orden">Orden de servicio relacionada (opcional)</label>
+        <input id="gasto-orden" type="search" maxlength="80" autocomplete="off" placeholder="Folio OS, número, cliente, servicio o unidad" role="combobox" aria-expanded="false" aria-controls="gasto-orden-sugerencias">
+        <div class="gasto-orden-sugerencias" id="gasto-orden-sugerencias" role="listbox" hidden></div>
+        <div class="gasto-orden-info" id="gasto-orden-info" role="status" hidden></div>
+      </div>
       <div class="campo"><label for="gasto-concepto">Concepto</label><input id="gasto-concepto" maxlength="200" placeholder="Ej. Disposición 12 m3 de lodos"></div>
       <div class="campo"><label for="gasto-total">Total a pagar con IVA (MXN)</label><input id="gasto-total" type="text" inputmode="decimal" autocomplete="off"></div>
       <div class="form-grid-2">
         <div class="campo"><label for="gasto-fecha">Fecha de la factura o gasto</label><input id="gasto-fecha" type="date"></div>
         <div class="campo"><label for="gasto-vence">Vence (según crédito del proveedor)</label><input id="gasto-vence" type="date"></div>
       </div>
-      <details><summary>Factura, orden y equipo (opcional)</summary>
+      <details><summary>Factura y equipo (opcional)</summary>
         <div class="campo"><label for="gasto-folio">Folio de la factura del proveedor</label><input id="gasto-folio" maxlength="60"></div>
-        <div class="campo"><label for="gasto-orden">Orden de servicio relacionada (folio OS o número)</label><input id="gasto-orden" type="text" maxlength="20" placeholder="Ej. OS-202610-0051"></div>
         <div class="campo"><label for="gasto-equipo">Equipo</label><input id="gasto-equipo" maxlength="200" placeholder="Ej. E-37-04"></div>
       </details>
       <label class="diseno-campo-checkbox"><input type="checkbox" id="gasto-pagado"> Ya lo pagué (gasto de contado)</label>

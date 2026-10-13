@@ -402,6 +402,59 @@ const Finanzas = (() => {
   }));
 
   // Nuevo gasto o factura
+  // ---- Orden de servicio relacionada al gasto: búsqueda, vista previa y datos que se cargan ----
+  let ORDENES_GASTO = [];
+  async function cargarOrdenesGasto() {
+    try { ORDENES_GASTO = await api('/leads?estatus=ganado').then(json); } catch { ORDENES_GASTO = []; }
+  }
+  const sinAcentosGasto = t => String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  // Busca por folio (OS-202610-0001), número (1), cliente, servicio, unidad, operador o ubicación.
+  function buscarOrdenesGasto(texto) {
+    const q = sinAcentosGasto(texto).trim(); if (!q) return [];
+    const numero = (q.match(/(\d+)\s*$/) || [])[1];
+    const exacta = ORDENES_GASTO.filter(o => sinAcentosGasto(folioOrdenServicio(o)) === q || (/^\d+$/.test(q) && o.id === Number(q)));
+    if (exacta.length) return exacta;
+    const palabras = q.split(/\s+/);
+    return ORDENES_GASTO.filter(o => { const t = sinAcentosGasto([folioOrdenServicio(o), o.id, o.nombre, o.empresa_contacto, o.servicio_nombre, o.equipo, o.operador, o.direccion, o.proyecto].join(' ')); return palabras.every(p => t.includes(p)); })
+      .concat(numero && !/^\d+$/.test(q) ? ORDENES_GASTO.filter(o => o.id === Number(numero)) : [])
+      .filter((o, i, a) => a.indexOf(o) === i).slice(0, 8);
+  }
+  const totalOrden = o => (Math.round((o.valor || 0) * 100) + (o.iva_cent || 0)) / 100;
+  function pintarSugerenciasGasto() {
+    const caja = $('gasto-orden-sugerencias'), lista = buscarOrdenesGasto($('gasto-orden').value);
+    caja.hidden = !lista.length; $('gasto-orden').setAttribute('aria-expanded', String(!!lista.length));
+    caja.innerHTML = lista.map(o => `<button type="button" role="option" class="gasto-orden-opcion" data-orden-gasto="${Number(o.id)}"><b>${esc(folioOrdenServicio(o))}</b> · ${esc(o.empresa_contacto || o.nombre || 'Sin cliente')} · ${esc(o.servicio_nombre || 'Servicio')}<small>${esc(fechaTxt(o.fecha_servicio))}${o.equipo ? ' · Unidad ' + esc(o.equipo) : ''} · ${formatoMoneda(totalOrden(o))}</small></button>`).join('');
+  }
+  // Muestra la información de la orden elegida y carga equipo y concepto si la orden los tiene.
+  function elegirOrdenGasto(o, cargarDatos = true) {
+    const info = $('gasto-orden-info'), campo = $('gasto-orden');
+    $('gasto-orden-sugerencias').hidden = true; campo.setAttribute('aria-expanded', 'false');
+    if (!o) { campo.dataset.leadId = ''; info.hidden = true; return; }
+    campo.value = folioOrdenServicio(o); campo.dataset.leadId = String(o.id);
+    info.hidden = false;
+    info.innerHTML = `<b>✓ ${esc(folioOrdenServicio(o))}</b> · ${esc(o.empresa_contacto || o.nombre || 'Sin cliente')}
+      <span>${esc(o.servicio_nombre || 'Servicio')} · servicio ${esc(fechaTxt(o.fecha_servicio))} · total ${formatoMoneda(totalOrden(o))}</span>
+      <span>${o.equipo ? 'Unidad ' + esc(o.equipo) : 'Sin unidad'}${o.operador ? ' · Operador ' + esc(o.operador) : ''}${o.proyecto ? ' · Proyecto ' + esc(o.proyecto) : ''}${o.direccion ? ' · ' + esc(o.direccion) : ''}</span>`;
+    if (!cargarDatos) return;
+    // Solo se llenan los campos vacíos (o los que se llenaron solos con otra orden): no se pisa lo que escribió el usuario.
+    const llenar = (id, valor) => { const el = $(id); if (valor && (!el.value.trim() || el.dataset.autollenado === el.value)) { el.value = valor; el.dataset.autollenado = valor; } };
+    llenar('gasto-equipo', o.equipo);
+    llenar('gasto-concepto', o.servicio_nombre);
+    if (o.equipo) $('gasto-folio').closest('details').open = true;
+  }
+  $('gasto-orden').addEventListener('input', () => { $('gasto-orden').dataset.leadId = ''; $('gasto-orden-info').hidden = true; pintarSugerenciasGasto(); });
+  $('gasto-orden').addEventListener('focus', pintarSugerenciasGasto);
+  $('gasto-orden').addEventListener('keydown', e => {
+    if (e.key === 'Enter') { const primera = buscarOrdenesGasto($('gasto-orden').value)[0]; if (primera) { e.preventDefault(); elegirOrdenGasto(primera); } }
+    if (e.key === 'Escape') { $('gasto-orden-sugerencias').hidden = true; $('gasto-orden').setAttribute('aria-expanded', 'false'); }
+  });
+  // Tocar fuera de la búsqueda cierra las sugerencias.
+  document.addEventListener('click', e => { if (!e.target.closest('.gasto-orden-campo')) { $('gasto-orden-sugerencias').hidden = true; $('gasto-orden').setAttribute('aria-expanded', 'false'); } });
+  $('gasto-orden-sugerencias').addEventListener('click', e => {
+    const b = e.target.closest('[data-orden-gasto]'); if (!b) return;
+    elegirOrdenGasto(ORDENES_GASTO.find(o => o.id === Number(b.dataset.ordenGasto)));
+  });
+
   // GASTO_ALGUARDAR: qué refrescar después de guardar (la ficha de la orden o la vista de Cuentas por pagar).
   let GASTO_ALGUARDAR = null;
   async function nuevoGasto(prellenado = {}, alGuardar = null) {
@@ -410,8 +463,10 @@ const Finanzas = (() => {
     ['gasto-concepto', 'gasto-total', 'gasto-folio', 'gasto-orden', 'gasto-equipo', 'gasto-referencia'].forEach(id => { $(id).value = prellenado[id] || ''; });
     $('gasto-fecha').value = hoy(); $('gasto-vence').value = hoy(); $('gasto-fecha-pago').value = hoy(); $('gasto-pagado').checked = false; $('gasto-metodo-wrap').hidden = true;
     $('gasto-categoria').value = 'otro';
-    // Con orden ligada, la sección de factura/orden se ve abierta para que se note el vínculo.
-    $('gasto-orden').closest('details').open = !!prellenado['gasto-orden'];
+    $('gasto-folio').closest('details').open = !!prellenado['gasto-equipo'];
+    $('gasto-orden').dataset.leadId = ''; $('gasto-orden-sugerencias').hidden = true; $('gasto-orden-info').hidden = true;
+    delete $('gasto-equipo').dataset.autollenado; delete $('gasto-concepto').dataset.autollenado;
+    cargarOrdenesGasto().then(() => { if (prellenado['gasto-orden']) elegirOrdenGasto(buscarOrdenesGasto(prellenado['gasto-orden'])[0], false); });
     pintarMetodos('gasto-metodos', 'efectivo', METODOS_PROV);
     GASTO_ALGUARDAR = alGuardar;
     abrirVentana('overlay-gasto');
@@ -443,8 +498,8 @@ const Finanzas = (() => {
   $('gasto-pagado').addEventListener('change', () => { $('gasto-metodo-wrap').hidden = !$('gasto-pagado').checked; });
   $('gasto-guardar').addEventListener('click', e => conBoton(e.currentTarget, async () => {
     const orden = $('gasto-orden').value.trim();
-    const leadId = orden ? Number((orden.match(/(\d+)\s*$/) || [])[1]) : null;
-    if (orden && !leadId) { toast('Escribe el folio de la orden (OS-AAAAMM-0000) o su número'); return; }
+    const leadId = orden ? Number($('gasto-orden').dataset.leadId) || null : null;
+    if (orden && !leadId) { toast('Elige la orden de servicio de la lista (o deja el campo vacío)'); $('gasto-orden').focus(); return; }
     const r = await enviar('/finanzas/cxp', 'POST', {
       proveedor_id: Number($('gasto-proveedor').value) || null, categoria: $('gasto-categoria').value, concepto: $('gasto-concepto').value,
       total: $('gasto-total').value.trim(), fecha_documento: $('gasto-fecha').value, fecha_vencimiento: $('gasto-vence').value,
