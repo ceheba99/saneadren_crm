@@ -296,4 +296,14 @@ db.transaction(()=>{
   END`);
   }
 })();
+// Correcciones de datos que se aplican UNA sola vez (quedan registradas para no repetirse).
+db.exec('CREATE TABLE IF NOT EXISTS migraciones_hechas (nombre TEXT PRIMARY KEY, fecha TEXT NOT NULL DEFAULT (datetime(\'now\',\'localtime\')))');
+function unaVez(nombre, fn) {
+  if (db.prepare('SELECT 1 FROM migraciones_hechas WHERE nombre = ?').get(nombre)) return;
+  db.transaction(() => { fn(); db.prepare('INSERT INTO migraciones_hechas (nombre) VALUES (?)').run(nombre); })();
+}
+// Las cotizaciones creadas antes se quedaban en "Recolección de datos": ya tienen propuesta, van a "Cotización enviada".
+unaVez('cotizaciones_a_cotizacion_enviada', () => {
+  db.prepare("UPDATE leads SET etapa = 2 WHERE estatus = 'abierto' AND etapa = 1 AND partidas_json IS NOT NULL").run();
+});
 module.exports = { db, normalizarTelefono };

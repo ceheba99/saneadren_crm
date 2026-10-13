@@ -567,6 +567,8 @@ app.post('/api/leads', validarPartidas, validarRegistro, h((req, res) => {
   let { telefono, nombre, empresa_contacto, direccion } = req.body;
   const { cliente_id, canal_id, servicio_id, notas_iniciales, responsable_id, forzar_duplicado, valor, fecha_servicio, correo, giro, urgente } = req.body;
   const fechaCotizacionFinal = req.body.fecha_cotizacion || hoyMexico();
+  if (req.body.fecha_cotizacion && (!/^\d{4}-\d{2}-\d{2}$/.test(fechaCotizacionFinal) || Number.isNaN(Date.parse(fechaCotizacionFinal + 'T00:00:00Z')) || fechaCotizacionFinal > hoyMexico()))
+    return res.status(400).json({ error: 'La fecha de la cotización no es válida o es futura' });
   const creado_por = req.usuarioSesion.nombre; // nunca se confía en el valor que mande el navegador
   if (!validarCorreo(correo)) return res.status(400).json({ error: 'El correo electrónico no es válido' });
   if (giro && !tipoClienteValido(giro)) return res.status(400).json({ error: 'Giro inválido' });
@@ -623,6 +625,8 @@ app.post('/api/leads', validarPartidas, validarRegistro, h((req, res) => {
     if (cliente && original.cliente_id !== cliente.id) return res.status(400).json({ error: 'La orden a duplicar pertenece a otro contacto' });
   }
   const origen = estatus === 'ganado' ? 'directo' : 'cotizacion';
+  // Una cotización nueva ya tiene propuesta: entra al Pipeline en "Cotización enviada" (la orden directa, en "Cierre").
+  const etapaInicial = estatus === 'ganado' ? 4 : 2;
   const errorOrden = validarDatosOrden(req.body);
   if (errorOrden) return res.status(400).json({ error: errorOrden });
   // Costos con terceros de la orden original que se copian a la duplicada (quedan pendientes de pago).
@@ -643,8 +647,8 @@ app.post('/api/leads', validarPartidas, validarRegistro, h((req, res) => {
   const resp = responsable_id;
 
   const info = db.prepare(`
-    INSERT INTO leads (cliente_id, telefono, telefono_normalizado, nombre, empresa_contacto, direccion, canal_id, servicio_id, responsable_id, notas_iniciales, creado_por, valor, fecha_servicio, fecha_cotizacion, estatus, urgente, origen, duplicado_de)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO leads (cliente_id, telefono, telefono_normalizado, nombre, empresa_contacto, direccion, canal_id, servicio_id, responsable_id, notas_iniciales, creado_por, valor, fecha_servicio, fecha_cotizacion, estatus, urgente, origen, duplicado_de, etapa)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     cliente.id, telefono, norm,
     cliente.nombre || null,
@@ -657,7 +661,8 @@ app.post('/api/leads', validarPartidas, validarRegistro, h((req, res) => {
     estatus,
     urgente ? 1 : 0,
     origen,
-    duplicadoDe
+    duplicadoDe,
+    etapaInicial
   );
 
   if(req.body.partidas_json!==undefined)db.prepare('UPDATE leads SET partidas_json = ?, iva_modo = ?, iva_tasa = ?, iva_cent = ? WHERE id = ?').run(req.body.partidas_json,req.body.iva_modo??null,req.body.iva_tasa??null,req.body.iva_cent??null,info.lastInsertRowid);
@@ -739,6 +744,11 @@ app.put('/api/leads/:id', validarPartidas, validarRegistro, h((req, res) => {
     }
     if (!(req.body.fecha_servicio !== undefined ? req.body.fecha_servicio : actual.fecha_servicio)) return res.status(400).json({error:'Indica la fecha acordada del servicio'});
     if (!(req.body.servicio_id !== undefined ? req.body.servicio_id : actual.servicio_id)) return res.status(400).json({error:'Selecciona el servicio que se contratará'});
+    // No se puede realizar un servicio antes de cotizarlo: al convertir o al cambiar la fecha se valida.
+    const fechaServ = req.body.fecha_servicio !== undefined ? req.body.fecha_servicio : actual.fecha_servicio;
+    const fechaCot = req.body.fecha_cotizacion || actual.fecha_cotizacion;
+    if ((actual.estatus !== 'ganado' || req.body.fecha_servicio !== undefined) && actual.origen === 'cotizacion' && fechaCot && fechaServ < fechaCot)
+      return res.status(400).json({ error: 'La fecha del servicio no puede ser anterior a la fecha de la cotización (' + fechaCot.split('-').reverse().join('/') + ')' });
     if (!String(req.body.direccion !== undefined ? req.body.direccion : actual.direccion || '').trim()) return res.status(400).json({error:'Indica la ubicación del servicio'});
     // Al aceptar la cotización, el lead llega al final del embudo de decisión ("Cierre") aunque
     // el usuario no haya movido la tarjeta manualmente; así el kanban refleja el estado real.

@@ -201,6 +201,7 @@ on('btn-cancelar-dup', 'click', () => {
 //   pide un servicio distinto) — es una oportunidad nueva y sí debe pasar por Leads.
 let MODO_SERVICIO_NUEVO = 'pipeline';
 let DUPLICADO_DE = null; // id de la orden de servicio que se está duplicando (si aplica)
+let FECHA_MIN_SERVICIO = ''; // fecha de la cotización que se convierte (el servicio no puede ser antes)
 let CONVERTIR_ID = null; // cotización que se convierte en orden de servicio (modo 'convertir')
 let ESTABLECIMIENTO_PENDIENTE = null; // { cliente_id, id, direccion } al abrir un contacto desde Prospección
 let REGRESO_FICHA = null; // registro cuya ficha se reabre al terminar la ventana de crear (p. ej. tras Duplicar)
@@ -251,10 +252,16 @@ function abrirServicioNuevo(modo, prefill) {
     ? `Última vez: ${formatoMoneda(CLIENTE_DUP.ultimo_valor)}`
     : 'Si ya se conoce';
   document.getElementById('sn-fecha').value = '';
+  // Al convertir, el servicio no puede ser antes de la fecha de la cotización.
+  FECHA_MIN_SERVICIO = CONVERTIR_ID ? (prefill?.fecha_cotizacion || '') : '';
+  document.getElementById('sn-fecha').min = FECHA_MIN_SERVICIO;
   // Vigencia: solo en cotizaciones. Se propone la de siempre (15 días) y se puede quitar o cambiar.
   document.getElementById('sn-vigencia').hidden = esDirecto;
   document.getElementById('sn-incluye-vigencia').checked = true;
   document.getElementById('sn-wrap-vigencia').hidden = false;
+  // Fecha de la cotización: hoy por defecto (se puede poner una anterior, nunca futura).
+  document.getElementById('sn-fecha-cotizacion').value = hoyISO();
+  document.getElementById('sn-fecha-cotizacion').max = hoyISO();
   document.getElementById('sn-vigencia-hasta').min = hoyISO();
   document.getElementById('sn-vigencia-hasta').value = sumarDiasISO(hoyISO(), EMPRESA_COTIZACION.vigenciaDias);
   document.getElementById('sn-datos-orden').hidden = !esDirecto;
@@ -294,9 +301,12 @@ async function guardarServicioNuevo(descargar=false) {
   if (!document.getElementById('sn-ubicacion').value.trim()) { toast('Indica la ubicación de este servicio'); return; }
   const esDirecto = MODO_SERVICIO_NUEVO === 'directo' || MODO_SERVICIO_NUEVO === 'convertir';
   if(esDirecto && !document.getElementById('sn-fecha').value){toast('Indica la fecha acordada del servicio');document.getElementById('sn-fecha').focus();return;}
+  if(CONVERTIR_ID && FECHA_MIN_SERVICIO && document.getElementById('sn-fecha').value < FECHA_MIN_SERVICIO){toast('La fecha del servicio no puede ser anterior a la cotización ('+FECHA_MIN_SERVICIO.split('-').reverse().join('/')+')');document.getElementById('sn-fecha').focus();return;}
+  const fechaCotizacion = document.getElementById('sn-fecha-cotizacion').value;
+  if (!esDirecto && (!fechaCotizacion || fechaCotizacion > hoyISO())) { toast('Indica la fecha de la cotización (hoy o una anterior)'); document.getElementById('sn-fecha-cotizacion').focus(); return; }
   const conVigencia = !esDirecto && document.getElementById('sn-incluye-vigencia').checked;
   const vigenciaHasta = document.getElementById('sn-vigencia-hasta').value;
-  if (conVigencia && (!vigenciaHasta || vigenciaHasta < hoyISO())) { toast('Indica hasta qué fecha es válida la cotización (hoy o después), o desmarca la vigencia'); document.getElementById('sn-vigencia-hasta').focus(); return; }
+  if (conVigencia && (!vigenciaHasta || vigenciaHasta < fechaCotizacion)) { toast('La vigencia debe ser igual o posterior a la fecha de la cotización, o desmarca la vigencia'); document.getElementById('sn-vigencia-hasta').focus(); return; }
   const valorRaw = document.getElementById('sn-valor').value;
   if(valorRaw!=='' && (!Number.isFinite(Number(valorRaw)) || Number(valorRaw)<0)){toast('El importe debe ser mayor o igual a cero');return;}
   if (esDirecto && valorRaw === '') {
@@ -326,6 +336,7 @@ async function guardarServicioNuevo(descargar=false) {
     proyecto: esDirecto ? document.getElementById('sn-proyecto').value.trim() : null,
     manifiestos: esDirecto ? document.getElementById('sn-manifiestos').value.trim() : null,
     tiros: esDirecto ? document.getElementById('sn-tiros').value.trim() : null,
+    fecha_cotizacion: esDirecto ? undefined : fechaCotizacion,
     incluye_vigencia: esDirecto ? undefined : conVigencia,
     notas_cotizacion: esDirecto ? null : document.getElementById('gc-notas').value.trim(),
     vigencia_hasta: conVigencia ? vigenciaHasta : null,
@@ -371,6 +382,13 @@ async function guardarServicioNuevo(descargar=false) {
 }
 on('btn-guardar-servicio-nuevo','click',()=>guardarServicioNuevo());
 on('sn-incluye-vigencia', 'change', e => { document.getElementById('sn-wrap-vigencia').hidden = !e.target.checked; });
+// Al cambiar la fecha de la cotización, la vigencia se recorre (15 días después) si quedó antes.
+on('sn-fecha-cotizacion', 'change', e => {
+  const f = e.target.value, vig = document.getElementById('sn-vigencia-hasta');
+  if (!f) return;
+  vig.min = f;
+  if (!vig.value || vig.value < f) vig.value = sumarDiasISO(f, EMPRESA_COTIZACION.vigenciaDias);
+});
 // Cerrar la ventana de crear sin guardar también regresa a la orden de la que se partió.
 document.querySelector('#overlay-servicio-nuevo .close-btn').addEventListener('click', () => setTimeout(regresarAFicha, 0));
 on('btn-barra-guardar','click',()=>EDITOR_MODO==='nuevo'?guardarServicioNuevo():document.getElementById('btn-guardar-ficha').click());
@@ -1244,7 +1262,8 @@ on('btn-generar-orden-servicio','click',async()=>{
   const items=recolectarItemsCotizacion();
   const prefill={convertir_de:lead.id,folio:folioCotizacion(lead),partidas_json:JSON.stringify(items),servicio_nombre:items[0]?.servicio,
     iva_modo:modoIvaEditor(),iva_tasa:IVA_TASA,direccion:document.getElementById('ed-direccion').value.trim()||lead.direccion,
-    equipo:lead.equipo,operador:lead.operador,observaciones:lead.observaciones,proyecto:lead.proyecto,manifiestos:lead.manifiestos,tiros:lead.tiros};
+    equipo:lead.equipo,operador:lead.operador,observaciones:lead.observaciones,proyecto:lead.proyecto,manifiestos:lead.manifiestos,tiros:lead.tiros,
+    fecha_cotizacion:document.getElementById('ed-fecha-cotizacion').value||lead.fecha_cotizacion||String(lead.created_at||'').slice(0,10)};
   FlujoCRM.marcarGuardado('overlay-ficha'); // lo capturado en la ficha pasa a la ventana
   await FlujoCRM.nuevoRegistro(lead.cliente_id,'convertir',prefill);
 });
@@ -1709,6 +1728,8 @@ async function abrirFicha(id) {
   document.getElementById('ed-responsable').value = lead.responsable_id || '';
   document.getElementById('ed-valor').value = lead.valor != null ? lead.valor : '';
   document.getElementById('ed-fecha-servicio').value = lead.fecha_servicio || '';
+  // Orden que viene de una cotización: su fecha de servicio no puede ser antes de la cotización.
+  document.getElementById('ed-fecha-servicio').min = lead.origen === 'cotizacion' && lead.fecha_cotizacion ? lead.fecha_cotizacion : '';
   document.getElementById('ed-fecha-cotizacion').value = lead.fecha_cotizacion || '';
   document.getElementById('ed-incluye-vigencia').checked = lead.incluye_vigencia !== 0;
   document.getElementById('ed-vigencia-hasta').value = lead.vigencia_hasta || '';
