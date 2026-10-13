@@ -618,6 +618,9 @@ app.post('/api/leads', validarPartidas, validarRegistro, h((req, res) => {
   const origen = estatus === 'ganado' ? 'directo' : 'cotizacion';
   const errorOrden = validarDatosOrden(req.body);
   if (errorOrden) return res.status(400).json({ error: errorOrden });
+  // Costos con terceros de la orden original que se copian a la duplicada (quedan pendientes de pago).
+  const costosDup = duplicadoDe ? finanzas.validarCostosDuplicados(duplicadoDe, req.body.costos_duplicar) : { items: [] };
+  if (costosDup.error) return res.status(400).json({ error: costosDup.error });
 
   if(req.body.establecimiento_id && !db.prepare("SELECT id FROM establecimientos WHERE id=? AND cliente_id=? AND estado<>'no_contactar'").get(req.body.establecimiento_id,cliente_id))return res.status(400).json({error:'El establecimiento no está vinculado a este contacto o está marcado como no contactar'});
   const creado=db.transaction(()=>{
@@ -658,6 +661,13 @@ app.post('/api/leads', validarPartidas, validarRegistro, h((req, res) => {
     .run(info.lastInsertRowid, duplicadoDe ? `Orden de servicio duplicada a partir del registro #${duplicadoDe}.` : estatus === 'ganado' ? 'Servicio registrado directamente como contratado.' : 'Cotización creada.', creado_por || null);
 
   if (estatus === 'ganado') finanzas.copiarCredito(info.lastInsertRowid);
+  if (costosDup.items.length) {
+    const orig = db.prepare('SELECT id, created_at FROM leads WHERE id = ?').get(duplicadoDe);
+    const folioOrig = 'OS-' + String(orig.created_at).slice(0, 7).replace('-', '') + '-' + String(orig.id).padStart(4, '0');
+    const suma = finanzas.duplicarCostos(info.lastInsertRowid, costosDup.items, fechaServicioFinal, textoOrden(req.body.equipo), req.usuarioSesion.id, folioOrig);
+    db.prepare(`INSERT INTO historial (lead_id, tipo, texto, usuario, origen) VALUES (?, 'observacion', ?, ?, 'sistema')`)
+      .run(info.lastInsertRowid, `Costos con terceros copiados de ${folioOrig}: ${costosDup.items.length} por $${(suma / 100).toLocaleString('es-MX', { minimumFractionDigits: 2 })} (pendientes de pago en Cuentas por pagar).`, creado_por || null);
+  }
   return db.prepare('SELECT * FROM leads WHERE id = ?').get(info.lastInsertRowid);
   })();
   res.status(201).json(creado);

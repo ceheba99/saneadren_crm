@@ -1016,6 +1016,29 @@ module.exports = function finanzas(app, db, h) {
     // Al nacer una orden se copian los días de crédito del cliente (si la orden no tiene).
     copiarCredito: leadId => db.prepare(`UPDATE leads SET dias_credito = (SELECT dias_credito FROM clientes WHERE clientes.id = leads.cliente_id)
       WHERE id = ? AND dias_credito IS NULL`).run(leadId),
+    // Al duplicar una orden: valida los costos con terceros que se copian (deben ser de la orden original).
+    validarCostosDuplicados(origenId, lista) {
+      if (lista === undefined || lista === null) return { items: [] };
+      if (!Array.isArray(lista) || lista.length > 20) return { error: 'Costos a duplicar inválidos' };
+      const items = [];
+      for (const c of lista) {
+        const x = db.prepare('SELECT x.*, p.dias_credito AS prov_credito FROM cuentas_por_pagar x JOIN proveedores p ON p.id = x.proveedor_id WHERE x.id = ? AND x.lead_id = ? AND x.cancelada = 0').get(c?.cxp_id, origenId);
+        if (!x) return { error: 'Uno de los costos a duplicar no pertenece a la orden original' };
+        const total = c.total === undefined ? x.total_cent : aCentavos(c.total);
+        if (!total) return { error: `El monto de "${x.concepto}" no es válido` };
+        items.push({ x, total });
+      }
+      return { items };
+    },
+    // Crea los costos copiados en Cuentas por pagar, ligados a la orden nueva y pendientes de pago.
+    duplicarCostos(nuevoId, items, fecha, equipo, usuarioId, folioOrigen) {
+      for (const { x, total } of items) {
+        db.prepare(`INSERT INTO cuentas_por_pagar (proveedor_id, categoria, concepto, factura_folio, fecha_documento, fecha_vencimiento, total_cent, lead_id, equipo, notas, registrado_por)
+          VALUES (?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?)`).run(x.proveedor_id, x.categoria, x.concepto, fecha, sumarDias(fecha, x.prov_credito || 0), total, nuevoId, equipo || x.equipo || null,
+          'Copiado al duplicar la orden ' + folioOrigen, usuarioId);
+      }
+      return items.reduce((t, i) => t + i.total, 0);
+    },
   };
 };
 module.exports.aCentavos = aCentavos;

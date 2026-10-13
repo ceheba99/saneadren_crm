@@ -490,6 +490,20 @@ const espera = ms => new Promise(r => setTimeout(r, ms));
   [s, j] = await pedir('GET', '/generador?desde=2026-10-01&hasta=2026-10-01', L);
   ok(!j.filas.some(f => f.lead_id === ordenSub.id), 'una orden no realizada sale del generador');
 
+  // Duplicar una orden con costos con terceros: se copian a la nueva orden, pendientes de pago.
+  const costosSub = (await pedir('GET', '/finanzas/cxp?vista=todas&lead_id=' + ordenSub.id, A))[1];
+  const renta = costosSub.find(x => x.concepto === 'Renta de pipas');
+  [s, j] = await altaIva({ partidas_json: part(27510), iva_modo: 'mas_iva', estatus: 'ganado', fecha_servicio: '2026-11-01', duplicado_de: ordenSub.id, costos_duplicar: [{ cxp_id: ordenGen.id + 99999, total: 1 }] });
+  ok(s === 400 && /no pertenece/.test(j.error), 'no se puede copiar un costo que no es de la orden original', j);
+  [s, j] = await altaIva({ partidas_json: part(27510), iva_modo: 'mas_iva', estatus: 'ganado', fecha_servicio: '2026-11-01', equipo: 'C-22', duplicado_de: ordenSub.id, costos_duplicar: [{ cxp_id: renta.id, total: '8,000.00' }] });
+  const ordenDup = j;
+  ok(s === 201 && ordenDup.duplicado_de === ordenSub.id, 'orden duplicada con su costo con tercero', j);
+  [s, j] = await pedir('GET', '/finanzas/cxp?vista=todas&lead_id=' + ordenDup.id, A);
+  ok(j.length === 1 && j[0].concepto === 'Renta de pipas' && j[0].proveedor_id === renta.proveedor_id && j[0].total === 8000 && j[0].saldo === 8000 && j[0].fecha_documento === '2026-11-01' && j[0].equipo === 'C-22',
+    'el costo copiado queda en la nueva orden con el monto ajustado y pendiente de pago (la original no cambia)', j);
+  ok((await pedir('GET', '/finanzas/cxp?vista=todas&lead_id=' + ordenSub.id, A))[1].length === 2, 'la orden original conserva sus costos');
+  ok((await pedir('GET', '/leads/' + ordenDup.id, A))[1].historial.some(h => /Costos con terceros copiados/.test(h.texto)), 'la bitácora de la nueva orden registra los costos copiados');
+
   seccion('13. Pipeline: contactos sin cotización');
   [s, j] = await pedir('POST', '/contactos', L, { nombre: 'Solo Contacto', telefono: '4427770099', canal_origen_id: canales[0].id });
   const soloId = j.id;

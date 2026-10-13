@@ -255,6 +255,7 @@ function abrirServicioNuevo(modo, prefill) {
   // Manifiestos y tiros son de cada servicio realizado: no se copian al duplicar.
   document.getElementById('sn-manifiestos').value = CONVERTIR_ID ? (prefill?.manifiestos || '') : '';
   document.getElementById('sn-tiros').value = CONVERTIR_ID ? (prefill?.tiros || '') : '';
+  pintarCostosDuplicar(DUPLICADO_DE);
   // El prellenado pasa por prepararEditorCotizacion para que también arme la tabla de
   // partidas real (gc-items) — de otro modo, al validar/guardar se recalcula desde ahí
   // y borraría cualquier valor puesto solo en sn-servicio/sn-valor.
@@ -310,7 +311,8 @@ async function guardarServicioNuevo(descargar=false) {
     proyecto: esDirecto ? document.getElementById('sn-proyecto').value.trim() : null,
     manifiestos: esDirecto ? document.getElementById('sn-manifiestos').value.trim() : null,
     tiros: esDirecto ? document.getElementById('sn-tiros').value.trim() : null,
-    ...ivaPayload()
+    ...ivaPayload(),
+    ...(DUPLICADO_DE ? { costos_duplicar: costosADuplicar() } : {})
   };
   botonGuardar.disabled = true;
   try {
@@ -992,6 +994,21 @@ function datosOrdenServicioDesdeLead(lead, items) {
     ...importesDocumento(items)
   };
 }
+// ---- Duplicar orden: costos con terceros de la original que también se copian ----
+async function pintarCostosDuplicar(origenId) {
+  const caja = document.getElementById('sn-costos'), lista = document.getElementById('sn-costos-lista');
+  caja.hidden = true; lista.innerHTML = '';
+  if (!origenId) return;
+  let costos;
+  try { costos = await api('/finanzas/cxp?vista=todas&lead_id=' + Number(origenId)).then(r => r.json()); } catch { return; }
+  if (DUPLICADO_DE !== origenId || !costos.length) return;
+  lista.innerHTML = costos.map(x => `<label class="sn-costo"><input type="checkbox" checked data-cxp="${Number(x.id)}">
+      <span><b>${escaparHtml(x.proveedor_nombre)}</b> · ${escaparHtml(x.concepto)}<small>${escaparHtml(x.categoria_nombre)}${x.saldo <= 0 ? ' · en la original ya está pagado' : ''}</small></span>
+      <input type="text" inputmode="decimal" class="sn-costo-monto" aria-label="Monto con IVA" value="${Number(x.total).toFixed(2)}"></label>`).join('');
+  caja.hidden = false;
+}
+const costosADuplicar = () => [...document.querySelectorAll('#sn-costos-lista input[data-cxp]:checked')].map(c => ({ cxp_id: Number(c.dataset.cxp), total: c.closest('.sn-costo').querySelector('.sn-costo-monto').value.trim() }));
+
 // Rótulo del recuadro del total en la orden de servicio.
 const etiquetaTotalOrden = modo => modo === 'mas_iva' ? 'TOTAL CON IVA' : modo === 'incluido' ? 'TOTAL (IVA INCLUIDO)' : modo === 'sin_iva' ? 'TOTAL (SIN IVA)' : 'IMPORTE TOTAL';
 
