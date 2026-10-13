@@ -36,12 +36,21 @@ const Finanzas = (() => {
     if (c.ejecucion === 'no_realizado') return 'no realizado';
     return (c.por_concluir ? 'por concluir · servicio ' : 'servicio ') + fechaTxt(c.fecha_servicio);
   }
+  // Estado de la cuenta en palabras claras: si el servicio ya se hizo y qué falta (realizarlo, marcarlo o cobrarlo).
+  function textoEstado(c) {
+    const dias = n => Number(n) === 1 ? '1 día' : Number(n) + ' días';
+    const falta = c.estado === 'parcial' ? `pagó una parte, falta ${formatoMoneda(c.saldo)}` : 'pendiente de cobrar';
+    if (c.estado === 'pagada') return ['pagada', c.ejecucion === 'no_realizado' ? 'No realizado · pago recibido (revisar devolución)' : 'Cobrado completo ✓'];
+    if (c.ejecucion === 'no_realizado') return ['vencida', 'No realizado · revisar el pago recibido'];
+    if (c.programada) return ['programada', 'Por realizar · aún no se cobra'];
+    const servicio = c.ejecucion === 'realizado' ? 'Servicio realizado' : c.por_concluir ? 'Falta marcar si se realizó' : 'Servicio';
+    if (c.vencida) return ['vencida', `${servicio} · cobro vencido hace ${dias(c.dias_vencido)}`];
+    if (c.por_concluir && c.ejecucion !== 'realizado') return ['por-concluir', `${servicio} · ${falta}`];
+    return [c.estado === 'parcial' ? 'parcial' : 'pendiente', `${servicio} · ${falta}${c.dias_vencido < 0 ? ' (vence en ' + dias(-c.dias_vencido) + ')' : c.dias_vencido === 0 ? ' (vence hoy)' : ''}`];
+  }
   function etiquetaEstado(c) {
-    if (c.estado === 'pagada') return '<span class="estado-cxc pagada">Pagada</span>';
-    if (c.vencida) return `<span class="estado-cxc vencida">Vencida hace ${Number(c.dias_vencido)} d</span>`;
-    if (c.programada) return '<span class="estado-cxc programada">Servicio programado</span>';
-    if (c.ejecucion === 'no_realizado') return '<span class="estado-cxc vencida">No realizado</span>';
-    return `<span class="estado-cxc ${esc(c.estado)}">${c.estado === 'parcial' ? 'Pago parcial' : 'Pendiente'}</span>`;
+    const [clase, texto] = textoEstado(c);
+    return `<span class="estado-cxc ${clase}">${esc(texto)}</span>${c.por_confirmar > 0 ? ' <span class="estado-cxc por-confirmar">Pago por confirmar</span>' : ''}`;
   }
   function pintarMetodos(contId, seleccionado, lista = METODOS) {
     $(contId).innerHTML = lista.map(([k, n]) => `<button type="button" class="metodo${k === seleccionado ? ' activo' : ''}" data-metodo="${k}" aria-pressed="${k === seleccionado}">${n}</button>`).join('');
@@ -219,9 +228,9 @@ const Finanzas = (() => {
       ? (r.pagar_semana !== undefined ? t('Pagar esta semana', formatoMoneda(r.pagar_semana), `${Number(r.facturas_semana)} facturas (incluye vencidas)`, r.pagar_semana > 0 ? 'aviso' : '') : '')
         + (r.por_pagar !== undefined ? t('Total por pagar', formatoMoneda(r.por_pagar), '') : '')
         + (r.pagado_mes !== undefined ? t('Pagado este mes', formatoMoneda(r.pagado_mes), '') : '')
-      : t('Te deben', formatoMoneda(r.por_cobrar), `${Number(r.cuentas_con_saldo)} órdenes con saldo`)
-      + t('Vencido', formatoMoneda(r.vencido), `${Number(r.clientes_con_vencido)} clientes`, r.vencido > 0 ? 'alerta' : '')
-      + (r.programado > 0 ? t('Programado', formatoMoneda(r.programado), `${Number(r.ordenes_programadas)} servicios aún no realizados`) : '')
+      : t('Te deben', formatoMoneda(r.por_cobrar), `${Number(r.cuentas_con_saldo)} ${Number(r.cuentas_con_saldo) === 1 ? 'orden' : 'órdenes'} por cobrar`)
+      + t('Vencido', formatoMoneda(r.vencido), `${Number(r.clientes_con_vencido)} ${Number(r.clientes_con_vencido) === 1 ? 'cliente' : 'clientes'}`, r.vencido > 0 ? 'alerta' : '')
+      + (r.programado > 0 ? t('Por realizar', formatoMoneda(r.programado), `${Number(r.ordenes_programadas)} ${Number(r.ordenes_programadas) === 1 ? 'servicio programado' : 'servicios programados'} (aún no se cobran)`) : '')
       + t('Cobrado este mes', formatoMoneda(r.cobrado_mes), '')
       + (r.por_confirmar ? t('Por confirmar', formatoMoneda(r.por_confirmar.monto), `${Number(r.por_confirmar.cantidad)} pagos`, r.por_confirmar.cantidad ? 'aviso' : '') : '');
     pintarRevision();
@@ -278,6 +287,29 @@ const Finanzas = (() => {
       + (g.vencido > 0 ? ' (vencido: ' + formatoMoneda(g.vencido) + ')' : g.proximo_vence ? ', con vencimiento el ' + fechaTxt(g.proximo_vence) : '')
       + '. Quedamos atentos a cualquier duda. ¡Gracias!';
   }
+  // Recordatorio de UNA orden: folio, servicio, cuándo se realizó, saldo y vencimiento.
+  function textoWhatsAppOrden(c) {
+    const realizado = c.ejecucion === 'realizado' && c.fecha_realizado ? ' realizado el ' + fechaTxt(c.fecha_realizado) : '';
+    return 'Hola ' + (c.cliente_nombre || '') + ', le saludamos de Saneadren. Le recordamos el pago de su servicio ' + folioOS(c)
+      + (c.servicio_nombre ? ' (' + c.servicio_nombre + realizado + ')' : realizado)
+      + (c.factura_folio ? ', factura ' + c.factura_folio : '')
+      + ' por ' + formatoMoneda(c.saldo) + (c.estado === 'parcial' ? ' (saldo pendiente)' : '')
+      + (c.vencida ? ', que venció el ' + fechaTxt(c.vence) : ', con vencimiento el ' + fechaTxt(c.vence))
+      + '. Si ya realizó el pago, puede enviarnos su comprobante por este medio. ¡Gracias!';
+  }
+  // Solo se recuerda lo que ya se debe: con saldo, servicio no programado a futuro y no marcado como no realizado.
+  const sePuedeRecordar = c => c.saldo > 0 && !c.programada && c.ejecucion !== 'no_realizado';
+  // Botón de recordatorio de una orden (con el teléfono y nombre del contacto si vienen aparte).
+  const waOrden = (c, cliente) => sePuedeRecordar(c) ? botonWhatsApp(cliente ? cliente.telefono : c.telefono, textoWhatsAppOrden(cliente ? { ...c, cliente_nombre: cliente.nombre } : c), c.lead_id) : '';
+  function botonWhatsApp(telefono, textoMsg, leadId) {
+    const wa = enlaceWhatsApp(telefono, textoMsg);
+    return wa ? `<a class="btn btn-outline btn-whatsapp" href="${esc(wa)}" target="_blank" rel="noopener noreferrer"${leadId ? ` data-wa-orden="${Number(leadId)}"` : ''}>💬 Recordar por WhatsApp</a>` : '';
+  }
+  // Al enviar el recordatorio de una orden queda anotado en su bitácora.
+  document.addEventListener('click', e => {
+    const a = e.target.closest('[data-wa-orden]');
+    if (a) registrarEventoSistema(Number(a.dataset.waOrden), 'Recordatorio de pago enviado por WhatsApp.');
+  });
   function enlaceWhatsApp(telefono, textoMsg) {
     let d = String(telefono || '').replace(/\D/g, '');
     if (d.length === 10) d = '52' + d;
@@ -297,15 +329,16 @@ const Finanzas = (() => {
           <small>${esc(g.telefono || '')} · ${Number(g.ordenes)} ${Number(g.ordenes) === 1 ? 'orden' : 'órdenes'} · crédito ${Number(g.dias_credito)} días${g.max_dias_vencido > 0 ? ` · hasta ${Number(g.max_dias_vencido)} días vencido` : ''}</small></div>
         <div class="montos"><b>${formatoMoneda(g.saldo)}</b>${g.vencido > 0 ? `<small class="rojo">Vencido ${formatoMoneda(g.vencido)}</small>` : ''}</div>
         <div class="btn-group">
-          ${wa ? `<a class="btn btn-outline" href="${esc(wa)}" target="_blank" rel="noopener noreferrer">Recordar por WhatsApp</a>` : ''}
+          ${wa ? `<a class="btn btn-outline btn-whatsapp" href="${esc(wa)}" target="_blank" rel="noopener noreferrer">💬 Recordar por WhatsApp</a>` : ''}
           ${puedeEditarFactura() ? `<button type="button" class="btn btn-outline" data-credito-cliente="${Number(g.cliente_id)}" data-credito-actual="${Number(g.dias_credito)}">Crédito</button>` : ''}
           <button type="button" class="btn btn-secundario" data-ver-ordenes="${esc(g.telefono || g.cliente_nombre || '')}">Ver órdenes</button>
         </div></div>`;
     }).join('') : CARTERA.map(c => `<div class="fila-dinero${c.vencida ? ' vencida' : ''}">
         <div class="info"><b>${esc(folioOS(c))}</b> · ${esc(c.cliente_nombre || 'Sin nombre')} ${etiquetaEstado(c)}
-          <small>${esc(c.servicio_nombre || 'Servicio')} · ${esc(textoEjecucion(c))} · vence ${esc(fechaTxt(c.vence))}${c.factura_folio ? ' · factura ' + esc(c.factura_folio) : ' · sin factura'}</small></div>
+          <small>${esc(c.servicio_nombre || 'Servicio')} · ${esc(textoEjecucion(c))}${c.programada ? '' : ' · vence ' + esc(fechaTxt(c.vence))}${c.factura_folio ? ' · factura ' + esc(c.factura_folio) : ' · sin factura'}</small></div>
         <div class="montos"><b>${formatoMoneda(c.saldo)}</b><small>de ${formatoMoneda(c.total)}</small></div>
         <div class="btn-group">
+          ${waOrden(c)}
           ${c.saldo > 0 ? `<button type="button" class="btn btn-primario" data-pagar-orden="${Number(c.lead_id)}">Registrar pago</button>` : ''}
           <button type="button" class="btn btn-outline" data-abrir-orden="${Number(c.lead_id)}">Abrir orden</button>
         </div></div>`).join('');
@@ -337,7 +370,7 @@ const Finanzas = (() => {
         { titulo: 'Unidad', valor: c => c.equipo }, { titulo: 'Operador', valor: c => c.operador }, { titulo: 'Proyecto', valor: c => c.proyecto },
         { titulo: 'Factura', valor: c => c.factura_folio }, { titulo: 'Total', valor: c => c.total.toFixed(2) },
         { titulo: 'Cobrado', valor: c => c.cobrado.toFixed(2) }, { titulo: 'Saldo', valor: c => c.saldo.toFixed(2) }, { titulo: 'Vence', valor: c => c.vence },
-        { titulo: 'Días vencido', valor: c => c.dias_vencido }, { titulo: 'Estado', valor: c => (c.vencida ? 'vencida' : c.estado) }], CARTERA);
+        { titulo: 'Días vencido', valor: c => c.dias_vencido }, { titulo: 'Estado', valor: c => textoEstado(c)[1] }], CARTERA);
     }
   });
 
@@ -594,10 +627,10 @@ const Finanzas = (() => {
   });
 
   // ===================== Ficha del contacto: estado de cuenta =====================
-  let CLIENTE_ACTUAL_ID = null;
+  let CLIENTE_ACTUAL_ID = null, CLIENTE_ACTUAL = null;
   async function pintarCliente(cliente) {
     const cont = $('fc-cobranza'); if (!cont) return;
-    cont.innerHTML = ''; CLIENTE_ACTUAL_ID = cliente?.id || null;
+    cont.innerHTML = ''; CLIENTE_ACTUAL_ID = cliente?.id || null; CLIENTE_ACTUAL = cliente || null;
     if (!CLIENTE_ACTUAL_ID) return;
     let r;
     try { r = await api('/finanzas/clientes/' + Number(cliente.id) + '/estado-cuenta').then(json); } catch { return; }
@@ -606,19 +639,24 @@ const Finanzas = (() => {
       if (r.tiene_vencido) cont.innerHTML = `<p class="cuentas-aviso">⚠ Este cliente tiene pagos vencidos (hasta ${Number(r.dias_max_vencido)} días). Consulta con administración antes de comprometer crédito.</p>`;
       return;
     }
-    const ordenes = r.ordenes.map(c => `<div class="pago-fila"><div><b>${esc(c.folio)}</b> · ${esc(c.servicio_nombre || 'Servicio')} ${etiquetaEstado(c)}<small>Saldo ${formatoMoneda(c.saldo)} de ${formatoMoneda(c.total)} · vence ${esc(fechaTxt(c.vence))}</small></div>
-      <button type="button" class="btn btn-outline" data-fc-pagar="${Number(c.lead_id)}">Registrar pago</button></div>`).join('');
+    const ordenes = r.ordenes.map(c => `<div class="pago-fila"><div><b>${esc(c.folio)}</b> · ${esc(c.servicio_nombre || 'Servicio')} ${etiquetaEstado(c)}<small>Saldo ${formatoMoneda(c.saldo)} de ${formatoMoneda(c.total)}${c.programada ? '' : ' · vence ' + esc(fechaTxt(c.vence))}</small></div>
+      <div class="btn-group">${waOrden(c, cliente)}<button type="button" class="btn btn-outline" data-fc-pagar="${Number(c.lead_id)}">Registrar pago</button></div></div>`).join('');
+    // Un solo mensaje con todo lo que debe el cliente (sin lo programado a futuro).
+    const deudas = r.ordenes.filter(sePuedeRecordar);
+    const waCliente = deudas.length > 1 ? botonWhatsApp(cliente.telefono, textoWhatsApp({ cliente_nombre: cliente.nombre, saldo: deudas.reduce((t, c) => t + c.saldo, 0), vencido: r.vencido,
+      folios: deudas.map(c => c.folio), proximo_vence: deudas.map(c => c.vence).sort()[0] })).replace('Recordar por WhatsApp', 'Recordar todo el saldo por WhatsApp') : '';
     cont.innerHTML = `<div class="modal-section" data-plegable="estado-cuenta"><div class="seccion-tit">💰 Estado de cuenta</div>
       <div class="cobranza-resumen"><div><small>Saldo</small><b>${formatoMoneda(r.saldo)}</b></div><div><small>Vencido</small><b class="${r.vencido > 0 ? 'rojo' : ''}">${formatoMoneda(r.vencido)}</b></div>
-        <div><small>Programado</small><b>${formatoMoneda(r.programado)}</b></div><div><small>Crédito</small><b>${Number(r.dias_credito)} días</b></div></div>
+        <div><small>Por realizar</small><b>${formatoMoneda(r.programado)}</b></div><div><small>Crédito</small><b>${Number(r.dias_credito)} días</b></div></div>
       ${r.por_revisar_n ? `<p class="ayuda">${Number(r.por_revisar_n)} órdenes anteriores al módulo están pendientes de la revisión inicial.</p>` : ''}
+      ${waCliente ? `<div class="btn-group">${waCliente}</div>` : ''}
       <div class="pagos-lista">${ordenes || '<p class="util-45">Sin saldos pendientes. 🎉</p>'}</div></div>`;
     window.Plegables?.preparar(cont);
   }
   $('fc-cobranza')?.addEventListener('click', e => {
     const b = e.target.closest('[data-fc-pagar]'); if (!b || !CLIENTE_ACTUAL_ID) return;
     const id = CLIENTE_ACTUAL_ID;
-    abrirCobro(Number(b.dataset.fcPagar), () => pintarCliente({ id }));
+    abrirCobro(Number(b.dataset.fcPagar), () => pintarCliente(CLIENTE_ACTUAL?.id === id ? CLIENTE_ACTUAL : { id }));
   });
 
   // Aviso al cotizar o registrar un servicio para un cliente con pagos vencidos (sin importes).
