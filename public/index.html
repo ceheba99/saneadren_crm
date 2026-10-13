@@ -511,7 +511,7 @@
         </div>
         <div class="btn-group">
           <span id="estado-guardado-registro" class="estado-guardado" role="status"></span>
-          <button class="btn btn-secundario" id="btn-guardar-ficha">Guardar cambios de este registro</button>
+          <button class="btn btn-secundario" id="btn-guardar-ficha" style="display:none">Guardar cambios de este registro</button>
           <button class="btn btn-ghost diseno-nav-usuarios" id="btn-recomprar" title="Crea otra orden de servicio con los mismos datos — útil para servicio recurrente">⧉ Duplicar esta orden de servicio</button>
           <button class="btn btn-outline diseno-nav-usuarios" id="btn-reabrir">↺ Reabrir cotización</button>
           <span id="btn-generar-cotizacion" hidden></span>
@@ -774,7 +774,7 @@
         <div class="campo"><label for="sn-observaciones">Observaciones de la orden (opcional)</label><textarea id="sn-observaciones" rows="2" maxlength="3000"></textarea></div>
       </div>
       <div id="editor-nuevo-destino"></div><span id="estado-guardado-nuevo" class="estado-guardado" role="status"></span>
-      <button class="btn btn-primario diseno-btn-guardar-servicio-nuevo" id="btn-guardar-servicio-nuevo">Crear registro</button>
+      <button class="btn btn-primario diseno-btn-guardar-servicio-nuevo" id="btn-guardar-servicio-nuevo" style="display:none">Crear registro</button>
     </div>
   </div>
 </div>
@@ -799,10 +799,16 @@
     <tr id="gc-fila-iva"><th id="gc-etiqueta-iva">IVA 16%</th><td id="gc-iva-monto">$0.00</td></tr>
     <tr class="gc-fila-total"><th id="gc-etiqueta-total">Total</th><td><b id="gc-total">$0.00</b></td></tr>
   </table>
-  <label><input type="radio" name="gc-formato" id="gc-formato-pdf" value="pdf" checked> PDF</label>
-  <label><input type="radio" name="gc-formato" value="word"> Word</label>
-  <button type="button" class="btn btn-primario" id="btn-gc-generar">Guardar y descargar cotización</button>
-  <button type="button" class="btn btn-verde" id="btn-generar-orden-servicio" hidden>Generar orden de servicio</button>
+</div>
+<!-- Única barra para guardar: solo "Guardar" y "Guardar y descargar" (y, en una cotización abierta,
+     "Convertir en orden de servicio", que es otra acción). Se coloca al final de la ventana o de la ficha. -->
+<div class="barra-acciones" id="barra-acciones" hidden>
+  <div class="barra-formato"><span>Descargar en:</span> <label><input type="radio" name="gc-formato" id="gc-formato-pdf" value="pdf" checked> PDF</label> <label><input type="radio" name="gc-formato" value="word"> Word</label></div>
+  <div class="barra-botones">
+    <button type="button" class="btn btn-secundario" id="btn-barra-guardar">Guardar</button>
+    <button type="button" class="btn btn-primario" id="btn-gc-generar">Guardar y descargar</button>
+  </div>
+  <button type="button" class="btn btn-verde" id="btn-generar-orden-servicio" hidden>🧾 Convertir en orden de servicio</button>
 </div>
 <!-- Librerías para generar el documento de cotización (PDF y Word) -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>

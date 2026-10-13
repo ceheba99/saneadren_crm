@@ -315,6 +315,7 @@ async function guardarServicioNuevo(descargar=false) {
   }
 }
 on('btn-guardar-servicio-nuevo','click',()=>guardarServicioNuevo());
+on('btn-barra-guardar','click',()=>EDITOR_MODO==='nuevo'?guardarServicioNuevo():document.getElementById('btn-guardar-ficha').click());
 
 // ---------- Guardar cotización ----------
 on('btn-guardar-lead', 'click', () => FlujoCRM.crearContacto(true));
@@ -1237,6 +1238,14 @@ function prepararEditorCotizacion(lead,modo){
   if(modo==='nuevo')document.getElementById('editor-nuevo-destino').append(editor);
   else document.getElementById('ed-direccion').closest('.form-grid-2').after(editor);
   editor.hidden=false;
+  // La barra de guardado va al final: en la ventana de crear o en la ficha del registro.
+  const barra=document.getElementById('barra-acciones');barra.hidden=false;
+  // El aviso de "cambios sin guardar" va dentro de la barra, junto a los botones.
+  const grupoFicha=document.getElementById('btn-guardar-ficha').closest('.btn-group');
+  const estadoNuevo=document.getElementById('estado-guardado-nuevo'),estadoFicha=document.getElementById('estado-guardado-registro');
+  if(modo==='nuevo'){document.getElementById('btn-guardar-servicio-nuevo').before(barra);grupoFicha.prepend(estadoFicha);barra.prepend(estadoNuevo);}
+  else{grupoFicha.before(barra);document.getElementById('btn-guardar-servicio-nuevo').before(estadoNuevo);barra.prepend(estadoFicha);}
+  document.getElementById('btn-barra-guardar').textContent=modo==='nuevo'?'Guardar':'Guardar cambios';
   ['sn-servicio','sn-valor','ed-servicio','ed-valor','ed-canal'].forEach(id=>document.getElementById(id).parentElement.hidden=true);
   // IVA: un registro nuevo empieza "más IVA" (casilla sin marcar); los demás traen el suyo.
   document.getElementById('gc-iva-modo').value=(lead && 'iva_modo' in lead ? lead.iva_modo : 'mas_iva')||'';
@@ -1627,7 +1636,8 @@ function actualizarBotonesEstatusFicha(lead) {
   document.getElementById('btn-reabrir').style.display = (lead && !esAbierto && lead.origen !== 'directo') ? 'inline-flex' : 'none';
   // Solo las órdenes de servicio se duplican (servicio recurrente); las cotizaciones no.
   document.getElementById('btn-recomprar').style.display = (lead && lead.estatus === 'ganado' && lead.cliente_id) ? 'inline-flex' : 'none';
-  document.getElementById('btn-generar-orden-servicio').hidden = !lead;
+  // Solo una cotización abierta se convierte en orden; en la orden ya está "Guardar y descargar".
+  document.getElementById('btn-generar-orden-servicio').hidden = !lead || lead.estatus !== 'abierto';
 }
 
 // Registra un evento de sistema en la bitácora sin interrumpir al usuario si falla

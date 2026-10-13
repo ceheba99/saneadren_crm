@@ -818,3 +818,11 @@ header.app nav.menu-principal .menu-sub .menu-item:focus-visible{outline:3px sol
 .aviso-urgente{display:flex;align-items:center;gap:8px;margin:2px 0 10px;font-weight:700;}
 .aviso-urgente .ayuda{font-weight:400;margin:0;}
 .notas-iniciales{background:var(--gris-100);border-left:3px solid var(--gris-400);padding:8px 10px;border-radius:6px;white-space:pre-wrap;margin:0 0 10px;}
+
+/* Barra única de guardado (ventana de crear y ficha del registro). */
+.barra-acciones{display:flex;flex-wrap:wrap;align-items:center;gap:10px 16px;margin:14px 0 4px;padding:12px;border-top:1px solid var(--gris-200);}
+.barra-acciones[hidden]{display:none;}
+.barra-formato{display:flex;align-items:center;gap:10px;color:var(--texto-sec);font-size:13.5px;}
+.barra-botones{display:flex;gap:10px;flex-wrap:wrap;margin-left:auto;}
+#btn-generar-orden-servicio[hidden]{display:none;}
+@media(max-width:600px){.barra-botones{margin-left:0;width:100%;}.barra-botones .btn{flex:1;}#btn-generar-orden-servicio{width:100%;}}

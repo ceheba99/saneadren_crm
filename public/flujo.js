@@ -55,7 +55,7 @@ const FlujoCRM = (() => {
     $('ed-estatus-actual').textContent=estado(lead.estatus);
     $('btn-generar-cotizacion').textContent='Exportar propuesta PDF / Word';
     const btnOrden=$('btn-generar-orden-servicio');
-    if(btnOrden)btnOrden.textContent='Generar orden de servicio';
+    if(btnOrden)btnOrden.textContent='🧾 Convertir en orden de servicio';
     $('ed-valor').closest('.campo-modal').querySelector('label').textContent=contratado?'Importe contratado (MXN)':'Importe propuesto (MXN)';
     // Las notas con fecha dicen a qué registro pertenecen, para no confundirlas con el contacto.
     const folio=contratado?folioOrdenServicio(lead):folioCotizacion(lead),doc=contratado?'la orden':'la cotización';
