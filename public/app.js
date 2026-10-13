@@ -178,7 +178,7 @@ async function verificarDuplicado(telefono) {
   panel.classList.toggle('mostrar',!!data.cliente);
   if (!data.cliente) return;
   document.getElementById('dup-titulo').textContent = 'Este contacto ya existe: ' + (data.cliente.nombre || data.cliente.telefono);
-  document.getElementById('dup-lista').innerHTML = '<p>Abre su ficha para consultar registros anteriores, crear otra cotización o registrar un servicio. Sus datos no se sobrescribirán.</p><button type="button" class="btn btn-primario" onclick="abrirFichaCliente(' + Number(data.cliente.id) + ')">Abrir ficha del contacto</button><button type="button" class="btn btn-outline" onclick="FlujoCRM.nuevoRegistro(' + Number(data.cliente.id) + ', \'pipeline\')">Cotizar a este contacto</button>';
+  document.getElementById('dup-lista').innerHTML = '<p>Abre su ficha para consultar registros anteriores y usar Crear cotización o Crear orden de servicio. Sus datos no se sobrescribirán.</p><button type="button" class="btn btn-primario" onclick="FlujoCRM.irACotizar(' + Number(data.cliente.id) + ')">Abrir ficha del contacto</button>';
 
 }
 
@@ -196,6 +196,7 @@ on('btn-cancelar-dup', 'click', () => {
 //   pide un servicio distinto) — es una oportunidad nueva y sí debe pasar por Leads.
 let MODO_SERVICIO_NUEVO = 'pipeline';
 let DUPLICADO_DE = null; // id de la orden de servicio que se está duplicando (si aplica)
+let ESTABLECIMIENTO_PENDIENTE = null; // { cliente_id, id, direccion } al abrir un contacto desde Prospección
 function abrirServicioNuevo(modo, prefill) {
   if (!CLIENTE_DUP) return;
   actualizarBotonesEstatusFicha(null);
@@ -219,6 +220,9 @@ function abrirServicioNuevo(modo, prefill) {
   Finanzas.avisoAdeudo(CLIENTE_DUP.id, 'sn-aviso-adeudo');
   document.getElementById('sn-servicio').innerHTML = '<option value="">Selecciona un servicio</option>' + CATALOGOS.servicios.map(s=>`<option value="${s.id}">${escaparHtml(s.nombre)}</option>`).join('');
   document.getElementById('sn-ubicacion').value = prefill?.direccion || CLIENTE_DUP.direccion || '';
+  // Contacto abierto desde Prospección: la cotización se liga al establecimiento y propone su domicilio.
+  const est = !prefill && ESTABLECIMIENTO_PENDIENTE?.cliente_id === CLIENTE_DUP.id ? ESTABLECIMIENTO_PENDIENTE : null;
+  if (est) { CLIENTE_DUP.establecimiento_id = est.id; if (est.direccion) document.getElementById('sn-ubicacion').value = est.direccion; }
   document.getElementById('btn-guardar-servicio-nuevo').textContent = DUPLICADO_DE ? 'Guardar orden duplicada' : esDirecto ? 'Crear orden de servicio' : 'Crear cotización';
   rotularEditorContenido(esDirecto);
   document.getElementById('sn-valor').placeholder = CLIENTE_DUP.ultimo_valor

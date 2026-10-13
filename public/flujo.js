@@ -102,10 +102,21 @@ const FlujoCRM = (() => {
       const id=r.status===409?c.cliente_id:c.id;
       if(r.status===409)toast('Usaremos el contacto existente; sus datos se conservan.');
       else toast('Contacto guardado.');
-      limpiarFormAlta();cambiarVista('clientes');await abrirFichaCliente(id);
-      if(cotizar)await nuevoRegistro(id,'pipeline');
+      limpiarFormAlta();
+      // Guardar contacto solo guarda. Para cotizar se abre su ficha: ahí están Crear cotización y
+      // Crear orden de servicio, la única forma de crear registros (evita rutas paralelas).
+      if(cotizar)await irACotizar(id);else $('in-telefono').focus();
     }catch(err){toast(err.message);}finally{botones.forEach(b=>b.disabled=false);}
   }
   $('btn-guardar-contacto-nuevo').addEventListener('click',()=>crearContacto(false));
-  return {crearContacto,estado,presentarContacto,presentarRegistro,nuevoRegistro,marcarGuardado,permitirCambio};
+  // Abre la ficha del contacto y lleva la vista a los botones Crear cotización / Crear orden de servicio.
+  async function irACotizar(id){
+    cambiarVista('clientes');await abrirFichaCliente(id);
+    const sec=document.querySelector('#overlay-ficha-cliente [data-plegable="registros-contacto"]');
+    if(sec?.classList.contains('plegada'))sec.querySelector('.plegable-cabecera')?.click();
+    const btn=$('btn-contacto-cotizar');btn.focus({preventScroll:true});
+    // Tras abrir la ventana (y cargar su contenido) se centra el botón, sin quedar bajo el encabezado.
+    setTimeout(()=>btn.scrollIntoView({block:'center',behavior:'smooth'}),350);
+  }
+  return {crearContacto,irACotizar,estado,presentarContacto,presentarRegistro,nuevoRegistro,marcarGuardado,permitirCambio};
 })();
