@@ -44,7 +44,7 @@
   | Borrar cotizaciones u órdenes (sin pagos) | | ✔ |
   El servidor valida los permisos de cada acción de la tabla. Ojo: las pantallas de trabajo (contactos, cotizaciones) muestran sus datos a todos los usuarios con sesión, así que ocultar "Exportar a Excel" evita la descarga masiva con un clic, pero no impide que alguien copie lo que ve.
 - **Inicio = pendientes**: avisos y recordatorios vencidos o de hoy, cotizaciones sin movimiento y recompras, con acceso directo a cada registro (ya no hay una pestaña Pendientes aparte).
-- **Flujo cotización vs. orden**: la cotización no lleva fecha de servicio; al convertirla en orden se pide la fecha acordada. Notas, recordatorios y "urgente" van en *Avisos y notas* de cada cotización u orden.
+- **Flujo cotización vs. orden**: la cotización no lleva fecha de servicio. "Convertir en orden de servicio" abre la ventana de orden con los datos de la cotización (partidas, IVA, ubicación) para completar fecha acordada, equipo, operador y observaciones; la misma cotización pasa a ser la orden. Notas, recordatorios y "urgente" van en *Avisos y notas* de cada cotización u orden.
 - **Filtros**: por responsable, por estatus (abierto/ganado/perdido) y búsqueda por nombre o teléfono.
 
 ## Requisitos

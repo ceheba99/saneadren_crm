@@ -199,6 +199,7 @@ on('btn-cancelar-dup', 'click', () => {
 //   pide un servicio distinto) — es una oportunidad nueva y sí debe pasar por Leads.
 let MODO_SERVICIO_NUEVO = 'pipeline';
 let DUPLICADO_DE = null; // id de la orden de servicio que se está duplicando (si aplica)
+let CONVERTIR_ID = null; // cotización que se convierte en orden de servicio (modo 'convertir')
 let ESTABLECIMIENTO_PENDIENTE = null; // { cliente_id, id, direccion } al abrir un contacto desde Prospección
 let REGRESO_FICHA = null; // registro cuya ficha se reabre al terminar la ventana de crear (p. ej. tras Duplicar)
 async function regresarAFicha() {
@@ -211,14 +212,20 @@ function abrirServicioNuevo(modo, prefill) {
   if (!CLIENTE_DUP) return;
   actualizarBotonesEstatusFicha(null);
   MODO_SERVICIO_NUEVO = modo || 'pipeline';
-  const esDirecto = MODO_SERVICIO_NUEVO === 'directo';
-  DUPLICADO_DE = esDirecto && prefill?.duplicado_de ? prefill.duplicado_de : null;
-  document.getElementById('sn-titulo').innerHTML = DUPLICADO_DE
+  // 'convertir' usa la misma ventana que una orden nueva, pero guarda sobre la cotización (mismo registro).
+  const esDirecto = MODO_SERVICIO_NUEVO === 'directo' || MODO_SERVICIO_NUEVO === 'convertir';
+  CONVERTIR_ID = MODO_SERVICIO_NUEVO === 'convertir' ? prefill?.convertir_de || null : null;
+  DUPLICADO_DE = MODO_SERVICIO_NUEVO === 'directo' && prefill?.duplicado_de ? prefill.duplicado_de : null;
+  document.getElementById('sn-titulo').innerHTML = CONVERTIR_ID
+    ? `<span class="tag-estatus ganado">🧾 Orden de servicio</span> Convertir ${escaparHtml(prefill.folio || 'cotización')} en orden de servicio`
+    : DUPLICADO_DE
     ? `<span class="tag-estatus ganado">🧾 Orden de servicio</span> Duplicar orden · copia de ${escaparHtml(prefill.folio || '#' + DUPLICADO_DE)}`
     : esDirecto
     ? '<span class="tag-estatus ganado">🧾 Orden de servicio</span> Crear orden de servicio · NUEVA'
     : '<span class="tag-estatus abierto">🔵 Cotización</span> Crear cotización · NUEVA';
-  document.getElementById('sn-ayuda').innerHTML = DUPLICADO_DE
+  document.getElementById('sn-ayuda').innerHTML = CONVERTIR_ID
+    ? 'El cliente aceptó la cotización: ya están cargados sus servicios, importes, IVA y ubicación. Indica la fecha acordada, el equipo y quién realiza el servicio. La cotización se convierte en esta orden (no se crea otro registro).'
+    : DUPLICADO_DE
     ? 'Se copiaron las partidas, importe, ubicación y notas de la orden original. Indica la nueva fecha acordada y ajusta lo que cambie. No se crea ninguna cotización.'
     : esDirecto
     ? 'Úsalo cuando el cliente ya confirmó. Indica el importe y la fecha acordados; aparecerá como contratado en su historial.'
@@ -233,7 +240,7 @@ function abrirServicioNuevo(modo, prefill) {
   // Contacto abierto desde Prospección: la cotización se liga al establecimiento y propone su domicilio.
   const est = !prefill && ESTABLECIMIENTO_PENDIENTE?.cliente_id === CLIENTE_DUP.id ? ESTABLECIMIENTO_PENDIENTE : null;
   if (est) { CLIENTE_DUP.establecimiento_id = est.id; if (est.direccion) document.getElementById('sn-ubicacion').value = est.direccion; }
-  document.getElementById('btn-guardar-servicio-nuevo').textContent = DUPLICADO_DE ? 'Guardar orden duplicada' : esDirecto ? 'Crear orden de servicio' : 'Crear cotización';
+  document.getElementById('btn-guardar-servicio-nuevo').textContent = CONVERTIR_ID ? 'Convertir en orden de servicio' : DUPLICADO_DE ? 'Guardar orden duplicada' : esDirecto ? 'Crear orden de servicio' : 'Crear cotización';
   rotularEditorContenido(esDirecto);
   document.getElementById('sn-valor').placeholder = CLIENTE_DUP.ultimo_valor
     ? `Última vez: ${formatoMoneda(CLIENTE_DUP.ultimo_valor)}`
@@ -242,7 +249,7 @@ function abrirServicioNuevo(modo, prefill) {
   document.getElementById('sn-datos-orden').hidden = !esDirecto;
   document.getElementById('sn-equipo').value = prefill?.equipo || '';
   document.getElementById('sn-operador').value = prefill?.operador || '';
-  document.getElementById('sn-observaciones').value = '';
+  document.getElementById('sn-observaciones').value = CONVERTIR_ID ? (prefill?.observaciones || '') : '';
   // El prellenado pasa por prepararEditorCotizacion para que también arme la tabla de
   // partidas real (gc-items) — de otro modo, al validar/guardar se recalcula desde ahí
   // y borraría cualquier valor puesto solo en sn-servicio/sn-valor.
@@ -267,7 +274,7 @@ async function guardarServicioNuevo(descargar=false) {
   if (!CLIENTE_DUP) return;
   if (!document.getElementById('sn-servicio').value) { toast('Selecciona el servicio de este registro'); return; }
   if (!document.getElementById('sn-ubicacion').value.trim()) { toast('Indica la ubicación de este servicio'); return; }
-  const esDirecto = MODO_SERVICIO_NUEVO === 'directo';
+  const esDirecto = MODO_SERVICIO_NUEVO === 'directo' || MODO_SERVICIO_NUEVO === 'convertir';
   if(esDirecto && !document.getElementById('sn-fecha').value){toast('Indica la fecha acordada del servicio');document.getElementById('sn-fecha').focus();return;}
   const valorRaw = document.getElementById('sn-valor').value;
   if(valorRaw!=='' && (!Number.isFinite(Number(valorRaw)) || Number(valorRaw)<0)){toast('El importe debe ser mayor o igual a cero');return;}
@@ -299,10 +306,22 @@ async function guardarServicioNuevo(descargar=false) {
   };
   botonGuardar.disabled = true;
   try {
-    const creado = await api('/leads', { method: 'POST', body: JSON.stringify(payload) }).then(r => r.json());
+    let creado;
+    if (CONVERTIR_ID) {
+      // Misma cotización, ahora como orden de servicio: se manda la versión para no pisar cambios de otra persona.
+      const actual = await api('/leads/' + CONVERTIR_ID).then(r => r.json());
+      if (actual.estatus !== 'abierto') { toast('Esta cotización ya no está abierta; vuelve a abrirla para revisar.'); return; }
+      const res = await api('/leads/' + CONVERTIR_ID, { method: 'PUT', body: JSON.stringify({
+        version: actual.version, estatus: 'ganado', partidas_json: payload.partidas_json, servicio_id: payload.servicio_id, direccion: payload.direccion,
+        fecha_servicio: payload.fecha_servicio, equipo: payload.equipo, operador: payload.operador, observaciones: payload.observaciones, ...ivaPayload() }) });
+      creado = await res.json();
+      if (!res.ok) { toast(creado.error || 'No se pudo convertir la cotización'); return; }
+    } else {
+      creado = await api('/leads', { method: 'POST', body: JSON.stringify(payload) }).then(r => r.json());
+    }
     FlujoCRM.marcarGuardado('overlay-servicio-nuevo');
     const folio = esDirecto ? folioOrdenServicio(creado) : folioCotizacion(creado);
-    const hecho = (DUPLICADO_DE ? 'Orden de servicio duplicada' : esDirecto ? 'Orden de servicio creada' : 'Cotización creada') + ': ' + folio;
+    const hecho = (CONVERTIR_ID ? 'Cotización convertida en orden de servicio' : DUPLICADO_DE ? 'Orden de servicio duplicada' : esDirecto ? 'Orden de servicio creada' : 'Cotización creada') + ': ' + folio;
     // El documento se arma con lo capturado en esta ventana, antes de cerrarla.
     if (descargar) {
       LEAD_ACTUAL = await api('/leads/' + creado.id).then(r => r.json());
@@ -1101,39 +1120,19 @@ async function descargarOrdenServicioActual(mensaje){
   registrarEventoSistema(LEAD_ACTUAL.id, 'Orden de servicio descargada ('+formato.toUpperCase()+').');
   toast(mensaje || 'Orden de servicio generada');
 }
-on('btn-generar-orden-servicio','click',async e=>{
-  const btn=e.currentTarget; // antes de cualquier await: después currentTarget ya es null
+// Convertir en orden de servicio: abre la misma ventana que una orden nueva, con lo que tiene la
+// cotización en pantalla (partidas, IVA, ubicación); ahí se completan fecha, equipo y operador.
+on('btn-generar-orden-servicio','click',async()=>{
+  const lead=LEAD_ACTUAL;
+  if(!lead||lead.estatus!=='abierto')return;
+  if(!lead.cliente_id){toast('Esta cotización no tiene un contacto asociado; no se puede convertir.');return;}
   if(!validarEditorCotizacion())return;
-  const cerrando = LEAD_ACTUAL.estatus === 'abierto';
-  if (cerrando) {
-    sincronizarEditor();
-    if (!document.getElementById('ed-fecha-servicio').value) {
-      const fecha = await solicitarDialogo({ titulo: 'Convertir en orden de servicio', mensaje: 'El cliente aceptó la cotización. ¿Qué fecha quedó acordada para el servicio?', aceptar: 'Crear orden de servicio', campo: { tipo: 'date', etiqueta: 'Fecha acordada del servicio' } });
-      if (!fecha) return;
-      document.getElementById('ed-fecha-servicio').value = fecha;
-    }
-    if(!document.getElementById('ed-servicio').value){toast('Selecciona el servicio que se contratará');document.getElementById('ed-servicio').focus();return;}
-    if(!document.getElementById('ed-direccion').value.trim()){toast('Indica la ubicación del servicio');document.getElementById('ed-direccion').focus();return;}
-    if(!document.getElementById('ed-fecha-servicio').value){toast('Indica la fecha acordada del servicio antes de generar la orden');document.getElementById('ed-fecha-servicio').focus();return;}
-    // Un lead "ganado" sin costo rompería los reportes de ingresos en Clientes — se exige aquí
-    // (el backend también lo valida).
-    if(document.getElementById('ed-valor').value===''){toast('Ingresa el costo del servicio antes de generar la orden');document.getElementById('ed-valor').focus();return;}
-  }
-  btn.disabled=true;
-  try{
-    const payload = cerrando ? { ...recolectarPayloadFicha(), estatus: 'ganado' } : recolectarPayloadFicha();
-    if(!await guardarLeadExistente(payload))return;
-    FlujoCRM.marcarGuardado('overlay-ficha');
-    await descargarOrdenServicioActual(cerrando ? 'Cotización cerrada: servicio contratado y orden de servicio generada' : undefined);
-    if (cerrando) {
-      // La cotización acaba de cerrarse como servicio contratado: refrescamos toda la ficha
-      // (botones, bitácora, cadena de documentos, pipeline) para que reflejen el nuevo estatus.
-      await abrirFicha(LEAD_ACTUAL.id);
-      await ServiciosTabla.refrescar();
-    }
-  }
-  catch(err){toast('No se pudo generar la orden de servicio: '+err.message);}
-  finally{btn.disabled=false;}
+  const items=recolectarItemsCotizacion();
+  const prefill={convertir_de:lead.id,folio:folioCotizacion(lead),partidas_json:JSON.stringify(items),servicio_nombre:items[0]?.servicio,
+    iva_modo:modoIvaEditor(),iva_tasa:IVA_TASA,direccion:document.getElementById('ed-direccion').value.trim()||lead.direccion,
+    equipo:lead.equipo,operador:lead.operador,observaciones:lead.observaciones};
+  FlujoCRM.marcarGuardado('overlay-ficha'); // lo capturado en la ficha pasa a la ventana
+  await FlujoCRM.nuevoRegistro(lead.cliente_id,'convertir',prefill);
 });
 document.getElementById('cadena-documentos').addEventListener('click',async e=>{
   if(!e.target.closest('[data-ver-cotizacion]'))return;
