@@ -336,8 +336,23 @@ const espera = ms => new Promise(r => setTimeout(r, ms));
   const cuenta = async id => (await pedir('GET', '/leads/' + id + '/cobros', A))[1].cuenta;
   const verLead = async id => (await pedir('GET', '/leads/' + id, A))[1];
 
+  // Ninguna cotización u orden sale en ceros.
+  [s, j] = await altaIva({ partidas_json: part(0), iva_modo: 'mas_iva' }); ok(s === 400 && /\$0\.00/.test(j.error), 'una cotización en $0.00 se rechaza', j);
+  [s, j] = await altaIva({ partidas_json: JSON.stringify([{ servicio: servicios[0].nombre, leyenda: 'a', importe: 500 }, { servicio: servicios[0].nombre, leyenda: 'b', importe: 0 }]), iva_modo: 'mas_iva' });
+  ok(s === 400, 'un servicio en $0.00 dentro de la cotización se rechaza', j);
+  [s, j] = await altaIva({ partidas_json: JSON.stringify([{ servicio: servicios[0].nombre, leyenda: 'a', importe: 1, cantidad: 2, precio: 0 }]), iva_modo: 'sin_iva', estatus: 'ganado', fecha_servicio: '2026-10-01', valor: 0 });
+  ok(s === 400, 'una orden de servicio con precio unitario $0 se rechaza', j);
+  [s, j] = await altaIva({}); ok(s === 400 && /servicio con su precio/.test(j.error), 'no se crea una cotización sin servicios ni precio', j);
+  // Vigencia desde la ventana de crear cotización.
+  [s, j] = await altaIva({ partidas_json: part(1800), iva_modo: 'mas_iva', incluye_vigencia: true, vigencia_hasta: '2099-12-31' });
+  ok(s === 201 && j.incluye_vigencia === 1 && j.vigencia_hasta === '2099-12-31', 'cotización con vigencia hasta la fecha elegida', j);
+  [s, j] = await altaIva({ partidas_json: part(1800), iva_modo: 'mas_iva', incluye_vigencia: false, vigencia_hasta: '2099-12-31' });
+  ok(s === 201 && j.incluye_vigencia === 0 && j.vigencia_hasta === null, 'cotización sin vigencia (no aplica)', j);
+  [s, j] = await altaIva({ partidas_json: part(1800), iva_modo: 'mas_iva', incluye_vigencia: true, vigencia_hasta: '2020-01-01' });
+  ok(s === 400 && /vigencia/.test(j.error), 'la vigencia no puede ser anterior a la fecha de la cotización', j);
   [s, j] = await altaIva({ partidas_json: part(3500), iva_modo: 'mas_iva', iva_tasa: 16, valor: 99, iva_cent: 1 });
   ok(s === 201 && j.valor === 3500 && j.iva_cent === 56000 && j.iva_modo === 'mas_iva' && j.iva_tasa === 16, 'cotización "más IVA": $3,500 + IVA $560 (el servidor ignora valor e IVA del navegador)', j);
+  ok(j.incluye_vigencia === 1 && j.vigencia_hasta === null, 'sin indicar vigencia, la cotización la incluye (15 días en el documento)', j);
   const cotIva = j;
   [s, j] = await pedir('PUT', '/leads/' + cotIva.id, L, { version: cotIva.version, etapa: 2 });
   ok(s === 200 && j.iva_cent === 56000 && j.iva_modo === 'mas_iva', 'mover de etapa conserva el IVA', j);
@@ -483,10 +498,23 @@ const espera = ms => new Promise(r => setTimeout(r, ms));
   const filaSub = j.filas.find(f => f.lead_id === ordenSub.id);
   ok(filaSub && filaSub.realizado_por === 'Subcontratado' && filaSub.costo === 7850 && filaSub.estatus_pago.startsWith('Pagado en parte') && filaSub.via_pago === 'Nómina · Semana 40',
     'el generador muestra el servicio subcontratado con su costo total y el estatus de pago', filaSub);
+  // Cuentas por cobrar: la orden realizada se cobra con los datos de su ejecución; el crédito corre desde que se realizó.
+  const enCartera = async id => (await pedir('GET', '/finanzas/cartera?filtro=todas', A))[1].find(c => c.lead_id === id);
+  let cxc = await enCartera(ordenSub.id);
+  ok(cxc && cxc.ejecucion === 'realizado' && cxc.fecha_realizado === '2026-10-01' && cxc.realizado_por === 'subcontratado' && cxc.equipo === 'C-22' && cxc.operador === 'Eduardo Hernández'
+    && cxc.total === 31911.6 && cxc.subtotal === 27510 && cxc.iva === 4401.6 && cxc.vence >= '2026-10-01' && !cxc.programada,
+    'Cuentas por cobrar: la orden realizada aparece con total con IVA, fecha y quién la realizó, unidad y operador', cxc);
+  [s, j] = await altaIva({ partidas_json: part(900), iva_modo: 'mas_iva', estatus: 'ganado', fecha_servicio: '2099-01-15' });
+  const ordenAdelantada = j;
+  ok((await enCartera(ordenAdelantada.id))?.programada === true, 'una orden programada a futuro aún no se cobra (servicio programado)');
+  await pedir('POST', '/leads/' + ordenAdelantada.id + '/ejecucion', L, { estado: 'realizado', realizado_por: 'propio' });
+  cxc = await enCartera(ordenAdelantada.id);
+  ok(cxc && !cxc.programada && cxc.ejecucion === 'realizado' && cxc.saldo === 1044, 'si se realiza antes de su fecha, ya se cobra (deja de estar programada)', cxc);
   [s, j] = await pedir('POST', '/leads/' + ordenSub.id + '/ejecucion', L, { estado: 'no_realizado', motivo: 'no' });
   ok(s === 400, 'no realizado exige motivo');
   [s, j] = await pedir('POST', '/leads/' + ordenSub.id + '/ejecucion', L, { estado: 'no_realizado', motivo: 'El cliente canceló el día del servicio' });
   ok(s === 200 && j.lead.ejecucion === 'no_realizado', 'servicio marcado como no realizado', j);
+  ok(!(await enCartera(ordenSub.id)), 'una orden NO realizada (sin pagos) sale de Cuentas por cobrar');
   [s, j] = await pedir('GET', '/generador?desde=2026-10-01&hasta=2026-10-01', L);
   ok(!j.filas.some(f => f.lead_id === ordenSub.id), 'una orden no realizada sale del generador');
 

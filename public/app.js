@@ -210,6 +210,9 @@ async function regresarAFicha() {
   const id = REGRESO_FICHA; REGRESO_FICHA = null;
   await abrirFicha(id);
 }
+// Fechas 'AAAA-MM-DD' en horario de México (sin depender de la zona del equipo).
+const hoyISO = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Mexico_City' }).format(new Date());
+const sumarDiasISO = (f, dias) => { const d = new Date(f + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() + dias); return d.toISOString().slice(0, 10); };
 function abrirServicioNuevo(modo, prefill) {
   if (!CLIENTE_DUP) return;
   actualizarBotonesEstatusFicha(null);
@@ -248,6 +251,12 @@ function abrirServicioNuevo(modo, prefill) {
     ? `Última vez: ${formatoMoneda(CLIENTE_DUP.ultimo_valor)}`
     : 'Si ya se conoce';
   document.getElementById('sn-fecha').value = '';
+  // Vigencia: solo en cotizaciones. Se propone la de siempre (15 días) y se puede quitar o cambiar.
+  document.getElementById('sn-vigencia').hidden = esDirecto;
+  document.getElementById('sn-incluye-vigencia').checked = true;
+  document.getElementById('sn-wrap-vigencia').hidden = false;
+  document.getElementById('sn-vigencia-hasta').min = hoyISO();
+  document.getElementById('sn-vigencia-hasta').value = sumarDiasISO(hoyISO(), EMPRESA_COTIZACION.vigenciaDias);
   document.getElementById('sn-datos-orden').hidden = !esDirecto;
   document.getElementById('sn-equipo').value = prefill?.equipo || '';
   document.getElementById('sn-operador').value = prefill?.operador || '';
@@ -283,6 +292,9 @@ async function guardarServicioNuevo(descargar=false) {
   if (!document.getElementById('sn-ubicacion').value.trim()) { toast('Indica la ubicación de este servicio'); return; }
   const esDirecto = MODO_SERVICIO_NUEVO === 'directo' || MODO_SERVICIO_NUEVO === 'convertir';
   if(esDirecto && !document.getElementById('sn-fecha').value){toast('Indica la fecha acordada del servicio');document.getElementById('sn-fecha').focus();return;}
+  const conVigencia = !esDirecto && document.getElementById('sn-incluye-vigencia').checked;
+  const vigenciaHasta = document.getElementById('sn-vigencia-hasta').value;
+  if (conVigencia && (!vigenciaHasta || vigenciaHasta < hoyISO())) { toast('Indica hasta qué fecha es válida la cotización (hoy o después), o desmarca la vigencia'); document.getElementById('sn-vigencia-hasta').focus(); return; }
   const valorRaw = document.getElementById('sn-valor').value;
   if(valorRaw!=='' && (!Number.isFinite(Number(valorRaw)) || Number(valorRaw)<0)){toast('El importe debe ser mayor o igual a cero');return;}
   if (esDirecto && valorRaw === '') {
@@ -312,6 +324,8 @@ async function guardarServicioNuevo(descargar=false) {
     proyecto: esDirecto ? document.getElementById('sn-proyecto').value.trim() : null,
     manifiestos: esDirecto ? document.getElementById('sn-manifiestos').value.trim() : null,
     tiros: esDirecto ? document.getElementById('sn-tiros').value.trim() : null,
+    incluye_vigencia: esDirecto ? undefined : conVigencia,
+    vigencia_hasta: conVigencia ? vigenciaHasta : null,
     ...ivaPayload(),
     ...(DUPLICADO_DE ? { costos_duplicar: costosADuplicar() } : {})
   };
@@ -353,6 +367,7 @@ async function guardarServicioNuevo(descargar=false) {
   }
 }
 on('btn-guardar-servicio-nuevo','click',()=>guardarServicioNuevo());
+on('sn-incluye-vigencia', 'change', e => { document.getElementById('sn-wrap-vigencia').hidden = !e.target.checked; });
 // Cerrar la ventana de crear sin guardar también regresa a la orden de la que se partió.
 document.querySelector('#overlay-servicio-nuevo .close-btn').addEventListener('click', () => setTimeout(regresarAFicha, 0));
 on('btn-barra-guardar','click',()=>EDITOR_MODO==='nuevo'?guardarServicioNuevo():document.getElementById('btn-guardar-ficha').click());
@@ -1256,7 +1271,7 @@ function crearFilaServicioHTML(item) {
           <div class="campo-modal"><label for="gc-cantidad-${id}">Cantidad</label>
             <input type="number" class="gc-cantidad" id="gc-cantidad-${id}" data-fila="${id}" min="0.001" step="any" value="${Number(Importes.cantidadDe(item))}"></div>
           <div class="campo-modal"><label class="gc-etiqueta-importe" for="gc-precio-${id}">${etiquetaPrecio(modoIvaEditor())}</label>
-            <input type="number" class="gc-precio" id="gc-precio-${id}" data-fila="${id}" min="0" step="0.01" value="${item.importe === undefined && item.precio === undefined ? '' : Number(Importes.precioDe(item))}"></div>
+            <input type="number" class="gc-precio" id="gc-precio-${id}" data-fila="${id}" min="0.01" step="0.01" placeholder="Precio" value="${item.importe === undefined && item.precio === undefined ? '' : Number(Importes.precioDe(item))}"></div>
           <div class="campo-modal"><label for="gc-importe-${id}">Importe (MXN)</label>
             <input type="number" class="gc-importe" id="gc-importe-${id}" data-fila="${id}" readonly tabindex="-1" value="${item.importe ?? ''}"></div>
         </div>
@@ -1368,7 +1383,7 @@ function prepararEditorCotizacion(lead,modo){
   IVA_BLOQUEADO=modo!=='nuevo'&&lead?.estatus==='ganado'&&!['admin','atencion'].includes(USUARIO_ACTUAL?.rol);
   document.getElementById('gc-items').innerHTML='';GC_CONTADOR=0;
   let items;try{items=JSON.parse(lead?.partidas_json||'null');}catch{}
-  (items||[{servicio:lead?.servicio_nombre||'',leyenda:descripcionServicio(lead?.servicio_nombre||''),importe:lead?.valor??0}]).forEach(agregarFilaCotizacion);
+  (items||[{servicio:lead?.servicio_nombre||'',leyenda:descripcionServicio(lead?.servicio_nombre||''),...(lead?.valor?{importe:lead.valor}:{})}]).forEach(agregarFilaCotizacion); // sin precio: el campo queda vacío, nunca en $0
   actualizarTotalCotizacion();sincronizarEditor();
 }
 function sincronizarEditor(){
@@ -1379,7 +1394,7 @@ function sincronizarEditor(){
 }
 function validarEditorCotizacion(){
   const filas=[...document.querySelectorAll('#gc-items .gc-fila')];
-  if(!filas.length||filas.some(f=>!f.querySelector('.gc-servicio').value||f.querySelector('.gc-precio').value===''||!(Number(f.querySelector('.gc-precio').value)>=0)||!(Number(f.querySelector('.gc-cantidad').value)>0))){toast('Selecciona un servicio y escribe cantidad y precio unitario en cada partida');return false;}
+  if(!filas.length||filas.some(f=>!f.querySelector('.gc-servicio').value||f.querySelector('.gc-precio').value===''||!(Number(f.querySelector('.gc-precio').value)>0)||!(Number(f.querySelector('.gc-cantidad').value)>0))){toast('Selecciona un servicio y escribe cantidad y precio unitario (mayor a $0) en cada partida');return false;}
   // Un registro nuevo o una cotización abierta deben decir si sus importes llevan IVA.
   if(!modoIvaEditor()&&(EDITOR_MODO==='nuevo'||LEAD_ACTUAL?.estatus==='abierto')){
     toast('Indica el IVA: elige Más IVA, IVA incluido o Sin IVA');

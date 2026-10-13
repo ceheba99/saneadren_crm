@@ -193,6 +193,7 @@ const SQL_TOTAL_ORDEN = 'CAST(ROUND(COALESCE(l.valor, 0) * 100) AS INTEGER) + CO
 const SQL_CUENTA = `
   SELECT l.id, l.cliente_id, l.created_at, l.fecha_servicio, l.valor, l.dias_credito, l.factura_folio, l.factura_fecha,
     l.factura_total_cent, l.cobranza_por_revisar, l.servicio_id, l.estatus, l.iva_modo, l.iva_tasa, l.iva_cent,
+    l.ejecucion, l.realizado_por, l.fecha_realizado, l.equipo, l.operador, l.proyecto,
     c.nombre AS cliente_nombre, c.empresa_contacto, c.telefono, c.rfc,
     s.nombre AS servicio_nombre,
     ${SQL_TOTAL_ORDEN} AS total_orden_cent,
@@ -205,12 +206,15 @@ const SQL_CUENTA = `
 
 function describirCuenta(f, hoy) {
   const saldo = f.total_cent - f.cobrado_cent;
-  const base = f.factura_fecha || f.fecha_servicio || String(f.created_at).slice(0, 10);
+  // El crédito corre desde la factura; sin factura, desde que se realizó el servicio (o su fecha acordada).
+  const base = f.factura_fecha || f.fecha_realizado || f.fecha_servicio || String(f.created_at).slice(0, 10);
+  const realizado = f.ejecucion === 'realizado';
   const vence = sumarDias(base, f.dias_credito || 0);
   const diasVencido = diasEntre(vence, hoy);
   let estado = saldo <= 0 ? 'pagada' : f.cobrado_cent > 0 ? 'parcial' : 'pendiente';
   // Programada: servicio todavía futuro y sin factura. No cuenta como "te deben" (aún no se hace el trabajo).
-  const programada = !!(f.fecha_servicio && f.fecha_servicio > hoy && !f.factura_folio);
+  // Un servicio ya marcado como realizado se debe aunque su fecha acordada fuera posterior.
+  const programada = !!(f.fecha_servicio && f.fecha_servicio > hoy && !f.factura_folio && !realizado);
   const vencida = saldo > 0 && diasVencido > 0;
   let tramo = null;
   if (saldo > 0) tramo = diasVencido <= 0 ? 'por_vencer' : diasVencido <= 15 ? '1-15' : diasVencido <= 30 ? '16-30' : diasVencido <= 60 ? '31-60' : '60+';
@@ -222,6 +226,9 @@ function describirCuenta(f, hoy) {
     total: aPesos(f.total_cent), cobrado: aPesos(f.cobrado_cent), saldo: aPesos(Math.max(saldo, 0)),
     vence, dias_vencido: saldo > 0 ? diasVencido : 0, estado, vencida, programada, tramo: programada ? null : tramo,
     por_confirmar: f.por_confirmar, por_revisar: !!f.cobranza_por_revisar,
+    ejecucion: f.ejecucion || null, realizado_por: f.realizado_por || null, fecha_realizado: f.fecha_realizado || null,
+    por_concluir: !f.ejecucion && !!f.fecha_servicio && f.fecha_servicio <= hoy,
+    equipo: f.equipo || null, operador: f.operador || null, proyecto: f.proyecto || null,
     iva_modo: f.iva_modo, iva_tasa: f.iva_tasa, subtotal: aPesos(f.total_orden_cent - (f.iva_cent || 0)),
     iva: f.iva_cent == null ? null : aPesos(f.iva_cent), total_orden: aPesos(f.total_orden_cent),
     // CFDI distinto del total de la orden (retención, descuento o centavos): solo informativo.
@@ -257,7 +264,9 @@ module.exports = function finanzas(app, db, h) {
   // Cuentas que componen la cartera (excluye las históricas aún sin revisar).
   function cartera() {
     const hoy = hoyMexico();
-    return db.prepare(SQL_CUENTA + " WHERE l.estatus = 'ganado' AND l.cobranza_por_revisar = 0").all()
+    // Un servicio NO realizado no se cobra (salvo que ya tenga pagos registrados, p. ej. un anticipo).
+    return db.prepare(SQL_CUENTA + ` WHERE l.estatus = 'ganado' AND l.cobranza_por_revisar = 0
+      AND (COALESCE(l.ejecucion, '') <> 'no_realizado' OR EXISTS (SELECT 1 FROM cobros k WHERE k.lead_id = l.id AND k.cancelado = 0))`).all()
       .map(f => describirCuenta(f, hoy));
   }
 
