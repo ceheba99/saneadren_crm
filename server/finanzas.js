@@ -161,7 +161,13 @@ function migrar(db) {
 const aPesos = cent => Math.round(Number(cent || 0)) / 100;
 // Pesos → centavos. null si no es un monto válido (> 0, máximo 2 decimales, hasta 100 millones).
 function aCentavos(valor) {
-  const n = typeof valor === 'string' ? Number(valor.replace(/[$,\s]/g, '')) : Number(valor);
+  // Solo números o texto con formato de dinero ("8000", "8,000.50", "$ 8,000"); nada de true, listas o "1,0,0".
+  if (typeof valor === 'string') {
+    const t = valor.trim().replace(/^\$\s*/, '');
+    if (!/^(\d{1,3}(,\d{3})+|\d+)(\.\d+)?$/.test(t)) return null;
+    valor = t.replace(/,/g, '');
+  } else if (typeof valor !== 'number') return null;
+  const n = Number(valor);
   if (!Number.isFinite(n) || n <= 0 || n > 100000000) return null;
   const cent = Math.round(n * 100);
   return Math.abs(cent - n * 100) < 1e-6 ? cent : null;
