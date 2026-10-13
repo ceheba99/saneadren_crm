@@ -983,3 +983,5 @@ header.app nav.menu-principal .menu-sub .menu-item:focus-visible{outline:3px sol
   .cal-puntos{display:flex;}
   .cal-filtro{font-size:12px;padding:4px 8px;}
 }
+.btn-whatsapp{border-color:#25d366;color:#128c4a;text-decoration:none;}
+.btn-whatsapp:hover{background:#e8f9ef;border-color:#128c4a;color:#0b6b37;}
