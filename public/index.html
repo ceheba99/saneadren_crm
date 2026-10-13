@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Saneadren · Cotizaciones y Servicios</title>
-<link rel="stylesheet" href="styles.css?v=iva1">
+<link rel="stylesheet" href="styles.css?v=cal1">
 <link rel="stylesheet" href="servicios-tabla.css">
 <link rel="stylesheet" href="flujo.css">
 </head>
@@ -26,6 +26,7 @@
     </button>
     <div class="menu-items" id="menu-items">
       <button type="button" class="menu-item activa" data-vista="inicio"><span class="menu-icono" aria-hidden="true">🏠</span>Inicio <span id="badge-pendientes" style="display:none">0</span></button>
+      <button type="button" class="menu-item" data-vista="calendario"><span class="menu-icono" aria-hidden="true">📅</span>Calendario</button>
       <div class="menu-grupo" data-grupo="ventas">
         <button type="button" class="menu-grupo-btn" aria-expanded="false"><span class="menu-icono" aria-hidden="true">💼</span>Ventas<span class="menu-flecha" aria-hidden="true">▾</span></button>
         <div class="menu-sub">
@@ -272,6 +273,19 @@
   </section>
 
   <!-- ====== VISTA: PENDIENTES (Recompras + Alertas juntas) ====== -->
+  <!-- ====== VISTA: CALENDARIO ====== -->
+  <section class="vista" id="vista-calendario">
+    <div class="vista-encabezado">
+      <div><h2>Calendario</h2><p class="ayuda">Órdenes de servicio, alertas, cobros y pagos por día. Toca un día para ver su lista y un evento para abrirlo.</p></div>
+      <div class="cal-nav"><button type="button" class="btn btn-outline" id="cal-anterior" aria-label="Mes anterior">‹</button><b id="cal-titulo"></b><button type="button" class="btn btn-outline" id="cal-siguiente" aria-label="Mes siguiente">›</button><button type="button" class="btn btn-outline" id="cal-hoy">Hoy</button></div>
+    </div>
+    <div class="cal-filtros" id="cal-filtros"></div>
+    <p class="ayuda" id="cal-estado" role="status"></p>
+    <div class="cal-semana" aria-hidden="true"><span>Lun</span><span>Mar</span><span>Mié</span><span>Jue</span><span>Vie</span><span>Sáb</span><span>Dom</span></div>
+    <div class="cal-grid" id="cal-grid"></div>
+    <div class="cal-lista-caja"><div class="cal-lista-cab"><h3 id="cal-lista-titulo"></h3><button type="button" class="btn btn-outline" id="cal-ver-mes" hidden>Ver todo el mes</button></div><div id="cal-lista"></div></div>
+  </section>
+
   <!-- ====== VISTA: GENERADOR (ventas por servicio de cada orden) ====== -->
   <section class="vista" id="vista-generador">
     <div class="vista-encabezado">
@@ -896,13 +910,14 @@
 
 
 <!-- ?v= obliga a los navegadores (sobre todo celulares) a tomar la versión nueva tras publicar. -->
-<script src="ui.js?v=iva1"></script>
-<script src="importes.js?v=iva1"></script>
-<script src="servicios-tabla.js?v=iva1"></script>
-<script src="flujo.js?v=iva1"></script>
-<script src="cuentas.js?v=iva1"></script>
-<script src="finanzas.js?v=iva1"></script>
-<script src="app.js?v=iva1"></script>
-<script src="prospeccion.js?v=iva1"></script>
+<script src="ui.js?v=cal1"></script>
+<script src="importes.js?v=cal1"></script>
+<script src="servicios-tabla.js?v=cal1"></script>
+<script src="flujo.js?v=cal1"></script>
+<script src="cuentas.js?v=cal1"></script>
+<script src="finanzas.js?v=cal1"></script>
+<script src="calendario.js?v=cal1"></script>
+<script src="app.js?v=cal1"></script>
+<script src="prospeccion.js?v=cal1"></script>
 </body>
 </html>

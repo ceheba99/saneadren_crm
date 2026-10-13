@@ -504,6 +504,19 @@ const espera = ms => new Promise(r => setTimeout(r, ms));
   ok((await pedir('GET', '/finanzas/cxp?vista=todas&lead_id=' + ordenSub.id, A))[1].length === 2, 'la orden original conserva sus costos');
   ok((await pedir('GET', '/leads/' + ordenDup.id, A))[1].historial.some(h => /Costos con terceros copiados/.test(h.texto)), 'la bitácora de la nueva orden registra los costos copiados');
 
+  // Calendario: órdenes por fecha de servicio, alertas, cobros y pagos que vencen.
+  [s, j] = await pedir('GET', '/calendario?desde=2026-11-30&hasta=2026-11-01', A); ok(s === 400, 'calendario: rango invertido rechazado');
+  [s, j] = await pedir('GET', '/calendario?desde=2026-01-01&hasta=2026-12-31', A); ok(s === 400, 'calendario: rango de más de 100 días rechazado');
+  [s, j] = await pedir('POST', '/leads/' + ordenDup.id + '/historial', A, { tipo: 'alerta', texto: 'Llamar para confirmar acceso', fecha_alerta: '2026-11-01T09:30' });
+  const costoDup = (await pedir('GET', '/finanzas/cxp?vista=todas&lead_id=' + ordenDup.id, A))[1][0];
+  [s, j] = await pedir('GET', '/calendario?desde=2026-10-26&hasta=2026-12-06', L);
+  const evs = j.eventos || [];
+  ok(s === 200 && evs.some(e => e.tipo === 'orden' && e.lead_id === ordenDup.id && e.fecha === '2026-11-01' && /^OS-/.test(e.titulo)), 'calendario: la orden aparece en su fecha de servicio', evs.filter(e => e.tipo === 'orden'));
+  ok(evs.some(e => e.tipo === 'alerta' && e.lead_id === ordenDup.id && e.fecha === '2026-11-01' && e.hora === '09:30' && e.estado === 'pendiente'), 'calendario: la alerta aparece con su hora', evs.filter(e => e.tipo === 'alerta'));
+  ok(evs.some(e => e.tipo === 'cobro' && e.lead_id === cot.id && e.fecha === '2026-12-01' && e.monto > 0), 'calendario: el cobro aparece el día que vence', evs.filter(e => e.tipo === 'cobro'));
+  ok(costoDup.fecha_vencimiento < '2026-10-26' || costoDup.fecha_vencimiento > '2026-12-06' || evs.some(e => e.tipo === 'pago' && e.cxp_id === costoDup.id && e.fecha === costoDup.fecha_vencimiento && e.monto === 8000), 'calendario: el pago al proveedor aparece el día que vence', evs.filter(e => e.tipo === 'pago'));
+  ok(!evs.some(e => e.fecha < '2026-10-26' || e.fecha > '2026-12-06'), 'calendario: solo eventos dentro del rango');
+
   seccion('13. Pipeline: contactos sin cotización');
   [s, j] = await pedir('POST', '/contactos', L, { nombre: 'Solo Contacto', telefono: '4427770099', canal_origen_id: canales[0].id });
   const soloId = j.id;
