@@ -906,3 +906,11 @@ header.app nav.menu-principal .menu-sub .menu-item:focus-visible{outline:3px sol
 .gasto-orden-opcion small{display:block;color:var(--texto-sec);font-size:11.5px;}
 .gasto-orden-info{margin-top:6px;padding:8px 10px;border:1px solid #b7dfc6;background:#effaf3;border-radius:var(--radio);font-size:13px;}
 .gasto-orden-info span{display:block;color:var(--texto-sec);font-size:12px;margin-top:2px;}
+
+/* Ejecución del servicio. */
+.ejecucion-estado{margin:0 0 6px;padding:8px 10px;border-radius:var(--radio);}
+.ejecucion-estado.realizado{background:#effaf3;border:1px solid #b7dfc6;}
+.ejecucion-estado.no-realizado{background:#fdf1ef;border:1px solid #f1c2bc;}
+.modal-realizado{max-width:760px;}
+.realizado-gasto{border:1px solid var(--gris-200);border-radius:var(--radio);padding:10px 12px;margin:8px 0;background:var(--gris-100);}
+.realizado-gasto .rg-pago[hidden]{display:none;}

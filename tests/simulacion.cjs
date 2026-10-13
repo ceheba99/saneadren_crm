@@ -439,6 +439,14 @@ const espera = ms => new Promise(r => setTimeout(r, ms));
     'el servidor calcula importe = cantidad × precio (3 × 1,166.67 + 2.5 × 400 = 4,500.01) y guarda el proyecto', j);
   [s] = await altaIva({ partidas_json: JSON.stringify([{ servicio: servicios[0].nombre, leyenda: 'x', importe: 1, cantidad: 0, precio: 100 }]), iva_modo: 'mas_iva' });
   ok(s === 400, 'cantidad 0 se rechaza');
+  [s, j] = await pedir('GET', '/generador?q=Planta Norte', L);
+  ok(s === 200 && j.filas.length === 0, 'una orden que no se ha marcado como realizada no aparece en el generador', j.filas);
+  [s, j] = await pedir('POST', '/leads/' + ordenGen.id + '/ejecucion', L, { estado: 'realizado', fecha: '2026-09-15', realizado_por: 'subcontratado', gastos: [] });
+  ok(s === 400 && /subcontrat/.test(j.error), 'si se subcontrató, exige registrar lo que se le paga al tercero', j);
+  [s, j] = await pedir('POST', '/leads/' + ordenGen.id + '/ejecucion', L, { estado: 'realizado', fecha: '2099-01-01', realizado_por: 'propio' });
+  ok(s === 400, 'la fecha de realizado no puede ser futura');
+  [s, j] = await pedir('POST', '/leads/' + ordenGen.id + '/ejecucion', L, { estado: 'realizado', fecha: '2026-09-15', realizado_por: 'propio' });
+  ok(s === 200 && j.lead.ejecucion === 'realizado' && j.lead.realizado_por === 'propio' && j.gastos === 0, 'servicio realizado por nuestro equipo sin gastos', j);
   [s, j] = await pedir('GET', '/generador?desde=2026-09-15&hasta=2026-09-15&q=Planta Norte', L);
   const g = j.filas || [];
   ok(s === 200 && g.length === 2 && g[0].mes === 'SEPTIEMBRE' && g[0].orden === 'OS-' + ordenGen.created_at.slice(0, 7).replace('-', '') + '-' + String(ordenGen.id).padStart(4, '0')
@@ -460,6 +468,27 @@ const espera = ms => new Promise(r => setTimeout(r, ms));
   ok(j.filas[0].proveedor === 'Pipas del Centro' && j.filas[0].concepto === 'Renta de pipas' && j.filas[0].costo === 7500 && j.filas[0].estatus_pago === 'Pagado 17/09/2026'
     && j.filas[0].via_pago === 'Nómina · Semana 38' && j.filas[0].manifiestos === 'M-1020' && j.filas[0].tiros === '2' && j.filas[1].costo === null && j.totales.costo === 7500,
     'el generador muestra proveedor, concepto, costo, estatus y vía de pago (una vez por orden)', j.filas);
+
+  // Servicio subcontratado: al marcarlo realizado, el pago al tercero y otros gastos se cargan en Cuentas por pagar.
+  [s, j] = await altaIva({ partidas_json: part(27510), iva_modo: 'mas_iva', estatus: 'ganado', fecha_servicio: '2026-10-01', equipo: 'C-22', operador: 'Eduardo Hernández' });
+  const ordenSub = j;
+  [s, j] = await pedir('POST', '/leads/' + ordenSub.id + '/ejecucion', L, { estado: 'realizado', fecha: '2026-10-01', realizado_por: 'subcontratado', gastos: [
+    { proveedor_id: pipas.id, categoria: 'subcontratacion', concepto: 'Renta de pipas', total: '7,500.00', ya_pagado: true, metodo: 'nomina', fecha_pago: '2026-10-02', referencia: 'Semana 40' },
+    { proveedor_id: pipas.id, categoria: 'casetas_viaticos', concepto: 'Casetas', total: 350 }] });
+  ok(s === 200 && j.gastos === 2 && j.lead.realizado_por === 'subcontratado', 'servicio subcontratado: se registran 2 gastos', j);
+  [s, j] = await pedir('GET', '/finanzas/cxp?vista=todas&lead_id=' + ordenSub.id, A);
+  ok(j.length === 2 && j.find(x => x.concepto === 'Renta de pipas')?.saldo === 0 && j.find(x => x.concepto === 'Casetas')?.saldo === 350 && j.every(x => x.equipo === 'C-22'),
+    'los gastos quedan en Cuentas por pagar ligados a la orden (el pagado por nómina con saldo 0, el otro pendiente)', j);
+  [s, j] = await pedir('GET', '/generador?desde=2026-10-01&hasta=2026-10-01', L);
+  const filaSub = j.filas.find(f => f.lead_id === ordenSub.id);
+  ok(filaSub && filaSub.realizado_por === 'Subcontratado' && filaSub.costo === 7850 && filaSub.estatus_pago.startsWith('Pagado en parte') && filaSub.via_pago === 'Nómina · Semana 40',
+    'el generador muestra el servicio subcontratado con su costo total y el estatus de pago', filaSub);
+  [s, j] = await pedir('POST', '/leads/' + ordenSub.id + '/ejecucion', L, { estado: 'no_realizado', motivo: 'no' });
+  ok(s === 400, 'no realizado exige motivo');
+  [s, j] = await pedir('POST', '/leads/' + ordenSub.id + '/ejecucion', L, { estado: 'no_realizado', motivo: 'El cliente canceló el día del servicio' });
+  ok(s === 200 && j.lead.ejecucion === 'no_realizado', 'servicio marcado como no realizado', j);
+  [s, j] = await pedir('GET', '/generador?desde=2026-10-01&hasta=2026-10-01', L);
+  ok(!j.filas.some(f => f.lead_id === ordenSub.id), 'una orden no realizada sale del generador');
 
   seccion('13. Pipeline: contactos sin cotización');
   [s, j] = await pedir('POST', '/contactos', L, { nombre: 'Solo Contacto', telefono: '4427770099', canal_origen_id: canales[0].id });

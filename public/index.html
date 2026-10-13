@@ -79,6 +79,12 @@
       <div id="inicio-cotizaciones" class="inicio-lista"></div>
     </div>
 
+    <div class="inicio-bloque inicio-bloque-concluir">
+      <h3>🧾 Servicios por concluir</h3>
+      <p class="ayuda">Órdenes cuya fecha ya pasó y que todavía no se marcan como realizadas o no realizadas. No aparecen en el Generador hasta concluirlas.</p>
+      <div id="inicio-concluir" class="inicio-lista"></div>
+    </div>
+
     <div class="inicio-bloque inicio-bloque-servicio">
       <h3><span class="cadena-nodo activo">🧾 Recompras</span> listas para registrar como nuevo servicio</h3>
       <p class="ayuda">Clientes que ya contrataron antes y, según el ciclo del servicio, probablemente ya lo necesiten otra vez.</p>
@@ -269,7 +275,7 @@
   <!-- ====== VISTA: GENERADOR (ventas por servicio de cada orden) ====== -->
   <section class="vista" id="vista-generador">
     <div class="vista-encabezado">
-      <div><h2>Generador</h2><p class="ayuda">Ventas de las órdenes de servicio, un renglón por cada servicio. Las columnas en gris son el costo con terceros (gastos ligados a la orden en Cuentas por pagar). Toca un renglón para abrir su orden.</p></div>
+      <div><h2>Generador</h2><p class="ayuda">Ventas de las órdenes de servicio <b>realizadas</b>, un renglón por cada servicio. Las columnas en gris son el costo con terceros (gastos ligados a la orden en Cuentas por pagar). Toca un renglón para abrir su orden.</p></div>
       <button type="button" class="btn btn-outline solo-admin" id="gen-exportar">📥 Exportar a Excel</button>
     </div>
     <div class="filtros">
@@ -281,7 +287,7 @@
     </div>
     <p class="gen-resumen" id="gen-resumen" role="status"></p>
     <div class="tabla-scroll"><table class="tabla-resumen tabla-generador">
-      <thead><tr><th>Mes</th><th>Fecha</th><th>No. orden</th><th>No. factura</th><th>Cliente</th><th>Proyecto</th><th>Producto</th><th class="st-num">Cantidad</th><th class="st-num">Precio unitario s/IVA</th><th class="st-num">Precio unitario c/IVA</th><th class="st-num">Subtotal</th><th class="st-num">IVA</th><th class="st-num">Total</th><th>Canal de venta</th><th>Unidad</th><th>Empleado</th><th>Manifiestos</th><th>Tiros</th><th class="gen-costo">Proveedor</th><th class="gen-costo">Concepto</th><th class="gen-costo st-num">Costo</th><th class="gen-costo">Estatus pago</th><th class="gen-costo">Vía de pago</th></tr></thead>
+      <thead><tr><th>Mes</th><th>Fecha</th><th>No. orden</th><th>No. factura</th><th>Cliente</th><th>Proyecto</th><th>Producto</th><th class="st-num">Cantidad</th><th class="st-num">Precio unitario s/IVA</th><th class="st-num">Precio unitario c/IVA</th><th class="st-num">Subtotal</th><th class="st-num">IVA</th><th class="st-num">Total</th><th>Canal de venta</th><th>Unidad</th><th>Empleado</th><th>Manifiestos</th><th>Tiros</th><th>Realizó</th><th class="gen-costo">Proveedor</th><th class="gen-costo">Concepto</th><th class="gen-costo st-num">Costo</th><th class="gen-costo">Estatus pago</th><th class="gen-costo">Vía de pago</th></tr></thead>
       <tbody id="gen-tabla"></tbody>
     </table></div>
   </section>
@@ -531,6 +537,12 @@
         </div>
       </div>
 
+      <!-- Ejecución: la orden pasa al Generador cuando se marca como realizada. -->
+      <div class="modal-section" id="seccion-ejecucion" hidden>
+        <div class="seccion-tit">✅ Ejecución del servicio</div>
+        <div id="ejecucion-orden"></div>
+      </div>
+
       <div class="modal-section" id="seccion-cobranza" data-plegable="cobranza" hidden>
         <div class="seccion-tit">💵 Cobranza de esta orden</div>
         <div id="cobranza-orden"></div>
@@ -734,6 +746,29 @@
         </div>
       </div>
       <button type="button" class="btn btn-primario btn-ancho" id="gasto-guardar">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ====== OVERLAY: SERVICIO REALIZADO (quién lo hizo y sus gastos → Cuentas por pagar) ====== -->
+<div class="overlay" id="overlay-realizado">
+  <div class="modal modal-dinero modal-realizado">
+    <div class="modal-header"><h2 id="realizado-titulo">Servicio realizado</h2><button class="close-btn" type="button">✕</button></div>
+    <div class="modal-body">
+      <p class="ayuda" id="realizado-orden"></p>
+      <div class="campo"><label for="realizado-fecha">Fecha en que se realizó</label><input id="realizado-fecha" type="date"></div>
+      <div class="campo"><span class="etiqueta-campo">¿Quién realizó el servicio?</span>
+        <div class="gc-iva-opciones" role="radiogroup" aria-label="Quién realizó el servicio">
+          <label class="gc-iva-opcion"><input type="radio" name="realizado-por" value="propio"> <span>Nosotros (equipo propio)</span></label>
+          <label class="gc-iva-opcion"><input type="radio" name="realizado-por" value="subcontratado"> <span>Lo subcontratamos (otra empresa)</span></label>
+        </div>
+      </div>
+      <p class="ayuda" id="realizado-ayuda"></p>
+      <div class="seccion-tit">Costos y gastos de este servicio</div>
+      <div id="realizado-gastos"></div>
+      <button type="button" class="btn btn-outline" id="realizado-agregar">+ Agregar gasto</button>
+      <p class="ayuda" id="realizado-resumen"></p>
+      <button type="button" class="btn btn-primario btn-ancho" id="realizado-guardar">Marcar como realizado</button>
     </div>
   </div>
 </div>

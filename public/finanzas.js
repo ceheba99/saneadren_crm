@@ -930,6 +930,126 @@ const Finanzas = (() => {
     catch (err) { toast(err.message); }
   });
 
+  // ===================== Ejecución del servicio (realizado / no realizado) =====================
+  let EJECUCION_ORDEN = null;
+  function pintarEjecucion(lead) {
+    const sec = $('seccion-ejecucion'), cont = $('ejecucion-orden');
+    if (!lead || lead.estatus !== 'ganado') { sec.hidden = true; EJECUCION_ORDEN = null; return; }
+    sec.hidden = false; EJECUCION_ORDEN = lead;
+    const botones = `<div class="btn-group"><button type="button" class="btn btn-verde" data-ejecucion="realizado">✔ Servicio realizado</button><button type="button" class="btn btn-outline" data-ejecucion="no_realizado">✖ No realizado</button></div>`;
+    if (lead.ejecucion === 'realizado') {
+      cont.innerHTML = `<p class="ejecucion-estado realizado"><b>✔ Servicio realizado</b> el ${esc(fechaTxt(lead.fecha_realizado))} · ${lead.realizado_por === 'subcontratado' ? 'Subcontratado (lo hizo otra empresa)' : 'Por nuestro equipo'}. Ya cuenta en el Generador.</p>
+        <p class="ayuda">¿Hubo otro gasto? Agrégalo en «Costos con terceros» de abajo.</p>`;
+    } else if (lead.ejecucion === 'no_realizado') {
+      cont.innerHTML = `<p class="ejecucion-estado no-realizado"><b>✖ No realizado.</b> Motivo: ${esc(lead.motivo_no_realizado || '—')}. No cuenta en el Generador. Si el cliente no pagará, pide al administrador un ajuste o cancela los pagos pendientes.</p>
+        <p class="ayuda">Si al final sí se realizó, márcalo:</p>${botones.replace('<button type="button" class="btn btn-outline" data-ejecucion="no_realizado">✖ No realizado</button>', '')}`;
+    } else {
+      const vencida = lead.fecha_servicio && lead.fecha_servicio <= hoy();
+      cont.innerHTML = `<p class="ayuda">${vencida ? '<b>Por concluir:</b> la fecha del servicio ya pasó.' : 'Programado para el ' + esc(fechaTxt(lead.fecha_servicio)) + '.'} Cuando termine, márcalo como realizado (pasa al Generador y se registran sus gastos) o como no realizado.</p>${botones}`;
+    }
+  }
+  $('ejecucion-orden').addEventListener('click', async e => {
+    const b = e.target.closest('[data-ejecucion]'); const lead = EJECUCION_ORDEN; if (!b || !lead) return;
+    if (b.dataset.ejecucion === 'realizado') return abrirRealizado(lead);
+    const motivo = await solicitarDialogo({ titulo: 'Servicio no realizado', mensaje: '¿Por qué no se realizó? Quedará en la bitácora de la orden.', aceptar: 'Marcar como no realizado', campo: { tipo: 'text', etiqueta: 'Motivo' } });
+    if (!motivo) return;
+    const r = await enviar('/leads/' + Number(lead.id) + '/ejecucion', 'POST', { estado: 'no_realizado', motivo });
+    if (r) { toast('Servicio marcado como no realizado'); await refrescarFichaOrden(lead.id); }
+  });
+  async function refrescarFichaOrden(id) { if (LEAD_ACTUAL?.id === id) await abrirFicha(id); await ServiciosTabla.refrescar(); }
+
+  // Ventana: quién lo hizo y sus gastos (cada gasto se carga en Cuentas por pagar ligado a la orden).
+  let REALIZADO = null;
+  const opcionesProveedor = sel => '<option value="">Selecciona…</option>' + PROVEEDORES.filter(p => p.activo).map(p => `<option value="${Number(p.id)}"${Number(p.id) === Number(sel) ? ' selected' : ''}>${esc(p.nombre)}</option>`).join('') + '<option value="__nuevo">+ Nuevo proveedor…</option>';
+  const opcionesCategoria = sel => Object.entries(CATEGORIAS_TXT).map(([k, n]) => `<option value="${esc(k)}"${k === sel ? ' selected' : ''}>${esc(n)}</option>`).join('');
+  const opcionesMetodo = () => METODOS_PROV.map(([k, n]) => `<option value="${k}">${esc(n)}</option>`).join('');
+  let CATEGORIAS_TXT = {};
+  function filaGasto(g = {}) {
+    const div = document.createElement('div'); div.className = 'realizado-gasto';
+    const categoriaInicial = g.categoria || 'otro';
+    div.innerHTML = `<div class="form-grid-2">
+        <div class="campo"><label>Proveedor / quién lo realizó</label><select class="rg-proveedor">${opcionesProveedor(g.proveedor_id)}</select></div>
+        <div class="campo"><label>Categoría</label><select class="rg-categoria">${opcionesCategoria(categoriaInicial)}</select></div>
+        <div class="campo"><label>Concepto</label><input class="rg-concepto" maxlength="200" value="${esc(g.concepto || '')}" placeholder="Ej. Renta de pipas"></div>
+        <div class="campo"><label>Monto con IVA (MXN)</label><input class="rg-total" type="text" inputmode="decimal" autocomplete="off" value="${esc(g.total || '')}"></div>
+      </div>
+      <label class="diseno-campo-checkbox"><input type="checkbox" class="rg-pagado"> Ya se pagó</label>
+      <div class="form-grid-2 rg-pago" hidden>
+        <div class="campo"><label>¿Cómo se pagó?</label><select class="rg-metodo">${opcionesMetodo()}</select></div>
+        <div class="campo"><label>Fecha de pago</label><input class="rg-fecha" type="date"></div>
+        <div class="campo"><label>Referencia / vía de pago</label><input class="rg-referencia" maxlength="120" placeholder="Ej. Nómina semana 40"></div>
+        <div class="campo"><label>Folio de factura (opcional)</label><input class="rg-folio" maxlength="60"></div>
+      </div>
+      <button type="button" class="btn-eliminar rg-quitar">🗑 Quitar gasto</button>`;
+    div.querySelector('.rg-fecha').value = $('realizado-fecha').value || hoy();
+    return div;
+  }
+  function resumenRealizado() {
+    const filas = [...document.querySelectorAll('#realizado-gastos .realizado-gasto')];
+    const total = filas.reduce((t, f) => t + (Number(f.querySelector('.rg-total').value.replace(/[$,\s]/g, '')) || 0), 0);
+    $('realizado-resumen').textContent = filas.length ? `${filas.length} gasto${filas.length === 1 ? '' : 's'} por ${formatoMoneda(total)}: se cargarán en Cuentas por pagar ligados a esta orden.` : 'Sin gastos: solo se marca como realizado.';
+  }
+  function ayudaRealizado() {
+    const por = document.querySelector('input[name="realizado-por"]:checked')?.value;
+    $('realizado-ayuda').textContent = por === 'subcontratado'
+      ? 'Registra lo que se le paga a la empresa que lo realizó (y cualquier otro gasto). Si ya se le pagó, marca «Ya se pagó».'
+      : por === 'propio' ? 'Si hubo gastos internos (combustible, casetas, disposición de residuos…), agrégalos; si no, déjalo sin gastos.' : '';
+    // Subcontratado: se propone el renglón del pago al tercero.
+    if (por === 'subcontratado' && !document.querySelector('#realizado-gastos .realizado-gasto')) {
+      $('realizado-gastos').append(filaGasto({ categoria: 'subcontratacion', concepto: 'Subcontratación: ' + (REALIZADO?.servicio_nombre || 'servicio') }));
+    }
+    resumenRealizado();
+  }
+  async function abrirRealizado(lead) {
+    try { await catalogosPagos(); CATEGORIAS_TXT = Object.fromEntries((await api('/finanzas/categorias').then(json)).map(c => [c.clave, c.nombre])); }
+    catch (err) { toast('No se pudo abrir: ' + err.message); return; }
+    REALIZADO = lead;
+    $('realizado-titulo').textContent = 'Servicio realizado · ' + folioOrdenServicio(lead);
+    $('realizado-orden').textContent = [lead.empresa_contacto || lead.nombre, lead.servicio_nombre, lead.equipo ? 'Unidad ' + lead.equipo : '', lead.operador ? 'Operador ' + lead.operador : ''].filter(Boolean).join(' · ');
+    $('realizado-fecha').value = lead.fecha_servicio && lead.fecha_servicio <= hoy() ? lead.fecha_servicio : hoy();
+    $('realizado-fecha').max = hoy();
+    document.querySelectorAll('input[name="realizado-por"]').forEach(r => { r.checked = false; });
+    $('realizado-gastos').innerHTML = '';
+    ayudaRealizado();
+    abrirVentana('overlay-realizado');
+  }
+  document.querySelectorAll('input[name="realizado-por"]').forEach(r => r.addEventListener('change', ayudaRealizado));
+  $('realizado-agregar').addEventListener('click', () => { $('realizado-gastos').append(filaGasto()); resumenRealizado(); });
+  $('realizado-gastos').addEventListener('input', resumenRealizado);
+  $('realizado-gastos').addEventListener('click', e => { const q = e.target.closest('.rg-quitar'); if (q) { q.closest('.realizado-gasto').remove(); resumenRealizado(); } });
+  $('realizado-gastos').addEventListener('change', async e => {
+    const fila = e.target.closest('.realizado-gasto'); if (!fila) return;
+    if (e.target.classList.contains('rg-pagado')) fila.querySelector('.rg-pago').hidden = !e.target.checked;
+    if (e.target.classList.contains('rg-proveedor')) {
+      if (e.target.value === '__nuevo') {
+        e.target.value = '';
+        const nombre = await solicitarDialogo({ titulo: 'Nuevo proveedor', mensaje: 'Se crea sin crédito (contado). Puedes completar sus datos después en Proveedores.', aceptar: 'Agregar', campo: { tipo: 'text', etiqueta: 'Nombre del proveedor o empresa' } });
+        if (!nombre) return;
+        try {
+          const p = await json(await api('/finanzas/proveedores', { method: 'POST', body: JSON.stringify({ nombre, categoria: fila.querySelector('.rg-categoria').value || 'otro', dias_credito: 0 }) }));
+          await catalogosPagos();
+          document.querySelectorAll('#realizado-gastos .rg-proveedor').forEach(s => { const v = s === e.target ? p.id : s.value; s.innerHTML = opcionesProveedor(v); });
+          toast('Proveedor agregado');
+        } catch (err) { toast('No se pudo agregar: ' + err.message); }
+      }
+    }
+  });
+  $('realizado-guardar').addEventListener('click', e => conBoton(e.currentTarget, async () => {
+    const lead = REALIZADO; if (!lead) return;
+    const por = document.querySelector('input[name="realizado-por"]:checked')?.value;
+    if (!por) { toast('Indica quién realizó el servicio'); return; }
+    const gastos = [...document.querySelectorAll('#realizado-gastos .realizado-gasto')].map(f => ({
+      proveedor_id: Number(f.querySelector('.rg-proveedor').value) || null, categoria: f.querySelector('.rg-categoria').value,
+      concepto: f.querySelector('.rg-concepto').value, total: f.querySelector('.rg-total').value.trim(),
+      ya_pagado: f.querySelector('.rg-pagado').checked, metodo: f.querySelector('.rg-metodo').value, fecha_pago: f.querySelector('.rg-fecha').value,
+      referencia: f.querySelector('.rg-referencia').value, factura_folio: f.querySelector('.rg-folio').value }));
+    const r = await enviar('/leads/' + Number(lead.id) + '/ejecucion', 'POST', { estado: 'realizado', fecha: $('realizado-fecha').value, realizado_por: por, gastos });
+    if (!r) return;
+    $('overlay-realizado').classList.remove('mostrar'); REALIZADO = null;
+    toast('Servicio realizado' + (r.gastos ? ` · ${r.gastos} gasto${r.gastos === 1 ? '' : 's'} cargado${r.gastos === 1 ? '' : 's'} en Cuentas por pagar` : ''));
+    await refrescarFichaOrden(lead.id);
+  }));
+
   // ===================== Costos con terceros en la ficha de la orden =====================
   let COSTOS_ORDEN = null;
   async function pintarCostosOrden(lead) {
@@ -954,5 +1074,5 @@ const Finanzas = (() => {
       () => pintarCostosOrden(lead));
   });
 
-  return { cargar, pintarCobranzaOrden, pintarCostosOrden, nuevoGasto, pintarInicio, abrirCobro, pintarCliente, avisoAdeudo, pintarResultados };
+  return { cargar, pintarCobranzaOrden, pintarCostosOrden, pintarEjecucion, nuevoGasto, pintarInicio, abrirCobro, pintarCliente, avisoAdeudo, pintarResultados };
 })();

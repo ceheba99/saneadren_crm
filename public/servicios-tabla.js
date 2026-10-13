@@ -42,7 +42,9 @@ const ServiciosTabla = (() => {
     if (s.estatus === 'perdido') return ['perdido', 'Cotización no aceptada'];
     if (!esOrden(s)) return ['abierto', 'Cotización abierta'];
     const hoy = new Date().toISOString().slice(0, 10);
-    return ['ganado', s.fecha_servicio && s.fecha_servicio > hoy ? 'Orden programada' : 'Orden de servicio'];
+    if (s.ejecucion === 'realizado') return ['ganado', 'Realizada'];
+    if (s.ejecucion === 'no_realizado') return ['perdido', 'No realizada'];
+    return ['abierto', s.fecha_servicio && s.fecha_servicio > hoy ? 'Orden programada' : 'Por concluir'];
   }
   function filaHTML(s, st) {
     const [clase, etiqueta] = estadoDe(s);

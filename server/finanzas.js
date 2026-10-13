@@ -21,7 +21,7 @@ const TIPOS_COBRO = ['anticipo', 'pago', 'ajuste'];
 const CATEGORIAS = {
   residuos: 'Disposición de residuos', combustible: 'Combustible', refacciones: 'Refacciones y mantenimiento',
   renta_maquinaria: 'Renta de maquinaria', nomina_eventual: 'Nómina eventual', casetas_viaticos: 'Casetas y viáticos',
-  servicios_oficina: 'Oficina y servicios', otro: 'Otro',
+  servicios_oficina: 'Oficina y servicios', subcontratacion: 'Subcontratación de servicios', otro: 'Otro',
 };
 // Quién ve qué. Ocultar botones en pantalla es solo comodidad: esto es lo que manda.
 // Todos los usuarios con sesión pueden VER las cuentas (por cobrar y por pagar). Lo que no pueden:
@@ -589,6 +589,65 @@ module.exports = function finanzas(app, db, h) {
     if (req.query.lead_id) lista = lista.filter(x => x.lead_id === Number(req.query.lead_id));
     lista.sort((a, b) => a.fecha_vencimiento.localeCompare(b.fecha_vencimiento) || a.id - b.id);
     res.json(lista);
+  }));
+
+  // ===================== Ejecución del servicio =====================
+  // Marca la orden como realizada (pasa al Generador) o no realizada. Al marcarla realizada se indica si
+  // la hizo el equipo propio o se subcontrató, y sus costos/gastos se cargan en Cuentas por pagar
+  // ligados a la orden (con su pago si ya se hizo).
+  app.post('/api/leads/:id/ejecucion', h((req, res) => {
+    if (!puedeOperar(req, res)) return;
+    const lead = db.prepare('SELECT * FROM leads WHERE id = ?').get(req.params.id);
+    if (!lead || lead.estatus !== 'ganado') return res.status(400).json({ error: 'Solo las órdenes de servicio se marcan como realizadas' });
+    const b = req.body || {}, hoy = hoyMexico();
+    const fmtFecha = f => f.split('-').reverse().join('/');
+    if (b.estado === 'no_realizado') {
+      const motivo = texto(b.motivo, 300);
+      if (!motivo || motivo.length < 5) return res.status(400).json({ error: 'Escribe por qué no se realizó (mínimo 5 caracteres)' });
+      db.transaction(() => {
+        db.prepare("UPDATE leads SET ejecucion = 'no_realizado', realizado_por = NULL, fecha_realizado = NULL, motivo_no_realizado = ?, updated_at = datetime('now','localtime'), version = version + 1 WHERE id = ?").run(motivo, lead.id);
+        bitacora(lead.id, 'Servicio marcado como NO realizado. Motivo: ' + motivo, req);
+      })();
+      return res.json({ ok: true, lead: db.prepare('SELECT * FROM leads WHERE id = ?').get(lead.id) });
+    }
+    if (b.estado !== 'realizado') return res.status(400).json({ error: 'Indica si el servicio se realizó o no' });
+    const fecha = b.fecha || hoy;
+    if (!fechaValida(fecha) || fecha > hoy) return res.status(400).json({ error: 'La fecha en que se realizó no es válida o es futura' });
+    if (!['propio', 'subcontratado'].includes(b.realizado_por)) return res.status(400).json({ error: 'Indica si lo realizamos nosotros o se subcontrató' });
+    const gastos = Array.isArray(b.gastos) ? b.gastos : [];
+    if (gastos.length > 20) return res.status(400).json({ error: 'Máximo 20 gastos por servicio' });
+    const listos = [];
+    for (const [n, g] of gastos.entries()) {
+      const ren = `Gasto ${n + 1}: `;
+      const prov = db.prepare('SELECT * FROM proveedores WHERE id = ? AND activo = 1').get(g?.proveedor_id);
+      if (!prov) return res.status(400).json({ error: ren + 'elige el proveedor (o quien realizó el servicio)' });
+      const categoria = g.categoria || prov.categoria;
+      if (!CATEGORIAS[categoria]) return res.status(400).json({ error: ren + 'categoría inválida' });
+      const concepto = texto(g.concepto, 200);
+      if (!concepto) return res.status(400).json({ error: ren + 'escribe el concepto' });
+      const total = aCentavos(g.total);
+      if (!total) return res.status(400).json({ error: ren + 'escribe el monto (mayor a 0, máximo 2 decimales)' });
+      if (g.ya_pagado && !METODOS_PROV.includes(g.metodo)) return res.status(400).json({ error: ren + 'elige cómo se pagó' });
+      const fechaPago = g.ya_pagado ? (g.fecha_pago || fecha) : null;
+      if (fechaPago && (!fechaValida(fechaPago) || fechaPago > hoy)) return res.status(400).json({ error: ren + 'la fecha de pago no es válida o es futura' });
+      listos.push({ prov, categoria, concepto, total, ya_pagado: !!g.ya_pagado, metodo: g.metodo, fechaPago, referencia: texto(g.referencia, 120), folio: texto(g.factura_folio, 60) });
+    }
+    if (b.realizado_por === 'subcontratado' && !listos.length) return res.status(400).json({ error: 'Si se subcontrató, registra lo que se le paga a quien lo realizó' });
+    db.transaction(() => {
+      db.prepare("UPDATE leads SET ejecucion = 'realizado', realizado_por = ?, fecha_realizado = ?, motivo_no_realizado = NULL, updated_at = datetime('now','localtime'), version = version + 1 WHERE id = ?")
+        .run(b.realizado_por, fecha, lead.id);
+      for (const g of listos) {
+        const info = db.prepare(`INSERT INTO cuentas_por_pagar (proveedor_id, categoria, concepto, factura_folio, fecha_documento, fecha_vencimiento, total_cent, lead_id, equipo, notas, registrado_por)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(g.prov.id, g.categoria, g.concepto, g.folio, fecha, sumarDias(fecha, g.prov.dias_credito), g.total, lead.id, lead.equipo || null,
+          'Registrado al marcar el servicio como realizado', req.usuarioSesion.id);
+        if (g.ya_pagado) db.prepare('INSERT INTO pagos_proveedor (cxp_id, fecha, monto_cent, metodo, referencia, registrado_por) VALUES (?, ?, ?, ?, ?, ?)')
+          .run(info.lastInsertRowid, g.fechaPago, g.total, g.metodo, g.referencia, req.usuarioSesion.id);
+      }
+      const suma = listos.reduce((t, g) => t + g.total, 0);
+      bitacora(lead.id, `Servicio realizado el ${fmtFecha(fecha)} por ${b.realizado_por === 'propio' ? 'nuestro equipo' : 'un tercero (subcontratado)'}.`
+        + (listos.length ? ` Gastos cargados en Cuentas por pagar: ${listos.length} por ${fmt(suma)}.` : ' Sin gastos registrados.'), req);
+    })();
+    res.json({ ok: true, gastos: listos.length, lead: db.prepare('SELECT * FROM leads WHERE id = ?').get(lead.id) });
   }));
 
   // Registrar una factura o gasto de proveedor. Con ya_pagado se crea también su pago (gasto de contado).
