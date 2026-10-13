@@ -766,18 +766,23 @@ module.exports = function finanzas(app, db, h) {
       const notas = textoMax(f.notas, LIM.notas, 'Notas', errores);
       // IVA del importe (columna opcional; vacía = "por definir", como las plantillas anteriores).
       const ivaTxt = claveNombre(f.iva);
-      const modo = !ivaTxt ? null : ivaTxt.includes('incluido') ? 'incluido' : ivaTxt.startsWith('mas iva') ? 'mas_iva' : undefined;
+      // Solo los textos de la lista (pegar en Excel se salta el desplegable): "IVA no incluido" o "8%" son error.
+      const modo = !ivaTxt ? null : ['mas iva 16%', 'mas iva 16 %', 'mas iva'].includes(ivaTxt) ? 'mas_iva'
+        : ['iva incluido 16%', 'iva incluido 16 %', 'iva incluido'].includes(ivaTxt) ? 'incluido' : undefined;
       if (modo === undefined) errores.push('IVA: elige "Más IVA 16%" o "IVA incluido 16%" (o déjalo vacío)');
       const imp = Importes.calcular([{ importe: (importe || 0) / 100 }], modo || null, modo ? Importes.TASA_DEFAULT : null);
+      if (modo && imp.total_cent > Importes.TOPE_CENT) errores.push('El total con IVA no puede pasar de $100,000,000.00');
       const total = totalFact ?? (importe ? imp.total_cent : null);
       if (pagado && total && pagado > total) errores.push('Ya pagado no puede ser mayor que el total');
       // Evita importar dos veces lo mismo (en el archivo o contra lo que ya existe).
       // Mismo cliente, servicio, fecha, importe, factura y dirección = el mismo registro. Contra lo
       // existente se compara el subtotal guardado o el total con IVA (pudo capturarse de las dos formas).
-      const llave = [tel, servicio?.id, fechaServ, importe, modo || '', folio || '', claveNombre(direccion)].join('|');
+      // La misma orden puede venir como subtotal + "Más IVA" o como total sin IVA: se comparan las dos cifras.
+      const llave = c => [tel, servicio?.id, fechaServ, c, folio || '', claveNombre(direccion)].join('|');
+      const llaves = [...new Set([imp.subtotal_cent, imp.total_cent])].map(llave);
       if (importe && servicio && fechaServ) {
-        if (vistos.has(llave)) errores.push('Fila repetida dentro del archivo');
-        vistos.add(llave);
+        if (llaves.some(k => vistos.has(k))) errores.push('Fila repetida dentro del archivo');
+        llaves.forEach(k => vistos.add(k));
         if (existente && db.prepare("SELECT 1 FROM leads WHERE cliente_id = ? AND servicio_id = ? AND fecha_servicio = ? AND estatus = 'ganado' AND (CAST(ROUND(valor * 100) AS INTEGER) = ? OR CAST(ROUND(valor * 100) AS INTEGER) + COALESCE(iva_cent, 0) = ?) AND COALESCE(factura_folio, '') = ? AND lower(trim(COALESCE(direccion, ''))) = lower(trim(?))").get(existente.id, servicio.id, fechaServ, imp.subtotal_cent, imp.total_cent, folio || '', direccion || '')) {
           errores.push('Ya existe una orden igual para este cliente (¿ya se importó?)');
         }

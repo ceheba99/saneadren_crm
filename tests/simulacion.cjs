@@ -394,6 +394,16 @@ const espera = ms => new Promise(r => setTimeout(r, ms));
   [s, j] = await pedir('POST', '/finanzas/importar/cxc?simular=1', A, { filas: [{ ...filasIva[0], importe: 1160, iva: '' }] });
   ok(/ya se importó/.test(j.errores?.[0]?.errores.join()), 'subir la misma orden con el total con IVA también se detecta como duplicada', j);
 
+  const filaBase = { telefono: '4427770003', nombre: 'Textos IVA', direccion: 'Local 2', servicio: servicios[0].nombre, importe: 1000 };
+  [s, j] = await pedir('POST', '/finanzas/importar/cxc?simular=1', A, { filas: ['IVA no incluido', 'Más IVA 8%', 'mas iva exento', 'IVA incluido 0%'].map((iva, i) => ({ ...filaBase, fila: i + 2, fecha_servicio: '2026-08-0' + (i + 1), iva })) });
+  ok(j.errores?.length === 4, 'textos de IVA fuera de la lista ("IVA no incluido", "8%"…) se marcan como error', j.errores);
+  [s, j] = await pedir('POST', '/finanzas/importar/cxc?simular=1', A, { filas: [{ ...filaBase, fila: 2, fecha_servicio: '2026-08-10', importe: 90000000, iva: 'Más IVA 16%' }] });
+  ok(j.errores?.length === 1 && /100,000,000/.test(j.errores[0].errores.join()), 'la importación respeta el tope del total con IVA', j.errores);
+  [s, j] = await pedir('POST', '/finanzas/importar/cxc?simular=1', A, { filas: [{ ...filaBase, fila: 2, fecha_servicio: '2026-08-11', importe: 1160 }, { ...filaBase, fila: 3, fecha_servicio: '2026-08-11', iva: 'Más IVA 16%' }] });
+  ok(j.errores?.length === 1 && j.errores[0].fila === 3 && /repetida/.test(j.errores[0].errores.join()), 'en el mismo archivo, $1,160 sin IVA y $1,000 + IVA son la misma orden', j.errores);
+  [s, j] = await altaIva({ partidas_json: part(3500), estatus: 'ganado', fecha_servicio: '2026-12-01', duplicado_de: ordenMas.id });
+  ok(s === 201 && j.iva_modo === 'mas_iva' && j.iva_cent === 56000, 'duplicar sin mandar el IVA (versión anterior) hereda el IVA de la orden original', j);
+
   [s, j] = await pedir('GET', '/analisis/comercial', A);
   ok(s === 200 && j.ivaPorDefinir && j.ivaPorDefinir.servicios >= 1, 'Resultados cuenta los servicios con IVA por definir', j.ivaPorDefinir);
 

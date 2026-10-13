@@ -522,13 +522,15 @@ function validarPartidas(req,res,next){
     try{items=JSON.parse(guardado?.partidas_json||'null');}catch{items=null;}
     if(!Array.isArray(items)||!items.length)return res.status(400).json({error:'Edita las partidas de la cotización para indicar su IVA'});
   }
-  let modo=req.body.iva_modo!==undefined?req.body.iva_modo:(guardado?.iva_modo??null);
+  // Al duplicar una orden sin decir el IVA (p. ej. pestaña con la versión anterior) se hereda el de la original.
+  const original=!req.params.id&&req.body.duplicado_de&&!tocaIva?db.prepare('SELECT iva_modo, iva_tasa FROM leads WHERE id = ?').get(req.body.duplicado_de):null;
+  let modo=req.body.iva_modo!==undefined?req.body.iva_modo:(guardado?.iva_modo??original?.iva_modo??null);
   if(modo==='')modo=null;
   if(modo!==null&&!Importes.MODOS.includes(modo))return res.status(400).json({error:'Indica si los importes son más IVA o con IVA incluido'});
   if(modo===null&&guardado?.iva_modo)return res.status(400).json({error:'El IVA de este registro ya está indicado; no puede volver a quedar por definir'});
   let tasa=null;
   if(modo!==null){
-    tasa=req.body.iva_tasa!==undefined&&req.body.iva_tasa!==null&&req.body.iva_tasa!==''?Number(req.body.iva_tasa):(guardado?.iva_tasa??Importes.TASA_DEFAULT);
+    tasa=req.body.iva_tasa!==undefined&&req.body.iva_tasa!==null&&req.body.iva_tasa!==''?Number(req.body.iva_tasa):(guardado?.iva_tasa??original?.iva_tasa??Importes.TASA_DEFAULT);
     if(!Importes.TASAS_PERMITIDAS.includes(tasa))return res.status(400).json({error:'Tasa de IVA no permitida (solo '+Importes.TASAS_PERMITIDAS.join(', ')+' %)'});
   }else if(req.body.iva_tasa!==undefined&&req.body.iva_tasa!==null&&req.body.iva_tasa!=='')return res.status(400).json({error:'Indica si los importes son más IVA o con IVA incluido'});
   const r=Importes.calcular(items,modo,tasa);
