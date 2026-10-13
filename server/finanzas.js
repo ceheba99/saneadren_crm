@@ -15,6 +15,8 @@ const { hoyMexico } = require('./fechas');
 const Importes = require('../public/importes.js');
 
 const METODOS = ['transferencia', 'efectivo', 'deposito', 'cheque', 'tarjeta', 'otro'];
+// A proveedores y terceros también se les paga por nómina (p. ej. "Nómina semana 40").
+const METODOS_PROV = [...METODOS, 'nomina'];
 const TIPOS_COBRO = ['anticipo', 'pago', 'ajuste'];
 const CATEGORIAS = {
   residuos: 'Disposición de residuos', combustible: 'Combustible', refacciones: 'Refacciones y mantenimiento',
@@ -522,12 +524,13 @@ module.exports = function finanzas(app, db, h) {
   // ===================== CUENTAS POR PAGAR (solo admin) =====================
   function cuentasPorPagar() {
     const hoy = hoyMexico();
-    return db.prepare(`SELECT x.*, p.nombre AS proveedor_nombre,
-        (SELECT COALESCE(SUM(monto_cent), 0) FROM pagos_proveedor g WHERE g.cxp_id = x.id AND g.cancelado = 0) AS pagado_cent
+    return db.prepare(`SELECT x.*, p.nombre AS proveedor_nombre, (SELECT created_at FROM leads l WHERE l.id = x.lead_id) AS lead_created_at,
+        (SELECT COALESCE(SUM(monto_cent), 0) FROM pagos_proveedor g WHERE g.cxp_id = x.id AND g.cancelado = 0) AS pagado_cent,
+        (SELECT fecha || '|' || metodo || '|' || COALESCE(referencia, '') FROM pagos_proveedor g WHERE g.cxp_id = x.id AND g.cancelado = 0 ORDER BY fecha DESC, id DESC LIMIT 1) AS ultimo_pago
       FROM cuentas_por_pagar x JOIN proveedores p ON p.id = x.proveedor_id WHERE x.cancelada = 0`).all()
       .map(x => {
         const saldo = x.total_cent - x.pagado_cent;
-        return { ...x, categoria_nombre: CATEGORIAS[x.categoria] || x.categoria, total: aPesos(x.total_cent), pagado: aPesos(x.pagado_cent),
+        return { ...x, orden_folio: x.lead_id ? folioOS(x.lead_id, x.lead_created_at) : null, categoria_nombre: CATEGORIAS[x.categoria] || x.categoria, total: aPesos(x.total_cent), pagado: aPesos(x.pagado_cent),
           saldo: aPesos(Math.max(saldo, 0)), vencida: saldo > 0 && x.fecha_vencimiento < hoy, dias_para_vencer: diasEntre(hoy, x.fecha_vencimiento) };
       });
   }
@@ -582,6 +585,8 @@ module.exports = function finanzas(app, db, h) {
     let lista = cuentasPorPagar();
     if (vista !== 'todas') lista = lista.filter(x => x.saldo > 0);
     if (req.query.proveedor_id) lista = lista.filter(x => x.proveedor_id === Number(req.query.proveedor_id));
+    // Costos con terceros de una orden de servicio (sección de la ficha de la orden).
+    if (req.query.lead_id) lista = lista.filter(x => x.lead_id === Number(req.query.lead_id));
     lista.sort((a, b) => a.fecha_vencimiento.localeCompare(b.fecha_vencimiento) || a.id - b.id);
     res.json(lista);
   }));
@@ -608,7 +613,10 @@ module.exports = function finanzas(app, db, h) {
       if (!l) return res.status(400).json({ error: 'La orden de servicio indicada no existe' });
       leadId = l.id;
     }
-    if (b.ya_pagado && !METODOS.includes(b.metodo)) return res.status(400).json({ error: 'Elige cómo se pagó' });
+    if (b.ya_pagado && !METODOS_PROV.includes(b.metodo)) return res.status(400).json({ error: 'Elige cómo se pagó' });
+    // Fecha en que se pagó (puede ser distinta de la del gasto); no puede ser futura.
+    const fechaPagoGasto = b.ya_pagado && b.fecha_pago ? b.fecha_pago : null;
+    if (fechaPagoGasto && (!fechaValida(fechaPagoGasto) || fechaPagoGasto > hoyMexico())) return res.status(400).json({ error: 'La fecha de pago no es válida o es futura' });
     const folioFactura = texto(b.factura_folio, 60);
     if (folioFactura && !b.forzar && db.prepare('SELECT id FROM cuentas_por_pagar WHERE proveedor_id = ? AND factura_folio = ? AND cancelada = 0').get(prov.id, folioFactura)) {
       return res.status(409).json({ error: `Ya registraste la factura ${folioFactura} de ${prov.nombre}. ¿Es otra factura?`, codigo: 'POSIBLE_DUPLICADO' });
@@ -618,7 +626,7 @@ module.exports = function finanzas(app, db, h) {
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(prov.id, categoria, concepto, texto(b.factura_folio, 60), fecha, vence, total, leadId, texto(b.equipo, 200), texto(b.notas, 1000), req.usuarioSesion.id);
       if (b.ya_pagado) {
         db.prepare('INSERT INTO pagos_proveedor (cxp_id, fecha, monto_cent, metodo, referencia, registrado_por) VALUES (?, ?, ?, ?, ?, ?)')
-          .run(info.lastInsertRowid, fecha > hoyMexico() ? hoyMexico() : fecha, total, b.metodo, texto(b.referencia, 120), req.usuarioSesion.id);
+          .run(info.lastInsertRowid, fechaPagoGasto || (fecha > hoyMexico() ? hoyMexico() : fecha), total, b.metodo, texto(b.referencia, 120), req.usuarioSesion.id);
       }
       return info.lastInsertRowid;
     })();
@@ -634,7 +642,7 @@ module.exports = function finanzas(app, db, h) {
     if (monto > Math.round(x.saldo * 100)) return res.status(400).json({ error: `El pago es mayor que el saldo (${fmt(Math.round(x.saldo * 100))})` });
     const hoy = hoyMexico(), fecha = req.body.fecha || hoy;
     if (!fechaValida(fecha) || fecha > hoy) return res.status(400).json({ error: 'La fecha del pago no es válida o es futura' });
-    if (!METODOS.includes(req.body.metodo)) return res.status(400).json({ error: 'Elige cómo se pagó' });
+    if (!METODOS_PROV.includes(req.body.metodo)) return res.status(400).json({ error: 'Elige cómo se pagó' });
     if (!req.body.forzar && db.prepare(`SELECT id FROM pagos_proveedor WHERE cxp_id = ? AND monto_cent = ? AND fecha = ? AND cancelado = 0
       AND created_at >= datetime('now','localtime','-2 minutes')`).get(x.id, monto, fecha)) {
       return res.status(409).json({ error: 'Ese mismo pago se acaba de registrar. ¿Es un pago distinto?', codigo: 'POSIBLE_DUPLICADO' });
@@ -879,7 +887,7 @@ module.exports = function finanzas(app, db, h) {
     const simular = req.query.simular === '1';
     const hoy = hoyMexico();
     const nombreCategoria = new Map(Object.entries(CATEGORIAS).flatMap(([k, n]) => [[k, k], [n.toLowerCase(), k]]));
-    const nombreMetodo = new Map(METODOS.map(m => [m, m]).concat([['depósito', 'deposito']]));
+    const nombreMetodo = new Map(METODOS_PROV.map(m => [m, m]).concat([['depósito', 'deposito'], ['nómina', 'nomina']]));
     const provPorClave = new Map(db.prepare('SELECT * FROM proveedores').all().map(x => [claveNombre(x.nombre), x]));
     const vistos = new Set();
     const resultado = filas.map((f, i) => {

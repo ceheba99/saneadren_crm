@@ -269,7 +269,7 @@
   <!-- ====== VISTA: GENERADOR (ventas por servicio de cada orden) ====== -->
   <section class="vista" id="vista-generador">
     <div class="vista-encabezado">
-      <div><h2>Generador</h2><p class="ayuda">Ventas de las órdenes de servicio, un renglón por cada servicio. Toca un renglón para abrir su orden.</p></div>
+      <div><h2>Generador</h2><p class="ayuda">Ventas de las órdenes de servicio, un renglón por cada servicio. Las columnas en gris son el costo con terceros (gastos ligados a la orden en Cuentas por pagar). Toca un renglón para abrir su orden.</p></div>
       <button type="button" class="btn btn-outline solo-admin" id="gen-exportar">📥 Exportar a Excel</button>
     </div>
     <div class="filtros">
@@ -281,7 +281,7 @@
     </div>
     <p class="gen-resumen" id="gen-resumen" role="status"></p>
     <div class="tabla-scroll"><table class="tabla-resumen tabla-generador">
-      <thead><tr><th>Mes</th><th>Fecha</th><th>No. orden</th><th>No. factura</th><th>Producto</th><th class="st-num">Precio unitario c/IVA</th><th class="st-num">Cantidad</th><th class="st-num">Precio unitario s/IVA</th><th class="st-num">Subtotal</th><th class="st-num">IVA</th><th class="st-num">Total</th><th>Canal de venta</th><th>Cliente</th><th>Proyecto</th><th>Unidad</th><th>Empleado</th></tr></thead>
+      <thead><tr><th>Mes</th><th>Fecha</th><th>No. orden</th><th>No. factura</th><th>Cliente</th><th>Proyecto</th><th>Producto</th><th class="st-num">Cantidad</th><th class="st-num">Precio unitario s/IVA</th><th class="st-num">Precio unitario c/IVA</th><th class="st-num">Subtotal</th><th class="st-num">IVA</th><th class="st-num">Total</th><th>Canal de venta</th><th>Unidad</th><th>Empleado</th><th>Manifiestos</th><th>Tiros</th><th class="gen-costo">Proveedor</th><th class="gen-costo">Concepto</th><th class="gen-costo st-num">Costo</th><th class="gen-costo">Estatus pago</th><th class="gen-costo">Vía de pago</th></tr></thead>
       <tbody id="gen-tabla"></tbody>
     </table></div>
   </section>
@@ -507,6 +507,8 @@
           <div class="campo-modal" id="wrap-vigencia-hasta"><label>Vigencia hasta</label><input type="date" id="ed-vigencia-hasta"></div>
           <div class="campo-modal solo-orden"><label for="ed-equipo">Equipo</label><input type="text" id="ed-equipo" maxlength="200" placeholder="Ej. E-37-04"></div>
           <div class="campo-modal solo-orden"><label for="ed-operador">Operador(es)</label><input type="text" id="ed-operador" maxlength="300" placeholder="Nombre de quien ejecuta el servicio"></div>
+          <div class="campo-modal solo-orden"><label for="ed-manifiestos">Manifiestos</label><input type="text" id="ed-manifiestos" maxlength="200" placeholder="Folio(s) de manifiesto"></div>
+          <div class="campo-modal solo-orden"><label for="ed-tiros">Tiros</label><input type="text" id="ed-tiros" maxlength="60" placeholder="Ej. 2"></div>
           <div class="campo-modal solo-orden"><label for="ed-proyecto">Proyecto</label><input type="text" id="ed-proyecto" maxlength="200" placeholder="Ej. Mantenimiento planta 2026"></div>
           <div class="campo-modal full solo-orden"><label for="ed-observaciones">Observaciones de la orden</label><textarea id="ed-observaciones" rows="2" maxlength="3000" placeholder="Se imprimen en la orden de servicio; también puedes capturar lo que anotó el operador"></textarea></div>
         </div>
@@ -532,6 +534,14 @@
       <div class="modal-section" id="seccion-cobranza" data-plegable="cobranza" hidden>
         <div class="seccion-tit">💵 Cobranza de esta orden</div>
         <div id="cobranza-orden"></div>
+      </div>
+
+      <!-- Servicios que realiza un tercero: su costo es un gasto de Cuentas por pagar ligado a esta orden. -->
+      <div class="modal-section" id="seccion-costos" data-plegable="costos" hidden>
+        <div class="seccion-tit">🚚 Costos con terceros de esta orden</div>
+        <p class="ayuda">Si otra empresa realizó el servicio (p. ej. renta de pipas), registra aquí lo que se le paga. Queda en Cuentas por pagar ligado a esta orden y se ve en el Generador.</p>
+        <div id="costos-orden"></div>
+        <button type="button" class="btn btn-outline" id="btn-costo-tercero">+ Registrar costo de un tercero</button>
       </div>
 
       <!-- Notas con fecha y la bitácora van juntas y dicen de qué registro son (no del contacto ni de sus otros servicios). -->
@@ -711,7 +721,13 @@
         <div class="campo"><label for="gasto-equipo">Equipo</label><input id="gasto-equipo" maxlength="200" placeholder="Ej. E-37-04"></div>
       </details>
       <label class="diseno-campo-checkbox"><input type="checkbox" id="gasto-pagado"> Ya lo pagué (gasto de contado)</label>
-      <div class="campo" id="gasto-metodo-wrap" hidden><span class="etiqueta-campo">¿Cómo se pagó?</span><div class="metodos" id="gasto-metodos"></div></div>
+      <div id="gasto-metodo-wrap" hidden>
+        <div class="campo"><span class="etiqueta-campo">¿Cómo se pagó?</span><div class="metodos" id="gasto-metodos"></div></div>
+        <div class="form-grid-2">
+          <div class="campo"><label for="gasto-fecha-pago">Fecha de pago</label><input id="gasto-fecha-pago" type="date"></div>
+          <div class="campo"><label for="gasto-referencia">Referencia / vía de pago</label><input id="gasto-referencia" maxlength="120" placeholder="Ej. Nómina semana 40"></div>
+        </div>
+      </div>
       <button type="button" class="btn btn-primario btn-ancho" id="gasto-guardar">Guardar</button>
     </div>
   </div>
@@ -778,6 +794,7 @@
       <div id="sn-datos-orden" hidden>
         <div class="campo"><label for="sn-equipo">Equipo</label><input type="text" id="sn-equipo" maxlength="200" placeholder="Ej. E-37-04"></div>
         <div class="campo"><label for="sn-operador">Operador(es)</label><input type="text" id="sn-operador" maxlength="300" placeholder="Nombre de quien ejecuta el servicio"></div>
+        <div class="form-grid-2"><div class="campo"><label for="sn-manifiestos">Manifiestos (opcional)</label><input type="text" id="sn-manifiestos" maxlength="200" placeholder="Folio(s) de manifiesto"></div><div class="campo"><label for="sn-tiros">Tiros (opcional)</label><input type="text" id="sn-tiros" maxlength="60" placeholder="Ej. 2"></div></div>
         <div class="campo"><label for="sn-proyecto">Proyecto (opcional)</label><input type="text" id="sn-proyecto" maxlength="200" placeholder="Ej. Mantenimiento planta 2026"></div>
         <div class="campo"><label for="sn-observaciones">Observaciones de la orden (opcional)</label><textarea id="sn-observaciones" rows="2" maxlength="3000"></textarea></div>
       </div>
