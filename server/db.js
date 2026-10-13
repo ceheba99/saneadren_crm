@@ -260,7 +260,8 @@ if(!db.prepare('PRAGMA table_info(leads)').all().some(c=>c.name==='origen')){
 if(!db.prepare('PRAGMA table_info(leads)').all().some(c=>c.name==='duplicado_de'))db.exec('ALTER TABLE leads ADD COLUMN duplicado_de INTEGER REFERENCES leads(id) ON DELETE SET NULL');
 // Datos propios de la orden de servicio (los mismos del formato en papel): unidad/equipo
 // que se envía, operador(es) que lo ejecutan, observaciones del trabajo realizado, proyecto, manifiestos y tiros.
-for(const c of ['equipo','operador','observaciones','proyecto','manifiestos','tiros'])if(!db.prepare('PRAGMA table_info(leads)').all().some(x=>x.name===c))db.exec(`ALTER TABLE leads ADD COLUMN ${c} TEXT`);
+// notas_cotizacion: notas y condiciones que se imprimen en la cotización (además de los servicios).
+for(const c of ['equipo','operador','observaciones','proyecto','manifiestos','tiros','notas_cotizacion'])if(!db.prepare('PRAGMA table_info(leads)').all().some(x=>x.name===c))db.exec(`ALTER TABLE leads ADD COLUMN ${c} TEXT`);
 // Ejecución del servicio: una orden pasa al Generador cuando se marca como realizada.
 // ejecucion: NULL (por concluir) | 'realizado' | 'no_realizado'; realizado_por: 'propio' | 'subcontratado'.
 for(const c of ['ejecucion','realizado_por','fecha_realizado','motivo_no_realizado'])if(!db.prepare('PRAGMA table_info(leads)').all().some(x=>x.name===c))db.exec(`ALTER TABLE leads ADD COLUMN ${c} TEXT`);

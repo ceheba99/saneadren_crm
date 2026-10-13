@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Saneadren · Cotizaciones y Servicios</title>
-<link rel="stylesheet" href="styles.css?v=cal4">
+<link rel="stylesheet" href="styles.css?v=cal5">
 <link rel="stylesheet" href="servicios-tabla.css">
 <link rel="stylesheet" href="flujo.css">
 </head>
@@ -892,6 +892,11 @@
     <tr id="gc-fila-iva"><th id="gc-etiqueta-iva">IVA 16%</th><td id="gc-iva-monto">$0.00</td></tr>
     <tr class="gc-fila-total"><th id="gc-etiqueta-total">Total</th><td><b id="gc-total">$0.00</b></td></tr>
   </table>
+  <div class="campo gc-notas" id="gc-notas-campo">
+    <label for="gc-notas">Notas y condiciones (opcional)</label>
+    <textarea id="gc-notas" rows="4" maxlength="3000" placeholder="Ej. Forma de pago: 50 % de anticipo. Incluye: retiro de lodos y limpieza del área. No incluye: obra civil. Horario: lunes a sábado de 8 a 18 h."></textarea>
+    <p class="ayuda">Se imprime en la cotización (PDF y Word) debajo de los servicios: condiciones, qué incluye o no, forma de pago o lo que pida el cliente.</p>
+  </div>
 </div>
 <!-- Única barra para guardar: solo "Guardar" y "Guardar y descargar" (y, en una cotización abierta,
      "Convertir en orden de servicio", que es otra acción). Se coloca al final de la ventana o de la ficha. -->
@@ -915,14 +920,14 @@
 
 
 <!-- ?v= obliga a los navegadores (sobre todo celulares) a tomar la versión nueva tras publicar. -->
-<script src="ui.js?v=cal4"></script>
-<script src="importes.js?v=cal4"></script>
-<script src="servicios-tabla.js?v=cal4"></script>
-<script src="flujo.js?v=cal4"></script>
-<script src="cuentas.js?v=cal4"></script>
-<script src="finanzas.js?v=cal4"></script>
-<script src="calendario.js?v=cal4"></script>
-<script src="app.js?v=cal4"></script>
-<script src="prospeccion.js?v=cal4"></script>
+<script src="ui.js?v=cal5"></script>
+<script src="importes.js?v=cal5"></script>
+<script src="servicios-tabla.js?v=cal5"></script>
+<script src="flujo.js?v=cal5"></script>
+<script src="cuentas.js?v=cal5"></script>
+<script src="finanzas.js?v=cal5"></script>
+<script src="calendario.js?v=cal5"></script>
+<script src="app.js?v=cal5"></script>
+<script src="prospeccion.js?v=cal5"></script>
 </body>
 </html>

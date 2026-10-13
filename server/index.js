@@ -553,7 +553,7 @@ function validarPartidas(req,res,next){
   next();
 }
 // Equipo / operador / observaciones de la orden de servicio: texto libre con tope de longitud.
-const LIMITES_ORDEN = { equipo: 200, operador: 300, observaciones: 3000, proyecto: 200, manifiestos: 200, tiros: 60 };
+const LIMITES_ORDEN = { equipo: 200, operador: 300, observaciones: 3000, proyecto: 200, manifiestos: 200, tiros: 60, notas_cotizacion: 3000 };
 function validarDatosOrden(body) {
   for (const [campo, max] of Object.entries(LIMITES_ORDEN)) {
     if (body[campo] === undefined || body[campo] === null) continue;
@@ -662,6 +662,7 @@ app.post('/api/leads', validarPartidas, validarRegistro, h((req, res) => {
 
   if(req.body.partidas_json!==undefined)db.prepare('UPDATE leads SET partidas_json = ?, iva_modo = ?, iva_tasa = ?, iva_cent = ? WHERE id = ?').run(req.body.partidas_json,req.body.iva_modo??null,req.body.iva_tasa??null,req.body.iva_cent??null,info.lastInsertRowid);
   db.prepare('UPDATE leads SET incluye_vigencia = ?, vigencia_hasta = ? WHERE id = ?').run(incluyeVigencia, vigenciaHasta, info.lastInsertRowid);
+  db.prepare('UPDATE leads SET notas_cotizacion = ? WHERE id = ?').run(textoOrden(req.body.notas_cotizacion), info.lastInsertRowid);
   db.prepare('UPDATE leads SET equipo = ?, operador = ?, observaciones = ?, proyecto = ?, manifiestos = ?, tiros = ? WHERE id = ?').run(textoOrden(req.body.equipo), textoOrden(req.body.operador), textoOrden(req.body.observaciones), textoOrden(req.body.proyecto), textoOrden(req.body.manifiestos), textoOrden(req.body.tiros), info.lastInsertRowid);
   if(req.body.establecimiento_id)db.prepare('UPDATE leads SET establecimiento_id=? WHERE id=?').run(req.body.establecimiento_id,info.lastInsertRowid);
   // Crear una cotización nunca modifica los datos maestros del contacto.
@@ -758,8 +759,8 @@ app.put('/api/leads/:id', validarPartidas, validarRegistro, h((req, res) => {
 
   const errorOrden = validarDatosOrden(req.body);
   if (errorOrden) return res.status(400).json({ error: errorOrden });
-  ['equipo', 'operador', 'observaciones', 'proyecto', 'manifiestos', 'tiros'].forEach(c => { if (req.body[c] !== undefined) req.body[c] = textoOrden(req.body[c]); });
-  const campos = ['equipo', 'operador', 'observaciones', 'proyecto', 'manifiestos', 'tiros', 'partidas_json', 'iva_modo', 'iva_tasa', 'iva_cent','direccion', 'canal_id', 'servicio_id', 'responsable_id', 'etapa', 'estatus', 'valor', 'fecha_servicio', 'notas_iniciales', 'urgente', 'encuesta_calificacion', 'encuesta_comentario', 'fecha_cotizacion', 'incluye_vigencia', 'vigencia_hasta'];
+  ['equipo', 'operador', 'observaciones', 'proyecto', 'manifiestos', 'tiros', 'notas_cotizacion'].forEach(c => { if (req.body[c] !== undefined) req.body[c] = textoOrden(req.body[c]); });
+  const campos = ['equipo', 'operador', 'observaciones', 'proyecto', 'manifiestos', 'tiros', 'partidas_json', 'iva_modo', 'iva_tasa', 'iva_cent','direccion', 'canal_id', 'servicio_id', 'responsable_id', 'etapa', 'estatus', 'valor', 'fecha_servicio', 'notas_iniciales', 'urgente', 'encuesta_calificacion', 'encuesta_comentario', 'fecha_cotizacion', 'incluye_vigencia', 'vigencia_hasta', 'notas_cotizacion'];
   const set = [];
   const params = [];
   campos.forEach(c => {
