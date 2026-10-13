@@ -259,6 +259,9 @@ function abrirServicioNuevo(modo, prefill) {
   document.getElementById('sn-vigencia').hidden = esDirecto;
   document.getElementById('sn-incluye-vigencia').checked = true;
   document.getElementById('sn-wrap-vigencia').hidden = false;
+  // Fecha de la cotización: hoy por defecto (se puede poner una anterior, nunca futura).
+  document.getElementById('sn-fecha-cotizacion').value = hoyISO();
+  document.getElementById('sn-fecha-cotizacion').max = hoyISO();
   document.getElementById('sn-vigencia-hasta').min = hoyISO();
   document.getElementById('sn-vigencia-hasta').value = sumarDiasISO(hoyISO(), EMPRESA_COTIZACION.vigenciaDias);
   document.getElementById('sn-datos-orden').hidden = !esDirecto;
@@ -299,9 +302,11 @@ async function guardarServicioNuevo(descargar=false) {
   const esDirecto = MODO_SERVICIO_NUEVO === 'directo' || MODO_SERVICIO_NUEVO === 'convertir';
   if(esDirecto && !document.getElementById('sn-fecha').value){toast('Indica la fecha acordada del servicio');document.getElementById('sn-fecha').focus();return;}
   if(CONVERTIR_ID && FECHA_MIN_SERVICIO && document.getElementById('sn-fecha').value < FECHA_MIN_SERVICIO){toast('La fecha del servicio no puede ser anterior a la cotización ('+FECHA_MIN_SERVICIO.split('-').reverse().join('/')+')');document.getElementById('sn-fecha').focus();return;}
+  const fechaCotizacion = document.getElementById('sn-fecha-cotizacion').value;
+  if (!esDirecto && (!fechaCotizacion || fechaCotizacion > hoyISO())) { toast('Indica la fecha de la cotización (hoy o una anterior)'); document.getElementById('sn-fecha-cotizacion').focus(); return; }
   const conVigencia = !esDirecto && document.getElementById('sn-incluye-vigencia').checked;
   const vigenciaHasta = document.getElementById('sn-vigencia-hasta').value;
-  if (conVigencia && (!vigenciaHasta || vigenciaHasta < hoyISO())) { toast('Indica hasta qué fecha es válida la cotización (hoy o después), o desmarca la vigencia'); document.getElementById('sn-vigencia-hasta').focus(); return; }
+  if (conVigencia && (!vigenciaHasta || vigenciaHasta < fechaCotizacion)) { toast('La vigencia debe ser igual o posterior a la fecha de la cotización, o desmarca la vigencia'); document.getElementById('sn-vigencia-hasta').focus(); return; }
   const valorRaw = document.getElementById('sn-valor').value;
   if(valorRaw!=='' && (!Number.isFinite(Number(valorRaw)) || Number(valorRaw)<0)){toast('El importe debe ser mayor o igual a cero');return;}
   if (esDirecto && valorRaw === '') {
@@ -331,6 +336,7 @@ async function guardarServicioNuevo(descargar=false) {
     proyecto: esDirecto ? document.getElementById('sn-proyecto').value.trim() : null,
     manifiestos: esDirecto ? document.getElementById('sn-manifiestos').value.trim() : null,
     tiros: esDirecto ? document.getElementById('sn-tiros').value.trim() : null,
+    fecha_cotizacion: esDirecto ? undefined : fechaCotizacion,
     incluye_vigencia: esDirecto ? undefined : conVigencia,
     notas_cotizacion: esDirecto ? null : document.getElementById('gc-notas').value.trim(),
     vigencia_hasta: conVigencia ? vigenciaHasta : null,
@@ -376,6 +382,13 @@ async function guardarServicioNuevo(descargar=false) {
 }
 on('btn-guardar-servicio-nuevo','click',()=>guardarServicioNuevo());
 on('sn-incluye-vigencia', 'change', e => { document.getElementById('sn-wrap-vigencia').hidden = !e.target.checked; });
+// Al cambiar la fecha de la cotización, la vigencia se recorre (15 días después) si quedó antes.
+on('sn-fecha-cotizacion', 'change', e => {
+  const f = e.target.value, vig = document.getElementById('sn-vigencia-hasta');
+  if (!f) return;
+  vig.min = f;
+  if (!vig.value || vig.value < f) vig.value = sumarDiasISO(f, EMPRESA_COTIZACION.vigenciaDias);
+});
 // Cerrar la ventana de crear sin guardar también regresa a la orden de la que se partió.
 document.querySelector('#overlay-servicio-nuevo .close-btn').addEventListener('click', () => setTimeout(regresarAFicha, 0));
 on('btn-barra-guardar','click',()=>EDITOR_MODO==='nuevo'?guardarServicioNuevo():document.getElementById('btn-guardar-ficha').click());

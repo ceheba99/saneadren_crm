@@ -354,14 +354,16 @@ const espera = ms => new Promise(r => setTimeout(r, ms));
   // Una cotización nueva entra al Pipeline en "Cotización enviada", no en "Recolección de datos".
   ok(cotNotas.etapa === 2, 'la cotización recién creada queda en "Cotización enviada" (etapa 2)', cotNotas.etapa);
   // Convertir en orden: la fecha del servicio no puede ser anterior a la cotización.
-  [s, j] = await altaIva({ partidas_json: part(1200), iva_modo: 'mas_iva', fecha_cotizacion: '2026-10-15' });
+  [s, j] = await altaIva({ partidas_json: part(1200), iva_modo: 'mas_iva', fecha_cotizacion: '2026-10-05' });
   const cotFecha = j;
-  ok(s === 201 && j.fecha_cotizacion === '2026-10-15', 'cotización con fecha 15/10/2026', j);
-  [s, j] = await pedir('PUT', '/leads/' + cotFecha.id, L, { version: cotFecha.version, estatus: 'ganado', fecha_servicio: '2026-10-10' });
-  ok(s === 400 && /anterior a la fecha de la cotización \(15\/10\/2026\)/.test(j.error), 'no se convierte en orden con fecha de servicio anterior a la cotización', j);
-  [s, j] = await pedir('PUT', '/leads/' + cotFecha.id, L, { version: cotFecha.version, estatus: 'ganado', fecha_servicio: '2026-10-15' });
+  ok(s === 201 && j.fecha_cotizacion === '2026-10-05', 'cotización con fecha 05/10/2026', j);
+  [s, j] = await pedir('PUT', '/leads/' + cotFecha.id, L, { version: cotFecha.version, estatus: 'ganado', fecha_servicio: '2026-10-01' });
+  ok(s === 400 && /anterior a la fecha de la cotización \(05\/10\/2026\)/.test(j.error), 'no se convierte en orden con fecha de servicio anterior a la cotización', j);
+  [s, j] = await pedir('PUT', '/leads/' + cotFecha.id, L, { version: cotFecha.version, estatus: 'ganado', fecha_servicio: '2026-10-05' });
   ok(s === 200 && j.estatus === 'ganado' && j.etapa === 4, 'sí se convierte con fecha igual o posterior a la cotización', j);
-  [s, j] = await pedir('PUT', '/leads/' + cotFecha.id, L, { version: j.version, fecha_servicio: '2026-10-01' });
+  [s, j] = await pedir('PUT', '/leads/' + cotFecha.id, L, { version: j.version, fecha_servicio: '2026-09-30' });
+  [s, j] = await altaIva({ partidas_json: part(1200), iva_modo: 'mas_iva', fecha_cotizacion: '2099-01-01' });
+  ok(s === 400 && /futura/.test(j.error), 'la fecha de la cotización no puede ser futura', j);
   ok(s === 400, 'tampoco se puede mover después la fecha de la orden antes de la cotización', j);
   // Vigencia desde la ventana de crear cotización.
   [s, j] = await altaIva({ partidas_json: part(1800), iva_modo: 'mas_iva', incluye_vigencia: true, vigencia_hasta: '2099-12-31' });

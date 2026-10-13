@@ -567,6 +567,8 @@ app.post('/api/leads', validarPartidas, validarRegistro, h((req, res) => {
   let { telefono, nombre, empresa_contacto, direccion } = req.body;
   const { cliente_id, canal_id, servicio_id, notas_iniciales, responsable_id, forzar_duplicado, valor, fecha_servicio, correo, giro, urgente } = req.body;
   const fechaCotizacionFinal = req.body.fecha_cotizacion || hoyMexico();
+  if (req.body.fecha_cotizacion && (!/^\d{4}-\d{2}-\d{2}$/.test(fechaCotizacionFinal) || Number.isNaN(Date.parse(fechaCotizacionFinal + 'T00:00:00Z')) || fechaCotizacionFinal > hoyMexico()))
+    return res.status(400).json({ error: 'La fecha de la cotización no es válida o es futura' });
   const creado_por = req.usuarioSesion.nombre; // nunca se confía en el valor que mande el navegador
   if (!validarCorreo(correo)) return res.status(400).json({ error: 'El correo electrónico no es válido' });
   if (giro && !tipoClienteValido(giro)) return res.status(400).json({ error: 'Giro inválido' });
