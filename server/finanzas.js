@@ -768,9 +768,10 @@ module.exports = function finanzas(app, db, h) {
       const ivaTxt = claveNombre(f.iva);
       // Solo los textos de la lista (pegar en Excel se salta el desplegable): "IVA no incluido" o "8%" son error.
       const modo = !ivaTxt ? null : ['mas iva 16%', 'mas iva 16 %', 'mas iva'].includes(ivaTxt) ? 'mas_iva'
-        : ['iva incluido 16%', 'iva incluido 16 %', 'iva incluido'].includes(ivaTxt) ? 'incluido' : undefined;
-      if (modo === undefined) errores.push('IVA: elige "Más IVA 16%" o "IVA incluido 16%" (o déjalo vacío)');
-      const imp = Importes.calcular([{ importe: (importe || 0) / 100 }], modo || null, modo ? Importes.TASA_DEFAULT : null);
+        : ['iva incluido 16%', 'iva incluido 16 %', 'iva incluido'].includes(ivaTxt) ? 'incluido'
+        : ['sin iva', 'sin iva 0%', 'sin iva 0 %'].includes(ivaTxt) ? 'sin_iva' : undefined;
+      if (modo === undefined) errores.push('IVA: elige "Más IVA 16%", "IVA incluido 16%" o "Sin IVA" (o déjalo vacío)');
+      const imp = Importes.calcular([{ importe: (importe || 0) / 100 }], modo || null, Importes.tasaDe(modo || null));
       if (modo && imp.total_cent > Importes.TOPE_CENT) errores.push('El total con IVA no puede pasar de $100,000,000.00');
       const total = totalFact ?? (importe ? imp.total_cent : null);
       if (pagado && total && pagado > total) errores.push('Ya pagado no puede ser mayor que el total');
@@ -813,7 +814,7 @@ module.exports = function finanzas(app, db, h) {
         const partidas = JSON.stringify([{ servicio: d.servicio.nombre, leyenda: d.descripcion || '', importe: d.importe / 100 }]);
         const leadId = insLead.run(cli.id, cli.telefono, cli.telefono_normalizado, cli.nombre, cli.empresa_contacto, d.direccion, d.servicio.id, req.usuarioSesion.id,
           d.notas, req.usuarioSesion.nombre, d.imp.subtotal_cent / 100, d.fechaServ, partidas, d.dias ?? cli.dias_credito ?? null, d.folio, d.fechaFact, d.totalFact,
-          d.modo, d.modo ? Importes.TASA_DEFAULT : null, d.imp.iva_cent).lastInsertRowid;
+          d.modo, Importes.tasaDe(d.modo), d.imp.iva_cent).lastInsertRowid;
         if (d.pagado) insCobro.run(leadId, d.fechaServ <= hoy ? d.fechaServ : hoy, d.pagado, d.fechaServ > hoy ? 'anticipo' : 'pago', req.usuarioSesion.id, req.usuarioSesion.id);
         bitacora(leadId, 'Orden importada desde la plantilla de Excel de cuentas por cobrar.' + (d.pagado ? ` Ya pagado: ${fmt(d.pagado)}.` : ''), req);
       }

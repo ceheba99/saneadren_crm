@@ -337,6 +337,11 @@ const espera = ms => new Promise(r => setTimeout(r, ms));
   c = await cuenta(ordenInc.id);
   ok(s === 201 && j.valor === 4310.34 && j.iva_cent === 68966 && c.total === 5000, 'IVA incluido: $5,000 = $4,310.34 + $689.66', { j, c });
 
+  [s, j] = await altaIva({ partidas_json: part(1000), iva_modo: 'sin_iva', iva_tasa: 16, estatus: 'ganado', fecha_servicio: '2026-11-25' });
+  const ordenSinIva = j;
+  ok(s === 201 && j.valor === 1000 && j.iva_cent === 0 && j.iva_tasa === 0 && (await cuenta(j.id)).total === 1000, 'sin IVA: $1,000 se cobran $1,000 (tasa 0)', j);
+  [s, j] = await pedir('PUT', '/leads/' + ordenSinIva.id, A, { version: ordenSinIva.version, iva_modo: 'mas_iva' });
+  ok(s === 200 && j.iva_tasa === 16 && (await cuenta(ordenSinIva.id)).total === 1160, 'pasar una orden de sin IVA a más IVA usa el 16 %', j);
   [s] = await altaIva({ partidas_json: part(1000), iva_modo: 'mas_iva', iva_tasa: 8 }); ok(s === 400, 'tasa de 8 % no permitida');
   [s] = await altaIva({ partidas_json: part(1000), iva_modo: 'raro' }); ok(s === 400, 'modo de IVA inválido rechazado');
   [s] = await altaIva({ iva_modo: 'mas_iva', valor: 1000 }); ok(s === 400, 'IVA sin partidas rechazado');
@@ -384,13 +389,14 @@ const espera = ms => new Promise(r => setTimeout(r, ms));
     { fila: 2, telefono: '4427770002', nombre: 'Plaza IVA', direccion: 'Local 1', servicio: servicios[0].nombre, fecha_servicio: '2026-09-05', importe: 1000, iva: 'Más IVA 16%' },
     { fila: 3, telefono: '4427770002', direccion: 'Local 1', servicio: servicios[0].nombre, fecha_servicio: '2026-09-06', importe: 1000, iva: '' },
     { fila: 4, telefono: '4427770002', direccion: 'Local 1', servicio: servicios[0].nombre, fecha_servicio: '2026-09-07', importe: 1000, iva: 'IVA incluido 16%' },
+    { fila: 5, telefono: '4427770002', direccion: 'Local 1', servicio: servicios[0].nombre, fecha_servicio: '2026-09-09', importe: 1000, iva: 'Sin IVA' },
   ];
-  [s, j] = await pedir('POST', '/finanzas/importar/cxc?simular=1', A, { filas: [...filasIva, { fila: 5, telefono: '4427770002', direccion: 'Local 1', servicio: servicios[0].nombre, fecha_servicio: '2026-09-08', importe: 1000, iva: 'Sin IVA' }] });
-  ok(j.errores.length === 1 && j.errores[0].fila === 5 && /IVA/.test(j.errores[0].errores.join()), 'un valor de IVA no válido se marca en su renglón', j.errores);
+  [s, j] = await pedir('POST', '/finanzas/importar/cxc?simular=1', A, { filas: [...filasIva, { fila: 6, telefono: '4427770002', direccion: 'Local 1', servicio: servicios[0].nombre, fecha_servicio: '2026-09-08', importe: 1000, iva: 'Exento' }] });
+  ok(j.errores.length === 1 && j.errores[0].fila === 6 && /IVA/.test(j.errores[0].errores.join()), 'un valor de IVA no válido se marca en su renglón', j.errores);
   [s, j] = await pedir('POST', '/finanzas/importar/cxc', A, { filas: filasIva });
-  ok(s === 201 && j.importadas === 3 && j.resumen.map(x => x.total).join() === '1160,1000,1000', 'importación con IVA: totales $1,160 / $1,000 / $1,000', j);
+  ok(s === 201 && j.importadas === 4 && j.resumen.map(x => x.total).join() === '1160,1000,1000,1000', 'importación con IVA: totales $1,160 / $1,000 / $1,000 / $1,000 (sin IVA)', j);
   [s, j] = await pedir('GET', '/finanzas/cartera?filtro=todas&q=Plaza IVA', A);
-  ok(j.length === 3 && j.map(x => x.iva_modo || '').sort().join() === ',incluido,mas_iva', 'las órdenes importadas guardan su IVA', j);
+  ok(j.length === 4 && j.map(x => x.iva_modo || '').sort().join() === ',incluido,mas_iva,sin_iva', 'las órdenes importadas guardan su IVA', j);
   [s, j] = await pedir('POST', '/finanzas/importar/cxc?simular=1', A, { filas: [{ ...filasIva[0], importe: 1160, iva: '' }] });
   ok(/ya se importó/.test(j.errores?.[0]?.errores.join()), 'subir la misma orden con el total con IVA también se detecta como duplicada', j);
 

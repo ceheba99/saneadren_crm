@@ -20,6 +20,13 @@ test('IVA incluido: el total es lo capturado y se desglosa', () => {
   assert.deepStrictEqual(c([100.01], 'incluido'), { subtotal_cent: 8622, iva_cent: 1379, total_cent: 10001 });
 });
 
+test('sin IVA: el cliente paga exactamente lo capturado', () => {
+  assert.deepStrictEqual(c([1000], 'sin_iva'), { subtotal_cent: 100000, iva_cent: 0, total_cent: 100000 });
+  assert.deepStrictEqual(I.filasTotales(c([1000], 'sin_iva'), 'sin_iva', 0), [['Total (sin IVA)', 100000]]);
+  assert.strictEqual(I.tasaDe('sin_iva', 16), 0);
+  assert.strictEqual(I.tasaDe('mas_iva', 0), 16);
+});
+
 test('IVA por definir (registros anteriores): total = suma, sin IVA', () => {
   assert.deepStrictEqual(c([3500, 0.5], null), { subtotal_cent: 350050, iva_cent: null, total_cent: 350050 });
 });

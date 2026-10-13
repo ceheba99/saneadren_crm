@@ -8,14 +8,15 @@
 - **Cotización vs. orden de servicio**:
   - *Cotización* (folio `COT-`): se crea desde "Nueva cotización"; se exporta como propuesta, se descarta o se convierte en orden con "Generar orden de servicio". Las cotizaciones **no** se duplican.
   - *Orden de servicio* (folio `OS-`): sale de una cotización aceptada, o se registra directo cuando el cliente ya confirmó. Solo las órdenes se pueden **duplicar** (servicio recurrente): se copian partidas, importe, ubicación y notas, y solo se pide la nueva fecha. Una orden directa o duplicada no muestra folio de cotización ni se puede "reabrir" como cotización.
-- **IVA (16 %)**: en el contenido de cada cotización u orden está la casilla **"IVA incluido"**.
-  - *Sin marcar* (así empieza todo registro nuevo): los importes son sin IVA y se suma el 16 %. Ejemplo: 1,500 → IVA 240 → total 1,740.
-  - *Marcada*: los importes ya traen IVA y el sistema lo desglosa. Ejemplo: 1,160 → subtotal 1,000 + IVA 160.
+- **IVA**: en el contenido de cada cotización u orden se elige una de tres opciones: **Más IVA 16 %**, **IVA incluido 16 %** o **Sin IVA**.
+  - *Más IVA* (así empieza todo registro nuevo): los importes son sin IVA y se suma el 16 %. Ejemplo: 1,500 → IVA 240 → total 1,740.
+  - *IVA incluido*: los importes ya traen IVA y el sistema lo desglosa. Ejemplo: 1,160 → subtotal 1,000 + IVA 160.
   - El editor, el PDF y el Word muestran Subtotal, IVA y Total; el importe con letra es el total. El cálculo vive en `public/importes.js` (lo usan el navegador y el servidor, en centavos).
   - La cuenta por cobrar de una orden es subtotal + IVA, salvo que se capture el **total del CFDI** (por retenciones o centavos), que manda; si no coinciden, la orden lo avisa.
   - Los registros anteriores al IVA quedan **"IVA por definir"** y no cambian de saldo ni de reportes. Una cotización abierta pide indicarlo al volver a guardarla; en una orden lo indican administración o atención (igual que el importe).
   - Resultados y el tablero suman importes **sin IVA** (la venta real); lo cobrado y los gastos sí incluyen IVA. La plantilla de Excel de cuentas por cobrar tiene una columna opcional "IVA del importe".
-  - Solo se acepta 16 %. Otra tasa (p. ej. 8 % fronterizo) se habilita en `TASAS_PERMITIDAS` de `public/importes.js` cuando el contador lo confirme.
+  - *Sin IVA*: el cliente paga exactamente lo capturado (1,000 → 1,000), sin desglose; se guarda con tasa 0. Conviene confirmarlo con el contador.
+  - La tasa de IVA es 16 %. Otra tasa (p. ej. 8 % fronterizo) se habilita en `TASAS_PERMITIDAS` de `public/importes.js` cuando el contador lo confirme.
 - **Membretes**: `public/membrete-cotizacion.png` y `public/membrete-orden-servicio.png` se generan con `node herramientas/membretes/servidor.js` → http://localhost:3301 → "Guardar en public/". Los datos de contacto y textos están al inicio de `herramientas/membretes/membretes.html`.
 - **Cuentas y seguridad**: el personal se registra solo con correo `@saneadren.com.mx` (debe confirmar el correo antes de entrar), puede restablecer su contraseña por correo y se le pide cambiar contraseñas débiles heredadas (p. ej. `1234`) al iniciar sesión. Ver "Configuración de correo" abajo.
 - **Cuentas por cobrar y por pagar** (menú **Finanzas**, dos secciones separadas: *Cuentas por cobrar* y *Cuentas por pagar*, esta última con sus proveedores):

@@ -87,6 +87,7 @@ const Finanzas = (() => {
   function desgloseIva(c) {
     const orden = c.iva_modo === 'mas_iva' ? `Orden: ${formatoMoneda(c.subtotal)} + IVA ${Number(c.iva_tasa)} % ${formatoMoneda(c.iva)} = ${formatoMoneda(c.total_orden)}`
       : c.iva_modo === 'incluido' ? `Orden con IVA incluido: ${formatoMoneda(c.total_orden)} (subtotal ${formatoMoneda(c.subtotal)} + IVA ${formatoMoneda(c.iva)})`
+      : c.iva_modo === 'sin_iva' ? `Orden sin IVA: el cliente paga ${formatoMoneda(c.total_orden)}.`
       : 'IVA por definir: el total es el importe tal como se capturó. Si el cliente paga con IVA, captura el total del CFDI.';
     const dif = c.dif_cfdi ? `<p class="cuentas-aviso">El CFDI es ${formatoMoneda(Math.abs(c.dif_cfdi))} ${c.dif_cfdi > 0 ? 'mayor' : 'menor'} que el total de la orden (¿retención, descuento o centavos?). Se cobra el total del CFDI.</p>` : '';
     return `<p class="ayuda cobranza-iva">${orden}</p>${dif}`;
@@ -600,7 +601,7 @@ const Finanzas = (() => {
         { key: 'descripcion', titulo: 'Descripción del trabajo', tipo: 'texto', ancho: 32, nota: 'Opcional.', ej: 'Limpieza de rejillas con equipo Vactor' },
         { key: 'fecha_servicio', titulo: 'Fecha del servicio', req: true, tipo: 'fecha', ancho: 14, nota: 'Fecha en que se hizo (o se hará) el servicio.', ej: '2026-09-15' },
         { key: 'importe', titulo: 'Importe (MXN)', alias: ['Importe total (MXN)'], req: true, tipo: 'dinero', ancho: 14, nota: 'Importe de la orden, según la columna IVA.', ej: 3500 },
-        { key: 'iva', titulo: 'IVA del importe', tipo: 'lista', lista: 'iva', ancho: 18, nota: 'Más IVA 16%: el importe es sin IVA y se le suma. IVA incluido 16%: el importe ya lo trae. Vacío = IVA por definir.', ej: 'Más IVA 16%' },
+        { key: 'iva', titulo: 'IVA del importe', tipo: 'lista', lista: 'iva', ancho: 18, nota: 'Más IVA 16%: el importe es sin IVA y se le suma. IVA incluido 16%: el importe ya lo trae. Sin IVA: no lleva IVA. Vacío = IVA por definir.', ej: 'Más IVA 16%' },
         { key: 'dias_credito', titulo: 'Días de crédito', tipo: 'entero', ancho: 10, nota: '0 = contado. De 0 a 180.', ej: 15 },
         { key: 'factura_folio', titulo: 'Folio de factura', tipo: 'texto', ancho: 14, nota: 'Si ya se facturó.', ej: 'A-123' },
         { key: 'factura_fecha', titulo: 'Fecha de factura', tipo: 'fecha', ancho: 14, nota: 'El vencimiento se cuenta desde aquí (si no, desde la fecha del servicio).', ej: '2026-09-16' },
@@ -641,7 +642,7 @@ const Finanzas = (() => {
         servicios: tipo === 'cxc' ? (await api('/servicios').then(json)).map(s => s.nombre) : [],
         categorias: tipo === 'cxp' ? (await api('/finanzas/categorias').then(json)).map(c => c.nombre) : [],
         metodos: METODOS.map(m => m[1]),
-        iva: ['Más IVA 16%', 'IVA incluido 16%'],
+        iva: ['Más IVA 16%', 'IVA incluido 16%', 'Sin IVA'],
       };
     } catch (err) { toast('No se pudo preparar la plantilla: ' + err.message); return; }
     const wb = new ExcelJS.Workbook();

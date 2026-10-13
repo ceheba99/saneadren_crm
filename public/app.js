@@ -498,6 +498,7 @@ function importeTarjeta(l) {
   if (l.valor == null) return '—';
   if (l.iva_modo === 'mas_iva') return formatoMoneda(l.valor) + ' + IVA';
   if (l.iva_modo === 'incluido') return formatoMoneda((Math.round(l.valor * 100) + (l.iva_cent || 0)) / 100) + ' IVA incl.';
+  if (l.iva_modo === 'sin_iva') return formatoMoneda(l.valor) + ' sin IVA';
   return formatoMoneda(l.valor);
 }
 function renderKanbanLeads(leads, contactos = []) {
@@ -892,7 +893,7 @@ function datosOrdenServicioDesdeLead(lead, items) {
   };
 }
 // Rótulo del recuadro del total en la orden de servicio.
-const etiquetaTotalOrden = modo => modo === 'mas_iva' ? 'TOTAL CON IVA' : modo === 'incluido' ? 'TOTAL (IVA INCLUIDO)' : 'IMPORTE TOTAL';
+const etiquetaTotalOrden = modo => modo === 'mas_iva' ? 'TOTAL CON IVA' : modo === 'incluido' ? 'TOTAL (IVA INCLUIDO)' : modo === 'sin_iva' ? 'TOTAL (SIN IVA)' : 'IMPORTE TOTAL';
 
 // Mismo orden de conceptos que el formato impreso "ORDENES DE SERVICIO" de Saneadren:
 // Empresa/Fecha, Ubicación, Equipo, Operador → Descripción → Importe → Observaciones →
@@ -1174,7 +1175,7 @@ function agregarFilaCotizacion(item = {}) {
 let IVA_TASA = Importes.TASA_DEFAULT;
 let IVA_BLOQUEADO = false; // orden de servicio: solo administración o atención cambian su IVA
 const modoIvaEditor = () => document.getElementById('gc-iva-modo').value || null;
-const ivaPayload = () => modoIvaEditor() ? { iva_modo: modoIvaEditor(), iva_tasa: IVA_TASA } : {};
+const ivaPayload = () => modoIvaEditor() ? { iva_modo: modoIvaEditor(), iva_tasa: Importes.tasaDe(modoIvaEditor(), IVA_TASA) } : {};
 function fijarModoIva(modo) {
   const campo = document.getElementById('gc-iva-modo');
   if (campo.value === (modo || '')) return;
@@ -1184,24 +1185,21 @@ function fijarModoIva(modo) {
 }
 function pintarIvaEditor() {
   const modo = modoIvaEditor();
-  const casilla = document.getElementById('gc-iva-incluido');
-  casilla.checked = modo === 'incluido';
-  casilla.disabled = IVA_BLOQUEADO;
+  document.querySelectorAll('input[name="gc-iva-opcion"]').forEach(r => { r.checked = r.value === modo; r.disabled = IVA_BLOQUEADO; });
   document.getElementById('gc-iva-ayuda').textContent = !modo ? ''
-    : (modo === 'incluido' ? `Los importes ya incluyen IVA: el sistema separa el subtotal y el IVA (${IVA_TASA} %).`
-      : `Los importes son sin IVA: se suma el ${IVA_TASA} % de IVA al total. Marca la casilla si el precio ya lo incluye.`)
+    : ({ incluido: `Escribe el total que paga el cliente: el sistema separa el subtotal y el IVA (${IVA_TASA} %). Ej.: 1,160 = 1,000 + 160.`,
+      mas_iva: `Escribe el precio sin IVA: el sistema suma el ${IVA_TASA} %. Ej.: 1,000 + 160 = 1,160.`,
+      sin_iva: 'El precio no lleva IVA: el cliente paga exactamente lo que escribes. Ej.: 1,000 = 1,000.' }[modo] || '')
       + (IVA_BLOQUEADO ? ' Solo administración o atención pueden cambiarlo en una orden de servicio.' : '');
   document.getElementById('gc-iva-aviso').hidden = !!modo;
   if (!modo) {
     document.getElementById('gc-iva-aviso-texto').textContent = IVA_BLOQUEADO
       ? 'IVA por definir: este registro es anterior al IVA. Lo indica administración o atención.'
-      : 'IVA por definir: este registro es anterior al IVA. ¿El importe que se le dio al cliente ya incluía IVA? Marca la casilla si sí, o pulsa el botón si es más IVA.';
-    document.getElementById('btn-gc-iva-mas').hidden = IVA_BLOQUEADO;
+      : 'IVA por definir: este registro es anterior al IVA. Elige cómo va el importe que se le dio al cliente: más IVA, IVA incluido o sin IVA.';
   }
   document.querySelectorAll('#gc-items .gc-etiqueta-importe').forEach(l => { l.textContent = Importes.encabezadoImporte(modo) + ' (MXN)'; });
 }
-on('gc-iva-incluido', 'change', e => fijarModoIva(e.target.checked ? 'incluido' : 'mas_iva'));
-on('btn-gc-iva-mas', 'click', () => fijarModoIva('mas_iva'));
+document.querySelectorAll('input[name="gc-iva-opcion"]').forEach(r => r.addEventListener('change', () => { if (r.checked) fijarModoIva(r.value); }));
 
 function actualizarTotalCotizacion() {
   pintarIvaEditor();
@@ -1209,9 +1207,11 @@ function actualizarTotalCotizacion() {
   const items = Array.from(document.querySelectorAll('#gc-items .gc-importe')).map(input => ({ importe: Number(input.value) || 0 }));
   const r = Importes.calcular(items, modo, IVA_TASA);
   const filas = Importes.filasTotales(r, modo, IVA_TASA);
-  document.getElementById('gc-fila-subtotal').hidden = !modo;
-  document.getElementById('gc-fila-iva').hidden = !modo;
-  if (modo) {
+  // Con desglose (más IVA o IVA incluido) hay Subtotal / IVA / Total; sin IVA o por definir, solo Total.
+  const conDesglose = filas.length > 1;
+  document.getElementById('gc-fila-subtotal').hidden = !conDesglose;
+  document.getElementById('gc-fila-iva').hidden = !conDesglose;
+  if (conDesglose) {
     document.getElementById('gc-etiqueta-subtotal').textContent = filas[0][0];
     document.getElementById('gc-subtotal').textContent = formatoMoneda(filas[0][1] / 100);
     document.getElementById('gc-etiqueta-iva').textContent = filas[1][0];
@@ -1267,7 +1267,7 @@ function validarEditorCotizacion(){
   if(!filas.length||filas.some(f=>!f.querySelector('.gc-servicio').value||f.querySelector('.gc-importe').value===''||!Number.isFinite(Number(f.querySelector('.gc-importe').value))||Number(f.querySelector('.gc-importe').value)<0)){toast('Selecciona un servicio e importe válido en cada partida');return false;}
   // Un registro nuevo o una cotización abierta deben decir si sus importes llevan IVA.
   if(!modoIvaEditor()&&(EDITOR_MODO==='nuevo'||LEAD_ACTUAL?.estatus==='abierto')){
-    toast('Indica el IVA: marca «IVA incluido» si el importe ya lo incluye, o pulsa «Los importes son sin IVA»');
+    toast('Indica el IVA: elige Más IVA, IVA incluido o Sin IVA');
     document.getElementById('gc-iva').scrollIntoView({block:'center',behavior:'smooth'});return false;
   }
   return true;

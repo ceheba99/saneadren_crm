@@ -768,14 +768,17 @@
 <div id="editor-cotizacion" hidden>
   <div class="seccion-tit" id="gc-titulo-contenido">Contenido de la cotización</div>
   <p class="ayuda" id="gc-ayuda-contenido">Edita servicios, descripciones e importes. Se guardan con esta cotización y se usan en la descarga.</p>
-  <!-- IVA: el valor real vive en #gc-iva-modo ('' = por definir, 'mas_iva', 'incluido'); la casilla es la forma de elegirlo. -->
+  <!-- IVA: el valor real vive en #gc-iva-modo ('' = por definir, 'mas_iva', 'incluido', 'sin_iva'); las tres opciones lo eligen. -->
   <div class="gc-iva" id="gc-iva">
     <input type="hidden" id="gc-iva-modo">
-    <label class="gc-iva-casilla"><input type="checkbox" id="gc-iva-incluido"> <span>IVA incluido (16 %)</span></label>
+    <div class="gc-iva-opciones" role="radiogroup" aria-label="IVA de los importes">
+      <label class="gc-iva-opcion"><input type="radio" name="gc-iva-opcion" value="mas_iva"> <span>Más IVA 16 %</span></label>
+      <label class="gc-iva-opcion"><input type="radio" name="gc-iva-opcion" value="incluido"> <span>IVA incluido 16 %</span></label>
+      <label class="gc-iva-opcion"><input type="radio" name="gc-iva-opcion" value="sin_iva"> <span>Sin IVA</span></label>
+    </div>
     <p class="ayuda" id="gc-iva-ayuda"></p>
     <div class="gc-iva-aviso" id="gc-iva-aviso" hidden>
       <span id="gc-iva-aviso-texto"></span>
-      <button type="button" class="btn btn-outline" id="btn-gc-iva-mas">Los importes son sin IVA (más IVA)</button>
     </div>
   </div>
   <div id="gc-items"></div><button type="button" class="btn btn-outline" id="btn-gc-agregar-servicio">+ Agregar servicio</button>

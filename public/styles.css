@@ -872,3 +872,10 @@ header.app nav.menu-principal .menu-sub .menu-item:focus-visible{outline:3px sol
   .st-acciones .btn:first-child{margin-left:0;}
 }
 .st-tabla th.st-num,.tabla-clientes th.st-num{text-align:right;}
+
+/* IVA: tres opciones (Más IVA / IVA incluido / Sin IVA) como botones. */
+.gc-iva-opciones{display:flex;flex-wrap:wrap;gap:8px;}
+.gc-iva-opcion{display:inline-flex;align-items:center;gap:6px;padding:8px 14px;border:1px solid var(--gris-300);border-radius:999px;background:var(--blanco);font-weight:600;cursor:pointer;}
+.gc-iva-opcion input{margin:0;accent-color:var(--amarillo);}
+.gc-iva-opcion:has(input:checked){border-color:var(--amarillo);background:#fff8dc;color:var(--texto);}
+.gc-iva-opcion:has(input:disabled){cursor:not-allowed;opacity:.7;}

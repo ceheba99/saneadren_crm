@@ -526,13 +526,15 @@ function validarPartidas(req,res,next){
   const original=!req.params.id&&req.body.duplicado_de&&!tocaIva?db.prepare('SELECT iva_modo, iva_tasa FROM leads WHERE id = ?').get(req.body.duplicado_de):null;
   let modo=req.body.iva_modo!==undefined?req.body.iva_modo:(guardado?.iva_modo??original?.iva_modo??null);
   if(modo==='')modo=null;
-  if(modo!==null&&!Importes.MODOS.includes(modo))return res.status(400).json({error:'Indica si los importes son más IVA o con IVA incluido'});
+  if(modo!==null&&!Importes.MODOS.includes(modo))return res.status(400).json({error:'Indica si los importes son más IVA, con IVA incluido o sin IVA'});
   if(modo===null&&guardado?.iva_modo)return res.status(400).json({error:'El IVA de este registro ya está indicado; no puede volver a quedar por definir'});
   let tasa=null;
-  if(modo!==null){
-    tasa=req.body.iva_tasa!==undefined&&req.body.iva_tasa!==null&&req.body.iva_tasa!==''?Number(req.body.iva_tasa):(guardado?.iva_tasa??original?.iva_tasa??Importes.TASA_DEFAULT);
+  if(modo==='sin_iva')tasa=0; // sin IVA: tasa 0, sin importar lo que se mande
+  else if(modo!==null){
+    // La tasa guardada de un registro "sin IVA" es 0: al pasar a otro modo se usa la tasa normal.
+    tasa=req.body.iva_tasa!==undefined&&req.body.iva_tasa!==null&&req.body.iva_tasa!==''?Number(req.body.iva_tasa):((guardado?.iva_tasa||original?.iva_tasa)||Importes.TASA_DEFAULT);
     if(!Importes.TASAS_PERMITIDAS.includes(tasa))return res.status(400).json({error:'Tasa de IVA no permitida (solo '+Importes.TASAS_PERMITIDAS.join(', ')+' %)'});
-  }else if(req.body.iva_tasa!==undefined&&req.body.iva_tasa!==null&&req.body.iva_tasa!=='')return res.status(400).json({error:'Indica si los importes son más IVA o con IVA incluido'});
+  }else if(req.body.iva_tasa!==undefined&&req.body.iva_tasa!==null&&req.body.iva_tasa!=='')return res.status(400).json({error:'Indica si los importes son más IVA, con IVA incluido o sin IVA'});
   const r=Importes.calcular(items,modo,tasa);
   if(modo!==null&&r.total_cent>Importes.TOPE_CENT)return res.status(400).json({error:'El total del documento no puede pasar de $100,000,000.00'});
   req.body.valor=r.subtotal_cent/100;req.body.iva_modo=modo;req.body.iva_tasa=tasa;req.body.iva_cent=r.iva_cent;

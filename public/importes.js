@@ -3,13 +3,14 @@
    require), para que las cifras siempre coincidan. Todo se calcula en centavos enteros.
    - 'mas_iva':  los importes capturados son sin IVA; el IVA se suma al subtotal del documento.
    - 'incluido': los importes ya traen IVA; el total es exactamente lo capturado y se desglosa.
+   - 'sin_iva':  el precio no lleva IVA (tasa 0): total = suma.
    - null:       registro anterior al IVA ("por definir"): total = suma, sin desglose. */
 (function (raiz, crear) {
   const m = crear();
   if (typeof module === 'object' && module.exports) module.exports = m;
   else raiz.Importes = m;
 })(typeof globalThis !== 'undefined' ? globalThis : this, function () {
-  const MODOS = ['mas_iva', 'incluido'];
+  const MODOS = ['mas_iva', 'incluido', 'sin_iva'];
   const TASAS_PERMITIDAS = [16];
   const TASA_DEFAULT = 16;
   // Tope por documento con IVA ($100,000,000.00): mantiene exactos los cálculos en centavos.
@@ -20,6 +21,7 @@
   function calcular(items, modo, tasa) {
     const suma = (items || []).reduce((t, i) => t + aCent(i.importe), 0);
     if (!modo) return { subtotal_cent: suma, iva_cent: null, total_cent: suma };
+    if (modo === 'sin_iva') return { subtotal_cent: suma, iva_cent: 0, total_cent: suma };
     const p = Number(tasa ?? TASA_DEFAULT);
     if (modo === 'incluido') {
       const subtotal = Math.round(suma * 100 / (100 + p));
@@ -30,15 +32,18 @@
   }
 
   const etiquetaModo = (modo, tasa) => modo === 'incluido' ? `IVA incluido ${tasa ?? TASA_DEFAULT}%`
-    : modo === 'mas_iva' ? `Más IVA ${tasa ?? TASA_DEFAULT}%` : 'IVA por definir';
+    : modo === 'mas_iva' ? `Más IVA ${tasa ?? TASA_DEFAULT}%` : modo === 'sin_iva' ? 'Sin IVA' : 'IVA por definir';
   const encabezadoImporte = modo => modo === 'incluido' ? 'Importe con IVA' : modo === 'mas_iva' ? 'Importe sin IVA' : 'Importe';
+  // Tasa que se guarda con cada modo: "Sin IVA" siempre es 0.
+  const tasaDe = (modo, tasa) => !modo ? null : modo === 'sin_iva' ? 0 : (tasa || TASA_DEFAULT);
   const leyenda = (modo, tasa) => modo === 'incluido' ? `Precios con IVA (${tasa ?? TASA_DEFAULT} %) incluido.`
-    : modo === 'mas_iva' ? `Precios en moneda nacional más IVA (${tasa ?? TASA_DEFAULT} %).` : '';
+    : modo === 'mas_iva' ? `Precios en moneda nacional más IVA (${tasa ?? TASA_DEFAULT} %).` : modo === 'sin_iva' ? 'Precio sin IVA.' : '';
   // Renglones de totales del documento: [etiqueta, centavos]. El último siempre es el total a pagar.
   function filasTotales(r, modo, tasa) {
     const p = tasa ?? TASA_DEFAULT;
     if (modo === 'mas_iva') return [['Subtotal', r.subtotal_cent], [`IVA ${p}%`, r.iva_cent], ['Total', r.total_cent]];
     if (modo === 'incluido') return [['Subtotal sin IVA', r.subtotal_cent], [`IVA ${p}% (incluido)`, r.iva_cent], ['Total (IVA incluido)', r.total_cent]];
+    if (modo === 'sin_iva') return [['Total (sin IVA)', r.total_cent]];
     return [['Total', r.total_cent]];
   }
 
@@ -85,5 +90,5 @@
     return `${letras} PESOS ${String(centavos).padStart(2, '0')}/100 M.N.`;
   }
 
-  return { MODOS, TASAS_PERMITIDAS, TASA_DEFAULT, TOPE_CENT, aCent, calcular, etiquetaModo, encabezadoImporte, leyenda, filasTotales, enLetras };
+  return { MODOS, TASAS_PERMITIDAS, TASA_DEFAULT, TOPE_CENT, aCent, calcular, etiquetaModo, encabezadoImporte, tasaDe, leyenda, filasTotales, enLetras };
 });

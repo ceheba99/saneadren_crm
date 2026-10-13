@@ -261,8 +261,8 @@ if(!db.prepare('PRAGMA table_info(leads)').all().some(c=>c.name==='duplicado_de'
 // Datos propios de la orden de servicio (los mismos del formato en papel): unidad/equipo
 // que se envía, operador(es) que lo ejecutan y observaciones del trabajo realizado.
 for(const c of ['equipo','operador','observaciones'])if(!db.prepare('PRAGMA table_info(leads)').all().some(x=>x.name===c))db.exec(`ALTER TABLE leads ADD COLUMN ${c} TEXT`);
-// IVA del documento (public/importes.js). iva_modo: 'mas_iva' (los importes son sin IVA) o
-// 'incluido' (ya lo traen); iva_tasa en porcentaje entero; iva_cent lo calcula el servidor.
+// IVA del documento (public/importes.js). iva_modo: 'mas_iva' (los importes son sin IVA),
+// 'incluido' (ya lo traen) o 'sin_iva' (no lleva IVA; tasa 0); iva_tasa en porcentaje entero; iva_cent lo calcula el servidor.
 // Los tres en NULL = registro anterior al IVA ("por definir"): valor se interpreta como hoy.
 // Con IVA, valor es el subtotal sin IVA y el total es valor + iva_cent. Deben existir antes
 // de recrear los triggers de abajo, que los validan.
@@ -285,7 +285,7 @@ db.transaction(()=>{
     SELECT CASE WHEN NEW.vigencia_hasta IS NOT NULL AND (length(NEW.vigencia_hasta)<>10 OR date(NEW.vigencia_hasta,'+0 days') IS NULL OR date(NEW.vigencia_hasta,'+0 days')<>NEW.vigencia_hasta) THEN RAISE(ABORT,'Fecha de vigencia inválida') END;
     SELECT CASE WHEN NEW.partidas_json IS NOT NULL AND NOT json_valid(NEW.partidas_json) THEN RAISE(ABORT,'Partidas inválidas') END;
     SELECT CASE WHEN NEW.encuesta_calificacion IS NOT NULL AND NEW.encuesta_calificacion NOT BETWEEN 1 AND 4 THEN RAISE(ABORT,'Calificación inválida') END;
-    SELECT CASE WHEN NEW.iva_modo IS NOT NULL AND NEW.iva_modo NOT IN ('mas_iva','incluido') THEN RAISE(ABORT,'Modo de IVA inválido') END;
+    SELECT CASE WHEN NEW.iva_modo IS NOT NULL AND NEW.iva_modo NOT IN ('mas_iva','incluido','sin_iva') THEN RAISE(ABORT,'Modo de IVA inválido') END;
     SELECT CASE WHEN NEW.iva_tasa IS NOT NULL AND (typeof(NEW.iva_tasa)<>'integer' OR NEW.iva_tasa NOT IN (0,8,16)) THEN RAISE(ABORT,'Tasa de IVA inválida') END;
     SELECT CASE WHEN NEW.iva_cent IS NOT NULL AND (typeof(NEW.iva_cent)<>'integer' OR NEW.iva_cent<0) THEN RAISE(ABORT,'IVA inválido') END;
     SELECT CASE WHEN (NEW.iva_modo IS NULL)<>(NEW.iva_tasa IS NULL) OR (NEW.iva_modo IS NULL)<>(NEW.iva_cent IS NULL) THEN RAISE(ABORT,'Datos de IVA incompletos') END;
