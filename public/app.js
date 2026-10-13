@@ -201,6 +201,7 @@ on('btn-cancelar-dup', 'click', () => {
 //   pide un servicio distinto) — es una oportunidad nueva y sí debe pasar por Leads.
 let MODO_SERVICIO_NUEVO = 'pipeline';
 let DUPLICADO_DE = null; // id de la orden de servicio que se está duplicando (si aplica)
+let FECHA_MIN_SERVICIO = ''; // fecha de la cotización que se convierte (el servicio no puede ser antes)
 let CONVERTIR_ID = null; // cotización que se convierte en orden de servicio (modo 'convertir')
 let ESTABLECIMIENTO_PENDIENTE = null; // { cliente_id, id, direccion } al abrir un contacto desde Prospección
 let REGRESO_FICHA = null; // registro cuya ficha se reabre al terminar la ventana de crear (p. ej. tras Duplicar)
@@ -251,6 +252,9 @@ function abrirServicioNuevo(modo, prefill) {
     ? `Última vez: ${formatoMoneda(CLIENTE_DUP.ultimo_valor)}`
     : 'Si ya se conoce';
   document.getElementById('sn-fecha').value = '';
+  // Al convertir, el servicio no puede ser antes de la fecha de la cotización.
+  FECHA_MIN_SERVICIO = CONVERTIR_ID ? (prefill?.fecha_cotizacion || '') : '';
+  document.getElementById('sn-fecha').min = FECHA_MIN_SERVICIO;
   // Vigencia: solo en cotizaciones. Se propone la de siempre (15 días) y se puede quitar o cambiar.
   document.getElementById('sn-vigencia').hidden = esDirecto;
   document.getElementById('sn-incluye-vigencia').checked = true;
@@ -294,6 +298,7 @@ async function guardarServicioNuevo(descargar=false) {
   if (!document.getElementById('sn-ubicacion').value.trim()) { toast('Indica la ubicación de este servicio'); return; }
   const esDirecto = MODO_SERVICIO_NUEVO === 'directo' || MODO_SERVICIO_NUEVO === 'convertir';
   if(esDirecto && !document.getElementById('sn-fecha').value){toast('Indica la fecha acordada del servicio');document.getElementById('sn-fecha').focus();return;}
+  if(CONVERTIR_ID && FECHA_MIN_SERVICIO && document.getElementById('sn-fecha').value < FECHA_MIN_SERVICIO){toast('La fecha del servicio no puede ser anterior a la cotización ('+FECHA_MIN_SERVICIO.split('-').reverse().join('/')+')');document.getElementById('sn-fecha').focus();return;}
   const conVigencia = !esDirecto && document.getElementById('sn-incluye-vigencia').checked;
   const vigenciaHasta = document.getElementById('sn-vigencia-hasta').value;
   if (conVigencia && (!vigenciaHasta || vigenciaHasta < hoyISO())) { toast('Indica hasta qué fecha es válida la cotización (hoy o después), o desmarca la vigencia'); document.getElementById('sn-vigencia-hasta').focus(); return; }
@@ -1244,7 +1249,8 @@ on('btn-generar-orden-servicio','click',async()=>{
   const items=recolectarItemsCotizacion();
   const prefill={convertir_de:lead.id,folio:folioCotizacion(lead),partidas_json:JSON.stringify(items),servicio_nombre:items[0]?.servicio,
     iva_modo:modoIvaEditor(),iva_tasa:IVA_TASA,direccion:document.getElementById('ed-direccion').value.trim()||lead.direccion,
-    equipo:lead.equipo,operador:lead.operador,observaciones:lead.observaciones,proyecto:lead.proyecto,manifiestos:lead.manifiestos,tiros:lead.tiros};
+    equipo:lead.equipo,operador:lead.operador,observaciones:lead.observaciones,proyecto:lead.proyecto,manifiestos:lead.manifiestos,tiros:lead.tiros,
+    fecha_cotizacion:document.getElementById('ed-fecha-cotizacion').value||lead.fecha_cotizacion||String(lead.created_at||'').slice(0,10)};
   FlujoCRM.marcarGuardado('overlay-ficha'); // lo capturado en la ficha pasa a la ventana
   await FlujoCRM.nuevoRegistro(lead.cliente_id,'convertir',prefill);
 });
@@ -1709,6 +1715,8 @@ async function abrirFicha(id) {
   document.getElementById('ed-responsable').value = lead.responsable_id || '';
   document.getElementById('ed-valor').value = lead.valor != null ? lead.valor : '';
   document.getElementById('ed-fecha-servicio').value = lead.fecha_servicio || '';
+  // Orden que viene de una cotización: su fecha de servicio no puede ser antes de la cotización.
+  document.getElementById('ed-fecha-servicio').min = lead.origen === 'cotizacion' && lead.fecha_cotizacion ? lead.fecha_cotizacion : '';
   document.getElementById('ed-fecha-cotizacion').value = lead.fecha_cotizacion || '';
   document.getElementById('ed-incluye-vigencia').checked = lead.incluye_vigencia !== 0;
   document.getElementById('ed-vigencia-hasta').value = lead.vigencia_hasta || '';
