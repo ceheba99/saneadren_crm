@@ -837,6 +837,12 @@
         <div class="form-grid-2"><div class="campo"><label for="sn-manifiestos">Manifiestos (opcional)</label><input type="text" id="sn-manifiestos" maxlength="200" placeholder="Folio(s) de manifiesto"></div><div class="campo"><label for="sn-tiros">Tiros (opcional)</label><input type="text" id="sn-tiros" maxlength="60" placeholder="Ej. 2"></div></div>
         <div class="campo"><label for="sn-proyecto">Proyecto (opcional)</label><input type="text" id="sn-proyecto" maxlength="200" placeholder="Ej. Mantenimiento planta 2026"></div>
         <div class="campo"><label for="sn-observaciones">Observaciones de la orden (opcional)</label><textarea id="sn-observaciones" rows="2" maxlength="3000"></textarea></div>
+        <!-- Al duplicar: costos con terceros de la orden original que también se copian (pendientes de pago). -->
+        <div class="sn-costos" id="sn-costos" hidden>
+          <div class="seccion-tit">🚚 Costos con terceros a duplicar</div>
+          <p class="ayuda">La orden original tiene estos costos. Los marcados se copian a la nueva orden en Cuentas por pagar, <b>pendientes de pago</b>. Puedes ajustar el monto.</p>
+          <div id="sn-costos-lista"></div>
+        </div>
       </div>
       <div id="editor-nuevo-destino"></div><span id="estado-guardado-nuevo" class="estado-guardado" role="status"></span>
       <button class="btn btn-primario diseno-btn-guardar-servicio-nuevo" id="btn-guardar-servicio-nuevo" style="display:none">Crear registro</button>
