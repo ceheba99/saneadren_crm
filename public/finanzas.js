@@ -40,8 +40,8 @@ const Finanzas = (() => {
   function textoEstado(c) {
     const dias = n => Number(n) === 1 ? '1 día' : Number(n) + ' días';
     const falta = c.estado === 'parcial' ? `pagó una parte, falta ${formatoMoneda(c.saldo)}` : 'pendiente de cobrar';
-    if (c.estado === 'pagada') return ['pagada', c.ejecucion === 'no_realizado' ? 'No realizado · pago recibido (revisar devolución)' : 'Cobrado completo ✓'];
-    if (c.ejecucion === 'no_realizado') return ['vencida', 'No realizado · revisar el pago recibido'];
+    if (c.ejecucion === 'no_realizado') return c.a_favor > 0 ? ['a-favor', `No realizado · ${formatoMoneda(c.a_favor)} a favor del cliente (devolver o aplicar)`] : ['programada', 'No realizado · no se cobra'];
+    if (c.estado === 'pagada') return ['pagada', 'Cobrado completo ✓'];
     if (c.programada) return ['programada', 'Por realizar · aún no se cobra'];
     const servicio = c.ejecucion === 'realizado' ? 'Servicio realizado' : c.por_concluir ? 'Falta marcar si se realizó' : 'Servicio';
     if (c.vencida) return ['vencida', `${servicio} · cobro vencido hace ${dias(c.dias_vencido)}`];
@@ -148,10 +148,10 @@ const Finanzas = (() => {
         <div><small>Total${c.factura_total != null ? ' (CFDI)' : ''}</small><b>${formatoMoneda(c.total)}</b></div>
         <div><small>Cobrado</small><b>${formatoMoneda(c.cobrado)}</b></div>
         <div><small>Saldo</small><b>${formatoMoneda(c.saldo)}</b></div>
-        <div><small>Vence</small><b>${esc(fechaTxt(c.vence))}</b></div>
+        ${c.ejecucion === 'no_realizado' ? `<div><small>A favor del cliente</small><b>${formatoMoneda(c.a_favor || 0)}</b></div>` : `<div><small>Vence</small><b>${esc(fechaTxt(c.vence))}</b></div>`}
       </div>
       ${desgloseIva(c)}
-      <button type="button" class="btn btn-primario" data-cobranza="registrar" ${c.saldo <= 0 ? 'disabled' : ''}>💵 Registrar pago</button>
+      ${c.ejecucion === 'no_realizado' ? '' : `<button type="button" class="btn btn-primario" data-cobranza="registrar" ${c.saldo <= 0 ? 'disabled' : ''}>💵 Registrar pago</button>`}
       ${fact}
       <div class="pagos-lista">${pagos}</div>`;
   }
@@ -231,6 +231,7 @@ const Finanzas = (() => {
       : t('Te deben', formatoMoneda(r.por_cobrar), `${Number(r.cuentas_con_saldo)} ${Number(r.cuentas_con_saldo) === 1 ? 'orden' : 'órdenes'} por cobrar`)
       + t('Vencido', formatoMoneda(r.vencido), `${Number(r.clientes_con_vencido)} ${Number(r.clientes_con_vencido) === 1 ? 'cliente' : 'clientes'}`, r.vencido > 0 ? 'alerta' : '')
       + (r.programado > 0 ? t('Por realizar', formatoMoneda(r.programado), `${Number(r.ordenes_programadas)} ${Number(r.ordenes_programadas) === 1 ? 'servicio programado' : 'servicios programados'} (aún no se cobran)`) : '')
+      + (r.a_favor > 0 ? t('A favor de clientes', formatoMoneda(r.a_favor), `${Number(r.ordenes_a_favor)} ${Number(r.ordenes_a_favor) === 1 ? 'servicio no realizado' : 'servicios no realizados'} con pago (devolver o aplicar)`, 'aviso') : '')
       + t('Cobrado este mes', formatoMoneda(r.cobrado_mes), '')
       + (r.por_confirmar ? t('Por confirmar', formatoMoneda(r.por_confirmar.monto), `${Number(r.por_confirmar.cantidad)} pagos`, r.por_confirmar.cantidad ? 'aviso' : '') : '');
     pintarRevision();
@@ -990,7 +991,7 @@ const Finanzas = (() => {
       cont.innerHTML = `<p class="ejecucion-estado realizado"><b>✔ Servicio realizado</b> el ${esc(fechaTxt(lead.fecha_realizado))} · ${lead.realizado_por === 'subcontratado' ? 'Subcontratado (lo hizo otra empresa)' : 'Por nuestro equipo'}. Ya cuenta en el Generador.</p>
         <p class="ayuda">¿Hubo otro gasto? Agrégalo en «Costos con terceros» de abajo.</p>`;
     } else if (lead.ejecucion === 'no_realizado') {
-      cont.innerHTML = `<p class="ejecucion-estado no-realizado"><b>✖ No realizado.</b> Motivo: ${esc(lead.motivo_no_realizado || '—')}. No cuenta en el Generador. Si el cliente no pagará, pide al administrador un ajuste o cancela los pagos pendientes.</p>
+      cont.innerHTML = `<p class="ejecucion-estado no-realizado"><b>✖ No realizado.</b> Motivo: ${esc(lead.motivo_no_realizado || '—')}. No cuenta en el Generador y no se le cobra; si ya había pagado, ese dinero queda a su favor (devolverlo o aplicarlo a otro servicio).</p>
         <p class="ayuda">Si al final sí se realizó, márcalo:</p>${botones.replace('<button type="button" class="btn btn-outline" data-ejecucion="no_realizado">✖ No realizado</button>', '')}`;
     } else {
       const vencida = lead.fecha_servicio && lead.fecha_servicio <= hoy();
@@ -1003,7 +1004,14 @@ const Finanzas = (() => {
     const motivo = await solicitarDialogo({ titulo: 'Servicio no realizado', mensaje: '¿Por qué no se realizó? Quedará en la bitácora de la orden.', aceptar: 'Marcar como no realizado', campo: { tipo: 'text', etiqueta: 'Motivo' } });
     if (!motivo) return;
     const r = await enviar('/leads/' + Number(lead.id) + '/ejecucion', 'POST', { estado: 'no_realizado', motivo });
-    if (r) { toast('Servicio marcado como no realizado'); await refrescarFichaOrden(lead.id); }
+    if (!r) return;
+    // Avisos claros: el cliente no debe nada; lo pagado queda a su favor; los gastos siguen en Cuentas por pagar.
+    const avisos = ['Servicio marcado como no realizado: ya no se le cobra.'];
+    if (r.a_favor > 0) avisos.push(`El cliente ya había pagado ${formatoMoneda(r.a_favor)}: queda a su favor (devuélvelo o aplícalo a otro servicio).`);
+    if (r.gastos_ligados > 0) avisos.push(`Esta orden tiene ${Number(r.gastos_ligados)} gasto(s) en Cuentas por pagar${r.gastos_pendientes > 0 ? ' (' + formatoMoneda(r.gastos_pendientes) + ' sin pagar)' : ''}: revisa si debes cancelarlos.`);
+    if (avisos.length > 1) await solicitarDialogo({ titulo: 'Servicio no realizado', mensaje: avisos.join('\n\n'), aceptar: 'Entendido', soloAviso: true });
+    else toast(avisos[0]);
+    await refrescarFichaOrden(lead.id);
   });
   async function refrescarFichaOrden(id) { if (LEAD_ACTUAL?.id === id) await abrirFicha(id); await ServiciosTabla.refrescar(); }
 

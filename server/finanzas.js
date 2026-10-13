@@ -205,13 +205,16 @@ const SQL_CUENTA = `
   LEFT JOIN catalogo_servicios s ON s.id = l.servicio_id`;
 
 function describirCuenta(f, hoy) {
-  const saldo = f.total_cent - f.cobrado_cent;
+  // Servicio NO realizado: el cliente no debe nada; lo que ya pagó (anticipo) queda a su favor.
+  const noRealizado = f.ejecucion === 'no_realizado';
+  const saldo = noRealizado ? 0 : f.total_cent - f.cobrado_cent;
+  const aFavor = noRealizado ? f.cobrado_cent : Math.max(0, f.cobrado_cent - f.total_cent);
   // El crédito corre desde la factura; sin factura, desde que se realizó el servicio (o su fecha acordada).
   const base = f.factura_fecha || f.fecha_realizado || f.fecha_servicio || String(f.created_at).slice(0, 10);
   const realizado = f.ejecucion === 'realizado';
   const vence = sumarDias(base, f.dias_credito || 0);
   const diasVencido = diasEntre(vence, hoy);
-  let estado = saldo <= 0 ? 'pagada' : f.cobrado_cent > 0 ? 'parcial' : 'pendiente';
+  let estado = noRealizado ? (aFavor > 0 ? 'a_favor' : 'cancelada') : saldo <= 0 ? 'pagada' : f.cobrado_cent > 0 ? 'parcial' : 'pendiente';
   // Programada: servicio todavía futuro y sin factura. No cuenta como "te deben" (aún no se hace el trabajo).
   // Un servicio ya marcado como realizado se debe aunque su fecha acordada fuera posterior.
   const programada = !!(f.fecha_servicio && f.fecha_servicio > hoy && !f.factura_folio && !realizado);
@@ -223,7 +226,7 @@ function describirCuenta(f, hoy) {
     telefono: f.telefono, rfc: f.rfc, servicio_nombre: f.servicio_nombre, created_at: f.created_at, fecha_servicio: f.fecha_servicio,
     dias_credito: f.dias_credito || 0, factura_folio: f.factura_folio, factura_fecha: f.factura_fecha,
     factura_total: f.factura_total_cent == null ? null : aPesos(f.factura_total_cent),
-    total: aPesos(f.total_cent), cobrado: aPesos(f.cobrado_cent), saldo: aPesos(Math.max(saldo, 0)),
+    total: aPesos(f.total_cent), cobrado: aPesos(f.cobrado_cent), saldo: aPesos(Math.max(saldo, 0)), a_favor: aPesos(aFavor),
     vence, dias_vencido: saldo > 0 ? diasVencido : 0, estado, vencida, programada, tramo: programada ? null : tramo,
     por_confirmar: f.por_confirmar, por_revisar: !!f.cobranza_por_revisar,
     ejecucion: f.ejecucion || null, realizado_por: f.realizado_por || null, fecha_realizado: f.fecha_realizado || null,
@@ -282,6 +285,7 @@ module.exports = function finanzas(app, db, h) {
     const r = {
       por_cobrar: suma(cuentas), vencido: suma(cuentas.filter(c => c.vencida)),
       programado: suma(conSaldo.filter(c => c.programada)), ordenes_programadas: conSaldo.filter(c => c.programada).length,
+      a_favor: suma(cartera().map(c => ({ saldo: c.a_favor || 0 }))), ordenes_a_favor: cartera().filter(c => c.a_favor > 0).length,
       cuentas_con_saldo: cuentas.length, clientes_con_vencido: new Set(cuentas.filter(c => c.vencida).map(c => c.cliente_id)).size,
       cobrado_mes: aPesos(db.prepare("SELECT COALESCE(SUM(monto_cent), 0) t FROM cobros WHERE cancelado = 0 AND tipo <> 'ajuste' AND substr(fecha, 1, 7) = ?").get(mes).t),
       por_revisar: db.prepare("SELECT COUNT(*) n FROM leads WHERE estatus = 'ganado' AND cobranza_por_revisar = 1").get().n,
@@ -349,6 +353,7 @@ module.exports = function finanzas(app, db, h) {
     if (!permitido(req, res, PUEDE_REGISTRAR_COBRO)) return;
     const lead = db.prepare('SELECT * FROM leads WHERE id = ?').get(req.params.id);
     if (!lead || lead.estatus !== 'ganado') return res.status(400).json({ error: 'Solo se registran pagos en órdenes de servicio contratadas' });
+    if (lead.ejecucion === 'no_realizado') return res.status(400).json({ error: 'Este servicio se marcó como NO realizado: no se le cobra. Si sí se realizó, márcalo primero como realizado.' });
     const monto = aCentavos(req.body.monto);
     if (!monto) return res.status(400).json({ error: 'Escribe un monto mayor a 0, con máximo 2 decimales' });
     const hoy = hoyMexico();
@@ -654,11 +659,17 @@ module.exports = function finanzas(app, db, h) {
     if (b.estado === 'no_realizado') {
       const motivo = texto(b.motivo, 300);
       if (!motivo || motivo.length < 5) return res.status(400).json({ error: 'Escribe por qué no se realizó (mínimo 5 caracteres)' });
+      // Avisos: lo que el cliente ya pagó queda a su favor, y los gastos ya cargados siguen en Cuentas por pagar.
+      const cobrado = db.prepare('SELECT COALESCE(SUM(monto_cent), 0) t FROM cobros WHERE lead_id = ? AND cancelado = 0').get(lead.id).t;
+      const gastos = cuentasPorPagar().filter(x => x.lead_id === lead.id);
+      const pendiente = Math.round(gastos.reduce((t, x) => t + x.saldo * 100, 0));
       db.transaction(() => {
         db.prepare("UPDATE leads SET ejecucion = 'no_realizado', realizado_por = NULL, fecha_realizado = NULL, motivo_no_realizado = ?, updated_at = datetime('now','localtime'), version = version + 1 WHERE id = ?").run(motivo, lead.id);
-        bitacora(lead.id, 'Servicio marcado como NO realizado. Motivo: ' + motivo, req);
+        bitacora(lead.id, 'Servicio marcado como NO realizado. Motivo: ' + motivo
+          + (cobrado ? `. El cliente ya pagó ${fmt(cobrado)}: queda a su favor (devolver o aplicar a otro servicio)` : '')
+          + (gastos.length ? `. Tiene ${gastos.length} gasto(s) en Cuentas por pagar${pendiente ? ' (' + fmt(pendiente) + ' sin pagar)' : ''}: revisa si se cancelan` : '') + '.', req);
       })();
-      return res.json({ ok: true, lead: db.prepare('SELECT * FROM leads WHERE id = ?').get(lead.id) });
+      return res.json({ ok: true, a_favor: aPesos(cobrado), gastos_ligados: gastos.length, gastos_pendientes: aPesos(pendiente), lead: db.prepare('SELECT * FROM leads WHERE id = ?').get(lead.id) });
     }
     if (b.estado !== 'realizado') return res.status(400).json({ error: 'Indica si el servicio se realizó o no' });
     const fecha = b.fecha || hoy;
@@ -682,7 +693,12 @@ module.exports = function finanzas(app, db, h) {
       if (fechaPago && (!fechaValida(fechaPago) || fechaPago > hoy)) return res.status(400).json({ error: ren + 'la fecha de pago no es válida o es futura' });
       listos.push({ prov, categoria, concepto, total, ya_pagado: !!g.ya_pagado, metodo: g.metodo, fechaPago, referencia: texto(g.referencia, 120), folio: texto(g.factura_folio, 60) });
     }
-    if (b.realizado_por === 'subcontratado' && !listos.length) return res.status(400).json({ error: 'Si se subcontrató, registra lo que se le paga a quien lo realizó' });
+    // Al volver a marcar realizado (p. ej. tras un "no realizado"), no se repiten los gastos que ya están cargados.
+    const yaCargado = g => db.prepare('SELECT 1 FROM cuentas_por_pagar WHERE lead_id = ? AND proveedor_id = ? AND concepto = ? AND total_cent = ? AND cancelada = 0').get(lead.id, g.prov.id, g.concepto, g.total);
+    const omitidos = listos.filter(yaCargado).length;
+    for (let i = listos.length - 1; i >= 0; i--) if (yaCargado(listos[i])) listos.splice(i, 1);
+    const yaTieneGastos = db.prepare('SELECT COUNT(*) n FROM cuentas_por_pagar WHERE lead_id = ? AND cancelada = 0').get(lead.id).n;
+    if (b.realizado_por === 'subcontratado' && !listos.length && !yaTieneGastos) return res.status(400).json({ error: 'Si se subcontrató, registra lo que se le paga a quien lo realizó' });
     db.transaction(() => {
       db.prepare("UPDATE leads SET ejecucion = 'realizado', realizado_por = ?, fecha_realizado = ?, motivo_no_realizado = NULL, updated_at = datetime('now','localtime'), version = version + 1 WHERE id = ?")
         .run(b.realizado_por, fecha, lead.id);
@@ -697,7 +713,7 @@ module.exports = function finanzas(app, db, h) {
       bitacora(lead.id, `Servicio realizado el ${fmtFecha(fecha)} por ${b.realizado_por === 'propio' ? 'nuestro equipo' : 'un tercero (subcontratado)'}.`
         + (listos.length ? ` Gastos cargados en Cuentas por pagar: ${listos.length} por ${fmt(suma)}.` : ' Sin gastos registrados.'), req);
     })();
-    res.json({ ok: true, gastos: listos.length, lead: db.prepare('SELECT * FROM leads WHERE id = ?').get(lead.id) });
+    res.json({ ok: true, gastos: listos.length, omitidos, lead: db.prepare('SELECT * FROM leads WHERE id = ?').get(lead.id) });
   }));
 
   // Registrar una factura o gasto de proveedor. Con ya_pagado se crea también su pago (gasto de contado).
