@@ -26,6 +26,7 @@
   - *Por pagar* y *Proveedores* (solo admin): facturas o gastos de proveedores con vencimiento según su crédito, gasto de contado ("ya lo pagué"), pagos parciales, agrupado por vencidas / esta semana / próxima semana, y relación opcional con una orden y un equipo.
   - Inicio muestra el bloque **Finanzas** (te deben, vencido, por confirmar, pagar esta semana).
   - **Carga masiva con plantillas de Excel** (solo admin): en *Por cobrar* y *Por pagar*, "Descargar plantilla" baja un `.xlsx` con hoja de instrucciones, listas desplegables (servicios del catálogo, categorías, métodos de pago) y validaciones. Se llena un renglón por registro y se usa "Subir plantilla": primero aparece una vista previa con los errores por renglón; **si hay un solo error no se importa nada**. Por cobrar crea (o reutiliza por teléfono) el cliente y una orden de servicio con su saldo y lo ya pagado; por pagar crea el proveedor si no existe y la factura o gasto. Subir dos veces el mismo archivo se detecta como duplicado. Máximo 1,000 renglones por archivo.
+  - *Plantilla de cuentas por cobrar*: mismo formato que la hoja de cobranza (SERIE, FOLIO, FECHA, NOMBRE, M,P, SUBTOTAL, IVA, TOTAL, CREDITO, FECHA VENCE, DIAS VENCIDOS, OS, STATUS, PAGO PROGRAMADO, FECHA PAGO, CP, A/C, FLUJO, OBSERVACIONES; opcionales TELÉFONO, SERVICIO y DIRECCIÓN). Se puede subir el .xlsx de la plantilla o el CSV de cobranza tal cual (el título de arriba y el renglón de totales se ignoran). El cliente se busca por nombre; PAGADO registra el pago (A/C o el total) con su fecha, complemento y banco; CANCELADO se omite. Los clientes nuevos se crean sin teléfono: agrégalo en su ficha antes de cotizarles.
 - **Permisos**:
   | Acción | Todos | Solo admin |
   |---|---|---|
@@ -76,6 +77,7 @@ El correo de saneadren.com.mx está en **Google Workspace**. Copia `.env.example
 | `CORREO_REMITENTE` | `Saneadren CRM <servicios@saneadren.com.mx>` | Remitente visible. |
 | `DOMINIO_CORREO` | `saneadren.com.mx` | Único dominio que puede registrarse (valor por defecto). |
 | `USUARIO_PRUEBA_NOMBRE` / `USUARIO_PRUEBA_PASSWORD` | `Karla` / (la contraseña) | Opcional: usuario de pruebas que se crea solo al arrancar (útil en Render sin disco, donde la base se borra en cada despliegue). `USUARIO_PRUEBA_ROL` (ventas por defecto) y `USUARIO_PRUEBA_CORREO` son opcionales. |
+| `USUARIO_2_PASSWORD` | (la contraseña) | Opcional: crea a **Luis Perea** al arrancar. `USUARIO_2_NOMBRE` (Luis Perea por defecto), `USUARIO_2_ROL` (ventas por defecto) y `USUARIO_2_CORREO` son opcionales. |
 
 Sin `SMTP_HOST` los correos **no se envían**: se imprimen en la consola del servidor con su enlace (útil para probar). Nunca guardes `SMTP_PASS` en el repositorio.
 

@@ -718,105 +718,154 @@ module.exports = function finanzas(app, db, h) {
     }
   }
   const responder = (res, simular, resultado) => {
-    const conError = resultado.filter(x => x.errores.length);
+    const conError = resultado.filter(x => x.errores.length), omitidas = resultado.filter(x => x.omitida).length;
     res.status(conError.length || simular ? 200 : 201).json({
-      simulacion: simular, total: resultado.length, validas: resultado.length - conError.length,
-      importadas: !simular && !conError.length ? resultado.length : 0,
+      simulacion: simular, total: resultado.length, validas: resultado.length - conError.length, omitidas,
+      importadas: !simular && !conError.length ? resultado.length - omitidas : 0,
       errores: conError.map(x => ({ fila: x.fila, errores: x.errores })),
       resumen: resultado.map(x => ({ fila: x.fila, ...x.resumen })),
     });
   };
 
-  // ---------- Cuentas por cobrar: cada fila crea (o reutiliza) el cliente y una orden de servicio ----------
+  // ---------- Cuentas por cobrar: formato de cobranza de Saneadren (una factura por renglón) ----------
+  // Columnas: SERIE, FOLIO, FECHA, NOMBRE, M,P, SUBTOTAL, IVA, TOTAL, CREDITO, FECHA VENCE, DIAS VENCIDOS,
+  // OS, STATUS, PAGO PROGRAMADO, FECHA PAGO, CP, A/C, FLUJO, OBSERVACIONES y, opcionales, TELÉFONO,
+  // SERVICIO y DIRECCIÓN. Cada renglón crea (o reutiliza por nombre o teléfono) el cliente y una orden
+  // de servicio con su factura; lo cobrado (A/C, o el total si dice PAGADO) se registra como pago.
+  // Los renglones CANCELADO y los que no tienen datos (p. ej. el de totales) se omiten sin error.
+  const MESES = { ene: 1, jan: 1, feb: 2, mar: 3, abr: 4, apr: 4, may: 5, jun: 6, jul: 7, ago: 8, aug: 8, sep: 9, set: 9, oct: 10, nov: 11, dic: 12, dec: 12 };
+  // "0", "$0.00" → 0; vacío → null; otro → centavos (> 0) o error.
+  function montoCent0(v, campo, errores) {
+    const t = celda(v);
+    if (!t) return null;
+    if (/^\$?\s*0+(\.0+)?$/.test(t)) return 0;
+    return montoCent(v, campo, errores, false);
+  }
+  // Fecha de pago: acepta AAAA-MM-DD o texto como "9-Sep", "2-December", "19-feb-2026". Si no trae
+  // año (o el año no cuadra), se usa el primero en que la fecha cae entre la factura y hoy.
+  function fechaPago(v, base, hoy, errores) {
+    const t = celda(v);
+    if (!t) return null;
+    let y = null, m = null, d = null, x;
+    if ((x = t.match(/^(\d{4})-(\d{2})-(\d{2})/))) { y = +x[1]; m = +x[2]; d = +x[3]; }
+    else if ((x = t.match(/^(\d{1,2})[\s\-\/.]+([a-záéíóú]+)\.?(?:[\s\-\/.]+(\d{2,4}))?/i))) {
+      d = +x[1]; m = MESES[claveNombre(x[2]).slice(0, 3)] || null; y = x[3] ? (x[3].length === 2 ? 2000 + +x[3] : +x[3]) : null;
+    }
+    const iso = (a, b, c) => `${a}-${String(b).padStart(2, '0')}-${String(c).padStart(2, '0')}`;
+    if (!m || !d) { errores.push(`Fecha de pago: no se entiende "${t.slice(0, 30)}" (usa día-mes, p. ej. 9-sep o 2026-09-09)`); return null; }
+    if (y && fechaValida(iso(y, m, d)) && iso(y, m, d) >= base && iso(y, m, d) <= hoy) return iso(y, m, d);
+    for (let a = Number(base.slice(0, 4)); a <= Number(hoy.slice(0, 4)); a++) {
+      const f = iso(a, m, d);
+      if (fechaValida(f) && f >= base && f <= hoy) return f;
+    }
+    errores.push(`Fecha de pago "${t.slice(0, 30)}": debe caer entre la fecha de la factura y hoy`);
+    return null;
+  }
+  const esBanco = t => /banorte|santander|bbva|bancomer|banamex|citi|hsbc|scotia|inbursa|afirme|banbaj|banregio|azteca|bajio|banco|spei/i.test(t || '');
+
   app.post('/api/finanzas/importar/cxc', h((req, res) => {
     const filas = leerFilas(req, res); if (!filas) return;
     const simular = req.query.simular === '1';
     const hoy = hoyMexico();
-    const servicios = new Map(db.prepare('SELECT id, nombre FROM catalogo_servicios WHERE activo = 1').all().map(x => [x.nombre.toLowerCase(), x]));
-    const buscarCliente = db.prepare('SELECT * FROM clientes WHERE telefono_normalizado = ?');
-    const vistos = new Set();
-    const nuevosEnArchivo = new Map(); // teléfono → nombre del cliente nuevo definido en un renglón anterior
+    const servicios = new Map(db.prepare('SELECT id, nombre FROM catalogo_servicios WHERE activo = 1').all().map(x => [claveNombre(x.nombre), x]));
+    const buscarPorTel = db.prepare('SELECT * FROM clientes WHERE telefono_normalizado = ?');
+    // Clientes por nombre o empresa (sin acentos ni mayúsculas): el formato de cobranza no trae teléfono.
+    const porNombre = new Map();
+    for (const c of db.prepare('SELECT * FROM clientes ORDER BY id').all()) {
+      for (const k of [claveNombre(c.nombre), claveNombre(c.empresa_contacto)]) if (k && !porNombre.has(k)) porNombre.set(k, c);
+    }
+    const facturaExiste = db.prepare("SELECT 1 FROM leads WHERE lower(factura_folio) = lower(?)");
+    const vistos = new Set(), nuevosEnArchivo = new Set();
     const resultado = filas.map((f, i) => {
       const errores = [];
       const fila = Number(f.fila) || i + 2;
       erroresExcel(f, errores);
-      const telefono = celda(f.telefono);
-      const tel = telefono.replace(/\D/g, '').slice(-10);
-      if (tel.length !== 10) errores.push('Teléfono: deben ser 10 dígitos');
-      const nombre = textoMax(f.nombre, LIM.nombre, 'Nombre', errores);
-      const existente = tel.length === 10 ? buscarCliente.get(tel) : null;
-      const previo = !existente && tel.length === 10 ? nuevosEnArchivo.get(tel) : null;
-      if (!nombre && !existente && !previo) errores.push('Nombre del cliente es obligatorio (el teléfono no corresponde a un cliente existente)');
-      if (!existente && nombre && tel.length === 10 && !previo) nuevosEnArchivo.set(tel, nombre);
-      const empresa = textoMax(f.empresa, LIM.empresa, 'Empresa', errores);
-      const direccion = textoMax(f.direccion, LIM.direccion, 'Dirección', errores) || existente?.direccion || null;
-      if (!direccion) errores.push('Dirección del servicio es obligatoria');
-      const servicio = servicios.get(celda(f.servicio).toLowerCase());
-      if (!servicio) errores.push(`Servicio "${celda(f.servicio) || '(vacío)'}" no está en el catálogo`);
-      const descripcion = textoMax(f.descripcion, LIM.descripcion, 'Descripción', errores);
-      const fechaServ = fechaCelda(f.fecha_servicio, 'Fecha del servicio', errores, true);
-      const importe = montoCent(f.importe, 'Importe', errores, true);
-      const diasTxt = celda(f.dias_credito);
-      const dias = diasTxt === '' ? null : Number(diasTxt);
-      if (dias !== null && !(Number.isInteger(dias) && dias >= 0 && dias <= 180)) errores.push('Días de crédito: entero de 0 a 180');
-      const folio = textoMax(f.factura_folio, LIM.folio, 'Folio de factura', errores);
-      const fechaFact = fechaCelda(f.factura_fecha, 'Fecha de factura', errores, false);
-      const totalFact = montoCent(f.factura_total, 'Total facturado', errores, false);
-      const pagado = montoCent(f.pagado, 'Ya pagado', errores, false);
-      const notas = textoMax(f.notas, LIM.notas, 'Notas', errores);
-      // IVA del importe (columna opcional; vacía = "por definir", como las plantillas anteriores).
-      const ivaTxt = claveNombre(f.iva);
-      // Solo los textos de la lista (pegar en Excel se salta el desplegable): "IVA no incluido" o "8%" son error.
-      const modo = !ivaTxt ? null : ['mas iva 16%', 'mas iva 16 %', 'mas iva'].includes(ivaTxt) ? 'mas_iva'
-        : ['iva incluido 16%', 'iva incluido 16 %', 'iva incluido'].includes(ivaTxt) ? 'incluido'
-        : ['sin iva', 'sin iva 0%', 'sin iva 0 %'].includes(ivaTxt) ? 'sin_iva' : undefined;
-      if (modo === undefined) errores.push('IVA: elige "Más IVA 16%", "IVA incluido 16%" o "Sin IVA" (o déjalo vacío)');
-      const imp = Importes.calcular([{ importe: (importe || 0) / 100 }], modo || null, Importes.tasaDe(modo || null));
-      if (modo && imp.total_cent > Importes.TOPE_CENT) errores.push('El total con IVA no puede pasar de $100,000,000.00');
-      const total = totalFact ?? (importe ? imp.total_cent : null);
-      if (pagado && total && pagado > total) errores.push('Ya pagado no puede ser mayor que el total');
-      // Evita importar dos veces lo mismo (en el archivo o contra lo que ya existe).
-      // Mismo cliente, servicio, fecha, importe, factura y dirección = el mismo registro. Contra lo
-      // existente se compara el subtotal guardado o el total con IVA (pudo capturarse de las dos formas).
-      // La misma orden puede venir como subtotal + "Más IVA" o como total sin IVA: se comparan las dos cifras.
-      const llave = c => [tel, servicio?.id, fechaServ, c, folio || '', claveNombre(direccion)].join('|');
-      const llaves = [...new Set([imp.subtotal_cent, imp.total_cent])].map(llave);
-      if (importe && servicio && fechaServ) {
-        if (llaves.some(k => vistos.has(k))) errores.push('Fila repetida dentro del archivo');
-        llaves.forEach(k => vistos.add(k));
-        if (existente && db.prepare("SELECT 1 FROM leads WHERE cliente_id = ? AND servicio_id = ? AND fecha_servicio = ? AND estatus = 'ganado' AND (CAST(ROUND(valor * 100) AS INTEGER) = ? OR CAST(ROUND(valor * 100) AS INTEGER) + COALESCE(iva_cent, 0) = ?) AND COALESCE(factura_folio, '') = ? AND lower(trim(COALESCE(direccion, ''))) = lower(trim(?))").get(existente.id, servicio.id, fechaServ, imp.subtotal_cent, imp.total_cent, folio || '', direccion || '')) {
-          errores.push('Ya existe una orden igual para este cliente (¿ya se importó?)');
-        }
+      const nombre = textoMax(f.nombre, LIM.nombre, 'NOMBRE', errores);
+      const folio = textoMax(f.folio, LIM.folio, 'FOLIO', errores), serie = textoMax(f.serie, 20, 'SERIE', errores);
+      const statusTxt = claveNombre(f.status);
+      // Renglones sin datos (p. ej. el de totales al final) y facturas canceladas: se omiten.
+      if (!nombre && !folio && !celda(f.fecha)) return { fila, errores: [], omitida: true, resumen: { omitida: 'Renglón sin cliente ni factura (p. ej. totales)' } };
+      if (statusTxt.startsWith('cancel')) return { fila, errores: [], omitida: true, resumen: { cliente: nombre, folio: [serie, folio].filter(Boolean).join('-'), omitida: 'Factura cancelada: no se importa' } };
+      if (!nombre) errores.push('NOMBRE del cliente es obligatorio');
+      const status = !statusTxt || statusTxt.startsWith('pend') ? 'pendiente' : statusTxt.startsWith('pagad') ? 'pagado'
+        : /parcial|abon/.test(statusTxt) ? 'pendiente' : null;
+      if (!status) errores.push(`STATUS: usa PENDIENTE, PAGADO o CANCELADO ("${celda(f.status).slice(0, 30)}")`);
+      const fecha = fechaCelda(f.fecha, 'FECHA', errores, true);
+      const subtotal = montoCent(f.subtotal, 'SUBTOTAL', errores, true);
+      const ivaArchivo = montoCent0(f.iva, 'IVA', errores);
+      const totalArchivo = montoCent(f.total, 'TOTAL', errores, false);
+      const abonado = montoCent0(f.abonado, 'A/C', errores);
+      // IVA: 0 = sin IVA; si trae IVA, el SUBTOTAL es antes de IVA. Si el TOTAL del archivo no coincide
+      // con subtotal + 16 % (centavos, retenciones), ese total es el de la factura y manda.
+      const modo = ivaArchivo === 0 ? 'sin_iva' : 'mas_iva';
+      const imp = Importes.calcular([{ importe: (subtotal || 0) / 100 }], modo, Importes.tasaDe(modo));
+      if (imp.total_cent > Importes.TOPE_CENT) errores.push('El total con IVA no puede pasar de $100,000,000.00');
+      const totalFactura = totalArchivo ?? (ivaArchivo != null && subtotal ? subtotal + ivaArchivo : null);
+      const facturaTotalCent = totalFactura != null && totalFactura !== imp.total_cent ? totalFactura : null;
+      const total = facturaTotalCent ?? imp.total_cent;
+      const creditoTxt = celda(f.credito);
+      let dias = creditoTxt === '' ? null : Number(creditoTxt);
+      const vence = fechaCelda(f.fecha_vence, 'FECHA VENCE', errores, false);
+      if (dias === null && vence && fecha) dias = diasEntre(fecha, vence);
+      if (dias !== null && !(Number.isInteger(dias) && dias >= 0 && dias <= 180)) errores.push('CREDITO: días enteros de 0 a 180');
+      // Lo cobrado: A/C si viene; si no y dice PAGADO, el total.
+      const pagado = abonado != null ? abonado : status === 'pagado' ? total : 0;
+      if (pagado && total && pagado > total) errores.push('A/C (lo cobrado) no puede ser mayor que el total');
+      let fechaCobro = null;
+      if (pagado && fecha) fechaCobro = fechaPago(f.fecha_pago, fecha, hoy, errores) || (fecha <= hoy ? fecha : hoy);
+      // Cliente: por teléfono (opcional) o por nombre / empresa.
+      const tel = celda(f.telefono).replace(/\D/g, '').slice(-10);
+      if (celda(f.telefono) && tel.length !== 10) errores.push('TELÉFONO: deben ser 10 dígitos');
+      const clave = claveNombre(nombre);
+      const existente = (tel.length === 10 ? buscarPorTel.get(tel) : null) || porNombre.get(clave) || null;
+      const nuevoRepetido = !existente && nuevosEnArchivo.has(clave);
+      if (!existente && clave) nuevosEnArchivo.add(clave);
+      const servicioTxt = celda(f.servicio);
+      const servicio = servicioTxt ? servicios.get(claveNombre(servicioTxt)) : null;
+      if (servicioTxt && !servicio) errores.push(`SERVICIO "${servicioTxt.slice(0, 40)}" no está en el catálogo`);
+      const direccion = textoMax(f.direccion, LIM.direccion, 'DIRECCIÓN', errores) || existente?.direccion || null;
+      const folioTxt = [serie, folio].filter(Boolean).join('-') || null;
+      // La factura (serie y folio) identifica el renglón: no se importa dos veces.
+      if (folioTxt) {
+        if (vistos.has(claveNombre(folioTxt))) errores.push(`La factura ${folioTxt} está repetida en el archivo`);
+        vistos.add(claveNombre(folioTxt));
+        if (facturaExiste.get(folioTxt)) errores.push(`Ya existe una orden con la factura ${folioTxt} (¿ya se importó?)`);
       }
-      return { fila, errores, datos: { tel, telefono, nombre, empresa, direccion, servicio, descripcion, fechaServ, importe, imp, modo: modo || null, dias, folio, fechaFact, totalFact, pagado, notas, existente },
-        resumen: { cliente: existente?.nombre || previo || nombre, servicio: servicio?.nombre || celda(f.servicio), total: total ? aPesos(total) : null, pagado: pagado ? aPesos(pagado) : 0, cliente_nuevo: !existente && !previo } };
+      const extra = [['Método de pago', f.metodo_pago], ['OS', f.os], ['Flujo', f.flujo], ['Pago programado', f.pago_programado], ['Observaciones', f.observaciones]]
+        .map(([k, v]) => celda(v) ? `${k}: ${celda(v)}` : '').filter(Boolean).join(' · ');
+      const notas = textoMax(extra, LIM.notas, 'Notas', errores);
+      const referencia = [celda(f.cp), celda(f.observaciones)].filter(Boolean).join(' · ').slice(0, 120) || null;
+      return { fila, errores, datos: { tel, nombre, clave, existente, servicio, direccion, fecha, subtotal, modo, imp, facturaTotalCent, folioTxt, dias, pagado, fechaCobro, notas, referencia, metodo: esBanco(f.observaciones) ? 'transferencia' : 'otro' },
+        resumen: { cliente: existente?.nombre || nombre, folio: folioTxt, total: total ? aPesos(total) : null, pagado: aPesos(pagado), estado: status === 'pagado' && pagado < total ? 'Pagado en parte' : status === 'pagado' ? 'Pagado' : 'Pendiente', cliente_nuevo: !existente && !nuevoRepetido } };
     });
     if (simular || resultado.some(x => x.errores.length)) return responder(res, simular, resultado);
 
     db.transaction(() => {
-      const insCliente = db.prepare('INSERT INTO clientes (telefono, telefono_normalizado, nombre, empresa_contacto, direccion) VALUES (?, ?, ?, ?, ?)');
+      const insCliente = db.prepare('INSERT INTO clientes (telefono, telefono_normalizado, nombre, direccion) VALUES (?, ?, ?, ?)');
       const insLead = db.prepare(`INSERT INTO leads (cliente_id, telefono, telefono_normalizado, nombre, empresa_contacto, direccion, servicio_id, responsable_id,
           notas_iniciales, creado_por, valor, fecha_servicio, estatus, etapa, origen, partidas_json, dias_credito, factura_folio, factura_fecha, factura_total_cent,
           iva_modo, iva_tasa, iva_cent)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ganado', 4, 'directo', ?, ?, ?, ?, ?, ?, ?, ?)`);
-      // Lo ya pagado es dinero que sí entró: se registra como pago (o anticipo si el servicio es futuro),
-      // igual que en cuentas por pagar, para que Resultados cuadre.
-      const insCobro = db.prepare(`INSERT INTO cobros (lead_id, fecha, monto_cent, tipo, metodo, notas, confirmado, confirmado_por, confirmado_at, registrado_por)
-        VALUES (?, ?, ?, ?, 'otro', 'Pagado antes de la importación (plantilla de Excel)', 1, ?, datetime('now','localtime'), ?)`);
-      const creados = new Map(); // teléfono → cliente creado en esta misma importación
-      for (const { datos: d } of resultado) {
-        let cli = d.existente || creados.get(d.tel);
+      const insCobro = db.prepare(`INSERT INTO cobros (lead_id, fecha, monto_cent, tipo, metodo, referencia, notas, confirmado, confirmado_por, confirmado_at, registrado_por)
+        VALUES (?, ?, ?, 'pago', ?, ?, 'Cobrado antes de la importación (plantilla de cobranza)', 1, ?, datetime('now','localtime'), ?)`);
+      const creados = new Map(); // clave del nombre → cliente creado en esta importación
+      for (const r of resultado) {
+        if (r.omitida) continue;
+        const d = r.datos;
+        let cli = d.existente || creados.get(d.clave);
         if (!cli) {
-          const id = insCliente.run(d.tel, d.tel, d.nombre, d.empresa, d.direccion).lastInsertRowid; // teléfono limpio: solo los 10 dígitos
+          // Sin teléfono en el archivo: el cliente se crea sin él (se agrega después desde su ficha).
+          const telNorm = d.tel.length === 10 ? d.tel : 'sin-telefono-' + require('crypto').randomBytes(6).toString('hex');
+          const id = insCliente.run(d.tel.length === 10 ? d.tel : '', telNorm, d.nombre, d.direccion).lastInsertRowid;
           cli = db.prepare('SELECT * FROM clientes WHERE id = ?').get(id);
-          creados.set(d.tel, cli);
+          creados.set(d.clave, cli);
         }
-        const partidas = JSON.stringify([{ servicio: d.servicio.nombre, leyenda: d.descripcion || '', importe: d.importe / 100 }]);
-        const leadId = insLead.run(cli.id, cli.telefono, cli.telefono_normalizado, cli.nombre, cli.empresa_contacto, d.direccion, d.servicio.id, req.usuarioSesion.id,
-          d.notas, req.usuarioSesion.nombre, d.imp.subtotal_cent / 100, d.fechaServ, partidas, d.dias ?? cli.dias_credito ?? null, d.folio, d.fechaFact, d.totalFact,
+        const partidas = JSON.stringify([{ servicio: d.servicio?.nombre || '', leyenda: d.folioTxt ? 'Factura ' + d.folioTxt : 'Servicio facturado', importe: d.subtotal / 100 }]);
+        const leadId = insLead.run(cli.id, cli.telefono, cli.telefono_normalizado, cli.nombre, cli.empresa_contacto, d.direccion, d.servicio?.id ?? null, req.usuarioSesion.id,
+          d.notas, req.usuarioSesion.nombre, d.imp.subtotal_cent / 100, d.fecha, partidas, d.dias ?? cli.dias_credito ?? null, d.folioTxt, d.fecha, d.facturaTotalCent,
           d.modo, Importes.tasaDe(d.modo), d.imp.iva_cent).lastInsertRowid;
-        if (d.pagado) insCobro.run(leadId, d.fechaServ <= hoy ? d.fechaServ : hoy, d.pagado, d.fechaServ > hoy ? 'anticipo' : 'pago', req.usuarioSesion.id, req.usuarioSesion.id);
-        bitacora(leadId, 'Orden importada desde la plantilla de Excel de cuentas por cobrar.' + (d.pagado ? ` Ya pagado: ${fmt(d.pagado)}.` : ''), req);
+        if (d.pagado) insCobro.run(leadId, d.fechaCobro, d.pagado, d.metodo, d.referencia, req.usuarioSesion.id, req.usuarioSesion.id);
+        bitacora(leadId, 'Orden importada desde la plantilla de cobranza' + (d.folioTxt ? ` (factura ${d.folioTxt})` : '') + '.' + (d.pagado ? ` Cobrado: ${fmt(d.pagado)}.` : ''), req);
       }
     })();
     responder(res, false, resultado);
