@@ -673,6 +673,8 @@ body:not(.puede-cobranza) .solo-cobranza{display:none !important;}
 .estado-cxc.vencida{background:#fbe6e3;color:var(--rojo);}
 .estado-cxc.parcial,.estado-cxc.por-confirmar{background:#fff3cd;color:var(--amarillo-texto);}
 .estado-cxc.programada{background:#e3eef5;color:var(--azul-600);}
+.estado-cxc.pendiente{background:#fff3cd;color:var(--amarillo-texto);}
+.estado-cxc.por-concluir{background:#fde7d3;color:#9a4a00;}
 .grupo-pagos{font-size:15px;margin:16px 0 8px;display:flex;gap:8px;align-items:baseline;}
 .grupo-pagos small{color:var(--texto-sec);font-weight:400;}
 #pagar-lista .fila-dinero{margin-bottom:8px;}

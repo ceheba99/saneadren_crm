@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Saneadren · Cotizaciones y Servicios</title>
-<link rel="stylesheet" href="styles.css?v=cal2">
+<link rel="stylesheet" href="styles.css?v=cal3">
 <link rel="stylesheet" href="servicios-tabla.css">
 <link rel="stylesheet" href="flujo.css">
 </head>
@@ -390,10 +390,11 @@
       <div id="cuentas-revision" class="cuentas-aviso solo-admin" hidden></div>
       <div id="cuentas-por-confirmar"></div>
       <div class="pendientes-filtros" id="cobrar-filtros">
-        <button type="button" class="activo" data-filtro-cobro="con_saldo">Con saldo</button>
+        <button type="button" class="activo" data-filtro-cobro="con_saldo">Por cobrar</button>
         <button type="button" data-filtro-cobro="vencido">Vencido</button>
         <button type="button" data-filtro-cobro="por_vencer">Por vencer</button>
-        <button type="button" data-filtro-cobro="programadas">Programadas</button>
+        <button type="button" data-filtro-cobro="por_concluir">Falta marcar realizado</button>
+        <button type="button" data-filtro-cobro="programadas">Por realizar</button>
         <button type="button" data-filtro-cobro="1-15">1-15 días</button>
         <button type="button" data-filtro-cobro="16-30">16-30</button>
         <button type="button" data-filtro-cobro="31-60">31-60</button>
@@ -914,14 +915,14 @@
 
 
 <!-- ?v= obliga a los navegadores (sobre todo celulares) a tomar la versión nueva tras publicar. -->
-<script src="ui.js?v=cal2"></script>
-<script src="importes.js?v=cal2"></script>
-<script src="servicios-tabla.js?v=cal2"></script>
-<script src="flujo.js?v=cal2"></script>
-<script src="cuentas.js?v=cal2"></script>
-<script src="finanzas.js?v=cal2"></script>
-<script src="calendario.js?v=cal2"></script>
-<script src="app.js?v=cal2"></script>
-<script src="prospeccion.js?v=cal2"></script>
+<script src="ui.js?v=cal3"></script>
+<script src="importes.js?v=cal3"></script>
+<script src="servicios-tabla.js?v=cal3"></script>
+<script src="flujo.js?v=cal3"></script>
+<script src="cuentas.js?v=cal3"></script>
+<script src="finanzas.js?v=cal3"></script>
+<script src="calendario.js?v=cal3"></script>
+<script src="app.js?v=cal3"></script>
+<script src="prospeccion.js?v=cal3"></script>
 </body>
 </html>

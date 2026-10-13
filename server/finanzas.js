@@ -312,6 +312,7 @@ module.exports = function finanzas(app, db, h) {
     else if (filtro === 'vencido') cuentas = cuentas.filter(c => c.vencida);
     else if (filtro === 'por_vencer') cuentas = cuentas.filter(c => c.saldo > 0 && !c.vencida && !c.programada);
     else if (filtro === 'programadas') cuentas = cuentas.filter(c => c.saldo > 0 && c.programada);
+    else if (filtro === 'por_concluir') cuentas = cuentas.filter(c => c.saldo > 0 && c.por_concluir);
     else if (['1-15', '16-30', '31-60', '60+'].includes(filtro)) cuentas = cuentas.filter(c => c.tramo === filtro);
     else if (filtro === 'sin_factura') cuentas = cuentas.filter(c => c.saldo > 0 && !c.factura_folio && !c.programada);
     else cuentas = cuentas.filter(c => c.saldo > 0 && !c.programada);
