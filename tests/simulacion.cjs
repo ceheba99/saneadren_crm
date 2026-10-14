@@ -387,10 +387,10 @@ const espera = ms => new Promise(r => setTimeout(r, ms));
   ok(c.total === 4060 && c.saldo === 4060 && c.subtotal === 3500 && c.iva === 560 && c.total_orden === 4060 && c.dif_cfdi === null, 'la orden "más IVA" es una cuenta por cobrar de $4,060 sin capturar factura', c);
 
   [s, j] = await altaIva({ partidas_json: part(1500), iva_modo: 'mas_iva', estatus: 'ganado', fecha_servicio: '2026-11-21' });
-  ok(s === 201 && (await cuenta(j.id)).total === 1740, 'ejemplo del dueño: subtotal $1,500 → total $1,740');
+  ok(s === 201 && (await cuenta(j.id)).total === 1740, 'ejemplo: subtotal $1,500 → total $1,740');
   [s, j] = await altaIva({ partidas_json: part(1160), iva_modo: 'incluido', estatus: 'ganado', fecha_servicio: '2026-11-22' });
   c = await cuenta(j.id);
-  ok(s === 201 && j.valor === 1000 && j.iva_cent === 16000 && c.total === 1160, 'ejemplo del dueño: $1,160 con IVA incluido → $1,000 + $160', { j, c });
+  ok(s === 201 && j.valor === 1000 && j.iva_cent === 16000 && c.total === 1160, 'ejemplo: $1,160 con IVA incluido → $1,000 + $160', { j, c });
   [s, j] = await altaIva({ partidas_json: part(5000), iva_modo: 'incluido', estatus: 'ganado', fecha_servicio: '2026-11-23' });
   const ordenInc = j;
   c = await cuenta(ordenInc.id);

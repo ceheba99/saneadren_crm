@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Saneadren · Cotizaciones y Servicios</title>
-<link rel="stylesheet" href="styles.css?v=cc2">
+<link rel="stylesheet" href="styles.css?v=pg2">
 <link rel="stylesheet" href="servicios-tabla.css">
 <link rel="stylesheet" href="flujo.css">
 </head>
@@ -308,7 +308,25 @@
 
   <!-- ====== VISTA: RESULTADOS ====== -->
   <section class="vista" id="vista-resultados">
-    <h2>Resultados comerciales</h2>
+    <div class="vista-encabezado"><div><h2>Resultados</h2><p class="ayuda">Cómo va la empresa: ventas, utilidad, dinero que entra y sale, cobranza y operación.</p></div></div>
+    <div class="res-pestanas" role="tablist">
+      <button type="button" role="tab" class="solo-admin activo" data-res-tab="panorama" aria-selected="true">📊 Panorama general</button>
+      <button type="button" role="tab" data-res-tab="comercial" aria-selected="false">📈 Análisis comercial</button>
+    </div>
+    <div id="res-panorama" class="solo-admin">
+      <div class="filtros pg-filtros">
+        <div class="segmentado pg-presets" role="group" aria-label="Periodo">
+          <button type="button" data-pg-preset="mes">Este mes</button><button type="button" data-pg-preset="mes_pasado">Mes pasado</button><button type="button" data-pg-preset="trimestre">Trimestre</button><button type="button" data-pg-preset="anio">Este año</button><button type="button" data-pg-preset="12m">12 meses</button>
+        </div>
+        <label>Desde <input type="date" id="pg-desde"></label><label>Hasta <input type="date" id="pg-hasta"></label>
+        <button type="button" class="btn btn-primario" id="pg-aplicar">Consultar</button>
+        <button type="button" class="btn btn-outline" id="pg-exportar">📥 Exportar a Excel</button>
+        <button type="button" class="btn btn-outline" id="pg-imprimir">🖨 Imprimir / PDF</button>
+      </div>
+      <p class="ayuda" id="pg-estado" role="status"></p>
+      <div id="pg-cuerpo"></div>
+    </div>
+    <div id="res-comercial" hidden>
     <div class="filtros"><label>Desde <input type="date" id="res-desde"></label><label>Hasta <input type="date" id="res-hasta"></label><button class="btn btn-primario" id="res-aplicar">Consultar</button><button class="btn btn-outline" id="res-todo">Todo el historial</button><button class="btn btn-outline solo-admin" id="res-exportar">Exportar canales a Excel</button></div>
     <p class="ayuda">Contactos nuevos: fecha de registro. Importe contratado: fecha acordada del servicio. Cada contacto y sus servicios se atribuyen a “Cómo se enteró de nosotros”. El importe contratado no equivale a cobros ni utilidad. Los importes son sin IVA (la venta real); lo cobrado y los gastos sí incluyen IVA.</p>
     <p id="res-estado" role="status"></p><div class="res-grid" id="res-kpis"></div>
@@ -324,6 +342,7 @@
       <div class="res-section"><h3>Clientes de una compra y recurrentes</h3><p class="ayuda">Clientes con servicio en el periodo, clasificados por su número de contrataciones histórico.</p><div id="res-repeticion" class="bar-chart"></div></div>
     </div>
     <div class="res-section"><h3>Evaluación de clientes y prospectos</h3><p class="ayuda">Ordenados por importe contratado del periodo. Recurrente: tiene más de un servicio contratado en todo su historial. Última fecha: fecha acordada más reciente, puede ser futura.</p><div class="tabla-scroll"><table class="tabla-resumen"><thead><tr><th>Contacto</th><th>Canal</th><th>Relación</th><th>Servicios del periodo</th><th>Contratado del periodo</th><th>Contratado histórico</th><th>Propuestas abiertas del periodo</th><th>Última fecha de servicio</th><th>Ficha</th></tr></thead><tbody id="res-clientes"></tbody></table></div></div>
+    </div>
   </section>
 
 <section class="vista" id="vista-prospeccion">
@@ -931,14 +950,15 @@
 
 
 <!-- ?v= obliga a los navegadores (sobre todo celulares) a tomar la versión nueva tras publicar. -->
-<script src="ui.js?v=cc2"></script>
-<script src="importes.js?v=cc2"></script>
-<script src="servicios-tabla.js?v=cc2"></script>
-<script src="flujo.js?v=cc2"></script>
-<script src="cuentas.js?v=cc2"></script>
-<script src="finanzas.js?v=cc2"></script>
-<script src="calendario.js?v=cc2"></script>
-<script src="app.js?v=cc2"></script>
-<script src="prospeccion.js?v=cc2"></script>
+<script src="ui.js?v=pg2"></script>
+<script src="importes.js?v=pg2"></script>
+<script src="servicios-tabla.js?v=pg2"></script>
+<script src="flujo.js?v=pg2"></script>
+<script src="cuentas.js?v=pg2"></script>
+<script src="finanzas.js?v=pg2"></script>
+<script src="calendario.js?v=pg2"></script>
+<script src="tablero.js?v=pg2"></script>
+<script src="app.js?v=pg2"></script>
+<script src="prospeccion.js?v=pg2"></script>
 </body>
 </html>
