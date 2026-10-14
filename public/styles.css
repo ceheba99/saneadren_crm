@@ -1063,3 +1063,49 @@ button.enlace{background:none;border:0;padding:0;color:var(--azul-600);text-deco
   .gc-fila-grid .gc-c-importe{grid-column:1/-1;}
 }
 #sn-wrap-vigencia input{width:100%;box-sizing:border-box;}
+
+/* ====== Ventana: estado de cuenta de un cliente ====== */
+.modal-cuenta-cliente{max-width:1100px;width:calc(100vw - 32px);}
+.modal-cuenta-cliente .modal-header{align-items:flex-start;}
+.modal-cuenta-cliente .modal-header h2{margin:2px 0 0;}
+.cc-sub{margin:4px 0 0;font-size:13px;color:#c9ced4;}
+.cc-aviso{margin:0 0 14px;padding:10px 12px;border-radius:var(--radio);background:#eef5fa;border:1px solid #cfe2ee;color:var(--azul-600);font-size:13.5px;}
+.cc-tarjetas{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:12px;}
+.cc-tarjeta{background:var(--blanco);border:1px solid var(--gris-200);border-radius:10px;padding:10px 12px;display:flex;flex-direction:column;gap:2px;}
+.cc-tarjeta small{font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:var(--texto-sec);font-weight:700;}
+.cc-tarjeta b{font-size:18px;}
+.cc-tarjeta.aviso{border-left:4px solid var(--amarillo);}
+.cc-tarjeta.alerta{border-left:4px solid var(--rojo);}
+.cc-tarjeta.alerta b{color:var(--rojo);}
+.cc-tarjeta.favor{border-left:4px solid #7b4fb0;}
+.cc-tarjeta .enlace{align-self:flex-start;font-size:12.5px;}
+.cc-acciones{margin-bottom:6px;}
+.cc-seccion{margin-top:16px;}
+.cc-seccion-cab{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px;}
+.cc-seccion-cab h3{margin:0;font-size:15px;}
+.cc-check{display:inline-flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;}
+.modal-cuenta-cliente .tabla-dinero-caja{max-height:340px;}
+.tabla-dinero tr.fila-cancelada td{color:var(--texto-sec);text-decoration:line-through;}
+.tabla-dinero tr.fila-cancelada td:last-child,.tabla-dinero tr.fila-cancelada td:nth-last-child(2){text-decoration:none;}
+/* Nombre del cliente en la lista: abre su estado de cuenta. */
+.enlace-cliente{background:none;border:0;padding:0;font:inherit;font-weight:700;color:var(--azul-600);cursor:pointer;text-align:left;}
+.enlace-cliente:hover{text-decoration:underline;}
+/* Cuentas por cobrar: Saldo y botones siempre a la vista a la derecha. */
+.tabla-dinero .celda-acciones{width:190px;min-width:190px;max-width:190px;box-sizing:border-box;}
+.tabla-dinero .celda-saldo{min-width:110px;position:sticky;right:190px;z-index:1;background:var(--blanco);box-shadow:-6px 0 8px -6px rgba(0,0,0,.15);}
+.tabla-dinero thead .celda-saldo,.tabla-dinero thead .celda-acciones{z-index:3;background:#f3f5f6;}
+.tabla-dinero tfoot .celda-saldo,.tabla-dinero tfoot .celda-acciones{background:#eef1f3;}
+.tabla-dinero tbody tr:nth-child(even) .celda-saldo{background:#fafbfc;}
+.tabla-dinero thead th.celda-acciones{position:sticky;right:0;}
+.tabla-dinero tfoot td.celda-acciones{position:sticky;right:0;}
+.tabla-dinero tbody tr .celda-acciones{box-shadow:none;}
+#cc-cuerpo{padding:18px 22px 24px;}
+/* En la ventana del cliente la tabla cabe completa: sin columnas fijas y el status en dos renglones si hace falta. */
+.modal-cuenta-cliente .tabla-dinero .celda-acciones{position:static;width:auto;min-width:0;max-width:none;box-shadow:none;}
+.modal-cuenta-cliente .tabla-dinero td .estado-cxc{white-space:normal;display:inline-block;max-width:210px;line-height:1.3;}
+.modal-cuenta-cliente .tabla-dinero th,.modal-cuenta-cliente .tabla-dinero td{padding:7px 8px;}
+@media(max-width:600px){
+  #cc-cuerpo{padding:14px 12px 20px;}
+  .cc-tarjetas{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;}
+  .cc-tarjeta b{font-size:15px;}
+}

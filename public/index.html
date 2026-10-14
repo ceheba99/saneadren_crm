@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Saneadren · Cotizaciones y Servicios</title>
-<link rel="stylesheet" href="styles.css?v=vis3">
+<link rel="stylesheet" href="styles.css?v=cc2">
 <link rel="stylesheet" href="servicios-tabla.css">
 <link rel="stylesheet" href="flujo.css">
 </head>
@@ -652,6 +652,17 @@
   </div>
 </div>
 
+<!-- ====== OVERLAY: ESTADO DE CUENTA DE UN CLIENTE (desde Cuentas por cobrar) ====== -->
+<div class="overlay" id="overlay-cuenta-cliente">
+  <div class="modal modal-cuenta-cliente">
+    <div class="modal-header">
+      <div><span class="flujo-kicker">ESTADO DE CUENTA DEL CLIENTE</span><h2 id="cc-titulo">Cliente</h2><p class="cc-sub" id="cc-sub"></p></div>
+      <button class="close-btn" onclick="document.getElementById('overlay-cuenta-cliente').classList.remove('mostrar')">✕</button>
+    </div>
+    <div class="modal-body" id="cc-cuerpo"></div>
+  </div>
+</div>
+
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
 <!-- ====== OVERLAY: LOGIN ====== -->
@@ -920,14 +931,14 @@
 
 
 <!-- ?v= obliga a los navegadores (sobre todo celulares) a tomar la versión nueva tras publicar. -->
-<script src="ui.js?v=vis3"></script>
-<script src="importes.js?v=vis3"></script>
-<script src="servicios-tabla.js?v=vis3"></script>
-<script src="flujo.js?v=vis3"></script>
-<script src="cuentas.js?v=vis3"></script>
-<script src="finanzas.js?v=vis3"></script>
-<script src="calendario.js?v=vis3"></script>
-<script src="app.js?v=vis3"></script>
-<script src="prospeccion.js?v=vis3"></script>
+<script src="ui.js?v=cc2"></script>
+<script src="importes.js?v=cc2"></script>
+<script src="servicios-tabla.js?v=cc2"></script>
+<script src="flujo.js?v=cc2"></script>
+<script src="cuentas.js?v=cc2"></script>
+<script src="finanzas.js?v=cc2"></script>
+<script src="calendario.js?v=cc2"></script>
+<script src="app.js?v=cc2"></script>
+<script src="prospeccion.js?v=cc2"></script>
 </body>
 </html>

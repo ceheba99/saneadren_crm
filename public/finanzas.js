@@ -129,6 +129,7 @@ const Finanzas = (() => {
           <div class="campo-modal"><label for="fact-credito">Días de crédito</label><input id="fact-credito" type="number" min="0" max="180" step="1" value="${Number(c.dias_credito) || 0}"></div>
           <div class="campo-modal"><label for="fact-folio">Folio de factura (CFDI)</label><input id="fact-folio" maxlength="60" value="${esc(c.factura_folio || '')}"></div>
           <div class="campo-modal"><label for="fact-fecha">Fecha de factura</label><input id="fact-fecha" type="date" value="${esc(c.factura_fecha || '')}"></div>
+          <div class="campo-modal"><label for="fact-metodo">Método de pago (M.P.)</label><select id="fact-metodo"><option value="">Sin indicar</option><option value="PUE"${c.factura_metodo === 'PUE' ? ' selected' : ''}>PUE · una sola exhibición</option><option value="PPD"${c.factura_metodo === 'PPD' ? ' selected' : ''}>PPD · parcialidades o diferido</option></select></div>
           <div class="campo-modal"><label for="fact-total">Total del CFDI, con IVA (vacío = total de la orden)</label><input id="fact-total" type="text" inputmode="decimal" value="${c.factura_total == null ? '' : Number(c.factura_total).toFixed(2)}"></div>
         </div>
         <button type="button" class="btn btn-secundario" data-cobranza="guardar-factura">Guardar crédito y factura</button>
@@ -170,7 +171,7 @@ const Finanzas = (() => {
     if (btn.dataset.cobranza === 'registrar') return abrirCobro(id, recargar);
     if (btn.dataset.cobranza === 'guardar-factura') return conBoton(btn, async () => {
       await json(await api('/leads/' + id + '/facturacion', { method: 'PUT', body: JSON.stringify({
-        dias_credito: $('fact-credito').value, factura_folio: $('fact-folio').value, factura_fecha: $('fact-fecha').value || null,
+        dias_credito: $('fact-credito').value, factura_folio: $('fact-folio').value, factura_fecha: $('fact-fecha').value || null, factura_metodo: $('fact-metodo').value,
         factura_total: $('fact-total').value.trim() === '' ? null : $('fact-total').value.trim() }) }));
       toast('Crédito y factura guardados'); await recargar();
     });
@@ -339,13 +340,13 @@ const Finanzas = (() => {
     const encabezado = c => {
       const flecha = orden && orden.k === c.k ? (orden.dir > 0 ? ' ▲' : ' ▼') : '';
       const sort = orden && orden.k === c.k ? (orden.dir > 0 ? 'ascending' : 'descending') : 'none';
-      return c.sinOrden ? '<th>' + esc(c.t) + '</th>' : '<th class="ordenable' + (c.n ? ' st-num' : '') + '" data-orden="' + esc(c.k) + '" aria-sort="' + sort + '" tabindex="0">' + esc(c.t) + flecha + '</th>';
+      return c.sinOrden ? '<th class="' + (c.clase || '') + '">' + esc(c.t) + '</th>' : '<th class="ordenable' + (c.n ? ' st-num' : '') + (c.clase ? ' ' + c.clase : '') + '" data-orden="' + esc(c.k) + '" aria-sort="' + sort + '" tabindex="0">' + esc(c.t) + flecha + '</th>';
     };
     const celda = (c, f) => '<td class="' + (c.n ? 'st-num' : '') + (c.clase ? ' ' + c.clase : '') + '">' + c.v(f) + '</td>';
     return '<div class="tabla-scroll tabla-dinero-caja"><table class="tabla-resumen tabla-dinero" data-tabla="' + esc(id) + '">'
       + '<thead><tr>' + visibles.map(encabezado).join('') + '</tr></thead>'
       + '<tbody>' + filas.map(f => '<tr class="' + (claseFila ? claseFila(f) : '') + '">' + visibles.map(c => celda(c, f)).join('') + '</tr>').join('') + '</tbody>'
-      + (visibles.some(c => c.sum) ? '<tfoot><tr>' + visibles.map((c, i) => '<td class="' + (c.n ? 'st-num' : '') + '">' + celdaPie(c, i) + '</td>').join('') + '</tr></tfoot>' : '')
+      + (visibles.some(c => c.sum) ? '<tfoot><tr>' + visibles.map((c, i) => '<td class="' + (c.n ? 'st-num' : '') + (c.clase ? ' ' + c.clase : '') + '">' + celdaPie(c, i) + '</td>').join('') + '</tr></tfoot>' : '')
       + '</table></div>';
   }
   // Barra (Tabla / Tarjetas y Columnas) + la tabla o las tarjetas de siempre.
@@ -395,37 +396,42 @@ const Finanzas = (() => {
   };
   const ejecucionCorta = c => c.ejecucion === 'realizado' ? 'Realizado ' + fechaTxt(c.fecha_realizado || c.fecha_servicio) + (c.realizado_por === 'subcontratado' ? ' (subcontratado)' : '')
     : c.ejecucion === 'no_realizado' ? 'No realizado' : c.por_concluir ? 'Falta marcar' : 'Programado';
+  // Mismo orden que la plantilla de cobranza (COBRANZA_QRO_2026): SERIE-FOLIO, FECHA, NOMBRE, M.P., SUBTOTAL, IVA, TOTAL,
+  // CRÉDITO, FECHA VENCE, DÍAS VENCIDOS, OS, STATUS, FECHA PAGO, CP, A/C, OBSERVACIONES; después, datos extra del CRM.
+  const pagoParte = (u, n) => (u ? String(u).split('|')[n] || '' : '');
   const COLS_COBRAR = [
-    { k: 'estado', t: 'Estado', fija: true, v: c => etiquetaEstado(c), s: c => textoEstado(c)[1] },
-    { k: 'folio', t: 'OS', fija: true, v: c => '<b>' + esc(folioOS(c)) + '</b>', s: c => c.lead_id },
+    { k: 'estado', t: 'Status', fija: true, v: c => etiquetaEstado(c), s: c => textoEstado(c)[1] },
     { k: 'factura', t: 'Factura', v: c => esc(c.factura_folio || '—'), s: c => c.factura_folio || '' },
-    { k: 'factura_fecha', t: 'Fecha factura', v: c => esc(c.factura_fecha ? fechaTxt(c.factura_fecha) : '—'), s: c => c.factura_fecha || '' },
-    { k: 'cliente', t: 'Cliente', fija: true, v: c => esc(c.cliente_nombre || 'Sin nombre') + (c.empresa_contacto ? '<small class="celda-sub">' + esc(c.empresa_contacto) + '</small>' : ''), s: c => String(c.cliente_nombre || '').toLowerCase() },
-    { k: 'rfc', t: 'RFC', v: c => esc(c.rfc || '—'), s: c => c.rfc || '' },
-    { k: 'telefono', t: 'Teléfono', v: c => esc(c.telefono || '—'), s: c => c.telefono || '' },
+    { k: 'fecha', t: 'Fecha', v: c => esc(fechaTxt(c.factura_fecha || c.fecha_realizado || c.fecha_servicio)), s: c => c.factura_fecha || c.fecha_realizado || c.fecha_servicio || '' },
+    { k: 'cliente', t: 'Cliente', fija: true, v: c => '<button type="button" class="enlace-cliente" data-cliente-cuenta="' + Number(c.cliente_id) + '" title="Ver todo lo de este cliente">' + esc(c.cliente_nombre || 'Sin nombre') + ' ›</button>' + (c.empresa_contacto ? '<small class="celda-sub">' + esc(c.empresa_contacto) + '</small>' : ''), s: c => String(c.cliente_nombre || '').toLowerCase() },
+    { k: 'mp', t: 'M.P.', v: c => esc(c.factura_metodo || '—'), s: c => c.factura_metodo || '' },
+    { k: 'subtotal', t: 'Subtotal', n: true, v: c => formatoMoneda(c.subtotal), s: c => c.subtotal, sum: c => c.subtotal },
+    { k: 'iva', t: 'IVA', n: true, v: c => (c.iva == null ? '<small>Por definir</small>' : formatoMoneda(c.iva)), s: c => c.iva || 0, sum: c => c.iva || 0 },
+    { k: 'total', t: 'Total', n: true, v: c => formatoMoneda(c.total), s: c => c.total, sum: c => c.total },
+    { k: 'credito', t: 'Crédito', n: true, v: c => Number(c.dias_credito) + ' d', s: c => c.dias_credito },
+    { k: 'vence', t: 'Fecha vence', v: c => (c.programada ? '—' : esc(fechaTxt(c.vence))), s: c => (c.programada ? '9999' : c.vence) },
+    { k: 'dias', t: 'Días vencidos', n: true, v: diasCobro, s: c => (c.saldo > 0 && !c.programada ? c.dias_vencido : -99999) },
+    { k: 'folio', t: 'OS', fija: true, v: c => '<b>' + esc(folioOS(c)) + '</b>', s: c => c.lead_id },
+    { k: 'fecha_pago', t: 'Fecha pago', v: c => esc(c.ultimo_pago ? fechaTxt(pagoParte(c.ultimo_pago, 0)) : '—'), s: c => pagoParte(c.ultimo_pago, 0) },
+    { k: 'cp', t: 'CP / referencia', v: c => esc(pagoParte(c.ultimo_pago, 2) || (c.ultimo_pago ? NOMBRE_METODO[pagoParte(c.ultimo_pago, 1)] || '' : '—')), s: c => pagoParte(c.ultimo_pago, 2) },
+    { k: 'cobrado', t: 'A/C', n: true, v: c => formatoMoneda(c.cobrado), s: c => c.cobrado, sum: c => c.cobrado },
+    { k: 'notas', t: 'Observaciones', clase: 'celda-notas', v: c => esc(c.notas || ''), s: c => c.notas || '' },
     { k: 'servicio', t: 'Servicio', v: c => esc(c.servicio_nombre || '—'), s: c => c.servicio_nombre || '' },
     { k: 'fecha_servicio', t: 'Fecha servicio', v: c => esc(fechaTxt(c.fecha_servicio)), s: c => c.fecha_servicio || '' },
     { k: 'ejecucion', t: 'Ejecución', v: c => esc(ejecucionCorta(c)), s: c => ejecucionCorta(c) },
     { k: 'equipo', t: 'Unidad', v: c => esc(c.equipo || '—'), s: c => c.equipo || '' },
     { k: 'operador', t: 'Operador', v: c => esc(c.operador || '—'), s: c => c.operador || '' },
     { k: 'proyecto', t: 'Proyecto', v: c => esc(c.proyecto || '—'), s: c => c.proyecto || '' },
-    { k: 'subtotal', t: 'Subtotal', n: true, v: c => formatoMoneda(c.subtotal), s: c => c.subtotal, sum: c => c.subtotal },
-    { k: 'iva', t: 'IVA', n: true, v: c => (c.iva == null ? '<small>Por definir</small>' : formatoMoneda(c.iva)), s: c => c.iva || 0, sum: c => c.iva || 0 },
-    { k: 'total', t: 'Total', n: true, v: c => formatoMoneda(c.total), s: c => c.total, sum: c => c.total },
-    { k: 'credito', t: 'Crédito', n: true, v: c => Number(c.dias_credito) + ' d', s: c => c.dias_credito },
-    { k: 'vence', t: 'Vence', v: c => (c.programada ? '—' : esc(fechaTxt(c.vence))), s: c => (c.programada ? '9999' : c.vence) },
-    { k: 'dias', t: 'Días vencido', n: true, v: diasCobro, s: c => (c.saldo > 0 && !c.programada ? c.dias_vencido : -99999) },
-    { k: 'cobrado', t: 'Cobrado (A/C)', n: true, v: c => formatoMoneda(c.cobrado), s: c => c.cobrado, sum: c => c.cobrado },
-    { k: 'saldo', t: 'Saldo', n: true, fija: true, v: c => '<b>' + formatoMoneda(c.saldo) + '</b>', s: c => c.saldo, sum: c => c.saldo },
+    { k: 'rfc', t: 'RFC', v: c => esc(c.rfc || '—'), s: c => c.rfc || '' },
+    { k: 'telefono', t: 'Teléfono', v: c => esc(c.telefono || '—'), s: c => c.telefono || '' },
     { k: 'a_favor', t: 'A favor', n: true, v: c => (c.a_favor > 0 ? formatoMoneda(c.a_favor) : '—'), s: c => c.a_favor || 0, sum: c => c.a_favor || 0 },
-    { k: 'ultimo_pago', t: 'Último pago', v: c => esc(ultimoPagoTxt(c.ultimo_pago)), s: c => c.ultimo_pago || '' },
     { k: 'pagos_n', t: 'Pagos', n: true, v: c => String(Number(c.pagos_n || 0)), s: c => c.pagos_n || 0 },
-    { k: 'notas', t: 'Observaciones', clase: 'celda-notas', v: c => esc(c.notas || ''), s: c => c.notas || '' },
+    { k: 'saldo', t: 'Saldo', n: true, fija: true, clase: 'celda-saldo', v: c => '<b>' + formatoMoneda(c.saldo) + '</b>', s: c => c.saldo, sum: c => c.saldo },
     { k: 'acciones', t: '', fija: true, sinOrden: true, clase: 'celda-acciones', v: c => accionesOrden(c) },
   ];
   const accionesOrden = c => '<div class="acciones-fila">' + waOrdenCorto(c)
-    + (c.saldo > 0 ? '<button type="button" class="btn btn-primario btn-chico" data-pagar-orden="' + Number(c.lead_id) + '">Registrar pago</button>' : '')
-    + '<button type="button" class="btn btn-outline btn-chico" data-abrir-orden="' + Number(c.lead_id) + '">Abrir</button></div>';
+    + (c.saldo > 0 && c.ejecucion !== 'no_realizado' ? '<button type="button" class="btn btn-primario btn-chico" data-pagar-orden="' + Number(c.lead_id) + '" title="Registrar pago">💵 Pagar</button>' : '')
+    + '<button type="button" class="btn btn-outline btn-chico" data-abrir-orden="' + Number(c.lead_id) + '" title="Abrir la orden">Abrir</button></div>';
   // WhatsApp de una orden, solo con el ícono (para la tabla).
   const waOrdenCorto = c => waOrden(c).replace('💬 Recordar por WhatsApp', '💬').replace('class="btn btn-outline btn-whatsapp"', 'class="btn btn-outline btn-whatsapp btn-chico" title="Recordar por WhatsApp"');
   async function cargarLista() {
@@ -436,13 +442,13 @@ const Finanzas = (() => {
     try { CARTERA = await api('/finanzas/cartera?' + params).then(json); }
     catch (err) { cont.innerHTML = `<div class="aviso-error-carga" role="alert"><p>No se pudo cargar: ${esc(err.message)}</p></div>`; return; }
     if (!CARTERA.length) { cont.innerHTML = '<p class="util-45">No hay cuentas con este filtro. 🎉</p>'; return; }
-    const id = 'cobrar-ordenes';
+    const id = 'cobrar';
     TABLAS[id] = { ...TABLAS[id], contenedor: 'cobrar-lista' };
-    cont.innerHTML = vistaDinero(id, { columnas: COLS_COBRAR, filas: CARTERA, claseFila: c => (c.vencida ? 'fila-vencida' : ''), tarjetas: tarjetasCobrar, ocultasDef: ['factura_fecha', 'rfc', 'telefono', 'operador', 'proyecto', 'pagos_n', 'a_favor'] });
+    cont.innerHTML = vistaDinero(id, { columnas: COLS_COBRAR, filas: CARTERA, claseFila: c => (c.vencida ? 'fila-vencida' : ''), tarjetas: tarjetasCobrar, ocultasDef: ['servicio', 'fecha_servicio', 'ejecucion', 'equipo', 'operador', 'proyecto', 'rfc', 'telefono', 'a_favor', 'pagos_n'] });
   }
   function tarjetasCobrar() {
     return CARTERA.map(c => `<div class="fila-dinero${c.vencida ? ' vencida' : ''}">
-        <div class="info"><b>${esc(folioOS(c))}</b> · ${esc(c.cliente_nombre || 'Sin nombre')} ${etiquetaEstado(c)}
+        <div class="info"><b>${esc(folioOS(c))}</b> · <button type="button" class="enlace-cliente" data-cliente-cuenta="${Number(c.cliente_id)}">${esc(c.cliente_nombre || 'Sin nombre')} ›</button> ${etiquetaEstado(c)}
           <small>${esc(c.servicio_nombre || 'Servicio')} · ${esc(textoEjecucion(c))}${c.programada ? '' : ' · vence ' + esc(fechaTxt(c.vence))}${c.factura_folio ? ' · factura ' + esc(c.factura_folio) : ' · sin factura'}</small></div>
         <div class="montos"><b>${formatoMoneda(c.saldo)}</b><small>de ${formatoMoneda(c.total)}</small></div>
         <div class="btn-group">
@@ -460,7 +466,7 @@ const Finanzas = (() => {
     if (!CARTERA.length) { toast('No hay datos con este filtro para exportar'); return; }
     {
       descargarCSV('cuentas_por_cobrar_ordenes_' + hoy() + '.csv', [
-        { titulo: 'Folio', valor: folioOS }, { titulo: 'Factura', valor: c => c.factura_folio }, { titulo: 'Fecha factura', valor: c => c.factura_fecha },
+        { titulo: 'Factura', valor: c => c.factura_folio }, { titulo: 'Fecha', valor: c => c.factura_fecha || c.fecha_realizado || c.fecha_servicio }, { titulo: 'M.P.', valor: c => c.factura_metodo || '' }, { titulo: 'OS', valor: folioOS },
         { titulo: 'Cliente', valor: c => c.cliente_nombre }, { titulo: 'Empresa', valor: c => c.empresa_contacto }, { titulo: 'RFC', valor: c => c.rfc }, { titulo: 'Teléfono', valor: c => c.telefono },
         { titulo: 'Servicio', valor: c => c.servicio_nombre },
         { titulo: 'Fecha del servicio', valor: c => c.fecha_servicio },
@@ -472,6 +478,70 @@ const Finanzas = (() => {
         { titulo: 'Cobrado (A/C)', valor: c => c.cobrado.toFixed(2) }, { titulo: 'Saldo', valor: c => c.saldo.toFixed(2) }, { titulo: 'A favor', valor: c => (c.a_favor || 0).toFixed(2) },
         { titulo: 'Último pago', valor: c => (c.ultimo_pago ? ultimoPagoTxt(c.ultimo_pago) : '') }, { titulo: 'Pagos', valor: c => c.pagos_n || 0 },
         { titulo: 'Estado', valor: c => textoEstado(c)[1] }, { titulo: 'Observaciones', valor: c => c.notas || '' }], CARTERA);
+    }
+  });
+
+
+  // ===================== Ventana: estado de cuenta de un cliente =====================
+  // Se abre al tocar un cliente en Cuentas por cobrar: todas sus órdenes (con o sin saldo) y todos sus pagos.
+  let CUENTA_CLIENTE = null, VER_PAGADAS = false;
+  async function abrirCuentaCliente(id) {
+    CUENTA_CLIENTE = id; VER_PAGADAS = false;
+    $('cc-cuerpo').innerHTML = '<p class="util-45" role="status">Cargando…</p>';
+    abrirVentana('overlay-cuenta-cliente');
+    await pintarCuentaCliente();
+  }
+  async function pintarCuentaCliente() {
+    const id = CUENTA_CLIENTE; let r;
+    try { r = await api('/finanzas/clientes/' + Number(id) + '/estado-cuenta?completo=1').then(json); }
+    catch (err) { $('cc-cuerpo').innerHTML = '<div class="aviso-error-carga" role="alert"><p>No se pudo cargar: ' + esc(err.message) + '</p></div>'; return; }
+    if (id !== CUENTA_CLIENTE) return;
+    const cli = r.cliente || {};
+    $('cc-titulo').textContent = cli.nombre || 'Cliente';
+    const deudas = r.ordenes.filter(sePuedeRecordar);
+    const wa = deudas.length ? botonWhatsApp(cli.telefono, textoWhatsApp({ cliente_nombre: cli.nombre, saldo: deudas.reduce((t, c) => t + c.saldo, 0), vencido: r.vencido,
+      folios: deudas.map(c => c.folio), proximo_vence: deudas.map(c => c.vence).sort()[0] })).replace('Recordar por WhatsApp', 'Recordar todo el saldo') : '';
+    const t = (titulo, valor, clase = '') => '<div class="cc-tarjeta ' + clase + '"><small>' + esc(titulo) + '</small><b>' + valor + '</b></div>';
+    const ordenes = VER_PAGADAS ? r.ordenes : r.ordenes.filter(c => c.saldo > 0 || c.a_favor > 0);
+    const filaOrden = c => '<tr class="' + (c.vencida ? 'fila-vencida' : '') + '"><td><b>' + esc(c.folio) + '</b></td><td>' + esc(c.factura_folio || '—') + '</td>'
+      + '<td>' + esc(c.servicio_nombre || '—') + '<small class="celda-sub">' + esc(ejecucionCorta(c)) + '</small></td>'
+      + '<td class="st-num">' + formatoMoneda(c.total) + '</td><td class="st-num">' + formatoMoneda(c.cobrado) + '</td><td class="st-num"><b>' + formatoMoneda(c.saldo) + '</b></td>'
+      + '<td>' + (c.programada ? '—' : esc(fechaTxt(c.vence))) + '</td><td class="st-num">' + diasCobro(c) + '</td><td>' + etiquetaEstado(c) + '</td>'
+      + '<td class="celda-acciones"><div class="acciones-fila">' + (c.saldo > 0 && c.ejecucion !== 'no_realizado' ? '<button type="button" class="btn btn-primario btn-chico" data-cc-pagar="' + Number(c.lead_id) + '">Registrar pago</button>' : '')
+      + '<button type="button" class="btn btn-outline btn-chico" data-cc-abrir="' + Number(c.lead_id) + '">Abrir</button></div></td></tr>';
+    const TIPO = { pago: 'Pago', anticipo: 'Anticipo', ajuste: 'Descuento / ajuste' };
+    const filaPago = k => '<tr class="' + (k.cancelado ? 'fila-cancelada' : '') + '"><td>' + esc(fechaTxt(k.fecha)) + '</td><td><b>' + esc(k.folio) + '</b></td>'
+      + '<td class="st-num">' + formatoMoneda(k.monto) + '</td><td>' + esc(TIPO[k.tipo] || k.tipo) + '</td><td>' + esc(NOMBRE_METODO[k.metodo] || k.metodo) + '</td>'
+      + '<td>' + esc(k.referencia || '—') + '</td><td>' + (k.cancelado ? '<span class="estado-cxc vencida" title="' + esc(k.motivo_cancelacion || '') + '">Cancelado</span>' : k.confirmado ? '<span class="estado-cxc pagada">Confirmado</span>' : '<span class="estado-cxc parcial">Por confirmar</span>') + '</td>'
+      + '<td>' + esc(k.registrado_por_nombre || '') + '</td></tr>';
+    const vivos = r.cobros.filter(k => !k.cancelado);
+    $('cc-sub').textContent = [cli.empresa_contacto, cli.telefono, cli.rfc ? 'RFC ' + cli.rfc : ''].filter(Boolean).join(' · ');
+    $('cc-cuerpo').innerHTML =
+      '<p class="cc-aviso">👤 Estás viendo el <b>estado de cuenta completo</b> de este cliente: todas sus órdenes y todos sus pagos. Cierra esta ventana para volver a la lista general.</p>'
+      + '<div class="cc-tarjetas">' + t('Debe hoy', formatoMoneda(r.saldo), r.saldo > 0 ? 'aviso' : '') + t('Vencido', formatoMoneda(r.vencido), r.vencido > 0 ? 'alerta' : '')
+      + t('Por realizar', formatoMoneda(r.programado)) + (r.a_favor > 0 ? t('A favor del cliente', formatoMoneda(r.a_favor), 'favor') : '')
+      + t('Pagado en total', formatoMoneda(r.pagado)) + '<div class="cc-tarjeta"><small>Crédito</small><b>' + Number(r.dias_credito) + ' días</b>' + (puedeEditarFactura() ? '<button type="button" class="enlace" data-cc-credito>Cambiar</button>' : '') + '</div></div>'
+      + '<div class="btn-group cc-acciones">' + wa + '<button type="button" class="btn btn-outline" data-cc-ficha>Abrir ficha del contacto</button></div>'
+      + '<div class="cc-seccion"><div class="cc-seccion-cab"><h3>Órdenes de servicio</h3><label class="cc-check"><input type="checkbox" data-cc-pagadas' + (VER_PAGADAS ? ' checked' : '') + '> Mostrar también las pagadas</label></div>'
+      + (ordenes.length ? '<div class="tabla-scroll tabla-dinero-caja"><table class="tabla-resumen tabla-dinero"><thead><tr><th>OS</th><th>Factura</th><th>Servicio</th><th class="st-num">Total</th><th class="st-num">A/C</th><th class="st-num">Saldo</th><th>Vence</th><th class="st-num">Días</th><th>Status</th><th></th></tr></thead><tbody>'
+        + ordenes.map(filaOrden).join('') + '</tbody><tfoot><tr><td colspan="3"><b>Totales · ' + ordenes.length + '</b></td><td class="st-num"><b>' + formatoMoneda(ordenes.reduce((s, c) => s + c.total, 0)) + '</b></td><td class="st-num"><b>' + formatoMoneda(ordenes.reduce((s, c) => s + c.cobrado, 0)) + '</b></td><td class="st-num"><b>' + formatoMoneda(ordenes.reduce((s, c) => s + c.saldo, 0)) + '</b></td><td colspan="4"></td></tr></tfoot></table></div>'
+        : '<p class="util-45">' + (VER_PAGADAS ? 'Este cliente no tiene órdenes de servicio.' : 'No debe nada. 🎉 Marca «Mostrar también las pagadas» para ver su historial.') + '</p>')
+      + '</div><div class="cc-seccion"><div class="cc-seccion-cab"><h3>Pagos realizados</h3><span class="ayuda">' + vivos.length + ' ' + (vivos.length === 1 ? 'pago' : 'pagos') + '</span></div>'
+      + (r.cobros.length ? '<div class="tabla-scroll tabla-dinero-caja"><table class="tabla-resumen tabla-dinero"><thead><tr><th>Fecha</th><th>OS</th><th class="st-num">Monto</th><th>Tipo</th><th>Método</th><th>CP / referencia</th><th>Estado</th><th>Registró</th></tr></thead><tbody>'
+        + r.cobros.map(filaPago).join('') + '</tbody></table></div>' : '<p class="util-45">Todavía no hay pagos registrados.</p>') + '</div>';
+  }
+  $('cobrar-lista').addEventListener('click', e => { const b = e.target.closest('[data-cliente-cuenta]'); if (b) abrirCuentaCliente(Number(b.dataset.clienteCuenta)); });
+  $('cc-cuerpo').addEventListener('change', e => { if (e.target.closest('[data-cc-pagadas]')) { VER_PAGADAS = e.target.checked; pintarCuentaCliente(); } });
+  $('cc-cuerpo').addEventListener('click', async e => {
+    const b = e.target.closest('button'); if (!b) return;
+    if (b.dataset.ccPagar) return abrirCobro(Number(b.dataset.ccPagar), () => { pintarCuentaCliente(); cargar(); });
+    if (b.dataset.ccAbrir) return abrirFicha(Number(b.dataset.ccAbrir));
+    if (b.dataset.ccFicha !== undefined) return abrirFichaCliente(CUENTA_CLIENTE);
+    if (b.dataset.ccCredito !== undefined) {
+      const id = CUENTA_CLIENTE;
+      const dias = await solicitarDialogo({ titulo: 'Días de crédito del cliente', mensaje: 'Se aplica a sus órdenes NUEVAS (0 = contado). Las órdenes existentes conservan el suyo; cámbialo en cada orden (Crédito y factura) si hace falta.', aceptar: 'Guardar', campo: { tipo: 'number', etiqueta: 'Días (0 a 180)' } });
+      if (dias === null) return;
+      conBoton(b, async () => { await json(await api('/finanzas/clientes/' + Number(id) + '/credito', { method: 'PUT', body: JSON.stringify({ dias_credito: dias }) })); toast('Crédito del cliente actualizado'); pintarCuentaCliente(); });
     }
   });
 
