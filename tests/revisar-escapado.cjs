@@ -4,7 +4,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const ARCHIVOS = ['app.js', 'flujo.js', 'servicios-tabla.js', 'prospeccion.js', 'cuentas.js', 'ui.js', 'finanzas.js', 'calendario.js', 'tablero.js']
+const ARCHIVOS = ['app.js', 'flujo.js', 'servicios-tabla.js', 'prospeccion.js', 'cuentas.js', 'ui.js', 'finanzas.js', 'calendario.js', 'tablero.js', 'compras.js']
   .map(f => path.join(__dirname, '..', 'public', f)).filter(f => fs.existsSync(f));
 // Funciones que devuelven texto ya seguro (escapan o solo producen números/fechas/folios).
 const SEGURAS = /^(escaparHtml|escapar|esc|Number|formatoMoneda|fechaCorta|fechaLarga|folioCotizacion|folioOrdenServicio|encodeURIComponent|Math\.|String\(Number|diasTexto|\d)/;

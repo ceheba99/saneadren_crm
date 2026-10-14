@@ -1338,5 +1338,5 @@ const Finanzas = (() => {
       () => pintarCostosOrden(lead));
   });
 
-  return { cargar, pintarCobranzaOrden, pintarCostosOrden, pintarEjecucion, nuevoGasto, pintarInicio, abrirCobro, pintarCliente, avisoAdeudo, pintarResultados };
+  return { cargarExcelJS, cargar, pintarCobranzaOrden, pintarCostosOrden, pintarEjecucion, nuevoGasto, pintarInicio, abrirCobro, pintarCliente, avisoAdeudo, pintarResultados };
 })();

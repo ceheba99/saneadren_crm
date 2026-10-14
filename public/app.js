@@ -132,6 +132,7 @@ function cambiarVista(v, opciones) {
   if (v === 'resultados') abrirResultados();
   if (v === 'generador') cargarGenerador();
   if (v === 'calendario') Calendario.cargar();
+  if (v === 'compras') Compras.cargar();
   if (v === 'usuarios') cargarUsuarios();
   if (seccionCuentas) Finanzas.cargar({ ...opciones, seccion: seccionCuentas });
   if (v === 'catalogos') { cargarTiposCliente(); cargarCatalogoServicios(); cargarCanalesCatalogo(); }
