@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Saneadren · Cotizaciones y Servicios</title>
-<link rel="stylesheet" href="styles.css?v=cal10">
+<link rel="stylesheet" href="styles.css?v=vis1">
 <link rel="stylesheet" href="servicios-tabla.css">
 <link rel="stylesheet" href="flujo.css">
 </head>
@@ -509,28 +509,25 @@
         <div class="seccion-tit" id="registro-datos-titulo">Datos de esta cotización</div>
         <p class="ayuda">Los cambios de esta sección afectan únicamente a este registro. Los datos de contacto se editan desde su ficha.</p>
         <div class="form-grid-2">
-          <div class="campo-modal"><label>Ubicación de este servicio</label><input type="text" id="ed-direccion"></div>
+          <div class="campo-modal"><label for="ed-fecha-cotizacion">Fecha de la cotización</label><input type="date" id="ed-fecha-cotizacion"></div>
+          <div class="campo-modal solo-orden"><label for="ed-fecha-servicio">Fecha acordada del servicio</label><input type="date" id="ed-fecha-servicio"></div>
           <div class="campo-modal">
-            <label>Canal</label><select id="ed-canal"></select>
+            <label for="ed-responsable">Atendido por</label><select id="ed-responsable"></select>
           </div>
-          <div class="campo-modal">
-            <label>Servicio</label><select id="ed-servicio"></select>
-          </div>
-          <div class="campo-modal">
-            <label>Atendido por</label><select id="ed-responsable"></select>
-          </div>
-          <div class="campo-modal"><label>Valor del servicio (MXN)</label><input type="number" id="ed-valor" min="0" step="0.01" placeholder="0.00"></div>
-          <div class="campo-modal"><label>Fecha de la cotización</label><input type="date" id="ed-fecha-cotizacion"></div>
-          <div class="campo-modal solo-orden"><label>Fecha acordada del servicio</label><input type="date" id="ed-fecha-servicio"></div>
-          <div class="campo-modal">
+          <div class="campo-modal full"><label for="ed-direccion">Ubicación de este servicio</label><input type="text" id="ed-direccion"></div>
+          <div class="campo-modal campo-check">
             <label class="diseno-campo-checkbox"><input type="checkbox" id="ed-incluye-vigencia" checked> Incluir vigencia en la cotización</label>
           </div>
-          <div class="campo-modal" id="wrap-vigencia-hasta"><label>Vigencia hasta</label><input type="date" id="ed-vigencia-hasta"></div>
+          <div class="campo-modal" id="wrap-vigencia-hasta"><label for="ed-vigencia-hasta">Vigencia hasta</label><input type="date" id="ed-vigencia-hasta"></div>
           <div class="campo-modal solo-orden"><label for="ed-equipo">Equipo</label><input type="text" id="ed-equipo" maxlength="200" placeholder="Ej. E-37-04"></div>
           <div class="campo-modal solo-orden"><label for="ed-operador">Operador(es)</label><input type="text" id="ed-operador" maxlength="300" placeholder="Nombre de quien ejecuta el servicio"></div>
           <div class="campo-modal solo-orden"><label for="ed-manifiestos">Manifiestos</label><input type="text" id="ed-manifiestos" maxlength="200" placeholder="Folio(s) de manifiesto"></div>
           <div class="campo-modal solo-orden"><label for="ed-tiros">Tiros</label><input type="text" id="ed-tiros" maxlength="60" placeholder="Ej. 2"></div>
-          <div class="campo-modal solo-orden"><label for="ed-proyecto">Proyecto</label><input type="text" id="ed-proyecto" maxlength="200" placeholder="Ej. Mantenimiento planta 2026"></div>
+          <div class="campo-modal full solo-orden"><label for="ed-proyecto">Proyecto</label><input type="text" id="ed-proyecto" maxlength="200" placeholder="Ej. Mantenimiento planta 2026"></div>
+          <!-- Canal, servicio y valor salen de las partidas: se conservan ocultos para el guardado -->
+          <div class="campo-modal"><label>Canal</label><select id="ed-canal"></select></div>
+          <div class="campo-modal"><label>Servicio</label><select id="ed-servicio"></select></div>
+          <div class="campo-modal"><label>Valor del servicio (MXN)</label><input type="number" id="ed-valor" min="0" step="0.01" placeholder="0.00"></div>
           <div class="campo-modal full solo-orden"><label for="ed-observaciones">Observaciones de la orden</label><textarea id="ed-observaciones" rows="2" maxlength="3000" placeholder="Se imprimen en la orden de servicio; también puedes capturar lo que anotó el operador"></textarea></div>
         </div>
         <div class="util-16">
@@ -648,9 +645,10 @@
         <div class="relacion-registros"><div><div class="seccion-tit" data-plegable-cabecera>Cotizaciones y servicios de este contacto</div><p class="ayuda">Una cotización abierta es una propuesta. Al aceptarla, el mismo registro pasa a servicio contratado; conserva su número e importe.</p></div>
         <div class="btn-group"><button class="btn btn-primario" id="btn-contacto-cotizar">📄 Crear cotización</button><button class="btn btn-secundario" id="btn-recapturar-servicio" title="Para cuando el cliente ya confirmó: registra el servicio sin pasar por cotización">🧾 Crear orden de servicio</button></div></div>
         <div class="ficha-meta" id="fc-meta"></div>
-        <div id="fc-cobranza"></div>
         <div id="fc-servicios" class="servicios-list"></div>
       </div>
+      <!-- Estado de cuenta: sección propia, después de sus cotizaciones y servicios -->
+      <div id="fc-cobranza"></div>
     </div>
   </div>
 </div>
@@ -746,7 +744,7 @@
       <div class="campo"><label for="gasto-total">Total a pagar con IVA (MXN)</label><input id="gasto-total" type="text" inputmode="decimal" autocomplete="off"></div>
       <div class="form-grid-2">
         <div class="campo"><label for="gasto-fecha">Fecha de la factura o gasto</label><input id="gasto-fecha" type="date"></div>
-        <div class="campo"><label for="gasto-vence">Vence (según crédito del proveedor)</label><input id="gasto-vence" type="date"></div>
+        <div class="campo"><label for="gasto-vence" title="Se calcula con los días de crédito del proveedor">Vence</label><input id="gasto-vence" type="date"></div>
       </div>
       <details><summary>Factura y equipo (opcional)</summary>
         <div class="campo"><label for="gasto-folio">Folio de la factura del proveedor</label><input id="gasto-folio" maxlength="60"></div>
@@ -847,13 +845,15 @@
       </div>
       <div class="sn-vigencia" id="sn-vigencia">
         <div class="campo"><label for="sn-fecha-cotizacion">Fecha de la cotización</label><input type="date" id="sn-fecha-cotizacion"></div>
-        <label class="diseno-campo-checkbox"><input type="checkbox" id="sn-incluye-vigencia" checked> La cotización tiene vigencia</label>
-        <div class="campo" id="sn-wrap-vigencia"><label for="sn-vigencia-hasta">Vigente hasta</label><input type="date" id="sn-vigencia-hasta"></div>
+        <div class="campo"><label class="sn-vigencia-check"><input type="checkbox" id="sn-incluye-vigencia" checked> La cotización tiene vigencia</label>
+          <div id="sn-wrap-vigencia"><input type="date" id="sn-vigencia-hasta" aria-label="Vigente hasta"></div><p class="sn-sin-vigencia" id="sn-sin-vigencia" hidden>Sin fecha de vigencia</p></div>
       </div>
-      <div class="campo"><label for="sn-ubicacion">Ubicación de este servicio (puedes cambiar el domicilio propuesto)</label><input id="sn-ubicacion" type="text"></div>
+      <div class="campo"><label for="sn-ubicacion">Ubicación del servicio <small class="label-nota">(puedes cambiar el domicilio propuesto)</small></label><input id="sn-ubicacion" type="text"></div>
       <div id="sn-datos-orden" hidden>
-        <div class="campo"><label for="sn-equipo">Equipo</label><input type="text" id="sn-equipo" maxlength="200" placeholder="Ej. E-37-04"></div>
-        <div class="campo"><label for="sn-operador">Operador(es)</label><input type="text" id="sn-operador" maxlength="300" placeholder="Nombre de quien ejecuta el servicio"></div>
+        <div class="form-grid-2">
+          <div class="campo"><label for="sn-equipo">Equipo</label><input type="text" id="sn-equipo" maxlength="200" placeholder="Ej. E-37-04"></div>
+          <div class="campo"><label for="sn-operador">Operador(es)</label><input type="text" id="sn-operador" maxlength="300" placeholder="Nombre de quien ejecuta el servicio"></div>
+        </div>
         <div class="form-grid-2"><div class="campo"><label for="sn-manifiestos">Manifiestos (opcional)</label><input type="text" id="sn-manifiestos" maxlength="200" placeholder="Folio(s) de manifiesto"></div><div class="campo"><label for="sn-tiros">Tiros (opcional)</label><input type="text" id="sn-tiros" maxlength="60" placeholder="Ej. 2"></div></div>
         <div class="campo"><label for="sn-proyecto">Proyecto (opcional)</label><input type="text" id="sn-proyecto" maxlength="200" placeholder="Ej. Mantenimiento planta 2026"></div>
         <div class="campo"><label for="sn-observaciones">Observaciones de la orden (opcional)</label><textarea id="sn-observaciones" rows="2" maxlength="3000"></textarea></div>
@@ -921,14 +921,14 @@
 
 
 <!-- ?v= obliga a los navegadores (sobre todo celulares) a tomar la versión nueva tras publicar. -->
-<script src="ui.js?v=cal10"></script>
-<script src="importes.js?v=cal10"></script>
-<script src="servicios-tabla.js?v=cal10"></script>
-<script src="flujo.js?v=cal10"></script>
-<script src="cuentas.js?v=cal10"></script>
-<script src="finanzas.js?v=cal10"></script>
-<script src="calendario.js?v=cal10"></script>
-<script src="app.js?v=cal10"></script>
-<script src="prospeccion.js?v=cal10"></script>
+<script src="ui.js?v=vis1"></script>
+<script src="importes.js?v=vis1"></script>
+<script src="servicios-tabla.js?v=vis1"></script>
+<script src="flujo.js?v=vis1"></script>
+<script src="cuentas.js?v=vis1"></script>
+<script src="finanzas.js?v=vis1"></script>
+<script src="calendario.js?v=vis1"></script>
+<script src="app.js?v=vis1"></script>
+<script src="prospeccion.js?v=vis1"></script>
 </body>
 </html>

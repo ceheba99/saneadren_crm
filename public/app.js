@@ -259,6 +259,7 @@ function abrirServicioNuevo(modo, prefill) {
   document.getElementById('sn-vigencia').hidden = esDirecto;
   document.getElementById('sn-incluye-vigencia').checked = true;
   document.getElementById('sn-wrap-vigencia').hidden = false;
+  document.getElementById('sn-sin-vigencia').hidden = true;
   // Fecha de la cotización: hoy por defecto (se puede poner una anterior, nunca futura).
   document.getElementById('sn-fecha-cotizacion').value = hoyISO();
   document.getElementById('sn-fecha-cotizacion').max = hoyISO();
@@ -381,7 +382,7 @@ async function guardarServicioNuevo(descargar=false) {
   }
 }
 on('btn-guardar-servicio-nuevo','click',()=>guardarServicioNuevo());
-on('sn-incluye-vigencia', 'change', e => { document.getElementById('sn-wrap-vigencia').hidden = !e.target.checked; });
+on('sn-incluye-vigencia', 'change', e => { document.getElementById('sn-wrap-vigencia').hidden = !e.target.checked; document.getElementById('sn-sin-vigencia').hidden = e.target.checked; });
 // Al cambiar la fecha de la cotización, la vigencia se recorre (15 días después) si quedó antes.
 on('sn-fecha-cotizacion', 'change', e => {
   const f = e.target.value, vig = document.getElementById('sn-vigencia-hasta');
@@ -1283,35 +1284,33 @@ function crearFilaServicioHTML(item) {
     `<option value="${escaparHtml(s.nombre)}" ${s.nombre === item.servicio ? 'selected' : ''}>${escaparHtml(s.nombre)}</option>`
   ).join('');
   return `
-    <div class="gc-fila util-16" data-fila="${id}">
-      <div class="form-grid-2">
-        <div class="campo-modal">
-          <label>Servicio</label>
-          <select class="gc-servicio" data-fila="${id}">
+    <div class="gc-fila" data-fila="${id}">
+      <div class="gc-fila-cab"><span class="gc-fila-num"></span><button type="button" class="btn-eliminar gc-quitar" data-fila="${id}">🗑 Quitar</button></div>
+      <div class="gc-fila-grid">
+        <div class="campo-modal gc-c-servicio">
+          <label for="gc-servicio-${id}">Servicio</label>
+          <select class="gc-servicio" id="gc-servicio-${id}" data-fila="${id}">
             <option value="">— Selecciona —</option>
             ${opciones}
           </select>
         </div>
-        <div class="gc-cantidades">
-          <div class="campo-modal"><label for="gc-cantidad-${id}">Cantidad</label>
+          <div class="campo-modal gc-c-cantidad"><label for="gc-cantidad-${id}">Cantidad</label>
             <input type="number" class="gc-cantidad" id="gc-cantidad-${id}" data-fila="${id}" min="0.001" step="any" value="${Number(Importes.cantidadDe(item))}"></div>
-          <div class="campo-modal"><label class="gc-etiqueta-importe" for="gc-precio-${id}">${etiquetaPrecio(modoIvaEditor())}</label>
+          <div class="campo-modal gc-c-precio"><label class="gc-etiqueta-importe" for="gc-precio-${id}">${etiquetaPrecio(modoIvaEditor())}</label>
             <input type="number" class="gc-precio" id="gc-precio-${id}" data-fila="${id}" min="0.01" step="0.01" placeholder="Precio" value="${item.importe === undefined && item.precio === undefined ? '' : Number(Importes.precioDe(item))}"></div>
-          <div class="campo-modal"><label for="gc-importe-${id}">Importe (MXN)</label>
+          <div class="campo-modal gc-c-importe"><label for="gc-importe-${id}">Importe</label>
             <input type="number" class="gc-importe" id="gc-importe-${id}" data-fila="${id}" readonly tabindex="-1" value="${item.importe ?? ''}"></div>
-        </div>
-        <div class="campo-modal full">
-          <label>Descripción / leyenda</label>
-          <textarea class="gc-leyenda" data-fila="${id}" data-plantilla="${escaparHtml(descripcionServicio(item.servicio))}" rows="2">${escaparHtml(item.leyenda || '')}</textarea>
+        <div class="campo-modal gc-c-leyenda">
+          <label for="gc-leyenda-${id}">Descripción / leyenda</label>
+          <textarea class="gc-leyenda" id="gc-leyenda-${id}" data-fila="${id}" data-plantilla="${escaparHtml(descripcionServicio(item.servicio))}" rows="2">${escaparHtml(item.leyenda || '')}</textarea>
         </div>
       </div>
-      <button type="button" class="btn-eliminar gc-quitar" data-fila="${id}">🗑 Quitar servicio</button>
     </div>
   `;
 }
 
 // Rótulo del precio unitario según el IVA del documento.
-const etiquetaPrecio = modo => 'Precio unitario' + (modo === 'incluido' ? ' con IVA' : modo === 'mas_iva' ? ' sin IVA' : '') + ' (MXN)';
+const etiquetaPrecio = modo => 'Precio unitario' + (modo === 'incluido' ? ' con IVA' : modo === 'mas_iva' ? ' sin IVA' : '');
 function agregarFilaCotizacion(item = {}) {
   document.getElementById('gc-items').insertAdjacentHTML('beforeend', crearFilaServicioHTML(item));
 }
