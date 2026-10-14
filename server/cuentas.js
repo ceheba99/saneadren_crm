@@ -24,33 +24,51 @@ function migrarCuentas(db) {
     expira INTEGER NOT NULL,
     usado INTEGER NOT NULL DEFAULT 0
   )`);
+  // Datos internos del servidor (p. ej. la huella de las variables del admin ya aplicadas).
+  db.exec("CREATE TABLE IF NOT EXISTS config_servidor (clave TEXT PRIMARY KEY, valor TEXT NOT NULL)");
 }
 
-// Administrador inicial desde variables de entorno (ADMIN_USUARIO, ADMIN_CORREO, ADMIN_PASSWORD).
-// Pensado para servidores como Render, donde la base nace con usuarios de ejemplo bloqueados.
-// Solo fija la contraseña si la cuenta no existe o sigue con la inicial '1234': si después se
-// cambia desde el CRM, reiniciar el servidor NO la sobrescribe.
+// Administrador desde variables de entorno (ADMIN_USUARIO, ADMIN_CORREO, ADMIN_PASSWORD).
+// Las variables del servidor mandan: cada vez que se ESCRIBE un valor nuevo (otro usuario, correo o
+// contraseña), al reiniciar se aplica una vez a la cuenta del admin (se crea, se reactiva, se
+// confirma su correo y se cierran sus sesiones). Si después se cambia la contraseña desde el CRM,
+// reiniciar con las mismas variables NO la sobrescribe. Así quien administra el servidor siempre
+// puede recuperar el acceso: basta con poner una contraseña nueva en ADMIN_PASSWORD y reiniciar.
 function asegurarAdminInicial(db, { verificarPassword }) {
-  const nombre = (process.env.ADMIN_USUARIO || '').trim(), correo = normalizarCorreo(process.env.ADMIN_CORREO), password = process.env.ADMIN_PASSWORD || '';
-  if (!nombre || !correo || !password) return;
+  const nombre = (process.env.ADMIN_USUARIO || '').trim().replace(/\s+/g, ' '), correo = normalizarCorreo(process.env.ADMIN_CORREO), password = process.env.ADMIN_PASSWORD || '';
+  if (!nombre || !correo || !password) {
+    if (nombre || correo || password) console.error('[admin inicial] Falta ADMIN_USUARIO, ADMIN_CORREO o ADMIN_PASSWORD; no se aplicó.');
+    return;
+  }
   const problema = problemaNombre(nombre) || (correoPermitido(correo) ? null : 'ADMIN_CORREO debe ser @' + DOMINIO) || problemaPassword(password, { nombre, correo });
   if (problema) { console.error('[admin inicial] No se aplicó:', problema); return; }
-  const existente = db.prepare('SELECT * FROM usuarios WHERE correo = ?').get(correo)
-    || db.prepare('SELECT * FROM usuarios WHERE lower(nombre) = lower(?)').get(nombre)
+
+  const huella = `${nombre.toLowerCase()}\n${correo}\n${password}`;
+  const marca = db.prepare("SELECT valor FROM config_servidor WHERE clave = 'admin_env'").get();
+  const porCorreo = db.prepare('SELECT * FROM usuarios WHERE correo = ?').get(correo);
+  const porNombre = db.prepare('SELECT * FROM usuarios WHERE lower(nombre) = lower(?)').get(nombre);
+  const existente = porCorreo || porNombre
     || db.prepare("SELECT * FROM usuarios WHERE nombre = 'Admin' AND rol = 'admin' AND correo IS NULL").get();
-  if (!existente) {
-    db.prepare("INSERT INTO usuarios (nombre, password, rol, correo, correo_verificado) VALUES (?, ?, 'admin', ?, 1)").run(nombre, hashPassword(password), correo);
-    console.log(`[admin inicial] Creado "${nombre}" (${correo}).`);
-  } else if (verificarPassword('1234', existente.password) || (existente.correo === correo && !existente.correo_verificado)) {
-    // También se toma una cuenta con ADMIN_CORREO que se registró sola y nunca confirmó el correo
-    // (p. ej. alguien usó "Crear cuenta" antes de que hubiera correo saliente): quien la creó nunca
-    // demostró ser dueño del correo, y sin esto el admin no podría entrar nunca.
-    db.prepare("UPDATE usuarios SET nombre = ?, correo = ?, correo_verificado = 1, password = ?, rol = 'admin', activo = 1, debe_cambiar_password = 0 WHERE id = ?").run(nombre, correo, hashPassword(password), existente.id);
-    db.prepare("DELETE FROM tokens_cuenta WHERE usuario_id = ?").run(existente.id);
-    console.log(`[admin inicial] Configurado "${nombre}" (${correo}).`);
-  } else {
-    console.log(`[admin inicial] "${existente.nombre}" ya tiene contraseña propia; no se cambia (usa "¿Olvidaste tu contraseña?").`);
+  const valoresNuevos = !marca || !verificarPassword(huella, marca.valor);
+  if (existente && !valoresNuevos && !verificarPassword('1234', existente.password)) {
+    console.log(`[admin inicial] "${existente.nombre}" ya está configurado; no se cambia.`);
+    return;
   }
+  db.transaction(() => {
+    let id;
+    if (!existente) {
+      id = db.prepare("INSERT INTO usuarios (nombre, password, rol, correo, correo_verificado) VALUES (?, ?, 'admin', ?, 1)").run(nombre, hashPassword(password), correo).lastInsertRowid;
+    } else {
+      // Si el nombre lo usa OTRA cuenta, esa se renombra para que el admin entre con su usuario.
+      if (porNombre && porNombre.id !== existente.id) db.prepare('UPDATE usuarios SET nombre = ? WHERE id = ?').run(`${porNombre.nombre} (${porNombre.id})`, porNombre.id);
+      db.prepare("UPDATE usuarios SET nombre = ?, correo = ?, correo_verificado = 1, password = ?, rol = 'admin', activo = 1, debe_cambiar_password = 0 WHERE id = ?").run(nombre, correo, hashPassword(password), existente.id);
+      db.prepare('DELETE FROM tokens_cuenta WHERE usuario_id = ?').run(existente.id);
+      db.prepare('DELETE FROM sesiones WHERE usuario_id = ?').run(existente.id);
+      id = existente.id;
+    }
+    db.prepare("INSERT INTO config_servidor (clave, valor) VALUES ('admin_env', ?) ON CONFLICT(clave) DO UPDATE SET valor = excluded.valor").run(hashPassword(huella));
+    console.log(`[admin inicial] ${existente ? 'Configurado' : 'Creado'} "${nombre}" (${correo}), id ${id}.`);
+  })();
 }
 
 // Usuario de prueba desde variables de entorno (USUARIO_PRUEBA_NOMBRE, USUARIO_PRUEBA_PASSWORD y,
