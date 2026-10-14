@@ -1103,6 +1103,8 @@ module.exports = function finanzas(app, db, h) {
 
   // ---------- Ganchos para las rutas de órdenes (server/index.js) ----------
   return {
+    // Para el panorama general de Resultados (server/tablero.js).
+    cartera, cuentasPorPagar, CATEGORIAS,
     // Centavos cobrados (no cancelados) de una orden.
     cobradoCent: leadId => db.prepare('SELECT COALESCE(SUM(monto_cent), 0) t FROM cobros WHERE lead_id = ? AND cancelado = 0').get(leadId).t,
     // ¿Tiene pagos activos? (no se puede borrar ni reabrir como cotización)

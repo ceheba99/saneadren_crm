@@ -131,7 +131,7 @@ module.exports = function cuentas(app, db, h, { sesiones, urlBase }) {
 
     const existente = db.prepare('SELECT * FROM usuarios WHERE correo = ?').get(email);
     if (existente) {
-      // No se revela si el correo ya tenía cuenta: se responde igual y se avisa por correo al dueño.
+      // No se revela si el correo ya tenía cuenta: se responde igual y se avisa por correo a quien tiene la cuenta.
       if (existente.activo && !existente.correo_verificado) enviarVerificacion(existente);
       else if (existente.activo) enviarSinBloquear(email, 'Ya tienes una cuenta · Saneadren CRM', {
         titulo: 'Ya tienes una cuenta', saludo: `Hola ${existente.nombre}:`,

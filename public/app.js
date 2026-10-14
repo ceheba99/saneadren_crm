@@ -129,7 +129,7 @@ function cambiarVista(v, opciones) {
   if (v === 'leads') cargarLeads();
   if (v === 'clientes') cargarClientes();
   if (v === 'prospeccion') Prospeccion.cargar();
-  if (v === 'resultados') cargarResultados();
+  if (v === 'resultados') abrirResultados();
   if (v === 'generador') cargarGenerador();
   if (v === 'calendario') Calendario.cargar();
   if (v === 'usuarios') cargarUsuarios();
@@ -757,6 +757,18 @@ on('gen-exportar', 'click', () => {
 
 // ---------- Vista Resultados (Análisis) ----------
 let RESULTADOS_ACTUALES=null,consultaResultados=0;
+// Resultados: "Panorama general" (solo administración) y "Análisis comercial" en pestañas.
+let RES_TAB = null;
+function abrirResultados(tab) {
+  const admin = USUARIO_ACTUAL?.rol === 'admin';
+  RES_TAB = tab || RES_TAB || (admin ? 'panorama' : 'comercial');
+  if (!admin) RES_TAB = 'comercial';
+  document.querySelectorAll('[data-res-tab]').forEach(b => { const on = b.dataset.resTab === RES_TAB; b.classList.toggle('activo', on); b.setAttribute('aria-selected', on); });
+  document.getElementById('res-panorama').hidden = RES_TAB !== 'panorama';
+  document.getElementById('res-comercial').hidden = RES_TAB !== 'comercial';
+  if (RES_TAB === 'panorama') Panorama.cargar(); else cargarResultados();
+}
+document.addEventListener('click', e => { const b = e.target.closest('[data-res-tab]'); if (b) abrirResultados(b.dataset.resTab); });
 async function cargarResultados(){
   const consulta=++consultaResultados,desde=document.getElementById('res-desde').value,hasta=document.getElementById('res-hasta').value;
   const estado=document.getElementById('res-estado');

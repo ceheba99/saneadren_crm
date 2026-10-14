@@ -1109,3 +1109,95 @@ button.enlace{background:none;border:0;padding:0;color:var(--azul-600);text-deco
   .cc-tarjetas{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;}
   .cc-tarjeta b{font-size:15px;}
 }
+
+/* ====== Resultados: pestañas y Panorama general ====== */
+.res-pestanas{display:flex;gap:4px;border-bottom:2px solid var(--gris-200);margin:4px 0 16px;flex-wrap:wrap;}
+.res-pestanas button{border:0;background:none;padding:10px 16px;font:inherit;font-weight:600;color:var(--texto-sec);cursor:pointer;border-bottom:3px solid transparent;margin-bottom:-2px;}
+.res-pestanas button.activo{color:var(--azul-600);border-bottom-color:var(--amarillo);}
+.pg-presets button.activo{background:var(--azul-600);color:#fff;}
+.pg-filtros .segmentado button{height:40px;}
+.pg-periodo{margin:0 0 12px;font-size:13.5px;color:var(--texto-sec);}
+.pg-tarjetas{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px;margin-bottom:14px;}
+.pg-tarjetas-chicas{grid-template-columns:repeat(auto-fit,minmax(160px,1fr));margin-bottom:0;}
+.pg-tarjeta{background:var(--blanco);border:1px solid var(--gris-200);border-radius:12px;padding:14px 16px;display:flex;flex-direction:column;gap:4px;box-shadow:var(--sombra);}
+.pg-tarjeta small{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--texto-sec);}
+.pg-tarjeta b{font-size:22px;line-height:1.2;font-variant-numeric:tabular-nums;}
+.pg-tarjetas-chicas .pg-tarjeta b,.pg-mini .pg-tarjeta b{font-size:18px;}
+.pg-tarjeta-pie{display:flex;flex-wrap:wrap;gap:4px 8px;align-items:center;font-size:12px;color:var(--texto-sec);}
+.pg-tarjeta.principal{border-top:4px solid var(--amarillo);}
+.pg-tarjeta.positivo{border-top:4px solid var(--verde);}
+.pg-tarjeta.negativo{border-top:4px solid var(--rojo);}
+.pg-tarjeta.negativo b{color:var(--rojo);}
+.pg-tarjeta.aviso{border-top:4px solid #e08a00;}
+.pg-delta{font-weight:700;font-size:12px;padding:1px 7px;border-radius:999px;}
+.pg-delta.bien{background:#e3f1e9;color:var(--verde);}
+.pg-delta.mal{background:#f7e3e1;color:var(--rojo);}
+.pg-delta.neutro{background:var(--gris-200);color:var(--texto-sec);}
+.pg-caja{background:var(--blanco);border:1px solid var(--gris-200);border-radius:12px;padding:16px 18px;margin-bottom:14px;box-shadow:var(--sombra);min-width:0;}
+.pg-caja h3{margin:0 0 10px;font-size:16px;}
+.pg-caja h4{margin:14px 0 8px;font-size:13px;text-transform:uppercase;letter-spacing:.4px;color:var(--texto-sec);}
+.pg-caja-cab{display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap;}
+.pg-dos{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;}
+.pg-tres{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;}
+.pg-dos>.pg-caja,.pg-tres>.pg-caja{margin-bottom:14px;}
+.pg-mini{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-bottom:12px;}
+.pg-mini .pg-tarjeta{box-shadow:none;padding:10px 12px;}
+.pg-alertas{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px;}
+.pg-alerta{padding:9px 12px;border-radius:8px;border-left:4px solid;font-size:14px;}
+.pg-alerta.rojo{background:#fbecea;border-color:var(--rojo);}
+.pg-alerta.amarillo{background:#fff6dc;border-color:#e0a800;}
+.pg-alerta.azul{background:#eaf3f9;border-color:var(--azul-500);}
+.pg-alerta.ok{background:#e9f5ee;border-color:var(--verde);}
+.pg-alerta .enlace{color:var(--texto);text-decoration:none;text-align:left;}
+.pg-alerta .enlace:hover{text-decoration:underline;}
+.pg-grafica{width:100%;height:auto;display:block;}
+.pg-g-guia{stroke:var(--gris-200);stroke-width:1;}
+.pg-g-cero{stroke:var(--gris-400);stroke-width:1;}
+.pg-g-eje{font-size:10px;fill:var(--texto-sec);}
+.pg-g-venta{fill:#2b6e93;}
+.pg-g-gasto{fill:#e3a24a;}
+.pg-g-zona{fill:transparent;}
+.pg-g-zona:hover{fill:rgba(43,110,147,.06);}
+.pg-g-utilidad{fill:none;stroke:var(--verde);stroke-width:2.5;}
+.pg-g-utilidad-p{fill:var(--verde);}
+.pg-g-cobrado{fill:none;stroke:#7b4fb0;stroke-width:2;stroke-dasharray:5 4;}
+.pg-g-cobrado-p{fill:#7b4fb0;}
+.pg-leyenda{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:12.5px;color:var(--texto-sec);margin-top:6px;}
+.pg-leyenda i{display:inline-block;width:12px;height:12px;border-radius:3px;margin-right:5px;vertical-align:-1px;}
+.pg-l-venta{background:#2b6e93;}.pg-l-gasto{background:#e3a24a;}.pg-l-utilidad{background:var(--verde);}.pg-l-cobrado{background:#7b4fb0;}
+.pg-barras{display:flex;flex-direction:column;gap:10px;}
+.pg-barra-cab{display:flex;justify-content:space-between;gap:10px;font-size:13.5px;}
+.pg-barra-cab span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.pg-barra-cab b{font-variant-numeric:tabular-nums;white-space:nowrap;}
+.pg-barra-fondo{height:8px;border-radius:999px;background:var(--gris-200);overflow:hidden;margin:4px 0 2px;}
+.pg-barra-relleno{height:100%;border-radius:999px;background:linear-gradient(90deg,#2b6e93,#4a90b8);}
+.pg-barra small{font-size:11.5px;color:var(--texto-sec);}
+.pg-tramos{display:flex;flex-direction:column;gap:6px;}
+.pg-tramo{display:grid;grid-template-columns:110px 1fr 110px;gap:10px;align-items:center;font-size:13px;}
+.pg-tramo b{text-align:right;font-variant-numeric:tabular-nums;}
+.pg-tramo .pg-barra-fondo{margin:0;}
+.pg-tramo.ok .pg-barra-relleno{background:var(--verde);}
+.pg-tramo.leve .pg-barra-relleno{background:#e0a800;}
+.pg-tramo.medio .pg-barra-relleno{background:#e07b00;}
+.pg-tramo.alto .pg-barra-relleno{background:var(--rojo);}
+.pg-tabla{width:100%;border-collapse:collapse;font-size:13px;}
+.pg-tabla td{padding:6px 4px;border-bottom:1px solid var(--gris-200);}
+.pg-tabla .rojo{color:var(--rojo);font-weight:600;}
+.pg-nota{margin-top:6px;}
+@media(max-width:900px){.pg-dos,.pg-tres{grid-template-columns:1fr;}}
+@media(max-width:600px){
+  .pg-tarjetas{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;}
+  .pg-tarjeta{padding:10px 12px;}
+  .pg-tarjeta b{font-size:17px;}
+  .pg-mini{grid-template-columns:1fr 1fr;}
+  .pg-tramo{grid-template-columns:90px 1fr 90px;}
+  .pg-presets{flex-wrap:wrap;}
+}
+/* Imprimir / guardar en PDF: solo el panorama, sin menú ni botones. */
+@media print{
+  header,nav,.menu,.res-pestanas,.pg-filtros,.toast,#res-comercial,.vista:not(#vista-resultados){display:none !important;}
+  body{background:#fff;}
+  .pg-caja,.pg-tarjeta{box-shadow:none;break-inside:avoid;}
+  .pg-dos,.pg-tres{grid-template-columns:1fr 1fr;}
+  .enlace{text-decoration:none;color:inherit;}
+}

@@ -129,6 +129,7 @@ app.use('/api', (req, res, next) => {
 require('./prospeccion')(app,db,h);
 // Cuentas por cobrar y por pagar. Devuelve ganchos que usan las rutas de órdenes de abajo.
 const finanzas = require('./finanzas')(app, db, h);
+require('./tablero')(app, db, h, finanzas); // Resultados: panorama general
 
 // ---------- Catálogos ----------
 app.get('/api/usuarios', h((req, res) => {
