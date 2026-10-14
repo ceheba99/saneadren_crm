@@ -1,0 +1,223 @@
+// Órdenes de compra (formato CM-F-03): se capturan como borrador, un administrador las autoriza y en
+// ese momento pasan a Cuentas por pagar como factura pendiente del proveedor. También se pueden cancelar
+// (si la cuenta por pagar aún no tiene pagos). Incluye el catálogo de centros de costo.
+const Importes = require('../public/importes.js');
+const { hoyMexico } = require('./fechas');
+
+const CENTROS_INICIALES = [['Mantenimiento', 'Isaac Hernandez'], ['Operaciones', 'Noe Gomez'], ['Subdireccion', 'Luis Perea'], ['Dirección', 'Miguel Perea'],
+  ['Compras', 'Marco Herrera'], ['Administración', 'Helena'], ['RH', 'Marco Herrera'], ['Ventas', 'Evelyn Perea']];
+const fechaOk = f => typeof f === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(f) && !Number.isNaN(Date.parse(f + 'T00:00:00Z')) && new Date(f + 'T00:00:00Z').toISOString().slice(0, 10) === f;
+const sumarDias = (f, d) => { const x = new Date(f + 'T00:00:00Z'); x.setUTCDate(x.getUTCDate() + (Number(d) || 0)); return x.toISOString().slice(0, 10); };
+const texto = (v, max) => { if (v === undefined || v === null) return null; const t = String(v).trim(); return t ? t.slice(0, max) : null; };
+const pesos = c => Math.round(Number(c || 0)) / 100;
+const folioOC = o => 'OC-' + String(o.created_at || '').slice(0, 7).replace('-', '') + '-' + String(o.id).padStart(4, '0');
+
+function migrar(db) {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS centros_costo (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      nombre TEXT NOT NULL UNIQUE CHECK(length(trim(nombre)) BETWEEN 1 AND 80),
+      responsable TEXT,
+      activo INTEGER NOT NULL DEFAULT 1 CHECK(activo IN (0, 1)),
+      orden INTEGER NOT NULL DEFAULT 0
+    );
+    CREATE TABLE IF NOT EXISTS ordenes_compra (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      proveedor_id INTEGER NOT NULL REFERENCES proveedores(id),
+      centro_id INTEGER NOT NULL REFERENCES centros_costo(id),
+      categoria TEXT NOT NULL,
+      lead_id INTEGER REFERENCES leads(id) ON DELETE SET NULL,
+      fecha TEXT NOT NULL CHECK(length(fecha) = 10 AND date(fecha, '+0 days') = fecha),
+      fecha_requerida TEXT CHECK(fecha_requerida IS NULL OR (length(fecha_requerida) = 10 AND date(fecha_requerida, '+0 days') = fecha_requerida)),
+      entrega TEXT, factura_a TEXT, nota TEXT, observaciones TEXT,
+      partidas_json TEXT NOT NULL,
+      iva_modo TEXT NOT NULL CHECK(iva_modo IN ('mas_iva', 'incluido', 'sin_iva')),
+      iva_tasa REAL NOT NULL,
+      subtotal_cent INTEGER NOT NULL, iva_cent INTEGER NOT NULL,
+      total_cent INTEGER NOT NULL CHECK(typeof(total_cent) = 'integer' AND total_cent > 0),
+      solicitante_nombre TEXT, solicitante_cargo TEXT,
+      estado TEXT NOT NULL DEFAULT 'borrador' CHECK(estado IN ('borrador', 'autorizada', 'cancelada')),
+      cxp_id INTEGER REFERENCES cuentas_por_pagar(id),
+      autorizada_por INTEGER REFERENCES usuarios(id), autorizada_at TEXT,
+      cancelada_por INTEGER REFERENCES usuarios(id), cancelada_at TEXT, motivo_cancelacion TEXT,
+      creado_por INTEGER NOT NULL REFERENCES usuarios(id),
+      created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+      updated_at TEXT,
+      version INTEGER NOT NULL DEFAULT 1
+    );
+    CREATE INDEX IF NOT EXISTS idx_oc_estado ON ordenes_compra(estado, fecha);
+  `);
+  if (!db.prepare('SELECT COUNT(*) n FROM centros_costo').get().n) {
+    const ins = db.prepare('INSERT INTO centros_costo (nombre, responsable, orden) VALUES (?, ?, ?)');
+    db.transaction(() => CENTROS_INICIALES.forEach(([n, r], i) => ins.run(n, r, i + 1)))();
+  }
+}
+
+module.exports = function compras(app, db, h, finanzas) {
+  migrar(db);
+  const esAdmin = req => req.usuarioSesion.rol === 'admin';
+  const CATEGORIAS = finanzas.CATEGORIAS;
+
+  const SQL_OC = `SELECT o.*, p.nombre AS proveedor_nombre, p.rfc AS proveedor_rfc, p.dias_credito AS proveedor_credito, c.nombre AS centro_nombre, c.responsable AS centro_responsable,
+      u.nombre AS creado_por_nombre, ua.nombre AS autorizada_por_nombre,
+      (SELECT created_at FROM leads l WHERE l.id = o.lead_id) AS lead_created_at,
+      (SELECT COALESCE(SUM(g.monto_cent), 0) FROM pagos_proveedor g WHERE g.cxp_id = o.cxp_id AND g.cancelado = 0) AS pagado_cent
+    FROM ordenes_compra o JOIN proveedores p ON p.id = o.proveedor_id JOIN centros_costo c ON c.id = o.centro_id
+    LEFT JOIN usuarios u ON u.id = o.creado_por LEFT JOIN usuarios ua ON ua.id = o.autorizada_por`;
+  const describir = o => {
+    let partidas; try { partidas = JSON.parse(o.partidas_json); } catch { partidas = []; }
+    return { ...o, folio: folioOC(o), partidas, subtotal: pesos(o.subtotal_cent), iva: pesos(o.iva_cent), total: pesos(o.total_cent), pagado: pesos(o.pagado_cent),
+      saldo: o.estado === 'autorizada' ? pesos(o.total_cent - o.pagado_cent) : null, categoria_nombre: CATEGORIAS[o.categoria] || o.categoria,
+      orden_folio: o.lead_id ? 'OS-' + String(o.lead_created_at || '').slice(0, 7).replace('-', '') + '-' + String(o.lead_id).padStart(4, '0') : null };
+  };
+  const leer = id => { const o = db.prepare(SQL_OC + ' WHERE o.id = ?').get(id); return o ? describir(o) : null; };
+
+  // Valida y calcula una orden (crear o editar). Devuelve { error } o { datos }.
+  function validar(b, usuario) {
+    const prov = db.prepare('SELECT * FROM proveedores WHERE id = ? AND activo = 1').get(b.proveedor_id);
+    if (!prov) return { error: 'Elige el proveedor' };
+    const centro = db.prepare('SELECT * FROM centros_costo WHERE id = ? AND activo = 1').get(b.centro_id);
+    if (!centro) return { error: 'Elige el centro de costos' };
+    const categoria = b.categoria || prov.categoria;
+    if (!CATEGORIAS[categoria]) return { error: 'Elige la categoría del gasto' };
+    let leadId = null;
+    if (b.lead_id) {
+      const l = db.prepare("SELECT id FROM leads WHERE id = ? AND estatus = 'ganado'").get(b.lead_id);
+      if (!l) return { error: 'La orden de servicio relacionada no existe' };
+      leadId = l.id;
+    }
+    const fecha = b.fecha || hoyMexico();
+    if (!fechaOk(fecha)) return { error: 'La fecha no es válida' };
+    const requerida = b.fecha_requerida || null;
+    if (requerida && (!fechaOk(requerida) || requerida < fecha)) return { error: 'La fecha requerida no puede ser antes de la fecha de la orden' };
+    if (!Importes.MODOS.includes(b.iva_modo)) return { error: 'Indica el IVA: más IVA, IVA incluido o sin IVA' };
+    const tasa = Importes.tasaDe(b.iva_modo, Importes.TASA_DEFAULT);
+    let lista = b.partidas;
+    if (typeof lista === 'string') { try { lista = JSON.parse(lista); } catch { lista = null; } }
+    if (!Array.isArray(lista) || !lista.length || lista.length > 100) return { error: 'Agrega de 1 a 100 partidas' };
+    const partidas = [];
+    for (const [i, p] of lista.entries()) {
+      const r = `Partida ${i + 1}: `;
+      const descripcion = texto(p && p.descripcion, 300);
+      if (!descripcion) return { error: r + 'escribe la descripción' };
+      const cantidad = typeof p.cantidad === 'string' ? Number(p.cantidad) : p.cantidad;
+      if (typeof cantidad !== 'number' || !Number.isFinite(cantidad) || cantidad <= 0 || cantidad > 1e6 || Math.round(cantidad * 1000) !== cantidad * 1000) return { error: r + 'la cantidad debe ser mayor a 0 (hasta 3 decimales)' };
+      const precio = typeof p.precio === 'string' ? Number(p.precio.replace(/[$,\s]/g, '')) : p.precio;
+      if (typeof precio !== 'number' || !Number.isFinite(precio) || precio <= 0 || precio > 1e9 || Math.abs(precio * 100 - Math.round(precio * 100)) > 1e-6) return { error: r + 'el precio debe ser mayor a $0 (máximo 2 decimales)' };
+      partidas.push({ cantidad, descripcion, unidad: texto(p.unidad, 30), clave: texto(p.clave, 60), precio, importe: Importes.importeDe(cantidad, precio) });
+    }
+    const r = Importes.calcular(partidas, b.iva_modo, tasa);
+    if (!(r.total_cent > 0)) return { error: 'El total debe ser mayor a $0' };
+    if (r.total_cent > Importes.TOPE_CENT) return { error: 'El total no puede pasar de $100,000,000.00' };
+    return { datos: { proveedor_id: prov.id, centro_id: centro.id, categoria, lead_id: leadId, fecha, fecha_requerida: requerida,
+      entrega: texto(b.entrega, 200), factura_a: texto(b.factura_a, 120) || 'SANEADREN', nota: texto(b.nota, 500), observaciones: texto(b.observaciones, 2000),
+      partidas_json: JSON.stringify(partidas), iva_modo: b.iva_modo, iva_tasa: tasa, subtotal_cent: r.subtotal_cent, iva_cent: r.iva_cent, total_cent: r.total_cent,
+      solicitante_nombre: texto(b.solicitante_nombre, 120) || usuario.nombre, solicitante_cargo: texto(b.solicitante_cargo, 120) } };
+  }
+
+  // ----- Centros de costo -----
+  app.get('/api/compras/centros', h((req, res) => {
+    res.json(db.prepare('SELECT * FROM centros_costo ORDER BY activo DESC, orden, nombre').all());
+  }));
+  app.post('/api/compras/centros', h((req, res) => {
+    if (!esAdmin(req)) return res.status(403).json({ error: 'Solo un administrador puede editar los centros de costo' });
+    const nombre = texto(req.body.nombre, 80);
+    if (!nombre) return res.status(400).json({ error: 'Escribe el nombre del centro de costos' });
+    if (db.prepare('SELECT 1 FROM centros_costo WHERE lower(nombre) = lower(?)').get(nombre)) return res.status(409).json({ error: 'Ya existe ese centro de costos' });
+    const orden = db.prepare('SELECT COALESCE(MAX(orden), 0) + 1 o FROM centros_costo').get().o;
+    const info = db.prepare('INSERT INTO centros_costo (nombre, responsable, orden) VALUES (?, ?, ?)').run(nombre, texto(req.body.responsable, 120), orden);
+    res.status(201).json(db.prepare('SELECT * FROM centros_costo WHERE id = ?').get(info.lastInsertRowid));
+  }));
+  app.put('/api/compras/centros/:id', h((req, res) => {
+    if (!esAdmin(req)) return res.status(403).json({ error: 'Solo un administrador puede editar los centros de costo' });
+    const c = db.prepare('SELECT * FROM centros_costo WHERE id = ?').get(req.params.id);
+    if (!c) return res.status(404).json({ error: 'Centro de costos no encontrado' });
+    const nombre = req.body.nombre === undefined ? c.nombre : texto(req.body.nombre, 80);
+    if (!nombre) return res.status(400).json({ error: 'Escribe el nombre del centro de costos' });
+    if (db.prepare('SELECT 1 FROM centros_costo WHERE lower(nombre) = lower(?) AND id <> ?').get(nombre, c.id)) return res.status(409).json({ error: 'Ya existe ese centro de costos' });
+    const responsable = req.body.responsable === undefined ? c.responsable : texto(req.body.responsable, 120);
+    const activo = req.body.activo === undefined ? c.activo : (req.body.activo ? 1 : 0);
+    db.prepare('UPDATE centros_costo SET nombre = ?, responsable = ?, activo = ? WHERE id = ?').run(nombre, responsable, activo, c.id);
+    res.json(db.prepare('SELECT * FROM centros_costo WHERE id = ?').get(c.id));
+  }));
+
+  // ----- Órdenes de compra -----
+  app.get('/api/compras/ordenes', h((req, res) => {
+    const estado = String(req.query.estado || '');
+    let filas = db.prepare(SQL_OC + ' ORDER BY o.fecha DESC, o.id DESC').all().map(describir);
+    if (['borrador', 'autorizada', 'cancelada'].includes(estado)) filas = filas.filter(o => o.estado === estado);
+    else if (estado === 'pendiente_pago') filas = filas.filter(o => o.estado === 'autorizada' && o.saldo > 0);
+    const q = String(req.query.q || '').trim().toLowerCase();
+    if (q) filas = filas.filter(o => [o.folio, o.proveedor_nombre, o.centro_nombre, o.nota, o.observaciones, o.solicitante_nombre, ...o.partidas.map(p => p.descripcion)]
+      .some(v => String(v || '').toLowerCase().includes(q)));
+    res.json(filas);
+  }));
+  app.get('/api/compras/ordenes/:id', h((req, res) => {
+    const o = leer(req.params.id);
+    if (!o) return res.status(404).json({ error: 'Orden de compra no encontrada' });
+    res.json(o);
+  }));
+  app.post('/api/compras/ordenes', h((req, res) => {
+    const v = validar(req.body || {}, req.usuarioSesion);
+    if (v.error) return res.status(400).json({ error: v.error });
+    const d = v.datos;
+    const info = db.prepare(`INSERT INTO ordenes_compra (proveedor_id, centro_id, categoria, lead_id, fecha, fecha_requerida, entrega, factura_a, nota, observaciones,
+        partidas_json, iva_modo, iva_tasa, subtotal_cent, iva_cent, total_cent, solicitante_nombre, solicitante_cargo, creado_por)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(d.proveedor_id, d.centro_id, d.categoria, d.lead_id, d.fecha, d.fecha_requerida, d.entrega, d.factura_a,
+      d.nota, d.observaciones, d.partidas_json, d.iva_modo, d.iva_tasa, d.subtotal_cent, d.iva_cent, d.total_cent, d.solicitante_nombre, d.solicitante_cargo, req.usuarioSesion.id);
+    res.status(201).json(leer(info.lastInsertRowid));
+  }));
+  app.put('/api/compras/ordenes/:id', h((req, res) => {
+    const o = db.prepare('SELECT * FROM ordenes_compra WHERE id = ?').get(req.params.id);
+    if (!o) return res.status(404).json({ error: 'Orden de compra no encontrada' });
+    if (o.estado !== 'borrador') return res.status(409).json({ error: 'Solo se edita una orden en borrador. Una autorizada ya está en Cuentas por pagar.' });
+    if (req.body.version !== undefined && Number(req.body.version) !== o.version) return res.status(409).json({ error: 'Otra persona modificó esta orden. Ciérrala y vuelve a abrirla.' });
+    const v = validar(req.body || {}, req.usuarioSesion);
+    if (v.error) return res.status(400).json({ error: v.error });
+    const d = v.datos;
+    db.prepare(`UPDATE ordenes_compra SET proveedor_id = ?, centro_id = ?, categoria = ?, lead_id = ?, fecha = ?, fecha_requerida = ?, entrega = ?, factura_a = ?, nota = ?, observaciones = ?,
+        partidas_json = ?, iva_modo = ?, iva_tasa = ?, subtotal_cent = ?, iva_cent = ?, total_cent = ?, solicitante_nombre = ?, solicitante_cargo = ?,
+        updated_at = datetime('now','localtime'), version = version + 1 WHERE id = ?`).run(d.proveedor_id, d.centro_id, d.categoria, d.lead_id, d.fecha, d.fecha_requerida, d.entrega,
+      d.factura_a, d.nota, d.observaciones, d.partidas_json, d.iva_modo, d.iva_tasa, d.subtotal_cent, d.iva_cent, d.total_cent, d.solicitante_nombre, d.solicitante_cargo, o.id);
+    res.json(leer(o.id));
+  }));
+  // Autorizar: la orden pasa a Cuentas por pagar (pendiente de pago; vence según el crédito del proveedor).
+  app.post('/api/compras/ordenes/:id/autorizar', h((req, res) => {
+    if (!esAdmin(req)) return res.status(403).json({ error: 'Solo un administrador puede autorizar órdenes de compra' });
+    const o = leer(req.params.id);
+    if (!o) return res.status(404).json({ error: 'Orden de compra no encontrada' });
+    if (o.estado !== 'borrador') return res.status(409).json({ error: o.estado === 'autorizada' ? 'Esta orden ya está autorizada' : 'Esta orden está cancelada' });
+    const prov = db.prepare('SELECT * FROM proveedores WHERE id = ?').get(o.proveedor_id);
+    const vence = req.body && req.body.fecha_vencimiento ? req.body.fecha_vencimiento : sumarDias(o.fecha, prov.dias_credito);
+    if (!fechaOk(vence) || vence < o.fecha) return res.status(400).json({ error: 'El vencimiento no puede ser antes de la fecha de la orden' });
+    const resumen = o.partidas[0].descripcion + (o.partidas.length > 1 ? ` y ${o.partidas.length - 1} más` : '');
+    const concepto = (o.folio + ' · ' + resumen).slice(0, 200);
+    const cxpId = db.transaction(() => {
+      const info = db.prepare(`INSERT INTO cuentas_por_pagar (proveedor_id, categoria, concepto, fecha_documento, fecha_vencimiento, total_cent, lead_id, notas, registrado_por)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(o.proveedor_id, o.categoria, concepto, o.fecha, vence, o.total_cent, o.lead_id,
+        `Orden de compra ${o.folio} · Centro de costos: ${o.centro_nombre}`, req.usuarioSesion.id);
+      db.prepare("UPDATE ordenes_compra SET estado = 'autorizada', cxp_id = ?, autorizada_por = ?, autorizada_at = datetime('now','localtime'), version = version + 1 WHERE id = ?")
+        .run(info.lastInsertRowid, req.usuarioSesion.id, o.id);
+      return info.lastInsertRowid;
+    })();
+    res.json({ ok: true, cxp_id: cxpId, orden: leer(o.id) });
+  }));
+  app.post('/api/compras/ordenes/:id/cancelar', h((req, res) => {
+    const motivo = texto(req.body && req.body.motivo, 300);
+    if (!motivo || motivo.length < 5) return res.status(400).json({ error: 'Escribe el motivo de la cancelación (mínimo 5 caracteres)' });
+    const o = leer(req.params.id);
+    if (!o) return res.status(404).json({ error: 'Orden de compra no encontrada' });
+    if (o.estado === 'cancelada') return res.status(409).json({ error: 'Esta orden ya estaba cancelada' });
+    if (o.estado === 'autorizada') {
+      if (!esAdmin(req)) return res.status(403).json({ error: 'Solo un administrador puede cancelar una orden autorizada' });
+      if (o.pagado_cent > 0) return res.status(409).json({ error: 'Esta orden ya tiene pagos al proveedor. Cancela primero esos pagos en Cuentas por pagar.' });
+    }
+    db.transaction(() => {
+      if (o.cxp_id) db.prepare("UPDATE cuentas_por_pagar SET cancelada = 1, cancelada_por = ?, cancelada_at = datetime('now','localtime'), motivo_cancelacion = ? WHERE id = ? AND cancelada = 0")
+        .run(req.usuarioSesion.id, ('Orden de compra cancelada: ' + motivo).slice(0, 300), o.cxp_id);
+      db.prepare("UPDATE ordenes_compra SET estado = 'cancelada', cancelada_por = ?, cancelada_at = datetime('now','localtime'), motivo_cancelacion = ?, version = version + 1 WHERE id = ?")
+        .run(req.usuarioSesion.id, motivo, o.id);
+    })();
+    res.json({ ok: true, orden: leer(o.id) });
+  }));
+};

@@ -130,6 +130,7 @@ require('./prospeccion')(app,db,h);
 // Cuentas por cobrar y por pagar. Devuelve ganchos que usan las rutas de órdenes de abajo.
 const finanzas = require('./finanzas')(app, db, h);
 require('./tablero')(app, db, h, finanzas); // Resultados: panorama general
+require('./compras')(app, db, h, finanzas); // Órdenes de compra (formato CM-F-03)
 
 // ---------- Catálogos ----------
 app.get('/api/usuarios', h((req, res) => {

@@ -1201,3 +1201,25 @@ button.enlace{background:none;border:0;padding:0;color:var(--azul-600);text-deco
   .pg-dos,.pg-tres{grid-template-columns:1fr 1fr;}
   .enlace{text-decoration:none;color:inherit;}
 }
+
+/* ====== Órdenes de compra ====== */
+.modal-compra{max-width:1000px;width:calc(100vw - 32px);}
+#oc-cuerpo{display:flex;flex-direction:column;gap:14px;padding:18px 22px 22px;}
+.oc-partidas-caja{border:1px solid var(--gris-200);border-radius:10px;padding:14px;display:flex;flex-direction:column;gap:10px;background:#fcfcfd;}
+.oc-tabla input{width:100%;min-height:36px;box-sizing:border-box;border:1px solid var(--gris-300);border-radius:6px;padding:5px 8px;font:inherit;font-size:13px;}
+.oc-tabla td{padding:4px 5px;vertical-align:middle;}
+.oc-tabla .oc-cantidad{width:80px;text-align:right;}
+.oc-tabla .oc-precio{width:110px;text-align:right;}
+.oc-tabla .oc-unidad{width:70px;}
+.oc-tabla .oc-clave{width:100px;}
+.oc-tabla .oc-descripcion{min-width:240px;}
+.oc-tabla .oc-num{color:var(--texto-sec);font-weight:700;text-align:center;width:28px;}
+.oc-tabla .oc-importe{font-weight:700;white-space:nowrap;}
+.oc-tabla .oc-quitar{padding:4px 8px;}
+.oc-totales{align-self:flex-end;min-width:280px;}
+.oc-acciones{display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:flex-end;}
+@media(max-width:600px){#oc-cuerpo{padding:14px 12px 18px;}.oc-totales{align-self:stretch;}}
+.oc-partidas-caja .tabla-scroll{max-height:none;}
+.oc-tabla .oc-unidad{width:62px;}
+.oc-tabla .oc-clave{width:88px;}
+.oc-tabla .oc-descripcion{min-width:300px;}

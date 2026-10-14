@@ -42,6 +42,7 @@
         <div class="menu-sub">
           <button type="button" class="menu-item solo-cobranza" data-vista="cobrar" id="nav-cobrar"><span class="menu-icono" aria-hidden="true">📥</span>Cuentas por cobrar</button>
           <button type="button" class="menu-item solo-cobranza" data-vista="pagar" id="nav-pagar"><span class="menu-icono" aria-hidden="true">📤</span>Cuentas por pagar</button>
+          <button type="button" class="menu-item" data-vista="compras"><span class="menu-icono" aria-hidden="true">🛒</span>Órdenes de compra</button>
           <button type="button" class="menu-item" data-vista="resultados"><span class="menu-icono" aria-hidden="true">📊</span>Resultados</button>
         </div>
       </div>
@@ -273,6 +274,19 @@
   </section>
 
   <!-- ====== VISTA: PENDIENTES (Recompras + Alertas juntas) ====== -->
+  <!-- ====== VISTA: ÓRDENES DE COMPRA (formato CM-F-03) ====== -->
+  <section class="vista" id="vista-compras">
+    <div class="vista-encabezado">
+      <div><h2>Órdenes de compra</h2><p class="ayuda">Se capturan como borrador; al autorizarlas (administración) pasan solas a Cuentas por pagar como factura pendiente del proveedor. Se descargan con el formato CM-F-03.</p></div>
+      <div class="btn-group"><button type="button" class="btn btn-primario" id="oc-nueva">+ Nueva orden de compra</button><button type="button" class="btn btn-outline solo-admin" id="oc-centros">Centros de costo</button></div>
+    </div>
+    <div class="filtros">
+      <select id="oc-filtro" aria-label="Mostrar"><option value="">Todas</option><option value="borrador">Borradores (por autorizar)</option><option value="pendiente_pago">Autorizadas por pagar</option><option value="autorizada">Autorizadas</option><option value="cancelada">Canceladas</option></select>
+      <input type="search" id="oc-buscar" placeholder="Folio, proveedor, centro de costos o concepto" aria-label="Buscar órdenes de compra">
+    </div>
+    <div id="oc-lista"></div>
+  </section>
+
   <!-- ====== VISTA: CALENDARIO ====== -->
   <section class="vista" id="vista-calendario">
     <div class="vista-encabezado">
@@ -671,6 +685,47 @@
   </div>
 </div>
 
+<!-- ====== OVERLAY: ORDEN DE COMPRA ====== -->
+<div class="overlay" id="overlay-compra">
+  <div class="modal modal-compra">
+    <div class="modal-header"><div><span class="flujo-kicker" id="oc-kicker">ORDEN DE COMPRA · CM-F-03</span><h2 id="oc-titulo">Nueva orden de compra</h2></div>
+      <button class="close-btn" type="button" onclick="document.getElementById('overlay-compra').classList.remove('mostrar')">✕</button></div>
+    <div class="modal-body" id="oc-cuerpo">
+      <p class="cuentas-aviso" id="oc-estado" hidden></p>
+      <div class="form-grid-2">
+        <div class="campo"><label for="oc-proveedor">Proveedor</label><select id="oc-proveedor"></select></div>
+        <div class="campo"><label for="oc-centro">Centro de costos</label><select id="oc-centro"></select></div>
+        <div class="campo"><label for="oc-categoria">Categoría del gasto</label><select id="oc-categoria"></select></div>
+        <div class="campo"><label for="oc-factura-a">Factura a</label><input id="oc-factura-a" maxlength="120" placeholder="SANEADREN"></div>
+        <div class="campo"><label for="oc-fecha">Fecha</label><input type="date" id="oc-fecha"></div>
+        <div class="campo"><label for="oc-requerida">Fecha requerida</label><input type="date" id="oc-requerida"></div>
+        <div class="campo"><label for="oc-entrega">Entrega</label><input id="oc-entrega" maxlength="200" placeholder="Lugar o forma de entrega"></div>
+        <div class="campo"><label for="oc-lead">Orden de servicio relacionada (opcional)</label><input id="oc-lead" inputmode="numeric" placeholder="Número de la orden, ej. 125"></div>
+        <div class="campo full"><label for="oc-nota">Nota</label><input id="oc-nota" maxlength="500" placeholder="Ej. GASTOS PAGADORA SEM 40"></div>
+      </div>
+      <div class="oc-partidas-caja">
+        <div class="seccion-tit">Partidas</div>
+        <div class="gc-iva oc-iva" role="radiogroup" aria-label="IVA de la orden">
+          <div class="gc-iva-opciones">
+            <label class="gc-iva-opcion"><input type="radio" name="oc-iva" value="mas_iva"> <span>Más IVA 16 %</span></label>
+            <label class="gc-iva-opcion"><input type="radio" name="oc-iva" value="incluido"> <span>IVA incluido 16 %</span></label>
+            <label class="gc-iva-opcion"><input type="radio" name="oc-iva" value="sin_iva"> <span>Sin IVA</span></label>
+          </div>
+        </div>
+        <div class="tabla-scroll"><table class="tabla-resumen tabla-dinero oc-tabla"><thead><tr><th>#</th><th class="st-num">Cantidad</th><th>Descripción</th><th>Unidad</th><th>Clave artículo</th><th class="st-num">Precio unitario</th><th class="st-num">Importe</th><th></th></tr></thead><tbody id="oc-filas"></tbody></table></div>
+        <button type="button" class="btn btn-outline" id="oc-agregar">+ Agregar partida</button>
+        <table class="gc-totales oc-totales" aria-label="Totales"><tbody id="oc-totales"></tbody></table>
+      </div>
+      <div class="campo"><label for="oc-observaciones">Observaciones</label><textarea id="oc-observaciones" rows="2" maxlength="2000"></textarea></div>
+      <div class="form-grid-2">
+        <div class="campo"><label for="oc-solicitante">Área solicitante: nombre</label><input id="oc-solicitante" maxlength="120"></div>
+        <div class="campo"><label for="oc-cargo">Cargo</label><input id="oc-cargo" maxlength="120"></div>
+      </div>
+      <div class="barra-acciones oc-acciones" id="oc-acciones"></div>
+    </div>
+  </div>
+</div>
+
 <!-- ====== OVERLAY: ESTADO DE CUENTA DE UN CLIENTE (desde Cuentas por cobrar) ====== -->
 <div class="overlay" id="overlay-cuenta-cliente">
   <div class="modal modal-cuenta-cliente">
@@ -958,6 +1013,7 @@
 <script src="finanzas.js?v=pg2"></script>
 <script src="calendario.js?v=pg2"></script>
 <script src="tablero.js?v=pg2"></script>
+<script src="compras.js?v=oc3"></script>
 <script src="app.js?v=pg2"></script>
 <script src="prospeccion.js?v=pg2"></script>
 </body>
