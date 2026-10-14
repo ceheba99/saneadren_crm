@@ -1059,7 +1059,10 @@ const etiquetaTotalOrden = modo => modo === 'mas_iva' ? 'TOTAL CON IVA' : modo =
 // pequeñas sobre cada dato y líneas finas (sin cuadrícula pesada), para que respire sobre el membrete.
 function camposOrden(datos) {
   return [
-    [['Empresa', datos.cliente.empresa || datos.cliente.nombre], ['Contacto', [datos.cliente.empresa ? datos.cliente.nombre : '', datos.cliente.telefono].filter(Boolean).join(' · ') || '—']],
+    // Con empresa: Empresa + Contacto (nombre y teléfono). Sin empresa: Cliente + Teléfono (no se inventa una empresa).
+    datos.cliente.empresa
+      ? [['Empresa', datos.cliente.empresa], ['Contacto', [datos.cliente.nombre, datos.cliente.telefono].filter(Boolean).join(' · ') || '—']]
+      : [['Cliente', datos.cliente.nombre || '—'], ['Teléfono', datos.cliente.telefono || '—']],
     [['Ubicación', datos.cliente.direccion || '—']],
     [['Equipo', datos.equipo || ''], ['Operador(es)', datos.operador || '']],
     ...(datos.proyecto ? [[['Proyecto', datos.proyecto]]] : [])
