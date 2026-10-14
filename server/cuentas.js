@@ -41,9 +41,15 @@ function asegurarAdminInicial(db, { verificarPassword }) {
   if (!existente) {
     db.prepare("INSERT INTO usuarios (nombre, password, rol, correo, correo_verificado) VALUES (?, ?, 'admin', ?, 1)").run(nombre, hashPassword(password), correo);
     console.log(`[admin inicial] Creado "${nombre}" (${correo}).`);
-  } else if (verificarPassword('1234', existente.password)) {
+  } else if (verificarPassword('1234', existente.password) || (existente.correo === correo && !existente.correo_verificado)) {
+    // También se toma una cuenta con ADMIN_CORREO que se registró sola y nunca confirmó el correo
+    // (p. ej. alguien usó "Crear cuenta" antes de que hubiera correo saliente): quien la creó nunca
+    // demostró ser dueño del correo, y sin esto el admin no podría entrar nunca.
     db.prepare("UPDATE usuarios SET nombre = ?, correo = ?, correo_verificado = 1, password = ?, rol = 'admin', activo = 1, debe_cambiar_password = 0 WHERE id = ?").run(nombre, correo, hashPassword(password), existente.id);
+    db.prepare("DELETE FROM tokens_cuenta WHERE usuario_id = ?").run(existente.id);
     console.log(`[admin inicial] Configurado "${nombre}" (${correo}).`);
+  } else {
+    console.log(`[admin inicial] "${existente.nombre}" ya tiene contraseña propia; no se cambia (usa "¿Olvidaste tu contraseña?").`);
   }
 }
 
