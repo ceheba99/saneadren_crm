@@ -203,7 +203,6 @@ const Finanzas = (() => {
   }));
   let tBuscar;
   $('cobrar-buscar').addEventListener('input', () => { clearTimeout(tBuscar); tBuscar = setTimeout(cargarLista, 300); });
-  $('cobrar-vista').addEventListener('change', cargarLista);
 
   async function cargar(opciones = {}) {
     if (!puedeCartera()) return;
@@ -427,56 +426,22 @@ const Finanzas = (() => {
   const accionesOrden = c => '<div class="acciones-fila">' + waOrdenCorto(c)
     + (c.saldo > 0 ? '<button type="button" class="btn btn-primario btn-chico" data-pagar-orden="' + Number(c.lead_id) + '">Registrar pago</button>' : '')
     + '<button type="button" class="btn btn-outline btn-chico" data-abrir-orden="' + Number(c.lead_id) + '">Abrir</button></div>';
-  const COLS_CLIENTES = [
-    { k: 'cliente', t: 'Cliente', fija: true, v: g => '<b>' + esc(g.cliente_nombre || 'Sin nombre') + '</b>' + (g.empresa_contacto ? '<small class="celda-sub">' + esc(g.empresa_contacto) + '</small>' : ''), s: g => String(g.cliente_nombre || '').toLowerCase() },
-    { k: 'telefono', t: 'Teléfono', v: g => esc(g.telefono || '—'), s: g => g.telefono || '' },
-    { k: 'rfc', t: 'RFC', v: g => esc(g.rfc || '—'), s: g => g.rfc || '' },
-    { k: 'ordenes', t: 'Órdenes', n: true, v: g => String(Number(g.ordenes)), s: g => g.ordenes },
-    { k: 'folios', t: 'Folios', clase: 'celda-notas', v: g => esc((g.folios || []).join(', ')), s: g => (g.folios || []).join(',') },
-    { k: 'credito', t: 'Crédito', n: true, v: g => Number(g.dias_credito) + ' d', s: g => g.dias_credito },
-    { k: 'total', t: 'Total', n: true, v: g => formatoMoneda(g.total || 0), s: g => g.total || 0, sum: g => g.total || 0 },
-    { k: 'cobrado', t: 'Cobrado (A/C)', n: true, v: g => formatoMoneda(g.cobrado || 0), s: g => g.cobrado || 0, sum: g => g.cobrado || 0 },
-    { k: 'saldo', t: 'Saldo', n: true, fija: true, v: g => '<b>' + formatoMoneda(g.saldo) + '</b>', s: g => g.saldo, sum: g => g.saldo },
-    { k: 'vencido', t: 'Vencido', n: true, v: g => (g.vencido > 0 ? '<b class="rojo">' + formatoMoneda(g.vencido) + '</b>' : '—'), s: g => g.vencido, sum: g => g.vencido },
-    { k: 'max_dias', t: 'Máx. días vencido', n: true, v: g => (g.max_dias_vencido > 0 ? '<b class="rojo">' + Number(g.max_dias_vencido) + '</b>' : '—'), s: g => g.max_dias_vencido },
-    { k: 'proximo', t: 'Próximo vencimiento', v: g => esc(g.proximo_vence ? fechaTxt(g.proximo_vence) : '—'), s: g => g.proximo_vence || '9999' },
-    { k: 'ultimo_pago', t: 'Último pago', v: g => esc(ultimoPagoTxt(g.ultimo_pago)), s: g => g.ultimo_pago || '' },
-    { k: 'acciones', t: '', fija: true, sinOrden: true, clase: 'celda-acciones', v: g => accionesCliente(g) },
-  ];
-  const accionesCliente = g => {
-    const wa = enlaceWhatsApp(g.telefono, textoWhatsApp(g));
-    return '<div class="acciones-fila">' + (wa ? '<a class="btn btn-outline btn-whatsapp btn-chico" href="' + esc(wa) + '" target="_blank" rel="noopener noreferrer" title="Recordar por WhatsApp">💬</a>' : '')
-      + (puedeEditarFactura() ? '<button type="button" class="btn btn-outline btn-chico" data-credito-cliente="' + Number(g.cliente_id) + '" data-credito-actual="' + Number(g.dias_credito) + '">Crédito</button>' : '')
-      + '<button type="button" class="btn btn-secundario btn-chico" data-ver-ordenes="' + esc(g.telefono || g.cliente_nombre || '') + '">Ver órdenes</button></div>';
-  };
   // WhatsApp de una orden, solo con el ícono (para la tabla).
   const waOrdenCorto = c => waOrden(c).replace('💬 Recordar por WhatsApp', '💬').replace('class="btn btn-outline btn-whatsapp"', 'class="btn btn-outline btn-whatsapp btn-chico" title="Recordar por WhatsApp"');
   async function cargarLista() {
-    const cont = $('cobrar-lista'), vista = $('cobrar-vista').value;
+    // Una sola lista: por orden (cada fila con su "Registrar pago").
+    const cont = $('cobrar-lista'), vista = 'orden';
     cont.innerHTML = '<p class="util-45" role="status">Cargando…</p>';
     const params = new URLSearchParams({ vista, filtro: FILTRO, q: $('cobrar-buscar').value.trim() });
     try { CARTERA = await api('/finanzas/cartera?' + params).then(json); }
     catch (err) { cont.innerHTML = `<div class="aviso-error-carga" role="alert"><p>No se pudo cargar: ${esc(err.message)}</p></div>`; return; }
     if (!CARTERA.length) { cont.innerHTML = '<p class="util-45">No hay cuentas con este filtro. 🎉</p>'; return; }
-    const id = vista === 'cliente' ? 'cobrar-clientes' : 'cobrar-ordenes';
+    const id = 'cobrar-ordenes';
     TABLAS[id] = { ...TABLAS[id], contenedor: 'cobrar-lista' };
-    cont.innerHTML = vistaDinero(id, vista === 'cliente'
-      ? { columnas: COLS_CLIENTES, filas: CARTERA, claseFila: g => (g.vencido > 0 ? 'fila-vencida' : ''), tarjetas: () => tarjetasCobrar('cliente'), ocultasDef: ['rfc', 'folios'] }
-      : { columnas: COLS_COBRAR, filas: CARTERA, claseFila: c => (c.vencida ? 'fila-vencida' : ''), tarjetas: () => tarjetasCobrar('orden'), ocultasDef: ['factura_fecha', 'rfc', 'telefono', 'operador', 'proyecto', 'pagos_n', 'a_favor'] });
+    cont.innerHTML = vistaDinero(id, { columnas: COLS_COBRAR, filas: CARTERA, claseFila: c => (c.vencida ? 'fila-vencida' : ''), tarjetas: tarjetasCobrar, ocultasDef: ['factura_fecha', 'rfc', 'telefono', 'operador', 'proyecto', 'pagos_n', 'a_favor'] });
   }
-  function tarjetasCobrar(vista) {
-    return vista === 'cliente' ? CARTERA.map(g => {
-      const wa = enlaceWhatsApp(g.telefono, textoWhatsApp(g));
-      return `<div class="fila-dinero${g.vencido > 0 ? ' vencida' : ''}">
-        <div class="info"><b>${esc(g.cliente_nombre || 'Sin nombre')}</b>${g.empresa_contacto ? ` · ${esc(g.empresa_contacto)}` : ''}
-          <small>${esc(g.telefono || '')} · ${Number(g.ordenes)} ${Number(g.ordenes) === 1 ? 'orden' : 'órdenes'} · crédito ${Number(g.dias_credito)} días${g.max_dias_vencido > 0 ? ` · hasta ${Number(g.max_dias_vencido)} días vencido` : ''}</small></div>
-        <div class="montos"><b>${formatoMoneda(g.saldo)}</b>${g.vencido > 0 ? `<small class="rojo">Vencido ${formatoMoneda(g.vencido)}</small>` : ''}</div>
-        <div class="btn-group">
-          ${wa ? `<a class="btn btn-outline btn-whatsapp" href="${esc(wa)}" target="_blank" rel="noopener noreferrer">💬 Recordar por WhatsApp</a>` : ''}
-          ${puedeEditarFactura() ? `<button type="button" class="btn btn-outline" data-credito-cliente="${Number(g.cliente_id)}" data-credito-actual="${Number(g.dias_credito)}">Crédito</button>` : ''}
-          <button type="button" class="btn btn-secundario" data-ver-ordenes="${esc(g.telefono || g.cliente_nombre || '')}">Ver órdenes</button>
-        </div></div>`;
-    }).join('') : CARTERA.map(c => `<div class="fila-dinero${c.vencida ? ' vencida' : ''}">
+  function tarjetasCobrar() {
+    return CARTERA.map(c => `<div class="fila-dinero${c.vencida ? ' vencida' : ''}">
         <div class="info"><b>${esc(folioOS(c))}</b> · ${esc(c.cliente_nombre || 'Sin nombre')} ${etiquetaEstado(c)}
           <small>${esc(c.servicio_nombre || 'Servicio')} · ${esc(textoEjecucion(c))}${c.programada ? '' : ' · vence ' + esc(fechaTxt(c.vence))}${c.factura_folio ? ' · factura ' + esc(c.factura_folio) : ' · sin factura'}</small></div>
         <div class="montos"><b>${formatoMoneda(c.saldo)}</b><small>de ${formatoMoneda(c.total)}</small></div>
@@ -490,24 +455,10 @@ const Finanzas = (() => {
     const btn = e.target.closest('button'); if (!btn) return;
     if (btn.dataset.pagarOrden) return abrirCobro(Number(btn.dataset.pagarOrden), () => cargar());
     if (btn.dataset.abrirOrden) return abrirFicha(Number(btn.dataset.abrirOrden));
-    if (btn.dataset.verOrdenes !== undefined) { $('cobrar-vista').value = 'orden'; $('cobrar-buscar').value = btn.dataset.verOrdenes; return cargarLista(); }
-    if (btn.dataset.creditoCliente) {
-      const dias = await solicitarDialogo({ titulo: 'Días de crédito del cliente', mensaje: 'Se aplica a sus órdenes NUEVAS (0 = contado). Las órdenes existentes conservan el suyo; cámbialo en cada orden si hace falta.', aceptar: 'Guardar', campo: { tipo: 'number', etiqueta: 'Días (0 a 180)' } });
-      if (dias === null) return;
-      conBoton(btn, async () => { await json(await api('/finanzas/clientes/' + Number(btn.dataset.creditoCliente) + '/credito', { method: 'PUT', body: JSON.stringify({ dias_credito: dias }) })); toast('Crédito del cliente actualizado'); cargarLista(); });
-    }
   });
   $('cobrar-exportar').addEventListener('click', () => {
     if (!CARTERA.length) { toast('No hay datos con este filtro para exportar'); return; }
-    if ($('cobrar-vista').value === 'cliente') {
-      descargarCSV('cuentas_por_cobrar_clientes_' + hoy() + '.csv', [
-        { titulo: 'Cliente', valor: g => g.cliente_nombre }, { titulo: 'Empresa', valor: g => g.empresa_contacto }, { titulo: 'Teléfono', valor: g => g.telefono },
-        { titulo: 'RFC', valor: g => g.rfc }, { titulo: 'Órdenes', valor: g => g.ordenes }, { titulo: 'Folios', valor: g => (g.folios || []).join(', ') },
-        { titulo: 'Total', valor: g => (g.total || 0).toFixed(2) }, { titulo: 'Cobrado (A/C)', valor: g => (g.cobrado || 0).toFixed(2) },
-        { titulo: 'Saldo', valor: g => g.saldo.toFixed(2) }, { titulo: 'Vencido', valor: g => g.vencido.toFixed(2) },
-        { titulo: 'Máx. días vencido', valor: g => g.max_dias_vencido }, { titulo: 'Próximo vencimiento', valor: g => g.proximo_vence || '' },
-        { titulo: 'Último pago', valor: g => (g.ultimo_pago ? ultimoPagoTxt(g.ultimo_pago) : '') }, { titulo: 'Días de crédito', valor: g => g.dias_credito }], CARTERA);
-    } else {
+    {
       descargarCSV('cuentas_por_cobrar_ordenes_' + hoy() + '.csv', [
         { titulo: 'Folio', valor: folioOS }, { titulo: 'Factura', valor: c => c.factura_folio }, { titulo: 'Fecha factura', valor: c => c.factura_fecha },
         { titulo: 'Cliente', valor: c => c.cliente_nombre }, { titulo: 'Empresa', valor: c => c.empresa_contacto }, { titulo: 'RFC', valor: c => c.rfc }, { titulo: 'Teléfono', valor: c => c.telefono },
@@ -826,13 +777,21 @@ const Finanzas = (() => {
       folios: deudas.map(c => c.folio), proximo_vence: deudas.map(c => c.vence).sort()[0] })).replace('Recordar por WhatsApp', 'Recordar todo el saldo por WhatsApp') : '';
     cont.innerHTML = `<div class="modal-section" data-plegable="estado-cuenta"><div class="seccion-tit">💰 Estado de cuenta</div>
       <div class="cobranza-resumen"><div><small>Saldo</small><b>${formatoMoneda(r.saldo)}</b></div><div><small>Vencido</small><b class="${r.vencido > 0 ? 'rojo' : ''}">${formatoMoneda(r.vencido)}</b></div>
-        <div><small>Por realizar</small><b>${formatoMoneda(r.programado)}</b></div><div><small>Crédito</small><b>${Number(r.dias_credito)} días</b></div></div>
+        <div><small>Por realizar</small><b>${formatoMoneda(r.programado)}</b></div><div><small>Crédito</small><b>${Number(r.dias_credito)} días</b>${puedeEditarFactura() ? '<button type="button" class="enlace" data-fc-credito>Cambiar</button>' : ''}</div></div>
       ${r.por_revisar_n ? `<p class="ayuda">${Number(r.por_revisar_n)} órdenes anteriores al módulo están pendientes de la revisión inicial.</p>` : ''}
       ${waCliente ? `<div class="btn-group">${waCliente}</div>` : ''}
       <div class="pagos-lista">${ordenes || '<p class="util-45">Sin saldos pendientes. 🎉</p>'}</div></div>`;
     window.Plegables?.preparar(cont);
   }
-  $('fc-cobranza')?.addEventListener('click', e => {
+  $('fc-cobranza')?.addEventListener('click', async e => {
+    const cr = e.target.closest('[data-fc-credito]');
+    if (cr && CLIENTE_ACTUAL_ID) {
+      const id = CLIENTE_ACTUAL_ID;
+      const dias = await solicitarDialogo({ titulo: 'Días de crédito del cliente', mensaje: 'Se aplica a sus órdenes NUEVAS (0 = contado). Las órdenes existentes conservan el suyo; cámbialo en cada orden (Crédito y factura) si hace falta.', aceptar: 'Guardar', campo: { tipo: 'number', etiqueta: 'Días (0 a 180)' } });
+      if (dias === null) return;
+      conBoton(cr, async () => { await json(await api('/finanzas/clientes/' + Number(id) + '/credito', { method: 'PUT', body: JSON.stringify({ dias_credito: dias }) })); toast('Crédito del cliente actualizado'); pintarCliente(CLIENTE_ACTUAL?.id === id ? CLIENTE_ACTUAL : { id }); });
+      return;
+    }
     const b = e.target.closest('[data-fc-pagar]'); if (!b || !CLIENTE_ACTUAL_ID) return;
     const id = CLIENTE_ACTUAL_ID;
     abrirCobro(Number(b.dataset.fcPagar), () => pintarCliente(CLIENTE_ACTUAL?.id === id ? CLIENTE_ACTUAL : { id }));
