@@ -1,4 +1,4 @@
-const Database = require('better-sqlite3');
+const Database = require('./sqlite'); // node:sqlite (integrado en Node; no necesita compilar)
 const path = require('path');
 
 // DB_PATH permite guardar la base en un disco persistente (p. ej. /var/data/saneadren.db en Render);
