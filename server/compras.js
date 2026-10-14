@@ -1,11 +1,15 @@
 // Órdenes de compra (formato CM-F-03): se capturan como borrador, un administrador las autoriza y en
 // ese momento pasan a Cuentas por pagar como factura pendiente del proveedor. También se pueden cancelar
-// (si la cuenta por pagar aún no tiene pagos). Incluye el catálogo de centros de costo.
+// (si la cuenta por pagar aún no tiene pagos). Incluye los catálogos de centros de costo (los edita un
+// administrador) y de unidades de medida (las edita cualquier usuario).
 const Importes = require('../public/importes.js');
 const { hoyMexico } = require('./fechas');
 
 const CENTROS_INICIALES = [['Mantenimiento', 'Isaac Hernandez'], ['Operaciones', 'Noe Gomez'], ['Subdireccion', 'Luis Perea'], ['Dirección', 'Miguel Perea'],
   ['Compras', 'Marco Herrera'], ['Administración', 'Helena'], ['RH', 'Marco Herrera'], ['Ventas', 'Evelyn Perea']];
+const UNIDADES_INICIALES = [['PZA', 'Pieza'], ['L', 'Litro'], ['M', 'Metro'], ['M2', 'Metro cuadrado'], ['M3', 'Metro cúbico'], ['KG', 'Kilogramo'],
+  ['TON', 'Tonelada'], ['GAL', 'Galón'], ['CJA', 'Caja'], ['PAQ', 'Paquete'], ['JGO', 'Juego'], ['ROL', 'Rollo'], ['BTO', 'Bulto'], ['LOTE', 'Lote'],
+  ['SERV', 'Servicio'], ['HR', 'Hora'], ['DÍA', 'Día'], ['VJE', 'Viaje']];
 const fechaOk = f => typeof f === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(f) && !Number.isNaN(Date.parse(f + 'T00:00:00Z')) && new Date(f + 'T00:00:00Z').toISOString().slice(0, 10) === f;
 const sumarDias = (f, d) => { const x = new Date(f + 'T00:00:00Z'); x.setUTCDate(x.getUTCDate() + (Number(d) || 0)); return x.toISOString().slice(0, 10); };
 const texto = (v, max) => { if (v === undefined || v === null) return null; const t = String(v).trim(); return t ? t.slice(0, max) : null; };
@@ -46,7 +50,18 @@ function migrar(db) {
       version INTEGER NOT NULL DEFAULT 1
     );
     CREATE INDEX IF NOT EXISTS idx_oc_estado ON ordenes_compra(estado, fecha);
+    CREATE TABLE IF NOT EXISTS unidades_medida (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      clave TEXT NOT NULL UNIQUE COLLATE NOCASE CHECK(length(trim(clave)) BETWEEN 1 AND 10),
+      nombre TEXT NOT NULL CHECK(length(trim(nombre)) BETWEEN 1 AND 40),
+      activo INTEGER NOT NULL DEFAULT 1 CHECK(activo IN (0, 1)),
+      orden INTEGER NOT NULL DEFAULT 0
+    );
   `);
+  if (!db.prepare('SELECT COUNT(*) n FROM unidades_medida').get().n) {
+    const ins = db.prepare('INSERT INTO unidades_medida (clave, nombre, orden) VALUES (?, ?, ?)');
+    db.transaction(() => UNIDADES_INICIALES.forEach(([c, n], i) => ins.run(c, n, i + 1)))();
+  }
   if (!db.prepare('SELECT COUNT(*) n FROM centros_costo').get().n) {
     const ins = db.prepare('INSERT INTO centros_costo (nombre, responsable, orden) VALUES (?, ?, ?)');
     db.transaction(() => CENTROS_INICIALES.forEach(([n, r], i) => ins.run(n, r, i + 1)))();
@@ -110,7 +125,7 @@ module.exports = function compras(app, db, h, finanzas) {
     if (!(r.total_cent > 0)) return { error: 'El total debe ser mayor a $0' };
     if (r.total_cent > Importes.TOPE_CENT) return { error: 'El total no puede pasar de $100,000,000.00' };
     return { datos: { proveedor_id: prov.id, centro_id: centro.id, categoria, lead_id: leadId, fecha, fecha_requerida: requerida,
-      entrega: texto(b.entrega, 200), factura_a: texto(b.factura_a, 120) || 'SANEADREN', nota: texto(b.nota, 500), observaciones: texto(b.observaciones, 2000),
+      entrega: null, factura_a: texto(b.factura_a, 120) || 'SANEADREN', nota: texto(b.nota, 500), observaciones: texto(b.observaciones, 2000),
       partidas_json: JSON.stringify(partidas), iva_modo: b.iva_modo, iva_tasa: tasa, subtotal_cent: r.subtotal_cent, iva_cent: r.iva_cent, total_cent: r.total_cent,
       solicitante_nombre: texto(b.solicitante_nombre, 120) || usuario.nombre, solicitante_cargo: texto(b.solicitante_cargo, 120) } };
   }
@@ -139,6 +154,38 @@ module.exports = function compras(app, db, h, finanzas) {
     const activo = req.body.activo === undefined ? c.activo : (req.body.activo ? 1 : 0);
     db.prepare('UPDATE centros_costo SET nombre = ?, responsable = ?, activo = ? WHERE id = ?').run(nombre, responsable, activo, c.id);
     res.json(db.prepare('SELECT * FROM centros_costo WHERE id = ?').get(c.id));
+  }));
+
+  // ----- Unidades de medida (cualquier usuario las agrega o corrige; no se borran, se dan de baja) -----
+  const leerUnidad = id => db.prepare('SELECT * FROM unidades_medida WHERE id = ?').get(id);
+  function datosUnidad(b, actual) {
+    const clave = b.clave === undefined && actual ? actual.clave : texto(b.clave, 10)?.toUpperCase();
+    const nombre = b.nombre === undefined && actual ? actual.nombre : texto(b.nombre, 40);
+    if (!clave) return { error: 'Escribe la abreviatura de la unidad (ej. PZA)' };
+    if (!nombre) return { error: 'Escribe el nombre de la unidad (ej. Pieza)' };
+    if (!/^[\p{L}\d ./²³-]+$/u.test(clave)) return { error: 'La abreviatura solo lleva letras, números, punto, guion o diagonal' };
+    if (db.prepare('SELECT 1 FROM unidades_medida WHERE clave = ? COLLATE NOCASE AND id <> ?').get(clave, actual?.id || 0)) return { error: 'Ya existe una unidad con la abreviatura ' + clave };
+    if (db.prepare('SELECT 1 FROM unidades_medida WHERE lower(nombre) = lower(?) AND id <> ?').get(nombre, actual?.id || 0)) return { error: 'Ya existe la unidad ' + nombre };
+    return { clave, nombre };
+  }
+  app.get('/api/compras/unidades', h((req, res) => {
+    res.json(db.prepare('SELECT * FROM unidades_medida ORDER BY activo DESC, orden, nombre').all());
+  }));
+  app.post('/api/compras/unidades', h((req, res) => {
+    const d = datosUnidad(req.body || {});
+    if (d.error) return res.status(400).json({ error: d.error });
+    const orden = db.prepare('SELECT COALESCE(MAX(orden), 0) + 1 o FROM unidades_medida').get().o;
+    const info = db.prepare('INSERT INTO unidades_medida (clave, nombre, orden) VALUES (?, ?, ?)').run(d.clave, d.nombre, orden);
+    res.status(201).json(leerUnidad(info.lastInsertRowid));
+  }));
+  app.put('/api/compras/unidades/:id', h((req, res) => {
+    const u = leerUnidad(req.params.id);
+    if (!u) return res.status(404).json({ error: 'Unidad no encontrada' });
+    const d = datosUnidad(req.body || {}, u);
+    if (d.error) return res.status(400).json({ error: d.error });
+    const activo = req.body.activo === undefined ? u.activo : (req.body.activo ? 1 : 0);
+    db.prepare('UPDATE unidades_medida SET clave = ?, nombre = ?, activo = ? WHERE id = ?').run(d.clave, d.nombre, activo, u.id);
+    res.json(leerUnidad(u.id));
   }));
 
   // ----- Órdenes de compra -----
