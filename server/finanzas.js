@@ -45,6 +45,7 @@ function migrar(db) {
   agregar('leads', 'factura_folio', 'TEXT');
   agregar('leads', 'factura_fecha', 'TEXT');
   agregar('leads', 'factura_total_cent', 'INTEGER');
+  agregar('leads', 'factura_metodo', 'TEXT'); // método de pago del CFDI: PUE (una sola exhibición) o PPD (parcialidades)
   // Órdenes que ya existían al instalar el módulo: quedan fuera de la cartera hasta que el admin
   // indique si ya se cobraron (si no, aparecerían todas como deuda el primer día).
   agregar('leads', 'cobranza_por_revisar', 'INTEGER NOT NULL DEFAULT 0');
@@ -198,7 +199,7 @@ const diasCreditoValidos = v => v === null || v === '' || v === undefined || (Nu
 const SQL_TOTAL_ORDEN = 'CAST(ROUND(COALESCE(l.valor, 0) * 100) AS INTEGER) + COALESCE(l.iva_cent, 0)';
 const SQL_CUENTA = `
   SELECT l.id, l.cliente_id, l.created_at, l.fecha_servicio, l.valor, l.dias_credito, l.factura_folio, l.factura_fecha,
-    l.factura_total_cent, l.cobranza_por_revisar, l.servicio_id, l.estatus, l.iva_modo, l.iva_tasa, l.iva_cent,
+    l.factura_total_cent, l.factura_metodo, l.cobranza_por_revisar, l.servicio_id, l.estatus, l.iva_modo, l.iva_tasa, l.iva_cent,
     l.ejecucion, l.realizado_por, l.fecha_realizado, l.equipo, l.operador, l.proyecto, l.notas_iniciales,
     (SELECT k.fecha || '|' || k.metodo || '|' || COALESCE(k.referencia, '') FROM cobros k WHERE k.lead_id = l.id AND k.cancelado = 0 AND k.tipo <> 'ajuste' ORDER BY k.fecha DESC, k.id DESC LIMIT 1) AS ultimo_pago,
     (SELECT COUNT(*) FROM cobros k WHERE k.lead_id = l.id AND k.cancelado = 0) AS pagos_n,
@@ -232,7 +233,7 @@ function describirCuenta(f, hoy) {
   return {
     lead_id: f.id, folio: folioOS(f.id, f.created_at), cliente_id: f.cliente_id, cliente_nombre: f.cliente_nombre, empresa_contacto: f.empresa_contacto,
     telefono: f.telefono, rfc: f.rfc, servicio_nombre: f.servicio_nombre, created_at: f.created_at, fecha_servicio: f.fecha_servicio,
-    dias_credito: f.dias_credito || 0, factura_folio: f.factura_folio, factura_fecha: f.factura_fecha,
+    dias_credito: f.dias_credito || 0, factura_folio: f.factura_folio, factura_fecha: f.factura_fecha, factura_metodo: f.factura_metodo || null,
     factura_total: f.factura_total_cent == null ? null : aPesos(f.factura_total_cent),
     total: aPesos(f.total_cent), cobrado: aPesos(f.cobrado_cent), saldo: aPesos(Math.max(saldo, 0)), a_favor: aPesos(aFavor),
     vence, dias_vencido: saldo > 0 ? diasVencido : 0, estado, vencida, programada, tramo: programada ? null : tramo,
@@ -454,13 +455,16 @@ module.exports = function finanzas(app, db, h) {
     const dias = b.dias_credito === undefined ? lead.dias_credito : (b.dias_credito === null || b.dias_credito === '' ? null : Number(b.dias_credito));
     const folio = b.factura_folio === undefined ? lead.factura_folio : texto(b.factura_folio, 60);
     const fechaF = b.factura_fecha === undefined ? lead.factura_fecha : (b.factura_fecha || null);
+    if (b.factura_metodo !== undefined && b.factura_metodo !== null && b.factura_metodo !== '' && !['PUE', 'PPD'].includes(b.factura_metodo)) return res.status(400).json({ error: 'El método de pago del CFDI es PUE o PPD' });
+    const metodoF = b.factura_metodo === undefined ? lead.factura_metodo : (b.factura_metodo || null);
     const cambios = [];
     if (dias !== lead.dias_credito) cambios.push(`crédito ${lead.dias_credito || 0} → ${dias || 0} días`);
     if (folio !== lead.factura_folio) cambios.push(`factura ${folio || '(sin folio)'}`);
     if (fechaF !== lead.factura_fecha) cambios.push(`fecha de factura ${fechaF || '(sin fecha)'}`);
+    if (metodoF !== lead.factura_metodo) cambios.push(`método de pago ${metodoF || '(sin indicar)'}`);
     if (totalFactura !== lead.factura_total_cent) cambios.push(`total facturado ${totalFactura == null ? '(igual al total de la orden)' : fmt(totalFactura)}`);
     db.transaction(() => {
-      db.prepare('UPDATE leads SET dias_credito = ?, factura_folio = ?, factura_fecha = ?, factura_total_cent = ? WHERE id = ?').run(dias, folio, fechaF, totalFactura, lead.id);
+      db.prepare('UPDATE leads SET dias_credito = ?, factura_folio = ?, factura_fecha = ?, factura_total_cent = ?, factura_metodo = ? WHERE id = ?').run(dias, folio, fechaF, totalFactura, metodoF, lead.id);
       if (cambios.length) bitacora(lead.id, 'Facturación: ' + cambios.join(', ') + '.', req);
     })();
     res.json({ ok: true, cuenta: cuentaDeOrden(lead.id) });
@@ -490,6 +494,18 @@ module.exports = function finanzas(app, db, h) {
     const ultimos = db.prepare(`SELECT k.id, k.lead_id, k.fecha, k.monto_cent, k.metodo, k.tipo, k.confirmado, l.created_at AS lead_created_at
       FROM cobros k JOIN leads l ON l.id = k.lead_id WHERE l.cliente_id = ? AND k.cancelado = 0 ORDER BY k.fecha DESC, k.id DESC LIMIT 5`).all(cli.id)
       .map(k => ({ ...k, monto: aPesos(k.monto_cent), folio: folioOS(k.lead_id, k.lead_created_at) }));
+    if (req.query.completo) {
+      const c = db.prepare('SELECT id, nombre, empresa_contacto, telefono, rfc, correo FROM clientes WHERE id = ?').get(cli.id);
+      const cobros = db.prepare(`SELECT k.id, k.lead_id, k.fecha, k.monto_cent, k.metodo, k.tipo, k.referencia, k.notas, k.confirmado, k.cancelado, k.motivo_cancelacion,
+          l.created_at AS lead_created_at, u.nombre AS registrado_por_nombre
+        FROM cobros k JOIN leads l ON l.id = k.lead_id LEFT JOIN usuarios u ON u.id = k.registrado_por WHERE l.cliente_id = ? ORDER BY k.fecha DESC, k.id DESC`).all(cli.id)
+        .map(k => ({ ...k, monto: aPesos(k.monto_cent), folio: folioOS(k.lead_id, k.lead_created_at) }));
+      const vivas = cobros.filter(k => !k.cancelado && k.tipo !== 'ajuste');
+      return res.json({ ...r, cliente: c, saldo: suma(activas.filter(x => x.saldo > 0 && !x.programada)), vencido: suma(vencidas),
+        programado: suma(activas.filter(x => x.saldo > 0 && x.programada)), a_favor: Math.round(activas.reduce((t, x) => t + (x.a_favor || 0) * 100, 0)) / 100,
+        total: Math.round(activas.reduce((t, x) => t + x.total * 100, 0)) / 100, pagado: aPesos(vivas.reduce((t, k) => t + k.monto_cent, 0)),
+        ordenes: activas, cobros });
+    }
     res.json({ ...r, saldo: suma(activas.filter(c => c.saldo > 0 && !c.programada)), vencido: suma(vencidas),
       programado: suma(activas.filter(c => c.saldo > 0 && c.programada)), por_revisar_n: cuentas.filter(c => c.por_revisar).length,
       ordenes: activas.filter(c => c.saldo > 0), ultimos_cobros: ultimos });
@@ -981,7 +997,7 @@ module.exports = function finanzas(app, db, h) {
         .map(([k, v]) => celda(v) ? `${k}: ${celda(v)}` : '').filter(Boolean).join(' · ');
       const notas = textoMax(extra, LIM.notas, 'Notas', errores);
       const referencia = [celda(f.cp), celda(f.observaciones)].filter(Boolean).join(' · ').slice(0, 120) || null;
-      return { fila, errores, datos: { tel, nombre, clave, existente, servicio, direccion, fecha, subtotal, modo, imp, facturaTotalCent, folioTxt, dias, pagado, fechaCobro, notas, referencia, metodo: esBanco(f.observaciones) ? 'transferencia' : 'otro' },
+      return { fila, errores, datos: { tel, nombre, clave, existente, servicio, direccion, fecha, subtotal, modo, imp, facturaTotalCent, folioTxt, dias, pagado, fechaCobro, notas, referencia, metodo: esBanco(f.observaciones) ? 'transferencia' : 'otro', mp: ['PUE', 'PPD'].includes(String(f.metodo_pago || '').trim().toUpperCase()) ? String(f.metodo_pago).trim().toUpperCase() : null },
         resumen: { cliente: existente?.nombre || nombre, folio: folioTxt, total: total ? aPesos(total) : null, pagado: aPesos(pagado), estado: status === 'pagado' && pagado < total ? 'Pagado en parte' : status === 'pagado' ? 'Pagado' : 'Pendiente', cliente_nuevo: !existente && !nuevoRepetido } };
     });
     if (simular || resultado.some(x => x.errores.length)) return responder(res, simular, resultado);
@@ -1010,6 +1026,7 @@ module.exports = function finanzas(app, db, h) {
         const leadId = insLead.run(cli.id, cli.telefono, cli.telefono_normalizado, cli.nombre, cli.empresa_contacto, d.direccion, d.servicio?.id ?? null, req.usuarioSesion.id,
           d.notas, req.usuarioSesion.nombre, d.imp.subtotal_cent / 100, d.fecha, partidas, d.dias ?? cli.dias_credito ?? null, d.folioTxt, d.fecha, d.facturaTotalCent,
           d.modo, Importes.tasaDe(d.modo), d.imp.iva_cent).lastInsertRowid;
+        if (d.mp) db.prepare('UPDATE leads SET factura_metodo = ? WHERE id = ?').run(d.mp, leadId);
         if (d.pagado) insCobro.run(leadId, d.fechaCobro, d.pagado, d.metodo, d.referencia, req.usuarioSesion.id, req.usuarioSesion.id);
         bitacora(leadId, 'Orden importada desde la plantilla de cobranza' + (d.folioTxt ? ` (factura ${d.folioTxt})` : '') + '.' + (d.pagado ? ` Cobrado: ${fmt(d.pagado)}.` : ''), req);
       }

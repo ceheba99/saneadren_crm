@@ -58,6 +58,14 @@ const HOY = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Mexico_City' }
   revisa(fila1 && fila1.ultimo_pago && fila1.ultimo_pago.startsWith(HOY + '|transferencia') && fila1.pagos_n === 2, 'la tabla trae el último pago (sin contar el descuento) y el número de pagos', fila1 && [fila1.ultimo_pago, fila1.pagos_n]);
   const porCliente = (await pedir('GET', '/finanzas/cartera?filtro=todas&vista=cliente', A))[1].find(g => g.cliente_id === C);
   revisa(porCliente && porCliente.total >= 3480 && porCliente.cobrado >= 3480 && 'rfc' in porCliente && porCliente.ultimo_pago, 'la vista por cliente trae total, cobrado, RFC y último pago', porCliente);
+  // Método de pago del CFDI (M.P. de la plantilla) y estado de cuenta completo del cliente (ventana emergente).
+  [s, j] = await pedir('PUT', '/leads/' + o1.id + '/facturacion', A, { factura_metodo: 'PPD', factura_folio: 'QR-1' });
+  revisa(s === 200 && j.cuenta.factura_metodo === 'PPD', 'la factura guarda el método de pago PPD', j.cuenta);
+  [s, j] = await pedir('PUT', '/leads/' + o1.id + '/facturacion', A, { factura_metodo: 'EFECTIVO' });
+  revisa(s === 400, 'un método de pago distinto de PUE/PPD se rechaza', s);
+  [s, j] = await pedir('GET', '/finanzas/clientes/' + C + '/estado-cuenta?completo=1', A);
+  revisa(s === 200 && j.cliente?.nombre === 'Fábrica Norte' && j.ordenes.some(o => o.lead_id === o1.id && o.saldo === 0) && j.cobros.some(k => k.lead_id === o1.id && k.tipo === 'ajuste') && j.pagado === 3000,
+    'estado de cuenta completo: datos del cliente, órdenes pagadas incluidas y todos sus pagos (pagado sin contar descuentos)', { cli: j.cliente, pagado: j.pagado, n: j.cobros?.length });
   sec('3. Orden con pagos no se descarta / conflicto de versiones');
   [s, j] = await alta({ partidas_json: P(partida(1000)) });
   const cot = j;
