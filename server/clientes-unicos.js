@@ -279,12 +279,20 @@ module.exports = function clientesUnicos(app, db, h) {
     const a = Number(req.body?.a), b = Number(req.body?.b);
     if (!a || !b || a === b || !db.prepare('SELECT 1 FROM clientes WHERE id = ?').get(a) || !db.prepare('SELECT 1 FROM clientes WHERE id = ?').get(b)) return res.status(400).json({ error: 'Clientes no válidos' });
     recordarDistintos(a, [b], req.usuarioSesion.id);
+    app.locals.auditoria?.registrar(req, 'cliente', a, 'son distintos', `Se confirmó que ${folioCliente(a)} y ${folioCliente(b)} son clientes distintos`);
     res.json({ ok: true });
   }));
   app.post('/api/clientes/:id/fusionar', h((req, res) => {
     if (!esAdmin(req)) return res.status(403).json({ error: 'Solo un administrador puede juntar clientes' });
+    const retirado = db.prepare('SELECT * FROM clientes WHERE id = ?').get(Number(req.params.id));
     const r = fusionar(Number(req.params.id), Number(req.body?.con), req.usuarioSesion.id);
     if (r.error) return res.status(400).json(r);
+    const bit = app.locals.auditoria;
+    if (bit) {
+      const nombre = retirado.empresa_contacto || retirado.nombre;
+      bit.registrar(req, 'cliente', Number(req.body.con), 'fusión', `Se juntó ${folioCliente(retirado.id)} «${nombre}» (tel. ${retirado.telefono || '—'}) dentro de este cliente: sus registros y teléfonos pasaron aquí`);
+      bit.registrar(req, 'cliente', retirado.id, 'retirado', `«${nombre}» se juntó en ${folioCliente(Number(req.body.con))}; su ID queda apuntando a ese cliente`);
+    }
     console.log(`[clientes] ${folioCliente(req.params.id)} se juntó en ${folioCliente(req.body.con)} por ${req.usuarioSesion.nombre}`);
     res.json(r);
   }));
@@ -295,10 +303,12 @@ module.exports = function clientesUnicos(app, db, h) {
     if (!db.prepare('SELECT 1 FROM clientes WHERE id = ?').get(req.params.id)) return res.status(404).json({ error: 'Cliente no encontrado' });
     const r = agregarTelefono(Number(req.params.id), req.body?.telefono, String(req.body?.etiqueta || '').trim().slice(0, 60) || null);
     if (r.error) return res.status(409).json(r);
+    app.locals.auditoria?.registrar(req, 'cliente', Number(req.params.id), 'teléfono agregado', telNorm(req.body?.telefono));
     res.status(201).json(r);
   }));
   app.delete('/api/clientes/:id/telefonos/:tel', h((req, res) => {
-    db.prepare('DELETE FROM telefonos_cliente WHERE cliente_id = ? AND telefono_normalizado = ?').run(req.params.id, telNorm(req.params.tel));
+    const quitado = db.prepare('DELETE FROM telefonos_cliente WHERE cliente_id = ? AND telefono_normalizado = ?').run(req.params.id, telNorm(req.params.tel));
+    if (quitado.changes) app.locals.auditoria?.registrar(req, 'cliente', Number(req.params.id), 'teléfono quitado', telNorm(req.params.tel));
     res.json({ ok: true });
   }));
 

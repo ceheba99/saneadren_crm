@@ -133,6 +133,7 @@ function cambiarVista(v, opciones) {
   if (v === 'generador') cargarGenerador();
   if (v === 'calendario') Calendario.cargar();
   if (v === 'compras') Compras.cargar();
+  if (v === 'bitacora') Bitacora.cargar();
   if (v === 'usuarios') cargarUsuarios();
   if (seccionCuentas) Finanzas.cargar({ ...opciones, seccion: seccionCuentas });
   if (v === 'catalogos') { cargarTiposCliente(); cargarCatalogoServicios(); cargarCanalesCatalogo(); }
@@ -1654,6 +1655,7 @@ async function abrirFichaCliente(id) {
 
   document.getElementById('fc-titulo').textContent = [folioCliente(cliente.id), cliente.empresa_contacto || cliente.nombre || 'Sin nombre', cliente.telefono].filter(Boolean).join(' · ');
   pintarTelefonosCliente(cliente.id);
+  Bitacora.movimientos('cliente', cliente.id, 'fc-movimientos');
   document.getElementById('fc-meta').innerHTML = metaClienteHTML(cliente);
   Finanzas.pintarCliente(cliente);
   document.getElementById('fc-ed-telefono').value = cliente.telefono || '';

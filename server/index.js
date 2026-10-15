@@ -27,6 +27,7 @@ app.use(encabezadosSeguridad);
 // Las plantillas de Excel pueden traer hasta 1,000 renglones: esas rutas aceptan un cuerpo mayor.
 // El parser global se salta las peticiones que ya se leyeron aquí.
 app.use('/api/finanzas/importar', express.json({ limit: '5mb' }));
+app.use('/api/generador/importar', express.json({ limit: '5mb' }));
 app.use(express.json({ limit: '1mb' }));
 app.use('/api', limitarCampos);
 app.use(express.static(path.join(__dirname, '..', 'public')));
@@ -126,6 +127,9 @@ app.use('/api', (req, res, next) => {
   requireAuth(req, res, next);
 });
 
+// Bitácora general de movimientos (clientes, proveedores, compras, usuarios, catálogos, eliminados).
+const audit = require('./auditoria')(app, db, h);
+app.locals.auditoria = audit;
 // Clientes sin duplicados: ID CLI-0001, teléfonos adicionales, revisión de parecidos y fusión.
 const unicos = require('./clientes-unicos')(app, db, h);
 require('./prospeccion')(app,db,h,unicos);
@@ -212,6 +216,7 @@ app.post('/api/cambiar-password', h((req, res) => {
   if (nueva === actual) return res.status(400).json({ error: 'La contraseña nueva debe ser distinta de la actual' });
   db.prepare('UPDATE usuarios SET password = ?, debe_cambiar_password = 0 WHERE id = ?').run(hashPassword(nueva), usuario.id);
   sesiones.revocarUsuario(usuario.id);
+  audit.registrar(req, 'usuario', usuario.id, 'contraseña', usuario.debe_cambiar_password ? 'Cambió la contraseña temporal por la suya' : 'Cambió su contraseña');
   res.json({ ok: true, token: crearSesion(usuario.id) });
 }));
 
@@ -235,6 +240,7 @@ app.post('/api/usuarios', h((req, res) => {
   // debe cambiar la contraseña al entrar la primera vez (así el administrador no conoce la definitiva).
   const temporal = req.body.temporal === true ? 1 : 0;
   const info = db.prepare('INSERT INTO usuarios (nombre, password, rol, correo, correo_verificado, debe_cambiar_password) VALUES (?, ?, ?, ?, ?, ?)').run(nombre.trim(), hashPassword(password), rol, correo, correo ? 1 : 0, temporal);
+  audit.registrar(req, 'usuario', Number(info.lastInsertRowid), 'creado', `${nombre.trim()} · rol ${rol}${correo ? ' · ' + correo : ''}${temporal ? ' · contraseña temporal' : ''}`);
   res.status(201).json({ id: info.lastInsertRowid, nombre: nombre.trim(), rol, correo });
 }));
 
@@ -264,6 +270,8 @@ app.put('/api/usuarios/:id', h((req, res) => {
   }
   db.prepare('UPDATE usuarios SET nombre = ?, rol = ?, correo = ?, correo_verificado = ? WHERE id = ?').run(nombre, rol, correo, verificado, usuario.id);
   if (rol !== usuario.rol) sesiones.revocarUsuario(usuario.id); // que el nuevo rol aplique de inmediato
+  const difUsuario = audit.diferencias(usuario, { nombre, rol, correo }, ['nombre', 'rol', 'correo']);
+  if (difUsuario) audit.registrar(req, 'usuario', usuario.id, 'editado', difUsuario);
   res.json(db.prepare('SELECT id, nombre, rol, correo, correo_verificado FROM usuarios WHERE id = ?').get(usuario.id));
 }));
 
@@ -277,6 +285,7 @@ app.post('/api/usuarios/:id/password', h((req, res) => {
   if (problema) return res.status(400).json({ error: problema });
   const propio = usuario.id === req.usuarioSesion.id;
   db.prepare('UPDATE usuarios SET password = ?, debe_cambiar_password = ? WHERE id = ?').run(hashPassword(req.body.password), propio ? 0 : 1, usuario.id);
+  audit.registrar(req, 'usuario', usuario.id, 'contraseña', propio ? 'Cambió su propia contraseña' : `Contraseña asignada por administración a ${usuario.nombre} (debe cambiarla al entrar)`);
   if (!propio) sesiones.revocarUsuario(usuario.id);
   res.json({ ok: true });
 }));
@@ -299,6 +308,7 @@ app.delete('/api/usuarios/:id', h((req, res) => {
      Esto preserva el historial de quién creó/atendió cada lead. */
   db.prepare('UPDATE usuarios SET activo = 0 WHERE id = ?').run(req.params.id);
   sesiones.revocarUsuario(Number(req.params.id));
+  audit.registrar(req, 'usuario', Number(req.params.id), 'desactivado', usuario.nombre + ' ya no puede entrar');
   /* Opcional: reasignar leads abiertos a un usuario "Sin asignar" o al admin.
   db.prepare('UPDATE leads SET responsable_id = ? WHERE responsable_id = ? AND estatus = ?')
     .run(solicitante_id, req.params.id, 'abierto'); */
@@ -717,6 +727,32 @@ app.post('/api/leads', validarPartidas, validarRegistro, h((req, res) => {
 }));
 
 // ---------- Editar lead (datos, etapa, responsable, estatus) ----------
+// Describe en palabras lo que cambió en una cotización u orden (el estatus y el importe se registran aparte).
+const ETAPAS_TXT = { 1: 'Recolección de datos', 2: 'Cotización enviada', 3: 'Negociación', 4: 'Cierre' };
+function cambiosDeOrden(antes, b) {
+  const fecha = v => v ? String(v).split('-').reverse().join('/') : '(sin fecha)';
+  const txt = v => { const t = String(v ?? '').replace(/\s+/g, ' ').trim(); return t ? (t.length > 60 ? t.slice(0, 57) + '…' : t) : '(vacío)'; };
+  const nombreDe = (tabla, id) => id ? (db.prepare(`SELECT nombre FROM ${tabla} WHERE id = ?`).get(id)?.nombre || '#' + id) : '(ninguno)';
+  const cambio = k => b[k] !== undefined && String(b[k] ?? '') !== String(antes[k] ?? '');
+  const lista = [];
+  if (cambio('fecha_servicio')) lista.push(`fecha del servicio ${fecha(antes.fecha_servicio)} → ${fecha(b.fecha_servicio)}`);
+  if (cambio('fecha_cotizacion')) lista.push(`fecha de la cotización ${fecha(antes.fecha_cotizacion)} → ${fecha(b.fecha_cotizacion)}`);
+  if (cambio('incluye_vigencia') || cambio('vigencia_hasta')) lista.push(`vigencia: ${Number(b.incluye_vigencia ?? antes.incluye_vigencia) ? 'hasta ' + fecha(b.vigencia_hasta ?? antes.vigencia_hasta) : 'sin vigencia'}`);
+  if (cambio('etapa') && !(b.estatus && b.estatus !== antes.estatus)) lista.push(`etapa ${ETAPAS_TXT[antes.etapa] || antes.etapa} → ${ETAPAS_TXT[b.etapa] || b.etapa}`);
+  if (cambio('responsable_id')) lista.push(`responsable ${nombreDe('usuarios', antes.responsable_id)} → ${nombreDe('usuarios', b.responsable_id)}`);
+  if (cambio('canal_id')) lista.push(`canal ${nombreDe('canales', antes.canal_id)} → ${nombreDe('canales', b.canal_id)}`);
+  if (cambio('servicio_id')) lista.push(`servicio principal ${nombreDe('catalogo_servicios', antes.servicio_id)} → ${nombreDe('catalogo_servicios', b.servicio_id)}`);
+  if (b.partidas_json !== undefined && b.partidas_json !== antes.partidas_json) {
+    const resumen = j => { try { return JSON.parse(j || '[]').map(p => p.servicio + (p.leyenda ? ' (' + txt(p.leyenda) + ')' : '')).join(', '); } catch { return '?'; } };
+    if (resumen(antes.partidas_json) !== resumen(b.partidas_json)) lista.push(`servicios: ${resumen(b.partidas_json)}`);
+  }
+  for (const [k, e] of [['direccion', 'ubicación'], ['notas_cotizacion', 'notas de la cotización'], ['equipo', 'equipo'], ['operador', 'operador'], ['observaciones', 'observaciones'], ['proyecto', 'proyecto'], ['manifiestos', 'manifiestos'], ['tiros', 'tiros'], ['notas_iniciales', 'notas iniciales']]) {
+    if (cambio(k)) lista.push(`${e}: ${txt(antes[k])} → ${txt(b[k])}`);
+  }
+  if (cambio('urgente')) lista.push(Number(b.urgente) ? 'marcada como urgente' : 'ya no es urgente');
+  if (cambio('encuesta_calificacion')) lista.push(`calificación del cliente: ${b.encuesta_calificacion}`);
+  return lista.join(' · ');
+}
 app.put('/api/leads/:id', validarPartidas, validarRegistro, h((req, res) => {
   const id = req.params.id;
   const actual = db.prepare('SELECT * FROM leads WHERE id = ?').get(id);
@@ -812,7 +848,9 @@ app.put('/api/leads/:id', validarPartidas, validarRegistro, h((req, res) => {
 
   db.prepare(`UPDATE leads SET ${set.join(', ')} WHERE id = ?`).run(...params);
 
-
+  // Queda registro de cualquier otro dato que cambie (fechas, etapa, responsable, servicios, notas…).
+  const otrosCambios = cambiosDeOrden(actual, req.body);
+  if (otrosCambios) db.prepare(`INSERT INTO historial (lead_id, tipo, texto, usuario, origen) VALUES (?, 'observacion', ?, ?, 'sistema')`).run(id, 'Cambios: ' + otrosCambios + '.', req.usuarioSesion.nombre);
 
   if (req.body.estatus !== undefined && req.body.estatus !== actual.estatus) {
     // Una cotización cerrada (ganada o perdida) ya no necesita recordatorios de seguimiento pendientes:
@@ -878,6 +916,10 @@ app.delete('/api/leads/:id', h((req, res) => {
     return res.status(409).json({ error: 'Esta orden tiene gastos en Cuentas por pagar. Cancélalos primero si de verdad quieres eliminarla.' });
   }
   console.log(`[eliminado] registro #${lead.id} (${lead.estatus}, ${lead.valor ?? 'sin importe'}) de cliente #${lead.cliente_id} por ${req.usuarioSesion.nombre}`);
+  // Su historial se borra con ella; en la bitácora general queda una foto de lo que era y quién la eliminó.
+  const folioEl = (lead.estatus === 'ganado' ? 'OS-' : 'COT-') + String(lead.created_at).slice(0, 7).replace('-', '') + '-' + String(lead.id).padStart(4, '0');
+  const notasEl = db.prepare("SELECT COUNT(*) n FROM historial WHERE lead_id = ?").get(lead.id).n;
+  audit.registrar(req, 'orden_servicio', lead.id, 'eliminado', `${folioEl} · ${lead.estatus === 'ganado' ? 'orden de servicio' : lead.estatus === 'perdido' ? 'cotización no aceptada' : 'cotización'} de ${unicos.folioCliente(lead.cliente_id)} ${lead.empresa_contacto || lead.nombre || ''} · importe $${Number(lead.valor || 0).toLocaleString('es-MX', { minimumFractionDigits: 2 })} sin IVA · servicio del ${lead.fecha_servicio || '—'} · ${notasEl} movimientos en su historial`);
   // El historial se borra en cascada (ON DELETE CASCADE). El cliente y sus otros servicios/cotizaciones no se tocan.
   db.prepare('DELETE FROM leads WHERE id = ?').run(req.params.id);
   res.json({ ok: true, id: Number(req.params.id) });
@@ -936,6 +978,7 @@ app.post('/api/contactos', h((req,res)=>{
     if (!destino) return res.status(404).json({ error: 'Cliente no encontrado' });
     const r = unicos.agregarTelefono(destino.id, telefono, 'Contacto: ' + String(nombre).trim().slice(0, 50));
     if (r.error) return res.status(409).json(r);
+    audit.registrar(req, 'cliente', destino.id, 'teléfono agregado', `${norm} (${String(nombre).trim()}) · se dijo que es el mismo cliente`);
     return res.json({ ...db.prepare('SELECT * FROM clientes WHERE id = ?').get(destino.id), telefono_agregado: true });
   }
   const deRfc = normalizarRfc(rfc) ? unicos.porRfc(normalizarRfc(rfc)) : null;
@@ -947,6 +990,7 @@ app.post('/api/contactos', h((req,res)=>{
   const info=db.prepare(`INSERT INTO clientes (nombre,telefono,telefono_normalizado,empresa_contacto,direccion,correo,telefono_alterno,giro,rfc,notas_generales,canal_origen_id)
     VALUES (?,?,?,?,?,?,?,?,?,?,?)`).run(String(nombre).trim(),telefono,norm,empresa_contacto||null,direccion||null,correo?.trim()||null,telefono_alterno||null,giro||null,normalizarRfc(rfc)||null,notas_generales||null,req.body.canal_origen_id);
   unicos.recordarDistintos(Number(info.lastInsertRowid), distintoDe, req.usuarioSesion.id);
+  audit.registrar(req, 'cliente', Number(info.lastInsertRowid), 'creado', `${String(empresa_contacto || '').trim() || String(nombre).trim()} · contacto ${String(nombre).trim()} · tel. ${norm}${distintoDe.length ? ' · confirmado como distinto de ' + distintoDe.map(unicos.folioCliente).join(', ') : ''}`);
   if (altNormNuevo && altNormNuevo !== norm) unicos.agregarTelefono(Number(info.lastInsertRowid), telefono_alterno, 'Alterno');
   res.status(201).json(db.prepare('SELECT * FROM clientes WHERE id = ?').get(info.lastInsertRowid));
 }));
@@ -1077,6 +1121,8 @@ app.put('/api/clientes/:id', h((req, res) => {
   params.push(id);
 
   db.prepare(`UPDATE clientes SET ${set.join(', ')} WHERE id = ?`).run(...params);
+  const difCliente = audit.diferencias(cliente, req.body, ['nombre', 'empresa_contacto', 'telefono', 'telefono_alterno', 'correo', 'rfc', 'direccion', 'giro', 'notas_generales']);
+  if (difCliente) audit.registrar(req, 'cliente', Number(id), 'editado', difCliente);
   if (altNorm.length === 10 && altNorm !== normalizarTelefono(db.prepare('SELECT telefono FROM clientes WHERE id = ?').get(id).telefono || '')) unicos.agregarTelefono(Number(id), req.body.telefono_alterno, 'Alterno');
   res.json(db.prepare('SELECT * FROM clientes WHERE id = ?').get(id));
 }));

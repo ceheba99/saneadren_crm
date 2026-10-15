@@ -1281,3 +1281,35 @@ button.enlace{background:none;border:0;padding:0;color:var(--azul-600);text-deco
 .check-linea{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;margin-bottom:6px;text-transform:none;letter-spacing:0;}
 
 .cg-errores-cab{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;}
+
+/* ===== Bitácora ===== */
+.bit-tabla td{vertical-align:top;}
+.bit-detalle{max-width:520px;white-space:normal;word-break:break-word;font-size:13px;}
+.bit-entidad{display:inline-block;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.03em;color:var(--texto-sec);}
+
+/* ===== Expediente de la orden de compra ===== */
+.oc-expediente{margin-top:18px;padding-top:16px;border-top:2px solid var(--gris-300);}
+.oc-exp-cab{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:10px;}
+.oc-exp-lista{list-style:none;padding:0;margin:0 0 14px;display:flex;flex-wrap:wrap;gap:6px;}
+.oc-exp-lista li{border:1px solid var(--gris-300);border-radius:999px;padding:4px 10px;font-size:12.5px;}
+.oc-exp-lista li.listo{border-color:var(--verde);color:var(--verde);font-weight:600;}
+.oc-exp-lista li.falta{border-color:var(--naranja, #b26a00);color:var(--naranja, #b26a00);}
+.oc-exp-lista li.opcional{color:var(--texto-sec);}
+.oc-exp-lista small{font-weight:400;opacity:.85;}
+.oc-exp-bloque{margin:14px 0;}
+.seccion-sub{font-weight:700;font-size:13px;text-transform:uppercase;letter-spacing:.03em;color:var(--texto-sec);margin-bottom:6px;}
+.oc-exp-docs td{vertical-align:top;}
+.oc-exp-factura{margin-top:4px;font-size:12px;color:var(--texto-sec);}
+.oc-exp-aviso{color:var(--rojo, #b8443a);font-weight:600;margin-top:2px;}
+.oc-exp-ok{color:var(--verde);font-weight:600;margin-top:2px;}
+.oc-exp-subir{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:10px;}
+.oc-exp-subir select,.oc-exp-subir input{min-height:36px;border:1px solid var(--gris-300);border-radius:6px;padding:4px 8px;font:inherit;font-size:13px;}
+.oc-exp-subir input[type=file]{border-style:dashed;}
+.oc-exp-cxp{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px;margin-bottom:8px;}
+.oc-exp-cxp>div{background:var(--gris-50, rgba(0,0,0,.03));border-radius:8px;padding:8px 10px;}
+.etiqueta-mini{display:block;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.03em;color:var(--texto-sec);}
+.oc-exp-quitados{margin-top:8px;font-size:12.5px;color:var(--texto-sec);}
+.modal-formato{max-width:620px;width:calc(100vw - 32px);}
+.modal-formato .modal-body{padding:16px 20px 20px;}
+@media(max-width:700px){.oc-exp-cxp{grid-template-columns:repeat(2,minmax(0,1fr));}}
+.bit-tabla th,.bit-tabla td{text-align:left;}

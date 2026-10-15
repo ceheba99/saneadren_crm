@@ -110,6 +110,7 @@ const Compras = (() => {
       + (o && o.estado === 'borrador' && esAdmin() ? bt('oc-autorizar', '✔ Autorizar y pasar a Cuentas por pagar', 'btn-verde') : '')
       + (o && o.estado === 'borrador' && !esAdmin() ? '<span class="ayuda">La autoriza un administrador.</span>' : '')
       + (o && (o.estado === 'borrador' || (o.estado === 'autorizada' && esAdmin())) ? bt('oc-cancelar', 'Cancelar orden', 'btn-eliminar') : '');
+    if (o) pintarExpediente(o.id); else { $('oc-expediente').hidden = true; $('oc-expediente').innerHTML = ''; }
     abrirVentana('overlay-compra');
   }
   const datosForm = () => ({ version: ACTUAL?.version, proveedor_id: Number($('oc-proveedor').value) || null, centro_id: Number($('oc-centro').value) || null, categoria: $('oc-categoria').value,
@@ -140,59 +141,225 @@ const Compras = (() => {
   }
 
   // ---------- Documentos (formato CM-F-03) ----------
-  let logoCache;
+  let logoCache, FORMATO = null;
   const logo = () => (logoCache ||= fetch('/logo-saneadren.png').then(r => { if (!r.ok) throw new Error('No se pudo cargar el logo'); return r.arrayBuffer(); }).then(b => new Uint8Array(b)).catch(e => { logoCache = null; throw e; }));
-  async function pdf(o) {
-    const { jsPDF } = window.jspdf, doc = new jsPDF({ unit: 'pt', format: 'letter', compress: true }), M = 36, W = 612 - 2 * M;
+  // Datos de control del formato (código, revisión y fechas): los edita administración en «Datos del formato».
+  const FORMATO_BASE = { codigo: 'CM-F-03', revision: '0', fecha_elaboracion: '2023-08-19', fecha_revision: '2023-08-26' };
+  async function formato() { try { FORMATO = await pedir('/compras/formato'); } catch { FORMATO = FORMATO || FORMATO_BASE; } return FORMATO; }
+  const AHORA = () => new Intl.DateTimeFormat('es-MX', { timeZone: 'America/Mexico_City', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }).format(new Date());
+  // Con { blob: true } regresa el PDF (para el expediente) en lugar de descargarlo.
+  async function pdf(o, { blob = false } = {}) {
+    const F = await formato();
+    const { jsPDF } = window.jspdf, doc = new jsPDF({ unit: 'pt', format: 'letter', compress: true }), M = 36, W = 612 - 2 * M, ALTO = 792;
     const img = await logo().catch(() => null);
-    const caja = (x, y, w, h, fill) => { doc.setDrawColor(60); doc.setLineWidth(0.6); if (fill) { doc.setFillColor(...fill); doc.rect(x, y, w, h, 'FD'); } else doc.rect(x, y, w, h); };
-    const t = (s, x, y, o2 = {}) => { doc.setFont('helvetica', o2.b ? 'bold' : 'normal'); doc.setFontSize(o2.s || 9); doc.setTextColor(25); doc.text(String(s ?? ''), x, y, o2.al ? { align: o2.al } : undefined); };
-    // Encabezado: logo · ORDEN DE COMPRAS · código y revisiones
-    caja(M, M, 130, 70); if (img) doc.addImage(img, 'PNG', M + 8, M + 18, 114, 114 * 265 / 942, 'logo', 'FAST');
-    caja(M + 130, M, 220, 70); t('ORDEN DE COMPRAS', M + 240, M + 32, { b: true, s: 15, al: 'center' }); t(o.folio, M + 240, M + 52, { b: true, s: 11, al: 'center' });
-    const cx = M + 350, cw = W - 350;
-    [['Página', ''], ['Código:', 'CM-F-03'], ['Fecha de elaboración:', '19/08/2023'], ['Revisión:', '0'], ['Fecha de revisión:', '26/08/2023']].forEach(([a, b], i) => {
-      caja(cx, M + i * 14, cw, 14); t(a, cx + 4, M + i * 14 + 10, { s: 7.5 }); t(b, cx + cw - 4, M + i * 14 + 10, { s: 7.5, b: true, al: 'right' });
+    const NEGRO = [26, 29, 35], AMARILLO = [246, 177, 3], GRIS = [110, 112, 118], LINEA = [214, 216, 220], SUAVE = [247, 247, 245];
+    const ESTADO = { borrador: ['BORRADOR · POR AUTORIZAR', [120, 122, 128]], autorizada: ['AUTORIZADA', [58, 125, 92]], cancelada: ['CANCELADA', [184, 68, 58]] }[o.estado] || ['', GRIS];
+    const t = (s, x, y, op = {}) => { doc.setFont('helvetica', op.b ? 'bold' : 'normal'); doc.setFontSize(op.s || 9); doc.setTextColor(...(op.c || NEGRO)); doc.text(Array.isArray(s) ? s : String(s ?? ''), x, y, op.al ? { align: op.al } : undefined); };
+    const etiqueta = (s, x, y) => t(String(s).toUpperCase(), x, y, { s: 6.5, b: true, c: GRIS });
+    const marco = (x, y, w, h, relleno) => { doc.setDrawColor(...LINEA); doc.setLineWidth(0.6); if (relleno) { doc.setFillColor(...relleno); doc.roundedRect(x, y, w, h, 4, 4, 'FD'); } else doc.roundedRect(x, y, w, h, 4, 4, 'S'); };
+    // Parte el texto en renglones con la MISMA letra con que se va a imprimir (si no, se encima con lo de al lado).
+    const lineas = (s, w, max, op = {}) => { doc.setFont('helvetica', op.b ? 'bold' : 'normal'); doc.setFontSize(op.s || 9); const todas = doc.splitTextToSize(String(s || ''), w); if (todas.length <= max) return todas; const r = todas.slice(0, max); let u = r[max - 1]; while (u && doc.getTextWidth(u + '…') > w) u = u.slice(0, -1); r[max - 1] = u.trimEnd() + '…'; return r; };
+
+    // Franja de marca y encabezado
+    doc.setFillColor(...AMARILLO); doc.rect(0, 0, 612, 6, 'F');
+    if (img) doc.addImage(img, 'PNG', M, M - 4, 140, 140 * 265 / 942, 'logo', 'FAST');
+    t('ORDEN DE COMPRA', M + 158, M + 12, { b: true, s: 17 });
+    t(o.folio, M + 158, M + 30, { b: true, s: 12, c: GRIS });
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(7.5);
+    const anchoEstado = doc.getTextWidth(ESTADO[0]) + 16;
+    doc.setFillColor(...ESTADO[1]); doc.roundedRect(M + 158, M + 37, anchoEstado, 14, 7, 7, 'F'); t(ESTADO[0], M + 166, M + 46.5, { b: true, s: 7.5, c: [255, 255, 255] });
+    // Control del formato (código, revisión y fechas del FORMATO, no de esta orden)
+    const cx = M + W - 150, filasControl = [['Código', F.codigo], ['Revisión', F.revision], ['Elaboración', fechaTxt(F.fecha_elaboracion)], ['Fecha de revisión', fechaTxt(F.fecha_revision)], ['Página', '']];
+    marco(cx, M - 6, 150, filasControl.length * 12 + 6);
+    filasControl.forEach(([a, b], i) => { t(a, cx + 6, M + 4 + i * 12, { s: 7, c: GRIS }); t(b, cx + 144, M + 4 + i * 12, { s: 7, b: true, al: 'right' }); });
+    let y = M + 64;
+
+    // Proveedor y datos de la orden
+    const alto = 74, wIzq = W * 0.5 - 5, wDer = W - wIzq - 10, xDer = M + wIzq + 10;
+    marco(M, y, wIzq, alto, SUAVE); marco(xDer, y, wDer, alto, SUAVE);
+    etiqueta('Proveedor', M + 10, y + 13);
+    t(lineas(o.proveedor_nombre, wIzq - 20, 2, { b: true, s: 11 }), M + 10, y + 27, { b: true, s: 11 });
+    t([o.proveedor_rfc ? 'RFC ' + o.proveedor_rfc : 'RFC: no registrado', 'Crédito: ' + (Number(o.proveedor_credito) ? o.proveedor_credito + ' días' : 'contado')].join('   ·   '), M + 10, y + 56, { s: 8, c: GRIS });
+    t('Factura a: ' + (o.factura_a || 'SANEADREN'), M + 10, y + 67, { s: 8, c: GRIS });
+    const datos = [['Fecha', fechaTxt(o.fecha)], ['Fecha requerida', fechaTxt(o.fecha_requerida)], ['Centro de costos', o.centro_nombre + (o.centro_responsable ? ' · ' + o.centro_responsable : '')],
+      ['Categoría', o.categoria_nombre || '—'], ['Orden de servicio', o.orden_folio || '—'], ['Factura del proveedor', o.factura_folio || '—']];
+    datos.forEach(([a, b], i) => {
+      const col = i % 2, fila = Math.floor(i / 2), x = xDer + 10 + col * (wDer / 2), ancho = wDer / 2 - 16;
+      // Si no cabe, la letra se achica un poco (hasta 6.5) antes de recortar con «…».
+      let tam = 8.5; doc.setFont('helvetica', 'bold'); while (tam > 6.5) { doc.setFontSize(tam); if (doc.getTextWidth(String(b)) <= ancho) break; tam -= 0.5; }
+      etiqueta(a, x, y + 13 + fila * 22); t(lineas(b, ancho, 1, { s: tam, b: true }), x, y + 23 + fila * 22, { s: tam, b: true });
     });
-    // Datos generales
-    let y = M + 82;
-    const celda = (etq, val, x, w, h = 30) => { caja(x, y, w, h); t(etq, x + 4, y + 10, { s: 7, b: true }); doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.text(doc.splitTextToSize(String(val || ''), w - 8).slice(0, 2), x + 4, y + 21); };
-    celda('PROVEEDOR', o.proveedor_nombre + (o.proveedor_rfc ? ' · RFC ' + o.proveedor_rfc : ''), M, W * 0.42); celda('CENTRO DE COSTOS', o.centro_nombre, M + W * 0.42, W * 0.25); celda('FACTURA A', o.factura_a, M + W * 0.67, W * 0.33); y += 30;
-    celda('FECHA', fechaTxt(o.fecha), M, W * 0.42); celda('FECHA REQUERIDA', fechaTxt(o.fecha_requerida), M + W * 0.42, W * 0.25); celda('ORDEN DE SERVICIO', o.orden_folio || '—', M + W * 0.67, W * 0.33); y += 30;
-    celda('NOTA', o.nota || '', M, W); y += 38;
+    y += alto + 10;
+    if (o.nota) { marco(M, y, W, 22); etiqueta('Nota', M + 10, y + 13.5); t(lineas(o.nota, W - 70, 1, { s: 8.5 }), M + 42, y + 14, { s: 8.5 }); y += 30; }
+
     // Partidas
-    doc.autoTable({ startY: y, margin: { left: M, right: M }, theme: 'grid',
-      head: [['PARTIDA', 'CANTIDAD', 'DESCRIPCIÓN', 'UNIDAD', 'CLAVE ARTÍCULO', 'PRECIO', 'IMPORTE']],
-      body: o.partidas.map((p, i) => [i + 1, p.cantidad, p.descripcion, p.unidad || '', p.clave || '', dinero(p.precio), dinero(p.importe)]),
-      styles: { fontSize: 7.5, cellPadding: 2.4, lineColor: [90, 90, 90], lineWidth: 0.4, textColor: 25 }, headStyles: { fillColor: [246, 177, 3], textColor: 20, fontStyle: 'bold', halign: 'center' },
-      columnStyles: { 0: { cellWidth: 44, halign: 'center' }, 1: { cellWidth: 50, halign: 'center' }, 3: { cellWidth: 46 }, 4: { cellWidth: 62 }, 5: { cellWidth: 66, halign: 'right' }, 6: { cellWidth: 72, halign: 'right' } } });
-    y = doc.lastAutoTable.finalY + 6;
-    const filas = Importes.filasTotales({ subtotal_cent: o.subtotal_cent, iva_cent: o.iva_cent, total_cent: o.total_cent }, o.iva_modo, o.iva_tasa)
-      .map(([e, c], i, a) => [i === a.length - 1 ? 'TOTAL A PAGAR' : e.toUpperCase(), dinero(c / 100)]);
-    if (y + filas.length * 16 + 120 > 760) { doc.addPage(); y = M; }
-    filas.forEach(([e, v], i) => { const last = i === filas.length - 1; caja(M + W - 210, y, 130, 16, last ? [246, 177, 3] : null); caja(M + W - 80, y, 80, 16, last ? [246, 177, 3] : null); t(e, M + W - 205, y + 11, { s: 8, b: true }); t(v, M + W - 4, y + 11, { s: 8.5, b: last, al: 'right' }); y += 16; });
-    t('Son: ' + Importes.enLetras(o.total_cent), M, y + 10, { s: 8, b: true }); y += 20;
+    doc.autoTable({ startY: y, margin: { left: M, right: M, bottom: 50 }, theme: 'plain',
+      head: [['#', 'CANT.', 'UNIDAD', 'DESCRIPCIÓN', 'CLAVE', 'P. UNITARIO', 'IMPORTE']],
+      body: o.partidas.map((p, i) => [i + 1, String(p.cantidad), p.unidad || '', p.descripcion, p.clave || '', dinero(p.precio), dinero(p.importe)]),
+      styles: { fontSize: 8, cellPadding: { top: 4, bottom: 4, left: 5, right: 5 }, textColor: NEGRO, lineColor: LINEA, lineWidth: { bottom: 0.5 } },
+      headStyles: { fillColor: NEGRO, textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 7, lineWidth: 0 },
+      alternateRowStyles: { fillColor: SUAVE },
+      columnStyles: { 0: { cellWidth: 22, halign: 'center', textColor: GRIS }, 1: { cellWidth: 38, halign: 'right' }, 2: { cellWidth: 44, halign: 'center' }, 4: { cellWidth: 56 }, 5: { cellWidth: 70, halign: 'right' }, 6: { cellWidth: 76, halign: 'right', fontStyle: 'bold' } },
+      didParseCell: c => { if (c.section === 'head' && c.column.index >= 5) c.cell.styles.halign = 'right'; } });
+    y = doc.lastAutoTable.finalY + 10;
+
+    // Totales e importe con letra
+    const filas = Importes.filasTotales({ subtotal_cent: o.subtotal_cent, iva_cent: o.iva_cent, total_cent: o.total_cent }, o.iva_modo, o.iva_tasa);
+    if (y + filas.length * 16 + 50 > ALTO - 40) { doc.addPage(); doc.setFillColor(...AMARILLO); doc.rect(0, 0, 612, 6, 'F'); y = M; }
+    const tx = M + W - 210, yTotales = y;
+    etiqueta('Importe con letra', M, yTotales + 6);
+    t(lineas(Importes.enLetras(o.total_cent), W - 240, 3, { s: 8.5, b: true }), M, yTotales + 18, { s: 8.5, b: true });
+    filas.forEach(([e, c], i) => {
+      const ultimo = i === filas.length - 1;
+      if (ultimo) { doc.setFillColor(...AMARILLO); doc.roundedRect(tx, y - 2, 210, 22, 4, 4, 'F'); }
+      t(ultimo ? 'TOTAL A PAGAR' : e, tx + 10, y + (ultimo ? 12.5 : 9), { s: ultimo ? 9.5 : 8.5, b: ultimo, c: ultimo ? NEGRO : GRIS });
+      t(dinero(c / 100), tx + 200, y + (ultimo ? 12.5 : 9), { s: ultimo ? 11 : 9, b: true, al: 'right' });
+      y += ultimo ? 24 : 15;
+    });
+    y = Math.max(y, yTotales + 46) + 8;
+
     // Observaciones
-    caja(M, y, W, 42); t('OBSERVACIONES:', M + 4, y + 10, { s: 7.5, b: true }); doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5); doc.text(doc.splitTextToSize(o.observaciones || '', W - 10).slice(0, 3), M + 4, y + 21); y += 52;
-    // Firmas: área solicitante, gerencia de área y dirección en un solo renglón
-    y += 12;
-    if (y + 100 > 772) { doc.addPage(); y = M; }
-    t('ÁREA SOLICITANTE:', M, y, { s: 8, b: true }); t('AUTORIZACIÓN:', M + W / 3 + 10, y, { s: 8, b: true }); y += 42;
-    const ancho = W / 3 - 20;
-    [0, 1, 2].forEach(n => doc.line(M + n * (W / 3) + 5, y, M + n * (W / 3) + 5 + ancho, y));
-    const centro = n => M + n * (W / 3) + 5 + ancho / 2;
-    t(o.solicitante_nombre || 'NOMBRE Y FIRMA', centro(0), y + 11, { s: 8, b: true, al: 'center' }); t(o.solicitante_cargo ? 'CARGO: ' + o.solicitante_cargo : 'CARGO:', centro(0), y + 21, { s: 7, al: 'center' });
-    t('GERENCIA DE ÁREA', centro(1), y + 11, { s: 8, b: true, al: 'center' }); t('NOMBRE Y FIRMA', centro(1), y + 21, { s: 7, al: 'center' });
-    t('DIRECCIÓN', centro(2), y + 11, { s: 8, b: true, al: 'center' }); t('NOMBRE Y FIRMA', centro(2), y + 21, { s: 7, al: 'center' });
-    if (o.estado === 'autorizada') t('Autorizada en el CRM por ' + (o.autorizada_por_nombre || '') + ' el ' + fechaTxt(String(o.autorizada_at || '').slice(0, 10)), M, y + 38, { s: 7.5 });
-    if (o.estado === 'cancelada') { doc.setTextColor(184, 68, 58); doc.setFontSize(40); doc.text('CANCELADA', 306, 420, { align: 'center', angle: 30 }); }
-    // Número real de hojas en el encabezado (y al pie de cada hoja)
-    const hojas = doc.getNumberOfPages();
-    doc.setPage(1); t(hojas === 1 ? '1 de 1' : '1 de ' + hojas, cx + cw - 4, M + 10, { s: 7.5, b: true, al: 'right' });
-    for (let i = 1; i <= hojas; i++) { doc.setPage(i); t(o.folio + ' · Hoja ' + i + ' de ' + hojas, 612 - M, 780, { s: 7, al: 'right' }); }
+    if (o.observaciones) {
+      const obs = lineas(o.observaciones, W - 20, 4, { s: 8.5 });
+      marco(M, y, W, 22 + obs.length * 10); etiqueta('Observaciones', M + 10, y + 13); t(obs, M + 10, y + 25, { s: 8.5 }); y += 30 + obs.length * 10;
+    }
+
+    // Firmas
+    y = Math.max(y + 26, ALTO - 170);
+    if (y + 110 > ALTO - 30) { doc.addPage(); doc.setFillColor(...AMARILLO); doc.rect(0, 0, 612, 6, 'F'); y = M + 40; }
+    const col = W / 3, ancho = col - 26;
+    [['Solicita', o.solicitante_nombre || 'Nombre y firma', o.solicitante_cargo ? o.solicitante_cargo : 'Área solicitante'], ['Autoriza', 'Gerencia de área', 'Nombre y firma'], ['Autoriza', 'Dirección', 'Nombre y firma']].forEach(([a, b, c], i) => {
+      const x = M + i * col + 13;
+      etiqueta(a, x, y);
+      doc.setDrawColor(...NEGRO); doc.setLineWidth(0.7); doc.line(x, y + 40, x + ancho, y + 40);
+      t(lineas(b, ancho, 1, { s: 8.5, b: true }), x + ancho / 2, y + 52, { s: 8.5, b: true, al: 'center' });
+      t(lineas(c, ancho, 1, { s: 7.5 }), x + ancho / 2, y + 62, { s: 7.5, c: GRIS, al: 'center' });
+    });
+    if (o.estado === 'autorizada') {
+      const msg = '✓ Autorizada en el CRM por ' + (o.autorizada_por_nombre || '') + ' el ' + fechaTxt(String(o.autorizada_at || '').slice(0, 10)) + ' ' + String(o.autorizada_at || '').slice(11, 16);
+      doc.setFillColor(232, 243, 238); doc.roundedRect(M, y + 76, W, 18, 4, 4, 'F'); t(msg.replace('✓ ', ''), M + W / 2, y + 88, { s: 8, b: true, c: [58, 125, 92], al: 'center' });
+    }
+    if (o.estado === 'cancelada') {
+      doc.setTextColor(184, 68, 58); doc.setFont('helvetica', 'bold'); doc.setFontSize(54);
+      doc.saveGraphicsState?.(); if (doc.GState) doc.setGState(new doc.GState({ opacity: 0.25 }));
+      doc.text('CANCELADA', 306, 430, { align: 'center', angle: 30 }); doc.restoreGraphicsState?.();
+      t('Motivo de la cancelación: ' + (o.motivo_cancelacion || '—'), M, y + 88, { s: 8, b: true, c: [184, 68, 58] });
+    }
+    // Pie y número real de hojas
+    const hojas = doc.getNumberOfPages(), generado = AHORA();
+    for (let i = 1; i <= hojas; i++) {
+      doc.setPage(i);
+      doc.setDrawColor(...LINEA); doc.setLineWidth(0.5); doc.line(M, ALTO - 30, M + W, ALTO - 30);
+      t('Saneadren · ' + o.folio + ' · Formato ' + F.codigo + ' rev. ' + F.revision + ' · Generado ' + generado, M, ALTO - 19, { s: 7, c: GRIS });
+      t('Hoja ' + i + ' de ' + hojas, M + W, ALTO - 19, { s: 7, c: GRIS, al: 'right' });
+    }
+    doc.setPage(1); t(hojas + (hojas === 1 ? ' hoja' : ' hojas'), cx + 144, M + 4 + 4 * 12, { s: 7, b: true, al: 'right' });
+    if (blob) return doc.output('blob');
     doc.save('orden_compra_' + o.folio + '.pdf');
   }
+
+  // ---------- Expediente de la orden: documentos, factura, pagos e historial ----------
+  let EXPEDIENTE = null;
+  const kb = n => (n >= 1048576 ? (n / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB');
+  async function pintarExpediente(id) {
+    const cont = $('oc-expediente');
+    cont.hidden = false;
+    cont.innerHTML = '<p class="util-45" role="status">Cargando expediente…</p>';
+    try { EXPEDIENTE = await pedir('/compras/ordenes/' + Number(id) + '/expediente'); } catch (err) { cont.innerHTML = '<p class="aviso-error-carga">' + esc(err.message) + '</p>'; return; }
+    const e = EXPEDIENTE, vivos = e.documentos.filter(d => !d.eliminado), quitados = e.documentos.filter(d => d.eliminado);
+    const tipos = Object.entries(e.tipos);
+    const lista = '<ul class="oc-exp-lista">' + e.lista.map(x => '<li class="' + (x.listo ? 'listo' : x.opcional ? 'opcional' : 'falta') + '"><span aria-hidden="true">' + (x.listo ? '✔' : x.opcional ? '○' : '•') + '</span> ' + esc(x.texto)
+      + (x.detalle ? ' <small>' + esc(x.detalle) + '</small>' : x.opcional && !x.listo ? ' <small>opcional</small>' : '') + '</li>').join('') + '</ul>';
+    const datosFactura = d => {
+      if (!d.datos) return '';
+      const f = d.datos;
+      return '<div class="oc-exp-factura">' + [f.uuid ? 'Folio fiscal ' + f.uuid : '', [f.serie, f.folio].filter(Boolean).join('-') ? 'Factura ' + [f.serie, f.folio].filter(Boolean).join('-') : '', f.emisor_rfc ? 'Emisor ' + f.emisor_rfc + (f.emisor_nombre ? ' · ' + f.emisor_nombre : '') : '',
+        f.total != null ? 'Total ' + dinero(f.total) : '', f.fecha ? 'Fecha ' + fechaTxt(String(f.fecha).slice(0, 10)) : ''].filter(Boolean).map(esc).join(' · ')
+        + (f.avisos?.length ? '<div class="oc-exp-aviso">⚠ ' + f.avisos.map(esc).join('<br>⚠ ') + '</div>' : '<div class="oc-exp-ok">✔ Coincide con la orden</div>') + '</div>';
+    };
+    const docs = vivos.length ? '<table class="tabla-resumen oc-exp-docs"><thead><tr><th>Documento</th><th>Archivo</th><th>Subió</th><th></th></tr></thead><tbody>' + vivos.map(d => '<tr><td><b>' + esc(d.tipo_nombre) + '</b></td>'
+      + '<td>' + esc(d.nombre) + ' <small class="util-45">' + esc(d.formato.toUpperCase()) + ' · ' + kb(d.bytes) + '</small>' + datosFactura(d) + (d.nota ? '<div class="util-45">' + esc(d.nota) + '</div>' : '') + '</td>'
+      + '<td><small>' + esc(d.subido_por_nombre || '') + '<br>' + esc(fechaTxt(String(d.created_at).slice(0, 10))) + '</small></td>'
+      + '<td class="celda-acciones"><div class="acciones-fila"><button type="button" class="btn btn-outline btn-chico" data-doc-bajar="' + Number(d.id) + '">Descargar</button><button type="button" class="btn btn-outline btn-chico" data-doc-quitar="' + Number(d.id) + '">Quitar</button></div></td></tr>').join('') + '</tbody></table>'
+      : '<p class="util-45">Todavía no hay documentos. Sube la cotización del proveedor, la factura (PDF y XML), los comprobantes de pago y la evidencia de entrega.</p>';
+    const subir = '<div class="oc-exp-subir"><select id="oc-doc-tipo" aria-label="Qué documento es"><option value="">¿Qué documento es?</option>' + tipos.map(([k, v]) => '<option value="' + esc(k) + '">' + esc(v.nombre) + ' (' + esc(v.admite.join(', ').toUpperCase()) + ')</option>').join('') + '</select>'
+      + '<input type="file" id="oc-doc-archivo" accept=".pdf,.xml,.jpg,.jpeg,.png,application/pdf,text/xml,application/xml,image/jpeg,image/png" aria-label="Archivo"><input id="oc-doc-nota" maxlength="300" placeholder="Nota (opcional)" aria-label="Nota del documento">'
+      + '<button type="button" class="btn btn-secundario btn-chico" id="oc-doc-subir">Subir al expediente</button></div><p class="ayuda">PDF, JPG o PNG hasta 10 MB. El XML de la factura se lee solo: folio fiscal, RFC del emisor y total, y se compara con la orden.</p>';
+    const c = e.cuenta_por_pagar;
+    const cuenta = c ? '<div class="oc-exp-cxp"><div><span class="etiqueta-mini">Cuenta por pagar</span><b>' + dinero(c.total) + '</b></div><div><span class="etiqueta-mini">Pagado</span><b>' + dinero(c.pagado) + '</b></div><div><span class="etiqueta-mini">Saldo</span><b class="' + (c.saldo > 0 ? 'cg-pendiente' : 'oc-deuda si') + '">' + (c.cancelada ? 'cancelada' : dinero(c.saldo)) + '</b></div><div><span class="etiqueta-mini">Vence</span><b>' + esc(fechaTxt(c.vence)) + '</b></div><div><span class="etiqueta-mini">Factura</span><b>' + esc(c.factura_folio || '—') + '</b></div></div>'
+      + (c.pagos.length ? '<table class="tabla-resumen"><thead><tr><th>Fecha</th><th>Método</th><th>Referencia</th><th class="st-num">Monto</th></tr></thead><tbody>' + c.pagos.map(p => '<tr class="' + (p.cancelado ? 'fila-cancelada' : '') + '"><td>' + esc(fechaTxt(p.fecha)) + '</td><td>' + esc(p.metodo) + '</td><td>' + esc(p.referencia || '') + (p.cancelado ? ' <small>cancelado: ' + esc(p.motivo_cancelacion || '') + '</small>' : '') + '</td><td class="st-num">' + dinero(p.monto) + '</td></tr>').join('') + '</tbody></table>' : '<p class="util-45">Sin pagos todavía (se registran en Cuentas por pagar).</p>')
+      : '<p class="util-45">Todavía no es deuda: al autorizarla pasa a Cuentas por pagar.</p>';
+    cont.innerHTML = '<div class="oc-exp-cab"><div class="seccion-tit">📁 Expediente de la orden</div><button type="button" class="btn btn-primario btn-chico" id="oc-exp-zip">📦 Descargar expediente completo (ZIP)</button></div>'
+      + lista
+      + '<div class="oc-exp-bloque"><div class="seccion-sub">Documentos</div>' + docs + subir
+      + (quitados.length ? '<details class="oc-exp-quitados"><summary>' + quitados.length + ' documento(s) quitado(s)</summary><ul>' + quitados.map(d => '<li>' + esc(d.tipo_nombre) + ': «' + esc(d.nombre) + '» · quitado por ' + esc(d.eliminado_por || '') + ' el ' + esc(fechaTxt(String(d.eliminado_at || '').slice(0, 10))) + ' · ' + esc(d.motivo_eliminado || '') + '</li>').join('') + '</ul></details>' : '') + '</div>'
+      + '<div class="oc-exp-bloque"><div class="seccion-sub">Pagos</div>' + cuenta + '</div>'
+      + '<div class="oc-exp-bloque"><div class="seccion-sub">Historial de la orden</div>' + (e.historial.length ? Bitacora.tabla(e.historial, false) : '<p class="util-45">Sin movimientos.</p>') + '</div>';
+  }
+  // Subir: el archivo va tal cual (sin convertirlo), con su tipo y nombre en encabezados.
+  async function subirDocumento() {
+    const tipo = $('oc-doc-tipo').value, archivo = $('oc-doc-archivo').files[0];
+    if (!tipo) { toast('Elige qué documento es'); $('oc-doc-tipo').focus(); return; }
+    if (!archivo) { toast('Elige el archivo'); return; }
+    if (archivo.size > 10 * 1024 * 1024) { toast('El archivo pasa de 10 MB'); return; }
+    const r = await api('/compras/ordenes/' + ACTUAL.id + '/documentos', { method: 'POST', body: archivo,
+      headers: { 'Content-Type': 'application/octet-stream', Authorization: 'Bearer ' + USUARIO_ACTUAL.token, 'X-Tipo': tipo, 'X-Nombre': encodeURIComponent(archivo.name), 'X-Nota': encodeURIComponent($('oc-doc-nota').value.trim()) } });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) { toast(j.error || 'No se pudo subir'); return; }
+    toast(j.avisos?.length ? '⚠ Subido, pero revisa: ' + j.avisos.join(' · ') : 'Documento agregado al expediente');
+    await pintarExpediente(ACTUAL.id);
+  }
+  async function bajarDocumento(id) {
+    const r = await api('/compras/documentos/' + Number(id), { headers: { Authorization: 'Bearer ' + USUARIO_ACTUAL.token } });
+    if (!r.ok) { const j = await r.json().catch(() => ({})); throw new Error(j.error || 'No se pudo descargar'); }
+    const d = EXPEDIENTE.documentos.find(x => x.id === Number(id));
+    saveAs(await r.blob(), d?.nombre || 'documento');
+  }
+  async function quitarDocumento(id) {
+    const d = EXPEDIENTE.documentos.find(x => x.id === Number(id));
+    const motivo = await solicitarDialogo({ titulo: 'Quitar documento', mensaje: '«' + (d?.nombre || '') + '» deja de contar en el expediente (queda registrado quién lo quitó y por qué; el archivo no se borra).', aceptar: 'Quitar', campo: { tipo: 'text', etiqueta: 'Motivo' } });
+    if (!motivo) return;
+    await pedir('/compras/documentos/' + Number(id) + '/quitar', 'POST', { motivo });
+    toast('Documento quitado del expediente'); await pintarExpediente(ACTUAL.id);
+  }
+  // Expediente completo en un ZIP: la orden en PDF, los documentos, los pagos y el historial.
+  let zipCache;
+  const cargarZip = () => (zipCache ||= new Promise((ok, mal) => { if (window.JSZip) return ok(window.JSZip); const s = document.createElement('script'); s.src = 'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js'; s.onload = () => ok(window.JSZip); s.onerror = () => { zipCache = null; mal(new Error('No se pudo cargar el compresor (revisa la conexión)')); }; document.head.appendChild(s); }));
+  async function descargarZip() {
+    const JSZip = await cargarZip();
+    const e = EXPEDIENTE, o = e.orden, zip = new JSZip(), carpeta = zip.folder('Expediente ' + o.folio);
+    carpeta.file('01 Orden de compra ' + o.folio + '.pdf', await pdf(o, { blob: true }));
+    let n = 2;
+    for (const d of e.documentos.filter(x => !x.eliminado)) {
+      const r = await api('/compras/documentos/' + d.id, { headers: { Authorization: 'Bearer ' + USUARIO_ACTUAL.token } });
+      if (!r.ok) continue;
+      carpeta.file(String(n++).padStart(2, '0') + ' ' + d.tipo_nombre.replace(/[\\/:*?"<>|]/g, '') + ' - ' + d.nombre.replace(/[\\/:*?"<>|]/g, '_'), await r.blob());
+    }
+    const c = e.cuenta_por_pagar;
+    const resumen = ['EXPEDIENTE ' + o.folio, '', 'Proveedor: ' + o.proveedor_nombre + (o.proveedor_rfc ? ' (RFC ' + o.proveedor_rfc + ')' : ''), 'Fecha: ' + fechaTxt(o.fecha) + ' · Requerida: ' + fechaTxt(o.fecha_requerida),
+      'Centro de costos: ' + o.centro_nombre + ' · Categoría: ' + (o.categoria_nombre || ''), 'Total: ' + dinero(o.total) + ' · Estado: ' + (ESTADOS[o.estado]?.[0] || o.estado), '',
+      'LISTA DEL EXPEDIENTE', ...e.lista.map(x => (x.listo ? '[x] ' : '[ ] ') + x.texto + (x.detalle ? ' (' + x.detalle + ')' : '')), '',
+      'PAGOS', ...(c ? [`Cuenta por pagar ${dinero(c.total)} · pagado ${dinero(c.pagado)} · saldo ${dinero(c.saldo)} · vence ${fechaTxt(c.vence)}`, ...c.pagos.map(p => fechaTxt(p.fecha) + ' · ' + p.metodo + ' · ' + dinero(p.monto) + (p.referencia ? ' · ref. ' + p.referencia : '') + (p.cancelado ? ' · CANCELADO' : ''))] : ['Todavía no es deuda (no autorizada).']), '',
+      'HISTORIAL', ...e.historial.slice().reverse().map(h => h.fecha + ' · ' + (h.usuario || '') + ' · ' + h.accion + (h.detalle ? ': ' + h.detalle : '')), '', 'Generado desde el CRM de Saneadren el ' + AHORA()].join('\r\n');
+    carpeta.file('00 Resumen e historial.txt', resumen);
+    saveAs(await zip.generateAsync({ type: 'blob' }), 'Expediente ' + o.folio + '.zip');
+    toast('Expediente descargado');
+  }
+
+  // ---------- Datos del formato (solo administración) ----------
+  async function editarFormato() {
+    const f = await formato();
+    $('fmt-codigo').value = f.codigo; $('fmt-revision').value = f.revision; $('fmt-elaboracion').value = f.fecha_elaboracion; $('fmt-fecha-revision').value = f.fecha_revision;
+    abrirVentana('overlay-formato-oc');
+  }
+  async function guardarFormato() {
+    FORMATO = await pedir('/compras/formato', 'PUT', { codigo: $('fmt-codigo').value, revision: $('fmt-revision').value, fecha_elaboracion: $('fmt-elaboracion').value, fecha_revision: $('fmt-fecha-revision').value });
+    $('overlay-formato-oc').classList.remove('mostrar');
+    toast('Datos del formato guardados: así saldrán en los PDF nuevos');
+  }
+
   async function excel(o) {
+    const F = await formato();
     let ExcelJS; try { ExcelJS = await Finanzas.cargarExcelJS(); } catch (err) { toast(err.message); return; }
     const wb = new ExcelJS.Workbook(), ws = wb.addWorksheet('Formato-ORDEN COMPRA', { pageSetup: { paperSize: 1, orientation: 'portrait', fitToPage: true, fitToWidth: 1, fitToHeight: 0 } });
     ws.columns = [{ width: 9 }, { width: 10 }, { width: 46 }, { width: 9 }, { width: 14 }, { width: 14 }, { width: 16 }];
@@ -201,7 +368,7 @@ const Compras = (() => {
     const img = await logo().catch(() => null);
     if (img) ws.addImage(wb.addImage({ buffer: img, extension: 'png' }), { tl: { col: 0.1, row: 0.3 }, ext: { width: 150, height: 42 } });
     ws.mergeCells('C1:C3'); Object.assign(ws.getCell('C1'), { value: 'ORDEN DE COMPRAS\n' + o.folio }); ws.getCell('C1').font = { bold: true, size: 14 }; ws.getCell('C1').alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
-    [['Código:', 'CM-F-03'], ['Revisión:', '0'], ['Fecha de elaboración:', '19/08/2023']].forEach(([a, b], i) => { ws.mergeCells(`D${i + 1}:E${i + 1}`); ws.getCell(`D${i + 1}`).value = a; ws.mergeCells(`F${i + 1}:G${i + 1}`); ws.getCell(`F${i + 1}`).value = b; ws.getCell(`F${i + 1}`).font = { bold: true }; });
+    [['Código:', F.codigo], ['Revisión:', F.revision], ['Fecha de revisión:', fechaTxt(F.fecha_revision)]].forEach(([a, b], i) => { ws.mergeCells(`D${i + 1}:E${i + 1}`); ws.getCell(`D${i + 1}`).value = a; ws.mergeCells(`F${i + 1}:G${i + 1}`); ws.getCell(`F${i + 1}`).value = b; ws.getCell(`F${i + 1}`).font = { bold: true }; });
     ws.getRow(1).height = 22; ws.getRow(2).height = 22; ws.getRow(3).height = 22;
     const dato = (fila, etq, val, col1, col2) => { ws.getCell(col1 + fila).value = etq; ws.getCell(col1 + fila).font = { bold: true, size: 8 }; ws.getCell(col2 + fila).value = val; };
     dato(5, 'PROVEEDOR', o.proveedor_nombre, 'A', 'C'); dato(5, 'CENTRO DE COSTOS', o.centro_nombre, 'E', 'F'); dato(6, 'NOTA', o.nota || '', 'A', 'C'); dato(6, 'FACTURA A', o.factura_a, 'E', 'F');
@@ -320,6 +487,16 @@ const Compras = (() => {
     e.preventDefault(); e.target.closest('tr').querySelector('button')?.click();
   });
   $('oc-filas').addEventListener('change', e => { if (e.target.classList.contains('oc-unidad') && e.target.value === '__nueva') unidadRapida(e.target); });
+  const conBotonOC = async (b, fn) => { if (!b || b.disabled) return; b.disabled = true; try { await fn(); } catch (err) { toast(err.message); } finally { b.disabled = false; } };
+  $('oc-expediente').addEventListener('click', e => {
+    const b = e.target.closest('button'); if (!b) return;
+    if (b.id === 'oc-doc-subir') conBotonOC(b, subirDocumento);
+    if (b.id === 'oc-exp-zip') conBotonOC(b, descargarZip);
+    if (b.dataset.docBajar) conBotonOC(b, () => bajarDocumento(b.dataset.docBajar));
+    if (b.dataset.docQuitar) conBotonOC(b, () => quitarDocumento(b.dataset.docQuitar));
+  });
+  $('oc-formato').addEventListener('click', e => conBotonOC(e.currentTarget, editarFormato));
+  $('fmt-guardar').addEventListener('click', e => conBotonOC(e.currentTarget, guardarFormato));
   $('oc-lista').addEventListener('click', async e => {
     const b = e.target.closest('button'); if (!b) return;
     if (b.dataset.ocAbrir) abrir(Number(b.dataset.ocAbrir));
@@ -354,6 +531,6 @@ const Compras = (() => {
       }
     } catch (err) { toast(err.message); } finally { b.disabled = false; }
   });
-  return { cargar };
+  return { cargar, pdf };
 })();
 window.Compras = Compras;
