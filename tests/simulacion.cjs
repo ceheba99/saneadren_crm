@@ -153,8 +153,8 @@ const espera = ms => new Promise(r => setTimeout(r, ms));
   [s, j] = await pedir('POST', '/finanzas/cobros/' + cobroVentas + '/confirmar', L); ok(s === 200, 'ventas (p. ej. facturación) SÍ puede confirmar pagos');
   [s, j] = await pedir('GET', '/leads/' + cot.id + '/cobros', A); ok(j.cobros.find(k => k.id === cobroVentas)?.confirmado === 1, 'el pago quedó confirmado');
   [s] = await pedir('POST', '/leads/' + cot.id + '/cobros', L, { monto: 1, metodo: 'efectivo', tipo: 'ajuste' }); ok(s === 403, 'los ajustes o descuentos siguen siendo solo del admin');
-  [s, j] = await pedir('PUT', '/leads/' + cot.id + '/facturacion', A, { dias_credito: 15, factura_folio: 'A-123', factura_fecha: '2026-11-16', factura_total: 4060 });
-  ok(s === 200 && j.cuenta.total === 4060 && j.cuenta.saldo === 3060 && j.cuenta.vence === '2026-12-01', 'factura con IVA: el total pasa a $4,060 y vence en 15 días', j.cuenta);
+  [s, j] = await pedir('PUT', '/leads/' + cot.id + '/facturacion', A, { dias_credito: 15, factura_folio: 'A-123', factura_fecha: hoy, factura_total: 4060 }); // la factura no puede tener fecha futura
+  ok(s === 200 && j.cuenta.total === 4060 && j.cuenta.saldo === 3060 && j.cuenta.vence === (d => { const x = new Date(d + 'T00:00:00Z'); x.setUTCDate(x.getUTCDate() + 15); return x.toISOString().slice(0, 10); })(hoy), 'factura con IVA: el total pasa a $4,060 y vence en 15 días', j.cuenta);
   [s, j] = await pedir('PUT', '/leads/' + cot.id + '/facturacion', A, { factura_total: 500 });
   ok(s === 400, 'el total facturado no puede quedar debajo de lo cobrado');
   [s, j] = await pedir('POST', '/leads/' + cot.id + '/cobros', A, { monto: 3060, metodo: 'transferencia', referencia: 'SPEI 99' });
@@ -575,7 +575,7 @@ const espera = ms => new Promise(r => setTimeout(r, ms));
   const evs = j.eventos || [];
   ok(s === 200 && evs.some(e => e.tipo === 'orden' && e.lead_id === ordenDup.id && e.fecha === '2026-11-01' && /^OS-/.test(e.titulo)), 'calendario: la orden aparece en su fecha de servicio', evs.filter(e => e.tipo === 'orden'));
   ok(evs.some(e => e.tipo === 'alerta' && e.lead_id === ordenDup.id && e.fecha === '2026-11-01' && e.hora === '09:30' && e.estado === 'pendiente'), 'calendario: la alerta aparece con su hora', evs.filter(e => e.tipo === 'alerta'));
-  ok(evs.some(e => e.tipo === 'cobro' && e.lead_id === cot.id && e.fecha === '2026-12-01' && e.monto > 0), 'calendario: el cobro aparece el día que vence', evs.filter(e => e.tipo === 'cobro'));
+  ok(evs.some(e => e.tipo === 'cobro' && e.lead_id === cot.id && e.fecha === (d => { const x = new Date(d + 'T00:00:00Z'); x.setUTCDate(x.getUTCDate() + 15); return x.toISOString().slice(0, 10); })(hoy) && e.monto > 0), 'calendario: el cobro aparece el día que vence', evs.filter(e => e.tipo === 'cobro'));
   ok(costoDup.fecha_vencimiento < '2026-10-26' || costoDup.fecha_vencimiento > '2026-12-06' || evs.some(e => e.tipo === 'pago' && e.cxp_id === costoDup.id && e.fecha === costoDup.fecha_vencimiento && e.monto === 8000), 'calendario: el pago al proveedor aparece el día que vence', evs.filter(e => e.tipo === 'pago'));
   ok(!evs.some(e => e.fecha < '2026-10-26' || e.fecha > '2026-12-06'), 'calendario: solo eventos dentro del rango');
 
