@@ -396,7 +396,7 @@ const Compras = (() => {
   }
   // Expediente completo en un ZIP: la orden en PDF, los documentos, los pagos y el historial.
   let zipCache;
-  const cargarZip = () => (zipCache ||= new Promise((ok, mal) => { if (window.JSZip) return ok(window.JSZip); const s = document.createElement('script'); s.src = 'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js'; s.onload = () => ok(window.JSZip); s.onerror = () => { zipCache = null; mal(new Error('No se pudo cargar el compresor (revisa la conexión)')); }; document.head.appendChild(s); }));
+  const cargarZip = () => (zipCache ||= new Promise((ok, mal) => { if (window.JSZip) return ok(window.JSZip); const s = document.createElement('script'); s.src = 'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js'; s.integrity = 'sha384-+mbV2IY1Zk/X1p/nWllGySJSUN8uMs+gUAN10Or95UBH0fpj6GfKgPmgC5EXieXG'; s.crossOrigin = 'anonymous'; s.onload = () => ok(window.JSZip); s.onerror = () => { zipCache = null; mal(new Error('No se pudo cargar el compresor (revisa la conexión)')); }; document.head.appendChild(s); }));
   async function descargarZip() {
     const JSZip = await cargarZip();
     const e = EXPEDIENTE, o = e.orden, zip = new JSZip(), carpeta = zip.folder('Expediente ' + o.folio);

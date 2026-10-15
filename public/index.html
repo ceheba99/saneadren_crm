@@ -1102,10 +1102,10 @@
   <button type="button" class="btn btn-verde" id="btn-generar-orden-servicio" hidden>🧾 Convertir en orden de servicio</button>
 </div>
 <!-- Librerías para generar el documento de cotización (PDF y Word) -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
-<script src="https://unpkg.com/docx@8.5.0/build/index.umd.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/1.3.8/FileSaver.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" integrity="sha384-JcnsjUPPylna1s1fvi1u12X5qjY5OL56iySh75FdtrwhO/SWXgMjoVqcKyIIWOLk" crossorigin="anonymous"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js" integrity="sha384-fCAW/rDWORTbQXSiB7mOg0QtQ5c+r0f544y6XoKjuVva0nMBlCpNUjiFeG5iMdS3" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/docx@8.5.0/build/index.umd.js" integrity="sha384-4xaIisuLEy2lo2HkB2C4rEf7v8jbTb2kuogX6TkuEt9feTWKBSFSOzsqNNbV+sKh" crossorigin="anonymous"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/1.3.8/FileSaver.js" integrity="sha384-ph76mR0W+Z/3+JTfCgW7I+2WZrKUE1M2EabdJVneuKwpssRuQggPhzQJ3oDectWZ" crossorigin="anonymous"></script>
 
 <div class="overlay" id="overlay-prospeccion"><div class="modal" style="max-width:920px"><div class="modal-header"><h2 id="pr-titulo">Establecimiento</h2><button class="close-btn" id="pr-cerrar" aria-label="Cerrar establecimiento">✕</button></div><div class="modal-body"><div class="modal-section"><p class="ayuda">Para investigar solo necesitas nombre, sector y ciudad o zona. Completa el teléfono cuando lo consigas. Guardar aquí no crea un cliente ni una cotización.</p><div class="form-grid-2">
 <div class="campo-modal"><label for="pr-nombre">Nombre del establecimiento o sucursal *</label><input id="pr-nombre" maxlength="500"></div><div class="campo-modal"><label for="pr-sector_id">Sector *</label><select id="pr-sector_id"></select></div><div class="campo-modal"><label for="pr-zona">Ciudad / zona *</label><input id="pr-zona" maxlength="500"></div><div class="campo-modal"><label for="pr-direccion">Domicilio (opcional)</label><input id="pr-direccion" maxlength="500"></div><div class="campo-modal"><label for="pr-telefono">Teléfono (opcional)</label><input id="pr-telefono" type="tel"></div><div class="campo-modal"><label for="pr-correo">Correo (opcional)</label><input id="pr-correo" type="email"></div><div class="campo-modal"><label for="pr-persona">Persona de contacto (opcional)</label><input id="pr-persona" maxlength="500"></div><div class="campo-modal"><label for="pr-cargo">Cargo / área (opcional)</label><input id="pr-cargo" maxlength="500"></div><div class="campo-modal"><label for="pr-fuente">Fuente de investigación / enlace (opcional)</label><input id="pr-fuente" maxlength="500"></div><div class="campo-modal"><label for="pr-estado">Estado del seguimiento</label><select id="pr-estado"></select></div><div class="campo-modal"><label for="pr-responsable_id">Responsable *</label><select id="pr-responsable_id"></select></div><div class="campo-modal"><label for="pr-proximo_contacto">Próxima fecha de contacto (opcional)</label><input id="pr-proximo_contacto" type="date"></div>
@@ -1122,7 +1122,7 @@
 <script src="calendario.js?v=pg2"></script>
 <script src="tablero.js?v=pg2"></script>
 <script src="bitacora.js?v=sol1"></script>
-<script src="compras.js?v=cred1"></script>
+<script src="compras.js?v=aud1"></script>
 <script src="solicitudes.js?v=sol2"></script>
 <script src="carga-generador.js?v=con1"></script>
 <script src="app.js?v=bus1"></script>

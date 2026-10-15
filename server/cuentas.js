@@ -101,8 +101,8 @@ module.exports = function cuentas(app, db, h, { sesiones, urlBase }) {
   asegurarUsuarioPrueba(db, 'USUARIO_2', 'Luis Perea');
   db.prepare('DELETE FROM tokens_cuenta WHERE expira < ? OR usado = 1').run(Date.now() - VIGENCIA_VERIFICACION_MS);
 
-  const porIp = (max, minutos) => limitador({ max, ventanaMs: minutos * 60000, clave: req => req.ip });
-  const porCorreo = (max, minutos) => limitador({ max, ventanaMs: minutos * 60000, clave: req => normalizarCorreo(req.body?.correo) || req.ip,
+  const porIp = (max, minutos) => limitador({ max, ventanaMs: minutos * 60000, clave: req => req.ipCliente || req.ip });
+  const porCorreo = (max, minutos) => limitador({ max, ventanaMs: minutos * 60000, clave: req => normalizarCorreo(req.body?.correo) || req.ipCliente || req.ip,
     mensaje: 'Ya enviamos varios correos a esta dirección. Revisa tu bandeja (y spam) o intenta más tarde.' });
 
   // Un token nuevo invalida los anteriores del mismo tipo: solo el último enlace enviado sirve.

@@ -141,7 +141,7 @@ module.exports = function buscador(app, db, h) {
     return { total, items: items.slice(0, POR_GRUPO) };
   }
 
-  const limite = limitador({ max: 60, ventanaMs: 60 * 1000, clave: req => 'buscar:' + (req.usuarioSesion?.id ?? req.ip), mensaje: 'Demasiadas búsquedas seguidas. Espera un momento.' });
+  const limite = limitador({ max: 60, ventanaMs: 60 * 1000, clave: req => 'buscar:' + (req.usuarioSesion?.id ?? req.ipCliente ?? req.ip), mensaje: 'Demasiadas búsquedas seguidas. Espera un momento.' });
   app.get('/api/buscar', limite, h((req, res) => {
     if (typeof req.query.q !== 'string') return res.status(400).json({ error: 'Escribe qué buscas' });
     const q = req.query.q;
