@@ -17,7 +17,7 @@ let n = 0; const malos = [];
 const revisa = (cond, texto, extra) => { n++; if (!cond) { malos.push(texto); console.log('  ✘ ' + texto + (extra !== undefined ? '  → ' + JSON.stringify(extra).slice(0, 500) : '')); } else console.log('  ✔ ' + texto); };
 
 (async () => {
-  for (let i = 0; i < 40 && !/corriendo/.test(salida); i++) await espera(150);
+  for (let i = 0; i < 100 && !/corriendo/.test(salida); i++) await espera(150);
   const A = (await pedir('POST', '/login', null, { nombre: ADMIN.correo, password: ADMIN.password }))[1].token;
   let s, j;
   console.log('1. Rol «costos»');
@@ -82,10 +82,11 @@ const revisa = (cond, texto, extra) => { n++; if (!cond) { malos.push(texto); co
   const cotA = j && (await pedir('GET', '/compras/solicitudes/' + sol.id, V))[1].cotizaciones.find(c => c.proveedor_id === prov.a.id);
   [s, j] = await pedir('POST', '/compras/solicitudes/' + sol.id + '/elegir', V, { cotizacion_id: cotB.id }); revisa(s === 403, 'ventas no elige');
   [s, j] = await pedir('POST', '/compras/solicitudes/' + sol.id + '/elegir', C, { cotizacion_id: 999999 }); revisa(s === 400, 'no se elige una cotización de otra solicitud');
-  [s, j] = await pedir('POST', '/compras/solicitudes/' + sol.id + '/elegir', C, { cotizacion_id: cotA.id }); revisa(s === 200 && j.estado === 'elegida' && j.ganadora.proveedor_id === prov.a.id, 'el encargado elige (aunque no sea la más barata)', [s, j.error]);
+  [s, j] = await pedir('POST', '/compras/solicitudes/' + sol.id + '/elegir', C, { cotizacion_id: cotA.id }); revisa(s === 409 && j.codigo === 'MOTIVO_ELECCION', 'si no es la más barata, pide el motivo', [s, j.error]);
+  [s, j] = await pedir('POST', '/compras/solicitudes/' + sol.id + '/elegir', C, { cotizacion_id: cotA.id, motivo_eleccion: 'Entrega en un día, el camión no puede esperar' }); revisa(s === 200 && j.estado === 'elegida' && j.ganadora.proveedor_id === prov.a.id && /no puede esperar/.test(j.motivo_eleccion), 'con motivo, el encargado elige una que no es la más barata', [s, j.error]);
   [s, j] = await pedir('POST', '/compras/solicitudes/' + sol.id + '/elegir', C, { cotizacion_id: cotB.id }); revisa(s === 200 && j.ganadora.proveedor_id === prov.b.id, 'puede cambiar de opinión antes de hacer la orden');
   [s, j] = await pedir('GET', '/auditoria?entidad=solicitud_compra&id=' + sol.id, V);
-  revisa(j.some(r => r.accion === 'cotización elegida' && /no es la más barata/.test(r.detalle)), 'queda registrado cuando se eligió una que no era la más barata');
+  revisa(j.some(r => r.accion === 'cotización elegida' && /no es la más barata.*motivo: Entrega en un día/.test(r.detalle)), 'queda registrado con su motivo cuando no era la más barata');
   [s, j] = await pedir('POST', '/compras/solicitudes/documentos/' + cotB.id + '/quitar', C, { motivo: 'ya no me gusta esta' }); revisa(s === 409, 'la cotización elegida no se puede quitar');
 
   console.log('6. Orden de compra desde la solicitud');
@@ -148,6 +149,20 @@ const revisa = (cond, texto, extra) => { n++; if (!cond) { malos.push(texto); co
   [s, j] = await pedir('POST', '/compras/ordenes', C, { proveedor_id: prov.a.id, centro_id: mantto.id, categoria: 'otro', iva_modo: 'sin_iva', partidas: [{ cantidad: 1, descripcion: 'Pago de recargas', precio: 400 }] });
   revisa(s === 201 && !j.solicitud_id, 'el encargado SÍ hace una orden sin solicitud', [s, j.error]);
   [s, j] = await pedir('GET', '/auditoria?entidad=orden_compra&id=' + j.id, A); revisa(j.some(r => /SIN SOLICITUD/.test(r.detalle || '')), 'queda marcado en la bitácora que fue sin solicitud');
+
+  console.log('9b. Controles de la auditoría');
+  const propia = (await pedir('POST', '/compras/solicitudes', C, { que: 'Rotomartillo industrial', para_que: 'Para romper registros en obra', centro_id: mantto.id }))[1];
+  [s, j] = await pedir('POST', '/compras/solicitudes/' + propia.id + '/aprobar', C); revisa(s === 403 && /Tú pediste/.test(j.error), 'el encargado NO se aprueba su propia solicitud', [s, j.error]);
+  [s, j] = await pedir('POST', '/compras/solicitudes/' + propia.id + '/aprobar', A); revisa(s === 200, 'la aprueba un administrador');
+  for (const [k, p] of Object.values(prov).entries()) await subir('/compras/solicitudes/' + propia.id + '/documentos', C, pdf(), { 'X-Tipo': 'cotizacion', 'X-Proveedor': p.id, 'X-Monto': String(5000 + k), 'X-Nombre': 'r' + k + '.pdf' });
+  const barata = (await pedir('GET', '/compras/solicitudes/' + propia.id, C))[1].cotizaciones[0];
+  await pedir('POST', '/compras/solicitudes/' + propia.id + '/elegir', C, { cotizacion_id: barata.id });
+  const baseR = { solicitud_id: propia.id, proveedor_id: barata.proveedor_id, centro_id: mantto.id, categoria: 'otro', iva_modo: 'incluido' };
+  [s, j] = await pedir('POST', '/compras/ordenes', C, { ...baseR, partidas: [{ cantidad: 1, descripcion: 'Rotomartillo industrial', precio: 6500 }] }); revisa(s === 409 && j.codigo === 'SUPERA_COTIZACION', 'una orden por más de lo cotizado pide el motivo', [s, j.error]);
+  [s, j] = await pedir('POST', '/compras/ordenes', C, { ...baseR, motivo_diferencia: 'Se agregó el juego de brocas que no venía', partidas: [{ cantidad: 1, descripcion: 'Rotomartillo industrial', precio: 6500 }] }); revisa(s === 201 && /brocas/.test(j.motivo_diferencia), 'con motivo se crea y lo guarda', [s, j.error]);
+  const ocR = j;
+  [s, j] = await pedir('PUT', '/compras/ordenes/' + ocR.id, C, { ...baseR, version: ocR.version, partidas: [{ cantidad: 1, descripcion: 'Rotomartillo industrial', precio: 7000 }] }); revisa(s === 200, 'al editar conserva el motivo ya escrito');
+  [s, j] = await pedir('POST', '/compras/ordenes', C, { solicitud_id: undefined, proveedor_id: prov.a.id, centro_id: mantto.id, categoria: 'otro', iva_modo: 'sin_iva', partidas: [{ cantidad: 1, descripcion: 'Cinta de aislar', precio: 40 }] }); revisa(s === 201, 'una orden sin solicitud no pide comparar contra cotización');
 
   console.log('10. Archivos y lista');
   const r = await fetch(URL + '/compras/solicitudes/documentos/' + cotB.id, { headers: { Authorization: 'Bearer ' + V } });

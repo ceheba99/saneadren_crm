@@ -1879,13 +1879,13 @@ function renderServiciosAnteriores() {
   ServiciosTabla.render('ficha-anteriores', LEAD_ACTUAL.servicios_cliente || [LEAD_ACTUAL], LEAD_ACTUAL.cliente_id || 'lead-'+LEAD_ACTUAL.id, 'lead');
 }
 
-async function cambiarEstatusLeadActual(estatus) {
+async function cambiarEstatusLeadActual(estatus, motivoPerdida) {
   if (!LEAD_ACTUAL) return;
   try {
     // Se envían junto los campos de la ficha (cotización, fecha, etc.): así, si el usuario
     // acaba de escribir la cotización final y da clic en "Convertir a Cliente" sin guardar
     // primero, ese dato no se pierde.
-    const body = { ...recolectarPayloadFicha(), estatus, usuario: USUARIO_ACTUAL ? USUARIO_ACTUAL.nombre : null };
+    const body = { ...recolectarPayloadFicha(), estatus, usuario: USUARIO_ACTUAL ? USUARIO_ACTUAL.nombre : null, ...(motivoPerdida ? { motivo_perdida: motivoPerdida } : {}) };
     if (!await guardarLeadExistente(body)) return;
     toast('Cotización ' + (estatus === 'ganado' ? 'cerrada como servicio' : estatus === 'perdido' ? 'descartada' : 'reabierta'));
     FlujoCRM.marcarGuardado('overlay-ficha');
@@ -1895,7 +1895,10 @@ async function cambiarEstatusLeadActual(estatus) {
     toast('No se pudo cambiar el estatus: ' + err.message);
   }
 }
-on('btn-marcar-perdido', 'click', () => cambiarEstatusLeadActual('perdido'));
+on('btn-marcar-perdido', 'click', async () => {
+  const motivo = await solicitarDialogo({ titulo: 'Cotización no aceptada', mensaje: '¿Por qué no se aceptó? Sirve para saber por qué se pierden ventas. Ejemplos: precio alto, eligió a otro proveedor, ya no lo necesita, no contestó.', aceptar: 'Marcar como no aceptada', campo: { tipo: 'text', etiqueta: 'Motivo', requerido: 'Escribe el motivo' } });
+  if (motivo) cambiarEstatusLeadActual('perdido', motivo);
+});
 on('btn-reabrir', 'click', () => cambiarEstatusLeadActual('abierto'));
 
 on('btn-cerrar-modal', 'click', () => {

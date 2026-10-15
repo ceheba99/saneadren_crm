@@ -15,7 +15,7 @@ const sumarDias = (f, d) => { const x = new Date(f + 'T12:00:00Z'); x.setUTCDate
 const HOY = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Mexico_City' }).format(new Date());
 
 (async () => {
-  for (let i = 0; i < 40 && !/corriendo/.test(salida); i++) await espera(150);
+  for (let i = 0; i < 100 && !/corriendo/.test(salida); i++) await espera(150);
   const A = (await pedir('POST', '/login', null, { nombre: ADMIN.correo, password: ADMIN.password }))[1].token;
   const servicios = (await pedir('GET', '/servicios', A))[1], canales = (await pedir('GET', '/canales', A))[1];
   const yo = (await pedir('GET', '/usuarios', A))[1].find(u => u.rol === 'admin').id;

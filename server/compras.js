@@ -70,7 +70,7 @@ function migrar(db) {
   `);
   // Solicitud de compra de la que salió la orden, y la recepción (cuando llega lo comprado).
   const cols = db.prepare('PRAGMA table_info(ordenes_compra)').all().map(c => c.name);
-  for (const [c, t] of [['solicitud_id', 'INTEGER'], ['recibida_at', 'TEXT'], ['recibida_por', 'INTEGER'], ['recibida_por_nombre', 'TEXT'], ['recibio_nombre', 'TEXT'], ['recepcion_nota', 'TEXT']])
+  for (const [c, t] of [['motivo_diferencia', 'TEXT'], ['solicitud_id', 'INTEGER'], ['recibida_at', 'TEXT'], ['recibida_por', 'INTEGER'], ['recibida_por_nombre', 'TEXT'], ['recibio_nombre', 'TEXT'], ['recepcion_nota', 'TEXT']])
     if (!cols.includes(c)) db.exec(`ALTER TABLE ordenes_compra ADD COLUMN ${c} ${t}`);
   // Días de crédito de CADA compra: se escriben al autorizarla (no se toman solos del proveedor).
   if (!db.prepare('PRAGMA table_info(cuentas_por_pagar)').all().some(c => c.name === 'dias_credito')) db.exec('ALTER TABLE cuentas_por_pagar ADD COLUMN dias_credito INTEGER');
@@ -305,6 +305,12 @@ module.exports = function compras(app, db, h, finanzas) {
     if (v.error) return res.status(400).json({ error: v.error });
     const d = v.datos;
     // La misma orden capturada dos veces (doble clic o se volvió a capturar): se pregunta antes de crear otra.
+    // Por más de lo cotizado (más de $1 de diferencia): se escribe por qué.
+    let motivoDif = null;
+    if (desde && d.total_cent > desde.ganadora.monto_cent + 100) {
+      motivoDif = texto(req.body.motivo_diferencia, 300);
+      if (!motivoDif || !conSentido(motivoDif, 10)) return res.status(409).json({ error: `La orden (${fmt(d.total_cent)}) es mayor que lo cotizado (${fmt(desde.ganadora.monto_cent)}). Escribe por qué (mínimo 10 letras).`, codigo: 'SUPERA_COTIZACION', cotizado: desde.ganadora.monto_cent / 100 });
+    }
     const igual = !req.body.forzar && !desde && db.prepare("SELECT id, created_at FROM ordenes_compra WHERE proveedor_id = ? AND fecha = ? AND total_cent = ? AND partidas_json = ? AND estado <> 'cancelada' ORDER BY id DESC LIMIT 1")
       .get(d.proveedor_id, d.fecha, d.total_cent, d.partidas_json);
     if (igual) return res.status(409).json({ error: `Ya existe una orden igual (${folioOC(igual)}): mismo proveedor, fecha, partidas y total. ¿Es otra compra?`, codigo: 'POSIBLE_DUPLICADO', orden_id: igual.id });
@@ -316,6 +322,7 @@ module.exports = function compras(app, db, h, finanzas) {
     audit(req, creada.id, 'creada', `${creada.folio} · ${creada.proveedor_nombre} · ${creada.partidas.length} partida(s) · ${fmt(creada.total_cent)} · centro ${creada.centro_nombre}`
       + (desde ? ` · de la solicitud ${desde.solicitud.folio} (cotización ${fmt(desde.ganadora.monto_cent)}${desde.solicitud.excepcion_motivo ? ', EXCEPCIÓN POR URGENCIA: ' + desde.solicitud.excepcion_motivo : ''})` : ' · SIN SOLICITUD')
       + (req.body.forzar ? ' · se confirmó que no es repetida' : ''));
+    if (motivoDif) { db.prepare('UPDATE ordenes_compra SET motivo_diferencia = ? WHERE id = ?').run(motivoDif, creada.id); audit(req, creada.id, 'mayor que lo cotizado', `${fmt(creada.total_cent)} vs cotizado ${fmt(desde.ganadora.monto_cent)} · motivo: ${motivoDif}`); }
     if (desde) { Sol.vincular(req, desde.solicitud.id, creada); creada = leer(creada.id); }
     res.status(201).json(creada);
   }));
@@ -331,6 +338,16 @@ module.exports = function compras(app, db, h, finanzas) {
     const d = v.datos;
     const antes = leer(o.id);
     if (o.solicitud_id && d.proveedor_id !== o.proveedor_id) return res.status(400).json({ error: `Esta orden salió de la solicitud ${antes.solicitud_folio}: el proveedor es el de la cotización elegida. Para cambiarlo, elige otra cotización en la solicitud.` });
+    // Al editar, tampoco puede quedar por encima de lo cotizado sin motivo.
+    let motivoDif = o.motivo_diferencia;
+    if (o.solicitud_id) {
+      const cot = db.prepare('SELECT d.monto_cent FROM solicitudes_compra s JOIN documentos_solicitud d ON d.id = s.ganadora_id WHERE s.id = ?').get(o.solicitud_id);
+      if (cot && d.total_cent > cot.monto_cent + 100) {
+        motivoDif = texto(req.body.motivo_diferencia, 300) || motivoDif;
+        if (!motivoDif || !conSentido(motivoDif, 10)) return res.status(409).json({ error: `La orden (${fmt(d.total_cent)}) es mayor que lo cotizado (${fmt(cot.monto_cent)}). Escribe por qué (mínimo 10 letras).`, codigo: 'SUPERA_COTIZACION', cotizado: cot.monto_cent / 100 });
+        if (motivoDif !== o.motivo_diferencia) db.prepare('UPDATE ordenes_compra SET motivo_diferencia = ? WHERE id = ?').run(motivoDif, o.id);
+      }
+    }
     db.prepare(`UPDATE ordenes_compra SET proveedor_id = ?, centro_id = ?, categoria = ?, lead_id = ?, fecha = ?, fecha_requerida = ?, entrega = ?, factura_a = ?, nota = ?, observaciones = ?,
         partidas_json = ?, iva_modo = ?, iva_tasa = ?, subtotal_cent = ?, iva_cent = ?, total_cent = ?, solicitante_nombre = ?, solicitante_cargo = ?,
         updated_at = datetime('now','localtime'), version = version + 1 WHERE id = ?`).run(d.proveedor_id, d.centro_id, d.categoria, d.lead_id, d.fecha, d.fecha_requerida, d.entrega,

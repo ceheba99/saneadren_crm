@@ -140,7 +140,7 @@ const Finanzas = (() => {
           <small>Registró ${esc(k.registrado_por_nombre || '—')}${k.referencia ? ' · Ref. ' + esc(k.referencia) : ''}${k.notas ? ' · ' + esc(k.notas) : ''}</small>
           ${k.cancelado ? `<small class="motivo">Cancelado: ${esc(k.motivo_cancelacion || '')}</small>` : (!k.confirmado ? '<span class="estado-cxc por-confirmar">Por confirmar</span>' : '')}
         </div>
-        ${r.puede_operar && !k.cancelado ? `<div class="btn-group">${!k.confirmado ? `<button type="button" class="btn btn-outline" data-cobro-confirmar="${Number(k.id)}">Confirmar</button>` : ''}<button type="button" class="btn btn-outline" data-cobro-cancelar="${Number(k.id)}">Cancelar</button></div>` : ''}
+        ${r.puede_operar && !k.cancelado ? `<div class="btn-group">${!k.confirmado ? `<button type="button" class="btn btn-outline" data-cobro-confirmar="${Number(k.id)}">Confirmar</button>` : ''}<button type="button" class="btn btn-outline solo-costos" data-cobro-cancelar="${Number(k.id)}">Cancelar</button></div>` : ''}
       </div>`).join('') : '<p class="util-45">Sin pagos registrados.</p>';
     cont.innerHTML = `
       ${c.por_revisar ? '<p class="cuentas-aviso">Orden anterior al módulo de cuentas: está pendiente de la revisión inicial (Finanzas → Cuentas por cobrar).</p>' : ''}
@@ -269,7 +269,7 @@ const Finanzas = (() => {
     const lista = await api('/finanzas/por-confirmar').then(json).catch(() => []);
     cont.innerHTML = lista.length ? `<div class="inicio-bloque inicio-bloque-aviso"><h3>Pagos por confirmar</h3><p class="ayuda">Los registraron vendedores o técnicos. Confírmalos cuando verifiques que el dinero llegó.</p>
       ${lista.map(k => `<div class="pago-fila"><div><b>${formatoMoneda(k.monto)}</b> · ${esc(NOMBRE_METODO[k.metodo] || k.metodo)} · ${esc(fechaTxt(k.fecha))}<small>${esc(k.cliente_nombre)} · ${esc(folioOrdenServicio({ id: k.lead_id, created_at: k.lead_created_at }))} · registró ${esc(k.registrado_por_nombre || '—')}</small></div>
-        <div class="btn-group"><button type="button" class="btn btn-outline" data-confirmar="${Number(k.id)}">Confirmar</button><button type="button" class="btn btn-outline" data-cancelar="${Number(k.id)}">Cancelar</button></div></div>`).join('')}</div>` : '';
+        <div class="btn-group"><button type="button" class="btn btn-outline" data-confirmar="${Number(k.id)}">Confirmar</button><button type="button" class="btn btn-outline solo-costos" data-cancelar="${Number(k.id)}">Cancelar</button></div></div>`).join('')}</div>` : '';
   }
   $('cuentas-por-confirmar').addEventListener('click', async e => {
     const btn = e.target.closest('button'); if (!btn) return;
@@ -578,9 +578,9 @@ const Finanzas = (() => {
       { k: 'saldo', t: 'Saldo', n: true, fija: true, v: x => '<b>' + formatoMoneda(x.saldo) + '</b>', s: x => x.saldo, sum: x => x.saldo },
       { k: 'ultimo_pago', t: 'Último pago', v: x => esc(ultimoPagoTxt(x.ultimo_pago)), s: x => x.ultimo_pago || '' },
       { k: 'notas', t: 'Notas', clase: 'celda-notas', v: x => esc(x.notas || ''), s: x => x.notas || '' },
-      { k: 'acciones', t: '', fija: true, sinOrden: true, clase: 'celda-acciones', v: x => '<div class="acciones-fila">' + (x.saldo > 0 ? '<button type="button" class="btn btn-primario btn-chico" data-pagar-cxp="' + Number(x.id) + '">Pagar</button>' : '')
+      { k: 'acciones', t: '', fija: true, sinOrden: true, clase: 'celda-acciones', v: x => '<div class="acciones-fila">' + (x.saldo > 0 ? '<button type="button" class="btn btn-primario btn-chico solo-costos" data-pagar-cxp="' + Number(x.id) + '">Pagar</button>' : '')
         + '<button type="button" class="btn btn-outline btn-chico" data-detalle-cxp="' + Number(x.id) + '">Pagos</button>'
-        + (x.pagado === 0 ? '<button type="button" class="btn btn-outline btn-chico" data-cancelar-cxp="' + Number(x.id) + '">Cancelar</button>' : '') + '</div>' },
+        + (x.pagado === 0 ? '<button type="button" class="btn btn-outline btn-chico solo-costos" data-cancelar-cxp="' + Number(x.id) + '">Cancelar</button>' : '') + '</div>' },
     ];
     if (!CXP.length) { cont.innerHTML = '<p class="util-45">No hay cuentas por pagar. 🎉</p>'; return; }
     TABLAS.pagar = { ...TABLAS.pagar, contenedor: 'pagar-lista', orden: TABLAS.pagar?.orden || { k: 'vence', dir: 1 } };
@@ -595,8 +595,8 @@ const Finanzas = (() => {
           <div class="info"><b>${esc(x.proveedor_nombre)}</b> · ${esc(x.concepto)}
             <small>${esc(x.categoria_nombre)} · vence ${esc(fechaTxt(x.fecha_vencimiento))}${x.factura_folio ? ' · factura ' + esc(x.factura_folio) : ''}${x.orden_folio ? ' · orden ' + esc(x.orden_folio) : ''}${x.equipo ? ' · ' + esc(x.equipo) : ''}</small></div>
           <div class="montos"><b>${formatoMoneda(x.saldo)}</b><small>de ${formatoMoneda(x.total)}</small></div>
-          <div class="btn-group">${x.saldo > 0 ? `<button type="button" class="btn btn-primario" data-pagar-cxp="${Number(x.id)}">Pagar</button>` : ''}<button type="button" class="btn btn-outline" data-detalle-cxp="${Number(x.id)}">Pagos</button>
-            ${x.pagado === 0 ? `<button type="button" class="btn btn-outline" data-cancelar-cxp="${Number(x.id)}">Cancelar</button>` : ''}</div>
+          <div class="btn-group">${x.saldo > 0 ? `<button type="button" class="btn btn-primario solo-costos" data-pagar-cxp="${Number(x.id)}">Pagar</button>` : ''}<button type="button" class="btn btn-outline" data-detalle-cxp="${Number(x.id)}">Pagos</button>
+            ${x.pagado === 0 ? `<button type="button" class="btn btn-outline solo-costos" data-cancelar-cxp="${Number(x.id)}">Cancelar</button>` : ''}</div>
         </div>`).join('');
     }).join('');
     return html || '<p class="util-45">No hay cuentas por pagar. 🎉</p>';
@@ -629,7 +629,7 @@ const Finanzas = (() => {
     $('pagoprov-historial').innerHTML = pagos.length ? '<div class="seccion-tit">Pagos registrados</div>' + pagos.map(g => `
       <div class="pago-fila${g.cancelado ? ' cancelado' : ''}"><div><b>${formatoMoneda(g.monto)}</b> · ${esc(NOMBRE_METODO[g.metodo] || g.metodo)} · ${esc(fechaTxt(g.fecha))}
         <small>Registró ${esc(g.registrado_por_nombre || '—')}${g.referencia ? ' · Ref. ' + esc(g.referencia) : ''}</small>${g.cancelado ? `<small class="motivo">Cancelado: ${esc(g.motivo_cancelacion || '')}</small>` : ''}</div>
-        ${!g.cancelado ? `<button type="button" class="btn btn-outline" data-cancelar-pagoprov="${Number(g.id)}">Cancelar</button>` : ''}</div>`).join('') : '<p class="util-45">Sin pagos registrados.</p>';
+        ${!g.cancelado ? `<button type="button" class="btn btn-outline solo-costos" data-cancelar-pagoprov="${Number(g.id)}">Cancelar</button>` : ''}</div>`).join('') : '<p class="util-45">Sin pagos registrados.</p>';
   }
   $('pagoprov-historial').addEventListener('click', async e => {
     const btn = e.target.closest('[data-cancelar-pagoprov]'); if (!btn) return;
@@ -706,7 +706,8 @@ const Finanzas = (() => {
     try { await catalogosPagos(); } catch (err) { toast('No se pudo cargar: ' + err.message); return; }
     llenarProveedoresGasto();
     ['gasto-concepto', 'gasto-total', 'gasto-folio', 'gasto-orden', 'gasto-equipo', 'gasto-referencia'].forEach(id => { $(id).value = prellenado[id] || ''; });
-    $('gasto-fecha').value = hoy(); $('gasto-vence').value = hoy(); $('gasto-fecha-pago').value = hoy(); $('gasto-pagado').checked = false; $('gasto-metodo-wrap').hidden = true;
+    $('gasto-fecha').value = hoy(); $('gasto-vence').value = ''; $('gasto-fecha-pago').value = hoy(); $('gasto-pagado').checked = false; $('gasto-metodo-wrap').hidden = true;
+    $('gasto-credito').value = ''; $('gasto-credito').disabled = false; $('gasto-credito-ayuda').textContent = '';
     $('gasto-categoria').value = 'otro';
     $('gasto-folio').closest('details').open = !!prellenado['gasto-equipo'];
     $('gasto-orden').dataset.leadId = ''; $('gasto-orden-sugerencias').hidden = true; $('gasto-orden-info').hidden = true;
@@ -723,10 +724,14 @@ const Finanzas = (() => {
       + '<option value="__nuevo">+ Nuevo proveedor…</option>';
     if (seleccionado) $('gasto-proveedor').value = String(seleccionado);
   }
+  // Días de crédito de ESTE gasto: se escriben siempre (0 = de contado). El del proveedor solo se muestra como referencia.
   const recalcularVence = () => {
     const p = PROVEEDORES.find(x => x.id === Number($('gasto-proveedor').value));
-    if (p && $('gasto-fecha').value) $('gasto-vence').value = sumarDias($('gasto-fecha').value, p.dias_credito);
+    $('gasto-credito-ayuda').textContent = p ? 'Este proveedor suele dar ' + Number(p.dias_credito) + ' días.' : '';
+    const d = $('gasto-credito').value.trim();
+    $('gasto-vence').value = /^\d{1,3}$/.test(d) && $('gasto-fecha').value ? sumarDias($('gasto-fecha').value, Number(d)) : '';
   };
+  $('gasto-credito').addEventListener('input', recalcularVence);
   $('gasto-proveedor').addEventListener('change', async () => {
     if ($('gasto-proveedor').value === '__nuevo') {
       $('gasto-proveedor').value = '';
@@ -741,14 +746,23 @@ const Finanzas = (() => {
     const p = PROVEEDORES.find(x => x.id === Number($('gasto-proveedor').value)); if (p) $('gasto-categoria').value = p.categoria; recalcularVence();
   });
   $('gasto-fecha').addEventListener('change', recalcularVence);
-  $('gasto-pagado').addEventListener('change', () => { $('gasto-metodo-wrap').hidden = !$('gasto-pagado').checked; });
+  $('gasto-pagado').addEventListener('change', () => {
+    const pagado = $('gasto-pagado').checked;
+    $('gasto-metodo-wrap').hidden = !pagado;
+    // Ya pagado = de contado.
+    if (pagado) $('gasto-credito').value = '0';
+    $('gasto-credito').disabled = pagado; recalcularVence();
+  });
   $('gasto-guardar').addEventListener('click', e => conBoton(e.currentTarget, async () => {
     const orden = $('gasto-orden').value.trim();
     const leadId = orden ? Number($('gasto-orden').dataset.leadId) || null : null;
     if (orden && !leadId) { toast('Elige la orden de servicio de la lista (o deja el campo vacío)'); $('gasto-orden').focus(); return; }
+    if (!leadId && !['admin', 'costos'].includes(USUARIO_ACTUAL?.rol)) { toast('Elige la orden de servicio. Las compras se piden con una Solicitud de compra.'); $('gasto-orden').focus(); return; }
+    const credito = $('gasto-pagado').checked ? '0' : $('gasto-credito').value.trim();
+    if (!/^\d{1,3}$/.test(credito) || Number(credito) > 365) { toast('Escribe los días de crédito (0 si es de contado)'); $('gasto-credito').focus(); return; }
     const r = await enviar('/finanzas/cxp', 'POST', {
       proveedor_id: Number($('gasto-proveedor').value) || null, categoria: $('gasto-categoria').value, concepto: $('gasto-concepto').value,
-      total: $('gasto-total').value.trim(), fecha_documento: $('gasto-fecha').value, fecha_vencimiento: $('gasto-vence').value,
+      total: $('gasto-total').value.trim(), fecha_documento: $('gasto-fecha').value, dias_credito: Number(credito),
       factura_folio: $('gasto-folio').value, lead_id: leadId, equipo: $('gasto-equipo').value,
       ya_pagado: $('gasto-pagado').checked, metodo: metodoElegido('gasto-metodos'),
       fecha_pago: $('gasto-pagado').checked ? $('gasto-fecha-pago').value : null, referencia: $('gasto-pagado').checked ? $('gasto-referencia').value : null });

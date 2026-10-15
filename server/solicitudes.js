@@ -61,6 +61,7 @@ function migrar(db) {
     );
     CREATE INDEX IF NOT EXISTS idx_documentos_solicitud ON documentos_solicitud(solicitud_id);
   `);
+  if (!db.prepare('PRAGMA table_info(solicitudes_compra)').all().some(c => c.name === 'motivo_eleccion')) db.exec('ALTER TABLE solicitudes_compra ADD COLUMN motivo_eleccion TEXT');
 }
 
 module.exports = function solicitudes(app, db, h, { texto, fechaOk, hoyMexico, conSentido, folioOC, agregarDocumentoOC }) {
@@ -169,6 +170,8 @@ module.exports = function solicitudes(app, db, h, { texto, fechaOk, hoyMexico, c
     const s = leer(req.params.id, false);
     if (!s) return res.status(404).json({ error: 'Solicitud no encontrada' });
     if (s.estado !== 'por_aprobar') return res.status(409).json({ error: 'Esta solicitud ya no está por aprobar (' + ESTADOS[s.estado].toLowerCase() + ')' });
+    // Nadie se aprueba a sí mismo: si el encargado pidió algo, lo aprueba un administrador (u otro encargado).
+    if (s.solicitante_id === req.usuarioSesion.id && req.usuarioSesion.rol !== 'admin') return res.status(403).json({ error: 'Tú pediste esta solicitud: la aprueba un administrador u otro encargado de centro de costos' });
     actualizar(s.id, { estado: 'cotizando', aprobada_por: req.usuarioSesion.nombre, aprobada_at: ahora() });
     audit(req, s.id, 'aprobada', `Pasa a cotizar: se piden ${COTIZACIONES_REQUERIDAS} cotizaciones de proveedores distintos`);
     res.json(leer(s.id));
@@ -278,10 +281,16 @@ module.exports = function solicitudes(app, db, h, { texto, fechaOk, hoyMexico, c
       excepcion = texto(req.body?.motivo_urgencia, 300);
       if (!excepcion || !conSentido(excepcion, 10)) return res.status(409).json({ error: `Faltan ${faltan} cotización(es): se piden ${COTIZACIONES_REQUERIDAS} de proveedores distintos. Si es urgente y no puede esperar, escribe por qué (mínimo 10 letras).`, codigo: 'FALTAN_COTIZACIONES', faltan });
     }
-    actualizar(s.id, { estado: 'elegida', ganadora_id: c.id, elegida_por: req.usuarioSesion.nombre, elegida_at: ahora(),
-      excepcion_motivo: excepcion, ...(excepcion ? { urgente: 1 } : {}) });
+    // Si no es la más barata, se escribe por qué (entrega, calidad, garantía…).
     const mas_barata = cots[0];
-    audit(req, s.id, 'cotización elegida', `${c.proveedor_nombre}: ${fmt(c.monto_cent)}${mas_barata.id !== c.id ? ` (no es la más barata: ${mas_barata.proveedor_nombre} ${fmt(mas_barata.monto_cent)})` : ' (la más barata)'}`
+    let motivoEleccion = null;
+    if (c.monto_cent > mas_barata.monto_cent) {
+      motivoEleccion = texto(req.body?.motivo_eleccion, 300);
+      if (!motivoEleccion || !conSentido(motivoEleccion, 10)) return res.status(409).json({ error: `No es la más barata (${mas_barata.proveedor_nombre} cotizó ${fmt(mas_barata.monto_cent)}). Escribe por qué se elige esta (mínimo 10 letras).`, codigo: 'MOTIVO_ELECCION' });
+    }
+    actualizar(s.id, { estado: 'elegida', ganadora_id: c.id, elegida_por: req.usuarioSesion.nombre, elegida_at: ahora(), motivo_eleccion: motivoEleccion,
+      excepcion_motivo: excepcion, ...(excepcion ? { urgente: 1 } : {}) });
+    audit(req, s.id, 'cotización elegida', `${c.proveedor_nombre}: ${fmt(c.monto_cent)}${mas_barata.id !== c.id ? ` (no es la más barata: ${mas_barata.proveedor_nombre} ${fmt(mas_barata.monto_cent)}; motivo: ${motivoEleccion})` : ' (la más barata)'}`
       + (excepcion ? ` · EXCEPCIÓN POR URGENCIA con ${COTIZACIONES_REQUERIDAS - faltan} de ${COTIZACIONES_REQUERIDAS} cotizaciones: ${excepcion}` : ''));
     res.json(leer(s.id));
   }));

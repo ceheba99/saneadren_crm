@@ -23,7 +23,7 @@ const CFDI = ({ total, rfc = 'RBA010101AB1', uuid = 'A1B2C3D4-0000-4000-8000-000
 </cfdi:Comprobante>`);
 
 (async () => {
-  for (let i = 0; i < 40 && !/corriendo/.test(salida); i++) await espera(150);
+  for (let i = 0; i < 100 && !/corriendo/.test(salida); i++) await espera(150);
   const A = (await pedir('POST', '/login', null, { nombre: ADMIN.correo, password: ADMIN.password }))[1].token;
   await pedir('POST', '/usuarios', A, { nombre: 'Compras Exp', correo: 'compras.exp@saneadren.com.mx', password: 'Compras-Exp-2026', rol: 'costos' }); // encargado de centro de costos: hace las órdenes de compra
   const V = (await pedir('POST', '/login', null, { nombre: 'compras.exp@saneadren.com.mx', password: 'Compras-Exp-2026' }))[1].token;
@@ -102,9 +102,9 @@ const CFDI = ({ total, rfc = 'RBA010101AB1', uuid = 'A1B2C3D4-0000-4000-8000-000
     [s, j] = await pedir('POST', '/leads/' + os.id + '/ejecucion', V, gasto(c)); revisa(s === 400, `concepto del costo ${txt} → se rechaza`, [s, j.error]);
   }
   [s, j] = await pedir('POST', '/leads/' + os.id + '/ejecucion', V, gasto('Renta de pipa 20 m³ para lodos')); revisa(s === 200, 'con su concepto propio sí se registra');
-  [s, j] = await pedir('POST', '/finanzas/cxp', V, { proveedor_id: pipas.id, categoria: 'residuos', concepto: servicios[0].nombre, total: 500, fecha_documento: HOY, lead_id: os.id });
+  [s, j] = await pedir('POST', '/finanzas/cxp', V, { proveedor_id: pipas.id, categoria: 'residuos', concepto: servicios[0].nombre, total: 500, fecha_documento: HOY, dias_credito: 15, lead_id: os.id });
   revisa(s === 400, 'tampoco desde Cuentas por pagar con el nombre del servicio', [s, j.error]);
-  [s, j] = await pedir('POST', '/finanzas/cxp', V, { proveedor_id: pipas.id, categoria: 'residuos', concepto: 'Disposición final de lodos', total: 500, fecha_documento: HOY, lead_id: os.id });
+  [s, j] = await pedir('POST', '/finanzas/cxp', V, { proveedor_id: pipas.id, categoria: 'residuos', concepto: 'Disposición final de lodos', total: 500, fecha_documento: HOY, dias_credito: 15, lead_id: os.id });
   revisa(s === 201, 'costo extra con concepto propio ligado a la orden');
 
   seccion('5. Historial de la orden de servicio: queda registro de todo');
@@ -122,7 +122,8 @@ const CFDI = ({ total, rfc = 'RBA010101AB1', uuid = 'A1B2C3D4-0000-4000-8000-000
   [s, j] = await pedir('GET', '/leads/' + cot.id, V);
   [s] = await pedir('PUT', '/leads/' + cot.id, V, { version: j.version, etapa: 3, responsable_id: 1 });
   [s, j] = await pedir('GET', '/leads/' + cot.id, V);
-  [s] = await pedir('PUT', '/leads/' + cot.id, V, { version: j.version, estatus: 'perdido' });
+  [s, j] = await pedir('PUT', '/leads/' + cot.id, V, { version: j.version, estatus: 'perdido' }); revisa(s === 400 && j.codigo === 'FALTA_MOTIVO_PERDIDA', 'marcar como no aceptada pide el motivo', [s, j.error]);
+  [s] = await pedir('PUT', '/leads/' + cot.id, V, { version: j.version, estatus: 'perdido', motivo_perdida: 'Precio alto, eligió a otro' });
   const [, h2] = await pedir('GET', '/leads/' + cot.id, V);
   const t2 = (Array.isArray(h2) ? h2 : h2.historial || []).map(h => h.texto);
   revisa(t2.some(t => /Cotización creada/.test(t)) && t2.some(t => /etapa Cotización enviada → Negociación/.test(t)) && t2.some(t => /responsable Compras Exp → admin/.test(t)) && t2.some(t => /marcada como no aceptada/.test(t)), 'cotización: creada, cambio de etapa, cambio de responsable y marcada como no aceptada', t2);

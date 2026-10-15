@@ -19,7 +19,7 @@ const SEMANA_40 = [['REPARACION FLECHA CARDAN JOSE LUIS ACOSTA', 2000], ['PAGO R
   ['DESCARGAS RESIDUALES CHEMICO KFC DENISSE ARELY', 2500], ['PAGO A CUENTA DE DEUDA GLOBAL EVELYN PEREA', 24008.46], ['APYO POR OPERACIONES PROYECTO ATVM SHARAI VILLA', 5000]];
 
 (async () => {
-  for (let i = 0; i < 40 && !/corriendo/.test(salida); i++) await espera(150);
+  for (let i = 0; i < 100 && !/corriendo/.test(salida); i++) await espera(150);
   const A = (await pedir('POST', '/login', null, { nombre: ADMIN.correo, password: ADMIN.password }))[1].token;
   // Las órdenes de compra las hace el encargado de centro de costos (rol «costos») o administración.
   await pedir('POST', '/usuarios', A, { nombre: 'Compras Sim', correo: 'compras.sim@saneadren.com.mx', password: 'Compras-Sim-2026', rol: 'costos' });

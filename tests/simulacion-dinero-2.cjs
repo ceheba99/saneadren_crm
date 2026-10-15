@@ -15,7 +15,7 @@ const sumarDias = (f, d) => { const x = new Date(f + 'T12:00:00Z'); x.setUTCDate
 const HOY = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Mexico_City' }).format(new Date());
 
 (async () => {
-  for (let i = 0; i < 40 && !/corriendo/.test(salida); i++) await espera(150);
+  for (let i = 0; i < 100 && !/corriendo/.test(salida); i++) await espera(150);
   const A = (await pedir('POST', '/login', null, { nombre: ADMIN.correo, password: ADMIN.password }))[1].token;
   const servicios = (await pedir('GET', '/servicios', A))[1], canales = (await pedir('GET', '/canales', A))[1];
   const yo = (await pedir('GET', '/usuarios', A))[1].find(u => u.rol === 'admin').id;
@@ -73,7 +73,7 @@ const HOY = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Mexico_City' }
   [s, j] = await pedir('PUT', '/leads/' + cot.id, A, { version: cot.version, notas_cotizacion: 'cambio con versión vieja' });
   revisa(s === 409, 'guardar con una versión vieja avisa del conflicto', [s, j.error]);
   await pedir('POST', '/leads/' + cot.id + '/cobros', A, { monto: 500, metodo: 'efectivo' });
-  [s, j] = await pedir('PUT', '/leads/' + cot.id, A, { version: (await lead(cot.id)).version, estatus: 'perdido' });
+  [s, j] = await pedir('PUT', '/leads/' + cot.id, A, { version: (await lead(cot.id)).version, estatus: 'perdido', motivo_perdida: 'El cliente eligió a otro' });
   revisa(s === 409, 'una orden con pagos no se puede marcar perdida', [s, j.error]);
   [s, j] = await pedir('PUT', '/leads/' + cot.id, A, { version: (await lead(cot.id)).version, estatus: 'abierto' });
   revisa(s === 409, 'una orden con pagos no vuelve a ser cotización', [s, j.error]);
@@ -133,9 +133,9 @@ const HOY = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Mexico_City' }
   sec('8. Proveedores: cancelar pago y cuenta');
   [s, j] = await pedir('POST', '/finanzas/proveedores', A, { nombre: 'Refacciones Bajío', categoria: 'otro', dias_credito: 0 });
   const prov = j;
-  [s, j] = await pedir('POST', '/finanzas/cxp', A, { proveedor_id: prov.id, concepto: 'Bomba', total: 1200, factura_folio: 'F-1' });
+  [s, j] = await pedir('POST', '/finanzas/cxp', A, { proveedor_id: prov.id, concepto: 'Bomba', total: 1200, factura_folio: 'F-1', dias_credito: 15 });
   const x1 = j;
-  [s, j] = await pedir('POST', '/finanzas/cxp', A, { proveedor_id: prov.id, concepto: 'Bomba', total: 1200, factura_folio: 'F-1' });
+  [s, j] = await pedir('POST', '/finanzas/cxp', A, { proveedor_id: prov.id, concepto: 'Bomba', total: 1200, factura_folio: 'F-1', dias_credito: 15 });
   revisa(s === 409, 'la misma factura del mismo proveedor dos veces se detecta', [s, j.error]);
   [s, j] = await pedir('POST', '/finanzas/cxp/' + x1.id + '/pagos', A, { monto: 1200, metodo: 'transferencia' });
   const pg = j.id;

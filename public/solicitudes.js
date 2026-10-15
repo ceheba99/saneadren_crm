@@ -105,8 +105,9 @@ const Solicitudes = (() => {
   function acciones(s) {
     const propia = s.solicitante_id === USUARIO_ACTUAL?.id, b = (id, txt, cl) => '<button type="button" class="btn ' + cl + '" id="' + id + '">' + txt + '</button>';
     let h = '';
-    if (s.estado === 'por_aprobar' && esCostos()) h += b('sol-aprobar', '✔ Aprobar para cotizar', 'btn-verde') + b('sol-rechazar', 'Rechazar', 'btn-eliminar');
-    if (s.estado === 'por_aprobar' && !esCostos()) h += '<span class="ayuda">La aprueba el encargado de centro de costos o administración.</span>';
+    const meAprueba = esCostos() && (!propia || USUARIO_ACTUAL?.rol === 'admin');
+    if (s.estado === 'por_aprobar' && meAprueba) h += b('sol-aprobar', '✔ Aprobar para cotizar', 'btn-verde') + b('sol-rechazar', 'Rechazar', 'btn-eliminar');
+    if (s.estado === 'por_aprobar' && !meAprueba) h += '<span class="ayuda">' + (propia && esCostos() ? 'Tú la pediste: la aprueba un administrador u otro encargado de centro de costos.' : 'La aprueba el encargado de centro de costos o administración.') + '</span>';
     if (s.estado === 'elegida' && esCostos()) h += b('sol-crear-oc', '🛒 Crear orden de compra', 'btn-primario');
     if (s.estado === 'elegida' && !esCostos()) h += '<span class="ayuda">El encargado de centro de costos hará la orden de compra.</span>';
     if (s.oc_id) h += b('sol-ver-oc', 'Abrir ' + esc(s.oc_folio), 'btn-outline');
@@ -173,8 +174,13 @@ const Solicitudes = (() => {
     if (ACTUAL.cotizaciones_faltan) {
       motivo_urgencia = await solicitarDialogo({ titulo: 'Faltan cotizaciones', mensaje: 'Van ' + ACTUAL.cotizaciones_count + ' de ' + ACTUAL.requeridas + '. Solo si es urgente y no puede esperar se sigue sin las ' + ACTUAL.requeridas + ': queda marcado como excepción por urgencia (lo ve administración al autorizar la orden). ¿Por qué no puede esperar?', aceptar: 'Elegir ' + c.proveedor_nombre + ' por urgencia', campo: { tipo: 'text', etiqueta: 'Motivo de la urgencia' } });
       if (!motivo_urgencia) return;
-    } else if (!await solicitarDialogo({ titulo: 'Elegir cotización', mensaje: c.proveedor_nombre + ' por ' + dinero(c.monto) + '.' + (barata && barata.id !== c.id ? ' Ojo: no es la más barata (' + barata.proveedor_nombre + ' por ' + dinero(barata.monto) + '); quedará registrado.' : ''), aceptar: 'Elegir' })) return;
-    ACTUAL = await pedir('/compras/solicitudes/' + ACTUAL.id + '/elegir', 'POST', { cotizacion_id: id, motivo_urgencia });
+    }
+    let motivo_eleccion;
+    if (barata && barata.monto < c.monto) {
+      motivo_eleccion = await solicitarDialogo({ titulo: 'No es la más barata', mensaje: c.proveedor_nombre + ' cotizó ' + dinero(c.monto) + ' y ' + barata.proveedor_nombre + ' ' + dinero(barata.monto) + '. ¿Por qué se elige esta? (entrega, calidad, garantía…). Queda registrado.', aceptar: 'Elegir ' + c.proveedor_nombre, campo: { tipo: 'text', etiqueta: 'Motivo', requerido: 'Escribe el motivo (mínimo 10 letras)' } });
+      if (!motivo_eleccion) return;
+    } else if (!motivo_urgencia && !await solicitarDialogo({ titulo: 'Elegir cotización', mensaje: c.proveedor_nombre + ' por ' + dinero(c.monto) + '.', aceptar: 'Elegir' })) return;
+    ACTUAL = await pedir('/compras/solicitudes/' + ACTUAL.id + '/elegir', 'POST', { cotizacion_id: id, motivo_urgencia, motivo_eleccion });
     toast('Cotización elegida: ' + c.proveedor_nombre); pintar(); cargar();
   }
   async function bajar(id) {

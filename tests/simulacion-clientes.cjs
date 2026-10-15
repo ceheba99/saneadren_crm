@@ -14,7 +14,7 @@ const revisa = (cond, texto, extra) => { n++; if (!cond) { malos.push(texto); co
 const seccion = t => console.log('\n' + t);
 
 (async () => {
-  for (let i = 0; i < 40 && !/corriendo/.test(salida); i++) await espera(150);
+  for (let i = 0; i < 100 && !/corriendo/.test(salida); i++) await espera(150);
   const A = (await pedir('POST', '/login', null, { nombre: ADMIN.correo, password: ADMIN.password }))[1].token;
   await pedir('POST', '/usuarios', A, { nombre: 'Ventas Sim', correo: 'ventas.sim@saneadren.com.mx', password: 'Ventas-Sim-2026', rol: 'ventas' });
   const V = (await pedir('POST', '/login', null, { nombre: 'ventas.sim@saneadren.com.mx', password: 'Ventas-Sim-2026' }))[1].token;

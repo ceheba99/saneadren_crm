@@ -18,7 +18,7 @@ const seccion = t => console.log('\n' + t);
 const igual = (a, b) => Math.abs(Number(a) - Number(b)) < 0.005;
 
 (async () => {
-  for (let i = 0; i < 40 && !/corriendo/.test(salida); i++) await espera(150);
+  for (let i = 0; i < 100 && !/corriendo/.test(salida); i++) await espera(150);
   let s, j;
 
   seccion('1. El administrador da de alta a su equipo');
@@ -56,9 +56,9 @@ const igual = (a, b) => Math.abs(Number(a) - Number(b)) < 0.005;
   [s, j] = await pedir('POST', '/leads/' + cot.id + '/cobros', A, { monto: 7400, metodo: 'transferencia', fecha: HOY, referencia: 'SPEI 0001' });
   revisa(s === 201, 'el hotel paga $7,400 a cuenta');
   [s, prov] = await pedir('POST', '/finanzas/proveedores', V, { nombre: 'Pipas del Centro', categoria: 'residuos', dias_credito: 15 });
-  [s, j] = await pedir('POST', '/finanzas/cxp', V, { proveedor_id: prov.id, categoria: 'residuos', concepto: 'Disposición de lodos del hotel', total: 3480, fecha_documento: HOY, lead_id: cot.id, factura_folio: 'PC-77' });
+  [s, j] = await pedir('POST', '/finanzas/cxp', V, { proveedor_id: prov.id, categoria: 'residuos', concepto: 'Disposición de lodos del hotel', total: 3480, fecha_documento: HOY, dias_credito: 15, lead_id: cot.id, factura_folio: 'PC-77' });
   const gasto = j; revisa(s === 201, 'gasto de terceros ligado a la orden: $3,480');
-  [s] = await pedir('POST', '/finanzas/cxp/' + gasto.id + '/pagos', V, { monto: 3480, metodo: 'transferencia', fecha: HOY });
+  [s] = await pedir('POST', '/finanzas/cxp/' + gasto.id + '/pagos', A, { monto: 3480, metodo: 'transferencia', fecha: HOY });
   revisa(s === 201, 'se le paga a Pipas del Centro');
   const [, refa] = await pedir('POST', '/finanzas/proveedores', V, { nombre: 'Refaccionaria Bajío', categoria: 'refacciones', dias_credito: 0 });
   const [, centros] = await pedir('GET', '/compras/centros', V);

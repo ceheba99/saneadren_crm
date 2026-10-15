@@ -802,6 +802,12 @@ app.put('/api/leads/:id', validarPartidas, validarRegistro, h((req, res) => {
   }
   // Una orden con pagos registrados no puede volver a ser cotización, ni bajar su importe por
   // debajo de lo ya cobrado (si no hay total facturado que mande sobre el importe).
+  // Perder una cotización pide el motivo (precio, tiempo, competencia…): así se sabe por qué no se vende.
+  let motivoPerdida = null;
+  if (req.body.estatus === 'perdido' && actual.estatus !== 'perdido') {
+    motivoPerdida = typeof req.body.motivo_perdida === 'string' ? req.body.motivo_perdida.trim().replace(/\s+/g, ' ').slice(0, 300) : '';
+    if ((motivoPerdida.match(/[\p{L}\p{N}]/gu) || []).length < 5 || /[<>{}]/.test(motivoPerdida)) return res.status(400).json({ error: 'Escribe por qué no se aceptó la cotización (ej. precio alto, eligió a otro, ya no lo necesita)', codigo: 'FALTA_MOTIVO_PERDIDA' });
+  }
   if (actual.estatus === 'ganado' && req.body.estatus !== undefined && req.body.estatus !== 'ganado' && finanzas.tieneCobros(actual.id)) {
     return res.status(409).json({ error: 'Esta orden tiene pagos registrados: no puede reabrirse ni descartarse. Si fue un error, un administrador debe cancelar primero esos pagos.' });
   }
@@ -873,6 +879,10 @@ app.put('/api/leads/:id', validarPartidas, validarRegistro, h((req, res) => {
   // Queda registro de cualquier otro dato que cambie (fechas, etapa, responsable, servicios, notas…).
   const otrosCambios = cambiosDeOrden(actual, req.body);
   if (otrosCambios) db.prepare(`INSERT INTO historial (lead_id, tipo, texto, usuario, origen) VALUES (?, 'observacion', ?, ?, 'sistema')`).run(id, 'Cambios: ' + otrosCambios + '.', req.usuarioSesion.nombre);
+  if (motivoPerdida) {
+    db.prepare('UPDATE leads SET motivo_perdida = ? WHERE id = ?').run(motivoPerdida, id);
+    db.prepare(`INSERT INTO historial (lead_id, tipo, texto, usuario, origen) VALUES (?, 'observacion', ?, ?, 'sistema')`).run(id, 'Cotización no aceptada. Motivo: ' + motivoPerdida, req.usuarioSesion.nombre);
+  }
 
   if (req.body.estatus !== undefined && req.body.estatus !== actual.estatus) {
     // Una cotización cerrada (ganada o perdida) ya no necesita recordatorios de seguimiento pendientes:

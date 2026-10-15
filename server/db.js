@@ -273,6 +273,7 @@ if(!db.prepare('PRAGMA table_info(leads)').all().some(c=>c.name==='encuesta_come
 // hace el trabajo, para la orden de servicio) — por eso van en columnas separadas y no
 // se reutiliza una sola fecha con dos significados. incluye_vigencia por default en 1
 // para no cambiar el comportamiento de las cotizaciones ya existentes.
+if(!db.prepare('PRAGMA table_info(leads)').all().some(c=>c.name==='motivo_perdida'))db.exec('ALTER TABLE leads ADD COLUMN motivo_perdida TEXT');
 if(!db.prepare('PRAGMA table_info(leads)').all().some(c=>c.name==='fecha_cotizacion'))db.exec('ALTER TABLE leads ADD COLUMN fecha_cotizacion TEXT');
 if(!db.prepare('PRAGMA table_info(leads)').all().some(c=>c.name==='incluye_vigencia'))db.exec('ALTER TABLE leads ADD COLUMN incluye_vigencia INTEGER NOT NULL DEFAULT 1');
 if(!db.prepare('PRAGMA table_info(leads)').all().some(c=>c.name==='vigencia_hasta'))db.exec('ALTER TABLE leads ADD COLUMN vigencia_hasta TEXT');
