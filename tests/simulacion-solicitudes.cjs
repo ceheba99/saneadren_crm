@@ -115,6 +115,8 @@ const revisa = (cond, texto, extra) => { n++; if (!cond) { malos.push(texto); co
   [s, j] = await pedir('GET', '/compras/solicitudes/' + sol.id, V); revisa(j.estado === 'recibida', 'la solicitud termina como «Recibida»');
   const pasos = j.historial.map(r => r.accion);
   revisa(['creada', 'foto', 'aprobada', 'cotización', 'cotización elegida', 'orden de compra', 'recibida'].every(a => pasos.includes(a)), 'el historial tiene todo: pidió, foto, aprobó, cotizaciones, eligió, orden y recibido', pasos);
+  [s, j] = await pedir('PUT', '/compras/ordenes/' + oc.id, C, { ...baseOC, proveedor_id: prov.b.id, version: (await pedir('GET', '/compras/ordenes/' + oc.id, C))[1].version, partidas: [{ cantidad: 4, descripcion: 'Llanta 11R22.5', precio: 5000 }] }); revisa(s === 409, 'una orden ya recibida no se edita (no se le puede cambiar el precio)', [s, j.error]);
+  [s, j] = await pedir('POST', '/compras/ordenes/' + oc.id + '/cancelar', C, { motivo: 'Se devolvieron las llantas' }); revisa(s === 403, 'una orden recibida solo la cancela un administrador', [s, j.error]);
 
   console.log('8. Urgente sin las 3 cotizaciones');
   [s, j] = await pedir('POST', '/compras/solicitudes', T, { que: 'Bomba de achique 2 pulgadas', para_que: 'Se quemó la bomba en servicio de emergencia KFC', centro_id: mantto.id, urgente: true });

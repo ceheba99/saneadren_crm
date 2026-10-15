@@ -324,6 +324,7 @@ module.exports = function compras(app, db, h, finanzas) {
     const o = db.prepare('SELECT * FROM ordenes_compra WHERE id = ?').get(req.params.id);
     if (!o) return res.status(404).json({ error: 'Orden de compra no encontrada' });
     if (o.estado !== 'borrador') return res.status(409).json({ error: 'Solo se edita una orden en borrador. Una autorizada ya está en Cuentas por pagar.' });
+    if (o.recibida_at) return res.status(409).json({ error: 'Esta orden ya se recibió: ya no se edita (lo que llegó y su precio quedan como se registraron).' });
     if (req.body.version !== undefined && Number(req.body.version) !== o.version) return res.status(409).json({ error: 'Otra persona modificó esta orden. Ciérrala y vuelve a abrirla.' });
     const v = validar(req.body || {}, req.usuarioSesion);
     if (v.error) return res.status(400).json({ error: v.error });
@@ -373,6 +374,7 @@ module.exports = function compras(app, db, h, finanzas) {
     if (!o) return res.status(404).json({ error: 'Orden de compra no encontrada' });
     if (o.estado === 'cancelada') return res.status(409).json({ error: 'Esta orden ya estaba cancelada' });
     if (!esCostos(req)) return res.status(403).json(SOLO_COSTOS);
+    if (o.recibida_at && !esAdmin(req)) return res.status(403).json({ error: 'Esta orden ya se recibió: solo un administrador puede cancelarla (por ejemplo, si se devolvió lo comprado)' });
     if (o.estado === 'autorizada') {
       if (!esAdmin(req)) return res.status(403).json({ error: 'Solo un administrador puede cancelar una orden autorizada' });
       if (o.pagado_cent > 0) return res.status(409).json({ error: 'Esta orden ya tiene pagos al proveedor. Cancela primero esos pagos en Cuentas por pagar.' });

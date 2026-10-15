@@ -481,6 +481,7 @@ module.exports = function finanzas(app, db, h, unicos) {
     const b = req.body;
     if (!diasCreditoValidos(b.dias_credito)) return res.status(400).json({ error: 'Los días de crédito deben ser un número entero de 0 a 180' });
     if (b.factura_fecha && !fechaValida(b.factura_fecha)) return res.status(400).json({ error: 'La fecha de la factura no es válida' });
+    if (b.factura_fecha && b.factura_fecha > hoyMexico()) return res.status(400).json({ error: 'La fecha de la factura no puede ser futura' });
     let totalFactura = lead.factura_total_cent;
     if (b.factura_total !== undefined) {
       totalFactura = b.factura_total === null || b.factura_total === '' ? null : aCentavos(b.factura_total);
@@ -494,6 +495,12 @@ module.exports = function finanzas(app, db, h, unicos) {
     const fechaF = b.factura_fecha === undefined ? lead.factura_fecha : (b.factura_fecha || null);
     if (b.factura_metodo !== undefined && b.factura_metodo !== null && b.factura_metodo !== '' && !['PUE', 'PPD'].includes(b.factura_metodo)) return res.status(400).json({ error: 'El método de pago del CFDI es PUE o PPD' });
     const metodoF = b.factura_metodo === undefined ? lead.factura_metodo : (b.factura_metodo || null);
+    // Una factura es de UNA orden: el mismo folio en otra orden es casi siempre un error de captura.
+    const llaveFolio = t => String(t || '').toUpperCase().replace(/[\s-]+/g, '');
+    if (folio && folio !== lead.factura_folio) {
+      const otra = db.prepare("SELECT id, created_at, factura_folio FROM leads WHERE id <> ? AND factura_folio IS NOT NULL AND factura_folio <> ''").all(lead.id).find(o => llaveFolio(o.factura_folio) === llaveFolio(folio));
+      if (otra) return res.status(409).json({ error: `La factura ${otra.factura_folio} ya está en la orden ${folioOS(otra.id, otra.created_at)}. Revisa el folio.` });
+    }
     const cambios = [];
     if (dias !== lead.dias_credito) cambios.push(`crédito ${lead.dias_credito || 0} → ${dias || 0} días`);
     if (folio !== lead.factura_folio) cambios.push(`factura ${folio || '(sin folio)'}`);
