@@ -403,7 +403,7 @@ const Finanzas = (() => {
     { k: 'estado', t: 'Status', fija: true, v: c => etiquetaEstado(c), s: c => textoEstado(c)[1] },
     { k: 'factura', t: 'Factura', v: c => esc(c.factura_folio || '—'), s: c => c.factura_folio || '' },
     { k: 'fecha', t: 'Fecha', v: c => esc(fechaTxt(c.factura_fecha || c.fecha_realizado || c.fecha_servicio)), s: c => c.factura_fecha || c.fecha_realizado || c.fecha_servicio || '' },
-    { k: 'cliente', t: 'Cliente', fija: true, v: c => '<button type="button" class="enlace-cliente" data-cliente-cuenta="' + Number(c.cliente_id) + '" title="Ver todo lo de este cliente">' + esc(c.cliente_nombre || 'Sin nombre') + ' ›</button>' + (c.empresa_contacto ? '<small class="celda-sub">' + esc(c.empresa_contacto) + '</small>' : ''), s: c => String(c.cliente_nombre || '').toLowerCase() },
+    { k: 'cliente', t: 'Cliente', fija: true, v: c => '<button type="button" class="enlace-cliente" data-cliente-cuenta="' + Number(c.cliente_id) + '" title="Ver todo lo de este cliente">' + esc(c.cliente_nombre || 'Sin nombre') + ' ›</button><small class="celda-sub">' + esc([folioCliente(c.cliente_id), c.empresa_contacto].filter(Boolean).join(' · ')) + '</small>', s: c => String(c.cliente_nombre || '').toLowerCase() },
     { k: 'mp', t: 'M.P.', v: c => esc(c.factura_metodo || '—'), s: c => c.factura_metodo || '' },
     { k: 'subtotal', t: 'Subtotal', n: true, v: c => formatoMoneda(c.subtotal), s: c => c.subtotal, sum: c => c.subtotal },
     { k: 'iva', t: 'IVA', n: true, v: c => (c.iva == null ? '<small>Por definir</small>' : formatoMoneda(c.iva)), s: c => c.iva || 0, sum: c => c.iva || 0 },
@@ -497,7 +497,7 @@ const Finanzas = (() => {
     catch (err) { $('cc-cuerpo').innerHTML = '<div class="aviso-error-carga" role="alert"><p>No se pudo cargar: ' + esc(err.message) + '</p></div>'; return; }
     if (id !== CUENTA_CLIENTE) return;
     const cli = r.cliente || {};
-    $('cc-titulo').textContent = cli.nombre || 'Cliente';
+    $('cc-titulo').textContent = folioCliente(cli.id) + ' · ' + (cli.empresa_contacto || cli.nombre || 'Cliente');
     const deudas = r.ordenes.filter(sePuedeRecordar);
     const wa = deudas.length ? botonWhatsApp(cli.telefono, textoWhatsApp({ cliente_nombre: cli.nombre, saldo: deudas.reduce((t, c) => t + c.saldo, 0), vencido: r.vencido,
       folios: deudas.map(c => c.folio), proximo_vence: deudas.map(c => c.vence).sort()[0] })).replace('Recordar por WhatsApp', 'Recordar todo el saldo') : '';
@@ -918,7 +918,8 @@ const Finanzas = (() => {
         { key: 'serie', titulo: 'SERIE', tipo: 'texto', ancho: 8, nota: 'Serie de la factura.', ej: 'QR' },
         { key: 'folio', titulo: 'FOLIO', tipo: 'texto', ancho: 9, nota: 'Folio de la factura. SERIE + FOLIO no se pueden repetir.', ej: '2786' },
         { key: 'fecha', titulo: 'FECHA', req: true, tipo: 'fecha', ancho: 12, nota: 'Fecha de la factura (también es la fecha del servicio).', ej: '2026-01-12' },
-        { key: 'nombre', titulo: 'NOMBRE', req: true, tipo: 'texto', ancho: 34, nota: 'Cliente (razón social). Si ya existe con ese nombre, se usa ese cliente.', ej: 'PREMIUM RESTAURANT BRANDS' },
+        { key: 'id_cliente', titulo: 'ID CLIENTE', alias: ['ID', 'ID DEL CLIENTE', 'CLIENTE ID'], tipo: 'lista', lista: 'clientes', ancho: 30, nota: 'Elige el cliente de la lista (CLI-0039 · nombre). Es lo más seguro: así no se duplica aunque el NOMBRE esté escrito distinto. Vacío = se busca por teléfono o nombre exacto. NUEVO = es un cliente nuevo aunque se parezca a otro.', ej: '' },
+        { key: 'nombre', titulo: 'NOMBRE', req: true, tipo: 'texto', ancho: 34, nota: 'Cliente (razón social). Si pusiste ID CLIENTE, este nombre es solo de referencia.', ej: 'PREMIUM RESTAURANT BRANDS' },
         { key: 'metodo_pago', titulo: 'M,P', tipo: 'lista', lista: 'metodo_pago', ancho: 7, nota: 'Método de pago del CFDI: PPD o PUE.', ej: 'PUE' },
         { key: 'subtotal', titulo: 'SUBTOTAL', req: true, tipo: 'dinero', ancho: 14, nota: 'Importe antes de IVA.', ej: 2150 },
         { key: 'iva', titulo: 'IVA', tipo: 'dinero', min: 0, ancho: 12, nota: 'IVA de la factura. 0 = sin IVA. Vacío = 16 %.', ej: 344 },
@@ -969,6 +970,7 @@ const Finanzas = (() => {
     try {
       listas = {
         servicios: tipo === 'cxc' ? (await api('/servicios').then(json)).map(s => s.nombre) : [],
+        clientes: tipo === 'cxc' ? ['NUEVO', ...(await api('/clientes/catalogo').then(json)).map(c => c.folio + ' · ' + (c.empresa || c.nombre || ''))] : [],
         categorias: tipo === 'cxp' ? (await api('/finanzas/categorias').then(json)).map(c => c.nombre) : [],
         metodos: METODOS_PROV.map(m => m[1]),
         metodo_pago: ['PPD', 'PUE'],
@@ -992,7 +994,7 @@ const Finanzas = (() => {
     // Hoja oculta con las listas de los desplegables
     const wl = wb.addWorksheet('Listas', { state: 'hidden' });
     const rangos = {};
-    ['servicios', 'categorias', 'metodos', 'metodo_pago', 'status'].forEach((nombre, idx) => {
+    ['servicios', 'categorias', 'metodos', 'metodo_pago', 'status', 'clientes'].forEach((nombre, idx) => {
       const col = String.fromCharCode(65 + idx);
       wl.getCell(col + '1').value = nombre;
       listas[nombre].forEach((v, i) => { wl.getCell(col + (i + 2)).value = v; });

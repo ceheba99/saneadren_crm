@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Saneadren · Cotizaciones y Servicios</title>
-<link rel="stylesheet" href="styles.css?v=pg2">
+<link rel="stylesheet" href="styles.css?v=cli3">
 <link rel="stylesheet" href="servicios-tabla.css">
 <link rel="stylesheet" href="flujo.css">
 </head>
@@ -213,7 +213,7 @@
   <section class="vista" id="vista-clientes">
     <div class="vista-encabezado">
       <div><h2>Contactos</h2><p class="ayuda">Personas y empresas. Abre un contacto para ver sus cotizaciones y órdenes, o para crear una nueva.</p></div>
-      <button type="button" class="btn btn-primario" onclick="cambiarVista('alta')">➕ Nuevo contacto</button>
+      <div class="btn-group"><button type="button" class="btn btn-outline solo-admin" id="btn-revisar-duplicados">Revisar duplicados</button><button type="button" class="btn btn-primario" onclick="cambiarVista('alta')">➕ Nuevo contacto</button></div>
     </div>
 
     <div class="rc-grid">
@@ -636,6 +636,18 @@
 </div>
 
 <!-- ====== MODAL FICHA DE CLIENTE ====== -->
+<!-- ====== OVERLAY: REVISAR CLIENTES DUPLICADOS (administración) ====== -->
+<div class="overlay" id="overlay-duplicados">
+  <div class="modal modal-duplicados">
+    <div class="modal-header"><div><span class="flujo-kicker">CLIENTES · SIN DUPLICADOS</span><h2>Revisar posibles duplicados</h2></div>
+      <button class="close-btn" type="button" onclick="document.getElementById('overlay-duplicados').classList.remove('mostrar')">✕</button></div>
+    <div class="modal-body">
+      <p class="ayuda">Clientes con el mismo RFC o con nombres casi iguales. Si son la misma razón social, júntalos: todo pasa al que elijas y el otro ID queda apuntando a él. Si son distintos, márcalos y no se vuelven a mostrar.</p>
+      <div id="dup-pares"></div>
+    </div>
+  </div>
+</div>
+
 <div class="overlay" id="overlay-ficha-cliente">
   <div class="modal">
     <div class="modal-header">
@@ -664,6 +676,7 @@
               
             </select>
           </div>
+          <div class="campo-modal full"><label>Otros teléfonos de este cliente</label><div class="fc-telefonos" id="fc-telefonos"></div></div>
           <div class="campo-modal full"><label>Notas generales del contacto (opcional)</label><textarea id="fc-ed-notas-generales" rows="2" placeholder="Información permanente sobre este contacto: acceso al predio, preferencias, referencias, etc."></textarea></div>
         </div>
         <div class="btn-group">
@@ -1005,16 +1018,16 @@
 
 
 <!-- ?v= obliga a los navegadores (sobre todo celulares) a tomar la versión nueva tras publicar. -->
-<script src="ui.js?v=pg2"></script>
+<script src="ui.js?v=cli2"></script>
 <script src="importes.js?v=pg2"></script>
 <script src="servicios-tabla.js?v=pg2"></script>
-<script src="flujo.js?v=pg2"></script>
+<script src="flujo.js?v=cli2"></script>
 <script src="cuentas.js?v=pg2"></script>
-<script src="finanzas.js?v=pg2"></script>
+<script src="finanzas.js?v=cli1"></script>
 <script src="calendario.js?v=pg2"></script>
 <script src="tablero.js?v=pg2"></script>
 <script src="compras.js?v=oc3"></script>
-<script src="app.js?v=pg2"></script>
-<script src="prospeccion.js?v=pg2"></script>
+<script src="app.js?v=cli1"></script>
+<script src="prospeccion.js?v=cli1"></script>
 </body>
 </html>

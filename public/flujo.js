@@ -29,9 +29,9 @@ const FlujoCRM = (() => {
     marcarGuardado(id);return true;
   }
   function presentarContacto(c){
-    $('fc-titulo').textContent=c.nombre||c.telefono;
+    $('fc-titulo').textContent=folioCliente(c.id)+' · '+(c.empresa_contacto||c.nombre||c.telefono);
     const giroEtiqueta=(CATALOGOS.tipos||[]).find(t=>t.clave===c.giro)?.nombre||'';
-    $('contacto-identidad').innerHTML=`<div class="contacto-avatar" aria-hidden="true">${escapar((c.nombre||'C').slice(0,1).toUpperCase())}</div><div><span class="etiqueta-contacto">${c.servicios_ganados>0?'CLIENTE · YA HA CONTRATADO':'PROSPECTO · AÚN NO HA CONTRATADO'}</span>${giroEtiqueta?` <span class="etiqueta-contacto">${escapar(giroEtiqueta)}</span>`:''}<h3>${escapar(c.nombre||'Sin nombre')}</h3><p>${escapar(c.empresa_contacto||'Contacto particular')} · ${escapar(c.telefono)}${c.correo?' · '+escapar(c.correo):''}</p><small>Contacto #${c.id} · Sus registros comerciales están separados de estos datos.</small></div>`;
+    $('contacto-identidad').innerHTML=`<div class="contacto-avatar" aria-hidden="true">${escapar((c.nombre||'C').slice(0,1).toUpperCase())}</div><div><span class="etiqueta-contacto etiqueta-id">${folioCliente(c.id)}</span> <span class="etiqueta-contacto">${c.servicios_ganados>0?'CLIENTE · YA HA CONTRATADO':'PROSPECTO · AÚN NO HA CONTRATADO'}</span>${giroEtiqueta?` <span class="etiqueta-contacto">${escapar(giroEtiqueta)}</span>`:''}<h3>${escapar(c.nombre||'Sin nombre')}</h3><p>${escapar(c.empresa_contacto||'Contacto particular')} · ${escapar(c.telefono)}${c.correo?' · '+escapar(c.correo):''}</p><small>ID de cliente ${folioCliente(c.id)}: fijo, no cambia aunque se corrija el nombre. Sus registros comerciales están separados de estos datos.</small></div>`;
     $('fc-meta').innerHTML=metaClienteHTML(c);
     const origen=CATALOGOS.canales.find(x=>Number(x.id)===Number(c.canal_origen_id));
     $('contacto-identidad').insertAdjacentHTML('beforeend',`<p>Cómo se enteró: <b>${escapar(origen?.nombre || 'Sin registrar')}</b></p>`);
@@ -106,10 +106,19 @@ const FlujoCRM = (() => {
     if(!payload.canal_origen_id){toast('Selecciona cómo se enteró de nosotros');$('in-origen').focus();return;}
     botones.forEach(b=>b.disabled=true);
     try{
-      const r=await api('/contactos',{method:'POST',body:JSON.stringify(payload)});const c=await r.json();
+      let r=await api('/contactos',{method:'POST',body:JSON.stringify(payload)});let c=await r.json();
+      // Nombre o empresa parecidos a un cliente que ya existe: se pregunta antes de crear otro.
+      if(r.status===409&&c.error==='posible_duplicado'){
+        const decision=await resolverDuplicado(c.parecidos,{nombre:payload.empresa_contacto||payload.nombre,telefono:payload.telefono});
+        if(!decision)return;
+        r=await api('/contactos',{method:'POST',body:JSON.stringify(decision.mismo?{...payload,agregar_telefono_a:decision.mismo}:{...payload,distinto_de:decision.distinto})});c=await r.json();
+        if(!r.ok&&r.status!==409){toast(c.error||'No se pudo guardar');return;}
+      }
+      if(r.status===409&&!c.cliente_id){toast(c.error||'No se pudo guardar');return;}
       const id=r.status===409?c.cliente_id:c.id;
-      if(r.status===409)toast('Usaremos el contacto existente; sus datos se conservan.');
-      else toast('Contacto guardado.');
+      if(r.status===409)toast((c.error||'Este teléfono ya está registrado')+'. Usaremos ese cliente; sus datos se conservan.');
+      else if(c.telefono_agregado)toast('Teléfono agregado a '+folioCliente(c.id)+' · '+(c.empresa_contacto||c.nombre)+'. No se creó otro cliente.');
+      else toast('Contacto guardado: '+folioCliente(c.id)+'.');
       limpiarFormAlta();
       // Guardar contacto solo guarda. Para cotizar se abre su ficha: ahí están Crear cotización y
       // Crear orden de servicio, la única forma de crear registros (evita rutas paralelas).

@@ -126,9 +126,11 @@ app.use('/api', (req, res, next) => {
   requireAuth(req, res, next);
 });
 
-require('./prospeccion')(app,db,h);
+// Clientes sin duplicados: ID CLI-0001, teléfonos adicionales, revisión de parecidos y fusión.
+const unicos = require('./clientes-unicos')(app, db, h);
+require('./prospeccion')(app,db,h,unicos);
 // Cuentas por cobrar y por pagar. Devuelve ganchos que usan las rutas de órdenes de abajo.
-const finanzas = require('./finanzas')(app, db, h);
+const finanzas = require('./finanzas')(app, db, h, unicos);
 require('./tablero')(app, db, h, finanzas); // Resultados: panorama general
 require('./compras')(app, db, h, finanzas); // Órdenes de compra (formato CM-F-03)
 
@@ -416,7 +418,7 @@ app.post('/api/canales', h((req, res) => {
 app.get('/api/leads/buscar-telefono/:telefono', h((req, res) => {
   const norm = normalizarTelefono(req.params.telefono);
   if (norm.length < 8) return res.json({ cliente: null, solicitudes: [] });
-  const cliente = db.prepare('SELECT * FROM clientes WHERE telefono_normalizado = ?').get(norm);
+  const cliente = unicos.porTelefono(norm);
   if (!cliente) return res.json({ cliente: null, solicitudes: [] });
   const solicitudes = db.prepare(`
     SELECT l.*, s.nombre AS servicio_nombre, u.nombre AS responsable_nombre, ca.nombre AS canal_nombre
@@ -574,9 +576,19 @@ app.post('/api/leads', validarPartidas, validarRegistro, h((req, res) => {
   const creado_por = req.usuarioSesion.nombre; // nunca se confía en el valor que mande el navegador
   if (!validarCorreo(correo)) return res.status(400).json({ error: 'El correo electrónico no es válido' });
   if (giro && !tipoClienteValido(giro)) return res.status(400).json({ error: 'Giro inválido' });
-  const contactoElegido = cliente_id ? db.prepare('SELECT * FROM clientes WHERE id = ?').get(cliente_id) : null;
-  if (cliente_id && !contactoElegido) return res.status(404).json({error:'Contacto no encontrado'});
-  if (contactoElegido) { telefono=contactoElegido.telefono;nombre=contactoElegido.nombre;empresa_contacto=contactoElegido.empresa_contacto; }
+  // «Es el mismo cliente»: el teléfono nuevo se agrega a ese cliente (agregar_telefono_a) en lugar de crear otro.
+  const agregarTelA = req.body.agregar_telefono_a ? Number(req.body.agregar_telefono_a) : null;
+  const idElegido = agregarTelA || cliente_id;
+  const contactoElegido = idElegido ? db.prepare('SELECT * FROM clientes WHERE id = ?').get(idElegido) : null;
+  if (idElegido && !contactoElegido) return res.status(404).json({error:'Contacto no encontrado'});
+  if (contactoElegido) {
+    if (!agregarTelA) telefono = contactoElegido.telefono;
+    nombre = contactoElegido.nombre; empresa_contacto = contactoElegido.empresa_contacto;
+  }
+  if (agregarTelA) {
+    const dueño = unicos.porTelefono(telefono);
+    if (dueño && dueño.id !== agregarTelA) return res.status(409).json({ error: `Ese teléfono ya es de ${unicos.folioCliente(dueño.id)} · ${dueño.empresa_contacto || dueño.nombre}` });
+  }
   if (!responsable_id || !db.prepare('SELECT id FROM usuarios WHERE id = ? AND activo = 1').get(responsable_id)) return res.status(400).json({error:'Selecciona un responsable activo'});
   let { estatus } = req.body;
   if (!telefono) return res.status(400).json({ error: 'Teléfono requerido' });
@@ -611,7 +623,13 @@ app.post('/api/leads', validarPartidas, validarRegistro, h((req, res) => {
   if (!existe('catalogo_servicios', servicio_id)) return res.status(400).json({ error: 'El servicio indicado no existe' });
   if (!existe('usuarios', responsable_id)) return res.status(400).json({ error: 'El responsable indicado no existe' });
 
-  let cliente = contactoElegido || db.prepare('SELECT * FROM clientes WHERE telefono_normalizado = ?').get(norm);
+  let cliente = contactoElegido || unicos.porTelefono(norm);
+  // Cliente nuevo: antes de crearlo se revisa que no exista uno parecido (salvo que ya se haya dicho que es otro).
+  const distintoDe = Array.isArray(req.body.distinto_de) ? req.body.distinto_de.map(Number).filter(Boolean) : [];
+  if (!cliente) {
+    const pendiente = unicos.exigirConfirmacion({ nombre, empresa: empresa_contacto }, distintoDe);
+    if (pendiente) return res.status(409).json(pendiente);
+  }
 
   if (cliente && !forzar_duplicado) {
     const abierta = db.prepare(`SELECT id FROM leads WHERE cliente_id = ? AND estatus = 'abierto' LIMIT 1`).get(cliente.id);
@@ -641,7 +659,9 @@ app.post('/api/leads', validarPartidas, validarRegistro, h((req, res) => {
     const infoC = db.prepare(`INSERT INTO clientes (telefono, telefono_normalizado, nombre, empresa_contacto, direccion, correo, giro)
       VALUES (?, ?, ?, ?, ?, ?, ?)`).run(telefono, norm, nombre || null, empresa_contacto || null, direccion || null, correo?.trim() || null, giro || null);
     cliente = db.prepare('SELECT * FROM clientes WHERE id = ?').get(infoC.lastInsertRowid);
+    unicos.recordarDistintos(cliente.id, distintoDe, req.usuarioSesion.id);
   }
+  if (agregarTelA) { const r = unicos.agregarTelefono(agregarTelA, telefono); if (r.error) throw Object.assign(new Error(r.error), { status: 409 }); }
 
 
   // El responsable es siempre el usuario que inició sesión, no depende del canal.
@@ -891,11 +911,25 @@ app.post('/api/contactos', h((req,res)=>{
   if (!validarCorreo(correo)) return res.status(400).json({error:'El correo electrónico no es válido'});
   if (giro && !tipoClienteValido(giro)) return res.status(400).json({error:'Giro inválido'});
   if (normalizarRfc(rfc) && !RFC.test(normalizarRfc(rfc))) return res.status(400).json({error:'El RFC no es válido (p. ej. ABC010101AB1)'});
-  const existente=db.prepare('SELECT id FROM clientes WHERE telefono_normalizado = ?').get(norm);
-  if(existente) return res.status(409).json({error:'Este contacto ya existe',cliente_id:existente.id});
+  const existente=unicos.porTelefono(norm);
+  if(existente) return res.status(409).json({error:`Este teléfono ya es de ${unicos.folioCliente(existente.id)} · ${existente.empresa_contacto||existente.nombre}`,cliente_id:existente.id,cliente:unicos.resumen(existente)});
+  // «Es el mismo cliente»: solo se le agrega este teléfono.
+  if (req.body.agregar_telefono_a) {
+    const destino = db.prepare('SELECT * FROM clientes WHERE id = ?').get(Number(req.body.agregar_telefono_a));
+    if (!destino) return res.status(404).json({ error: 'Cliente no encontrado' });
+    const r = unicos.agregarTelefono(destino.id, telefono, 'Contacto: ' + String(nombre).trim().slice(0, 50));
+    if (r.error) return res.status(409).json(r);
+    return res.json({ ...db.prepare('SELECT * FROM clientes WHERE id = ?').get(destino.id), telefono_agregado: true });
+  }
+  const deRfc = normalizarRfc(rfc) ? unicos.porRfc(normalizarRfc(rfc)) : null;
+  if (deRfc) return res.status(409).json({ error: `Este RFC ya es de ${unicos.folioCliente(deRfc.id)} · ${deRfc.empresa_contacto || deRfc.nombre}`, rfc_de: unicos.resumen(deRfc) });
+  const distintoDe = Array.isArray(req.body.distinto_de) ? req.body.distinto_de.map(Number).filter(Boolean) : [];
+  const pendiente = unicos.exigirConfirmacion({ nombre, empresa: empresa_contacto }, distintoDe);
+  if (pendiente) return res.status(409).json(pendiente);
   if (!req.body.canal_origen_id || !db.prepare('SELECT id FROM canales WHERE id = ?').get(req.body.canal_origen_id)) return res.status(400).json({error:'Selecciona cómo se enteró de nosotros'});
   const info=db.prepare(`INSERT INTO clientes (nombre,telefono,telefono_normalizado,empresa_contacto,direccion,correo,telefono_alterno,giro,rfc,notas_generales,canal_origen_id)
     VALUES (?,?,?,?,?,?,?,?,?,?,?)`).run(String(nombre).trim(),telefono,norm,empresa_contacto||null,direccion||null,correo?.trim()||null,telefono_alterno||null,giro||null,normalizarRfc(rfc)||null,notas_generales||null,req.body.canal_origen_id);
+  unicos.recordarDistintos(Number(info.lastInsertRowid), distintoDe, req.usuarioSesion.id);
   res.status(201).json(db.prepare('SELECT * FROM clientes WHERE id = ?').get(info.lastInsertRowid));
 }));
 
@@ -980,8 +1014,21 @@ app.put('/api/clientes/:id', h((req, res) => {
   if (req.body.telefono !== undefined) {
     nuevoNorm = normalizarTelefono(req.body.telefono);
     if (nuevoNorm.length < 10) return res.status(400).json({ error: 'El teléfono debe tener 10 dígitos' });
-    const otro = db.prepare('SELECT id FROM clientes WHERE telefono_normalizado = ? AND id != ?').get(nuevoNorm, id);
-    if (otro) return res.status(409).json({ error: 'Ese teléfono ya pertenece a otro cliente registrado (cliente #' + otro.id + ')' });
+    const otro = unicos.porTelefono(nuevoNorm);
+    if (otro && String(otro.id) !== String(id)) return res.status(409).json({ error: `Ese teléfono ya es de ${unicos.folioCliente(otro.id)} · ${otro.empresa_contacto || otro.nombre}` });
+    // Si era uno de sus teléfonos adicionales, pasa a ser el principal.
+    db.prepare('DELETE FROM telefonos_cliente WHERE cliente_id = ? AND telefono_normalizado = ?').run(id, nuevoNorm);
+  }
+  // El teléfono alterno también identifica al cliente: no puede ser de otro.
+  const altNorm = req.body.telefono_alterno ? normalizarTelefono(req.body.telefono_alterno) : '';
+  if (altNorm.length === 10) {
+    const dueñoAlt = unicos.porTelefono(altNorm);
+    if (dueñoAlt && String(dueñoAlt.id) !== String(id)) return res.status(409).json({ error: `El teléfono alterno ya es de ${unicos.folioCliente(dueñoAlt.id)} · ${dueñoAlt.empresa_contacto || dueñoAlt.nombre}` });
+  }
+  // El RFC no se repite: si ya lo tiene otro cliente, es la misma razón social (se ofrece juntarlos).
+  if (req.body.rfc) {
+    const deRfc = unicos.porRfc(req.body.rfc, Number(id));
+    if (deRfc) return res.status(409).json({ error: `Este RFC ya es de ${unicos.folioCliente(deRfc.id)} · ${deRfc.empresa_contacto || deRfc.nombre}. Si es la misma razón social, un administrador puede juntarlos.`, rfc_de: unicos.resumen(deRfc) });
   }
 
   const campos = ['nombre', 'empresa_contacto', 'direccion', 'telefono', 'correo', 'telefono_alterno', 'giro', 'rfc', 'notas_generales'];
@@ -996,6 +1043,7 @@ app.put('/api/clientes/:id', h((req, res) => {
   params.push(id);
 
   db.prepare(`UPDATE clientes SET ${set.join(', ')} WHERE id = ?`).run(...params);
+  if (altNorm.length === 10 && altNorm !== normalizarTelefono(db.prepare('SELECT telefono FROM clientes WHERE id = ?').get(id).telefono || '')) unicos.agregarTelefono(Number(id), req.body.telefono_alterno, 'Alterno');
   res.json(db.prepare('SELECT * FROM clientes WHERE id = ?').get(id));
 }));
 

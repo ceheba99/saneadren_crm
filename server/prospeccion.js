@@ -1,4 +1,4 @@
-module.exports=function registrarProspeccion(app,db,h){
+module.exports=function registrarProspeccion(app,db,h,unicos){
   db.transaction(()=>{
     db.exec(`CREATE TABLE IF NOT EXISTS sectores_prospeccion(id INTEGER PRIMARY KEY,nombre TEXT NOT NULL COLLATE NOCASE UNIQUE);
     CREATE TABLE IF NOT EXISTS establecimientos(
@@ -73,13 +73,21 @@ module.exports=function registrarProspeccion(app,db,h){
     if(e.version!==req.body.version)return res.status(409).json({error:'La ficha cambió. Vuelve a abrirla.'});
     if(e.estado==='no_contactar')return res.status(400).json({error:'Este establecimiento está marcado como no contactar'});
     const tel=e.telefono.replace(/\D/g,'').slice(-10);if(tel.length!==10)return res.status(400).json({error:'Completa el teléfono antes de preparar la cotización'});
-    const existente=db.prepare('SELECT id,nombre,telefono FROM clientes WHERE telefono_normalizado=?').get(tel);
+    // «Es el mismo cliente» (parecido por nombre): se le agrega este teléfono y se vincula el establecimiento.
+    if(req.body.agregar_telefono_a){const destino=db.prepare('SELECT id FROM clientes WHERE id=?').get(Number(req.body.agregar_telefono_a));if(!destino)return res.status(404).json({error:'Cliente no encontrado'});
+      const r=unicos.agregarTelefono(destino.id,e.telefono,'Prospección: '+String(e.nombre).slice(0,45));if(r.error)return res.status(409).json(r);
+      db.prepare("UPDATE establecimientos SET cliente_id=?,version=version+1,updated_at=datetime('now','localtime') WHERE id=?").run(destino.id,e.id);return res.json({cliente_id:destino.id});}
+    const existente=unicos.porTelefono(tel);
     if(existente&&req.body.cliente_id!==existente.id)return res.status(409).json({error:'El teléfono ya pertenece a un contacto. Confirma si es el mismo contacto comercial.',existente});
     if(req.body.cliente_id&&!existente)return res.status(400).json({error:'El contacto indicado no coincide con el teléfono'});
+    // Contacto nuevo: no debe existir ya un cliente con nombre o empresa parecidos (salvo que se confirme que es otro).
+    const distintoDe=Array.isArray(req.body.distinto_de)?req.body.distinto_de.map(Number).filter(Boolean):[];
+    if(!existente){const pendiente=unicos.exigirConfirmacion({nombre:e.persona||e.nombre,empresa:e.nombre},distintoDe);if(pendiente)return res.status(409).json(pendiente);}
     const id=db.transaction(()=>{
       let clienteId=existente?.id;
       if(!clienteId){db.prepare("INSERT OR IGNORE INTO canales(nombre,orden) VALUES ('Prospección comercial',99)").run();const canal=db.prepare("SELECT id FROM canales WHERE nombre='Prospección comercial'").get();
         clienteId=db.prepare('INSERT INTO clientes(nombre,empresa_contacto,telefono,telefono_normalizado,direccion,correo,canal_origen_id) VALUES (?,?,?,?,?,?,?)').run(e.persona||e.nombre,e.nombre,e.telefono,tel,e.direccion,e.correo||null,canal.id).lastInsertRowid;
+        unicos.recordarDistintos(Number(clienteId),distintoDe,req.usuarioSesion.id);
       }
       db.prepare("UPDATE establecimientos SET cliente_id=?,version=version+1,updated_at=datetime('now','localtime') WHERE id=?").run(clienteId,e.id);return clienteId;
     })();res.json({cliente_id:id});

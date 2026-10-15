@@ -249,7 +249,7 @@ function describirCuenta(f, hoy) {
   };
 }
 
-module.exports = function finanzas(app, db, h) {
+module.exports = function finanzas(app, db, h, unicos) {
   migrar(db);
   const rol = req => req.usuarioSesion.rol;
   const permitido = (req, res, roles, mensaje) => {
@@ -937,7 +937,7 @@ module.exports = function finanzas(app, db, h) {
       for (const k of [claveNombre(c.nombre), claveNombre(c.empresa_contacto)]) if (k && !porNombre.has(k)) porNombre.set(k, c);
     }
     const facturaExiste = db.prepare("SELECT 1 FROM leads WHERE lower(factura_folio) = lower(?)");
-    const vistos = new Set(), nuevosEnArchivo = new Set();
+    const vistos = new Set(), nuevosEnArchivo = new Set(), nuevosParecidos = [];
     const resultado = filas.map((f, i) => {
       const errores = [];
       const fila = Number(f.fila) || i + 2;
@@ -979,7 +979,25 @@ module.exports = function finanzas(app, db, h) {
       const tel = celda(f.telefono).replace(/\D/g, '').slice(-10);
       if (celda(f.telefono) && tel.length !== 10) errores.push('TELÉFONO: deben ser 10 dígitos');
       const clave = claveNombre(nombre);
-      const existente = (tel.length === 10 ? buscarPorTel.get(tel) : null) || porNombre.get(clave) || null;
+      // Cliente, de lo más seguro a lo menos: ID CLIENTE (CLI-0039) → teléfono → nombre exacto o ya confirmado antes.
+      // «NUEVO» en ID CLIENTE = es otro cliente aunque se parezca a uno existente.
+      const idTxt = celda(f.id_cliente), esNuevo = /^nuevo$/i.test(idTxt);
+      let existente = null;
+      if (idTxt && !esNuevo) { existente = unicos.porId(idTxt); if (!existente) errores.push(`ID CLIENTE "${idTxt.slice(0, 20)}" no existe`); }
+      if (!existente && !esNuevo && tel.length === 10) existente = unicos.porTelefono(tel);
+      if (!existente && !esNuevo && !idTxt) existente = unicos.porNombreExacto(nombre) || porNombre.get(clave) || null;
+      // Sin coincidencia exacta pero parecido a uno existente: no se crea un cliente nuevo en silencio.
+      if (!existente && !esNuevo && nombre && !idTxt) {
+        const p = unicos.parecidos({ nombre }, { limite: 2 });
+        if (p.length) errores.push(`"${nombre.slice(0, 40)}" se parece a ${p.map(x => x.folio + ' ' + (x.empresa || x.nombre)).join(' / ')}: escribe su ID en ID CLIENTE, o NUEVO si es otro cliente`);
+      }
+      // Dos clientes nuevos del mismo archivo escritos casi igual (AGUAKAN / AGUKAN): tampoco se crean dos.
+      if (!existente && nombre && clave) {
+        const k = unicos.clave(nombre);
+        const otra = nuevosParecidos.find(x => x.k !== k && unicos.motivoParecido(x.k, k));
+        if (otra && !esNuevo) errores.push(`"${nombre.slice(0, 40)}" se parece a "${otra.nombre.slice(0, 40)}" (fila ${otra.fila}) de este mismo archivo: escribe igual el nombre si es el mismo cliente, o NUEVO en ID CLIENTE si es otro`);
+        if (!nuevosParecidos.some(x => x.k === k)) nuevosParecidos.push({ k, nombre, fila });
+      }
       const nuevoRepetido = !existente && nuevosEnArchivo.has(clave);
       if (!existente && clave) nuevosEnArchivo.add(clave);
       const servicioTxt = celda(f.servicio);
