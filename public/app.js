@@ -133,6 +133,7 @@ function cambiarVista(v, opciones) {
   if (v === 'generador') cargarGenerador();
   if (v === 'calendario') Calendario.cargar();
   if (v === 'compras') Compras.cargar();
+  if (v === 'solicitudes') Solicitudes.cargar();
   if (v === 'bitacora') Bitacora.cargar();
   if (v === 'usuarios') cargarUsuarios();
   if (seccionCuentas) Finanzas.cargar({ ...opciones, seccion: seccionCuentas });
@@ -2236,12 +2237,13 @@ on('btn-descargar-respaldo', 'click', async () => {
 function mostrarUsuarioEnHeader() {
   document.getElementById('sesion-nombre').textContent = USUARIO_ACTUAL.nombre;
   document.body.classList.toggle('es-admin', USUARIO_ACTUAL.rol === 'admin');
+  document.body.classList.toggle('es-costos', ['admin', 'costos'].includes(USUARIO_ACTUAL.rol));
   // Todos los usuarios ven Cuentas; las acciones delicadas se ocultan con .solo-admin (y el servidor las valida).
   document.body.classList.toggle('puede-cobranza', !!USUARIO_ACTUAL);
 }
 
 // ---------- Gestión de usuarios (solo admin) ----------
-const ROLES = ['admin', 'ventas', 'atencion', 'tecnico'];
+const ROLES = ['admin', 'ventas', 'atencion', 'tecnico', 'costos'];
 async function cargarUsuarios() {
   const usuarios = await api('/usuarios').then(r => r.json());
   const admins = usuarios.filter(x => x.rol === 'admin').length;
@@ -2250,7 +2252,7 @@ async function cargarUsuarios() {
     return `<div class="servicio-row fila-usuario" data-usuario="${id}">
       <div><label for="usr-nombre-${id}">Nombre${propio ? ' (tú)' : ''}</label><input id="usr-nombre-${id}" value="${escaparHtml(u.nombre)}" maxlength="60"></div>
       <div><label for="usr-correo-${id}">Correo${u.correo && !u.correo_verificado ? ' · sin confirmar' : ''}</label><input id="usr-correo-${id}" type="email" value="${escaparHtml(u.correo || '')}" placeholder="nombre@saneadren.com.mx" maxlength="254"></div>
-      <div><label for="usr-rol-${id}">Rol</label><select id="usr-rol-${id}" ${u.rol === 'admin' && admins === 1 ? 'disabled title="Debe quedar al menos un administrador"' : ''}>${ROLES.map(r => `<option value="${r}" ${r === u.rol ? 'selected' : ''}>${r}</option>`).join('')}</select></div>
+      <div><label for="usr-rol-${id}">Rol</label><select id="usr-rol-${id}" ${u.rol === 'admin' && admins === 1 ? 'disabled title="Debe quedar al menos un administrador"' : ''}>${ROLES.map(r => `<option value="${r}" ${r === u.rol ? 'selected' : ''}>${r === 'costos' ? 'costos (encargado de centro de costos)' : r}</option>`).join('')}</select></div>
       <div class="acciones-catalogo">
         <button type="button" class="btn btn-secundario" data-accion="guardar">Guardar</button>
         <button type="button" class="btn btn-outline" data-accion="password">Nueva contraseña</button>

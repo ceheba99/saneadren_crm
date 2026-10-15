@@ -6,6 +6,9 @@ const Compras = (() => {
   const hoy = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Mexico_City' }).format(new Date());
   const fechaTxt = f => (f ? f.split('-').reverse().join('/') : '—');
   const esAdmin = () => USUARIO_ACTUAL?.rol === 'admin';
+  // Encargado de centro de costos (rol «costos») o administración: hacen y corrigen las órdenes y marcan lo recibido.
+  const esCostos = () => ['admin', 'costos'].includes(USUARIO_ACTUAL?.rol);
+  let DESDE_SOL = null; // solicitud de la que sale la orden nueva
   const ESTADOS = { borrador: ['Borrador · por autorizar', 'parcial'], autorizada: ['Autorizada', 'programada'], cancelada: ['Cancelada', 'vencida'] };
   let LISTA = [], ACTUAL = null, PROVEEDORES = [], CENTROS = [], CATEGORIAS = [], UNIDADES = [], consulta = 0;
   const json = async r => { const j = await r.json().catch(() => ({})); if (!r.ok) throw Object.assign(new Error(j.error || 'No se pudo completar'), { datos: j }); return j; };
@@ -79,9 +82,10 @@ const Compras = (() => {
     $('oc-totales').innerHTML = m ? Importes.filasTotales(Importes.calcular(items, m, 16), m, 16).map(([e, c], i, a) => '<tr class="' + (i === a.length - 1 ? 'gc-fila-total' : '') + '"><th>' + esc(e) + '</th><td>' + (i === a.length - 1 ? '<b>' + dinero(c / 100) + '</b>' : dinero(c / 100)) + '</td></tr>').join('')
       : '<tr><td colspan="2" class="util-45">Elige el IVA para ver los totales.</td></tr>';
   }
-  async function abrir(id) {
+  async function abrir(id, sol = null) {
     try { await catalogos(); ACTUAL = id ? await pedir('/compras/ordenes/' + Number(id)) : null; } catch (err) { toast(err.message); return; }
-    const o = ACTUAL, editable = !o || o.estado === 'borrador';
+    DESDE_SOL = id ? null : sol;
+    const o = ACTUAL, editable = (!o || o.estado === 'borrador') && esCostos();
     $('oc-titulo').textContent = o ? o.folio + ' · ' + o.proveedor_nombre : 'Nueva orden de compra';
     $('oc-kicker').textContent = o ? 'ORDEN DE COMPRA · ' + ESTADOS[o.estado][0].toUpperCase() : 'ORDEN DE COMPRA · CM-F-03';
     pintarSelects(o);
@@ -95,6 +99,26 @@ const Compras = (() => {
     $('oc-cargo').value = o?.solicitante_cargo || '';
     document.querySelectorAll('input[name="oc-iva"]').forEach(r => { r.checked = r.value === (o?.iva_modo || 'mas_iva'); });
     $('oc-filas').innerHTML = (o?.partidas?.length ? o.partidas : [{}]).map(filaHTML).join('');
+    // Orden nueva desde una solicitud: proveedor de la cotización elegida, área, fechas y lo que se pidió.
+    if (DESDE_SOL) {
+      const s = DESDE_SOL, g = s.ganadora;
+      $('oc-proveedor').value = String(g.proveedor_id);
+      const p = PROVEEDORES.find(x => x.id === g.proveedor_id); if (p && CATEGORIAS.some(c => c.clave === p.categoria)) $('oc-categoria').value = p.categoria;
+      $('oc-centro').value = String(s.centro_id);
+      $('oc-requerida').value = s.fecha_requerida || '';
+      $('oc-lead').value = s.lead_id || '';
+      $('oc-nota').value = 'Solicitud ' + s.folio + (s.equipo ? ' · ' + s.equipo : '');
+      $('oc-observaciones').value = s.para_que;
+      document.querySelectorAll('input[name="oc-iva"]').forEach(r => { r.checked = r.value === 'incluido'; });
+      $('oc-filas').innerHTML = filaHTML({ cantidad: 1, descripcion: s.que, precio: g.monto });
+    }
+    const origen = $('oc-origen'), origSol = DESDE_SOL || (o?.solicitud_id ? { folio: o.solicitud_folio, excepcion_motivo: o.excepcion_motivo } : null);
+    origen.hidden = !o && !origSol;
+    origen.className = 'oc-origen' + (origSol?.excepcion_motivo ? ' excepcion' : '') + (!origSol ? ' sin' : '');
+    origen.innerHTML = origSol ? '📝 Sale de la solicitud <b>' + esc(origSol.folio) + '</b>' + (DESDE_SOL ? ': cotización de ' + esc(DESDE_SOL.ganadora.proveedor_nombre) + ' por ' + dinero(DESDE_SOL.ganadora.monto) + ' (con IVA incluido; ajusta las partidas si hace falta)' : '')
+        + (origSol.excepcion_motivo ? '<br>⚠ <b>Excepción por urgencia</b> (sin las 3 cotizaciones): ' + esc(origSol.excepcion_motivo) : '')
+      : 'Orden hecha sin solicitud de compra.';
+    $('oc-proveedor').dataset.fijo = DESDE_SOL || o?.solicitud_id ? '1' : '';
     recalcular();
     // Estado y bloqueo
     const est = $('oc-estado');
@@ -102,6 +126,7 @@ const Compras = (() => {
     if (o?.estado === 'autorizada') est.innerHTML = '✔ Autorizada por ' + esc(o.autorizada_por_nombre || '') + ' el ' + esc(fechaTxt(String(o.autorizada_at || '').slice(0, 10))) + '. Está en Cuentas por pagar: ' + (o.saldo > 0 ? 'falta pagar <b>' + dinero(o.saldo) + '</b>' : '<b>pagada</b>') + '. Ya no se puede editar.';
     if (o?.estado === 'cancelada') est.innerHTML = '✖ Cancelada el ' + esc(fechaTxt(String(o.cancelada_at || '').slice(0, 10))) + '. Motivo: ' + esc(o.motivo_cancelacion || '—');
     $('oc-cuerpo').querySelectorAll('input,select,textarea').forEach(x => { x.disabled = !editable; });
+    if ($('oc-proveedor').dataset.fijo) $('oc-proveedor').disabled = true; // el de la cotización elegida
     $('oc-agregar').hidden = !editable;
     document.querySelectorAll('#oc-filas .oc-quitar').forEach(b => { b.hidden = !editable; });
     const bt = (id, txt, cl, extra = '') => '<button type="button" class="btn ' + cl + '" id="' + id + '"' + extra + '>' + txt + '</button>';
@@ -109,11 +134,11 @@ const Compras = (() => {
       + (o ? bt('oc-excel', 'Excel', 'btn-outline solo-admin') : '')
       + (o && o.estado === 'borrador' && esAdmin() ? bt('oc-autorizar', '✔ Autorizar y pasar a Cuentas por pagar', 'btn-verde') : '')
       + (o && o.estado === 'borrador' && !esAdmin() ? '<span class="ayuda">La autoriza un administrador.</span>' : '')
-      + (o && (o.estado === 'borrador' || (o.estado === 'autorizada' && esAdmin())) ? bt('oc-cancelar', 'Cancelar orden', 'btn-eliminar') : '');
+      + (o && esCostos() && (o.estado === 'borrador' || (o.estado === 'autorizada' && esAdmin())) ? bt('oc-cancelar', 'Cancelar orden', 'btn-eliminar') : '');
     if (o) pintarExpediente(o.id); else { $('oc-expediente').hidden = true; $('oc-expediente').innerHTML = ''; }
     abrirVentana('overlay-compra');
   }
-  const datosForm = () => ({ version: ACTUAL?.version, proveedor_id: Number($('oc-proveedor').value) || null, centro_id: Number($('oc-centro').value) || null, categoria: $('oc-categoria').value,
+  const datosForm = () => ({ version: ACTUAL?.version, solicitud_id: DESDE_SOL?.id || undefined, proveedor_id: Number($('oc-proveedor').value) || null, centro_id: Number($('oc-centro').value) || null, categoria: $('oc-categoria').value,
     factura_a: $('oc-factura-a').value, fecha: $('oc-fecha').value, fecha_requerida: $('oc-requerida').value || null, lead_id: Number($('oc-lead').value) || null,
     nota: $('oc-nota').value, observaciones: $('oc-observaciones').value, solicitante_nombre: $('oc-solicitante').value, solicitante_cargo: $('oc-cargo').value, iva_modo: modo(), partidas: recolectar() });
   async function guardar(descargar) {
@@ -134,7 +159,7 @@ const Compras = (() => {
         o = await pedir('/compras/ordenes', 'POST', { ...d, forzar: true });
       }
     }
-    ACTUAL = o;
+    ACTUAL = o; DESDE_SOL = null;
     toast((d.version ? 'Orden ' : 'Orden de compra creada: ') + o.folio + (d.version ? ' guardada' : ''));
     if (descargar) await pdf(o);
     await abrir(o.id); cargar();
@@ -290,13 +315,60 @@ const Compras = (() => {
       + (c.pagos.length ? '<table class="tabla-resumen"><thead><tr><th>Fecha</th><th>Método</th><th>Referencia</th><th class="st-num">Monto</th></tr></thead><tbody>' + c.pagos.map(p => '<tr class="' + (p.cancelado ? 'fila-cancelada' : '') + '"><td>' + esc(fechaTxt(p.fecha)) + '</td><td>' + esc(p.metodo) + '</td><td>' + esc(p.referencia || '') + (p.cancelado ? ' <small>cancelado: ' + esc(p.motivo_cancelacion || '') + '</small>' : '') + '</td><td class="st-num">' + dinero(p.monto) + '</td></tr>').join('') + '</tbody></table>' : '<p class="util-45">Sin pagos todavía (se registran en Cuentas por pagar).</p>')
       : '<p class="util-45">Todavía no es deuda: al autorizarla pasa a Cuentas por pagar.</p>';
     cont.innerHTML = '<div class="oc-exp-cab"><div class="seccion-tit">📁 Expediente de la orden</div><button type="button" class="btn btn-primario btn-chico" id="oc-exp-zip">📦 Descargar expediente completo (ZIP)</button></div>'
-      + lista
+      + lista + recepcionHTML(e.orden)
       + '<div class="oc-exp-bloque"><div class="seccion-sub">Documentos</div>' + docs + subir
       + (quitados.length ? '<details class="oc-exp-quitados"><summary>' + quitados.length + ' documento(s) quitado(s)</summary><ul>' + quitados.map(d => '<li>' + esc(d.tipo_nombre) + ': «' + esc(d.nombre) + '» · quitado por ' + esc(d.eliminado_por || '') + ' el ' + esc(fechaTxt(String(d.eliminado_at || '').slice(0, 10))) + ' · ' + esc(d.motivo_eliminado || '') + '</li>').join('') + '</ul></details>' : '') + '</div>'
       + '<div class="oc-exp-bloque"><div class="seccion-sub">Pagos</div>' + cuenta + '</div>'
       + '<div class="oc-exp-bloque"><div class="seccion-sub">Historial de la orden</div>' + (e.historial.length ? Bitacora.tabla(e.historial, false) : '<p class="util-45">Sin movimientos.</p>') + '</div>';
+    prepararFirma();
   }
   // Subir: el archivo va tal cual (sin convertirlo), con su tipo y nombre en encabezados.
+  // ---------- Recepción: el encargado marca que llegó lo comprado, con foto y/o firma de quien recibe ----------
+  function recepcionHTML(o) {
+    if (o.estado === 'cancelada') return '';
+    if (o.recibida_at) return '<div class="oc-recepcion listo"><div class="seccion-sub">📦 Recepción</div>✔ Recibido el ' + esc(fechaTxt(String(o.recibida_at).slice(0, 10))) + ' · recibió <b>' + esc(o.recibio_nombre || '') + '</b> · lo marcó ' + esc(o.recibida_por_nombre || '') + (o.recepcion_nota ? '<br><small>' + esc(o.recepcion_nota) + '</small>' : '') + ' <small class="util-45">(la foto y la firma están en los documentos)</small></div>';
+    if (!esCostos()) return '<div class="oc-recepcion"><div class="seccion-sub">📦 Recepción</div><span class="util-45">Pendiente: cuando llegue, lo marca el encargado de centro de costos con foto y/o firma.</span></div>';
+    return '<div class="oc-recepcion"><div class="seccion-sub">📦 ¿Ya llegó? Márcalo como recibido</div>'
+      + '<div class="oc-rec-campos"><label class="cat-campo"><span>Foto de lo que llegó</span><input type="file" id="oc-rec-foto" accept="image/*,application/pdf" capture="environment"></label>'
+      + '<label class="cat-campo"><span>Quién lo recibe</span><input id="oc-rec-nombre" maxlength="120" value="' + esc(USUARIO_ACTUAL?.nombre || '') + '"></label>'
+      + '<label class="cat-campo"><span>Nota (opcional)</span><input id="oc-rec-nota" maxlength="300" placeholder="Ej. llegaron completas"></label></div>'
+      + '<div class="oc-firma-caja"><span class="etiqueta-mini">Firma de quien recibe (con el dedo o el mouse)</span><canvas id="oc-firma" class="oc-firma" aria-label="Espacio para firmar"></canvas><button type="button" class="btn btn-outline btn-chico" id="oc-firma-borrar">Borrar firma</button></div>'
+      + '<button type="button" class="btn btn-verde" id="oc-recibir">✔ Marcar como recibido</button><p class="ayuda">Necesita la foto, la firma o las dos. Se guardan en el expediente.</p></div>';
+  }
+  let FIRMA_TRAZOS = 0;
+  // Firma: se dibuja en un lienzo; las coordenadas se ajustan al tamaño real en pantalla (celular o computadora).
+  function prepararFirma() {
+    const cv = $('oc-firma'); if (!cv || cv.dataset.listo) return;
+    cv.dataset.listo = '1'; FIRMA_TRAZOS = 0;
+    const ancho = cv.getBoundingClientRect().width, ratio = window.devicePixelRatio || 1;
+    cv.width = Math.round((ancho > 0 ? ancho : 520) * ratio); cv.height = Math.round(150 * ratio);
+    const ctx = cv.getContext('2d');
+    ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, cv.width, cv.height);
+    ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.strokeStyle = '#1a1d23';
+    let dibujando = false;
+    const punto = e => { const r = cv.getBoundingClientRect(); return [(e.clientX - r.left) * cv.width / r.width, (e.clientY - r.top) * cv.height / r.height]; };
+    cv.addEventListener('pointerdown', e => { dibujando = true; cv.setPointerCapture?.(e.pointerId); ctx.lineWidth = 2.4 * cv.width / cv.getBoundingClientRect().width; const [x, y] = punto(e); ctx.beginPath(); ctx.moveTo(x, y); e.preventDefault(); });
+    cv.addEventListener('pointermove', e => { if (!dibujando) return; const [x, y] = punto(e); ctx.lineTo(x, y); ctx.stroke(); FIRMA_TRAZOS++; e.preventDefault(); });
+    const fin = () => { dibujando = false; };
+    cv.addEventListener('pointerup', fin); cv.addEventListener('pointercancel', fin);
+  }
+  async function subirArchivoOC(archivoOBlob, tipo, nombre) {
+    const r = await api('/compras/ordenes/' + ACTUAL.id + '/documentos', { method: 'POST', body: archivoOBlob,
+      headers: { 'Content-Type': 'application/octet-stream', Authorization: 'Bearer ' + USUARIO_ACTUAL.token, 'X-Tipo': tipo, 'X-Nombre': encodeURIComponent(nombre), 'X-Nota': encodeURIComponent('Recepción') } });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok && !(r.status === 409 && /ya está en este expediente/.test(j.error || ''))) throw new Error(j.error || 'No se pudo subir');
+  }
+  async function recibir() {
+    const foto = $('oc-rec-foto').files[0], recibio = $('oc-rec-nombre').value.trim();
+    const yaHay = EXPEDIENTE.documentos.some(d => !d.eliminado && ['evidencia', 'firma_recepcion'].includes(d.tipo));
+    if (!foto && !FIRMA_TRAZOS && !yaHay) { toast('Agrega la foto de lo que llegó y/o la firma de quien lo recibe'); return; }
+    if (!recibio) { toast('Escribe quién lo recibe'); $('oc-rec-nombre').focus(); return; }
+    if (foto) await subirArchivoOC(foto, 'evidencia', foto.name);
+    if (FIRMA_TRAZOS) { const blob = await new Promise(ok => $('oc-firma').toBlob(ok, 'image/png')); await subirArchivoOC(blob, 'firma_recepcion', 'firma-' + ACTUAL.folio + '.png'); }
+    await pedir('/compras/ordenes/' + ACTUAL.id + '/recibir', 'POST', { recibio, nota: $('oc-rec-nota').value.trim() });
+    toast('Marcado como recibido'); await abrir(ACTUAL.id); cargar();
+  }
+
   async function subirDocumento() {
     const tipo = $('oc-doc-tipo').value, archivo = $('oc-doc-archivo').files[0];
     if (!tipo) { toast('Elige qué documento es'); $('oc-doc-tipo').focus(); return; }
@@ -535,7 +607,10 @@ const Compras = (() => {
     if (b.id === 'oc-exp-zip') conBotonOC(b, descargarZip);
     if (b.dataset.docBajar) conBotonOC(b, () => bajarDocumento(b.dataset.docBajar));
     if (b.dataset.docQuitar) conBotonOC(b, () => quitarDocumento(b.dataset.docQuitar));
+    if (b.id === 'oc-recibir') conBotonOC(b, recibir);
+    if (b.id === 'oc-firma-borrar') { const cv = $('oc-firma'), ctx = cv.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, cv.width, cv.height); FIRMA_TRAZOS = 0; }
   });
+  $('oc-ir-solicitudes').addEventListener('click', () => cambiarVista('solicitudes'));
   $('oc-formato').addEventListener('click', e => conBotonOC(e.currentTarget, editarFormato));
   $('fmt-guardar').addEventListener('click', e => conBotonOC(e.currentTarget, guardarFormato));
   $('oc-lista').addEventListener('click', async e => {
@@ -572,6 +647,6 @@ const Compras = (() => {
       }
     } catch (err) { toast(err.message); } finally { b.disabled = false; }
   });
-  return { cargar, pdf };
+  return { cargar, pdf, abrir, desdeSolicitud: sol => abrir(null, sol) };
 })();
 window.Compras = Compras;

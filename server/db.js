@@ -14,7 +14,7 @@ CREATE TABLE IF NOT EXISTS usuarios (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   nombre TEXT NOT NULL,
   password TEXT NOT NULL DEFAULT '1234',
-  rol TEXT NOT NULL CHECK(rol IN ('admin','ventas','atencion','tecnico')),
+  rol TEXT NOT NULL CHECK(rol IN ('admin','ventas','atencion','tecnico','costos')),
   activo INTEGER NOT NULL DEFAULT 1
 );
 
@@ -165,6 +165,31 @@ const backfillCliente = db.transaction(() => {
   });
 });
 backfillCliente();
+
+// Rol «costos» (encargado de centro de costos / compras). SQLite no deja cambiar un CHECK: se rehace la tabla
+// usuarios con la misma estructura y los mismos datos (procedimiento oficial de SQLite, sin llaves foráneas activas).
+{
+  const sqlUsuarios = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'usuarios'").get().sql;
+  if (!sqlUsuarios.includes("'costos'")) {
+    const nuevo = sqlUsuarios.replace(/CHECK\s*\(\s*rol\s+IN\s*\(([^)]*)\)\s*\)/i, (m, lista) => `CHECK(rol IN (${lista},'costos'))`)
+      .replace(/^CREATE TABLE\s+("?usuarios"?|\[usuarios\])/i, 'CREATE TABLE usuarios_nuevo');
+    if (nuevo === sqlUsuarios || !nuevo.includes('usuarios_nuevo') || !nuevo.includes("'costos'")) throw new Error('No se pudo preparar el rol costos en usuarios');
+    const antes = db.prepare('SELECT COUNT(*) n FROM usuarios').get().n;
+    db.pragma('foreign_keys = OFF');
+    try {
+      db.transaction(() => {
+        db.exec('DROP TABLE IF EXISTS usuarios_nuevo');
+        db.exec(nuevo);
+        db.exec('INSERT INTO usuarios_nuevo SELECT * FROM usuarios');
+        if (db.prepare('SELECT COUNT(*) n FROM usuarios_nuevo').get().n !== antes) throw new Error('La copia de usuarios no cuadra');
+        db.exec('DROP TABLE usuarios');
+        db.exec('ALTER TABLE usuarios_nuevo RENAME TO usuarios');
+      })();
+    } finally { db.pragma('foreign_keys = ON'); }
+    const rotas = db.pragma('foreign_key_check');
+    if (rotas.length) console.error('Aviso: referencias rotas después de agregar el rol costos', rotas.slice(0, 5));
+  }
+}
 
 // Seed data inicial (solo si las tablas están vacías)
 const seed = db.transaction(() => {

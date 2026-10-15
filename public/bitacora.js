@@ -3,7 +3,7 @@
    el historial de un registro (p. ej. «Movimientos de este contacto» en la ficha). Servidor: server/auditoria.js */
 const Bitacora = (() => {
   const $ = id => document.getElementById(id), esc = t => escaparHtml(t);
-  const ENTIDADES = { cliente: 'Cliente', proveedor: 'Proveedor', orden_compra: 'Orden de compra', cuenta_por_pagar: 'Cuenta por pagar', usuario: 'Usuario', catalogo: 'Catálogos', orden_servicio: 'Cotización / orden' };
+  const ENTIDADES = { cliente: 'Cliente', proveedor: 'Proveedor', orden_compra: 'Orden de compra', solicitud_compra: 'Solicitud de compra', cuenta_por_pagar: 'Cuenta por pagar', usuario: 'Usuario', catalogo: 'Catálogos', orden_servicio: 'Cotización / orden' };
   const fechaHora = f => { const [d, h] = String(f || '').split(' '); return (d || '').split('-').reverse().join('/') + (h ? ' ' + h.slice(0, 5) : ''); };
   const referencia = r => r.entidad === 'cliente' && r.entidad_id ? folioCliente(r.entidad_id) : r.entidad_id ? '#' + r.entidad_id : '';
   let consulta = 0;

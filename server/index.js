@@ -231,7 +231,7 @@ app.post('/api/usuarios', h((req, res) => {
   if (correo && db.prepare('SELECT id FROM usuarios WHERE correo = ?').get(correo)) return res.status(409).json({ error: 'Ya existe un usuario con ese correo' });
   const problema = problemaPassword(password, { nombre, correo: correo || '' });
   if (problema) return res.status(400).json({ error: problema });
-  if (!['admin', 'ventas', 'atencion', 'tecnico'].includes(rol)) return res.status(400).json({ error: 'Rol inválido' });
+  if (!['admin', 'ventas', 'atencion', 'tecnico', 'costos'].includes(rol)) return res.status(400).json({ error: 'Rol inválido' });
 
   const existente = db.prepare('SELECT id FROM usuarios WHERE nombre = ?').get(nombre.trim());
   if (existente) return res.status(409).json({ error: 'Ya existe un usuario con ese nombre' });
@@ -257,7 +257,7 @@ app.put('/api/usuarios/:id', h((req, res) => {
   if (problemaN) return res.status(400).json({ error: problemaN });
   if (db.prepare('SELECT id FROM usuarios WHERE lower(nombre) = lower(?) AND id <> ?').get(nombre, usuario.id)) return res.status(409).json({ error: 'Ya existe un usuario con ese nombre' });
   const rol = req.body.rol !== undefined ? req.body.rol : usuario.rol;
-  if (!['admin', 'ventas', 'atencion', 'tecnico'].includes(rol)) return res.status(400).json({ error: 'Rol inválido' });
+  if (!['admin', 'ventas', 'atencion', 'tecnico', 'costos'].includes(rol)) return res.status(400).json({ error: 'Rol inválido' });
   if (usuario.rol === 'admin' && rol !== 'admin' && db.prepare("SELECT COUNT(*) c FROM usuarios WHERE rol = 'admin' AND activo = 1").get().c <= 1) {
     return res.status(400).json({ error: 'Debe quedar al menos un administrador' });
   }

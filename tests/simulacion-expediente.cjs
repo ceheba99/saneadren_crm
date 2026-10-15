@@ -25,7 +25,7 @@ const CFDI = ({ total, rfc = 'RBA010101AB1', uuid = 'A1B2C3D4-0000-4000-8000-000
 (async () => {
   for (let i = 0; i < 40 && !/corriendo/.test(salida); i++) await espera(150);
   const A = (await pedir('POST', '/login', null, { nombre: ADMIN.correo, password: ADMIN.password }))[1].token;
-  await pedir('POST', '/usuarios', A, { nombre: 'Compras Exp', correo: 'compras.exp@saneadren.com.mx', password: 'Compras-Exp-2026', rol: 'ventas' });
+  await pedir('POST', '/usuarios', A, { nombre: 'Compras Exp', correo: 'compras.exp@saneadren.com.mx', password: 'Compras-Exp-2026', rol: 'costos' }); // encargado de centro de costos: hace las órdenes de compra
   const V = (await pedir('POST', '/login', null, { nombre: 'compras.exp@saneadren.com.mx', password: 'Compras-Exp-2026' }))[1].token;
   let s, j;
 
