@@ -22,6 +22,11 @@ const app = express();
 // Detrás de un proxy (Nginx, Cloudflare, etc.) define TRUST_PROXY=1 para que req.ip sea la IP real
 // del cliente; sin proxy NO se activa, porque cualquiera podría falsificar X-Forwarded-For.
 if (process.env.TRUST_PROXY) app.set('trust proxy', Number(process.env.TRUST_PROXY) || process.env.TRUST_PROXY);
+// IP del visitante para los límites de intentos. Detrás de Cloudflare todos llegan desde la misma IP local:
+// sin esto, los intentos fallidos de un desconocido bloquearían a toda la oficina. Cloudflare manda la IP real
+// en CF-Connecting-IP. (Si alguien la falsifica, solo evade el tope por IP: el tope por CUENTA sigue).
+const IP_VALIDA = /^(\d{1,3}\.){3}\d{1,3}$|^[0-9a-f:]{2,39}$/i;
+app.use((req, res, next) => { const cf = String(req.get('cf-connecting-ip') || '').trim(); req.ipCliente = IP_VALIDA.test(cf) ? cf : req.ip; next(); });
 app.disable('x-powered-by');
 app.use(encabezadosSeguridad);
 // Las plantillas de Excel pueden traer hasta 1,000 renglones: esas rutas aceptan un cuerpo mayor.
@@ -72,8 +77,15 @@ const LOGIN_MAX_INTENTOS = 6;
 const LOGIN_BLOQUEO_MS = 5 * 60 * 1000;
 // Limpieza periódica: sin esto el registro de intentos crece sin límite con nombres inventados.
 setInterval(() => { const ahora = Date.now(); for (const [k, v] of intentosLogin) if (!v.bloqueadoHasta || v.bloqueadoHasta < ahora) intentosLogin.delete(k); }, LOGIN_BLOQUEO_MS).unref();
+// Tope por CUENTA (sin importar la IP): ni cambiando de IP se pueden probar contraseñas sin fin.
+const fallosPorCuenta = new Map(); // nombre -> { fallos, reinicia }
+const FALLOS_CUENTA_MAX = 30, FALLOS_CUENTA_VENTANA_MS = 60 * 60 * 1000;
+setInterval(() => { const ahora = Date.now(); for (const [k, v] of fallosPorCuenta) if (v.reinicia <= ahora) fallosPorCuenta.delete(k); }, FALLOS_CUENTA_VENTANA_MS).unref();
+const cuentaDe = req => String(req.body?.nombre || '').trim().toLowerCase().slice(0, 254);
 function limitarLogin(req, res, next) {
-  const clave = req.ip + '|' + String(req.body?.nombre || '').toLowerCase();
+  const c = fallosPorCuenta.get(cuentaDe(req));
+  if (c && c.reinicia > Date.now() && c.fallos >= FALLOS_CUENTA_MAX) return res.status(429).json({ error: 'Esta cuenta tuvo demasiados intentos fallidos. Espera una hora o usa «¿Olvidaste tu contraseña?».' });
+  const clave = req.ipCliente + '|' + String(req.body?.nombre || '').toLowerCase();
   const estado = intentosLogin.get(clave);
   if (estado?.bloqueadoHasta && estado.bloqueadoHasta > Date.now()) {
     const minutos = Math.ceil((estado.bloqueadoHasta - Date.now()) / 60000);
@@ -83,14 +95,16 @@ function limitarLogin(req, res, next) {
 }
 function registrarLoginFallido(req) {
   if (typeof contarFalloPorIp === 'function') contarFalloPorIp(req);
-  const clave = req.ip + '|' + String(req.body?.nombre || '').toLowerCase();
+  { const ahora = Date.now(); let c = fallosPorCuenta.get(cuentaDe(req)); if (!c || c.reinicia <= ahora) { c = { fallos: 0, reinicia: ahora + FALLOS_CUENTA_VENTANA_MS }; fallosPorCuenta.set(cuentaDe(req), c); } c.fallos++; }
+  const clave = req.ipCliente + '|' + String(req.body?.nombre || '').toLowerCase();
   const estado = intentosLogin.get(clave) || { fallos: 0, bloqueadoHasta: 0 };
   estado.fallos += 1;
   if (estado.fallos >= LOGIN_MAX_INTENTOS) { estado.bloqueadoHasta = Date.now() + LOGIN_BLOQUEO_MS; estado.fallos = 0; }
   intentosLogin.set(clave, estado);
 }
 function limpiarLoginFallidos(req) {
-  intentosLogin.delete(req.ip + '|' + String(req.body?.nombre || '').toLowerCase());
+  intentosLogin.delete(req.ipCliente + '|' + String(req.body?.nombre || '').toLowerCase());
+  fallosPorCuenta.delete(cuentaDe(req));
 }
 
 // Envuelve cada handler para que una excepción (ej. FOREIGN KEY constraint) nunca tumbe el servidor completo.
@@ -139,6 +153,7 @@ require('./tablero')(app, db, h, finanzas); // Resultados: panorama general
 require('./compras')(app, db, h, finanzas); // Órdenes de compra (formato CM-F-03)
 require('./carga-generador')(app, db, h, unicos); // Carga masiva del Generador (Excel por meses)
 require('./buscador')(app, db, h); // Buscador general (caja de arriba): folios, clientes, compras, proveedores
+require('./respaldos')(db, { hoyMexico }); // Copia diaria automática de la base (últimos 14 días) junto a la base
 
 // ---------- Catálogos ----------
 app.get('/api/usuarios', h((req, res) => {
@@ -156,7 +171,7 @@ const fallosPorIp = new Map(); // ip -> { fallos, reinicia }
 const FALLOS_IP_MAX = 40, FALLOS_IP_VENTANA_MS = 15 * 60 * 1000;
 setInterval(() => { const ahora = Date.now(); for (const [k, v] of fallosPorIp) if (v.reinicia <= ahora) fallosPorIp.delete(k); }, FALLOS_IP_VENTANA_MS).unref();
 function limitarLoginPorIp(req, res, next) {
-  const r = fallosPorIp.get(req.ip);
+  const r = fallosPorIp.get(req.ipCliente);
   if (r && r.reinicia > Date.now() && r.fallos >= FALLOS_IP_MAX) {
     return res.status(429).json({ error: 'Demasiados intentos fallidos desde esta conexión. Espera 15 minutos.' });
   }
@@ -164,8 +179,8 @@ function limitarLoginPorIp(req, res, next) {
 }
 function contarFalloPorIp(req) {
   const ahora = Date.now();
-  let r = fallosPorIp.get(req.ip);
-  if (!r || r.reinicia <= ahora) { r = { fallos: 0, reinicia: ahora + FALLOS_IP_VENTANA_MS }; fallosPorIp.set(req.ip, r); }
+  let r = fallosPorIp.get(req.ipCliente);
+  if (!r || r.reinicia <= ahora) { r = { fallos: 0, reinicia: ahora + FALLOS_IP_VENTANA_MS }; fallosPorIp.set(req.ipCliente, r); }
   r.fallos++;
 }
 if (process.env.RENDER && !process.env.TRUST_PROXY) console.warn('[aviso] En Render define TRUST_PROXY=1 para que los límites de intentos vean la IP real de cada persona.');
@@ -1452,7 +1467,7 @@ app.get('/api/admin/backup', async (req, res) => {
       return res.status(403).json({ error: 'Solo un administrador puede respaldar la base de datos' });
     }
     const nombreArchivo = `saneadren_backup_${hoyMexico()}.db`;
-    const destino = path.join(__dirname, '..', nombreArchivo);
+    const destino = path.join(require('os').tmpdir(), `saneadren-${process.pid}-${Date.now()}-${require('crypto').randomBytes(4).toString('hex')}.db`);
     await db.backup(destino);
     res.download(destino, nombreArchivo, () => fs.unlink(destino, () => {}));
   } catch (err) {
