@@ -594,8 +594,12 @@ app.post('/api/leads', validarPartidas, validarRegistro, h((req, res) => {
   let { estatus } = req.body;
   if (!telefono) return res.status(400).json({ error: 'Teléfono requerido' });
   const norm = normalizarTelefono(telefono);
-  if (norm.length < 10) return res.status(400).json({ error: 'El teléfono debe tener 10 dígitos' });
+  if (norm.length !== 10) return res.status(400).json({ error: 'El teléfono debe tener 10 dígitos' });
   if (!nombre || !nombre.trim()) return res.status(400).json({ error: 'El nombre del contacto es requerido' });
+  if (!contactoElegido) {
+    const mal = (!agregarTelA && unicos.telefonoFalso(norm) ? 'Ese teléfono no parece real (' + norm + ')' : null) || unicos.problemaNombreCliente(nombre, 'El nombre') || (empresa_contacto && String(empresa_contacto).trim() ? unicos.problemaNombreCliente(empresa_contacto, 'La empresa') : null);
+    if (mal) return res.status(400).json({ error: mal });
+  } else if (agregarTelA && unicos.telefonoFalso(norm)) return res.status(400).json({ error: 'Ese teléfono no parece real (' + norm + ')' });
   if (!direccion || !direccion.trim()) return res.status(400).json({ error: 'La dirección es requerida' });
   if (valor !== undefined && valor !== null && (isNaN(Number(valor)) || Number(valor) < 0)) {
     return res.status(400).json({ error: 'El valor debe ser un número mayor o igual a 0' });
@@ -907,8 +911,18 @@ const normalizarRfc = v => (v === undefined || v === null) ? v : String(v).trim(
 app.post('/api/contactos', h((req,res)=>{
   const {nombre,telefono,empresa_contacto,direccion,correo,telefono_alterno,giro,rfc,notas_generales}=req.body;
   if (!nombre || !String(nombre).trim()) return res.status(400).json({error:'El nombre del contacto es obligatorio'});
+  const malNombre = unicos.problemaNombreCliente(nombre, 'El nombre') || (empresa_contacto && String(empresa_contacto).trim() ? unicos.problemaNombreCliente(empresa_contacto, 'La empresa') : null);
+  if (malNombre) return res.status(400).json({ error: malNombre });
   const norm=normalizarTelefono(telefono);
   if(norm.length!==10) return res.status(400).json({error:'El teléfono debe tener 10 dígitos'});
+  if (unicos.telefonoFalso(norm)) return res.status(400).json({ error: 'Ese teléfono no parece real (' + norm + '): escribe el teléfono del contacto' });
+  // El teléfono alterno también identifica al cliente: debe ser válido y no ser de otro cliente.
+  const altNormNuevo = telefono_alterno && String(telefono_alterno).trim() ? normalizarTelefono(telefono_alterno) : '';
+  if (altNormNuevo && altNormNuevo.length !== 10) return res.status(400).json({ error: 'El teléfono alterno debe tener 10 dígitos' });
+  if (altNormNuevo && altNormNuevo !== norm) {
+    const dueñoAlt = unicos.porTelefono(altNormNuevo);
+    if (dueñoAlt) return res.status(409).json({ error: `El teléfono alterno ya es de ${unicos.folioCliente(dueñoAlt.id)} · ${dueñoAlt.empresa_contacto || dueñoAlt.nombre}`, cliente_id: dueñoAlt.id, cliente: unicos.resumen(dueñoAlt) });
+  }
   if (!validarCorreo(correo)) return res.status(400).json({error:'El correo electrónico no es válido'});
   if (giro && !tipoClienteValido(giro)) return res.status(400).json({error:'Giro inválido'});
   if (normalizarRfc(rfc) && !RFC.test(normalizarRfc(rfc))) return res.status(400).json({error:'El RFC no es válido (p. ej. ABC010101AB1)'});
@@ -931,6 +945,7 @@ app.post('/api/contactos', h((req,res)=>{
   const info=db.prepare(`INSERT INTO clientes (nombre,telefono,telefono_normalizado,empresa_contacto,direccion,correo,telefono_alterno,giro,rfc,notas_generales,canal_origen_id)
     VALUES (?,?,?,?,?,?,?,?,?,?,?)`).run(String(nombre).trim(),telefono,norm,empresa_contacto||null,direccion||null,correo?.trim()||null,telefono_alterno||null,giro||null,normalizarRfc(rfc)||null,notas_generales||null,req.body.canal_origen_id);
   unicos.recordarDistintos(Number(info.lastInsertRowid), distintoDe, req.usuarioSesion.id);
+  if (altNormNuevo && altNormNuevo !== norm) unicos.agregarTelefono(Number(info.lastInsertRowid), telefono_alterno, 'Alterno');
   res.status(201).json(db.prepare('SELECT * FROM clientes WHERE id = ?').get(info.lastInsertRowid));
 }));
 
@@ -1014,17 +1029,33 @@ app.put('/api/clientes/:id', h((req, res) => {
   let nuevoNorm = null;
   if (req.body.telefono !== undefined) {
     nuevoNorm = normalizarTelefono(req.body.telefono);
-    if (nuevoNorm.length < 10) return res.status(400).json({ error: 'El teléfono debe tener 10 dígitos' });
+    if (nuevoNorm.length !== 10) return res.status(400).json({ error: 'El teléfono debe tener 10 dígitos' });
+    if (unicos.telefonoFalso(nuevoNorm) && nuevoNorm !== cliente.telefono_normalizado) return res.status(400).json({ error: 'Ese teléfono no parece real (' + nuevoNorm + ')' });
     const otro = unicos.porTelefono(nuevoNorm);
     if (otro && String(otro.id) !== String(id)) return res.status(409).json({ error: `Ese teléfono ya es de ${unicos.folioCliente(otro.id)} · ${otro.empresa_contacto || otro.nombre}` });
     // Si era uno de sus teléfonos adicionales, pasa a ser el principal.
     db.prepare('DELETE FROM telefonos_cliente WHERE cliente_id = ? AND telefono_normalizado = ?').run(id, nuevoNorm);
   }
   // El teléfono alterno también identifica al cliente: no puede ser de otro.
-  const altNorm = req.body.telefono_alterno ? normalizarTelefono(req.body.telefono_alterno) : '';
+  const altNorm = req.body.telefono_alterno && String(req.body.telefono_alterno).trim() ? normalizarTelefono(req.body.telefono_alterno) : '';
+  if (altNorm && altNorm.length !== 10) return res.status(400).json({ error: 'El teléfono alterno debe tener 10 dígitos' });
   if (altNorm.length === 10) {
     const dueñoAlt = unicos.porTelefono(altNorm);
     if (dueñoAlt && String(dueñoAlt.id) !== String(id)) return res.status(409).json({ error: `El teléfono alterno ya es de ${unicos.folioCliente(dueñoAlt.id)} · ${dueñoAlt.empresa_contacto || dueñoAlt.nombre}` });
+  }
+  // Nombre o empresa: válidos y, si cambian, que no queden iguales a otro cliente (se pregunta antes).
+  for (const [campo, etiqueta] of [['nombre', 'El nombre'], ['empresa_contacto', 'La empresa']]) {
+    if (req.body[campo] === undefined || req.body[campo] === null || !String(req.body[campo]).trim()) continue;
+    const mal = unicos.problemaNombreCliente(req.body[campo], etiqueta);
+    if (mal) return res.status(400).json({ error: mal });
+  }
+  const cambiaNombre = ['nombre', 'empresa_contacto'].some(c => req.body[c] !== undefined && unicos.clave(req.body[c]) !== unicos.clave(cliente[c]));
+  if (cambiaNombre) {
+    const distintoDe = Array.isArray(req.body.distinto_de) ? req.body.distinto_de.map(Number).filter(Boolean) : [];
+    const nuevo = { nombre: req.body.nombre ?? cliente.nombre, empresa: req.body.empresa_contacto ?? cliente.empresa_contacto };
+    const pendiente = unicos.exigirConfirmacion(nuevo, [...distintoDe, Number(id)], [Number(id)]);
+    if (pendiente) return res.status(409).json({ ...pendiente, mensaje: 'Con este nombre quedaría igual a otro cliente. Si es el mismo, un administrador puede juntarlos.' });
+    if (distintoDe.length) unicos.recordarDistintos(Number(id), distintoDe, req.usuarioSesion.id);
   }
   // El RFC no se repite: si ya lo tiene otro cliente, es la misma razón social (se ofrece juntarlos).
   if (req.body.rfc) {

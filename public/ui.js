@@ -15,9 +15,10 @@
   document.body.append(dup);
   const escDup = t => String(t ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   window.folioCliente = id => (id ? 'CLI-' + String(id).padStart(4, '0') : '');
-  window.resolverDuplicado = (parecidos, { nombre = '', telefono = '' } = {}) => new Promise(resolve => {
+  window.resolverDuplicado = (parecidos, { nombre = '', telefono = '', mensaje = '', otro = 'No, es otro cliente: crearlo' } = {}) => new Promise(resolve => {
     const fin = v => { dup.classList.remove('mostrar'); resolve(v); };
-    document.getElementById('dupc-texto').textContent = 'Vas a registrar «' + nombre + '»' + (telefono ? ' con el teléfono ' + telefono : '') + '. Ya existe' + (parecidos.length > 1 ? 'n estos clientes parecidos' : ' un cliente parecido') + '. Si es el mismo, se le agrega este teléfono y no se crea otro.';
+    document.getElementById('dupc-texto').textContent = mensaje || ('Vas a registrar «' + nombre + '»' + (telefono ? ' con el teléfono ' + telefono : '') + '. Ya existe' + (parecidos.length > 1 ? 'n estos clientes parecidos' : ' un cliente parecido') + '. Si es el mismo, se le agrega este teléfono y no se crea otro.');
+    document.getElementById('dupc-otro').textContent = otro;
     document.getElementById('dupc-lista').innerHTML = parecidos.map(p => '<div class="dup-item"><div><b>' + escDup(p.folio) + ' · ' + escDup(p.empresa || p.nombre) + '</b>'
       + '<small>' + escDup([p.empresa && p.nombre !== p.empresa ? p.nombre : '', p.telefono ? 'tel. ' + p.telefono : 'sin teléfono', p.rfc ? 'RFC ' + p.rfc : ''].filter(Boolean).join(' · ')) + '</small>'
       + '<small class="dup-motivo">' + escDup(p.motivo || '') + '</small></div><button type="button" class="btn btn-verde btn-chico" data-dup-mismo="' + Number(p.id) + '">Es este</button></div>').join('');

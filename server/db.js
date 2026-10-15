@@ -218,8 +218,14 @@ if (!db.prepare('PRAGMA table_info(catalogo_servicios)').all().some(c => c.name 
 }
 
 
+// 10 dígitos. Se aceptan con lada internacional (+52, 52 1) o con 044/045; cualquier otro largo se regresa
+// tal cual para que la validación de «10 dígitos» lo rechace (antes se tomaban los últimos 10 de lo que fuera).
 function normalizarTelefono(tel) {
-  return (tel || '').replace(/\D/g, '').slice(-10);
+  // La extensión no es parte del número: «442 123 4567 ext. 3» → 4421234567.
+  const d = String(tel || '').replace(/\s*(ext\.?|extensi[oó]n|x)\s*\d{1,6}\s*$/i, '').replace(/\D/g, '');
+  if (d.length === 12 && d.startsWith('52')) return d.slice(2);
+  if (d.length === 13 && (d.startsWith('521') || d.startsWith('044') || d.startsWith('045'))) return d.slice(3);
+  return d;
 }
 
 if (!db.prepare('PRAGMA table_info(clientes)').all().some(c => c.name === 'canal_origen_id')) {

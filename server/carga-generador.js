@@ -153,6 +153,7 @@ module.exports = function cargaGenerador(app, db, h, unicos) {
       if (!clienteTxt && !idTxt) errores.push('CLIENTE vacío');
       else if (idTxt && !/^nuevo$/i.test(idTxt)) { cliente = unicos.porId(idTxt); if (!cliente) errores.push(`ID CLIENTE "${idTxt.slice(0, 20)}" no existe`); }
       else if (kc.replace(/ /g, '').length < 2) errores.push(`CLIENTE "${clienteTxt}" es demasiado corto: escribe el nombre completo`);
+      else if (unicos.problemaNombreCliente(clienteTxt, 'CLIENTE')) errores.push(unicos.problemaNombreCliente(clienteTxt, 'CLIENTE') + ` («${clienteTxt.slice(0, 30)}»)`);
       else {
         // «Es el mismo que X de este archivo»: se sigue la cadena hasta un cliente que ya existe o uno nuevo.
         let eq = eqC[kc], destino = kc;

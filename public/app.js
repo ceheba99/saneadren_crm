@@ -1681,7 +1681,7 @@ async function abrirDuplicados() {
   try { const r = await api('/clientes/duplicados'); pares = await r.json(); if (!r.ok) throw new Error(pares.error); } catch (err) { cont.innerHTML = '<p class="aviso-error-carga">' + escaparHtml(err.message) + '</p>'; return; }
   if (!pares.length) { cont.innerHTML = '<p class="dup-limpio">✔ No hay posibles duplicados.</p>'; return; }
   const lado = c => '<div class="dup-lado"><b>' + escaparHtml(c.folio + ' · ' + (c.empresa || c.nombre || 'Sin nombre')) + '</b><small>' + escaparHtml([c.empresa && c.nombre !== c.empresa ? c.nombre : '', c.telefono ? 'tel. ' + c.telefono : 'sin teléfono', c.rfc ? 'RFC ' + c.rfc : '', c.servicios + (c.servicios === 1 ? ' registro' : ' registros')].filter(Boolean).join(' · ')) + '</small></div>';
-  cont.innerHTML = '<p class="ayuda">' + pares.length + (pares.length === 1 ? ' pareja' : ' parejas') + ' por revisar.</p>' + pares.map((p, i) => '<div class="dup-par" data-par="' + i + '"><div class="dup-motivo">' + escaparHtml(p.motivo) + '</div><div class="dup-lados">' + lado(p.a) + lado(p.b) + '</div>'
+  cont.innerHTML = '<p class="ayuda">' + pares.length + (pares.length === 1 ? ' pareja' : ' parejas') + ' por revisar.</p>' + pares.map((p, i) => '<div class="dup-par" data-par="' + i + '"><div class="dup-motivo">' + escaparHtml(p.motivo) + (p.marcado_distinto_por ? ' · ' + escaparHtml(p.marcado_distinto_por) + ' dijo que son distintos: confírmalo' : '') + '</div><div class="dup-lados">' + lado(p.a) + lado(p.b) + '</div>'
     + '<div class="dup-acciones"><button type="button" class="btn btn-outline btn-chico" data-dup-juntar="' + i + '" data-queda="b">Juntar en ' + escaparHtml(p.b.folio) + '</button><button type="button" class="btn btn-outline btn-chico" data-dup-juntar="' + i + '" data-queda="a">Juntar en ' + escaparHtml(p.a.folio) + '</button><button type="button" class="btn btn-secundario btn-chico" data-dup-distintos="' + i + '">Son distintos</button></div></div>').join('');
   cont.onclick = async e => {
     const b = e.target.closest('button'); if (!b || b.disabled) return;
@@ -1767,6 +1767,26 @@ on('btn-guardar-cliente', 'click', async () => {
     const res = await api('/clientes/' + CLIENTE_ACTUAL.id, { method: 'PUT', body: JSON.stringify(payload) });
     if (res.status === 409) {
       const data = await res.json();
+      // El nuevo nombre lo deja igual a otro cliente: ¿es el mismo? (se juntan) o es otro (se guarda).
+      if (data.error === 'posible_duplicado') {
+        const d = await resolverDuplicado(data.parecidos, { mensaje: 'Con el nombre «' + (payload.empresa_contacto || payload.nombre) + '», ' + folioCliente(CLIENTE_ACTUAL.id) + ' quedaría igual a otro cliente. Si es el mismo, se juntan en uno; si es otro, se guarda el cambio.', otro: 'Es otro cliente: guardar el cambio' });
+        if (!d) return;
+        if (d.distinto) {
+          const r2 = await api('/clientes/' + CLIENTE_ACTUAL.id, { method: 'PUT', body: JSON.stringify({ ...payload, distinto_de: d.distinto }) });
+          const j2 = await r2.json();
+          if (!r2.ok) { toast(j2.error === 'posible_duplicado' ? 'Sigue pareciéndose a otro cliente' : (j2.error || 'No se pudo guardar')); return; }
+          toast('Datos del cliente actualizados'); FlujoCRM.marcarGuardado('overlay-ficha-cliente'); await abrirFichaCliente(CLIENTE_ACTUAL.id); await cargarClientes();
+          return;
+        }
+        if (USUARIO_ACTUAL?.rol !== 'admin') { toast('Es el mismo cliente: pide a un administrador que los junte (Contactos → Revisar duplicados). No se guardó el cambio de nombre.'); return; }
+        if (!await solicitarDialogo({ titulo: 'Juntar clientes', mensaje: 'Todo lo de ' + folioCliente(CLIENTE_ACTUAL.id) + ' pasa a ' + folioCliente(d.mismo) + ' y ' + folioCliente(CLIENTE_ACTUAL.id) + ' deja de existir (su ID queda apuntando a ' + folioCliente(d.mismo) + ').', aceptar: 'Juntar en ' + folioCliente(d.mismo) })) return;
+        const rj = await api('/clientes/' + CLIENTE_ACTUAL.id + '/fusionar', { method: 'POST', body: JSON.stringify({ con: d.mismo }) });
+        const dj = await rj.json();
+        if (!rj.ok) { toast(dj.error || 'No se pudieron juntar'); return; }
+        toast('Clientes juntados en ' + folioCliente(d.mismo)); FlujoCRM.marcarGuardado('overlay-ficha-cliente');
+        await abrirFichaCliente(d.mismo); await cargarClientes();
+        return;
+      }
       // Mismo RFC = misma razón social: un administrador puede juntar los dos clientes en uno.
       if (data.rfc_de && USUARIO_ACTUAL?.rol === 'admin') {
         const ok = await solicitarDialogo({ titulo: 'Este RFC ya es de otro cliente', mensaje: data.error.split('. Si')[0] + '. Si es la misma razón social, junta ' + folioCliente(CLIENTE_ACTUAL.id) + ' dentro de ' + data.rfc_de.folio + ': sus cotizaciones, órdenes, cobros y teléfonos pasan a ' + data.rfc_de.folio + ' y ' + folioCliente(CLIENTE_ACTUAL.id) + ' deja de existir (su ID queda apuntando a ' + data.rfc_de.folio + ').', aceptar: 'Juntar en ' + data.rfc_de.folio });
