@@ -5,6 +5,28 @@
   layer.id = 'overlay-confirmacion';
   layer.innerHTML = `<div class="modal dialogo-confirmacion"><div class="modal-header"><h2 id="dialogo-titulo"></h2><button class="close-btn" type="button" aria-label="Cerrar ventana">✕</button></div><div class="modal-body dialogo-contenido"><p class="dialogo-mensaje" id="dialogo-mensaje"></p><div class="campo" id="dialogo-campo-wrap" hidden><label for="dialogo-campo">Valor</label><input id="dialogo-campo" autocomplete="new-password" maxlength="128"></div><div class="dialogo-acciones"><button class="btn btn-secundario" id="dialogo-cancelar">Cancelar</button><button class="btn btn-peligro" id="dialogo-aceptar"></button></div></div></div>`;
   document.body.append(layer);
+  // «¿Es el mismo cliente?»: cuando el CRM encuentra clientes parecidos antes de crear uno nuevo.
+  // Resuelve { mismo: id } (agregar el teléfono a ese cliente), { distinto: [ids] } (crear uno nuevo) o null (cancelar).
+  const dup = document.createElement('div');
+  dup.className = 'overlay'; dup.id = 'overlay-duplicado';
+  dup.innerHTML = '<div class="modal modal-duplicado"><div class="modal-header"><div><span class="flujo-kicker">REVISIÓN PARA NO DUPLICAR</span><h2>¿Es el mismo cliente?</h2></div><button class="close-btn" type="button" aria-label="Cerrar ventana">✕</button></div>'
+    + '<div class="modal-body"><p class="dup-texto" id="dupc-texto"></p><div class="dup-lista" id="dupc-lista"></div>'
+    + '<div class="dialogo-acciones"><button class="btn btn-secundario" type="button" id="dupc-cancelar">Cancelar</button><button class="btn btn-primario" type="button" id="dupc-otro">No, es otro cliente: crearlo</button></div></div></div>';
+  document.body.append(dup);
+  const escDup = t => String(t ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  window.folioCliente = id => (id ? 'CLI-' + String(id).padStart(4, '0') : '');
+  window.resolverDuplicado = (parecidos, { nombre = '', telefono = '' } = {}) => new Promise(resolve => {
+    const fin = v => { dup.classList.remove('mostrar'); resolve(v); };
+    document.getElementById('dupc-texto').textContent = 'Vas a registrar «' + nombre + '»' + (telefono ? ' con el teléfono ' + telefono : '') + '. Ya existe' + (parecidos.length > 1 ? 'n estos clientes parecidos' : ' un cliente parecido') + '. Si es el mismo, se le agrega este teléfono y no se crea otro.';
+    document.getElementById('dupc-lista').innerHTML = parecidos.map(p => '<div class="dup-item"><div><b>' + escDup(p.folio) + ' · ' + escDup(p.empresa || p.nombre) + '</b>'
+      + '<small>' + escDup([p.empresa && p.nombre !== p.empresa ? p.nombre : '', p.telefono ? 'tel. ' + p.telefono : 'sin teléfono', p.rfc ? 'RFC ' + p.rfc : ''].filter(Boolean).join(' · ')) + '</small>'
+      + '<small class="dup-motivo">' + escDup(p.motivo || '') + '</small></div><button type="button" class="btn btn-verde btn-chico" data-dup-mismo="' + Number(p.id) + '">Es este</button></div>').join('');
+    document.getElementById('dupc-lista').onclick = e => { const b = e.target.closest('[data-dup-mismo]'); if (b) fin({ mismo: Number(b.dataset.dupMismo) }); };
+    document.getElementById('dupc-otro').onclick = () => fin({ distinto: parecidos.map(p => p.id) });
+    document.getElementById('dupc-cancelar').onclick = () => fin(null);
+    dup.querySelector('.close-btn').onclick = () => fin(null);
+    dup.classList.add('mostrar');
+  });
   let resolver = null;
   const finish = value => { layer.classList.remove('mostrar'); const done = resolver; resolver = null; if(done) done(value); };
   layer.querySelector('.close-btn').onclick = () => finish(null);

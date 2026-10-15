@@ -1635,7 +1635,7 @@ function renderTablaClientesReales(clientes) {
   const tipo = c => c.servicios_ganados > 1 ? ['recurrente', 'Recurrente'] : c.servicios_ganados > 0 ? ['cliente', 'Cliente'] : ['prospecto', 'Prospecto'];
   body.innerHTML = clientes.map(c => `
     <tr onclick="abrirFichaCliente(${Number(c.id)})">
-      <td data-label="Contacto"><b>${escaparHtml(c.nombre || 'Sin nombre')}</b><small class="contacto-relacion">${escaparHtml([c.empresa_contacto, c.telefono].filter(Boolean).join(' · '))}</small></td>
+      <td data-label="Contacto"><b>${escaparHtml(c.nombre || 'Sin nombre')}</b><small class="contacto-relacion">${escaparHtml([folioCliente(c.id), c.empresa_contacto, c.telefono].filter(Boolean).join(' · '))}</small></td>
       <td data-label="Tipo"><span class="tipo-contacto ${tipo(c)[0]}">${tipo(c)[1]}</span></td>
       <td data-label="Cotizaciones abiertas" class="st-num">${Number(c.solicitudes_abiertas) || '—'}</td>
       <td data-label="Órdenes de servicio" class="st-num">${Number(c.servicios_ganados) || '—'}</td>
@@ -1652,7 +1652,8 @@ async function abrirFichaCliente(id) {
   const cliente = await api('/clientes/' + id).then(r => r.json());
   CLIENTE_ACTUAL = cliente;
 
-  document.getElementById('fc-titulo').textContent = `${cliente.telefono} · ${cliente.nombre || 'Sin nombre'}`;
+  document.getElementById('fc-titulo').textContent = [folioCliente(cliente.id), cliente.empresa_contacto || cliente.nombre || 'Sin nombre', cliente.telefono].filter(Boolean).join(' · ');
+  pintarTelefonosCliente(cliente.id);
   document.getElementById('fc-meta').innerHTML = metaClienteHTML(cliente);
   Finanzas.pintarCliente(cliente);
   document.getElementById('fc-ed-telefono').value = cliente.telefono || '';
@@ -1670,6 +1671,66 @@ async function abrirFichaCliente(id) {
   FlujoCRM.presentarContacto(cliente);
   FlujoCRM.marcarGuardado('overlay-ficha-cliente');
 }
+
+// ---------- Revisar duplicados (administración) ----------
+async function abrirDuplicados() {
+  const cont = document.getElementById('dup-pares');
+  cont.innerHTML = '<p class="util-45" role="status">Buscando…</p>';
+  abrirVentana('overlay-duplicados');
+  let pares;
+  try { const r = await api('/clientes/duplicados'); pares = await r.json(); if (!r.ok) throw new Error(pares.error); } catch (err) { cont.innerHTML = '<p class="aviso-error-carga">' + escaparHtml(err.message) + '</p>'; return; }
+  if (!pares.length) { cont.innerHTML = '<p class="dup-limpio">✔ No hay posibles duplicados.</p>'; return; }
+  const lado = c => '<div class="dup-lado"><b>' + escaparHtml(c.folio + ' · ' + (c.empresa || c.nombre || 'Sin nombre')) + '</b><small>' + escaparHtml([c.empresa && c.nombre !== c.empresa ? c.nombre : '', c.telefono ? 'tel. ' + c.telefono : 'sin teléfono', c.rfc ? 'RFC ' + c.rfc : '', c.servicios + (c.servicios === 1 ? ' registro' : ' registros')].filter(Boolean).join(' · ')) + '</small></div>';
+  cont.innerHTML = '<p class="ayuda">' + pares.length + (pares.length === 1 ? ' pareja' : ' parejas') + ' por revisar.</p>' + pares.map((p, i) => '<div class="dup-par" data-par="' + i + '"><div class="dup-motivo">' + escaparHtml(p.motivo) + '</div><div class="dup-lados">' + lado(p.a) + lado(p.b) + '</div>'
+    + '<div class="dup-acciones"><button type="button" class="btn btn-outline btn-chico" data-dup-juntar="' + i + '" data-queda="b">Juntar en ' + escaparHtml(p.b.folio) + '</button><button type="button" class="btn btn-outline btn-chico" data-dup-juntar="' + i + '" data-queda="a">Juntar en ' + escaparHtml(p.a.folio) + '</button><button type="button" class="btn btn-secundario btn-chico" data-dup-distintos="' + i + '">Son distintos</button></div></div>').join('');
+  cont.onclick = async e => {
+    const b = e.target.closest('button'); if (!b || b.disabled) return;
+    const p = pares[Number(b.dataset.dupJuntar ?? b.dataset.dupDistintos)];
+    if (b.dataset.dupDistintos !== undefined) {
+      b.disabled = true;
+      const r = await api('/clientes/distintos', { method: 'POST', body: JSON.stringify({ a: p.a.id, b: p.b.id }) });
+      if (r.ok) { b.closest('.dup-par').remove(); toast('Marcados como clientes distintos'); } else { b.disabled = false; toast('No se pudo guardar'); }
+      return;
+    }
+    const queda = b.dataset.queda === 'a' ? p.a : p.b, sale = b.dataset.queda === 'a' ? p.b : p.a;
+    if (!await solicitarDialogo({ titulo: 'Juntar clientes', mensaje: 'Todo lo de ' + sale.folio + ' (' + (sale.empresa || sale.nombre) + ': cotizaciones, órdenes, cobros y teléfonos) pasa a ' + queda.folio + ' (' + (queda.empresa || queda.nombre) + '). ' + sale.folio + ' deja de existir y su ID queda apuntando a ' + queda.folio + '.', aceptar: 'Juntar en ' + queda.folio })) return;
+    b.disabled = true;
+    const r = await api('/clientes/' + sale.id + '/fusionar', { method: 'POST', body: JSON.stringify({ con: queda.id }) });
+    const d = await r.json();
+    if (!r.ok) { b.disabled = false; toast(d.error || 'No se pudieron juntar'); return; }
+    toast('Juntados en ' + queda.folio);
+    await abrirDuplicados(); cargarClientes();
+  };
+}
+on('btn-revisar-duplicados', 'click', abrirDuplicados);
+
+// Otros teléfonos del mismo cliente (sucursales, otras personas): cualquiera de ellos lo identifica.
+async function pintarTelefonosCliente(id) {
+  const cont = document.getElementById('fc-telefonos');
+  if (!cont) return;
+  let lista = [];
+  try { lista = await api('/clientes/' + id + '/telefonos').then(r => r.json()); } catch { lista = []; }
+  cont.innerHTML = (lista.length ? lista.map(t => '<span class="chip tel-chip">' + escaparHtml(t.telefono) + (t.etiqueta ? ' <small>' + escaparHtml(t.etiqueta) + '</small>' : '')
+    + ' <button type="button" class="tel-quitar" data-tel-quitar="' + escaparHtml(t.telefono_normalizado) + '" aria-label="Quitar teléfono">✕</button></span>').join('') : '<span class="util-45">Ninguno</span>')
+    + ' <button type="button" class="btn btn-outline btn-chico" id="fc-tel-agregar">+ Agregar teléfono</button>';
+}
+document.addEventListener('click', async e => {
+  if (!CLIENTE_ACTUAL) return;
+  const quitar = e.target.closest('[data-tel-quitar]');
+  if (quitar && quitar.closest('#fc-telefonos')) {
+    if (!await solicitarDialogo({ titulo: 'Quitar teléfono', mensaje: 'Este teléfono ya no identificará a ' + folioCliente(CLIENTE_ACTUAL.id) + '.', aceptar: 'Quitar' })) return;
+    await api('/clientes/' + CLIENTE_ACTUAL.id + '/telefonos/' + encodeURIComponent(quitar.dataset.telQuitar), { method: 'DELETE' });
+    pintarTelefonosCliente(CLIENTE_ACTUAL.id); return;
+  }
+  if (e.target.id === 'fc-tel-agregar') {
+    const tel = await solicitarDialogo({ titulo: 'Agregar teléfono', mensaje: 'Otro teléfono de ' + folioCliente(CLIENTE_ACTUAL.id) + ' (otra persona o sucursal de la misma razón social). Si llaman de ese número, el CRM reconocerá a este cliente.', aceptar: 'Agregar', campo: { tipo: 'tel', etiqueta: 'Teléfono (10 dígitos)' } });
+    if (!tel) return;
+    const r = await api('/clientes/' + CLIENTE_ACTUAL.id + '/telefonos', { method: 'POST', body: JSON.stringify({ telefono: tel }) });
+    const d = await r.json();
+    if (!r.ok) { toast(d.error || 'No se pudo agregar'); return; }
+    toast('Teléfono agregado'); pintarTelefonosCliente(CLIENTE_ACTUAL.id);
+  }
+});
 
 function renderServiciosCliente(servicios) {
   ServiciosTabla.render('fc-servicios', servicios, CLIENTE_ACTUAL.id, 'cliente');
@@ -1706,6 +1767,18 @@ on('btn-guardar-cliente', 'click', async () => {
     const res = await api('/clientes/' + CLIENTE_ACTUAL.id, { method: 'PUT', body: JSON.stringify(payload) });
     if (res.status === 409) {
       const data = await res.json();
+      // Mismo RFC = misma razón social: un administrador puede juntar los dos clientes en uno.
+      if (data.rfc_de && USUARIO_ACTUAL?.rol === 'admin') {
+        const ok = await solicitarDialogo({ titulo: 'Este RFC ya es de otro cliente', mensaje: data.error.split('. Si')[0] + '. Si es la misma razón social, junta ' + folioCliente(CLIENTE_ACTUAL.id) + ' dentro de ' + data.rfc_de.folio + ': sus cotizaciones, órdenes, cobros y teléfonos pasan a ' + data.rfc_de.folio + ' y ' + folioCliente(CLIENTE_ACTUAL.id) + ' deja de existir (su ID queda apuntando a ' + data.rfc_de.folio + ').', aceptar: 'Juntar en ' + data.rfc_de.folio });
+        if (!ok) return;
+        const rj = await api('/clientes/' + CLIENTE_ACTUAL.id + '/fusionar', { method: 'POST', body: JSON.stringify({ con: data.rfc_de.id }) });
+        const dj = await rj.json();
+        if (!rj.ok) { toast(dj.error || 'No se pudieron juntar'); return; }
+        toast('Clientes juntados en ' + data.rfc_de.folio);
+        FlujoCRM.marcarGuardado('overlay-ficha-cliente');
+        await abrirFichaCliente(data.rfc_de.id); await cargarClientes();
+        return;
+      }
       toast(data.error || 'Ese teléfono ya pertenece a otro cliente');
       return;
     }

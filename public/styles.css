@@ -1222,6 +1222,29 @@ button.enlace{background:none;border:0;padding:0;color:var(--azul-600);text-deco
 .oc-partidas-caja .tabla-scroll{max-height:none;}
 .oc-tabla .oc-unidad{width:128px;min-width:128px;}
 .oc-tabla .oc-clave{width:88px;}
+.oc-tabla .oc-descripcion{min-width:300px;}
+
+/* ===== Clientes sin duplicados: «¿es el mismo?», revisión de duplicados y teléfonos ===== */
+.modal-duplicado{max-width:560px;width:calc(100vw - 32px);}
+.dup-texto{margin:0 0 12px;}
+.dup-lista{display:flex;flex-direction:column;gap:8px;margin-bottom:14px;}
+.dup-item{display:flex;align-items:center;justify-content:space-between;gap:12px;border:1px solid var(--gris-300);border-radius:8px;padding:10px 12px;}
+.dup-item small,.dup-lado small{display:block;color:var(--texto-sec);font-size:12px;margin-top:2px;}
+.dup-item .dup-motivo{color:var(--naranja, #b26a00);}
+.modal-duplicados{max-width:820px;width:calc(100vw - 32px);}
+.dup-par{border:1px solid var(--gris-300);border-radius:10px;padding:12px;margin-bottom:10px;}
+.dup-par .dup-motivo{font-size:12px;font-weight:700;color:var(--texto-sec);text-transform:uppercase;letter-spacing:.03em;margin-bottom:8px;}
+.dup-lados{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+.dup-lado{background:var(--gris-50, rgba(0,0,0,.03));border-radius:8px;padding:8px 10px;}
+.dup-acciones{display:flex;flex-wrap:wrap;gap:8px;justify-content:flex-end;margin-top:10px;}
+.dup-limpio{font-weight:700;color:var(--verde);}
+@media(max-width:600px){.dup-lados{grid-template-columns:1fr;}.dup-item{flex-direction:column;align-items:stretch;}}
+.fc-telefonos{display:flex;flex-wrap:wrap;gap:6px;align-items:center;}
+.tel-chip small{color:var(--texto-sec);}
+.tel-quitar{border:0;background:none;cursor:pointer;color:var(--texto-sec);padding:0 2px;font-size:12px;}
+.modal-duplicado .modal-body,.modal-duplicados .modal-body{padding:16px 20px 20px;}
+.etiqueta-contacto.etiqueta-id{font-variant-numeric:tabular-nums;letter-spacing:.02em;}
+
 .oc-tabla .oc-descripcion{min-width:240px;}
 
 /* ===== Órdenes de compra: autorización (deuda) y catálogos editables ===== */
