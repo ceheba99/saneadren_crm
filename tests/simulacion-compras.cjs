@@ -21,7 +21,8 @@ const SEMANA_40 = [['REPARACION FLECHA CARDAN JOSE LUIS ACOSTA', 2000], ['PAGO R
 (async () => {
   for (let i = 0; i < 40 && !/corriendo/.test(salida); i++) await espera(150);
   const A = (await pedir('POST', '/login', null, { nombre: ADMIN.correo, password: ADMIN.password }))[1].token;
-  await pedir('POST', '/usuarios', A, { nombre: 'Compras Sim', correo: 'compras.sim@saneadren.com.mx', password: 'Compras-Sim-2026', rol: 'ventas' });
+  // Las órdenes de compra las hace el encargado de centro de costos (rol «costos») o administración.
+  await pedir('POST', '/usuarios', A, { nombre: 'Compras Sim', correo: 'compras.sim@saneadren.com.mx', password: 'Compras-Sim-2026', rol: 'costos' });
   const V = (await pedir('POST', '/login', null, { nombre: 'compras.sim@saneadren.com.mx', password: 'Compras-Sim-2026' }))[1].token;
   let s, j;
   [s, j] = await pedir('GET', '/compras/centros', V);

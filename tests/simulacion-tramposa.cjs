@@ -77,7 +77,8 @@ const rechaza = (r, texto) => revisa(r[0] >= 400 && r[0] < 500 && r[1].error, te
   const [, prov] = await pedir('POST', '/finanzas/proveedores', A, { nombre: 'Refaccionaria Tramposa', categoria: 'refacciones', dias_credito: 15 });
   const [, centros] = await pedir('GET', '/compras/centros', V);
   const base = { proveedor_id: prov.id, centro_id: centros[0].id, categoria: 'refacciones', fecha: HOY, iva_modo: 'mas_iva', partidas: [{ cantidad: 2, descripcion: 'Manguera de 4 pulgadas', unidad: 'PZA', precio: 1500 }] };
-  const oc = (p, t = V) => pedir('POST', '/compras/ordenes', t, { ...base, ...p });
+  const oc = (p, t = A) => // las órdenes las hace el encargado de centro de costos o administración
+    pedir('POST', '/compras/ordenes', t, { ...base, ...p });
   const P = x => ({ partidas: [{ ...base.partidas[0], ...x }] });
   for (const [cambio, texto] of [
     [P({ cantidad: -2 }), 'cantidad negativa'], [P({ cantidad: 0 }), 'cantidad 0'], [P({ cantidad: '2 piezas' }), 'cantidad «2 piezas»'], [P({ cantidad: 'NaN' }), 'cantidad NaN'], [P({ cantidad: 1e9 }), 'cantidad absurda'],

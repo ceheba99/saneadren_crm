@@ -62,7 +62,7 @@ const igual = (a, b) => Math.abs(Number(a) - Number(b)) < 0.005;
   revisa(s === 201, 'se le paga a Pipas del Centro');
   const [, refa] = await pedir('POST', '/finanzas/proveedores', V, { nombre: 'Refaccionaria Bajío', categoria: 'refacciones', dias_credito: 0 });
   const [, centros] = await pedir('GET', '/compras/centros', V);
-  [s, j] = await pedir('POST', '/compras/ordenes', V, { proveedor_id: refa.id, centro_id: centros[0].id, categoria: 'refacciones', fecha: HOY, iva_modo: 'mas_iva', partidas: [{ cantidad: 2, descripcion: 'Manguera de succión 4"', unidad: 'PZA', precio: 500 }] });
+  [s, j] = await pedir('POST', '/compras/ordenes', A, { proveedor_id: refa.id, centro_id: centros[0].id, categoria: 'refacciones', fecha: HOY, iva_modo: 'mas_iva', partidas: [{ cantidad: 2, descripcion: 'Manguera de succión 4"', unidad: 'PZA', precio: 500 }] });
   const oc = j; revisa(s === 201 && oc.total === 1160, 'orden de compra de $1,160 (borrador, todavía no es deuda)', [s, oc.total, oc.error]);
   [s, j] = await pedir('POST', '/compras/ordenes/' + oc.id + '/autorizar', A);
   revisa(s === 200 && j.cxp_id, 'el administrador la autoriza: se vuelve deuda');

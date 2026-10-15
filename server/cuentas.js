@@ -83,7 +83,7 @@ function asegurarUsuarioPrueba(db, prefijo = 'USUARIO_PRUEBA', nombrePorDefecto 
   const rol = (env('ROL') || 'ventas').trim().toLowerCase();
   const correo = env('CORREO') ? normalizarCorreo(env('CORREO')) : null;
   const problema = problemaNombre(nombre)
-    || (['admin', 'ventas', 'atencion', 'tecnico'].includes(rol) ? null : prefijo + '_ROL debe ser admin, ventas, atencion o tecnico')
+    || (['admin', 'ventas', 'atencion', 'tecnico', 'costos'].includes(rol) ? null : prefijo + '_ROL debe ser admin, ventas, atencion, tecnico o costos')
     || (correo && !correoPermitido(correo) ? prefijo + '_CORREO debe ser @' + DOMINIO : null)
     || problemaPassword(password, { nombre, correo: correo || '' });
   if (problema) { console.error(`[usuario ${nombre}] No se aplicó:`, problema); return; }

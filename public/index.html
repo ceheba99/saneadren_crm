@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Saneadren · Cotizaciones y Servicios</title>
-<link rel="stylesheet" href="styles.css?v=oc3">
+<link rel="stylesheet" href="styles.css?v=sol1">
 <link rel="stylesheet" href="servicios-tabla.css">
 <link rel="stylesheet" href="flujo.css">
 </head>
@@ -42,6 +42,7 @@
         <div class="menu-sub">
           <button type="button" class="menu-item solo-cobranza" data-vista="cobrar" id="nav-cobrar"><span class="menu-icono" aria-hidden="true">📥</span>Cuentas por cobrar</button>
           <button type="button" class="menu-item solo-cobranza" data-vista="pagar" id="nav-pagar"><span class="menu-icono" aria-hidden="true">📤</span>Cuentas por pagar</button>
+          <button type="button" class="menu-item" data-vista="solicitudes"><span class="menu-icono" aria-hidden="true">📝</span>Solicitudes de compra</button>
           <button type="button" class="menu-item" data-vista="compras"><span class="menu-icono" aria-hidden="true">🛒</span>Órdenes de compra</button>
           <button type="button" class="menu-item" data-vista="resultados"><span class="menu-icono" aria-hidden="true">📊</span>Resultados</button>
         </div>
@@ -276,10 +277,22 @@
 
   <!-- ====== VISTA: PENDIENTES (Recompras + Alertas juntas) ====== -->
   <!-- ====== VISTA: ÓRDENES DE COMPRA (formato CM-F-03) ====== -->
+  <section class="vista" id="vista-solicitudes">
+    <div class="vista-encabezado">
+      <div><h2>Solicitudes de compra</h2><p class="ayuda">¿Necesitas que se compre algo? Pídelo aquí: qué y para qué. El encargado de centro de costos la aprueba, se juntan 3 cotizaciones, se elige una y se hace la orden de compra.</p></div>
+      <div class="btn-group"><button type="button" class="btn btn-primario" id="sol-nueva">+ Nueva solicitud</button></div>
+    </div>
+    <div class="filtros">
+      <select id="sol-filtro" aria-label="Mostrar"><option value="abiertas">Abiertas</option><option value="mias">Las que yo pedí</option><option value="por_aprobar">Por aprobar</option><option value="cotizando">Cotizando</option><option value="elegida">Cotización elegida</option><option value="con_orden">Con orden de compra</option><option value="recibida">Recibidas</option><option value="rechazada">Rechazadas</option><option value="cancelada">Canceladas</option><option value="">Todas</option></select>
+      <input type="search" id="sol-buscar" placeholder="Folio, qué se necesita, área o quién pidió" aria-label="Buscar solicitudes">
+    </div>
+    <div id="sol-lista"></div>
+  </section>
+
   <section class="vista" id="vista-compras">
     <div class="vista-encabezado">
       <div><h2>Órdenes de compra</h2><p class="ayuda">Se capturan como borrador; al autorizarlas (administración) pasan solas a Cuentas por pagar como factura pendiente del proveedor. Se descargan con el formato CM-F-03.</p></div>
-      <div class="btn-group"><button type="button" class="btn btn-primario" id="oc-nueva">+ Nueva orden de compra</button><button type="button" class="btn btn-outline" id="oc-unidades">Unidades de medida</button><button type="button" class="btn btn-outline" id="oc-centros">Centros de costo</button><button type="button" class="btn btn-outline" id="oc-categorias">Categorías de gasto</button><button type="button" class="btn btn-outline solo-admin" id="oc-formato">Datos del formato</button></div>
+      <div class="btn-group"><button type="button" class="btn btn-primario solo-costos" id="oc-nueva" title="Orden sin solicitud (solo encargado de centro de costos y administración)">+ Nueva orden de compra</button><button type="button" class="btn btn-outline" id="oc-ir-solicitudes">📝 Solicitudes de compra</button><button type="button" class="btn btn-outline" id="oc-unidades">Unidades de medida</button><button type="button" class="btn btn-outline" id="oc-centros">Centros de costo</button><button type="button" class="btn btn-outline" id="oc-categorias">Categorías de gasto</button><button type="button" class="btn btn-outline solo-admin" id="oc-formato">Datos del formato</button></div>
     </div>
     <div class="filtros">
       <select id="oc-filtro" aria-label="Mostrar"><option value="">Todas</option><option value="borrador">Borradores (por autorizar)</option><option value="pendiente_pago">Autorizadas por pagar</option><option value="autorizada">Autorizadas</option><option value="cancelada">Canceladas</option></select>
@@ -409,6 +422,7 @@
             <option value="ventas">ventas</option>
             <option value="atencion">atencion</option>
             <option value="tecnico">tecnico</option>
+            <option value="costos">costos (encargado de centro de costos)</option>
           </select>
         </div>
         <div class="campo">
@@ -718,6 +732,15 @@
   </div>
 </div>
 
+<!-- ====== OVERLAY: SOLICITUD DE COMPRA ====== -->
+<div class="overlay" id="overlay-solicitud">
+  <div class="modal modal-solicitud">
+    <div class="modal-header"><div><span class="flujo-kicker" id="sol-kicker">SOLICITUD DE COMPRA</span><h2 id="sol-titulo">Nueva solicitud de compra</h2></div>
+      <button class="close-btn" type="button" onclick="document.getElementById('overlay-solicitud').classList.remove('mostrar')">✕</button></div>
+    <div class="modal-body" id="sol-cuerpo"></div>
+  </div>
+</div>
+
 <!-- ====== OVERLAY: ORDEN DE COMPRA ====== -->
 <div class="overlay" id="overlay-compra">
   <div class="modal modal-compra">
@@ -725,6 +748,7 @@
       <button class="close-btn" type="button" onclick="document.getElementById('overlay-compra').classList.remove('mostrar')">✕</button></div>
     <div class="modal-body" id="oc-cuerpo">
       <p class="cuentas-aviso" id="oc-estado" hidden></p>
+      <p class="oc-origen" id="oc-origen" hidden></p>
       <div class="form-grid-2">
         <div class="campo"><label for="oc-proveedor">Proveedor</label><select id="oc-proveedor"></select></div>
         <div class="campo"><label for="oc-centro">Centro de costos</label><select id="oc-centro"></select></div>
@@ -1086,10 +1110,11 @@
 <script src="finanzas.js?v=t2"></script>
 <script src="calendario.js?v=pg2"></script>
 <script src="tablero.js?v=pg2"></script>
-<script src="bitacora.js?v=b2"></script>
-<script src="compras.js?v=cat1"></script>
+<script src="bitacora.js?v=sol1"></script>
+<script src="compras.js?v=sol2"></script>
+<script src="solicitudes.js?v=sol2"></script>
 <script src="carga-generador.js?v=con1"></script>
-<script src="app.js?v=con1"></script>
+<script src="app.js?v=sol1"></script>
 <script src="prospeccion.js?v=cli1"></script>
 </body>
 </html>

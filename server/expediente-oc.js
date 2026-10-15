@@ -15,6 +15,7 @@ const TIPOS = {
   factura_xml: { nombre: 'Factura (XML del SAT)', admite: ['xml'] },
   comprobante_pago: { nombre: 'Comprobante de pago', admite: ['pdf', 'jpg', 'png'] },
   evidencia: { nombre: 'Evidencia de entrega / fotos', admite: ['pdf', 'jpg', 'png'] },
+  firma_recepcion: { nombre: 'Firma de recibido', admite: ['png', 'jpg', 'pdf'] },
   otro: { nombre: 'Otro documento', admite: ['pdf', 'jpg', 'png', 'xml'] },
 };
 const MIME = { pdf: 'application/pdf', jpg: 'image/jpeg', png: 'image/png', xml: 'application/xml' };
@@ -74,6 +75,26 @@ module.exports = function expedienteOC(app, db, h, { leer, esAdmin, folioOC }) {
       pagos: pagos.map(p => ({ ...p, monto: p.monto_cent / 100 })) };
   }
 
+  function insertar(req, o, tipo, nombre, buf, formato, sha, datos, nota) {
+    const r = db.prepare('INSERT INTO documentos_oc (oc_id, tipo, nombre, archivo, formato, bytes, sha256, datos_json, nota, subido_por, subido_por_nombre) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+      .run(o.id, tipo, nombre, '', formato, buf.length, sha, datos ? JSON.stringify(datos) : null, String(nota || '').slice(0, 300) || null, req.usuarioSesion.id, req.usuarioSesion.nombre);
+    const archivo = path.join(String(o.id), `${r.lastInsertRowid}-${sha.slice(0, 12)}.${formato}`);
+    fs.mkdirSync(path.join(DIR, String(o.id)), { recursive: true });
+    fs.writeFileSync(path.join(DIR, archivo), buf);
+    db.prepare('UPDATE documentos_oc SET archivo = ? WHERE id = ?').run(archivo, r.lastInsertRowid);
+    return r;
+  }
+  // Para otros módulos (la cotización elegida de una solicitud pasa sola al expediente de su orden).
+  function agregarDocumento(req, o, tipo, nombre, buf, nota) {
+    const formato = tipoReal(buf);
+    if (!formato || !TIPOS[tipo]?.admite.includes(formato)) throw new Error('Formato no admitido');
+    const sha = crypto.createHash('sha256').update(buf).digest('hex');
+    if (db.prepare('SELECT 1 FROM documentos_oc WHERE sha256 = ? AND eliminado = 0 AND oc_id = ?').get(sha, o.id)) return null;
+    const r = db.transaction(() => insertar(req, o, tipo, nombreSeguro(nombre), buf, formato, sha, null, nota))();
+    audit(req, o.id, 'documento', `${TIPOS[tipo].nombre}: «${nombreSeguro(nombre)}» (${formato.toUpperCase()}, ${Math.ceil(buf.length / 1024)} KB)${nota ? ' · ' + nota : ''}`);
+    return r.lastInsertRowid;
+  }
+
   app.get('/api/compras/formatos-documento', h((req, res) => res.json(TIPOS)));
 
   app.get('/api/compras/ordenes/:id/expediente', h((req, res) => {
@@ -91,7 +112,7 @@ module.exports = function expedienteOC(app, db, h, { leer, esAdmin, folioOC }) {
       { clave: 'factura_xml', texto: 'Factura (XML del SAT)', listo: tiene('factura_xml') },
       { clave: 'pago', texto: 'Pagada', listo: !!cxp && cxp.saldo <= 0 && cxp.pagado > 0, detalle: cxp ? (cxp.saldo > 0 ? `falta ${fmt(cxp.saldo * 100)}` : 'sí') : 'aún no es deuda' },
       { clave: 'comprobante_pago', texto: 'Comprobante de pago', listo: tiene('comprobante_pago') },
-      { clave: 'evidencia', texto: 'Evidencia de entrega', listo: tiene('evidencia'), opcional: true },
+      { clave: 'recepcion', texto: 'Recibido (foto y/o firma)', listo: !!o.recibida_at, detalle: o.recibida_at ? `por ${o.recibio_nombre || o.recibida_por_nombre || ''} el ${String(o.recibida_at).slice(0, 10).split('-').reverse().join('/')}` : 'pendiente' },
     ];
     const historial = db.prepare("SELECT * FROM auditoria WHERE entidad = 'orden_compra' AND entidad_id = ? ORDER BY id DESC").all(o.id);
     res.json({ orden: o, documentos: docs, cuenta_por_pagar: cxp, lista, historial, tipos: TIPOS });
@@ -111,7 +132,7 @@ module.exports = function expedienteOC(app, db, h, { leer, esAdmin, folioOC }) {
     if (!formato) return res.status(400).json({ error: 'Solo se aceptan PDF, JPG, PNG o el XML de la factura' });
     if (!TIPOS[tipo].admite.includes(formato)) return res.status(400).json({ error: `${TIPOS[tipo].nombre}: el archivo debe ser ${TIPOS[tipo].admite.map(x => x.toUpperCase()).join(' o ')} (este es ${formato.toUpperCase()})` });
     const sha = crypto.createHash('sha256').update(buf).digest('hex');
-    const repetido = db.prepare('SELECT d.id, d.oc_id FROM documentos_oc d WHERE d.sha256 = ? AND d.eliminado = 0').get(sha);
+    const repetido = db.prepare('SELECT d.id, d.oc_id FROM documentos_oc d WHERE d.sha256 = ? AND d.eliminado = 0 ORDER BY (d.oc_id = ?) DESC').get(sha, o.id);
     if (repetido) return res.status(409).json({ error: repetido.oc_id === o.id ? 'Ese mismo archivo ya está en este expediente' : `Ese mismo archivo ya está en el expediente de ${folioOC(db.prepare('SELECT * FROM ordenes_compra WHERE id = ?').get(repetido.oc_id))}` });
     // Factura XML: se leen sus datos y se comparan con la orden.
     let datos = null; const avisos = [];
@@ -130,13 +151,9 @@ module.exports = function expedienteOC(app, db, h, { leer, esAdmin, folioOC }) {
         datos.avisos = avisos;
       }
     }
+    let notaTxt = ''; try { notaTxt = decodeURIComponent(String(req.get('x-nota') || '')); } catch { notaTxt = ''; }
     const info = db.transaction(() => {
-      const r = db.prepare('INSERT INTO documentos_oc (oc_id, tipo, nombre, archivo, formato, bytes, sha256, datos_json, nota, subido_por, subido_por_nombre) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
-        .run(o.id, tipo, nombre, '', formato, buf.length, sha, datos ? JSON.stringify(datos) : null, String(req.get('x-nota') ? decodeURIComponent(req.get('x-nota')) : '').slice(0, 300) || null, req.usuarioSesion.id, req.usuarioSesion.nombre);
-      const archivo = path.join(String(o.id), `${r.lastInsertRowid}-${sha.slice(0, 12)}.${formato}`);
-      fs.mkdirSync(path.join(DIR, String(o.id)), { recursive: true });
-      fs.writeFileSync(path.join(DIR, archivo), buf);
-      db.prepare('UPDATE documentos_oc SET archivo = ? WHERE id = ?').run(archivo, r.lastInsertRowid);
+      const r = insertar(req, o, tipo, nombre, buf, formato, sha, datos, notaTxt);
       // El folio de la factura queda en la orden y en su cuenta por pagar (si aún no tenía).
       if (datos?.folio || datos?.uuid) {
         const folio = [datos.serie, datos.folio].filter(Boolean).join('-') || datos.uuid.slice(0, 8);
@@ -172,7 +189,7 @@ module.exports = function expedienteOC(app, db, h, { leer, esAdmin, folioOC }) {
     res.json({ ok: true });
   }));
 
-  return { TIPOS, leerCfdi };
+  return { TIPOS, leerCfdi, agregarDocumento };
 };
 module.exports.leerCfdi = leerCfdi;
 module.exports.tipoReal = tipoReal;

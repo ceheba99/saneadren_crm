@@ -1344,3 +1344,47 @@ button.enlace{background:none;border:0;padding:0;color:var(--azul-600);text-deco
 /* Sin flechitas en Cantidad y Precio: ocupan espacio y hacen que el número parezca centrado */
 .oc-tabla input[type=number]{-moz-appearance:textfield;appearance:textfield;}
 .oc-tabla input[type=number]::-webkit-outer-spin-button,.oc-tabla input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none;margin:0;}
+
+/* ===== Solicitudes de compra ===== */
+body:not(.es-costos) .solo-costos{display:none !important;}
+.modal-solicitud{max-width:860px;width:calc(100vw - 32px);}
+#sol-cuerpo{display:flex;flex-direction:column;gap:14px;padding:18px 22px 22px;}
+.sol-form{display:flex;flex-direction:column;gap:12px;}
+.sol-form textarea,.sol-form input,.sol-form select{width:100%;box-sizing:border-box;}
+.sol-check-urgente{background:#fff4e5;border:1px solid #f3c27a;border-radius:8px;padding:10px 12px;}
+.sol-urgente{display:inline-block;background:#fbe9e7;color:#b8443a;font-weight:800;font-size:11px;letter-spacing:.04em;padding:2px 6px;border-radius:4px;}
+.sol-pasos{list-style:none;display:flex;flex-wrap:wrap;gap:6px;margin:0;padding:0;counter-reset:paso;}
+.sol-pasos li{counter-increment:paso;flex:1 1 120px;padding:8px 10px;border-radius:8px;background:var(--gris-50, #f4f4f2);color:var(--texto-sec);font-size:12.5px;font-weight:700;border:1px solid var(--gris-300);}
+.sol-pasos li::before{content:counter(paso) '. ';}
+.sol-pasos li.hecho{background:#e8f3ee;color:var(--verde);border-color:#b9dcc9;}
+.sol-pasos li.hecho::before{content:'✔ ';}
+.sol-pasos li.actual{background:#fff8e1;color:#7a5600;border-color:#f6b103;}
+.sol-detalle{border:1px solid var(--gris-300);border-radius:10px;padding:14px;display:flex;flex-direction:column;gap:8px;}
+.sol-que{font-size:18px;font-weight:800;}
+.sol-para{margin:0;color:var(--texto-sec);}
+.sol-datos{display:flex;flex-wrap:wrap;gap:8px 22px;}
+.sol-datos > div{display:flex;flex-direction:column;}
+.sol-fotos{display:flex;flex-wrap:wrap;gap:6px;}
+.sol-bloque{border:1px solid var(--gris-300);border-radius:10px;padding:14px;display:flex;flex-direction:column;gap:10px;}
+.sol-progreso{margin:0;padding:8px 12px;border-radius:8px;font-weight:600;}
+.sol-progreso.falta{background:#fff4e5;color:#7a5600;}
+.sol-progreso.listo{background:#e8f3ee;color:var(--verde);}
+.sol-cot.falta{color:#b26a00;font-weight:700;}
+.sol-cot.listo{color:var(--verde);font-weight:700;}
+.sol-excepcion{background:#fff4e5;border-color:#f3c27a;}
+.sol-ganadora{background:#e8f3ee;}
+.sol-barata{font-size:11px;font-weight:700;color:#3a7d5c;background:#e8f3ee;border-radius:4px;padding:1px 5px;}
+.sol-elegida{font-size:11px;font-weight:800;color:#fff;background:var(--verde);border-radius:4px;padding:1px 6px;}
+.sol-alta{display:flex;flex-direction:column;gap:8px;background:var(--gris-50, rgba(0,0,0,.03));border-radius:8px;padding:12px;}
+.sol-alta-campos,.oc-rec-campos{display:flex;flex-wrap:wrap;gap:10px;}
+.sol-alta input,.sol-alta select,.oc-recepcion input{min-height:38px;border:1px solid var(--gris-300);border-radius:6px;padding:6px 10px;font:inherit;font-size:14px;width:100%;box-sizing:border-box;background:#fff;}
+.sol-alta .btn{align-self:flex-start;}
+.sol-historial summary{cursor:pointer;}
+.oc-origen{margin:0;padding:8px 12px;border-radius:8px;background:#eef3fb;border:1px solid #c9d8ef;font-size:13.5px;}
+.oc-origen.excepcion{background:#fff4e5;border-color:#f3c27a;}
+.oc-origen.sin{background:var(--gris-50, #f4f4f2);border-color:var(--gris-300);color:var(--texto-sec);}
+.oc-recepcion{border:1px solid var(--gris-300);border-radius:10px;padding:12px;margin:10px 0;display:flex;flex-direction:column;gap:10px;}
+.oc-recepcion.listo{background:#e8f3ee;border-color:#b9dcc9;}
+.oc-firma-caja{display:flex;flex-direction:column;gap:6px;align-items:flex-start;}
+.oc-firma{width:100%;max-width:520px;height:150px;border:1px dashed var(--gris-300);border-radius:8px;background:#fff;touch-action:none;}
+.oc-recepcion > .btn-verde{align-self:flex-start;}

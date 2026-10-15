@@ -36,13 +36,13 @@ const CATEGORIAS_INICIALES = {
 // Quién ve qué. Ocultar botones en pantalla es solo comodidad: esto es lo que manda.
 // Todos los usuarios con sesión pueden VER las cuentas (por cobrar y por pagar). Lo que no pueden:
 // descargar la base ni exportar a Excel (rutas aparte, solo admin) ni las acciones delicadas.
-const TODOS = ['admin', 'ventas', 'atencion', 'tecnico'];
+const TODOS = ['admin', 'ventas', 'atencion', 'tecnico', 'costos'];
 const PUEDE_VER_CARTERA = TODOS;                   // cartera, estados de cuenta, resúmenes y cuentas por pagar
 const PUEDE_EDITAR_FACTURA = TODOS;               // días de crédito y datos de la factura
 // Operar las cuentas: confirmar/cancelar pagos, gastos y pagos a proveedores, proveedores e importar
 // plantillas. Solo admin: ajustes o descuentos, revisión inicial, exportar a Excel y respaldo de la base.
 const PUEDE_OPERAR = TODOS;
-const PUEDE_REGISTRAR_COBRO = ['admin', 'atencion', 'ventas', 'tecnico'];
+const PUEDE_REGISTRAR_COBRO = ['admin', 'atencion', 'ventas', 'tecnico', 'costos'];
 const COBRO_CONFIRMADO_AL_REGISTRAR = ['admin', 'atencion']; // los demás quedan "por confirmar"
 
 function migrar(db) {
