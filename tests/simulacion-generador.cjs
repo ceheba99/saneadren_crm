@@ -91,7 +91,7 @@ const fila = (id, cliente, producto, subtotal, extra = {}) => ({ fila: 'SEPTIEMB
   revisa(/FECHA/.test(err(21)), 'fecha escrita como «JUNIO»', err(21));
   revisa(/corto/.test(err(22)), 'cliente «s»', err(22));
   revisa(/16 %/.test(err(23)), 'IVA que no es 16 % ni 0', err(23));
-  revisa(/SUBTOTAL vacío/.test(err(24)) && /PRODUCTO vacío/.test(err(24)), 'renglón sin producto ni importe', err(24));
+  revisa(/SUBTOTAL vacío/.test(err(24)) && /CONCEPTO vacío/.test(err(24)), 'renglón sin producto ni importe', err(24));
   revisa(/no existe/.test(err(25)), 'ID CLIENTE que no existe', err(25));
   revisa(/futuro/.test(err(26)), 'fecha en el futuro', err(26));
   [s, j] = await pedir('POST', '/generador/importar', A, { filas: [...malas, fila(27, 'SYMRISE', 'RETIRO DE AGUA RESIDUAL', 1000)], cobrado: true });

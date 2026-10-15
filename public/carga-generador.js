@@ -10,7 +10,7 @@ const CargaGenerador = (() => {
     { key: 'fecha', titulo: 'FECHA', fecha: true },
     { key: 'no_orden', titulo: 'NO. ORDEN', alias: ['NO ORDEN', 'ORDEN', 'NUMERO DE ORDEN', 'NO DE ORDEN'] },
     { key: 'factura', titulo: 'NO. FACTURA', alias: ['NO FACTURA', 'FACTURA', 'FOLIO FACTURA'] },
-    { key: 'producto', titulo: 'PRODUCTO', alias: ['SERVICIO'] },
+    { key: 'producto', titulo: 'CONCEPTO', alias: ['PRODUCTO', 'SERVICIO'] },
     { key: 'cantidad', titulo: 'CANTIDAD' },
     { key: 'subtotal', titulo: 'SUBTOTAL' },
     { key: 'iva', titulo: 'IVA' },
@@ -30,7 +30,7 @@ const CargaGenerador = (() => {
   // ---------- Avisos en el propio Excel (comentarios como los de Excel) ----------
   // A qué columna corresponde cada aviso del servidor: el comentario va en esa celda; si no se sabe, en la primera.
   const CAMPO_AVISO = [[/^ID CLIENTE/, 'id_cliente'], [/^FECHA/, 'fecha'], [/^SUBTOTAL/, 'subtotal'], [/^IVA/, 'iva'], [/^TOTAL/, 'total'], [/^CANTIDAD/, 'cantidad'],
-    [/^PRODUCTO|servicio elegido/i, 'producto'], [/^CLIENTE|cliente elegido|«.*» y otro nombre/i, 'cliente'], [/^Ya se cargó/, 'no_orden']];
+    [/^(CONCEPTO|PRODUCTO)|servicio elegido/i, 'producto'], [/^CLIENTE|cliente elegido|«.*» y otro nombre/i, 'cliente'], [/^Ya se cargó/, 'no_orden']];
   const campoDeAviso = m => CAMPO_AVISO.find(([re]) => re.test(m))?.[1] || null;
   // Marca en el libro cada celda con error (fondo rojo claro y comentario) y agrega la hoja «Avisos por corregir»
   // con la lista y un enlace a cada celda. posPorHoja: { HOJA: { campo: número de columna } }.
@@ -119,7 +119,7 @@ const CargaGenerador = (() => {
       }
       if (cuenta) hojas.push({ nombre: ws.name.trim(), filas: cuenta });
     }
-    if (!filas.length) throw new Error('No se encontraron hojas con los títulos del generador (FECHA, PRODUCTO, SUBTOTAL, CLIENTE…). Usa «Descargar plantilla».');
+    if (!filas.length) throw new Error('No se encontraron hojas con los títulos del generador (FECHA, CONCEPTO o PRODUCTO, SUBTOTAL, CLIENTE…). Usa «Descargar plantilla».');
     if (filas.length > 5000) throw new Error(`El archivo tiene ${filas.length} renglones; el máximo es 5,000 por carga. Divídelo por meses.`);
     return { filas, hojas, pos: Object.fromEntries(Object.entries(posHojas).map(([h, p]) => [h, Object.fromEntries(Object.entries(p).map(([k, i]) => [k, i]))])) };
   }
@@ -178,7 +178,7 @@ const CargaGenerador = (() => {
           + c.del_archivo.map(o => opcion('como:' + o.clave, 'Es el mismo que «' + o.texto + '» de este archivo', v)).join('')
           + otros('clientes', c, v) + otro + opcion('otro', 'Es otro cliente que ya existe… (escribir su ID)', '') + opcion('nuevo', 'Es un cliente nuevo', v) + '</select></td></tr>';
       }).join('') + '</tbody></table></div>';
-    if (pr.productos.length) html += '<div class="cg-bloque"><div class="seccion-tit">Productos que no están en el catálogo de servicios (' + pr.productos.length + ')</div><p class="ayuda">Elige a qué servicio corresponde cada forma de escribirlo (ya viene sugerido el más parecido), o agrégalo al catálogo.</p>'
+    if (pr.productos.length) html += '<div class="cg-bloque"><div class="seccion-tit">Conceptos que no están en el catálogo de servicios (' + pr.productos.length + ')</div><p class="ayuda">Elige a qué servicio corresponde cada forma de escribirlo (ya viene sugerido el más parecido), o agrégalo al catálogo.</p>'
       + '<table class="tabla-resumen cg-tabla"><thead><tr><th>Así viene en el Excel</th><th class="st-num">Servicios</th><th>Servicio del catálogo</th></tr></thead><tbody>'
       + pr.productos.map(p => { const v = EQ.productos[p.clave] ?? ''; return '<tr><td><b>' + esc(p.texto) + '</b></td><td class="st-num">' + p.filas + '</td><td><select class="cg-sel" data-tipo="productos" data-clave="' + esc(p.clave) + '">'
         + opcion('', '— Elige —', v) + (p.sugerencias.length ? '<optgroup label="Más parecidos">' + p.sugerencias.map(s => opcion(s.id, s.nombre, v)).join('') + '</optgroup>' : '')
@@ -228,10 +228,10 @@ const CargaGenerador = (() => {
     catch (err) { toast('No se pudo preparar la plantilla: ' + err.message); return; }
     const wb = new ExcelJS.Workbook(); wb.creator = 'Saneadren CRM';
     const ws = wb.addWorksheet('Generador', { views: [{ state: 'frozen', ySplit: 1 }] });
-    const cols = [['FECHA', 12], ['NO. ORDEN', 11], ['NO. FACTURA', 13], ['PRODUCTO', 34], ['PRECIO UNITARIO SIN IVA', 14], ['CANTIDAD', 10], ['SUBTOTAL', 14], ['IVA', 12], ['TOTAL', 14],
+    const cols = [['FECHA', 12], ['NO. ORDEN', 11], ['NO. FACTURA', 13], ['CONCEPTO', 34], ['PRECIO UNITARIO SIN IVA', 14], ['CANTIDAD', 10], ['SUBTOTAL', 14], ['IVA', 12], ['TOTAL', 14],
       ['CANAL DE VENTA', 18], ['ID CLIENTE', 34], ['CLIENTE', 30], ['PROYECTO', 16], ['UNIDAD', 10], ['EMPLEADO', 22], ['MANIFIESTOS', 14]];
     ws.columns = cols.map(([t, w]) => ({ header: t, width: w }));
-    const notas = { 'FECHA': 'Fecha del servicio (día/mes/año).', 'PRODUCTO': 'Elige de la lista (catálogo de servicios).', 'ID CLIENTE': 'Elige el cliente de la lista: así no se duplica aunque el nombre se escriba distinto. Si es un cliente nuevo, déjalo vacío y escribe su nombre en CLIENTE.',
+    const notas = { 'FECHA': 'Fecha del servicio (día/mes/año).', 'CONCEPTO': 'El servicio realizado: elige de la lista (catálogo de servicios).', 'ID CLIENTE': 'Elige el cliente de la lista: así no se duplica aunque el nombre se escriba distinto. Si es un cliente nuevo, déjalo vacío y escribe su nombre en CLIENTE.',
       'CLIENTE': 'Nombre o razón social. Si elegiste ID CLIENTE es solo de referencia.', 'SUBTOTAL': 'Se calcula: precio × cantidad.', 'IVA': 'Se calcula al 16 %. Si no lleva IVA, escribe 0.', 'TOTAL': 'Se calcula: subtotal + IVA.' };
     ws.getRow(1).eachCell((c, i) => { c.font = { bold: true }; c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF6B103' } }; c.alignment = { wrapText: true, vertical: 'middle' }; const n = notas[cols[i - 1][0]]; if (n) c.note = n; });
     ws.getRow(1).height = 32;
