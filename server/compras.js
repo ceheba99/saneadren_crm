@@ -15,6 +15,13 @@ const sumarDias = (f, d) => { const x = new Date(f + 'T00:00:00Z'); x.setUTCDate
 const texto = (v, max) => { if (v === undefined || v === null) return null; const t = String(v).trim(); return t ? t.slice(0, max) : null; };
 // Compara nombres sin importar mayúsculas, acentos ni espacios de más (lower() de SQLite no cambia «É» → «é»).
 const llaveNombre = t => String(t ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
+// Número escrito como número: «1500», «1,500.50», «$ 1,500». Nada de «0x10», «1e3», «Infinity» ni texto.
+const numeroEscrito = v => {
+  if (typeof v === 'number') return Number.isFinite(v) ? v : NaN;
+  if (typeof v !== 'string') return NaN;
+  const t = v.trim().replace(/^\$\s*/, '');
+  return /^(\d{1,3}(,\d{3})+|\d+)(\.\d+)?$/.test(t) ? Number(t.replace(/,/g, '')) : NaN;
+};
 const pesos = c => Math.round(Number(c || 0)) / 100;
 const { folioSol } = require('./solicitudes');
 const folioOC = o => 'OC-' + String(o.created_at || '').slice(0, 7).replace('-', '') + '-' + String(o.id).padStart(4, '0');
@@ -163,9 +170,9 @@ module.exports = function compras(app, db, h, finanzas) {
         if (!u) return { error: r + `la unidad «${String(p.unidad).slice(0, 15)}» no está en el catálogo de unidades (agrégala primero)` };
         unidad = u.clave;
       }
-      const cantidad = typeof p.cantidad === 'string' ? Number(p.cantidad) : p.cantidad;
+      const cantidad = numeroEscrito(p.cantidad);
       if (typeof cantidad !== 'number' || !Number.isFinite(cantidad) || cantidad <= 0 || cantidad > 1e6 || Math.round(cantidad * 1000) !== cantidad * 1000) return { error: r + 'la cantidad debe ser mayor a 0 (hasta 3 decimales)' };
-      const precio = typeof p.precio === 'string' ? Number(p.precio.replace(/[$,\s]/g, '')) : p.precio;
+      const precio = numeroEscrito(p.precio);
       if (typeof precio !== 'number' || !Number.isFinite(precio) || precio <= 0 || precio > 1e9 || Math.abs(precio * 100 - Math.round(precio * 100)) > 1e-6) return { error: r + 'el precio debe ser mayor a $0 (máximo 2 decimales)' };
       partidas.push({ cantidad, descripcion, unidad, clave: texto(p.clave, 60), precio, importe: Importes.importeDe(cantidad, precio) });
     }
@@ -276,7 +283,7 @@ module.exports = function compras(app, db, h, finanzas) {
     if (['borrador', 'autorizada', 'cancelada'].includes(estado)) filas = filas.filter(o => o.estado === estado);
     else if (estado === 'pendiente_pago') filas = filas.filter(o => o.estado === 'autorizada' && o.saldo > 0);
     const q = String(req.query.q || '').trim().toLowerCase();
-    if (q) filas = filas.filter(o => [o.folio, o.proveedor_nombre, o.centro_nombre, o.nota, o.observaciones, o.solicitante_nombre, ...o.partidas.map(p => p.descripcion)]
+    if (q) filas = filas.filter(o => [o.folio, o.solicitud_folio, o.orden_folio, o.factura_folio, o.proveedor_nombre, o.centro_nombre, o.nota, o.observaciones, o.solicitante_nombre, ...o.partidas.map(p => p.descripcion)]
       .some(v => String(v || '').toLowerCase().includes(q)));
     res.json(filas);
   }));
@@ -342,7 +349,7 @@ module.exports = function compras(app, db, h, finanzas) {
     const prov = db.prepare('SELECT * FROM proveedores WHERE id = ?').get(o.proveedor_id);
     // Obligatorio: cuántos días de crédito tiene ESTA compra (0 = de contado). Con eso se calcula cuándo vence.
     const crudo = req.body?.dias_credito;
-    const dias = crudo === undefined || crudo === null || String(crudo).trim() === '' ? NaN : Number(crudo);
+    const dias = typeof crudo === 'number' ? crudo : typeof crudo === 'string' && /^\s*\d{1,3}\s*$/.test(crudo) ? Number(crudo) : NaN;
     if (!Number.isInteger(dias) || dias < 0 || dias > 365) return res.status(400).json({ error: 'Escribe cuántos días de crédito tiene esta compra (0 si es de contado, máximo 365)', codigo: 'FALTA_CREDITO', credito_proveedor: prov.dias_credito ?? null });
     const vence = sumarDias(o.fecha, dias);
     const resumen = o.partidas[0].descripcion + (o.partidas.length > 1 ? ` y ${o.partidas.length - 1} más` : '');

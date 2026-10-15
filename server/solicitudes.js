@@ -21,6 +21,13 @@ const MIME = { pdf: 'application/pdf', jpg: 'image/jpeg', png: 'image/png' };
 const folioSol = s => 'SOL-' + String(s.created_at || '').slice(0, 7).replace('-', '') + '-' + String(s.id).padStart(4, '0');
 const nombreSeguro = t => String(t || 'documento').normalize('NFC').replace(/[\\/:*?"<>|\u0000-\u001f]+/g, '_').slice(0, 120) || 'documento';
 const llave = t => String(t ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9ñ]+/g, ' ').trim();
+// Número escrito como número: «1500», «1,500.50», «$ 1,500». Nada de «0x10», «1e3», «Infinity» ni texto.
+const numeroEscrito = v => {
+  if (typeof v === 'number') return Number.isFinite(v) ? v : NaN;
+  if (typeof v !== 'string') return NaN;
+  const t = v.trim().replace(/^\$\s*/, '');
+  return /^(\d{1,3}(,\d{3})+|\d+)(\.\d+)?$/.test(t) ? Number(t.replace(/,/g, '')) : NaN;
+};
 const encabezado = (req, k) => { try { return decodeURIComponent(String(req.get(k) || '')); } catch { return ''; } };
 
 function migrar(db) {
@@ -202,7 +209,7 @@ module.exports = function solicitudes(app, db, h, { texto, fechaOk, hoyMexico, c
       if (!proveedor) return res.status(400).json({ error: 'Elige el proveedor de la cotización' });
       const ya = db.prepare("SELECT id FROM documentos_solicitud WHERE solicitud_id = ? AND tipo = 'cotizacion' AND eliminado = 0 AND proveedor_id = ?").get(s.id, proveedor.id);
       if (ya) return res.status(409).json({ error: `Ya hay una cotización de ${proveedor.nombre}. Las ${COTIZACIONES_REQUERIDAS} deben ser de proveedores distintos (si es una nueva, quita la anterior).` });
-      monto = Number(encabezado(req, 'x-monto').replace(/[$,\s]/g, ''));
+      monto = numeroEscrito(encabezado(req, 'x-monto'));
       if (!Number.isFinite(monto) || monto <= 0 || monto > 1e8 || Math.abs(monto * 100 - Math.round(monto * 100)) > 1e-6) return res.status(400).json({ error: 'Escribe el total de la cotización (mayor a $0, máximo 2 decimales)' });
     } else if (['rechazada', 'cancelada'].includes(s.estado)) return res.status(409).json({ error: 'La solicitud está ' + ESTADOS[s.estado].toLowerCase() });
     const buf = Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0);
