@@ -1,4 +1,30 @@
 /* Comportamiento de presentación. No modifica datos ni sustituye reglas del CRM. */
+// Mostrar / ocultar contraseña: cada campo de contraseña lleva un botón «Mostrar» que la deja ver mientras se
+// escribe. Al enviar el formulario vuelve a ocultarse (por si la pantalla queda a la vista de alguien).
+window.prepararOjo = input => {
+  if (!input || input.dataset.ojo) return;
+  input.dataset.ojo = '1';
+  const caja = document.createElement('span');
+  caja.className = 'campo-pass';
+  input.parentNode.insertBefore(caja, input);
+  caja.appendChild(input);
+  const b = document.createElement('button');
+  b.type = 'button'; b.className = 'ojo-pass'; b.textContent = '👁 Mostrar'; b.setAttribute('aria-label', 'Mostrar contraseña'); b.setAttribute('aria-pressed', 'false');
+  b.addEventListener('click', () => {
+    const ver = input.type === 'password';
+    input.type = ver ? 'text' : 'password';
+    b.textContent = ver ? '🙈 Ocultar' : '👁 Mostrar';
+    b.setAttribute('aria-label', ver ? 'Ocultar contraseña' : 'Mostrar contraseña'); b.setAttribute('aria-pressed', String(ver));
+    input.focus();
+  });
+  caja.appendChild(b);
+};
+window.ocultarContrasenas = (raiz = document) => raiz.querySelectorAll('input[data-ojo]').forEach(i => {
+  if (i.type === 'text' && i.dataset.esPassword !== '0') i.type = 'password';
+  const b = i.parentNode.querySelector('.ojo-pass'); if (b) { b.textContent = '👁 Mostrar'; b.setAttribute('aria-label', 'Mostrar contraseña'); b.setAttribute('aria-pressed', 'false'); }
+});
+document.querySelectorAll('input[type="password"]').forEach(window.prepararOjo);
+document.addEventListener('submit', e => window.ocultarContrasenas(e.target), true);
 (() => {
   const layer = document.createElement('div');
   layer.className = 'overlay';
@@ -42,6 +68,11 @@
     document.getElementById('dialogo-aceptar').textContent = aceptar;
     const wrap = document.getElementById('dialogo-campo-wrap'), input = document.getElementById('dialogo-campo');
     wrap.hidden = !campo; input.value = ''; input.type = campo?.tipo || 'text';
+    // En el diálogo el campo cambia de tipo: el botón «Mostrar» solo aparece cuando pide una contraseña.
+    window.prepararOjo(input);
+    input.dataset.esPassword = campo?.tipo === 'password' ? '1' : '0';
+    input.parentNode.querySelector('.ojo-pass').hidden = campo?.tipo !== 'password';
+    window.ocultarContrasenas(wrap);
     wrap.querySelector('label').textContent = campo?.etiqueta || (campo?.tipo === 'password' ? 'Contraseña' : 'Valor');
     document.getElementById('dialogo-aceptar').onclick = () => finish(campo ? (input.value || null) : true);
     input.onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); document.getElementById('dialogo-aceptar').click(); } };

@@ -2,7 +2,7 @@
    contraseña, restablecerla desde el enlace del correo y cambio obligatorio de contraseña. */
 const Cuentas = (() => {
   const $ = id => document.getElementById(id);
-  const TITULOS = { login: 'Iniciar sesión', registro: 'Crear cuenta', olvide: 'Recuperar contraseña', nueva: 'Contraseña nueva' };
+  const TITULOS = { login: 'Iniciar sesión', olvide: 'Recuperar contraseña', nueva: 'Contraseña nueva' };
   let tokenRestablecer = null; // token del enlace del correo (modo restablecer)
   let modoNueva = 'restablecer'; // 'restablecer' | 'obligatorio'
 
@@ -39,19 +39,6 @@ const Cuentas = (() => {
   document.addEventListener('click', e => {
     const ir = e.target.closest('#overlay-login [data-ir]');
     if (ir) mostrar(ir.dataset.ir);
-  });
-
-  $('form-registro').addEventListener('submit', e => {
-    e.preventDefault();
-    conBoton(e.target, async () => {
-      const password = $('reg-password').value;
-      if (password !== $('reg-password2').value) return error('registro-error', 'Las contraseñas no coinciden');
-      try {
-        const r = await publico('/registro', { nombre: $('reg-nombre').value, correo: $('reg-correo').value, password });
-        e.target.reset();
-        mostrar('login', { mensaje: r.mensaje });
-      } catch (err) { error('registro-error', err.message); }
-    });
   });
 
   $('form-olvide').addEventListener('submit', e => {

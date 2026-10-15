@@ -180,6 +180,32 @@ const rechaza = (r, texto) => revisa(r[0] >= 400 && r[0] < 500 && r[1].error, te
     rechaza(await cotizar(x), 'Cotización: ' + texto);
   }
 
+  seccion('9. Cuentas: nadie entra ni se crea una cuenta desde fuera');
+  for (const cuerpo of [{ nombre: 'Intruso Total', correo: 'intruso@saneadren.com.mx', password: 'Intruso-Total-26' }, { nombre: 'Intruso Dos', correo: 'otro@gmail.com', password: 'Intruso-Total-26' }, {}]) {
+    [s, j] = await pedir('POST', '/registro', null, cuerpo); revisa(s === 403 && /administrador/.test(j.error), 'registro desde fuera → cerrado («las cuentas las crea un administrador»)', [s, j]);
+  }
+  [s] = await pedir('POST', '/login', null, { nombre: 'intruso@saneadren.com.mx', password: 'Intruso-Total-26' }); revisa(s === 401, 'y no quedó ninguna cuenta del intruso');
+  rechaza(await pedir('POST', '/usuarios', null, { nombre: 'Intruso Total', password: 'Intruso-Total-26', rol: 'admin' }), 'crear usuario sin sesión');
+  rechaza(await pedir('POST', '/usuarios', V, { nombre: 'Intruso Total', password: 'Intruso-Total-26', rol: 'admin' }), 'ventas crea un usuario administrador');
+  rechaza(await pedir('PUT', '/usuarios/' + vid, V, { rol: 'admin' }), 'ventas se sube a sí mismo a administrador');
+  rechaza(await pedir('POST', '/usuarios/1/password', V, { password: 'Robo-De-Cuenta-26' }), 'ventas le cambia la contraseña al administrador');
+  [s, j] = await pedir('POST', '/usuarios', A, { nombre: 'Débil Prueba', password: '1234567890', rol: 'ventas' }); rechaza([s, j], 'el administrador crea un usuario con contraseña débil');
+  // Recuperar contraseña
+  [s, j] = await pedir('POST', '/olvide-password', null, { correo: 'no-existe@saneadren.com.mx' });
+  const [, j2] = await pedir('POST', '/olvide-password', null, { correo: 'ventas.t@saneadren.com.mx' });
+  revisa(s === 200 && j.mensaje === j2.mensaje, 'recuperar contraseña responde igual exista o no el correo (no revela quién tiene cuenta)');
+  await espera(300);
+  const tokens = [...salida.matchAll(/#restablecer=([\w-]+)/g)].map(m => m[1]);
+  const token = tokens.at(-1);
+  rechaza(await pedir('POST', '/restablecer-password', null, { token: 'x'.repeat(40), password: 'Nueva-Segura-2026' }), 'restablecer con un enlace inventado');
+  rechaza(await pedir('POST', '/restablecer-password', null, { token, password: '12345' }), 'restablecer con una contraseña débil');
+  [s, j] = await pedir('POST', '/restablecer-password', null, { token, password: 'Nueva-Segura-2026' }); revisa(s === 200, 'el enlace del correo sí cambia la contraseña', [s, j]);
+  rechaza(await pedir('POST', '/restablecer-password', null, { token, password: 'Otra-Segura-2027' }), 'el mismo enlace no sirve dos veces');
+  [s] = await pedir('GET', '/servicios', V); revisa(s === 401, 'al cambiar la contraseña se cierran las sesiones abiertas');
+  let bloqueado = false;
+  for (let i = 0; i < 15 && !bloqueado; i++) { const [st] = await pedir('POST', '/login', null, { nombre: 'admin', password: 'Adivinando-' + i }); bloqueado = st === 429; }
+  revisa(bloqueado, 'adivinar contraseñas una y otra vez → se bloquea por un rato');
+
   revisa(!/uncaughtException|Error en |TypeError|SqliteError|RangeError|ReferenceError/.test(salida), 'el servidor no registró errores internos', salida.split('\n').filter(l => /Error/.test(l)).slice(0, 6));
   console.log(`\n${n - malos.length}/${n} correctas`);
   if (malos.length) console.log('FALLAS:\n- ' + malos.join('\n- '));

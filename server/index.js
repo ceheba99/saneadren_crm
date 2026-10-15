@@ -231,8 +231,10 @@ app.post('/api/usuarios', h((req, res) => {
   const existente = db.prepare('SELECT id FROM usuarios WHERE nombre = ?').get(nombre.trim());
   if (existente) return res.status(409).json({ error: 'Ya existe un usuario con ese nombre' });
 
-  // El correo que captura un admin se da por confirmado (el admin responde por él).
-  const info = db.prepare('INSERT INTO usuarios (nombre, password, rol, correo, correo_verificado) VALUES (?, ?, ?, ?, ?)').run(nombre.trim(), hashPassword(password), rol, correo, correo ? 1 : 0);
+  // El correo que captura un admin se da por confirmado (el admin responde por él). Con «temporal», la persona
+  // debe cambiar la contraseña al entrar la primera vez (así el administrador no conoce la definitiva).
+  const temporal = req.body.temporal === true ? 1 : 0;
+  const info = db.prepare('INSERT INTO usuarios (nombre, password, rol, correo, correo_verificado, debe_cambiar_password) VALUES (?, ?, ?, ?, ?, ?)').run(nombre.trim(), hashPassword(password), rol, correo, correo ? 1 : 0, temporal);
   res.status(201).json({ id: info.lastInsertRowid, nombre: nombre.trim(), rol, correo });
 }));
 

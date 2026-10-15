@@ -2424,14 +2424,14 @@ on('btn-crear-usuario', 'click', async () => {
   try {
     const res = await api('/usuarios', {
       method: 'POST',
-      body: JSON.stringify({ nombre, password, rol, correo: correo || null })
+      body: JSON.stringify({ nombre, password, rol, correo: correo || null, temporal: document.getElementById('nu-temporal').checked })
     });
-    if (res.status === 409) {
-      const data = await res.json();
-      toast(data.error || 'Ya existe un usuario con ese nombre');
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      toast(data.error || 'No se pudo crear el usuario');
       return;
     }
-    toast('Usuario creado correctamente');
+    toast(document.getElementById('nu-temporal').checked ? 'Usuario creado. Al entrar por primera vez tendrá que cambiar la contraseña.' : 'Usuario creado correctamente');
     document.getElementById('nu-nombre').value = '';
     document.getElementById('nu-password').value = '';
     document.getElementById('nu-correo').value = '';

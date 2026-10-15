@@ -1271,3 +1271,13 @@ button.enlace{background:none;border:0;padding:0;color:var(--azul-600);text-deco
 .cg-tabla select{width:100%;min-width:260px;min-height:36px;border:1px solid var(--gris-300);border-radius:6px;padding:4px 6px;font:inherit;font-size:13px;}
 .cg-tabla select.cg-falta{border-color:var(--naranja, #b26a00);box-shadow:0 0 0 2px rgba(246,177,3,.25);}
 .cg-cobrado{display:flex;flex-direction:column;gap:6px;margin:16px 0 4px;}
+
+/* ===== Mostrar / ocultar contraseña ===== */
+.campo-pass{position:relative;display:block;width:100%;}
+.campo-pass input{width:100%;box-sizing:border-box;padding-right:96px;}
+.ojo-pass{position:absolute;right:6px;top:50%;transform:translateY(-50%);border:0;background:transparent;color:var(--texto-sec);font:inherit;font-size:12px;font-weight:700;cursor:pointer;padding:6px 8px;border-radius:6px;}
+.ojo-pass:hover,.ojo-pass:focus-visible{background:var(--gris-100, rgba(0,0,0,.06));color:inherit;}
+.cuenta-sin-registro{text-align:center;margin-top:10px;}
+.check-linea{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;margin-bottom:6px;text-transform:none;letter-spacing:0;}
+
+.cg-errores-cab{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;}

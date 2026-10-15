@@ -30,11 +30,23 @@ async function servidor(envExtra) {
   return s;
 }
 
+function cuentaSinConfirmar(nombre, correo, password) {
+  const { DatabaseSync } = require('node:sqlite');
+  const { hashPassword } = require('../server/seguridad');
+  const base = new DatabaseSync(DB);
+  base.prepare('INSERT INTO usuarios (nombre, password, rol, correo, correo_verificado) VALUES (?, ?, ?, ?, 0)').run(nombre, hashPassword(password), 'ventas', correo);
+  base.close();
+}
+
 (async () => {
   console.log('\nAdmin inicial con una cuenta sin confirmar');
   let a = await servidor({});
   let [st] = await a.pedir('/registro', { nombre: 'Cesar Marketing', correo: CORREO, password: 'Registro-Propio-77' });
-  ok(st === 202, 'alguien se registra con el correo del admin (sin correo saliente)');
+  ok(st === 403, 'el registro público está cerrado');
+  await a.cerrar();
+  // Una base anterior puede traer una cuenta que alguien registró solo y nunca confirmó: se simula directo en la base.
+  cuentaSinConfirmar('Cesar Marketing', CORREO, 'Registro-Propio-77');
+  a = await servidor({});
   [st] = await a.pedir('/login', { nombre: CORREO, password: 'Registro-Propio-77' });
   ok(st === 403, 'esa cuenta no entra sin confirmar');
   await a.cerrar();
@@ -75,9 +87,7 @@ async function servidor(envExtra) {
   ok(s2 === 200, 'una contraseña nueva en el servidor recupera el acceso');
   await a.cerrar();
   // Otra cuenta ya usaba el nombre del admin: se renombra y el admin entra con su usuario.
-  a = await servidor({});
-  await a.pedir('/registro', { nombre: 'Helena Admin', correo: 'helena@saneadren.com.mx', password: 'Helena-Cuentas-12' });
-  await a.cerrar();
+  cuentaSinConfirmar('Helena Admin', 'helena@saneadren.com.mx', 'Helena-Cuentas-12');
   a = await servidor({ ADMIN_USUARIO: 'Helena Admin', ADMIN_CORREO: CORREO, ADMIN_PASSWORD: 'Choque-Nombres-34' });
   [s2, j] = await a.pedir('/login', { nombre: 'Helena Admin', password: 'Choque-Nombres-34' });
   ok(s2 === 200 && j.rol === 'admin', 'con un nombre repetido, el admin entra con su usuario', j);

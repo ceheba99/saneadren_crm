@@ -25,7 +25,57 @@ const CargaGenerador = (() => {
   ];
   const columnaDe = t => { const k = sinAcentos(t); return k && COLUMNAS.find(c => [c.titulo, ...(c.alias || [])].some(n => sinAcentos(n) === k)); };
 
-  let FILAS = null, EQ = null, ULTIMA = null, HOJAS = [], consulta = 0;
+  let FILAS = null, EQ = null, ULTIMA = null, HOJAS = [], ARCHIVO = null, POS = {}, consulta = 0;
+
+  // ---------- Avisos en el propio Excel (comentarios como los de Excel) ----------
+  // A qué columna corresponde cada aviso del servidor: el comentario va en esa celda; si no se sabe, en la primera.
+  const CAMPO_AVISO = [[/^ID CLIENTE/, 'id_cliente'], [/^FECHA/, 'fecha'], [/^SUBTOTAL/, 'subtotal'], [/^IVA/, 'iva'], [/^TOTAL/, 'total'], [/^CANTIDAD/, 'cantidad'],
+    [/^PRODUCTO|servicio elegido/i, 'producto'], [/^CLIENTE|cliente elegido|«.*» y otro nombre/i, 'cliente'], [/^Ya se cargó/, 'no_orden']];
+  const campoDeAviso = m => CAMPO_AVISO.find(([re]) => re.test(m))?.[1] || null;
+  // Marca en el libro cada celda con error (fondo rojo claro y comentario) y agrega la hoja «Avisos por corregir»
+  // con la lista y un enlace a cada celda. posPorHoja: { HOJA: { campo: número de columna } }.
+  function anotarAvisos(wb, errores, posPorHoja) {
+    const porCelda = new Map();
+    for (const e of errores) {
+      const corte = String(e.fila).lastIndexOf(' #'); if (corte < 0) continue;
+      const hoja = String(e.fila).slice(0, corte), renglon = Number(String(e.fila).slice(corte + 2));
+      const ws = wb.worksheets.find(w => w.name.trim() === hoja); if (!ws || !renglon) continue;
+      for (const m of e.errores) {
+        const pos = posPorHoja[hoja] || {};
+        const col = pos[campoDeAviso(m)] || pos.cliente || pos.producto || 1;
+        const k = hoja + '|' + renglon + '|' + col;
+        const x = porCelda.get(k) || { ws, hoja, renglon, col, avisos: [] };
+        x.avisos.push(m); porCelda.set(k, x);
+      }
+    }
+    for (const x of porCelda.values()) {
+      const cel = x.ws.getRow(x.renglon).getCell(x.col);
+      cel.note = { texts: [{ font: { bold: true, size: 9 }, text: '⚠ Por corregir:\n' }, { font: { size: 9 }, text: x.avisos.join('\n') }] };
+      cel.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFAD4D0' } };
+    }
+    const ya = wb.getWorksheet('Avisos por corregir'); if (ya) wb.removeWorksheet(ya.id);
+    const av = wb.addWorksheet('Avisos por corregir', { properties: { tabColor: { argb: 'FFB8443A' } } });
+    av.columns = [{ header: 'Hoja', width: 14 }, { header: 'Renglón', width: 10 }, { header: 'Celda', width: 10 }, { header: 'Qué corregir', width: 90 }];
+    av.getRow(1).font = { bold: true };
+    [...porCelda.values()].sort((a, b) => a.hoja.localeCompare(b.hoja) || a.renglon - b.renglon).forEach(x => {
+      const dir = x.ws.getRow(x.renglon).getCell(x.col).address;
+      const r = av.addRow([x.hoja, x.renglon, { text: dir, hyperlink: "#'" + x.hoja.replace(/'/g, "''") + "'!" + dir }, x.avisos.join(' · ')]);
+      r.getCell(3).font = { color: { argb: 'FF1F5FA8' }, underline: true };
+    });
+    // La hoja de avisos va primero para que sea lo primero que se ve al abrir.
+    av.orderNo = -1;
+    return porCelda.size;
+  }
+  async function descargarAvisos() {
+    if (!ARCHIVO || !ULTIMA?.errores?.length) return;
+    const ExcelJS = await Finanzas.cargarExcelJS();
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(await ARCHIVO.arrayBuffer());
+    const n = anotarAvisos(wb, ULTIMA.errores, POS);
+    const buf = await wb.xlsx.writeBuffer();
+    saveAs(new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), ARCHIVO.name.replace(/\.xlsx$/i, '') + ' - con avisos.xlsx');
+    toast(n + ' celdas marcadas en rojo con su comentario. Pasa el mouse sobre ellas en Excel para ver qué corregir.');
+  }
 
   // ---------- Leer el Excel: todas las hojas visibles que tengan los títulos del generador ----------
   async function leerExcel(archivo) {
@@ -34,7 +84,7 @@ const CargaGenerador = (() => {
     const wb = new ExcelJS.Workbook();
     try { await wb.xlsx.load(await archivo.arrayBuffer(), { ignoreNodes: ['dataValidations', 'conditionalFormatting', 'hyperlinks'], maxRows: 6000, maxCols: 80 }); }
     catch { throw new Error('No se pudo leer el archivo. Guárdalo como Excel (.xlsx) e inténtalo de nuevo.'); }
-    const filas = [], hojas = [];
+    const filas = [], hojas = [], posHojas = {};
     for (const ws of wb.worksheets) {
       if (ws.state && ws.state !== 'visible') continue;
       const renglones = [];
@@ -44,6 +94,7 @@ const CargaGenerador = (() => {
       for (const r of renglones.slice(0, 10)) { const k = r.v.filter(x => x != null && columnaDe(x)).length; if (k > mejor) { mejor = k; enc = r; } }
       if (!enc || mejor < 4) continue;
       const pos = {};
+      posHojas[ws.name.trim()] = pos;
       enc.v.forEach((x, i) => { const c = x != null && columnaDe(x); if (c && pos[c.key] === undefined) pos[c.key] = i; });
       if (pos.cliente === undefined && pos.id_cliente === undefined || pos.producto === undefined || pos.subtotal === undefined) continue;
       let cuenta = 0;
@@ -70,7 +121,7 @@ const CargaGenerador = (() => {
     }
     if (!filas.length) throw new Error('No se encontraron hojas con los títulos del generador (FECHA, PRODUCTO, SUBTOTAL, CLIENTE…). Usa «Descargar plantilla».');
     if (filas.length > 5000) throw new Error(`El archivo tiene ${filas.length} renglones; el máximo es 5,000 por carga. Divídelo por meses.`);
-    return { filas, hojas };
+    return { filas, hojas, pos: Object.fromEntries(Object.entries(posHojas).map(([h, p]) => [h, Object.fromEntries(Object.entries(p).map(([k, i]) => [k, i]))])) };
   }
 
   // ---------- Revisión ----------
@@ -140,7 +191,8 @@ const CargaGenerador = (() => {
         + opcion('', '— Elige —', v) + (c.del_archivo?.length ? c.del_archivo.map(o => opcion('como:' + o.clave, 'Igual que «' + o.texto + '» (' + o.filas + ')', v)).join('') : '') + otros('canales', c, v) + canalOpts(v) + opcion('nuevo', 'Crear el canal «' + c.texto + '»', v) + opcion('ninguno', 'Sin canal', v) + '</select></td></tr>'; }).join('')
       + '</tbody></table></div>';
     $('cg-resolver').innerHTML = html;
-    $('cg-errores').innerHTML = r.errores.length ? '<div class="cg-bloque"><div class="seccion-tit cg-mal">Renglones con error: corrígelos en el Excel y vuelve a cargarlo</div><div class="importar-errores">'
+    $('cg-errores').innerHTML = r.errores.length ? '<div class="cg-bloque"><div class="cg-errores-cab"><div class="seccion-tit cg-mal">Renglones con error: corrígelos en el Excel y vuelve a cargarlo</div>'
+      + '<button type="button" class="btn btn-outline btn-chico" id="cg-avisos">📥 Descargar mi Excel con avisos</button></div><p class="ayuda">Te regresa tu mismo archivo con cada celda a corregir en rojo y un comentario (como los de Excel) que aparece al pasar el mouse, más una hoja «Avisos por corregir» con la lista.</p><div class="importar-errores">'
       + r.errores.slice(0, 300).map(e => '<div class="pago-fila"><div><b>' + esc(e.fila) + '</b><small class="motivo">' + e.errores.map(esc).join(' · ') + '</small></div></div>').join('')
       + (r.errores.length > 300 ? '<p class="ayuda">…y ' + (r.errores.length - 300) + ' más.</p>' : '') + '</div></div>' : '';
     $('cg-cobrado').hidden = false;
@@ -210,8 +262,8 @@ const CargaGenerador = (() => {
   $('cg-archivo').addEventListener('change', async () => {
     const archivo = $('cg-archivo').files[0]; if (!archivo) return;
     try {
-      const { filas, hojas } = await leerExcel(archivo);
-      FILAS = filas; HOJAS = hojas; EQ = { clientes: {}, productos: {}, canales: {} }; ULTIMA = null;
+      const leido = await leerExcel(archivo), { filas, hojas } = leido;
+      FILAS = filas; HOJAS = hojas; POS = leido.pos; ARCHIVO = archivo; EQ = { clientes: {}, productos: {}, canales: {} }; ULTIMA = null;
       document.querySelectorAll('input[name="cg-cobrado"]').forEach(x => { x.checked = false; });
       $('cg-titulo').textContent = 'Cargar «' + archivo.name + '»';
       $('cg-resolver').innerHTML = ''; $('cg-errores').innerHTML = ''; $('cg-cobrado').hidden = true;
@@ -233,6 +285,7 @@ const CargaGenerador = (() => {
     await revisar();
   });
   document.querySelectorAll('input[name="cg-cobrado"]').forEach(x => x.addEventListener('change', actualizarBoton));
+  $('cg-errores').addEventListener('click', e => { const b = e.target.closest('#cg-avisos'); if (b) conBotonCG(b, descargarAvisos); });
   $('cg-cancelar').addEventListener('click', () => $('overlay-carga-gen').classList.remove('mostrar'));
   $('cg-cargar').addEventListener('click', e => conBotonCG(e.currentTarget, async () => {
     const r = ULTIMA; if (!r) return;
@@ -240,6 +293,6 @@ const CargaGenerador = (() => {
     if (ok) await cargar();
   }));
   async function conBotonCG(b, fn) { if (b.disabled) return; b.disabled = true; try { await fn(); } catch (err) { toast(err.message); } finally { b.disabled = false; actualizarBoton(); } }
-  return { leerExcel };
+  return { leerExcel, anotarAvisos };
 })();
 window.CargaGenerador = CargaGenerador;
