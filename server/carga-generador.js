@@ -172,7 +172,7 @@ module.exports = function cargaGenerador(app, db, h, unicos) {
       // Producto → servicio del catálogo; canal de venta (opcional). Ambos admiten «igual que X de este archivo».
       let servicio = null, servicioNuevo = null;
       const kp = claveTexto(productoTxt);
-      if (!productoTxt) errores.push('PRODUCTO vacío');
+      if (!productoTxt) errores.push('CONCEPTO vacío');
       else {
         const r = resolverCatalogo('productos', kp, productoTxt, eqP, k => cat.servPorClave.get(k) || null, id => cat.servicios.find(x => x.id === Number(id)) || null, errores);
         servicio = r.item; servicioNuevo = r.nuevo;

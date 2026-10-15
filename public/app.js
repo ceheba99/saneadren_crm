@@ -750,10 +750,10 @@ on('gen-exportar', 'click', () => {
   if (!GENERADOR?.filas.length) { toast('No hay renglones para exportar'); return; }
   descargarCSV('generador_saneadren_' + new Date().toISOString().slice(0, 10) + '.csv', [
     { titulo: 'MES LETRA', valor: f => f.mes }, { titulo: 'FECHA', valor: f => f.fecha }, { titulo: 'NO. ORDEN', valor: f => f.orden }, { titulo: 'ORDEN GENERADOR', valor: f => f.orden_generador || '' }, { titulo: 'NO. FACTURA', valor: f => f.factura },
-    { titulo: 'CLIENTE', valor: f => f.cliente }, { titulo: 'PROYECTO', valor: f => f.proyecto }, { titulo: 'PRODUCTO', valor: f => f.producto }, { titulo: 'CANTIDAD', valor: f => f.cantidad },
+    { titulo: 'CLIENTE', valor: f => f.cliente }, { titulo: 'PROYECTO', valor: f => f.proyecto }, { titulo: 'CONCEPTO', valor: f => f.producto }, { titulo: 'CANTIDAD', valor: f => f.cantidad },
     { titulo: 'PRECIO UNITARIO S/IVA', valor: f => f.precio_sin_iva }, { titulo: 'PRECIO UNITARIO C/IVA', valor: f => f.precio_con_iva }, { titulo: 'SUBTOTAL', valor: f => f.subtotal }, { titulo: 'IVA', valor: f => f.iva ?? '' }, { titulo: 'TOTAL', valor: f => f.total },
     { titulo: 'CANAL DE VENTA', valor: f => f.canal }, { titulo: 'UNIDAD', valor: f => f.unidad }, { titulo: 'EMPLEADO', valor: f => f.empleado }, { titulo: 'MANIFIESTOS', valor: f => f.manifiestos }, { titulo: 'TIROS', valor: f => f.tiros }, { titulo: 'REALIZÓ', valor: f => f.realizado_por },
-    { titulo: 'PROVEEDOR', valor: f => f.proveedor }, { titulo: 'CONCEPTO', valor: f => f.concepto }, { titulo: 'COSTO', valor: f => f.costo ?? '' }, { titulo: 'ESTATUS PAGO', valor: f => f.estatus_pago }, { titulo: 'VIA PAGO', valor: f => f.via_pago }
+    { titulo: 'PROVEEDOR', valor: f => f.proveedor }, { titulo: 'CONCEPTO DEL COSTO', valor: f => f.concepto }, { titulo: 'COSTO', valor: f => f.costo ?? '' }, { titulo: 'ESTATUS PAGO', valor: f => f.estatus_pago }, { titulo: 'VIA PAGO', valor: f => f.via_pago }
   ], GENERADOR.filas);
 });
 

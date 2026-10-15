@@ -312,11 +312,11 @@
       <label>Hasta <input type="date" id="gen-hasta"></label>
       <button type="button" class="btn btn-outline" id="gen-mes">Este mes</button>
       <button type="button" class="btn btn-outline" id="gen-todo">Todo</button>
-      <input type="search" id="gen-buscar" aria-label="Buscar en el generador" placeholder="Cliente, orden, factura, producto, proyecto, unidad o empleado">
+      <input type="search" id="gen-buscar" aria-label="Buscar en el generador" placeholder="Cliente, orden, factura, concepto, proyecto, unidad o empleado">
     </div>
     <p class="gen-resumen" id="gen-resumen" role="status"></p>
     <div class="tabla-scroll"><table class="tabla-resumen tabla-generador">
-      <thead><tr><th>Mes</th><th>Fecha</th><th>No. orden</th><th>No. factura</th><th>Cliente</th><th>Proyecto</th><th>Producto</th><th class="st-num">Cantidad</th><th class="st-num">Precio unitario s/IVA</th><th class="st-num">Precio unitario c/IVA</th><th class="st-num">Subtotal</th><th class="st-num">IVA</th><th class="st-num">Total</th><th>Canal de venta</th><th>Unidad</th><th>Empleado</th><th>Manifiestos</th><th>Tiros</th><th>Realizó</th><th class="gen-costo">Proveedor</th><th class="gen-costo">Concepto</th><th class="gen-costo st-num">Costo</th><th class="gen-costo">Estatus pago</th><th class="gen-costo">Vía de pago</th></tr></thead>
+      <thead><tr><th>Mes</th><th>Fecha</th><th>No. orden</th><th>No. factura</th><th>Cliente</th><th>Proyecto</th><th>Concepto</th><th class="st-num">Cantidad</th><th class="st-num">Precio unitario s/IVA</th><th class="st-num">Precio unitario c/IVA</th><th class="st-num">Subtotal</th><th class="st-num">IVA</th><th class="st-num">Total</th><th>Canal de venta</th><th>Unidad</th><th>Empleado</th><th>Manifiestos</th><th>Tiros</th><th>Realizó</th><th class="gen-costo">Proveedor</th><th class="gen-costo">Concepto del costo</th><th class="gen-costo st-num">Costo</th><th class="gen-costo">Estatus pago</th><th class="gen-costo">Vía de pago</th></tr></thead>
       <tbody id="gen-tabla"></tbody>
     </table></div>
   </section>
@@ -1088,8 +1088,8 @@
 <script src="tablero.js?v=pg2"></script>
 <script src="bitacora.js?v=b2"></script>
 <script src="compras.js?v=cat1"></script>
-<script src="carga-generador.js?v=av1"></script>
-<script src="app.js?v=av1"></script>
+<script src="carga-generador.js?v=con1"></script>
+<script src="app.js?v=con1"></script>
 <script src="prospeccion.js?v=cli1"></script>
 </body>
 </html>
