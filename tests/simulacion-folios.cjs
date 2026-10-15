@@ -31,7 +31,7 @@ function funcionesPagina() {
 }
 
 (async () => {
-  for (let i = 0; i < 40 && !/corriendo/.test(salida); i++) await espera(150);
+  for (let i = 0; i < 100 && !/corriendo/.test(salida); i++) await espera(150);
   const A = (await pedir('POST', '/login', null, { nombre: ADMIN.correo, password: ADMIN.password }))[1].token;
   await pedir('POST', '/usuarios', A, { nombre: 'Vende Folios', correo: 'vende.folios@saneadren.com.mx', password: 'Vende-Folios-2026', rol: 'ventas' });
   await pedir('POST', '/usuarios', A, { nombre: 'Costos Folios', correo: 'costos.folios@saneadren.com.mx', password: 'Costos-Folios-2026', rol: 'costos' });

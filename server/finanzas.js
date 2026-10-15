@@ -44,6 +44,9 @@ const PUEDE_EDITAR_FACTURA = TODOS;               // días de crédito y datos d
 const PUEDE_OPERAR = TODOS;
 const PUEDE_REGISTRAR_COBRO = ['admin', 'atencion', 'ventas', 'tecnico', 'costos'];
 const COBRO_CONFIRMADO_AL_REGISTRAR = ['admin', 'atencion']; // los demás quedan "por confirmar"
+// Mover dinero (pagar a proveedores, cancelar pagos o cuentas, importar cuentas por pagar y registrar compras
+// directas): solo administración y el encargado de centro de costos. Los demás registran y otro lo revisa.
+const PUEDE_PAGAR = ['admin', 'costos'];
 
 function migrar(db) {
   const columnas = tabla => db.prepare(`PRAGMA table_info(${tabla})`).all().map(c => c.name);
@@ -51,6 +54,7 @@ function migrar(db) {
   const nuevaInstalacion = !db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'cobros'").get();
 
   agregar('clientes', 'dias_credito', 'INTEGER');
+  if (db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'cuentas_por_pagar'").get()) agregar('cuentas_por_pagar', 'dias_credito', 'INTEGER');
   agregar('leads', 'dias_credito', 'INTEGER');
   agregar('leads', 'factura_folio', 'TEXT');
   agregar('leads', 'factura_fecha', 'TEXT');
@@ -285,6 +289,7 @@ module.exports = function finanzas(app, db, h, unicos) {
   };
   const soloAdmin = (req, res) => permitido(req, res, ['admin'], 'Solo un administrador puede hacer esto');
   const puedeOperar = (req, res) => permitido(req, res, PUEDE_OPERAR, 'No tienes permiso para esta acción');
+  const puedePagar = (req, res) => permitido(req, res, PUEDE_PAGAR, 'Esto lo hace administración o el encargado de centro de costos');
   // El concepto de un costo con terceros dice QUÉ se le paga al tercero (renta de pipa, disposición de lodos…):
   // es obligatorio y no puede ser simplemente el nombre o la descripción del servicio que se le vende al cliente.
   function problemaConceptoCosto(concepto, lead) {
@@ -453,7 +458,7 @@ module.exports = function finanzas(app, db, h, unicos) {
   }));
 
   app.post('/api/finanzas/cobros/:id/cancelar', h((req, res) => {
-    if (!puedeOperar(req, res)) return;
+    if (!puedePagar(req, res)) return;
     const motivo = texto(req.body.motivo, 300);
     if (!motivo || !conSentido(motivo, 5)) return res.status(400).json({ error: 'Escribe el motivo de la cancelación (mínimo 5 caracteres)' });
     const c = db.prepare('SELECT * FROM cobros WHERE id = ?').get(req.params.id);
@@ -864,6 +869,8 @@ module.exports = function finanzas(app, db, h, unicos) {
   app.post('/api/finanzas/cxp', h((req, res) => {
     if (!puedeOperar(req, res)) return;
     const b = req.body;
+    // Sin orden de servicio es una COMPRA: va por Solicitud de compra (o la registra administración / costos).
+    if (!b.lead_id && !PUEDE_PAGAR.includes(rol(req))) return res.status(403).json({ error: 'Las compras se piden con una Solicitud de compra. Aquí solo se registran costos de un servicio: elige la orden de servicio.' });
     const prov = db.prepare('SELECT * FROM proveedores WHERE id = ? AND activo = 1').get(b.proveedor_id);
     if (!prov) return res.status(400).json({ error: 'Elige un proveedor' });
     const categoria = b.categoria || prov.categoria;
@@ -875,8 +882,11 @@ module.exports = function finanzas(app, db, h, unicos) {
     const fecha = b.fecha_documento || hoyMexico();
     if (!fechaValida(fecha)) return res.status(400).json({ error: 'La fecha del documento no es válida' });
     if (fecha > sumarDias(hoyMexico(), 60)) return res.status(400).json({ error: 'La fecha del documento está a más de 60 días en el futuro: revisa el año' });
-    const vence = b.fecha_vencimiento || sumarDias(fecha, prov.dias_credito);
-    if (!fechaValida(vence) || vence < fecha) return res.status(400).json({ error: 'El vencimiento no es válido (no puede ser antes de la fecha del documento)' });
+    // Días de crédito de ESTA cuenta: obligatorios (0 = de contado). Si ya se pagó, es de contado.
+    const crudo = b.ya_pagado ? 0 : b.dias_credito;
+    const dias = typeof crudo === 'number' ? crudo : typeof crudo === 'string' && /^\s*\d{1,3}\s*$/.test(crudo) ? Number(crudo) : NaN;
+    if (!Number.isInteger(dias) || dias < 0 || dias > 365) return res.status(400).json({ error: 'Escribe cuántos días de crédito tiene (0 si es de contado)', codigo: 'FALTA_CREDITO', credito_proveedor: prov.dias_credito });
+    const vence = sumarDias(fecha, dias);
     let leadId = null;
     if (b.lead_id) {
       const l = db.prepare("SELECT * FROM leads WHERE id = ? AND estatus = 'ganado'").get(b.lead_id);
@@ -894,8 +904,8 @@ module.exports = function finanzas(app, db, h, unicos) {
       return res.status(409).json({ error: `Ya registraste la factura ${folioFactura} de ${prov.nombre}. ¿Es otra factura?`, codigo: 'POSIBLE_DUPLICADO' });
     }
     const id = db.transaction(() => {
-      const info = db.prepare(`INSERT INTO cuentas_por_pagar (proveedor_id, categoria, concepto, factura_folio, fecha_documento, fecha_vencimiento, total_cent, lead_id, equipo, notas, registrado_por)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(prov.id, categoria, concepto, texto(b.factura_folio, 60), fecha, vence, total, leadId, texto(b.equipo, 200), texto(b.notas, 1000), req.usuarioSesion.id);
+      const info = db.prepare(`INSERT INTO cuentas_por_pagar (proveedor_id, categoria, concepto, factura_folio, fecha_documento, fecha_vencimiento, total_cent, lead_id, equipo, notas, registrado_por, dias_credito)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(prov.id, categoria, concepto, texto(b.factura_folio, 60), fecha, vence, total, leadId, texto(b.equipo, 200), texto(b.notas, 1000), req.usuarioSesion.id, dias);
       if (b.ya_pagado) {
         db.prepare('INSERT INTO pagos_proveedor (cxp_id, fecha, monto_cent, metodo, referencia, registrado_por) VALUES (?, ?, ?, ?, ?, ?)')
           .run(info.lastInsertRowid, fechaPagoGasto || (fecha > hoyMexico() ? hoyMexico() : fecha), total, b.metodo, texto(b.referencia, 120), req.usuarioSesion.id);
@@ -908,7 +918,7 @@ module.exports = function finanzas(app, db, h, unicos) {
   }));
 
   app.post('/api/finanzas/cxp/:id/pagos', h((req, res) => {
-    if (!puedeOperar(req, res)) return;
+    if (!puedePagar(req, res)) return;
     const x = cuentasPorPagar().find(c => c.id === Number(req.params.id));
     if (!x) return res.status(404).json({ error: 'Cuenta por pagar no encontrada' });
     const monto = aCentavos(req.body.monto);
@@ -935,7 +945,7 @@ module.exports = function finanzas(app, db, h, unicos) {
   }));
 
   app.post('/api/finanzas/pagos-proveedor/:id/cancelar', h((req, res) => {
-    if (!puedeOperar(req, res)) return;
+    if (!puedePagar(req, res)) return;
     const motivo = texto(req.body.motivo, 300);
     if (!motivo || !conSentido(motivo, 5)) return res.status(400).json({ error: 'Escribe el motivo de la cancelación (mínimo 5 caracteres)' });
     const pagoAntes = db.prepare('SELECT g.*, c.lead_id, c.concepto FROM pagos_proveedor g JOIN cuentas_por_pagar c ON c.id = g.cxp_id WHERE g.id = ?').get(req.params.id);
@@ -948,7 +958,7 @@ module.exports = function finanzas(app, db, h, unicos) {
   }));
 
   app.post('/api/finanzas/cxp/:id/cancelar', h((req, res) => {
-    if (!puedeOperar(req, res)) return;
+    if (!puedePagar(req, res)) return;
     const motivo = texto(req.body.motivo, 300);
     if (!motivo || !conSentido(motivo, 5)) return res.status(400).json({ error: 'Escribe el motivo de la cancelación (mínimo 5 caracteres)' });
     const pagos = db.prepare('SELECT COUNT(*) n FROM pagos_proveedor WHERE cxp_id = ? AND cancelado = 0').get(req.params.id).n;
@@ -1185,6 +1195,7 @@ module.exports = function finanzas(app, db, h, unicos) {
 
   // ---------- Cuentas por pagar: cada fila crea una factura o gasto (y el proveedor si no existe) ----------
   app.post('/api/finanzas/importar/cxp', h((req, res) => {
+    if (!puedePagar(req, res)) return;
     const filas = leerFilas(req, res); if (!filas) return;
     const simular = req.query.simular === '1';
     const hoy = hoyMexico();

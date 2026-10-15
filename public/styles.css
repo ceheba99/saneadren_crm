@@ -1435,3 +1435,6 @@ body:not(.es-costos) .solo-costos{display:none !important;}
   .buscar-resultados{max-height:none;flex:1;}
   .buscar-lado{display:none;}
 }
+
+/* Avisos solo para quien no es administración ni encargado de centro de costos */
+body.es-costos .solo-no-costos{display:none !important;}

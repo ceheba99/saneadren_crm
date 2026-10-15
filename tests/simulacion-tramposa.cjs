@@ -17,7 +17,7 @@ const seccion = t => console.log('\n' + t);
 const rechaza = (r, texto) => revisa(r[0] >= 400 && r[0] < 500 && r[1].error, texto, r);
 
 (async () => {
-  for (let i = 0; i < 40 && !/corriendo/.test(salida); i++) await espera(150);
+  for (let i = 0; i < 100 && !/corriendo/.test(salida); i++) await espera(150);
   const A = (await pedir('POST', '/login', null, { nombre: ADMIN.correo, password: ADMIN.password }))[1].token;
   await pedir('POST', '/usuarios', A, { nombre: 'Ventas Tramposa', correo: 'ventas.t@saneadren.com.mx', password: 'Ventas-Tramposa-26', rol: 'ventas' });
   const V = (await pedir('POST', '/login', null, { nombre: 'ventas.t@saneadren.com.mx', password: 'Ventas-Tramposa-26' }))[1].token;
@@ -110,11 +110,11 @@ const rechaza = (r, texto) => revisa(r[0] >= 400 && r[0] < 500 && r[1].error, te
   rechaza(await pedir('POST', '/compras/ordenes/' + oc2.id + '/cancelar', V, { motivo: '' }), 'cancelar sin motivo');
 
   seccion('4. Gastos (cuentas por pagar) con conceptos malos');
-  const gasto = x => pedir('POST', '/finanzas/cxp', V, { proveedor_id: prov.id, categoria: 'refacciones', concepto: 'Balatas camión E-37', total: 2400, fecha_documento: HOY, ...x });
+  const gasto = x => pedir('POST', '/finanzas/cxp', A, { proveedor_id: prov.id, categoria: 'refacciones', concepto: 'Balatas camión E-37', total: 2400, fecha_documento: HOY, dias_credito: 15, ...x }); // compra directa: solo administración o costos
   for (const [x, texto] of [[{ concepto: '' }, 'concepto vacío'], [{ concepto: '   ' }, 'concepto de espacios'], [{ concepto: '...' }, 'concepto «...»'], [{ concepto: 'x' }, 'concepto de una letra'],
     [{ total: 0 }, 'total 0'], [{ total: -50 }, 'total negativo'], [{ total: '2,4OO' }, 'total con letra O'], [{ total: 10.555 }, 'total con 3 decimales'], [{ total: true }, 'total «true»'],
     [{ categoria: 'papeleria_vieja' }, 'categoría dada de baja'], [{ categoria: 'inventada' }, 'categoría inventada'], [{ proveedor_id: 999999 }, 'proveedor que no existe'],
-    [{ fecha_documento: '2026-13-01' }, 'fecha mes 13'], [{ fecha_documento: dias(HOY, 400) }, 'fecha a más de un año'], [{ fecha_vencimiento: dias(HOY, -10) }, 'vence antes del documento'],
+    [{ fecha_documento: '2026-13-01' }, 'fecha mes 13'], [{ fecha_documento: dias(HOY, 400) }, 'fecha a más de un año'], [{ dias_credito: -10 }, 'días de crédito negativos'], [{ dias_credito: '' }, 'sin días de crédito'],
     [{ ya_pagado: true, metodo: 'trueque' }, 'pagado con método inventado'], [{ ya_pagado: true, metodo: 'efectivo', fecha_pago: dias(HOY, 5) }, 'pagado en el futuro']]) {
     rechaza(await gasto(x), 'Gasto: ' + texto);
   }
@@ -139,7 +139,7 @@ const rechaza = (r, texto) => revisa(r[0] >= 400 && r[0] < 500 && r[1].error, te
   const [, cot] = await pedir('POST', '/leads', V, { cliente_id: gib.id, direccion: 'Planta', responsable_id: vid, forzar_duplicado: true, iva_modo: 'mas_iva', partidas_json: partida(5000), valor: 5000 });
   rechaza(await pedir('POST', '/leads/' + cot.id + '/cobros', V, { monto: 100, metodo: 'efectivo' }), 'cobrar una cotización (no es orden)');
   // Pagos a proveedor
-  const pagoProv = x => pedir('POST', '/finanzas/cxp/' + g1.id + '/pagos', V, { monto: 400, metodo: 'transferencia', fecha: HOY, ...x });
+  const pagoProv = x => pedir('POST', '/finanzas/cxp/' + g1.id + '/pagos', A, { monto: 400, metodo: 'transferencia', fecha: HOY, ...x });
   for (const [x, texto] of [[{ monto: 0 }, 'monto 0'], [{ monto: 99999 }, 'más que el saldo'], [{ monto: -1 }, 'negativo'], [{ metodo: 'trueque' }, 'método inventado'], [{ fecha: dias(HOY, 2) }, 'fecha futura']]) {
     rechaza(await pagoProv(x), 'Pago a proveedor: ' + texto);
   }

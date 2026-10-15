@@ -30,7 +30,7 @@ const enlace = accion => { const m = [...salida.matchAll(new RegExp('#' + accion
 const espera = ms => new Promise(r => setTimeout(r, ms));
 
 (async () => {
-  for (let i = 0; i < 40 && !/corriendo/.test(salida); i++) await espera(150);
+  for (let i = 0; i < 100 && !/corriendo/.test(salida); i++) await espera(150);
 
   seccion('1. Servidor nuevo y admin inicial');
   ok(/\[admin inicial\] Configurado "admin"/.test(salida), 'el admin se configuró desde variables de entorno');
@@ -210,17 +210,22 @@ const espera = ms => new Promise(r => setTimeout(r, ms));
   [s] = await pedir('GET', '/finanzas/cxp', L); ok(s === 200, 'ventas SÍ ve cuentas por pagar');
   [s, j] = await pedir('POST', '/finanzas/proveedores', L, { nombre: 'Proveedor de ventas', categoria: 'otro' }); ok(s === 201, 'ventas SÍ da de alta proveedores');
   const provVentas = j;
-  [s, j] = await pedir('POST', '/finanzas/cxp', L, { proveedor_id: provVentas.id, concepto: 'Gasto de ventas', total: 10, ya_pagado: true, metodo: 'efectivo' }); ok(s === 201, 'ventas SÍ registra gastos y pagos a proveedores');
+  [s, j] = await pedir('POST', '/finanzas/cxp', L, { proveedor_id: provVentas.id, concepto: 'Gasto de ventas', total: 10, ya_pagado: true, metodo: 'efectivo' }); ok(s === 403, 'ventas NO registra compras sin orden de servicio (van por Solicitud de compra)');
+  [s, j] = await pedir('POST', '/finanzas/cxp', L, { proveedor_id: provVentas.id, concepto: 'Casetas del viaje', total: 10, ya_pagado: true, metodo: 'efectivo', lead_id: cot.id }); ok(s === 201, 'ventas SÍ registra un costo ya pagado de un servicio');
+  const gastoVentas = (await pedir('POST', '/finanzas/cxp', L, { proveedor_id: provVentas.id, concepto: 'Renta de herramienta', total: 50, dias_credito: 0, lead_id: cot.id }))[1];
+  [s] = await pedir('POST', '/finanzas/cxp/' + gastoVentas.id + '/pagos', L, { monto: 50, metodo: 'efectivo' }); ok(s === 403, 'ventas NO paga a proveedores (lo hace administración o el encargado de costos)');
+  [s] = await pedir('POST', '/finanzas/cxp/' + gastoVentas.id + '/cancelar', L, { motivo: 'Me equivoqué de monto' }); ok(s === 403, 'ventas NO cancela cuentas por pagar');
+  await pedir('POST', '/finanzas/cxp/' + gastoVentas.id + '/cancelar', A, { motivo: 'Prueba de permisos' });
   [s] = await pedir('GET', '/admin/backup', L); ok(s === 403, 'ventas sigue SIN poder descargar la base de datos');
   [s, j] = await pedir('POST', '/finanzas/proveedores', A, { nombre: 'Disposición del Bajío', categoria: 'residuos', dias_credito: 30 });
   ok(s === 201, 'proveedor creado');
   const prov = j;
-  [s, j] = await pedir('POST', '/finanzas/cxp', A, { proveedor_id: prov.id, concepto: 'Disposición 12 m3 lodos', total: 2400.5, fecha_documento: '2026-10-01', lead_id: cot.id });
+  [s, j] = await pedir('POST', '/finanzas/cxp', A, { proveedor_id: prov.id, concepto: 'Disposición 12 m3 lodos', total: 2400.5, fecha_documento: '2026-10-01', lead_id: cot.id, dias_credito: 30 });
   ok(s === 201, 'factura de proveedor a 30 días ligada a la orden');
   const cxp1 = j.id;
   [s, j] = await pedir('GET', '/finanzas/cxp', A);
   const c1 = j.find(x => x.id === cxp1);
-  ok(c1 && c1.fecha_vencimiento === '2026-10-31' && c1.saldo === 2400.5, 'vencimiento calculado con el crédito del proveedor', c1);
+  ok(c1 && c1.fecha_vencimiento === '2026-10-31' && c1.saldo === 2400.5, 'vencimiento calculado con los días de crédito escritos', c1);
   [s, j] = await pedir('POST', '/finanzas/cxp/' + cxp1 + '/pagos', A, { monto: 400.5, metodo: 'transferencia' });
   ok(s === 201, 'pago parcial al proveedor');
   [s] = await pedir('POST', '/finanzas/cxp/' + cxp1 + '/cancelar', A, { motivo: 'Factura duplicada' });
@@ -231,9 +236,9 @@ const espera = ms => new Promise(r => setTimeout(r, ms));
   ok(!j.some(x => x.concepto === 'Diésel pipa'), 'el gasto de contado no queda como pendiente');
   [s, j] = await pedir('GET', '/finanzas/resumen', A);
   ok(j.por_pagar === 2000 && j.pagado_mes >= 1800, 'resumen de pagos: $2,000 por pagar', j);
-  [s, j] = await pedir('POST', '/finanzas/cxp', A, { proveedor_id: prov.id, concepto: 'Disposición octubre', total: 500, factura_folio: 'F-77' });
+  [s, j] = await pedir('POST', '/finanzas/cxp', A, { proveedor_id: prov.id, concepto: 'Disposición octubre', total: 500, factura_folio: 'F-77', dias_credito: 30 });
   ok(s === 201, 'factura F-77 registrada');
-  [s, j] = await pedir('POST', '/finanzas/cxp', A, { proveedor_id: prov.id, concepto: 'Disposición octubre', total: 500, factura_folio: 'F-77' });
+  [s, j] = await pedir('POST', '/finanzas/cxp', A, { proveedor_id: prov.id, concepto: 'Disposición octubre', total: 500, factura_folio: 'F-77', dias_credito: 30 });
   ok(s === 409 && j.codigo === 'POSIBLE_DUPLICADO', 'la misma factura del mismo proveedor avisa que está repetida');
   const adminId = (await pedir('GET', '/usuarios', A))[1].find(u => u.rol === 'admin').id;
   [s, j] = await pedir('POST', '/prospeccion', A, { nombre: 'Restaurante La Fuente', sector_id: 1, zona: 'Centro', responsable_id: adminId, fuente: 'https://www.google.com/maps/place/' + 'x'.repeat(150) });

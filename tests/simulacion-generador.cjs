@@ -15,7 +15,7 @@ const seccion = t => console.log('\n' + t);
 const fila = (id, cliente, producto, subtotal, extra = {}) => ({ fila: 'SEPTIEMBRE #' + id, fecha: '2026-09-0' + (id % 9 + 1), no_orden: String(6000 + id), factura: 'QR' + (3000 + id), producto, cantidad: 1, subtotal, iva: Math.round(subtotal * 16) / 100, total: Math.round(subtotal * 116) / 100, cliente, canal: 'CAUTIVO', unidad: 'C-22', empleado: 'BOGAR TAMAYO', ...extra });
 
 (async () => {
-  for (let i = 0; i < 40 && !/corriendo/.test(salida); i++) await espera(150);
+  for (let i = 0; i < 100 && !/corriendo/.test(salida); i++) await espera(150);
   const A = (await pedir('POST', '/login', null, { nombre: ADMIN.correo, password: ADMIN.password }))[1].token;
   await pedir('POST', '/usuarios', A, { nombre: 'Tecnico Sim', correo: 'tecnico.sim@saneadren.com.mx', password: 'Tecnico-Sim-2026', rol: 'tecnico' });
   const Tc = (await pedir('POST', '/login', null, { nombre: 'tecnico.sim@saneadren.com.mx', password: 'Tecnico-Sim-2026' }))[1].token;

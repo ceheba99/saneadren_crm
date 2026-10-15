@@ -117,6 +117,7 @@ const Compras = (() => {
     origen.className = 'oc-origen' + (origSol?.excepcion_motivo ? ' excepcion' : '') + (!origSol ? ' sin' : '');
     origen.innerHTML = origSol ? '📝 Sale de la solicitud <b>' + esc(origSol.folio) + '</b>' + (DESDE_SOL ? ': cotización de ' + esc(DESDE_SOL.ganadora.proveedor_nombre) + ' por ' + dinero(DESDE_SOL.ganadora.monto) + ' (con IVA incluido; ajusta las partidas si hace falta)' : '')
         + (origSol.excepcion_motivo ? '<br>⚠ <b>Excepción por urgencia</b> (sin las 3 cotizaciones): ' + esc(origSol.excepcion_motivo) : '')
+        + (o?.motivo_diferencia ? '<br>⚠ <b>Mayor que lo cotizado:</b> ' + esc(o.motivo_diferencia) : '')
       : 'Orden hecha sin solicitud de compra.';
     $('oc-proveedor').dataset.fijo = DESDE_SOL || o?.solicitud_id ? '1' : '';
     recalcular();
@@ -149,9 +150,19 @@ const Compras = (() => {
     const mala = d.partidas.findIndex(p => !p.descripcion || !(p.cantidad > 0) || !(p.precio > 0));
     if (mala >= 0) { toast('Partida ' + (mala + 1) + ': escribe cantidad, descripción y precio (mayor a $0)'); return; }
     let o;
-    if (ACTUAL) o = await pedir('/compras/ordenes/' + ACTUAL.id, 'PUT', d);
+    // Por más de lo cotizado: se pide el motivo y se vuelve a guardar con él.
+    const conMotivo = async fn => {
+      try { return await fn(d); }
+      catch (err) {
+        if (err.datos?.codigo !== 'SUPERA_COTIZACION') throw err;
+        const motivo = await solicitarDialogo({ titulo: 'Mayor que lo cotizado', mensaje: err.message, aceptar: 'Guardar con este motivo', campo: { tipo: 'text', etiqueta: 'Motivo', requerido: 'Escribe el motivo (mínimo 10 letras)' } });
+        if (!motivo) return null;
+        d.motivo_diferencia = motivo; return fn(d);
+      }
+    };
+    if (ACTUAL) { o = await conMotivo(x => pedir('/compras/ordenes/' + ACTUAL.id, 'PUT', x)); if (!o) return; }
     else {
-      try { o = await pedir('/compras/ordenes', 'POST', d); }
+      try { o = await conMotivo(x => pedir('/compras/ordenes', 'POST', x)); if (!o) return; }
       catch (err) {
         // La misma orden ya existe (doble clic o se capturó otra vez): se pregunta antes de crear otra.
         if (err.datos?.codigo !== 'POSIBLE_DUPLICADO') throw err;
@@ -575,7 +586,9 @@ const Compras = (() => {
   async function autorizar(o) {
     if (!o) return false;
     const habitual = PROVEEDORES.find(p => p.id === o.proveedor_id)?.dias_credito;
-    const excepcion = o.excepcion_motivo ? ' ⚠ OJO: se hizo sin las 3 cotizaciones por urgencia («' + o.excepcion_motivo + '»).' : o.solicitud_id ? '' : ' (Orden hecha sin solicitud de compra.)';
+    const excepcion = (o.excepcion_motivo ? ' ⚠ OJO: se hizo sin las 3 cotizaciones por urgencia («' + o.excepcion_motivo + '»).' : o.solicitud_id ? '' : ' (Orden hecha sin solicitud de compra.)')
+      + (o.motivo_diferencia ? ' ⚠ Es mayor que lo cotizado: «' + o.motivo_diferencia + '».' : '')
+      + (o.recibida_at ? ' ⚠ Ya se recibió el ' + fechaTxt(String(o.recibida_at).slice(0, 10)) + ' (se compró antes de autorizar).' : '');
     const txt = await solicitarDialogo({ titulo: 'Autorizar y pasar a pago', mensaje: 'La orden ' + o.folio + ' por ' + dinero(o.total) + ' se vuelve deuda con ' + o.proveedor_nombre + ' y pasa a Cuentas por pagar.' + excepcion
       + ' ¿Cuántos días de crédito tiene esta compra? Escribe 0 si es de contado.' + (habitual != null ? ' (Este proveedor suele dar ' + habitual + ' días.)' : ''), aceptar: 'Autorizar', campo: { tipo: 'number', etiqueta: 'Días de crédito de esta compra', requerido: 'Escribe los días de crédito (0 si es de contado)' } });
     if (txt === null) return false;

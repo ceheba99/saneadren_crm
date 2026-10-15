@@ -88,8 +88,8 @@ const masDias = (f, d) => { const x = new Date(f + 'T00:00:00Z'); x.setUTCDate(x
 
   console.log('\nCOSTOS CON TERCEROS (pipas, tiros…)');
   prueba('Costos', 'Gasto con terceros sin concepto', await pedir('POST', '/finanzas/cxp', V, { proveedor_id: prov.id, categoria: 'otro', concepto: '', total: 1500, fecha_documento: HOY, lead_id: c7.id }));
-  prueba('Costos', 'Gasto con terceros en una cotización NO ganada', await pedir('POST', '/finanzas/cxp', V, { proveedor_id: prov.id, categoria: 'otro', concepto: 'Renta de pipa', total: 1500, fecha_documento: HOY, lead_id: c4.id }));
-  [s, j] = await pedir('POST', '/finanzas/cxp', V, { proveedor_id: prov.id, categoria: 'otro', concepto: 'Renta de pipa 10 m3', total: 1500, fecha_documento: HOY, lead_id: c7.id });
+  prueba('Costos', 'Gasto con terceros en una cotización NO ganada', await pedir('POST', '/finanzas/cxp', V, { proveedor_id: prov.id, categoria: 'otro', concepto: 'Renta de pipa', total: 1500, fecha_documento: HOY, lead_id: c4.id, dias_credito: 15 }));
+  [s, j] = await pedir('POST', '/finanzas/cxp', V, { proveedor_id: prov.id, categoria: 'otro', concepto: 'Renta de pipa 10 m3', total: 1500, fecha_documento: HOY, lead_id: c7.id, dias_credito: 15 });
   const gasto = j;
   prueba('Costos', 'Pagar al proveedor más de lo que se le debe', await pedir('POST', '/finanzas/cxp/' + gasto.id + '/pagos', A, { monto: 5000, metodo: 'transferencia', fecha: HOY }));
   prueba('Costos', 'Pago a proveedor con fecha futura', await pedir('POST', '/finanzas/cxp/' + gasto.id + '/pagos', A, { monto: 100, metodo: 'transferencia', fecha: masDias(HOY, 10) }));
@@ -101,11 +101,14 @@ const masDias = (f, d) => { const x = new Date(f + 'T00:00:00Z'); x.setUTCDate(x
   prueba('Compras', 'Cuenta por pagar directa sin escribir el crédito (lo toma solo del proveedor)', [s, j], { bloquea: true, nota: 'en las órdenes de compra el crédito es obligatorio' });
   const sol = (await pedir('POST', '/compras/solicitudes', C, { que: 'Bomba sumergible 2 HP', para_que: 'Para achique en servicios de emergencia', centro_id: centros[0].id }))[1];
   prueba('Compras', 'El encargado de costos aprueba SU PROPIA solicitud', await pedir('POST', '/compras/solicitudes/' + sol.id + '/aprobar', C), { nota: 'la misma persona pide y aprueba' });
+  await pedir('POST', '/compras/solicitudes/' + sol.id + '/aprobar', A);
   for (const p of [prov, prov2, prov3]) await subir('/compras/solicitudes/' + sol.id + '/documentos', C, pdf(), { 'X-Tipo': 'cotizacion', 'X-Proveedor': p.id, 'X-Monto': p.id === prov3.id ? '7000' : '9000', 'X-Nombre': 'c.pdf' });
   const cots = (await pedir('GET', '/compras/solicitudes/' + sol.id, C))[1].cotizaciones;
-  prueba('Compras', 'Elegir la cotización MÁS CARA sin explicar por qué', await pedir('POST', '/compras/solicitudes/' + sol.id + '/elegir', C, { cotizacion_id: cots.find(x => x.proveedor_id === prov.id).id }), { nota: 'queda anotado, pero no se pide el motivo' });
-  const oc = (await pedir('POST', '/compras/ordenes', C, { solicitud_id: sol.id, proveedor_id: prov.id, centro_id: centros[0].id, categoria: 'otro', iva_modo: 'incluido', partidas: [{ cantidad: 1, descripcion: 'Bomba sumergible 2 HP', precio: 12000 }] }))[1];
-  prueba('Compras', 'La orden se hace por MÁS de lo cotizado ($12,000 vs $9,000)', [oc.id ? 201 : 400, oc], { nota: 'debería avisar o pedir motivo' });
+  prueba('Compras', 'Elegir la cotización MÁS CARA sin explicar por qué', await pedir('POST', '/compras/solicitudes/' + sol.id + '/elegir', C, { cotizacion_id: cots.find(x => x.proveedor_id === prov.id).id }), { nota: 'debe pedir el motivo' });
+  await pedir('POST', '/compras/solicitudes/' + sol.id + '/elegir', C, { cotizacion_id: cots.find(x => x.proveedor_id === prov.id).id, motivo_eleccion: 'Entrega inmediata y garantía de un año' });
+  const baseOC = { solicitud_id: sol.id, proveedor_id: prov.id, centro_id: centros[0].id, categoria: 'otro', iva_modo: 'incluido', partidas: [{ cantidad: 1, descripcion: 'Bomba sumergible 2 HP', precio: 12000 }] };
+  prueba('Compras', 'La orden se hace por MÁS de lo cotizado ($12,000 vs $9,000) sin motivo', await pedir('POST', '/compras/ordenes', C, baseOC), { nota: 'debe pedir el motivo' });
+  const oc = (await pedir('POST', '/compras/ordenes', C, { ...baseOC, motivo_diferencia: 'Se agregó el kit de instalación' }))[1];
   await subir('/compras/ordenes/' + oc.id + '/documentos', C, png(), { 'X-Tipo': 'firma_recepcion', 'X-Nombre': 'f.png' });
   prueba('Compras', 'Marcar RECIBIDA una orden que aún no se autoriza', await pedir('POST', '/compras/ordenes/' + oc.id + '/recibir', C, { recibio: 'Almacén' }), { nota: 'se compró antes de autorizar' });
   [s, j] = await pedir('GET', '/compras/ordenes/' + oc.id, C);

@@ -24,7 +24,7 @@ const grupo = (j, tipo) => (j.grupos || []).find(g => g.tipo === tipo);
 const tiene = (j, tipo, id) => !!grupo(j, tipo)?.items.some(x => x.id === id);
 
 (async () => {
-  for (let i = 0; i < 40 && !/corriendo/.test(salida); i++) await espera(150);
+  for (let i = 0; i < 100 && !/corriendo/.test(salida); i++) await espera(150);
   const A = (await pedir('POST', '/login', null, { nombre: ADMIN.correo, password: ADMIN.password }))[1].token;
   await pedir('POST', '/usuarios', A, { nombre: 'Vende Busca', correo: 'vende.busca@saneadren.com.mx', password: 'Vende-Busca-2026', rol: 'ventas' });
   await pedir('POST', '/usuarios', A, { nombre: 'Tecnico Busca', correo: 'tec.busca@saneadren.com.mx', password: 'Tecnico-Busca-2026', rol: 'tecnico' });
@@ -48,7 +48,7 @@ const tiene = (j, tipo, id) => !!grupo(j, tipo)?.items.some(x => x.id === id);
   const prov = (await pedir('POST', '/finanzas/proveedores', A, { nombre: 'Pipas del Centro', categoria: 'otro', dias_credito: 15, rfc: 'PCE010101AA1', telefono: '442 111 2233' }))[1];
   const prov2 = (await pedir('POST', '/finanzas/proveedores', A, { nombre: 'Llantera Querétaro', categoria: 'otro', dias_credito: 7 }))[1];
   const prov3 = (await pedir('POST', '/finanzas/proveedores', A, { nombre: 'Servillantas', categoria: 'otro', dias_credito: 7 }))[1];
-  const cxp = (await pedir('POST', '/finanzas/cxp', A, { proveedor_id: prov.id, categoria: 'otro', concepto: 'Disposición de lodos KFC', total: 3480, fecha_documento: HOY, factura_folio: 'PC-77' }))[1];
+  const cxp = (await pedir('POST', '/finanzas/cxp', A, { proveedor_id: prov.id, categoria: 'otro', concepto: 'Disposición de lodos KFC', total: 3480, fecha_documento: HOY, factura_folio: 'PC-77', dias_credito: 15 }))[1];
   const sol = (await pedir('POST', '/compras/solicitudes', V, { que: '4 llantas 11R22.5', para_que: 'Para el camión C-22 que se poncho', centro_id: centros[0].id, equipo: 'C-22' }))[1];
   await pedir('POST', '/compras/solicitudes/' + sol.id + '/aprobar', C);
   for (const p of [prov, prov2, prov3]) await subir('/compras/solicitudes/' + sol.id + '/documentos', C, pdf(), { 'X-Tipo': 'cotizacion', 'X-Proveedor': p.id, 'X-Monto': '15800', 'X-Nombre': 'c.pdf' });

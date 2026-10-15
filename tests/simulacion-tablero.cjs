@@ -14,7 +14,7 @@ const sumarDias = (f, d) => { const x = new Date(f + 'T12:00:00Z'); x.setUTCDate
 const HOY = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Mexico_City' }).format(new Date());
 
 (async () => {
-  for (let i = 0; i < 40 && !/corriendo/.test(salida); i++) await espera(150);
+  for (let i = 0; i < 100 && !/corriendo/.test(salida); i++) await espera(150);
   const A = (await pedir('POST', '/login', null, { nombre: ADMIN.correo, password: ADMIN.password }))[1].token;
   await pedir('POST', '/usuarios', A, { nombre: 'Ventas Tab', correo: 'vt@saneadren.com.mx', password: 'Ventas-Tab-2026', rol: 'ventas' });
   const V = (await pedir('POST', '/login', null, { nombre: 'vt@saneadren.com.mx', password: 'Ventas-Tab-2026' }))[1].token;
@@ -36,7 +36,7 @@ const HOY = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Mexico_City' }
   const o3 = await orden(c2, { partidas_json: P(partida(2000)), fecha_servicio: sumarDias(HOY, -2), iva_modo: 'sin_iva', equipo: 'E-2' });
   await realizar(o3.id, sumarDias(HOY, -2), { realizado_por: 'subcontratado', gastos: [{ proveedor_id: prov.id, concepto: 'Pipa', total: 1200, ya_pagado: true, metodo: 'transferencia', fecha_pago: sumarDias(HOY, -1) }] });
   // Gasto general del periodo (sin orden): $800, pendiente
-  await pedir('POST', '/finanzas/cxp', A, { proveedor_id: prov.id, categoria: 'combustible', concepto: 'Diesel', total: 800, fecha_documento: sumarDias(HOY, -4) });
+  await pedir('POST', '/finanzas/cxp', A, { proveedor_id: prov.id, categoria: 'combustible', concepto: 'Diesel', total: 800, fecha_documento: sumarDias(HOY, -4), dias_credito: 7 });
   // Cobros del periodo: $11,600 (o1 completo con IVA) y un descuento de $100 que no cuenta como cobrado
   await pedir('POST', '/leads/' + o1.id + '/cobros', A, { monto: 11600, metodo: 'transferencia', fecha: sumarDias(HOY, -1) });
   await pedir('POST', '/leads/' + o2.id + '/cobros', A, { monto: 100, metodo: 'otro', tipo: 'ajuste', fecha: sumarDias(HOY, -1) });

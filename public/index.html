@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Saneadren · Cotizaciones y Servicios</title>
-<link rel="stylesheet" href="styles.css?v=bus1">
+<link rel="stylesheet" href="styles.css?v=rec1">
 <link rel="stylesheet" href="servicios-tabla.css">
 <link rel="stylesheet" href="flujo.css">
 </head>
@@ -479,7 +479,7 @@
         <select id="pagar-vista" aria-label="Mostrar"><option value="pendientes">Por pagar</option><option value="todas">Todas (incluye pagadas)</option></select>
         <button type="button" class="btn btn-outline solo-admin" id="pagar-exportar">📥 Exportar a Excel</button>
         <button type="button" class="btn btn-outline" data-plantilla-descargar="cxp">📄 Descargar plantilla</button>
-        <button type="button" class="btn btn-secundario" data-plantilla-subir="cxp">📤 Subir plantilla</button>
+        <button type="button" class="btn btn-secundario solo-costos" data-plantilla-subir="cxp">📤 Subir plantilla</button>
       </div>
       <div id="pagar-lista"></div>
     </div>
@@ -905,6 +905,7 @@
   <div class="modal modal-dinero">
     <div class="modal-header"><h2>Registrar gasto o factura</h2><button class="close-btn" type="button">✕</button></div>
     <div class="modal-body">
+      <p class="cuentas-aviso solo-no-costos">Aquí se registran los <b>costos de un servicio</b> (pipas, tiros, casetas…): elige la orden de servicio. Las compras van por <b>Solicitudes de compra</b>.</p>
       <div class="campo"><label for="gasto-proveedor">Proveedor</label><select id="gasto-proveedor"></select><small class="ayuda">¿No está? Agrégalo en la pestaña Proveedores.</small></div>
       <div class="campo"><label for="gasto-categoria">Categoría</label><select id="gasto-categoria"></select></div>
       <!-- Orden de servicio relacionada: se busca por folio, número, cliente, servicio o unidad y se muestra su información. -->
@@ -917,7 +918,8 @@
       <div class="campo"><label for="gasto-total">Total a pagar con IVA (MXN)</label><input id="gasto-total" type="text" inputmode="decimal" autocomplete="off"></div>
       <div class="form-grid-2">
         <div class="campo"><label for="gasto-fecha">Fecha de la factura o gasto</label><input id="gasto-fecha" type="date"></div>
-        <div class="campo"><label for="gasto-vence" title="Se calcula con los días de crédito del proveedor">Vence</label><input id="gasto-vence" type="date"></div>
+        <div class="campo"><label for="gasto-credito">Días de crédito (obligatorio)</label><input id="gasto-credito" type="number" min="0" max="365" step="1" inputmode="numeric" placeholder="0 = de contado"><small class="ayuda" id="gasto-credito-ayuda"></small></div>
+        <div class="campo"><label for="gasto-vence">Vence</label><input id="gasto-vence" type="date" readonly tabindex="-1" title="Se calcula: fecha + días de crédito"></div>
       </div>
       <details><summary>Factura y equipo (opcional)</summary>
         <div class="campo"><label for="gasto-folio">Folio de la factura del proveedor</label><input id="gasto-folio" maxlength="60"></div>
@@ -1118,14 +1120,14 @@
 <script src="servicios-tabla.js?v=pg2"></script>
 <script src="flujo.js?v=cli2"></script>
 <script src="cuentas.js?v=av1"></script>
-<script src="finanzas.js?v=t2"></script>
+<script src="finanzas.js?v=rec1"></script>
 <script src="calendario.js?v=pg2"></script>
 <script src="tablero.js?v=pg2"></script>
 <script src="bitacora.js?v=sol1"></script>
-<script src="compras.js?v=aud1"></script>
-<script src="solicitudes.js?v=sol2"></script>
+<script src="compras.js?v=rec1"></script>
+<script src="solicitudes.js?v=rec1"></script>
 <script src="carga-generador.js?v=con1"></script>
-<script src="app.js?v=bus1"></script>
+<script src="app.js?v=rec1"></script>
 <script src="buscador.js?v=bus1"></script>
 <script src="prospeccion.js?v=cli1"></script>
 </body>
