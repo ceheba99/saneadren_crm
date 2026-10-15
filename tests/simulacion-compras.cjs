@@ -27,9 +27,18 @@ const SEMANA_40 = [['REPARACION FLECHA CARDAN JOSE LUIS ACOSTA', 2000], ['PAGO R
   [s, j] = await pedir('GET', '/compras/centros', V);
   revisa(s === 200 && j.length === 8 && j.find(c => c.nombre === 'Operaciones')?.responsable === 'Noe Gomez', 'catálogo inicial de 8 centros de costo con responsable', j.map(c => c.nombre));
   const operaciones = j.find(c => c.nombre === 'Operaciones');
-  [s, j] = await pedir('POST', '/compras/centros', V, { nombre: 'Taller' }); revisa(s === 403, 'ventas no edita centros de costo');
-  [s, j] = await pedir('POST', '/compras/centros', A, { nombre: 'Taller', responsable: 'Isaac Hernandez' }); revisa(s === 201, 'el administrador agrega un centro de costos', j);
-  [s, j] = await pedir('POST', '/compras/centros', A, { nombre: 'taller' }); revisa(s === 409, 'no se repite un centro de costos');
+  // Centros de costo: cualquier usuario agrega, corrige o elimina
+  [s, j] = await pedir('POST', '/compras/centros', V, { nombre: 'Taller', responsable: 'Isaac Hernandez' }); revisa(s === 201, 'ventas agrega un centro de costos', j);
+  const taller = j;
+  [s, j] = await pedir('POST', '/compras/centros', A, { nombre: 'taller' }); revisa(s === 409 && /Taller/.test(j.error), 'no se repite un centro de costos (dice cuál ya existe)', j.error);
+  [s, j] = await pedir('POST', '/compras/centros', V, { nombre: '--' }); revisa(s === 400, 'un nombre sin letras no se acepta');
+  [s, j] = await pedir('POST', '/compras/centros', V, { nombre: '<b>x</b>' }); revisa(s === 400, 'un nombre con código no se acepta');
+  [s, j] = await pedir('PUT', '/compras/centros/' + taller.id, V, { nombre: 'Taller mecánico', responsable: 'Isaac Hernandez' }); revisa(s === 200 && j.nombre === 'Taller mecánico', 'ventas corrige el nombre del centro', j);
+  [s, j] = await pedir('DELETE', '/compras/centros/' + taller.id, V); revisa(s === 200 && j.ok, 'ventas elimina un centro de costos que no le sirve', j);
+  [s, j] = await pedir('GET', '/compras/centros', V); revisa(!j.some(c => c.id === taller.id && c.activo), 'el centro eliminado ya no se ofrece');
+  [s, j] = await pedir('DELETE', '/compras/centros/' + taller.id, V); revisa(s === 404, 'eliminarlo dos veces no hace nada');
+  [s, j] = await pedir('POST', '/compras/centros', V, { nombre: 'TALLER MECÁNICO' }); revisa(s === 201 && j.id === taller.id && j.activo === 1 && j.responsable === 'Isaac Hernandez', 'volver a agregarlo lo recupera (mismo registro, conserva el responsable)', j);
+  [s, j] = await pedir('GET', '/auditoria?entidad=catalogo', A); revisa(s === 200 && j.some(r => r.accion === 'centro de costos eliminado' && /Taller/.test(r.detalle)), 'la eliminación queda en la bitácora con quién lo hizo', j.slice?.(0, 3));
   const [, prov] = await pedir('POST', '/finanzas/proveedores', A, { nombre: 'PROFESIONALSERV', categoria: 'otro', dias_credito: 7 });
 
   const base = { forzar: true, proveedor_id: prov.id, centro_id: operaciones.id, categoria: 'otro', fecha: '2026-10-02', fecha_requerida: '2026-10-02', iva_modo: 'sin_iva',
@@ -104,13 +113,11 @@ const SEMANA_40 = [['REPARACION FLECHA CARDAN JOSE LUIS ACOSTA', 2000], ['PAGO R
   [s, j] = await pedir('POST', '/compras/ordenes', V, { ...base, partidas: [{ cantidad: 2.5, descripcion: 'Manguera', unidad: 'M', precio: 100 }] });
   revisa(s === 201 && j.partidas[0].unidad === 'M', 'la partida guarda la unidad elegida', j.partidas?.[0]);
 
-  // Categorías de gasto: solo administración las edita; renombrar actualiza lo capturado
+  // Categorías de gasto: cualquier usuario las agrega, corrige o elimina; renombrar actualiza lo capturado
   [s, j] = await pedir('GET', '/finanzas/categorias', V);
   revisa(s === 200 && j.some(c => c.clave === 'combustible') && j.every(c => c.activo === 1), 'categorías iniciales (solo activas)', j.map(c => c.clave));
-  [s, j] = await pedir('POST', '/finanzas/categorias', V, { nombre: 'Papelería' }); revisa(s === 403, 'ventas no edita categorías');
-  [s, j] = await pedir('PUT', '/finanzas/categorias/combustible', V, { nombre: 'Gasolina' }); revisa(s === 403, 'ventas no renombra categorías');
-  [s, j] = await pedir('POST', '/finanzas/categorias', A, { nombre: 'Papelería y consumibles' });
-  revisa(s === 201 && j.clave === 'papeleria_y_consumibles', 'el administrador agrega una categoría', j);
+  [s, j] = await pedir('POST', '/finanzas/categorias', V, { nombre: 'Papelería y consumibles' });
+  revisa(s === 201 && j.clave === 'papeleria_y_consumibles', 'ventas agrega una categoría', j);
   [s] = await pedir('POST', '/finanzas/categorias', A, { nombre: 'papelería y consumibles' }); revisa(s === 409, 'no se repite una categoría');
   [s, j] = await pedir('POST', '/compras/ordenes', V, { ...base, categoria: 'papeleria_y_consumibles' });
   revisa(s === 201 && j.categoria_nombre === 'Papelería y consumibles', 'la categoría nueva se usa de inmediato en una orden', [s, j.categoria_nombre, j.error]);
@@ -125,6 +132,12 @@ const SEMANA_40 = [['REPARACION FLECHA CARDAN JOSE LUIS ACOSTA', 2000], ['PAGO R
   [s, j] = await pedir('GET', '/finanzas/categorias?todas=1', A);
   revisa(j.some(c => c.clave === 'papeleria_y_consumibles' && c.activo === 0), 'pero sigue en el catálogo completo para reactivarla');
   [s, j] = await pedir('PUT', '/finanzas/categorias/otro', A, { activo: false }); revisa(s === 400, '«Otro» no se puede dar de baja', [s, j.error]);
+  [s, j] = await pedir('DELETE', '/finanzas/categorias/otro', V); revisa(s === 400, '«Otro» no se puede eliminar', [s, j.error]);
+  [s, j] = await pedir('POST', '/finanzas/categorias', V, { nombre: 'Papelería' }); revisa(s === 201 && j.clave === 'papeleria_y_consumibles' && j.activo === 1, 'volver a agregar una categoría eliminada la recupera', j);
+  [s, j] = await pedir('DELETE', '/finanzas/categorias/papeleria_y_consumibles', V); revisa(s === 200 && j.usos >= 1, 'ventas elimina una categoría (avisa cuántos registros la conservan)', j);
+  [s, j] = await pedir('GET', '/compras/ordenes/' + ocPapel.id, V); revisa(j.categoria_nombre === 'Papelería', 'la orden que ya la usaba no cambia', j.categoria_nombre);
+  [s, j] = await pedir('POST', '/compras/ordenes', V, { ...base, categoria: 'papeleria_y_consumibles' }); revisa(s === 400, 'una categoría eliminada no se usa en órdenes nuevas', [s, j.error]);
+  [s, j] = await pedir('POST', '/finanzas/categorias', V, { nombre: 'Papelería' }); revisa(s === 201, 'se recupera de nuevo para seguir la prueba');
 
   // Autorizar = volverse deuda; solo un administrador
   [s, j] = await pedir('POST', '/compras/ordenes/' + ocPapel.id + '/autorizar', V); revisa(s === 403, 'ventas no autoriza (no se vuelve deuda)');

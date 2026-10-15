@@ -13,6 +13,8 @@ const UNIDADES_INICIALES = [['PZA', 'Pieza'], ['L', 'Litro'], ['M', 'Metro'], ['
 const fechaOk = f => typeof f === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(f) && !Number.isNaN(Date.parse(f + 'T00:00:00Z')) && new Date(f + 'T00:00:00Z').toISOString().slice(0, 10) === f;
 const sumarDias = (f, d) => { const x = new Date(f + 'T00:00:00Z'); x.setUTCDate(x.getUTCDate() + (Number(d) || 0)); return x.toISOString().slice(0, 10); };
 const texto = (v, max) => { if (v === undefined || v === null) return null; const t = String(v).trim(); return t ? t.slice(0, max) : null; };
+// Compara nombres sin importar mayúsculas, acentos ni espacios de más (lower() de SQLite no cambia «É» → «é»).
+const llaveNombre = t => String(t ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
 const pesos = c => Math.round(Number(c || 0)) / 100;
 const folioOC = o => 'OC-' + String(o.created_at || '').slice(0, 7).replace('-', '') + '-' + String(o.id).padStart(4, '0');
 
@@ -165,29 +167,46 @@ module.exports = function compras(app, db, h, finanzas) {
   app.get('/api/compras/centros', h((req, res) => {
     res.json(db.prepare('SELECT * FROM centros_costo ORDER BY activo DESC, orden, nombre').all());
   }));
+  // Cualquier usuario agrega, corrige o elimina centros de costo. Eliminar lo quita de la lista para órdenes
+  // nuevas (las órdenes que ya lo usan no cambian); si se vuelve a agregar con el mismo nombre, regresa.
+  const nombreValido = n => n && conSentido(n, 2) && !/[<>{}]/.test(n);
   app.post('/api/compras/centros', h((req, res) => {
-    if (!esAdmin(req)) return res.status(403).json({ error: 'Solo un administrador puede editar los centros de costo' });
     const nombre = texto(req.body.nombre, 80);
-    if (!nombre) return res.status(400).json({ error: 'Escribe el nombre del centro de costos' });
-    if (db.prepare('SELECT 1 FROM centros_costo WHERE lower(nombre) = lower(?)').get(nombre)) return res.status(409).json({ error: 'Ya existe ese centro de costos' });
+    if (!nombreValido(nombre)) return res.status(400).json({ error: 'Escribe el nombre del centro de costos' });
+    const ya = db.prepare('SELECT * FROM centros_costo ORDER BY activo DESC').all().find(c => llaveNombre(c.nombre) === llaveNombre(nombre));
+    if (ya && ya.activo) return res.status(409).json({ error: `Ya existe el centro de costos «${ya.nombre}»` });
+    if (ya) {
+      db.prepare('UPDATE centros_costo SET activo = 1, responsable = COALESCE(?, responsable) WHERE id = ?').run(texto(req.body.responsable, 120), ya.id);
+      app.locals.auditoria?.registrar(req, 'catalogo', null, 'centro de costos agregado', `${ya.nombre} (se recuperó el que estaba eliminado)`);
+      return res.status(201).json(db.prepare('SELECT * FROM centros_costo WHERE id = ?').get(ya.id));
+    }
     const orden = db.prepare('SELECT COALESCE(MAX(orden), 0) + 1 o FROM centros_costo').get().o;
     const info = db.prepare('INSERT INTO centros_costo (nombre, responsable, orden) VALUES (?, ?, ?)').run(nombre, texto(req.body.responsable, 120), orden);
     app.locals.auditoria?.registrar(req, 'catalogo', null, 'centro de costos agregado', nombre + (texto(req.body.responsable, 120) ? ' · ' + texto(req.body.responsable, 120) : ''));
     res.status(201).json(db.prepare('SELECT * FROM centros_costo WHERE id = ?').get(info.lastInsertRowid));
   }));
   app.put('/api/compras/centros/:id', h((req, res) => {
-    if (!esAdmin(req)) return res.status(403).json({ error: 'Solo un administrador puede editar los centros de costo' });
     const c = db.prepare('SELECT * FROM centros_costo WHERE id = ?').get(req.params.id);
     if (!c) return res.status(404).json({ error: 'Centro de costos no encontrado' });
     const nombre = req.body.nombre === undefined ? c.nombre : texto(req.body.nombre, 80);
-    if (!nombre) return res.status(400).json({ error: 'Escribe el nombre del centro de costos' });
-    if (db.prepare('SELECT 1 FROM centros_costo WHERE lower(nombre) = lower(?) AND id <> ?').get(nombre, c.id)) return res.status(409).json({ error: 'Ya existe ese centro de costos' });
+    if (!nombreValido(nombre)) return res.status(400).json({ error: 'Escribe el nombre del centro de costos' });
+    if (db.prepare('SELECT nombre FROM centros_costo WHERE id <> ?').all(c.id).some(x => llaveNombre(x.nombre) === llaveNombre(nombre))) return res.status(409).json({ error: 'Ya existe ese centro de costos' });
     const responsable = req.body.responsable === undefined ? c.responsable : texto(req.body.responsable, 120);
     const activo = req.body.activo === undefined ? c.activo : (req.body.activo ? 1 : 0);
     db.prepare('UPDATE centros_costo SET nombre = ?, responsable = ?, activo = ? WHERE id = ?').run(nombre, responsable, activo, c.id);
     const difCentro = app.locals.auditoria?.diferencias(c, { nombre, responsable, activo }, ['nombre', 'responsable', 'activo']);
     if (difCentro) app.locals.auditoria.registrar(req, 'catalogo', null, 'centro de costos editado', `«${c.nombre}»: ${difCentro}`);
     res.json(db.prepare('SELECT * FROM centros_costo WHERE id = ?').get(c.id));
+  }));
+
+  app.delete('/api/compras/centros/:id', h((req, res) => {
+    const c = db.prepare('SELECT * FROM centros_costo WHERE id = ? AND activo = 1').get(req.params.id);
+    if (!c) return res.status(404).json({ error: 'Centro de costos no encontrado' });
+    if (db.prepare('SELECT COUNT(*) n FROM centros_costo WHERE activo = 1').get().n <= 1) return res.status(400).json({ error: 'Debe quedar al menos un centro de costos' });
+    db.prepare('UPDATE centros_costo SET activo = 0 WHERE id = ?').run(c.id);
+    const usos = db.prepare("SELECT COUNT(*) n FROM ordenes_compra WHERE centro_id = ?").get(c.id).n;
+    app.locals.auditoria?.registrar(req, 'catalogo', null, 'centro de costos eliminado', `${c.nombre}${usos ? ` (lo usan ${usos} órdenes, que no cambian)` : ''}`);
+    res.json({ ok: true, usos });
   }));
 
   // ----- Unidades de medida (cualquier usuario las agrega o corrige; no se borran, se dan de baja) -----
@@ -199,19 +218,29 @@ module.exports = function compras(app, db, h, finanzas) {
     if (!nombre) return { error: 'Escribe el nombre de la unidad (ej. Pieza)' };
     if (!/^[\p{L}\d ./²³-]+$/u.test(clave)) return { error: 'La abreviatura solo lleva letras, números, punto, guion o diagonal' };
     if (db.prepare('SELECT 1 FROM unidades_medida WHERE clave = ? COLLATE NOCASE AND id <> ?').get(clave, actual?.id || 0)) return { error: 'Ya existe una unidad con la abreviatura ' + clave };
-    if (db.prepare('SELECT 1 FROM unidades_medida WHERE lower(nombre) = lower(?) AND id <> ?').get(nombre, actual?.id || 0)) return { error: 'Ya existe la unidad ' + nombre };
+    if (db.prepare('SELECT nombre FROM unidades_medida WHERE id <> ?').all(actual?.id || 0).some(x => llaveNombre(x.nombre) === llaveNombre(nombre))) return { error: 'Ya existe la unidad ' + nombre };
     return { clave, nombre };
   }
   app.get('/api/compras/unidades', h((req, res) => {
     res.json(db.prepare('SELECT * FROM unidades_medida ORDER BY activo DESC, orden, nombre').all());
   }));
   app.post('/api/compras/unidades', h((req, res) => {
+    const bClave = llaveNombre(texto(req.body?.clave, 10)), bNombre = llaveNombre(texto(req.body?.nombre, 40));
+    const baja = db.prepare('SELECT * FROM unidades_medida WHERE activo = 0').all().find(u => (bClave && llaveNombre(u.clave) === bClave) || (bNombre && llaveNombre(u.nombre) === bNombre));
+    if (baja) { db.prepare('UPDATE unidades_medida SET activo = 1 WHERE id = ?').run(baja.id); app.locals.auditoria?.registrar(req, 'catalogo', null, 'unidad agregada', `${baja.nombre} (${baja.clave}) · se recuperó la que estaba eliminada`); return res.status(201).json(leerUnidad(baja.id)); }
     const d = datosUnidad(req.body || {});
     if (d.error) return res.status(400).json({ error: d.error });
     const orden = db.prepare('SELECT COALESCE(MAX(orden), 0) + 1 o FROM unidades_medida').get().o;
     const info = db.prepare('INSERT INTO unidades_medida (clave, nombre, orden) VALUES (?, ?, ?)').run(d.clave, d.nombre, orden);
     app.locals.auditoria?.registrar(req, 'catalogo', null, 'unidad agregada', `${d.nombre} (${d.clave})`);
     res.status(201).json(leerUnidad(info.lastInsertRowid));
+  }));
+  app.delete('/api/compras/unidades/:id', h((req, res) => {
+    const u = db.prepare('SELECT * FROM unidades_medida WHERE id = ? AND activo = 1').get(req.params.id);
+    if (!u) return res.status(404).json({ error: 'Unidad no encontrada' });
+    db.prepare('UPDATE unidades_medida SET activo = 0 WHERE id = ?').run(u.id);
+    app.locals.auditoria?.registrar(req, 'catalogo', null, 'unidad eliminada', `${u.nombre} (${u.clave})`);
+    res.json({ ok: true });
   }));
   app.put('/api/compras/unidades/:id', h((req, res) => {
     const u = leerUnidad(req.params.id);

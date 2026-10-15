@@ -25,6 +25,8 @@ const CATEGORIAS = {};
 const CATEGORIAS_ACTIVAS = new Set();
 const categoriaActiva = k => CATEGORIAS_ACTIVAS.has(k);
 // Un texto «con sentido»: al menos «min» letras o números (no solo puntos, guiones o espacios).
+// Compara nombres sin importar mayúsculas, acentos ni espacios de más (lower() de SQLite no cambia «É» → «é»).
+const llaveNombre = t => String(t ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
 const conSentido = (t, min) => (String(t ?? '').match(/[\p{L}\p{N}]/gu) || []).length >= min;
 const CATEGORIAS_INICIALES = {
   residuos: 'Disposición de residuos', combustible: 'Combustible', refacciones: 'Refacciones y mantenimiento',
@@ -621,11 +623,18 @@ module.exports = function finanzas(app, db, h, unicos) {
   // Solo un administrador agrega, renombra o da de baja categorías. La clave no cambia nunca (los
   // gastos guardan la clave), así que renombrar actualiza todo lo ya capturado.
   const claveDe = nombre => claveNombre(nombre).replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '').slice(0, 30) || 'categoria';
+  // Cualquier usuario agrega, corrige o elimina categorías. Eliminar la quita de la lista (lo ya capturado conserva
+  // su categoría); si se vuelve a agregar con el mismo nombre, regresa. «Otro» no se elimina: es la de respaldo.
   app.post('/api/finanzas/categorias', h((req, res) => {
-    if (rol(req) !== 'admin') return res.status(403).json({ error: 'Solo un administrador puede editar las categorías de gasto' });
     const nombre = texto(req.body.nombre, 80);
-    if (!nombre) return res.status(400).json({ error: 'Escribe el nombre de la categoría' });
-    if (db.prepare('SELECT 1 FROM categorias_gasto WHERE lower(nombre) = lower(?)').get(nombre)) return res.status(409).json({ error: 'Ya existe esa categoría' });
+    if (!nombre || !conSentido(nombre, 2) || /[<>{}]/.test(nombre)) return res.status(400).json({ error: 'Escribe el nombre de la categoría' });
+    const ya = db.prepare('SELECT * FROM categorias_gasto ORDER BY activo DESC').all().find(c => llaveNombre(c.nombre) === llaveNombre(nombre));
+    if (ya && ya.activo) return res.status(409).json({ error: `Ya existe la categoría «${ya.nombre}»` });
+    if (ya) {
+      db.prepare('UPDATE categorias_gasto SET activo = 1 WHERE clave = ?').run(ya.clave); cargarCategorias(db);
+      app.locals.auditoria?.registrar(req, 'catalogo', null, 'categoría agregada', ya.nombre + ' (se recuperó la que estaba eliminada)');
+      return res.status(201).json(db.prepare('SELECT clave, nombre, activo FROM categorias_gasto WHERE clave = ?').get(ya.clave));
+    }
     let clave = claveDe(nombre);
     for (let n = 2; db.prepare('SELECT 1 FROM categorias_gasto WHERE clave = ?').get(clave); n++) clave = claveDe(nombre).slice(0, 27) + '_' + n;
     const orden = db.prepare('SELECT COALESCE(MAX(orden), 0) + 1 o FROM categorias_gasto').get().o;
@@ -634,13 +643,21 @@ module.exports = function finanzas(app, db, h, unicos) {
     app.locals.auditoria?.registrar(req, 'catalogo', null, 'categoría agregada', nombre);
     res.status(201).json(db.prepare('SELECT clave, nombre, activo FROM categorias_gasto WHERE clave = ?').get(clave));
   }));
+  app.delete('/api/finanzas/categorias/:clave', h((req, res) => {
+    const c = db.prepare('SELECT * FROM categorias_gasto WHERE clave = ? AND activo = 1').get(req.params.clave);
+    if (!c) return res.status(404).json({ error: 'Categoría no encontrada' });
+    if (c.clave === 'otro') return res.status(400).json({ error: '«Otro» no se puede eliminar: es la categoría de respaldo' });
+    db.prepare('UPDATE categorias_gasto SET activo = 0 WHERE clave = ?').run(c.clave); cargarCategorias(db);
+    const usos = db.prepare('SELECT (SELECT COUNT(*) FROM cuentas_por_pagar WHERE categoria = ?) + (SELECT COUNT(*) FROM ordenes_compra WHERE categoria = ?) n').get(c.clave, c.clave).n;
+    app.locals.auditoria?.registrar(req, 'catalogo', null, 'categoría eliminada', `${c.nombre}${usos ? ` (la usan ${usos} gastos u órdenes, que no cambian)` : ''}`);
+    res.json({ ok: true, usos });
+  }));
   app.put('/api/finanzas/categorias/:clave', h((req, res) => {
-    if (rol(req) !== 'admin') return res.status(403).json({ error: 'Solo un administrador puede editar las categorías de gasto' });
     const c = db.prepare('SELECT * FROM categorias_gasto WHERE clave = ?').get(req.params.clave);
     if (!c) return res.status(404).json({ error: 'Categoría no encontrada' });
     const nombre = req.body.nombre === undefined ? c.nombre : texto(req.body.nombre, 80);
     if (!nombre) return res.status(400).json({ error: 'Escribe el nombre de la categoría' });
-    if (db.prepare('SELECT 1 FROM categorias_gasto WHERE lower(nombre) = lower(?) AND clave <> ?').get(nombre, c.clave)) return res.status(409).json({ error: 'Ya existe esa categoría' });
+    if (db.prepare('SELECT nombre FROM categorias_gasto WHERE clave <> ?').all(c.clave).some(x => llaveNombre(x.nombre) === llaveNombre(nombre))) return res.status(409).json({ error: 'Ya existe esa categoría' });
     const activo = req.body.activo === undefined ? c.activo : (req.body.activo ? 1 : 0);
     if (!activo && c.clave === 'otro') return res.status(400).json({ error: '«Otro» no se puede dar de baja: es la categoría de respaldo' });
     db.prepare('UPDATE categorias_gasto SET nombre = ?, activo = ? WHERE clave = ?').run(nombre, activo, c.clave);
