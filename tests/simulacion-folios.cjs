@@ -171,6 +171,13 @@ function funcionesPagina() {
   [s, j] = await pedir('POST', '/compras/ordenes', C, { ...baseOC, solicitud_id: undefined, partidas: [{ cantidad: '0x2', descripcion: 'Cinta', precio: 10 }] }); revisa(s === 400, 'Orden: cantidad «0x2» no se acepta');
   [s, j] = await pedir('POST', '/compras/ordenes', C, { ...baseOC, solicitud_id: undefined, partidas: [{ cantidad: 1, descripcion: 'Cinta', precio: '1e2' }] }); revisa(s === 400, 'Orden: precio «1e2» no se acepta');
 
+  [s, j] = await pedir('PUT', '/leads/' + cot2.id + '/facturacion', A, { dias_credito: 15, factura_folio: 'F-500', factura_fecha: HOY }); revisa(s === 200, 'se factura la orden con F-500');
+  [s, j] = await pedir('PUT', '/leads/' + cot4.id + '/facturacion', A, { dias_credito: 0, factura_folio: 'f 500' }); revisa(s === 409 || s === 400, 'el mismo folio de factura («f 500») no se repite en otra orden', [s, j.error]);
+  const [, otra] = await pedir('POST', '/leads', V, { cliente_id: cli.id, direccion: 'Cocina', canal_id: canales[0].id, servicio_id: servicios[0].id, responsable_id: vid, forzar_duplicado: true, partidas_json: partidas, iva_modo: 'mas_iva', valor: 5000, fecha_cotizacion: HOY });
+  [s, j] = await pedir('GET', '/leads/' + otra.id, V); await pedir('PUT', '/leads/' + otra.id, V, { version: j.version, estatus: 'ganado', fecha_servicio: HOY });
+  [s, j] = await pedir('PUT', '/leads/' + otra.id + '/facturacion', A, { dias_credito: 0, factura_folio: 'F-500' }); revisa(s === 409 && /OS-/.test(j.error), 'si se repite, dice en qué orden está', [s, j.error]);
+  [s, j] = await pedir('PUT', '/leads/' + otra.id + '/facturacion', A, { dias_credito: 0, factura_folio: 'F-501', factura_fecha: '2099-01-01' }); revisa(s === 400, 'una factura con fecha futura no se acepta', [s, j.error]);
+
   seccion('9. Folios distintos por tipo (no se confunden)');
   revisa(new Set([sol.folio.split('-')[0], oc.folio.split('-')[0], osEsperado.split('-')[0], folioCot1.split('-')[0]]).size === 4, 'cada tipo tiene su prefijo: SOL, OC, OS, COT');
 
