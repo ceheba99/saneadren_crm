@@ -125,7 +125,7 @@
       <span class="tabla-conteo diseno-tabla-leads-conteo" id="tabla-leads-conteo">0 cotizaciones</span>
     </div>
     <div class="filtros">
-      <input type="text" id="f-buscar" placeholder="Buscar por nombre, teléfono o ID de cliente...">
+      <input type="text" id="f-buscar" placeholder="Nombre, empresa, teléfono o folio (COT-202610-0125, OS-…)">
       <select id="f-responsable"><option value="">Todos los responsables</option></select>
       <span class="filtro-fecha-label">Desde</span>
       <input type="date" id="f-desde" title="Filtrar desde esta fecha de creación">
@@ -242,7 +242,7 @@
     </div>
 
     <div class="filtros">
-      <input type="text" id="fc-buscar" aria-label="Buscar contacto" placeholder="Nombre, teléfono o ID del contacto">
+      <input type="text" id="fc-buscar" aria-label="Buscar contacto" placeholder="Nombre, empresa, teléfono o ID (CLI-0039)">
       <select id="fc-tipo" aria-label="Tipo de contacto"><option value="todos">Todos los contactos</option><option value="prospectos">Prospectos · sin servicios contratados</option><option value="clientes">Clientes · con servicios contratados</option></select>
       <span class="filtro-fecha-label">Desde</span>
       <input type="date" id="fc-desde" title="Filtrar desde esta fecha">
@@ -296,7 +296,7 @@
     </div>
     <div class="filtros">
       <select id="oc-filtro" aria-label="Mostrar"><option value="">Todas</option><option value="borrador">Borradores (por autorizar)</option><option value="pendiente_pago">Autorizadas por pagar</option><option value="autorizada">Autorizadas</option><option value="cancelada">Canceladas</option></select>
-      <input type="search" id="oc-buscar" placeholder="Folio, proveedor, centro de costos o concepto" aria-label="Buscar órdenes de compra">
+      <input type="search" id="oc-buscar" placeholder="Folio OC o SOL, proveedor, centro de costos o concepto" aria-label="Buscar órdenes de compra">
     </div>
     <div id="oc-lista"></div>
   </section>
@@ -1114,7 +1114,7 @@
 <script src="compras.js?v=cred1"></script>
 <script src="solicitudes.js?v=sol2"></script>
 <script src="carga-generador.js?v=con1"></script>
-<script src="app.js?v=sol1"></script>
+<script src="app.js?v=fol1"></script>
 <script src="prospeccion.js?v=cli1"></script>
 </body>
 </html>

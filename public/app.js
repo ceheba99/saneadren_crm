@@ -842,11 +842,15 @@ function descripcionServicio(nombre) {
   return (CATALOGOS.servicios || []).find(s => s.nombre === nombre)?.descripcion || '';
 }
 
+// AAAAMM del folio: del texto de la fecha de creación («2026-09-30 23:59:59» → 202609), igual que el servidor,
+// sin convertir zonas horarias. Si aún no tiene fecha (o no se entiende), el mes de hoy en Querétaro.
+function mesDeFolio(creado) {
+  const m = String(creado || '').match(/^(\d{4})-(\d{2})/);
+  if (m) return m[1] + m[2];
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Mexico_City' }).format(new Date()).slice(0, 7).replace('-', '');
+}
 function folioCotizacion(lead) {
-  const fecha = new Date(lead.created_at || Date.now());
-  const yyyy = fecha.getFullYear();
-  const mm = String(fecha.getMonth() + 1).padStart(2, '0');
-  return `COT-${yyyy}${mm}-${String(lead.id).padStart(4, '0')}`;
+  return `COT-${mesDeFolio(lead.created_at)}-${String(lead.id).padStart(4, '0')}`;
 }
 
 function nombreArchivoCotizacion(datos, extension) {
@@ -1018,10 +1022,7 @@ async function generarWordCotizacion(datos) {
 const CONDICIONES_ORDEN_SERVICIO = 'El presente documento formaliza el servicio aceptado por el cliente en los términos y el importe aquí descritos. Cualquier trabajo adicional no listado en esta orden se cotizará por separado.';
 
 function folioOrdenServicio(lead) {
-  const fecha = new Date(lead.created_at || Date.now());
-  const yyyy = fecha.getFullYear();
-  const mm = String(fecha.getMonth() + 1).padStart(2, '0');
-  return `OS-${yyyy}${mm}-${String(lead.id).padStart(4, '0')}`;
+  return `OS-${mesDeFolio(lead.created_at)}-${String(lead.id).padStart(4, '0')}`;
 }
 
 function nombreArchivoOrdenServicio(datos, extension) {

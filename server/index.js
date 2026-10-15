@@ -462,7 +462,13 @@ app.get('/api/leads', h((req, res) => {
   if (etapa) { sql += ' AND l.etapa = ?'; params.push(etapa); }
   if (responsable_id) { sql += ' AND l.responsable_id = ?'; params.push(responsable_id); }
   if (estatus) { sql += ' AND l.estatus = ?'; params.push(estatus); }
-  if (q) { sql += ' AND (l.nombre LIKE ? OR l.telefono LIKE ? OR CAST(l.cliente_id AS TEXT) = ?)'; params.push(`%${q}%`, `%${q}%`, q); }
+  if (q) {
+    // También por folio: «COT-202610-0125», «OS-202610-0125», «os 202610 125» o solo «0125». Si trae el mes, debe coincidir.
+    const f = String(q).trim().match(/^(?:(?:cot|os)[\s-]*)?(?:(\d{6})[\s-]+)?0*(\d{1,7})$/i);
+    sql += ' AND (l.nombre LIKE ? OR l.empresa_contacto LIKE ? OR l.telefono LIKE ? OR CAST(l.cliente_id AS TEXT) = ?' + (f ? " OR (l.id = ? AND (? IS NULL OR strftime('%Y%m', l.created_at) = ?))" : '') + ')';
+    params.push(`%${q}%`, `%${q}%`, `%${q}%`, q);
+    if (f) params.push(Number(f[2]), f[1] || null, f[1] || null);
+  }
   if (desde) { sql += " AND date(l.created_at) >= date(?)"; params.push(desde); }
   if (hasta) { sql += " AND date(l.created_at) <= date(?)"; params.push(hasta); }
   if (urgente === '1') { sql += ' AND l.urgente = 1'; }
@@ -1009,7 +1015,13 @@ app.get('/api/clientes', h((req, res) => {
     WHERE 1=1
   `;
   const params = [];
-  if (q) { sql += ' AND (c.nombre LIKE ? OR c.telefono LIKE ? OR CAST(c.id AS TEXT) = ?)'; params.push(`%${q}%`, `%${q}%`, q); }
+  if (q) {
+    // También por su ID de cliente: «CLI-0039» o «cli 39».
+    const f = String(q).trim().match(/^cli[\s-]*0*(\d{1,7})$/i);
+    sql += ' AND (c.nombre LIKE ? OR c.empresa_contacto LIKE ? OR c.telefono LIKE ? OR CAST(c.id AS TEXT) = ?' + (f ? ' OR c.id = ?' : '') + ')';
+    params.push(`%${q}%`, `%${q}%`, `%${q}%`, q);
+    if (f) params.push(Number(f[1]));
+  }
   sql += ' GROUP BY c.id HAVING 1=1';
   if (incluir_prospectos !== '1' || tipo === 'clientes') sql += ' AND servicios_ganados > 0';
   if (incluir_prospectos === '1' && tipo === 'prospectos') sql += ' AND servicios_ganados = 0';
