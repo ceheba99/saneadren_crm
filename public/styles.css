@@ -1206,23 +1206,30 @@ button.enlace{background:none;border:0;padding:0;color:var(--azul-600);text-deco
 .modal-compra{max-width:1000px;width:calc(100vw - 32px);}
 #oc-cuerpo{display:flex;flex-direction:column;gap:14px;padding:18px 22px 22px;}
 .oc-partidas-caja{border:1px solid var(--gris-200);border-radius:10px;padding:14px;display:flex;flex-direction:column;gap:10px;background:#fcfcfd;}
-.oc-tabla input{width:100%;min-height:36px;box-sizing:border-box;border:1px solid var(--gris-300);border-radius:6px;padding:5px 8px;font:inherit;font-size:13px;}
-.oc-tabla td{padding:4px 5px;vertical-align:middle;}
-.oc-tabla .oc-cantidad{width:80px;text-align:right;}
-.oc-tabla .oc-precio{width:110px;text-align:right;}
-.oc-tabla .oc-unidad{width:150px;min-width:130px;min-height:36px;border:1px solid var(--gris-300);border-radius:6px;padding:5px 6px;font:inherit;font-size:13px;}
-.oc-tabla .oc-clave{width:100px;}
-.oc-tabla .oc-descripcion{min-width:240px;}
-.oc-tabla .oc-num{color:var(--texto-sec);font-weight:700;text-align:center;width:28px;}
+/* Cada casilla llena su columna: así el título queda justo encima de la casilla (antes la casilla era más
+   angosta que la columna y los títulos de Cantidad, Clave y Precio quedaban recorridos). */
+.oc-tabla{table-layout:fixed;width:100%;min-width:760px;}
+.oc-tabla th,.oc-tabla td{padding:4px 5px;vertical-align:middle;box-sizing:border-box;}
+.oc-tabla input,.oc-tabla select{width:100%;height:36px;box-sizing:border-box;border:1px solid var(--gris-300);border-radius:6px;padding:5px 8px;font:inherit;font-size:13px;background:#fff;margin:0;}
+.oc-tabla select{padding:5px 6px;}
+.oc-tabla th:nth-child(1){width:34px;}
+.oc-tabla th:nth-child(2){width:84px;}
+.oc-tabla th:nth-child(4){width:140px;}
+.oc-tabla th:nth-child(5){width:110px;}
+.oc-tabla th:nth-child(6){width:118px;}
+.oc-tabla th:nth-child(7){width:100px;}
+.oc-tabla th:nth-child(8){width:44px;}
+.oc-tabla .oc-cantidad,.oc-tabla .oc-precio{text-align:right;}
+.oc-tabla .oc-cantidad::placeholder,.oc-tabla .oc-precio::placeholder{text-align:right;}
+.oc-tabla .oc-num{color:var(--texto-sec);font-weight:700;text-align:center;}
+.oc-tabla th:nth-child(1),.oc-tabla th:nth-child(8){text-align:center;}
+.oc-tabla td:last-child{text-align:center;}
 .oc-tabla .oc-importe{font-weight:700;white-space:nowrap;}
 .oc-tabla .oc-quitar{padding:4px 8px;}
 .oc-totales{align-self:flex-end;min-width:280px;}
 .oc-acciones{display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:flex-end;}
 @media(max-width:600px){#oc-cuerpo{padding:14px 12px 18px;}.oc-totales{align-self:stretch;}}
 .oc-partidas-caja .tabla-scroll{max-height:none;}
-.oc-tabla .oc-unidad{width:128px;min-width:128px;}
-.oc-tabla .oc-clave{width:88px;}
-.oc-tabla .oc-descripcion{min-width:300px;}
 
 /* ===== Clientes sin duplicados: «¿es el mismo?», revisión de duplicados y teléfonos ===== */
 .modal-duplicado{max-width:560px;width:calc(100vw - 32px);}
@@ -1334,3 +1341,6 @@ button.enlace{background:none;border:0;padding:0;color:var(--azul-600);text-deco
 @keyframes cat-recien{0%{background:#e8f3ee;}100%{background:transparent;}}
 .cat-vacio{padding:14px;color:var(--texto-sec);}
 @media(max-width:600px){.cat-item{flex-direction:column;align-items:stretch;}.cat-botones{justify-content:flex-end;}}
+/* Sin flechitas en Cantidad y Precio: ocupan espacio y hacen que el número parezca centrado */
+.oc-tabla input[type=number]{-moz-appearance:textfield;appearance:textfield;}
+.oc-tabla input[type=number]::-webkit-outer-spin-button,.oc-tabla input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none;margin:0;}
