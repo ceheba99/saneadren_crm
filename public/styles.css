@@ -1313,3 +1313,24 @@ button.enlace{background:none;border:0;padding:0;color:var(--azul-600);text-deco
 .modal-formato .modal-body{padding:16px 20px 20px;}
 @media(max-width:700px){.oc-exp-cxp{grid-template-columns:repeat(2,minmax(0,1fr));}}
 .bit-tabla th,.bit-tabla td{text-align:left;}
+
+/* ===== Catálogos sencillos (centros de costo, categorías, unidades) ===== */
+.cat-alta{display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;background:var(--gris-50, rgba(0,0,0,.03));border:1px solid var(--gris-300);border-radius:10px;padding:12px;margin:10px 0;}
+.cat-campo{display:flex;flex-direction:column;gap:4px;flex:1 1 180px;font-size:12px;font-weight:700;color:var(--texto-sec);}
+.cat-alta input,.cat-edicion input{min-height:38px;border:1px solid var(--gris-300);border-radius:6px;padding:6px 10px;font:inherit;font-size:14px;width:100%;box-sizing:border-box;}
+.cat-estado{margin:6px 0 10px;padding:8px 12px;border-radius:8px;font-weight:600;font-size:13.5px;}
+.cat-estado.ok{background:#e8f3ee;color:var(--verde);}
+.cat-estado.mal{background:#fbe9e7;color:var(--rojo, #b8443a);}
+.cat-lista{list-style:none;margin:0;padding:0;max-height:52vh;overflow:auto;border:1px solid var(--gris-300);border-radius:10px;}
+.cat-item{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 12px;border-bottom:1px solid var(--gris-300);}
+.cat-item:last-child{border-bottom:0;}
+.cat-texto{display:flex;flex-direction:column;min-width:0;}
+.cat-texto small{color:var(--texto-sec);font-size:12px;}
+.cat-botones{display:flex;gap:6px;flex-shrink:0;}
+.cat-eliminar{color:var(--rojo, #b8443a);}
+.cat-item.editando{background:#fff8e1;}
+.cat-edicion{display:flex;gap:8px;flex:1;flex-wrap:wrap;}
+.cat-item.recien{animation:cat-recien 2.5s ease-out;}
+@keyframes cat-recien{0%{background:#e8f3ee;}100%{background:transparent;}}
+.cat-vacio{padding:14px;color:var(--texto-sec);}
+@media(max-width:600px){.cat-item{flex-direction:column;align-items:stretch;}.cat-botones{justify-content:flex-end;}}

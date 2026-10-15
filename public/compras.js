@@ -398,46 +398,82 @@ const Compras = (() => {
     saveAs(new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), 'orden_compra_' + o.folio + '.xlsx');
   }
 
-  // ---------- Catálogos editables: unidades (todos), centros de costo y categorías (administración) ----------
-  // Una sola ventana para los tres: cada renglón se corrige y se guarda solo; nada se borra, se da de baja.
+  // ---------- Catálogos: centros de costo, categorías de gasto y unidades de medida ----------
+  // Una ventana sencilla para los tres: arriba se agrega, abajo la lista con «Editar» y «Eliminar» en cada uno.
+  // Cualquier usuario puede usarla. Eliminar lo quita de la lista para lo nuevo; lo ya capturado no cambia
+  // (y si se vuelve a agregar con el mismo nombre, regresa). Todo queda en la Bitácora.
   const CATALOGOS = {
-    unidades: { titulo: 'Unidades de medida', lista: '/compras/unidades', item: u => '/compras/unidades/' + u.id, clave: u => u.id,
-      ayuda: 'Las unidades que aparecen en las partidas de la orden de compra. Cualquier usuario puede agregar o corregir; dar de baja solo la quita de la lista (las órdenes viejas la conservan).',
-      campos: [{ k: 'clave', t: 'Abreviatura', max: 10, ph: 'PZA', ancho: '7rem' }, { k: 'nombre', t: 'Nombre', max: 40, ph: 'Pieza' }] },
-    centros: { titulo: 'Centros de costo', lista: '/compras/centros', item: c => '/compras/centros/' + c.id, clave: c => c.id, admin: true,
-      ayuda: 'Solo administradores. Dar de baja un centro lo quita de la lista para órdenes nuevas; las órdenes viejas lo conservan.',
-      campos: [{ k: 'nombre', t: 'Centro de costos', max: 80, ph: 'Mantenimiento' }, { k: 'responsable', t: 'Responsable', max: 120, ph: 'Nombre', vacio: true }] },
-    categorias: { titulo: 'Categorías de gasto', lista: '/finanzas/categorias?todas=1', alta: '/finanzas/categorias', item: c => '/finanzas/categorias/' + encodeURIComponent(c.clave), clave: c => c.clave, admin: true,
-      ayuda: 'Solo administradores. Se usan en órdenes de compra, Cuentas por pagar y resultados. Renombrar una categoría actualiza también los gastos ya capturados; «Otro» no se puede dar de baja.',
-      campos: [{ k: 'nombre', t: 'Categoría', max: 80, ph: 'Ej. Papelería' }] },
+    centros: { titulo: 'Centros de costo', singular: 'centro de costos', lista: '/compras/centros', alta: '/compras/centros', item: c => '/compras/centros/' + c.id,
+      ayuda: 'Las áreas a las que se carga cada compra. Si uno no les sirve, elimínalo: las órdenes que ya lo usan no cambian.',
+      campos: [{ k: 'nombre', t: 'Centro de costos', max: 80, ph: 'Ej. Mantenimiento' }, { k: 'responsable', t: 'Responsable (opcional)', max: 120, ph: 'Ej. Isaac Hernández', vacio: true }] },
+    categorias: { titulo: 'Categorías de gasto', singular: 'categoría', lista: '/finanzas/categorias', alta: '/finanzas/categorias', item: c => '/finanzas/categorias/' + encodeURIComponent(c.clave),
+      ayuda: 'Se usan en órdenes de compra, Cuentas por pagar y Resultados. Si cambias el nombre se actualiza en todo lo capturado. «Otro» no se puede eliminar.',
+      campos: [{ k: 'nombre', t: 'Categoría', max: 80, ph: 'Ej. Papelería' }], fija: c => c.clave === 'otro' },
+    unidades: { titulo: 'Unidades de medida', singular: 'unidad', lista: '/compras/unidades', alta: '/compras/unidades', item: u => '/compras/unidades/' + u.id,
+      ayuda: 'Las unidades de las partidas de la orden de compra (pieza, litro, metro…).',
+      campos: [{ k: 'nombre', t: 'Nombre', max: 40, ph: 'Ej. Metro lineal' }, { k: 'clave', t: 'Abreviatura', max: 10, ph: 'Ej. ML', ancho: '8rem' }] },
   };
-  let CAT = null, CAT_FILAS = [];
+  let CAT = null, CAT_FILAS = [], CAT_EDITANDO = null;
+  const nombreDe = x => x.nombre + (x.clave && CAT === CATALOGOS.unidades ? ' (' + x.clave + ')' : '');
+  const campoCat = (c, v, extra = '') => '<input data-campo="' + esc(c.k) + '" maxlength="' + c.max + '" value="' + esc(v ?? '') + '" placeholder="' + esc(c.ph) + '" aria-label="' + esc(c.t) + '"' + (c.ancho ? ' style="max-width:' + esc(c.ancho) + '"' : '') + extra + '>';
+  // Mensaje fijo arriba de la lista: deja claro qué se acaba de guardar (no se pierde como un aviso flotante).
+  function estadoCat(texto, tipo = 'ok') { const e = $('cat-estado'); e.className = 'cat-estado ' + tipo; e.textContent = texto; e.hidden = !texto; }
   async function abrirCatalogo(tipo) {
-    CAT = CATALOGOS[tipo];
-    if (CAT.admin && !esAdmin()) { toast('Solo un administrador puede editar ' + CAT.titulo.toLowerCase()); return; }
+    CAT = CATALOGOS[tipo]; CAT_EDITANDO = null;
     $('cat-titulo').textContent = CAT.titulo; $('cat-ayuda').textContent = CAT.ayuda;
-    $('cat-cabeza').innerHTML = '<tr>' + CAT.campos.map(c => '<th>' + esc(c.t) + '</th>').join('') + '<th>Activo</th><th></th></tr>';
+    $('cat-alta').innerHTML = CAT.campos.map(c => '<label class="cat-campo"><span>' + esc(c.t) + '</span>' + campoCat(c, '') + '</label>').join('') + '<button type="submit" class="btn btn-primario">+ Agregar</button>';
+    estadoCat('');
     await pintarCatalogo();
     abrirVentana('overlay-catalogo');
+    $('cat-alta').querySelector('input')?.focus();
   }
-  const inputCat = (c, v, i) => '<input data-campo="' + esc(c.k) + '" maxlength="' + c.max + '" value="' + esc(v ?? '') + '" placeholder="' + esc(c.ph) + '" aria-label="' + esc(c.t) + '"' + (c.ancho ? ' style="width:' + esc(c.ancho) + '"' : '') + (i === undefined ? '' : ' data-fila="' + i + '"') + '>';
-  async function pintarCatalogo() {
-    try { CAT_FILAS = await pedir(CAT.lista); } catch (err) { toast(err.message); return; }
-    $('cat-filas').innerHTML = CAT_FILAS.map((x, i) => '<tr class="' + (x.activo ? '' : 'fila-cancelada') + '" data-fila="' + i + '">' + CAT.campos.map(c => '<td>' + inputCat(c, x[c.k]) + '</td>').join('')
-      + '<td><label class="cat-activo"><input type="checkbox" data-campo="activo"' + (x.activo ? ' checked' : '') + '> ' + (x.activo ? 'Sí' : 'Baja') + '</label></td>'
-      + '<td><button type="button" class="btn btn-outline btn-chico" data-cat-guardar="' + i + '">Guardar</button></td></tr>').join('');
-    $('cat-nuevo').innerHTML = '<tr class="cat-fila-nueva">' + CAT.campos.map(c => '<td>' + inputCat(c, '') + '</td>').join('') + '<td></td><td><button type="button" class="btn btn-primario btn-chico" id="cat-agregar">+ Agregar</button></td></tr>';
+  async function pintarCatalogo(resaltar = null) {
+    try { CAT_FILAS = (await pedir(CAT.lista)).filter(x => x.activo !== 0); } catch (err) { estadoCat(err.message, 'mal'); return; }
+    $('cat-lista').innerHTML = CAT_FILAS.length ? CAT_FILAS.map((x, i) => {
+      if (CAT_EDITANDO === i) return '<li class="cat-item editando" data-i="' + i + '"><div class="cat-edicion">' + CAT.campos.map(c => campoCat(c, x[c.k])).join('') + '</div>'
+        + '<div class="cat-botones"><button type="button" class="btn btn-primario btn-chico" data-cat-guardar="' + i + '">Guardar</button><button type="button" class="btn btn-outline btn-chico" data-cat-cancelar="' + i + '">Cancelar</button></div></li>';
+      return '<li class="cat-item' + (resaltar !== null && String(CAT === CATALOGOS.categorias ? x.clave : x.id) === String(resaltar) ? ' recien' : '') + '" data-i="' + i + '">'
+        + '<div class="cat-texto"><b>' + esc(nombreDe(x)) + '</b>' + (x.responsable ? '<small>' + esc(x.responsable) + '</small>' : '') + '</div>'
+        + '<div class="cat-botones"><button type="button" class="btn btn-outline btn-chico" data-cat-editar="' + i + '">Editar</button>'
+        + (CAT.fija?.(x) ? '' : '<button type="button" class="btn btn-outline btn-chico cat-eliminar" data-cat-eliminar="' + i + '">Eliminar</button>') + '</div></li>';
+    }).join('') : '<li class="cat-vacio">Todavía no hay ninguno. Agrégalo arriba.</li>';
   }
-  const leerFila = tr => Object.fromEntries([...tr.querySelectorAll('[data-campo]')].map(x => [x.dataset.campo, x.type === 'checkbox' ? x.checked : x.value.trim()]));
-  async function guardarCatalogo(b) {
-    const tr = b.closest('tr'), datos = leerFila(tr);
-    const faltante = CAT.campos.find(c => !c.vacio && !datos[c.k]);
-    if (faltante) { toast('Escribe ' + faltante.t.toLowerCase()); tr.querySelector('[data-campo="' + faltante.k + '"]').focus(); return; }
-    if (b.id === 'cat-agregar') { delete datos.activo; await pedir(CAT.alta || CAT.lista, 'POST', datos); toast('Agregado a ' + CAT.titulo.toLowerCase()); }
-    else { await pedir(CAT.item(CAT_FILAS[Number(b.dataset.catGuardar)]), 'PUT', datos); toast('Guardado'); }
-    await pintarCatalogo();
-    await catalogos();
-    refrescarCatalogosEnOrden();
+  const leerCampos = cont => Object.fromEntries([...cont.querySelectorAll('[data-campo]')].map(x => [x.dataset.campo, x.value.trim()]));
+  const idDe = x => (CAT === CATALOGOS.categorias ? x.clave : x.id);
+  async function despuesDeCambio(texto, resaltar) {
+    estadoCat(texto, 'ok');
+    await pintarCatalogo(resaltar);
+    await catalogos(); refrescarCatalogosEnOrden();
+  }
+  async function agregarCat() {
+    const datos = leerCampos($('cat-alta'));
+    const falta = CAT.campos.find(c => !c.vacio && !datos[c.k]);
+    if (falta) { estadoCat('Escribe ' + falta.t.toLowerCase().replace(' (opcional)', ''), 'mal'); $('cat-alta').querySelector('[data-campo="' + falta.k + '"]').focus(); return; }
+    if (CAT === CATALOGOS.unidades && !datos.clave) { const p = datos.nombre.split(/\s+/); datos.clave = (p.length > 1 ? p.map(x => x[0]).join('') : datos.nombre.slice(0, 3)).toUpperCase(); }
+    try {
+      const x = await pedir(CAT.alta, 'POST', datos);
+      $('cat-alta').querySelectorAll('input').forEach(i => { i.value = ''; });
+      await despuesDeCambio('✔ Se agregó «' + x.nombre + '». Ya aparece en la lista.', idDe(x));
+      $('cat-alta').querySelector('input')?.focus();
+    } catch (err) { estadoCat(err.message, 'mal'); }
+  }
+  async function guardarEdicion(i) {
+    const x = CAT_FILAS[i], li = $('cat-lista').querySelector('[data-i="' + i + '"]'), datos = leerCampos(li);
+    const falta = CAT.campos.find(c => !c.vacio && !datos[c.k]);
+    if (falta) { estadoCat('Escribe ' + falta.t.toLowerCase().replace(' (opcional)', ''), 'mal'); return; }
+    try {
+      await pedir(CAT.item(x), 'PUT', datos);
+      CAT_EDITANDO = null;
+      await despuesDeCambio('✔ Cambios guardados en «' + datos.nombre + '».', idDe(x));
+    } catch (err) { estadoCat(err.message, 'mal'); }
+  }
+  async function eliminarCat(i) {
+    const x = CAT_FILAS[i];
+    if (!await solicitarDialogo({ titulo: 'Eliminar ' + CAT.singular, mensaje: '«' + nombreDe(x) + '» ya no aparecerá para registros nuevos. Lo que ya se capturó con él no cambia.', aceptar: 'Eliminar' })) return;
+    try {
+      const r = await pedir(CAT.item(x), 'DELETE');
+      await despuesDeCambio('✔ Se eliminó «' + nombreDe(x) + '»' + (r.usos ? ' (' + r.usos + ' registros ya lo usaban y lo conservan).' : '.'), null);
+    } catch (err) { estadoCat(err.message, 'mal'); }
   }
   // Si la orden de compra está abierta, sus listas se actualizan sin perder lo capturado.
   function refrescarCatalogosEnOrden() {
@@ -478,13 +514,18 @@ const Compras = (() => {
   $('oc-centros').addEventListener('click', () => abrirCatalogo('centros'));
   $('oc-categorias').addEventListener('click', () => abrirCatalogo('categorias'));
   $('oc-unidades').addEventListener('click', () => abrirCatalogo('unidades'));
-  document.querySelector('#overlay-catalogo .modal-body').addEventListener('click', async e => {
-    const b = e.target.closest('button[data-cat-guardar], #cat-agregar'); if (!b || b.disabled) return;
-    b.disabled = true; try { await guardarCatalogo(b); } catch (err) { toast(err.message); } finally { b.disabled = false; }
+  $('cat-alta').addEventListener('submit', e => { e.preventDefault(); const b = e.target.querySelector('button'); if (b.disabled) return; b.disabled = true; agregarCat().finally(() => { b.disabled = false; }); });
+  $('cat-lista').addEventListener('click', async e => {
+    const b = e.target.closest('button'); if (!b || b.disabled) return;
+    if (b.dataset.catEditar !== undefined) { CAT_EDITANDO = Number(b.dataset.catEditar); estadoCat(''); await pintarCatalogo(); $('cat-lista').querySelector('.editando input')?.focus(); return; }
+    if (b.dataset.catCancelar !== undefined) { CAT_EDITANDO = null; await pintarCatalogo(); return; }
+    b.disabled = true;
+    try { if (b.dataset.catGuardar !== undefined) await guardarEdicion(Number(b.dataset.catGuardar)); if (b.dataset.catEliminar !== undefined) await eliminarCat(Number(b.dataset.catEliminar)); } finally { b.disabled = false; }
   });
-  document.querySelector('#overlay-catalogo .modal-body').addEventListener('keydown', e => {
-    if (e.key !== 'Enter' || e.target.tagName !== 'INPUT') return;
-    e.preventDefault(); e.target.closest('tr').querySelector('button')?.click();
+  $('cat-lista').addEventListener('keydown', e => {
+    if (e.target.tagName !== 'INPUT') return;
+    if (e.key === 'Enter') { e.preventDefault(); e.target.closest('li').querySelector('[data-cat-guardar]')?.click(); }
+    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); e.target.closest('li').querySelector('[data-cat-cancelar]')?.click(); }
   });
   $('oc-filas').addEventListener('change', e => { if (e.target.classList.contains('oc-unidad') && e.target.value === '__nueva') unidadRapida(e.target); });
   const conBotonOC = async (b, fn) => { if (!b || b.disabled) return; b.disabled = true; try { await fn(); } catch (err) { toast(err.message); } finally { b.disabled = false; } };

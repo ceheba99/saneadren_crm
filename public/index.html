@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Saneadren · Cotizaciones y Servicios</title>
-<link rel="stylesheet" href="styles.css?v=av1">
+<link rel="stylesheet" href="styles.css?v=cat1">
 <link rel="stylesheet" href="servicios-tabla.css">
 <link rel="stylesheet" href="flujo.css">
 </head>
@@ -279,7 +279,7 @@
   <section class="vista" id="vista-compras">
     <div class="vista-encabezado">
       <div><h2>Órdenes de compra</h2><p class="ayuda">Se capturan como borrador; al autorizarlas (administración) pasan solas a Cuentas por pagar como factura pendiente del proveedor. Se descargan con el formato CM-F-03.</p></div>
-      <div class="btn-group"><button type="button" class="btn btn-primario" id="oc-nueva">+ Nueva orden de compra</button><button type="button" class="btn btn-outline" id="oc-unidades">Unidades de medida</button><button type="button" class="btn btn-outline solo-admin" id="oc-centros">Centros de costo</button><button type="button" class="btn btn-outline solo-admin" id="oc-categorias">Categorías de gasto</button><button type="button" class="btn btn-outline solo-admin" id="oc-formato">Datos del formato</button></div>
+      <div class="btn-group"><button type="button" class="btn btn-primario" id="oc-nueva">+ Nueva orden de compra</button><button type="button" class="btn btn-outline" id="oc-unidades">Unidades de medida</button><button type="button" class="btn btn-outline" id="oc-centros">Centros de costo</button><button type="button" class="btn btn-outline" id="oc-categorias">Categorías de gasto</button><button type="button" class="btn btn-outline solo-admin" id="oc-formato">Datos del formato</button></div>
     </div>
     <div class="filtros">
       <select id="oc-filtro" aria-label="Mostrar"><option value="">Todas</option><option value="borrador">Borradores (por autorizar)</option><option value="pendiente_pago">Autorizadas por pagar</option><option value="autorizada">Autorizadas</option><option value="cancelada">Canceladas</option></select>
@@ -784,7 +784,9 @@
       <button class="close-btn" type="button" onclick="document.getElementById('overlay-catalogo').classList.remove('mostrar')">✕</button></div>
     <div class="modal-body">
       <p class="ayuda" id="cat-ayuda"></p>
-      <div class="tabla-scroll"><table class="tabla-resumen cat-tabla"><thead id="cat-cabeza"></thead><tbody id="cat-filas"></tbody><tfoot id="cat-nuevo"></tfoot></table></div>
+      <form class="cat-alta" id="cat-alta" autocomplete="off"></form>
+      <p class="cat-estado" id="cat-estado" role="status" hidden></p>
+      <ul class="cat-lista" id="cat-lista"></ul>
     </div>
   </div>
 </div>
@@ -1085,7 +1087,7 @@
 <script src="calendario.js?v=pg2"></script>
 <script src="tablero.js?v=pg2"></script>
 <script src="bitacora.js?v=b2"></script>
-<script src="compras.js?v=t2"></script>
+<script src="compras.js?v=cat1"></script>
 <script src="carga-generador.js?v=av1"></script>
 <script src="app.js?v=av1"></script>
 <script src="prospeccion.js?v=cli1"></script>
