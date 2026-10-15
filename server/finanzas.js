@@ -22,6 +22,10 @@ const TIPOS_COBRO = ['anticipo', 'pago', 'ajuste'];
 // las edita. CATEGORIAS (clave → nombre, incluye las inactivas para mostrar gastos viejos) se recarga
 // de la base al arrancar y en cada cambio; es el mismo objeto que usan tablero y compras.
 const CATEGORIAS = {};
+const CATEGORIAS_ACTIVAS = new Set();
+const categoriaActiva = k => CATEGORIAS_ACTIVAS.has(k);
+// Un texto «con sentido»: al menos «min» letras o números (no solo puntos, guiones o espacios).
+const conSentido = (t, min) => (String(t ?? '').match(/[\p{L}\p{N}]/gu) || []).length >= min;
 const CATEGORIAS_INICIALES = {
   residuos: 'Disposición de residuos', combustible: 'Combustible', refacciones: 'Refacciones y mantenimiento',
   renta_maquinaria: 'Renta de maquinaria', nomina_eventual: 'Nómina eventual', casetas_viaticos: 'Casetas y viáticos',
@@ -173,7 +177,8 @@ function migrar(db) {
 }
 function cargarCategorias(db) {
   for (const k of Object.keys(CATEGORIAS)) delete CATEGORIAS[k];
-  for (const c of db.prepare('SELECT clave, nombre FROM categorias_gasto ORDER BY orden, nombre').all()) CATEGORIAS[c.clave] = c.nombre;
+  CATEGORIAS_ACTIVAS.clear();
+  for (const c of db.prepare('SELECT clave, nombre, activo FROM categorias_gasto ORDER BY orden, nombre').all()) { CATEGORIAS[c.clave] = c.nombre; if (c.activo) CATEGORIAS_ACTIVAS.add(c.clave); }
 }
 
 // ---------- Utilidades de dinero y fechas ----------
@@ -437,7 +442,7 @@ module.exports = function finanzas(app, db, h, unicos) {
   app.post('/api/finanzas/cobros/:id/cancelar', h((req, res) => {
     if (!puedeOperar(req, res)) return;
     const motivo = texto(req.body.motivo, 300);
-    if (!motivo || motivo.length < 5) return res.status(400).json({ error: 'Escribe el motivo de la cancelación (mínimo 5 caracteres)' });
+    if (!motivo || !conSentido(motivo, 5)) return res.status(400).json({ error: 'Escribe el motivo de la cancelación (mínimo 5 caracteres)' });
     const c = db.prepare('SELECT * FROM cobros WHERE id = ?').get(req.params.id);
     if (!c) return res.status(404).json({ error: 'Pago no encontrado' });
     if (c.cancelado) return res.status(400).json({ error: 'Ese pago ya estaba cancelado' });
@@ -648,11 +653,30 @@ module.exports = function finanzas(app, db, h, unicos) {
     if (rfc && !/^[A-ZÑ&]{3,4}\d{6}[A-Z0-9]{3}$/.test(rfc)) return { error: 'El RFC no es válido (p. ej. ABC010101AB1)' };
     return { nombre, categoria, rfc, telefono: texto(b.telefono, 25), contacto: texto(b.contacto, 120), dias_credito: Number(b.dias_credito) || 0, notas: texto(b.notas, 1000) };
   }
+  // Proveedores sin duplicados (mismas reglas que los clientes): nombre igual o parecido (acentos, mayúsculas,
+  // «S.A. de C.V.», errores de dedo) se pregunta; el mismo RFC no se repite.
+  function problemaProveedor(d, excluir = 0, forzar = false) {
+    const mal = unicos.problemaNombreCliente(d.nombre, 'El nombre del proveedor');
+    if (mal) return { status: 400, cuerpo: { error: mal } };
+    const otros = db.prepare('SELECT id, nombre, rfc FROM proveedores WHERE id <> ?').all(excluir);
+    if (d.rfc && !['XAXX010101000', 'XEXX010101000'].includes(d.rfc)) {
+      const mismoRfc = otros.find(x => String(x.rfc || '').toUpperCase() === d.rfc);
+      if (mismoRfc) return { status: 409, cuerpo: { error: `El RFC ${d.rfc} ya es del proveedor «${mismoRfc.nombre}»`, proveedor_id: mismoRfc.id } };
+    }
+    const igual = otros.find(x => claveNombre(x.nombre) === claveNombre(d.nombre) || unicos.motivoParecido(unicos.clave(x.nombre), unicos.clave(d.nombre)) === 'Mismo nombre');
+    if (igual) return { status: 409, cuerpo: { error: `Ya existe el proveedor «${igual.nombre}»`, proveedor_id: igual.id } };
+    if (!forzar) {
+      const parecido = otros.find(x => unicos.motivoParecido(unicos.clave(x.nombre), unicos.clave(d.nombre)));
+      if (parecido) return { status: 409, cuerpo: { error: `Se parece al proveedor «${parecido.nombre}». ¿Es otro proveedor?`, codigo: 'POSIBLE_DUPLICADO', proveedor_id: parecido.id } };
+    }
+    return null;
+  }
   app.post('/api/finanzas/proveedores', h((req, res) => {
     if (!puedeOperar(req, res)) return;
     const d = datosProveedor(req.body);
     if (d.error) return res.status(400).json(d);
-    if (db.prepare('SELECT nombre FROM proveedores').all().some(x => claveNombre(x.nombre) === claveNombre(d.nombre))) return res.status(409).json({ error: 'Ya existe un proveedor con ese nombre' });
+    const p = problemaProveedor(d, 0, !!req.body.forzar);
+    if (p) return res.status(p.status).json(p.cuerpo);
     const info = db.prepare('INSERT INTO proveedores (nombre, categoria, rfc, telefono, contacto, dias_credito, notas) VALUES (?, ?, ?, ?, ?, ?, ?)')
       .run(d.nombre, d.categoria, d.rfc, d.telefono, d.contacto, d.dias_credito, d.notas);
     res.status(201).json(db.prepare('SELECT * FROM proveedores WHERE id = ?').get(info.lastInsertRowid));
@@ -663,7 +687,9 @@ module.exports = function finanzas(app, db, h, unicos) {
     if (!p) return res.status(404).json({ error: 'Proveedor no encontrado' });
     const d = datosProveedor({ ...p, ...req.body });
     if (d.error) return res.status(400).json(d);
-    if (db.prepare('SELECT id, nombre FROM proveedores WHERE id <> ?').all(p.id).some(x => claveNombre(x.nombre) === claveNombre(d.nombre))) return res.status(409).json({ error: 'Ya existe un proveedor con ese nombre' });
+    // Al renombrar, también se revisa que no quede igual o parecido a otro (salvo que se confirme).
+    const prob = problemaProveedor(d, p.id, !!req.body.forzar || unicos.clave(d.nombre) === unicos.clave(p.nombre));
+    if (prob) return res.status(prob.status).json(prob.cuerpo);
     const activo = req.body.activo === undefined ? p.activo : (req.body.activo ? 1 : 0);
     db.prepare('UPDATE proveedores SET nombre = ?, categoria = ?, rfc = ?, telefono = ?, contacto = ?, dias_credito = ?, notas = ?, activo = ? WHERE id = ?')
       .run(d.nombre, d.categoria, d.rfc, d.telefono, d.contacto, d.dias_credito, d.notas, activo, p.id);
@@ -734,7 +760,7 @@ module.exports = function finanzas(app, db, h, unicos) {
     const fmtFecha = f => f.split('-').reverse().join('/');
     if (b.estado === 'no_realizado') {
       const motivo = texto(b.motivo, 300);
-      if (!motivo || motivo.length < 5) return res.status(400).json({ error: 'Escribe por qué no se realizó (mínimo 5 caracteres)' });
+      if (!motivo || !conSentido(motivo, 5)) return res.status(400).json({ error: 'Escribe por qué no se realizó (mínimo 5 caracteres)' });
       // Avisos: lo que el cliente ya pagó queda a su favor, y los gastos ya cargados siguen en Cuentas por pagar.
       const cobrado = db.prepare('SELECT COALESCE(SUM(monto_cent), 0) t FROM cobros WHERE lead_id = ? AND cancelado = 0').get(lead.id).t;
       const gastos = cuentasPorPagar().filter(x => x.lead_id === lead.id);
@@ -799,13 +825,14 @@ module.exports = function finanzas(app, db, h, unicos) {
     const prov = db.prepare('SELECT * FROM proveedores WHERE id = ? AND activo = 1').get(b.proveedor_id);
     if (!prov) return res.status(400).json({ error: 'Elige un proveedor' });
     const categoria = b.categoria || prov.categoria;
-    if (!CATEGORIAS[categoria]) return res.status(400).json({ error: 'Categoría inválida' });
+    if (!categoriaActiva(categoria)) return res.status(400).json({ error: CATEGORIAS[categoria] ? `La categoría «${CATEGORIAS[categoria]}» está dada de baja: elige otra` : 'Categoría inválida' });
     const concepto = texto(b.concepto, 200);
-    if (!concepto) return res.status(400).json({ error: 'Escribe el concepto del gasto' });
+    if (!concepto || !conSentido(concepto, 3)) return res.status(400).json({ error: 'Escribe el concepto del gasto (qué se compró o qué servicio dio)' });
     const total = aCentavos(b.total);
     if (!total) return res.status(400).json({ error: 'Escribe el total (mayor a 0, máximo 2 decimales)' });
     const fecha = b.fecha_documento || hoyMexico();
     if (!fechaValida(fecha)) return res.status(400).json({ error: 'La fecha del documento no es válida' });
+    if (fecha > sumarDias(hoyMexico(), 60)) return res.status(400).json({ error: 'La fecha del documento está a más de 60 días en el futuro: revisa el año' });
     const vence = b.fecha_vencimiento || sumarDias(fecha, prov.dias_credito);
     if (!fechaValida(vence) || vence < fecha) return res.status(400).json({ error: 'El vencimiento no es válido (no puede ser antes de la fecha del documento)' });
     let leadId = null;
@@ -819,7 +846,7 @@ module.exports = function finanzas(app, db, h, unicos) {
     const fechaPagoGasto = b.ya_pagado && b.fecha_pago ? b.fecha_pago : null;
     if (fechaPagoGasto && (!fechaValida(fechaPagoGasto) || fechaPagoGasto > hoyMexico())) return res.status(400).json({ error: 'La fecha de pago no es válida o es futura' });
     const folioFactura = texto(b.factura_folio, 60);
-    if (folioFactura && !b.forzar && db.prepare('SELECT id FROM cuentas_por_pagar WHERE proveedor_id = ? AND factura_folio = ? AND cancelada = 0').get(prov.id, folioFactura)) {
+    if (folioFactura && !b.forzar && db.prepare("SELECT id FROM cuentas_por_pagar WHERE proveedor_id = ? AND replace(upper(factura_folio), ' ', '') = replace(upper(?), ' ', '') AND cancelada = 0").get(prov.id, folioFactura)) {
       return res.status(409).json({ error: `Ya registraste la factura ${folioFactura} de ${prov.nombre}. ¿Es otra factura?`, codigo: 'POSIBLE_DUPLICADO' });
     }
     const id = db.transaction(() => {
@@ -862,7 +889,7 @@ module.exports = function finanzas(app, db, h, unicos) {
   app.post('/api/finanzas/pagos-proveedor/:id/cancelar', h((req, res) => {
     if (!puedeOperar(req, res)) return;
     const motivo = texto(req.body.motivo, 300);
-    if (!motivo || motivo.length < 5) return res.status(400).json({ error: 'Escribe el motivo de la cancelación (mínimo 5 caracteres)' });
+    if (!motivo || !conSentido(motivo, 5)) return res.status(400).json({ error: 'Escribe el motivo de la cancelación (mínimo 5 caracteres)' });
     const info = db.prepare("UPDATE pagos_proveedor SET cancelado = 1, cancelado_por = ?, cancelado_at = datetime('now','localtime'), motivo_cancelacion = ? WHERE id = ? AND cancelado = 0")
       .run(req.usuarioSesion.id, motivo, req.params.id);
     if (!info.changes) return res.status(404).json({ error: 'Pago no encontrado o ya cancelado' });
@@ -872,7 +899,7 @@ module.exports = function finanzas(app, db, h, unicos) {
   app.post('/api/finanzas/cxp/:id/cancelar', h((req, res) => {
     if (!puedeOperar(req, res)) return;
     const motivo = texto(req.body.motivo, 300);
-    if (!motivo || motivo.length < 5) return res.status(400).json({ error: 'Escribe el motivo de la cancelación (mínimo 5 caracteres)' });
+    if (!motivo || !conSentido(motivo, 5)) return res.status(400).json({ error: 'Escribe el motivo de la cancelación (mínimo 5 caracteres)' });
     const pagos = db.prepare('SELECT COUNT(*) n FROM pagos_proveedor WHERE cxp_id = ? AND cancelado = 0').get(req.params.id).n;
     if (pagos) return res.status(409).json({ error: 'Esta cuenta tiene pagos registrados: cancélalos primero' });
     const info = db.prepare("UPDATE cuentas_por_pagar SET cancelada = 1, cancelada_por = ?, cancelada_at = datetime('now','localtime'), motivo_cancelacion = ? WHERE id = ? AND cancelada = 0")
@@ -998,6 +1025,7 @@ module.exports = function finanzas(app, db, h, unicos) {
       if (!nombre && !folio && !celda(f.fecha)) return { fila, errores: [], omitida: true, resumen: { omitida: 'Renglón sin cliente ni factura (p. ej. totales)' } };
       if (statusTxt.startsWith('cancel')) return { fila, errores: [], omitida: true, resumen: { cliente: nombre, folio: [serie, folio].filter(Boolean).join('-'), omitida: 'Factura cancelada: no se importa' } };
       if (!nombre) errores.push('NOMBRE del cliente es obligatorio');
+      else if (!celda(f.id_cliente) && unicos.problemaNombreCliente(nombre, 'NOMBRE')) errores.push(unicos.problemaNombreCliente(nombre, 'NOMBRE'));
       const status = !statusTxt || statusTxt.startsWith('pend') ? 'pendiente' : statusTxt.startsWith('pagad') ? 'pagado'
         : /parcial|abon/.test(statusTxt) ? 'pendiente' : null;
       if (!status) errores.push(`STATUS: usa PENDIENTE, PAGADO o CANCELADO ("${celda(f.status).slice(0, 30)}")`);
@@ -1171,7 +1199,7 @@ module.exports = function finanzas(app, db, h, unicos) {
   // ---------- Ganchos para las rutas de órdenes (server/index.js) ----------
   return {
     // Para el panorama general de Resultados (server/tablero.js).
-    cartera, cuentasPorPagar, CATEGORIAS,
+    cartera, cuentasPorPagar, CATEGORIAS, categoriaActiva, conSentido,
     // Centavos cobrados (no cancelados) de una orden.
     cobradoCent: leadId => db.prepare('SELECT COALESCE(SUM(monto_cent), 0) t FROM cobros WHERE lead_id = ? AND cancelado = 0').get(leadId).t,
     // ¿Tiene pagos activos? (no se puede borrar ni reabrir como cotización)

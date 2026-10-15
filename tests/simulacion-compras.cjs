@@ -32,7 +32,7 @@ const SEMANA_40 = [['REPARACION FLECHA CARDAN JOSE LUIS ACOSTA', 2000], ['PAGO R
   [s, j] = await pedir('POST', '/compras/centros', A, { nombre: 'taller' }); revisa(s === 409, 'no se repite un centro de costos');
   const [, prov] = await pedir('POST', '/finanzas/proveedores', A, { nombre: 'PROFESIONALSERV', categoria: 'otro', dias_credito: 7 });
 
-  const base = { proveedor_id: prov.id, centro_id: operaciones.id, categoria: 'otro', fecha: '2026-10-02', fecha_requerida: '2026-10-02', iva_modo: 'sin_iva',
+  const base = { forzar: true, proveedor_id: prov.id, centro_id: operaciones.id, categoria: 'otro', fecha: '2026-10-02', fecha_requerida: '2026-10-02', iva_modo: 'sin_iva',
     partidas: SEMANA_40.map(([descripcion, precio]) => ({ cantidad: 1, descripcion, precio })) };
   [s, j] = await pedir('POST', '/compras/ordenes', V, base);
   const oc = j;

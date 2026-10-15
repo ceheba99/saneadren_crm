@@ -71,7 +71,7 @@ function migrar(db) {
 module.exports = function compras(app, db, h, finanzas) {
   migrar(db);
   const esAdmin = req => req.usuarioSesion.rol === 'admin';
-  const CATEGORIAS = finanzas.CATEGORIAS;
+  const CATEGORIAS = finanzas.CATEGORIAS, conSentido = finanzas.conSentido;
 
   const SQL_OC = `SELECT o.*, p.nombre AS proveedor_nombre, p.rfc AS proveedor_rfc, p.dias_credito AS proveedor_credito, c.nombre AS centro_nombre, c.responsable AS centro_responsable,
       u.nombre AS creado_por_nombre, ua.nombre AS autorizada_por_nombre,
@@ -94,7 +94,7 @@ module.exports = function compras(app, db, h, finanzas) {
     const centro = db.prepare('SELECT * FROM centros_costo WHERE id = ? AND activo = 1').get(b.centro_id);
     if (!centro) return { error: 'Elige el centro de costos' };
     const categoria = b.categoria || prov.categoria;
-    if (!CATEGORIAS[categoria]) return { error: 'Elige la categoría del gasto' };
+    if (!finanzas.categoriaActiva(categoria)) return { error: CATEGORIAS[categoria] ? `La categoría «${CATEGORIAS[categoria]}» está dada de baja: elige otra` : 'Elige la categoría del gasto' };
     let leadId = null;
     if (b.lead_id) {
       const l = db.prepare("SELECT id FROM leads WHERE id = ? AND estatus = 'ganado'").get(b.lead_id);
@@ -103,6 +103,7 @@ module.exports = function compras(app, db, h, finanzas) {
     }
     const fecha = b.fecha || hoyMexico();
     if (!fechaOk(fecha)) return { error: 'La fecha no es válida' };
+    if (fecha > sumarDias(hoyMexico(), 31)) return { error: 'La fecha de la orden está a más de un mes en el futuro: revisa el año' };
     const requerida = b.fecha_requerida || null;
     if (requerida && (!fechaOk(requerida) || requerida < fecha)) return { error: 'La fecha requerida no puede ser antes de la fecha de la orden' };
     if (!Importes.MODOS.includes(b.iva_modo)) return { error: 'Indica el IVA: más IVA, IVA incluido o sin IVA' };
@@ -114,12 +115,19 @@ module.exports = function compras(app, db, h, finanzas) {
     for (const [i, p] of lista.entries()) {
       const r = `Partida ${i + 1}: `;
       const descripcion = texto(p && p.descripcion, 300);
-      if (!descripcion) return { error: r + 'escribe la descripción' };
+      if (!descripcion || !conSentido(descripcion, 2)) return { error: r + 'escribe la descripción (qué se compra)' };
+      // La unidad, si viene, debe ser una del catálogo (se guarda con su abreviatura oficial: «pza» → «PZA»).
+      let unidad = null;
+      if (p.unidad !== undefined && p.unidad !== null && String(p.unidad).trim()) {
+        const u = db.prepare('SELECT clave FROM unidades_medida WHERE clave = ? COLLATE NOCASE').get(String(p.unidad).trim());
+        if (!u) return { error: r + `la unidad «${String(p.unidad).slice(0, 15)}» no está en el catálogo de unidades (agrégala primero)` };
+        unidad = u.clave;
+      }
       const cantidad = typeof p.cantidad === 'string' ? Number(p.cantidad) : p.cantidad;
       if (typeof cantidad !== 'number' || !Number.isFinite(cantidad) || cantidad <= 0 || cantidad > 1e6 || Math.round(cantidad * 1000) !== cantidad * 1000) return { error: r + 'la cantidad debe ser mayor a 0 (hasta 3 decimales)' };
       const precio = typeof p.precio === 'string' ? Number(p.precio.replace(/[$,\s]/g, '')) : p.precio;
       if (typeof precio !== 'number' || !Number.isFinite(precio) || precio <= 0 || precio > 1e9 || Math.abs(precio * 100 - Math.round(precio * 100)) > 1e-6) return { error: r + 'el precio debe ser mayor a $0 (máximo 2 decimales)' };
-      partidas.push({ cantidad, descripcion, unidad: texto(p.unidad, 30), clave: texto(p.clave, 60), precio, importe: Importes.importeDe(cantidad, precio) });
+      partidas.push({ cantidad, descripcion, unidad, clave: texto(p.clave, 60), precio, importe: Importes.importeDe(cantidad, precio) });
     }
     const r = Importes.calcular(partidas, b.iva_modo, tasa);
     if (!(r.total_cent > 0)) return { error: 'El total debe ser mayor a $0' };
@@ -208,6 +216,10 @@ module.exports = function compras(app, db, h, finanzas) {
     const v = validar(req.body || {}, req.usuarioSesion);
     if (v.error) return res.status(400).json({ error: v.error });
     const d = v.datos;
+    // La misma orden capturada dos veces (doble clic o se volvió a capturar): se pregunta antes de crear otra.
+    const igual = !req.body.forzar && db.prepare("SELECT id, created_at FROM ordenes_compra WHERE proveedor_id = ? AND fecha = ? AND total_cent = ? AND partidas_json = ? AND estado <> 'cancelada' ORDER BY id DESC LIMIT 1")
+      .get(d.proveedor_id, d.fecha, d.total_cent, d.partidas_json);
+    if (igual) return res.status(409).json({ error: `Ya existe una orden igual (${folioOC(igual)}): mismo proveedor, fecha, partidas y total. ¿Es otra compra?`, codigo: 'POSIBLE_DUPLICADO', orden_id: igual.id });
     const info = db.prepare(`INSERT INTO ordenes_compra (proveedor_id, centro_id, categoria, lead_id, fecha, fecha_requerida, entrega, factura_a, nota, observaciones,
         partidas_json, iva_modo, iva_tasa, subtotal_cent, iva_cent, total_cent, solicitante_nombre, solicitante_cargo, creado_por)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(d.proveedor_id, d.centro_id, d.categoria, d.lead_id, d.fecha, d.fecha_requerida, d.entrega, d.factura_a,
@@ -251,7 +263,7 @@ module.exports = function compras(app, db, h, finanzas) {
   }));
   app.post('/api/compras/ordenes/:id/cancelar', h((req, res) => {
     const motivo = texto(req.body && req.body.motivo, 300);
-    if (!motivo || motivo.length < 5) return res.status(400).json({ error: 'Escribe el motivo de la cancelación (mínimo 5 caracteres)' });
+    if (!motivo || !conSentido(motivo, 5)) return res.status(400).json({ error: 'Escribe el motivo de la cancelación (mínimo 5 caracteres)' });
     const o = leer(req.params.id);
     if (!o) return res.status(404).json({ error: 'Orden de compra no encontrada' });
     if (o.estado === 'cancelada') return res.status(409).json({ error: 'Esta orden ya estaba cancelada' });

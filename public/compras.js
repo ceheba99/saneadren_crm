@@ -8,7 +8,7 @@ const Compras = (() => {
   const esAdmin = () => USUARIO_ACTUAL?.rol === 'admin';
   const ESTADOS = { borrador: ['Borrador · por autorizar', 'parcial'], autorizada: ['Autorizada', 'programada'], cancelada: ['Cancelada', 'vencida'] };
   let LISTA = [], ACTUAL = null, PROVEEDORES = [], CENTROS = [], CATEGORIAS = [], UNIDADES = [], consulta = 0;
-  const json = async r => { const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.error || 'No se pudo completar'); return j; };
+  const json = async r => { const j = await r.json().catch(() => ({})); if (!r.ok) throw Object.assign(new Error(j.error || 'No se pudo completar'), { datos: j }); return j; };
   const pedir = (ruta, metodo = 'GET', cuerpo) => api(ruta, metodo === 'GET' ? undefined : { method: metodo, body: JSON.stringify(cuerpo || {}) }).then(json);
 
   async function catalogos() {
@@ -122,7 +122,17 @@ const Compras = (() => {
     if (!d.iva_modo) { toast('Elige el IVA de la orden'); return; }
     const mala = d.partidas.findIndex(p => !p.descripcion || !(p.cantidad > 0) || !(p.precio > 0));
     if (mala >= 0) { toast('Partida ' + (mala + 1) + ': escribe cantidad, descripción y precio (mayor a $0)'); return; }
-    const o = ACTUAL ? await pedir('/compras/ordenes/' + ACTUAL.id, 'PUT', d) : await pedir('/compras/ordenes', 'POST', d);
+    let o;
+    if (ACTUAL) o = await pedir('/compras/ordenes/' + ACTUAL.id, 'PUT', d);
+    else {
+      try { o = await pedir('/compras/ordenes', 'POST', d); }
+      catch (err) {
+        // La misma orden ya existe (doble clic o se capturó otra vez): se pregunta antes de crear otra.
+        if (err.datos?.codigo !== 'POSIBLE_DUPLICADO') throw err;
+        if (!await solicitarDialogo({ titulo: '¿Es otra compra?', mensaje: err.message + ' Si es la misma, cancela y búscala en la lista.', aceptar: 'Sí, es otra compra' })) return;
+        o = await pedir('/compras/ordenes', 'POST', { ...d, forzar: true });
+      }
+    }
     ACTUAL = o;
     toast((d.version ? 'Orden ' : 'Orden de compra creada: ') + o.folio + (d.version ? ' guardada' : ''));
     if (descargar) await pdf(o);
@@ -325,7 +335,7 @@ const Compras = (() => {
     e.target.value = '';
     const nombre = await solicitarDialogo({ titulo: 'Nuevo proveedor', mensaje: 'Nombre o razón social del proveedor. Sus datos (RFC, crédito) se completan en Cuentas por pagar → Proveedores.', aceptar: 'Agregar', campo: { tipo: 'text', etiqueta: 'Proveedor' } });
     if (!nombre) return;
-    try { const p = await pedir('/finanzas/proveedores', 'POST', { nombre, categoria: $('oc-categoria').value || 'otro' }); await catalogos(); pintarSelects({ ...(ACTUAL || {}), ...datosForm(), proveedor_id: p.id }); toast('Proveedor agregado'); }
+    try { const p = await Finanzas.guardarProveedor({ nombre, categoria: $('oc-categoria').value || 'otro' }); if (!p) return; await catalogos(); pintarSelects({ ...(ACTUAL || {}), ...datosForm(), proveedor_id: p.id }); toast('Proveedor agregado'); }
     catch (err) { toast(err.message); }
   });
   $('oc-acciones').addEventListener('click', async e => {

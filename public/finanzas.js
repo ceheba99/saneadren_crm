@@ -731,8 +731,9 @@ const Finanzas = (() => {
       const nombre = await solicitarDialogo({ titulo: 'Nuevo proveedor', mensaje: 'Se crea con la categoría elegida y sin crédito (contado). Puedes completar sus datos después en la pestaña Proveedores.', aceptar: 'Agregar', campo: { tipo: 'text', etiqueta: 'Nombre del proveedor' } });
       if (!nombre) return;
       try {
-        const p = await json(await api('/finanzas/proveedores', { method: 'POST', body: JSON.stringify({ nombre, categoria: $('gasto-categoria').value || 'otro', dias_credito: 0 }) }));
-        await catalogosPagos(); llenarProveedoresGasto(p.id); toast('Proveedor agregado');
+        const p = await guardarProveedor({ nombre, categoria: $('gasto-categoria').value || 'otro', dias_credito: 0 });
+        if (!p) return;
+        await catalogosPagos(); llenarProveedoresGasto(p.id); toast('Proveedor listo: ' + p.nombre);
       } catch (err) { toast('No se pudo agregar: ' + err.message); }
     }
     const p = PROVEEDORES.find(x => x.id === Number($('gasto-proveedor').value)); if (p) $('gasto-categoria').value = p.categoria; recalcularVence();
@@ -798,10 +799,27 @@ const Finanzas = (() => {
     }
     conBoton(btn, async () => { await json(await api('/finanzas/proveedores/' + p.id, { method: 'PUT', body: JSON.stringify({ activo: !p.activo }) })); cargarProveedores(); });
   });
+  // Crear o editar un proveedor. Si se parece a uno que ya existe, se pregunta «¿es otro?»; si es exactamente
+  // el mismo (nombre o RFC), al crear se usa el que ya existe. Devuelve el proveedor, o null si se canceló.
+  async function guardarProveedor(cuerpo, id = null) {
+    const enviar = c => api('/finanzas/proveedores' + (id ? '/' + id : ''), { method: id ? 'PUT' : 'POST', body: JSON.stringify(c) });
+    let r = await enviar(cuerpo), j = await r.json().catch(() => ({}));
+    if (r.status === 409 && j.codigo === 'POSIBLE_DUPLICADO') {
+      if (!await solicitarDialogo({ titulo: '¿Es otro proveedor?', mensaje: j.error + ' Si es el mismo, cancela y elígelo de la lista.', aceptar: 'Sí, es otro proveedor' })) return null;
+      r = await enviar({ ...cuerpo, forzar: true }); j = await r.json().catch(() => ({}));
+    }
+    if (r.status === 409 && j.proveedor_id && !id) {
+      const lista = await api('/finanzas/proveedores').then(x => x.json());
+      const existente = lista.find(p => p.id === j.proveedor_id);
+      if (existente) { toast(j.error + ': se usa ese proveedor.'); return existente; }
+    }
+    if (!r.ok) throw new Error(j.error || 'No se pudo guardar el proveedor');
+    return j;
+  }
   $('prov-guardar').addEventListener('click', e => conBoton(e.currentTarget, async () => {
     const cuerpo = { nombre: $('prov-nombre').value, categoria: $('prov-categoria').value, dias_credito: $('prov-credito').value,
       rfc: $('prov-rfc').value, telefono: $('prov-telefono').value, contacto: $('prov-contacto').value };
-    await json(await api('/finanzas/proveedores' + (PROV_EDITANDO ? '/' + PROV_EDITANDO : ''), { method: PROV_EDITANDO ? 'PUT' : 'POST', body: JSON.stringify(cuerpo) }));
+    if (!await guardarProveedor(cuerpo, PROV_EDITANDO)) return;
     toast(PROV_EDITANDO ? 'Proveedor actualizado' : 'Proveedor agregado'); cargarProveedores();
   }));
 
@@ -1292,7 +1310,8 @@ const Finanzas = (() => {
         const nombre = await solicitarDialogo({ titulo: 'Nuevo proveedor', mensaje: 'Se crea sin crédito (contado). Puedes completar sus datos después en Proveedores.', aceptar: 'Agregar', campo: { tipo: 'text', etiqueta: 'Nombre del proveedor o empresa' } });
         if (!nombre) return;
         try {
-          const p = await json(await api('/finanzas/proveedores', { method: 'POST', body: JSON.stringify({ nombre, categoria: fila.querySelector('.rg-categoria').value || 'otro', dias_credito: 0 }) }));
+          const p = await guardarProveedor({ nombre, categoria: fila.querySelector('.rg-categoria').value || 'otro', dias_credito: 0 });
+          if (!p) return;
           await catalogosPagos();
           document.querySelectorAll('#realizado-gastos .rg-proveedor').forEach(s => { const v = s === e.target ? p.id : s.value; s.innerHTML = opcionesProveedor(v); });
           toast('Proveedor agregado');
@@ -1340,5 +1359,5 @@ const Finanzas = (() => {
       () => pintarCostosOrden(lead));
   });
 
-  return { cargarExcelJS, valorCelda, fechaTexto, cargar, pintarCobranzaOrden, pintarCostosOrden, pintarEjecucion, nuevoGasto, pintarInicio, abrirCobro, pintarCliente, avisoAdeudo, pintarResultados };
+  return { guardarProveedor, cargarExcelJS, valorCelda, fechaTexto, cargar, pintarCobranzaOrden, pintarCostosOrden, pintarEjecucion, nuevoGasto, pintarInicio, abrirCobro, pintarCliente, avisoAdeudo, pintarResultados };
 })();

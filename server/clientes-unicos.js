@@ -10,7 +10,18 @@
 const folioCliente = id => (id ? 'CLI-' + String(id).padStart(4, '0') : '');
 // Acepta «CLI-0039», «cli 39», «39» y lo que trae la lista de la plantilla («CLI-0039 · KFC») → 39
 const idDeFolio = v => { const m = String(v ?? '').trim().match(/^(?:CLI[\s-]*)?0*(\d{1,9})(?:\s*·.*)?$/i); return m ? Number(m[1]) : null; };
-const telNorm = t => String(t || '').replace(/\D/g, '').slice(-10);
+const telNorm = t => { const d = String(t || '').replace(/\s*(ext\.?|extensi[oó]n|x)\s*\d{1,6}\s*$/i, '').replace(/\D/g, ''); return d.length === 12 && d.startsWith('52') ? d.slice(2) : d.length === 13 && /^(521|044|045)/.test(d) ? d.slice(3) : d; };
+// Teléfonos de relleno que no son de nadie: 0000000000, 1111111111, 1234567890…
+const telefonoFalso = t => /^(\d)\1{9}$/.test(t) || ['1234567890', '0123456789', '9876543210'].includes(t);
+// Nombre o empresa capturables: al menos 2 letras y sin < > { } (nada de código ni solo signos o emojis).
+function problemaNombreCliente(t, etiqueta = 'El nombre') {
+  const s = String(t ?? '').trim();
+  if (/[<>{}]/.test(s)) return etiqueta + ' no puede llevar < > { }';
+  if ((s.match(/\p{L}/gu) || []).length < 2) return etiqueta + ' debe tener al menos 2 letras';
+  return null;
+}
+// RFC genéricos del SAT (público en general / extranjeros): los comparten muchos clientes, no identifican a nadie.
+const RFC_GENERICOS = new Set(['XAXX010101000', 'XEXX010101000']);
 const esTelReal = t => /^\d{10}$/.test(String(t || ''));
 
 // ---------- Comparación de nombres ----------
@@ -133,6 +144,7 @@ module.exports = function clientesUnicos(app, db, h) {
   const esAdmin = req => req.usuarioSesion?.rol === 'admin';
   const par = (x, y) => (x < y ? [x, y] : [y, x]);
   const sonDistintos = db.prepare('SELECT 1 FROM clientes_distintos WHERE a = ? AND b = ?');
+  const quienDistintos = db.prepare('SELECT u.nombre, u.rol FROM clientes_distintos d LEFT JOIN usuarios u ON u.id = d.confirmado_por WHERE d.a = ? AND d.b = ?');
   const resumen = c => c && ({ id: c.id, folio: folioCliente(c.id), nombre: c.nombre, empresa: c.empresa_contacto, telefono: esTelReal(c.telefono_normalizado) ? c.telefono : null, rfc: c.rfc || null });
 
   // ---------- Búsquedas ----------
@@ -144,6 +156,7 @@ module.exports = function clientesUnicos(app, db, h) {
   }
   function porRfc(rfc, excluir = 0) {
     const r = String(rfc || '').trim().toUpperCase();
+    if (RFC_GENERICOS.has(r)) return null;
     return r ? db.prepare('SELECT * FROM clientes WHERE upper(rfc) = ? AND id <> ? ORDER BY id LIMIT 1').get(r, excluir) || null : null;
   }
   // Por ID (también los retirados por fusión, que apuntan al cliente que quedó).
@@ -185,13 +198,14 @@ module.exports = function clientesUnicos(app, db, h) {
   }
   // Para rutas que crean clientes: ¿falta que el usuario confirme algo? Devuelve null o el cuerpo del 409.
   // `distintos` = ids que el usuario ya dijo que NO son el mismo cliente.
-  function exigirConfirmacion(datos, distintos = []) {
-    const lista = parecidos(datos, { limite: 5 }).filter(p => !distintos.map(Number).includes(p.id));
+  function exigirConfirmacion(datos, distintos = [], excluir = []) {
+    const lista = parecidos(datos, { limite: 5, excluir }).filter(p => !distintos.map(Number).includes(p.id));
     return lista.length ? { error: 'posible_duplicado', mensaje: 'Hay clientes parecidos: confirma si es el mismo o es otro.', parecidos: lista } : null;
   }
   // Tras crear un cliente «distinto» a otros, se recuerda para no volver a preguntar.
   function recordarDistintos(nuevoId, distintos = [], usuarioId = null) {
-    const ins = db.prepare('INSERT OR IGNORE INTO clientes_distintos (a, b, confirmado_por) VALUES (?, ?, ?)');
+    // Si ya estaba marcada, se actualiza quién lo confirmó (un administrador puede ratificar lo que dijo ventas).
+    const ins = db.prepare("INSERT INTO clientes_distintos (a, b, confirmado_por) VALUES (?, ?, ?) ON CONFLICT(a, b) DO UPDATE SET confirmado_por = excluded.confirmado_por, fecha = datetime('now','localtime')");
     for (const d of distintos.map(Number).filter(x => x && x !== nuevoId)) { const [a, b] = par(nuevoId, d); ins.run(a, b, usuarioId); }
   }
   // Agrega un teléfono más a un cliente («es el mismo»). Error si ya es de otro cliente.
@@ -240,11 +254,13 @@ module.exports = function clientesUnicos(app, db, h) {
     const pares = [];
     for (let i = 0; i < todos.length; i++) for (let j = i + 1; j < todos.length; j++) {
       const A = todos[i], B = todos[j];
-      if (sonDistintos.get(A.c.id, B.c.id)) continue;
+      // Lo que marcó como «distinto» alguien que no es administrador se sigue mostrando, por si fue un descuido.
+      const marca = quienDistintos.get(A.c.id, B.c.id);
+      if (marca && marca.rol === 'admin') continue;
       let motivo = null;
-      if (A.c.rfc && B.c.rfc && A.c.rfc.toUpperCase() === B.c.rfc.toUpperCase()) motivo = 'Mismo RFC';
+      if (A.c.rfc && B.c.rfc && A.c.rfc.toUpperCase() === B.c.rfc.toUpperCase() && !RFC_GENERICOS.has(A.c.rfc.toUpperCase())) motivo = 'Mismo RFC';
       motivo ||= motivoClientes({ nombre: A.c.nombre, empresa: A.c.empresa_contacto }, { nombre: B.c.nombre, empresa: B.c.empresa_contacto });
-      if (motivo) pares.push({ motivo, a: { ...resumen(A.c), servicios: db.prepare('SELECT COUNT(*) n FROM leads WHERE cliente_id = ?').get(A.c.id).n }, b: { ...resumen(B.c), servicios: db.prepare('SELECT COUNT(*) n FROM leads WHERE cliente_id = ?').get(B.c.id).n } });
+      if (motivo) pares.push({ motivo, marcado_distinto_por: marca ? marca.nombre || 'otro usuario' : null, a: { ...resumen(A.c), servicios: db.prepare('SELECT COUNT(*) n FROM leads WHERE cliente_id = ?').get(A.c.id).n }, b: { ...resumen(B.c), servicios: db.prepare('SELECT COUNT(*) n FROM leads WHERE cliente_id = ?').get(B.c.id).n } });
     }
     return pares.slice(0, 300);
   }
@@ -286,9 +302,11 @@ module.exports = function clientesUnicos(app, db, h) {
     res.json({ ok: true });
   }));
 
-  return { folioCliente, idDeFolio, clave, motivoParecido, porTelefono, porRfc, porId, porNombreExacto, parecidos, verificar, exigirConfirmacion, recordarDistintos, agregarTelefono, recordarAlias, fusionar, resumen };
+  return { telefonoFalso, problemaNombreCliente, folioCliente, idDeFolio, clave, motivoParecido, porTelefono, porRfc, porId, porNombreExacto, parecidos, verificar, exigirConfirmacion, recordarDistintos, agregarTelefono, recordarAlias, fusionar, resumen };
 };
 module.exports.folioCliente = folioCliente;
+module.exports.problemaNombreCliente = problemaNombreCliente;
+module.exports.telefonoFalso = telefonoFalso;
 module.exports.clave = clave;
 module.exports.motivoParecido = motivoParecido;
 module.exports.motivoClientes = motivoClientes;
