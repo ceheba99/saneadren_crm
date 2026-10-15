@@ -7,12 +7,12 @@ const Compras = (() => {
   const fechaTxt = f => (f ? f.split('-').reverse().join('/') : '—');
   const esAdmin = () => USUARIO_ACTUAL?.rol === 'admin';
   const ESTADOS = { borrador: ['Borrador · por autorizar', 'parcial'], autorizada: ['Autorizada', 'programada'], cancelada: ['Cancelada', 'vencida'] };
-  let LISTA = [], ACTUAL = null, PROVEEDORES = [], CENTROS = [], CATEGORIAS = [], consulta = 0;
+  let LISTA = [], ACTUAL = null, PROVEEDORES = [], CENTROS = [], CATEGORIAS = [], UNIDADES = [], consulta = 0;
   const json = async r => { const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.error || 'No se pudo completar'); return j; };
   const pedir = (ruta, metodo = 'GET', cuerpo) => api(ruta, metodo === 'GET' ? undefined : { method: metodo, body: JSON.stringify(cuerpo || {}) }).then(json);
 
   async function catalogos() {
-    [PROVEEDORES, CENTROS, CATEGORIAS] = await Promise.all([pedir('/finanzas/proveedores'), pedir('/compras/centros'), CATEGORIAS.length ? CATEGORIAS : pedir('/finanzas/categorias')]);
+    [PROVEEDORES, CENTROS, CATEGORIAS, UNIDADES] = await Promise.all([pedir('/finanzas/proveedores'), pedir('/compras/centros'), pedir('/finanzas/categorias'), pedir('/compras/unidades')]);
   }
   // ---------- Lista ----------
   async function cargar() {
@@ -28,14 +28,21 @@ const Compras = (() => {
     const filas = LISTA.map(o => {
       const [txt, cl] = ESTADOS[o.estado];
       const pago = o.estado === 'autorizada' ? (o.saldo > 0 ? (o.pagado > 0 ? 'Pagado ' + dinero(o.pagado) + ' · falta ' + dinero(o.saldo) : 'Pendiente de pago') : 'Pagada ✓') : '—';
+      // ¿Autorizada? Solo al autorizarla se vuelve deuda (factura pendiente en Cuentas por pagar).
+      const deuda = o.estado === 'autorizada' ? '<span class="oc-deuda si" title="Ya es deuda: está en Cuentas por pagar">✔ Sí</span>'
+        : o.estado === 'cancelada' ? '<span class="util-45">—</span>'
+        : esAdmin() ? '<button type="button" class="btn btn-verde btn-chico" data-oc-autorizar="' + Number(o.id) + '">✔ Autorizar</button>' : '<span class="oc-deuda no">Por autorizar</span>';
       return '<tr class="' + (o.estado === 'cancelada' ? 'fila-cancelada' : '') + '"><td><span class="estado-cxc ' + cl + '">' + esc(txt) + '</span></td><td><b>' + esc(o.folio) + '</b></td><td>' + esc(fechaTxt(o.fecha)) + '</td>'
         + '<td>' + esc(o.proveedor_nombre) + '</td><td>' + esc(o.centro_nombre) + '</td><td>' + esc(o.partidas[0]?.descripcion || '') + (o.partidas.length > 1 ? ' <small class="util-45">y ' + (o.partidas.length - 1) + ' más</small>' : '') + '</td>'
-        + '<td class="st-num"><b>' + dinero(o.total) + '</b></td><td>' + esc(pago) + '</td>'
+        + '<td class="st-num"><b>' + dinero(o.total) + '</b></td><td>' + deuda + '</td><td>' + esc(pago) + '</td>'
         + '<td class="celda-acciones"><div class="acciones-fila"><button type="button" class="btn btn-outline btn-chico" data-oc-abrir="' + Number(o.id) + '">Abrir</button><button type="button" class="btn btn-outline btn-chico" data-oc-pdf="' + Number(o.id) + '">PDF</button></div></td></tr>';
     }).join('');
     const total = LISTA.filter(o => o.estado !== 'cancelada').reduce((t, o) => t + o.total, 0);
-    cont.innerHTML = '<div class="tabla-scroll tabla-dinero-caja"><table class="tabla-resumen tabla-dinero"><thead><tr><th>Estado</th><th>Folio</th><th>Fecha</th><th>Proveedor</th><th>Centro de costos</th><th>Concepto</th><th class="st-num">Total</th><th>Pago</th><th></th></tr></thead><tbody>'
-      + filas + '</tbody><tfoot><tr><td colspan="6"><b>Totales · ' + LISTA.length + '</b> <small class="util-45">(sin canceladas)</small></td><td class="st-num"><b>' + dinero(total) + '</b></td><td colspan="2"></td></tr></tfoot></table></div>';
+    const porAutorizar = LISTA.filter(o => o.estado === 'borrador');
+    const aviso = porAutorizar.length ? '<p class="cuentas-aviso oc-por-autorizar">' + porAutorizar.length + (porAutorizar.length === 1 ? ' orden está' : ' órdenes están') + ' por autorizar (' + dinero(porAutorizar.reduce((t, o) => t + o.total, 0)) + '). '
+      + (esAdmin() ? 'Al autorizarlas se vuelven deuda: pasan a Cuentas por pagar como factura pendiente del proveedor.' : 'Las autoriza un administrador; hasta entonces no son deuda.') + '</p>' : '';
+    cont.innerHTML = aviso + '<div class="tabla-scroll tabla-dinero-caja"><table class="tabla-resumen tabla-dinero"><thead><tr><th>Estado</th><th>Folio</th><th>Fecha</th><th>Proveedor</th><th>Centro de costos</th><th>Concepto</th><th class="st-num">Total</th><th>¿Autorizada?</th><th>Pago</th><th></th></tr></thead><tbody>'
+      + filas + '</tbody><tfoot><tr><td colspan="6"><b>Totales · ' + LISTA.length + '</b> <small class="util-45">(sin canceladas)</small></td><td class="st-num"><b>' + dinero(total) + '</b></td><td colspan="3"></td></tr></tfoot></table></div>';
   }
 
   // ---------- Ventana: captura / consulta ----------
@@ -45,17 +52,24 @@ const Compras = (() => {
     $('oc-centro').innerHTML = '<option value="">Selecciona…</option>' + opciones(CENTROS.filter(c => c.activo || c.id === o?.centro_id).map(c => ({ v: c.id, n: c.nombre + (c.responsable ? ' · ' + c.responsable : '') })), o?.centro_id, x => x.n);
     $('oc-categoria').innerHTML = opciones(CATEGORIAS.map(c => ({ v: c.clave, n: c.nombre })), o?.categoria || 'otro', x => x.n);
   }
+  // Unidades: las activas del catálogo; si la partida trae una que ya no está (o escrita a mano antes), se respeta.
+  const opcionesUnidad = sel => {
+    const activas = UNIDADES.filter(u => u.activo);
+    const extra = sel && !activas.some(u => u.clave.toLowerCase() === String(sel).toLowerCase()) ? [{ clave: sel, nombre: '' }] : [];
+    return '<option value="">—</option>' + [...activas, ...extra].map(u => '<option value="' + esc(u.clave) + '"' + (sel && u.clave.toLowerCase() === String(sel).toLowerCase() ? ' selected' : '') + '>'
+      + esc(u.nombre ? u.nombre + ' (' + u.clave + ')' : u.clave) + '</option>').join('') + '<option value="__nueva">+ Agregar unidad…</option>';
+  };
   const filaHTML = (p = {}) => '<tr class="oc-fila"><td class="oc-num"></td>'
     + '<td><input type="number" class="oc-cantidad" min="0.001" step="any" value="' + esc(String(p.cantidad ?? 1)) + '" aria-label="Cantidad"></td>'
     + '<td><input class="oc-descripcion" maxlength="300" value="' + esc(p.descripcion || '') + '" placeholder="Qué se compra o qué servicio" aria-label="Descripción"></td>'
-    + '<td><input class="oc-unidad" maxlength="30" value="' + esc(p.unidad || '') + '" placeholder="PZA" aria-label="Unidad"></td>'
+    + '<td><select class="oc-unidad" aria-label="Unidad">' + opcionesUnidad(p.unidad) + '</select></td>'
     + '<td><input class="oc-clave" maxlength="60" value="' + esc(p.clave || '') + '" aria-label="Clave artículo"></td>'
     + '<td><input type="number" class="oc-precio" min="0.01" step="0.01" value="' + esc(p.precio === undefined ? '' : String(p.precio)) + '" placeholder="Precio" aria-label="Precio unitario"></td>'
     + '<td class="st-num oc-importe"></td><td><button type="button" class="btn-eliminar oc-quitar" title="Quitar partida" aria-label="Quitar partida">🗑</button></td></tr>';
   const modo = () => document.querySelector('input[name="oc-iva"]:checked')?.value || null;
   function recolectar() {
     return [...document.querySelectorAll('#oc-filas .oc-fila')].map(f => ({ cantidad: Number(f.querySelector('.oc-cantidad').value), descripcion: f.querySelector('.oc-descripcion').value.trim(),
-      unidad: f.querySelector('.oc-unidad').value.trim(), clave: f.querySelector('.oc-clave').value.trim(), precio: f.querySelector('.oc-precio').value === '' ? 0 : Number(f.querySelector('.oc-precio').value) }));
+      unidad: f.querySelector('.oc-unidad').value.replace('__nueva', ''), clave: f.querySelector('.oc-clave').value.trim(), precio: f.querySelector('.oc-precio').value === '' ? 0 : Number(f.querySelector('.oc-precio').value) }));
   }
   function recalcular() {
     const filas = [...document.querySelectorAll('#oc-filas .oc-fila')];
@@ -74,7 +88,6 @@ const Compras = (() => {
     $('oc-factura-a').value = o?.factura_a || 'SANEADREN';
     $('oc-fecha').value = o?.fecha || hoy();
     $('oc-requerida').value = o?.fecha_requerida || '';
-    $('oc-entrega').value = o?.entrega || '';
     $('oc-lead').value = o?.lead_id || '';
     $('oc-nota').value = o?.nota || '';
     $('oc-observaciones').value = o?.observaciones || '';
@@ -100,7 +113,7 @@ const Compras = (() => {
     abrirVentana('overlay-compra');
   }
   const datosForm = () => ({ version: ACTUAL?.version, proveedor_id: Number($('oc-proveedor').value) || null, centro_id: Number($('oc-centro').value) || null, categoria: $('oc-categoria').value,
-    factura_a: $('oc-factura-a').value, fecha: $('oc-fecha').value, fecha_requerida: $('oc-requerida').value || null, entrega: $('oc-entrega').value, lead_id: Number($('oc-lead').value) || null,
+    factura_a: $('oc-factura-a').value, fecha: $('oc-fecha').value, fecha_requerida: $('oc-requerida').value || null, lead_id: Number($('oc-lead').value) || null,
     nota: $('oc-nota').value, observaciones: $('oc-observaciones').value, solicitante_nombre: $('oc-solicitante').value, solicitante_cargo: $('oc-cargo').value, iva_modo: modo(), partidas: recolectar() });
   async function guardar(descargar) {
     const d = datosForm();
@@ -135,8 +148,8 @@ const Compras = (() => {
     let y = M + 82;
     const celda = (etq, val, x, w, h = 30) => { caja(x, y, w, h); t(etq, x + 4, y + 10, { s: 7, b: true }); doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.text(doc.splitTextToSize(String(val || ''), w - 8).slice(0, 2), x + 4, y + 21); };
     celda('PROVEEDOR', o.proveedor_nombre + (o.proveedor_rfc ? ' · RFC ' + o.proveedor_rfc : ''), M, W * 0.42); celda('CENTRO DE COSTOS', o.centro_nombre, M + W * 0.42, W * 0.25); celda('FACTURA A', o.factura_a, M + W * 0.67, W * 0.33); y += 30;
-    celda('ENTREGA', o.entrega || '', M, W * 0.42); celda('FECHA', fechaTxt(o.fecha), M + W * 0.42, W * 0.25); celda('FECHA REQUERIDA', fechaTxt(o.fecha_requerida), M + W * 0.67, W * 0.33); y += 30;
-    celda('NOTA', o.nota || '', M, W * 0.67); celda('ORDEN DE SERVICIO', o.orden_folio || '—', M + W * 0.67, W * 0.33); y += 38;
+    celda('FECHA', fechaTxt(o.fecha), M, W * 0.42); celda('FECHA REQUERIDA', fechaTxt(o.fecha_requerida), M + W * 0.42, W * 0.25); celda('ORDEN DE SERVICIO', o.orden_folio || '—', M + W * 0.67, W * 0.33); y += 30;
+    celda('NOTA', o.nota || '', M, W); y += 38;
     // Partidas
     doc.autoTable({ startY: y, margin: { left: M, right: M }, theme: 'grid',
       head: [['PARTIDA', 'CANTIDAD', 'DESCRIPCIÓN', 'UNIDAD', 'CLAVE ARTÍCULO', 'PRECIO', 'IMPORTE']],
@@ -181,8 +194,8 @@ const Compras = (() => {
     [['Código:', 'CM-F-03'], ['Revisión:', '0'], ['Fecha de elaboración:', '19/08/2023']].forEach(([a, b], i) => { ws.mergeCells(`D${i + 1}:E${i + 1}`); ws.getCell(`D${i + 1}`).value = a; ws.mergeCells(`F${i + 1}:G${i + 1}`); ws.getCell(`F${i + 1}`).value = b; ws.getCell(`F${i + 1}`).font = { bold: true }; });
     ws.getRow(1).height = 22; ws.getRow(2).height = 22; ws.getRow(3).height = 22;
     const dato = (fila, etq, val, col1, col2) => { ws.getCell(col1 + fila).value = etq; ws.getCell(col1 + fila).font = { bold: true, size: 8 }; ws.getCell(col2 + fila).value = val; };
-    dato(5, 'PROVEEDOR', o.proveedor_nombre, 'A', 'C'); dato(5, 'CENTRO DE COSTOS', o.centro_nombre, 'E', 'F'); dato(6, 'ENTREGA', o.entrega || '', 'A', 'C'); dato(6, 'FACTURA A', o.factura_a, 'E', 'F');
-    dato(7, 'NOTA', o.nota || '', 'A', 'C'); dato(7, 'FECHA', fechaTxt(o.fecha), 'E', 'F'); dato(8, 'ORDEN DE SERVICIO', o.orden_folio || '', 'A', 'C'); dato(8, 'FECHA REQUERIDA', fechaTxt(o.fecha_requerida), 'E', 'F');
+    dato(5, 'PROVEEDOR', o.proveedor_nombre, 'A', 'C'); dato(5, 'CENTRO DE COSTOS', o.centro_nombre, 'E', 'F'); dato(6, 'NOTA', o.nota || '', 'A', 'C'); dato(6, 'FACTURA A', o.factura_a, 'E', 'F');
+    dato(7, 'ORDEN DE SERVICIO', o.orden_folio || '', 'A', 'C'); dato(7, 'FECHA', fechaTxt(o.fecha), 'E', 'F'); dato(8, 'FECHA REQUERIDA', fechaTxt(o.fecha_requerida), 'E', 'F');
     const cab = ws.getRow(10); cab.values = ['PARTIDA', 'CANTIDAD', 'DESCRIPCIÓN', 'UNIDAD', 'CLAVE ARTÍCULO', 'PRECIO', 'IMPORTE'];
     cab.eachCell(c => { c.font = { bold: true }; c.fill = amarillo; c.border = borde; c.alignment = { horizontal: 'center' }; });
     o.partidas.forEach((p, i) => {
@@ -208,20 +221,76 @@ const Compras = (() => {
     saveAs(new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), 'orden_compra_' + o.folio + '.xlsx');
   }
 
-  // ---------- Centros de costo (administración) ----------
-  async function centros() {
+  // ---------- Catálogos editables: unidades (todos), centros de costo y categorías (administración) ----------
+  // Una sola ventana para los tres: cada renglón se corrige y se guarda solo; nada se borra, se da de baja.
+  const CATALOGOS = {
+    unidades: { titulo: 'Unidades de medida', lista: '/compras/unidades', item: u => '/compras/unidades/' + u.id, clave: u => u.id,
+      ayuda: 'Las unidades que aparecen en las partidas de la orden de compra. Cualquier usuario puede agregar o corregir; dar de baja solo la quita de la lista (las órdenes viejas la conservan).',
+      campos: [{ k: 'clave', t: 'Abreviatura', max: 10, ph: 'PZA', ancho: '7rem' }, { k: 'nombre', t: 'Nombre', max: 40, ph: 'Pieza' }] },
+    centros: { titulo: 'Centros de costo', lista: '/compras/centros', item: c => '/compras/centros/' + c.id, clave: c => c.id, admin: true,
+      ayuda: 'Solo administradores. Dar de baja un centro lo quita de la lista para órdenes nuevas; las órdenes viejas lo conservan.',
+      campos: [{ k: 'nombre', t: 'Centro de costos', max: 80, ph: 'Mantenimiento' }, { k: 'responsable', t: 'Responsable', max: 120, ph: 'Nombre', vacio: true }] },
+    categorias: { titulo: 'Categorías de gasto', lista: '/finanzas/categorias?todas=1', alta: '/finanzas/categorias', item: c => '/finanzas/categorias/' + encodeURIComponent(c.clave), clave: c => c.clave, admin: true,
+      ayuda: 'Solo administradores. Se usan en órdenes de compra, Cuentas por pagar y resultados. Renombrar una categoría actualiza también los gastos ya capturados; «Otro» no se puede dar de baja.',
+      campos: [{ k: 'nombre', t: 'Categoría', max: 80, ph: 'Ej. Papelería' }] },
+  };
+  let CAT = null, CAT_FILAS = [];
+  async function abrirCatalogo(tipo) {
+    CAT = CATALOGOS[tipo];
+    if (CAT.admin && !esAdmin()) { toast('Solo un administrador puede editar ' + CAT.titulo.toLowerCase()); return; }
+    $('cat-titulo').textContent = CAT.titulo; $('cat-ayuda').textContent = CAT.ayuda;
+    $('cat-cabeza').innerHTML = '<tr>' + CAT.campos.map(c => '<th>' + esc(c.t) + '</th>').join('') + '<th>Activo</th><th></th></tr>';
+    await pintarCatalogo();
+    abrirVentana('overlay-catalogo');
+  }
+  const inputCat = (c, v, i) => '<input data-campo="' + esc(c.k) + '" maxlength="' + c.max + '" value="' + esc(v ?? '') + '" placeholder="' + esc(c.ph) + '" aria-label="' + esc(c.t) + '"' + (c.ancho ? ' style="width:' + esc(c.ancho) + '"' : '') + (i === undefined ? '' : ' data-fila="' + i + '"') + '>';
+  async function pintarCatalogo() {
+    try { CAT_FILAS = await pedir(CAT.lista); } catch (err) { toast(err.message); return; }
+    $('cat-filas').innerHTML = CAT_FILAS.map((x, i) => '<tr class="' + (x.activo ? '' : 'fila-cancelada') + '" data-fila="' + i + '">' + CAT.campos.map(c => '<td>' + inputCat(c, x[c.k]) + '</td>').join('')
+      + '<td><label class="cat-activo"><input type="checkbox" data-campo="activo"' + (x.activo ? ' checked' : '') + '> ' + (x.activo ? 'Sí' : 'Baja') + '</label></td>'
+      + '<td><button type="button" class="btn btn-outline btn-chico" data-cat-guardar="' + i + '">Guardar</button></td></tr>').join('');
+    $('cat-nuevo').innerHTML = '<tr class="cat-fila-nueva">' + CAT.campos.map(c => '<td>' + inputCat(c, '') + '</td>').join('') + '<td></td><td><button type="button" class="btn btn-primario btn-chico" id="cat-agregar">+ Agregar</button></td></tr>';
+  }
+  const leerFila = tr => Object.fromEntries([...tr.querySelectorAll('[data-campo]')].map(x => [x.dataset.campo, x.type === 'checkbox' ? x.checked : x.value.trim()]));
+  async function guardarCatalogo(b) {
+    const tr = b.closest('tr'), datos = leerFila(tr);
+    const faltante = CAT.campos.find(c => !c.vacio && !datos[c.k]);
+    if (faltante) { toast('Escribe ' + faltante.t.toLowerCase()); tr.querySelector('[data-campo="' + faltante.k + '"]').focus(); return; }
+    if (b.id === 'cat-agregar') { delete datos.activo; await pedir(CAT.alta || CAT.lista, 'POST', datos); toast('Agregado a ' + CAT.titulo.toLowerCase()); }
+    else { await pedir(CAT.item(CAT_FILAS[Number(b.dataset.catGuardar)]), 'PUT', datos); toast('Guardado'); }
+    await pintarCatalogo();
     await catalogos();
-    const lista = CENTROS.map((c, i) => (i + 1) + '. ' + c.nombre + (c.responsable ? ' · ' + c.responsable : '') + (c.activo ? '' : ' (inactivo)')).join('\n');
-    const nombre = await solicitarDialogo({ titulo: 'Centros de costo', mensaje: lista + '\n\nPara agregar uno, escribe "Nombre · Responsable". Para editar uno, escribe su número, por ejemplo "3 · Subdirección · Luis Perea", o "3 · baja" para desactivarlo.', aceptar: 'Guardar', campo: { tipo: 'text', etiqueta: 'Centro de costos' } });
-    if (!nombre) return;
-    const partes = nombre.split('·').map(x => x.trim());
+    refrescarCatalogosEnOrden();
+  }
+  // Si la orden de compra está abierta, sus listas se actualizan sin perder lo capturado.
+  function refrescarCatalogosEnOrden() {
+    if (!$('overlay-compra').classList.contains('mostrar')) return;
+    const d = datosForm();
+    pintarSelects({ ...(ACTUAL || {}), ...d });
+    document.querySelectorAll('#oc-filas .oc-unidad').forEach(sel => { const v = sel.value === '__nueva' ? '' : sel.value; sel.innerHTML = opcionesUnidad(v); });
+  }
+  // «+ Agregar unidad…» desde una partida: abreviatura y nombre en un solo paso.
+  async function unidadRapida(sel) {
+    sel.value = '';
+    const txt = await solicitarDialogo({ titulo: 'Nueva unidad de medida', mensaje: 'Escribe la abreviatura y el nombre separados por un guion, por ejemplo «ML - Metro lineal». Queda disponible para todos.', aceptar: 'Agregar', campo: { tipo: 'text', etiqueta: 'Unidad' } });
+    if (!txt) return;
+    const partes = txt.split(/\s+-\s+|·/).map(x => x.trim()).filter(Boolean);
+    // Sin abreviatura: se arma con las iniciales («Metro lineal» → ML) o las 3 primeras letras («Costal» → COS).
+    const nombre = partes.length > 1 ? partes.slice(1).join(' ') : partes[0];
+    const palabras = nombre.split(/\s+/);
+    const clave = partes.length > 1 ? partes[0] : (palabras.length > 1 ? palabras.map(p => p[0]).join('') : nombre.slice(0, 3)).toUpperCase();
     try {
-      if (/^\d+$/.test(partes[0]) && CENTROS[Number(partes[0]) - 1]) {
-        const c = CENTROS[Number(partes[0]) - 1];
-        const cuerpo = partes[1]?.toLowerCase() === 'baja' ? { activo: false } : partes[1]?.toLowerCase() === 'alta' ? { activo: true } : { nombre: partes[1] || c.nombre, responsable: partes[2] ?? c.responsable };
-        await pedir('/compras/centros/' + c.id, 'PUT', cuerpo); toast('Centro de costos actualizado');
-      } else { await pedir('/compras/centros', 'POST', { nombre: partes[0], responsable: partes[1] || '' }); toast('Centro de costos agregado'); }
+      const u = await pedir('/compras/unidades', 'POST', { clave: clave.slice(0, 10), nombre });
+      await catalogos(); refrescarCatalogosEnOrden(); sel.value = u.clave; toast('Unidad agregada: ' + u.nombre);
     } catch (err) { toast(err.message); }
+  }
+
+  // Autorizar = la orden se vuelve deuda: pasa a Cuentas por pagar como factura pendiente del proveedor.
+  async function autorizar(o) {
+    if (!o) return false;
+    if (!await solicitarDialogo({ titulo: 'Autorizar orden de compra', mensaje: 'La orden ' + o.folio + ' por ' + dinero(o.total) + ' se vuelve deuda: pasa a Cuentas por pagar como factura pendiente de ' + o.proveedor_nombre + '. Después ya no se puede editar.', aceptar: 'Autorizar' })) return false;
+    try { await pedir('/compras/ordenes/' + o.id + '/autorizar', 'POST', {}); } catch (err) { toast(err.message); return false; }
+    toast('Orden ' + o.folio + ' autorizada: ya está en Cuentas por pagar'); cargar(); return true;
   }
 
   // ---------- Eventos ----------
@@ -229,10 +298,22 @@ const Compras = (() => {
   $('oc-buscar').addEventListener('input', () => { clearTimeout(tBuscar); tBuscar = setTimeout(cargar, 300); });
   $('oc-filtro').addEventListener('change', cargar);
   $('oc-nueva').addEventListener('click', () => abrir(null));
-  $('oc-centros').addEventListener('click', centros);
+  $('oc-centros').addEventListener('click', () => abrirCatalogo('centros'));
+  $('oc-categorias').addEventListener('click', () => abrirCatalogo('categorias'));
+  $('oc-unidades').addEventListener('click', () => abrirCatalogo('unidades'));
+  document.querySelector('#overlay-catalogo .modal-body').addEventListener('click', async e => {
+    const b = e.target.closest('button[data-cat-guardar], #cat-agregar'); if (!b || b.disabled) return;
+    b.disabled = true; try { await guardarCatalogo(b); } catch (err) { toast(err.message); } finally { b.disabled = false; }
+  });
+  document.querySelector('#overlay-catalogo .modal-body').addEventListener('keydown', e => {
+    if (e.key !== 'Enter' || e.target.tagName !== 'INPUT') return;
+    e.preventDefault(); e.target.closest('tr').querySelector('button')?.click();
+  });
+  $('oc-filas').addEventListener('change', e => { if (e.target.classList.contains('oc-unidad') && e.target.value === '__nueva') unidadRapida(e.target); });
   $('oc-lista').addEventListener('click', async e => {
     const b = e.target.closest('button'); if (!b) return;
     if (b.dataset.ocAbrir) abrir(Number(b.dataset.ocAbrir));
+    if (b.dataset.ocAutorizar) { await autorizar(LISTA.find(o => o.id === Number(b.dataset.ocAutorizar))); return; }
     if (b.dataset.ocPdf) { try { await pdf(await pedir('/compras/ordenes/' + Number(b.dataset.ocPdf))); } catch (err) { toast(err.message); } }
   });
   $('oc-agregar').addEventListener('click', () => { $('oc-filas').insertAdjacentHTML('beforeend', filaHTML()); recalcular(); $('oc-filas').lastElementChild.querySelector('.oc-descripcion').focus(); });
@@ -255,10 +336,7 @@ const Compras = (() => {
       if (b.id === 'oc-guardar-pdf') await guardar(true);
       if (b.id === 'oc-pdf') await pdf(ACTUAL);
       if (b.id === 'oc-excel') await excel(ACTUAL);
-      if (b.id === 'oc-autorizar') {
-        if (!await solicitarDialogo({ titulo: 'Autorizar orden de compra', mensaje: 'La orden ' + ACTUAL.folio + ' por ' + dinero(ACTUAL.total) + ' pasa a Cuentas por pagar como factura pendiente de ' + ACTUAL.proveedor_nombre + '. Después ya no se puede editar.', aceptar: 'Autorizar' })) return;
-        const r = await pedir('/compras/ordenes/' + ACTUAL.id + '/autorizar', 'POST', {}); toast('Orden autorizada: ya está en Cuentas por pagar'); await abrir(r.orden.id); cargar();
-      }
+      if (b.id === 'oc-autorizar' && await autorizar(ACTUAL)) await abrir(ACTUAL.id);
       if (b.id === 'oc-cancelar') {
         const motivo = await solicitarDialogo({ titulo: 'Cancelar orden de compra', mensaje: ACTUAL.estado === 'autorizada' ? 'También se cancela su cuenta por pagar.' : 'La orden queda cancelada (se conserva en la lista).', aceptar: 'Cancelar orden', campo: { tipo: 'text', etiqueta: 'Motivo' } });
         if (!motivo) return;

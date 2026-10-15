@@ -18,7 +18,11 @@ const METODOS = ['transferencia', 'efectivo', 'deposito', 'cheque', 'tarjeta', '
 // A proveedores y terceros también se les paga por nómina (p. ej. "Nómina semana 40").
 const METODOS_PROV = [...METODOS, 'nomina'];
 const TIPOS_COBRO = ['anticipo', 'pago', 'ajuste'];
-const CATEGORIAS = {
+// Categorías de gasto: estas son las iniciales; viven en la tabla categorias_gasto y un administrador
+// las edita. CATEGORIAS (clave → nombre, incluye las inactivas para mostrar gastos viejos) se recarga
+// de la base al arrancar y en cada cambio; es el mismo objeto que usan tablero y compras.
+const CATEGORIAS = {};
+const CATEGORIAS_INICIALES = {
   residuos: 'Disposición de residuos', combustible: 'Combustible', refacciones: 'Refacciones y mantenimiento',
   renta_maquinaria: 'Renta de maquinaria', nomina_eventual: 'Nómina eventual', casetas_viaticos: 'Casetas y viáticos',
   servicios_oficina: 'Oficina y servicios', subcontratacion: 'Subcontratación de servicios', otro: 'Otro',
@@ -156,6 +160,20 @@ function migrar(db) {
   trigger('cobros_sin_borrar', `BEFORE DELETE ON cobros BEGIN SELECT RAISE(ABORT, 'Los pagos no se borran: se cancelan'); END`);
   trigger('pagos_proveedor_sin_borrar', `BEFORE DELETE ON pagos_proveedor BEGIN SELECT RAISE(ABORT, 'Los pagos no se borran: se cancelan'); END`);
   trigger('cuentas_por_pagar_sin_borrar', `BEFORE DELETE ON cuentas_por_pagar BEGIN SELECT RAISE(ABORT, 'Las cuentas no se borran: se cancelan'); END`);
+  db.exec(`CREATE TABLE IF NOT EXISTS categorias_gasto (
+    clave TEXT PRIMARY KEY CHECK(length(clave) BETWEEN 1 AND 40),
+    nombre TEXT NOT NULL CHECK(length(trim(nombre)) BETWEEN 1 AND 80),
+    activo INTEGER NOT NULL DEFAULT 1 CHECK(activo IN (0, 1)),
+    orden INTEGER NOT NULL DEFAULT 0
+  )`);
+  if (!db.prepare('SELECT COUNT(*) n FROM categorias_gasto').get().n) {
+    const ins = db.prepare('INSERT INTO categorias_gasto (clave, nombre, orden) VALUES (?, ?, ?)');
+    db.transaction(() => Object.entries(CATEGORIAS_INICIALES).forEach(([k, n], i) => ins.run(k, n, i + 1)))();
+  }
+}
+function cargarCategorias(db) {
+  for (const k of Object.keys(CATEGORIAS)) delete CATEGORIAS[k];
+  for (const c of db.prepare('SELECT clave, nombre FROM categorias_gasto ORDER BY orden, nombre').all()) CATEGORIAS[c.clave] = c.nombre;
 }
 
 // ---------- Utilidades de dinero y fechas ----------
@@ -251,6 +269,7 @@ function describirCuenta(f, hoy) {
 
 module.exports = function finanzas(app, db, h, unicos) {
   migrar(db);
+  cargarCategorias(db);
   const rol = req => req.usuarioSesion.rol;
   const permitido = (req, res, roles, mensaje) => {
     if (roles.includes(rol(req))) return true;
@@ -577,9 +596,39 @@ module.exports = function finanzas(app, db, h, unicos) {
       });
   }
 
+  // Sin ?todas solo las activas (para elegir). Con ?todas=1 también las dadas de baja (para editarlas).
   app.get('/api/finanzas/categorias', h((req, res) => {
     if (!permitido(req, res, PUEDE_VER_CARTERA)) return;
-    res.json(Object.entries(CATEGORIAS).map(([clave, nombre]) => ({ clave, nombre })));
+    const todas = req.query.todas === '1';
+    res.json(db.prepare(`SELECT clave, nombre, activo FROM categorias_gasto ${todas ? '' : 'WHERE activo = 1'} ORDER BY activo DESC, orden, nombre`).all());
+  }));
+  // Solo un administrador agrega, renombra o da de baja categorías. La clave no cambia nunca (los
+  // gastos guardan la clave), así que renombrar actualiza todo lo ya capturado.
+  const claveDe = nombre => claveNombre(nombre).replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '').slice(0, 30) || 'categoria';
+  app.post('/api/finanzas/categorias', h((req, res) => {
+    if (rol(req) !== 'admin') return res.status(403).json({ error: 'Solo un administrador puede editar las categorías de gasto' });
+    const nombre = texto(req.body.nombre, 80);
+    if (!nombre) return res.status(400).json({ error: 'Escribe el nombre de la categoría' });
+    if (db.prepare('SELECT 1 FROM categorias_gasto WHERE lower(nombre) = lower(?)').get(nombre)) return res.status(409).json({ error: 'Ya existe esa categoría' });
+    let clave = claveDe(nombre);
+    for (let n = 2; db.prepare('SELECT 1 FROM categorias_gasto WHERE clave = ?').get(clave); n++) clave = claveDe(nombre).slice(0, 27) + '_' + n;
+    const orden = db.prepare('SELECT COALESCE(MAX(orden), 0) + 1 o FROM categorias_gasto').get().o;
+    db.prepare('INSERT INTO categorias_gasto (clave, nombre, orden) VALUES (?, ?, ?)').run(clave, nombre, orden);
+    cargarCategorias(db);
+    res.status(201).json(db.prepare('SELECT clave, nombre, activo FROM categorias_gasto WHERE clave = ?').get(clave));
+  }));
+  app.put('/api/finanzas/categorias/:clave', h((req, res) => {
+    if (rol(req) !== 'admin') return res.status(403).json({ error: 'Solo un administrador puede editar las categorías de gasto' });
+    const c = db.prepare('SELECT * FROM categorias_gasto WHERE clave = ?').get(req.params.clave);
+    if (!c) return res.status(404).json({ error: 'Categoría no encontrada' });
+    const nombre = req.body.nombre === undefined ? c.nombre : texto(req.body.nombre, 80);
+    if (!nombre) return res.status(400).json({ error: 'Escribe el nombre de la categoría' });
+    if (db.prepare('SELECT 1 FROM categorias_gasto WHERE lower(nombre) = lower(?) AND clave <> ?').get(nombre, c.clave)) return res.status(409).json({ error: 'Ya existe esa categoría' });
+    const activo = req.body.activo === undefined ? c.activo : (req.body.activo ? 1 : 0);
+    if (!activo && c.clave === 'otro') return res.status(400).json({ error: '«Otro» no se puede dar de baja: es la categoría de respaldo' });
+    db.prepare('UPDATE categorias_gasto SET nombre = ?, activo = ? WHERE clave = ?').run(nombre, activo, c.clave);
+    cargarCategorias(db);
+    res.json(db.prepare('SELECT clave, nombre, activo FROM categorias_gasto WHERE clave = ?').get(c.clave));
   }));
 
   app.get('/api/finanzas/proveedores', h((req, res) => {

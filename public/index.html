@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Saneadren · Cotizaciones y Servicios</title>
-<link rel="stylesheet" href="styles.css?v=cli3">
+<link rel="stylesheet" href="styles.css?v=m30">
 <link rel="stylesheet" href="servicios-tabla.css">
 <link rel="stylesheet" href="flujo.css">
 </head>
@@ -278,7 +278,7 @@
   <section class="vista" id="vista-compras">
     <div class="vista-encabezado">
       <div><h2>Órdenes de compra</h2><p class="ayuda">Se capturan como borrador; al autorizarlas (administración) pasan solas a Cuentas por pagar como factura pendiente del proveedor. Se descargan con el formato CM-F-03.</p></div>
-      <div class="btn-group"><button type="button" class="btn btn-primario" id="oc-nueva">+ Nueva orden de compra</button><button type="button" class="btn btn-outline solo-admin" id="oc-centros">Centros de costo</button></div>
+      <div class="btn-group"><button type="button" class="btn btn-primario" id="oc-nueva">+ Nueva orden de compra</button><button type="button" class="btn btn-outline" id="oc-unidades">Unidades de medida</button><button type="button" class="btn btn-outline solo-admin" id="oc-centros">Centros de costo</button><button type="button" class="btn btn-outline solo-admin" id="oc-categorias">Categorías de gasto</button></div>
     </div>
     <div class="filtros">
       <select id="oc-filtro" aria-label="Mostrar"><option value="">Todas</option><option value="borrador">Borradores (por autorizar)</option><option value="pendiente_pago">Autorizadas por pagar</option><option value="autorizada">Autorizadas</option><option value="cancelada">Canceladas</option></select>
@@ -712,7 +712,6 @@
         <div class="campo"><label for="oc-factura-a">Factura a</label><input id="oc-factura-a" maxlength="120" placeholder="SANEADREN"></div>
         <div class="campo"><label for="oc-fecha">Fecha</label><input type="date" id="oc-fecha"></div>
         <div class="campo"><label for="oc-requerida">Fecha requerida</label><input type="date" id="oc-requerida"></div>
-        <div class="campo"><label for="oc-entrega">Entrega</label><input id="oc-entrega" maxlength="200" placeholder="Lugar o forma de entrega"></div>
         <div class="campo"><label for="oc-lead">Orden de servicio relacionada (opcional)</label><input id="oc-lead" inputmode="numeric" placeholder="Número de la orden, ej. 125"></div>
         <div class="campo full"><label for="oc-nota">Nota</label><input id="oc-nota" maxlength="500" placeholder="Ej. GASTOS PAGADORA SEM 40"></div>
       </div>
@@ -735,6 +734,18 @@
         <div class="campo"><label for="oc-cargo">Cargo</label><input id="oc-cargo" maxlength="120"></div>
       </div>
       <div class="barra-acciones oc-acciones" id="oc-acciones"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ====== OVERLAY: CATÁLOGO EDITABLE (unidades, centros de costo, categorías de gasto) ====== -->
+<div class="overlay" id="overlay-catalogo">
+  <div class="modal modal-catalogo">
+    <div class="modal-header"><div><span class="flujo-kicker">CATÁLOGO</span><h2 id="cat-titulo">Catálogo</h2></div>
+      <button class="close-btn" type="button" onclick="document.getElementById('overlay-catalogo').classList.remove('mostrar')">✕</button></div>
+    <div class="modal-body">
+      <p class="ayuda" id="cat-ayuda"></p>
+      <div class="tabla-scroll"><table class="tabla-resumen cat-tabla"><thead id="cat-cabeza"></thead><tbody id="cat-filas"></tbody><tfoot id="cat-nuevo"></tfoot></table></div>
     </div>
   </div>
 </div>
@@ -1023,10 +1034,10 @@
 <script src="servicios-tabla.js?v=pg2"></script>
 <script src="flujo.js?v=cli2"></script>
 <script src="cuentas.js?v=pg2"></script>
-<script src="finanzas.js?v=cli1"></script>
+<script src="finanzas.js?v=m30"></script>
 <script src="calendario.js?v=pg2"></script>
 <script src="tablero.js?v=pg2"></script>
-<script src="compras.js?v=oc3"></script>
+<script src="compras.js?v=oc4"></script>
 <script src="app.js?v=cli1"></script>
 <script src="prospeccion.js?v=cli1"></script>
 </body>
