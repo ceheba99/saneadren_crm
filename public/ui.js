@@ -29,7 +29,7 @@ document.addEventListener('submit', e => window.ocultarContrasenas(e.target), tr
   const layer = document.createElement('div');
   layer.className = 'overlay';
   layer.id = 'overlay-confirmacion';
-  layer.innerHTML = `<div class="modal dialogo-confirmacion"><div class="modal-header"><h2 id="dialogo-titulo"></h2><button class="close-btn" type="button" aria-label="Cerrar ventana">✕</button></div><div class="modal-body dialogo-contenido"><p class="dialogo-mensaje" id="dialogo-mensaje"></p><div class="campo" id="dialogo-campo-wrap" hidden><label for="dialogo-campo">Valor</label><input id="dialogo-campo" autocomplete="new-password" maxlength="128"></div><div class="dialogo-acciones"><button class="btn btn-secundario" id="dialogo-cancelar">Cancelar</button><button class="btn btn-peligro" id="dialogo-aceptar"></button></div></div></div>`;
+  layer.innerHTML = `<div class="modal dialogo-confirmacion"><div class="modal-header"><h2 id="dialogo-titulo"></h2><button class="close-btn" type="button" aria-label="Cerrar ventana">✕</button></div><div class="modal-body dialogo-contenido"><p class="dialogo-mensaje" id="dialogo-mensaje"></p><div class="campo" id="dialogo-campo-wrap" hidden><label for="dialogo-campo">Valor</label><input id="dialogo-campo" autocomplete="new-password" maxlength="128"><p class="dialogo-campo-aviso" id="dialogo-campo-aviso" role="alert" hidden></p></div><div class="dialogo-acciones"><button class="btn btn-secundario" id="dialogo-cancelar">Cancelar</button><button class="btn btn-peligro" id="dialogo-aceptar"></button></div></div></div>`;
   document.body.append(layer);
   // «¿Es el mismo cliente?»: cuando el CRM encuentra clientes parecidos antes de crear uno nuevo.
   // Resuelve { mismo: id } (agregar el teléfono a ese cliente), { distinto: [ids] } (crear uno nuevo) o null (cancelar).
@@ -74,7 +74,14 @@ document.addEventListener('submit', e => window.ocultarContrasenas(e.target), tr
     input.parentNode.querySelector('.ojo-pass').hidden = campo?.tipo !== 'password';
     window.ocultarContrasenas(wrap);
     wrap.querySelector('label').textContent = campo?.etiqueta || (campo?.tipo === 'password' ? 'Contraseña' : 'Valor');
-    document.getElementById('dialogo-aceptar').onclick = () => finish(campo ? (input.value || null) : true);
+    // Con campo.requerido, si está vacío no se cierra: se marca el campo y se dice qué falta.
+    const avisoCampo = document.getElementById('dialogo-campo-aviso');
+    if (avisoCampo) avisoCampo.hidden = true;
+    input.classList.remove('campo-error');
+    document.getElementById('dialogo-aceptar').onclick = () => {
+      if (campo?.requerido && !input.value.trim()) { input.classList.add('campo-error'); if (avisoCampo) { avisoCampo.textContent = campo.requerido; avisoCampo.hidden = false; } input.focus(); return; }
+      finish(campo ? (input.value || null) : true);
+    };
     input.onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); document.getElementById('dialogo-aceptar').click(); } };
     if (campo) setTimeout(() => input.focus(), 0);
     layer.classList.add('mostrar');

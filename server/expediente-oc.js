@@ -71,7 +71,7 @@ module.exports = function expedienteOC(app, db, h, { leer, esAdmin, folioOC }) {
     if (!c) return null;
     const pagos = db.prepare('SELECT id, fecha, monto_cent, metodo, referencia, cancelado, motivo_cancelacion FROM pagos_proveedor WHERE cxp_id = ? ORDER BY fecha, id').all(c.id);
     const pagado = pagos.filter(p => !p.cancelado).reduce((t, p) => t + p.monto_cent, 0);
-    return { id: c.id, factura_folio: c.factura_folio, total: c.total_cent / 100, pagado: pagado / 100, saldo: c.cancelada ? 0 : (c.total_cent - pagado) / 100, vence: c.fecha_vencimiento, cancelada: !!c.cancelada,
+    return { id: c.id, dias_credito: c.dias_credito, factura_folio: c.factura_folio, total: c.total_cent / 100, pagado: pagado / 100, saldo: c.cancelada ? 0 : (c.total_cent - pagado) / 100, vence: c.fecha_vencimiento, cancelada: !!c.cancelada,
       pagos: pagos.map(p => ({ ...p, monto: p.monto_cent / 100 })) };
   }
 

@@ -46,7 +46,7 @@ const CFDI = ({ total, rfc = 'RBA010101AB1', uuid = 'A1B2C3D4-0000-4000-8000-000
   [s, j] = await pedir('POST', '/compras/ordenes', V, base); const oc = j; revisa(s === 201 && oc.total === 2320, 'orden de $2,320');
   [s, j] = await pedir('PUT', '/compras/ordenes/' + oc.id, V, { ...base, version: oc.version, nota: 'Urgente para el E-37', partidas: [{ cantidad: 3, descripcion: 'Manguera de succión', unidad: 'PZA', precio: 1000 }] });
   revisa(s === 200 && j.total === 3480, 'se edita: 3 piezas, $3,480');
-  [s, j] = await pedir('POST', '/compras/ordenes/' + oc.id + '/autorizar', A); revisa(s === 200, 'se autoriza');
+  [s, j] = await pedir('POST', '/compras/ordenes/' + oc.id + '/autorizar', A, { dias_credito: 30 }); revisa(s === 200, 'se autoriza');
   [s, j] = await pedir('GET', '/compras/ordenes/' + oc.id + '/expediente', V);
   const acciones = j.historial.map(h => h.accion);
   revisa(['creada', 'editada', 'autorizada'].every(a => acciones.includes(a)), 'historial de la orden: creada, editada y autorizada (con quién y cuándo)', acciones);

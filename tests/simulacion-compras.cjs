@@ -70,13 +70,20 @@ const SEMANA_40 = [['REPARACION FLECHA CARDAN JOSE LUIS ACOSTA', 2000], ['PAGO R
   [s, j] = await pedir('PUT', '/compras/ordenes/' + oc.id, V, { ...base, version: 1 }); revisa(s === 409, 'editar con una versión vieja avisa del conflicto');
   // Autorizar
   [s, j] = await pedir('POST', '/compras/ordenes/' + oc.id + '/autorizar', V, {}); revisa(s === 403, 'ventas no autoriza órdenes de compra');
-  [s, j] = await pedir('POST', '/compras/ordenes/' + oc.id + '/autorizar', A, {});
+  [s, j] = await pedir('POST', '/compras/ordenes/' + oc.id + '/autorizar', A, {}); revisa(s === 400 && j.codigo === 'FALTA_CREDITO' && j.credito_proveedor === 7, 'sin escribir los días de crédito no se autoriza (y dice cuántos suele dar el proveedor)', [s, j]);
+  [s, j] = await pedir('POST', '/compras/ordenes/' + oc.id + '/autorizar', A, { dias_credito: '' }); revisa(s === 400, 'crédito vacío no cuenta');
+  [s, j] = await pedir('POST', '/compras/ordenes/' + oc.id + '/autorizar', A, { dias_credito: -3 }); revisa(s === 400, 'crédito negativo no');
+  [s, j] = await pedir('POST', '/compras/ordenes/' + oc.id + '/autorizar', A, { dias_credito: 2.5 }); revisa(s === 400, 'crédito con decimales no');
+  [s, j] = await pedir('POST', '/compras/ordenes/' + oc.id + '/autorizar', A, { dias_credito: 400 }); revisa(s === 400, 'crédito de más de un año no');
+  [s, j] = await pedir('GET', '/compras/ordenes/' + oc.id, A); revisa(j.estado === 'borrador' && !j.cxp_id, 'los intentos fallidos no la autorizaron');
+  [s, j] = await pedir('POST', '/compras/ordenes/' + oc.id + '/autorizar', A, { dias_credito: 7 });
   revisa(s === 200 && j.orden.estado === 'autorizada' && j.cxp_id, 'el administrador autoriza la orden', [s, j.error]);
   const cxp = (await pedir('GET', '/finanzas/cxp?vista=todas', A))[1].find(x => x.id === j.cxp_id);
   revisa(cxp && cxp.total === 467127.77 && cxp.saldo === 467127.77 && cxp.fecha_documento === '2026-10-02' && cxp.fecha_vencimiento === '2026-10-09' && cxp.concepto.startsWith(oc.folio) && /Operaciones/.test(cxp.notas),
-    'pasa a Cuentas por pagar: total, vence según crédito del proveedor (7 días), concepto con el folio y centro de costos', cxp);
+    'pasa a Cuentas por pagar: total, vence según el crédito escrito (7 días), concepto con el folio y centro de costos', cxp);
+  revisa(/Crédito: 7 días/.test(cxp.notas), 'la cuenta por pagar dice el crédito de la compra', cxp.notas);
   [s, j] = await pedir('PUT', '/compras/ordenes/' + oc.id, A, { ...base }); revisa(s === 409, 'una orden autorizada ya no se edita');
-  [s, j] = await pedir('POST', '/compras/ordenes/' + oc.id + '/autorizar', A, {}); revisa(s === 409, 'no se autoriza dos veces');
+  [s, j] = await pedir('POST', '/compras/ordenes/' + oc.id + '/autorizar', A, { dias_credito: 7 }); revisa(s === 409, 'no se autoriza dos veces');
   // Pago parcial y cancelar
   await pedir('POST', '/finanzas/cxp/' + cxp.id + '/pagos', A, { monto: 100000, metodo: 'transferencia' });
   [s, j] = await pedir('GET', '/compras/ordenes/' + oc.id, V);
@@ -84,7 +91,10 @@ const SEMANA_40 = [['REPARACION FLECHA CARDAN JOSE LUIS ACOSTA', 2000], ['PAGO R
   [s, j] = await pedir('POST', '/compras/ordenes/' + oc.id + '/cancelar', A, { motivo: 'Se capturó mal' });
   revisa(s === 409, 'no se cancela una orden que ya tiene pagos al proveedor', [s, j.error]);
   [s, j] = await pedir('POST', '/compras/ordenes/' + oc2.id + '/cancelar', V, { motivo: 'no' }); revisa(s === 400, 'cancelar exige motivo');
-  [s, j] = await pedir('POST', '/compras/ordenes/' + oc2.id + '/autorizar', A, {});
+  [s, j] = await pedir('POST', '/compras/ordenes/' + oc2.id + '/autorizar', A, { dias_credito: 0 });
+  revisa(s === 200 && (await pedir('GET', '/finanzas/cxp?vista=todas', A))[1].find(x => x.id === j.cxp_id)?.fecha_vencimiento === j.orden.fecha, 'de contado (0 días): vence el mismo día de la orden');
+  [s, j] = await pedir('GET', '/auditoria?entidad=orden_compra&id=' + oc2.id, A); revisa(j.some(r => /de contado \(el proveedor suele dar 7\)/.test(r.detalle || '')), 'si el crédito es distinto al habitual del proveedor, queda anotado');
+  [s, j] = await pedir('GET', '/compras/ordenes/' + oc2.id, A);
   [s, j] = await pedir('POST', '/compras/ordenes/' + oc2.id + '/cancelar', V, { motivo: 'El proveedor no tiene existencia' }); revisa(s === 403, 'ventas no cancela una orden autorizada');
   [s, j] = await pedir('POST', '/compras/ordenes/' + oc2.id + '/cancelar', A, { motivo: 'El proveedor no tiene existencia' });
   revisa(s === 200 && j.orden.estado === 'cancelada', 'el administrador cancela una autorizada sin pagos', [s, j.error]);
@@ -144,7 +154,7 @@ const SEMANA_40 = [['REPARACION FLECHA CARDAN JOSE LUIS ACOSTA', 2000], ['PAGO R
   [s, j] = await pedir('POST', '/compras/ordenes/' + ocPapel.id + '/autorizar', V); revisa(s === 403, 'ventas no autoriza (no se vuelve deuda)');
   [s, j] = await pedir('GET', '/finanzas/cxp', A);
   const antes = (Array.isArray(j) ? j : j.cuentas || []).length;
-  [s, j] = await pedir('POST', '/compras/ordenes/' + ocPapel.id + '/autorizar', A);
+  [s, j] = await pedir('POST', '/compras/ordenes/' + ocPapel.id + '/autorizar', A, { dias_credito: 15 });
   revisa(s === 200 && j.orden.estado === 'autorizada' && j.cxp_id, 'al autorizarla pasa a Cuentas por pagar', [s, j.error]);
   [s, j] = await pedir('GET', '/finanzas/cxp', A);
   revisa((Array.isArray(j) ? j : j.cuentas || []).length === antes + 1, 'aparece una cuenta por pagar nueva');

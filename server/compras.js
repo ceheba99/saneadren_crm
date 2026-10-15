@@ -65,6 +65,8 @@ function migrar(db) {
   const cols = db.prepare('PRAGMA table_info(ordenes_compra)').all().map(c => c.name);
   for (const [c, t] of [['solicitud_id', 'INTEGER'], ['recibida_at', 'TEXT'], ['recibida_por', 'INTEGER'], ['recibida_por_nombre', 'TEXT'], ['recibio_nombre', 'TEXT'], ['recepcion_nota', 'TEXT']])
     if (!cols.includes(c)) db.exec(`ALTER TABLE ordenes_compra ADD COLUMN ${c} ${t}`);
+  // Días de crédito de CADA compra: se escriben al autorizarla (no se toman solos del proveedor).
+  if (!db.prepare('PRAGMA table_info(cuentas_por_pagar)').all().some(c => c.name === 'dias_credito')) db.exec('ALTER TABLE cuentas_por_pagar ADD COLUMN dias_credito INTEGER');
   if (!db.prepare('SELECT COUNT(*) n FROM unidades_medida').get().n) {
     const ins = db.prepare('INSERT INTO unidades_medida (clave, nombre, orden) VALUES (?, ?, ?)');
     db.transaction(() => UNIDADES_INICIALES.forEach(([c, n], i) => ins.run(c, n, i + 1)))();
@@ -338,19 +340,23 @@ module.exports = function compras(app, db, h, finanzas) {
     if (!o) return res.status(404).json({ error: 'Orden de compra no encontrada' });
     if (o.estado !== 'borrador') return res.status(409).json({ error: o.estado === 'autorizada' ? 'Esta orden ya está autorizada' : 'Esta orden está cancelada' });
     const prov = db.prepare('SELECT * FROM proveedores WHERE id = ?').get(o.proveedor_id);
-    const vence = req.body && req.body.fecha_vencimiento ? req.body.fecha_vencimiento : sumarDias(o.fecha, prov.dias_credito);
-    if (!fechaOk(vence) || vence < o.fecha) return res.status(400).json({ error: 'El vencimiento no puede ser antes de la fecha de la orden' });
+    // Obligatorio: cuántos días de crédito tiene ESTA compra (0 = de contado). Con eso se calcula cuándo vence.
+    const crudo = req.body?.dias_credito;
+    const dias = crudo === undefined || crudo === null || String(crudo).trim() === '' ? NaN : Number(crudo);
+    if (!Number.isInteger(dias) || dias < 0 || dias > 365) return res.status(400).json({ error: 'Escribe cuántos días de crédito tiene esta compra (0 si es de contado, máximo 365)', codigo: 'FALTA_CREDITO', credito_proveedor: prov.dias_credito ?? null });
+    const vence = sumarDias(o.fecha, dias);
     const resumen = o.partidas[0].descripcion + (o.partidas.length > 1 ? ` y ${o.partidas.length - 1} más` : '');
     const concepto = (o.folio + ' · ' + resumen).slice(0, 200);
     const cxpId = db.transaction(() => {
-      const info = db.prepare(`INSERT INTO cuentas_por_pagar (proveedor_id, categoria, concepto, fecha_documento, fecha_vencimiento, total_cent, lead_id, notas, registrado_por)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(o.proveedor_id, o.categoria, concepto, o.fecha, vence, o.total_cent, o.lead_id,
-        `Orden de compra ${o.folio} · Centro de costos: ${o.centro_nombre}`, req.usuarioSesion.id);
+      const info = db.prepare(`INSERT INTO cuentas_por_pagar (proveedor_id, categoria, concepto, fecha_documento, fecha_vencimiento, total_cent, lead_id, notas, registrado_por, dias_credito)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(o.proveedor_id, o.categoria, concepto, o.fecha, vence, o.total_cent, o.lead_id,
+        `Orden de compra ${o.folio} · Centro de costos: ${o.centro_nombre} · Crédito: ${dias ? dias + ' días' : 'de contado'}`, req.usuarioSesion.id, dias);
       db.prepare("UPDATE ordenes_compra SET estado = 'autorizada', cxp_id = ?, autorizada_por = ?, autorizada_at = datetime('now','localtime'), version = version + 1 WHERE id = ?")
         .run(info.lastInsertRowid, req.usuarioSesion.id, o.id);
       return info.lastInsertRowid;
     })();
-    audit(req, o.id, 'autorizada', `Se volvió deuda: cuenta por pagar de ${fmt(o.total_cent)} con ${o.proveedor_nombre}, vence el ${vence.split('-').reverse().join('/')}`);
+    const distinto = prov.dias_credito != null && Number(prov.dias_credito) !== dias ? ` (el proveedor suele dar ${prov.dias_credito})` : '';
+    audit(req, o.id, 'autorizada', `Se volvió deuda: cuenta por pagar de ${fmt(o.total_cent)} con ${o.proveedor_nombre} · crédito ${dias ? dias + ' días' : 'de contado'}${distinto}, vence el ${vence.split('-').reverse().join('/')}`);
     res.json({ ok: true, cxp_id: cxpId, orden: leer(o.id) });
   }));
   app.post('/api/compras/ordenes/:id/cancelar', h((req, res) => {
