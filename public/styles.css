@@ -1391,3 +1391,47 @@ body:not(.es-costos) .solo-costos{display:none !important;}
 /* Diálogo con dato obligatorio (p. ej. días de crédito al autorizar) */
 #dialogo-campo.campo-error{border-color:#b8443a;box-shadow:0 0 0 2px rgba(184,68,58,.18);}
 .dialogo-campo-aviso{margin:6px 0 0;color:#b8443a;font-weight:600;font-size:13px;}
+
+/* ===== Buscador general ===== */
+.sr-solo{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;}
+.btn-buscar-general{display:inline-flex;align-items:center;gap:8px;min-height:40px;padding:6px 12px;border-radius:999px;border:1px solid rgba(255,255,255,.25);background:rgba(255,255,255,.08);color:#fff;font:inherit;font-size:14px;cursor:pointer;}
+.btn-buscar-general:hover,.btn-buscar-general:focus-visible{background:rgba(255,255,255,.16);}
+.btn-buscar-texto{color:rgba(255,255,255,.8);}
+.btn-buscar-atajo{font-size:11px;border:1px solid rgba(255,255,255,.3);border-radius:4px;padding:1px 5px;color:rgba(255,255,255,.75);}
+.modal-buscar{max-width:760px;width:calc(100vw - 32px);align-self:flex-start;margin-top:6vh;}
+.modal-buscar .modal-header{gap:10px;}
+.buscar-barra{flex:1;display:flex;align-items:center;gap:10px;background:#fff;border-radius:10px;padding:6px 12px;}
+.buscar-barra input{flex:1;border:0;outline:0;font:inherit;font-size:17px;min-height:38px;background:transparent;color:#1a1d23;min-width:0;}
+.buscar-estado{font-size:12px;color:var(--texto-sec);white-space:nowrap;}
+.buscar-resultados{max-height:68vh;overflow:auto;padding:12px 16px 18px;display:flex;flex-direction:column;gap:12px;}
+.buscar-grupo h3{margin:0 0 6px;font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--texto-sec);}
+.buscar-grupo h3 small{background:var(--gris-50, #f1f1ef);border-radius:999px;padding:1px 7px;margin-left:4px;}
+.buscar-grupo ul{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:4px;}
+.buscar-item{width:100%;display:flex;align-items:center;gap:10px;text-align:left;background:#fff;border:1px solid var(--gris-300);border-radius:8px;padding:8px 10px;font:inherit;cursor:pointer;color:inherit;}
+.buscar-item:hover,.buscar-item.activo{border-color:var(--amarillo);background:#fffbea;}
+.buscar-item.exacta{border-color:#3a7d5c;}
+.buscar-icono{font-size:18px;flex-shrink:0;}
+.buscar-texto{flex:1;min-width:0;display:flex;flex-direction:column;}
+.buscar-linea1{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.buscar-texto small{color:var(--texto-sec);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.buscar-folio{font-variant-numeric:tabular-nums;}
+.buscar-exacta{font-size:11px;font-weight:700;color:#fff;background:#3a7d5c;border-radius:4px;padding:1px 6px;}
+.buscar-lado{display:flex;flex-direction:column;align-items:flex-end;flex-shrink:0;font-size:13px;}
+.buscar-lado small{color:var(--texto-sec);font-size:11.5px;}
+.buscar-estado-item{font-weight:600;}
+.buscar-ver-todos{align-self:flex-start;margin-top:4px;background:none;border:0;color:#2a5ea8;font:inherit;font-size:13px;font-weight:600;cursor:pointer;padding:4px 0;}
+.buscar-aviso{margin:0;padding:8px 12px;border-radius:8px;background:#fbe9e7;color:#b8443a;font-weight:600;font-size:13.5px;}
+.buscar-aviso.ok{background:#e8f3ee;color:#2f6b4e;}
+.buscar-vacio{font-weight:700;margin:6px 0 0;}
+.buscar-ayuda ul{list-style:none;display:flex;flex-wrap:wrap;gap:6px;padding:0;margin:8px 0 12px;}
+.buscar-ejemplo{border:1px solid var(--gris-300);background:#fff;border-radius:999px;padding:4px 10px;font:inherit;font-size:13px;cursor:pointer;}
+.buscar-ayuda kbd,.buscar-aviso kbd{font-size:11px;border:1px solid var(--gris-300);border-radius:4px;padding:0 4px;background:#fff;}
+.buscar-resaltado{animation:buscar-resaltado 3s ease-out;}
+@keyframes buscar-resaltado{0%,40%{background:#fff3c4;}100%{background:transparent;}}
+@media(max-width:700px){
+  .btn-buscar-texto,.btn-buscar-atajo{display:none;}
+  .btn-buscar-general{padding:6px 10px;}
+  .modal-buscar{width:100vw;max-width:100vw;margin-top:0;min-height:100dvh;border-radius:0;}
+  .buscar-resultados{max-height:none;flex:1;}
+  .buscar-lado{display:none;}
+}
