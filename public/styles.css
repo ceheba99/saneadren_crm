@@ -1388,3 +1388,6 @@ body:not(.es-costos) .solo-costos{display:none !important;}
 .oc-firma-caja{display:flex;flex-direction:column;gap:6px;align-items:flex-start;}
 .oc-firma{width:100%;max-width:520px;height:150px;border:1px dashed var(--gris-300);border-radius:8px;background:#fff;touch-action:none;}
 .oc-recepcion > .btn-verde{align-self:flex-start;}
+/* Diálogo con dato obligatorio (p. ej. días de crédito al autorizar) */
+#dialogo-campo.campo-error{border-color:#b8443a;box-shadow:0 0 0 2px rgba(184,68,58,.18);}
+.dialogo-campo-aviso{margin:6px 0 0;color:#b8443a;font-weight:600;font-size:13px;}

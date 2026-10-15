@@ -103,7 +103,7 @@ const rechaza = (r, texto) => revisa(r[0] >= 400 && r[0] < 500 && r[1].error, te
   rechaza(await oc({ categoria: 'papeleria_vieja' }), 'OC con categoría dada de baja');
   // Autorizar / editar / cancelar a destiempo
   rechaza(await pedir('POST', '/compras/ordenes/' + oc1.id + '/autorizar', V), 'ventas autoriza una OC');
-  const aut = await Promise.all([pedir('POST', '/compras/ordenes/' + oc1.id + '/autorizar', A), pedir('POST', '/compras/ordenes/' + oc1.id + '/autorizar', A)]);
+  const aut = await Promise.all([pedir('POST', '/compras/ordenes/' + oc1.id + '/autorizar', A, { dias_credito: 7 }), pedir('POST', '/compras/ordenes/' + oc1.id + '/autorizar', A, { dias_credito: 7 })]);
   revisa(aut.filter(r => r[0] === 200).length === 1, 'dos clics en «Autorizar» al mismo tiempo → solo una cuenta por pagar', aut.map(r => r[0]));
   rechaza(await pedir('PUT', '/compras/ordenes/' + oc1.id, V, { ...base, version: 99 }), 'editar una OC ya autorizada');
   rechaza(await pedir('POST', '/compras/ordenes/' + oc2.id + '/cancelar', V, { motivo: '.....' }), 'cancelar con motivo «.....»');

@@ -311,7 +311,7 @@ const Compras = (() => {
       + '<input type="file" id="oc-doc-archivo" accept=".pdf,.xml,.jpg,.jpeg,.png,application/pdf,text/xml,application/xml,image/jpeg,image/png" aria-label="Archivo"><input id="oc-doc-nota" maxlength="300" placeholder="Nota (opcional)" aria-label="Nota del documento">'
       + '<button type="button" class="btn btn-secundario btn-chico" id="oc-doc-subir">Subir al expediente</button></div><p class="ayuda">PDF, JPG o PNG hasta 10 MB. El XML de la factura se lee solo: folio fiscal, RFC del emisor y total, y se compara con la orden.</p>';
     const c = e.cuenta_por_pagar;
-    const cuenta = c ? '<div class="oc-exp-cxp"><div><span class="etiqueta-mini">Cuenta por pagar</span><b>' + dinero(c.total) + '</b></div><div><span class="etiqueta-mini">Pagado</span><b>' + dinero(c.pagado) + '</b></div><div><span class="etiqueta-mini">Saldo</span><b class="' + (c.saldo > 0 ? 'cg-pendiente' : 'oc-deuda si') + '">' + (c.cancelada ? 'cancelada' : dinero(c.saldo)) + '</b></div><div><span class="etiqueta-mini">Vence</span><b>' + esc(fechaTxt(c.vence)) + '</b></div><div><span class="etiqueta-mini">Factura</span><b>' + esc(c.factura_folio || '—') + '</b></div></div>'
+    const cuenta = c ? '<div class="oc-exp-cxp"><div><span class="etiqueta-mini">Cuenta por pagar</span><b>' + dinero(c.total) + '</b></div><div><span class="etiqueta-mini">Pagado</span><b>' + dinero(c.pagado) + '</b></div><div><span class="etiqueta-mini">Saldo</span><b class="' + (c.saldo > 0 ? 'cg-pendiente' : 'oc-deuda si') + '">' + (c.cancelada ? 'cancelada' : dinero(c.saldo)) + '</b></div><div><span class="etiqueta-mini">Crédito</span><b>' + esc(c.dias_credito == null ? '—' : c.dias_credito ? c.dias_credito + ' días' : 'De contado') + '</b></div><div><span class="etiqueta-mini">Vence</span><b>' + esc(fechaTxt(c.vence)) + '</b></div><div><span class="etiqueta-mini">Factura</span><b>' + esc(c.factura_folio || '—') + '</b></div></div>'
       + (c.pagos.length ? '<table class="tabla-resumen"><thead><tr><th>Fecha</th><th>Método</th><th>Referencia</th><th class="st-num">Monto</th></tr></thead><tbody>' + c.pagos.map(p => '<tr class="' + (p.cancelado ? 'fila-cancelada' : '') + '"><td>' + esc(fechaTxt(p.fecha)) + '</td><td>' + esc(p.metodo) + '</td><td>' + esc(p.referencia || '') + (p.cancelado ? ' <small>cancelado: ' + esc(p.motivo_cancelacion || '') + '</small>' : '') + '</td><td class="st-num">' + dinero(p.monto) + '</td></tr>').join('') + '</tbody></table>' : '<p class="util-45">Sin pagos todavía (se registran en Cuentas por pagar).</p>')
       : '<p class="util-45">Todavía no es deuda: al autorizarla pasa a Cuentas por pagar.</p>';
     cont.innerHTML = '<div class="oc-exp-cab"><div class="seccion-tit">📁 Expediente de la orden</div><button type="button" class="btn btn-primario btn-chico" id="oc-exp-zip">📦 Descargar expediente completo (ZIP)</button></div>'
@@ -571,11 +571,18 @@ const Compras = (() => {
   }
 
   // Autorizar = la orden se vuelve deuda: pasa a Cuentas por pagar como factura pendiente del proveedor.
+  // Al autorizar SIEMPRE se escriben los días de crédito de esta compra (0 = de contado): con eso vence en Cuentas por pagar.
   async function autorizar(o) {
     if (!o) return false;
-    if (!await solicitarDialogo({ titulo: 'Autorizar orden de compra', mensaje: 'La orden ' + o.folio + ' por ' + dinero(o.total) + ' se vuelve deuda: pasa a Cuentas por pagar como factura pendiente de ' + o.proveedor_nombre + '. Después ya no se puede editar.', aceptar: 'Autorizar' })) return false;
-    try { await pedir('/compras/ordenes/' + o.id + '/autorizar', 'POST', {}); } catch (err) { toast(err.message); return false; }
-    toast('Orden ' + o.folio + ' autorizada: ya está en Cuentas por pagar'); cargar(); return true;
+    const habitual = PROVEEDORES.find(p => p.id === o.proveedor_id)?.dias_credito;
+    const excepcion = o.excepcion_motivo ? ' ⚠ OJO: se hizo sin las 3 cotizaciones por urgencia («' + o.excepcion_motivo + '»).' : o.solicitud_id ? '' : ' (Orden hecha sin solicitud de compra.)';
+    const txt = await solicitarDialogo({ titulo: 'Autorizar y pasar a pago', mensaje: 'La orden ' + o.folio + ' por ' + dinero(o.total) + ' se vuelve deuda con ' + o.proveedor_nombre + ' y pasa a Cuentas por pagar.' + excepcion
+      + ' ¿Cuántos días de crédito tiene esta compra? Escribe 0 si es de contado.' + (habitual != null ? ' (Este proveedor suele dar ' + habitual + ' días.)' : ''), aceptar: 'Autorizar', campo: { tipo: 'number', etiqueta: 'Días de crédito de esta compra', requerido: 'Escribe los días de crédito (0 si es de contado)' } });
+    if (txt === null) return false;
+    const dias = Number(txt);
+    if (!Number.isInteger(dias) || dias < 0 || dias > 365) { toast('Escribe los días de crédito: un número entero de 0 a 365'); return false; }
+    try { await pedir('/compras/ordenes/' + o.id + '/autorizar', 'POST', { dias_credito: dias }); } catch (err) { toast(err.message); return false; }
+    toast('Orden ' + o.folio + ' autorizada · ' + (dias ? dias + ' días de crédito' : 'de contado') + ': ya está en Cuentas por pagar'); cargar(); return true;
   }
 
   // ---------- Eventos ----------
