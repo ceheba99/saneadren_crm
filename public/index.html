@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Saneadren · Cotizaciones y Servicios</title>
-<link rel="stylesheet" href="styles.css?v=cg1">
+<link rel="stylesheet" href="styles.css?v=av1">
 <link rel="stylesheet" href="servicios-tabla.css">
 <link rel="stylesheet" href="flujo.css">
 </head>
@@ -374,7 +374,7 @@
     </div>
     <div class="panel-alta">
       <h2>Crear nuevo usuario</h2>
-      <p class="ayuda">Podrá iniciar sesión con su nombre o su correo. El personal también puede registrarse solo desde la pantalla de inicio de sesión con su correo @saneadren.com.mx.</p>
+      <p class="ayuda">Solo un administrador crea cuentas. La persona podrá iniciar sesión con su nombre o su correo; con su correo puede recuperar la contraseña si la olvida.</p>
       <div class="form-grid">
         <div class="campo">
           <label>Nombre</label>
@@ -398,7 +398,7 @@
           </select>
         </div>
         <div class="campo">
-          <label>&nbsp;</label>
+          <label class="check-linea"><input type="checkbox" id="nu-temporal" checked> Contraseña temporal: la cambia al entrar la primera vez</label>
           <button class="btn btn-primario" id="btn-crear-usuario">Crear usuario</button>
         </div>
       </div>
@@ -782,19 +782,8 @@
         </div>
         <div class="diseno-login-error" id="login-error"></div>
         <button type="submit" class="btn btn-primario util-27">Entrar</button>
-        <div class="cuenta-enlaces"><button type="button" class="enlace" data-ir="olvide">¿Olvidaste tu contraseña?</button><button type="button" class="enlace" data-ir="registro">Crear cuenta</button></div>
-      </form>
-      <form id="form-registro" data-vista="registro" hidden>
-        <p class="ayuda">Solo para personal con correo <b>@saneadren.com.mx</b>. Te enviaremos un enlace para confirmar tu correo.</p>
-        <div class="form-grid util-25">
-          <div class="campo"><label for="reg-nombre">Nombre y apellido</label><input type="text" id="reg-nombre" autocomplete="name" required minlength="3" maxlength="60"></div>
-          <div class="campo"><label for="reg-correo">Correo de la empresa</label><input type="email" id="reg-correo" autocomplete="email" required maxlength="254" placeholder="nombre@saneadren.com.mx"></div>
-          <div class="campo"><label for="reg-password">Contraseña</label><input type="password" id="reg-password" autocomplete="new-password" required minlength="10" maxlength="128"><small class="ayuda">Mínimo 10 caracteres, con letras y números.</small></div>
-          <div class="campo"><label for="reg-password2">Repite la contraseña</label><input type="password" id="reg-password2" autocomplete="new-password" required minlength="10" maxlength="128"></div>
-        </div>
-        <div class="diseno-login-error" id="registro-error"></div>
-        <button type="submit" class="btn btn-primario util-27">Crear cuenta</button>
-        <div class="cuenta-enlaces"><button type="button" class="enlace" data-ir="login">Ya tengo cuenta</button></div>
+        <div class="cuenta-enlaces"><button type="button" class="enlace" data-ir="olvide">¿Olvidaste tu contraseña?</button></div>
+        <p class="ayuda cuenta-sin-registro">¿No tienes cuenta? Pídela a un administrador.</p>
       </form>
       <form id="form-olvide" data-vista="olvide" hidden>
         <p class="ayuda">Escribe el correo de tu cuenta y te enviaremos un enlace para crear una contraseña nueva.</p>
@@ -1048,17 +1037,17 @@
 
 
 <!-- ?v= obliga a los navegadores (sobre todo celulares) a tomar la versión nueva tras publicar. -->
-<script src="ui.js?v=t1"></script>
+<script src="ui.js?v=av1"></script>
 <script src="importes.js?v=pg2"></script>
 <script src="servicios-tabla.js?v=pg2"></script>
 <script src="flujo.js?v=cli2"></script>
-<script src="cuentas.js?v=pg2"></script>
+<script src="cuentas.js?v=av1"></script>
 <script src="finanzas.js?v=t2"></script>
 <script src="calendario.js?v=pg2"></script>
 <script src="tablero.js?v=pg2"></script>
 <script src="compras.js?v=t2"></script>
-<script src="carga-generador.js?v=cg3"></script>
-<script src="app.js?v=t1"></script>
+<script src="carga-generador.js?v=av1"></script>
+<script src="app.js?v=av1"></script>
 <script src="prospeccion.js?v=cli1"></script>
 </body>
 </html>

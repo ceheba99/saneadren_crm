@@ -1,12 +1,11 @@
-// Autoservicio de cuentas: registro con correo @saneadren.com.mx, verificación del correo y
-// restablecimiento de contraseña por correo. Todas estas rutas son públicas (sin sesión), por
+// Cuentas: solo un administrador las crea (no hay registro público). Aquí quedan la verificación del correo
+// (para cuentas antiguas) y el restablecimiento de contraseña por correo. Todas estas rutas son públicas (sin sesión), por
 // eso cada una tiene límite de intentos y respuestas que no revelan si un correo existe.
 const { problemaNombre, hashPassword, problemaPassword, normalizarCorreo, correoPermitido, DOMINIO, hashToken, nuevoToken, limitador } = require('./seguridad');
 const correo = require('./correo');
 
 const VIGENCIA_VERIFICACION_MS = 24 * 60 * 60 * 1000;
 const VIGENCIA_RESTABLECER_MS = 30 * 60 * 1000;
-const ROL_REGISTRO = 'ventas'; // rol con el que entra quien se registra solo; un admin puede cambiarlo
 
 // Columnas y tablas de cuentas (también lo usa herramientas/configurar-admin.js).
 function migrarCuentas(db) {
@@ -132,45 +131,10 @@ module.exports = function cuentas(app, db, h, { sesiones, urlBase }) {
   const enlace = (accion, token) => `${urlBase}/#${accion}=${encodeURIComponent(token)}`;
   const enviarSinBloquear = (...args) => correo.enviar(...args).catch(err => console.error('No se pudo enviar el correo:', err.message));
 
-  function enviarVerificacion(usuario) {
-    return enviarSinBloquear(usuario.correo, 'Confirma tu correo · Saneadren CRM', {
-      titulo: 'Confirma tu correo', saludo: `Hola ${usuario.nombre}:`,
-      mensaje: 'Recibimos una solicitud para crear tu cuenta en el CRM de Saneadren. Confirma que este correo es tuyo para poder iniciar sesión. El enlace vence en 24 horas.',
-      boton: 'Confirmar mi correo', enlace: enlace('verificar', emitirToken(usuario.id, 'verificar')),
-      pie: 'Si tú no solicitaste esta cuenta, ignora este mensaje; la cuenta no se activará.'
-    });
-  }
-
-  const RESPUESTA_REGISTRO = { ok: true, mensaje: 'Si el correo es válido, te enviamos un enlace para confirmar tu cuenta. Revisa tu bandeja de entrada (y spam).' };
-
-  app.post('/api/registro', porIp(20, 60), porCorreo(3, 60), h((req, res) => {
-    const nombre = typeof req.body.nombre === 'string' ? req.body.nombre.trim().replace(/\s+/g, ' ') : '';
-    const email = normalizarCorreo(req.body.correo);
-    const password = req.body.password;
-    const problemaN = problemaNombre(nombre);
-    if (problemaN) return res.status(400).json({ error: problemaN });
-    if (!correoPermitido(email)) return res.status(400).json({ error: `Solo se pueden registrar correos @${DOMINIO}` });
-    const problema = problemaPassword(password, { nombre, correo: email });
-    if (problema) return res.status(400).json({ error: problema });
-
-    const existente = db.prepare('SELECT * FROM usuarios WHERE correo = ?').get(email);
-    if (existente) {
-      // No se revela si el correo ya tenía cuenta: se responde igual y se avisa por correo a quien tiene la cuenta.
-      if (existente.activo && !existente.correo_verificado) enviarVerificacion(existente);
-      else if (existente.activo) enviarSinBloquear(email, 'Ya tienes una cuenta · Saneadren CRM', {
-        titulo: 'Ya tienes una cuenta', saludo: `Hola ${existente.nombre}:`,
-        mensaje: 'Alguien intentó registrar de nuevo este correo. Tu cuenta ya existe; si olvidaste tu contraseña, usa la opción "¿Olvidaste tu contraseña?" en la pantalla de inicio de sesión.',
-        pie: 'Si no fuiste tú, puedes ignorar este mensaje; tu cuenta no cambió.'
-      });
-      return res.status(202).json(RESPUESTA_REGISTRO);
-    }
-    if (db.prepare('SELECT id FROM usuarios WHERE lower(nombre) = lower(?)').get(nombre)) {
-      return res.status(409).json({ error: 'Ya existe un usuario con ese nombre; agrega tu apellido para distinguirte' });
-    }
-    const info = db.prepare('INSERT INTO usuarios (nombre, password, rol, correo, correo_verificado) VALUES (?, ?, ?, ?, 0)')
-      .run(nombre, hashPassword(password), ROL_REGISTRO, email);
-    enviarVerificacion({ id: info.lastInsertRowid, nombre, correo: email });
-    res.status(202).json(RESPUESTA_REGISTRO);
+  // Las cuentas solo las crea un administrador (Ajustes → Usuarios). La ruta pública de registro queda
+  // cerrada y lo dice claro, aunque alguien la llame directamente desde fuera del CRM.
+  app.post('/api/registro', porIp(20, 60), h((req, res) => {
+    res.status(403).json({ error: 'Las cuentas las crea un administrador. Pídele a tu administrador que te dé de alta.' });
   }));
 
   app.post('/api/verificar-correo', porIp(20, 15), h((req, res) => {

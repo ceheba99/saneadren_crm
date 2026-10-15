@@ -6,3 +6,4 @@ saneadren.db-wal
 .env
 *.rar
 test-simulacion.mjs
+entregables/
