@@ -85,6 +85,55 @@ const SEMANA_40 = [['REPARACION FLECHA CARDAN JOSE LUIS ACOSTA', 2000], ['PAGO R
   revisa(s === 200 && j.length === 1 && j[0].id === oc.id, 'filtro "por pagar": solo la autorizada con saldo', j.map(o => o.folio));
   [s, j] = await pedir('GET', '/compras/ordenes?q=televia', V);
   revisa(j.length === 1 && j[0].id === oc.id, 'buscar por texto de las partidas', j.map(o => o.folio));
+
+  // Entrega ya no se usa: aunque llegue, no se guarda
+  [s, j] = await pedir('POST', '/compras/ordenes', V, { ...base, entrega: 'Oficina Querétaro' });
+  revisa(s === 201 && j.entrega === null, 'el campo «entrega» ya no se guarda', [s, j.entrega]);
+
+  // Unidades de medida: catálogo inicial y cualquiera lo edita
+  [s, j] = await pedir('GET', '/compras/unidades', V);
+  revisa(s === 200 && ['PZA', 'L', 'M', 'KG'].every(c => j.some(u => u.clave === c)), 'catálogo inicial de unidades (pieza, litro, metro, kilo…)', j.map(u => u.clave));
+  [s, j] = await pedir('POST', '/compras/unidades', V, { clave: 'ml', nombre: 'Metro lineal' });
+  revisa(s === 201 && j.clave === 'ML', 'ventas agrega una unidad (la abreviatura va en mayúsculas)', [s, j]);
+  const ml = j;
+  [s, j] = await pedir('POST', '/compras/unidades', V, { clave: 'Ml', nombre: 'Otra' }); revisa(s === 400, 'no se repite la abreviatura', [s, j.error]);
+  [s, j] = await pedir('POST', '/compras/unidades', V, { clave: 'XX', nombre: 'metro lineal' }); revisa(s === 400, 'no se repite el nombre', [s, j.error]);
+  [s, j] = await pedir('POST', '/compras/unidades', V, { clave: '<b>', nombre: 'Mala' }); revisa(s === 400, 'abreviatura con símbolos raros rechazada', [s, j.error]);
+  [s, j] = await pedir('PUT', '/compras/unidades/' + ml.id, V, { nombre: 'Metro lineal (ML)', activo: false });
+  revisa(s === 200 && j.nombre === 'Metro lineal (ML)' && j.activo === 0, 'ventas corrige y da de baja una unidad', j);
+  [s, j] = await pedir('POST', '/compras/ordenes', V, { ...base, partidas: [{ cantidad: 2.5, descripcion: 'Manguera', unidad: 'M', precio: 100 }] });
+  revisa(s === 201 && j.partidas[0].unidad === 'M', 'la partida guarda la unidad elegida', j.partidas?.[0]);
+
+  // Categorías de gasto: solo administración las edita; renombrar actualiza lo capturado
+  [s, j] = await pedir('GET', '/finanzas/categorias', V);
+  revisa(s === 200 && j.some(c => c.clave === 'combustible') && j.every(c => c.activo === 1), 'categorías iniciales (solo activas)', j.map(c => c.clave));
+  [s, j] = await pedir('POST', '/finanzas/categorias', V, { nombre: 'Papelería' }); revisa(s === 403, 'ventas no edita categorías');
+  [s, j] = await pedir('PUT', '/finanzas/categorias/combustible', V, { nombre: 'Gasolina' }); revisa(s === 403, 'ventas no renombra categorías');
+  [s, j] = await pedir('POST', '/finanzas/categorias', A, { nombre: 'Papelería y consumibles' });
+  revisa(s === 201 && j.clave === 'papeleria_y_consumibles', 'el administrador agrega una categoría', j);
+  [s] = await pedir('POST', '/finanzas/categorias', A, { nombre: 'papelería y consumibles' }); revisa(s === 409, 'no se repite una categoría');
+  [s, j] = await pedir('POST', '/compras/ordenes', V, { ...base, categoria: 'papeleria_y_consumibles' });
+  revisa(s === 201 && j.categoria_nombre === 'Papelería y consumibles', 'la categoría nueva se usa de inmediato en una orden', [s, j.categoria_nombre, j.error]);
+  const ocPapel = j;
+  [s, j] = await pedir('PUT', '/finanzas/categorias/papeleria_y_consumibles', A, { nombre: 'Papelería' });
+  revisa(s === 200 && j.nombre === 'Papelería', 'el administrador renombra la categoría', j);
+  [s, j] = await pedir('GET', '/compras/ordenes/' + ocPapel.id, V);
+  revisa(j.categoria_nombre === 'Papelería', 'renombrar actualiza las órdenes ya capturadas', j.categoria_nombre);
+  [s, j] = await pedir('PUT', '/finanzas/categorias/papeleria_y_consumibles', A, { activo: false });
+  [s, j] = await pedir('GET', '/finanzas/categorias', V);
+  revisa(!j.some(c => c.clave === 'papeleria_y_consumibles'), 'una categoría dada de baja ya no se ofrece');
+  [s, j] = await pedir('GET', '/finanzas/categorias?todas=1', A);
+  revisa(j.some(c => c.clave === 'papeleria_y_consumibles' && c.activo === 0), 'pero sigue en el catálogo completo para reactivarla');
+  [s, j] = await pedir('PUT', '/finanzas/categorias/otro', A, { activo: false }); revisa(s === 400, '«Otro» no se puede dar de baja', [s, j.error]);
+
+  // Autorizar = volverse deuda; solo un administrador
+  [s, j] = await pedir('POST', '/compras/ordenes/' + ocPapel.id + '/autorizar', V); revisa(s === 403, 'ventas no autoriza (no se vuelve deuda)');
+  [s, j] = await pedir('GET', '/finanzas/cxp', A);
+  const antes = (Array.isArray(j) ? j : j.cuentas || []).length;
+  [s, j] = await pedir('POST', '/compras/ordenes/' + ocPapel.id + '/autorizar', A);
+  revisa(s === 200 && j.orden.estado === 'autorizada' && j.cxp_id, 'al autorizarla pasa a Cuentas por pagar', [s, j.error]);
+  [s, j] = await pedir('GET', '/finanzas/cxp', A);
+  revisa((Array.isArray(j) ? j : j.cuentas || []).length === antes + 1, 'aparece una cuenta por pagar nueva');
   revisa(!/uncaughtException|Error no manejado|TypeError|SqliteError|RangeError|ReferenceError/.test(salida), 'el servidor no registró errores internos', salida.split('\n').filter(l => /Error/.test(l)).slice(0, 6));
 
   console.log(`\n${n - malos.length}/${n} correctas`);

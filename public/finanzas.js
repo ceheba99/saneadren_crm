@@ -548,7 +548,7 @@ const Finanzas = (() => {
   // ---------- Por pagar ----------
   let CXP = [], PAGO_PROV = null, PROVEEDORES = [], CATEGORIAS = [];
   async function catalogosPagos() {
-    [PROVEEDORES, CATEGORIAS] = await Promise.all([api('/finanzas/proveedores').then(json), CATEGORIAS.length ? CATEGORIAS : api('/finanzas/categorias').then(json)]);
+    [PROVEEDORES, CATEGORIAS] = await Promise.all([api('/finanzas/proveedores').then(json), api('/finanzas/categorias').then(json)]);
     const opts = CATEGORIAS.map(c => `<option value="${esc(c.clave)}">${esc(c.nombre)}</option>`).join('');
     $('gasto-categoria').innerHTML = opts; $('prov-categoria').innerHTML = opts;
   }

@@ -1210,7 +1210,7 @@ button.enlace{background:none;border:0;padding:0;color:var(--azul-600);text-deco
 .oc-tabla td{padding:4px 5px;vertical-align:middle;}
 .oc-tabla .oc-cantidad{width:80px;text-align:right;}
 .oc-tabla .oc-precio{width:110px;text-align:right;}
-.oc-tabla .oc-unidad{width:70px;}
+.oc-tabla .oc-unidad{width:150px;min-width:130px;min-height:36px;border:1px solid var(--gris-300);border-radius:6px;padding:5px 6px;font:inherit;font-size:13px;}
 .oc-tabla .oc-clave{width:100px;}
 .oc-tabla .oc-descripcion{min-width:240px;}
 .oc-tabla .oc-num{color:var(--texto-sec);font-weight:700;text-align:center;width:28px;}
@@ -1220,6 +1220,19 @@ button.enlace{background:none;border:0;padding:0;color:var(--azul-600);text-deco
 .oc-acciones{display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:flex-end;}
 @media(max-width:600px){#oc-cuerpo{padding:14px 12px 18px;}.oc-totales{align-self:stretch;}}
 .oc-partidas-caja .tabla-scroll{max-height:none;}
-.oc-tabla .oc-unidad{width:62px;}
+.oc-tabla .oc-unidad{width:128px;min-width:128px;}
 .oc-tabla .oc-clave{width:88px;}
-.oc-tabla .oc-descripcion{min-width:300px;}
+.oc-tabla .oc-descripcion{min-width:240px;}
+
+/* ===== Órdenes de compra: autorización (deuda) y catálogos editables ===== */
+.oc-deuda{display:inline-block;font-size:12px;font-weight:700;white-space:nowrap;}
+.oc-deuda.si{color:var(--verde);}
+.oc-deuda.no{color:var(--texto-sec);}
+.oc-por-autorizar{margin-bottom:10px;}
+.modal-catalogo{max-width:720px;width:calc(100vw - 32px);}
+.cat-tabla td{padding:4px 5px;vertical-align:middle;}
+.cat-tabla input:not([type="checkbox"]){width:100%;min-width:90px;min-height:36px;box-sizing:border-box;border:1px solid var(--gris-300);border-radius:6px;padding:5px 8px;font:inherit;font-size:13px;}
+.cat-tabla .cat-activo{display:inline-flex;align-items:center;gap:6px;white-space:nowrap;font-size:13px;}
+.cat-tabla tfoot td{border-top:2px solid var(--gris-300);padding-top:10px;}
+.cat-tabla tr.fila-cancelada input:not([type="checkbox"]){opacity:.6;}
+.cat-tabla th{text-align:left;}
