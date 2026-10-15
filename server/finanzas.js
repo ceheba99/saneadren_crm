@@ -283,6 +283,17 @@ module.exports = function finanzas(app, db, h, unicos) {
   };
   const soloAdmin = (req, res) => permitido(req, res, ['admin'], 'Solo un administrador puede hacer esto');
   const puedeOperar = (req, res) => permitido(req, res, PUEDE_OPERAR, 'No tienes permiso para esta acción');
+  // El concepto de un costo con terceros dice QUÉ se le paga al tercero (renta de pipa, disposición de lodos…):
+  // es obligatorio y no puede ser simplemente el nombre o la descripción del servicio que se le vende al cliente.
+  function problemaConceptoCosto(concepto, lead) {
+    if (!concepto || !conSentido(concepto, 3)) return 'escribe el concepto del costo (qué se le paga al tercero)';
+    const k = t => String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+    const delServicio = [lead?.servicio_nombre];
+    if (lead?.servicio_id) delServicio.push(db.prepare('SELECT nombre FROM catalogo_servicios WHERE id = ?').get(lead.servicio_id)?.nombre);
+    try { for (const p of JSON.parse(lead?.partidas_json || '[]')) delServicio.push(p.servicio, p.leyenda); } catch { /* sin partidas */ }
+    if (delServicio.some(t => k(t) && k(t) === k(concepto))) return 'el concepto es igual al servicio que se le vende al cliente: escribe qué se le paga al tercero (ej. «Renta de pipa 20 m³»)';
+    return null;
+  }
   const bitacora = (leadId, textoEvento, req) => db.prepare(
     "INSERT INTO historial (lead_id, tipo, texto, usuario, origen) VALUES (?, 'observacion', ?, ?, 'sistema')"
   ).run(leadId, textoEvento, req.usuarioSesion.nombre);
@@ -620,6 +631,7 @@ module.exports = function finanzas(app, db, h, unicos) {
     const orden = db.prepare('SELECT COALESCE(MAX(orden), 0) + 1 o FROM categorias_gasto').get().o;
     db.prepare('INSERT INTO categorias_gasto (clave, nombre, orden) VALUES (?, ?, ?)').run(clave, nombre, orden);
     cargarCategorias(db);
+    app.locals.auditoria?.registrar(req, 'catalogo', null, 'categoría agregada', nombre);
     res.status(201).json(db.prepare('SELECT clave, nombre, activo FROM categorias_gasto WHERE clave = ?').get(clave));
   }));
   app.put('/api/finanzas/categorias/:clave', h((req, res) => {
@@ -633,6 +645,8 @@ module.exports = function finanzas(app, db, h, unicos) {
     if (!activo && c.clave === 'otro') return res.status(400).json({ error: '«Otro» no se puede dar de baja: es la categoría de respaldo' });
     db.prepare('UPDATE categorias_gasto SET nombre = ?, activo = ? WHERE clave = ?').run(nombre, activo, c.clave);
     cargarCategorias(db);
+    const difCat = app.locals.auditoria?.diferencias(c, { nombre, activo }, ['nombre', 'activo']);
+    if (difCat) app.locals.auditoria.registrar(req, 'catalogo', null, 'categoría editada', `«${c.nombre}»: ${difCat}`);
     res.json(db.prepare('SELECT clave, nombre, activo FROM categorias_gasto WHERE clave = ?').get(c.clave));
   }));
 
@@ -679,6 +693,7 @@ module.exports = function finanzas(app, db, h, unicos) {
     if (p) return res.status(p.status).json(p.cuerpo);
     const info = db.prepare('INSERT INTO proveedores (nombre, categoria, rfc, telefono, contacto, dias_credito, notas) VALUES (?, ?, ?, ?, ?, ?, ?)')
       .run(d.nombre, d.categoria, d.rfc, d.telefono, d.contacto, d.dias_credito, d.notas);
+    app.locals.auditoria?.registrar(req, 'proveedor', Number(info.lastInsertRowid), 'creado', `${d.nombre}${d.rfc ? ' · RFC ' + d.rfc : ''} · ${CATEGORIAS[d.categoria] || d.categoria}${req.body.forzar ? ' · confirmado como distinto de uno parecido' : ''}`);
     res.status(201).json(db.prepare('SELECT * FROM proveedores WHERE id = ?').get(info.lastInsertRowid));
   }));
   app.put('/api/finanzas/proveedores/:id', h((req, res) => {
@@ -690,6 +705,8 @@ module.exports = function finanzas(app, db, h, unicos) {
     // Al renombrar, también se revisa que no quede igual o parecido a otro (salvo que se confirme).
     const prob = problemaProveedor(d, p.id, !!req.body.forzar || unicos.clave(d.nombre) === unicos.clave(p.nombre));
     if (prob) return res.status(prob.status).json(prob.cuerpo);
+    const difProv = app.locals.auditoria?.diferencias(p, { ...d, activo: req.body.activo === undefined ? p.activo : (req.body.activo ? 1 : 0) }, ['nombre', 'rfc', 'categoria', 'dias_credito', 'telefono', 'contacto', 'notas', 'activo']);
+    if (difProv) app.locals.auditoria.registrar(req, 'proveedor', p.id, 'editado', difProv);
     const activo = req.body.activo === undefined ? p.activo : (req.body.activo ? 1 : 0);
     db.prepare('UPDATE proveedores SET nombre = ?, categoria = ?, rfc = ?, telefono = ?, contacto = ?, dias_credito = ?, notas = ?, activo = ? WHERE id = ?')
       .run(d.nombre, d.categoria, d.rfc, d.telefono, d.contacto, d.dias_credito, d.notas, activo, p.id);
@@ -787,7 +804,8 @@ module.exports = function finanzas(app, db, h, unicos) {
       const categoria = g.categoria || prov.categoria;
       if (!CATEGORIAS[categoria]) return res.status(400).json({ error: ren + 'categoría inválida' });
       const concepto = texto(g.concepto, 200);
-      if (!concepto) return res.status(400).json({ error: ren + 'escribe el concepto' });
+      const malConcepto = problemaConceptoCosto(concepto, lead);
+      if (malConcepto) return res.status(400).json({ error: ren + malConcepto });
       const total = aCentavos(g.total);
       if (!total) return res.status(400).json({ error: ren + 'escribe el monto (mayor a 0, máximo 2 decimales)' });
       if (g.ya_pagado && !METODOS_PROV.includes(g.metodo)) return res.status(400).json({ error: ren + 'elige cómo se pagó' });
@@ -813,7 +831,7 @@ module.exports = function finanzas(app, db, h, unicos) {
       }
       const suma = listos.reduce((t, g) => t + g.total, 0);
       bitacora(lead.id, `Servicio realizado el ${fmtFecha(fecha)} por ${b.realizado_por === 'propio' ? 'nuestro equipo' : 'un tercero (subcontratado)'}.`
-        + (listos.length ? ` Gastos cargados en Cuentas por pagar: ${listos.length} por ${fmt(suma)}.` : ' Sin gastos registrados.'), req);
+        + (listos.length ? ` Costos con terceros cargados en Cuentas por pagar: ${listos.map(g => `«${g.concepto}» de ${g.prov.nombre} ${fmt(g.total)}${g.ya_pagado ? ' (pagado)' : ''}`).join('; ')}.` : ' Sin costos con terceros.'), req);
     })();
     res.json({ ok: true, gastos: listos.length, omitidos, lead: db.prepare('SELECT * FROM leads WHERE id = ?').get(lead.id) });
   }));
@@ -837,8 +855,10 @@ module.exports = function finanzas(app, db, h, unicos) {
     if (!fechaValida(vence) || vence < fecha) return res.status(400).json({ error: 'El vencimiento no es válido (no puede ser antes de la fecha del documento)' });
     let leadId = null;
     if (b.lead_id) {
-      const l = db.prepare("SELECT id FROM leads WHERE id = ? AND estatus = 'ganado'").get(b.lead_id);
+      const l = db.prepare("SELECT * FROM leads WHERE id = ? AND estatus = 'ganado'").get(b.lead_id);
       if (!l) return res.status(400).json({ error: 'La orden de servicio indicada no existe' });
+      const malConcepto = problemaConceptoCosto(concepto, l);
+      if (malConcepto) return res.status(400).json({ error: malConcepto.charAt(0).toUpperCase() + malConcepto.slice(1) });
       leadId = l.id;
     }
     if (b.ya_pagado && !METODOS_PROV.includes(b.metodo)) return res.status(400).json({ error: 'Elige cómo se pagó' });
@@ -856,6 +876,8 @@ module.exports = function finanzas(app, db, h, unicos) {
         db.prepare('INSERT INTO pagos_proveedor (cxp_id, fecha, monto_cent, metodo, referencia, registrado_por) VALUES (?, ?, ?, ?, ?, ?)')
           .run(info.lastInsertRowid, fechaPagoGasto || (fecha > hoyMexico() ? hoyMexico() : fecha), total, b.metodo, texto(b.referencia, 120), req.usuarioSesion.id);
       }
+      if (leadId) bitacora(leadId, `Costo con terceros registrado: «${concepto}» de ${prov.nombre} por ${fmt(total)}${b.ya_pagado ? ' (ya pagado)' : ' (pendiente de pago en Cuentas por pagar)'}.`, req);
+      app.locals.auditoria?.registrar(req, 'cuenta_por_pagar', Number(info.lastInsertRowid), 'creada', `${prov.nombre} · «${concepto}» · ${fmt(total)}${folioFactura ? ' · factura ' + folioFactura : ''}${b.ya_pagado ? ' · pagada al registrar' : ''}`);
       return info.lastInsertRowid;
     })();
     res.status(201).json({ id });
@@ -877,6 +899,8 @@ module.exports = function finanzas(app, db, h, unicos) {
     }
     const info = db.prepare('INSERT INTO pagos_proveedor (cxp_id, fecha, monto_cent, metodo, referencia, registrado_por) VALUES (?, ?, ?, ?, ?, ?)')
       .run(x.id, fecha, monto, req.body.metodo, texto(req.body.referencia, 120), req.usuarioSesion.id);
+    if (x.lead_id) bitacora(x.lead_id, `Pago a tercero: ${fmt(monto)} a ${x.proveedor_nombre || 'proveedor'} por «${x.concepto}» (${req.body.metodo}, ${fecha}).`, req);
+    app.locals.auditoria?.registrar(req, 'cuenta_por_pagar', x.id, 'pago', `${fmt(monto)} por ${req.body.metodo} el ${fecha}${texto(req.body.referencia, 120) ? ' · ref. ' + texto(req.body.referencia, 120) : ''}`);
     res.status(201).json({ id: info.lastInsertRowid });
   }));
 
@@ -890,9 +914,12 @@ module.exports = function finanzas(app, db, h, unicos) {
     if (!puedeOperar(req, res)) return;
     const motivo = texto(req.body.motivo, 300);
     if (!motivo || !conSentido(motivo, 5)) return res.status(400).json({ error: 'Escribe el motivo de la cancelación (mínimo 5 caracteres)' });
+    const pagoAntes = db.prepare('SELECT g.*, c.lead_id, c.concepto FROM pagos_proveedor g JOIN cuentas_por_pagar c ON c.id = g.cxp_id WHERE g.id = ?').get(req.params.id);
     const info = db.prepare("UPDATE pagos_proveedor SET cancelado = 1, cancelado_por = ?, cancelado_at = datetime('now','localtime'), motivo_cancelacion = ? WHERE id = ? AND cancelado = 0")
       .run(req.usuarioSesion.id, motivo, req.params.id);
     if (!info.changes) return res.status(404).json({ error: 'Pago no encontrado o ya cancelado' });
+    if (pagoAntes?.lead_id) bitacora(pagoAntes.lead_id, `Pago a tercero CANCELADO: ${fmt(pagoAntes.monto_cent)} por «${pagoAntes.concepto}». Motivo: ${motivo}`, req);
+    app.locals.auditoria?.registrar(req, 'cuenta_por_pagar', pagoAntes?.cxp_id ?? null, 'pago cancelado', `${fmt(pagoAntes?.monto_cent || 0)} · motivo: ${motivo}`);
     res.json({ ok: true });
   }));
 
@@ -902,9 +929,12 @@ module.exports = function finanzas(app, db, h, unicos) {
     if (!motivo || !conSentido(motivo, 5)) return res.status(400).json({ error: 'Escribe el motivo de la cancelación (mínimo 5 caracteres)' });
     const pagos = db.prepare('SELECT COUNT(*) n FROM pagos_proveedor WHERE cxp_id = ? AND cancelado = 0').get(req.params.id).n;
     if (pagos) return res.status(409).json({ error: 'Esta cuenta tiene pagos registrados: cancélalos primero' });
+    const cxpAntes = db.prepare('SELECT * FROM cuentas_por_pagar WHERE id = ?').get(req.params.id);
     const info = db.prepare("UPDATE cuentas_por_pagar SET cancelada = 1, cancelada_por = ?, cancelada_at = datetime('now','localtime'), motivo_cancelacion = ? WHERE id = ? AND cancelada = 0")
       .run(req.usuarioSesion.id, motivo, req.params.id);
     if (!info.changes) return res.status(404).json({ error: 'Cuenta no encontrada o ya cancelada' });
+    if (cxpAntes?.lead_id) bitacora(cxpAntes.lead_id, `Costo con terceros CANCELADO: «${cxpAntes.concepto}» por ${fmt(cxpAntes.total_cent)}. Motivo: ${motivo}`, req);
+    app.locals.auditoria?.registrar(req, 'cuenta_por_pagar', Number(req.params.id), 'cancelada', `«${cxpAntes?.concepto}» · ${fmt(cxpAntes?.total_cent || 0)} · motivo: ${motivo}`);
     res.json({ ok: true });
   }));
 

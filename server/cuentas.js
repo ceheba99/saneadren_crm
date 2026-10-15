@@ -169,6 +169,7 @@ module.exports = function cuentas(app, db, h, { sesiones, urlBase }) {
       db.prepare("DELETE FROM tokens_cuenta WHERE usuario_id = ? AND tipo = 'restablecer'").run(usuario.id);
       sesiones.revocarUsuario(usuario.id);
     })();
+    app.locals.auditoria?.registrar({ usuarioSesion: { id: usuario.id, nombre: usuario.nombre } }, 'usuario', usuario.id, 'contraseña', 'Restableció su contraseña con el enlace del correo');
     if (usuario.correo) enviarSinBloquear(usuario.correo, 'Tu contraseña cambió · Saneadren CRM', {
       titulo: 'Tu contraseña cambió', saludo: `Hola ${usuario.nombre}:`,
       mensaje: 'La contraseña de tu cuenta del CRM se cambió correctamente y se cerraron tus sesiones abiertas.',

@@ -682,7 +682,9 @@ const Finanzas = (() => {
     // Solo se llenan los campos vacíos (o los que se llenaron solos con otra orden): no se pisa lo que escribió el usuario.
     const llenar = (id, valor) => { const el = $(id); if (valor && (!el.value.trim() || el.dataset.autollenado === el.value)) { el.value = valor; el.dataset.autollenado = valor; } };
     llenar('gasto-equipo', o.equipo);
-    llenar('gasto-concepto', o.servicio_nombre);
+    // El concepto NO se llena con el servicio: quien registra escribe qué se le paga al tercero.
+    if ($('gasto-concepto').dataset.autollenado && $('gasto-concepto').value === $('gasto-concepto').dataset.autollenado) $('gasto-concepto').value = '';
+    $('gasto-concepto').placeholder = 'Qué se le paga al tercero (ej. Renta de pipa 20 m³, disposición de lodos)';
     if (o.equipo) $('gasto-folio').closest('details').open = true;
   }
   $('gasto-orden').addEventListener('input', () => { $('gasto-orden').dataset.leadId = ''; $('gasto-orden-info').hidden = true; pintarSugerenciasGasto(); });
@@ -1254,7 +1256,7 @@ const Finanzas = (() => {
     div.innerHTML = `<div class="form-grid-2">
         <div class="campo"><label>Proveedor / quién lo realizó</label><select class="rg-proveedor">${opcionesProveedor(g.proveedor_id)}</select></div>
         <div class="campo"><label>Categoría</label><select class="rg-categoria">${opcionesCategoria(categoriaInicial)}</select></div>
-        <div class="campo"><label>Concepto</label><input class="rg-concepto" maxlength="200" value="${esc(g.concepto || '')}" placeholder="Ej. Renta de pipas"></div>
+        <div class="campo"><label>Concepto del costo (obligatorio)</label><input class="rg-concepto" maxlength="200" value="${esc(g.concepto || '')}" placeholder="Qué se le paga al tercero: ej. Renta de pipa 20 m³" required></div>
         <div class="campo"><label>Monto con IVA (MXN)</label><input class="rg-total" type="text" inputmode="decimal" autocomplete="off" value="${esc(g.total || '')}"></div>
       </div>
       <label class="diseno-campo-checkbox"><input type="checkbox" class="rg-pagado"> Ya se pagó</label>
@@ -1280,7 +1282,7 @@ const Finanzas = (() => {
       : por === 'propio' ? 'Si hubo gastos internos (combustible, casetas, disposición de residuos…), agrégalos; si no, déjalo sin gastos.' : '';
     // Subcontratado: se propone el renglón del pago al tercero.
     if (por === 'subcontratado' && !document.querySelector('#realizado-gastos .realizado-gasto')) {
-      $('realizado-gastos').append(filaGasto({ categoria: 'subcontratacion', concepto: 'Subcontratación: ' + (REALIZADO?.servicio_nombre || 'servicio') }));
+      $('realizado-gastos').append(filaGasto({ categoria: 'subcontratacion', concepto: '' }));
     }
     resumenRealizado();
   }
@@ -1355,7 +1357,7 @@ const Finanzas = (() => {
   }
   $('btn-costo-tercero').addEventListener('click', () => {
     const lead = COSTOS_ORDEN; if (!lead) return;
-    nuevoGasto({ 'gasto-orden': folioOrdenServicio(lead), 'gasto-concepto': lead.servicio_nombre || '', 'gasto-equipo': lead.equipo || '' },
+    nuevoGasto({ 'gasto-orden': folioOrdenServicio(lead), 'gasto-concepto': '', 'gasto-equipo': lead.equipo || '' },
       () => pintarCostosOrden(lead));
   });
 

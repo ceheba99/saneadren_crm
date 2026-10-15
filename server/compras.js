@@ -86,6 +86,29 @@ module.exports = function compras(app, db, h, finanzas) {
       orden_folio: o.lead_id ? 'OS-' + String(o.lead_created_at || '').slice(0, 7).replace('-', '') + '-' + String(o.lead_id).padStart(4, '0') : null };
   };
   const leer = id => { const o = db.prepare(SQL_OC + ' WHERE o.id = ?').get(id); return o ? describir(o) : null; };
+  const audit = (req, id, accion, detalle) => app.locals.auditoria?.registrar(req, 'orden_compra', id, accion, detalle);
+  const fmt = c => '$' + (Number(c || 0) / 100).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  require('./expediente-oc')(app, db, h, { leer, esAdmin, folioOC });
+
+  // ----- Datos de control del formato CM-F-03 (código, revisión y fechas). Son del FORMATO, no de cada orden:
+  // cambian cuando se actualiza el formato. Los edita un administrador; quedan en la bitácora. -----
+  const FORMATO_INICIAL = { codigo: 'CM-F-03', revision: '0', fecha_elaboracion: '2023-08-19', fecha_revision: '2023-08-26' };
+  const formato = () => { const f = db.prepare("SELECT valor FROM config_servidor WHERE clave = 'formato_oc'").get(); try { return { ...FORMATO_INICIAL, ...(f ? JSON.parse(f.valor) : {}) }; } catch { return FORMATO_INICIAL; } };
+  app.get('/api/compras/formato', h((req, res) => res.json(formato())));
+  app.put('/api/compras/formato', h((req, res) => {
+    if (!esAdmin(req)) return res.status(403).json({ error: 'Solo un administrador cambia los datos del formato' });
+    const antes = formato(), b = req.body || {};
+    const nuevo = { codigo: texto(b.codigo, 20) || antes.codigo, revision: texto(b.revision, 10) ?? antes.revision,
+      fecha_elaboracion: b.fecha_elaboracion || antes.fecha_elaboracion, fecha_revision: b.fecha_revision || antes.fecha_revision };
+    if (!/^[\p{L}\d .\/-]{1,20}$/u.test(nuevo.codigo)) return res.status(400).json({ error: 'El código del formato solo lleva letras, números y guiones' });
+    if (!/^[\p{L}\d .-]{1,10}$/u.test(String(nuevo.revision))) return res.status(400).json({ error: 'La revisión es un número o letra corta (ej. 1, 2, A)' });
+    if (!fechaOk(nuevo.fecha_elaboracion) || !fechaOk(nuevo.fecha_revision)) return res.status(400).json({ error: 'Revisa las fechas del formato' });
+    if (nuevo.fecha_revision < nuevo.fecha_elaboracion) return res.status(400).json({ error: 'La fecha de revisión no puede ser antes de la de elaboración' });
+    db.prepare("INSERT INTO config_servidor (clave, valor) VALUES ('formato_oc', ?) ON CONFLICT(clave) DO UPDATE SET valor = excluded.valor").run(JSON.stringify(nuevo));
+    const cambios = Object.keys(nuevo).filter(k => String(nuevo[k]) !== String(antes[k])).map(k => `${k.replace('_', ' ')}: ${antes[k]} → ${nuevo[k]}`).join(' · ');
+    if (cambios) app.locals.auditoria?.registrar(req, 'catalogo', null, 'formato de orden de compra', cambios);
+    res.json(nuevo);
+  }));
 
   // Valida y calcula una orden (crear o editar). Devuelve { error } o { datos }.
   function validar(b, usuario) {
@@ -149,6 +172,7 @@ module.exports = function compras(app, db, h, finanzas) {
     if (db.prepare('SELECT 1 FROM centros_costo WHERE lower(nombre) = lower(?)').get(nombre)) return res.status(409).json({ error: 'Ya existe ese centro de costos' });
     const orden = db.prepare('SELECT COALESCE(MAX(orden), 0) + 1 o FROM centros_costo').get().o;
     const info = db.prepare('INSERT INTO centros_costo (nombre, responsable, orden) VALUES (?, ?, ?)').run(nombre, texto(req.body.responsable, 120), orden);
+    app.locals.auditoria?.registrar(req, 'catalogo', null, 'centro de costos agregado', nombre + (texto(req.body.responsable, 120) ? ' · ' + texto(req.body.responsable, 120) : ''));
     res.status(201).json(db.prepare('SELECT * FROM centros_costo WHERE id = ?').get(info.lastInsertRowid));
   }));
   app.put('/api/compras/centros/:id', h((req, res) => {
@@ -161,6 +185,8 @@ module.exports = function compras(app, db, h, finanzas) {
     const responsable = req.body.responsable === undefined ? c.responsable : texto(req.body.responsable, 120);
     const activo = req.body.activo === undefined ? c.activo : (req.body.activo ? 1 : 0);
     db.prepare('UPDATE centros_costo SET nombre = ?, responsable = ?, activo = ? WHERE id = ?').run(nombre, responsable, activo, c.id);
+    const difCentro = app.locals.auditoria?.diferencias(c, { nombre, responsable, activo }, ['nombre', 'responsable', 'activo']);
+    if (difCentro) app.locals.auditoria.registrar(req, 'catalogo', null, 'centro de costos editado', `«${c.nombre}»: ${difCentro}`);
     res.json(db.prepare('SELECT * FROM centros_costo WHERE id = ?').get(c.id));
   }));
 
@@ -184,6 +210,7 @@ module.exports = function compras(app, db, h, finanzas) {
     if (d.error) return res.status(400).json({ error: d.error });
     const orden = db.prepare('SELECT COALESCE(MAX(orden), 0) + 1 o FROM unidades_medida').get().o;
     const info = db.prepare('INSERT INTO unidades_medida (clave, nombre, orden) VALUES (?, ?, ?)').run(d.clave, d.nombre, orden);
+    app.locals.auditoria?.registrar(req, 'catalogo', null, 'unidad agregada', `${d.nombre} (${d.clave})`);
     res.status(201).json(leerUnidad(info.lastInsertRowid));
   }));
   app.put('/api/compras/unidades/:id', h((req, res) => {
@@ -193,6 +220,8 @@ module.exports = function compras(app, db, h, finanzas) {
     if (d.error) return res.status(400).json({ error: d.error });
     const activo = req.body.activo === undefined ? u.activo : (req.body.activo ? 1 : 0);
     db.prepare('UPDATE unidades_medida SET clave = ?, nombre = ?, activo = ? WHERE id = ?').run(d.clave, d.nombre, activo, u.id);
+    const difUni = app.locals.auditoria?.diferencias(u, { clave: d.clave, nombre: d.nombre, activo }, ['clave', 'nombre', 'activo']);
+    if (difUni) app.locals.auditoria.registrar(req, 'catalogo', null, 'unidad editada', `«${u.nombre}»: ${difUni}`);
     res.json(leerUnidad(u.id));
   }));
 
@@ -224,7 +253,9 @@ module.exports = function compras(app, db, h, finanzas) {
         partidas_json, iva_modo, iva_tasa, subtotal_cent, iva_cent, total_cent, solicitante_nombre, solicitante_cargo, creado_por)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(d.proveedor_id, d.centro_id, d.categoria, d.lead_id, d.fecha, d.fecha_requerida, d.entrega, d.factura_a,
       d.nota, d.observaciones, d.partidas_json, d.iva_modo, d.iva_tasa, d.subtotal_cent, d.iva_cent, d.total_cent, d.solicitante_nombre, d.solicitante_cargo, req.usuarioSesion.id);
-    res.status(201).json(leer(info.lastInsertRowid));
+    const creada = leer(info.lastInsertRowid);
+    audit(req, creada.id, 'creada', `${creada.folio} · ${creada.proveedor_nombre} · ${creada.partidas.length} partida(s) · ${fmt(creada.total_cent)} · centro ${creada.centro_nombre}${req.body.forzar ? ' · se confirmó que no es repetida' : ''}`);
+    res.status(201).json(creada);
   }));
   app.put('/api/compras/ordenes/:id', h((req, res) => {
     const o = db.prepare('SELECT * FROM ordenes_compra WHERE id = ?').get(req.params.id);
@@ -234,11 +265,16 @@ module.exports = function compras(app, db, h, finanzas) {
     const v = validar(req.body || {}, req.usuarioSesion);
     if (v.error) return res.status(400).json({ error: v.error });
     const d = v.datos;
+    const antes = leer(o.id);
     db.prepare(`UPDATE ordenes_compra SET proveedor_id = ?, centro_id = ?, categoria = ?, lead_id = ?, fecha = ?, fecha_requerida = ?, entrega = ?, factura_a = ?, nota = ?, observaciones = ?,
         partidas_json = ?, iva_modo = ?, iva_tasa = ?, subtotal_cent = ?, iva_cent = ?, total_cent = ?, solicitante_nombre = ?, solicitante_cargo = ?,
         updated_at = datetime('now','localtime'), version = version + 1 WHERE id = ?`).run(d.proveedor_id, d.centro_id, d.categoria, d.lead_id, d.fecha, d.fecha_requerida, d.entrega,
       d.factura_a, d.nota, d.observaciones, d.partidas_json, d.iva_modo, d.iva_tasa, d.subtotal_cent, d.iva_cent, d.total_cent, d.solicitante_nombre, d.solicitante_cargo, o.id);
-    res.json(leer(o.id));
+    const despues = leer(o.id);
+    const cambios = [app.locals.auditoria?.diferencias(antes, despues, ['proveedor_nombre', 'centro_nombre', 'fecha', 'fecha_requerida', 'factura_a', 'nota', 'observaciones', 'total_cent', 'iva_modo', 'solicitante_nombre', 'solicitante_cargo'].map(k => k)),
+      antes.partidas_json !== despues.partidas_json ? 'partidas: ' + despues.partidas.map(p => `${p.cantidad} ${p.unidad || ''} ${p.descripcion} a ${fmt(Math.round(p.precio * 100))}`).join('; ') : ''].filter(Boolean).join(' · ');
+    if (cambios) audit(req, o.id, 'editada', cambios);
+    res.json(despues);
   }));
   // Autorizar: la orden pasa a Cuentas por pagar (pendiente de pago; vence según el crédito del proveedor).
   app.post('/api/compras/ordenes/:id/autorizar', h((req, res) => {
@@ -259,6 +295,7 @@ module.exports = function compras(app, db, h, finanzas) {
         .run(info.lastInsertRowid, req.usuarioSesion.id, o.id);
       return info.lastInsertRowid;
     })();
+    audit(req, o.id, 'autorizada', `Se volvió deuda: cuenta por pagar de ${fmt(o.total_cent)} con ${o.proveedor_nombre}, vence el ${vence.split('-').reverse().join('/')}`);
     res.json({ ok: true, cxp_id: cxpId, orden: leer(o.id) });
   }));
   app.post('/api/compras/ordenes/:id/cancelar', h((req, res) => {
@@ -277,6 +314,7 @@ module.exports = function compras(app, db, h, finanzas) {
       db.prepare("UPDATE ordenes_compra SET estado = 'cancelada', cancelada_por = ?, cancelada_at = datetime('now','localtime'), motivo_cancelacion = ?, version = version + 1 WHERE id = ?")
         .run(req.usuarioSesion.id, motivo, o.id);
     })();
+    audit(req, o.id, 'cancelada', `Motivo: ${motivo}${o.cxp_id ? ' · también se canceló su cuenta por pagar' : ''}`);
     res.json({ ok: true, orden: leer(o.id) });
   }));
 };
