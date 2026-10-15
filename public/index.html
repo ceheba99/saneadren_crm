@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Saneadren · Cotizaciones y Servicios</title>
-<link rel="stylesheet" href="styles.css?v=cred1">
+<link rel="stylesheet" href="styles.css?v=bus1">
 <link rel="stylesheet" href="servicios-tabla.css">
 <link rel="stylesheet" href="flujo.css">
 </head>
@@ -58,6 +58,7 @@
     </div>
   </nav>
   <div class="util-2">
+    <button type="button" class="btn-buscar-general" id="btn-buscar-general" aria-label="Buscar en todo el sistema (Ctrl+K)" title="Buscar en todo el sistema (Ctrl+K)"><span aria-hidden="true">🔍</span><span class="btn-buscar-texto">Buscar folio, cliente, proveedor…</span><kbd class="btn-buscar-atajo">Ctrl K</kbd></button>
     <span>👤 <b id="sesion-nombre"></b></span>
     <button id="btn-logout" class="btn btn-outline diseno-btn-logout">Salir</button>
   </div>
@@ -732,6 +733,16 @@
   </div>
 </div>
 
+<!-- ====== OVERLAY: BUSCADOR GENERAL ====== -->
+<div class="overlay overlay-buscar" id="overlay-buscar">
+  <div class="modal modal-buscar">
+    <div class="modal-header"><h2 class="sr-solo" id="buscar-titulo">Buscar en todo el sistema</h2>
+      <div class="buscar-barra"><span aria-hidden="true">🔍</span><input type="search" id="buscar-caja" maxlength="80" autocomplete="off" spellcheck="false" placeholder="Folio, cliente, empresa, RFC, teléfono, proveedor o concepto" aria-label="Buscar en todo el sistema" aria-describedby="buscar-estado"><span class="buscar-estado" id="buscar-estado" role="status"></span></div>
+      <button class="close-btn" type="button" onclick="document.getElementById('overlay-buscar').classList.remove('mostrar')">✕</button></div>
+    <div class="modal-body buscar-resultados" id="buscar-resultados"></div>
+  </div>
+</div>
+
 <!-- ====== OVERLAY: SOLICITUD DE COMPRA ====== -->
 <div class="overlay" id="overlay-solicitud">
   <div class="modal modal-solicitud">
@@ -1114,7 +1125,8 @@
 <script src="compras.js?v=cred1"></script>
 <script src="solicitudes.js?v=sol2"></script>
 <script src="carga-generador.js?v=con1"></script>
-<script src="app.js?v=fol1"></script>
+<script src="app.js?v=bus1"></script>
+<script src="buscador.js?v=bus1"></script>
 <script src="prospeccion.js?v=cli1"></script>
 </body>
 </html>

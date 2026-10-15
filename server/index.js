@@ -138,6 +138,7 @@ const finanzas = require('./finanzas')(app, db, h, unicos);
 require('./tablero')(app, db, h, finanzas); // Resultados: panorama general
 require('./compras')(app, db, h, finanzas); // Órdenes de compra (formato CM-F-03)
 require('./carga-generador')(app, db, h, unicos); // Carga masiva del Generador (Excel por meses)
+require('./buscador')(app, db, h); // Buscador general (caja de arriba): folios, clientes, compras, proveedores
 
 // ---------- Catálogos ----------
 app.get('/api/usuarios', h((req, res) => {
