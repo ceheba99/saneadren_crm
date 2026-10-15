@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Saneadren · Cotizaciones y Servicios</title>
-<link rel="stylesheet" href="styles.css?v=m30">
+<link rel="stylesheet" href="styles.css?v=cg1">
 <link rel="stylesheet" href="servicios-tabla.css">
 <link rel="stylesheet" href="flujo.css">
 </head>
@@ -304,7 +304,7 @@
   <section class="vista" id="vista-generador">
     <div class="vista-encabezado">
       <div><h2>Generador</h2><p class="ayuda">Ventas de las órdenes de servicio <b>realizadas</b>, un renglón por cada servicio. Las columnas en gris son el costo con terceros (gastos ligados a la orden en Cuentas por pagar). Toca un renglón para abrir su orden.</p></div>
-      <button type="button" class="btn btn-outline solo-admin" id="gen-exportar">📥 Exportar a Excel</button>
+      <div class="btn-group"><button type="button" class="btn btn-outline" id="cg-plantilla">📄 Descargar plantilla</button><button type="button" class="btn btn-secundario" id="cg-subir">📤 Cargar generador (Excel)</button><button type="button" class="btn btn-outline solo-admin" id="gen-exportar">📥 Exportar a Excel</button></div>
     </div>
     <div class="filtros">
       <label>Desde <input type="date" id="gen-desde"></label>
@@ -906,6 +906,25 @@
     </div>
   </div>
 </div>
+<!-- ====== OVERLAY: CARGA MASIVA DEL GENERADOR ====== -->
+<div class="overlay" id="overlay-carga-gen">
+  <div class="modal modal-carga-gen">
+    <div class="modal-header"><div><span class="flujo-kicker">CARGA MASIVA · GENERADOR</span><h2 id="cg-titulo">Cargar generador</h2></div>
+      <button class="close-btn" type="button" onclick="document.getElementById('overlay-carga-gen').classList.remove('mostrar')">✕</button></div>
+    <div class="modal-body">
+      <p class="cg-resumen" id="cg-resumen" role="status"></p>
+      <div id="cg-resolver"></div>
+      <div id="cg-errores"></div>
+      <div class="cg-cobrado" id="cg-cobrado" hidden>
+        <div class="seccion-tit">¿Estos servicios ya se cobraron?</div>
+        <label class="gc-iva-opcion"><input type="radio" name="cg-cobrado" value="si"> <span>Sí, ya están cobrados (es historial)</span></label>
+        <label class="gc-iva-opcion"><input type="radio" name="cg-cobrado" value="no"> <span>No, quedan por cobrar (pasan a Cuentas por cobrar)</span></label>
+      </div>
+      <div class="dialogo-acciones"><button type="button" class="btn btn-secundario" id="cg-cancelar">Cancelar</button><button type="button" class="btn btn-primario" id="cg-cargar" disabled>Cargar</button></div>
+    </div>
+  </div>
+</div>
+<input type="file" id="cg-archivo" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" hidden>
 <input type="file" id="importar-archivo" accept=".xlsx,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv" hidden>
 
 <!-- ====== OVERLAY: PAGAR A PROVEEDOR ====== -->
@@ -1034,11 +1053,12 @@
 <script src="servicios-tabla.js?v=pg2"></script>
 <script src="flujo.js?v=cli2"></script>
 <script src="cuentas.js?v=pg2"></script>
-<script src="finanzas.js?v=m30"></script>
+<script src="finanzas.js?v=cg1"></script>
 <script src="calendario.js?v=pg2"></script>
 <script src="tablero.js?v=pg2"></script>
 <script src="compras.js?v=oc4"></script>
-<script src="app.js?v=cli1"></script>
+<script src="carga-generador.js?v=cg3"></script>
+<script src="app.js?v=cg1"></script>
 <script src="prospeccion.js?v=cli1"></script>
 </body>
 </html>

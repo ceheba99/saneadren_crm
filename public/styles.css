@@ -1259,3 +1259,15 @@ button.enlace{background:none;border:0;padding:0;color:var(--azul-600);text-deco
 .cat-tabla tfoot td{border-top:2px solid var(--gris-300);padding-top:10px;}
 .cat-tabla tr.fila-cancelada input:not([type="checkbox"]){opacity:.6;}
 .cat-tabla th{text-align:left;}
+
+/* ===== Carga masiva del generador ===== */
+.modal-carga-gen{max-width:980px;width:calc(100vw - 32px);}
+.modal-carga-gen .modal-body{padding:16px 20px 20px;}
+.cg-resumen{margin:0 0 12px;line-height:1.5;}
+.cg-mal{color:var(--rojo, #b8443a);}
+.cg-pendiente{color:var(--naranja, #b26a00);}
+.cg-bloque{margin:14px 0;}
+.cg-tabla td{vertical-align:middle;padding:5px 6px;}
+.cg-tabla select{width:100%;min-width:260px;min-height:36px;border:1px solid var(--gris-300);border-radius:6px;padding:4px 6px;font:inherit;font-size:13px;}
+.cg-tabla select.cg-falta{border-color:var(--naranja, #b26a00);box-shadow:0 0 0 2px rgba(246,177,3,.25);}
+.cg-cobrado{display:flex;flex-direction:column;gap:6px;margin:16px 0 4px;}

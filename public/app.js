@@ -732,7 +732,7 @@ async function cargarGenerador() {
     + (r.filas.some(f => f.iva_por_definir) ? ' · Las órdenes con IVA por definir se muestran como se capturaron.' : '')
     + (r.por_concluir ? ` · ${r.por_concluir} orden${r.por_concluir === 1 ? '' : 'es'} con fecha pasada aún sin marcar como realizada${r.por_concluir === 1 ? '' : 's'} (no aparecen aquí; ve a Inicio).` : '');
   cuerpo.innerHTML = r.filas.length ? r.filas.map(f => `<tr data-gen-orden="${Number(f.lead_id)}">
-      <td>${escaparHtml(f.mes)}</td><td class="st-fecha">${escaparHtml(f.fecha.split('-').reverse().join('/'))}</td><td class="st-folio">${escaparHtml(f.orden)}</td><td>${escaparHtml(f.factura || '—')}</td>
+      <td>${escaparHtml(f.mes)}</td><td class="st-fecha">${escaparHtml(f.fecha.split('-').reverse().join('/'))}</td><td class="st-folio">${escaparHtml(f.orden)}${f.orden_generador ? `<small class="celda-sub">orden ${escaparHtml(f.orden_generador)}</small>` : ''}</td><td>${escaparHtml(f.factura || '—')}</td>
       <td>${escaparHtml(f.cliente || '—')}</td><td>${escaparHtml(f.proyecto || '—')}</td><td>${escaparHtml(f.producto)}</td><td class="st-num">${Number(f.cantidad)}</td><td class="st-num">${m(f.precio_sin_iva)}</td><td class="st-num">${m(f.precio_con_iva)}</td>
       <td class="st-num">${m(f.subtotal)}</td><td class="st-num">${f.iva_por_definir ? '<small>Por definir</small>' : m(f.iva)}</td><td class="st-num"><b>${m(f.total)}</b></td>
       <td>${escaparHtml(f.canal || '—')}</td><td>${escaparHtml(f.unidad || '—')}</td><td>${escaparHtml(f.empleado || '—')}</td><td>${escaparHtml(f.manifiestos || '—')}</td><td>${escaparHtml(f.tiros || '—')}</td><td>${escaparHtml(f.realizado_por)}</td>
@@ -748,7 +748,7 @@ on('gen-tabla', 'click', e => { const fila = e.target.closest('[data-gen-orden]'
 on('gen-exportar', 'click', () => {
   if (!GENERADOR?.filas.length) { toast('No hay renglones para exportar'); return; }
   descargarCSV('generador_saneadren_' + new Date().toISOString().slice(0, 10) + '.csv', [
-    { titulo: 'MES LETRA', valor: f => f.mes }, { titulo: 'FECHA', valor: f => f.fecha }, { titulo: 'NO. ORDEN', valor: f => f.orden }, { titulo: 'NO. FACTURA', valor: f => f.factura },
+    { titulo: 'MES LETRA', valor: f => f.mes }, { titulo: 'FECHA', valor: f => f.fecha }, { titulo: 'NO. ORDEN', valor: f => f.orden }, { titulo: 'ORDEN GENERADOR', valor: f => f.orden_generador || '' }, { titulo: 'NO. FACTURA', valor: f => f.factura },
     { titulo: 'CLIENTE', valor: f => f.cliente }, { titulo: 'PROYECTO', valor: f => f.proyecto }, { titulo: 'PRODUCTO', valor: f => f.producto }, { titulo: 'CANTIDAD', valor: f => f.cantidad },
     { titulo: 'PRECIO UNITARIO S/IVA', valor: f => f.precio_sin_iva }, { titulo: 'PRECIO UNITARIO C/IVA', valor: f => f.precio_con_iva }, { titulo: 'SUBTOTAL', valor: f => f.subtotal }, { titulo: 'IVA', valor: f => f.iva ?? '' }, { titulo: 'TOTAL', valor: f => f.total },
     { titulo: 'CANAL DE VENTA', valor: f => f.canal }, { titulo: 'UNIDAD', valor: f => f.unidad }, { titulo: 'EMPLEADO', valor: f => f.empleado }, { titulo: 'MANIFIESTOS', valor: f => f.manifiestos }, { titulo: 'TIROS', valor: f => f.tiros }, { titulo: 'REALIZÓ', valor: f => f.realizado_por },
