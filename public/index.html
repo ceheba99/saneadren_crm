@@ -484,6 +484,7 @@
         <button type="button" class="btn btn-primario" id="pagar-nuevo">+ Registrar gasto o factura</button>
         <select id="pagar-vista" aria-label="Mostrar"><option value="pendientes">Por pagar</option><option value="todas">Todas (incluye pagadas)</option></select>
         <button type="button" class="btn btn-outline solo-admin" id="pagar-exportar">📥 Exportar a Excel</button>
+        <button type="button" class="btn btn-outline solo-admin" id="pagar-formato-cxp" title="Mismas 19 columnas del Excel CXP, más el detalle de cada pago">📗 Descargar como «CXP»</button>
         <button type="button" class="btn btn-outline" data-plantilla-descargar="cxp">📄 Descargar plantilla</button>
         <button type="button" class="btn btn-secundario solo-costos" data-plantilla-subir="cxp">📤 Subir plantilla</button>
       </div>
@@ -500,6 +501,8 @@
           <div class="campo"><label for="prov-rfc">RFC (opcional)</label><input id="prov-rfc" maxlength="13"></div>
           <div class="campo"><label for="prov-telefono">Teléfono (opcional)</label><input id="prov-telefono" maxlength="25" inputmode="tel"></div>
           <div class="campo"><label for="prov-contacto">Contacto (opcional)</label><input id="prov-contacto" maxlength="120"></div>
+          <div class="campo"><label for="prov-clabe">CLABE para transferencias (opcional)</label><input id="prov-clabe" maxlength="22" inputmode="numeric" placeholder="18 dígitos"></div>
+          <div class="campo"><label for="prov-banco">Banco (opcional)</label><input id="prov-banco" maxlength="60" placeholder="Ej. Santander"></div>
         </div>
         <div class="btn-group"><button type="button" class="btn btn-primario" id="prov-guardar">Guardar proveedor</button><button type="button" class="btn btn-outline" id="prov-cancelar" hidden>Cancelar edición</button></div>
       </div>
@@ -922,6 +925,11 @@
       <div class="campo"><label for="gasto-concepto">Concepto del costo (obligatorio)</label><input id="gasto-concepto" maxlength="200" required placeholder="Qué se le paga al tercero (ej. Renta de pipa 20 m³, disposición de lodos)"></div>
       <div class="campo"><label for="gasto-total">Total a pagar con IVA (MXN)</label><input id="gasto-total" type="text" inputmode="decimal" autocomplete="off"></div>
       <div class="form-grid-2">
+        <div class="campo"><label for="gasto-comprobante">Tipo de comprobante</label><select id="gasto-comprobante"></select></div>
+        <div class="campo" id="gasto-sat-wrap"><label for="gasto-sat">Método del SAT</label><select id="gasto-sat"><option value="">Sin indicar</option><option value="PUE">PUE · una sola exhibición</option><option value="PPD">PPD · en parcialidades</option></select></div>
+      </div>
+      <div class="campo"><label for="gasto-beneficiario">¿A quién se le paga? (si no es el proveedor)</label><input id="gasto-beneficiario" maxlength="120" list="gasto-beneficiarios" placeholder="Vacío = al mismo proveedor (ej. reembolso a quien pagó con su tarjeta)"><datalist id="gasto-beneficiarios"></datalist></div>
+      <div class="form-grid-2">
         <div class="campo"><label for="gasto-fecha">Fecha de la factura o gasto</label><input id="gasto-fecha" type="date"></div>
         <div class="campo"><label for="gasto-credito">Días de crédito (obligatorio)</label><input id="gasto-credito" type="number" min="0" max="365" step="1" inputmode="numeric" placeholder="0 = de contado"><small class="ayuda" id="gasto-credito-ayuda"></small></div>
         <div class="campo"><label for="gasto-vence">Vence</label><input id="gasto-vence" type="date" readonly tabindex="-1" title="Se calcula: fecha + días de crédito"></div>
@@ -1009,6 +1017,7 @@
       <div class="campo"><span class="etiqueta-campo">¿Cómo se pagó?</span><div class="metodos" id="pagoprov-metodos"></div></div>
       <div class="campo"><label for="pagoprov-fecha">Fecha del pago</label><input id="pagoprov-fecha" type="date"></div>
       <div class="campo"><label for="pagoprov-referencia">Referencia (opcional)</label><input id="pagoprov-referencia" maxlength="120"></div>
+      <div class="campo"><label for="pagoprov-cuenta">¿De qué cuenta salió? (opcional)</label><input id="pagoprov-cuenta" maxlength="80" list="pagoprov-cuentas" placeholder="Ej. Santander empresa, tarjeta de Luis Perea"><datalist id="pagoprov-cuentas"><option value="Santander empresa"></option><option value="Banamex"></option><option value="Banorte"></option><option value="Efectivo caja"></option></datalist></div>
       <div id="pagoprov-historial"></div>
       <button type="button" class="btn btn-primario btn-ancho" id="pagoprov-guardar">Guardar pago</button>
     </div>
@@ -1125,7 +1134,7 @@
 <script src="servicios-tabla.js?v=fe1"></script>
 <script src="flujo.js?v=cli2"></script>
 <script src="cuentas.js?v=av1"></script>
-<script src="finanzas.js?v=rec1"></script>
+<script src="finanzas.js?v=cxp1"></script>
 <script src="calendario.js?v=pg2"></script>
 <script src="tablero.js?v=pg2"></script>
 <script src="bitacora.js?v=hc1"></script>
