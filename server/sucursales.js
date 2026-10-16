@@ -50,7 +50,6 @@ const SOLO_GENERAL = [
   [/^(POST|PUT|DELETE)$/, /^\/servicios(\/|$)/], [/^(POST|PUT|DELETE)$/, /^\/canales(\/|$)/], [/^(POST|PUT|DELETE)$/, /^\/tipos-cliente(\/|$)/],
   [/^(POST|PUT|DELETE)$/, /^\/finanzas\/categorias(\/|$)/], [/^(POST|PUT|DELETE)$/, /^\/prospeccion\/sectores(\/|$)/],
   [/^(PUT)$/, /^\/compras\/formato$/], [/^(POST|PUT|DELETE)$/, /^\/compras\/(centros|unidades)(\/|$)/],
-  [/./, /^\/finanzas\/importar\//], [/./, /^\/generador\/importar$/], [/./, /^\/finanzas\/revision-inicial$/],
 ];
 
 // Folio de un registro a partir de su id (busca su sucursal y su consecutivo). Lo usan todos los módulos.

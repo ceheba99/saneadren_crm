@@ -6,11 +6,14 @@ const { DatabaseSync, backup: respaldar } = require('node:sqlite');
 
 // node:sqlite entrega filas sin prototipo; se copian a objetos normales (como better-sqlite3).
 const normal = fila => (fila === undefined ? undefined : Object.assign({}, fila));
+// Un valor que no llegó (undefined) se toma como NULL: la consulta no encuentra nada y la ruta responde con su
+// mensaje normal («elige un proveedor»…), en vez de tronar con «cannot be bound» (error 500).
+const limpio = p => p.map(v => (v === undefined ? null : v));
 class Sentencia {
   constructor(st) { this.st = st; }
-  get(...p) { return normal(this.st.get(...p)); }
-  all(...p) { return this.st.all(...p).map(normal); }
-  run(...p) { return this.st.run(...p); }
+  get(...p) { return normal(this.st.get(...limpio(p))); }
+  all(...p) { return this.st.all(...limpio(p)).map(normal); }
+  run(...p) { return this.st.run(...limpio(p)); }
 }
 
 class Database {

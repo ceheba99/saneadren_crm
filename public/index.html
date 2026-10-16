@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Saneadren · Cotizaciones y Servicios</title>
-<link rel="stylesheet" href="styles.css?v=suc1">
+<link rel="stylesheet" href="styles.css?v=suc5">
 <link rel="stylesheet" href="servicios-tabla.css">
 <link rel="stylesheet" href="flujo.css">
 </head>
@@ -52,7 +52,7 @@
         <div class="menu-sub">
           <button type="button" class="menu-item" data-vista="catalogos" id="nav-catalogos"><span class="menu-icono" aria-hidden="true">📚</span>Catálogos</button>
           <button type="button" class="menu-item solo-admin" data-vista="usuarios" id="nav-usuarios"><span class="menu-icono" aria-hidden="true">👤</span>Usuarios</button>
-          <button type="button" class="menu-item solo-admin" data-vista="bitacora" id="nav-bitacora"><span class="menu-icono" aria-hidden="true">🗂️</span>Bitácora</button>
+          <button type="button" class="menu-item solo-admin solo-general" data-vista="bitacora" id="nav-bitacora"><span class="menu-icono" aria-hidden="true">🗂️</span>Bitácora</button>
         </div>
       </div>
     </div>
@@ -395,12 +395,12 @@
   </section>
 
   <section class="vista" id="vista-usuarios">
-    <div class="panel-alta">
+    <div class="panel-alta solo-general">
       <h2>Respaldo de la base de datos</h2>
       <p class="ayuda">Descarga una copia del archivo de la base de datos con todo el historial (contactos, cotizaciones y servicios). Guárdala en un lugar seguro; hazlo con regularidad, sobre todo antes de cualquier cambio importante.</p>
       <button class="btn btn-secundario" id="btn-descargar-respaldo">⬇ Descargar respaldo de la base de datos</button>
     </div>
-    <div class="panel-alta">
+    <div class="panel-alta solo-general">
       <h2>🩺 Revisión de integridad de los datos</h2>
       <p class="ayuda">Recorre todo lo guardado y busca incongruencias: fechas imposibles (futuras o antes de cotizar), importes que no cuadran con sus partidas, cobros o pagos de más, facturas repetidas, órdenes de compra sin su cuenta por pagar, solicitudes sin sus 3 cotizaciones, clientes duplicados y archivos que falten. No cambia nada: solo informa. Córrela de vez en cuando y antes de cambios importantes.</p>
       <button class="btn btn-secundario" id="btn-integridad">Revisar ahora</button>

@@ -183,6 +183,9 @@ const total = sub => Math.round(sub * 116) / 100;
   [s, j] = await pedir('GET', '/usuarios', G); revisa(!j.some(u => u.nombre === 'Laura Ventas'), 'la gerente no ve a la gente de Querétaro');
   [s, j] = await pedir('GET', '/auditoria?entidad=orden_compra&id=' + oc.id, G); revisa(Array.isArray(j) && j.some(x => /autoriz/i.test(x.accion)), 'la gerente sí ve el historial de SUS órdenes de compra', j);
   [s, j] = await pedir('GET', '/auditoria', G); revisa(s === 403, 'pero no la bitácora completa (es de todas las sucursales)');
+  [s, j] = await pedir('POST', '/finanzas/importar/cxp', G, { filas: [{ fila: 2, proveedor: 'Pipas del Valle', categoria: 'Otro', concepto: 'Importado por la gerente', fecha_documento: HOY, fecha_vencimiento: HOY, total: 1500 }] });
+  { const [, l] = await pedir('GET', '/finanzas/cxp?vista=todas', A, undefined, { 'X-Sucursal': String(cdmx.id) }); revisa(s < 300 && l.some(x => x.concepto === 'Importado por la gerente'), 'la gerente puede importar su plantilla de cuentas por pagar y queda en CDMX', [s, j.error || j]); }
+  { const [, l] = await pedir('GET', '/finanzas/cxp?vista=todas', LQ); revisa(!l.some(x => x.concepto === 'Importado por la gerente'), 'y Querétaro no ve lo que ella importó'); }
   [s, j] = await pedir('GET', '/auditoria?entidad=cliente&id=' + kfc.id, P); revisa(Array.isArray(j) && j.length > 0, 'Pedro ve el historial de datos de KFC (cliente compartido con el que trabaja)');
   [s, j] = await pedir('GET', '/auditoria?entidad=usuario&id=' + laura.id, G); revisa(Array.isArray(j) && !j.length, 'y nadie de CDMX ve el historial de los usuarios de Querétaro');
   // Sesiones: si Dirección cambia a alguien de sucursal, su sesión se cierra y al volver ve la nueva.
