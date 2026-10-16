@@ -318,7 +318,7 @@
   <!-- ====== VISTA: GENERADOR (ventas por servicio de cada orden) ====== -->
   <section class="vista" id="vista-generador">
     <div class="vista-encabezado">
-      <div><h2>Generador</h2><p class="ayuda">Ventas de las órdenes de servicio <b>realizadas</b>, un renglón por cada servicio. Las columnas en gris son el costo con terceros (gastos ligados a la orden en Cuentas por pagar). Toca un renglón para abrir su orden.</p></div>
+      <div><h2>Generador</h2><p class="ayuda">Ventas de las órdenes de servicio <b>realizadas</b>, un renglón por cada servicio. Las columnas en gris son los gastos generados de cada orden (en Cuentas por pagar). Toca un renglón para abrir su orden.</p></div>
       <div class="btn-group"><button type="button" class="btn btn-outline" id="cg-plantilla">📄 Descargar plantilla</button><button type="button" class="btn btn-secundario" id="cg-subir">📤 Cargar generador (Excel)</button><button type="button" class="btn btn-outline solo-admin" id="gen-exportar">📥 Exportar a Excel</button></div>
     </div>
     <div class="filtros">
@@ -647,12 +647,12 @@
         <div id="cobranza-orden"></div>
       </div>
 
-      <!-- Servicios que realiza un tercero: su costo es un gasto de Cuentas por pagar ligado a esta orden. -->
+      <!-- Gastos que generó esta orden (diésel, casetas, renta de equipo, disposición…): van a Cuentas por pagar con su número de orden. -->
       <div class="modal-section" id="seccion-costos" data-plegable="costos" hidden>
-        <div class="seccion-tit">🚚 Costos con terceros de esta orden</div>
-        <p class="ayuda">Si otra empresa realizó el servicio (p. ej. renta de pipas), registra aquí lo que se le paga. Queda en Cuentas por pagar ligado a esta orden y se ve en el Generador.</p>
+        <div class="seccion-tit">🧾 Gastos generados de esta orden</div>
+        <p class="ayuda">Lo que se gastó para este servicio (diésel, casetas, renta de equipo, disposición de residuos…). Queda en Cuentas por pagar con el número de esta orden y se ve en el Generador.</p>
         <div id="costos-orden"></div>
-        <button type="button" class="btn btn-outline" id="btn-costo-tercero">+ Registrar costo de un tercero</button>
+        <button type="button" class="btn btn-outline" id="btn-costo-tercero">+ Registrar gasto</button>
       </div>
 
       <!-- Notas con fecha y la bitácora van juntas y dicen de qué registro son (no del contacto ni de sus otros servicios). -->
@@ -949,7 +949,7 @@
         <div class="gasto-orden-sugerencias" id="gasto-orden-sugerencias" role="listbox" hidden></div>
         <div class="gasto-orden-info" id="gasto-orden-info" role="status" hidden></div>
       </div>
-      <div class="campo"><label for="gasto-concepto">Concepto del costo (obligatorio)</label><input id="gasto-concepto" maxlength="200" required placeholder="Qué se le paga al tercero (ej. Renta de pipa 20 m³, disposición de lodos)"></div>
+      <div class="campo"><label for="gasto-concepto">Concepto del costo (obligatorio)</label><input id="gasto-concepto" maxlength="200" required placeholder="Concepto del gasto (ej. Renta de pipa 20 m³, diésel, disposición de lodos)"></div>
       <div class="campo"><label for="gasto-total">Total a pagar con IVA (MXN)</label><input id="gasto-total" type="text" inputmode="decimal" autocomplete="off"></div>
       <div class="form-grid-2">
         <div class="campo"><label for="gasto-comprobante">Tipo de comprobante</label><select id="gasto-comprobante"></select></div>
@@ -978,25 +978,26 @@
   </div>
 </div>
 
-<!-- ====== OVERLAY: SERVICIO REALIZADO (quién lo hizo y sus gastos → Cuentas por pagar) ====== -->
+<!-- ====== OVERLAY: ¿SE REALIZÓ EL SERVICIO? (sí: fecha · no: motivo · y sus gastos → Cuentas por pagar) ====== -->
 <div class="overlay" id="overlay-realizado">
   <div class="modal modal-dinero modal-realizado">
     <div class="modal-header"><h2 id="realizado-titulo">Servicio realizado</h2><button class="close-btn" type="button">✕</button></div>
     <div class="modal-body">
       <p class="ayuda" id="realizado-orden"></p>
-      <div class="campo"><label for="realizado-fecha">Fecha en que se realizó</label><input id="realizado-fecha" type="date"></div>
-      <div class="campo"><span class="etiqueta-campo">¿Quién realizó el servicio?</span>
-        <div class="gc-iva-opciones" role="radiogroup" aria-label="Quién realizó el servicio">
-          <label class="gc-iva-opcion"><input type="radio" name="realizado-por" value="propio"> <span>Nosotros (equipo propio)</span></label>
-          <label class="gc-iva-opcion"><input type="radio" name="realizado-por" value="subcontratado"> <span>Lo subcontratamos (otra empresa)</span></label>
+      <div class="campo"><span class="etiqueta-campo">¿Se realizó el servicio?</span>
+        <div class="gc-iva-opciones" role="radiogroup" aria-label="¿Se realizó el servicio?">
+          <label class="gc-iva-opcion"><input type="radio" name="realizado-si" value="si"> <span>Sí</span></label>
+          <label class="gc-iva-opcion"><input type="radio" name="realizado-si" value="no"> <span>No</span></label>
         </div>
       </div>
+      <div class="campo" id="realizado-campo-fecha" hidden><label for="realizado-fecha">Fecha en que se realizó</label><input id="realizado-fecha" type="date"></div>
+      <div class="campo" id="realizado-campo-motivo" hidden><label for="realizado-motivo">¿Por qué no se realizó? (obligatorio)</label><textarea id="realizado-motivo" rows="2" maxlength="300" placeholder="Ej. El cliente canceló en el sitio; no había acceso al registro"></textarea></div>
       <p class="ayuda" id="realizado-ayuda"></p>
-      <div class="seccion-tit">Costos y gastos de este servicio</div>
+      <div class="seccion-tit">¿Se generó algún gasto de este servicio? Inclúyelo:</div>
       <div id="realizado-gastos"></div>
       <button type="button" class="btn btn-outline" id="realizado-agregar">+ Agregar gasto</button>
       <p class="ayuda" id="realizado-resumen"></p>
-      <button type="button" class="btn btn-primario btn-ancho" id="realizado-guardar">Marcar como realizado</button>
+      <button type="button" class="btn btn-primario btn-ancho" id="realizado-guardar">Guardar cambios</button>
     </div>
   </div>
 </div>
@@ -1092,10 +1093,10 @@
         <div class="form-grid-2"><div class="campo"><label for="sn-manifiestos">Manifiestos (opcional)</label><input type="text" id="sn-manifiestos" maxlength="200" placeholder="Folio(s) de manifiesto"></div><div class="campo"><label for="sn-tiros">Tiros (opcional)</label><input type="text" id="sn-tiros" maxlength="60" placeholder="Ej. 2"></div></div>
         <div class="campo"><label for="sn-proyecto">Proyecto (opcional)</label><input type="text" id="sn-proyecto" maxlength="200" placeholder="Ej. Mantenimiento planta 2026"></div>
         <div class="campo"><label for="sn-observaciones">Observaciones de la orden (opcional)</label><textarea id="sn-observaciones" rows="2" maxlength="3000"></textarea></div>
-        <!-- Al duplicar: costos con terceros de la orden original que también se copian (pendientes de pago). -->
+        <!-- Al duplicar: gastos de la orden original que también se copian (pendientes de pago). -->
         <div class="sn-costos" id="sn-costos" hidden>
-          <div class="seccion-tit">🚚 Costos con terceros a duplicar</div>
-          <p class="ayuda">La orden original tiene estos costos. Los marcados se copian a la nueva orden en Cuentas por pagar, <b>pendientes de pago</b>. Puedes ajustar el monto.</p>
+          <div class="seccion-tit">🧾 Gastos de la orden original a duplicar</div>
+          <p class="ayuda">La orden original tiene estos gastos. Los marcados se copian a la nueva orden en Cuentas por pagar, <b>pendientes de pago</b>. Puedes ajustar el monto.</p>
           <div id="sn-costos-lista"></div>
         </div>
       </div>
@@ -1161,7 +1162,7 @@
 <script src="servicios-tabla.js?v=fe1"></script>
 <script src="flujo.js?v=suc4"></script>
 <script src="cuentas.js?v=av1"></script>
-<script src="finanzas.js?v=suc2"></script>
+<script src="finanzas.js?v=gas2"></script>
 <script src="calendario.js?v=pg2"></script>
 <script src="tablero.js?v=suc2"></script>
 <script src="bitacora.js?v=hc1"></script>

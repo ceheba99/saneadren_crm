@@ -320,12 +320,12 @@ module.exports = function finanzas(app, db, h, unicos) {
   // El concepto de un costo con terceros dice QUÉ se le paga al tercero (renta de pipa, disposición de lodos…):
   // es obligatorio y no puede ser simplemente el nombre o la descripción del servicio que se le vende al cliente.
   function problemaConceptoCosto(concepto, lead) {
-    if (!concepto || !conSentido(concepto, 3)) return 'escribe el concepto del costo (qué se le paga al tercero)';
+    if (!concepto || !conSentido(concepto, 3)) return 'escribe el concepto del gasto (ej. diésel, casetas, disposición de lodos)';
     const k = t => String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
     const delServicio = [lead?.servicio_nombre];
     if (lead?.servicio_id) delServicio.push(db.prepare('SELECT nombre FROM catalogo_servicios WHERE id = ?').get(lead.servicio_id)?.nombre);
     try { for (const p of JSON.parse(lead?.partidas_json || '[]')) delServicio.push(p.servicio, p.leyenda); } catch { /* sin partidas */ }
-    if (delServicio.some(t => k(t) && k(t) === k(concepto))) return 'el concepto es igual al servicio que se le vende al cliente: escribe qué se le paga al tercero (ej. «Renta de pipa 20 m³»)';
+    if (delServicio.some(t => k(t) && k(t) === k(concepto))) return 'el concepto es igual al servicio que se le vende al cliente: escribe en qué se gastó (ej. «Renta de pipa 20 m³», «Diésel»)';
     return null;
   }
   const bitacora = (leadId, textoEvento, req) => db.prepare(
@@ -894,6 +894,38 @@ module.exports = function finanzas(app, db, h, unicos) {
   // Marca la orden como realizada (pasa al Generador) o no realizada. Al marcarla realizada se indica si
   // la hizo el equipo propio o se subcontrató, y sus costos/gastos se cargan en Cuentas por pagar
   // ligados a la orden (con su pago si ya se hizo).
+  // Gastos generados por un servicio (se haya realizado o no): validación y carga en Cuentas por pagar ligados a la orden.
+  function validarGastos(lista, lead, fecha, hoy) {
+    const gastos = Array.isArray(lista) ? lista : [];
+    if (gastos.length > 20) return { error: 'Máximo 20 gastos por servicio' };
+    const listos = [];
+    for (const [n, g] of gastos.entries()) {
+      const ren = `Gasto ${n + 1}: `;
+      const prov = db.prepare('SELECT * FROM proveedores WHERE id = ? AND activo = 1').get(g?.proveedor_id);
+      if (!prov) return { error: ren + 'elige el proveedor' };
+      const categoria = g.categoria || prov.categoria;
+      if (!CATEGORIAS[categoria]) return { error: ren + 'categoría inválida' };
+      const concepto = texto(g.concepto, 200);
+      const malConcepto = problemaConceptoCosto(concepto, lead);
+      if (malConcepto) return { error: ren + malConcepto };
+      const total = aCentavos(g.total);
+      if (!total) return { error: ren + 'escribe el monto (mayor a 0, máximo 2 decimales)' };
+      if (g.ya_pagado && !METODOS_PROV.includes(g.metodo)) return { error: ren + 'elige cómo se pagó' };
+      const fechaPago = g.ya_pagado ? (g.fecha_pago || fecha) : null;
+      if (fechaPago && (!fechaValida(fechaPago) || fechaPago > hoy)) return { error: ren + 'la fecha de pago no es válida o es futura' };
+      listos.push({ prov, categoria, concepto, total, ya_pagado: !!g.ya_pagado, metodo: g.metodo, fechaPago, referencia: texto(g.referencia, 120), folio: texto(g.factura_folio, 60) });
+    }
+    return { listos };
+  }
+  function cargarGastos(listos, lead, fecha, nota, req) {
+    for (const g of listos) {
+      const info = db.prepare(`INSERT INTO main.cuentas_por_pagar (proveedor_id, categoria, concepto, factura_folio, fecha_documento, fecha_vencimiento, total_cent, lead_id, equipo, notas, registrado_por)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(g.prov.id, g.categoria, g.concepto, g.folio, fecha, sumarDias(fecha, g.prov.dias_credito), g.total, lead.id, lead.equipo || null, nota, req.usuarioSesion.id);
+      app.locals.sucursales.asignar('cuentas_por_pagar', Number(info.lastInsertRowid), lead.sucursal_id);
+      if (g.ya_pagado) db.prepare('INSERT INTO main.pagos_proveedor (cxp_id, fecha, monto_cent, metodo, referencia, registrado_por) VALUES (?, ?, ?, ?, ?, ?)')
+        .run(info.lastInsertRowid, g.fechaPago, g.total, g.metodo, g.referencia, req.usuarioSesion.id);
+    }
+  }
   app.post('/api/leads/:id/ejecucion', h((req, res) => {
     if (!puedeOperar(req, res)) return;
     const lead = db.prepare('SELECT * FROM leads WHERE id = ?').get(req.params.id);
@@ -903,62 +935,41 @@ module.exports = function finanzas(app, db, h, unicos) {
     if (b.estado === 'no_realizado') {
       const motivo = texto(b.motivo, 300);
       if (!motivo || !conSentido(motivo, 5)) return res.status(400).json({ error: 'Escribe por qué no se realizó (mínimo 5 caracteres)' });
+      const fechaGasto = lead.fecha_servicio && lead.fecha_servicio <= hoy ? lead.fecha_servicio : hoy;
+      const vg = validarGastos(b.gastos, lead, fechaGasto, hoy); if (vg.error) return res.status(400).json({ error: vg.error });
       // Avisos: lo que el cliente ya pagó queda a su favor, y los gastos ya cargados siguen en Cuentas por pagar.
       const cobrado = db.prepare('SELECT COALESCE(SUM(monto_cent), 0) t FROM cobros WHERE lead_id = ? AND cancelado = 0').get(lead.id).t;
       const gastos = cuentasPorPagar().filter(x => x.lead_id === lead.id);
       const pendiente = Math.round(gastos.reduce((t, x) => t + x.saldo * 100, 0));
       db.transaction(() => {
+        if (vg.listos.length) cargarGastos(vg.listos, lead, fechaGasto, 'Gasto generado aunque el servicio no se realizó', req);
         db.prepare("UPDATE main.leads SET ejecucion = 'no_realizado', realizado_por = NULL, fecha_realizado = NULL, motivo_no_realizado = ?, updated_at = datetime('now','localtime'), version = version + 1 WHERE id = ?").run(motivo, lead.id);
         bitacora(lead.id, 'Servicio marcado como NO realizado. Motivo: ' + motivo
           + (cobrado ? `. El cliente ya pagó ${fmt(cobrado)}: queda a su favor (devolver o aplicar a otro servicio)` : '')
           + (gastos.length ? `. Tiene ${gastos.length} gasto(s) en Cuentas por pagar${pendiente ? ' (' + fmt(pendiente) + ' sin pagar)' : ''}: revisa si se cancelan` : '') + '.', req);
       })();
-      return res.json({ ok: true, a_favor: aPesos(cobrado), gastos_ligados: gastos.length, gastos_pendientes: aPesos(pendiente), lead: db.prepare('SELECT * FROM leads WHERE id = ?').get(lead.id) });
+      return res.json({ ok: true, gastos: vg.listos.length, a_favor: aPesos(cobrado), gastos_ligados: gastos.length + vg.listos.length, gastos_pendientes: aPesos(pendiente), lead: db.prepare('SELECT * FROM leads WHERE id = ?').get(lead.id) });
     }
     if (b.estado !== 'realizado') return res.status(400).json({ error: 'Indica si el servicio se realizó o no' });
     const fecha = b.fecha || hoy;
     if (!fechaValida(fecha) || fecha > hoy) return res.status(400).json({ error: 'La fecha en que se realizó no es válida o es futura' });
     if (antesDeCotizar(fecha, lead)) return res.status(400).json({ error: `No se puede haber realizado antes de cotizarse (${fechaDMA(lead.fecha_cotizacion)})` });
-    if (!['propio', 'subcontratado'].includes(b.realizado_por)) return res.status(400).json({ error: 'Indica si lo realizamos nosotros o se subcontrató' });
-    const gastos = Array.isArray(b.gastos) ? b.gastos : [];
-    if (gastos.length > 20) return res.status(400).json({ error: 'Máximo 20 gastos por servicio' });
-    const listos = [];
-    for (const [n, g] of gastos.entries()) {
-      const ren = `Gasto ${n + 1}: `;
-      const prov = db.prepare('SELECT * FROM proveedores WHERE id = ? AND activo = 1').get(g?.proveedor_id);
-      if (!prov) return res.status(400).json({ error: ren + 'elige el proveedor (o quien realizó el servicio)' });
-      const categoria = g.categoria || prov.categoria;
-      if (!CATEGORIAS[categoria]) return res.status(400).json({ error: ren + 'categoría inválida' });
-      const concepto = texto(g.concepto, 200);
-      const malConcepto = problemaConceptoCosto(concepto, lead);
-      if (malConcepto) return res.status(400).json({ error: ren + malConcepto });
-      const total = aCentavos(g.total);
-      if (!total) return res.status(400).json({ error: ren + 'escribe el monto (mayor a 0, máximo 2 decimales)' });
-      if (g.ya_pagado && !METODOS_PROV.includes(g.metodo)) return res.status(400).json({ error: ren + 'elige cómo se pagó' });
-      const fechaPago = g.ya_pagado ? (g.fecha_pago || fecha) : null;
-      if (fechaPago && (!fechaValida(fechaPago) || fechaPago > hoy)) return res.status(400).json({ error: ren + 'la fecha de pago no es válida o es futura' });
-      listos.push({ prov, categoria, concepto, total, ya_pagado: !!g.ya_pagado, metodo: g.metodo, fechaPago, referencia: texto(g.referencia, 120), folio: texto(g.factura_folio, 60) });
-    }
+    // «Quién lo realizó» ya no se pregunta (no se muestra en la orden); se conserva el dato si llega.
+    if (b.realizado_por === undefined || b.realizado_por === null || b.realizado_por === '') b.realizado_por = 'propio';
+    if (!['propio', 'subcontratado'].includes(b.realizado_por)) return res.status(400).json({ error: 'Dato inválido' });
+    const v = validarGastos(b.gastos, lead, fecha, hoy); if (v.error) return res.status(400).json({ error: v.error });
+    const listos = v.listos;
     // Al volver a marcar realizado (p. ej. tras un "no realizado"), no se repiten los gastos que ya están cargados.
     const yaCargado = g => db.prepare('SELECT 1 FROM cuentas_por_pagar WHERE lead_id = ? AND proveedor_id = ? AND concepto = ? AND total_cent = ? AND cancelada = 0').get(lead.id, g.prov.id, g.concepto, g.total);
     const omitidos = listos.filter(yaCargado).length;
     for (let i = listos.length - 1; i >= 0; i--) if (yaCargado(listos[i])) listos.splice(i, 1);
-    const yaTieneGastos = db.prepare('SELECT COUNT(*) n FROM cuentas_por_pagar WHERE lead_id = ? AND cancelada = 0').get(lead.id).n;
-    if (b.realizado_por === 'subcontratado' && !listos.length && !yaTieneGastos) return res.status(400).json({ error: 'Si se subcontrató, registra lo que se le paga a quien lo realizó' });
     db.transaction(() => {
       db.prepare("UPDATE main.leads SET ejecucion = 'realizado', realizado_por = ?, fecha_realizado = ?, motivo_no_realizado = NULL, updated_at = datetime('now','localtime'), version = version + 1 WHERE id = ?")
         .run(b.realizado_por, fecha, lead.id);
-      for (const g of listos) {
-        const info = db.prepare(`INSERT INTO main.cuentas_por_pagar (proveedor_id, categoria, concepto, factura_folio, fecha_documento, fecha_vencimiento, total_cent, lead_id, equipo, notas, registrado_por)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(g.prov.id, g.categoria, g.concepto, g.folio, fecha, sumarDias(fecha, g.prov.dias_credito), g.total, lead.id, lead.equipo || null,
-          'Registrado al marcar el servicio como realizado', req.usuarioSesion.id);
-        app.locals.sucursales.asignar('cuentas_por_pagar', Number(info.lastInsertRowid), lead.sucursal_id);
-        if (g.ya_pagado) db.prepare('INSERT INTO main.pagos_proveedor (cxp_id, fecha, monto_cent, metodo, referencia, registrado_por) VALUES (?, ?, ?, ?, ?, ?)')
-          .run(info.lastInsertRowid, g.fechaPago, g.total, g.metodo, g.referencia, req.usuarioSesion.id);
-      }
+      cargarGastos(listos, lead, fecha, 'Registrado al marcar el servicio como realizado', req);
       const suma = listos.reduce((t, g) => t + g.total, 0);
-      bitacora(lead.id, `Servicio realizado el ${fmtFecha(fecha)} por ${b.realizado_por === 'propio' ? 'nuestro equipo' : 'un tercero (subcontratado)'}.`
-        + (listos.length ? ` Costos con terceros cargados en Cuentas por pagar: ${listos.map(g => `«${g.concepto}» de ${g.prov.nombre} ${fmt(g.total)}${g.ya_pagado ? ' (pagado)' : ''}`).join('; ')}.` : ' Sin costos con terceros.'), req);
+      bitacora(lead.id, `Servicio realizado el ${fmtFecha(fecha)}.`
+        + (listos.length ? ` Gastos generados cargados en Cuentas por pagar: ${listos.map(g => `«${g.concepto}» de ${g.prov.nombre} ${fmt(g.total)}${g.ya_pagado ? ' (pagado)' : ''}`).join('; ')}.` : ' Sin gastos generados.'), req);
     })();
     res.json({ ok: true, gastos: listos.length, omitidos, lead: db.prepare('SELECT * FROM leads WHERE id = ?').get(lead.id) });
   }));
