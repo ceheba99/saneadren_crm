@@ -1449,3 +1449,17 @@ body.es-costos .solo-no-costos{display:none !important;}
 .hc-tabla .bit-detalle{white-space:normal;color:var(--texto-sec);font-size:12.5px;}
 .hc-tabla th,.hc-tabla td{text-align:left !important;vertical-align:top;}
 .hc-tabla .celda-sub{display:block;}
+
+/* Revisión de integridad (Ajustes → Usuarios) */
+.integridad-resultado{display:flex;flex-direction:column;gap:6px;margin-top:10px;}
+.integ-resumen{margin:0;padding:8px 12px;border-radius:8px;font-weight:700;}
+.integ-resumen.ok{background:#e8f3ee;color:#2f6b4e;}
+.integ-resumen.aviso{background:#fff4e5;color:#7a5600;}
+.integ-resumen.mal{background:#fbe9e7;color:#b8443a;}
+.integ-item{border:1px solid var(--gris-300);border-radius:8px;padding:8px 12px;}
+.integ-item.error{border-color:#e9b7b0;background:#fdf6f5;}
+.integ-item.aviso{border-color:#f3c27a;background:#fffaf2;}
+.integ-item summary{cursor:pointer;}
+.integ-item ul,.integ-limpias ul{margin:6px 0 0;padding-left:18px;font-size:13px;}
+.integ-n{display:inline-block;min-width:22px;text-align:center;border-radius:999px;background:#fff;border:1px solid var(--gris-300);font-size:12px;font-weight:700;}
+.integ-limpias{color:var(--texto-sec);font-size:13px;}

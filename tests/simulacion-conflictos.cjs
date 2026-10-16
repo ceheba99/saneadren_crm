@@ -138,6 +138,7 @@ const HOY = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Mexico_City' }
   const rs = (await pedir('GET', '/finanzas/resumen', A))[1];
   const suma = Math.round(todas.filter(c => c.saldo > 0 && !c.programada).reduce((t, c) => t + c.saldo * 100, 0)) / 100;
   revisa(rs.por_cobrar === suma, '"Te deben" = suma de la lista', { rs: rs.por_cobrar, suma });
+  { const [si, ri] = await pedir('GET', '/admin/integridad', A); const malos = (ri.resultados || []).filter(r => r.gravedad === 'error' && r.total); revisa(si === 200 && ri.errores === 0, 'al terminar, la revisión de integridad no encuentra errores en los datos', malos.map(r => r.titulo + ': ' + JSON.stringify(r.casos.slice(0, 2)))); }
   revisa(!/uncaughtException|Error no manejado|TypeError|SqliteError|RangeError|ReferenceError/.test(salida), 'el servidor no registró errores internos', salida.split('\n').filter(l => /Error/.test(l)).slice(0, 6));
   const salud = await pedir('GET', '/salud', null);
   revisa(salud[0] === 200, 'el servidor sigue vivo al final', salud);

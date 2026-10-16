@@ -154,6 +154,7 @@ require('./compras')(app, db, h, finanzas); // Órdenes de compra (formato CM-F-
 require('./carga-generador')(app, db, h, unicos); // Carga masiva del Generador (Excel por meses)
 require('./buscador')(app, db, h); // Buscador general (caja de arriba): folios, clientes, compras, proveedores
 require('./respaldos')(db, { hoyMexico }); // Copia diaria automática de la base (últimos 14 días) junto a la base
+require('./integridad')(app, db, h); // Revisión de integridad de los datos guardados (solo administración)
 
 // ---------- Catálogos ----------
 app.get('/api/usuarios', h((req, res) => {

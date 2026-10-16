@@ -172,6 +172,7 @@ const revisa = (cond, texto, extra) => { n++; if (!cond) { malos.push(texto); co
   [s, j] = await pedir('GET', '/compras/solicitudes?q=llantas', V); revisa(j.length === 1 && j[0].id === sol.id, 'buscar «llantas»');
   [s, j] = await pedir('GET', '/compras/solicitudes', null); revisa(s === 401, 'sin sesión no se ve nada');
 
+  { const [si, ri] = await pedir('GET', '/admin/integridad', A); const malos = (ri.resultados || []).filter(r => r.gravedad === 'error' && r.total); revisa(si === 200 && ri.errores === 0, 'al terminar, la revisión de integridad no encuentra errores en los datos', malos.map(r => r.titulo + ': ' + JSON.stringify(r.casos.slice(0, 2)))); }
   revisa(!/uncaughtException|Error no manejado|TypeError|SqliteError|RangeError|ReferenceError/.test(salida), 'el servidor no registró errores internos', salida.split('\n').filter(l => /Error/.test(l)).slice(0, 6));
   console.log(`\n${n - malos.length}/${n} correctas`);
   if (malos.length) console.log('FALLAS:\n- ' + malos.join('\n- '));
