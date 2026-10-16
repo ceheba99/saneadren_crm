@@ -551,6 +551,8 @@ module.exports = function finanzas(app, db, h, unicos) {
   // Días de crédito predeterminados del cliente (se copian a sus órdenes nuevas).
   app.put('/api/finanzas/clientes/:id/credito', h((req, res) => {
     if (!permitido(req, res, PUEDE_EDITAR_FACTURA, 'Solo administración o atención pueden cambiar el crédito')) return;
+    const suc = app.locals.sucursales;
+    if (suc && !suc.puedeEditarCliente(req, Number(req.params.id))) return res.status(403).json(suc.NO_EDITA(req, Number(req.params.id)));
     if (!diasCreditoValidos(req.body.dias_credito)) return res.status(400).json({ error: 'Los días de crédito deben ser un número entero de 0 a 180' });
     const info = db.prepare('UPDATE clientes SET dias_credito = ? WHERE id = ?').run(req.body.dias_credito === '' || req.body.dias_credito == null ? null : Number(req.body.dias_credito), req.params.id);
     if (!info.changes) return res.status(404).json({ error: 'Cliente no encontrado' });

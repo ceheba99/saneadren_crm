@@ -124,23 +124,39 @@ const total = sub => Math.round(sub * 116) / 100;
   revisa(s === 200 && !j.ordenes.length && !j.pagos.length && j.debe === 0, 'el mismo proveedor visto desde Querétaro: sin las compras de CDMX', [j.ordenes?.length, j.pagos?.length]);
 
   console.log('5. Clientes compartidos (KFC)');
-  [s, j] = await pedir('GET', '/leads/buscar-telefono/4426901122', P);
-  revisa(j.cliente?.id === kfc.id && j.solicitudes.length === 0 && j.tiene_abierta === false, 'Pedro escribe el teléfono de KFC: el sistema reconoce al cliente, pero no le enseña nada de lo que KFC hizo en Querétaro', j);
-  [s, j] = await pedir('POST', '/contactos', P, { nombre: 'Gerente KFC Reforma', telefono: '442 690 1122', empresa_contacto: 'KFC', direccion: 'Reforma 222', canal_origen_id: canales[0].id });
-  revisa(s === 409 && j.cliente_id === kfc.id, 'si intenta darlo de alta otra vez, no lo deja duplicar («ya es de CLI-…»)', [s, j.error]);
+  const sinDatosKFC = txt => !/Operadora KFC|Sofía|OKB980512|690 1122|Bernardo Quintana/i.test(txt.replace(/4426901122|442 690 1122/g, ''));
+  [s, j, t] = await pedir('GET', '/leads/buscar-telefono/4426901122', P);
+  revisa(j.cliente?.id === kfc.id && j.cliente.otra_sucursal && j.cliente.folio && j.solicitudes.length === 0 && sinDatosKFC(t), 'Pedro escribe el teléfono de KFC: «ya está registrado en otra sucursal (CLI-…)», sin nombre, empresa ni RFC', j);
+  [s, j, t] = await pedir('POST', '/contactos', P, { nombre: 'Gerente KFC Reforma', telefono: '442 690 1122', empresa_contacto: 'KFC Reforma', direccion: 'Reforma 222', canal_origen_id: canales[0].id });
+  revisa(s === 409 && j.cliente_id === kfc.id && /otra sucursal/.test(j.error) && sinDatosKFC(t), 'si intenta darlo de alta otra vez: no lo duplica y tampoco le enseña sus datos', [s, j.error]);
+  [s, j, t] = await pedir('POST', '/contactos', P, { nombre: 'Ing. Sofía Hernández', telefono: '55 1234 9876', empresa_contacto: 'Operadora KFC', direccion: 'Reforma 222', canal_origen_id: canales[0].id });
+  revisa(s === 409 && j.error === 'posible_duplicado' && j.parecidos.every(p => p.otra_sucursal && !p.telefono && !p.rfc) && !/OKB980512|690 1122|Bernardo/.test(t), 'con el mismo nombre en otro teléfono: pregunta «¿es el mismo?» sin enseñar teléfono ni RFC del otro', j.parecidos);
+  [s, j] = await pedir('POST', '/contactos', P, { nombre: 'Ing. Sofía Hernández', telefono: '55 1234 9876', empresa_contacto: 'Operadora KFC', direccion: 'Reforma 222', canal_origen_id: canales[0].id, agregar_telefono_a: kfc.id });
+  revisa(s === 409 && j.cliente_id === kfc.id && j.cliente?.otra_sucursal, 'si dice «es el mismo»: se usa ese cliente, pero NO se le agrega el teléfono (sus datos son de Querétaro)', [s, j.error]);
+  [s, j] = await pedir('GET', '/clientes/' + kfc.id + '/telefonos', A); revisa(!j.some(x => x.telefono_normalizado === '5512349876'), 'el teléfono de CDMX no se agregó a KFC', j);
   [s, j] = await pedir('POST', '/leads', P, { cliente_id: kfc.id, direccion: 'Sucursal Reforma, CDMX', canal_id: canales[0].id, servicio_id: SERV.id, responsable_id: uid('Pedro Ventas'), partidas_json: partidas('Trampa de grasa Reforma (CDMX)', 5200), iva_modo: 'mas_iva', valor: 5200, fecha_cotizacion: HOY });
-  const cotK = j; revisa(s === 201 && cotK.sucursal_id === cdmx.id, 'le cotiza al mismo KFC: la cotización es de CDMX', [s, j.error]);
+  const cotK = j; revisa(s === 201 && cotK.sucursal_id === cdmx.id, '«Cotizarle a este cliente»: la cotización es de CDMX, al mismo KFC', [s, j.error]);
+  [s, j] = await pedir('POST', '/leads', P, { agregar_telefono_a: kfc.id, telefono: '55 1234 9877', direccion: 'Sucursal Polanco, CDMX', canal_id: canales[0].id, servicio_id: SERV.id, responsable_id: uid('Pedro Ventas'), forzar_duplicado: true, partidas_json: partidas('Trampa de grasa Polanco (CDMX)', 5200), iva_modo: 'mas_iva', valor: 5200 });
+  { const [, tel] = await pedir('GET', '/clientes/' + kfc.id + '/telefonos', A); revisa(s === 201 && j.cliente_id === kfc.id && !tel.some(x => x.telefono_normalizado === '5512349877'), 'cotizar con «agregar este teléfono» desde CDMX: se cotiza a KFC sin tocar sus teléfonos', [s, j.error]); }
   [s, j, t] = await pedir('GET', '/clientes/' + kfc.id, P);
-  revisa(s === 200 && j.servicios.length === 1 && j.servicios[0].id === cotK.id && !/Juriquilla/.test(t), 'en la ficha de KFC, Pedro ve solo lo de CDMX (no Juriquilla)', j.servicios?.map(x => x.id));
+  revisa(s === 200 && j.servicios.length === 2 && j.servicios.every(x => x.sucursal_id === cdmx.id) && !/Juriquilla/.test(t), 'ya que le vende, Pedro ve la ficha de KFC (para la cotización), pero solo con lo de CDMX', j.servicios?.map(x => x.id));
   [s, j, t] = await pedir('GET', '/clientes/' + kfc.id, LQ);
-  revisa(j.servicios.length === 1 && j.servicios[0].id === cotQ.id && !/Reforma \(CDMX\)/.test(t), 'y Laura (Querétaro) ve solo lo de Querétaro', j.servicios?.map(x => x.id));
+  revisa(j.servicios.length === 1 && j.servicios[0].id === cotQ.id && !/\(CDMX\)/.test(t), 'y Laura (Querétaro) ve solo lo de Querétaro', j.servicios?.map(x => x.id));
   [s, j] = await pedir('GET', '/finanzas/clientes/' + kfc.id + '/estado-cuenta?completo=1', P); revisa(j.ordenes.every(o => o.lead_id !== cotQ.id), 'estado de cuenta de KFC en CDMX: sin la deuda de Querétaro');
   [s, j, t] = await pedir('GET', '/clientes/' + kfc.id + '/movimientos', P); revisa(!/Juriquilla|Q-1/.test(t), 'historial de KFC en CDMX: sin los movimientos de Querétaro');
-  [s, j] = await pedir('GET', '/clientes/' + kfc.id, A); revisa(j.servicios.length === 2, 'Dirección ve a KFC completo: Querétaro + CDMX');
+  [s, j] = await pedir('GET', '/clientes/' + kfc.id, A); revisa(j.servicios.length === 3, 'Dirección ve a KFC completo: Querétaro + CDMX');
+  // Quién corrige los datos del cliente compartido.
   [s, j] = await pedir('PUT', '/clientes/' + kfc.id, P, { correo: 'mantenimiento@kfc.mx' });
-  [s, j] = await pedir('GET', '/clientes/' + kfc.id, LQ); revisa(j.correo === 'mantenimiento@kfc.mx', 'los datos del cliente (correo, teléfono, RFC) son uno solo: si CDMX los corrige, Querétaro ve el cambio', j.correo);
-  [s, j] = await pedir('GET', '/auditoria?entidad=cliente&id=' + kfc.id, A); revisa(j.some(x => x.usuario === 'Pedro Ventas' && /correo/i.test(x.detalle)), 'y queda en la bitácora quién lo cambió (Pedro)');
+  revisa(s === 403 && j.codigo === 'CLIENTE_DE_OTRA_SUCURSAL' && /Querétaro/.test(j.error), 'Pedro NO puede cambiar los datos de KFC (lo dio de alta Querétaro); el aviso le dice quién sí', [s, j.error]);
+  [s, j] = await pedir('PUT', '/finanzas/clientes/' + kfc.id + '/credito', G, { dias_credito: 90 }); revisa(s === 403, 'la gerente de CDMX tampoco le cambia el crédito a KFC');
+  [s, j] = await pedir('POST', '/clientes/' + kfc.id + '/telefonos', G, { telefono: '55 1111 2233' }); revisa(s === 403, 'ni le agrega teléfonos');
+  [s, j] = await pedir('PUT', '/clientes/' + kfc.id, LQ, { correo: 'mantenimiento@kfc.mx' }); revisa(s === 200, 'Laura (Querétaro, quien lo dio de alta) sí lo corrige');
+  [s, j] = await pedir('GET', '/clientes/' + kfc.id, P); revisa(j.correo === 'mantenimiento@kfc.mx', 'y Pedro ve el dato corregido (el cliente es uno solo)');
+  [s, j] = await pedir('PUT', '/finanzas/clientes/' + kfc.id + '/credito', A, { dias_credito: 30 }); revisa(s === 200, 'Dirección sí puede corregir cualquier cliente (p. ej. su crédito)');
+  [s, j] = await pedir('GET', '/auditoria?entidad=cliente&id=' + kfc.id, A); revisa(j.some(x => x.usuario === 'Laura Ventas' && /correo/i.test(x.detalle)), 'y queda en la bitácora quién lo cambió');
+  [s, j] = await pedir('PUT', '/clientes/' + torre.id, P, { correo: 'mantenimiento@torre.mx' }); revisa(s === 200, 'Pedro sí corrige a sus propios clientes (Torre Reforma)');
   [s] = await pedir('GET', '/clientes/' + torre.id, LQ); revisa(s === 404, 'Torre Reforma (cliente solo de CDMX) no existe para Querétaro');
+  [s, j, t] = await pedir('GET', '/leads/buscar-telefono/5552501234', LQ); revisa(j.cliente?.otra_sucursal && !/Torre|Daniela/.test(t), 'y si Laura escribe su teléfono, tampoco ve sus datos');
 
   console.log('6. Intentos de saltar de sucursal');
   for (const h of [String(qro.id), 'todas', '1,2', ' ' + qro.id, qro.id + '.0', '-1', '0', 'abc', '999999', 'QRO', 'null', '[1]']) {

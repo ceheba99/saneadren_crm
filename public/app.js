@@ -190,6 +190,13 @@ async function verificarDuplicado(telefono) {
   const panel = document.getElementById('alerta-dup');
   panel.classList.toggle('mostrar',!!data.cliente);
   if (!data.cliente) return;
+  if (data.cliente.otra_sucursal) {
+    // De otra sucursal: solo se sabe que existe (su ID); se le cotiza al mismo cliente para no duplicarlo.
+    document.getElementById('dup-titulo').textContent = 'Este teléfono ya está registrado en otra sucursal (' + data.cliente.folio + ')';
+    document.getElementById('dup-lista').innerHTML = '<p>Para no duplicarlo, se le cotiza a ese mismo cliente. Sus datos y lo que ha hecho con la otra sucursal no se muestran aquí ni se modifican.</p><button type="button" class="btn btn-primario" id="btn-dup-otra-sucursal">Cotizarle a este cliente</button>';
+    document.getElementById('btn-dup-otra-sucursal').onclick = () => FlujoCRM.irACotizar(data.cliente.id, { ...data.cliente, telefono: telefono, direccion: document.getElementById('in-direccion')?.value || '' });
+    return;
+  }
   document.getElementById('dup-titulo').textContent = 'Este contacto ya existe: ' + (data.cliente.nombre || data.cliente.telefono);
   document.getElementById('dup-lista').innerHTML = '<p>Abre su ficha para consultar registros anteriores y usar Crear cotización o Crear orden de servicio. Sus datos no se sobrescribirán.</p><button type="button" class="btn btn-primario" onclick="FlujoCRM.irACotizar(' + Number(data.cliente.id) + ')">Abrir ficha del contacto</button>';
 

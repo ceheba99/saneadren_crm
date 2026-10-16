@@ -147,8 +147,14 @@ const MARCA = /secretoqro|-QRO-/i; // nada de QRO: ni su marca ni sus folios
     for (const r of LECTURAS) {
       const [st, js, texto] = await pedir('GET', r, T);
       // buscar-telefono: el cliente es compartido (para no duplicarlo), pero sus servicios no se ven.
-      if (r.startsWith('/leads/buscar-telefono')) { if ((js.solicitudes || []).length) fugas.push(r + ' trae servicios de QRO'); continue; }
+      if (r.startsWith('/leads/buscar-telefono') && (js.solicitudes || []).length) fugas.push(r + ' trae servicios de QRO');
       if (MARCA.test(texto.replace(/"q":"[^"]*"/, ''))) fugas.push(st + ' ' + r + ' → ' + (texto.match(/.{0,60}(secretoqro|-QRO-).{0,40}/i) || [''])[0]);
+    }
+    // Dar de alta un contacto con el teléfono o el nombre de uno de Querétaro: no regresa sus datos.
+    for (const cuerpo of [{ nombre: 'Prueba Uno', telefono: '4421837201', empresa_contacto: 'Otra Empresa', direccion: 'x', canal_origen_id: canales[0].id },
+      { nombre: 'Contacto Secretoqro', telefono: '5598761234', empresa_contacto: 'Empresa Secretoqro', direccion: 'x', canal_origen_id: canales[0].id }]) {
+      const [st, , texto] = await pedir('POST', '/contactos', T, cuerpo);
+      if (/4421837201|Calle 1/.test(texto) || (MARCA.test(texto.replace(/Secretoqro/g, '')) )) fugas.push('alta de contacto ' + st + ' → ' + texto.slice(0, 120));
     }
     revisa(!fugas.length, `${rol} de CDMX: ${LECTURAS.length} lecturas sin ningún dato de Querétaro`, fugas.slice(0, 8));
   }

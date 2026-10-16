@@ -263,8 +263,17 @@ module.exports = function sucursales(app, db, h, { audit }) {
   // Clientes compartidos: los ve quien los dio de alta en su sucursal o ha trabajado con ellos (SQL para «c»).
   const clienteVisible = (a = 'c') => `(en_alcance(${a}.sucursal_id) OR EXISTS (SELECT 1 FROM leads lv WHERE lv.cliente_id = ${a}.id))`;
   const verCliente = id => !!db.prepare(`SELECT 1 FROM main.clientes c WHERE c.id = ? AND ${clienteVisible('c')}`).get(id);
+  // Los datos de un cliente compartido (teléfonos, RFC, correo, dirección, crédito) los corrige Dirección o la
+  // sucursal que lo dio de alta; las demás sucursales le venden, pero no le cambian los datos.
+  function puedeEditarCliente(req, id) {
+    if (req.usuarioSesion?.admin_general) return true;
+    const c = db.prepare('SELECT sucursal_id FROM main.clientes WHERE id = ?').get(id);
+    return !!c && (c.sucursal_id == null ? req.alcanceSuc.permitidas.includes(alcance.matriz()) : req.alcanceSuc.permitidas.includes(c.sucursal_id));
+  }
+  const sucursalDeCliente = id => { const c = db.prepare('SELECT sucursal_id FROM main.clientes WHERE id = ?').get(id); return lista().find(s => s.id === c?.sucursal_id) || null; };
+  const NO_EDITA = (req, id) => { const s = sucursalDeCliente(id); return { error: `Este cliente lo dio de alta ${s ? s.nombre + ' (' + s.clave + ')' : 'otra sucursal'}: sus datos (teléfonos, RFC, correo, dirección y crédito) los corrige esa sucursal o Dirección. Tú sí puedes cotizarle y venderle.`, codigo: 'CLIENTE_DE_OTRA_SUCURSAL' }; };
 
-  return { activarCandados, folio: folioDe, claveDe, asignar, de, siguienteFolio, lista, clienteVisible, verCliente, esGeneral, sucursalesParaUsuario, guardarSucursalesUsuario, puedeAdministrar, sucursalesDe };
+  return { puedeEditarCliente, NO_EDITA, activarCandados, folio: folioDe, claveDe, asignar, de, siguienteFolio, lista, clienteVisible, verCliente, esGeneral, sucursalesParaUsuario, guardarSucursalesUsuario, puedeAdministrar, sucursalesDe };
 };
 module.exports.VISTAS = VISTAS;
 // «OS-CDMX-202610-0001»; los registros de antes de las sucursales conservan «OS-202610-0087».

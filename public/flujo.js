@@ -70,10 +70,10 @@ const FlujoCRM = (() => {
     const c=contacto||{id:lead.cliente_id,nombre:lead.nombre,telefono:lead.telefono,empresa_contacto:lead.empresa_contacto};
     $('registro-contacto').innerHTML=`<div><span class="flujo-kicker">CONTACTO ASOCIADO · SOLO CONSULTA</span><strong>${escapar(c.nombre||'Sin nombre')}</strong><span>${escapar(c.telefono||'')} ${c.empresa_contacto?'· '+escapar(c.empresa_contacto):''}</span></div>${c.id?`<button type="button" class="btn btn-outline" data-abrir-contacto="${Number(c.id)}">Ver / editar contacto #${Number(c.id)}</button>`:''}`;
   }
-  async function nuevoRegistro(id,modo,prefill){
+  async function nuevoRegistro(id,modo,prefill,clienteOculto){
     if(!await permitirCambio('overlay-ficha') || !await permitirCambio('overlay-ficha-cliente') || !await permitirCambio('overlay-servicio-nuevo'))return;
     try {
-      CLIENTE_DUP=await api('/clientes/'+id).then(r=>r.json());
+      CLIENTE_DUP=clienteOculto?{...clienteOculto,id:Number(id)}:await api('/clientes/'+id).then(r=>r.json());
       // Si se abrió desde la ficha de una orden (p. ej. Duplicar), al terminar se regresa a esa orden:
       // la ficha se cierra porque el editor de partidas pasa a la ventana nueva.
       REGRESO_FICHA=$('overlay-ficha').classList.contains('mostrar')?LEAD_ACTUAL?.id??null:null;
@@ -122,12 +122,15 @@ const FlujoCRM = (() => {
       limpiarFormAlta();
       // Guardar contacto solo guarda. Para cotizar se abre su ficha: ahí están Crear cotización y
       // Crear orden de servicio, la única forma de crear registros (evita rutas paralelas).
-      if(cotizar)await irACotizar(id);else $('in-telefono').focus();
+      const oculto=r.status===409&&c.cliente?.otra_sucursal?{...c.cliente,telefono:payload.telefono,direccion:payload.direccion}:null;
+      if(cotizar)await irACotizar(id,oculto);else $('in-telefono').focus();
     }catch(err){toast(err.message);}finally{botones.forEach(b=>b.disabled=false);}
   }
   $('btn-guardar-contacto-nuevo').addEventListener('click',()=>crearContacto(false));
   // Abre la ficha del contacto y lleva la vista a los botones Crear cotización / Crear orden de servicio.
-  async function irACotizar(id){
+  async function irACotizar(id,clienteOculto){
+    // Cliente de otra sucursal: su ficha no se muestra aquí; se le cotiza directo (sus datos no se cambian).
+    if(clienteOculto){document.getElementById('in-telefono')?.closest('.overlay')?.classList.remove('mostrar');return nuevoRegistro(id,'pipeline',undefined,clienteOculto);}
     cambiarVista('clientes');await abrirFichaCliente(id);
     const sec=document.querySelector('#overlay-ficha-cliente [data-plegable="registros-contacto"]');
     if(sec?.classList.contains('plegada'))sec.querySelector('.plegable-cabecera')?.click();

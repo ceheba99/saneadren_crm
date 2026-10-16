@@ -75,10 +75,11 @@ module.exports=function registrarProspeccion(app,db,h,unicos){
     const tel=e.telefono.replace(/\D/g,'').slice(-10);if(tel.length!==10)return res.status(400).json({error:'Completa el teléfono antes de preparar la cotización'});
     // «Es el mismo cliente» (parecido por nombre): se le agrega este teléfono y se vincula el establecimiento.
     if(req.body.agregar_telefono_a){const destino=db.prepare('SELECT id FROM clientes WHERE id=?').get(Number(req.body.agregar_telefono_a));if(!destino)return res.status(404).json({error:'Cliente no encontrado'});
+      if(!app.locals.sucursales.puedeEditarCliente(req,destino.id)){db.prepare("UPDATE main.establecimientos SET cliente_id=?,version=version+1,updated_at=datetime('now','localtime') WHERE id=?").run(destino.id,e.id);return res.json({cliente_id:destino.id,otra_sucursal:true});}
       const r=unicos.agregarTelefono(destino.id,e.telefono,'Prospección: '+String(e.nombre).slice(0,45));if(r.error)return res.status(409).json(r);
       db.prepare("UPDATE main.establecimientos SET cliente_id=?,version=version+1,updated_at=datetime('now','localtime') WHERE id=?").run(destino.id,e.id);return res.json({cliente_id:destino.id});}
     const existente=unicos.porTelefono(tel);
-    if(existente&&req.body.cliente_id!==existente.id)return res.status(409).json({error:'El teléfono ya pertenece a un contacto. Confirma si es el mismo contacto comercial.',existente});
+    if(existente&&req.body.cliente_id!==existente.id)return res.status(409).json({error:'El teléfono ya pertenece a un contacto. Confirma si es el mismo contacto comercial.',existente:unicos.resumen(existente)});
     if(req.body.cliente_id&&!existente)return res.status(400).json({error:'El contacto indicado no coincide con el teléfono'});
     // Contacto nuevo: no debe existir ya un cliente con nombre o empresa parecidos (salvo que se confirme que es otro).
     const distintoDe=Array.isArray(req.body.distinto_de)?req.body.distinto_de.map(Number).filter(Boolean):[];
@@ -90,6 +91,6 @@ module.exports=function registrarProspeccion(app,db,h,unicos){
         unicos.recordarDistintos(Number(clienteId),distintoDe,req.usuarioSesion.id);
       }
       db.prepare("UPDATE main.establecimientos SET cliente_id=?,version=version+1,updated_at=datetime('now','localtime') WHERE id=?").run(clienteId,e.id);return clienteId;
-    })();res.json({cliente_id:id});
+    })();res.json({cliente_id:id,otra_sucursal:!app.locals.sucursales.verCliente(Number(id))});
   }));
 };

@@ -145,7 +145,12 @@ module.exports = function clientesUnicos(app, db, h) {
   const par = (x, y) => (x < y ? [x, y] : [y, x]);
   const sonDistintos = db.prepare('SELECT 1 FROM clientes_distintos WHERE a = ? AND b = ?');
   const quienDistintos = db.prepare('SELECT u.nombre, u.rol FROM clientes_distintos d LEFT JOIN usuarios u ON u.id = d.confirmado_por WHERE d.a = ? AND d.b = ?');
-  const resumen = c => c && ({ id: c.id, folio: folioCliente(c.id), nombre: c.nombre, empresa: c.empresa_contacto, telefono: esTelReal(c.telefono_normalizado) ? c.telefono : null, rfc: c.rfc || null });
+  // Un cliente de otra sucursal (que esta no ve): solo se dice que existe y su ID, sin nombre, teléfono ni RFC.
+  const ve = c => !app.locals.sucursales || app.locals.sucursales.verCliente(c.id);
+  const resumen = c => c && (ve(c) ? { id: c.id, folio: folioCliente(c.id), nombre: c.nombre, empresa: c.empresa_contacto, telefono: esTelReal(c.telefono_normalizado) ? c.telefono : null, rfc: c.rfc || null }
+    : { id: c.id, folio: folioCliente(c.id), nombre: 'Cliente de otra sucursal', empresa: null, telefono: null, rfc: null, otra_sucursal: true });
+  // «CLI-0039 · KFC» o «CLI-0039 (cliente de otra sucursal)» para los mensajes.
+  const etiqueta = c => (c ? (ve(c) ? folioCliente(c.id) + ' · ' + (c.empresa_contacto || c.nombre) : folioCliente(c.id) + ' (cliente de otra sucursal)') : '');
 
   // ---------- Búsquedas ----------
   function porTelefono(tel) {
@@ -213,7 +218,7 @@ module.exports = function clientesUnicos(app, db, h) {
     const t = telNorm(telefono);
     if (!esTelReal(t)) return { error: 'El teléfono debe tener 10 dígitos' };
     const dueño = porTelefono(t);
-    if (dueño && dueño.id !== Number(clienteId)) return { error: `Ese teléfono ya es de ${folioCliente(dueño.id)} · ${dueño.empresa_contacto || dueño.nombre}` };
+    if (dueño && dueño.id !== Number(clienteId)) return { error: `Ese teléfono ya es de ${etiqueta(dueño)}` };
     if (!dueño) db.prepare('INSERT INTO telefonos_cliente (telefono_normalizado, cliente_id, telefono, etiqueta) VALUES (?, ?, ?, ?)').run(t, clienteId, String(telefono).trim(), etiqueta);
     return { ok: true };
   }
@@ -302,18 +307,20 @@ module.exports = function clientesUnicos(app, db, h) {
   }));
   app.post('/api/clientes/:id/telefonos', h((req, res) => {
     if (!db.prepare('SELECT 1 FROM clientes WHERE id = ?').get(req.params.id)) return res.status(404).json({ error: 'Cliente no encontrado' });
+    if (app.locals.sucursales && !app.locals.sucursales.puedeEditarCliente(req, Number(req.params.id))) return res.status(403).json(app.locals.sucursales.NO_EDITA(req, Number(req.params.id)));
     const r = agregarTelefono(Number(req.params.id), req.body?.telefono, String(req.body?.etiqueta || '').trim().slice(0, 60) || null);
     if (r.error) return res.status(409).json(r);
     app.locals.auditoria?.registrar(req, 'cliente', Number(req.params.id), 'teléfono agregado', telNorm(req.body?.telefono));
     res.status(201).json(r);
   }));
   app.delete('/api/clientes/:id/telefonos/:tel', h((req, res) => {
+    if (app.locals.sucursales && !app.locals.sucursales.puedeEditarCliente(req, Number(req.params.id))) return res.status(403).json(app.locals.sucursales.NO_EDITA(req, Number(req.params.id)));
     const quitado = db.prepare('DELETE FROM telefonos_cliente WHERE cliente_id = ? AND telefono_normalizado = ?').run(req.params.id, telNorm(req.params.tel));
     if (quitado.changes) app.locals.auditoria?.registrar(req, 'cliente', Number(req.params.id), 'teléfono quitado', telNorm(req.params.tel));
     res.json({ ok: true });
   }));
 
-  return { telefonoFalso, problemaNombreCliente, folioCliente, idDeFolio, clave, motivoParecido, porTelefono, porRfc, porId, porNombreExacto, parecidos, verificar, exigirConfirmacion, recordarDistintos, agregarTelefono, recordarAlias, fusionar, resumen };
+  return { telefonoFalso, problemaNombreCliente, folioCliente, idDeFolio, clave, motivoParecido, porTelefono, porRfc, porId, porNombreExacto, parecidos, verificar, exigirConfirmacion, recordarDistintos, agregarTelefono, recordarAlias, fusionar, resumen, etiqueta };
 };
 module.exports.folioCliente = folioCliente;
 module.exports.problemaNombreCliente = problemaNombreCliente;
