@@ -1383,21 +1383,21 @@ const Finanzas = (() => {
     const sec = $('seccion-ejecucion'), cont = $('ejecucion-orden');
     if (!lead || lead.estatus !== 'ganado') { sec.hidden = true; EJECUCION_ORDEN = null; return; }
     sec.hidden = false; EJECUCION_ORDEN = lead;
-    const botones = `<div class="btn-group"><button type="button" class="btn btn-verde" data-ejecucion="realizado">✔ Servicio realizado</button><button type="button" class="btn btn-outline" data-ejecucion="no_realizado">✖ No realizado</button></div>`;
+    const botones = `<div class="btn-group"><button type="button" class="btn btn-verde" data-ejecucion="estatus">🔄 Actualizar estatus del servicio</button></div>`;
     if (lead.ejecucion === 'realizado') {
       cont.innerHTML = `<p class="ejecucion-estado realizado"><b>✔ Servicio realizado</b> el ${esc(fechaTxt(lead.fecha_realizado))}. Ya cuenta en el Generador.</p>
         <p class="ayuda">¿Hubo otro gasto? Agrégalo en «Gastos generados de esta orden», abajo.</p>`;
     } else if (lead.ejecucion === 'no_realizado') {
       cont.innerHTML = `<p class="ejecucion-estado no-realizado"><b>✖ No realizado.</b> Motivo: ${esc(lead.motivo_no_realizado || '—')}. No cuenta en el Generador y no se le cobra; si ya había pagado, ese dinero queda a su favor (devolverlo o aplicarlo a otro servicio).</p>
-        <p class="ayuda">Si al final sí se realizó, márcalo:</p>${botones.replace('<button type="button" class="btn btn-outline" data-ejecucion="no_realizado">✖ No realizado</button>', '')}`;
+        <p class="ayuda">Si al final sí se realizó, actualízalo:</p>${botones}`;
     } else {
       const vencida = lead.fecha_servicio && lead.fecha_servicio <= hoy();
-      cont.innerHTML = `<p class="ayuda">${vencida ? '<b>Por concluir:</b> la fecha del servicio ya pasó.' : 'Programado para el ' + esc(fechaTxt(lead.fecha_servicio)) + '.'} Cuando termine, márcalo como realizado (pasa al Generador y se registran sus gastos) o como no realizado.</p>${botones}`;
+      cont.innerHTML = `<p class="ayuda">${vencida ? '<b>Por concluir:</b> la fecha del servicio ya pasó.' : 'Programado para el ' + esc(fechaTxt(lead.fecha_servicio)) + '.'} Cuando termine, actualiza su estatus: si se realizó (pasa al Generador y se registran sus gastos) o no.</p>${botones}`;
     }
   }
   $('ejecucion-orden').addEventListener('click', async e => {
     const b = e.target.closest('[data-ejecucion]'); const lead = EJECUCION_ORDEN; if (!b || !lead) return;
-    return abrirRealizado(lead, b.dataset.ejecucion === 'realizado' ? 'si' : 'no');
+    return abrirRealizado(lead, null);
   });
   // Avisos claros al marcar «no realizado»: el cliente no debe nada; lo pagado queda a su favor; los gastos siguen en Cuentas por pagar.
   async function avisosNoRealizado(r) {
@@ -1440,6 +1440,12 @@ const Finanzas = (() => {
     const total = filas.reduce((t, f) => t + (Number(f.querySelector('.rg-total').value.replace(/[$,\s]/g, '')) || 0), 0);
     $('realizado-resumen').textContent = filas.length ? `${filas.length} gasto${filas.length === 1 ? '' : 's'} por ${formatoMoneda(total)}: se cargarán en Cuentas por pagar con el número de esta orden.` : 'Sin gastos: si no hubo, déjalo así.';
   }
+  // La fecha se precarga con la de la orden; si esa fecha aún no llega, se pide la fecha real (no se acepta una futura).
+  function avisoFechaRealizado() {
+    const f = $('realizado-fecha').value, aviso = $('realizado-aviso-fecha');
+    aviso.hidden = !(f && f > hoy());
+    aviso.textContent = f && f > hoy() ? 'La orden está programada para el ' + fechaTxt(f) + ' (fecha futura): si ya se realizó, pon la fecha real en que se hizo.' : '';
+  }
   // Sí: la fecha (precargada con la de la orden). No: el motivo es obligatorio. En ambos casos se pueden incluir gastos.
   function ayudaRealizado() {
     const si = document.querySelector('input[name="realizado-si"]:checked')?.value;
@@ -1454,8 +1460,9 @@ const Finanzas = (() => {
     REALIZADO = lead;
     $('realizado-titulo').textContent = '¿Se realizó el servicio? · ' + folioOrdenServicio(lead);
     $('realizado-orden').textContent = [lead.empresa_contacto || lead.nombre, lead.servicio_nombre, lead.equipo ? 'Unidad ' + lead.equipo : '', lead.operador ? 'Operador ' + lead.operador : ''].filter(Boolean).join(' · ');
-    $('realizado-fecha').value = lead.fecha_servicio && lead.fecha_servicio <= hoy() ? lead.fecha_servicio : hoy();
+    $('realizado-fecha').value = lead.fecha_servicio || hoy();
     $('realizado-fecha').max = hoy();
+    avisoFechaRealizado();
     document.querySelectorAll('input[name="realizado-si"]').forEach(r => { r.checked = r.value === respuesta; });
     $('realizado-motivo').value = '';
     $('realizado-gastos').innerHTML = '';
@@ -1463,6 +1470,7 @@ const Finanzas = (() => {
     abrirVentana('overlay-realizado');
   }
   document.querySelectorAll('input[name="realizado-si"]').forEach(r => r.addEventListener('change', ayudaRealizado));
+  $('realizado-fecha').addEventListener('input', avisoFechaRealizado);
   $('realizado-agregar').addEventListener('click', () => { $('realizado-gastos').append(filaGasto()); resumenRealizado(); });
   $('realizado-gastos').addEventListener('input', resumenRealizado);
   $('realizado-gastos').addEventListener('click', e => { const q = e.target.closest('.rg-quitar'); if (q) { q.closest('.realizado-gasto').remove(); resumenRealizado(); } });
@@ -1490,6 +1498,7 @@ const Finanzas = (() => {
     if (!si) { toast('Indica si se realizó el servicio'); return; }
     const motivo = $('realizado-motivo').value.trim();
     if (si === 'no' && motivo.replace(/[^\p{L}\p{N}]/gu, '').length < 5) { toast('Escribe por qué no se realizó'); $('realizado-motivo').focus(); return; }
+    if (si === 'si' && $('realizado-fecha').value > hoy()) { toast('La fecha en que se realizó no puede ser futura: pon la fecha real'); $('realizado-fecha').focus(); return; }
     if (si === 'si' && !await solicitarDialogo({ titulo: '¿Guardar el servicio como realizado?', mensaje: 'Una vez que el servicio se considera realizado, pasa a Cuentas por cobrar y ya no hay vuelta atrás.', aceptar: 'Sí, guardar' })) return;
     const gastos = [...document.querySelectorAll('#realizado-gastos .realizado-gasto')].map(f => ({
       proveedor_id: Number(f.querySelector('.rg-proveedor').value) || null, categoria: f.querySelector('.rg-categoria').value,
