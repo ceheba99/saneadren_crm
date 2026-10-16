@@ -17,7 +17,7 @@ module.exports = {
   // ¿Esta fila (por su sucursal) está dentro del alcance de la petición?
   ve: sucursalId => { const a = als.getStore(); if (!a) return false; return a.todo || (sucursalId != null && a.ids.has(Number(sucursalId))); },
   // Sucursal donde se registra lo nuevo en esta petición.
-  sucursalAlta: () => { const a = als.getStore(); return (a && a.alta) || matriz; },
+  sucursalAlta: () => { const a = als.getStore(); if (!a) return matriz; return a.alta ?? (a.todo ? matriz : null); },
   fijarMatriz: id => { matriz = id; },
   matriz: () => matriz,
 };

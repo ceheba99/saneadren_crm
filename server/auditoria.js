@@ -53,6 +53,17 @@ module.exports = function auditoria(app, db, h) {
   app.get('/api/auditoria', h((req, res) => {
     const { entidad, id } = req.query;
     if (entidad && id) {
+      // Solo el historial de algo que quien pregunta puede ver (registros de otra sucursal «no existen»).
+      const suc = app.locals.sucursales, n = Number(id);
+      const VISTA = { orden_compra: 'ordenes_compra', solicitud_compra: 'solicitudes_compra', cuenta_por_pagar: 'cuentas_por_pagar' };
+      const general = !!req.usuarioSesion.admin_general;
+      const visible = general ? true
+        : VISTA[entidad] ? !!db.prepare(`SELECT 1 FROM ${VISTA[entidad]} WHERE id = ?`).get(n)
+        : entidad === 'orden_servicio' ? !!db.prepare('SELECT 1 FROM leads WHERE id = ?').get(n)
+        : entidad === 'cliente' ? !!suc?.verCliente(n)
+        : entidad === 'usuario' ? n === req.usuarioSesion.id || (req.usuarioSesion.rol === 'admin' && !!db.prepare('SELECT 1 FROM usuarios WHERE id = ?').get(n) && suc?.puedeAdministrar(req, db.prepare('SELECT * FROM usuarios WHERE id = ?').get(n)))
+        : entidad === 'proveedor';
+      if (!visible) return res.json([]);
       return res.json(db.prepare('SELECT * FROM auditoria WHERE entidad = ? AND entidad_id = ? ORDER BY id DESC LIMIT 500').all(String(entidad), Number(id)));
     }
     if (req.usuarioSesion.rol !== 'admin') return res.status(403).json({ error: 'La bitácora completa es solo para administración' });

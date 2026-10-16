@@ -139,7 +139,9 @@ const MARCA = /secretoqro|-QRO-/i; // nada de QRO: ni su marca ni sus folios
   const LECTURAS = rutas.filter(([m]) => m === 'GET').map(([, r]) => conIds(r))
     .concat(['/leads?q=secretoqro', '/clientes?q=secretoqro&incluir_prospectos=1', '/contactos/sin-cotizacion?q=secretoqro', '/buscar?q=secretoqro', '/buscar?q=' + encodeURIComponent('OS-QRO-' + mes + '-0002'),
       '/buscar?q=Proveedor%20Compartido', '/finanzas/cxp?vista=todas', '/compras/solicitudes?estado=', '/clientes?incluir_prospectos=1', '/calendario?desde=' + dia(-60) + '&hasta=' + dia(60),
-      '/generador?desde=' + dia(-60) + '&hasta=' + dia(1), '/tablero?desde=' + dia(-60) + '&hasta=' + dia(1), '/finanzas/periodo?desde=' + dia(-60) + '&hasta=' + dia(1), '/alertas', '/recompras', '/kpis', '/compras/ordenes?q=llanta']);
+      '/generador?desde=' + dia(-60) + '&hasta=' + dia(1), '/tablero?desde=' + dia(-60) + '&hasta=' + dia(1), '/finanzas/periodo?desde=' + dia(-60) + '&hasta=' + dia(1), '/alertas', '/recompras', '/kpis', '/compras/ordenes?q=llanta',
+      '/auditoria?entidad=orden_compra&id=' + RQ.oc.id, '/auditoria?entidad=solicitud_compra&id=' + RQ.sol.id, '/auditoria?entidad=cuenta_por_pagar&id=' + RQ.cxp.id,
+      '/auditoria?entidad=orden_servicio&id=' + RQ.borrar.id, '/auditoria?entidad=cliente&id=' + RQ.cliente.id, '/auditoria?entidad=usuario&id=' + uid('Vendedor Secretoqro')]);
   for (const [rol, T] of Object.entries(C)) {
     const fugas = [];
     for (const r of LECTURAS) {

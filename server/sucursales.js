@@ -45,7 +45,7 @@ const RUTA_CLIENTE = /^\/(?:finanzas\/)?clientes\/(\d+)(?:\/|$)/;
 // Lo que solo hace el administrador GENERAL (afecta a todas las sucursales o lo ve todo).
 const SOLO_GENERAL = [
   [/^(POST|PUT|DELETE)$/, /^\/sucursales(\/|$)/],
-  [/./, /^\/admin\//], [/./, /^\/auditoria$/],
+  [/./, /^\/admin\//],
   [/./, /^\/clientes\/(duplicados|distintos)$/], [/./, /^\/clientes\/\d+\/fusionar$/],
   [/^(POST|PUT|DELETE)$/, /^\/servicios(\/|$)/], [/^(POST|PUT|DELETE)$/, /^\/canales(\/|$)/], [/^(POST|PUT|DELETE)$/, /^\/tipos-cliente(\/|$)/],
   [/^(POST|PUT|DELETE)$/, /^\/finanzas\/categorias(\/|$)/], [/^(POST|PUT|DELETE)$/, /^\/prospeccion\/sectores(\/|$)/],
@@ -120,7 +120,8 @@ module.exports = function sucursales(app, db, h, { audit }) {
   function alcanceDe(usuario, pedida) {
     const general = usuario.rol === 'admin';
     let permitidas = general ? lista().map(s => s.id) : sucursalesDe(usuario.id);
-    if (!general && !permitidas.length) {
+    // Solo quien NUNCA tuvo sucursal (p. ej. se creó cuando había una sola); si su sucursal está desactivada, no ve nada.
+    if (!general && !permitidas.length && !db.prepare('SELECT 1 FROM usuario_sucursales WHERE usuario_id = ?').get(usuario.id)) {
       const activas = lista().filter(s => s.activo);
       if (activas.length === 1) { db.prepare('INSERT OR IGNORE INTO usuario_sucursales (usuario_id, sucursal_id) VALUES (?, ?)').run(usuario.id, activas[0].id); permitidas = [activas[0].id]; }
     }
@@ -140,11 +141,14 @@ module.exports = function sucursales(app, db, h, { audit }) {
     if (!u) return alcance.correr(alcance.SIN_ACCESO, next);
     const a = alcanceDe(u, req.get('X-Sucursal'));
     if (a.error) return res.status(403).json({ error: a.error, codigo: 'SUCURSAL' });
+    if (!a.general && !a.permitidas.length && !['/sucursales', '/logout', '/cambiar-password'].includes(req.path))
+      return res.status(403).json({ error: 'Tu sucursal está desactivada o no tienes sucursal asignada. Pide a Dirección que te asigne una.', codigo: 'SIN_SUCURSAL' });
     req.alcanceSuc = a;
     u.rol_real = u.rol; u.admin_general = u.rol === 'admin';
     if (u.rol === 'gerente') {
       u.rol = 'admin';
-      if (SOLO_GENERAL.some(([m, r]) => m.test(req.method) && r.test(req.path))) return res.status(403).json({ error: 'Esto solo lo hace el administrador general (afecta a todas las sucursales)' });
+      const bitacoraCompleta = req.path === '/auditoria' && !(req.query.entidad && req.query.id);
+      if (bitacoraCompleta || SOLO_GENERAL.some(([m, r]) => m.test(req.method) && r.test(req.path))) return res.status(403).json({ error: 'Esto solo lo hace el administrador general (afecta a todas las sucursales)' });
     }
     const visible = alcance.correr(a, () => {
       const c = req.path.match(RUTA_CLIENTE);

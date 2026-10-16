@@ -88,6 +88,7 @@ async function api(path, opts) {
   if (res.status === 403) {
     const j = await res.clone().json().catch(() => ({}));
     if (j.codigo === 'CAMBIAR_PASSWORD') { Cuentas.pedirCambioObligatorio(); throw errorConEstado(j.error, 403, j.codigo); }
+    if (j.codigo === 'SIN_SUCURSAL') { toast(j.error); throw errorConEstado(j.error, 403, j.codigo); }
     if (j.codigo === 'SUCURSAL') { try { localStorage.removeItem('sucursal_vista'); } catch {} location.reload(); throw errorConEstado(j.error, 403, j.codigo); }
   }
   if (res.status === 401) {
