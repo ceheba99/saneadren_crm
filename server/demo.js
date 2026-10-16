@@ -243,7 +243,7 @@ module.exports = function demo(app, db, { sesiones, PORT, SESSION_TTL_MS }) {
     await cxp({ proveedor_id: prov.disposicion.id, categoria: 'residuos', concepto: 'Disposición de lodos del mes (todas las órdenes)', total: 9860, fecha_documento: dia(-8), dias_credito: 30, tipo_comprobante: 'factura', metodo_sat: 'PUE', factura_folio: 'DB-311' });
 
     // Al final: la revisión de integridad debe salir limpia.
-    const r = require('./integridad').revisar(db, {});
+    const r = require('./alcance').global(() => require('./integridad').revisar(db, {}));
     console.log(`[demo] revisión de integridad: ${r.errores} errores, ${r.avisos} avisos`);
     for (const t of [A, V, C, T]) sesiones.delete?.(t);
   }

@@ -7,9 +7,9 @@ const path = require('path');
 const Importes = require('../public/importes.js');
 const { hoyMexico } = require('./fechas');
 
-const folioL = l => (l.estatus === 'ganado' ? 'OS-' : 'COT-') + String(l.created_at || '').slice(0, 7).replace('-', '') + '-' + String(l.id).padStart(4, '0');
-const folioOC = o => 'OC-' + String(o.created_at || '').slice(0, 7).replace('-', '') + '-' + String(o.id).padStart(4, '0');
-const folioSol = s => 'SOL-' + String(s.created_at || '').slice(0, 7).replace('-', '') + '-' + String(s.id).padStart(4, '0');
+const folioL = l => require('./sucursales').folioLead(l);
+const folioOC = o => require('./sucursales').folio('OC', 'ordenes_compra', o.id, o.created_at);
+const folioSol = s => require('./sucursales').folio('SOL', 'solicitudes_compra', s.id, s.created_at);
 const pesos = c => '$' + (Number(c || 0) / 100).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const dma = f => String(f || '').slice(0, 10).split('-').reverse().join('/');
 const existe = (db, t) => !!db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(t);
@@ -37,6 +37,15 @@ function revisar(db, { dirArchivos } = {}) {
   });
   chequeo('Base de datos', 'Referencias rotas entre tablas (foreign_key_check)', 'error', () =>
     db.prepare('PRAGMA foreign_key_check').all().map(x => ({ ref: x.table + ' #' + x.rowid, detalle: 'apunta a ' + x.parent + ' que no existe' })));
+  // Sucursales: todo registro operativo debe tener sucursal (sin ella nadie más que el admin general lo ve),
+  // la cotización/orden y sus gastos deben ser de la misma sucursal, y los folios no se repiten dentro de una sucursal.
+  if (existe(db, 'sucursales')) {
+    chequeo('Sucursales', 'Registros sin sucursal', 'error', () => ['leads', 'cuentas_por_pagar', 'solicitudes_compra', 'ordenes_compra', 'establecimientos', 'clientes']
+      .filter(t => existe(db, t) && db.prepare('PRAGMA table_info(' + t + ')').all().some(c => c.name === 'sucursal_id'))
+      .flatMap(t => db.prepare('SELECT id FROM main.' + t + ' WHERE sucursal_id IS NULL').all().map(r => ({ ref: t + ' #' + r.id, detalle: 'no tiene sucursal' }))));
+    chequeo('Sucursales', 'Gasto de una orden registrado en otra sucursal', 'error', () => existe(db, 'cuentas_por_pagar') ? db.prepare('SELECT x.id, x.concepto FROM main.cuentas_por_pagar x JOIN main.leads l ON l.id = x.lead_id WHERE x.sucursal_id IS NOT l.sucursal_id').all().map(r => ({ ref: 'cuenta por pagar #' + r.id, detalle: r.concepto })) : []);
+    chequeo('Sucursales', 'Orden de compra en otra sucursal que su solicitud', 'error', () => existe(db, 'ordenes_compra') ? db.prepare('SELECT o.id, o.created_at, o.folio_num, o.sucursal_id FROM main.ordenes_compra o JOIN main.solicitudes_compra s ON s.id = o.solicitud_id WHERE o.sucursal_id IS NOT s.sucursal_id').all().map(o => ({ ref: folioOC(o), detalle: 'su solicitud es de otra sucursal' })) : []);
+  }
   chequeo('Base de datos', 'Hay al menos un administrador activo', 'error', () =>
     db.prepare("SELECT COUNT(*) n FROM usuarios WHERE rol = 'admin' AND activo = 1").get().n ? [] : [{ ref: 'usuarios', detalle: 'No hay administradores activos' }]);
 
@@ -134,7 +143,7 @@ module.exports = function integridad(app, db, h) {
   const base = process.env.DB_PATH ? path.dirname(path.resolve(process.env.DB_PATH)) : path.join(__dirname, '..');
   app.get('/api/admin/integridad', h((req, res) => {
     if (req.usuarioSesion.rol !== 'admin') return res.status(403).json({ error: 'Solo administración revisa la integridad de los datos' });
-    const r = revisar(db, { dirArchivos: path.join(base, 'archivos') });
+    const r = require('./alcance').global(() => revisar(db, { dirArchivos: path.join(base, 'archivos') })); // siempre toda la base
     app.locals.auditoria?.registrar(req, 'catalogo', null, 'revisión de integridad', `${r.revisiones} revisiones · ${r.errores} errores · ${r.avisos} avisos`);
     res.json(r);
   }));

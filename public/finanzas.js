@@ -18,7 +18,7 @@ const Finanzas = (() => {
   const hoy = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Mexico_City', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
   const sumarDias = (f, d) => { const x = new Date(f + 'T00:00:00Z'); x.setUTCDate(x.getUTCDate() + (Number(d) || 0)); return x.toISOString().slice(0, 10); };
   const fechaTxt = f => (f ? new Date(f + 'T12:00:00').toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' }) : '—');
-  const folioOS = c => folioOrdenServicio({ id: c.lead_id, created_at: c.created_at });
+  const folioOS = c => c.folio || folioOrdenServicio({ id: c.lead_id, created_at: c.created_at });
   const json = async res => { const j = await res.json().catch(() => ({})); if (!res.ok) throw Object.assign(new Error(j.error || 'No se pudo completar'), { status: res.status, codigo: j.codigo }); return j; };
   // POST/PUT que puede responder 409 "posible duplicado": pregunta y reintenta con forzar.
   async function enviar(ruta, metodo, cuerpo) {

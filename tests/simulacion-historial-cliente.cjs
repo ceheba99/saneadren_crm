@@ -54,7 +54,7 @@ const HOY = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Mexico_City' }
   [s, j] = await pedir('GET', '/clientes/' + cli.id + '/movimientos', V);
   const h = Array.isArray(j) ? j : [];
   const hay = (re, extra = () => true) => h.some(x => re.test(x.que + ' · ' + x.detalle) && extra(x));
-  const fOS = 'OS-' + String(c1.created_at).slice(0, 7).replace('-', '') + '-' + String(c1.id).padStart(4, '0');
+  const fOS = 'OS-QRO-' + String(c1.created_at).slice(0, 7).replace('-', '') + '-' + String(c1.folio_num).padStart(4, '0');
   revisa(s === 200 && h.length >= 10, 'la ficha trae el historial completo (' + h.length + ' movimientos)', [s, j.error]);
   revisa(hay(/creado/i, x => x.grupo === 'contacto'), 'alta del contacto (quién lo dio de alta)');
   revisa(hay(/RFC|Notas/, x => x.grupo === 'contacto' && x.usuario === 'admin'), 'cambio de datos del contacto y quién lo hizo');
@@ -78,7 +78,7 @@ const HOY = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Mexico_City' }
   await pedir('DELETE', '/leads/' + c4.id, A, { motivo: 'Prueba de eliminación vieja' });
   { const db = new DatabaseSync(path.join(dir, 'h.db')); db.prepare('DELETE FROM historial_archivo WHERE lead_id = ?').run(c4.id); db.close(); }
   [s, j] = await pedir('GET', '/clientes/' + cli.id + '/movimientos', V);
-  revisa(j.some(x => x.grupo === 'eliminado' && x.que === 'Eliminada' && x.registro === 'COT-' + String(c4.created_at).slice(0, 7).replace('-', '') + '-' + String(c4.id).padStart(4, '0')), 'las eliminadas antes de este cambio también aparecen (de la bitácora general)');
+  revisa(j.some(x => x.grupo === 'eliminado' && x.que === 'Eliminada' && x.registro === 'COT-QRO-' + String(c4.created_at).slice(0, 7).replace('-', '') + '-' + String(c4.folio_num).padStart(4, '0')), 'las eliminadas antes de este cambio también aparecen (de la bitácora general)');
   [s] = await pedir('GET', '/clientes/999999/movimientos', V); revisa(s === 404, 'cliente que no existe');
   { const x = await fetch(`http://localhost:${PUERTO}/api/clientes/${cli.id}/movimientos`); revisa(x.status === 401, 'sin sesión no se ve'); }
 

@@ -229,8 +229,8 @@ module.exports = function clientesUnicos(app, db, h) {
     if (r.id === q.id) return { error: 'Elige dos clientes distintos' };
     if (r.rfc && q.rfc && r.rfc.toUpperCase() !== q.rfc.toUpperCase()) return { error: `No se pueden juntar: tienen RFC distinto (${r.rfc} y ${q.rfc}), son razones sociales diferentes` };
     db.transaction(() => {
-      db.prepare('UPDATE leads SET cliente_id = ? WHERE cliente_id = ?').run(q.id, r.id);
-      if (db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'establecimientos'").get()) db.prepare('UPDATE establecimientos SET cliente_id = ? WHERE cliente_id = ?').run(q.id, r.id);
+      db.prepare('UPDATE main.leads SET cliente_id = ? WHERE cliente_id = ?').run(q.id, r.id);
+      if (db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'establecimientos'").get()) db.prepare('UPDATE main.establecimientos SET cliente_id = ? WHERE cliente_id = ?').run(q.id, r.id);
       // Teléfonos: el principal y los adicionales del retirado pasan como adicionales del que queda.
       db.prepare('UPDATE telefonos_cliente SET cliente_id = ? WHERE cliente_id = ?').run(q.id, r.id);
       // Datos que le falten al que queda se completan con los del retirado (nunca se pisan).
@@ -269,7 +269,8 @@ module.exports = function clientesUnicos(app, db, h) {
   app.post('/api/clientes/verificar', h((req, res) => res.json(verificar(req.body || {}))));
   // Todos los clientes con su ID (para las listas de las plantillas y los buscadores).
   app.get('/api/clientes/catalogo', h((req, res) => {
-    res.json(db.prepare('SELECT * FROM clientes ORDER BY lower(COALESCE(empresa_contacto, nombre))').all().map(resumen));
+    // Solo los de la sucursal: los dio de alta o ha trabajado con ellos.
+    res.json(db.prepare('SELECT * FROM clientes c WHERE (en_alcance(c.sucursal_id) OR EXISTS (SELECT 1 FROM leads lv WHERE lv.cliente_id = c.id)) ORDER BY lower(COALESCE(empresa_contacto, nombre))').all().map(resumen));
   }));
   app.get('/api/clientes/duplicados', h((req, res) => {
     if (!esAdmin(req)) return res.status(403).json({ error: 'Solo un administrador revisa duplicados' });

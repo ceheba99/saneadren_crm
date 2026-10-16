@@ -25,8 +25,8 @@ const HOY = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Mexico_City' }
 function funcionesPagina() {
   const src = fs.readFileSync(path.join(__dirname, '..', 'public', 'app.js'), 'utf8');
   const tomar = nombre => { const i = src.indexOf('function ' + nombre + '('); let j = src.indexOf('\n}', i); return src.slice(i, j + 2); };
-  const extra = ['mesDeFolio'].filter(f => src.includes('function ' + f + '(')).map(tomar).join('\n');
-  const ctx = {}; vm.createContext(ctx); vm.runInContext(extra + '\n' + tomar('folioCotizacion') + '\n' + tomar('folioOrdenServicio') + '\nthis.fc = folioCotizacion; this.fo = folioOrdenServicio;', ctx);
+  const extra = ['mesDeFolio', 'folioDeLead'].filter(f => src.includes('function ' + f + '(')).map(tomar).join('\n');
+  const ctx = { SUCURSALES_MAPA: { 1: 'QRO' } }; vm.createContext(ctx); vm.runInContext(extra + '\n' + tomar('folioCotizacion') + '\n' + tomar('folioOrdenServicio') + '\nthis.fc = folioCotizacion; this.fo = folioOrdenServicio;', ctx);
   return ctx;
 }
 
@@ -54,13 +54,13 @@ function funcionesPagina() {
   await pedir('POST', '/leads/' + cot2.id + '/ejecucion', V, { estado: 'realizado', fecha: HOY, realizado_por: 'propio' });
   [s, j] = await pedir('GET', '/finanzas/cartera', A);
   const filaCxc = (Array.isArray(j) ? j : j.cuentas || j.filas || []).find(x => x.lead_id === cot2.id);
-  const osEsperado = 'OS-' + mes(cot2.created_at) + '-' + pad(cot2.id);
+  const osEsperado = 'OS-QRO-' + mes(cot2.created_at) + '-' + pad(cot2.id);
   revisa(filaCxc?.folio === osEsperado, 'Cuentas por cobrar muestra la OS con el MISMO número que la cotización (' + osEsperado + ')', filaCxc?.folio);
   [s, j] = await pedir('GET', '/generador', A);
   revisa(j.filas?.some(f => f.orden === osEsperado), 'el Generador muestra el mismo folio de OS', j.filas?.map(f => f.orden));
   const pagina = funcionesPagina();
-  revisa(pagina.fc(cot1) === 'COT-' + mes(cot1.created_at) + '-' + pad(cot1.id) && pagina.fo(cot2) === osEsperado, 'la página arma el mismo folio que el servidor (COT y OS)', [pagina.fc(cot1), pagina.fo(cot2)]);
-  revisa(/^COT-\d{6}-\d{4}$/.test(pagina.fc(cot1)) && /^OS-\d{6}-\d{4}$/.test(osEsperado), 'formato COT-AAAAMM-0000 y OS-AAAAMM-0000');
+  revisa(pagina.fc(cot1) === 'COT-QRO-' + mes(cot1.created_at) + '-' + pad(cot1.id) && pagina.fo(cot2) === osEsperado, 'la página arma el mismo folio que el servidor (COT y OS)', [pagina.fc(cot1), pagina.fo(cot2)]);
+  revisa(/^COT-QRO-\d{6}-\d{4}$/.test(pagina.fc(cot1)) && /^OS-QRO-\d{6}-\d{4}$/.test(osEsperado), 'formato COT-QRO-AAAAMM-0000 y OS-QRO-AAAAMM-0000 (con la clave de la sucursal)');
 
   seccion('2. Cambio de mes y fechas raras (el folio no debe brincar de mes)');
   revisa(pagina.fc({ id: 7, created_at: '2026-09-30 23:59:59' }) === 'COT-202609-0007', 'creada el 30/sep a las 23:59 → sigue siendo de septiembre', pagina.fc({ id: 7, created_at: '2026-09-30 23:59:59' }));
@@ -73,22 +73,22 @@ function funcionesPagina() {
   [s, j] = await pedir('GET', '/finanzas/cartera', A);
   const fila2 = (Array.isArray(j) ? j : j.cuentas || j.filas || []).find(x => x.lead_id === cot2.id);
   [s, j] = await pedir('GET', '/generador', A);
-  revisa(fila2?.folio === 'OS-202609-' + pad(cot2.id) && j.filas?.some(f => f.orden === 'OS-202609-' + pad(cot2.id)), 'orden creada el 30/sep 23:59:59 → OS-202609 en Cuentas por cobrar y en el Generador', [fila2?.folio]);
+  revisa(fila2?.folio === 'OS-QRO-202609-' + pad(cot2.id) && j.filas?.some(f => f.orden === 'OS-QRO-202609-' + pad(cot2.id)), 'orden creada el 30/sep 23:59:59 → OS-202609 en Cuentas por cobrar y en el Generador', [fila2?.folio]);
 
   seccion('3. Los folios no se repiten ni se reutilizan');
   [s] = await pedir('DELETE', '/leads/' + cot3.id, A, { motivo: 'Capturada por error' }); revisa(s === 200, 'administración borra la última cotización');
   const cot4 = await nuevaCot();
   revisa(cot4.id > cot3.id, 'la siguiente cotización NO reutiliza el número borrado', [cot3.id, cot4.id]);
-  [s, j] = await pedir('GET', '/leads?q=' + encodeURIComponent('COT-' + mes(cot3.created_at) + '-' + pad(cot3.id)), A);
+  [s, j] = await pedir('GET', '/leads?q=' + encodeURIComponent('COT-QRO-' + mes(cot3.created_at) + '-' + pad(cot3.id)), A);
   revisa(Array.isArray(j) && !j.some(l => l.id === cot3.id), 'el folio borrado ya no aparece');
 
   seccion('4. Buscar por folio');
-  const folioCot1 = 'COT-' + mes(cot1.created_at) + '-' + pad(cot1.id);
+  const folioCot1 = 'COT-QRO-' + mes(cot1.created_at) + '-' + pad(cot1.id);
   for (const q of [folioCot1, folioCot1.toLowerCase(), 'cot ' + mes(cot1.created_at) + ' ' + pad(cot1.id), pad(cot1.id)]) {
     [s, j] = await pedir('GET', '/leads?q=' + encodeURIComponent(q), V);
     revisa(Array.isArray(j) && j.some(l => l.id === cot1.id), 'buscar cotizaciones por «' + q + '» la encuentra', Array.isArray(j) ? j.map(l => l.id) : j);
   }
-  [s, j] = await pedir('GET', '/leads?q=' + encodeURIComponent('OS-202609-' + pad(cot2.id)), V);
+  [s, j] = await pedir('GET', '/leads?q=' + encodeURIComponent('OS-QRO-202609-' + pad(cot2.id)), V);
   revisa(Array.isArray(j) && j.some(l => l.id === cot2.id), 'buscar «OS-…» encuentra la orden de servicio', Array.isArray(j) ? j.map(l => l.id) : j);
   [s, j] = await pedir('GET', '/leads?q=' + encodeURIComponent('COT-199901-' + pad(cot1.id)), V);
   revisa(Array.isArray(j) && !j.some(l => l.id === cot1.id), 'un folio con el mes equivocado NO encuentra otra cotización (no confunde)', Array.isArray(j) ? j.map(l => l.id) : j);
@@ -103,7 +103,7 @@ function funcionesPagina() {
   [s, j] = await pedir('POST', '/compras/solicitudes', V, { id: 777, created_at: '2020-01-01 00:00:00', estado: 'recibida', solicitante_id: 1, solicitante_nombre: 'Otro', oc_id: 5, excepcion_motivo: 'x', que: 'Manguera de 4 pulgadas', para_que: 'Para la unidad E44 que la rompió', centro_id: centros[0].id });
   const sol = j;
   revisa(s === 201 && sol.id !== 777 && sol.estado === 'por_aprobar' && sol.solicitante_nombre === 'Vende Folios' && !sol.oc_id && !sol.excepcion_motivo && mes(sol.created_at) !== '202001', 'mandar id, fecha, estado o quién pidió por fuera se ignora', [sol.id, sol.estado, sol.solicitante_nombre, sol.created_at]);
-  revisa(sol.folio === 'SOL-' + mes(sol.created_at) + '-' + pad(sol.id), 'folio SOL-AAAAMM-0000', sol.folio);
+  revisa(sol.folio === 'SOL-QRO-' + mes(sol.created_at) + '-' + pad(sol.id), 'folio SOL-QRO-AAAAMM-0000', sol.folio);
   [s, j] = await pedir('PUT', '/compras/solicitudes/' + sol.id, V, { que: 'Manguera de 4 pulgadas', para_que: 'Para la unidad E44 que la rompió', centro_id: centros[0].id, estado: 'elegida', ganadora_id: 1, aprobada_por: 'Yo mismo' });
   revisa(s === 200 && j.estado === 'por_aprobar' && !j.aprobada_por, 'tampoco al corregir se puede cambiar el estado o aprobarse uno mismo', [s, j.estado, j.aprobada_por]);
   await pedir('POST', '/compras/solicitudes/' + sol.id + '/aprobar', C);
@@ -120,7 +120,7 @@ function funcionesPagina() {
   const dobles = await Promise.all([pedir('POST', '/compras/ordenes', C, baseOC), pedir('POST', '/compras/ordenes', C, baseOC)]);
   revisa(dobles.filter(([x]) => x === 201).length === 1 && dobles.filter(([x]) => x === 409).length === 1, 'dos clics al mismo tiempo crean UNA sola orden', dobles.map(([x, y]) => [x, y.error]));
   const oc = dobles.find(([x]) => x === 201)[1];
-  revisa(oc.folio === 'OC-' + mes(oc.created_at) + '-' + pad(oc.id) && oc.solicitud_folio === sol.folio, 'la orden lleva su folio OC y el de su solicitud', [oc.folio, oc.solicitud_folio]);
+  revisa(oc.folio === 'OC-QRO-' + mes(oc.created_at) + '-' + pad(oc.id) && oc.solicitud_folio === sol.folio, 'la orden lleva su folio OC y el de su solicitud', [oc.folio, oc.solicitud_folio]);
   [s, j] = await pedir('PUT', '/compras/ordenes/' + oc.id, C, { ...baseOC, version: oc.version, estado: 'autorizada', cxp_id: 1, creado_por: 1, solicitud_id: 999 });
   revisa(s === 200 && j.estado === 'borrador' && !j.cxp_id && j.solicitud_id === sol.id, 'al editar la orden no se puede autorizar a escondidas ni cambiarle la solicitud', [s, j.estado, j.cxp_id, j.solicitud_id]);
   [s, j] = await pedir('GET', '/compras/ordenes?q=' + encodeURIComponent(oc.folio.toLowerCase()), V); revisa(j.length === 1 && j[0].id === oc.id, 'buscar la orden por su folio (en minúsculas)');

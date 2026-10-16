@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Saneadren · Cotizaciones y Servicios</title>
-<link rel="stylesheet" href="styles.css?v=prov1">
+<link rel="stylesheet" href="styles.css?v=suc1">
 <link rel="stylesheet" href="servicios-tabla.css">
 <link rel="stylesheet" href="flujo.css">
 </head>
@@ -406,6 +406,18 @@
       <button class="btn btn-secundario" id="btn-integridad">Revisar ahora</button>
       <div id="integridad-resultado" class="integridad-resultado"></div>
     </div>
+    <div class="panel-alta solo-general">
+      <h2>Sucursales</h2>
+      <p class="ayuda">Cada sucursal ve solo lo suyo; el administrador general ve todas (elige arriba cuál ver). La clave va en los folios (OS-CDMX-202610-0001) y no se cambia después. Clientes, proveedores y catálogos son de todas.</p>
+      <div class="form-grid">
+        <div class="campo"><label for="ns-nombre">Nombre</label><input id="ns-nombre" maxlength="60" placeholder="Ciudad de México"></div>
+        <div class="campo"><label for="ns-clave">Clave</label><input id="ns-clave" maxlength="6" placeholder="CDMX" autocapitalize="characters"></div>
+        <div class="campo"><label for="ns-direccion">Dirección</label><input id="ns-direccion" maxlength="200"></div>
+        <div class="campo"><label for="ns-telefono">Teléfono</label><input id="ns-telefono" maxlength="25"></div>
+        <div class="campo"><button class="btn btn-primario" id="btn-crear-sucursal">Crear sucursal</button></div>
+      </div>
+      <div id="lista-sucursales"></div>
+    </div>
     <div class="panel-alta">
       <h2>Crear nuevo usuario</h2>
       <p class="ayuda">Solo un administrador crea cuentas. La persona podrá iniciar sesión con su nombre o su correo; con su correo puede recuperar la contraseña si la olvida.</p>
@@ -425,12 +437,17 @@
         <div class="campo">
           <label>Rol</label>
           <select id="nu-rol">
-            <option value="admin">admin</option>
+            <option value="admin" class="solo-general">admin (general: todas las sucursales)</option>
+            <option value="gerente" class="solo-general">gerente (admin de su sucursal)</option>
             <option value="ventas">ventas</option>
             <option value="atencion">atencion</option>
             <option value="tecnico">tecnico</option>
             <option value="costos">costos (encargado de centro de costos)</option>
           </select>
+        </div>
+        <div class="campo solo-varias-sucursales" id="nu-sucursales-campo">
+          <label>Sucursales</label>
+          <div id="nu-sucursales"></div>
         </div>
         <div class="campo">
           <label class="check-linea"><input type="checkbox" id="nu-temporal" checked> Contraseña temporal: la cambia al entrar la primera vez</label>
@@ -1144,15 +1161,16 @@
 <script src="servicios-tabla.js?v=fe1"></script>
 <script src="flujo.js?v=cli2"></script>
 <script src="cuentas.js?v=av1"></script>
-<script src="finanzas.js?v=prov1"></script>
+<script src="finanzas.js?v=suc1"></script>
 <script src="calendario.js?v=pg2"></script>
 <script src="tablero.js?v=pg2"></script>
 <script src="bitacora.js?v=hc1"></script>
 <script src="compras.js?v=fe1"></script>
 <script src="solicitudes.js?v=rec1"></script>
 <script src="carga-generador.js?v=con1"></script>
-<script src="app.js?v=int1"></script>
-<script src="buscador.js?v=prov1"></script>
+<script src="sucursales.js?v=suc1"></script>
+<script src="app.js?v=suc1"></script>
+<script src="buscador.js?v=suc1"></script>
 <script src="demo.js?v=demo1"></script>
 <script src="prospeccion.js?v=cli1"></script>
 </body>

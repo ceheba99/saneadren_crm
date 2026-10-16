@@ -24,7 +24,7 @@ const numeroEscrito = v => {
 };
 const pesos = c => Math.round(Number(c || 0)) / 100;
 const { folioSol } = require('./solicitudes');
-const folioOC = o => 'OC-' + String(o.created_at || '').slice(0, 7).replace('-', '') + '-' + String(o.id).padStart(4, '0');
+const folioOC = o => require('./sucursales').folio('OC', 'ordenes_compra', o.id, o.created_at);
 
 function migrar(db) {
   db.exec(`
@@ -106,7 +106,7 @@ module.exports = function compras(app, db, h, finanzas) {
     return { ...o, folio: folioOC(o), partidas, subtotal: pesos(o.subtotal_cent), iva: pesos(o.iva_cent), total: pesos(o.total_cent), pagado: pesos(o.pagado_cent),
       saldo: o.estado === 'autorizada' ? pesos(o.total_cent - o.pagado_cent) : null, categoria_nombre: CATEGORIAS[o.categoria] || o.categoria,
       solicitud_folio: o.solicitud_id ? folioSol({ id: o.solicitud_id, created_at: o.solicitud_created_at }) : null,
-      orden_folio: o.lead_id ? 'OS-' + String(o.lead_created_at || '').slice(0, 7).replace('-', '') + '-' + String(o.lead_id).padStart(4, '0') : null };
+      orden_folio: o.lead_id ? require('./sucursales').folio('OS', 'leads', o.lead_id, o.lead_created_at) : null };
   };
   const leer = id => { const o = db.prepare(SQL_OC + ' WHERE o.id = ?').get(id); return o ? describir(o) : null; };
   const audit = (req, id, accion, detalle) => app.locals.auditoria?.registrar(req, 'orden_compra', id, accion, detalle);
@@ -310,15 +310,17 @@ module.exports = function compras(app, db, h, finanzas) {
     const igual = !req.body.forzar && !desde && db.prepare("SELECT id, created_at FROM ordenes_compra WHERE proveedor_id = ? AND fecha = ? AND total_cent = ? AND partidas_json = ? AND estado <> 'cancelada' ORDER BY id DESC LIMIT 1")
       .get(d.proveedor_id, d.fecha, d.total_cent, d.partidas_json);
     if (igual) return res.status(409).json({ error: `Ya existe una orden igual (${folioOC(igual)}): mismo proveedor, fecha, partidas y total. ¿Es otra compra?`, codigo: 'POSIBLE_DUPLICADO', orden_id: igual.id });
-    const info = db.prepare(`INSERT INTO ordenes_compra (proveedor_id, centro_id, categoria, lead_id, fecha, fecha_requerida, entrega, factura_a, nota, observaciones,
+    const info = db.prepare(`INSERT INTO main.ordenes_compra (proveedor_id, centro_id, categoria, lead_id, fecha, fecha_requerida, entrega, factura_a, nota, observaciones,
         partidas_json, iva_modo, iva_tasa, subtotal_cent, iva_cent, total_cent, solicitante_nombre, solicitante_cargo, creado_por, solicitud_id)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(d.proveedor_id, d.centro_id, d.categoria, d.lead_id, d.fecha, d.fecha_requerida, d.entrega, d.factura_a,
       d.nota, d.observaciones, d.partidas_json, d.iva_modo, d.iva_tasa, d.subtotal_cent, d.iva_cent, d.total_cent, d.solicitante_nombre, d.solicitante_cargo, req.usuarioSesion.id, desde ? desde.solicitud.id : null);
+    // La orden va a la sucursal de su solicitud (si viene de una); si no, a la de quien la hace.
+    app.locals.sucursales.asignar('ordenes_compra', Number(info.lastInsertRowid), desde ? app.locals.sucursales.de('solicitudes_compra', desde.solicitud.id) : undefined);
     let creada = leer(info.lastInsertRowid);
     audit(req, creada.id, 'creada', `${creada.folio} · ${creada.proveedor_nombre} · ${creada.partidas.length} partida(s) · ${fmt(creada.total_cent)} · centro ${creada.centro_nombre}`
       + (desde ? ` · de la solicitud ${desde.solicitud.folio} (cotización ${fmt(desde.ganadora.monto_cent)}${desde.solicitud.excepcion_motivo ? ', EXCEPCIÓN POR URGENCIA: ' + desde.solicitud.excepcion_motivo : ''})` : ' · SIN SOLICITUD')
       + (req.body.forzar ? ' · se confirmó que no es repetida' : ''));
-    if (motivoDif) { db.prepare('UPDATE ordenes_compra SET motivo_diferencia = ? WHERE id = ?').run(motivoDif, creada.id); audit(req, creada.id, 'mayor que lo cotizado', `${fmt(creada.total_cent)} vs cotizado ${fmt(desde.ganadora.monto_cent)} · motivo: ${motivoDif}`); }
+    if (motivoDif) { db.prepare('UPDATE main.ordenes_compra SET motivo_diferencia = ? WHERE id = ?').run(motivoDif, creada.id); audit(req, creada.id, 'mayor que lo cotizado', `${fmt(creada.total_cent)} vs cotizado ${fmt(desde.ganadora.monto_cent)} · motivo: ${motivoDif}`); }
     if (desde) { Sol.vincular(req, desde.solicitud.id, creada); creada = leer(creada.id); }
     res.status(201).json(creada);
   }));
@@ -341,10 +343,10 @@ module.exports = function compras(app, db, h, finanzas) {
       if (cot && d.total_cent > cot.monto_cent + 100) {
         motivoDif = texto(req.body.motivo_diferencia, 300) || motivoDif;
         if (!motivoDif || !conSentido(motivoDif, 10)) return res.status(409).json({ error: `La orden (${fmt(d.total_cent)}) es mayor que lo cotizado (${fmt(cot.monto_cent)}). Escribe por qué (mínimo 10 letras).`, codigo: 'SUPERA_COTIZACION', cotizado: cot.monto_cent / 100 });
-        if (motivoDif !== o.motivo_diferencia) db.prepare('UPDATE ordenes_compra SET motivo_diferencia = ? WHERE id = ?').run(motivoDif, o.id);
+        if (motivoDif !== o.motivo_diferencia) db.prepare('UPDATE main.ordenes_compra SET motivo_diferencia = ? WHERE id = ?').run(motivoDif, o.id);
       }
     }
-    db.prepare(`UPDATE ordenes_compra SET proveedor_id = ?, centro_id = ?, categoria = ?, lead_id = ?, fecha = ?, fecha_requerida = ?, entrega = ?, factura_a = ?, nota = ?, observaciones = ?,
+    db.prepare(`UPDATE main.ordenes_compra SET proveedor_id = ?, centro_id = ?, categoria = ?, lead_id = ?, fecha = ?, fecha_requerida = ?, entrega = ?, factura_a = ?, nota = ?, observaciones = ?,
         partidas_json = ?, iva_modo = ?, iva_tasa = ?, subtotal_cent = ?, iva_cent = ?, total_cent = ?, solicitante_nombre = ?, solicitante_cargo = ?,
         updated_at = datetime('now','localtime'), version = version + 1 WHERE id = ?`).run(d.proveedor_id, d.centro_id, d.categoria, d.lead_id, d.fecha, d.fecha_requerida, d.entrega,
       d.factura_a, d.nota, d.observaciones, d.partidas_json, d.iva_modo, d.iva_tasa, d.subtotal_cent, d.iva_cent, d.total_cent, d.solicitante_nombre, d.solicitante_cargo, o.id);
@@ -369,10 +371,11 @@ module.exports = function compras(app, db, h, finanzas) {
     const resumen = o.partidas[0].descripcion + (o.partidas.length > 1 ? ` y ${o.partidas.length - 1} más` : '');
     const concepto = (o.folio + ' · ' + resumen).slice(0, 200);
     const cxpId = db.transaction(() => {
-      const info = db.prepare(`INSERT INTO cuentas_por_pagar (proveedor_id, categoria, concepto, fecha_documento, fecha_vencimiento, total_cent, lead_id, notas, registrado_por, dias_credito)
+      const info = db.prepare(`INSERT INTO main.cuentas_por_pagar (proveedor_id, categoria, concepto, fecha_documento, fecha_vencimiento, total_cent, lead_id, notas, registrado_por, dias_credito)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(o.proveedor_id, o.categoria, concepto, o.fecha, vence, o.total_cent, o.lead_id,
         `Orden de compra ${o.folio} · Centro de costos: ${o.centro_nombre} · Crédito: ${dias ? dias + ' días' : 'de contado'}`, req.usuarioSesion.id, dias);
-      db.prepare("UPDATE ordenes_compra SET estado = 'autorizada', cxp_id = ?, autorizada_por = ?, autorizada_at = datetime('now','localtime'), version = version + 1 WHERE id = ?")
+      app.locals.sucursales.asignar('cuentas_por_pagar', Number(info.lastInsertRowid), o.sucursal_id);
+      db.prepare("UPDATE main.ordenes_compra SET estado = 'autorizada', cxp_id = ?, autorizada_por = ?, autorizada_at = datetime('now','localtime'), version = version + 1 WHERE id = ?")
         .run(info.lastInsertRowid, req.usuarioSesion.id, o.id);
       return info.lastInsertRowid;
     })();
@@ -393,9 +396,9 @@ module.exports = function compras(app, db, h, finanzas) {
       if (o.pagado_cent > 0) return res.status(409).json({ error: 'Esta orden ya tiene pagos al proveedor. Cancela primero esos pagos en Cuentas por pagar.' });
     }
     db.transaction(() => {
-      if (o.cxp_id) db.prepare("UPDATE cuentas_por_pagar SET cancelada = 1, cancelada_por = ?, cancelada_at = datetime('now','localtime'), motivo_cancelacion = ? WHERE id = ? AND cancelada = 0")
+      if (o.cxp_id) db.prepare("UPDATE main.cuentas_por_pagar SET cancelada = 1, cancelada_por = ?, cancelada_at = datetime('now','localtime'), motivo_cancelacion = ? WHERE id = ? AND cancelada = 0")
         .run(req.usuarioSesion.id, ('Orden de compra cancelada: ' + motivo).slice(0, 300), o.cxp_id);
-      db.prepare("UPDATE ordenes_compra SET estado = 'cancelada', cancelada_por = ?, cancelada_at = datetime('now','localtime'), motivo_cancelacion = ?, version = version + 1 WHERE id = ?")
+      db.prepare("UPDATE main.ordenes_compra SET estado = 'cancelada', cancelada_por = ?, cancelada_at = datetime('now','localtime'), motivo_cancelacion = ?, version = version + 1 WHERE id = ?")
         .run(req.usuarioSesion.id, motivo, o.id);
     })();
     audit(req, o.id, 'cancelada', `Motivo: ${motivo}${o.cxp_id ? ' · también se canceló su cuenta por pagar' : ''}`);
@@ -415,7 +418,7 @@ module.exports = function compras(app, db, h, finanzas) {
     const recibio = texto(req.body?.recibio, 120);
     if (!recibio || !conSentido(recibio, 3) || /[<>{}]/.test(recibio)) return res.status(400).json({ error: 'Escribe el nombre de quien recibió' });
     const nota = texto(req.body?.nota, 300);
-    db.prepare("UPDATE ordenes_compra SET recibida_at = datetime('now','localtime'), recibida_por = ?, recibida_por_nombre = ?, recibio_nombre = ?, recepcion_nota = ? WHERE id = ?")
+    db.prepare("UPDATE main.ordenes_compra SET recibida_at = datetime('now','localtime'), recibida_por = ?, recibida_por_nombre = ?, recibio_nombre = ?, recepcion_nota = ? WHERE id = ?")
       .run(req.usuarioSesion.id, req.usuarioSesion.nombre, recibio, nota, o.id);
     const conQue = evidencia.map(e => e.tipo === 'evidencia' ? 'foto' : 'firma').join(' y ');
     audit(req, o.id, 'recibida', `Recibió ${recibio} · con ${conQue}${nota ? ' · ' + nota : ''}`);
