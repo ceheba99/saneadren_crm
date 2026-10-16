@@ -41,7 +41,7 @@ const ServiciosTabla = (() => {
   function estadoDe(s) {
     if (s.estatus === 'perdido') return ['perdido', 'Cotización no aceptada'];
     if (!esOrden(s)) return ['abierto', 'Cotización abierta'];
-    const hoy = new Date().toISOString().slice(0, 10);
+    const hoy = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Mexico_City' }).format(new Date());
     if (s.ejecucion === 'realizado') return ['ganado', 'Realizada'];
     if (s.ejecucion === 'no_realizado') return ['perdido', 'No realizada'];
     return ['abierto', s.fecha_servicio && s.fecha_servicio > hoy ? 'Orden programada' : 'Por concluir'];

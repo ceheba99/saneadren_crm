@@ -114,20 +114,16 @@ module.exports = function compras(app, db, h, finanzas) {
   const expediente = require('./expediente-oc')(app, db, h, { leer, esAdmin, folioOC });
   const Sol = require('./solicitudes')(app, db, h, { texto, fechaOk, hoyMexico, conSentido, folioOC, agregarDocumentoOC: expediente.agregarDocumento });
 
-  // ----- Datos de control del formato CM-F-03 (código, revisión y fechas). Son del FORMATO, no de cada orden:
-  // cambian cuando se actualiza el formato. Los edita un administrador; quedan en la bitácora. -----
-  const FORMATO_INICIAL = { codigo: 'CM-F-03', revision: '0', fecha_elaboracion: '2023-08-19', fecha_revision: '2023-08-26' };
-  const formato = () => { const f = db.prepare("SELECT valor FROM config_servidor WHERE clave = 'formato_oc'").get(); try { return { ...FORMATO_INICIAL, ...(f ? JSON.parse(f.valor) : {}) }; } catch { return FORMATO_INICIAL; } };
+  // ----- Código del formato (CM-F-03). Es del FORMATO, no de cada orden; lo cambia un administrador y queda en
+  // la bitácora. (La revisión y sus fechas se quitaron: confundían con la fecha de la orden.) -----
+  const FORMATO_INICIAL = { codigo: 'CM-F-03' };
+  const formato = () => { const f = db.prepare("SELECT valor FROM config_servidor WHERE clave = 'formato_oc'").get(); let g = {}; try { g = f ? JSON.parse(f.valor) : {}; } catch { g = {}; } return { codigo: g.codigo || FORMATO_INICIAL.codigo }; };
   app.get('/api/compras/formato', h((req, res) => res.json(formato())));
   app.put('/api/compras/formato', h((req, res) => {
     if (!esAdmin(req)) return res.status(403).json({ error: 'Solo un administrador cambia los datos del formato' });
     const antes = formato(), b = req.body || {};
-    const nuevo = { codigo: texto(b.codigo, 20) || antes.codigo, revision: texto(b.revision, 10) ?? antes.revision,
-      fecha_elaboracion: b.fecha_elaboracion || antes.fecha_elaboracion, fecha_revision: b.fecha_revision || antes.fecha_revision };
+    const nuevo = { codigo: texto(b.codigo, 20) || antes.codigo };
     if (!/^[\p{L}\d .\/-]{1,20}$/u.test(nuevo.codigo)) return res.status(400).json({ error: 'El código del formato solo lleva letras, números y guiones' });
-    if (!/^[\p{L}\d .-]{1,10}$/u.test(String(nuevo.revision))) return res.status(400).json({ error: 'La revisión es un número o letra corta (ej. 1, 2, A)' });
-    if (!fechaOk(nuevo.fecha_elaboracion) || !fechaOk(nuevo.fecha_revision)) return res.status(400).json({ error: 'Revisa las fechas del formato' });
-    if (nuevo.fecha_revision < nuevo.fecha_elaboracion) return res.status(400).json({ error: 'La fecha de revisión no puede ser antes de la de elaboración' });
     db.prepare("INSERT INTO config_servidor (clave, valor) VALUES ('formato_oc', ?) ON CONFLICT(clave) DO UPDATE SET valor = excluded.valor").run(JSON.stringify(nuevo));
     const cambios = Object.keys(nuevo).filter(k => String(nuevo[k]) !== String(antes[k])).map(k => `${k.replace('_', ' ')}: ${antes[k]} → ${nuevo[k]}`).join(' · ');
     if (cambios) app.locals.auditoria?.registrar(req, 'catalogo', null, 'formato de orden de compra', cambios);

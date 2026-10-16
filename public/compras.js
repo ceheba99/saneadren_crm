@@ -63,8 +63,8 @@ const Compras = (() => {
       + esc(u.nombre ? u.nombre + ' (' + u.clave + ')' : u.clave) + '</option>').join('') + '<option value="__nueva">+ Agregar unidad…</option>';
   };
   const filaHTML = (p = {}) => '<tr class="oc-fila"><td class="oc-num"></td>'
-    + '<td><input type="number" class="oc-cantidad" min="0.001" step="any" value="' + esc(String(p.cantidad ?? 1)) + '" aria-label="Cantidad"></td>'
     + '<td><input class="oc-descripcion" maxlength="300" value="' + esc(p.descripcion || '') + '" placeholder="Qué se compra o qué servicio" aria-label="Descripción"></td>'
+    + '<td><input type="number" class="oc-cantidad" min="0.001" step="any" value="' + esc(String(p.cantidad ?? 1)) + '" aria-label="Cantidad"></td>'
     + '<td><select class="oc-unidad" aria-label="Unidad">' + opcionesUnidad(p.unidad) + '</select></td>'
     + '<td><input class="oc-clave" maxlength="60" value="' + esc(p.clave || '') + '" aria-label="Clave artículo"></td>'
     + '<td><input type="number" class="oc-precio" min="0.01" step="0.01" value="' + esc(p.precio === undefined ? '' : String(p.precio)) + '" placeholder="Precio" aria-label="Precio unitario"></td>'
@@ -180,7 +180,7 @@ const Compras = (() => {
   let logoCache, FORMATO = null;
   const logo = () => (logoCache ||= fetch('/logo-saneadren.png').then(r => { if (!r.ok) throw new Error('No se pudo cargar el logo'); return r.arrayBuffer(); }).then(b => new Uint8Array(b)).catch(e => { logoCache = null; throw e; }));
   // Datos de control del formato (código, revisión y fechas): los edita administración en «Datos del formato».
-  const FORMATO_BASE = { codigo: 'CM-F-03', revision: '0', fecha_elaboracion: '2023-08-19', fecha_revision: '2023-08-26' };
+  const FORMATO_BASE = { codigo: 'CM-F-03' };
   async function formato() { try { FORMATO = await pedir('/compras/formato'); } catch { FORMATO = FORMATO || FORMATO_BASE; } return FORMATO; }
   const AHORA = () => new Intl.DateTimeFormat('es-MX', { timeZone: 'America/Mexico_City', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }).format(new Date());
   // Con { blob: true } regresa el PDF (para el expediente) en lugar de descargarlo.
@@ -204,8 +204,8 @@ const Compras = (() => {
     doc.setFont('helvetica', 'bold'); doc.setFontSize(7.5);
     const anchoEstado = doc.getTextWidth(ESTADO[0]) + 16;
     doc.setFillColor(...ESTADO[1]); doc.roundedRect(M + 158, M + 37, anchoEstado, 14, 7, 7, 'F'); t(ESTADO[0], M + 166, M + 46.5, { b: true, s: 7.5, c: [255, 255, 255] });
-    // Control del formato (código, revisión y fechas del FORMATO, no de esta orden)
-    const cx = M + W - 150, filasControl = [['Código', F.codigo], ['Revisión', F.revision], ['Elaboración', fechaTxt(F.fecha_elaboracion)], ['Fecha de revisión', fechaTxt(F.fecha_revision)], ['Página', '']];
+    // Recuadro de control: código del formato, fecha de ESTA orden y página
+    const cx = M + W - 150, filasControl = [['Código', F.codigo], ['Fecha de la orden', fechaTxt(o.fecha)], ['Página', '']];
     marco(cx, M - 6, 150, filasControl.length * 12 + 6);
     filasControl.forEach(([a, b], i) => { t(a, cx + 6, M + 4 + i * 12, { s: 7, c: GRIS }); t(b, cx + 144, M + 4 + i * 12, { s: 7, b: true, al: 'right' }); });
     let y = M + 64;
@@ -230,13 +230,13 @@ const Compras = (() => {
 
     // Partidas
     doc.autoTable({ startY: y, margin: { left: M, right: M, bottom: 50 }, theme: 'plain',
-      head: [['#', 'CANT.', 'UNIDAD', 'DESCRIPCIÓN', 'CLAVE', 'P. UNITARIO', 'IMPORTE']],
-      body: o.partidas.map((p, i) => [i + 1, String(p.cantidad), p.unidad || '', p.descripcion, p.clave || '', dinero(p.precio), dinero(p.importe)]),
+      head: [['#', 'DESCRIPCIÓN', 'CANT.', 'UNIDAD', 'CLAVE', 'P. UNITARIO', 'IMPORTE']],
+      body: o.partidas.map((p, i) => [i + 1, p.descripcion, String(p.cantidad), p.unidad || '', p.clave || '', dinero(p.precio), dinero(p.importe)]),
       styles: { fontSize: 8, cellPadding: { top: 4, bottom: 4, left: 5, right: 5 }, textColor: NEGRO, lineColor: LINEA, lineWidth: { bottom: 0.5 } },
       headStyles: { fillColor: NEGRO, textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 7, lineWidth: 0 },
       alternateRowStyles: { fillColor: SUAVE },
-      columnStyles: { 0: { cellWidth: 22, halign: 'center', textColor: GRIS }, 1: { cellWidth: 38, halign: 'right' }, 2: { cellWidth: 44, halign: 'center' }, 4: { cellWidth: 56 }, 5: { cellWidth: 70, halign: 'right' }, 6: { cellWidth: 76, halign: 'right', fontStyle: 'bold' } },
-      didParseCell: c => { if (c.section === 'head' && c.column.index >= 5) c.cell.styles.halign = 'right'; } });
+      columnStyles: { 0: { cellWidth: 22, halign: 'center', textColor: GRIS }, 2: { cellWidth: 38, halign: 'right' }, 3: { cellWidth: 44, halign: 'center' }, 4: { cellWidth: 56 }, 5: { cellWidth: 70, halign: 'right' }, 6: { cellWidth: 76, halign: 'right', fontStyle: 'bold' } },
+      didParseCell: c => { if (c.section === 'head' && (c.column.index >= 5 || c.column.index === 2)) c.cell.styles.halign = c.column.index === 2 ? 'right' : 'right'; if (c.section === 'head' && c.column.index === 3) c.cell.styles.halign = 'center'; } });
     y = doc.lastAutoTable.finalY + 10;
 
     // Totales e importe con letra
@@ -286,10 +286,10 @@ const Compras = (() => {
     for (let i = 1; i <= hojas; i++) {
       doc.setPage(i);
       doc.setDrawColor(...LINEA); doc.setLineWidth(0.5); doc.line(M, ALTO - 30, M + W, ALTO - 30);
-      t('Saneadren · ' + o.folio + ' · Formato ' + F.codigo + ' rev. ' + F.revision + ' · Generado ' + generado, M, ALTO - 19, { s: 7, c: GRIS });
+      t('Saneadren · ' + o.folio + ' · Formato ' + F.codigo + ' · Generado ' + generado, M, ALTO - 19, { s: 7, c: GRIS });
       t('Hoja ' + i + ' de ' + hojas, M + W, ALTO - 19, { s: 7, c: GRIS, al: 'right' });
     }
-    doc.setPage(1); t(hojas + (hojas === 1 ? ' hoja' : ' hojas'), cx + 144, M + 4 + 4 * 12, { s: 7, b: true, al: 'right' });
+    doc.setPage(1); t('1 de ' + hojas, cx + 144, M + 4 + (filasControl.length - 1) * 12, { s: 7, b: true, al: 'right' }); // fila «Página» del recuadro
     if (blob) return doc.output('blob');
     doc.save('orden_compra_' + o.folio + '.pdf');
   }
@@ -432,11 +432,11 @@ const Compras = (() => {
   // ---------- Datos del formato (solo administración) ----------
   async function editarFormato() {
     const f = await formato();
-    $('fmt-codigo').value = f.codigo; $('fmt-revision').value = f.revision; $('fmt-elaboracion').value = f.fecha_elaboracion; $('fmt-fecha-revision').value = f.fecha_revision;
+    $('fmt-codigo').value = f.codigo;
     abrirVentana('overlay-formato-oc');
   }
   async function guardarFormato() {
-    FORMATO = await pedir('/compras/formato', 'PUT', { codigo: $('fmt-codigo').value, revision: $('fmt-revision').value, fecha_elaboracion: $('fmt-elaboracion').value, fecha_revision: $('fmt-fecha-revision').value });
+    FORMATO = await pedir('/compras/formato', 'PUT', { codigo: $('fmt-codigo').value });
     $('overlay-formato-oc').classList.remove('mostrar');
     toast('Datos del formato guardados: así saldrán en los PDF nuevos');
   }
@@ -445,23 +445,23 @@ const Compras = (() => {
     const F = await formato();
     let ExcelJS; try { ExcelJS = await Finanzas.cargarExcelJS(); } catch (err) { toast(err.message); return; }
     const wb = new ExcelJS.Workbook(), ws = wb.addWorksheet('Formato-ORDEN COMPRA', { pageSetup: { paperSize: 1, orientation: 'portrait', fitToPage: true, fitToWidth: 1, fitToHeight: 0 } });
-    ws.columns = [{ width: 9 }, { width: 10 }, { width: 46 }, { width: 9 }, { width: 14 }, { width: 14 }, { width: 16 }];
+    ws.columns = [{ width: 18 }, { width: 46 }, { width: 10 }, { width: 9 }, { width: 14 }, { width: 14 }, { width: 16 }];
     const borde = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
     const amarillo = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF6B103' } };
     const img = await logo().catch(() => null);
     if (img) ws.addImage(wb.addImage({ buffer: img, extension: 'png' }), { tl: { col: 0.1, row: 0.3 }, ext: { width: 150, height: 42 } });
-    ws.mergeCells('C1:C3'); Object.assign(ws.getCell('C1'), { value: 'ORDEN DE COMPRAS\n' + o.folio }); ws.getCell('C1').font = { bold: true, size: 14 }; ws.getCell('C1').alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
-    [['Código:', F.codigo], ['Revisión:', F.revision], ['Fecha de revisión:', fechaTxt(F.fecha_revision)]].forEach(([a, b], i) => { ws.mergeCells(`D${i + 1}:E${i + 1}`); ws.getCell(`D${i + 1}`).value = a; ws.mergeCells(`F${i + 1}:G${i + 1}`); ws.getCell(`F${i + 1}`).value = b; ws.getCell(`F${i + 1}`).font = { bold: true }; });
+    ws.mergeCells('B1:C3'); Object.assign(ws.getCell('B1'), { value: 'ORDEN DE COMPRAS\n' + o.folio }); ws.getCell('B1').font = { bold: true, size: 14 }; ws.getCell('B1').alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+    [['Código:', F.codigo], ['Fecha:', fechaTxt(o.fecha)]].forEach(([a, b], i) => { ws.mergeCells(`D${i + 1}:E${i + 1}`); ws.getCell(`D${i + 1}`).value = a; ws.mergeCells(`F${i + 1}:G${i + 1}`); ws.getCell(`F${i + 1}`).value = b; ws.getCell(`F${i + 1}`).font = { bold: true }; });
     ws.getRow(1).height = 22; ws.getRow(2).height = 22; ws.getRow(3).height = 22;
     const dato = (fila, etq, val, col1, col2) => { ws.getCell(col1 + fila).value = etq; ws.getCell(col1 + fila).font = { bold: true, size: 8 }; ws.getCell(col2 + fila).value = val; };
-    dato(5, 'PROVEEDOR', o.proveedor_nombre, 'A', 'C'); dato(5, 'CENTRO DE COSTOS', o.centro_nombre, 'E', 'F'); dato(6, 'NOTA', o.nota || '', 'A', 'C'); dato(6, 'FACTURA A', o.factura_a, 'E', 'F');
-    dato(7, 'ORDEN DE SERVICIO', o.orden_folio || '', 'A', 'C'); dato(7, 'FECHA', fechaTxt(o.fecha), 'E', 'F'); dato(8, 'FECHA REQUERIDA', fechaTxt(o.fecha_requerida), 'E', 'F');
-    const cab = ws.getRow(10); cab.values = ['PARTIDA', 'CANTIDAD', 'DESCRIPCIÓN', 'UNIDAD', 'CLAVE ARTÍCULO', 'PRECIO', 'IMPORTE'];
+    dato(5, 'PROVEEDOR', o.proveedor_nombre, 'A', 'B'); dato(5, 'CENTRO DE COSTOS', o.centro_nombre, 'E', 'F'); dato(6, 'NOTA', o.nota || '', 'A', 'B'); dato(6, 'FACTURA A', o.factura_a, 'E', 'F');
+    dato(7, 'ORDEN DE SERVICIO', o.orden_folio || '', 'A', 'B'); dato(7, 'FECHA', fechaTxt(o.fecha), 'E', 'F'); dato(8, 'FECHA REQUERIDA', fechaTxt(o.fecha_requerida), 'E', 'F');
+    const cab = ws.getRow(10); cab.values = ['PARTIDA', 'DESCRIPCIÓN', 'CANTIDAD', 'UNIDAD', 'CLAVE ARTÍCULO', 'PRECIO', 'IMPORTE'];
     cab.eachCell(c => { c.font = { bold: true }; c.fill = amarillo; c.border = borde; c.alignment = { horizontal: 'center' }; });
     o.partidas.forEach((p, i) => {
       const n = 11 + i, r = ws.getRow(n);
-      r.values = [i + 1, p.cantidad, p.descripcion, p.unidad || '', p.clave || '', p.precio, { formula: `B${n}*F${n}`, result: p.importe }];
-      r.eachCell({ includeEmpty: true }, c => { c.border = borde; }); r.getCell(3).alignment = { wrapText: true };
+      r.values = [i + 1, p.descripcion, p.cantidad, p.unidad || '', p.clave || '', p.precio, { formula: `C${n}*F${n}`, result: p.importe }];
+      r.eachCell({ includeEmpty: true }, c => { c.border = borde; }); r.getCell(2).alignment = { wrapText: true };
       r.getCell(6).numFmt = r.getCell(7).numFmt = '"$"#,##0.00';
     });
     let f = 11 + o.partidas.length + 1;

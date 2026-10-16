@@ -970,6 +970,10 @@ app.delete('/api/leads/:id', h((req, res) => {
   res.json({ ok: true, id: Number(req.params.id) });
 }));
 
+// Fechas sin hora (AAAA-MM-DD): sumar días y contar días entre dos fechas, sin depender de la hora ni de la zona.
+const sumarDiasFecha = (f, d) => { const x = new Date(f + 'T00:00:00Z'); x.setUTCDate(x.getUTCDate() + Number(d || 0)); return x.toISOString().slice(0, 10); };
+const diasEntre = (desde, hasta) => Math.round((Date.parse(hasta + 'T00:00:00Z') - Date.parse(desde + 'T00:00:00Z')) / 86400000);
+
 // ---------- Historial completo de un cliente ----------
 // Todo lo que le ha pasado, de lo más reciente a lo más antiguo: alta y cambios del contacto (y de los clientes
 // que se juntaron con él), y de cada cotización u orden: creación, cambios (importe, IVA, fechas, servicios,
@@ -1140,8 +1144,8 @@ app.get('/api/clientes/:id', h((req, res) => {
     WHERE l.cliente_id = ? AND l.estatus = 'ganado' AND s.dias_recurrencia IS NOT NULL
     GROUP BY s.id
   `).all(cliente.id).filter(r => r.ya_en_leads === 0).map(r => {
-    const sugerida = new Date(new Date(r.ultima_fecha + 'T00:00:00').getTime() + r.dias_recurrencia * 86400000);
-    return { servicio_nombre: r.servicio_nombre, fecha_sugerida: sugerida.toISOString().slice(0, 10), dias_restantes: Math.round((sugerida - new Date()) / 86400000) };
+    const sugerida = sumarDiasFecha(String(r.ultima_fecha).slice(0, 10), r.dias_recurrencia);
+    return { servicio_nombre: r.servicio_nombre, fecha_sugerida: sugerida, dias_restantes: diasEntre(hoyMexico(), sugerida) };
   }).sort((a, b) => a.dias_restantes - b.dias_restantes);
 
   res.json({ ...cliente, servicios, ...totales, proxima_recompra: recurrentes[0] || null });
@@ -1305,20 +1309,19 @@ app.get('/api/recompras', h((req, res) => {
     GROUP BY c.id, s.id
   `).all();
 
-  const hoy = new Date();
+  const hoy = hoyMexico();
   const resultado = filas
     .filter(f => f.ya_en_leads === 0) // ya se le está gestionando una nueva solicitud de este mismo servicio
     .map(f => {
-      const ultima = new Date(f.ultima_fecha + 'T00:00:00');
-      const sugerida = new Date(ultima.getTime() + f.dias_recurrencia * 86400000);
-      if (Number.isNaN(sugerida.getTime())) return null; // fecha o recurrencia inválida: se omite en vez de tumbar la lista
-      const dias_restantes = Math.round((sugerida - hoy) / 86400000);
+      if (!/^\d{4}-\d{2}-\d{2}/.test(String(f.ultima_fecha || '')) || !Number.isFinite(Number(f.dias_recurrencia))) return null; // fecha o recurrencia inválida: se omite en vez de tumbar la lista
+      const sugerida = sumarDiasFecha(String(f.ultima_fecha).slice(0, 10), f.dias_recurrencia);
+      const dias_restantes = diasEntre(hoy, sugerida);
       return {
         cliente_id: f.cliente_id, telefono: f.telefono, nombre: f.nombre,
         empresa_contacto: f.empresa_contacto, direccion: f.direccion,
         servicio_id: f.servicio_id, servicio_nombre: f.servicio_nombre,
         ultima_fecha: f.ultima_fecha, ultimo_valor: f.ultimo_valor, ultimo_lead_id: f.ultimo_lead_id,
-        fecha_sugerida: sugerida.toISOString().slice(0, 10),
+        fecha_sugerida: sugerida,
         dias_restantes
       };
     })
