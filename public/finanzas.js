@@ -6,7 +6,8 @@ const Finanzas = (() => {
   const esc = v => escaparHtml(v);
   const METODOS = [['transferencia', 'Transferencia'], ['efectivo', 'Efectivo'], ['deposito', 'Depósito'], ['cheque', 'Cheque'], ['tarjeta', 'Tarjeta'], ['otro', 'Otro']];
   // A proveedores y terceros también se les paga por nómina.
-  const METODOS_PROV = [...METODOS.slice(0, -1), ['nomina', 'Nómina'], ['otro', 'Otro']];
+  const METODOS_PROV = [...METODOS.slice(0, -1), ['nomina', 'Nómina'], ['layout', 'Layout'], ['pagadora', 'Pagadora'], ['domiciliado', 'Domiciliado'], ['linea_captura', 'Línea de captura'], ['directo', 'Directo'], ['otro', 'Otro']];
+  const COMPROBANTES = [['factura', 'Factura (CFDI)'], ['recibo', 'Recibo'], ['estado_cuenta', 'Estado de cuenta / corrida'], ['linea_captura', 'Línea de captura (impuestos)'], ['nomina', 'Nómina, finiquito o liquidación'], ['pagadora', 'Pagadora'], ['sin_factura', 'Sin factura'], ['informativo', 'Informativo (no se suma)'], ['otro', 'Otro']];
   const NOMBRE_METODO = Object.fromEntries(METODOS_PROV);
   const esAdmin = () => USUARIO_ACTUAL?.rol === 'admin';
   // Todos los usuarios con sesión ven las cuentas; crédito y factura los cambian admin y atención.
@@ -619,7 +620,7 @@ const Finanzas = (() => {
     $('pagoprov-info').textContent = `${x.proveedor_nombre} · ${x.concepto} · Saldo ${formatoMoneda(x.saldo)}`;
     $('pagoprov-monto').value = x.saldo > 0 ? x.saldo.toFixed(2) : '';
     pintarMetodos('pagoprov-metodos', 'transferencia', METODOS_PROV);
-    $('pagoprov-fecha').value = hoy(); $('pagoprov-fecha').max = hoy(); $('pagoprov-referencia').value = '';
+    $('pagoprov-fecha').value = hoy(); $('pagoprov-fecha').max = hoy(); $('pagoprov-referencia').value = ''; $('pagoprov-cuenta').value = '';
     $('pagoprov-guardar').disabled = x.saldo <= 0;
     [$('pagoprov-monto'), $('pagoprov-fecha'), $('pagoprov-referencia'), $('pagoprov-guardar')].forEach(el => { el.closest('.campo') ? (el.closest('.campo').hidden = !paraPagar) : (el.hidden = !paraPagar); });
     $('pagoprov-metodos').closest('.campo').hidden = !paraPagar;
@@ -639,7 +640,7 @@ const Finanzas = (() => {
   });
   $('pagoprov-guardar').addEventListener('click', e => conBoton(e.currentTarget, async () => {
     if (!PAGO_PROV) return;
-    const r = await enviar('/finanzas/cxp/' + PAGO_PROV.id + '/pagos', 'POST', { monto: $('pagoprov-monto').value.trim(), metodo: metodoElegido('pagoprov-metodos'), fecha: $('pagoprov-fecha').value, referencia: $('pagoprov-referencia').value });
+    const r = await enviar('/finanzas/cxp/' + PAGO_PROV.id + '/pagos', 'POST', { monto: $('pagoprov-monto').value.trim(), metodo: metodoElegido('pagoprov-metodos'), fecha: $('pagoprov-fecha').value, referencia: $('pagoprov-referencia').value, cuenta_origen: $('pagoprov-cuenta').value });
     if (!r) return;
     $('overlay-pago-prov').classList.remove('mostrar'); toast('Pago a proveedor guardado'); cargar({ pestana: 'pagar' });
   }));
@@ -708,6 +709,9 @@ const Finanzas = (() => {
     ['gasto-concepto', 'gasto-total', 'gasto-folio', 'gasto-orden', 'gasto-equipo', 'gasto-referencia'].forEach(id => { $(id).value = prellenado[id] || ''; });
     $('gasto-fecha').value = hoy(); $('gasto-vence').value = ''; $('gasto-fecha-pago').value = hoy(); $('gasto-pagado').checked = false; $('gasto-metodo-wrap').hidden = true;
     $('gasto-credito').value = ''; $('gasto-credito').disabled = false; $('gasto-credito-ayuda').textContent = '';
+    $('gasto-comprobante').innerHTML = '<option value="">Selecciona…</option>' + COMPROBANTES.map(([v, t]) => '<option value="' + v + '">' + esc(t) + '</option>').join('');
+    $('gasto-sat').value = ''; $('gasto-sat-wrap').hidden = true; $('gasto-beneficiario').value = '';
+    $('gasto-beneficiarios').innerHTML = PROVEEDORES.filter(p => p.activo).map(p => '<option value="' + esc(p.nombre) + '"></option>').join('');
     $('gasto-categoria').value = 'otro';
     $('gasto-folio').closest('details').open = !!prellenado['gasto-equipo'];
     $('gasto-orden').dataset.leadId = ''; $('gasto-orden-sugerencias').hidden = true; $('gasto-orden-info').hidden = true;
@@ -732,6 +736,7 @@ const Finanzas = (() => {
     $('gasto-vence').value = /^\d{1,3}$/.test(d) && $('gasto-fecha').value ? sumarDias($('gasto-fecha').value, Number(d)) : '';
   };
   $('gasto-credito').addEventListener('input', recalcularVence);
+  $('gasto-comprobante').addEventListener('change', () => { $('gasto-sat-wrap').hidden = $('gasto-comprobante').value !== 'factura'; if ($('gasto-comprobante').value !== 'factura') $('gasto-sat').value = ''; });
   $('gasto-proveedor').addEventListener('change', async () => {
     if ($('gasto-proveedor').value === '__nuevo') {
       $('gasto-proveedor').value = '';
@@ -758,11 +763,13 @@ const Finanzas = (() => {
     const leadId = orden ? Number($('gasto-orden').dataset.leadId) || null : null;
     if (orden && !leadId) { toast('Elige la orden de servicio de la lista (o deja el campo vacío)'); $('gasto-orden').focus(); return; }
     if (!leadId && !['admin', 'costos'].includes(USUARIO_ACTUAL?.rol)) { toast('Elige la orden de servicio. Las compras se piden con una Solicitud de compra.'); $('gasto-orden').focus(); return; }
+    if (!$('gasto-comprobante').value) { toast('Elige el tipo de comprobante (factura, recibo, sin factura…)'); $('gasto-comprobante').focus(); return; }
     const credito = $('gasto-pagado').checked ? '0' : $('gasto-credito').value.trim();
     if (!/^\d{1,3}$/.test(credito) || Number(credito) > 365) { toast('Escribe los días de crédito (0 si es de contado)'); $('gasto-credito').focus(); return; }
     const r = await enviar('/finanzas/cxp', 'POST', {
       proveedor_id: Number($('gasto-proveedor').value) || null, categoria: $('gasto-categoria').value, concepto: $('gasto-concepto').value,
       total: $('gasto-total').value.trim(), fecha_documento: $('gasto-fecha').value, dias_credito: Number(credito),
+      tipo_comprobante: $('gasto-comprobante').value, metodo_sat: $('gasto-sat').value || null, beneficiario: $('gasto-beneficiario').value.trim() || null,
       factura_folio: $('gasto-folio').value, lead_id: leadId, equipo: $('gasto-equipo').value,
       ya_pagado: $('gasto-pagado').checked, metodo: metodoElegido('gasto-metodos'),
       fecha_pago: $('gasto-pagado').checked ? $('gasto-fecha-pago').value : null, referencia: $('gasto-pagado').checked ? $('gasto-referencia').value : null });
@@ -771,6 +778,56 @@ const Finanzas = (() => {
     const alGuardar = GASTO_ALGUARDAR; GASTO_ALGUARDAR = null;
     if (alGuardar) await alGuardar(); else cargar({ pestana: 'pagar' });
   }));
+  $('pagar-formato-cxp').addEventListener('click', e => conBoton(e.currentTarget, descargarFormatoCxp));
+  async function descargarFormatoCxp() {
+    let ExcelJS; try { ExcelJS = await cargarExcelJS(); } catch (err) { toast(err.message); return; }
+    const d = await api('/finanzas/cxp/formato-excel').then(json);
+    const COMP = d.comprobantes, VIA = Object.fromEntries(METODOS_PROV);
+    const pagosDe = id => d.pagos.filter(g => g.cxp_id === id && !g.cancelado);
+    const fecha = f => (f ? new Date(f + 'T12:00:00') : null);
+    const wb = new ExcelJS.Workbook(); wb.creator = 'Saneadren CRM';
+    const ws = wb.addWorksheet('CXP ' + hoy().slice(0, 4), { views: [{ state: 'frozen', ySplit: 2 }] });
+    const COLS = [['FECHA VENCIMIENTO', 13], ['PROVEEDOR', 34], ['BENEFICIARIO', 34], ['DESCRIPCION', 44], ['FECHA FACTURA/SOLICITUD', 13], ['capturo', 12], ['FOLIO FACTURA', 16],
+      ['METODO DE PAGO', 18], ['MONTO TOTAL FACTURA', 16], ['PENDIENTE', 14], ['ANTICIPO', 13], ['PAGADO', 16], ['CUENTA BANCARIA', 22], ['BANCO', 14], ['DIAS DE CREDITO', 9],
+      ['CONCEPTO DE GASTO ', 30], ['STATUS', 12], ['FECHA DE PAGO', 13], ['OBSERVACIONES', 40]];
+    ws.columns = COLS.map(([, w]) => ({ width: w }));
+    ws.mergeCells('A1:S1'); ws.getCell('A1').value = 'Cuentas por pagar ' + hoy().slice(0, 4); ws.getCell('A1').font = { bold: true, size: 14 };
+    ws.getRow(2).values = COLS.map(([t]) => t);
+    ws.getRow(2).eachCell(c => { c.font = { bold: true }; c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF6B103' } }; c.alignment = { wrapText: true, vertical: 'middle' }; });
+    let n = 3;
+    for (const x of d.cuentas.filter(c => !c.cancelada)) {
+      const pg = pagosDe(x.id), pagado = pg.reduce((t, g) => t + g.monto, 0), anticipo = pg.filter(g => g.fecha < x.fecha_documento).reduce((t, g) => t + g.monto, 0);
+      const status = pagado <= 0 ? 'PENDIENTE' : pagado + 0.005 < x.total ? 'PARCIAL' : 'PAGADO';
+      const metodo = x.tipo_comprobante === 'factura' ? (x.metodo_sat || 'FACTURA') : (COMP[x.tipo_comprobante] || '').toUpperCase();
+      const folio = x.factura_folio || (x.tipo_comprobante && x.tipo_comprobante !== 'factura' ? (COMP[x.tipo_comprobante] || '').toUpperCase() : '');
+      const ultimo = pg.length ? pg[pg.length - 1] : null;
+      const r = ws.getRow(n);
+      r.values = [fecha(x.fecha_vencimiento), x.proveedor, x.beneficiario, x.concepto, fecha(x.fecha_documento), (x.capturo || '').toUpperCase(), folio, metodo, x.total,
+        { formula: 'I' + n + '-L' + n, result: Math.round((x.total - pagado) * 100) / 100 }, anticipo || null,
+        // Varios pagos: como en el Excel, una suma con cada pago (=a+b+c); el detalle con fechas está en la hoja PAGOS.
+        pg.length > 1 ? { formula: pg.map(g => g.monto).join('+'), result: pagado } : (pg.length ? pagado : null),
+        x.clabe || '', x.banco || '', x.dias_credito ?? '', (x.categoria || '').toUpperCase(), status, ultimo ? fecha(ultimo.fecha) : null,
+        [x.notas, x.orden_folio ? 'Orden ' + x.orden_folio : '', x.tipo_comprobante === 'informativo' ? 'INFORMATIVO: no se suma' : '', !x.es_gasto ? 'No cuenta como gasto' : ''].filter(Boolean).join(' · ')];
+      [1, 5, 18].forEach(i => { r.getCell(i).numFmt = 'dd/mm/yyyy'; });
+      [9, 10, 11, 12].forEach(i => { r.getCell(i).numFmt = '"$"#,##0.00'; });
+      n++;
+    }
+    const pw = wb.addWorksheet('PAGOS', { views: [{ state: 'frozen', ySplit: 1 }] });
+    pw.columns = [{ header: 'FECHA DE PAGO', width: 13 }, { header: 'PROVEEDOR', width: 34 }, { header: 'BENEFICIARIO', width: 34 }, { header: 'DESCRIPCION', width: 40 }, { header: 'MONTO', width: 14 },
+      { header: 'VIA DE PAGO', width: 16 }, { header: 'CUENTA DE SALIDA', width: 24 }, { header: 'REFERENCIA', width: 22 }, { header: 'REGISTRÓ', width: 16 }, { header: 'ESTADO', width: 30 }];
+    pw.getRow(1).eachCell(c => { c.font = { bold: true }; c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF6B103' } }; });
+    for (const g of d.pagos) {
+      const x = d.cuentas.find(c => c.id === g.cxp_id) || {};
+      const r = pw.addRow([fecha(g.fecha), x.proveedor, x.beneficiario, x.concepto, g.monto, VIA[g.metodo] || g.metodo, g.cuenta_origen || '', g.referencia || '', g.registro || '', g.cancelado ? 'CANCELADO: ' + (g.motivo_cancelacion || '') : 'Vigente']);
+      r.getCell(1).numFmt = 'dd/mm/yyyy'; r.getCell(5).numFmt = '"$"#,##0.00';
+    }
+    const lw = wb.addWorksheet('LISTA');
+    const listas = [['PROVEEDOR', [...new Set(d.cuentas.map(c => c.proveedor))].sort()], ['BENEFICIARIO', [...new Set(d.cuentas.map(c => c.beneficiario))].sort()],
+      ['CONCEPTO DE GASTO', Object.values(d.categorias)], ['TIPO DE COMPROBANTE', Object.values(COMP)], ['VIA DE PAGO', METODOS_PROV.map(([, t]) => t)], ['STATUS', ['PENDIENTE', 'PARCIAL', 'PAGADO']]];
+    listas.forEach(([t, vals], i) => { const col = lw.getColumn(i + 1); col.width = 34; lw.getCell(1, i + 1).value = t; lw.getCell(1, i + 1).font = { bold: true }; vals.forEach((v, j) => { lw.getCell(j + 2, i + 1).value = v; }); });
+    saveAs(new Blob([await wb.xlsx.writeBuffer()], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), 'CUENTAS_POR_PAGAR_' + hoy() + '.xlsx');
+    toast('Descargado con el formato CXP');
+  }
   $('pagar-exportar').addEventListener('click', () => {
     if (!CXP.length) { toast('No hay datos para exportar'); return; }
     descargarCSV('cuentas_por_pagar_' + hoy() + '.csv', [
@@ -798,7 +855,7 @@ const Finanzas = (() => {
   }
   function limpiarFormProveedor() {
     PROV_EDITANDO = null;
-    ['prov-nombre', 'prov-rfc', 'prov-telefono', 'prov-contacto'].forEach(id => { $(id).value = ''; });
+    ['prov-nombre', 'prov-rfc', 'prov-telefono', 'prov-contacto', 'prov-clabe', 'prov-banco'].forEach(id => { $(id).value = ''; });
     $('prov-credito').value = 0; $('prov-categoria').value = 'otro';
     $('prov-form-titulo').textContent = 'Agregar proveedor'; $('prov-cancelar').hidden = true;
   }
@@ -809,7 +866,7 @@ const Finanzas = (() => {
     if (btn.dataset.editarProv) {
       PROV_EDITANDO = p.id;
       $('prov-nombre').value = p.nombre; $('prov-categoria').value = p.categoria; $('prov-credito').value = p.dias_credito;
-      $('prov-rfc').value = p.rfc || ''; $('prov-telefono').value = p.telefono || ''; $('prov-contacto').value = p.contacto || '';
+      $('prov-rfc').value = p.rfc || ''; $('prov-telefono').value = p.telefono || ''; $('prov-contacto').value = p.contacto || ''; $('prov-clabe').value = p.clabe || ''; $('prov-banco').value = p.banco || '';
       $('prov-form-titulo').textContent = 'Editar proveedor'; $('prov-cancelar').hidden = false; $('prov-nombre').focus();
       return;
     }
@@ -834,7 +891,7 @@ const Finanzas = (() => {
   }
   $('prov-guardar').addEventListener('click', e => conBoton(e.currentTarget, async () => {
     const cuerpo = { nombre: $('prov-nombre').value, categoria: $('prov-categoria').value, dias_credito: $('prov-credito').value,
-      rfc: $('prov-rfc').value, telefono: $('prov-telefono').value, contacto: $('prov-contacto').value };
+      rfc: $('prov-rfc').value, telefono: $('prov-telefono').value, contacto: $('prov-contacto').value, clabe: $('prov-clabe').value, banco: $('prov-banco').value };
     if (!await guardarProveedor(cuerpo, PROV_EDITANDO)) return;
     toast(PROV_EDITANDO ? 'Proveedor actualizado' : 'Proveedor agregado'); cargarProveedores();
   }));

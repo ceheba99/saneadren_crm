@@ -16,7 +16,10 @@ const Importes = require('../public/importes.js');
 
 const METODOS = ['transferencia', 'efectivo', 'deposito', 'cheque', 'tarjeta', 'otro'];
 // A proveedores y terceros también se les paga por nómina (p. ej. "Nómina semana 40").
-const METODOS_PROV = [...METODOS, 'nomina'];
+const METODOS_PROV = [...METODOS, 'nomina', 'layout', 'pagadora', 'domiciliado', 'linea_captura', 'directo'];
+// Tipo de comprobante de una cuenta por pagar (antes iba mezclado en «método de pago» y en el folio del Excel).
+const COMPROBANTES = { factura: 'Factura (CFDI)', recibo: 'Recibo', estado_cuenta: 'Estado de cuenta / corrida', linea_captura: 'Línea de captura (impuestos)',
+  nomina: 'Nómina, finiquito o liquidación', pagadora: 'Pagadora', sin_factura: 'Sin factura', informativo: 'Informativo (no se suma)', otro: 'Otro' };
 const TIPOS_COBRO = ['anticipo', 'pago', 'ajuste'];
 // Categorías de gasto: estas son las iniciales; viven en la tabla categorias_gasto y un administrador
 // las edita. CATEGORIAS (clave → nombre, incluye las inactivas para mostrar gastos viejos) se recarga
@@ -176,15 +179,36 @@ function migrar(db) {
     activo INTEGER NOT NULL DEFAULT 1 CHECK(activo IN (0, 1)),
     orden INTEGER NOT NULL DEFAULT 0
   )`);
+  if (!db.prepare('PRAGMA table_info(categorias_gasto)').all().some(c => c.name === 'es_gasto')) db.exec('ALTER TABLE categorias_gasto ADD COLUMN es_gasto INTEGER NOT NULL DEFAULT 1 CHECK(es_gasto IN (0, 1))');
   if (!db.prepare('SELECT COUNT(*) n FROM categorias_gasto').get().n) {
     const ins = db.prepare('INSERT INTO categorias_gasto (clave, nombre, orden) VALUES (?, ?, ?)');
     db.transaction(() => Object.entries(CATEGORIAS_INICIALES).forEach(([k, n], i) => ins.run(k, n, i + 1)))();
   }
+  // Categorías del Excel de Cuentas por pagar: se agregan las que falten (no se tocan las que ya existen, aunque
+  // se hayan renombrado). Las de inversión, préstamos y traspasos quedan marcadas como «no es gasto».
+  { const max = db.prepare('SELECT COALESCE(MAX(orden), 0) m FROM categorias_gasto').get().m, ins = db.prepare('INSERT OR IGNORE INTO categorias_gasto (clave, nombre, orden, es_gasto) VALUES (?, ?, ?, ?)');
+    db.transaction(() => CATEGORIAS_CXP.forEach(([k, n, g], i) => ins.run(k, n, max + i + 1, g)))(); }
+  // Columnas nuevas del Excel: a quién se paga, tipo de comprobante y método del SAT; cuenta de salida del pago; CLABE y banco del proveedor.
+  { const cols = t => db.prepare(`PRAGMA table_info(${t})`).all().map(c => c.name);
+    for (const [t, c, tipo] of [['cuentas_por_pagar', 'beneficiario', 'TEXT'], ['cuentas_por_pagar', 'tipo_comprobante', 'TEXT'], ['cuentas_por_pagar', 'metodo_sat', 'TEXT'],
+      ['pagos_proveedor', 'cuenta_origen', 'TEXT'], ['proveedores', 'clabe', 'TEXT'], ['proveedores', 'banco', 'TEXT']])
+      if (!cols(t).includes(c)) db.exec(`ALTER TABLE ${t} ADD COLUMN ${c} ${tipo}`); }
 }
+// Categorías del Excel de Cuentas por pagar (sus 200 conceptos se agrupan en éstas). «es_gasto» = 0: compras de
+// bienes (inversión), préstamos y traspasos o devoluciones: NO se restan como gasto en Resultados.
+const CATEGORIAS_CXP = [
+  ['sueldos', 'Sueldos, nómina y finiquitos', 1], ['impuestos', 'Impuestos, IMSS e INFONAVIT', 1], ['tramites_vehiculares', 'Tenencias, placas, verificaciones y trámites', 1],
+  ['creditos', 'Créditos y financiamientos', 1], ['comisiones_bancarias', 'Comisiones bancarias e intereses', 1], ['mantto_vehiculos', 'Mantenimiento de vehículos', 1],
+  ['herramientas', 'Herramientas, ferretería y consumibles', 1], ['renta_inmuebles', 'Renta de inmuebles', 1], ['profesionales', 'Honorarios y servicios profesionales', 1],
+  ['seguros', 'Seguros y fianzas', 1], ['uniformes_seguridad', 'Uniformes y equipo de seguridad', 1], ['publicidad', 'Publicidad y ventas', 1],
+  ['pagadora', 'Pagadora: comisión y facturación', 1], ['direccion', 'Gastos de dirección y socios', 1],
+  ['activos', 'Compra de vehículos, maquinaria e inmuebles (inversión)', 0], ['prestamos', 'Préstamos y anticipos', 0], ['movimientos', 'Traspasos y devoluciones (no es gasto)', 0],
+];
+const CATEGORIAS_NO_GASTO = new Set();
 function cargarCategorias(db) {
   for (const k of Object.keys(CATEGORIAS)) delete CATEGORIAS[k];
-  CATEGORIAS_ACTIVAS.clear();
-  for (const c of db.prepare('SELECT clave, nombre, activo FROM categorias_gasto ORDER BY orden, nombre').all()) { CATEGORIAS[c.clave] = c.nombre; if (c.activo) CATEGORIAS_ACTIVAS.add(c.clave); }
+  CATEGORIAS_ACTIVAS.clear(); CATEGORIAS_NO_GASTO.clear();
+  for (const c of db.prepare('SELECT clave, nombre, activo, es_gasto FROM categorias_gasto ORDER BY orden, nombre').all()) { CATEGORIAS[c.clave] = c.nombre; if (c.activo) CATEGORIAS_ACTIVAS.add(c.clave); if (c.es_gasto === 0) CATEGORIAS_NO_GASTO.add(c.clave); }
 }
 
 // ---------- Utilidades de dinero y fechas ----------
@@ -632,10 +656,28 @@ module.exports = function finanzas(app, db, h, unicos) {
   }
 
   // Sin ?todas solo las activas (para elegir). Con ?todas=1 también las dadas de baja (para editarlas).
+  app.get('/api/finanzas/comprobantes', h((req, res) => res.json({ comprobantes: COMPROBANTES, vias: METODOS_PROV })));
+  // Todo lo necesario para descargar Cuentas por pagar con el MISMO formato del Excel «CXP» (19 columnas) más el
+  // detalle de cada pago. Solo administración (igual que las demás exportaciones a Excel).
+  app.get('/api/finanzas/cxp/formato-excel', h((req, res) => {
+    if (rol(req) !== 'admin') return res.status(403).json({ error: 'Solo administración exporta a Excel' });
+    const cuentas = db.prepare(`SELECT x.*, p.nombre AS proveedor_nombre, p.clabe, p.banco, u.nombre AS capturo,
+        (SELECT created_at FROM leads l WHERE l.id = x.lead_id) AS lead_created_at
+      FROM cuentas_por_pagar x JOIN proveedores p ON p.id = x.proveedor_id LEFT JOIN usuarios u ON u.id = x.registrado_por
+      ORDER BY x.fecha_documento, x.id`).all();
+    const pagos = db.prepare('SELECT g.*, u.nombre AS registro FROM pagos_proveedor g LEFT JOIN usuarios u ON u.id = g.registrado_por ORDER BY g.fecha, g.id').all();
+    res.json({ comprobantes: COMPROBANTES, categorias: CATEGORIAS, no_gasto: [...CATEGORIAS_NO_GASTO],
+      cuentas: cuentas.map(x => ({ id: x.id, proveedor: x.proveedor_nombre, beneficiario: x.beneficiario || x.proveedor_nombre, concepto: x.concepto, fecha_documento: x.fecha_documento,
+        fecha_vencimiento: x.fecha_vencimiento, capturo: x.capturo, factura_folio: x.factura_folio, tipo_comprobante: x.tipo_comprobante, metodo_sat: x.metodo_sat,
+        total: aPesos(x.total_cent), clabe: x.clabe, banco: x.banco, dias_credito: x.dias_credito, categoria: CATEGORIAS[x.categoria] || x.categoria, es_gasto: !CATEGORIAS_NO_GASTO.has(x.categoria),
+        notas: x.notas, cancelada: !!x.cancelada, motivo_cancelacion: x.motivo_cancelacion, orden_folio: x.lead_id ? folioOS(x.lead_id, x.lead_created_at) : null, equipo: x.equipo })),
+      pagos: pagos.map(g => ({ id: g.id, cxp_id: g.cxp_id, fecha: g.fecha, monto: aPesos(g.monto_cent), metodo: g.metodo, referencia: g.referencia, cuenta_origen: g.cuenta_origen,
+        registro: g.registro, cancelado: !!g.cancelado, motivo_cancelacion: g.motivo_cancelacion })) });
+  }));
   app.get('/api/finanzas/categorias', h((req, res) => {
     if (!permitido(req, res, PUEDE_VER_CARTERA)) return;
     const todas = req.query.todas === '1';
-    res.json(db.prepare(`SELECT clave, nombre, activo FROM categorias_gasto ${todas ? '' : 'WHERE activo = 1'} ORDER BY activo DESC, orden, nombre`).all());
+    res.json(db.prepare(`SELECT clave, nombre, activo, es_gasto FROM categorias_gasto ${todas ? '' : 'WHERE activo = 1'} ORDER BY activo DESC, orden, nombre`).all());
   }));
   // Solo un administrador agrega, renombra o da de baja categorías. La clave no cambia nunca (los
   // gastos guardan la clave), así que renombrar actualiza todo lo ya capturado.
@@ -677,11 +719,14 @@ module.exports = function finanzas(app, db, h, unicos) {
     if (db.prepare('SELECT nombre FROM categorias_gasto WHERE clave <> ?').all(c.clave).some(x => llaveNombre(x.nombre) === llaveNombre(nombre))) return res.status(409).json({ error: 'Ya existe esa categoría' });
     const activo = req.body.activo === undefined ? c.activo : (req.body.activo ? 1 : 0);
     if (!activo && c.clave === 'otro') return res.status(400).json({ error: '«Otro» no se puede dar de baja: es la categoría de respaldo' });
-    db.prepare('UPDATE categorias_gasto SET nombre = ?, activo = ? WHERE clave = ?').run(nombre, activo, c.clave);
+    // Si cuenta o no como gasto en Resultados cambia las cifras de utilidad: solo administración.
+    const esGasto = req.body.es_gasto === undefined ? c.es_gasto : (req.body.es_gasto ? 1 : 0);
+    if (esGasto !== c.es_gasto && rol(req) !== 'admin') return res.status(403).json({ error: 'Solo administración decide si una categoría cuenta como gasto en Resultados' });
+    db.prepare('UPDATE categorias_gasto SET nombre = ?, activo = ?, es_gasto = ? WHERE clave = ?').run(nombre, activo, esGasto, c.clave);
     cargarCategorias(db);
-    const difCat = app.locals.auditoria?.diferencias(c, { nombre, activo }, ['nombre', 'activo']);
+    const difCat = app.locals.auditoria?.diferencias(c, { nombre, activo, es_gasto: esGasto }, ['nombre', 'activo', 'es_gasto']);
     if (difCat) app.locals.auditoria.registrar(req, 'catalogo', null, 'categoría editada', `«${c.nombre}»: ${difCat}`);
-    res.json(db.prepare('SELECT clave, nombre, activo FROM categorias_gasto WHERE clave = ?').get(c.clave));
+    res.json(db.prepare('SELECT clave, nombre, activo, es_gasto FROM categorias_gasto WHERE clave = ?').get(c.clave));
   }));
 
   app.get('/api/finanzas/proveedores', h((req, res) => {
@@ -699,7 +744,9 @@ module.exports = function finanzas(app, db, h, unicos) {
     if (!diasCreditoValidos(b.dias_credito)) return { error: 'Los días de crédito deben ser un número entero de 0 a 180' };
     const rfc = texto(b.rfc, 20)?.toUpperCase() || null;
     if (rfc && !/^[A-ZÑ&]{3,4}\d{6}[A-Z0-9]{3}$/.test(rfc)) return { error: 'El RFC no es válido (p. ej. ABC010101AB1)' };
-    return { nombre, categoria, rfc, telefono: texto(b.telefono, 25), contacto: texto(b.contacto, 120), dias_credito: Number(b.dias_credito) || 0, notas: texto(b.notas, 1000) };
+    const clabe = b.clabe === undefined || b.clabe === null || String(b.clabe).trim() === '' ? null : String(b.clabe).replace(/[\s-]/g, '');
+    if (clabe && !/^\d{18}$/.test(clabe)) return { error: 'La CLABE lleva 18 dígitos' };
+    return { nombre, categoria, rfc, telefono: texto(b.telefono, 25), contacto: texto(b.contacto, 120), dias_credito: Number(b.dias_credito) || 0, notas: texto(b.notas, 1000), clabe, banco: texto(b.banco, 60) };
   }
   // Proveedores sin duplicados (mismas reglas que los clientes): nombre igual o parecido (acentos, mayúsculas,
   // «S.A. de C.V.», errores de dedo) se pregunta; el mismo RFC no se repite.
@@ -725,8 +772,8 @@ module.exports = function finanzas(app, db, h, unicos) {
     if (d.error) return res.status(400).json(d);
     const p = problemaProveedor(d, 0, !!req.body.forzar);
     if (p) return res.status(p.status).json(p.cuerpo);
-    const info = db.prepare('INSERT INTO proveedores (nombre, categoria, rfc, telefono, contacto, dias_credito, notas) VALUES (?, ?, ?, ?, ?, ?, ?)')
-      .run(d.nombre, d.categoria, d.rfc, d.telefono, d.contacto, d.dias_credito, d.notas);
+    const info = db.prepare('INSERT INTO proveedores (nombre, categoria, rfc, telefono, contacto, dias_credito, notas, clabe, banco) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+      .run(d.nombre, d.categoria, d.rfc, d.telefono, d.contacto, d.dias_credito, d.notas, d.clabe, d.banco);
     app.locals.auditoria?.registrar(req, 'proveedor', Number(info.lastInsertRowid), 'creado', `${d.nombre}${d.rfc ? ' · RFC ' + d.rfc : ''} · ${CATEGORIAS[d.categoria] || d.categoria}${req.body.forzar ? ' · confirmado como distinto de uno parecido' : ''}`);
     res.status(201).json(db.prepare('SELECT * FROM proveedores WHERE id = ?').get(info.lastInsertRowid));
   }));
@@ -739,11 +786,11 @@ module.exports = function finanzas(app, db, h, unicos) {
     // Al renombrar, también se revisa que no quede igual o parecido a otro (salvo que se confirme).
     const prob = problemaProveedor(d, p.id, !!req.body.forzar || unicos.clave(d.nombre) === unicos.clave(p.nombre));
     if (prob) return res.status(prob.status).json(prob.cuerpo);
-    const difProv = app.locals.auditoria?.diferencias(p, { ...d, activo: req.body.activo === undefined ? p.activo : (req.body.activo ? 1 : 0) }, ['nombre', 'rfc', 'categoria', 'dias_credito', 'telefono', 'contacto', 'notas', 'activo']);
+    const difProv = app.locals.auditoria?.diferencias(p, { ...d, activo: req.body.activo === undefined ? p.activo : (req.body.activo ? 1 : 0) }, ['nombre', 'rfc', 'categoria', 'dias_credito', 'telefono', 'contacto', 'notas', 'activo', 'clabe', 'banco']);
     if (difProv) app.locals.auditoria.registrar(req, 'proveedor', p.id, 'editado', difProv);
     const activo = req.body.activo === undefined ? p.activo : (req.body.activo ? 1 : 0);
-    db.prepare('UPDATE proveedores SET nombre = ?, categoria = ?, rfc = ?, telefono = ?, contacto = ?, dias_credito = ?, notas = ?, activo = ? WHERE id = ?')
-      .run(d.nombre, d.categoria, d.rfc, d.telefono, d.contacto, d.dias_credito, d.notas, activo, p.id);
+    db.prepare('UPDATE proveedores SET nombre = ?, categoria = ?, rfc = ?, telefono = ?, contacto = ?, dias_credito = ?, notas = ?, activo = ?, clabe = ?, banco = ? WHERE id = ?')
+      .run(d.nombre, d.categoria, d.rfc, d.telefono, d.contacto, d.dias_credito, d.notas, activo, d.clabe, d.banco, p.id);
     res.json(db.prepare('SELECT * FROM proveedores WHERE id = ?').get(p.id));
   }));
 
@@ -906,15 +953,23 @@ module.exports = function finanzas(app, db, h, unicos) {
     const fechaPagoGasto = b.ya_pagado && b.fecha_pago ? b.fecha_pago : null;
     if (fechaPagoGasto && (!fechaValida(fechaPagoGasto) || fechaPagoGasto > hoyMexico())) return res.status(400).json({ error: 'La fecha de pago no es válida o es futura' });
     const folioFactura = texto(b.factura_folio, 60);
+    // Tipo de comprobante (si no se dice: factura si trae folio). El método del SAT solo aplica a facturas.
+    const tipoComp = b.tipo_comprobante ? String(b.tipo_comprobante) : (folioFactura ? 'factura' : null);
+    if (tipoComp && !COMPROBANTES[tipoComp]) return res.status(400).json({ error: 'Elige el tipo de comprobante' });
+    const metodoSat = b.metodo_sat ? String(b.metodo_sat).toUpperCase() : null;
+    if (metodoSat && (!['PUE', 'PPD'].includes(metodoSat) || tipoComp !== 'factura')) return res.status(400).json({ error: 'El método del SAT (PUE o PPD) solo aplica a facturas' });
+    const beneficiario = texto(b.beneficiario, 120);
+    if (beneficiario && !conSentido(beneficiario, 3)) return res.status(400).json({ error: 'Escribe a quién se le paga' });
     if (folioFactura && !b.forzar && db.prepare("SELECT id FROM cuentas_por_pagar WHERE proveedor_id = ? AND replace(upper(factura_folio), ' ', '') = replace(upper(?), ' ', '') AND cancelada = 0").get(prov.id, folioFactura)) {
       return res.status(409).json({ error: `Ya registraste la factura ${folioFactura} de ${prov.nombre}. ¿Es otra factura?`, codigo: 'POSIBLE_DUPLICADO' });
     }
     const id = db.transaction(() => {
-      const info = db.prepare(`INSERT INTO cuentas_por_pagar (proveedor_id, categoria, concepto, factura_folio, fecha_documento, fecha_vencimiento, total_cent, lead_id, equipo, notas, registrado_por, dias_credito)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(prov.id, categoria, concepto, texto(b.factura_folio, 60), fecha, vence, total, leadId, texto(b.equipo, 200), texto(b.notas, 1000), req.usuarioSesion.id, dias);
+      const info = db.prepare(`INSERT INTO cuentas_por_pagar (proveedor_id, categoria, concepto, factura_folio, fecha_documento, fecha_vencimiento, total_cent, lead_id, equipo, notas, registrado_por, dias_credito, beneficiario, tipo_comprobante, metodo_sat)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(prov.id, categoria, concepto, texto(b.factura_folio, 60), fecha, vence, total, leadId, texto(b.equipo, 200), texto(b.notas, 1000), req.usuarioSesion.id, dias,
+        beneficiario && unicos.clave(beneficiario) !== unicos.clave(prov.nombre) ? beneficiario : null, tipoComp, metodoSat);
       if (b.ya_pagado) {
-        db.prepare('INSERT INTO pagos_proveedor (cxp_id, fecha, monto_cent, metodo, referencia, registrado_por) VALUES (?, ?, ?, ?, ?, ?)')
-          .run(info.lastInsertRowid, fechaPagoGasto || (fecha > hoyMexico() ? hoyMexico() : fecha), total, b.metodo, texto(b.referencia, 120), req.usuarioSesion.id);
+        db.prepare('INSERT INTO pagos_proveedor (cxp_id, fecha, monto_cent, metodo, referencia, registrado_por, cuenta_origen) VALUES (?, ?, ?, ?, ?, ?, ?)')
+          .run(info.lastInsertRowid, fechaPagoGasto || (fecha > hoyMexico() ? hoyMexico() : fecha), total, b.metodo, texto(b.referencia, 120), req.usuarioSesion.id, texto(b.cuenta_origen, 80));
       }
       if (leadId) bitacora(leadId, `Costo con terceros registrado: «${concepto}» de ${prov.nombre} por ${fmt(total)}${b.ya_pagado ? ' (ya pagado)' : ' (pendiente de pago en Cuentas por pagar)'}.`, req);
       app.locals.auditoria?.registrar(req, 'cuenta_por_pagar', Number(info.lastInsertRowid), 'creada', `${prov.nombre} · «${concepto}» · ${fmt(total)}${folioFactura ? ' · factura ' + folioFactura : ''}${b.ya_pagado ? ' · pagada al registrar' : ''}`);
@@ -937,8 +992,8 @@ module.exports = function finanzas(app, db, h, unicos) {
       AND created_at >= datetime('now','localtime','-2 minutes')`).get(x.id, monto, fecha)) {
       return res.status(409).json({ error: 'Ese mismo pago se acaba de registrar. ¿Es un pago distinto?', codigo: 'POSIBLE_DUPLICADO' });
     }
-    const info = db.prepare('INSERT INTO pagos_proveedor (cxp_id, fecha, monto_cent, metodo, referencia, registrado_por) VALUES (?, ?, ?, ?, ?, ?)')
-      .run(x.id, fecha, monto, req.body.metodo, texto(req.body.referencia, 120), req.usuarioSesion.id);
+    const info = db.prepare('INSERT INTO pagos_proveedor (cxp_id, fecha, monto_cent, metodo, referencia, registrado_por, cuenta_origen) VALUES (?, ?, ?, ?, ?, ?, ?)')
+      .run(x.id, fecha, monto, req.body.metodo, texto(req.body.referencia, 120), req.usuarioSesion.id, texto(req.body.cuenta_origen, 80));
     if (x.lead_id) bitacora(x.lead_id, `Pago a tercero: ${fmt(monto)} a ${x.proveedor_nombre || 'proveedor'} por «${x.concepto}» (${req.body.metodo}, ${fecha}).`, req);
     app.locals.auditoria?.registrar(req, 'cuenta_por_pagar', x.id, 'pago', `${fmt(monto)} por ${req.body.metodo} el ${fecha}${texto(req.body.referencia, 120) ? ' · ref. ' + texto(req.body.referencia, 120) : ''}`);
     res.status(201).json({ id: info.lastInsertRowid });
@@ -1306,4 +1361,6 @@ module.exports = function finanzas(app, db, h, unicos) {
 module.exports.aCentavos = aCentavos;
 module.exports.migrar = migrar;
 module.exports.folioOS = folioOS;
+module.exports.CATEGORIAS_NO_GASTO = CATEGORIAS_NO_GASTO;
+module.exports.COMPROBANTES = COMPROBANTES;
 module.exports.describirCuenta = describirCuenta;

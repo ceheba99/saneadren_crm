@@ -58,7 +58,10 @@ module.exports = function tablero(app, db, h, finanzas) {
     const costoDirecto = [...costos.values()].reduce((t, x) => t + x, 0);
     const gastos = db.prepare(`SELECT categoria, SUM(total_cent) t, SUM(CASE WHEN lead_id IS NULL THEN total_cent ELSE 0 END) sin_orden FROM cuentas_por_pagar
       WHERE cancelada = 0 AND fecha_documento BETWEEN ? AND ? GROUP BY categoria ORDER BY t DESC`).all(d, h);
-    const gastoTotal = gastos.reduce((t, g) => t + g.t, 0);
+    // Compras de bienes (inversión), préstamos y traspasos no son gasto: se muestran aparte y no restan a la utilidad.
+    const { CATEGORIAS_NO_GASTO } = require('./finanzas');
+    const gastoTotal = gastos.filter(g => !CATEGORIAS_NO_GASTO.has(g.categoria)).reduce((t, g) => t + g.t, 0);
+    const noGasto = gastos.filter(g => CATEGORIAS_NO_GASTO.has(g.categoria)).reduce((t, g) => t + g.t, 0);
     const cobrado = uno("SELECT COALESCE(SUM(monto_cent), 0) t, COUNT(*) n FROM cobros WHERE cancelado = 0 AND tipo <> 'ajuste' AND fecha BETWEEN ? AND ?", d, h);
     const descuentos = uno("SELECT COALESCE(SUM(monto_cent), 0) t FROM cobros WHERE cancelado = 0 AND tipo = 'ajuste' AND fecha BETWEEN ? AND ?", d, h).t;
     const pagado = uno('SELECT COALESCE(SUM(monto_cent), 0) t FROM pagos_proveedor WHERE cancelado = 0 AND fecha BETWEEN ? AND ?', d, h).t;
@@ -79,7 +82,7 @@ module.exports = function tablero(app, db, h, finanzas) {
       r: {
         venta: pesos(ventaSub), venta_con_iva: pesos(ventaTotal), servicios: ventas.length, ticket: ventas.length ? pesos(ventaSub / ventas.length) : 0,
         costo_directo: pesos(costoDirecto), margen_directo: pesos(ventaSub - costoDirecto),
-        gasto: pesos(gastoTotal), utilidad: pesos(ventaSub - gastoTotal), margen_pct: ventaSub ? Math.round((ventaSub - gastoTotal) / ventaSub * 1000) / 10 : null,
+        gasto: pesos(gastoTotal), no_gasto: pesos(noGasto), utilidad: pesos(ventaSub - gastoTotal), margen_pct: ventaSub ? Math.round((ventaSub - gastoTotal) / ventaSub * 1000) / 10 : null,
         cobrado: pesos(cobrado.t), cobros_n: cobrado.n, descuentos: pesos(descuentos), pagado: pesos(pagado), flujo: pesos(cobrado.t - pagado),
         cotizaciones: cot.n, cotizado: Math.round((cot.v || 0) * 100) / 100, cot_ganadas: cot.ganadas || 0, cot_perdidas: cot.perdidas || 0,
         cierre_pct: (cot.ganadas || 0) + (cot.perdidas || 0) ? Math.round(cot.ganadas / (cot.ganadas + cot.perdidas) * 1000) / 10 : null,
@@ -87,7 +90,7 @@ module.exports = function tablero(app, db, h, finanzas) {
         contactos_nuevos: contactos, clientes_activos: activos.size, clientes_nuevos: nuevos, clientes_recurrentes: activos.size - nuevos,
         subcontratado_pct: ventaSub ? Math.round(subcontratado.reduce((t, l) => t + subtotalCent(l), 0) / ventaSub * 1000) / 10 : null,
       },
-      gastos: gastos.map(g => ({ categoria: g.categoria, nombre: finanzas.CATEGORIAS[g.categoria] || g.categoria, total: pesos(g.t), sin_orden: pesos(g.sin_orden) })),
+      gastos: gastos.map(g => ({ categoria: g.categoria, nombre: finanzas.CATEGORIAS[g.categoria] || g.categoria, total: pesos(g.t), sin_orden: pesos(g.sin_orden), es_gasto: !CATEGORIAS_NO_GASTO.has(g.categoria) })),
     };
   }
 
