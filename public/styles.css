@@ -1463,3 +1463,8 @@ body.es-costos .solo-no-costos{display:none !important;}
 .integ-item ul,.integ-limpias ul{margin:6px 0 0;padding-left:18px;font-size:13px;}
 .integ-n{display:inline-block;min-width:22px;text-align:center;border-radius:999px;background:#fff;border:1px solid var(--gris-300);font-size:12px;font-weight:700;}
 .integ-limpias{color:var(--texto-sec);font-size:13px;}
+
+/* Versión DEMO (solo servidor de prueba) */
+.demo-franja{position:sticky;top:0;z-index:9999;background:#b45309;color:#fff;text-align:center;font-weight:700;font-size:13px;padding:5px 12px;letter-spacing:.3px;}
+.demo-entrar{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px;padding-bottom:14px;border-bottom:1px dashed var(--gris-200);}
+.demo-entrar p{width:100%;margin:0 0 2px;}
