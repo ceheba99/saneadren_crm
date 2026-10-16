@@ -54,10 +54,12 @@ const SOLO_GENERAL = [
 
 // Folio de un registro a partir de su id (busca su sucursal y su consecutivo). Lo usan todos los módulos.
 let DB = null, LISTA = [];
+const CONSULTA_FOLIO = {};
 const mesDe = creado => String(creado || '').slice(0, 7).replace('-', '');
 function folioDe(prefijo, tabla, id, creado) {
   if (id == null) return '';
-  const r = DB && FOLIO[tabla] ? DB.prepare(`SELECT folio_num, sucursal_id, created_at FROM main.${tabla} WHERE id = ?`).get(id) : null;
+  // La consulta se prepara una sola vez por tabla (en listas de miles de renglones prepararla cada vez era lo lento).
+  const r = DB && FOLIO[tabla] ? (CONSULTA_FOLIO[tabla] ||= DB.prepare(`SELECT folio_num, sucursal_id, created_at FROM main.${tabla} WHERE id = ?`)).get(id) : null;
   const clave = r && r.folio_num != null ? (LISTA.find(s => s.id === r.sucursal_id)?.clave || '') : '';
   if (clave) return `${prefijo}-${clave}-${mesDe(r.created_at)}-${String(r.folio_num).padStart(4, '0')}`;
   return `${prefijo}-${mesDe(r?.created_at || creado)}-${String(id).padStart(4, '0')}`;

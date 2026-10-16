@@ -14,19 +14,21 @@ const ok = (c, t, extra) => { pruebas++; if (!c) fallos++; console.log((c ? '  �
 const espera = ms => new Promise(r => setTimeout(r, ms));
 
 async function servidor(envExtra) {
-  const puerto = String(3900 + Math.floor(Math.random() * 90));
+  const puerto = String(9500 + Math.floor(Math.random() * 400)); // lejos de otros servidores de prueba
   const srv = spawn(process.execPath, [path.join(__dirname, '..', 'server', 'index.js')], {
     env: { ...process.env, PORT: puerto, DB_PATH: DB, APP_URL: 'http://localhost:' + puerto, SMTP_HOST: '',
       ADMIN_USUARIO: '', ADMIN_CORREO: '', ADMIN_PASSWORD: '', USUARIO_PRUEBA_PASSWORD: '', USUARIO_2_PASSWORD: '', ...envExtra }
   });
   const s = { srv, salida: '', api: `http://localhost:${puerto}/api` };
   srv.stdout.on('data', d => s.salida += d); srv.stderr.on('data', d => s.salida += d);
-  for (let i = 0; i < 60 && !/corriendo/.test(s.salida); i++) await espera(150);
+  for (let i = 0; i < 100 && !/corriendo/.test(s.salida) && srv.exitCode === null; i++) await espera(150);
+  // Si no arrancó ESTE servidor (p. ej. el puerto estaba ocupado), la prueba falla en vez de hablarle a otro.
+  if (!/corriendo/.test(s.salida)) throw new Error('El servidor de prueba no arrancó: ' + s.salida.slice(-800));
   s.pedir = async (ruta, cuerpo, token) => {
     const r = await fetch(s.api + ruta, { method: 'POST', headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: 'Bearer ' + token } : {}) }, body: JSON.stringify(cuerpo) });
     return [r.status, await r.json().catch(() => ({}))];
   };
-  s.cerrar = () => new Promise(r => { srv.on('exit', r); srv.kill(); });
+  s.cerrar = () => new Promise(r => { if (srv.exitCode !== null || srv.signalCode) return r(); srv.on('exit', r); srv.kill(); });
   return s;
 }
 
@@ -38,6 +40,9 @@ function cuentaSinConfirmar(nombre, correo, password) {
   base.close();
 }
 
+// Si la prueba termina sin llegar a su resumen (p. ej. se quedó esperando algo que nunca pasó), cuenta como falla.
+let terminado = false;
+process.on('exit', codigo => { if (!terminado && codigo === 0) { console.log('✘ La prueba terminó antes de tiempo (sin su resumen)'); process.exitCode = 1; } });
 (async () => {
   console.log('\nAdmin inicial con una cuenta sin confirmar');
   let a = await servidor({});
@@ -94,6 +99,7 @@ function cuentaSinConfirmar(nombre, correo, password) {
   await a.cerrar();
 
   console.log(`\n${pruebas - fallos}/${pruebas} pruebas correctas`);
+  terminado = true;
   fs.rmSync(dir, { recursive: true, force: true });
   process.exit(fallos ? 1 : 0);
 })().catch(e => { console.error(e); process.exit(1); });

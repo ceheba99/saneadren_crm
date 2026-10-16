@@ -93,8 +93,14 @@
   // Cantidad y precio unitario de una partida. Las anteriores (solo importe) valen 1 × importe.
   const cantidadDe = i => (i && Number(i.cantidad) > 0 ? Number(i.cantidad) : 1);
   const precioDe = i => (i && i.precio !== undefined && i.precio !== null && i.precio !== '' ? Number(i.precio) : Number(i?.importe) || 0);
-  // Importe = cantidad × precio unitario, en centavos enteros.
-  const importeDe = (cantidad, precio) => Math.round((Number(cantidad) || 0) * (Number(precio) || 0) * 100) / 100;
+  // Importe = cantidad × precio unitario, redondeado al centavo (medio centavo hacia arriba). Se calcula con enteros
+  // exactos (cantidad en milésimas × precio en diezmilésimas): con decimales, 2.5 × 3.33 = 8.325 salía 8.32 en vez de 8.33.
+  const importeDe = (cantidad, precio) => {
+    const c = Number(cantidad) || 0, p = Number(precio) || 0;
+    const prod = BigInt(Math.round(Math.abs(c) * 1000)) * BigInt(Math.round(Math.abs(p) * 10000)); // en 1/10,000,000 de peso
+    const cent = Number((prod + 50000n) / 100000n);
+    return (Math.sign(c) * Math.sign(p) < 0 ? -cent : cent) / 100;
+  };
 
   // Reparte el subtotal, el IVA y el total del documento entre sus partidas (para reportes por
   // servicio). Cada partida se calcula por su cuenta y la última absorbe la diferencia de redondeo,

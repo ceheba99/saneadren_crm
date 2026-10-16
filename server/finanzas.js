@@ -264,6 +264,7 @@ const SQL_CUENTA = `
     ${SQL_TOTAL_ORDEN} AS total_orden_cent,
     COALESCE(l.factura_total_cent, ${SQL_TOTAL_ORDEN}) AS total_cent,
     (SELECT COALESCE(SUM(monto_cent), 0) FROM cobros k WHERE k.lead_id = l.id AND k.cancelado = 0) AS cobrado_cent,
+    (SELECT COALESCE(SUM(monto_cent), 0) FROM cobros k WHERE k.lead_id = l.id AND k.cancelado = 0 AND k.tipo <> 'ajuste') AS pagado_real_cent,
     (SELECT COUNT(*) FROM cobros k WHERE k.lead_id = l.id AND k.cancelado = 0 AND k.confirmado = 0) AS por_confirmar
   FROM leads l
   LEFT JOIN clientes c ON c.id = l.cliente_id
@@ -273,7 +274,7 @@ function describirCuenta(f, hoy) {
   // Servicio NO realizado: el cliente no debe nada; lo que ya pagó (anticipo) queda a su favor.
   const noRealizado = f.ejecucion === 'no_realizado';
   const saldo = noRealizado ? 0 : f.total_cent - f.cobrado_cent;
-  const aFavor = noRealizado ? f.cobrado_cent : Math.max(0, f.cobrado_cent - f.total_cent);
+  const aFavor = noRealizado ? (f.pagado_real_cent ?? f.cobrado_cent) : Math.max(0, f.cobrado_cent - f.total_cent);
   // El crédito corre desde la factura; sin factura, desde que se realizó el servicio (o su fecha acordada).
   const base = f.factura_fecha || f.fecha_realizado || f.fecha_servicio || String(f.created_at).slice(0, 10);
   const realizado = f.ejecucion === 'realizado';
@@ -938,7 +939,7 @@ module.exports = function finanzas(app, db, h, unicos) {
       const fechaGasto = lead.fecha_servicio && lead.fecha_servicio <= hoy ? lead.fecha_servicio : hoy;
       const vg = validarGastos(b.gastos, lead, fechaGasto, hoy); if (vg.error) return res.status(400).json({ error: vg.error });
       // Avisos: lo que el cliente ya pagó queda a su favor, y los gastos ya cargados siguen en Cuentas por pagar.
-      const cobrado = db.prepare('SELECT COALESCE(SUM(monto_cent), 0) t FROM cobros WHERE lead_id = ? AND cancelado = 0').get(lead.id).t;
+      const cobrado = db.prepare("SELECT COALESCE(SUM(monto_cent), 0) t FROM cobros WHERE lead_id = ? AND cancelado = 0 AND tipo <> 'ajuste'").get(lead.id).t;
       const gastos = cuentasPorPagar().filter(x => x.lead_id === lead.id);
       const pendiente = Math.round(gastos.reduce((t, x) => t + x.saldo * 100, 0));
       db.transaction(() => {
