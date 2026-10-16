@@ -1657,7 +1657,7 @@ async function abrirFichaCliente(id) {
 
   document.getElementById('fc-titulo').textContent = [folioCliente(cliente.id), cliente.empresa_contacto || cliente.nombre || 'Sin nombre', cliente.telefono].filter(Boolean).join(' · ');
   pintarTelefonosCliente(cliente.id);
-  Bitacora.movimientos('cliente', cliente.id, 'fc-movimientos');
+  Bitacora.historialCliente(cliente.id);
   document.getElementById('fc-meta').innerHTML = metaClienteHTML(cliente);
   Finanzas.pintarCliente(cliente);
   document.getElementById('fc-ed-telefono').value = cliente.telefono || '';

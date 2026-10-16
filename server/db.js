@@ -84,6 +84,16 @@ CREATE TABLE IF NOT EXISTS historial (
 );
 
 CREATE INDEX IF NOT EXISTS idx_hist_lead ON historial(lead_id);
+
+-- Historial de cotizaciones u órdenes ELIMINADAS: se copia aquí antes de borrarlas, para que la ficha del
+-- cliente conserve todo lo que pasó (y quién la eliminó y por qué).
+CREATE TABLE IF NOT EXISTS historial_archivo (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  lead_id INTEGER NOT NULL, cliente_id INTEGER, folio TEXT NOT NULL,
+  tipo TEXT NOT NULL, texto TEXT NOT NULL, usuario TEXT, created_at TEXT NOT NULL,
+  archivado_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+CREATE INDEX IF NOT EXISTS idx_hist_archivo_cliente ON historial_archivo(cliente_id);
 CREATE INDEX IF NOT EXISTS idx_hist_alerta ON historial(fecha_alerta, resuelta);
 `);
 

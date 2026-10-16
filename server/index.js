@@ -771,6 +771,11 @@ function cambiosDeOrden(antes, b) {
   for (const [k, e] of [['direccion', 'ubicación'], ['notas_cotizacion', 'notas de la cotización'], ['equipo', 'equipo'], ['operador', 'operador'], ['observaciones', 'observaciones'], ['proyecto', 'proyecto'], ['manifiestos', 'manifiestos'], ['tiros', 'tiros'], ['notas_iniciales', 'notas iniciales']]) {
     if (cambio(k)) lista.push(`${e}: ${txt(antes[k])} → ${txt(b[k])}`);
   }
+  if (antes.estatus !== 'ganado') {
+    const pesos = v => '$' + Number(v || 0).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    if (b.valor !== undefined && b.valor !== null && Math.round(Number(b.valor) * 100) !== Math.round(Number(antes.valor || 0) * 100)) lista.push(`importe ${pesos(antes.valor)} → ${pesos(b.valor)} sin IVA`);
+    if (cambio('iva_modo')) lista.push(`IVA ${Importes.etiquetaModo(antes.iva_modo, antes.iva_tasa)} → ${Importes.etiquetaModo(b.iva_modo, b.iva_tasa ?? antes.iva_tasa)}`);
+  }
   if (cambio('urgente')) lista.push(Number(b.urgente) ? 'marcada como urgente' : 'ya no es urgente');
   if (cambio('encuesta_calificacion')) lista.push(`calificación del cliente: ${b.encuesta_calificacion}`);
   return lista.join(' · ');
@@ -947,14 +952,58 @@ app.delete('/api/leads/:id', h((req, res) => {
   if (db.prepare('SELECT 1 FROM cuentas_por_pagar WHERE lead_id = ? AND cancelada = 0 LIMIT 1').get(lead.id)) {
     return res.status(409).json({ error: 'Esta orden tiene gastos en Cuentas por pagar. Cancélalos primero si de verdad quieres eliminarla.' });
   }
+  const motivoEl = typeof req.body?.motivo === 'string' ? req.body.motivo.trim().replace(/\s+/g, ' ').slice(0, 300) : '';
+  if ((motivoEl.match(/[\p{L}\p{N}]/gu) || []).length < 5 || /[<>{}]/.test(motivoEl)) return res.status(400).json({ error: 'Escribe por qué se elimina (mínimo 5 letras)', codigo: 'FALTA_MOTIVO' });
   console.log(`[eliminado] registro #${lead.id} (${lead.estatus}, ${lead.valor ?? 'sin importe'}) de cliente #${lead.cliente_id} por ${req.usuarioSesion.nombre}`);
   // Su historial se borra con ella; en la bitácora general queda una foto de lo que era y quién la eliminó.
   const folioEl = (lead.estatus === 'ganado' ? 'OS-' : 'COT-') + String(lead.created_at).slice(0, 7).replace('-', '') + '-' + String(lead.id).padStart(4, '0');
   const notasEl = db.prepare("SELECT COUNT(*) n FROM historial WHERE lead_id = ?").get(lead.id).n;
   audit.registrar(req, 'orden_servicio', lead.id, 'eliminado', `${folioEl} · ${lead.estatus === 'ganado' ? 'orden de servicio' : lead.estatus === 'perdido' ? 'cotización no aceptada' : 'cotización'} de ${unicos.folioCliente(lead.cliente_id)} ${lead.empresa_contacto || lead.nombre || ''} · importe $${Number(lead.valor || 0).toLocaleString('es-MX', { minimumFractionDigits: 2 })} sin IVA · servicio del ${lead.fecha_servicio || '—'} · ${notasEl} movimientos en su historial`);
-  // El historial se borra en cascada (ON DELETE CASCADE). El cliente y sus otros servicios/cotizaciones no se tocan.
-  db.prepare('DELETE FROM leads WHERE id = ?').run(req.params.id);
+  // Antes de borrar, su historial pasa al archivo (la ficha del cliente lo sigue mostrando) junto con quién la
+  // eliminó y por qué. El cliente y sus otros servicios/cotizaciones no se tocan.
+  db.transaction(() => {
+    db.prepare('INSERT INTO historial_archivo (lead_id, cliente_id, folio, tipo, texto, usuario, created_at) SELECT lead_id, ?, ?, tipo, texto, usuario, created_at FROM historial WHERE lead_id = ?').run(lead.cliente_id, folioEl, lead.id);
+    db.prepare("INSERT INTO historial_archivo (lead_id, cliente_id, folio, tipo, texto, usuario, created_at) VALUES (?, ?, ?, 'eliminado', ?, ?, datetime('now','localtime'))")
+      .run(lead.id, lead.cliente_id, folioEl, `${lead.estatus === 'ganado' ? 'Orden de servicio' : 'Cotización'} ELIMINADA (importe $${Number(lead.valor || 0).toLocaleString('es-MX', { minimumFractionDigits: 2 })} sin IVA). Motivo: ${motivoEl}`, req.usuarioSesion.nombre);
+    db.prepare('DELETE FROM leads WHERE id = ?').run(req.params.id);
+  })();
   res.json({ ok: true, id: Number(req.params.id) });
+}));
+
+// ---------- Historial completo de un cliente ----------
+// Todo lo que le ha pasado, de lo más reciente a lo más antiguo: alta y cambios del contacto (y de los clientes
+// que se juntaron con él), y de cada cotización u orden: creación, cambios (importe, IVA, fechas, servicios,
+// responsable…), aceptación o rechazo, factura, pagos, costos, notas y alertas; también las que se ELIMINARON
+// (con quién y por qué). Cada renglón dice qué pasó, en qué registro, quién y cuándo.
+// Nombre corto de lo que pasó, a partir del texto del historial.
+const ACCIONES = [[/Cotización creada|registrado directamente|duplicada a partir|cargada desde el generador|importada desde/i, 'Creada'], [/marcada como ganada/i, 'Aceptada (orden de servicio)'],
+  [/no aceptada/i, 'No aceptada'], [/reabierta/i, 'Reabierta'], [/Importe de la orden cambiado|IVA de la orden/i, 'Cambio de importe'], [/^Cambios:.*importe/i, 'Cambios (incluye importe)'], [/^Cambios:/i, 'Cambios'],
+  [/Facturación/i, 'Factura y crédito'], [/(Pago|Anticipo|Ajuste).*(CANCELADO|cancelad)/i, 'Pago cancelado'], [/(Pago|Anticipo|Ajuste).*confirmad/i, 'Pago confirmado'], [/(Pago|Anticipo|Ajuste) registrado/i, 'Pago'],
+  [/Costo con terceros|gasto/i, 'Costo con terceros'], [/NO realizado/i, 'No realizado'], [/realizad/i, 'Servicio realizado'], [/Alerta/i, 'Alerta']];
+const accionDe = t => (ACCIONES.find(([re]) => re.test(t || '')) || [null, 'Movimiento'])[1];
+app.get('/api/clientes/:id/movimientos', h((req, res) => {
+  const id = Number(req.params.id);
+  if (!db.prepare('SELECT 1 FROM clientes WHERE id = ?').get(id)) return res.status(404).json({ error: 'Cliente no encontrado' });
+  const folioL = l => (l.estatus === 'ganado' ? 'OS-' : 'COT-') + String(l.created_at).slice(0, 7).replace('-', '') + '-' + String(l.lead_id).padStart(4, '0');
+  const ids = [id, ...db.prepare('SELECT id_retirado FROM clientes_fusionados WHERE cliente_id = ?').all(id).map(r => r.id_retirado)];
+  const marcas = ids.map(() => '?').join(',');
+  const filas = [
+    ...db.prepare(`SELECT fecha, usuario, entidad_id, accion, detalle FROM auditoria WHERE entidad = 'cliente' AND entidad_id IN (${marcas})`).all(...ids)
+      .map(a => ({ fecha: a.fecha, usuario: a.usuario, registro: unicos.folioCliente(a.entidad_id), grupo: 'contacto', que: 'Contacto ' + a.accion, detalle: a.detalle || '' })),
+    ...db.prepare(`SELECT h.created_at, h.usuario, h.tipo, h.texto, h.origen, h.fecha_alerta, h.resuelta, l.id AS lead_id, l.created_at AS lead_creado, l.estatus
+        FROM historial h JOIN leads l ON l.id = h.lead_id WHERE l.cliente_id = ?`).all(id)
+      .map(h => ({ fecha: h.created_at, usuario: h.usuario, registro: folioL({ ...h, created_at: h.lead_creado }), lead_id: h.lead_id,
+        grupo: h.tipo === 'alerta' ? 'nota' : h.origen === 'manual' ? 'nota' : 'registro',
+        que: h.tipo === 'alerta' ? 'Alerta' + (h.fecha_alerta ? ' para el ' + String(h.fecha_alerta).slice(0, 16).replace('T', ' ') : '') + (h.resuelta ? ' (resuelta)' : '') : h.origen === 'manual' ? 'Nota' : accionDe(h.texto), detalle: h.texto })),
+    ...db.prepare('SELECT * FROM historial_archivo WHERE cliente_id IN (' + marcas + ')').all(...ids)
+      .map(h => ({ fecha: h.created_at, usuario: h.usuario, registro: h.folio, grupo: 'eliminado', que: h.tipo === 'eliminado' ? 'Eliminada' : 'Movimiento (de un registro eliminado)', detalle: h.texto })),
+  ];
+  // Eliminadas ANTES de que existiera el archivo: solo quedó la foto en la bitácora general («… de CLI-0039 …»).
+  const archivadas = new Set(db.prepare('SELECT DISTINCT lead_id FROM historial_archivo WHERE cliente_id IN (' + marcas + ')').all(...ids).map(r => r.lead_id));
+  for (const cid of ids) for (const a of db.prepare("SELECT fecha, usuario, entidad_id, detalle FROM auditoria WHERE entidad = 'orden_servicio' AND accion = 'eliminado' AND detalle LIKE ?").all('% de ' + unicos.folioCliente(cid) + ' %'))
+    if (!archivadas.has(a.entidad_id)) filas.push({ fecha: a.fecha, usuario: a.usuario, registro: String(a.detalle).split(' · ')[0], grupo: 'eliminado', que: 'Eliminada', detalle: a.detalle });
+  filas.sort((a, b) => String(b.fecha).localeCompare(String(a.fecha)));
+  res.json(filas.slice(0, 2000));
 }));
 
 // ---------- Clientes (post-venta: clientes reales, separado del pipeline de leads) ----------

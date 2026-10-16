@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Saneadren · Cotizaciones y Servicios</title>
-<link rel="stylesheet" href="styles.css?v=rec1">
+<link rel="stylesheet" href="styles.css?v=hc2">
 <link rel="stylesheet" href="servicios-tabla.css">
 <link rel="stylesheet" href="flujo.css">
 </head>
@@ -715,12 +715,6 @@
         </div>
       </div>
 
-      <div class="modal-section" data-plegable="movimientos-contacto" data-plegado-defecto="1">
-        <div class="seccion-tit">🗂️ Movimientos de este contacto</div>
-        <p class="ayuda">Cambios en sus datos, teléfonos agregados o quitados, fusiones y quién los hizo.</p>
-        <div id="fc-movimientos"></div>
-      </div>
-
       <div class="modal-section" data-plegable="registros-contacto">
         <div class="relacion-registros"><div><div class="seccion-tit" data-plegable-cabecera>Cotizaciones y servicios de este contacto</div><p class="ayuda">Una cotización abierta es una propuesta. Al aceptarla, el mismo registro pasa a servicio contratado; conserva su número e importe.</p></div>
         <div class="btn-group"><button class="btn btn-primario" id="btn-contacto-cotizar">📄 Crear cotización</button><button class="btn btn-secundario" id="btn-recapturar-servicio" title="Para cuando el cliente ya confirmó: registra el servicio sin pasar por cotización">🧾 Crear orden de servicio</button></div></div>
@@ -729,6 +723,14 @@
       </div>
       <!-- Estado de cuenta: sección propia, después de sus cotizaciones y servicios -->
       <div id="fc-cobranza"></div>
+      <!-- Historial completo: hasta abajo de la ficha -->
+      <div class="modal-section" data-plegable="historial-cliente" data-plegado-defecto="1">
+        <div class="seccion-tit">🗂️ Historial completo del cliente <span class="hc-cuenta" id="fc-mov-cuenta"></span></div>
+        <p class="ayuda">Todo lo que ha pasado con este cliente, de lo más reciente a lo más antiguo, con quién lo hizo: alta y cambios de sus datos, cotizaciones creadas, cambios de importe o servicios, aceptadas o no aceptadas (con motivo), facturas, pagos, costos, notas y lo que se eliminó (quién y por qué).</p>
+        <div class="hc-filtros"><label for="fc-mov-filtro">Mostrar</label><select id="fc-mov-filtro"><option value="">Todo</option><option value="registro">Cotizaciones y órdenes</option><option value="contacto">Datos del contacto</option><option value="nota">Notas y alertas</option><option value="eliminado">Eliminados</option></select>
+          <input type="search" id="fc-mov-buscar" placeholder="Buscar: importe, aceptada, folio, nombre…" aria-label="Buscar en el historial"></div>
+        <div id="fc-movimientos"></div>
+      </div>
     </div>
   </div>
 </div>
@@ -1117,17 +1119,17 @@
 <!-- ?v= obliga a los navegadores (sobre todo celulares) a tomar la versión nueva tras publicar. -->
 <script src="ui.js?v=cred1"></script>
 <script src="importes.js?v=pg2"></script>
-<script src="servicios-tabla.js?v=pg2"></script>
+<script src="servicios-tabla.js?v=hc1"></script>
 <script src="flujo.js?v=cli2"></script>
 <script src="cuentas.js?v=av1"></script>
 <script src="finanzas.js?v=rec1"></script>
 <script src="calendario.js?v=pg2"></script>
 <script src="tablero.js?v=pg2"></script>
-<script src="bitacora.js?v=sol1"></script>
+<script src="bitacora.js?v=hc1"></script>
 <script src="compras.js?v=rec1"></script>
 <script src="solicitudes.js?v=rec1"></script>
 <script src="carga-generador.js?v=con1"></script>
-<script src="app.js?v=rec1"></script>
+<script src="app.js?v=hc1"></script>
 <script src="buscador.js?v=bus1"></script>
 <script src="prospeccion.js?v=cli1"></script>
 </body>

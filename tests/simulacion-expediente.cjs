@@ -127,7 +127,7 @@ const CFDI = ({ total, rfc = 'RBA010101AB1', uuid = 'A1B2C3D4-0000-4000-8000-000
   const [, h2] = await pedir('GET', '/leads/' + cot.id, V);
   const t2 = (Array.isArray(h2) ? h2 : h2.historial || []).map(h => h.texto);
   revisa(t2.some(t => /Cotización creada/.test(t)) && t2.some(t => /etapa Cotización enviada → Negociación/.test(t)) && t2.some(t => /responsable Compras Exp → admin/.test(t)) && t2.some(t => /marcada como no aceptada/.test(t)), 'cotización: creada, cambio de etapa, cambio de responsable y marcada como no aceptada', t2);
-  [s] = await pedir('DELETE', '/leads/' + cot.id, A);
+  [s] = await pedir('DELETE', '/leads/' + cot.id, A, { motivo: 'Cotización de prueba' });
   [s, j] = await pedir('GET', '/auditoria?entidad=orden_servicio', A);
   revisa(s === 200 && j.some(r => r.entidad_id === cot.id && r.accion === 'eliminado' && /COT-/.test(r.detalle) && /movimientos en su historial/.test(r.detalle)), 'al eliminarla queda una foto en la bitácora (qué era y cuántos movimientos tenía)', j.slice(0, 1));
 
