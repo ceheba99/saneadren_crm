@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Saneadren · Cotizaciones y Servicios</title>
-<link rel="stylesheet" href="styles.css?v=hc2">
+<link rel="stylesheet" href="styles.css?v=fe1">
 <link rel="stylesheet" href="servicios-tabla.css">
 <link rel="stylesheet" href="flujo.css">
 </head>
@@ -781,7 +781,7 @@
             <label class="gc-iva-opcion"><input type="radio" name="oc-iva" value="sin_iva"> <span>Sin IVA</span></label>
           </div>
         </div>
-        <div class="tabla-scroll"><table class="tabla-resumen tabla-dinero oc-tabla"><thead><tr><th>#</th><th class="st-num">Cantidad</th><th>Descripción</th><th>Unidad</th><th>Clave artículo</th><th class="st-num">Precio unitario</th><th class="st-num">Importe</th><th></th></tr></thead><tbody id="oc-filas"></tbody></table></div>
+        <div class="tabla-scroll"><table class="tabla-resumen tabla-dinero oc-tabla"><thead><tr><th>#</th><th>Descripción (qué se compra)</th><th class="st-num">Cantidad</th><th>Unidad</th><th>Clave artículo</th><th class="st-num">Precio unitario</th><th class="st-num">Importe</th><th></th></tr></thead><tbody id="oc-filas"></tbody></table></div>
         <button type="button" class="btn btn-outline" id="oc-agregar">+ Agregar partida</button>
         <table class="gc-totales oc-totales" aria-label="Totales"><tbody id="oc-totales"></tbody></table>
       </div>
@@ -802,12 +802,9 @@
     <div class="modal-header"><div><span class="flujo-kicker">ORDEN DE COMPRA</span><h2>Datos del formato</h2></div>
       <button class="close-btn" type="button" onclick="document.getElementById('overlay-formato-oc').classList.remove('mostrar')">✕</button></div>
     <div class="modal-body">
-      <p class="ayuda">Son los datos de control del <b>formato</b> (como en un sistema de calidad), no de cada orden: el código del formato, su número de revisión y cuándo se elaboró y se revisó por última vez. Cámbialos cuando actualicen el formato; todas las órdenes que se impriman después saldrán con estos datos. El cambio queda en la Bitácora.</p>
+      <p class="ayuda">Es el código del <b>formato</b> de la orden de compra (aparece en el PDF y en Excel). No cambia de una orden a otra por última vez. Cámbialos cuando actualicen el formato; todas las órdenes que se impriman después saldrán con estos datos. El cambio queda en la Bitácora.</p>
       <div class="form-grid-2">
         <div class="campo"><label for="fmt-codigo">Código del formato</label><input id="fmt-codigo" maxlength="20" placeholder="CM-F-03"></div>
-        <div class="campo"><label for="fmt-revision">Número de revisión</label><input id="fmt-revision" maxlength="10" placeholder="0"></div>
-        <div class="campo"><label for="fmt-elaboracion">Fecha de elaboración</label><input type="date" id="fmt-elaboracion"></div>
-        <div class="campo"><label for="fmt-fecha-revision">Fecha de la última revisión</label><input type="date" id="fmt-fecha-revision"></div>
       </div>
       <div class="dialogo-acciones"><button type="button" class="btn btn-primario" id="fmt-guardar">Guardar</button></div>
     </div>
@@ -1119,17 +1116,17 @@
 <!-- ?v= obliga a los navegadores (sobre todo celulares) a tomar la versión nueva tras publicar. -->
 <script src="ui.js?v=cred1"></script>
 <script src="importes.js?v=pg2"></script>
-<script src="servicios-tabla.js?v=hc1"></script>
+<script src="servicios-tabla.js?v=fe1"></script>
 <script src="flujo.js?v=cli2"></script>
 <script src="cuentas.js?v=av1"></script>
 <script src="finanzas.js?v=rec1"></script>
 <script src="calendario.js?v=pg2"></script>
 <script src="tablero.js?v=pg2"></script>
 <script src="bitacora.js?v=hc1"></script>
-<script src="compras.js?v=rec1"></script>
+<script src="compras.js?v=fe1"></script>
 <script src="solicitudes.js?v=rec1"></script>
 <script src="carga-generador.js?v=con1"></script>
-<script src="app.js?v=hc1"></script>
+<script src="app.js?v=fe1"></script>
 <script src="buscador.js?v=bus1"></script>
 <script src="prospeccion.js?v=cli1"></script>
 </body>

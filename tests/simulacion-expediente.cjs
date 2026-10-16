@@ -29,15 +29,15 @@ const CFDI = ({ total, rfc = 'RBA010101AB1', uuid = 'A1B2C3D4-0000-4000-8000-000
   const V = (await pedir('POST', '/login', null, { nombre: 'compras.exp@saneadren.com.mx', password: 'Compras-Exp-2026' }))[1].token;
   let s, j;
 
-  seccion('1. Datos del formato (código, revisión y fechas)');
+  seccion('1. Código del formato (sin revisión ni fechas de 2023)');
   [s, j] = await pedir('GET', '/compras/formato', V);
-  revisa(j.codigo === 'CM-F-03' && j.revision === '0' && j.fecha_elaboracion === '2023-08-19' && j.fecha_revision === '2023-08-26', 'de inicio: CM-F-03, revisión 0, elaborado 19/08/2023, revisado 26/08/2023 (los del formato en Excel)', j);
-  [s] = await pedir('PUT', '/compras/formato', V, { revision: '1' }); revisa(s === 403, 'ventas no cambia los datos del formato');
-  [s] = await pedir('PUT', '/compras/formato', A, { fecha_revision: '2020-01-01' }); revisa(s === 400, 'la fecha de revisión no puede ser antes de la elaboración');
-  [s, j] = await pedir('PUT', '/compras/formato', A, { revision: '1', fecha_revision: HOY });
-  revisa(s === 200 && j.revision === '1' && j.fecha_revision === HOY, 'el administrador actualiza la revisión del formato');
+  revisa(j.codigo === 'CM-F-03' && j.revision === undefined && j.fecha_elaboracion === undefined && j.fecha_revision === undefined, 'el formato solo tiene su código: CM-F-03 (ya no revisión ni fechas de 2023)', j);
+  [s] = await pedir('PUT', '/compras/formato', V, { codigo: 'CM-F-04' }); revisa(s === 403, 'ventas no cambia el código del formato');
+  [s] = await pedir('PUT', '/compras/formato', A, { codigo: '<b>x</b>' }); revisa(s === 400, 'un código con símbolos raros no se acepta');
+  [s, j] = await pedir('PUT', '/compras/formato', A, { codigo: 'CM-F-04', revision: '9', fecha_revision: '2023-01-01' });
+  revisa(s === 200 && j.codigo === 'CM-F-04' && j.revision === undefined, 'el administrador cambia el código (lo de revisión se ignora)', j);
   [s, j] = await pedir('GET', '/auditoria?entidad=catalogo', A);
-  revisa(j.some(r => r.accion === 'formato de orden de compra' && /revision: 0 → 1/.test(r.detalle)), 'y queda en la bitácora', j.slice(0, 2));
+  revisa(j.some(r => r.accion === 'formato de orden de compra' && /codigo: CM-F-03 → CM-F-04/.test(r.detalle)), 'y queda en la bitácora', j.slice(0, 2));
 
   seccion('2. Orden de compra con historial');
   const [, prov] = await pedir('POST', '/finanzas/proveedores', A, { nombre: 'Refaccionaria Bajío', categoria: 'refacciones', dias_credito: 15, rfc: 'RBA010101AB1' });

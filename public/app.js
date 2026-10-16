@@ -749,7 +749,7 @@ on('gen-todo', 'click', () => { document.getElementById('gen-desde').value = '';
 on('gen-tabla', 'click', e => { const fila = e.target.closest('[data-gen-orden]'); if (fila) abrirFicha(Number(fila.dataset.genOrden)); });
 on('gen-exportar', 'click', () => {
   if (!GENERADOR?.filas.length) { toast('No hay renglones para exportar'); return; }
-  descargarCSV('generador_saneadren_' + new Date().toISOString().slice(0, 10) + '.csv', [
+  descargarCSV('generador_saneadren_' + hoyISO() + '.csv', [
     { titulo: 'MES LETRA', valor: f => f.mes }, { titulo: 'FECHA', valor: f => f.fecha }, { titulo: 'NO. ORDEN', valor: f => f.orden }, { titulo: 'ORDEN GENERADOR', valor: f => f.orden_generador || '' }, { titulo: 'NO. FACTURA', valor: f => f.factura },
     { titulo: 'CLIENTE', valor: f => f.cliente }, { titulo: 'PROYECTO', valor: f => f.proyecto }, { titulo: 'CONCEPTO', valor: f => f.producto }, { titulo: 'CANTIDAD', valor: f => f.cantidad },
     { titulo: 'PRECIO UNITARIO S/IVA', valor: f => f.precio_sin_iva }, { titulo: 'PRECIO UNITARIO C/IVA', valor: f => f.precio_con_iva }, { titulo: 'SUBTOTAL', valor: f => f.subtotal }, { titulo: 'IVA', valor: f => f.iva ?? '' }, { titulo: 'TOTAL', valor: f => f.total },
@@ -876,21 +876,13 @@ function importesDocumento(items) {
 }
 
 function datosCotizacionDesdeLead(lead, items) {
-  const emision = new Date();
+  const fechaLargaISO = f => new Date(f + 'T12:00:00').toLocaleDateString('es-MX', { year: 'numeric', month: 'long', day: 'numeric' });
   let vigenciaTexto = null;
-  if (lead.incluye_vigencia !== 0) {
-    if (lead.vigencia_hasta) {
-      vigenciaTexto = new Date(lead.vigencia_hasta + 'T00:00:00').toLocaleDateString('es-MX', { year: 'numeric', month: 'long', day: 'numeric' });
-    } else {
-      const vencimiento = new Date(emision);
-      vencimiento.setDate(vencimiento.getDate() + EMPRESA_COTIZACION.vigenciaDias);
-      vigenciaTexto = vencimiento.toLocaleDateString('es-MX', { year: 'numeric', month: 'long', day: 'numeric' });
-    }
-  }
+  if (lead.incluye_vigencia !== 0) vigenciaTexto = fechaLargaISO(lead.vigencia_hasta || sumarDiasISO(hoyISO(), EMPRESA_COTIZACION.vigenciaDias));
   return {
     folio: folioCotizacion(lead),
-    fechaEmision: emision.toLocaleDateString('es-MX', { year: 'numeric', month: 'long', day: 'numeric' }),
-    fechaCotizacion: new Date((lead.fecha_cotizacion || lead.created_at.slice(0,10)) + 'T00:00:00').toLocaleDateString('es-MX', { year: 'numeric', month: 'long', day: 'numeric' }),
+    fechaEmision: fechaLargaISO(hoyISO()),
+    fechaCotizacion: fechaLargaISO(lead.fecha_cotizacion || lead.created_at.slice(0,10)),
     vigenciaTexto,
     notas: lead.notas_cotizacion || '', // ya guardadas: la descarga siempre guarda antes
     atendioPor: lead.responsable_nombre || 'Por asignar',
@@ -1542,7 +1534,7 @@ on('btn-exportar-leads', 'click', async () => {
   if (ETAPA_FILTRO) params.set('etapa', ETAPA_FILTRO);
   const leads = await api('/leads?' + params.toString()).then(r => r.json());
   if (!leads.length) { toast('No hay cotizaciones con estos filtros para exportar'); return; }
-  descargarCSV('cotizaciones_saneadren_' + new Date().toISOString().slice(0, 10) + '.csv', [
+  descargarCSV('cotizaciones_saneadren_' + hoyISO() + '.csv', [
     { titulo: 'ID', valor: l => l.id },
     { titulo: 'Teléfono', valor: l => l.telefono },
     { titulo: 'Nombre', valor: l => l.nombre || '' },
@@ -1588,7 +1580,7 @@ on('btn-exportar-clientes', 'click', async () => {
     .filter(s => filtro(s.estatus))
     .map(s => s.servicio_nombre || 'Sin servicio')
     .join('; ');
-  descargarCSV('clientes_saneadren_' + new Date().toISOString().slice(0, 10) + '.csv', [
+  descargarCSV('clientes_saneadren_' + hoyISO() + '.csv', [
     { titulo: 'ID', valor: c => c.id },
     { titulo: 'Teléfono', valor: c => c.telefono },
     { titulo: 'Nombre', valor: c => c.nombre || '' },
@@ -2051,9 +2043,7 @@ on('ed-incluye-vigencia', 'change', e => {
   document.getElementById('wrap-vigencia-hasta').hidden = !e.target.checked;
   const campoFecha = document.getElementById('ed-vigencia-hasta');
   if (e.target.checked && !campoFecha.value) {
-    const sugerida = new Date();
-    sugerida.setDate(sugerida.getDate() + 15);
-    campoFecha.value = sugerida.toISOString().slice(0, 10);
+    campoFecha.value = sumarDiasISO(hoyISO(), 15);
   }
 });
 on('obs-es-alerta', 'change', e => {

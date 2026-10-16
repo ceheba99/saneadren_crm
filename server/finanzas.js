@@ -189,6 +189,9 @@ function cargarCategorias(db) {
 
 // ---------- Utilidades de dinero y fechas ----------
 const aPesos = cent => Math.round(Number(cent || 0)) / 100;
+// Orden lógico de fechas: nada (pago, realización, factura) puede ser anterior a la fecha en que se cotizó.
+const fechaDMA = f => String(f).split('-').reverse().join('/');
+const antesDeCotizar = (fecha, lead) => !!(lead.fecha_cotizacion && fecha && fecha < lead.fecha_cotizacion);
 // Pesos → centavos. null si no es un monto válido (> 0, máximo 2 decimales, hasta 100 millones).
 function aCentavos(valor) {
   // Solo números o texto con formato de dinero ("8000", "8,000.50", "$ 8,000"); nada de true, listas o "1,0,0".
@@ -414,6 +417,7 @@ module.exports = function finanzas(app, db, h, unicos) {
     const fecha = req.body.fecha || hoy;
     if (!fechaValida(fecha)) return res.status(400).json({ error: 'La fecha del pago no es válida' });
     if (fecha > hoy) return res.status(400).json({ error: 'La fecha del pago no puede ser futura' });
+    if (antesDeCotizar(fecha, lead)) return res.status(400).json({ error: `La fecha del pago no puede ser antes de la cotización (${fechaDMA(lead.fecha_cotizacion)})` });
     const metodo = String(req.body.metodo || '');
     if (!METODOS.includes(metodo)) return res.status(400).json({ error: 'Elige cómo pagó el cliente' });
     let tipo = String(req.body.tipo || (lead.fecha_servicio && lead.fecha_servicio > hoy ? 'anticipo' : 'pago'));
@@ -487,6 +491,7 @@ module.exports = function finanzas(app, db, h, unicos) {
     if (!diasCreditoValidos(b.dias_credito)) return res.status(400).json({ error: 'Los días de crédito deben ser un número entero de 0 a 180' });
     if (b.factura_fecha && !fechaValida(b.factura_fecha)) return res.status(400).json({ error: 'La fecha de la factura no es válida' });
     if (b.factura_fecha && b.factura_fecha > hoyMexico()) return res.status(400).json({ error: 'La fecha de la factura no puede ser futura' });
+    if (antesDeCotizar(b.factura_fecha, lead)) return res.status(400).json({ error: `La fecha de la factura no puede ser antes de la cotización (${fechaDMA(lead.fecha_cotizacion)})` });
     let totalFactura = lead.factura_total_cent;
     if (b.factura_total !== undefined) {
       totalFactura = b.factura_total === null || b.factura_total === '' ? null : aCentavos(b.factura_total);
@@ -822,6 +827,7 @@ module.exports = function finanzas(app, db, h, unicos) {
     if (b.estado !== 'realizado') return res.status(400).json({ error: 'Indica si el servicio se realizó o no' });
     const fecha = b.fecha || hoy;
     if (!fechaValida(fecha) || fecha > hoy) return res.status(400).json({ error: 'La fecha en que se realizó no es válida o es futura' });
+    if (antesDeCotizar(fecha, lead)) return res.status(400).json({ error: `No se puede haber realizado antes de cotizarse (${fechaDMA(lead.fecha_cotizacion)})` });
     if (!['propio', 'subcontratado'].includes(b.realizado_por)) return res.status(400).json({ error: 'Indica si lo realizamos nosotros o se subcontrató' });
     const gastos = Array.isArray(b.gastos) ? b.gastos : [];
     if (gastos.length > 20) return res.status(400).json({ error: 'Máximo 20 gastos por servicio' });
