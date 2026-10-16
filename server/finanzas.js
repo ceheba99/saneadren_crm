@@ -254,7 +254,7 @@ const diasCreditoValidos = v => v === null || v === '' || v === undefined || (Nu
 // total es el importe tal como se capturó.
 const SQL_TOTAL_ORDEN = 'CAST(ROUND(COALESCE(l.valor, 0) * 100) AS INTEGER) + COALESCE(l.iva_cent, 0)';
 const SQL_CUENTA = `
-  SELECT l.id, l.cliente_id, l.created_at, l.fecha_servicio, l.valor, l.dias_credito, l.factura_folio, l.factura_fecha,
+  SELECT l.id, l.cliente_id, l.created_at, l.fecha_servicio, l.valor, l.dias_credito, l.factura_folio, l.factura_fecha, l.sucursal_id,
     l.factura_total_cent, l.factura_metodo, l.cobranza_por_revisar, l.servicio_id, l.estatus, l.iva_modo, l.iva_tasa, l.iva_cent,
     l.ejecucion, l.realizado_por, l.fecha_realizado, l.equipo, l.operador, l.proyecto, l.notas_iniciales,
     (SELECT k.fecha || '|' || k.metodo || '|' || COALESCE(k.referencia, '') FROM cobros k WHERE k.lead_id = l.id AND k.cancelado = 0 AND k.tipo <> 'ajuste' ORDER BY k.fecha DESC, k.id DESC LIMIT 1) AS ultimo_pago,
@@ -287,7 +287,7 @@ function describirCuenta(f, hoy) {
   let tramo = null;
   if (saldo > 0) tramo = diasVencido <= 0 ? 'por_vencer' : diasVencido <= 15 ? '1-15' : diasVencido <= 30 ? '16-30' : diasVencido <= 60 ? '31-60' : '60+';
   return {
-    lead_id: f.id, folio: folioOS(f.id, f.created_at), cliente_id: f.cliente_id, cliente_nombre: f.cliente_nombre, empresa_contacto: f.empresa_contacto,
+    lead_id: f.id, folio: folioOS(f.id, f.created_at), sucursal_id: f.sucursal_id, cliente_id: f.cliente_id, cliente_nombre: f.cliente_nombre, empresa_contacto: f.empresa_contacto,
     telefono: f.telefono, rfc: f.rfc, servicio_nombre: f.servicio_nombre, created_at: f.created_at, fecha_servicio: f.fecha_servicio,
     dias_credito: f.dias_credito || 0, factura_folio: f.factura_folio, factura_fecha: f.factura_fecha, factura_metodo: f.factura_metodo || null,
     factura_total: f.factura_total_cent == null ? null : aPesos(f.factura_total_cent),
@@ -667,7 +667,7 @@ module.exports = function finanzas(app, db, h, unicos) {
       ORDER BY x.fecha_documento, x.id`).all();
     const pagos = db.prepare('SELECT g.*, u.nombre AS registro FROM pagos_proveedor g LEFT JOIN usuarios u ON u.id = g.registrado_por ORDER BY g.fecha, g.id').all();
     res.json({ comprobantes: COMPROBANTES, categorias: CATEGORIAS, no_gasto: [...CATEGORIAS_NO_GASTO],
-      cuentas: cuentas.map(x => ({ id: x.id, proveedor: x.proveedor_nombre, beneficiario: x.beneficiario || x.proveedor_nombre, concepto: x.concepto, fecha_documento: x.fecha_documento,
+      cuentas: cuentas.map(x => ({ id: x.id, sucursal: app.locals.sucursales?.claveDe(x.sucursal_id) || '', proveedor: x.proveedor_nombre, beneficiario: x.beneficiario || x.proveedor_nombre, concepto: x.concepto, fecha_documento: x.fecha_documento,
         fecha_vencimiento: x.fecha_vencimiento, capturo: x.capturo, factura_folio: x.factura_folio, tipo_comprobante: x.tipo_comprobante, metodo_sat: x.metodo_sat,
         total: aPesos(x.total_cent), clabe: x.clabe, banco: x.banco, dias_credito: x.dias_credito, categoria: CATEGORIAS[x.categoria] || x.categoria, es_gasto: !CATEGORIAS_NO_GASTO.has(x.categoria),
         notas: x.notas, cancelada: !!x.cancelada, motivo_cancelacion: x.motivo_cancelacion, orden_folio: x.lead_id ? folioOS(x.lead_id, x.lead_created_at) : null, equipo: x.equipo })),

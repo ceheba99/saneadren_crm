@@ -199,6 +199,7 @@ const MARCA = /secretoqro|-QRO-/i; // nada de QRO: ni su marca ni sus folios
   [s, j] = await pedir('POST', '/finanzas/cxp', AMBAS, { proveedor_id: prov.id, categoria: 'otro', concepto: 'Gasto de Ana', total: 10, fecha_documento: HOY, dias_credito: 0 }, { 'X-Sucursal': String(cdmx.id) });
   { const [, l] = await pedir('GET', '/finanzas/cxp?vista=todas', A, undefined, { 'X-Sucursal': String(cdmx.id) }); revisa(s === 201 && l.some(x => x.id === j.id), 'lo que registra viendo CDMX queda en CDMX', [s, j]); }
 
+  [s, j] = await pedir('GET', '/generador?desde=' + dia(-30) + '&hasta=' + dia(1), A); revisa(j.filas?.some(f => f.sucursal === 'QRO') && j.filas?.some(f => f.sucursal === 'CDMX') && j.filas.every(f => f.orden.includes('-' + f.sucursal + '-')), 'Generador del admin general: cada renglón dice su sucursal (y coincide con su folio)', j.filas?.map(f => [f.sucursal, f.orden]));
   console.log('8. Gerente de sucursal');
   [s, j] = await crear('Nuevo Vendedor Cdmx', 'ventas', [cdmx.id], C.gerente); revisa(s === 201, 'el gerente da de alta usuarios de su sucursal', [s, j.error]);
   [s, j] = await crear('Vendedor Ajeno', 'ventas', [qro.id], C.gerente); revisa(s === 400, 'pero no en Querétaro', [s, j.error]);

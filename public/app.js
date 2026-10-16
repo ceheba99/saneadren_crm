@@ -754,6 +754,7 @@ on('gen-tabla', 'click', e => { const fila = e.target.closest('[data-gen-orden]'
 on('gen-exportar', 'click', () => {
   if (!GENERADOR?.filas.length) { toast('No hay renglones para exportar'); return; }
   descargarCSV('generador_saneadren_' + hoyISO() + '.csv', [
+    ...(Sucursales.varias() ? [{ titulo: 'SUCURSAL', valor: f => f.sucursal || '' }] : []),
     { titulo: 'MES LETRA', valor: f => f.mes }, { titulo: 'FECHA', valor: f => f.fecha }, { titulo: 'NO. ORDEN', valor: f => f.orden }, { titulo: 'ORDEN GENERADOR', valor: f => f.orden_generador || '' }, { titulo: 'NO. FACTURA', valor: f => f.factura },
     { titulo: 'CLIENTE', valor: f => f.cliente }, { titulo: 'PROYECTO', valor: f => f.proyecto }, { titulo: 'CONCEPTO', valor: f => f.producto }, { titulo: 'CANTIDAD', valor: f => f.cantidad },
     { titulo: 'PRECIO UNITARIO S/IVA', valor: f => f.precio_sin_iva }, { titulo: 'PRECIO UNITARIO C/IVA', valor: f => f.precio_con_iva }, { titulo: 'SUBTOTAL', valor: f => f.subtotal }, { titulo: 'IVA', valor: f => f.iva ?? '' }, { titulo: 'TOTAL', valor: f => f.total },

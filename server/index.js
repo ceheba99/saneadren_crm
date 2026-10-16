@@ -1384,7 +1384,7 @@ app.get('/api/generador', h((req, res) => {
   const fechaOk = v => !v || (/^\d{4}-\d{2}-\d{2}$/.test(v) && !isNaN(Date.parse(v)));
   if (!fechaOk(desde) || !fechaOk(hasta) || (desde && hasta && desde > hasta)) return res.status(400).json({ error: 'Revisa el rango de fechas' });
   const q = String(req.query.q || '').trim().toLowerCase();
-  const ordenes = db.prepare(`SELECT l.id, l.created_at, l.fecha_servicio, l.factura_folio, l.orden_generador, l.cliente_id, l.partidas_json, l.valor, l.iva_modo, l.iva_tasa, l.iva_cent,
+  const ordenes = db.prepare(`SELECT l.id, l.created_at, l.fecha_servicio, l.factura_folio, l.orden_generador, l.cliente_id, l.sucursal_id, l.partidas_json, l.valor, l.iva_modo, l.iva_tasa, l.iva_cent,
       l.proyecto, l.equipo, l.operador, l.manifiestos, l.tiros, l.realizado_por, COALESCE(c.empresa_contacto, c.nombre, l.empresa_contacto, l.nombre) AS cliente,
       COALESCE(cl.nombre, cc.nombre) AS canal, s.nombre AS servicio_nombre,
       COALESCE(l.fecha_realizado, l.fecha_servicio, date(l.created_at)) AS fecha
@@ -1424,7 +1424,7 @@ app.get('/api/generador', h((req, res) => {
     items.forEach((it, n) => {
       const l = lineas[n], cantidad = Importes.cantidadDe(it);
       filas.push({
-        lead_id: o.id, mes: MESES_LETRA[Number(String(o.fecha).slice(5, 7)) - 1] || '', fecha: o.fecha, orden: folio, orden_generador: o.orden_generador || '', factura: o.factura_folio || '',
+        lead_id: o.id, sucursal: suc.claveDe(o.sucursal_id), mes: MESES_LETRA[Number(String(o.fecha).slice(5, 7)) - 1] || '', fecha: o.fecha, orden: folio, orden_generador: o.orden_generador || '', factura: o.factura_folio || '',
         cliente_id: o.cliente_id,
         producto: it.servicio || o.servicio_nombre || 'Servicio', cantidad,
         precio_con_iva: Math.round(l.total_cent / cantidad) / 100, precio_sin_iva: Math.round(l.subtotal_cent / cantidad) / 100,

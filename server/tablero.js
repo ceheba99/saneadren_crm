@@ -4,6 +4,7 @@
 // internamente; se responde en pesos. Solo administración (incluye utilidad y márgenes).
 const Importes = require('../public/importes.js');
 const { hoyMexico } = require('./fechas');
+const alcance = require('./alcance');
 
 const pesos = cent => Math.round(Number(cent || 0)) / 100;
 const fechaOk = f => typeof f === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(f) && !Number.isNaN(Date.parse(f + 'T00:00:00Z'));
@@ -200,9 +201,18 @@ module.exports = function tablero(app, db, h, finanzas) {
     if (foto.a_favor > 0) alertas.push({ nivel: 'azul', texto: `${fmt(foto.a_favor)} a favor de clientes por servicios no realizados (devolver o aplicar)`, ir: 'cobrar' });
     if (foto.iva_por_definir > 0) alertas.push({ nivel: 'azul', texto: `${foto.iva_por_definir} servicios realizados con IVA por definir (su importe se toma como se capturó)`, ir: null });
 
+    // Viendo varias sucursales: el mismo cálculo para cada una (cada número sale solo con lo de esa sucursal).
+    const sucs = [...req.alcanceSuc.ids];
+    const porSucursal = sucs.length < 2 ? [] : db.prepare(`SELECT id, nombre, clave FROM sucursales WHERE id IN (${sucs.map(() => '?').join(',')}) ORDER BY id`).all(...sucs).map(s =>
+      alcance.correr({ todo: false, ids: new Set([s.id]), alta: s.id }, () => {
+        const r = periodo(desde, hasta).r, ca = finanzas.cartera().filter(c => c.saldo > 0 && !c.programada), px = finanzas.cuentasPorPagar().filter(x => x.saldo > 0);
+        const cent = arr => Math.round(arr.reduce((t, x) => t + x.saldo * 100, 0)) / 100;
+        return { id: s.id, nombre: s.nombre, clave: s.clave, venta: r.venta, servicios: r.servicios, gasto: r.gasto, utilidad: r.utilidad, margen_pct: r.margen_pct, cobrado: r.cobrado, pagado: r.pagado, flujo: r.flujo,
+          te_deben: cent(ca), vencido: cent(ca.filter(c => c.vencida)), debes: cent(px) };
+      }));
     res.json({
       desde, hasta, anterior: { desde: antDesde, hasta: antHasta }, generado: new Date().toISOString(),
-      actual: act.r, previo: ant.r, foto, alertas,
+      actual: act.r, previo: ant.r, foto, alertas, por_sucursal: porSucursal,
       gastos: act.gastos, tendencia: tendencia(hasta),
       top_clientes: ranking(act.ventas, act.costos, l => l.cliente), por_servicio: porServicio(act.ventas),
       por_canal: ranking(act.ventas, act.costos, l => l.canal), por_unidad: ranking(act.ventas, act.costos, l => l.equipo), por_operador: ranking(act.ventas, act.costos, l => l.operador),

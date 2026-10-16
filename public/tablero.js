@@ -90,6 +90,10 @@ const Panorama = (() => {
       + tarjeta('Flujo de efectivo', dinero(a.flujo), 'Cobrado menos pagado', delta(a.flujo, p.flujo), a.flujo < 0 ? 'negativo' : '')
       + tarjeta('Gastos del periodo', dinero(a.gasto), 'Facturas y gastos registrados', delta(a.gasto, p.gasto, false))
       + '</div>'
+      // 1b. Comparativo por sucursal (solo si se ven varias)
+      + ((d.por_sucursal || []).length > 1 ? '<div class="pg-caja"><div class="pg-caja-cab"><h3>Por sucursal</h3><span class="ayuda">Cada renglón solo con lo de esa sucursal; la suma es el total de arriba.</span></div><div class="tabla-scroll"><table class="pg-tabla pg-sucursales"><thead><tr><th>Sucursal</th><th class="st-num">Venta</th><th class="st-num">Gastos</th><th class="st-num">Utilidad</th><th class="st-num">Margen</th><th class="st-num">Cobrado</th><th class="st-num">Pagado</th><th class="st-num">Te deben</th><th class="st-num">Vencido</th><th class="st-num">Debes</th></tr></thead><tbody>'
+        + d.por_sucursal.map(s => '<tr><td><b>' + esc(s.clave) + '</b> · ' + esc(s.nombre) + '<small class="celda-sub">' + s.servicios + (s.servicios === 1 ? ' servicio' : ' servicios') + '</small></td><td class="st-num">' + dinero(s.venta) + '</td><td class="st-num">' + dinero(s.gasto) + '</td><td class="st-num' + (s.utilidad < 0 ? ' rojo' : '') + '">' + dinero(s.utilidad) + '</td><td class="st-num">' + pct(s.margen_pct) + '</td><td class="st-num">' + dinero(s.cobrado) + '</td><td class="st-num">' + dinero(s.pagado) + '</td><td class="st-num">' + dinero(s.te_deben) + '</td><td class="st-num' + (s.vencido > 0 ? ' rojo' : '') + '">' + dinero(s.vencido) + '</td><td class="st-num">' + dinero(s.debes) + '</td></tr>').join('')
+        + '</tbody></table></div></div>' : '')
       // 2. Alertas
       + '<div class="pg-caja"><h3>Para atender</h3><ul class="pg-alertas">' + alertas + '</ul></div>'
       // 3. Tendencia
@@ -139,7 +143,8 @@ const Panorama = (() => {
       ['Gastos del periodo', a.gasto, p.gasto], ['Utilidad estimada', a.utilidad, p.utilidad], ['Margen %', a.margen_pct, p.margen_pct],
       ['Costo de terceros en servicios', a.costo_directo, p.costo_directo], ['Dinero cobrado', a.cobrado, p.cobrado], ['Pagado a proveedores', a.pagado, p.pagado], ['Flujo de efectivo', a.flujo, p.flujo],
       ['Cotizaciones', a.cotizaciones, p.cotizaciones], ['Tasa de cierre %', a.cierre_pct, p.cierre_pct], ['Clientes atendidos', a.clientes_activos, p.clientes_activos], ['Clientes nuevos', a.clientes_nuevos, p.clientes_nuevos],
-      [], ['Mes', 'Venta', 'Gastos', 'Utilidad', 'Cobrado', 'Pagado'], ...d.tendencia.map(m => [m.mes, m.venta, m.gasto, m.utilidad, m.cobrado, m.pagado])];
+      [], ['Mes', 'Venta', 'Gastos', 'Utilidad', 'Cobrado', 'Pagado'], ...d.tendencia.map(m => [m.mes, m.venta, m.gasto, m.utilidad, m.cobrado, m.pagado]),
+      ...((d.por_sucursal || []).length > 1 ? [[], ['Sucursal', 'Venta', 'Gastos', 'Utilidad', 'Cobrado', 'Pagado', 'Te deben', 'Vencido', 'Debes'], ...d.por_sucursal.map(s => [s.clave + ' · ' + s.nombre, s.venta, s.gasto, s.utilidad, s.cobrado, s.pagado, s.te_deben, s.vencido, s.debes])] : [])];
     descargarCSV('panorama_' + d.desde + '_a_' + d.hasta + '.csv', filas[0].map((t, i) => ({ titulo: t, valor: f => f[i] ?? '' })), filas.slice(1));
   }
 

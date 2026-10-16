@@ -22,7 +22,7 @@
   for (const u of e.usuarios || []) {
     const b = document.createElement('button');
     b.type = 'button'; b.className = 'btn btn-secundario';
-    b.textContent = NOMBRES[u.rol] || u.nombre;
+    b.textContent = u.etiqueta || NOMBRES[u.rol] || u.nombre;
     b.title = u.nombre;
     b.addEventListener('click', async () => {
       const err = document.getElementById('login-error');
