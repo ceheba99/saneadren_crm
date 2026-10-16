@@ -1468,3 +1468,13 @@ body.es-costos .solo-no-costos{display:none !important;}
 .demo-franja{position:sticky;top:0;z-index:9999;background:#b45309;color:#fff;text-align:center;font-weight:700;font-size:13px;padding:5px 12px;letter-spacing:.3px;}
 .demo-entrar{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px;padding-bottom:14px;border-bottom:1px dashed var(--gris-200);}
 .demo-entrar p{width:100%;margin:0 0 2px;}
+
+/* Ficha del proveedor */
+.enlace-fuerte{font-weight:700;color:inherit;text-align:left;}
+.cp-datos{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:8px 16px;margin:4px 0 12px;padding:10px 12px;border:1px solid var(--gris-200);border-radius:10px;}
+.cp-datos small{display:block;color:var(--texto-suave,#667);font-size:12px;}
+.cp-datos b{word-break:break-all;}
+.cp-total{margin:6px 0 0;text-align:right;}
+.cp-historial{list-style:none;padding:0;margin:0;font-size:14px;}
+.cp-historial li{padding:6px 0;border-bottom:1px solid var(--gris-200);}
+.cp-historial small{display:block;color:var(--texto-suave,#667);}
