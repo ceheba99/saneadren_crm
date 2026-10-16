@@ -134,7 +134,7 @@ function existe(tabla, id) {
 app.get('/api/salud', (req, res) => {
   res.json({ ok: true, hoy: hoyMexico(), zona: process.env.TZ || Intl.DateTimeFormat().resolvedOptions().timeZone, base_persistente: !!process.env.DB_PATH || !process.env.RENDER });
 });
-const RUTAS_PUBLICAS = new Set(['/salud', '/login', '/registro', '/verificar-correo', '/olvide-password', '/restablecer-password']);
+const RUTAS_PUBLICAS = new Set(['/salud', '/login', '/registro', '/verificar-correo', '/olvide-password', '/restablecer-password', '/demo/estado', '/demo/entrar']);
 require('./cuentas')(app, db, h, { sesiones, urlBase: URL_BASE });
 app.use('/api', (req, res, next) => {
   if (RUTAS_PUBLICAS.has(req.path)) return next();
@@ -155,6 +155,8 @@ require('./carga-generador')(app, db, h, unicos); // Carga masiva del Generador 
 require('./buscador')(app, db, h); // Buscador general (caja de arriba): folios, clientes, compras, proveedores
 require('./respaldos')(db, { hoyMexico }); // Copia diaria automática de la base (últimos 14 días) junto a la base
 require('./integridad')(app, db, h); // Revisión de integridad de los datos guardados (solo administración)
+// Versión DEMO con datos de ejemplo: solo con MODO_DEMO=1 y en una base vacía (nunca en el sistema real).
+const demo = require('./demo')(app, db, { sesiones, PORT, SESSION_TTL_MS });
 
 // ---------- Catálogos ----------
 app.get('/api/usuarios', h((req, res) => {
@@ -1550,4 +1552,4 @@ app.use((err, req, res, next) => {
 process.on('uncaughtException', err => console.error('uncaughtException (servidor sigue vivo):', err));
 process.on('unhandledRejection', err => console.error('unhandledRejection (servidor sigue vivo):', err));
 
-app.listen(PORT, () => console.log(`Saneadren CRM corriendo en http://localhost:${PORT}`));
+app.listen(PORT, () => { console.log(`Saneadren CRM corriendo en http://localhost:${PORT}`); demo.alEscuchar(); });
