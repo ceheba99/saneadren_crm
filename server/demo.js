@@ -13,9 +13,9 @@ const { hoyMexico } = require('./fechas');
 
 // Clave del botón, rol, nombre, texto del botón y sucursal (QRO = principal; CDMX = la segunda sucursal del ejemplo).
 const USUARIOS_DEMO = [
-  ['admin', 'admin', 'Dirección (demo)', 'Dirección (todas)', null], ['ventas', 'ventas', 'Laura Ventas (demo)', 'Ventas QRO', 'QRO'], ['costos', 'costos', 'Isaac Compras (demo)', 'Compras QRO', 'QRO'],
-  ['tecnico', 'tecnico', 'Raúl Técnico (demo)', 'Técnico QRO', 'QRO'], ['atencion', 'atencion', 'Ana Atención (demo)', 'Atención QRO', 'QRO'],
-  ['gerente_cdmx', 'gerente', 'Mónica Gerente CDMX (demo)', 'Gerente CDMX', 'CDMX'], ['ventas_cdmx', 'ventas', 'Pedro Ventas CDMX (demo)', 'Ventas CDMX', 'CDMX'],
+  ['admin', 'admin', 'Dirección - Demo', 'Dirección (todas)', null], ['ventas', 'ventas', 'Laura Ventas - Demo', 'Ventas QRO', 'QRO'], ['costos', 'costos', 'Isaac Compras - Demo', 'Compras QRO', 'QRO'],
+  ['tecnico', 'tecnico', 'Raúl Técnico - Demo', 'Técnico QRO', 'QRO'], ['atencion', 'atencion', 'Ana Atención - Demo', 'Atención QRO', 'QRO'],
+  ['gerente_cdmx', 'gerente', 'Mónica Gerente CDMX - Demo', 'Gerente CDMX', 'CDMX'], ['ventas_cdmx', 'ventas', 'Pedro Ventas CDMX - Demo', 'Ventas CDMX', 'CDMX'],
 ];
 const nombreDemo = clave => (USUARIOS_DEMO.find(([c]) => c === clave) || [])[2] || '';
 const activo = () => process.env.MODO_DEMO === '1';

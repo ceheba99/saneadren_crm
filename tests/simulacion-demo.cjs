@@ -26,7 +26,7 @@ const pedir = async (m, r, t, b) => { const x = await fetch(`http://localhost:${
   const A = (await pedir('POST', '/login', null, { nombre: ADMIN.correo, password: ADMIN.password }))[1].token;
   [s, j] = await pedir('POST', '/contactos', A, { nombre: 'Cliente Real', telefono: '442 111 2233', empresa_contacto: 'Empresa Real', canal_origen_id: 1 });
   revisa(s === 201 || s === 200, 'se captura un cliente real', [s, j.error]);
-  [s, j] = await pedir('GET', '/usuarios', A); revisa(!j.some(u => /\(demo\)/.test(u.nombre)), 'no hay usuarios de ejemplo');
+  [s, j] = await pedir('GET', '/usuarios', A); revisa(!j.some(u => / - Demo$/.test(u.nombre)), 'no hay usuarios de ejemplo');
   await parar();
 
   console.log('2. MODO_DEMO=1 sobre esa base con datos reales');
@@ -37,13 +37,14 @@ const pedir = async (m, r, t, b) => { const x = await fetch(`http://localhost:${
   revisa(/NO se siembran ejemplos/.test(salida), 'lo deja escrito en el registro del servidor');
   const A2 = (await pedir('POST', '/login', null, { nombre: ADMIN.correo, password: ADMIN.password }))[1].token;
   [s, j] = await pedir('GET', '/clientes/catalogo', A2); revisa(Array.isArray(j) && j.length === 1, 'la base real quedó igual (un solo cliente, sin ejemplos)', j.length);
-  [s, j] = await pedir('GET', '/usuarios', A2); revisa(!j.some(u => /\(demo\)/.test(u.nombre)), 'no se crearon usuarios de ejemplo');
+  [s, j] = await pedir('GET', '/usuarios', A2); revisa(!j.some(u => / - Demo$/.test(u.nombre)), 'no se crearon usuarios de ejemplo');
   await parar();
 
   console.log('3. MODO_DEMO=1 en una base vacía');
   await arrancar('demo.db', { MODO_DEMO: '1' });
   for (let i = 0; i < 400; i++) { [s, j] = await pedir('GET', '/demo/estado'); if (j.listo || j.error) break; await espera(250); }
   revisa(j.demo === true && j.listo === true && !j.error, 'los ejemplos se sembraron sin errores', j.error || j);
+  { const [, us] = await pedir('GET', '/usuarios', (await pedir('POST', '/demo/entrar', null, { rol: 'admin' }))[1].token); revisa(us.filter(u => / - Demo$/.test(u.nombre)).length === 7, 'los 7 usuarios de ejemplo tienen nombres válidos (se pueden editar)', us.map(u => u.nombre)); }
   [s] = await pedir('POST', '/demo/entrar', null, { rol: 'inventado' }); revisa(s === 400, 'un rol que no existe no entra');
   const tok = {};
   for (const rol of ['admin', 'ventas', 'costos', 'tecnico', 'atencion', 'gerente_cdmx', 'ventas_cdmx']) { [s, j] = await pedir('POST', '/demo/entrar', null, { rol }); tok[rol] = j.token; revisa(s === 200 && j.token && (j.rol === rol || j.rol_real === rol.split('_')[0]), 'entra como ' + rol + ' sin contraseña'); }
