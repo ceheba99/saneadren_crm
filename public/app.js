@@ -2212,6 +2212,22 @@ on('form-login', 'submit', async e => {
   }
 });
 on('btn-logout', 'click', cerrarSesion);
+// Revisión de integridad (solo administración): muestra cada revisión con lo que encontró.
+on('btn-integridad', 'click', async e => {
+  const btn = e.currentTarget, cont = document.getElementById('integridad-resultado');
+  btn.disabled = true; cont.innerHTML = '<p class="util-45" role="status">Revisando…</p>';
+  try {
+    const r = await api('/admin/integridad').then(x => x.json());
+    if (r.error) throw new Error(r.error);
+    const conCasos = r.resultados.filter(x => x.total), limpias = r.resultados.filter(x => !x.total);
+    const caja = x => `<details class="integ-item ${x.gravedad}"${x.gravedad === 'error' ? ' open' : ''}><summary><b>${x.gravedad === 'error' ? '✘' : '⚠'} ${escaparHtml(x.titulo)}</b> <span class="integ-n">${Number(x.total)}</span> <small>${escaparHtml(x.grupo)}</small></summary>`
+      + '<ul>' + x.casos.map(c => `<li><b>${escaparHtml(c.ref)}</b> · ${escaparHtml(c.detalle)}</li>`).join('') + (x.total > x.casos.length ? `<li>… y ${Number(x.total - x.casos.length)} más</li>` : '') + '</ul></details>';
+    cont.innerHTML = `<p class="integ-resumen ${r.errores ? 'mal' : r.avisos ? 'aviso' : 'ok'}">${r.errores ? '✘ ' + Number(r.errores) + ' error(es)' : '✔ Sin errores'}${r.avisos ? ' · ⚠ ' + Number(r.avisos) + ' aviso(s) para revisar' : ''} · ${Number(r.revisiones)} revisiones · ${escaparHtml(r.fecha)}</p>`
+      + conCasos.sort((a, b) => (a.gravedad === 'error' ? 0 : 1) - (b.gravedad === 'error' ? 0 : 1)).map(caja).join('')
+      + `<details class="integ-limpias"><summary>✔ ${limpias.length} revisiones sin problemas</summary><ul>${limpias.map(x => '<li>' + escaparHtml(x.grupo + ' · ' + x.titulo) + '</li>').join('')}</ul></details>`;
+  } catch (err) { cont.innerHTML = '<p class="aviso-error-carga">No se pudo revisar: ' + escaparHtml(err.message) + '</p>'; }
+  finally { btn.disabled = false; }
+});
 on('btn-descargar-respaldo', 'click', async () => {
   try {
     const res = await api('/admin/backup');

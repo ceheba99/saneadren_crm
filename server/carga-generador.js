@@ -296,7 +296,10 @@ module.exports = function cargaGenerador(app, db, h, unicos) {
         const precio = Math.round(d.sub / d.cantidad) / 100;
         const partida = { servicio: serv.nombre, leyenda: d.productoTxt !== serv.nombre ? d.productoTxt : '', importe: d.sub / 100 };
         if (d.cantidad !== 1 && Importes.importeDe(d.cantidad, precio) * 100 === d.sub) Object.assign(partida, { cantidad: d.cantidad, precio });
-        const creadoEn = d.fecha + ' 12:00:00'; // el folio OS-AAAAMM y los reportes por mes salen del mes del servicio
+        // El folio OS-AAAAMM y los reportes por mes salen del mes del servicio. A las 12:00 de ese día, pero nunca
+        // en el futuro (un servicio de hoy cargado en la mañana queda con la hora actual).
+        const ahora = db.prepare("SELECT datetime('now','localtime') t").get().t;
+        const creadoEn = d.fecha + ' 12:00:00' > ahora ? ahora : d.fecha + ' 12:00:00';
         const id = insLead.run(cli.id, cli.telefono, cli.telefono_normalizado, cli.nombre, cli.empresa_contacto, canal?.id ?? null, serv.id, usuario.id, usuario.nombre,
           d.sub / 100, d.fecha, JSON.stringify([partida]), d.modo, d.modo === 'mas_iva' ? 16 : 0, d.imp.iva_cent, d.factura, d.proyecto, d.unidad, d.empleado, d.manifiestos,
           d.fecha, d.no_orden, d.huella, creadoEn).lastInsertRowid;

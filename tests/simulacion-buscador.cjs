@@ -132,6 +132,7 @@ const tiene = (j, tipo, id) => !!grupo(j, tipo)?.items.some(x => x.id === id);
   revisa(r.filter(x => x === 429).length >= 5 && r.slice(0, 50).every(x => x !== 429), 'más de 60 búsquedas en un minuto se frenan (para que nadie «barra» la base)', r.filter(x => x === 429).length);
   [s] = await buscar(V, 'kfc'); revisa(s === 200, 'el freno es por usuario: los demás siguen buscando');
 
+  { const [si, ri] = await pedir('GET', '/admin/integridad', A); const malos = (ri.resultados || []).filter(r => r.gravedad === 'error' && r.total); revisa(si === 200 && ri.errores === 0, 'al terminar, la revisión de integridad no encuentra errores en los datos', malos.map(r => r.titulo + ': ' + JSON.stringify(r.casos.slice(0, 2)))); }
   revisa(!/uncaughtException|Error no manejado|TypeError|SqliteError|RangeError|ReferenceError|\[buscar\]/.test(salida), 'el servidor no registró errores internos', salida.split('\n').filter(l => /Error|\[buscar\]/.test(l)).slice(0, 6));
   console.log(`\n${n - malos.length}/${n} correctas`);
   if (malos.length) console.log('FALLAS:\n- ' + malos.join('\n- '));

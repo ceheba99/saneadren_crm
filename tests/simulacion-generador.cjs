@@ -97,6 +97,7 @@ const fila = (id, cliente, producto, subtotal, extra = {}) => ({ fila: 'SEPTIEMB
   [s, j] = await pedir('POST', '/generador/importar', A, { filas: [...malas, fila(27, 'SYMRISE', 'RETIRO DE AGUA RESIDUAL', 1000)], cobrado: true });
   revisa(j.importadas === 0, 'con un error no se carga ningún renglón (todo o nada)');
 
+  { const [si, ri] = await pedir('GET', '/admin/integridad', A); const malos = (ri.resultados || []).filter(r => r.gravedad === 'error' && r.total); revisa(si === 200 && ri.errores === 0, 'al terminar, la revisión de integridad no encuentra errores en los datos', malos.map(r => r.titulo + ': ' + JSON.stringify(r.casos.slice(0, 2)))); }
   revisa(!/uncaughtException|Error en |TypeError|SqliteError|RangeError|ReferenceError/.test(salida), 'el servidor no registró errores internos', salida.split('\n').filter(l => /Error/.test(l)).slice(0, 6));
   console.log(`\n${n - malos.length}/${n} correctas`);
   if (malos.length) console.log('FALLAS:\n- ' + malos.join('\n- '));

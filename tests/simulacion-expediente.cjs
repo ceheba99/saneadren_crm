@@ -142,6 +142,7 @@ const CFDI = ({ total, rfc = 'RBA010101AB1', uuid = 'A1B2C3D4-0000-4000-8000-000
   [s] = await pedir('GET', '/auditoria', V); revisa(s === 403, 'la bitácora completa es solo para administración');
   [s, j] = await pedir('GET', '/auditoria?q=Pipas', A); revisa(s === 200 && j.length >= 1, 'se puede buscar en la bitácora');
 
+  { const [si, ri] = await pedir('GET', '/admin/integridad', A); const malos = (ri.resultados || []).filter(r => r.gravedad === 'error' && r.total); revisa(si === 200 && ri.errores === 0, 'al terminar, la revisión de integridad no encuentra errores en los datos', malos.map(r => r.titulo + ': ' + JSON.stringify(r.casos.slice(0, 2)))); }
   revisa(!/uncaughtException|Error en |TypeError|SqliteError|RangeError|ReferenceError/.test(salida), 'el servidor no registró errores internos', salida.split('\n').filter(l => /Error/.test(l)).slice(0, 6));
   console.log(`\n${n - malos.length}/${n} correctas`);
   if (malos.length) console.log('FALLAS:\n- ' + malos.join('\n- '));

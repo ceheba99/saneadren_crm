@@ -227,6 +227,7 @@ const HOY = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Mexico_City' }
   const todas = await cartera();
   revisa(todas.every(c => c.saldo >= 0), 'ningún saldo negativo', todas.filter(c => c.saldo < 0));
   revisa(todas.every(c => c.ejecucion === 'no_realizado' ? c.saldo === 0 && Math.abs(c.a_favor - c.cobrado) < 0.005 : Math.abs(c.total - c.cobrado - c.saldo) < 0.005 || c.saldo === 0), 'total − cobrado = saldo en todas las cuentas', todas.filter(c => Math.abs(c.total - c.cobrado - c.saldo) >= 0.005 && c.saldo !== 0).map(c => [c.lead_id, c.total, c.cobrado, c.saldo]));
+  { const [si, ri] = await pedir('GET', '/admin/integridad', A); const malos = (ri.resultados || []).filter(r => r.gravedad === 'error' && r.total); revisa(si === 200 && ri.errores === 0, 'al terminar, la revisión de integridad no encuentra errores en los datos', malos.map(r => r.titulo + ': ' + JSON.stringify(r.casos.slice(0, 2)))); }
   revisa(!/uncaughtException|Error no manejado|TypeError|SqliteError/.test(salida), 'el servidor no registró errores internos', salida.split('\n').filter(l => /Error/.test(l)).slice(0, 5));
 
   console.log(`\n${n - malos.length}/${n} correctas`);

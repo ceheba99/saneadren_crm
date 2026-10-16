@@ -158,6 +158,7 @@ const SEMANA_40 = [['REPARACION FLECHA CARDAN JOSE LUIS ACOSTA', 2000], ['PAGO R
   revisa(s === 200 && j.orden.estado === 'autorizada' && j.cxp_id, 'al autorizarla pasa a Cuentas por pagar', [s, j.error]);
   [s, j] = await pedir('GET', '/finanzas/cxp', A);
   revisa((Array.isArray(j) ? j : j.cuentas || []).length === antes + 1, 'aparece una cuenta por pagar nueva');
+  { const [si, ri] = await pedir('GET', '/admin/integridad', A); const malos = (ri.resultados || []).filter(r => r.gravedad === 'error' && r.total); revisa(si === 200 && ri.errores === 0, 'al terminar, la revisión de integridad no encuentra errores en los datos', malos.map(r => r.titulo + ': ' + JSON.stringify(r.casos.slice(0, 2)))); }
   revisa(!/uncaughtException|Error no manejado|TypeError|SqliteError|RangeError|ReferenceError/.test(salida), 'el servidor no registró errores internos', salida.split('\n').filter(l => /Error/.test(l)).slice(0, 6));
 
   console.log(`\n${n - malos.length}/${n} correctas`);

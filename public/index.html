@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Saneadren · Cotizaciones y Servicios</title>
-<link rel="stylesheet" href="styles.css?v=fe1">
+<link rel="stylesheet" href="styles.css?v=int1">
 <link rel="stylesheet" href="servicios-tabla.css">
 <link rel="stylesheet" href="flujo.css">
 </head>
@@ -399,6 +399,12 @@
       <h2>Respaldo de la base de datos</h2>
       <p class="ayuda">Descarga una copia del archivo de la base de datos con todo el historial (contactos, cotizaciones y servicios). Guárdala en un lugar seguro; hazlo con regularidad, sobre todo antes de cualquier cambio importante.</p>
       <button class="btn btn-secundario" id="btn-descargar-respaldo">⬇ Descargar respaldo de la base de datos</button>
+    </div>
+    <div class="panel-alta">
+      <h2>🩺 Revisión de integridad de los datos</h2>
+      <p class="ayuda">Recorre todo lo guardado y busca incongruencias: fechas imposibles (futuras o antes de cotizar), importes que no cuadran con sus partidas, cobros o pagos de más, facturas repetidas, órdenes de compra sin su cuenta por pagar, solicitudes sin sus 3 cotizaciones, clientes duplicados y archivos que falten. No cambia nada: solo informa. Córrela de vez en cuando y antes de cambios importantes.</p>
+      <button class="btn btn-secundario" id="btn-integridad">Revisar ahora</button>
+      <div id="integridad-resultado" class="integridad-resultado"></div>
     </div>
     <div class="panel-alta">
       <h2>Crear nuevo usuario</h2>
@@ -1126,7 +1132,7 @@
 <script src="compras.js?v=fe1"></script>
 <script src="solicitudes.js?v=rec1"></script>
 <script src="carga-generador.js?v=con1"></script>
-<script src="app.js?v=fe1"></script>
+<script src="app.js?v=int1"></script>
 <script src="buscador.js?v=bus1"></script>
 <script src="prospeccion.js?v=cli1"></script>
 </body>
