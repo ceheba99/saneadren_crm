@@ -71,3 +71,19 @@ test('importe con letra desde centavos', () => {
   assert.strictEqual(I.enLetras(0), 'CERO PESOS 00/100 M.N.');
   assert.strictEqual(I.enLetras(115), 'UN PESOS 15/100 M.N.');
 });
+
+test('cantidad × precio redondea exacto al centavo (medio centavo hacia arriba)', () => {
+  // Con decimales binarios, 2.5 × 3.33 = 8.325 salía 8.32; debe ser 8.33.
+  assert.strictEqual(I.importeDe(2.5, 3.33), 8.33);
+  assert.strictEqual(I.importeDe(0.25, 4.14), 1.04);
+  assert.strictEqual(I.importeDe(0.125, 8.2), 1.03);
+  assert.strictEqual(I.importeDe(0.5, 0.29), 0.15);
+  assert.strictEqual(I.importeDe(1, 1166.67), 1166.67);
+  assert.strictEqual(I.importeDe(1000000, 999999.99), 999999990000);
+  // Barrido: siempre igual al cálculo exacto en enteros.
+  for (let c = 1; c <= 400; c++) for (let p = 1; p <= 2000; p += 13) {
+    const cant = c / 8, precio = p / 100;
+    const exacto = Math.floor((Math.round(cant * 1000) * Math.round(precio * 100) * 10 + 5000) / 10000) / 100;
+    assert.strictEqual(I.importeDe(cant, precio), exacto, cant + ' × ' + precio);
+  }
+});

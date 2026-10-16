@@ -64,6 +64,14 @@ const dia = k => { const x = new Date(HOY + 'T12:00:00Z'); x.setUTCDate(x.getUTC
   [s, j] = await pedir('GET', '/finanzas/cxp?vista=todas', A); revisa(!j.some(x => x.lead_id === o4.id), 'con un gasto inválido no se carga nada (ni se marca realizado)');
   [s, j] = await pedir('GET', '/leads/' + o4.id, A); revisa(!j.ejecucion, 'la orden sigue sin marcar');
 
+  console.log('5. No realizado con descuento y anticipo: a favor solo lo que de verdad pagó');
+  const o5 = await orden('Servicio con descuento', dia(-1));
+  await pedir('POST', '/leads/' + o5.id + '/cobros', A, { monto: 1000, metodo: 'otro', fecha: HOY, tipo: 'ajuste', notas: 'Descuento por cliente frecuente' });
+  await pedir('POST', '/leads/' + o5.id + '/cobros', A, { monto: 2000, metodo: 'efectivo', fecha: HOY });
+  [s, j] = await pedir('POST', '/leads/' + o5.id + '/ejecucion', A, { estado: 'no_realizado', motivo: 'El cliente canceló el servicio' });
+  revisa(s === 200 && j.a_favor === 2000, 'el aviso dice $2,000 a favor (el descuento de $1,000 no es dinero recibido)', j.a_favor);
+  [s, j] = await pedir('GET', '/leads/' + o5.id + '/cobros', A); revisa(j.cuenta?.a_favor === 2000 && j.cuenta?.saldo === 0, 'la cuenta de la orden dice lo mismo', j.cuenta && [j.cuenta.a_favor, j.cuenta.saldo]);
+  [s, j] = await pedir('GET', '/finanzas/clientes/' + cli.id + '/estado-cuenta?completo=1', A); revisa(j.ordenes.find(x => x.lead_id === o5.id)?.a_favor === 2000, 'y el estado de cuenta del cliente');
   { const [si, ri] = await pedir('GET', '/admin/integridad', A); revisa(si === 200 && ri.errores === 0, 'revisión de integridad: 0 errores', (ri.resultados || []).filter(r => r.gravedad === 'error' && r.total).map(r => r.titulo)); }
   revisa(!/uncaughtException|Error no manejado|TypeError|SqliteError|RangeError|ReferenceError/.test(salida), 'el servidor no registró errores internos', salida.split('\n').filter(l => /Error/.test(l)).slice(0, 6));
   console.log(`\n${n - malos.length}/${n} correctas`);
