@@ -76,7 +76,7 @@ function funcionesPagina() {
   revisa(fila2?.folio === 'OS-202609-' + pad(cot2.id) && j.filas?.some(f => f.orden === 'OS-202609-' + pad(cot2.id)), 'orden creada el 30/sep 23:59:59 → OS-202609 en Cuentas por cobrar y en el Generador', [fila2?.folio]);
 
   seccion('3. Los folios no se repiten ni se reutilizan');
-  [s] = await pedir('DELETE', '/leads/' + cot3.id, A); revisa(s === 200, 'administración borra la última cotización');
+  [s] = await pedir('DELETE', '/leads/' + cot3.id, A, { motivo: 'Capturada por error' }); revisa(s === 200, 'administración borra la última cotización');
   const cot4 = await nuevaCot();
   revisa(cot4.id > cot3.id, 'la siguiente cotización NO reutiliza el número borrado', [cot3.id, cot4.id]);
   [s, j] = await pedir('GET', '/leads?q=' + encodeURIComponent('COT-' + mes(cot3.created_at) + '-' + pad(cot3.id)), A);

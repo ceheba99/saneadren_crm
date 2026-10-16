@@ -37,9 +37,36 @@ const Bitacora = (() => {
     } catch (err) { cont.innerHTML = '<p class="aviso-error-carga">' + esc(err.message) + '</p>'; }
   }
 
+  // Historial completo de un cliente (ficha del cliente, hasta abajo).
+  let HC = [], HC_CLIENTE = null;
+  const GRUPO = { contacto: '👤 Contacto', registro: '📄 Cotización / orden', nota: '📝 Nota / alerta', eliminado: '🗑️ Eliminado' };
+  const sinAcentos = t => String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  async function historialCliente(clienteId) {
+    HC_CLIENTE = clienteId; HC = [];
+    const cont = $('fc-movimientos'); if (!cont) return;
+    $('fc-mov-filtro').value = ''; $('fc-mov-buscar').value = '';
+    cont.innerHTML = '<p class="util-45">Cargando…</p>';
+    try { const r = await api('/clientes/' + Number(clienteId) + '/movimientos'); const j = await r.json(); if (!r.ok) throw new Error(j.error); if (HC_CLIENTE !== clienteId) return; HC = j; }
+    catch (err) { cont.innerHTML = '<p class="aviso-error-carga">' + esc(err.message) + '</p>'; return; }
+    $('fc-mov-cuenta').textContent = '(' + HC.length + (HC.length === 1 ? ' movimiento)' : ' movimientos)');
+    pintarHistorial();
+  }
+  function pintarHistorial() {
+    const cont = $('fc-movimientos'), g = $('fc-mov-filtro').value, q = sinAcentos($('fc-mov-buscar').value.trim());
+    const filas = HC.filter(x => (!g || x.grupo === g) && (!q || sinAcentos([x.registro, x.que, x.detalle, x.usuario].join(' ')).includes(q)));
+    cont.innerHTML = filas.length ? '<div class="tabla-scroll"><table class="tabla-resumen bit-tabla hc-tabla"><thead><tr><th>Fecha</th><th>Registro</th><th>Qué pasó</th><th>Quién</th></tr></thead><tbody>'
+      + filas.map(x => '<tr class="hc-' + esc(x.grupo) + '"><td class="st-fecha">' + esc(fechaHora(x.fecha)) + '</td>'
+        + '<td>' + (x.lead_id ? '<button type="button" class="enlace" data-hc-abrir="' + Number(x.lead_id) + '">' + esc(x.registro) + '</button>' : '<b>' + esc(x.registro || '') + '</b>') + '<small class="celda-sub">' + esc(GRUPO[x.grupo] || '') + '</small></td>'
+        + '<td><b>' + esc(x.que) + '</b><div class="bit-detalle">' + esc(x.detalle || '') + '</div></td><td>' + esc(x.usuario || '—') + '</td></tr>').join('') + '</tbody></table></div>'
+      : '<p class="util-45">' + (HC.length ? 'Nada con ese filtro.' : 'Todavía no hay movimientos.') + '</p>';
+  }
+  $('fc-mov-filtro')?.addEventListener('change', pintarHistorial);
+  $('fc-mov-buscar')?.addEventListener('input', pintarHistorial);
+  $('fc-movimientos')?.addEventListener('click', e => { const b = e.target.closest('[data-hc-abrir]'); if (b) abrirFicha(Number(b.dataset.hcAbrir)); });
+
   let t;
   ['bit-entidad', 'bit-desde', 'bit-hasta'].forEach(id => $(id).addEventListener('change', cargar));
   $('bit-buscar').addEventListener('input', () => { clearTimeout(t); t = setTimeout(cargar, 350); });
-  return { cargar, movimientos, tabla };
+  return { cargar, movimientos, tabla, historialCliente };
 })();
 window.Bitacora = Bitacora;

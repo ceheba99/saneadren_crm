@@ -1438,3 +1438,14 @@ body:not(.es-costos) .solo-costos{display:none !important;}
 
 /* Avisos solo para quien no es administración ni encargado de centro de costos */
 body.es-costos .solo-no-costos{display:none !important;}
+
+/* Historial completo del cliente (hasta abajo de la ficha) */
+.hc-cuenta{font-weight:600;color:var(--texto-sec);text-transform:none;letter-spacing:0;}
+.hc-filtros{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:6px 0 10px;}
+.hc-filtros select,.hc-filtros input{min-height:36px;border:1px solid var(--gris-300);border-radius:6px;padding:4px 8px;font:inherit;font-size:13.5px;}
+.hc-filtros input{flex:1;min-width:180px;}
+.hc-tabla tr.hc-eliminado{background:#fbe9e7;}
+.hc-tabla tr.hc-contacto td:first-child{border-left:3px solid #2a5ea8;}
+.hc-tabla .bit-detalle{white-space:normal;color:var(--texto-sec);font-size:12.5px;}
+.hc-tabla th,.hc-tabla td{text-align:left !important;vertical-align:top;}
+.hc-tabla .celda-sub{display:block;}

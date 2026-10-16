@@ -121,7 +121,7 @@ const espera = ms => new Promise(r => setTimeout(r, ms));
   [s, j] = await pedir('GET', '/salud', null);
   ok(s === 200 && j.ok && j.hoy === hoy, 'ruta de salud pública con la fecha de México', j);
   [s] = await pedir('DELETE', '/leads/' + ordenVieja.id, L); ok(s === 403, 'ventas NO puede borrar una orden');
-  [s] = await pedir('DELETE', '/leads/' + ordenVieja.id, A); ok(s === 200, 'admin sí puede borrarla');
+  [s] = await pedir('DELETE', '/leads/' + ordenVieja.id, A, { motivo: 'Se capturó dos veces' }); ok(s === 200, 'admin sí puede borrarla');
   [s] = await pedir('PUT', '/servicios/' + recurrente.id, A, { dias_recurrencia: 99999999 }); ok(s === 400, 'recurrencia absurda rechazada');
 
   seccion('6. Datos que no se aceptan');
