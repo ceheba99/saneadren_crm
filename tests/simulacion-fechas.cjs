@@ -43,7 +43,7 @@ const pdf = () => Buffer.from('%PDF-1.4\n% ' + crypto.randomBytes(8).toString('h
   const FCOT = dias(HOY, -10);
   [s, j] = await cotizar(FCOT); const c1 = j;
   revisa(s === 201 && c1.fecha_cotizacion === FCOT, 'la fecha de la cotización se guarda igual (' + FCOT + ')', [s, c1.fecha_cotizacion]);
-  revisa(c1.folio === undefined || /^COT-\d{6}-\d{4}$/.test(c1.folio), 'folio con el mes de creación');
+  revisa(c1.folio === undefined || /^COT-(QRO-)?\d{6}-\d{4}$/.test(c1.folio), 'folio con el mes de creación');
   const ganar = async (id, extra) => { const [, l] = await pedir('GET', '/leads/' + id, A); return pedir('PUT', '/leads/' + id, A, { version: l.version, estatus: 'ganado', ...extra }); };
   [s, j] = await ganar(c1.id, { fecha_servicio: dias(FCOT, -5) });
   revisa(s === 400, 'INCONGRUENCIA: un servicio con fecha ANTES de la cotización no se acepta', [s, j.error]);
@@ -96,7 +96,7 @@ const pdf = () => Buffer.from('%PDF-1.4\n% ' + crypto.randomBytes(8).toString('h
   [s, j] = await pedir('POST', '/compras/ordenes', C, { ...baseOC, fecha_requerida: dias(HOY, -1) }); revisa(s === 400, 'la orden no puede requerirse antes de su fecha');
   [s, j] = await pedir('POST', '/compras/ordenes', C, { ...baseOC, fecha: dias(HOY, 40) }); revisa(s === 400, 'una orden a más de un mes en el futuro se rechaza (año mal escrito)');
   [s, j] = await pedir('POST', '/compras/ordenes', C, baseOC); const oc = j;
-  revisa(s === 201 && oc.fecha === HOY && oc.folio.slice(3, 9) === HOY.slice(0, 7).replace('-', ''), 'la orden toma la fecha de hoy y su folio el mes de hoy', [oc.fecha, oc.folio]);
+  revisa(s === 201 && oc.fecha === HOY && oc.folio.replace(/^OC-(?:[A-Z][A-Z0-9]*-)?/, '').slice(0, 6) === HOY.slice(0, 7).replace('-', ''), 'la orden toma la fecha de hoy y su folio el mes de hoy', [oc.fecha, oc.folio]);
   [s, j] = await pedir('GET', '/compras/formato', C);
   revisa(!JSON.stringify(j).includes('2023'), 'el formato de la orden ya no trae fechas de 2023 ni revisión', j);
   [s, j] = await pedir('POST', '/compras/ordenes/' + oc.id + '/autorizar', A, { dias_credito: 15 });
@@ -130,7 +130,7 @@ const pdf = () => Buffer.from('%PDF-1.4\n% ' + crypto.randomBytes(8).toString('h
   seccion('7. La página no cambia la fecha aunque la computadora esté en otra zona horaria');
   const src = fs.readFileSync(path.join(__dirname, '..', 'public', 'app.js'), 'utf8');
   const tomar = nombre => { const re = new RegExp('(?:^|\\n)(?:const ' + nombre + ' = [^\\n]+|function ' + nombre + '\\([^]*?\\n\\})'); const m = src.match(re); return m ? m[0] : ''; };
-  const codigo = ['hoyISO', 'sumarDiasISO', 'mesDeFolio', 'folioCotizacion'].map(tomar).join('\n');
+  const codigo = ['hoyISO', 'sumarDiasISO', 'mesDeFolio', 'folioDeLead', 'folioCotizacion'].map(tomar).join('\n');
   for (const tz of ['UTC', 'Asia/Tokyo', 'America/Los_Angeles', 'Pacific/Kiritimati']) {
     const r = execFileSync(process.execPath, ['-e', codigo + '\nconsole.log(JSON.stringify([hoyISO(), sumarDiasISO("2028-02-28", 1), sumarDiasISO("2026-12-31", 1), folioCotizacion({ id: 5, created_at: "2026-09-30 23:59:59" })]))'], { env: { ...process.env, TZ: tz } }).toString().trim();
     const [h, b, a, fo] = JSON.parse(r);

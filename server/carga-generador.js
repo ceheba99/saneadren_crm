@@ -244,13 +244,13 @@ module.exports = function cargaGenerador(app, db, h, unicos) {
       const insCliente = db.prepare('INSERT INTO clientes (telefono, telefono_normalizado, nombre, empresa_contacto) VALUES (?, ?, ?, ?)');
       const insServicio = db.prepare('INSERT INTO catalogo_servicios (nombre, orden) VALUES (?, (SELECT COALESCE(MAX(orden), 0) + 1 FROM catalogo_servicios))');
       const insCanal = db.prepare('INSERT INTO canales (nombre, orden) VALUES (?, 99)');
-      const insLead = db.prepare(`INSERT INTO leads (cliente_id, telefono, telefono_normalizado, nombre, empresa_contacto, direccion, canal_id, servicio_id, responsable_id,
+      const insLead = db.prepare(`INSERT INTO main.leads (cliente_id, telefono, telefono_normalizado, nombre, empresa_contacto, direccion, canal_id, servicio_id, responsable_id,
           creado_por, valor, fecha_servicio, estatus, etapa, origen, partidas_json, iva_modo, iva_tasa, iva_cent, factura_folio, proyecto, equipo, operador, manifiestos,
           ejecucion, realizado_por, fecha_realizado, orden_generador, import_huella, created_at, updated_at)
         VALUES (?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, 'ganado', 4, 'directo', ?, ?, ?, ?, ?, ?, ?, ?, ?, 'realizado', 'propio', ?, ?, ?, ?, datetime('now','localtime'))`);
-      const insCobro = db.prepare(`INSERT INTO cobros (lead_id, fecha, monto_cent, tipo, metodo, notas, confirmado, confirmado_por, confirmado_at, registrado_por)
+      const insCobro = db.prepare(`INSERT INTO main.cobros (lead_id, fecha, monto_cent, tipo, metodo, notas, confirmado, confirmado_por, confirmado_at, registrado_por)
         VALUES (?, ?, ?, 'pago', 'otro', 'Cobrado antes de la carga del generador (histórico)', 1, ?, datetime('now','localtime'), ?)`);
-      const bit = db.prepare("INSERT INTO historial (lead_id, tipo, texto, usuario, origen) VALUES (?, 'observacion', ?, ?, 'sistema')");
+      const bit = db.prepare("INSERT INTO main.historial (lead_id, tipo, texto, usuario, origen) VALUES (?, 'observacion', ?, ?, 'sistema')");
       const aliasCanal = db.prepare('INSERT INTO canales_alias (clave, canal_id) VALUES (?, ?) ON CONFLICT(clave) DO UPDATE SET canal_id = excluded.canal_id');
       let n = 0;
       for (const r of resultado) {
@@ -264,6 +264,7 @@ module.exports = function cargaGenerador(app, db, h, unicos) {
             const nombre = d.clienteNuevo === unicos.clave(d.clienteTxt) ? d.clienteTxt : (resultado.find(x => x.datos && unicos.clave(x.datos.clienteTxt) === d.clienteNuevo)?.datos.clienteTxt || d.clienteTxt);
             const tel = 'sin-telefono-' + crypto.randomBytes(6).toString('hex');
             const id = insCliente.run('', tel, nombre.trim(), nombre.trim()).lastInsertRowid;
+            app.locals.sucursales.asignar('clientes', id);
             cli = db.prepare('SELECT * FROM clientes WHERE id = ?').get(id);
             clientesNuevos.set(d.clienteNuevo, cli);
           }
@@ -303,6 +304,7 @@ module.exports = function cargaGenerador(app, db, h, unicos) {
         const id = insLead.run(cli.id, cli.telefono, cli.telefono_normalizado, cli.nombre, cli.empresa_contacto, canal?.id ?? null, serv.id, usuario.id, usuario.nombre,
           d.sub / 100, d.fecha, JSON.stringify([partida]), d.modo, d.modo === 'mas_iva' ? 16 : 0, d.imp.iva_cent, d.factura, d.proyecto, d.unidad, d.empleado, d.manifiestos,
           d.fecha, d.no_orden, d.huella, creadoEn).lastInsertRowid;
+        app.locals.sucursales.asignar('leads', id);
         if (cobrado) insCobro.run(id, d.fecha, d.imp.total_cent, usuario.id, usuario.id);
         bit.run(id, 'Orden cargada desde el generador' + (d.no_orden ? ` (orden ${d.no_orden})` : '') + (cobrado ? ' · cobrada (histórico)' : ' · por cobrar') + '.', usuario.nombre);
         n++;

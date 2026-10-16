@@ -46,7 +46,7 @@ document.addEventListener('submit', e => window.ocultarContrasenas(e.target), tr
     document.getElementById('dupc-texto').textContent = mensaje || ('Vas a registrar «' + nombre + '»' + (telefono ? ' con el teléfono ' + telefono : '') + '. Ya existe' + (parecidos.length > 1 ? 'n estos clientes parecidos' : ' un cliente parecido') + '. Si es el mismo, se le agrega este teléfono y no se crea otro.');
     document.getElementById('dupc-otro').textContent = otro;
     document.getElementById('dupc-lista').innerHTML = parecidos.map(p => '<div class="dup-item"><div><b>' + escDup(p.folio) + ' · ' + escDup(p.empresa || p.nombre) + '</b>'
-      + '<small>' + escDup([p.empresa && p.nombre !== p.empresa ? p.nombre : '', p.telefono ? 'tel. ' + p.telefono : 'sin teléfono', p.rfc ? 'RFC ' + p.rfc : ''].filter(Boolean).join(' · ')) + '</small>'
+      + '<small>' + escDup([p.empresa && p.nombre !== p.empresa ? p.nombre : '', p.otra_sucursal ? 'sus datos no se muestran' : p.telefono ? 'tel. ' + p.telefono : 'sin teléfono', p.rfc ? 'RFC ' + p.rfc : ''].filter(Boolean).join(' · ')) + '</small>'
       + '<small class="dup-motivo">' + escDup(p.motivo || '') + '</small></div><button type="button" class="btn btn-verde btn-chico" data-dup-mismo="' + Number(p.id) + '">Es este</button></div>').join('');
     document.getElementById('dupc-lista').onclick = e => { const b = e.target.closest('[data-dup-mismo]'); if (b) fin({ mismo: Number(b.dataset.dupMismo) }); };
     document.getElementById('dupc-otro').onclick = () => fin({ distinto: parecidos.map(p => p.id) });

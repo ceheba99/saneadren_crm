@@ -52,7 +52,7 @@ const HOY = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Mexico_City' }
   const pagoId = j.id; revisa(s === 201, 'se registra un pago de $1,000', [s, j.error]);
   [, j] = await pedir('GET', '/finanzas/proveedores/' + pipas.id + '/estado-cuenta', A);
   const g = j.pagos.find(x => x.referencia === 'PRUEBA-FICHA');
-  revisa(g && g.cuenta_origen === 'Santander empresa' && g.registrado_por_nombre === 'Isaac Compras (demo)' && g.concepto === conSaldo.concepto, 'el pago aparece con cuenta de salida, quién lo registró y qué se pagó', g);
+  revisa(g && g.cuenta_origen === 'Santander empresa' && g.registrado_por_nombre === 'Isaac Compras - Demo' && g.concepto === conSaldo.concepto, 'el pago aparece con cuenta de salida, quién lo registró y qué se pagó', g);
   const debeAntes = j.debe;
   [s] = await pedir('POST', '/finanzas/pagos-proveedor/' + (pagoId || g.id) + '/cancelar', C, { motivo: 'Prueba de la ficha' });
   [, j] = await pedir('GET', '/finanzas/proveedores/' + pipas.id + '/estado-cuenta', A);
@@ -72,7 +72,7 @@ const HOY = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Mexico_City' }
   console.log('5. Historial de cambios a sus datos');
   [s] = await pedir('PUT', '/finanzas/proveedores/' + llantera.id, C, { telefono: '442 123 4567', dias_credito: 30 });
   [, j] = await pedir('GET', '/finanzas/proveedores/' + llantera.id + '/estado-cuenta', A);
-  revisa(s === 200 && j.historial[0]?.accion === 'editado' && /442 123 4567/.test(j.historial[0].detalle) && j.historial[0].usuario === 'Isaac Compras (demo)' && j.historial.some(h => h.accion === 'creado'),
+  revisa(s === 200 && j.historial[0]?.accion === 'editado' && /442 123 4567/.test(j.historial[0].detalle) && j.historial[0].usuario === 'Isaac Compras - Demo' && j.historial.some(h => h.accion === 'creado'),
     'se ve quién cambió qué (teléfono y crédito) y cuándo se dio de alta', j.historial);
   revisa(j.proveedor.dias_credito === 30, 'y la ficha ya muestra el crédito nuevo');
 

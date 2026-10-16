@@ -77,7 +77,7 @@ const tiene = (j, tipo, id) => !!grupo(j, tipo)?.items.some(x => x.id === id);
   [s, j, texto] = await buscar(A, 'admin'); revisa(s === 200 && !/marketing@saneadren/.test(texto), 'buscar «admin» no expone las cuentas de usuario');
 
   seccion('2. Folios');
-  const fCot = 'COT-' + mes(cotA.created_at) + '-' + pad(cotA.id), fOS = 'OS-' + mes(cotB.created_at) + '-' + pad(cotB.id);
+  const fCot = 'COT-QRO-' + mes(cotA.created_at) + '-' + pad(cotA.folio_num), fOS = 'OS-QRO-' + mes(cotB.created_at) + '-' + pad(cotB.folio_num);
   [s, j] = await buscar(V, fCot); revisa(j.exacta?.tipo === 'cotizacion' && j.exacta.id === cotA.id && j.exacta.folio === fCot, 'folio de cotización exacto → se abre directo', j.exacta);
   [s, j] = await buscar(V, fOS); revisa(j.exacta?.tipo === 'orden_servicio' && j.exacta.id === cotB.id, 'folio de orden de servicio exacto', j.exacta);
   [s, j] = await buscar(V, 'COT-' + mes(cotB.created_at) + '-' + pad(cotB.id)); revisa(!j.exacta && !tiene(j, 'cotizacion', cotB.id), 'el COT- de una cotización que ya es OS no la confunde con otra cotización', j.exacta);
@@ -121,7 +121,7 @@ const tiene = (j, tipo, id) => !!grupo(j, tipo)?.items.some(x => x.id === id);
   [s, j, texto] = await buscar(V, 'onerror'); revisa(s === 200 && tiene(j, 'cliente', kfc.id), 'un nombre con código se encuentra como texto (la página lo escapa al mostrarlo)');
 
   seccion('8. Rapidez con miles de registros');
-  { const db = new DatabaseSync(DB); const ins = db.prepare('INSERT INTO clientes (nombre, empresa_contacto, telefono, telefono_normalizado) VALUES (?, ?, ?, ?)'); db.exec('BEGIN'); for (let k = 0; k < 5000; k++) ins.run('Contacto ' + k, 'Empresa Prueba ' + k, '44' + String(10000000 + k), '44' + String(10000000 + k)); db.exec('COMMIT'); db.close(); }
+  { const db = new DatabaseSync(DB); const ins = db.prepare('INSERT INTO clientes (nombre, empresa_contacto, telefono, telefono_normalizado, sucursal_id) VALUES (?, ?, ?, ?, 1)'); db.exec('BEGIN'); for (let k = 0; k < 5000; k++) ins.run('Contacto ' + k, 'Empresa Prueba ' + k, '44' + String(10000000 + k), '44' + String(10000000 + k)); db.exec('COMMIT'); db.close(); }
   let peor = 0;
   for (const t of ['empresa prueba', 'zzzz', 'queretaro', '4410000', 'CLI-0003']) { const t0 = Date.now(); [s, j] = await buscar(V, t); peor = Math.max(peor, Date.now() - t0); }
   revisa(peor < 600, 'con 5,000 clientes más, cada búsqueda tarda menos de 0.6 s (peor: ' + peor + ' ms)');

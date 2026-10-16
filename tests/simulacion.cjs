@@ -177,7 +177,7 @@ const espera = ms => new Promise(r => setTimeout(r, ms));
   [s, j] = await pedir('POST', '/leads', A, { cliente_id: clienteRec, direccion: 'Av. Constituyentes 10', responsable_id: usuarioL.id, partidas_json: partidasRec, estatus: 'ganado', fecha_servicio: '2099-06-01', forzar_duplicado: true });
   const programada = j;
   [s, j] = await pedir('GET', '/leads/' + programada.id + '/cobros', A);
-  ok(j.cuenta.programada === true && j.cuenta.tramo === null && j.cuenta.folio && /^OS-\d{6}-\d{4}$/.test(j.cuenta.folio), 'una orden con servicio futuro queda como programada y con folio OS', j.cuenta);
+  ok(j.cuenta.programada === true && j.cuenta.tramo === null && j.cuenta.folio && /^OS-(QRO-)?\d{6}-\d{4}$/.test(j.cuenta.folio), 'una orden con servicio futuro queda como programada y con folio OS', j.cuenta);
   [s, j] = await pedir('GET', '/finanzas/cartera?filtro=programadas', A);
   ok(j.some(c => c.lead_id === programada.id), 'filtro Programadas la muestra');
   [s, j] = await pedir('GET', '/finanzas/cartera', A);
@@ -499,7 +499,7 @@ const espera = ms => new Promise(r => setTimeout(r, ms));
   ok(s === 200 && j.lead.ejecucion === 'realizado' && j.lead.realizado_por === 'propio' && j.gastos === 0, 'servicio realizado por nuestro equipo sin gastos', j);
   [s, j] = await pedir('GET', '/generador?desde=2026-09-15&hasta=2026-09-15&q=Planta Norte', L);
   const g = j.filas || [];
-  ok(s === 200 && g.length === 2 && g[0].mes === 'SEPTIEMBRE' && g[0].orden === 'OS-' + ordenGen.created_at.slice(0, 7).replace('-', '') + '-' + String(ordenGen.id).padStart(4, '0')
+  ok(s === 200 && g.length === 2 && g[0].mes === 'SEPTIEMBRE' && g[0].orden === 'OS-QRO-' + ordenGen.created_at.slice(0, 7).replace('-', '') + '-' + String(ordenGen.folio_num).padStart(4, '0')
     && g[0].cantidad === 3 && g[0].precio_sin_iva === 1166.67 && g[0].unidad === 'E-37-04' && g[0].empleado === 'Diego Arturo' && g[0].proyecto === 'Planta Norte 2026' && g[0].cliente === 'Restaurante IVA',
     'el generador da un renglón por servicio con mes, orden, cantidad, precio, unidad, empleado, proyecto y cliente', g);
   ok(j.totales.subtotal === 4500.01 && j.totales.iva === 720 && j.totales.total === 5220.01 && Math.round((g[0].total + g[1].total) * 100) === 522001,

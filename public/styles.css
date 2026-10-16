@@ -1478,3 +1478,18 @@ body.es-costos .solo-no-costos{display:none !important;}
 .cp-historial{list-style:none;padding:0;margin:0;font-size:14px;}
 .cp-historial li{padding:6px 0;border-bottom:1px solid var(--gris-200);}
 .cp-historial small{display:block;color:var(--texto-suave,#667);}
+
+/* Sucursales */
+/* Solo el administrador general / solo con varias sucursales (se ocultan; si se ven, conservan su estilo) */
+body:not(.es-general) .solo-general{display:none!important;}
+body:not(.varias-sucursales) .solo-varias-sucursales{display:none!important;}
+.sucursal-selector{display:inline-flex;align-items:center;gap:6px;margin-right:8px;}
+.sucursal-selector select{max-width:220px;padding:4px 8px;border-radius:8px;border:1px solid var(--gris-200);font-weight:600;}
+.sucursales-casillas{display:flex;flex-wrap:wrap;gap:4px 12px;}
+.fila-sucursal{grid-template-columns:repeat(auto-fit,minmax(150px,1fr));}
+/* Lista de sucursales (Ajustes): como los demás formularios, etiqueta arriba y campos completos */
+.fila-sucursal{display:grid!important;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px 14px;align-items:end;padding:12px 14px;margin-top:10px;border:1px solid var(--gris-200);border-radius:10px;}
+.fila-sucursal label{display:block;font-size:12px;font-weight:600;letter-spacing:.3px;text-transform:uppercase;color:var(--texto-suave,#667);margin-bottom:4px;}
+.fila-sucursal input{width:100%;box-sizing:border-box;padding:9px 10px;border:1px solid var(--gris-200);border-radius:8px;font:inherit;}
+.fila-sucursal input:disabled{background:var(--gris-100,#f3f4f6);color:var(--texto-suave,#667);}
+.fila-sucursal .acciones-catalogo{display:flex;flex-wrap:wrap;gap:6px;align-items:center;grid-column:1/-1;justify-content:flex-end;}

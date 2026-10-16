@@ -76,12 +76,12 @@ module.exports = function expedienteOC(app, db, h, { leer, esAdmin, folioOC }) {
   }
 
   function insertar(req, o, tipo, nombre, buf, formato, sha, datos, nota) {
-    const r = db.prepare('INSERT INTO documentos_oc (oc_id, tipo, nombre, archivo, formato, bytes, sha256, datos_json, nota, subido_por, subido_por_nombre) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+    const r = db.prepare('INSERT INTO main.documentos_oc (oc_id, tipo, nombre, archivo, formato, bytes, sha256, datos_json, nota, subido_por, subido_por_nombre) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
       .run(o.id, tipo, nombre, '', formato, buf.length, sha, datos ? JSON.stringify(datos) : null, String(nota || '').slice(0, 300) || null, req.usuarioSesion.id, req.usuarioSesion.nombre);
     const archivo = path.join(String(o.id), `${r.lastInsertRowid}-${sha.slice(0, 12)}.${formato}`);
     fs.mkdirSync(path.join(DIR, String(o.id)), { recursive: true });
     fs.writeFileSync(path.join(DIR, archivo), buf);
-    db.prepare('UPDATE documentos_oc SET archivo = ? WHERE id = ?').run(archivo, r.lastInsertRowid);
+    db.prepare('UPDATE main.documentos_oc SET archivo = ? WHERE id = ?').run(archivo, r.lastInsertRowid);
     return r;
   }
   // Para otros módulos (la cotización elegida de una solicitud pasa sola al expediente de su orden).
@@ -157,8 +157,8 @@ module.exports = function expedienteOC(app, db, h, { leer, esAdmin, folioOC }) {
       // El folio de la factura queda en la orden y en su cuenta por pagar (si aún no tenía).
       if (datos?.folio || datos?.uuid) {
         const folio = [datos.serie, datos.folio].filter(Boolean).join('-') || datos.uuid.slice(0, 8);
-        if (!o.factura_folio) db.prepare('UPDATE ordenes_compra SET factura_folio = ? WHERE id = ?').run(folio, o.id);
-        if (o.cxp_id) db.prepare("UPDATE cuentas_por_pagar SET factura_folio = ? WHERE id = ? AND (factura_folio IS NULL OR factura_folio = '')").run(folio, o.cxp_id);
+        if (!o.factura_folio) db.prepare('UPDATE main.ordenes_compra SET factura_folio = ? WHERE id = ?').run(folio, o.id);
+        if (o.cxp_id) db.prepare("UPDATE main.cuentas_por_pagar SET factura_folio = ? WHERE id = ? AND (factura_folio IS NULL OR factura_folio = '')").run(folio, o.cxp_id);
       }
       return r;
     })();
@@ -184,7 +184,7 @@ module.exports = function expedienteOC(app, db, h, { leer, esAdmin, folioOC }) {
     if (!esAdmin(req) && !(d.subido_por === req.usuarioSesion.id && o.estado === 'borrador')) return res.status(403).json({ error: 'Solo administración puede quitar documentos de una orden autorizada o que subió otra persona' });
     const motivo = String(req.body?.motivo || '').trim().slice(0, 300);
     if ((motivo.match(/[\p{L}\p{N}]/gu) || []).length < 5) return res.status(400).json({ error: 'Escribe por qué se quita (mínimo 5 letras)' });
-    db.prepare("UPDATE documentos_oc SET eliminado = 1, eliminado_por = ?, eliminado_at = datetime('now','localtime'), motivo_eliminado = ? WHERE id = ?").run(req.usuarioSesion.nombre, motivo, d.id);
+    db.prepare("UPDATE main.documentos_oc SET eliminado = 1, eliminado_por = ?, eliminado_at = datetime('now','localtime'), motivo_eliminado = ? WHERE id = ?").run(req.usuarioSesion.nombre, motivo, d.id);
     audit(req, d.oc_id, 'documento quitado', `${TIPOS[d.tipo]?.nombre || d.tipo}: «${d.nombre}» · motivo: ${motivo}`);
     res.json({ ok: true });
   }));

@@ -11,12 +11,14 @@
 // («OC-202610-0034», «oc 202610 34», «34»), teléfonos con cualquier formato, y si una fuente falla las demás siguen.
 const { limitador } = require('./seguridad');
 const { folioSol } = require('./solicitudes');
+const { folio: folioCentral } = require('./sucursales');
 
 const MIN = 2, MAX = 80, POR_GRUPO = 6, MAX_PALABRAS = 6;
 const quitarAcentos = t => String(t ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
 const mes = c => String(c || '').slice(0, 7).replace('-', '');
 const pad = id => String(id).padStart(4, '0');
-const folioDe = (prefijo, id, creado) => `${prefijo}-${mes(creado)}-${pad(id)}`;
+const TABLA = { COT: 'leads', OS: 'leads', SOL: 'solicitudes_compra', OC: 'ordenes_compra' };
+const folioDe = (prefijo, id, creado) => folioCentral(prefijo, TABLA[prefijo], id, creado);
 const pesos = c => (c == null ? null : Math.round(c) / 100);
 const ESCAPE = s => s.replace(/[\\%_]/g, m => '\\' + m); // «%» y «_» como letras, no como comodines
 
@@ -28,12 +30,12 @@ function textoPartidas(json) {
 // Entiende lo que se escribió: palabras, si parece folio (y de qué tipo) y si trae un teléfono.
 function interpretar(q) {
   const limpio = String(q).replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim();
-  const folio = limpio.match(/^(cot|os|sol|oc|cli)?[\s-]*(?:(\d{6})[\s-]+)?0*(\d{1,7})$/i);
+  const folio = limpio.match(/^(cot|os|sol|oc|cli)?[\s-]*(?:([a-z][a-z0-9]{1,5})[\s-]+)?(?:(\d{6})[\s-]+)?0*(\d{1,7})$/i);
   const digitos = limpio.replace(/\D/g, '');
   return {
     limpio,
     palabras: [...new Set(quitarAcentos(limpio).split(/[\s,;]+/).filter(Boolean))].slice(0, MAX_PALABRAS),
-    folio: folio ? { tipo: (folio[1] || '').toLowerCase() || null, mes: folio[2] || null, id: Number(folio[3]) } : null,
+    folio: folio ? { tipo: (folio[1] || '').toLowerCase() || null, clave: folio[2] ? folio[2].toUpperCase() : null, mes: folio[3] || null, id: Number(folio[4]) } : null,
     // Un número de 7 a 13 dígitos (con o sin espacios, guiones o +52) se busca también como teléfono: los últimos 10.
     telefono: digitos.length >= 7 && digitos.length <= 13 && /^[\d\s()+.-]+$/.test(limpio) ? digitos.slice(-10) : null,
   };
@@ -54,7 +56,7 @@ module.exports = function buscador(app, db, h) {
   const FUENTES = [
     {
       tipo: 'cliente', titulo: 'Clientes', prefijo: 'cli', puede: () => true,
-      base: `FROM clientes c`,
+      base: `FROM clientes c WHERE (en_alcance(c.sucursal_id) OR EXISTS (SELECT 1 FROM leads lv WHERE lv.cliente_id = c.id))`,
       texto: `'cli-' || printf('%04d', c.id) || ' ' || COALESCE(c.nombre,'') || ' ' || COALESCE(c.empresa_contacto,'') || ' ' || COALESCE(c.rfc,'') || ' ' || COALESCE(c.direccion,'') || ' ' || COALESCE(c.correo,'')`,
       telefono: `(c.telefono_normalizado LIKE ? OR solo_digitos(c.telefono_alterno) LIKE ? OR EXISTS (SELECT 1 FROM telefonos_cliente t WHERE t.cliente_id = c.id AND t.telefono_normalizado LIKE ?))`, telParams: 3,
       porId: `c.id = ?`,
@@ -65,9 +67,9 @@ module.exports = function buscador(app, db, h) {
     ...[['cotizacion', 'Cotizaciones', 'cot', `l.estatus <> 'ganado'`], ['orden_servicio', 'Órdenes de servicio', 'os', `l.estatus = 'ganado'`]].map(([tipo, titulo, prefijo, filtro]) => ({
       tipo, titulo, prefijo, puede: () => true,
       base: `FROM leads l LEFT JOIN clientes c ON c.id = l.cliente_id LEFT JOIN catalogo_servicios s ON s.id = l.servicio_id WHERE ${filtro}`,
-      texto: `'${prefijo}-' || strftime('%Y%m', l.created_at) || '-' || printf('%04d', l.id) || ' ' || COALESCE(l.nombre,'') || ' ' || COALESCE(l.empresa_contacto,'') || ' ' || COALESCE(c.empresa_contacto,'') || ' ' || COALESCE(c.nombre,'') || ' ' || COALESCE(c.rfc,'') || ' ' || COALESCE(l.direccion,'') || ' ' || COALESCE(s.nombre,'') || ' ' || texto_partidas(l.partidas_json) || ' ' || COALESCE(l.factura_folio,'') || ' ' || COALESCE(l.orden_generador,'') || ' ' || COALESCE(l.equipo,'') || ' ' || COALESCE(l.proyecto,'')`,
+      texto: `'${prefijo}-' || COALESCE((SELECT lower(su.clave) FROM sucursales su WHERE su.id = l.sucursal_id AND l.folio_num IS NOT NULL) || '-', '') || strftime('%Y%m', l.created_at) || '-' || printf('%04d', COALESCE(l.folio_num, l.id)) || ' ' || COALESCE(l.nombre,'') || ' ' || COALESCE(l.empresa_contacto,'') || ' ' || COALESCE(c.empresa_contacto,'') || ' ' || COALESCE(c.nombre,'') || ' ' || COALESCE(c.rfc,'') || ' ' || COALESCE(l.direccion,'') || ' ' || COALESCE(s.nombre,'') || ' ' || texto_partidas(l.partidas_json) || ' ' || COALESCE(l.factura_folio,'') || ' ' || COALESCE(l.orden_generador,'') || ' ' || COALESCE(l.equipo,'') || ' ' || COALESCE(l.proyecto,'')`,
       telefono: `l.telefono_normalizado LIKE ?`, telParams: 1,
-      porId: `l.id = ?`, porMes: `strftime('%Y%m', l.created_at) = ?`,
+      porId: `l.id = ?`, conSucursal: 'l', porMes: `strftime('%Y%m', l.created_at) = ?`,
       campos: `l.id, l.created_at, l.estatus, l.ejecucion, l.valor, l.fecha_servicio, l.factura_folio, COALESCE(c.empresa_contacto, l.empresa_contacto, c.nombre, l.nombre) AS cliente, s.nombre AS servicio`,
       orden: `l.id DESC`,
       pinta: l => ({ id: l.id, folio: folioDe(prefijo.toUpperCase(), l.id, l.created_at), titulo: l.cliente || 'Sin cliente', detalle: [l.servicio, l.factura_folio ? 'Factura ' + l.factura_folio : null].filter(Boolean).join(' · '),
@@ -77,8 +79,8 @@ module.exports = function buscador(app, db, h) {
     {
       tipo: 'solicitud', titulo: 'Solicitudes de compra', prefijo: 'sol', puede: () => true,
       base: `FROM solicitudes_compra x JOIN centros_costo cc ON cc.id = x.centro_id LEFT JOIN ordenes_compra o ON o.id = x.oc_id`,
-      texto: `'sol-' || strftime('%Y%m', x.created_at) || '-' || printf('%04d', x.id) || ' ' || x.que || ' ' || x.para_que || ' ' || COALESCE(x.equipo,'') || ' ' || x.solicitante_nombre || ' ' || cc.nombre || ' ' || COALESCE('oc-' || strftime('%Y%m', o.created_at) || '-' || printf('%04d', o.id), '')`,
-      porId: `x.id = ?`, porMes: `strftime('%Y%m', x.created_at) = ?`,
+      texto: `'sol-' || COALESCE((SELECT lower(su.clave) FROM sucursales su WHERE su.id = x.sucursal_id AND x.folio_num IS NOT NULL) || '-', '') || strftime('%Y%m', x.created_at) || '-' || printf('%04d', COALESCE(x.folio_num, x.id)) || ' ' || x.que || ' ' || x.para_que || ' ' || COALESCE(x.equipo,'') || ' ' || x.solicitante_nombre || ' ' || cc.nombre || ' ' || COALESCE('oc-' || strftime('%Y%m', o.created_at) || '-' || printf('%04d', o.id), '')`,
+      porId: `x.id = ?`, conSucursal: 'x', porMes: `strftime('%Y%m', x.created_at) = ?`,
       campos: `x.id, x.created_at, x.que, x.estado, x.urgente, x.solicitante_nombre, cc.nombre AS centro`,
       orden: `x.id DESC`,
       pinta: x => ({ id: x.id, folio: folioSol(x), titulo: x.que, detalle: [x.centro, 'pidió ' + x.solicitante_nombre, x.urgente ? 'URGENTE' : null].filter(Boolean).join(' · '),
@@ -87,8 +89,8 @@ module.exports = function buscador(app, db, h) {
     {
       tipo: 'orden_compra', titulo: 'Órdenes de compra', prefijo: 'oc', puede: () => true,
       base: `FROM ordenes_compra o JOIN proveedores p ON p.id = o.proveedor_id JOIN centros_costo cc ON cc.id = o.centro_id LEFT JOIN solicitudes_compra x ON x.id = o.solicitud_id`,
-      texto: `'oc-' || strftime('%Y%m', o.created_at) || '-' || printf('%04d', o.id) || ' ' || p.nombre || ' ' || COALESCE(p.rfc,'') || ' ' || cc.nombre || ' ' || texto_partidas(o.partidas_json) || ' ' || COALESCE(o.nota,'') || ' ' || COALESCE(o.observaciones,'') || ' ' || COALESCE(o.factura_folio,'') || ' ' || COALESCE('sol-' || strftime('%Y%m', x.created_at) || '-' || printf('%04d', x.id), '')`,
-      porId: `o.id = ?`, porMes: `strftime('%Y%m', o.created_at) = ?`,
+      texto: `'oc-' || COALESCE((SELECT lower(su.clave) FROM sucursales su WHERE su.id = o.sucursal_id AND o.folio_num IS NOT NULL) || '-', '') || strftime('%Y%m', o.created_at) || '-' || printf('%04d', COALESCE(o.folio_num, o.id)) || ' ' || p.nombre || ' ' || COALESCE(p.rfc,'') || ' ' || cc.nombre || ' ' || texto_partidas(o.partidas_json) || ' ' || COALESCE(o.nota,'') || ' ' || COALESCE(o.observaciones,'') || ' ' || COALESCE(o.factura_folio,'') || ' ' || COALESCE('sol-' || strftime('%Y%m', x.created_at) || '-' || printf('%04d', x.id), '')`,
+      porId: `o.id = ?`, conSucursal: 'o', porMes: `strftime('%Y%m', o.created_at) = ?`,
       campos: `o.id, o.created_at, o.estado, o.total_cent, o.fecha, o.recibida_at, p.nombre AS proveedor, texto_partidas(o.partidas_json) AS concepto`,
       orden: `o.id DESC`,
       pinta: o => ({ id: o.id, folio: folioDe('OC', o.id, o.created_at), titulo: o.proveedor, detalle: String(o.concepto || '').slice(0, 90), monto: pesos(o.total_cent),
@@ -119,8 +121,12 @@ module.exports = function buscador(app, db, h) {
     const where = f.base.includes(' WHERE ') ? ' AND ' : ' WHERE ';
     let exacta = null;
     // Folio: el número del registro (y el mes, si se escribió; si no coincide, no trae nada para no confundir).
-    if (i.folio && f.porId && (!i.folio.tipo || i.folio.tipo === f.prefijo) && !(i.folio.mes && !f.porMes)) {
-      const fila = db.prepare(`SELECT ${f.campos} ${f.base}${where}${f.porId}${i.folio.mes ? ' AND ' + f.porMes : ''} LIMIT 1`).get(i.folio.id, ...(i.folio.mes ? [i.folio.mes] : []));
+    if (i.folio && f.porId && (!i.folio.tipo || i.folio.tipo === f.prefijo) && !(i.folio.mes && !f.porMes) && !(i.folio.clave && !f.conSucursal)) {
+      // Con sucursal: su consecutivo propio (folio_num); sin ella, también los folios de antes (por id).
+      const a = f.conSucursal, suc = i.folio.clave ? db.prepare('SELECT id FROM sucursales WHERE clave = ?').get(i.folio.clave) : null;
+      const cond = !a ? f.porId : i.folio.clave ? `${a}.sucursal_id = ? AND ${a}.folio_num = ?` : `((${a}.id = ? AND ${a}.folio_num IS NULL) OR ${a}.folio_num = ?)`;
+      const ps = !a ? [i.folio.id] : i.folio.clave ? [suc?.id ?? -1, i.folio.id] : [i.folio.id, i.folio.id];
+      const fila = db.prepare(`SELECT ${f.campos} ${f.base}${where}${cond}${i.folio.mes ? ' AND ' + f.porMes : ''} ORDER BY ${a ? a + '.folio_num IS NULL DESC, ' : ''}1 LIMIT 1`).get(...ps, ...(i.folio.mes ? [i.folio.mes] : []));
       if (fila) exacta = { ...f.pinta(fila), exacta: true };
       // Cliente que se juntó con otro: su ID viejo lleva al cliente que quedó.
       else if (f.tipo === 'cliente') {
@@ -158,7 +164,9 @@ module.exports = function buscador(app, db, h) {
       catch (err) { console.error('[buscar]', f.tipo, err.message); grupos.push({ tipo: f.tipo, titulo: f.titulo, error: 'No se pudo buscar aquí' }); }
     }
     // Coincidencia exacta de folio con tipo (COT-, OS-, SOL-, OC-, CLI-): se abre directo con Enter.
-    const exacta = i.folio?.tipo ? grupos.flatMap(g => (g.items || []).filter(x => x.exacta).map(x => ({ ...x, tipo: g.tipo }))).find(Boolean) || null : null;
+    // Con la clave de sucursal y sin tipo («cdmx 2»): si solo hay un registro con ese número, también se abre directo.
+    const exactas = grupos.flatMap(g => (g.items || []).filter(x => x.exacta).map(x => ({ ...x, tipo: g.tipo })));
+    const exacta = i.folio?.tipo ? exactas[0] || null : i.folio?.clave && exactas.length === 1 ? exactas[0] : null;
     res.set('Cache-Control', 'no-store');
     res.json({ q: i.limpio, exacta, grupos });
   }));

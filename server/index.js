@@ -15,6 +15,7 @@ const PORT = process.env.PORT || 3210;
 // URL pública del CRM; se usa en los enlaces de los correos (nunca se toma del encabezado Host).
 const URL_BASE = (process.env.APP_URL || `http://localhost:${PORT}`).replace(/\/+$/, '');
 
+const alcance = require('./alcance');
 const { hoyMexico } = require('./fechas');
 const Importes = require('../public/importes.js'); // mismo cálculo de IVA que el navegador
 
@@ -111,6 +112,7 @@ function limpiarLoginFallidos(req) {
 function h(fn) {
   return (req, res) => {
     try {
+      if (req.alcanceSuc) return alcance.correr(req.alcanceSuc, () => fn(req, res));
       fn(req, res);
     } catch (err) {
       console.error(`Error en ${req.method} ${req.originalUrl}:`, err.message);
@@ -140,6 +142,9 @@ app.use('/api', (req, res, next) => {
   if (RUTAS_PUBLICAS.has(req.path)) return next();
   requireAuth(req, res, next);
 });
+// Sucursales: alcance de cada petición (qué sucursales ve) y candados en la base. Va antes de las demás rutas.
+const suc = require('./sucursales')(app, db, h, { audit: { registrar: (...a) => app.locals.auditoria?.registrar(...a), diferencias: (...a) => app.locals.auditoria?.diferencias(...a) } });
+app.locals.sucursales = suc;
 
 // Bitácora general de movimientos (clientes, proveedores, compras, usuarios, catálogos, eliminados).
 const audit = require('./auditoria')(app, db, h);
@@ -162,7 +167,9 @@ const demo = require('./demo')(app, db, { sesiones, PORT, SESSION_TTL_MS });
 app.get('/api/usuarios', h((req, res) => {
   // El correo solo lo ve el administrador (para gestionar cuentas).
   const columnas = req.usuarioSesion.rol === 'admin' ? 'id, nombre, rol, activo, correo, correo_verificado' : 'id, nombre, rol, activo';
-  res.json(db.prepare(`SELECT ${columnas} FROM usuarios WHERE activo = 1 ORDER BY nombre`).all());
+  const a = req.alcanceSuc;
+  const filas = db.prepare(`SELECT ${columnas} FROM usuarios WHERE activo = 1 ORDER BY nombre`).all().map(u => ({ ...u, sucursales: suc.sucursalesDe(u.id) }));
+  res.json(filas.filter(u => a.todo || u.id === req.usuarioSesion.id || u.sucursales.some(s => a.ids.has(s))));
 }));
 
 // ---------- Login ----------
@@ -215,7 +222,7 @@ app.post('/api/login', limitarLoginPorIp, limitarLogin, h((req, res) => {
   const debil = !!problemaPassword(password, { nombre: usuario.nombre, correo: usuario.correo || '' });
   if (debil && !usuario.debe_cambiar_password) db.prepare('UPDATE usuarios SET debe_cambiar_password = 1 WHERE id = ?').run(usuario.id);
   const token = crearSesion(usuario.id);
-  res.json({ token, id: usuario.id, nombre: usuario.nombre, rol: usuario.rol, cambiar_password: debil || !!usuario.debe_cambiar_password });
+  res.json({ token, id: usuario.id, nombre: usuario.nombre, rol: usuario.rol === 'gerente' ? 'admin' : usuario.rol, rol_real: usuario.rol, cambiar_password: debil || !!usuario.debe_cambiar_password });
 }));
 app.post('/api/logout', h((req, res) => {
   const encabezado = req.headers.authorization || '';
@@ -250,7 +257,10 @@ app.post('/api/usuarios', h((req, res) => {
   if (correo && db.prepare('SELECT id FROM usuarios WHERE correo = ?').get(correo)) return res.status(409).json({ error: 'Ya existe un usuario con ese correo' });
   const problema = problemaPassword(password, { nombre, correo: correo || '' });
   if (problema) return res.status(400).json({ error: problema });
-  if (!['admin', 'ventas', 'atencion', 'tecnico', 'costos'].includes(rol)) return res.status(400).json({ error: 'Rol inválido' });
+  if (![...['admin', 'ventas', 'atencion', 'tecnico', 'costos'], 'gerente'].includes(rol)) return res.status(400).json({ error: 'Rol inválido' });
+  if (['admin', 'gerente'].includes(rol) && !suc.esGeneral(req)) return res.status(403).json({ error: 'Solo el administrador general crea administradores o gerentes' });
+  const sucs = suc.sucursalesParaUsuario(req, req.body.sucursales, rol);
+  if (sucs.error) return res.status(400).json({ error: sucs.error });
 
   const existente = db.prepare('SELECT id FROM usuarios WHERE nombre = ?').get(nombre.trim());
   if (existente) return res.status(409).json({ error: 'Ya existe un usuario con ese nombre' });
@@ -259,7 +269,8 @@ app.post('/api/usuarios', h((req, res) => {
   // debe cambiar la contraseña al entrar la primera vez (así el administrador no conoce la definitiva).
   const temporal = req.body.temporal === true ? 1 : 0;
   const info = db.prepare('INSERT INTO usuarios (nombre, password, rol, correo, correo_verificado, debe_cambiar_password) VALUES (?, ?, ?, ?, ?, ?)').run(nombre.trim(), hashPassword(password), rol, correo, correo ? 1 : 0, temporal);
-  audit.registrar(req, 'usuario', Number(info.lastInsertRowid), 'creado', `${nombre.trim()} · rol ${rol}${correo ? ' · ' + correo : ''}${temporal ? ' · contraseña temporal' : ''}`);
+  suc.guardarSucursalesUsuario(Number(info.lastInsertRowid), sucs.ids);
+  audit.registrar(req, 'usuario', Number(info.lastInsertRowid), 'creado', `${nombre.trim()} · rol ${rol}${correo ? ' · ' + correo : ''}${temporal ? ' · contraseña temporal' : ''}${sucs.ids.length ? ' · sucursales ' + sucs.ids.map(suc.claveDe).join(', ') : ' · todas las sucursales'}`);
   res.status(201).json({ id: info.lastInsertRowid, nombre: nombre.trim(), rol, correo });
 }));
 
@@ -270,13 +281,16 @@ app.get('/api/servicios', h((req, res) => {
 app.put('/api/usuarios/:id', h((req, res) => {
   if (soloAdmin(req, res, 'Solo un administrador puede administrar usuarios')) return;
   const usuario = db.prepare('SELECT * FROM usuarios WHERE id = ? AND activo = 1').get(req.params.id);
-  if (!usuario) return res.status(404).json({ error: 'Usuario no encontrado' });
+  if (!usuario || !suc.puedeAdministrar(req, usuario)) return res.status(404).json({ error: 'Usuario no encontrado' });
   const nombre = req.body.nombre !== undefined ? String(req.body.nombre).trim().replace(/\s+/g, ' ') : usuario.nombre;
   const problemaN = problemaNombre(nombre);
   if (problemaN) return res.status(400).json({ error: problemaN });
   if (db.prepare('SELECT id FROM usuarios WHERE lower(nombre) = lower(?) AND id <> ?').get(nombre, usuario.id)) return res.status(409).json({ error: 'Ya existe un usuario con ese nombre' });
   const rol = req.body.rol !== undefined ? req.body.rol : usuario.rol;
-  if (!['admin', 'ventas', 'atencion', 'tecnico', 'costos'].includes(rol)) return res.status(400).json({ error: 'Rol inválido' });
+  if (![...['admin', 'ventas', 'atencion', 'tecnico', 'costos'], 'gerente'].includes(rol)) return res.status(400).json({ error: 'Rol inválido' });
+  if (['admin', 'gerente'].includes(rol) && rol !== usuario.rol && !suc.esGeneral(req)) return res.status(403).json({ error: 'Solo el administrador general asigna administradores o gerentes' });
+  const sucsNuevas = req.body.sucursales !== undefined || (usuario.rol === 'admin' && rol !== 'admin') ? suc.sucursalesParaUsuario(req, req.body.sucursales, rol) : null;
+  if (sucsNuevas?.error) return res.status(400).json({ error: sucsNuevas.error });
   if (usuario.rol === 'admin' && rol !== 'admin' && db.prepare("SELECT COUNT(*) c FROM usuarios WHERE rol = 'admin' AND activo = 1").get().c <= 1) {
     return res.status(400).json({ error: 'Debe quedar al menos un administrador' });
   }
@@ -288,10 +302,14 @@ app.put('/api/usuarios/:id', h((req, res) => {
     if (correo !== usuario.correo) verificado = correo ? 1 : 0; // el admin responde por el correo que captura
   }
   db.prepare('UPDATE usuarios SET nombre = ?, rol = ?, correo = ?, correo_verificado = ? WHERE id = ?').run(nombre, rol, correo, verificado, usuario.id);
-  if (rol !== usuario.rol) sesiones.revocarUsuario(usuario.id); // que el nuevo rol aplique de inmediato
+  const sucsAntes = suc.sucursalesDe(usuario.id);
+  if (sucsNuevas) suc.guardarSucursalesUsuario(usuario.id, sucsNuevas.ids);
+  const cambioSucs = sucsNuevas && sucsAntes.join() !== sucsNuevas.ids.join();
+  if (cambioSucs) audit.registrar(req, 'usuario', usuario.id, 'sucursales', `${usuario.nombre}: ${sucsAntes.map(suc.claveDe).join(', ') || 'todas'} → ${sucsNuevas.ids.map(suc.claveDe).join(', ') || 'todas'}`);
+  if (rol !== usuario.rol || cambioSucs) sesiones.revocarUsuario(usuario.id); // que el nuevo rol o sucursal aplique de inmediato
   const difUsuario = audit.diferencias(usuario, { nombre, rol, correo }, ['nombre', 'rol', 'correo']);
   if (difUsuario) audit.registrar(req, 'usuario', usuario.id, 'editado', difUsuario);
-  res.json(db.prepare('SELECT id, nombre, rol, correo, correo_verificado FROM usuarios WHERE id = ?').get(usuario.id));
+  res.json({ ...db.prepare('SELECT id, nombre, rol, correo, correo_verificado FROM usuarios WHERE id = ?').get(usuario.id), sucursales: suc.sucursalesDe(usuario.id) });
 }));
 
 // Asignar una contraseña temporal (solo admin). El usuario deberá cambiarla al entrar y se
@@ -299,7 +317,7 @@ app.put('/api/usuarios/:id', h((req, res) => {
 app.post('/api/usuarios/:id/password', h((req, res) => {
   if (soloAdmin(req, res, 'Solo un administrador puede asignar contraseñas')) return;
   const usuario = db.prepare('SELECT * FROM usuarios WHERE id = ? AND activo = 1').get(req.params.id);
-  if (!usuario) return res.status(404).json({ error: 'Usuario no encontrado' });
+  if (!usuario || (usuario.id !== req.usuarioSesion.id && !suc.puedeAdministrar(req, usuario))) return res.status(404).json({ error: 'Usuario no encontrado' });
   const problema = problemaPassword(req.body.password, { nombre: usuario.nombre, correo: usuario.correo || '' });
   if (problema) return res.status(400).json({ error: problema });
   const propio = usuario.id === req.usuarioSesion.id;
@@ -315,7 +333,7 @@ app.delete('/api/usuarios/:id', h((req, res) => {
     return res.status(403).json({ error: 'Solo un administrador puede eliminar usuarios' });
   }
   const usuario = db.prepare('SELECT * FROM usuarios WHERE id = ?').get(req.params.id);
-  if (!usuario) return res.status(404).json({ error: 'Usuario no encontrado' });
+  if (!usuario || !suc.puedeAdministrar(req, usuario)) return res.status(404).json({ error: 'Usuario no encontrado' });
   if (usuario.id === req.usuarioSesion.id) return res.status(400).json({ error: 'No puedes desactivar tu propia cuenta' });
   if (usuario.rol === 'admin') {
     const totalAdmins = db.prepare('SELECT COUNT(*) c FROM usuarios WHERE rol = ? AND activo = 1').get('admin').c;
@@ -329,7 +347,7 @@ app.delete('/api/usuarios/:id', h((req, res) => {
   sesiones.revocarUsuario(Number(req.params.id));
   audit.registrar(req, 'usuario', Number(req.params.id), 'desactivado', usuario.nombre + ' ya no puede entrar');
   /* Opcional: reasignar leads abiertos a un usuario "Sin asignar" o al admin.
-  db.prepare('UPDATE leads SET responsable_id = ? WHERE responsable_id = ? AND estatus = ?')
+  db.prepare('UPDATE main.leads SET responsable_id = ? WHERE responsable_id = ? AND estatus = ?')
     .run(solicitante_id, req.params.id, 'abierto'); */
   res.json({ ok: true, id: Number(req.params.id), nombre: usuario.nombre });
 }));
@@ -450,8 +468,10 @@ app.post('/api/canales', h((req, res) => {
 app.get('/api/leads/buscar-telefono/:telefono', h((req, res) => {
   const norm = normalizarTelefono(req.params.telefono);
   if (norm.length < 8) return res.json({ cliente: null, solicitudes: [] });
-  const cliente = unicos.porTelefono(norm);
-  if (!cliente) return res.json({ cliente: null, solicitudes: [] });
+  const encontrado = unicos.porTelefono(norm);
+  if (!encontrado) return res.json({ cliente: null, solicitudes: [] });
+  if (!suc.verCliente(encontrado.id)) return res.json({ cliente: { ...unicos.resumen(encontrado), telefono: req.params.telefono }, solicitudes: [], tiene_abierta: false });
+  const cliente = encontrado;
   const solicitudes = db.prepare(`
     SELECT l.*, s.nombre AS servicio_nombre, u.nombre AS responsable_nombre, ca.nombre AS canal_nombre
     FROM leads l
@@ -483,10 +503,13 @@ app.get('/api/leads', h((req, res) => {
   if (estatus) { sql += ' AND l.estatus = ?'; params.push(estatus); }
   if (q) {
     // También por folio: «COT-202610-0125», «OS-202610-0125», «os 202610 125» o solo «0125». Si trae el mes, debe coincidir.
-    const f = String(q).trim().match(/^(?:(?:cot|os)[\s-]*)?(?:(\d{6})[\s-]+)?0*(\d{1,7})$/i);
-    sql += ' AND (l.nombre LIKE ? OR l.empresa_contacto LIKE ? OR l.telefono LIKE ? OR CAST(l.cliente_id AS TEXT) = ?' + (f ? " OR (l.id = ? AND (? IS NULL OR strftime('%Y%m', l.created_at) = ?))" : '') + ')';
+    // Con sucursal: «OS-CDMX-202610-0001» o «cdmx 1» (consecutivo de esa sucursal); los de antes, por su número.
+    const f = String(q).trim().match(/^(?:(?:cot|os)[\s-]*)?(?:([a-z][a-z0-9]{1,5})[\s-]+)?(?:(\d{6})[\s-]+)?0*(\d{1,7})$/i);
+    const folioCond = !f ? '' : f[1] ? " OR (l.sucursal_id = (SELECT id FROM sucursales WHERE clave = ?) AND l.folio_num = ? AND (? IS NULL OR strftime('%Y%m', l.created_at) = ?))"
+      : " OR (((l.id = ? AND l.folio_num IS NULL) OR l.folio_num = ?) AND (? IS NULL OR strftime('%Y%m', l.created_at) = ?))";
+    sql += ' AND (l.nombre LIKE ? OR l.empresa_contacto LIKE ? OR l.telefono LIKE ? OR CAST(l.cliente_id AS TEXT) = ?' + folioCond + ')';
     params.push(`%${q}%`, `%${q}%`, `%${q}%`, q);
-    if (f) params.push(Number(f[2]), f[1] || null, f[1] || null);
+    if (f) params.push(f[1] ? f[1].toUpperCase() : Number(f[3]), Number(f[3]), f[2] || null, f[2] || null);
   }
   if (desde) { sql += " AND date(l.created_at) >= date(?)"; params.push(desde); }
   if (hasta) { sql += " AND date(l.created_at) <= date(?)"; params.push(hasta); }
@@ -615,8 +638,9 @@ app.post('/api/leads', validarPartidas, validarRegistro, h((req, res) => {
   if (!validarCorreo(correo)) return res.status(400).json({ error: 'El correo electrónico no es válido' });
   if (giro && !tipoClienteValido(giro)) return res.status(400).json({ error: 'Giro inválido' });
   // «Es el mismo cliente»: el teléfono nuevo se agrega a ese cliente (agregar_telefono_a) en lugar de crear otro.
-  const agregarTelA = req.body.agregar_telefono_a ? Number(req.body.agregar_telefono_a) : null;
-  const idElegido = agregarTelA || cliente_id;
+  let agregarTelA = req.body.agregar_telefono_a ? Number(req.body.agregar_telefono_a) : null;
+  if (agregarTelA && !suc.puedeEditarCliente(req, agregarTelA)) { req.body.cliente_id = agregarTelA; agregarTelA = null; }
+  const idElegido = agregarTelA || req.body.cliente_id;
   const contactoElegido = idElegido ? db.prepare('SELECT * FROM clientes WHERE id = ?').get(idElegido) : null;
   if (idElegido && !contactoElegido) return res.status(404).json({error:'Contacto no encontrado'});
   if (contactoElegido) {
@@ -625,7 +649,7 @@ app.post('/api/leads', validarPartidas, validarRegistro, h((req, res) => {
   }
   if (agregarTelA) {
     const dueño = unicos.porTelefono(telefono);
-    if (dueño && dueño.id !== agregarTelA) return res.status(409).json({ error: `Ese teléfono ya es de ${unicos.folioCliente(dueño.id)} · ${dueño.empresa_contacto || dueño.nombre}` });
+    if (dueño && dueño.id !== agregarTelA) return res.status(409).json({ error: `Ese teléfono ya es de ${unicos.etiqueta(dueño)}` });
   }
   if (!responsable_id || !db.prepare('SELECT id FROM usuarios WHERE id = ? AND activo = 1').get(responsable_id)) return res.status(400).json({error:'Selecciona un responsable activo'});
   let { estatus } = req.body;
@@ -695,11 +719,12 @@ app.post('/api/leads', validarPartidas, validarRegistro, h((req, res) => {
   const costosDup = duplicadoDe ? finanzas.validarCostosDuplicados(duplicadoDe, req.body.costos_duplicar) : { items: [] };
   if (costosDup.error) return res.status(400).json({ error: costosDup.error });
 
-  if(req.body.establecimiento_id && !db.prepare("SELECT id FROM establecimientos WHERE id=? AND cliente_id=? AND estado<>'no_contactar'").get(req.body.establecimiento_id,cliente_id))return res.status(400).json({error:'El establecimiento no está vinculado a este contacto o está marcado como no contactar'});
+  if(req.body.establecimiento_id && !db.prepare("SELECT id FROM establecimientos WHERE id=? AND cliente_id=? AND estado<>'no_contactar'").get(req.body.establecimiento_id,req.body.cliente_id))return res.status(400).json({error:'El establecimiento no está vinculado a este contacto o está marcado como no contactar'});
   const creado=db.transaction(()=>{
   if (!cliente) {
     const infoC = db.prepare(`INSERT INTO clientes (telefono, telefono_normalizado, nombre, empresa_contacto, direccion, correo, giro)
       VALUES (?, ?, ?, ?, ?, ?, ?)`).run(telefono, norm, nombre || null, empresa_contacto || null, direccion || null, correo?.trim() || null, giro || null);
+    suc.asignar('clientes', Number(infoC.lastInsertRowid));
     cliente = db.prepare('SELECT * FROM clientes WHERE id = ?').get(infoC.lastInsertRowid);
     unicos.recordarDistintos(cliente.id, distintoDe, req.usuarioSesion.id);
   }
@@ -711,7 +736,7 @@ app.post('/api/leads', validarPartidas, validarRegistro, h((req, res) => {
   const resp = responsable_id;
 
   const info = db.prepare(`
-    INSERT INTO leads (cliente_id, telefono, telefono_normalizado, nombre, empresa_contacto, direccion, canal_id, servicio_id, responsable_id, notas_iniciales, creado_por, valor, fecha_servicio, fecha_cotizacion, estatus, urgente, origen, duplicado_de, etapa)
+    INSERT INTO main.leads (cliente_id, telefono, telefono_normalizado, nombre, empresa_contacto, direccion, canal_id, servicio_id, responsable_id, notas_iniciales, creado_por, valor, fecha_servicio, fecha_cotizacion, estatus, urgente, origen, duplicado_de, etapa)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     cliente.id, telefono, norm,
@@ -729,21 +754,22 @@ app.post('/api/leads', validarPartidas, validarRegistro, h((req, res) => {
     etapaInicial
   );
 
-  if(req.body.partidas_json!==undefined)db.prepare('UPDATE leads SET partidas_json = ?, iva_modo = ?, iva_tasa = ?, iva_cent = ? WHERE id = ?').run(req.body.partidas_json,req.body.iva_modo??null,req.body.iva_tasa??null,req.body.iva_cent??null,info.lastInsertRowid);
-  db.prepare('UPDATE leads SET incluye_vigencia = ?, vigencia_hasta = ? WHERE id = ?').run(incluyeVigencia, vigenciaHasta, info.lastInsertRowid);
-  db.prepare('UPDATE leads SET notas_cotizacion = ? WHERE id = ?').run(textoOrden(req.body.notas_cotizacion), info.lastInsertRowid);
-  db.prepare('UPDATE leads SET equipo = ?, operador = ?, observaciones = ?, proyecto = ?, manifiestos = ?, tiros = ? WHERE id = ?').run(textoOrden(req.body.equipo), textoOrden(req.body.operador), textoOrden(req.body.observaciones), textoOrden(req.body.proyecto), textoOrden(req.body.manifiestos), textoOrden(req.body.tiros), info.lastInsertRowid);
-  if(req.body.establecimiento_id)db.prepare('UPDATE leads SET establecimiento_id=? WHERE id=?').run(req.body.establecimiento_id,info.lastInsertRowid);
+  suc.asignar('leads', Number(info.lastInsertRowid));
+  if(req.body.partidas_json!==undefined)db.prepare('UPDATE main.leads SET partidas_json = ?, iva_modo = ?, iva_tasa = ?, iva_cent = ? WHERE id = ?').run(req.body.partidas_json,req.body.iva_modo??null,req.body.iva_tasa??null,req.body.iva_cent??null,info.lastInsertRowid);
+  db.prepare('UPDATE main.leads SET incluye_vigencia = ?, vigencia_hasta = ? WHERE id = ?').run(incluyeVigencia, vigenciaHasta, info.lastInsertRowid);
+  db.prepare('UPDATE main.leads SET notas_cotizacion = ? WHERE id = ?').run(textoOrden(req.body.notas_cotizacion), info.lastInsertRowid);
+  db.prepare('UPDATE main.leads SET equipo = ?, operador = ?, observaciones = ?, proyecto = ?, manifiestos = ?, tiros = ? WHERE id = ?').run(textoOrden(req.body.equipo), textoOrden(req.body.operador), textoOrden(req.body.observaciones), textoOrden(req.body.proyecto), textoOrden(req.body.manifiestos), textoOrden(req.body.tiros), info.lastInsertRowid);
+  if(req.body.establecimiento_id)db.prepare('UPDATE main.leads SET establecimiento_id=? WHERE id=?').run(req.body.establecimiento_id,info.lastInsertRowid);
   // Crear una cotización nunca modifica los datos maestros del contacto.
-  db.prepare(`INSERT INTO historial (lead_id, tipo, texto, usuario, origen) VALUES (?, 'observacion', ?, ?, 'sistema')`)
+  db.prepare(`INSERT INTO main.historial (lead_id, tipo, texto, usuario, origen) VALUES (?, 'observacion', ?, ?, 'sistema')`)
     .run(info.lastInsertRowid, duplicadoDe ? `Orden de servicio duplicada a partir del registro #${duplicadoDe}.` : estatus === 'ganado' ? 'Servicio registrado directamente como contratado.' : 'Cotización creada.', creado_por || null);
 
   if (estatus === 'ganado') finanzas.copiarCredito(info.lastInsertRowid);
   if (costosDup.items.length) {
     const orig = db.prepare('SELECT id, created_at FROM leads WHERE id = ?').get(duplicadoDe);
-    const folioOrig = 'OS-' + String(orig.created_at).slice(0, 7).replace('-', '') + '-' + String(orig.id).padStart(4, '0');
+    const folioOrig = require('./sucursales').folio('OS', 'leads', orig.id, orig.created_at);
     const suma = finanzas.duplicarCostos(info.lastInsertRowid, costosDup.items, fechaServicioFinal, textoOrden(req.body.equipo), req.usuarioSesion.id, folioOrig);
-    db.prepare(`INSERT INTO historial (lead_id, tipo, texto, usuario, origen) VALUES (?, 'observacion', ?, ?, 'sistema')`)
+    db.prepare(`INSERT INTO main.historial (lead_id, tipo, texto, usuario, origen) VALUES (?, 'observacion', ?, ?, 'sistema')`)
       .run(info.lastInsertRowid, `Costos con terceros copiados de ${folioOrig}: ${costosDup.items.length} por $${(suma / 100).toLocaleString('es-MX', { minimumFractionDigits: 2 })} (pendientes de pago en Cuentas por pagar).`, creado_por || null);
   }
   return db.prepare('SELECT * FROM leads WHERE id = ?').get(info.lastInsertRowid);
@@ -882,24 +908,24 @@ app.put('/api/leads/:id', validarPartidas, validarRegistro, h((req, res) => {
   set.push('version = version + 1');
   params.push(id);
 
-  db.prepare(`UPDATE leads SET ${set.join(', ')} WHERE id = ?`).run(...params);
+  db.prepare(`UPDATE main.leads SET ${set.join(', ')} WHERE id = ?`).run(...params);
 
   // Queda registro de cualquier otro dato que cambie (fechas, etapa, responsable, servicios, notas…).
   const otrosCambios = cambiosDeOrden(actual, req.body);
-  if (otrosCambios) db.prepare(`INSERT INTO historial (lead_id, tipo, texto, usuario, origen) VALUES (?, 'observacion', ?, ?, 'sistema')`).run(id, 'Cambios: ' + otrosCambios + '.', req.usuarioSesion.nombre);
+  if (otrosCambios) db.prepare(`INSERT INTO main.historial (lead_id, tipo, texto, usuario, origen) VALUES (?, 'observacion', ?, ?, 'sistema')`).run(id, 'Cambios: ' + otrosCambios + '.', req.usuarioSesion.nombre);
   if (motivoPerdida) {
-    db.prepare('UPDATE leads SET motivo_perdida = ? WHERE id = ?').run(motivoPerdida, id);
-    db.prepare(`INSERT INTO historial (lead_id, tipo, texto, usuario, origen) VALUES (?, 'observacion', ?, ?, 'sistema')`).run(id, 'Cotización no aceptada. Motivo: ' + motivoPerdida, req.usuarioSesion.nombre);
+    db.prepare('UPDATE main.leads SET motivo_perdida = ? WHERE id = ?').run(motivoPerdida, id);
+    db.prepare(`INSERT INTO main.historial (lead_id, tipo, texto, usuario, origen) VALUES (?, 'observacion', ?, ?, 'sistema')`).run(id, 'Cotización no aceptada. Motivo: ' + motivoPerdida, req.usuarioSesion.nombre);
   }
 
   if (req.body.estatus !== undefined && req.body.estatus !== actual.estatus) {
     // Una cotización cerrada (ganada o perdida) ya no necesita recordatorios de seguimiento pendientes:
     // se resuelven solos para no dejar tareas obsoletas en la vista de Alertas.
     if (req.body.estatus === 'ganado' || req.body.estatus === 'perdido') {
-      db.prepare(`UPDATE historial SET resuelta = 1 WHERE lead_id = ? AND tipo = 'alerta' AND resuelta = 0`).run(id);
+      db.prepare(`UPDATE main.historial SET resuelta = 1 WHERE lead_id = ? AND tipo = 'alerta' AND resuelta = 0`).run(id);
     }
     const textoEvento = { ganado: 'Cotización marcada como ganada (servicio contratado).', perdido: 'Cotización marcada como no aceptada.', abierto: 'Cotización reabierta.' }[req.body.estatus] || ('Estatus cambiado a ' + req.body.estatus + '.');
-    db.prepare(`INSERT INTO historial (lead_id, tipo, texto, usuario, origen) VALUES (?, 'observacion', ?, ?, 'sistema')`)
+    db.prepare(`INSERT INTO main.historial (lead_id, tipo, texto, usuario, origen) VALUES (?, 'observacion', ?, ?, 'sistema')`)
       .run(id, textoEvento, req.usuarioSesion?.nombre || null);
     if (req.body.estatus === 'ganado') finanzas.copiarCredito(id);
   }
@@ -909,7 +935,7 @@ app.put('/api/leads/:id', validarPartidas, validarRegistro, h((req, res) => {
     const texto = cambiaImporte
       ? `Importe de la orden cambiado: ${fmt(totalActualCent)} → ${fmt(totalNuevoCent)}${iva ? ' (' + iva + ')' : ''}.`
       : `${iva} en la orden; el total no cambia (${fmt(totalNuevoCent)}).`;
-    db.prepare(`INSERT INTO historial (lead_id, tipo, texto, usuario, origen) VALUES (?, 'observacion', ?, ?, 'sistema')`)
+    db.prepare(`INSERT INTO main.historial (lead_id, tipo, texto, usuario, origen) VALUES (?, 'observacion', ?, ?, 'sistema')`)
       .run(id, texto, req.usuarioSesion.nombre);
   }
   res.json(db.prepare('SELECT * FROM leads WHERE id = ?').get(id));
@@ -928,15 +954,15 @@ app.post('/api/leads/:id/historial', h((req, res) => {
   if (!lead) return res.status(404).json({ error: 'Cotización no encontrada' });
 
   const info = db.prepare(`
-    INSERT INTO historial (lead_id, tipo, texto, fecha_alerta, usuario, origen)
+    INSERT INTO main.historial (lead_id, tipo, texto, fecha_alerta, usuario, origen)
     VALUES (?, ?, ?, ?, ?, ?)
   `).run(req.params.id, tipoFinal, texto, fecha_alerta || null, usuario || null, origen);
-  db.prepare("UPDATE leads SET updated_at = datetime('now','localtime') WHERE id = ?").run(req.params.id);
+  db.prepare("UPDATE main.leads SET updated_at = datetime('now','localtime') WHERE id = ?").run(req.params.id);
   res.status(201).json(db.prepare('SELECT * FROM historial WHERE id = ?').get(info.lastInsertRowid));
 }));
 
 app.put('/api/historial/:id/resolver', h((req, res) => {
-  const info = db.prepare('UPDATE historial SET resuelta = 1 WHERE id = ?').run(req.params.id);
+  const info = db.prepare('UPDATE main.historial SET resuelta = 1 WHERE id = ?').run(req.params.id);
   if (info.changes === 0) return res.status(404).json({ error: 'Registro de historial no encontrado' });
   res.json({ ok: true });
 }));
@@ -959,16 +985,17 @@ app.delete('/api/leads/:id', h((req, res) => {
   if ((motivoEl.match(/[\p{L}\p{N}]/gu) || []).length < 5 || /[<>{}]/.test(motivoEl)) return res.status(400).json({ error: 'Escribe por qué se elimina (mínimo 5 letras)', codigo: 'FALTA_MOTIVO' });
   console.log(`[eliminado] registro #${lead.id} (${lead.estatus}, ${lead.valor ?? 'sin importe'}) de cliente #${lead.cliente_id} por ${req.usuarioSesion.nombre}`);
   // Su historial se borra con ella; en la bitácora general queda una foto de lo que era y quién la eliminó.
-  const folioEl = (lead.estatus === 'ganado' ? 'OS-' : 'COT-') + String(lead.created_at).slice(0, 7).replace('-', '') + '-' + String(lead.id).padStart(4, '0');
+  const folioEl = require('./sucursales').folioLead(lead);
   const notasEl = db.prepare("SELECT COUNT(*) n FROM historial WHERE lead_id = ?").get(lead.id).n;
   audit.registrar(req, 'orden_servicio', lead.id, 'eliminado', `${folioEl} · ${lead.estatus === 'ganado' ? 'orden de servicio' : lead.estatus === 'perdido' ? 'cotización no aceptada' : 'cotización'} de ${unicos.folioCliente(lead.cliente_id)} ${lead.empresa_contacto || lead.nombre || ''} · importe $${Number(lead.valor || 0).toLocaleString('es-MX', { minimumFractionDigits: 2 })} sin IVA · servicio del ${lead.fecha_servicio || '—'} · ${notasEl} movimientos en su historial`);
   // Antes de borrar, su historial pasa al archivo (la ficha del cliente lo sigue mostrando) junto con quién la
   // eliminó y por qué. El cliente y sus otros servicios/cotizaciones no se tocan.
   db.transaction(() => {
-    db.prepare('INSERT INTO historial_archivo (lead_id, cliente_id, folio, tipo, texto, usuario, created_at) SELECT lead_id, ?, ?, tipo, texto, usuario, created_at FROM historial WHERE lead_id = ?').run(lead.cliente_id, folioEl, lead.id);
-    db.prepare("INSERT INTO historial_archivo (lead_id, cliente_id, folio, tipo, texto, usuario, created_at) VALUES (?, ?, ?, 'eliminado', ?, ?, datetime('now','localtime'))")
+    db.prepare('INSERT INTO main.historial_archivo (lead_id, cliente_id, folio, tipo, texto, usuario, created_at) SELECT lead_id, ?, ?, tipo, texto, usuario, created_at FROM historial WHERE lead_id = ?').run(lead.cliente_id, folioEl, lead.id);
+    db.prepare("INSERT INTO main.historial_archivo (lead_id, cliente_id, folio, tipo, texto, usuario, created_at) VALUES (?, ?, ?, 'eliminado', ?, ?, datetime('now','localtime'))")
       .run(lead.id, lead.cliente_id, folioEl, `${lead.estatus === 'ganado' ? 'Orden de servicio' : 'Cotización'} ELIMINADA (importe $${Number(lead.valor || 0).toLocaleString('es-MX', { minimumFractionDigits: 2 })} sin IVA). Motivo: ${motivoEl}`, req.usuarioSesion.nombre);
-    db.prepare('DELETE FROM leads WHERE id = ?').run(req.params.id);
+    db.prepare('UPDATE main.historial_archivo SET sucursal_id = ? WHERE lead_id = ? AND sucursal_id IS NULL').run(lead.sucursal_id, lead.id);
+    db.prepare('DELETE FROM main.leads WHERE id = ?').run(req.params.id);
   })();
   res.json({ ok: true, id: Number(req.params.id) });
 }));
@@ -991,7 +1018,7 @@ const accionDe = t => (ACCIONES.find(([re]) => re.test(t || '')) || [null, 'Movi
 app.get('/api/clientes/:id/movimientos', h((req, res) => {
   const id = Number(req.params.id);
   if (!db.prepare('SELECT 1 FROM clientes WHERE id = ?').get(id)) return res.status(404).json({ error: 'Cliente no encontrado' });
-  const folioL = l => (l.estatus === 'ganado' ? 'OS-' : 'COT-') + String(l.created_at).slice(0, 7).replace('-', '') + '-' + String(l.lead_id).padStart(4, '0');
+  const folioL = l => require('./sucursales').folioLead(l, l.lead_id);
   const ids = [id, ...db.prepare('SELECT id_retirado FROM clientes_fusionados WHERE cliente_id = ?').all(id).map(r => r.id_retirado)];
   const marcas = ids.map(() => '?').join(',');
   const filas = [
@@ -1007,7 +1034,8 @@ app.get('/api/clientes/:id/movimientos', h((req, res) => {
   ];
   // Eliminadas ANTES de que existiera el archivo: solo quedó la foto en la bitácora general («… de CLI-0039 …»).
   const archivadas = new Set(db.prepare('SELECT DISTINCT lead_id FROM historial_archivo WHERE cliente_id IN (' + marcas + ')').all(...ids).map(r => r.lead_id));
-  for (const cid of ids) for (const a of db.prepare("SELECT fecha, usuario, entidad_id, detalle FROM auditoria WHERE entidad = 'orden_servicio' AND accion = 'eliminado' AND detalle LIKE ?").all('% de ' + unicos.folioCliente(cid) + ' %'))
+  // (Son todas de antes de las sucursales, o sea de la principal: solo las ve quien ve esa sucursal.)
+  if (alcance.ve(alcance.matriz())) for (const cid of ids) for (const a of db.prepare("SELECT fecha, usuario, entidad_id, detalle FROM auditoria WHERE entidad = 'orden_servicio' AND accion = 'eliminado' AND detalle LIKE ?").all('% de ' + unicos.folioCliente(cid) + ' %'))
     if (!archivadas.has(a.entidad_id)) filas.push({ fecha: a.fecha, usuario: a.usuario, registro: String(a.detalle).split(' · ')[0], grupo: 'eliminado', que: 'Eliminada', detalle: a.detalle });
   filas.sort((a, b) => String(b.fecha).localeCompare(String(a.fecha)));
   res.json(filas.slice(0, 2000));
@@ -1029,7 +1057,7 @@ app.get('/api/contactos/sin-cotizacion', h((req,res)=>{
   const { q, desde, hasta } = req.query;
   let sql = `SELECT c.id, c.nombre, c.telefono, c.empresa_contacto, c.created_at, c.updated_at, ca.nombre AS canal_nombre
     FROM clientes c LEFT JOIN canales ca ON ca.id = c.canal_origen_id
-    WHERE NOT EXISTS (SELECT 1 FROM leads l WHERE l.cliente_id = c.id)`;
+    WHERE NOT EXISTS (SELECT 1 FROM leads l WHERE l.cliente_id = c.id) AND en_alcance(c.sucursal_id)`;
   const params = [];
   if (q) { sql += ' AND (c.nombre LIKE ? OR c.telefono LIKE ? OR c.empresa_contacto LIKE ?)'; params.push(`%${q}%`, `%${q}%`, `%${q}%`); }
   if (desde) { sql += ' AND date(c.created_at) >= date(?)'; params.push(desde); }
@@ -1053,30 +1081,33 @@ app.post('/api/contactos', h((req,res)=>{
   if (altNormNuevo && altNormNuevo.length !== 10) return res.status(400).json({ error: 'El teléfono alterno debe tener 10 dígitos' });
   if (altNormNuevo && altNormNuevo !== norm) {
     const dueñoAlt = unicos.porTelefono(altNormNuevo);
-    if (dueñoAlt) return res.status(409).json({ error: `El teléfono alterno ya es de ${unicos.folioCliente(dueñoAlt.id)} · ${dueñoAlt.empresa_contacto || dueñoAlt.nombre}`, cliente_id: dueñoAlt.id, cliente: unicos.resumen(dueñoAlt) });
+    if (dueñoAlt) return res.status(409).json({ error: `El teléfono alterno ya es de ${unicos.etiqueta(dueñoAlt)}`, cliente_id: dueñoAlt.id, cliente: unicos.resumen(dueñoAlt) });
   }
   if (!validarCorreo(correo)) return res.status(400).json({error:'El correo electrónico no es válido'});
   if (giro && !tipoClienteValido(giro)) return res.status(400).json({error:'Giro inválido'});
   if (normalizarRfc(rfc) && !RFC.test(normalizarRfc(rfc))) return res.status(400).json({error:'El RFC no es válido (p. ej. ABC010101AB1)'});
   const existente=unicos.porTelefono(norm);
-  if(existente) return res.status(409).json({error:`Este teléfono ya es de ${unicos.folioCliente(existente.id)} · ${existente.empresa_contacto||existente.nombre}`,cliente_id:existente.id,cliente:unicos.resumen(existente)});
+  if(existente) return res.status(409).json({error:`Este teléfono ya es de ${unicos.etiqueta(existente)}`,cliente_id:existente.id,cliente:unicos.resumen(existente)});
   // «Es el mismo cliente»: solo se le agrega este teléfono.
   if (req.body.agregar_telefono_a) {
     const destino = db.prepare('SELECT * FROM clientes WHERE id = ?').get(Number(req.body.agregar_telefono_a));
     if (!destino) return res.status(404).json({ error: 'Cliente no encontrado' });
+    // De otra sucursal: no se le cambian los datos; se usa ese mismo cliente para cotizarle.
+    if (!suc.puedeEditarCliente(req, destino.id)) return res.status(409).json({ error: 'Es cliente de otra sucursal: le cotizarás a ese mismo cliente (sus datos no se cambian)', cliente_id: destino.id, cliente: unicos.resumen(destino) });
     const r = unicos.agregarTelefono(destino.id, telefono, 'Contacto: ' + String(nombre).trim().slice(0, 50));
     if (r.error) return res.status(409).json(r);
     audit.registrar(req, 'cliente', destino.id, 'teléfono agregado', `${norm} (${String(nombre).trim()}) · se dijo que es el mismo cliente`);
     return res.json({ ...db.prepare('SELECT * FROM clientes WHERE id = ?').get(destino.id), telefono_agregado: true });
   }
   const deRfc = normalizarRfc(rfc) ? unicos.porRfc(normalizarRfc(rfc)) : null;
-  if (deRfc) return res.status(409).json({ error: `Este RFC ya es de ${unicos.folioCliente(deRfc.id)} · ${deRfc.empresa_contacto || deRfc.nombre}`, rfc_de: unicos.resumen(deRfc) });
+  if (deRfc) return res.status(409).json({ error: `Este RFC ya es de ${unicos.etiqueta(deRfc)}`, rfc_de: unicos.resumen(deRfc) });
   const distintoDe = Array.isArray(req.body.distinto_de) ? req.body.distinto_de.map(Number).filter(Boolean) : [];
   const pendiente = unicos.exigirConfirmacion({ nombre, empresa: empresa_contacto }, distintoDe);
   if (pendiente) return res.status(409).json(pendiente);
   if (!req.body.canal_origen_id || !db.prepare('SELECT id FROM canales WHERE id = ?').get(req.body.canal_origen_id)) return res.status(400).json({error:'Selecciona cómo se enteró de nosotros'});
   const info=db.prepare(`INSERT INTO clientes (nombre,telefono,telefono_normalizado,empresa_contacto,direccion,correo,telefono_alterno,giro,rfc,notas_generales,canal_origen_id)
     VALUES (?,?,?,?,?,?,?,?,?,?,?)`).run(String(nombre).trim(),telefono,norm,empresa_contacto||null,direccion||null,correo?.trim()||null,telefono_alterno||null,giro||null,normalizarRfc(rfc)||null,notas_generales||null,req.body.canal_origen_id);
+  suc.asignar('clientes', Number(info.lastInsertRowid));
   unicos.recordarDistintos(Number(info.lastInsertRowid), distintoDe, req.usuarioSesion.id);
   audit.registrar(req, 'cliente', Number(info.lastInsertRowid), 'creado', `${String(empresa_contacto || '').trim() || String(nombre).trim()} · contacto ${String(nombre).trim()} · tel. ${norm}${distintoDe.length ? ' · confirmado como distinto de ' + distintoDe.map(unicos.folioCliente).join(', ') : ''}`);
   if (altNormNuevo && altNormNuevo !== norm) unicos.agregarTelefono(Number(info.lastInsertRowid), telefono_alterno, 'Alterno');
@@ -1094,7 +1125,7 @@ app.get('/api/clientes', h((req, res) => {
       MAX(COALESCE(l.updated_at,c.updated_at)) AS ultima_actividad
     FROM clientes c
     LEFT JOIN leads l ON l.cliente_id = c.id
-    WHERE 1=1
+    WHERE (en_alcance(c.sucursal_id) OR EXISTS (SELECT 1 FROM leads lv WHERE lv.cliente_id = c.id))
   `;
   const params = [];
   if (q) {
@@ -1163,6 +1194,7 @@ app.put('/api/clientes/:id', h((req, res) => {
   const id = req.params.id;
   const cliente = db.prepare('SELECT * FROM clientes WHERE id = ?').get(id);
   if (!cliente) return res.status(404).json({ error: 'Cliente no encontrado' });
+  if (!suc.puedeEditarCliente(req, Number(id))) return res.status(403).json(suc.NO_EDITA(req, Number(id)));
 
   // Un cliente importado sin teléfono puede guardar sus otros datos mientras el teléfono siga vacío.
   if (req.body.telefono !== undefined && !String(req.body.telefono).trim() && !cliente.telefono) delete req.body.telefono;
@@ -1172,7 +1204,7 @@ app.put('/api/clientes/:id', h((req, res) => {
     if (nuevoNorm.length !== 10) return res.status(400).json({ error: 'El teléfono debe tener 10 dígitos' });
     if (unicos.telefonoFalso(nuevoNorm) && nuevoNorm !== cliente.telefono_normalizado) return res.status(400).json({ error: 'Ese teléfono no parece real (' + nuevoNorm + ')' });
     const otro = unicos.porTelefono(nuevoNorm);
-    if (otro && String(otro.id) !== String(id)) return res.status(409).json({ error: `Ese teléfono ya es de ${unicos.folioCliente(otro.id)} · ${otro.empresa_contacto || otro.nombre}` });
+    if (otro && String(otro.id) !== String(id)) return res.status(409).json({ error: `Ese teléfono ya es de ${unicos.etiqueta(otro)}` });
     // Si era uno de sus teléfonos adicionales, pasa a ser el principal.
     db.prepare('DELETE FROM telefonos_cliente WHERE cliente_id = ? AND telefono_normalizado = ?').run(id, nuevoNorm);
   }
@@ -1181,7 +1213,7 @@ app.put('/api/clientes/:id', h((req, res) => {
   if (altNorm && altNorm.length !== 10) return res.status(400).json({ error: 'El teléfono alterno debe tener 10 dígitos' });
   if (altNorm.length === 10) {
     const dueñoAlt = unicos.porTelefono(altNorm);
-    if (dueñoAlt && String(dueñoAlt.id) !== String(id)) return res.status(409).json({ error: `El teléfono alterno ya es de ${unicos.folioCliente(dueñoAlt.id)} · ${dueñoAlt.empresa_contacto || dueñoAlt.nombre}` });
+    if (dueñoAlt && String(dueñoAlt.id) !== String(id)) return res.status(409).json({ error: `El teléfono alterno ya es de ${unicos.etiqueta(dueñoAlt)}` });
   }
   // Nombre o empresa: válidos y, si cambian, que no queden iguales a otro cliente (se pregunta antes).
   for (const [campo, etiqueta] of [['nombre', 'El nombre'], ['empresa_contacto', 'La empresa']]) {
@@ -1200,7 +1232,7 @@ app.put('/api/clientes/:id', h((req, res) => {
   // El RFC no se repite: si ya lo tiene otro cliente, es la misma razón social (se ofrece juntarlos).
   if (req.body.rfc) {
     const deRfc = unicos.porRfc(req.body.rfc, Number(id));
-    if (deRfc) return res.status(409).json({ error: `Este RFC ya es de ${unicos.folioCliente(deRfc.id)} · ${deRfc.empresa_contacto || deRfc.nombre}. Si es la misma razón social, un administrador puede juntarlos.`, rfc_de: unicos.resumen(deRfc) });
+    if (deRfc) return res.status(409).json({ error: `Este RFC ya es de ${unicos.etiqueta(deRfc)}. Si es la misma razón social, un administrador puede juntarlos.`, rfc_de: unicos.resumen(deRfc) });
   }
 
   const campos = ['nombre', 'empresa_contacto', 'direccion', 'telefono', 'correo', 'telefono_alterno', 'giro', 'rfc', 'notas_generales'];
@@ -1274,6 +1306,7 @@ app.get('/api/kpis', h((req, res) => {
       SELECT cliente_id, SUM(CASE WHEN estatus = 'ganado' THEN 1 ELSE 0 END) AS ganados
       FROM leads GROUP BY cliente_id
     ) g ON g.cliente_id = c.id
+    WHERE (en_alcance(c.sucursal_id) OR EXISTS (SELECT 1 FROM leads lv WHERE lv.cliente_id = c.id))
   `).get();
   const valorHistorico = db.prepare(`SELECT COALESCE(SUM(valor), 0) AS v FROM leads WHERE estatus = 'ganado'`).get().v;
 
@@ -1357,7 +1390,7 @@ app.get('/api/generador', h((req, res) => {
   const fechaOk = v => !v || (/^\d{4}-\d{2}-\d{2}$/.test(v) && !isNaN(Date.parse(v)));
   if (!fechaOk(desde) || !fechaOk(hasta) || (desde && hasta && desde > hasta)) return res.status(400).json({ error: 'Revisa el rango de fechas' });
   const q = String(req.query.q || '').trim().toLowerCase();
-  const ordenes = db.prepare(`SELECT l.id, l.created_at, l.fecha_servicio, l.factura_folio, l.orden_generador, l.cliente_id, l.partidas_json, l.valor, l.iva_modo, l.iva_tasa, l.iva_cent,
+  const ordenes = db.prepare(`SELECT l.id, l.created_at, l.fecha_servicio, l.factura_folio, l.orden_generador, l.cliente_id, l.sucursal_id, l.partidas_json, l.valor, l.iva_modo, l.iva_tasa, l.iva_cent,
       l.proyecto, l.equipo, l.operador, l.manifiestos, l.tiros, l.realizado_por, COALESCE(c.empresa_contacto, c.nombre, l.empresa_contacto, l.nombre) AS cliente,
       COALESCE(cl.nombre, cc.nombre) AS canal, s.nombre AS servicio_nombre,
       COALESCE(l.fecha_realizado, l.fecha_servicio, date(l.created_at)) AS fecha
@@ -1392,12 +1425,12 @@ app.get('/api/generador', h((req, res) => {
     let items; try { items = JSON.parse(o.partidas_json || 'null'); } catch { items = null; }
     if (!Array.isArray(items) || !items.length) items = [{ servicio: o.servicio_nombre || '', importe: o.valor || 0 }];
     const lineas = Importes.desglosarPartidas(items, o.iva_modo, o.iva_tasa);
-    const folio = 'OS-' + String(o.created_at).slice(0, 7).replace('-', '') + '-' + String(o.id).padStart(4, '0');
+    const folio = require('./sucursales').folio('OS', 'leads', o.id, o.created_at);
     const costo = costoDe(o.id);
     items.forEach((it, n) => {
       const l = lineas[n], cantidad = Importes.cantidadDe(it);
       filas.push({
-        lead_id: o.id, mes: MESES_LETRA[Number(String(o.fecha).slice(5, 7)) - 1] || '', fecha: o.fecha, orden: folio, orden_generador: o.orden_generador || '', factura: o.factura_folio || '',
+        lead_id: o.id, sucursal: suc.claveDe(o.sucursal_id), mes: MESES_LETRA[Number(String(o.fecha).slice(5, 7)) - 1] || '', fecha: o.fecha, orden: folio, orden_generador: o.orden_generador || '', factura: o.factura_folio || '',
         cliente_id: o.cliente_id,
         producto: it.servicio || o.servicio_nombre || 'Servicio', cantidad,
         precio_con_iva: Math.round(l.total_cent / cantidad) / 100, precio_sin_iva: Math.round(l.subtotal_cent / cantidad) / 100,
@@ -1436,7 +1469,8 @@ app.get('/api/analisis/comercial', h((req,res)=>{
       SUM(CASE WHEN estatus='abierto' AND (? IS NULL OR date(created_at)>=?) AND (? IS NULL OR date(created_at)<=?) THEN 1 ELSE 0 END) abiertas,
       SUM(CASE WHEN estatus='abierto' AND (? IS NULL OR date(created_at)>=?) AND (? IS NULL OR date(created_at)<=?) THEN COALESCE(valor,0) ELSE 0 END) propuesto,
       MAX(CASE WHEN estatus='ganado' THEN fecha_servicio END) ultima_fecha
-      FROM leads GROUP BY cliente_id) a ON a.cliente_id=c.id`).all(...Array.from({length:6},()=>[desde,desde,hasta,hasta]).flat());
+      FROM leads GROUP BY cliente_id) a ON a.cliente_id=c.id
+    WHERE (en_alcance(c.sucursal_id) OR EXISTS (SELECT 1 FROM leads lv WHERE lv.cliente_id = c.id))`).all(...Array.from({length:6},()=>[desde,desde,hasta,hasta]).flat());
   const canales=new Map();
   for(const c of clientes){const k=c.canal_origen_id||0;if(!canales.has(k))canales.set(k,{canal:c.canal,nuevos:0,convertidos:0,clientes:0,recurrentes:0,servicios:0,contratado:0,registros:0,abiertas:0,propuesto:0});const r=canales.get(k);r.nuevos+=c.nuevo;r.convertidos+=c.nuevo&&c.ganados_historicos>0?1:0;r.clientes+=c.servicios>0?1:0;r.recurrentes+=c.servicios>0&&c.ganados_historicos>1?1:0;for(const campo of ['servicios','contratado','registros','abiertas','propuesto'])r[campo]+=c[campo];}
   const filas=[...canales.values()].sort((a,b)=>b.contratado-a.contratado);
@@ -1552,4 +1586,5 @@ app.use((err, req, res, next) => {
 process.on('uncaughtException', err => console.error('uncaughtException (servidor sigue vivo):', err));
 process.on('unhandledRejection', err => console.error('unhandledRejection (servidor sigue vivo):', err));
 
+suc.activarCandados(); // al final: todas las tablas ya existen
 app.listen(PORT, () => { console.log(`Saneadren CRM corriendo en http://localhost:${PORT}`); demo.alEscuchar(); });

@@ -32,7 +32,7 @@ const Buscador = (() => {
     control?.abort(); control = new AbortController();
     $('buscar-estado').textContent = 'Buscando…';
     let r, j;
-    try { r = await fetch('/api/buscar?q=' + encodeURIComponent(q), { headers: { Authorization: 'Bearer ' + USUARIO_ACTUAL?.token }, signal: control.signal }); j = await r.json().catch(() => ({})); }
+    try { r = await fetch('/api/buscar?q=' + encodeURIComponent(q), { headers: { Authorization: 'Bearer ' + USUARIO_ACTUAL?.token, ...encabezadoSucursal() }, signal: control.signal }); j = await r.json().catch(() => ({})); }
     catch (err) { if (err.name !== 'AbortError' && mio === turno) { $('buscar-estado').textContent = ''; pintarAyuda('No se pudo buscar: revisa tu conexión.'); } return; }
     if (mio !== turno) return;
     $('buscar-estado').textContent = '';

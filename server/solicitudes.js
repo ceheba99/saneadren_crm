@@ -18,7 +18,7 @@ const COTIZACIONES_REQUERIDAS = 3;
 const ESTADOS = { por_aprobar: 'Por aprobar', cotizando: 'Cotizando', elegida: 'Cotización elegida', con_orden: 'Con orden de compra', recibida: 'Recibida', rechazada: 'Rechazada', cancelada: 'Cancelada' };
 const ABIERTAS = ['por_aprobar', 'cotizando', 'elegida'];
 const MIME = { pdf: 'application/pdf', jpg: 'image/jpeg', png: 'image/png' };
-const folioSol = s => 'SOL-' + String(s.created_at || '').slice(0, 7).replace('-', '') + '-' + String(s.id).padStart(4, '0');
+const folioSol = s => require('./sucursales').folio('SOL', 'solicitudes_compra', s.id, s.created_at);
 const nombreSeguro = t => String(t || 'documento').normalize('NFC').replace(/[\\/:*?"<>|\u0000-\u001f]+/g, '_').slice(0, 120) || 'documento';
 const llave = t => String(t ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9ñ]+/g, ' ').trim();
 // Número escrito como número: «1500», «1,500.50», «$ 1,500». Nada de «0x10», «1e3», «Infinity» ni texto.
@@ -95,7 +95,7 @@ module.exports = function solicitudes(app, db, h, { texto, fechaOk, hoyMexico, c
   const leer = (id, completo = true) => { const s = db.prepare(SQL + ' WHERE s.id = ?').get(id); return s ? describir(s, completo) : null; };
   const actualizar = (id, campos) => {
     const k = Object.keys(campos);
-    db.prepare(`UPDATE solicitudes_compra SET ${k.map(x => x + ' = ?').join(', ')}, updated_at = datetime('now','localtime'), version = version + 1 WHERE id = ?`).run(...k.map(x => campos[x]), id);
+    db.prepare(`UPDATE main.solicitudes_compra SET ${k.map(x => x + ' = ?').join(', ')}, updated_at = datetime('now','localtime'), version = version + 1 WHERE id = ?`).run(...k.map(x => campos[x]), id);
   };
 
   function validar(b, antes) {
@@ -142,8 +142,9 @@ module.exports = function solicitudes(app, db, h, { texto, fechaOk, hoyMexico, c
         .find(s => llave(s.que) === llave(d.que));
       if (igual) return res.status(409).json({ error: `Ya pediste lo mismo en ${folioSol(igual)} y sigue abierta. ¿Es otra necesidad?`, codigo: 'POSIBLE_DUPLICADO', solicitud_id: igual.id });
     }
-    const info = db.prepare(`INSERT INTO solicitudes_compra (que, para_que, urgente, fecha_requerida, centro_id, equipo, lead_id, solicitante_id, solicitante_nombre) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+    const info = db.prepare(`INSERT INTO main.solicitudes_compra (que, para_que, urgente, fecha_requerida, centro_id, equipo, lead_id, solicitante_id, solicitante_nombre) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
       .run(d.que, d.para_que, d.urgente, d.fecha_requerida, d.centro_id, d.equipo, d.lead_id, req.usuarioSesion.id, req.usuarioSesion.nombre);
+    app.locals.sucursales.asignar('solicitudes_compra', Number(info.lastInsertRowid), d.lead_id ? app.locals.sucursales.de('leads', d.lead_id) : undefined);
     const s = leer(info.lastInsertRowid);
     audit(req, s.id, 'creada', `${s.folio} · ${s.que} · para: ${s.para_que} · ${s.centro_nombre}${s.urgente ? ' · URGENTE' : ''}${s.fecha_requerida ? ' · para el ' + s.fecha_requerida.split('-').reverse().join('/') : ''}${req.body.forzar ? ' · se confirmó que no es repetida' : ''}`);
     res.status(201).json(s);
@@ -229,12 +230,12 @@ module.exports = function solicitudes(app, db, h, { texto, fechaOk, hoyMexico, c
     const nombre = nombreSeguro(encabezado(req, 'x-nombre'));
     const entrega = texto(encabezado(req, 'x-entrega'), 80), nota = texto(encabezado(req, 'x-nota'), 300);
     const id = db.transaction(() => {
-      const r = db.prepare('INSERT INTO documentos_solicitud (solicitud_id, tipo, proveedor_id, monto_cent, entrega, nota, nombre, archivo, formato, bytes, sha256, subido_por, subido_por_nombre) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+      const r = db.prepare('INSERT INTO main.documentos_solicitud (solicitud_id, tipo, proveedor_id, monto_cent, entrega, nota, nombre, archivo, formato, bytes, sha256, subido_por, subido_por_nombre) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
         .run(s.id, tipo, proveedor?.id ?? null, monto == null ? null : Math.round(monto * 100), entrega, nota, nombre, '', formato, buf.length, sha, req.usuarioSesion.id, req.usuarioSesion.nombre);
       const archivo = path.join(String(s.id), `${r.lastInsertRowid}-${sha.slice(0, 12)}.${formato}`);
       fs.mkdirSync(path.join(DIR, String(s.id)), { recursive: true });
       fs.writeFileSync(path.join(DIR, archivo), buf);
-      db.prepare('UPDATE documentos_solicitud SET archivo = ? WHERE id = ?').run(archivo, r.lastInsertRowid);
+      db.prepare('UPDATE main.documentos_solicitud SET archivo = ? WHERE id = ?').run(archivo, r.lastInsertRowid);
       return r.lastInsertRowid;
     })();
     const despues = leer(s.id);
@@ -260,7 +261,7 @@ module.exports = function solicitudes(app, db, h, { texto, fechaOk, hoyMexico, c
     if (!esCostos(req) && !(d.subido_por === req.usuarioSesion.id && ABIERTAS.includes(s.estado))) return res.status(403).json({ error: 'Solo quien lo subió (mientras la solicitud está abierta) o el encargado de centro de costos puede quitarlo' });
     const motivo = texto(req.body?.motivo, 300);
     if (!motivo || !conSentido(motivo, 5)) return res.status(400).json({ error: 'Escribe por qué se quita (mínimo 5 letras)' });
-    db.prepare("UPDATE documentos_solicitud SET eliminado = 1, eliminado_por = ?, eliminado_at = datetime('now','localtime'), motivo_eliminado = ? WHERE id = ?").run(req.usuarioSesion.nombre, motivo, d.id);
+    db.prepare("UPDATE main.documentos_solicitud SET eliminado = 1, eliminado_por = ?, eliminado_at = datetime('now','localtime'), motivo_eliminado = ? WHERE id = ?").run(req.usuarioSesion.nombre, motivo, d.id);
     const prov = d.proveedor_id ? db.prepare('SELECT nombre FROM proveedores WHERE id = ?').get(d.proveedor_id)?.nombre : null;
     audit(req, s.id, d.tipo === 'cotizacion' ? 'cotización quitada' : 'foto quitada', `${prov ? prov + ' ' + fmt(d.monto_cent) + ' · ' : ''}«${d.nombre}» · motivo: ${motivo}`);
     res.json({ ok: true, solicitud: leer(s.id) });

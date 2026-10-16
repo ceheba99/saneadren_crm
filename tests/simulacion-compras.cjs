@@ -46,7 +46,7 @@ const SEMANA_40 = [['REPARACION FLECHA CARDAN JOSE LUIS ACOSTA', 2000], ['PAGO R
     partidas: SEMANA_40.map(([descripcion, precio]) => ({ cantidad: 1, descripcion, precio })) };
   [s, j] = await pedir('POST', '/compras/ordenes', V, base);
   const oc = j;
-  revisa(s === 201 && j.estado === 'borrador' && /^OC-\d{6}-0001$/.test(j.folio), 'ventas crea la orden de compra en borrador con folio OC', [s, j.folio, j.error]);
+  revisa(s === 201 && j.estado === 'borrador' && /^OC-QRO-\d{6}-0001$/.test(j.folio), 'ventas crea la orden de compra en borrador con folio OC', [s, j.folio, j.error]);
   revisa(j.partidas.length === 17 && j.total === 467127.77 && j.subtotal === 467127.77 && j.iva === 0, 'sin IVA: 17 partidas suman $467,127.77 (igual que el Excel)', [j.partidas?.length, j.total]);
   revisa(j.factura_a === 'SANEADREN' && j.solicitante_nombre === 'Compras Sim' && j.centro_nombre === 'Operaciones', 'por defecto factura a SANEADREN y solicita quien la captura', [j.factura_a, j.solicitante_nombre]);
   // IVA

@@ -43,7 +43,7 @@ const revisa = (cond, texto, extra) => { n++; if (!cond) { malos.push(texto); co
   [s, j] = await pedir('POST', '/compras/solicitudes', V, { que: '4 llantas 11R22.5', para_que: 'Al camión C-22 se le reventó una', centro_id: mantto.id, fecha_requerida: '2020-01-01' }); revisa(s === 400, 'para cuándo no puede ser en el pasado');
   [s, j] = await pedir('POST', '/compras/solicitudes', V, { que: '4 llantas 11R22.5', para_que: 'Al camión C-22 se le reventó una y las demás están lisas', centro_id: mantto.id, equipo: 'C-22' });
   const sol = j;
-  revisa(s === 201 && sol.estado === 'por_aprobar' && /^SOL-\d{6}-0001$/.test(sol.folio) && sol.solicitante_nombre === 'Laura Ventas', 'ventas pide: queda «por aprobar» con folio SOL', [s, j.folio, j.error]);
+  revisa(s === 201 && sol.estado === 'por_aprobar' && /^SOL-QRO-\d{6}-0001$/.test(sol.folio) && sol.solicitante_nombre === 'Laura Ventas', 'ventas pide: queda «por aprobar» con folio SOL', [s, j.folio, j.error]);
   [s, j] = await pedir('POST', '/compras/solicitudes', V, { que: '4 LLANTAS 11R22.5 ', para_que: 'Otra vez lo mismo por error de doble clic', centro_id: mantto.id });
   revisa(s === 409 && j.codigo === 'POSIBLE_DUPLICADO', 'pedir lo mismo otra vez pregunta antes (aunque cambien mayúsculas)', [s, j]);
   [s, j] = await subir('/compras/solicitudes/' + sol.id + '/documentos', V, png(), { 'X-Tipo': 'foto', 'X-Nombre': 'llanta.png' }); revisa(s === 201, 'quien pidió sube la foto de la llanta', [s, j.error]);

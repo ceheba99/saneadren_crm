@@ -18,7 +18,7 @@ const Finanzas = (() => {
   const hoy = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Mexico_City', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
   const sumarDias = (f, d) => { const x = new Date(f + 'T00:00:00Z'); x.setUTCDate(x.getUTCDate() + (Number(d) || 0)); return x.toISOString().slice(0, 10); };
   const fechaTxt = f => (f ? new Date(f + 'T12:00:00').toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' }) : '—');
-  const folioOS = c => folioOrdenServicio({ id: c.lead_id, created_at: c.created_at });
+  const folioOS = c => c.folio || folioOrdenServicio({ id: c.lead_id, created_at: c.created_at });
   const json = async res => { const j = await res.json().catch(() => ({})); if (!res.ok) throw Object.assign(new Error(j.error || 'No se pudo completar'), { status: res.status, codigo: j.codigo }); return j; };
   // POST/PUT que puede responder 409 "posible duplicado": pregunta y reintenta con forzar.
   async function enviar(ruta, metodo, cuerpo) {
@@ -467,6 +467,7 @@ const Finanzas = (() => {
     if (!CARTERA.length) { toast('No hay datos con este filtro para exportar'); return; }
     {
       descargarCSV('cuentas_por_cobrar_ordenes_' + hoy() + '.csv', [
+        ...(Sucursales.varias() ? [{ titulo: 'Sucursal', valor: c => (globalThis.SUCURSALES_MAPA || {})[c.sucursal_id] || '' }] : []),
         { titulo: 'Factura', valor: c => c.factura_folio }, { titulo: 'Fecha', valor: c => c.factura_fecha || c.fecha_realizado || c.fecha_servicio }, { titulo: 'M.P.', valor: c => c.factura_metodo || '' }, { titulo: 'OS', valor: folioOS },
         { titulo: 'Cliente', valor: c => c.cliente_nombre }, { titulo: 'Empresa', valor: c => c.empresa_contacto }, { titulo: 'RFC', valor: c => c.rfc }, { titulo: 'Teléfono', valor: c => c.telefono },
         { titulo: 'Servicio', valor: c => c.servicio_nombre },
@@ -882,9 +883,9 @@ const Finanzas = (() => {
     const ws = wb.addWorksheet('CXP ' + hoy().slice(0, 4), { views: [{ state: 'frozen', ySplit: 2 }] });
     const COLS = [['FECHA VENCIMIENTO', 13], ['PROVEEDOR', 34], ['BENEFICIARIO', 34], ['DESCRIPCION', 44], ['FECHA FACTURA/SOLICITUD', 13], ['capturo', 12], ['FOLIO FACTURA', 16],
       ['METODO DE PAGO', 18], ['MONTO TOTAL FACTURA', 16], ['PENDIENTE', 14], ['ANTICIPO', 13], ['PAGADO', 16], ['CUENTA BANCARIA', 22], ['BANCO', 14], ['DIAS DE CREDITO', 9],
-      ['CONCEPTO DE GASTO ', 30], ['STATUS', 12], ['FECHA DE PAGO', 13], ['OBSERVACIONES', 40]];
+      ['CONCEPTO DE GASTO ', 30], ['STATUS', 12], ['FECHA DE PAGO', 13], ['OBSERVACIONES', 40], ...(Sucursales.varias() ? [['SUCURSAL', 10]] : [])];
     ws.columns = COLS.map(([, w]) => ({ width: w }));
-    ws.mergeCells('A1:S1'); ws.getCell('A1').value = 'Cuentas por pagar ' + hoy().slice(0, 4); ws.getCell('A1').font = { bold: true, size: 14 };
+    ws.mergeCells(Sucursales.varias() ? 'A1:T1' : 'A1:S1'); ws.getCell('A1').value = 'Cuentas por pagar ' + hoy().slice(0, 4); ws.getCell('A1').font = { bold: true, size: 14 };
     ws.getRow(2).values = COLS.map(([t]) => t);
     ws.getRow(2).eachCell(c => { c.font = { bold: true }; c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF6B103' } }; c.alignment = { wrapText: true, vertical: 'middle' }; });
     let n = 3;
@@ -901,6 +902,7 @@ const Finanzas = (() => {
         pg.length > 1 ? { formula: pg.map(g => g.monto).join('+'), result: pagado } : (pg.length ? pagado : null),
         x.clabe || '', x.banco || '', x.dias_credito ?? '', (x.categoria || '').toUpperCase(), status, ultimo ? fecha(ultimo.fecha) : null,
         [x.notas, x.orden_folio ? 'Orden ' + x.orden_folio : '', x.tipo_comprobante === 'informativo' ? 'INFORMATIVO: no se suma' : '', !x.es_gasto ? 'No cuenta como gasto' : ''].filter(Boolean).join(' · ')];
+      if (Sucursales.varias()) r.getCell(20).value = x.sucursal || '';
       [1, 5, 18].forEach(i => { r.getCell(i).numFmt = 'dd/mm/yyyy'; });
       [9, 10, 11, 12].forEach(i => { r.getCell(i).numFmt = '"$"#,##0.00'; });
       n++;
@@ -924,6 +926,7 @@ const Finanzas = (() => {
   $('pagar-exportar').addEventListener('click', () => {
     if (!CXP.length) { toast('No hay datos para exportar'); return; }
     descargarCSV('cuentas_por_pagar_' + hoy() + '.csv', [
+      ...(Sucursales.varias() ? [{ titulo: 'Sucursal', valor: x => (globalThis.SUCURSALES_MAPA || {})[x.sucursal_id] || '' }] : []),
       { titulo: 'Proveedor', valor: x => x.proveedor_nombre }, { titulo: 'Concepto', valor: x => x.concepto }, { titulo: 'Categoría', valor: x => x.categoria_nombre },
       { titulo: 'Factura', valor: x => x.factura_folio }, { titulo: 'Fecha', valor: x => x.fecha_documento }, { titulo: 'Vence', valor: x => x.fecha_vencimiento },
       { titulo: 'Total', valor: x => x.total.toFixed(2) }, { titulo: 'Pagado', valor: x => x.pagado.toFixed(2) }, { titulo: 'Saldo', valor: x => x.saldo.toFixed(2) },

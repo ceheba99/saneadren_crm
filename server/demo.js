@@ -11,9 +11,13 @@ const crypto = require('crypto');
 const { hashPassword } = require('./seguridad');
 const { hoyMexico } = require('./fechas');
 
+// Clave del botón, rol, nombre, texto del botón y sucursal (QRO = principal; CDMX = la segunda sucursal del ejemplo).
 const USUARIOS_DEMO = [
-  ['admin', 'Dirección (demo)'], ['ventas', 'Laura Ventas (demo)'], ['costos', 'Isaac Compras (demo)'], ['tecnico', 'Pedro Técnico (demo)'], ['atencion', 'Ana Atención (demo)'],
+  ['admin', 'admin', 'Dirección - Demo', 'Dirección (todas)', null], ['ventas', 'ventas', 'Laura Ventas - Demo', 'Ventas QRO', 'QRO'], ['costos', 'costos', 'Isaac Compras - Demo', 'Compras QRO', 'QRO'],
+  ['tecnico', 'tecnico', 'Raúl Técnico - Demo', 'Técnico QRO', 'QRO'], ['atencion', 'atencion', 'Ana Atención - Demo', 'Atención QRO', 'QRO'],
+  ['gerente_cdmx', 'gerente', 'Mónica Gerente CDMX - Demo', 'Gerente CDMX', 'CDMX'], ['ventas_cdmx', 'ventas', 'Pedro Ventas CDMX - Demo', 'Ventas CDMX', 'CDMX'],
 ];
+const nombreDemo = clave => (USUARIOS_DEMO.find(([c]) => c === clave) || [])[2] || '';
 const activo = () => process.env.MODO_DEMO === '1';
 
 module.exports = function demo(app, db, { sesiones, PORT, SESSION_TTL_MS }) {
@@ -22,7 +26,7 @@ module.exports = function demo(app, db, { sesiones, PORT, SESSION_TTL_MS }) {
   const hayDatosNegocio = () => ['clientes', 'leads', 'cuentas_por_pagar', 'ordenes_compra', 'solicitudes_compra'].some(t => {
     try { return db.prepare(`SELECT COUNT(*) n FROM ${t}`).get().n > 0; } catch { return false; }
   });
-  const usuarioDemo = rol => db.prepare('SELECT id, nombre, rol FROM usuarios WHERE nombre = ? AND activo = 1').get((USUARIOS_DEMO.find(([r]) => r === rol) || [])[1] || '');
+  const usuarioDemo = clave => db.prepare('SELECT id, nombre, rol FROM usuarios WHERE nombre = ? AND activo = 1').get(nombreDemo(clave));
 
   // «Entrar como…» (sin contraseña): solo en el modo demo y en una base sembrada como demo.
   app.post('/api/demo/entrar', (req, res) => {
@@ -32,9 +36,9 @@ module.exports = function demo(app, db, { sesiones, PORT, SESSION_TTL_MS }) {
     if (!u) return res.status(400).json({ error: 'Usuario de ejemplo no encontrado' });
     const token = crypto.randomBytes(32).toString('hex');
     sesiones.set(token, { usuarioId: u.id, expira: Date.now() + SESSION_TTL_MS });
-    res.json({ token, id: u.id, nombre: u.nombre, rol: u.rol, cambiar_password: false, demo: true });
+    res.json({ token, id: u.id, nombre: u.nombre, rol: u.rol === 'gerente' ? 'admin' : u.rol, rol_real: u.rol, cambiar_password: false, demo: true });
   });
-  app.get('/api/demo/estado', (req, res) => res.json({ demo: estado.activo && (esBaseDemo() || !estado.listo), listo: estado.listo, error: estado.error, usuarios: USUARIOS_DEMO.map(([r, n]) => ({ rol: r, nombre: n })) }));
+  app.get('/api/demo/estado', (req, res) => res.json({ demo: estado.activo && (esBaseDemo() || !estado.listo), listo: estado.listo, error: estado.error, usuarios: USUARIOS_DEMO.map(([c, , n, t]) => ({ rol: c, nombre: n, etiqueta: t })) }));
 
   if (!estado.activo) return estado;
   if (hayDatosNegocio() && !esBaseDemo()) {
@@ -51,7 +55,7 @@ module.exports = function demo(app, db, { sesiones, PORT, SESSION_TTL_MS }) {
   async function sembrar() {
     // Usuarios de ejemplo (contraseña aleatoria que nadie conoce: se entra con los botones del demo).
     const ins = db.prepare('INSERT INTO usuarios (nombre, password, rol) VALUES (?, ?, ?)');
-    for (const [rol, nombre] of USUARIOS_DEMO) if (!usuarioDemo(rol)) ins.run(nombre, hashPassword(crypto.randomBytes(24).toString('hex')), rol);
+    for (const [clave, rol, nombre] of USUARIOS_DEMO) if (!usuarioDemo(clave)) ins.run(nombre, hashPassword(crypto.randomBytes(24).toString('hex')), rol);
     db.prepare("INSERT INTO config_servidor (clave, valor) VALUES ('base_demo', '1') ON CONFLICT(clave) DO UPDATE SET valor = '1'").run();
     const tok = rol => { const t = crypto.randomBytes(32).toString('hex'); sesiones.set(t, { usuarioId: usuarioDemo(rol).id, expira: Date.now() + 3600000 }); return t; };
     const A = tok('admin'), V = tok('ventas'), C = tok('costos'), T = tok('tecnico');
@@ -73,7 +77,15 @@ module.exports = function demo(app, db, { sesiones, PORT, SESSION_TTL_MS }) {
     const HOY = hoyMexico();
     const dia = n => { const x = new Date(HOY + 'T12:00:00Z'); x.setUTCDate(x.getUTCDate() + n); return x.toISOString().slice(0, 10); };
     const min = (a, b) => (a < b ? a : b);
-    const usuarios = await pedir('GET', '/usuarios', A), idDe = rol => usuarios.find(u => u.nombre === USUARIOS_DEMO.find(([r]) => r === rol)[1]).id;
+    // Segunda sucursal (CDMX) y la sucursal de cada usuario de ejemplo.
+    const cdmx = await pedir('POST', '/sucursales', A, { nombre: 'Ciudad de México', clave: 'CDMX', direccion: 'Av. Insurgentes Sur 1602, Benito Juárez' });
+    const qroId = db.prepare("SELECT id FROM sucursales WHERE clave = 'QRO'").get()?.id ?? db.prepare('SELECT id FROM sucursales ORDER BY id LIMIT 1').get().id;
+    for (const [clave, , , , s] of USUARIOS_DEMO) if (s) {
+      const u = usuarioDemo(clave); db.prepare('DELETE FROM usuario_sucursales WHERE usuario_id = ?').run(u.id);
+      db.prepare('INSERT INTO usuario_sucursales (usuario_id, sucursal_id) VALUES (?, ?)').run(u.id, s === 'CDMX' ? cdmx.id : qroId);
+    }
+    const GC = tok('gerente_cdmx'), VC = tok('ventas_cdmx');
+    const usuarios = await pedir('GET', '/usuarios', A), idDe = clave => usuarios.find(u => u.nombre === nombreDemo(clave)).id;
     const [canales, servicios, centros] = await Promise.all([pedir('GET', '/canales', A), pedir('GET', '/servicios', A), pedir('GET', '/compras/centros', A)]);
     const servicio = n => { const s = servicios.find(x => x.nombre === n); if (!s) throw new Error('Servicio no está en el catálogo: ' + n); return s; };
     const canal = n => (canales.find(c => c.nombre === n) || canales[0]).id;
@@ -83,15 +95,15 @@ module.exports = function demo(app, db, { sesiones, PORT, SESSION_TTL_MS }) {
       return c;
     };
     // Cotización → (opcional) orden de servicio → realizado → factura → cobros
-    const orden = async ({ cliente, serv, partidas, iva = 'mas_iva', fCot, fServ, direccion, proyecto, equipo, operador, realizado, sub, propio, factura, cobros = [], quien = V, etapa }) => {
+    const orden = async ({ cliente, serv, partidas, iva = 'mas_iva', fCot, fServ, direccion, proyecto, equipo, operador, realizado, sub, propio, factura, cobros = [], quien = V, tec, resp = 'ventas', etapa }) => {
       const s = servicio(serv);
       const items = partidas.map(p => ({ servicio: s.nombre, leyenda: p.leyenda, ...(p.cantidad ? { cantidad: p.cantidad, precio: p.precio, importe: p.cantidad * p.precio } : { importe: p.importe }) }));
-      const c = await pedir('POST', '/leads', quien, { cliente_id: cliente.id, direccion: direccion || cliente.direccion, canal_id: canal('Llamada telefónica'), servicio_id: s.id, responsable_id: idDe('ventas'),
+      const c = await pedir('POST', '/leads', quien, { cliente_id: cliente.id, direccion: direccion || cliente.direccion, canal_id: canal('Llamada telefónica'), servicio_id: s.id, responsable_id: idDe(resp),
         forzar_duplicado: true, partidas_json: JSON.stringify(items), iva_modo: iva, valor: 1, fecha_cotizacion: fCot });
       if (etapa) await pedir('PUT', '/leads/' + c.id, quien, { version: (await pedir('GET', '/leads/' + c.id, quien)).version, etapa });
       if (!fServ) return c;
       await pedir('PUT', '/leads/' + c.id, quien, { version: (await pedir('GET', '/leads/' + c.id, quien)).version, estatus: 'ganado', fecha_servicio: fServ, ...(proyecto ? { proyecto } : {}), ...(equipo ? { equipo } : {}), ...(operador ? { operador } : {}) });
-      if (realizado) await pedir('POST', '/leads/' + c.id + '/ejecucion', propio ? C : T, { estado: 'realizado', fecha: realizado, realizado_por: sub ? 'subcontratado' : 'propio', gastos: sub || propio || [] });
+      if (realizado) await pedir('POST', '/leads/' + c.id + '/ejecucion', tec || (propio ? C : T), { estado: 'realizado', fecha: realizado, realizado_por: sub ? 'subcontratado' : 'propio', gastos: sub || propio || [] });
       if (factura) await pedir('PUT', '/leads/' + c.id + '/facturacion', A, { dias_credito: factura.dias, factura_folio: factura.folio, factura_fecha: factura.fecha, factura_metodo: factura.metodo || 'PUE' });
       for (const k of cobros) if (k.fecha <= HOY) await pedir('POST', '/leads/' + c.id + '/cobros', A, { monto: k.monto, metodo: k.metodo || 'transferencia', fecha: k.fecha, referencia: k.ref || null });
       return c;
@@ -203,7 +215,7 @@ module.exports = function demo(app, db, { sesiones, PORT, SESSION_TTL_MS }) {
     const aut1 = await pedir('POST', '/compras/ordenes/' + oc1.id + '/autorizar', A, { dias_credito: 15 });
     await pedir('POST', '/finanzas/cxp/' + aut1.cxp_id + '/pagos', C, { monto: 15800, metodo: 'transferencia', fecha: HOY, referencia: 'SPEI llantas C-22', cuenta_origen: 'Santander empresa' });
     await subir('/compras/ordenes/' + oc1.id + '/documentos', C, png(), { 'X-Tipo': 'firma_recepcion', 'X-Nombre': 'firma-almacen.png' });
-    await pedir('POST', '/compras/ordenes/' + oc1.id + '/recibir', C, { recibio: 'Pedro Técnico', nota: 'Llegaron las 4 llantas' });
+    await pedir('POST', '/compras/ordenes/' + oc1.id + '/recibir', C, { recibio: 'Raúl Técnico', nota: 'Llegaron las 4 llantas' });
     // b) Urgente sin las 3 cotizaciones
     const s2 = await pedir('POST', '/compras/solicitudes', T, { que: 'Bomba sumergible 2 HP', para_que: 'Se quemó la bomba durante un servicio de emergencia en KFC Juriquilla', centro_id: opera.id, urgente: true });
     await pedir('POST', '/compras/solicitudes/' + s2.id + '/aprobar', A);
@@ -242,9 +254,28 @@ module.exports = function demo(app, db, { sesiones, PORT, SESSION_TTL_MS }) {
     await pagar(camion.id, 500000, dia(-38), 'transferencia', 'Santander empresa', 'Enganche camión');
     await cxp({ proveedor_id: prov.disposicion.id, categoria: 'residuos', concepto: 'Disposición de lodos del mes (todas las órdenes)', total: 9860, fecha_documento: dia(-8), dias_credito: 30, tipo_comprobante: 'factura', metodo_sat: 'PUE', factura_folio: 'DB-311' });
 
+    // ===== 7. Sucursal CDMX: opera lo suyo; solo Dirección ve las dos =====
+    const torre = await pedir('POST', '/contactos', VC, { nombre: 'Arq. Daniela Ríos · Mantenimiento', telefono: '55 5250 7700', empresa_contacto: 'Corporativo Torre Reforma', direccion: 'Paseo de la Reforma 483, Cuauhtémoc', canal_origen_id: canal('Correo electrónico') });
+    await orden({ cliente: torre, quien: VC, tec: GC, resp: 'ventas_cdmx', serv: 'Desazolve de drenaje', partidas: [{ leyenda: 'Desazolve de bajadas pluviales y cárcamo del sótano 3', importe: 28500 }], fCot: dia(-14), fServ: dia(-12), realizado: dia(-12),
+      factura: { dias: 15, folio: 'C-101', fecha: dia(-12) }, cobros: [{ monto: total(28500), fecha: dia(-2), ref: 'SPEI Torre Reforma' }] });
+    const antara = await pedir('POST', '/contactos', VC, { nombre: 'Ing. Mauricio Peña', telefono: '55 5280 4411', empresa_contacto: 'Centro Comercial Plaza Lomas', direccion: 'Av. Ejército Nacional 843, Granada', canal_origen_id: canal('Llamada telefónica') });
+    await orden({ cliente: antara, quien: VC, tec: GC, resp: 'ventas_cdmx', serv: 'Limpieza de fosas y cárcamos', partidas: [{ leyenda: 'Limpieza de cárcamo de aguas negras y retiro de lodos', importe: 36000 }], fCot: dia(-8), fServ: dia(-4), realizado: dia(-4),
+      factura: { dias: 30, folio: 'C-102', fecha: dia(-4) } });
+    for (const [s, dir, d, cobrar] of [['Reforma', 'Paseo de la Reforma 222', -10, false], ['Polanco', 'Av. Presidente Masaryk 101', -6, false], ['Coyoacán', 'Av. Miguel Ángel de Quevedo 450', 3, false]])
+      await orden({ cliente: kfc, quien: VC, tec: GC, resp: 'ventas_cdmx', serv: 'Limpieza de trampas de grasa', partidas: [{ leyenda: `Limpieza de trampa de grasa · sucursal ${s} (CDMX)`, importe: 5200 }], fCot: dia(Math.min(d, 0) - 2), fServ: dia(d),
+        direccion: `Sucursal ${s} · ${dir}`, proyecto: `Sucursal ${s}`, equipo: 'CDMX-01', operador: 'Óscar Medina', realizado: d < 0 ? dia(d) : null, factura: d < 0 ? { dias: 30, folio: 'C-1' + (200 - d), fecha: dia(d) } : null,
+        cobros: cobrar ? [{ monto: total(5200), fecha: dia(d + 14), ref: 'SPEI KFC CDMX' }] : [] });
+    const hotelC = await pedir('POST', '/contactos', VC, { nombre: 'Lic. Ernesto Salas', telefono: '55 5512 3344', empresa_contacto: 'Hotel Centro Histórico', direccion: 'República de Uruguay 40, Centro', canal_origen_id: canal('WhatsApp') });
+    await orden({ cliente: hotelC, quien: VC, resp: 'ventas_cdmx', serv: 'Video inspección de tuberías', partidas: [{ leyenda: 'Video inspección de colector general, 80 m', importe: 14500 }], fCot: dia(-3), etapa: 3 });
+    const provCdmx = await pedir('POST', '/finanzas/proveedores', A, { nombre: 'Inmobiliaria Insurgentes', categoria: 'renta_inmuebles', dias_credito: 0 });
+    const rentaC = await pedir('POST', '/finanzas/cxp', GC, { proveedor_id: provCdmx.id, categoria: 'renta_inmuebles', concepto: 'Renta de bodega y oficina CDMX · este mes', total: 18500, fecha_documento: dia(-5), dias_credito: 5, tipo_comprobante: 'factura', metodo_sat: 'PUE', factura_folio: 'II-88' });
+    await pedir('POST', '/finanzas/cxp/' + rentaC.id + '/pagos', GC, { monto: 18500, metodo: 'transferencia', fecha: dia(-4), referencia: 'SPEI renta CDMX', cuenta_origen: 'BBVA sucursal CDMX' });
+    await pedir('POST', '/finanzas/cxp', GC, { proveedor_id: prov.gasolinera.id, categoria: 'combustible', concepto: 'Diésel unidad CDMX-01 · semana', total: 6400, fecha_documento: dia(-2), dias_credito: 0, tipo_comprobante: 'factura', metodo_sat: 'PUE', factura_folio: 'CB-9921' });
+    await pedir('POST', '/compras/solicitudes', VC, { que: 'Hidrolavadora de agua caliente para la unidad CDMX-01', para_que: 'Las trampas de grasa de KFC CDMX requieren agua caliente', centro_id: opera.id, equipo: 'CDMX-01', urgente: false });
+
     // Al final: la revisión de integridad debe salir limpia.
-    const r = require('./integridad').revisar(db, {});
+    const r = require('./alcance').global(() => require('./integridad').revisar(db, {}));
     console.log(`[demo] revisión de integridad: ${r.errores} errores, ${r.avisos} avisos`);
-    for (const t of [A, V, C, T]) sesiones.delete?.(t);
+    for (const t of [A, V, C, T, GC, VC]) sesiones.delete?.(t);
   }
 };

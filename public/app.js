@@ -65,6 +65,8 @@ function errorConEstado(mensaje, status, codigo) {
   if (codigo) err.codigo = codigo;
   return err;
 }
+// Sucursal que se está viendo (la elige el selector de arriba; vacío = todas las permitidas).
+function encabezadoSucursal() { let v = ''; try { v = localStorage.getItem('sucursal_vista') || ''; } catch {} return v ? { 'X-Sucursal': v } : {}; }
 async function api(path, opts) {
   // Sin sesión no se intenta nada: evita peticiones repetidas tras un 401 y pantallas a medias.
   const token = USUARIO_ACTUAL?.token;
@@ -74,9 +76,10 @@ async function api(path, opts) {
   }
   let res;
   try {
+    const { headers: extra, ...resto } = opts || {};
     res = await fetch(API + path, {
-      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
-      ...opts
+      ...resto,
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token, ...encabezadoSucursal(), ...(extra || {}) },
     });
   } catch (e) {
     // Sin internet o servidor caído: la sesión se conserva y el mensaje es comprensible.
@@ -85,6 +88,8 @@ async function api(path, opts) {
   if (res.status === 403) {
     const j = await res.clone().json().catch(() => ({}));
     if (j.codigo === 'CAMBIAR_PASSWORD') { Cuentas.pedirCambioObligatorio(); throw errorConEstado(j.error, 403, j.codigo); }
+    if (j.codigo === 'SIN_SUCURSAL') { toast(j.error); throw errorConEstado(j.error, 403, j.codigo); }
+    if (j.codigo === 'SUCURSAL') { try { localStorage.removeItem('sucursal_vista'); } catch {} location.reload(); throw errorConEstado(j.error, 403, j.codigo); }
   }
   if (res.status === 401) {
     // Solo se cierra la sesión con la que se hizo la petición: si mientras tanto alguien inició
@@ -185,6 +190,13 @@ async function verificarDuplicado(telefono) {
   const panel = document.getElementById('alerta-dup');
   panel.classList.toggle('mostrar',!!data.cliente);
   if (!data.cliente) return;
+  if (data.cliente.otra_sucursal) {
+    // De otra sucursal: solo se sabe que existe (su ID); se le cotiza al mismo cliente para no duplicarlo.
+    document.getElementById('dup-titulo').textContent = 'Este teléfono ya está registrado en otra sucursal (' + data.cliente.folio + ')';
+    document.getElementById('dup-lista').innerHTML = '<p>Para no duplicarlo, se le cotiza a ese mismo cliente. Sus datos y lo que ha hecho con la otra sucursal no se muestran aquí ni se modifican.</p><button type="button" class="btn btn-primario" id="btn-dup-otra-sucursal">Cotizarle a este cliente</button>';
+    document.getElementById('btn-dup-otra-sucursal').onclick = () => FlujoCRM.irACotizar(data.cliente.id, { ...data.cliente, telefono: telefono, direccion: document.getElementById('in-direccion')?.value || '' });
+    return;
+  }
   document.getElementById('dup-titulo').textContent = 'Este contacto ya existe: ' + (data.cliente.nombre || data.cliente.telefono);
   document.getElementById('dup-lista').innerHTML = '<p>Abre su ficha para consultar registros anteriores y usar Crear cotización o Crear orden de servicio. Sus datos no se sobrescribirán.</p><button type="button" class="btn btn-primario" onclick="FlujoCRM.irACotizar(' + Number(data.cliente.id) + ')">Abrir ficha del contacto</button>';
 
@@ -750,6 +762,7 @@ on('gen-tabla', 'click', e => { const fila = e.target.closest('[data-gen-orden]'
 on('gen-exportar', 'click', () => {
   if (!GENERADOR?.filas.length) { toast('No hay renglones para exportar'); return; }
   descargarCSV('generador_saneadren_' + hoyISO() + '.csv', [
+    ...(Sucursales.varias() ? [{ titulo: 'SUCURSAL', valor: f => f.sucursal || '' }] : []),
     { titulo: 'MES LETRA', valor: f => f.mes }, { titulo: 'FECHA', valor: f => f.fecha }, { titulo: 'NO. ORDEN', valor: f => f.orden }, { titulo: 'ORDEN GENERADOR', valor: f => f.orden_generador || '' }, { titulo: 'NO. FACTURA', valor: f => f.factura },
     { titulo: 'CLIENTE', valor: f => f.cliente }, { titulo: 'PROYECTO', valor: f => f.proyecto }, { titulo: 'CONCEPTO', valor: f => f.producto }, { titulo: 'CANTIDAD', valor: f => f.cantidad },
     { titulo: 'PRECIO UNITARIO S/IVA', valor: f => f.precio_sin_iva }, { titulo: 'PRECIO UNITARIO C/IVA', valor: f => f.precio_con_iva }, { titulo: 'SUBTOTAL', valor: f => f.subtotal }, { titulo: 'IVA', valor: f => f.iva ?? '' }, { titulo: 'TOTAL', valor: f => f.total },
@@ -849,9 +862,14 @@ function mesDeFolio(creado) {
   if (m) return m[1] + m[2];
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Mexico_City' }).format(new Date()).slice(0, 7).replace('-', '');
 }
-function folioCotizacion(lead) {
-  return `COT-${mesDeFolio(lead.created_at)}-${String(lead.id).padStart(4, '0')}`;
+// «COT-CDMX-202610-0001»: con clave y consecutivo de su sucursal; los de antes de las sucursales, «COT-202610-0087».
+function folioDeLead(prefijo, lead) {
+  if (lead && lead.folio && new RegExp('^' + prefijo + '-').test(lead.folio)) return lead.folio;
+  const clave = lead && lead.folio_num != null && lead.sucursal_id != null ? (globalThis.SUCURSALES_MAPA || {})[lead.sucursal_id] : null;
+  if (clave) return `${prefijo}-${clave}-${mesDeFolio(lead.created_at)}-${String(lead.folio_num).padStart(4, '0')}`;
+  return `${prefijo}-${mesDeFolio(lead.created_at)}-${String(lead.id).padStart(4, '0')}`;
 }
+function folioCotizacion(lead) { return folioDeLead('COT', lead); }
 
 function nombreArchivoCotizacion(datos, extension) {
   const cliente = (datos.cliente.nombre || 'cliente').toLowerCase()
@@ -1013,9 +1031,7 @@ async function generarWordCotizacion(datos) {
 // TODO: ajusta este texto con las condiciones, alcance y garantía reales de Saneadren.
 const CONDICIONES_ORDEN_SERVICIO = 'El presente documento formaliza el servicio aceptado por el cliente en los términos y el importe aquí descritos. Cualquier trabajo adicional no listado en esta orden se cotizará por separado.';
 
-function folioOrdenServicio(lead) {
-  return `OS-${mesDeFolio(lead.created_at)}-${String(lead.id).padStart(4, '0')}`;
-}
+function folioOrdenServicio(lead) { return folioDeLead('OS', lead); }
 
 function nombreArchivoOrdenServicio(datos, extension) {
   const cliente = (datos.cliente.nombre || 'cliente').toLowerCase()
@@ -2253,16 +2269,19 @@ function mostrarUsuarioEnHeader() {
 }
 
 // ---------- Gestión de usuarios (solo admin) ----------
-const ROLES = ['admin', 'ventas', 'atencion', 'tecnico', 'costos'];
+const ROLES = ['admin', 'gerente', 'ventas', 'atencion', 'tecnico', 'costos'];
+const NOMBRE_ROL = { admin: 'admin (general: todas las sucursales)', gerente: 'gerente (admin de su sucursal)', costos: 'costos (encargado de centro de costos)' };
 async function cargarUsuarios() {
   const usuarios = await api('/usuarios').then(r => r.json());
+  const nuS = document.getElementById('nu-sucursales'); if (nuS) nuS.innerHTML = Sucursales.casillas('nu', Sucursales.datos.sucursales.length === 1 ? [Sucursales.datos.sucursales[0].id] : []);
   const admins = usuarios.filter(x => x.rol === 'admin').length;
   document.getElementById('lista-usuarios').innerHTML = usuarios.map(u => {
     const id = Number(u.id), propio = id === USUARIO_ACTUAL.id;
     return `<div class="servicio-row fila-usuario" data-usuario="${id}">
       <div><label for="usr-nombre-${id}">Nombre${propio ? ' (tú)' : ''}</label><input id="usr-nombre-${id}" value="${escaparHtml(u.nombre)}" maxlength="60"></div>
       <div><label for="usr-correo-${id}">Correo${u.correo && !u.correo_verificado ? ' · sin confirmar' : ''}</label><input id="usr-correo-${id}" type="email" value="${escaparHtml(u.correo || '')}" placeholder="nombre@saneadren.com.mx" maxlength="254"></div>
-      <div><label for="usr-rol-${id}">Rol</label><select id="usr-rol-${id}" ${u.rol === 'admin' && admins === 1 ? 'disabled title="Debe quedar al menos un administrador"' : ''}>${ROLES.map(r => `<option value="${r}" ${r === u.rol ? 'selected' : ''}>${r === 'costos' ? 'costos (encargado de centro de costos)' : r}</option>`).join('')}</select></div>
+      <div><label for="usr-rol-${id}">Rol</label><select id="usr-rol-${id}" ${u.rol === 'admin' && admins === 1 ? 'disabled title="Debe quedar al menos un administrador"' : ''}>${ROLES.filter(r => Sucursales.datos.admin_general || !['admin', 'gerente'].includes(r) || r === u.rol).map(r => `<option value="${r}" ${r === u.rol ? 'selected' : ''}>${NOMBRE_ROL[r] || r}</option>`).join('')}</select></div>
+      ${Sucursales.varias() ? `<div><label>Sucursales</label>${u.rol === 'admin' ? '<p class="ayuda">Todas</p>' : Sucursales.casillas('usr-' + id, u.sucursales || [])}</div>` : ''}
       <div class="acciones-catalogo">
         <button type="button" class="btn btn-secundario" data-accion="guardar">Guardar</button>
         <button type="button" class="btn btn-outline" data-accion="password">Nueva contraseña</button>
@@ -2278,7 +2297,10 @@ on('lista-usuarios', 'click', async e => {
   btn.disabled = true;
   try {
     if (btn.dataset.accion === 'guardar') {
-      await api('/usuarios/' + id, { method: 'PUT', body: JSON.stringify({ nombre, correo: document.getElementById('usr-correo-' + id).value.trim() || null, rol: document.getElementById('usr-rol-' + id).value }) });
+      const rolNuevo = document.getElementById('usr-rol-' + id).value, cuerpo = { nombre, correo: document.getElementById('usr-correo-' + id).value.trim() || null, rol: rolNuevo };
+      if (Sucursales.varias() && rolNuevo !== 'admin' && fila.querySelector('[data-sucursales]')) cuerpo.sucursales = Sucursales.elegidas('usr-' + id);
+      const r = await api('/usuarios/' + id, { method: 'PUT', body: JSON.stringify(cuerpo) });
+      if (!r.ok) { const j = await r.json().catch(() => ({})); throw new Error(j.error || 'No se pudo guardar'); }
       toast('Usuario actualizado');
       if (id === USUARIO_ACTUAL.id) { guardarSesion({ ...USUARIO_ACTUAL, nombre }); mostrarUsuarioEnHeader(); }
     } else if (btn.dataset.accion === 'password') {
@@ -2438,7 +2460,7 @@ on('btn-crear-usuario', 'click', async () => {
   try {
     const res = await api('/usuarios', {
       method: 'POST',
-      body: JSON.stringify({ nombre, password, rol, correo: correo || null, temporal: document.getElementById('nu-temporal').checked })
+      body: JSON.stringify({ nombre, password, rol, correo: correo || null, temporal: document.getElementById('nu-temporal').checked, ...(Sucursales.varias() && rol !== 'admin' ? { sucursales: Sucursales.elegidas('nu') } : {}) })
     });
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
@@ -2459,6 +2481,7 @@ on('btn-crear-usuario', 'click', async () => {
 // ---------- Inicio ----------
 async function iniciarApp() {
   mostrarUsuarioEnHeader();
+  await Sucursales.cargar();
   // Si otra persona inicia sesión en el mismo navegador, no debe quedar a la vista lo del usuario anterior.
   for (const id of ['cuentas-tarjetas', 'cobrar-lista', 'pagar-lista', 'prov-lista', 'cuentas-por-confirmar', 'fc-cobranza', 'inicio-dinero']) { const el = document.getElementById(id); if (el) el.innerHTML = ''; }
   cambiarVista('inicio'); // también carga Inicio

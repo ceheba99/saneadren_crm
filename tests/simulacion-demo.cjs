@@ -26,7 +26,7 @@ const pedir = async (m, r, t, b) => { const x = await fetch(`http://localhost:${
   const A = (await pedir('POST', '/login', null, { nombre: ADMIN.correo, password: ADMIN.password }))[1].token;
   [s, j] = await pedir('POST', '/contactos', A, { nombre: 'Cliente Real', telefono: '442 111 2233', empresa_contacto: 'Empresa Real', canal_origen_id: 1 });
   revisa(s === 201 || s === 200, 'se captura un cliente real', [s, j.error]);
-  [s, j] = await pedir('GET', '/usuarios', A); revisa(!j.some(u => /\(demo\)/.test(u.nombre)), 'no hay usuarios de ejemplo');
+  [s, j] = await pedir('GET', '/usuarios', A); revisa(!j.some(u => / - Demo$/.test(u.nombre)), 'no hay usuarios de ejemplo');
   await parar();
 
   console.log('2. MODO_DEMO=1 sobre esa base con datos reales');
@@ -37,23 +37,28 @@ const pedir = async (m, r, t, b) => { const x = await fetch(`http://localhost:${
   revisa(/NO se siembran ejemplos/.test(salida), 'lo deja escrito en el registro del servidor');
   const A2 = (await pedir('POST', '/login', null, { nombre: ADMIN.correo, password: ADMIN.password }))[1].token;
   [s, j] = await pedir('GET', '/clientes/catalogo', A2); revisa(Array.isArray(j) && j.length === 1, 'la base real quedó igual (un solo cliente, sin ejemplos)', j.length);
-  [s, j] = await pedir('GET', '/usuarios', A2); revisa(!j.some(u => /\(demo\)/.test(u.nombre)), 'no se crearon usuarios de ejemplo');
+  [s, j] = await pedir('GET', '/usuarios', A2); revisa(!j.some(u => / - Demo$/.test(u.nombre)), 'no se crearon usuarios de ejemplo');
   await parar();
 
   console.log('3. MODO_DEMO=1 en una base vacía');
   await arrancar('demo.db', { MODO_DEMO: '1' });
   for (let i = 0; i < 400; i++) { [s, j] = await pedir('GET', '/demo/estado'); if (j.listo || j.error) break; await espera(250); }
   revisa(j.demo === true && j.listo === true && !j.error, 'los ejemplos se sembraron sin errores', j.error || j);
+  { const [, us] = await pedir('GET', '/usuarios', (await pedir('POST', '/demo/entrar', null, { rol: 'admin' }))[1].token); revisa(us.filter(u => / - Demo$/.test(u.nombre)).length === 7, 'los 7 usuarios de ejemplo tienen nombres válidos (se pueden editar)', us.map(u => u.nombre)); }
   [s] = await pedir('POST', '/demo/entrar', null, { rol: 'inventado' }); revisa(s === 400, 'un rol que no existe no entra');
   const tok = {};
-  for (const rol of ['admin', 'ventas', 'costos', 'tecnico', 'atencion']) { [s, j] = await pedir('POST', '/demo/entrar', null, { rol }); tok[rol] = j.token; revisa(s === 200 && j.rol === rol && j.token, 'entra como ' + rol + ' sin contraseña'); }
+  for (const rol of ['admin', 'ventas', 'costos', 'tecnico', 'atencion', 'gerente_cdmx', 'ventas_cdmx']) { [s, j] = await pedir('POST', '/demo/entrar', null, { rol }); tok[rol] = j.token; revisa(s === 200 && j.token && (j.rol === rol || j.rol_real === rol.split('_')[0]), 'entra como ' + rol + ' sin contraseña'); }
   [s, j] = await pedir('GET', '/admin/integridad', tok.ventas); revisa(s === 403, 'cada usuario de ejemplo conserva los permisos de su rol (ventas no ve la revisión de integridad)');
   [s, j] = await pedir('GET', '/admin/integridad', tok.admin);
   revisa(s === 200 && j.errores === 0, 'la revisión de integridad no encuentra errores en los datos de ejemplo', (j.resultados || []).filter(r => r.gravedad === 'error' && r.total).map(r => r.titulo));
   const [, leads] = await pedir('GET', '/leads', tok.admin);
   const de = emp => leads.filter(l => (l.empresa_contacto || l.cliente_empresa || l.empresa || '').includes(emp) || JSON.stringify(l).includes(emp));
   const kfc = de('KFC'), sym = de('Symrise');
-  revisa(kfc.length === 6 && new Set(kfc.map(l => l.cliente_id)).size === 1, 'KFC: 6 órdenes (una por sucursal) bajo un solo cliente', [kfc.length, [...new Set(kfc.map(l => l.cliente_id))]]);
+  revisa(kfc.length === 9 && new Set(kfc.map(l => l.cliente_id)).size === 1, 'KFC: un solo cliente con 9 órdenes (6 sucursales en Querétaro y 3 en CDMX)', [kfc.length, [...new Set(kfc.map(l => l.cliente_id))]]);
+  { const kq = (await pedir('GET', '/leads', tok.ventas))[1].filter(l => JSON.stringify(l).includes('KFC')), kc = (await pedir('GET', '/leads', tok.gerente_cdmx))[1].filter(l => JSON.stringify(l).includes('KFC'));
+    revisa(kq.length === 6 && kc.length === 3 && kc.every(l => l.sucursal_id !== kq[0].sucursal_id), 'Ventas QRO ve las 6 de Querétaro y la gerente de CDMX solo sus 3', [kq.length, kc.length]); }
+  { const [, sc] = await pedir('GET', '/leads', tok.ventas_cdmx); revisa(sc.length > 0 && !JSON.stringify(sc).includes('Symrise') && !JSON.stringify(sc).includes('-QRO-'), 'Ventas CDMX no ve nada de Querétaro (ni Symrise ni folios QRO)'); }
+  { const [, t] = await pedir('GET', '/tablero', tok.admin); revisa(t.por_sucursal?.length === 2 && Math.round(t.por_sucursal.reduce((a, x) => a + x.venta * 100, 0)) === Math.round(t.actual.venta * 100), 'Resultados de Dirección: comparativo por sucursal que suma el total', t.por_sucursal?.map(x => [x.clave, x.venta])); }
   const dias = {}; for (const l of sym) { const d = new Date(l.fecha_servicio + 'T12:00:00Z').getUTCDay(); dias[d] = dias[d] || new Set(); dias[d].add(JSON.parse(l.partidas_json)[0].cantidad); }
   revisa(sym.length >= 40 && !dias[0] && [...(dias[1] || [])].join() === '5' && [...(dias[6] || [])].join() === '5' && [2, 3, 4, 5].every(d => [...(dias[d] || [])].join() === '3'), 'Symrise: lunes y sábado 5 viajes, martes a viernes 3, nunca domingo', [sym.length, Object.fromEntries(Object.entries(dias).map(([k, v]) => [k, [...v]]))]);
   [s, j] = await pedir('GET', '/compras/solicitudes', tok.admin); revisa(['recibida', 'con_orden', 'rechazada', 'cotizando', 'por_aprobar'].every(e => j.some(x => x.estado === e)), 'solicitudes de compra en cada etapa', j.map(x => x.estado));

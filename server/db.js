@@ -161,7 +161,7 @@ const backfillCliente = db.transaction(() => {
   const buscar = db.prepare('SELECT id FROM clientes WHERE telefono_normalizado = ?');
   const crear = db.prepare(`INSERT INTO clientes (telefono, telefono_normalizado, nombre, empresa_contacto, direccion)
     VALUES (?, ?, ?, ?, ?)`);
-  const asignar = db.prepare('UPDATE leads SET cliente_id = ? WHERE id = ?');
+  const asignar = db.prepare('UPDATE main.leads SET cliente_id = ? WHERE id = ?');
   sinCliente.forEach(l => {
     let cliente = buscar.get(l.telefono_normalizado);
     let clienteId;
@@ -180,10 +180,11 @@ backfillCliente();
 // usuarios con la misma estructura y los mismos datos (procedimiento oficial de SQLite, sin llaves foráneas activas).
 {
   const sqlUsuarios = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'usuarios'").get().sql;
-  if (!sqlUsuarios.includes("'costos'")) {
-    const nuevo = sqlUsuarios.replace(/CHECK\s*\(\s*rol\s+IN\s*\(([^)]*)\)\s*\)/i, (m, lista) => `CHECK(rol IN (${lista},'costos'))`)
+  const faltan = ['costos', 'gerente'].filter(r => !sqlUsuarios.includes("'" + r + "'"));
+  if (faltan.length) {
+    const nuevo = sqlUsuarios.replace(/CHECK\s*\(\s*rol\s+IN\s*\(([^)]*)\)\s*\)/i, (m, lista) => `CHECK(rol IN (${lista},${faltan.map(r => "'" + r + "'").join(',')}))`)
       .replace(/^CREATE TABLE\s+("?usuarios"?|\[usuarios\])/i, 'CREATE TABLE usuarios_nuevo');
-    if (nuevo === sqlUsuarios || !nuevo.includes('usuarios_nuevo') || !nuevo.includes("'costos'")) throw new Error('No se pudo preparar el rol costos en usuarios');
+    if (nuevo === sqlUsuarios || !nuevo.includes('usuarios_nuevo') || faltan.some(r => !nuevo.includes("'" + r + "'"))) throw new Error('No se pudieron preparar los roles en usuarios');
     const antes = db.prepare('SELECT COUNT(*) n FROM usuarios').get().n;
     db.pragma('foreign_keys = OFF');
     try {
@@ -297,7 +298,7 @@ if(!db.prepare('PRAGMA table_info(leads)').all().some(c=>c.name==='version'))db.
 // así que NO tiene folio de cotización. duplicado_de apunta a la orden de la que se copió.
 if(!db.prepare('PRAGMA table_info(leads)').all().some(c=>c.name==='origen')){
   db.exec("ALTER TABLE leads ADD COLUMN origen TEXT NOT NULL DEFAULT 'cotizacion'");
-  db.exec(`UPDATE leads SET origen='directo' WHERE id IN (SELECT lead_id FROM historial WHERE origen='sistema' AND texto='Servicio registrado directamente como contratado.')`);
+  db.exec(`UPDATE main.leads SET origen='directo' WHERE id IN (SELECT lead_id FROM historial WHERE origen='sistema' AND texto='Servicio registrado directamente como contratado.')`);
 }
 if(!db.prepare('PRAGMA table_info(leads)').all().some(c=>c.name==='duplicado_de'))db.exec('ALTER TABLE leads ADD COLUMN duplicado_de INTEGER REFERENCES leads(id) ON DELETE SET NULL');
 // Datos propios de la orden de servicio (los mismos del formato en papel): unidad/equipo
@@ -346,6 +347,6 @@ function unaVez(nombre, fn) {
 }
 // Las cotizaciones creadas antes se quedaban en "Recolección de datos": ya tienen propuesta, van a "Cotización enviada".
 unaVez('cotizaciones_a_cotizacion_enviada', () => {
-  db.prepare("UPDATE leads SET etapa = 2 WHERE estatus = 'abierto' AND etapa = 1 AND partidas_json IS NOT NULL").run();
+  db.prepare("UPDATE main.leads SET etapa = 2 WHERE estatus = 'abierto' AND etapa = 1 AND partidas_json IS NOT NULL").run();
 });
 module.exports = { db, normalizarTelefono };
