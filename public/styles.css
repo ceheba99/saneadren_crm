@@ -1493,3 +1493,5 @@ body:not(.varias-sucursales) .solo-varias-sucursales{display:none!important;}
 .fila-sucursal input{width:100%;box-sizing:border-box;padding:9px 10px;border:1px solid var(--gris-200);border-radius:8px;font:inherit;}
 .fila-sucursal input:disabled{background:var(--gris-100,#f3f4f6);color:var(--texto-suave,#667);}
 .fila-sucursal .acciones-catalogo{display:flex;flex-wrap:wrap;gap:6px;align-items:center;grid-column:1/-1;justify-content:flex-end;}
+
+.aviso-fecha-realizado{margin:6px 0 0;padding:6px 10px;border-radius:8px;background:#fff7e6;color:#8a5a00;font-size:13px;}

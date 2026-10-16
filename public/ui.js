@@ -134,6 +134,14 @@ document.addEventListener('submit', e => window.ocultarContrasenas(e.target), tr
   };
   const observer=new MutationObserver(records=>{ if(records.some(r=>(r.type==='childList' && stack.at(-1) && !stack.at(-1).contains(document.activeElement)) || (r.attributeName==='class' && overlays.includes(r.target) && r.target.classList.contains('mostrar') !== (r.oldValue||'').split(/\s+/).includes('mostrar')))) sync(); });
   overlays.forEach(o=>observer.observe(o,{attributes:true,attributeFilter:['class'],attributeOldValue:true,childList:true,subtree:true}));
+  // Red de seguridad: la ✕ (y Esc, que la presiona) SIEMPRE cierra su ventana, aunque esa ventana no tenga su propio
+  // manejo. Corre al final (fase de burbuja y en el siguiente ciclo): el aviso de «cambios sin guardar» de flujo.js
+  // detiene el clic antes, así que si hay cambios sin guardar primero se pregunta.
+  document.addEventListener('click',e=>{
+    const cerrar=e.target.closest('.close-btn'); const overlay=cerrar?.closest('.overlay');
+    if(!overlay || overlay.id==='overlay-login') return;
+    setTimeout(()=>{ if(overlay.classList.contains('mostrar')) overlay.classList.remove('mostrar'); },0);
+  });
   document.addEventListener('keydown',e=>{
     const top=stack.at(-1);if(!top)return;
     if(e.key==='Escape') {e.preventDefault();if(top.id!=='overlay-login')top.querySelector('.close-btn')?.click();}
