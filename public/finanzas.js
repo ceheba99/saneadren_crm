@@ -33,7 +33,7 @@ const Finanzas = (() => {
   }
   // De dónde sale la cuenta: servicio realizado (fecha y quién), por concluir o solo programado.
   function textoEjecucion(c) {
-    if (c.ejecucion === 'realizado') return 'realizado el ' + fechaTxt(c.fecha_realizado || c.fecha_servicio) + (c.realizado_por === 'subcontratado' ? ' (subcontratado)' : '');
+    if (c.ejecucion === 'realizado') return 'realizado el ' + fechaTxt(c.fecha_realizado || c.fecha_servicio);
     if (c.ejecucion === 'no_realizado') return 'no realizado';
     return (c.por_concluir ? 'por concluir · servicio ' : 'servicio ') + fechaTxt(c.fecha_servicio);
   }
@@ -395,7 +395,7 @@ const Finanzas = (() => {
     if (c.dias_vencido > 0) return '<b class="rojo">' + Number(c.dias_vencido) + '</b>';
     return c.dias_vencido === 0 ? 'Vence hoy' : 'en ' + Number(-c.dias_vencido) + ' d';
   };
-  const ejecucionCorta = c => c.ejecucion === 'realizado' ? 'Realizado ' + fechaTxt(c.fecha_realizado || c.fecha_servicio) + (c.realizado_por === 'subcontratado' ? ' (subcontratado)' : '')
+  const ejecucionCorta = c => c.ejecucion === 'realizado' ? 'Realizado ' + fechaTxt(c.fecha_realizado || c.fecha_servicio)
     : c.ejecucion === 'no_realizado' ? 'No realizado' : c.por_concluir ? 'Falta marcar' : 'Programado';
   // Mismo orden que la plantilla de cobranza (COBRANZA_QRO_2026): SERIE-FOLIO, FECHA, NOMBRE, M.P., SUBTOTAL, IVA, TOTAL,
   // CRÉDITO, FECHA VENCE, DÍAS VENCIDOS, OS, STATUS, FECHA PAGO, CP, A/C, OBSERVACIONES; después, datos extra del CRM.
@@ -473,7 +473,7 @@ const Finanzas = (() => {
         { titulo: 'Servicio', valor: c => c.servicio_nombre },
         { titulo: 'Fecha del servicio', valor: c => c.fecha_servicio },
         { titulo: 'Ejecución', valor: c => (c.ejecucion === 'realizado' ? 'Realizado' : c.ejecucion === 'no_realizado' ? 'No realizado' : c.por_concluir ? 'Por concluir' : 'Programado') },
-        { titulo: 'Fecha realizado', valor: c => c.fecha_realizado }, { titulo: 'Realizado por', valor: c => (c.realizado_por === 'subcontratado' ? 'Subcontratado' : c.realizado_por === 'propio' ? 'Equipo propio' : '') },
+        { titulo: 'Fecha realizado', valor: c => c.fecha_realizado },
         { titulo: 'Unidad', valor: c => c.equipo }, { titulo: 'Operador', valor: c => c.operador }, { titulo: 'Proyecto', valor: c => c.proyecto },
         { titulo: 'Subtotal', valor: c => c.subtotal.toFixed(2) }, { titulo: 'IVA', valor: c => (c.iva == null ? '' : c.iva.toFixed(2)) }, { titulo: 'Total', valor: c => c.total.toFixed(2) },
         { titulo: 'Crédito (días)', valor: c => c.dias_credito }, { titulo: 'Vence', valor: c => c.vence }, { titulo: 'Días vencido', valor: c => c.dias_vencido },
@@ -779,7 +779,7 @@ const Finanzas = (() => {
     llenar('gasto-equipo', o.equipo);
     // El concepto NO se llena con el servicio: quien registra escribe qué se le paga al tercero.
     if ($('gasto-concepto').dataset.autollenado && $('gasto-concepto').value === $('gasto-concepto').dataset.autollenado) $('gasto-concepto').value = '';
-    $('gasto-concepto').placeholder = 'Qué se le paga al tercero (ej. Renta de pipa 20 m³, disposición de lodos)';
+    $('gasto-concepto').placeholder = 'Concepto del gasto (ej. Renta de pipa 20 m³, diésel, disposición de lodos)';
     if (o.equipo) $('gasto-folio').closest('details').open = true;
   }
   $('gasto-orden').addEventListener('input', () => { $('gasto-orden').dataset.leadId = ''; $('gasto-orden-info').hidden = true; pintarSugerenciasGasto(); });
@@ -1385,8 +1385,8 @@ const Finanzas = (() => {
     sec.hidden = false; EJECUCION_ORDEN = lead;
     const botones = `<div class="btn-group"><button type="button" class="btn btn-verde" data-ejecucion="realizado">✔ Servicio realizado</button><button type="button" class="btn btn-outline" data-ejecucion="no_realizado">✖ No realizado</button></div>`;
     if (lead.ejecucion === 'realizado') {
-      cont.innerHTML = `<p class="ejecucion-estado realizado"><b>✔ Servicio realizado</b> el ${esc(fechaTxt(lead.fecha_realizado))} · ${lead.realizado_por === 'subcontratado' ? 'Subcontratado (lo hizo otra empresa)' : 'Por nuestro equipo'}. Ya cuenta en el Generador.</p>
-        <p class="ayuda">¿Hubo otro gasto? Agrégalo en «Costos con terceros» de abajo.</p>`;
+      cont.innerHTML = `<p class="ejecucion-estado realizado"><b>✔ Servicio realizado</b> el ${esc(fechaTxt(lead.fecha_realizado))}. Ya cuenta en el Generador.</p>
+        <p class="ayuda">¿Hubo otro gasto? Agrégalo en «Gastos generados de esta orden», abajo.</p>`;
     } else if (lead.ejecucion === 'no_realizado') {
       cont.innerHTML = `<p class="ejecucion-estado no-realizado"><b>✖ No realizado.</b> Motivo: ${esc(lead.motivo_no_realizado || '—')}. No cuenta en el Generador y no se le cobra; si ya había pagado, ese dinero queda a su favor (devolverlo o aplicarlo a otro servicio).</p>
         <p class="ayuda">Si al final sí se realizó, márcalo:</p>${botones.replace('<button type="button" class="btn btn-outline" data-ejecucion="no_realizado">✖ No realizado</button>', '')}`;
@@ -1397,19 +1397,16 @@ const Finanzas = (() => {
   }
   $('ejecucion-orden').addEventListener('click', async e => {
     const b = e.target.closest('[data-ejecucion]'); const lead = EJECUCION_ORDEN; if (!b || !lead) return;
-    if (b.dataset.ejecucion === 'realizado') return abrirRealizado(lead);
-    const motivo = await solicitarDialogo({ titulo: 'Servicio no realizado', mensaje: '¿Por qué no se realizó? Quedará en la bitácora de la orden.', aceptar: 'Marcar como no realizado', campo: { tipo: 'text', etiqueta: 'Motivo' } });
-    if (!motivo) return;
-    const r = await enviar('/leads/' + Number(lead.id) + '/ejecucion', 'POST', { estado: 'no_realizado', motivo });
-    if (!r) return;
-    // Avisos claros: el cliente no debe nada; lo pagado queda a su favor; los gastos siguen en Cuentas por pagar.
+    return abrirRealizado(lead, b.dataset.ejecucion === 'realizado' ? 'si' : 'no');
+  });
+  // Avisos claros al marcar «no realizado»: el cliente no debe nada; lo pagado queda a su favor; los gastos siguen en Cuentas por pagar.
+  async function avisosNoRealizado(r) {
     const avisos = ['Servicio marcado como no realizado: ya no se le cobra.'];
     if (r.a_favor > 0) avisos.push(`El cliente ya había pagado ${formatoMoneda(r.a_favor)}: queda a su favor (devuélvelo o aplícalo a otro servicio).`);
-    if (r.gastos_ligados > 0) avisos.push(`Esta orden tiene ${Number(r.gastos_ligados)} gasto(s) en Cuentas por pagar${r.gastos_pendientes > 0 ? ' (' + formatoMoneda(r.gastos_pendientes) + ' sin pagar)' : ''}: revisa si debes cancelarlos.`);
+    if (r.gastos_ligados > 0) avisos.push(`Esta orden tiene ${Number(r.gastos_ligados)} gasto(s) en Cuentas por pagar${r.gastos_pendientes > 0 ? ' (' + formatoMoneda(r.gastos_pendientes) + ' sin pagar)' : ''}: revisa si alguno se cancela.`);
     if (avisos.length > 1) await solicitarDialogo({ titulo: 'Servicio no realizado', mensaje: avisos.join('\n\n'), aceptar: 'Entendido', soloAviso: true });
     else toast(avisos[0]);
-    await refrescarFichaOrden(lead.id);
-  });
+  }
   async function refrescarFichaOrden(id) { if (LEAD_ACTUAL?.id === id) await abrirFicha(id); await ServiciosTabla.refrescar(); }
 
   // Ventana: quién lo hizo y sus gastos (cada gasto se carga en Cuentas por pagar ligado a la orden).
@@ -1422,9 +1419,9 @@ const Finanzas = (() => {
     const div = document.createElement('div'); div.className = 'realizado-gasto';
     const categoriaInicial = g.categoria || 'otro';
     div.innerHTML = `<div class="form-grid-2">
-        <div class="campo"><label>Proveedor / quién lo realizó</label><select class="rg-proveedor">${opcionesProveedor(g.proveedor_id)}</select></div>
+        <div class="campo"><label>Proveedor</label><select class="rg-proveedor">${opcionesProveedor(g.proveedor_id)}</select></div>
         <div class="campo"><label>Categoría</label><select class="rg-categoria">${opcionesCategoria(categoriaInicial)}</select></div>
-        <div class="campo"><label>Concepto del costo (obligatorio)</label><input class="rg-concepto" maxlength="200" value="${esc(g.concepto || '')}" placeholder="Qué se le paga al tercero: ej. Renta de pipa 20 m³" required></div>
+        <div class="campo"><label>Concepto del costo (obligatorio)</label><input class="rg-concepto" maxlength="200" value="${esc(g.concepto || '')}" placeholder="Ej. Diésel, casetas, renta de pipa 20 m³, disposición de lodos" required></div>
         <div class="campo"><label>Monto con IVA (MXN)</label><input class="rg-total" type="text" inputmode="decimal" autocomplete="off" value="${esc(g.total || '')}"></div>
       </div>
       <label class="diseno-campo-checkbox"><input type="checkbox" class="rg-pagado"> Ya se pagó</label>
@@ -1435,39 +1432,37 @@ const Finanzas = (() => {
         <div class="campo"><label>Folio de factura (opcional)</label><input class="rg-folio" maxlength="60"></div>
       </div>
       <button type="button" class="btn-eliminar rg-quitar">🗑 Quitar gasto</button>`;
-    div.querySelector('.rg-fecha').value = $('realizado-fecha').value || hoy();
+    div.querySelector('.rg-fecha').value = ($('realizado-campo-fecha').hidden ? '' : $('realizado-fecha').value) || hoy();
     return div;
   }
   function resumenRealizado() {
     const filas = [...document.querySelectorAll('#realizado-gastos .realizado-gasto')];
     const total = filas.reduce((t, f) => t + (Number(f.querySelector('.rg-total').value.replace(/[$,\s]/g, '')) || 0), 0);
-    $('realizado-resumen').textContent = filas.length ? `${filas.length} gasto${filas.length === 1 ? '' : 's'} por ${formatoMoneda(total)}: se cargarán en Cuentas por pagar ligados a esta orden.` : 'Sin gastos: solo se marca como realizado.';
+    $('realizado-resumen').textContent = filas.length ? `${filas.length} gasto${filas.length === 1 ? '' : 's'} por ${formatoMoneda(total)}: se cargarán en Cuentas por pagar con el número de esta orden.` : 'Sin gastos: si no hubo, déjalo así.';
   }
+  // Sí: la fecha (precargada con la de la orden). No: el motivo es obligatorio. En ambos casos se pueden incluir gastos.
   function ayudaRealizado() {
-    const por = document.querySelector('input[name="realizado-por"]:checked')?.value;
-    $('realizado-ayuda').textContent = por === 'subcontratado'
-      ? 'Registra lo que se le paga a la empresa que lo realizó (y cualquier otro gasto). Si ya se le pagó, marca «Ya se pagó».'
-      : por === 'propio' ? 'Si hubo gastos internos (combustible, casetas, disposición de residuos…), agrégalos; si no, déjalo sin gastos.' : '';
-    // Subcontratado: se propone el renglón del pago al tercero.
-    if (por === 'subcontratado' && !document.querySelector('#realizado-gastos .realizado-gasto')) {
-      $('realizado-gastos').append(filaGasto({ categoria: 'subcontratacion', concepto: '' }));
-    }
+    const si = document.querySelector('input[name="realizado-si"]:checked')?.value;
+    $('realizado-campo-fecha').hidden = si !== 'si';
+    $('realizado-campo-motivo').hidden = si !== 'no';
+    $('realizado-ayuda').textContent = si === 'no' ? 'No se le cobrará al cliente; si ya había pagado, ese dinero queda a su favor.' : '';
     resumenRealizado();
   }
-  async function abrirRealizado(lead) {
+  async function abrirRealizado(lead, respuesta) {
     try { await catalogosPagos(); CATEGORIAS_TXT = Object.fromEntries((await api('/finanzas/categorias').then(json)).map(c => [c.clave, c.nombre])); }
     catch (err) { toast('No se pudo abrir: ' + err.message); return; }
     REALIZADO = lead;
-    $('realizado-titulo').textContent = 'Servicio realizado · ' + folioOrdenServicio(lead);
+    $('realizado-titulo').textContent = '¿Se realizó el servicio? · ' + folioOrdenServicio(lead);
     $('realizado-orden').textContent = [lead.empresa_contacto || lead.nombre, lead.servicio_nombre, lead.equipo ? 'Unidad ' + lead.equipo : '', lead.operador ? 'Operador ' + lead.operador : ''].filter(Boolean).join(' · ');
     $('realizado-fecha').value = lead.fecha_servicio && lead.fecha_servicio <= hoy() ? lead.fecha_servicio : hoy();
     $('realizado-fecha').max = hoy();
-    document.querySelectorAll('input[name="realizado-por"]').forEach(r => { r.checked = false; });
+    document.querySelectorAll('input[name="realizado-si"]').forEach(r => { r.checked = r.value === respuesta; });
+    $('realizado-motivo').value = '';
     $('realizado-gastos').innerHTML = '';
     ayudaRealizado();
     abrirVentana('overlay-realizado');
   }
-  document.querySelectorAll('input[name="realizado-por"]').forEach(r => r.addEventListener('change', ayudaRealizado));
+  document.querySelectorAll('input[name="realizado-si"]').forEach(r => r.addEventListener('change', ayudaRealizado));
   $('realizado-agregar').addEventListener('click', () => { $('realizado-gastos').append(filaGasto()); resumenRealizado(); });
   $('realizado-gastos').addEventListener('input', resumenRealizado);
   $('realizado-gastos').addEventListener('click', e => { const q = e.target.closest('.rg-quitar'); if (q) { q.closest('.realizado-gasto').remove(); resumenRealizado(); } });
@@ -1491,21 +1486,25 @@ const Finanzas = (() => {
   });
   $('realizado-guardar').addEventListener('click', e => conBoton(e.currentTarget, async () => {
     const lead = REALIZADO; if (!lead) return;
-    const por = document.querySelector('input[name="realizado-por"]:checked')?.value;
-    if (!por) { toast('Indica quién realizó el servicio'); return; }
+    const si = document.querySelector('input[name="realizado-si"]:checked')?.value;
+    if (!si) { toast('Indica si se realizó el servicio'); return; }
+    const motivo = $('realizado-motivo').value.trim();
+    if (si === 'no' && motivo.replace(/[^\p{L}\p{N}]/gu, '').length < 5) { toast('Escribe por qué no se realizó'); $('realizado-motivo').focus(); return; }
+    if (si === 'si' && !await solicitarDialogo({ titulo: '¿Guardar el servicio como realizado?', mensaje: 'Una vez que el servicio se considera realizado, pasa a Cuentas por cobrar y ya no hay vuelta atrás.', aceptar: 'Sí, guardar' })) return;
     const gastos = [...document.querySelectorAll('#realizado-gastos .realizado-gasto')].map(f => ({
       proveedor_id: Number(f.querySelector('.rg-proveedor').value) || null, categoria: f.querySelector('.rg-categoria').value,
       concepto: f.querySelector('.rg-concepto').value, total: f.querySelector('.rg-total').value.trim(),
       ya_pagado: f.querySelector('.rg-pagado').checked, metodo: f.querySelector('.rg-metodo').value, fecha_pago: f.querySelector('.rg-fecha').value,
       referencia: f.querySelector('.rg-referencia').value, factura_folio: f.querySelector('.rg-folio').value }));
-    const r = await enviar('/leads/' + Number(lead.id) + '/ejecucion', 'POST', { estado: 'realizado', fecha: $('realizado-fecha').value, realizado_por: por, gastos });
+    const r = await enviar('/leads/' + Number(lead.id) + '/ejecucion', 'POST', si === 'si' ? { estado: 'realizado', fecha: $('realizado-fecha').value, gastos } : { estado: 'no_realizado', motivo, gastos });
     if (!r) return;
     $('overlay-realizado').classList.remove('mostrar'); REALIZADO = null;
-    toast('Servicio realizado' + (r.gastos ? ` · ${r.gastos} gasto${r.gastos === 1 ? '' : 's'} cargado${r.gastos === 1 ? '' : 's'} en Cuentas por pagar` : ''));
+    if (si === 'no') await avisosNoRealizado(r);
+    else toast('Servicio realizado' + (r.gastos ? ` · ${r.gastos} gasto${r.gastos === 1 ? '' : 's'} cargado${r.gastos === 1 ? '' : 's'} en Cuentas por pagar` : ''));
     await refrescarFichaOrden(lead.id);
   }));
 
-  // ===================== Costos con terceros en la ficha de la orden =====================
+  // ===================== Gastos generados de la orden (ficha de la orden) =====================
   let COSTOS_ORDEN = null;
   async function pintarCostosOrden(lead) {
     const sec = $('seccion-costos'), cont = $('costos-orden');
@@ -1514,14 +1513,14 @@ const Finanzas = (() => {
     cont.innerHTML = '<p class="util-45" role="status">Cargando…</p>';
     let lista;
     try { lista = await api('/finanzas/cxp?vista=todas&lead_id=' + Number(lead.id)).then(json); }
-    catch (err) { cont.innerHTML = `<p class="ayuda">No se pudieron cargar los costos: ${esc(err.message)}</p>`; return; }
+    catch (err) { cont.innerHTML = `<p class="ayuda">No se pudieron cargar los gastos: ${esc(err.message)}</p>`; return; }
     if (COSTOS_ORDEN?.id !== lead.id) return;
-    if (!lista.length) { cont.innerHTML = '<p class="util-45">Sin costos con terceros registrados.</p>'; return; }
+    if (!lista.length) { cont.innerHTML = '<p class="util-45">Sin gastos registrados.</p>'; return; }
     const estado = x => x.saldo <= 0 ? '<span class="estado-cxc pagada">Pagado</span>' : x.pagado > 0 ? '<span class="estado-cxc parcial">Pagado en parte</span>' : '<span class="estado-cxc pendiente">Pendiente de pago</span>';
     const via = x => { const u = (x.ultimo_pago || '').split('|'); return x.ultimo_pago ? ` · ${esc(NOMBRE_METODO[u[1]] || u[1])}${u[2] ? ' · ' + esc(u[2]) : ''} · ${esc(fechaTxt(u[0]))}` : ''; };
     cont.innerHTML = '<div class="pagos-lista">' + lista.map(x => `<div class="pago-fila"><div><b>${formatoMoneda(x.total)}</b> · ${esc(x.proveedor_nombre)} · ${esc(x.concepto)} ${estado(x)}
         <small>${x.factura_folio ? 'Factura ' + esc(x.factura_folio) + ' · ' : ''}Pagado ${formatoMoneda(x.pagado)}${via(x)}</small></div></div>`).join('') + '</div>'
-      + `<p class="ayuda">Total con terceros: ${formatoMoneda(lista.reduce((t, x) => t + x.total, 0))}. Los pagos se registran en Finanzas → Cuentas por pagar.</p>`;
+      + `<p class="ayuda">Total de gastos de esta orden: ${formatoMoneda(lista.reduce((t, x) => t + x.total, 0))}. Los pagos se registran en Finanzas → Cuentas por pagar.</p>`;
   }
   $('btn-costo-tercero').addEventListener('click', () => {
     const lead = COSTOS_ORDEN; if (!lead) return;

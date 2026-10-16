@@ -150,7 +150,7 @@ module.exports = function demo(app, db, { sesiones, PORT, SESSION_TTL_MS }) {
         if (L + d >= 0) continue; // solo días ya trabajados
         const viajes = d === 0 || d === 5 ? 5 : 3, f = dia(L + d);
         const o = await orden({ cliente: symrise, serv: 'Retiro de agua / bombeo', partidas: [{ leyenda: `Recolección de agua residual · ${viajes} viajes de pipa 20 m³`, cantidad: viajes, precio: 3200 }],
-          fCot: dia(L), fServ: f, realizado: f, proyecto: 'Planta Symrise · recolección diaria', equipo: 'Pipas de tercero', operador: 'Pipas Hermanos Ramírez',
+          fCot: dia(L), fServ: f, realizado: f, proyecto: 'Planta Symrise · recolección diaria', equipo: 'Pipa 20 m³', operador: 'Supervisa: Diego Arturo Hdz',
           sub: [{ proveedor_id: prov.pipas.id, categoria: 'renta_maquinaria', concepto: `Renta de pipa 20 m³ con operador · ${viajes} viajes`, total: viajes * 1900 }],
           factura: { dias: 30, folio: 'SYM-' + (++folioSym), fecha: f }, cobros: L + d + 30 < -1 ? [{ monto: total(viajes * 3200), fecha: dia(L + d + 30), ref: 'SPEI Symrise ' + f }] : [] });
         const pagoPipas = L + 12; // el lunes de la semana siguiente a la que se trabajó
