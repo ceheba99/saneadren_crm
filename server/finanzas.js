@@ -794,6 +794,48 @@ module.exports = function finanzas(app, db, h, unicos) {
     res.json(db.prepare('SELECT * FROM proveedores WHERE id = ?').get(p.id));
   }));
 
+  // Ficha del proveedor (como el estado de cuenta del cliente): cuánto se le debe y cuándo vence, todas sus
+  // facturas o gastos, todos los pagos (con la cuenta de salida), sus órdenes de compra, las cotizaciones que ha
+  // mandado en solicitudes de compra (y cuáles ganó) y los cambios a sus datos.
+  const folioOCx = o => 'OC-' + String(o.created_at || '').slice(0, 7).replace('-', '') + '-' + String(o.id).padStart(4, '0');
+  const folioSolx = o => 'SOL-' + String(o.created_at || '').slice(0, 7).replace('-', '') + '-' + String(o.id).padStart(4, '0');
+  const tablaExiste = t => !!db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(t);
+  app.get('/api/finanzas/proveedores/:id/estado-cuenta', h((req, res) => {
+    if (!permitido(req, res, PUEDE_VER_CARTERA)) return;
+    const p = db.prepare('SELECT * FROM proveedores WHERE id = ?').get(req.params.id);
+    if (!p) return res.status(404).json({ error: 'Proveedor no encontrado' });
+    const hoy = hoyMexico(), semana = new Date(Date.parse(hoy + 'T00:00:00Z') + 7 * 86400000).toISOString().slice(0, 10);
+    const cuentas = cuentasPorPagar().filter(x => x.proveedor_id === p.id)
+      .map(x => ({ id: x.id, concepto: x.concepto, categoria: x.categoria, categoria_nombre: x.categoria_nombre, es_gasto: !CATEGORIAS_NO_GASTO.has(x.categoria), factura_folio: x.factura_folio,
+        tipo_comprobante: x.tipo_comprobante, metodo_sat: x.metodo_sat, beneficiario: x.beneficiario, fecha_documento: x.fecha_documento, fecha_vencimiento: x.fecha_vencimiento,
+        dias_credito: x.dias_credito, total: x.total, pagado: x.pagado, saldo: x.saldo, vencida: x.vencida, dias_para_vencer: x.dias_para_vencer, orden_folio: x.orden_folio, lead_id: x.lead_id, equipo: x.equipo, notas: x.notas }))
+      .sort((a, b) => (b.fecha_documento || '').localeCompare(a.fecha_documento || '') || b.id - a.id);
+    const cent = arr => arr.reduce((t, x) => t + Math.round(x * 100), 0);
+    const conSaldo = cuentas.filter(x => x.saldo > 0);
+    const pagos = db.prepare(`SELECT g.id, g.cxp_id, g.fecha, g.monto_cent, g.metodo, g.referencia, g.cuenta_origen, g.cancelado, g.motivo_cancelacion, u.nombre AS registrado_por_nombre,
+        x.concepto, x.factura_folio
+      FROM pagos_proveedor g JOIN cuentas_por_pagar x ON x.id = g.cxp_id LEFT JOIN usuarios u ON u.id = g.registrado_por
+      WHERE x.proveedor_id = ? ORDER BY g.fecha DESC, g.id DESC`).all(p.id).map(g => ({ ...g, monto: aPesos(g.monto_cent), cancelado: !!g.cancelado }));
+    const vivos = pagos.filter(g => !g.cancelado);
+    const ordenes = tablaExiste('ordenes_compra') ? db.prepare(`SELECT o.id, o.created_at, o.fecha, o.estado, o.total_cent, o.recibida_at, o.solicitud_id, o.cxp_id,
+        (SELECT created_at FROM solicitudes_compra s WHERE s.id = o.solicitud_id) AS sol_created_at
+      FROM ordenes_compra o WHERE o.proveedor_id = ? ORDER BY o.fecha DESC, o.id DESC`).all(p.id)
+      .map(o => ({ id: o.id, folio: folioOCx(o), fecha: o.fecha, estado: o.estado, total: aPesos(o.total_cent), recibida: !!o.recibida_at, recibida_at: o.recibida_at, cxp_id: o.cxp_id,
+        solicitud_folio: o.solicitud_id ? folioSolx({ id: o.solicitud_id, created_at: o.sol_created_at }) : null })) : [];
+    const cotizaciones = tablaExiste('documentos_solicitud') ? db.prepare(`SELECT d.id, d.monto_cent, d.entrega, d.created_at, s.id AS solicitud_id, s.created_at AS sol_created_at, s.que, s.estado, s.ganadora_id
+      FROM documentos_solicitud d JOIN solicitudes_compra s ON s.id = d.solicitud_id
+      WHERE d.proveedor_id = ? AND d.tipo = 'cotizacion' AND d.eliminado = 0 ORDER BY d.created_at DESC, d.id DESC`).all(p.id)
+      .map(d => ({ id: d.id, solicitud_id: d.solicitud_id, solicitud_folio: folioSolx({ id: d.solicitud_id, created_at: d.sol_created_at }), que: d.que, monto: d.monto_cent == null ? null : aPesos(d.monto_cent),
+        entrega: d.entrega, fecha: String(d.created_at).slice(0, 10), gano: d.ganadora_id === d.id, decidida: !!d.ganadora_id })) : [];
+    const historial = db.prepare("SELECT fecha, accion, detalle, usuario FROM auditoria WHERE entidad = 'proveedor' AND entidad_id = ? ORDER BY fecha DESC, id DESC LIMIT 100").all(p.id);
+    res.json({ proveedor: p,
+      debe: aPesos(cent(conSaldo.map(x => x.saldo))), vencido: aPesos(cent(conSaldo.filter(x => x.vencida).map(x => x.saldo))),
+      esta_semana: aPesos(cent(conSaldo.filter(x => !x.vencida && x.fecha_vencimiento <= semana).map(x => x.saldo))),
+      comprado: aPesos(cent(cuentas.map(x => x.total))), pagado: aPesos(vivos.reduce((t, g) => t + g.monto_cent, 0)),
+      ultimo_pago: vivos[0] ? { fecha: vivos[0].fecha, monto: vivos[0].monto } : null,
+      cuentas, pagos, ordenes, cotizaciones, historial });
+  }));
+
   app.get('/api/finanzas/cxp', h((req, res) => {
     if (!permitido(req, res, PUEDE_VER_CARTERA)) return;
     const vista = String(req.query.vista || 'pendientes');

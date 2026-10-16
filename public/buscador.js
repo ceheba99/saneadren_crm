@@ -81,6 +81,7 @@ const Buscador = (() => {
         resaltar(b); b.click(); return;
       }
       if (tipo === 'proveedor') {
+        if (window.abrirCuentaProveedor) return await window.abrirCuentaProveedor(id);
         cambiarVista('cuentas', { pestana: 'proveedores' });
         resaltar(await esperar('[data-editar-prov="' + Number(id) + '"]')); return;
       }
