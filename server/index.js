@@ -145,6 +145,9 @@ app.use('/api', (req, res, next) => {
 // Sucursales: alcance de cada petición (qué sucursales ve) y candados en la base. Va antes de las demás rutas.
 const suc = require('./sucursales')(app, db, h, { audit: { registrar: (...a) => app.locals.auditoria?.registrar(...a), diferencias: (...a) => app.locals.auditoria?.diferencias(...a) } });
 app.locals.sucursales = suc;
+// Roles y permisos: qué puede hacer cada rol (lo decide Dirección en «Roles y permisos»).
+const permisos = require('./permisos')(db, app, h);
+app.locals.permisos = permisos;
 
 // Bitácora general de movimientos (clientes, proveedores, compras, usuarios, catálogos, eliminados).
 const audit = require('./auditoria')(app, db, h);
@@ -166,7 +169,7 @@ const demo = require('./demo')(app, db, { sesiones, PORT, SESSION_TTL_MS });
 // ---------- Catálogos ----------
 app.get('/api/usuarios', h((req, res) => {
   // El correo solo lo ve el administrador (para gestionar cuentas).
-  const columnas = req.usuarioSesion.rol === 'admin' ? 'id, nombre, rol, activo, correo, correo_verificado' : 'id, nombre, rol, activo';
+  const columnas = permisos.puede(req, 'usuarios.administrar') ? 'id, nombre, rol, activo, correo, correo_verificado' : 'id, nombre, rol, activo';
   const a = req.alcanceSuc;
   const filas = db.prepare(`SELECT ${columnas} FROM usuarios WHERE activo = 1 ORDER BY nombre`).all().map(u => ({ ...u, sucursales: suc.sucursalesDe(u.id) }));
   res.json(filas.filter(u => a.todo || u.id === req.usuarioSesion.id || u.sucursales.some(s => a.ids.has(s))));
@@ -249,7 +252,7 @@ app.post('/api/cambiar-password', h((req, res) => {
 // ---------- Crear usuario (solo admin) ----------
 app.post('/api/usuarios', h((req, res) => {
   const { nombre, password, rol } = req.body;
-  if (req.usuarioSesion.rol !== 'admin') return res.status(403).json({ error: 'Solo un administrador puede crear usuarios' });
+  if (!permisos.puede(req, 'usuarios.administrar')) return res.status(403).json({ error: 'No tienes permiso para crear usuarios' });
   const problemaN = problemaNombre(nombre);
   if (problemaN) return res.status(400).json({ error: problemaN });
   const correo = req.body.correo ? normalizarCorreo(req.body.correo) : null;
@@ -257,8 +260,9 @@ app.post('/api/usuarios', h((req, res) => {
   if (correo && db.prepare('SELECT id FROM usuarios WHERE correo = ?').get(correo)) return res.status(409).json({ error: 'Ya existe un usuario con ese correo' });
   const problema = problemaPassword(password, { nombre, correo: correo || '' });
   if (problema) return res.status(400).json({ error: problema });
-  if (![...['admin', 'ventas', 'atencion', 'tecnico', 'costos'], 'gerente'].includes(rol)) return res.status(400).json({ error: 'Rol inválido' });
+  if (!permisos.rolValido(rol)) return res.status(400).json({ error: 'Rol inválido' });
   if (['admin', 'gerente'].includes(rol) && !suc.esGeneral(req)) return res.status(403).json({ error: 'Solo el administrador general crea administradores o gerentes' });
+  if (!permisos.cabe(req, rol)) return res.status(403).json({ error: 'No puedes dar un rol con más permisos que el tuyo' });
   const sucs = suc.sucursalesParaUsuario(req, req.body.sucursales, rol);
   if (sucs.error) return res.status(400).json({ error: sucs.error });
 
@@ -279,7 +283,7 @@ app.get('/api/servicios', h((req, res) => {
 })); 
 // ---------- Administrar un usuario (solo admin): nombre, correo y rol ----------
 app.put('/api/usuarios/:id', h((req, res) => {
-  if (soloAdmin(req, res, 'Solo un administrador puede administrar usuarios')) return;
+  if (!permisos.exigir(req, res, 'usuarios.administrar', 'No tienes permiso para administrar usuarios')) return;
   const usuario = db.prepare('SELECT * FROM usuarios WHERE id = ? AND activo = 1').get(req.params.id);
   if (!usuario || !suc.puedeAdministrar(req, usuario)) return res.status(404).json({ error: 'Usuario no encontrado' });
   const nombre = req.body.nombre !== undefined ? String(req.body.nombre).trim().replace(/\s+/g, ' ') : usuario.nombre;
@@ -287,8 +291,9 @@ app.put('/api/usuarios/:id', h((req, res) => {
   if (problemaN) return res.status(400).json({ error: problemaN });
   if (db.prepare('SELECT id FROM usuarios WHERE lower(nombre) = lower(?) AND id <> ?').get(nombre, usuario.id)) return res.status(409).json({ error: 'Ya existe un usuario con ese nombre' });
   const rol = req.body.rol !== undefined ? req.body.rol : usuario.rol;
-  if (![...['admin', 'ventas', 'atencion', 'tecnico', 'costos'], 'gerente'].includes(rol)) return res.status(400).json({ error: 'Rol inválido' });
+  if (rol !== usuario.rol && !permisos.rolValido(rol)) return res.status(400).json({ error: 'Rol inválido' });
   if (['admin', 'gerente'].includes(rol) && rol !== usuario.rol && !suc.esGeneral(req)) return res.status(403).json({ error: 'Solo el administrador general asigna administradores o gerentes' });
+  if (rol !== usuario.rol && !permisos.cabe(req, rol)) return res.status(403).json({ error: 'No puedes dar un rol con más permisos que el tuyo' });
   const sucsNuevas = req.body.sucursales !== undefined || (usuario.rol === 'admin' && rol !== 'admin') ? suc.sucursalesParaUsuario(req, req.body.sucursales, rol) : null;
   if (sucsNuevas?.error) return res.status(400).json({ error: sucsNuevas.error });
   if (usuario.rol === 'admin' && rol !== 'admin' && db.prepare("SELECT COUNT(*) c FROM usuarios WHERE rol = 'admin' AND activo = 1").get().c <= 1) {
@@ -315,7 +320,7 @@ app.put('/api/usuarios/:id', h((req, res) => {
 // Asignar una contraseña temporal (solo admin). El usuario deberá cambiarla al entrar y se
 // cierran sus sesiones abiertas.
 app.post('/api/usuarios/:id/password', h((req, res) => {
-  if (soloAdmin(req, res, 'Solo un administrador puede asignar contraseñas')) return;
+  if (!permisos.exigir(req, res, 'usuarios.administrar', 'No tienes permiso para asignar contraseñas')) return;
   const usuario = db.prepare('SELECT * FROM usuarios WHERE id = ? AND activo = 1').get(req.params.id);
   if (!usuario || (usuario.id !== req.usuarioSesion.id && !suc.puedeAdministrar(req, usuario))) return res.status(404).json({ error: 'Usuario no encontrado' });
   const problema = problemaPassword(req.body.password, { nombre: usuario.nombre, correo: usuario.correo || '' });
@@ -329,8 +334,8 @@ app.post('/api/usuarios/:id/password', h((req, res) => {
 
 /* ---------- Eliminar usuario (soft delete, solo admin) ---------- */
 app.delete('/api/usuarios/:id', h((req, res) => {
-  if (req.usuarioSesion.rol !== 'admin') {
-    return res.status(403).json({ error: 'Solo un administrador puede eliminar usuarios' });
+  if (!permisos.puede(req, 'usuarios.administrar')) {
+    return res.status(403).json({ error: 'No tienes permiso para desactivar usuarios' });
   }
   const usuario = db.prepare('SELECT * FROM usuarios WHERE id = ?').get(req.params.id);
   if (!usuario || !suc.puedeAdministrar(req, usuario)) return res.status(404).json({ error: 'Usuario no encontrado' });
@@ -356,8 +361,7 @@ app.delete('/api/usuarios/:id', h((req, res) => {
 // Todos: editar la descripción de los servicios, tipos de cliente y canales ("cómo se enteró"),
 // y reordenar servicios y canales. Solo admin: dar de alta / eliminar servicios, la recurrencia
 // de recompra y todo lo de usuarios y respaldos.
-const esAdmin = req => req.usuarioSesion.rol === 'admin';
-const soloAdmin = (req, res, mensaje) => { if (esAdmin(req)) return false; res.status(403).json({ error: mensaje }); return true; };
+const soloServicios = (req, res, mensaje) => !permisos.exigir(req, res, 'catalogo.servicios', mensaje);
 
 // Reordenar un catálogo: recibe la lista completa de ids en el nuevo orden.
 function reordenar(tabla, req, res) {
@@ -376,7 +380,7 @@ app.put('/api/canales/orden', h((req, res) => reordenar('canales', req, res)));
 // Editar un servicio: la descripción la puede cambiar cualquiera; la recurrencia solo un admin.
 app.put('/api/servicios/:id', h((req, res) => {
   const { dias_recurrencia } = req.body;
-  if (dias_recurrencia !== undefined && soloAdmin(req, res, 'Solo un administrador puede cambiar la recurrencia de un servicio')) return;
+  if (dias_recurrencia !== undefined && soloServicios(req, res, 'No tienes permiso para cambiar la recurrencia de un servicio')) return;
   const servicio = db.prepare('SELECT * FROM catalogo_servicios WHERE id = ? AND activo = 1').get(req.params.id);
   if (!servicio) return res.status(404).json({ error: 'Servicio no encontrado' });
   let dias = null;
@@ -392,7 +396,7 @@ app.put('/api/servicios/:id', h((req, res) => {
 // Eliminar un servicio del catálogo (solo admin). Es una baja lógica: las cotizaciones y
 // órdenes que ya lo usan lo conservan; solo deja de ofrecerse en las nuevas.
 app.delete('/api/servicios/:id', h((req, res) => {
-  if (soloAdmin(req, res, 'Solo un administrador puede eliminar servicios')) return;
+  if (soloServicios(req, res, 'No tienes permiso para eliminar servicios')) return;
   const servicio = db.prepare('SELECT * FROM catalogo_servicios WHERE id = ? AND activo = 1').get(req.params.id);
   if (!servicio) return res.status(404).json({ error: 'Servicio no encontrado' });
   if (db.prepare('SELECT COUNT(*) c FROM catalogo_servicios WHERE activo = 1').get().c <= 1) return res.status(400).json({ error: 'Debe quedar al menos un servicio en el catálogo' });
@@ -403,7 +407,7 @@ app.delete('/api/servicios/:id', h((req, res) => {
 // Agregar un servicio nuevo al catálogo (solo admin). Si existía y se había eliminado, se reactiva.
 app.post('/api/servicios', h((req, res) => {
   const { nombre, dias_recurrencia } = req.body;
-  if (soloAdmin(req, res, 'Solo un administrador puede agregar servicios')) return;
+  if (soloServicios(req, res, 'No tienes permiso para agregar servicios')) return;
   if (typeof nombre !== 'string' || !nombre.trim() || nombre.trim().length > 120) return res.status(400).json({ error: 'El nombre del servicio es requerido (máximo 120 caracteres)' });
   const existente = db.prepare('SELECT id, activo FROM catalogo_servicios WHERE nombre = ?').get(nombre.trim());
   if (existente?.activo) return res.status(409).json({ error: 'Ya existe un servicio con ese nombre' });
@@ -855,10 +859,10 @@ app.put('/api/leads/:id', validarPartidas, validarRegistro, h((req, res) => {
   // Indicar o cambiar el IVA de una orden cambia cómo se lee su importe: misma regla que el importe.
   const cambiaIva = actual.estatus === 'ganado' && req.totalNuevoCent !== undefined
     && (req.body.iva_modo !== actual.iva_modo || req.body.iva_tasa !== actual.iva_tasa);
-  if ((cambiaImporte || cambiaIva) && !['admin', 'atencion'].includes(req.usuarioSesion.rol)) {
+  if ((cambiaImporte || cambiaIva) && !permisos.puede(req, 'ordenes.importe_ganada')) {
     return res.status(403).json({ error: cambiaImporte
-      ? 'Solo administración o atención pueden cambiar el importe de una orden de servicio. Para un descuento, pide un ajuste al administrador.'
-      : 'Solo administración o atención pueden indicar o cambiar el IVA de una orden de servicio.' });
+      ? 'No tienes permiso para cambiar el importe de una orden de servicio. Para un descuento, pide un ajuste a administración.'
+      : 'No tienes permiso para indicar o cambiar el IVA de una orden de servicio.' });
   }
   if (actual.estatus === 'ganado' && actual.factura_total_cent == null && totalNuevoCent !== null
     && totalNuevoCent < finanzas.cobradoCent(actual.id)) {
@@ -970,7 +974,7 @@ app.put('/api/historial/:id/resolver', h((req, res) => {
 // ---------- Eliminar cotización ----------
 // Borrar es definitivo (se pierden importe, notas y bitácora): solo un administrador puede hacerlo.
 app.delete('/api/leads/:id', h((req, res) => {
-  if (req.usuarioSesion.rol !== 'admin') return res.status(403).json({ error: 'Solo un administrador puede eliminar cotizaciones u órdenes de servicio' });
+  if (!permisos.puede(req, 'ordenes.eliminar')) return res.status(403).json({ error: 'No tienes permiso para eliminar cotizaciones u órdenes de servicio' });
   const lead = db.prepare('SELECT * FROM leads WHERE id = ?').get(req.params.id);
   if (!lead) return res.status(404).json({ error: 'Cotización no encontrada' });
   // Los pagos son el rastro del dinero: una orden que alguna vez tuvo pagos no se borra.
@@ -1562,7 +1566,7 @@ app.get('/api/analisis/resumen-mensual', h((req, res) => {
 // aunque haya escrituras en curso en ese momento.
 app.get('/api/admin/backup', async (req, res) => {
   try {
-    if (!req.usuarioSesion || req.usuarioSesion.rol !== 'admin') {
+    if (!req.usuarioSesion?.admin_general) {
       return res.status(403).json({ error: 'Solo un administrador puede respaldar la base de datos' });
     }
     const nombreArchivo = `saneadren_backup_${hoyMexico()}.db`;

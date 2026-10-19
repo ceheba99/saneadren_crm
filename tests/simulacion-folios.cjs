@@ -3,7 +3,7 @@
 // clics dobles al mismo tiempo). Uso: node tests/simulacion-folios.cjs
 const { spawn } = require('child_process'); const fs = require('fs'), os = require('os'), path = require('path'), crypto = require('crypto'), vm = require('vm');
 const { DatabaseSync } = require('node:sqlite');
-const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'crm-folios-')); const PUERTO = String(6000 + Math.floor(Math.random() * 300));
+const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'crm-folios-')); const PUERTO = String(6010 + Math.floor(Math.random() * 290));
 const DB = path.join(dir, 'f.db');
 const ADMIN = { correo: 'marketing@saneadren.com.mx', password: 'Folios-' + Math.random().toString(36).slice(2) + '-9' };
 let salida = '';

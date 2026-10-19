@@ -226,6 +226,7 @@ module.exports = function sucursales(app, db, h, { audit }) {
   function puedeAdministrar(req, usuario) {
     if (esGeneral(req)) return true;
     if (['admin', 'gerente'].includes(usuario.rol)) return false;
+    if (!app.locals.permisos.cabe(req, usuario.rol)) return false; // nadie administra a quien tiene más permisos
     const suyas = sucursalesDe(usuario.id);
     return suyas.length > 0 && suyas.every(s => req.alcanceSuc.permitidas.includes(s));
   }

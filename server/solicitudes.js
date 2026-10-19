@@ -68,7 +68,7 @@ module.exports = function solicitudes(app, db, h, { texto, fechaOk, hoyMexico, c
   migrar(db);
   const base = process.env.DB_PATH ? path.dirname(path.resolve(process.env.DB_PATH)) : path.join(__dirname, '..');
   const DIR = path.join(base, 'archivos', 'solicitudes');
-  const esCostos = req => ['admin', 'costos'].includes(req.usuarioSesion.rol);
+  const esCostos = req => app.locals.permisos.puede(req, 'compras.gestionar');
   const audit = (req, id, accion, detalle) => app.locals.auditoria?.registrar(req, 'solicitud_compra', id, accion, detalle);
   const fmt = c => '$' + (Number(c || 0) / 100).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const ahora = () => db.prepare("SELECT datetime('now','localtime') AS t").get().t;
@@ -172,7 +172,7 @@ module.exports = function solicitudes(app, db, h, { texto, fechaOk, hoyMexico, c
     if (!s) return res.status(404).json({ error: 'Solicitud no encontrada' });
     if (s.estado !== 'por_aprobar') return res.status(409).json({ error: 'Esta solicitud ya no está por aprobar (' + ESTADOS[s.estado].toLowerCase() + ')' });
     // Nadie se aprueba a sí mismo: si el encargado pidió algo, lo aprueba un administrador (u otro encargado).
-    if (s.solicitante_id === req.usuarioSesion.id && req.usuarioSesion.rol !== 'admin') return res.status(403).json({ error: 'Tú pediste esta solicitud: la aprueba un administrador u otro encargado de centro de costos' });
+    if (s.solicitante_id === req.usuarioSesion.id && !app.locals.permisos.puede(req, 'compras.aprobar_propias')) return res.status(403).json({ error: 'Tú pediste esta solicitud: la aprueba un administrador u otro encargado de centro de costos' });
     actualizar(s.id, { estado: 'cotizando', aprobada_por: req.usuarioSesion.nombre, aprobada_at: ahora() });
     audit(req, s.id, 'aprobada', `Pasa a cotizar: se piden ${COTIZACIONES_REQUERIDAS} cotizaciones de proveedores distintos`);
     res.json(leer(s.id));

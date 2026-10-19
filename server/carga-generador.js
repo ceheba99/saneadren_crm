@@ -49,7 +49,7 @@ module.exports = function cargaGenerador(app, db, h, unicos) {
   if (!cols.includes('import_huella')) db.exec('ALTER TABLE leads ADD COLUMN import_huella TEXT');
   db.exec('CREATE INDEX IF NOT EXISTS idx_leads_import_huella ON leads(import_huella)');
 
-  const puede = req => ['admin', 'atencion', 'ventas'].includes(req.usuarioSesion?.rol);
+  const puede = req => !!req.usuarioSesion && app.locals.permisos.puede(req, 'generador.cargar');
 
   // ---------- Catálogos y equivalencias ----------
   function catalogos() {

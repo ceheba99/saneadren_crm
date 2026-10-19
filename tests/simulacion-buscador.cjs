@@ -3,7 +3,7 @@
 // minuto y rapidez con miles de registros. Uso: node tests/simulacion-buscador.cjs
 const { spawn } = require('child_process'); const fs = require('fs'), os = require('os'), path = require('path'), crypto = require('crypto');
 const { DatabaseSync } = require('node:sqlite');
-const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'crm-buscador-')); const PUERTO = String(6400 + Math.floor(Math.random() * 300));
+const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'crm-buscador-')); const PUERTO = String(7400 + Math.floor(Math.random() * 300)); // fuera de 6665-6669, que fetch bloquea
 const DB = path.join(dir, 'b.db');
 const ADMIN = { correo: 'marketing@saneadren.com.mx', password: 'Busca-' + Math.random().toString(36).slice(2) + '-9' };
 let salida = '';

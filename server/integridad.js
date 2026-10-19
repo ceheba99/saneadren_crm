@@ -142,7 +142,7 @@ function revisar(db, { dirArchivos } = {}) {
 module.exports = function integridad(app, db, h) {
   const base = process.env.DB_PATH ? path.dirname(path.resolve(process.env.DB_PATH)) : path.join(__dirname, '..');
   app.get('/api/admin/integridad', h((req, res) => {
-    if (req.usuarioSesion.rol !== 'admin') return res.status(403).json({ error: 'Solo administración revisa la integridad de los datos' });
+    if (!req.usuarioSesion.admin_general) return res.status(403).json({ error: 'La revisión de integridad es solo para Dirección (revisa todas las sucursales)' });
     const r = require('./alcance').global(() => revisar(db, { dirArchivos: path.join(base, 'archivos') })); // siempre toda la base
     app.locals.auditoria?.registrar(req, 'catalogo', null, 'revisión de integridad', `${r.revisiones} revisiones · ${r.errores} errores · ${r.avisos} avisos`);
     res.json(r);

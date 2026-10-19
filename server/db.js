@@ -14,7 +14,7 @@ CREATE TABLE IF NOT EXISTS usuarios (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   nombre TEXT NOT NULL,
   password TEXT NOT NULL DEFAULT '1234',
-  rol TEXT NOT NULL CHECK(rol IN ('admin','ventas','atencion','tecnico','costos')),
+  rol TEXT NOT NULL CHECK(rol <> '') /* roles de fábrica: 'admin','ventas','atencion','tecnico','costos','gerente'; los demás viven en la tabla roles */,
   activo INTEGER NOT NULL DEFAULT 1
 );
 
@@ -176,15 +176,17 @@ const backfillCliente = db.transaction(() => {
 });
 backfillCliente();
 
-// Rol «costos» (encargado de centro de costos / compras). SQLite no deja cambiar un CHECK: se rehace la tabla
-// usuarios con la misma estructura y los mismos datos (procedimiento oficial de SQLite, sin llaves foráneas activas).
+// Roles: antes la tabla usuarios fijaba la lista de roles con un CHECK. Ahora los roles viven en la tabla «roles»
+// (Dirección puede crear nuevos), así que ese CHECK se cambia por uno que acepta cualquier rol no vacío. SQLite no
+// deja cambiar un CHECK: se rehace la tabla usuarios con la misma estructura y los mismos datos (procedimiento oficial
+// de SQLite, sin llaves foráneas activas). La definición nueva conserva los nombres de los roles de fábrica en un
+// comentario: el código anterior los busca al arrancar y, sin ellos, no arrancaría si hubiera que regresar a él.
 {
   const sqlUsuarios = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'usuarios'").get().sql;
-  const faltan = ['costos', 'gerente'].filter(r => !sqlUsuarios.includes("'" + r + "'"));
-  if (faltan.length) {
-    const nuevo = sqlUsuarios.replace(/CHECK\s*\(\s*rol\s+IN\s*\(([^)]*)\)\s*\)/i, (m, lista) => `CHECK(rol IN (${lista},${faltan.map(r => "'" + r + "'").join(',')}))`)
+  if (/CHECK\s*\(\s*rol\s+IN\s*\(/i.test(sqlUsuarios)) {
+    const nuevo = sqlUsuarios.replace(/CHECK\s*\(\s*rol\s+IN\s*\([^)]*\)\s*\)/i, 'CHECK(rol <> \'\') /* roles de fábrica: \'admin\',\'ventas\',\'atencion\',\'tecnico\',\'costos\',\'gerente\'; los demás viven en la tabla roles */')
       .replace(/^CREATE TABLE\s+("?usuarios"?|\[usuarios\])/i, 'CREATE TABLE usuarios_nuevo');
-    if (nuevo === sqlUsuarios || !nuevo.includes('usuarios_nuevo') || faltan.some(r => !nuevo.includes("'" + r + "'"))) throw new Error('No se pudieron preparar los roles en usuarios');
+    if (nuevo === sqlUsuarios || !nuevo.includes('usuarios_nuevo') || /CHECK\s*\(\s*rol\s+IN/i.test(nuevo)) throw new Error('No se pudo preparar la tabla de usuarios para los roles');
     const antes = db.prepare('SELECT COUNT(*) n FROM usuarios').get().n;
     db.pragma('foreign_keys = OFF');
     try {
@@ -198,7 +200,7 @@ backfillCliente();
       })();
     } finally { db.pragma('foreign_keys = ON'); }
     const rotas = db.pragma('foreign_key_check');
-    if (rotas.length) console.error('Aviso: referencias rotas después de agregar el rol costos', rotas.slice(0, 5));
+    if (rotas.length) console.error('Aviso: referencias rotas después de rehacer la tabla de usuarios', rotas.slice(0, 5));
   }
 }
 

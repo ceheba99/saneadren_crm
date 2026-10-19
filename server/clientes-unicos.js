@@ -141,7 +141,7 @@ module.exports = function clientesUnicos(app, db, h) {
     }
   })();
 
-  const esAdmin = req => req.usuarioSesion?.rol === 'admin';
+  const esAdmin = req => !!req.usuarioSesion && app.locals.permisos.puede(req, 'clientes.duplicados');
   const par = (x, y) => (x < y ? [x, y] : [y, x]);
   const sonDistintos = db.prepare('SELECT 1 FROM clientes_distintos WHERE a = ? AND b = ?');
   const quienDistintos = db.prepare('SELECT u.nombre, u.rol FROM clientes_distintos d LEFT JOIN usuarios u ON u.id = d.confirmado_por WHERE d.a = ? AND d.b = ?');

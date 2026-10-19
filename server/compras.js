@@ -86,10 +86,12 @@ function migrar(db) {
 
 module.exports = function compras(app, db, h, finanzas) {
   migrar(db);
-  const esAdmin = req => req.usuarioSesion.rol === 'admin';
-  // Encargado de centro de costos (rol «costos») o administración: aprueban solicitudes, eligen cotización,
-  // crean y corrigen órdenes de compra y marcan cuando llega lo comprado.
-  const esCostos = req => ['admin', 'costos'].includes(req.usuarioSesion.rol);
+  const P = app.locals.permisos;
+  // Autorizar órdenes (se vuelven deuda), cancelar autorizadas o recibidas y quitar sus documentos.
+  const esAdmin = req => P.puede(req, 'compras.autorizar');
+  // Gestionar compras (al inicio: encargado de centro de costos y administración): aprueban solicitudes, eligen
+  // cotización, crean y corrigen órdenes de compra y marcan cuando llega lo comprado.
+  const esCostos = req => P.puede(req, 'compras.gestionar');
   const SOLO_COSTOS = { error: 'Las órdenes de compra las hace el encargado de centro de costos o administración. Si necesitas algo, haz una Solicitud de compra.' };
   const CATEGORIAS = finanzas.CATEGORIAS, conSentido = finanzas.conSentido;
 
@@ -120,7 +122,7 @@ module.exports = function compras(app, db, h, finanzas) {
   const formato = () => { const f = db.prepare("SELECT valor FROM config_servidor WHERE clave = 'formato_oc'").get(); let g = {}; try { g = f ? JSON.parse(f.valor) : {}; } catch { g = {}; } return { codigo: g.codigo || FORMATO_INICIAL.codigo }; };
   app.get('/api/compras/formato', h((req, res) => res.json(formato())));
   app.put('/api/compras/formato', h((req, res) => {
-    if (!esAdmin(req)) return res.status(403).json({ error: 'Solo un administrador cambia los datos del formato' });
+    if (!P.puede(req, 'compras.formato')) return res.status(403).json({ error: 'No tienes permiso para cambiar los datos del formato' });
     const antes = formato(), b = req.body || {};
     const nuevo = { codigo: texto(b.codigo, 20) || antes.codigo };
     if (!/^[\p{L}\d .\/-]{1,20}$/u.test(nuevo.codigo)) return res.status(400).json({ error: 'El código del formato solo lleva letras, números y guiones' });

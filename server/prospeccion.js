@@ -36,7 +36,7 @@ module.exports=function registrarProspeccion(app,db,h,unicos){
   }
   app.get('/api/prospeccion/sectores',h((req,res)=>res.json(db.prepare('SELECT * FROM sectores_prospeccion ORDER BY nombre').all())));
   function guardarSector(req,res){
-    if(req.usuarioSesion.rol!=='admin')return res.status(403).json({error:'Solo el administrador puede administrar sectores'});
+    if(!app.locals.permisos.puede(req,'prospeccion.sectores'))return res.status(403).json({error:'No tienes permiso para administrar sectores'});
     const nombre=typeof req.body.nombre==='string'?req.body.nombre.trim():'';
     if(!nombre||nombre.length>80)return res.status(400).json({error:'Escribe un nombre de hasta 80 caracteres'});
     if(db.prepare('SELECT id FROM sectores_prospeccion WHERE nombre=? AND id<>?').get(nombre,Number(req.params.id)||0))return res.status(409).json({error:'Ese sector ya existe'});

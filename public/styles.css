@@ -637,7 +637,9 @@ header.app .logo-saneadren{display:block;width:250px;max-width:100%;height:auto;
 @media(max-width:600px){.gc-fila-grid{grid-template-columns:1fr 1fr;}.gc-fila-grid .gc-c-servicio{grid-column:1/-1;}}
 
 /* Elementos solo para administradores (el servidor también lo valida). */
-body:not(.es-admin) .solo-admin{display:none !important;}
+/* Permisos: permisos.js esconde .perm-<permiso> si no se tiene y .noperm-<permiso> si se tiene. Hasta saberlo, nada de eso se muestra. */
+body:not(.permisos-listos) [class*="perm-"]{display:none !important;}
+.aviso-ver-como{position:sticky;top:env(safe-area-inset-top,0px);z-index:3000;display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;justify-content:center;padding:8px 16px;background:#fff4d6;color:#5b4300;border-bottom:1px solid #e8c766;font-size:.92rem;}
 .fila-catalogo{display:grid;grid-template-columns:auto 1fr auto;gap:10px;align-items:start;}
 .orden-btns{display:flex;flex-direction:column;gap:4px;}
 .orden-btns .btn{padding:2px 10px;min-width:0;line-height:1.2;}
@@ -1346,7 +1348,6 @@ button.enlace{background:none;border:0;padding:0;color:var(--azul-600);text-deco
 .oc-tabla input[type=number]::-webkit-outer-spin-button,.oc-tabla input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none;margin:0;}
 
 /* ===== Solicitudes de compra ===== */
-body:not(.es-costos) .solo-costos{display:none !important;}
 .modal-solicitud{max-width:860px;width:calc(100vw - 32px);}
 #sol-cuerpo{display:flex;flex-direction:column;gap:14px;padding:18px 22px 22px;}
 .sol-form{display:flex;flex-direction:column;gap:12px;}
@@ -1437,7 +1438,6 @@ body:not(.es-costos) .solo-costos{display:none !important;}
 }
 
 /* Avisos solo para quien no es administración ni encargado de centro de costos */
-body.es-costos .solo-no-costos{display:none !important;}
 
 /* Historial completo del cliente (hasta abajo de la ficha) */
 .hc-cuenta{font-weight:600;color:var(--texto-sec);text-transform:none;letter-spacing:0;}
@@ -1495,3 +1495,22 @@ body:not(.varias-sucursales) .solo-varias-sucursales{display:none!important;}
 .fila-sucursal .acciones-catalogo{display:flex;flex-wrap:wrap;gap:6px;align-items:center;grid-column:1/-1;justify-content:flex-end;}
 
 .aviso-fecha-realizado{margin:6px 0 0;padding:6px 10px;border-radius:8px;background:#fff7e6;color:#8a5a00;font-size:13px;}
+
+/* Roles y permisos (Ajustes → Usuarios, solo Dirección) */
+.rp-nuevo{margin-bottom:12px;}
+.rp-tabla-caja{max-height:none;}
+.rp-tabla{width:100%;border-collapse:collapse;font-size:13px;}
+.rp-tabla th,.rp-tabla td{padding:6px 8px;text-align:center;border-bottom:1px solid var(--gris-200,#e5e7eb);vertical-align:middle;}
+.rp-tabla thead th{position:sticky;top:0;background:var(--blanco,#fff);z-index:2;vertical-align:top;font-size:13px;}
+.rp-tabla thead th.rp-permiso{left:0;z-index:3;color:var(--texto-sec,#666);font-size:12px;text-transform:uppercase;letter-spacing:.04em;}
+.rp-tabla .rp-permiso{text-align:left;min-width:200px;max-width:280px;font-weight:500;position:sticky;left:0;background:var(--blanco,#fff);z-index:1;}
+.rp-tabla .rp-permiso small{display:block;font-weight:400;color:var(--texto-sec,#666);font-size:12px;line-height:1.3;}
+.rp-rol{min-width:120px;text-align:center;}
+.rp-rol-nombre{display:block;font-weight:600;}
+.rp-rol-gente{display:block;font-weight:400;font-size:12px;color:var(--texto-sec,#666);}
+.rp-rol-acciones{display:flex;flex-direction:column;gap:4px;margin-top:6px;}
+.rp-celda{text-align:center;}
+.rp-celda input{width:20px;height:20px;cursor:pointer;}
+.rp-celda input:disabled{cursor:default;}
+.rp-tabla tr.rp-seccion th{background:var(--gris-100,#f3f4f6);text-align:left;position:sticky;left:0;font-size:12px;text-transform:uppercase;letter-spacing:.04em;}
+@media (max-width:600px){.rp-tabla .rp-permiso{min-width:150px;max-width:170px;}.rp-rol{min-width:96px;}}
