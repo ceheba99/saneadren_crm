@@ -12,6 +12,8 @@ const Permisos = (() => {
   const leerVerComo = () => { try { return sessionStorage.getItem(CLAVE_VER) || ''; } catch { return ''; } };
   const encabezado = () => { const v = leerVerComo(); return v ? { 'X-Ver-Como': v } : {}; };
   const puede = c => DATOS.rol === 'admin' || DATOS.permisos.includes(c);
+  // Solo Dirección (lo de todas las sucursales); viendo como otro rol, no.
+  const direccion = () => !!DATOS.direccion && !DATOS.ver_como;
 
   function pintarEstilos() {
     let st = document.getElementById('estilos-permisos');
@@ -43,5 +45,5 @@ const Permisos = (() => {
     try { if (rol) sessionStorage.setItem(CLAVE_VER, rol); else sessionStorage.removeItem(CLAVE_VER); } catch { /* sin almacenamiento */ }
     location.reload();
   }
-  return { cargar, puede, encabezado, verComo, get datos() { return DATOS; }, clase };
+  return { cargar, puede, direccion, encabezado, verComo, get datos() { return DATOS; }, clase };
 })();

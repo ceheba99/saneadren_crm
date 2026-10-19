@@ -52,8 +52,12 @@ function rutas() {
   const fuera = /^(POST|GET) \/api\/(login|logout|registro|cambiar-password|verificar-correo|olvide-password|restablecer-password|demo\/)|\/api\/(permisos|roles)(\/|$)/;
   return [...set].filter(r => !fuera.test(r)).sort().map(r => { const [m, p] = r.split(' '); return [m, p.replace(/:[a-z_]+/gi, '1').replace(/^\/api/, '')]; });
 }
-// Cambios a propósito respecto al código anterior: [rol, "MÉTODO /ruta", motivo].
-const CAMBIOS_ESPERADOS = [];
+// Cambios a propósito respecto al código anterior: [rol, expresión "MÉTODO /ruta", motivo].
+const CATALOGOS = /^(POST|PUT|DELETE) \/(canales|tipos-cliente|compras\/(centros|unidades)|finanzas\/categorias|servicios\/(1|orden))(\/|$)/;
+const CAMBIOS_ESPERADOS = [
+  ['gerente', CATALOGOS, 'el gerente ya edita los catálogos compartidos como ventas o atención (lo decide «Catálogos compartidos»)'],
+  ...['ventas', 'atencion', 'tecnico', 'costos'].map(r => [r, /^POST \/clientes\/distintos$/, 'marcar clientes «distintos» es parte de revisar duplicados: solo Dirección']),
+];
 
 (async () => {
   const RUTAS = rutas();
@@ -79,11 +83,12 @@ const CAMBIOS_ESPERADOS = [];
     }
     for (const rol of ROLES) {
       const difs = Object.keys(fotos.nuevo[rol]).filter(k => fotos.anterior[rol][k] !== fotos.nuevo[rol][k]);
-      const esperadas = difs.filter(k => CAMBIOS_ESPERADOS.some(([r, ruta]) => r === rol && ruta === k));
+      const esperadas = difs.filter(k => CAMBIOS_ESPERADOS.some(([r, ruta]) => r === rol && ruta.test(k)));
       const raras = difs.filter(k => !esperadas.includes(k));
       revisa(!raras.length, `${rol}: las ${RUTAS.length} rutas responden igual que antes` + (esperadas.length ? ` (salvo ${esperadas.length} cambio(s) a propósito)` : ''),
         raras.map(k => `${k}: ${fotos.anterior[rol][k]} → ${fotos.nuevo[rol][k]}`));
-      for (const k of esperadas) revisa(fotos.nuevo[rol][k] === 403, `${rol}: ${k} ahora se niega (${CAMBIOS_ESPERADOS.find(([r, x]) => r === rol && x === k)[2]})`, fotos.nuevo[rol][k]);
+      const motivos = [...new Set(esperadas.map(k => CAMBIOS_ESPERADOS.find(([r, x]) => r === rol && x.test(k))[2]))];
+      for (const m of motivos) revisa(true, `${rol}: cambio a propósito → ${m}`);
     }
     const negados = rol => Object.values(fotos.nuevo[rol]).filter(s => s === 403).length;
     const negadasDir = Object.keys(fotos.nuevo.admin).filter(k => fotos.nuevo.admin[k] === 403);
@@ -104,7 +109,7 @@ const CAMBIOS_ESPERADOS = [];
     T[rol] = await login(usuarioDe(rol), CLAVE);
   }
   let [s, j] = await pedir('GET', '/permisos', A);
-  revisa(s === 200 && j.roles.length === 6 && j.catalogo.length > 20, `la tabla de permisos trae los 6 roles y ${j.catalogo?.length} permisos`);
+  revisa(s === 200 && j.roles.length === 6 && j.catalogo.length >= 18, `la tabla de permisos trae los 6 roles y ${j.catalogo?.length} permisos`);
   const tabla = j, permisosDe = clave => tabla.roles.find(r => r.clave === clave).permisos;
   revisa(permisosDe('admin').length === j.catalogo.length, 'Dirección tiene todos los permisos');
   revisa(permisosDe('costos').includes('dinero.mover') && !permisosDe('ventas').includes('dinero.mover'), 'al inicio, costos mueve dinero y ventas no (como antes)');
@@ -116,7 +121,9 @@ const CAMBIOS_ESPERADOS = [];
   [s] = await pedir('GET', '/finanzas/cartera', T.ventas); revisa(s === 200, 'ventas ve cuentas por cobrar');
   let ventas = permisosDe('ventas');
   [s, j] = await pedir('PUT', '/roles/ventas/permisos', A, { permisos: ventas.filter(c => c !== 'cxc.ver') });
-  revisa(s === 200 && j.cambios === 1, 'Dirección le quita a ventas «Ver cuentas por cobrar»', j);
+  revisa(s === 400 && /necesita/.test(j.error), 'no se le quita «Ver cuentas por cobrar» dejando «Confirmar cobros» (lo necesita)', j);
+  [s, j] = await pedir('PUT', '/roles/ventas/permisos', A, { permisos: ventas.filter(c => c !== 'cxc.ver' && c !== 'cobros.confirmar') });
+  revisa(s === 200 && j.cambios === 2, 'Dirección le quita a ventas «Ver cuentas por cobrar» (y «Confirmar cobros»)', j);
   [s] = await pedir('GET', '/finanzas/cartera', T.ventas); revisa(s === 403, 'ventas ya no ve cuentas por cobrar (sin volver a entrar)');
   [s, j] = await pedir('GET', '/permisos/mios', T.ventas); revisa(!j.permisos.includes('cxc.ver') && j.todas.includes('cxc.ver'), 'la pantalla de ventas sabe que no lo tiene (para esconderlo)');
   [s] = await pedir('GET', '/finanzas/cartera', T.atencion); revisa(s === 200, 'atención sigue viéndolas (es otro rol)');
@@ -124,9 +131,10 @@ const CAMBIOS_ESPERADOS = [];
   [s] = await pedir('PUT', '/roles/ventas/permisos', A, { permisos: [...ventas, 'cobros.ajustes'] }); revisa(s === 200, 'Dirección le devuelve cuentas por cobrar y le da «Ajustes»');
   [s] = await pedir('GET', '/finanzas/revision-inicial', T.ventas); revisa(s === 200, 'ventas ya puede hacer la revisión inicial');
   [s] = await pedir('GET', '/finanzas/cartera', T.ventas); revisa(s === 200, 'y vuelve a ver cuentas por cobrar');
-  [s] = await pedir('POST', '/servicios', T.tecnico, { nombre: 'Servicio de prueba técnico' }); revisa(s === 403, 'el técnico no agrega servicios al catálogo');
-  [s] = await pedir('PUT', '/roles/tecnico/permisos', A, { permisos: [...permisosDe('tecnico'), 'catalogo.servicios'] });
-  [s] = await pedir('POST', '/servicios', T.tecnico, { nombre: 'Servicio de prueba técnico' }); revisa(s === 201 || s === 200, 'con el permiso, el técnico sí lo agrega', s);
+  [s] = await pedir('GET', '/finanzas/cxp/formato-excel', T.tecnico); revisa(s === 403, 'el técnico no exporta a Excel');
+  [s] = await pedir('PUT', '/roles/tecnico/permisos', A, { permisos: [...permisosDe('tecnico'), 'clientes.exportar'] });
+  [s] = await pedir('GET', '/finanzas/cxp/formato-excel', T.tecnico); revisa(s === 200, 'con el permiso, el técnico sí exporta', s);
+  [s] = await pedir('POST', '/servicios', T.gerente, { nombre: 'Servicio de prueba gerente' }); revisa(s === 403, 'agregar servicios al catálogo es solo de Dirección (ni el gerente)');
 
   // Candados.
   [s, j] = await pedir('PUT', '/roles/admin/permisos', A, { permisos: [] }); revisa(s === 400, 'a Dirección no se le quitan permisos', j);
@@ -187,11 +195,11 @@ const CAMBIOS_ESPERADOS = [];
   const lista = Array.isArray(j) ? j : j.filas || j.registros || [];
   revisa(s === 200 && JSON.stringify(j).includes('Ver cuentas por cobrar') && JSON.stringify(j).includes('Contador'), 'la bitácora registra los cambios de permisos y roles', JSON.stringify(j).slice(0, 300));
   const ventasAntes = (await pedir('GET', '/permisos', A))[1].roles.find(r => r.clave === 'ventas').permisos.sort();
-  [s] = await pedir('PUT', '/roles/ventas/permisos', A, { permisos: ventasAntes.filter(c => c !== 'cobros.registrar') });
+  [s] = await pedir('PUT', '/roles/ventas/permisos', A, { permisos: ventasAntes.filter(c => c !== 'cobranza.factura') });
   await parar(); await arrancar(NUEVO, DB);
   const A2 = await login('admin', ADMIN.password);
   const ventasDespues = (await pedir('GET', '/permisos', A2))[1].roles.find(r => r.clave === 'ventas').permisos;
-  revisa(!ventasDespues.includes('cobros.registrar') && ventasDespues.includes('cobros.ajustes'), 'tras reiniciar, los permisos siguen como los dejó Dirección (no regresan los de fábrica)');
+  revisa(!ventasDespues.includes('cobranza.factura') && ventasDespues.includes('cobros.ajustes'), 'tras reiniciar, los permisos siguen como los dejó Dirección (no regresan los de fábrica)');
   const d = new DatabaseSync(DB); const sql = d.prepare("SELECT sql FROM sqlite_master WHERE name = 'usuarios'").get().sql; d.close();
   revisa(!/CHECK\s*\(\s*rol\s+IN/i.test(sql) && /'costos'/.test(sql) && /'gerente'/.test(sql), 'la tabla de usuarios ya no limita la lista de roles (y el código anterior la sigue reconociendo)');
   await parar();

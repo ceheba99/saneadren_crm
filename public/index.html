@@ -50,7 +50,7 @@
       <div class="menu-grupo" data-grupo="ajustes">
         <button type="button" class="menu-grupo-btn" aria-expanded="false"><span class="menu-icono" aria-hidden="true">⚙️</span>Ajustes<span class="menu-flecha" aria-hidden="true">▾</span></button>
         <div class="menu-sub">
-          <button type="button" class="menu-item" data-vista="catalogos" id="nav-catalogos"><span class="menu-icono" aria-hidden="true">📚</span>Catálogos</button>
+          <button type="button" class="menu-item perm-catalogos-editar" data-vista="catalogos" id="nav-catalogos"><span class="menu-icono" aria-hidden="true">📚</span>Catálogos</button>
           <button type="button" class="menu-item perm-usuarios-administrar" data-vista="usuarios" id="nav-usuarios"><span class="menu-icono" aria-hidden="true">👤</span>Usuarios</button>
           <button type="button" class="menu-item solo-general" data-vista="bitacora" id="nav-bitacora"><span class="menu-icono" aria-hidden="true">🗂️</span>Bitácora</button>
         </div>
@@ -216,7 +216,7 @@
   <section class="vista" id="vista-clientes">
     <div class="vista-encabezado">
       <div><h2>Contactos</h2><p class="ayuda">Personas y empresas. Abre un contacto para ver sus cotizaciones y órdenes, o para crear una nueva.</p></div>
-      <div class="btn-group"><button type="button" class="btn btn-outline perm-clientes-duplicados" id="btn-revisar-duplicados">Revisar duplicados</button><button type="button" class="btn btn-primario" onclick="cambiarVista('alta')">➕ Nuevo contacto</button></div>
+      <div class="btn-group"><button type="button" class="btn btn-outline solo-general" id="btn-revisar-duplicados">Revisar duplicados</button><button type="button" class="btn btn-primario" onclick="cambiarVista('alta')">➕ Nuevo contacto</button></div>
     </div>
 
     <div class="rc-grid">
@@ -293,7 +293,7 @@
   <section class="vista" id="vista-compras">
     <div class="vista-encabezado">
       <div><h2>Órdenes de compra</h2><p class="ayuda">Se capturan como borrador; al autorizarlas (administración) pasan solas a Cuentas por pagar como factura pendiente del proveedor. Se descargan con el formato CM-F-03.</p></div>
-      <div class="btn-group"><button type="button" class="btn btn-primario perm-compras-gestionar" id="oc-nueva" title="Orden sin solicitud (solo encargado de centro de costos y administración)">+ Nueva orden de compra</button><button type="button" class="btn btn-outline" id="oc-ir-solicitudes">📝 Solicitudes de compra</button><button type="button" class="btn btn-outline" id="oc-unidades">Unidades de medida</button><button type="button" class="btn btn-outline" id="oc-centros">Centros de costo</button><button type="button" class="btn btn-outline" id="oc-categorias">Categorías de gasto</button><button type="button" class="btn btn-outline perm-compras-formato" id="oc-formato">Datos del formato</button></div>
+      <div class="btn-group"><button type="button" class="btn btn-primario perm-compras-gestionar" id="oc-nueva" title="Orden sin solicitud (solo encargado de centro de costos y administración)">+ Nueva orden de compra</button><button type="button" class="btn btn-outline" id="oc-ir-solicitudes">📝 Solicitudes de compra</button><button type="button" class="btn btn-outline" id="oc-unidades">Unidades de medida</button><button type="button" class="btn btn-outline" id="oc-centros">Centros de costo</button><button type="button" class="btn btn-outline" id="oc-categorias">Categorías de gasto</button><button type="button" class="btn btn-outline solo-general" id="oc-formato">Datos del formato</button></div>
     </div>
     <div class="filtros">
       <select id="oc-filtro" aria-label="Mostrar"><option value="">Todas</option><option value="borrador">Borradores (por autorizar)</option><option value="pendiente_pago">Autorizadas por pagar</option><option value="autorizada">Autorizadas</option><option value="cancelada">Canceladas</option></select>
@@ -532,10 +532,10 @@
     <div id="lista-tipos-cliente"></div>
     <div class="campo"><label for="nuevo-tipo-cliente">Nuevo tipo de cliente</label><input id="nuevo-tipo-cliente" maxlength="80" placeholder="Ej. Gobierno"><button type="button" class="btn btn-primario" id="btn-agregar-tipo">Agregar tipo</button></div>
     <h3 class="util-14">Catálogo de servicios</h3>
-    <p class="ayuda util-15">Usa ↑ ↓ para cambiar el orden en que aparecen en las listas. <span class="perm-catalogo-servicios">La recompra (cada cuántos días volver a ofrecer el servicio) alimenta la vista "Recompras"; déjala vacía si es de una sola vez.</span></p>
+    <p class="ayuda util-15">Usa ↑ ↓ para cambiar el orden en que aparecen en las listas. <span class="solo-general">La recompra (cada cuántos días volver a ofrecer el servicio) alimenta la vista "Recompras"; déjala vacía si es de una sola vez.</span></p>
     <p class="ayuda">Guarda aquí la descripción base de cada servicio. Al elegirlo en una cotización se precarga y puedes editarla solo para ese documento, sin cambiar el catálogo.</p>
     <div id="lista-servicios-catalogo"></div>
-    <div class="panel-alta perm-catalogo-servicios">
+    <div class="panel-alta solo-general">
       <h2>Agregar servicio nuevo</h2>
       <div class="form-grid">
         <div class="campo">
@@ -1156,8 +1156,8 @@
 
 <!-- ?v= obliga a los navegadores (sobre todo celulares) a tomar la versión nueva tras publicar. -->
 <script src="ui.js?v=cer1"></script>
-<script src="permisos.js?v=perm1"></script>
-<script src="roles.js?v=perm1"></script>
+<script src="permisos.js?v=perm2"></script>
+<script src="roles.js?v=perm2"></script>
 <script src="importes.js?v=red1"></script>
 <script src="servicios-tabla.js?v=perm1"></script>
 <script src="flujo.js?v=suc4"></script>
@@ -1169,7 +1169,7 @@
 <script src="compras.js?v=perm1"></script>
 <script src="solicitudes.js?v=perm1"></script>
 <script src="carga-generador.js?v=con1"></script>
-<script src="sucursales.js?v=suc1"></script>
+<script src="sucursales.js?v=perm2"></script>
 <script src="app.js?v=perm1"></script>
 <script src="buscador.js?v=suc1"></script>
 <script src="demo.js?v=demo1"></script>

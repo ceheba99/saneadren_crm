@@ -361,7 +361,8 @@ app.delete('/api/usuarios/:id', h((req, res) => {
 // Todos: editar la descripción de los servicios, tipos de cliente y canales ("cómo se enteró"),
 // y reordenar servicios y canales. Solo admin: dar de alta / eliminar servicios, la recurrencia
 // de recompra y todo lo de usuarios y respaldos.
-const soloServicios = (req, res, mensaje) => !permisos.exigir(req, res, 'catalogo.servicios', mensaje);
+// Alta y baja de servicios y su recompra: solo Dirección (el catálogo es de todas las sucursales).
+const soloServicios = (req, res, mensaje) => { if (permisos.direccion(req)) return false; res.status(403).json({ error: mensaje }); return true; };
 
 // Reordenar un catálogo: recibe la lista completa de ids en el nuevo orden.
 function reordenar(tabla, req, res) {
@@ -380,7 +381,7 @@ app.put('/api/canales/orden', h((req, res) => reordenar('canales', req, res)));
 // Editar un servicio: la descripción la puede cambiar cualquiera; la recurrencia solo un admin.
 app.put('/api/servicios/:id', h((req, res) => {
   const { dias_recurrencia } = req.body;
-  if (dias_recurrencia !== undefined && soloServicios(req, res, 'No tienes permiso para cambiar la recurrencia de un servicio')) return;
+  if (dias_recurrencia !== undefined && soloServicios(req, res, 'La recompra de un servicio la decide Dirección')) return;
   const servicio = db.prepare('SELECT * FROM catalogo_servicios WHERE id = ? AND activo = 1').get(req.params.id);
   if (!servicio) return res.status(404).json({ error: 'Servicio no encontrado' });
   let dias = null;
@@ -396,7 +397,7 @@ app.put('/api/servicios/:id', h((req, res) => {
 // Eliminar un servicio del catálogo (solo admin). Es una baja lógica: las cotizaciones y
 // órdenes que ya lo usan lo conservan; solo deja de ofrecerse en las nuevas.
 app.delete('/api/servicios/:id', h((req, res) => {
-  if (soloServicios(req, res, 'No tienes permiso para eliminar servicios')) return;
+  if (soloServicios(req, res, 'Los servicios los quita Dirección')) return;
   const servicio = db.prepare('SELECT * FROM catalogo_servicios WHERE id = ? AND activo = 1').get(req.params.id);
   if (!servicio) return res.status(404).json({ error: 'Servicio no encontrado' });
   if (db.prepare('SELECT COUNT(*) c FROM catalogo_servicios WHERE activo = 1').get().c <= 1) return res.status(400).json({ error: 'Debe quedar al menos un servicio en el catálogo' });
@@ -407,7 +408,7 @@ app.delete('/api/servicios/:id', h((req, res) => {
 // Agregar un servicio nuevo al catálogo (solo admin). Si existía y se había eliminado, se reactiva.
 app.post('/api/servicios', h((req, res) => {
   const { nombre, dias_recurrencia } = req.body;
-  if (soloServicios(req, res, 'No tienes permiso para agregar servicios')) return;
+  if (soloServicios(req, res, 'Los servicios los agrega Dirección')) return;
   if (typeof nombre !== 'string' || !nombre.trim() || nombre.trim().length > 120) return res.status(400).json({ error: 'El nombre del servicio es requerido (máximo 120 caracteres)' });
   const existente = db.prepare('SELECT id, activo FROM catalogo_servicios WHERE nombre = ?').get(nombre.trim());
   if (existente?.activo) return res.status(409).json({ error: 'Ya existe un servicio con ese nombre' });

@@ -122,7 +122,7 @@ module.exports = function compras(app, db, h, finanzas) {
   const formato = () => { const f = db.prepare("SELECT valor FROM config_servidor WHERE clave = 'formato_oc'").get(); let g = {}; try { g = f ? JSON.parse(f.valor) : {}; } catch { g = {}; } return { codigo: g.codigo || FORMATO_INICIAL.codigo }; };
   app.get('/api/compras/formato', h((req, res) => res.json(formato())));
   app.put('/api/compras/formato', h((req, res) => {
-    if (!P.puede(req, 'compras.formato')) return res.status(403).json({ error: 'No tienes permiso para cambiar los datos del formato' });
+    if (!P.direccion(req)) return res.status(403).json({ error: 'Los datos del formato los cambia Dirección' });
     const antes = formato(), b = req.body || {};
     const nuevo = { codigo: texto(b.codigo, 20) || antes.codigo };
     if (!/^[\p{L}\d .\/-]{1,20}$/u.test(nuevo.codigo)) return res.status(400).json({ error: 'El código del formato solo lleva letras, números y guiones' });

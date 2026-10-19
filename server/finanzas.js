@@ -461,9 +461,11 @@ module.exports = function finanzas(app, db, h, unicos) {
     const c = db.prepare('SELECT * FROM cobros WHERE id = ?').get(req.params.id);
     if (!c || c.cancelado) return res.status(404).json({ error: 'Pago no encontrado' });
     if (c.confirmado) return res.json({ ok: true });
+    // Confirmar es que OTRA persona revise el cobro: uno mismo solo si su rol deja que sus cobros entren ya confirmados.
+    if (c.registrado_por === req.usuarioSesion.id && !P.puede(req, 'cobros.directo')) return res.status(403).json({ error: 'Tú registraste este pago: lo confirma otra persona' });
     db.transaction(() => {
       db.prepare("UPDATE main.cobros SET confirmado = 1, confirmado_por = ?, confirmado_at = datetime('now','localtime') WHERE id = ?").run(req.usuarioSesion.id, c.id);
-      bitacora(c.lead_id, `Pago de ${fmt(c.monto_cent)} (${c.fecha}) confirmado por administración.`, req);
+      bitacora(c.lead_id, `Pago de ${fmt(c.monto_cent)} (${c.fecha}) confirmado por ${req.usuarioSesion.nombre}.`, req);
     })();
     res.json({ ok: true });
   }));
@@ -706,7 +708,7 @@ module.exports = function finanzas(app, db, h, unicos) {
     if (!activo && c.clave === 'otro') return res.status(400).json({ error: '«Otro» no se puede dar de baja: es la categoría de respaldo' });
     // Si cuenta o no como gasto en Resultados cambia las cifras de utilidad: solo administración.
     const esGasto = req.body.es_gasto === undefined ? c.es_gasto : (req.body.es_gasto ? 1 : 0);
-    if (esGasto !== c.es_gasto && !P.puede(req, 'finanzas.categorias')) return res.status(403).json({ error: 'Solo administración decide si una categoría cuenta como gasto en Resultados' });
+    if (esGasto !== c.es_gasto && !P.direccion(req)) return res.status(403).json({ error: 'Solo administración decide si una categoría cuenta como gasto en Resultados' });
     db.prepare('UPDATE categorias_gasto SET nombre = ?, activo = ?, es_gasto = ? WHERE clave = ?').run(nombre, activo, esGasto, c.clave);
     cargarCategorias(db);
     const difCat = app.locals.auditoria?.diferencias(c, { nombre, activo, es_gasto: esGasto }, ['nombre', 'activo', 'es_gasto']);

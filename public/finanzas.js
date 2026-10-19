@@ -141,7 +141,7 @@ const Finanzas = (() => {
           <small>Registró ${esc(k.registrado_por_nombre || '—')}${k.referencia ? ' · Ref. ' + esc(k.referencia) : ''}${k.notas ? ' · ' + esc(k.notas) : ''}</small>
           ${k.cancelado ? `<small class="motivo">Cancelado: ${esc(k.motivo_cancelacion || '')}</small>` : (!k.confirmado ? '<span class="estado-cxc por-confirmar">Por confirmar</span>' : '')}
         </div>
-        ${r.puede_operar && !k.cancelado ? `<div class="btn-group">${!k.confirmado ? `<button type="button" class="btn btn-outline" data-cobro-confirmar="${Number(k.id)}">Confirmar</button>` : ''}<button type="button" class="btn btn-outline perm-dinero-mover" data-cobro-cancelar="${Number(k.id)}">Cancelar</button></div>` : ''}
+        ${r.puede_operar && !k.cancelado ? `<div class="btn-group">${!k.confirmado && (k.registrado_por !== USUARIO_ACTUAL?.id || cobroQuedaConfirmado()) ? `<button type="button" class="btn btn-outline" data-cobro-confirmar="${Number(k.id)}">Confirmar</button>` : ''}<button type="button" class="btn btn-outline perm-dinero-mover" data-cobro-cancelar="${Number(k.id)}">Cancelar</button></div>` : ''}
       </div>`).join('') : '<p class="util-45">Sin pagos registrados.</p>';
     cont.innerHTML = `
       ${c.por_revisar ? '<p class="cuentas-aviso">Orden anterior al módulo de cuentas: está pendiente de la revisión inicial (Finanzas → Cuentas por cobrar).</p>' : ''}
@@ -270,7 +270,7 @@ const Finanzas = (() => {
     const lista = await api('/finanzas/por-confirmar').then(json).catch(() => []);
     cont.innerHTML = lista.length ? `<div class="inicio-bloque inicio-bloque-aviso"><h3>Pagos por confirmar</h3><p class="ayuda">Los registraron vendedores o técnicos. Confírmalos cuando verifiques que el dinero llegó.</p>
       ${lista.map(k => `<div class="pago-fila"><div><b>${formatoMoneda(k.monto)}</b> · ${esc(NOMBRE_METODO[k.metodo] || k.metodo)} · ${esc(fechaTxt(k.fecha))}<small>${esc(k.cliente_nombre)} · ${esc(folioOrdenServicio({ id: k.lead_id, created_at: k.lead_created_at }))} · registró ${esc(k.registrado_por_nombre || '—')}</small></div>
-        <div class="btn-group"><button type="button" class="btn btn-outline" data-confirmar="${Number(k.id)}">Confirmar</button><button type="button" class="btn btn-outline perm-dinero-mover" data-cancelar="${Number(k.id)}">Cancelar</button></div></div>`).join('')}</div>` : '';
+        <div class="btn-group">${k.registrado_por !== USUARIO_ACTUAL?.id || cobroQuedaConfirmado() ? `<button type="button" class="btn btn-outline" data-confirmar="${Number(k.id)}">Confirmar</button>` : '<span class="ayuda">Lo registraste tú: lo confirma otra persona</span>'}<button type="button" class="btn btn-outline perm-dinero-mover" data-cancelar="${Number(k.id)}">Cancelar</button></div></div>`).join('')}</div>` : '';
   }
   $('cuentas-por-confirmar').addEventListener('click', async e => {
     const btn = e.target.closest('button'); if (!btn) return;

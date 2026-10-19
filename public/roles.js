@@ -57,9 +57,18 @@ const Roles = (() => {
 
   function marcar(rolClave, permiso, on) {
     const r = DATOS.roles.find(x => x.clave === rolClave);
-    const set = new Set(permisosDe(r));
-    if (on) set.add(permiso); else set.delete(permiso);
+    const set = new Set(permisosDe(r)), dep = DATOS.dependencias || {}, arrastrados = [];
+    if (on) {
+      const pendientes = [permiso];
+      while (pendientes.length) { const p = pendientes.pop(); if (!set.has(p) && p !== permiso) arrastrados.push(p); set.add(p); (dep[p] || []).forEach(x => { if (!set.has(x)) pendientes.push(x); }); }
+    } else {
+      const quitar = [permiso];
+      while (quitar.length) { const p = quitar.pop(); if (set.delete(p) && p !== permiso) arrastrados.push(p); Object.entries(dep).forEach(([d, req]) => { if (req.includes(p) && set.has(d)) quitar.push(d); }); }
+    }
     cambios.set(rolClave, set);
+    // Refleja en las casillas lo que se marcó o quitó de arrastre, y avisa.
+    for (const p of arrastrados) { const c = document.querySelector(`[data-rp-rol="${CSS.escape(rolClave)}"][data-rp-permiso="${CSS.escape(p)}"]`); if (c) c.checked = on; }
+    if (arrastrados.length) { const nom = c => DATOS.catalogo.find(x => x.clave === c)?.nombre || c; toast((on ? 'También se marcó: ' : 'También se quitó: ') + arrastrados.map(nom).join(', ') + (on ? ' (lo necesita)' : ' (dependía de ese)')); }
     const n = pendientes().length, b = $('rp-guardar');
     b.disabled = !n; b.textContent = n ? 'Guardar cambios (' + n + (n === 1 ? ' rol' : ' roles') + ')' : 'Sin cambios';
     if (n && !$('rp-descartar')) b.insertAdjacentHTML('afterend', '<button type="button" class="btn btn-outline" id="rp-descartar">Descartar</button>');
@@ -70,15 +79,25 @@ const Roles = (() => {
     const lista = pendientes();
     if (!lista.length) return;
     const b = $('rp-guardar'); b.disabled = true;
-    try {
-      for (const [clave, set] of lista) {
-        const r = await api('/roles/' + encodeURIComponent(clave) + '/permisos', { method: 'PUT', body: JSON.stringify({ permisos: [...set] }) });
+    // Se guarda cada rol por su cuenta: si otra persona cambió uno mientras tanto, ese no se pisa y los demás sí se guardan.
+    const guardados = [], chocaron = [], errores = [];
+    for (const [clave, set] of lista) {
+      const rol = DATOS.roles.find(x => x.clave === clave);
+      try {
+        const r = await api('/roles/' + encodeURIComponent(clave) + '/permisos', { method: 'PUT', body: JSON.stringify({ permisos: [...set], antes: rol.permisos }) });
         const j = await r.json().catch(() => ({}));
-        if (!r.ok) throw new Error(j.error || 'No se pudo guardar');
-      }
-      toast('Permisos guardados');
-      await cargar();
-    } catch (e) { toast(e.message); b.disabled = false; }
+        if (r.status === 409) chocaron.push(rol.nombre);
+        else if (!r.ok) errores.push(rol.nombre + ': ' + (j.error || 'no se pudo guardar'));
+        else guardados.push(rol.nombre);
+      } catch (e) { errores.push(rol.nombre + ': ' + e.message); }
+    }
+    const partes = [];
+    if (guardados.length) partes.push('Guardado: ' + guardados.join(', ') + '.');
+    if (chocaron.length) partes.push('No se guardó ' + chocaron.join(', ') + ': alguien más lo cambió mientras lo editabas; ya ves lo actual, vuelve a hacer tu cambio.');
+    if (errores.length) partes.push(errores.join(' · '));
+    toast(partes.join(' '));
+    if (errores.length && !chocaron.length && !guardados.length) { b.disabled = false; return; }
+    await cargar();
   }
 
   async function crear() {

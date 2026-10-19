@@ -141,7 +141,7 @@ module.exports = function clientesUnicos(app, db, h) {
     }
   })();
 
-  const esAdmin = req => !!req.usuarioSesion && app.locals.permisos.puede(req, 'clientes.duplicados');
+  const esAdmin = req => !!req.usuarioSesion && app.locals.permisos.direccion(req); // duplicados: ven clientes de todas las sucursales
   const par = (x, y) => (x < y ? [x, y] : [y, x]);
   const sonDistintos = db.prepare('SELECT 1 FROM clientes_distintos WHERE a = ? AND b = ?');
   const quienDistintos = db.prepare('SELECT u.nombre, u.rol FROM clientes_distintos d LEFT JOIN usuarios u ON u.id = d.confirmado_por WHERE d.a = ? AND d.b = ?');
@@ -282,6 +282,7 @@ module.exports = function clientesUnicos(app, db, h) {
     res.json(duplicadosExistentes());
   }));
   app.post('/api/clientes/distintos', h((req, res) => {
+    if (!esAdmin(req)) return res.status(403).json({ error: 'Los duplicados los revisa Dirección' });
     const a = Number(req.body?.a), b = Number(req.body?.b);
     if (!a || !b || a === b || !db.prepare('SELECT 1 FROM clientes WHERE id = ?').get(a) || !db.prepare('SELECT 1 FROM clientes WHERE id = ?').get(b)) return res.status(400).json({ error: 'Clientes no válidos' });
     recordarDistintos(a, [b], req.usuarioSesion.id);

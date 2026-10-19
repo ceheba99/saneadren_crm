@@ -42,15 +42,18 @@ const RUTAS_REGISTRO = [
   [/^\/compras\/solicitudes\/(\d+)(?:\/|$)/, 'solicitudes_compra'], [/^\/prospeccion\/(\d+)(?:\/|$)/, 'establecimientos'],
 ];
 const RUTA_CLIENTE = /^\/(?:finanzas\/)?clientes\/(\d+)(?:\/|$)/;
-// Lo que solo hace el administrador GENERAL (afecta a todas las sucursales o lo ve todo).
+// Lo que solo hace el administrador GENERAL (Dirección): afecta a todas las sucursales o lo ve todo. Aplica a
+// cualquier otro rol, incluidos los que Dirección invente. (Los catálogos compartidos —canales, tipos de cliente,
+// centros, unidades, categorías y descripción de servicios— los decide el permiso «catalogos.editar».)
 const SOLO_GENERAL = [
   [/^(POST|PUT|DELETE)$/, /^\/sucursales(\/|$)/],
   [/./, /^\/admin\//],
   [/./, /^\/clientes\/(duplicados|distintos)$/], [/./, /^\/clientes\/\d+\/fusionar$/],
-  [/^(POST|PUT|DELETE)$/, /^\/servicios(\/|$)/], [/^(POST|PUT|DELETE)$/, /^\/canales(\/|$)/], [/^(POST|PUT|DELETE)$/, /^\/tipos-cliente(\/|$)/],
-  [/^(POST|PUT|DELETE)$/, /^\/finanzas\/categorias(\/|$)/], [/^(POST|PUT|DELETE)$/, /^\/prospeccion\/sectores(\/|$)/],
-  [/^(PUT)$/, /^\/compras\/formato$/], [/^(POST|PUT|DELETE)$/, /^\/compras\/(centros|unidades)(\/|$)/],
+  [/^POST$/, /^\/servicios$/], [/^DELETE$/, /^\/servicios\/\d+$/],
+  [/^(POST|PUT|DELETE)$/, /^\/prospeccion\/sectores(\/|$)/],
+  [/^(PUT)$/, /^\/compras\/formato$/],
 ];
+const esSoloGeneral = req => (req.path === '/auditoria' && !(req.query.entidad && req.query.id)) || SOLO_GENERAL.some(([m, r]) => m.test(req.method) && r.test(req.path));
 
 // Folio de un registro a partir de su id (busca su sucursal y su consecutivo). Lo usan todos los módulos.
 let DB = null, LISTA = [];
@@ -146,11 +149,8 @@ module.exports = function sucursales(app, db, h, { audit }) {
       return res.status(403).json({ error: 'Tu sucursal está desactivada o no tienes sucursal asignada. Pide a Dirección que te asigne una.', codigo: 'SIN_SUCURSAL' });
     req.alcanceSuc = a;
     u.rol_real = u.rol; u.admin_general = u.rol === 'admin';
-    if (u.rol === 'gerente') {
-      u.rol = 'admin';
-      const bitacoraCompleta = req.path === '/auditoria' && !(req.query.entidad && req.query.id);
-      if (bitacoraCompleta || SOLO_GENERAL.some(([m, r]) => m.test(req.method) && r.test(req.path))) return res.status(403).json({ error: 'Esto solo lo hace el administrador general (afecta a todas las sucursales)' });
-    }
+    if (u.rol === 'gerente') u.rol = 'admin';
+    if (!u.admin_general && esSoloGeneral(req)) return res.status(403).json({ error: 'Esto solo lo hace Dirección (afecta a todas las sucursales)' });
     const visible = alcance.correr(a, () => {
       const c = req.path.match(RUTA_CLIENTE);
       if (c) return verCliente(Number(c[1]));
@@ -292,3 +292,4 @@ module.exports.leadPorFolio = texto => {
 };
 module.exports.folioLead = (l, id = l.id) => folioDe(l.estatus === 'ganado' ? 'OS' : 'COT', 'leads', id, l.created_at);
 module.exports.CON_SUCURSAL = CON_SUCURSAL;
+module.exports.esSoloGeneral = esSoloGeneral;

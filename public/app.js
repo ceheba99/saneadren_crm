@@ -1794,7 +1794,7 @@ on('btn-guardar-cliente', 'click', async () => {
           toast('Datos del cliente actualizados'); FlujoCRM.marcarGuardado('overlay-ficha-cliente'); await abrirFichaCliente(CLIENTE_ACTUAL.id); await cargarClientes();
           return;
         }
-        if (!Permisos.puede('clientes.duplicados')) { toast('Es el mismo cliente: pide a un administrador que los junte (Contactos → Revisar duplicados). No se guardó el cambio de nombre.'); return; }
+        if (!Permisos.direccion()) { toast('Es el mismo cliente: pide a un administrador que los junte (Contactos → Revisar duplicados). No se guardó el cambio de nombre.'); return; }
         if (!await solicitarDialogo({ titulo: 'Juntar clientes', mensaje: 'Todo lo de ' + folioCliente(CLIENTE_ACTUAL.id) + ' pasa a ' + folioCliente(d.mismo) + ' y ' + folioCliente(CLIENTE_ACTUAL.id) + ' deja de existir (su ID queda apuntando a ' + folioCliente(d.mismo) + ').', aceptar: 'Juntar en ' + folioCliente(d.mismo) })) return;
         const rj = await api('/clientes/' + CLIENTE_ACTUAL.id + '/fusionar', { method: 'POST', body: JSON.stringify({ con: d.mismo }) });
         const dj = await rj.json();
@@ -1804,7 +1804,7 @@ on('btn-guardar-cliente', 'click', async () => {
         return;
       }
       // Mismo RFC = misma razón social: un administrador puede juntar los dos clientes en uno.
-      if (data.rfc_de && Permisos.puede('clientes.duplicados')) {
+      if (data.rfc_de && Permisos.direccion()) {
         const ok = await solicitarDialogo({ titulo: 'Este RFC ya es de otro cliente', mensaje: data.error.split('. Si')[0] + '. Si es la misma razón social, junta ' + folioCliente(CLIENTE_ACTUAL.id) + ' dentro de ' + data.rfc_de.folio + ': sus cotizaciones, órdenes, cobros y teléfonos pasan a ' + data.rfc_de.folio + ' y ' + folioCliente(CLIENTE_ACTUAL.id) + ' deja de existir (su ID queda apuntando a ' + data.rfc_de.folio + ').', aceptar: 'Juntar en ' + data.rfc_de.folio });
         if (!ok) return;
         const rj = await api('/clientes/' + CLIENTE_ACTUAL.id + '/fusionar', { method: 'POST', body: JSON.stringify({ con: data.rfc_de.id }) });
@@ -2340,13 +2340,13 @@ async function cargarCatalogoServicios() {
   if (!cont) return;
   const servicios = await api('/servicios').then(r => r.json());
   IDS_SERVICIOS = servicios.map(s => s.id);
-  const admin = Permisos.puede('catalogo.servicios');
+  const admin = Permisos.direccion(); // alta, baja y recompra de servicios: solo Dirección
   cont.innerHTML = servicios.map((s, i) => `
     <div class="servicio-row fila-catalogo" data-servicio="${Number(s.id)}">
       <div class="orden-btns"><button type="button" class="btn btn-outline" data-mover="-1" ${i === 0 ? 'disabled' : ''} aria-label="Subir ${escaparHtml(s.nombre)}">↑</button><button type="button" class="btn btn-outline" data-mover="1" ${i === servicios.length - 1 ? 'disabled' : ''} aria-label="Bajar ${escaparHtml(s.nombre)}">↓</button></div>
       <div class="info"><div class="tit">${escaparHtml(s.nombre)}</div><label for="desc-${s.id}">Descripción predeterminada para cotizaciones</label><textarea id="desc-${s.id}" rows="3" maxlength="10000" placeholder="Descripción que se precargará al elegir este servicio">${escaparHtml(s.descripcion || '')}</textarea></div>
       <div class="acciones-catalogo">
-        <span class="perm-catalogo-servicios"><input class="util-48" type="number" min="1" step="1" placeholder="Sin recompra" value="${s.dias_recurrencia != null ? s.dias_recurrencia : ''}" id="rec-${s.id}" aria-label="Recompra cada (días)"> <span class="util-49">días</span></span>
+        <span class="solo-general"><input class="util-48" type="number" min="1" step="1" placeholder="Sin recompra" value="${s.dias_recurrencia != null ? s.dias_recurrencia : ''}" id="rec-${s.id}" aria-label="Recompra cada (días)"> <span class="util-49">días</span></span>
         <button type="button" class="btn btn-secundario" data-guardar>Guardar</button>
         ${admin ? '<button type="button" class="btn btn-peligro" data-eliminar>Eliminar</button>' : ''}
       </div>
@@ -2364,7 +2364,7 @@ on('lista-servicios-catalogo', 'click', async e => {
     }
     if (btn.hasAttribute('data-guardar')) {
       const cuerpo = { descripcion: document.getElementById('desc-' + id).value };
-      if (Permisos.puede('catalogo.servicios')) { const v = document.getElementById('rec-' + id).value; cuerpo.dias_recurrencia = v === '' ? null : Number(v); }
+      if (Permisos.direccion()) { const v = document.getElementById('rec-' + id).value; cuerpo.dias_recurrencia = v === '' ? null : Number(v); }
       await api('/servicios/' + id, { method: 'PUT', body: JSON.stringify(cuerpo) });
       toast('Servicio guardado');
       cargarCatalogos();

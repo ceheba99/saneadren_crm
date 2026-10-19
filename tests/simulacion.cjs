@@ -150,7 +150,8 @@ const espera = ms => new Promise(r => setTimeout(r, ms));
   ok(s === 400, 'montos con más de 2 decimales se rechazan');
   [s, j] = await pedir('POST', '/leads/' + cot.id + '/cobros', A, { monto: 100, metodo: 'transferencia', fecha: '2099-01-01' });
   ok(s === 400, 'no se aceptan pagos con fecha futura');
-  [s, j] = await pedir('POST', '/finanzas/cobros/' + cobroVentas + '/confirmar', L); ok(s === 200, 'ventas (p. ej. facturación) SÍ puede confirmar pagos');
+  [s, j] = await pedir('POST', '/finanzas/cobros/' + cobroVentas + '/confirmar', L); ok(s === 403, 'ventas NO se confirma su propio pago (lo revisa otra persona)', j);
+  [s, j] = await pedir('POST', '/finanzas/cobros/' + cobroVentas + '/confirmar', A); ok(s === 200, 'otra persona (administración) sí lo confirma');
   [s, j] = await pedir('GET', '/leads/' + cot.id + '/cobros', A); ok(j.cobros.find(k => k.id === cobroVentas)?.confirmado === 1, 'el pago quedó confirmado');
   [s] = await pedir('POST', '/leads/' + cot.id + '/cobros', L, { monto: 1, metodo: 'efectivo', tipo: 'ajuste' }); ok(s === 403, 'los ajustes o descuentos siguen siendo solo del admin');
   [s, j] = await pedir('PUT', '/leads/' + cot.id + '/facturacion', A, { dias_credito: 15, factura_folio: 'A-123', factura_fecha: hoy, factura_total: 4060 }); // la factura no puede tener fecha futura
