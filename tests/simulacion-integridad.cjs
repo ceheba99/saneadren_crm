@@ -119,10 +119,13 @@ const cent = p => Math.round(Number(p || 0) * 100);
   [s, j] = await pedir('GET', '/tablero?desde=' + INI + '&hasta=' + HOY, A);
   const cobradoPeriodo = db.prepare("SELECT COALESCE(SUM(monto_cent),0) t FROM cobros WHERE cancelado = 0 AND tipo <> 'ajuste' AND fecha BETWEEN ? AND ?").get(INI, HOY).t;
   const pagadoPeriodo = db.prepare('SELECT COALESCE(SUM(monto_cent),0) t FROM pagos_proveedor WHERE cancelado = 0 AND fecha BETWEEN ? AND ?').get(INI, HOY).t;
-  const gastoPeriodo = db.prepare('SELECT COALESCE(SUM(total_cent),0) t FROM cuentas_por_pagar WHERE cancelada = 0 AND fecha_documento BETWEEN ? AND ?').get(INI, HOY).t;
+  // Gastos del periodo como se pagan (con IVA) y sin IVA (a cada factura se le quita su IVA: ver ivaDeGasto).
+  const { ivaDeGasto } = require('../server/finanzas');
+  const filasGasto = db.prepare("SELECT total_cent, iva_cent, tipo_comprobante, factura_folio FROM cuentas_por_pagar WHERE cancelada = 0 AND COALESCE(tipo_comprobante, '') <> 'informativo' AND fecha_documento BETWEEN ? AND ?").all(INI, HOY);
+  const gastoPeriodo = filasGasto.reduce((t, x) => t + x.total_cent, 0), gastoSinIva = filasGasto.reduce((t, x) => t + x.total_cent - ivaDeGasto(x).iva_cent, 0);
   revisa(cent(j.actual?.venta) === sub && cent(j.actual?.venta_con_iva) === sub + iva, 'Resultados: la venta es la misma que en el Generador', [j.actual?.venta, sub]);
   revisa(cent(j.actual?.cobrado) === cobradoPeriodo && cent(j.actual?.pagado) === pagadoPeriodo && cent(j.actual?.flujo) === cobradoPeriodo - pagadoPeriodo, 'Resultados: cobrado, pagado y flujo cuadran (el cobro cancelado no cuenta)', [j.actual?.cobrado, cobradoPeriodo, j.actual?.pagado, pagadoPeriodo]);
-  revisa(cent(j.actual?.gasto) === gastoPeriodo && cent(j.actual?.utilidad) === sub - gastoPeriodo, 'Resultados: gastos y utilidad estimada cuadran (la orden de compra cancelada no cuenta)', [j.actual?.gasto, gastoPeriodo]);
+  revisa(cent(j.actual?.gasto_con_iva) === gastoPeriodo && cent(j.actual?.gasto) === gastoSinIva && cent(j.actual?.utilidad) === sub - gastoSinIva, 'Resultados: gastos (con y sin IVA) y utilidad estimada cuadran (la orden de compra cancelada no cuenta)', [j.actual?.gasto, gastoSinIva, j.actual?.gasto_con_iva, gastoPeriodo]);
   [s, j] = await pedir('GET', '/finanzas/periodo?desde=' + INI + '&hasta=' + HOY, A);
   revisa(cent(j.cobrado) === cobradoPeriodo, 'Finanzas por periodo: mismo cobrado que Resultados');
   [s, j] = await pedir('GET', '/finanzas/cxp?vista=todas', A);

@@ -665,12 +665,14 @@ const Finanzas = (() => {
       { k: 'orden', t: 'Orden', v: x => (x.lead_id ? '<button type="button" class="enlace" data-abrir-orden-cxp="' + Number(x.lead_id) + '">' + esc(x.orden_folio) + '</button>' : '—'), s: x => x.orden_folio || '' },
       { k: 'equipo', t: 'Unidad', v: x => esc(x.equipo || '—'), s: x => x.equipo || '' },
       { k: 'total', t: 'Total', n: true, v: x => formatoMoneda(x.total), s: x => x.total, sum: x => x.total },
+      { k: 'iva', t: 'IVA', n: true, v: x => (x.es_factura ? formatoMoneda(x.iva) + (x.iva_estimado ? '<small class="celda-sub">estimado 16 %</small>' : '') : '—'), s: x => x.iva, sum: x => x.iva },
       { k: 'pagado', t: 'Pagado', n: true, v: x => formatoMoneda(x.pagado), s: x => x.pagado, sum: x => x.pagado },
       { k: 'saldo', t: 'Saldo', n: true, fija: true, v: x => '<b>' + formatoMoneda(x.saldo) + '</b>', s: x => x.saldo, sum: x => x.saldo },
       { k: 'ultimo_pago', t: 'Último pago', v: x => esc(ultimoPagoTxt(x.ultimo_pago)), s: x => x.ultimo_pago || '' },
       { k: 'notas', t: 'Notas', clase: 'celda-notas', v: x => esc(x.notas || ''), s: x => x.notas || '' },
       { k: 'acciones', t: '', fija: true, sinOrden: true, clase: 'celda-acciones', v: x => '<div class="acciones-fila">' + (x.saldo > 0 ? '<button type="button" class="btn btn-primario btn-chico perm-dinero-mover" data-pagar-cxp="' + Number(x.id) + '">Pagar</button>' : '')
         + '<button type="button" class="btn btn-outline btn-chico" data-detalle-cxp="' + Number(x.id) + '">Pagos</button>'
+        + (x.es_factura ? '<button type="button" class="btn btn-outline btn-chico perm-dinero-mover" data-iva-cxp="' + Number(x.id) + '" title="Capturar o corregir el IVA de la factura">IVA</button>' : '')
         + (x.pagado === 0 ? '<button type="button" class="btn btn-outline btn-chico perm-dinero-mover" data-cancelar-cxp="' + Number(x.id) + '">Cancelar</button>' : '') + '</div>' },
     ];
     if (!CXP.length) { cont.innerHTML = '<p class="util-45">No hay cuentas por pagar. 🎉</p>'; return; }
@@ -698,7 +700,13 @@ const Finanzas = (() => {
     const btn = e.target.closest('button'); if (!btn) return;
     if (btn.dataset.abrirOrdenCxp) return abrirFicha(Number(btn.dataset.abrirOrdenCxp));
     if (btn.dataset.provCuenta) return abrirCuentaProveedor(Number(btn.dataset.provCuenta));
-    const id = Number(btn.dataset.pagarCxp || btn.dataset.detalleCxp || btn.dataset.cancelarCxp);
+    const id = Number(btn.dataset.pagarCxp || btn.dataset.detalleCxp || btn.dataset.cancelarCxp || btn.dataset.ivaCxp);
+    if (btn.dataset.ivaCxp) {
+      const x = CXP.find(c => c.id === id); if (!x) return;
+      const v = await solicitarDialogo({ titulo: 'IVA de la factura', mensaje: `«${x.concepto}» · total ${formatoMoneda(x.total)}. ${x.iva_estimado ? 'No se capturó: se estima en ' : 'Capturado: '}${formatoMoneda(x.iva)}. Escribe el IVA que trae la factura (0 si es tasa 0 o exenta).`, aceptar: 'Guardar', campo: { etiqueta: 'IVA (MXN)', requerido: 'Escribe el IVA (0 si no trae)' } });
+      if (v === null) return;
+      return conBoton(btn, async () => { await json(await api('/finanzas/cxp/' + id + '/iva', { method: 'POST', body: JSON.stringify({ iva: v.trim() }) })); toast('IVA guardado'); cargar({ pestana: 'pagar' }); });
+    }
     if (btn.dataset.cancelarCxp) {
       const motivo = await pedirMotivo('Cancelar cuenta por pagar'); if (!motivo) return;
       return conBoton(btn, async () => { await json(await api('/finanzas/cxp/' + id + '/cancelar', { method: 'POST', body: JSON.stringify({ motivo }) })); toast('Cuenta cancelada'); cargar({ pestana: 'pagar' }); });
@@ -805,6 +813,7 @@ const Finanzas = (() => {
     $('gasto-credito').value = ''; $('gasto-credito').disabled = false; $('gasto-credito-ayuda').textContent = '';
     $('gasto-comprobante').innerHTML = '<option value="">Selecciona…</option>' + COMPROBANTES.map(([v, t]) => '<option value="' + v + '">' + esc(t) + '</option>').join('');
     $('gasto-sat').value = ''; $('gasto-sat-wrap').hidden = true; $('gasto-beneficiario').value = '';
+    $('gasto-iva').value = ''; delete $('gasto-iva').dataset.editado; $('gasto-iva-wrap').hidden = true;
     $('gasto-beneficiarios').innerHTML = PROVEEDORES.filter(p => p.activo).map(p => '<option value="' + esc(p.nombre) + '"></option>').join('');
     $('gasto-categoria').value = 'otro';
     $('gasto-folio').closest('details').open = !!prellenado['gasto-equipo'];
@@ -830,7 +839,16 @@ const Finanzas = (() => {
     $('gasto-vence').value = /^\d{1,3}$/.test(d) && $('gasto-fecha').value ? sumarDias($('gasto-fecha').value, Number(d)) : '';
   };
   $('gasto-credito').addEventListener('input', recalcularVence);
-  $('gasto-comprobante').addEventListener('change', () => { $('gasto-sat-wrap').hidden = $('gasto-comprobante').value !== 'factura'; if ($('gasto-comprobante').value !== 'factura') $('gasto-sat').value = ''; });
+  // IVA de la factura: se propone el 16 % incluido en el total mientras no lo escriban a mano.
+  const ivaPropuesto = () => { const n = Number(String($('gasto-total').value).replace(/[$,\s]/g, '')); return Number.isFinite(n) && n > 0 ? (Math.round(n * 1600 / 116) / 100).toFixed(2) : ''; };
+  const proponerIva = () => { if ($('gasto-comprobante').value === 'factura' && !$('gasto-iva').dataset.editado) $('gasto-iva').value = ivaPropuesto(); };
+  $('gasto-comprobante').addEventListener('change', () => {
+    const factura = $('gasto-comprobante').value === 'factura';
+    $('gasto-sat-wrap').hidden = !factura; if (!factura) $('gasto-sat').value = '';
+    $('gasto-iva-wrap').hidden = !factura; if (!factura) { $('gasto-iva').value = ''; delete $('gasto-iva').dataset.editado; } else proponerIva();
+  });
+  $('gasto-total').addEventListener('input', proponerIva);
+  $('gasto-iva').addEventListener('input', () => { $('gasto-iva').dataset.editado = '1'; });
   $('gasto-proveedor').addEventListener('change', async () => {
     if ($('gasto-proveedor').value === '__nuevo') {
       $('gasto-proveedor').value = '';
@@ -864,6 +882,7 @@ const Finanzas = (() => {
       proveedor_id: Number($('gasto-proveedor').value) || null, categoria: $('gasto-categoria').value, concepto: $('gasto-concepto').value,
       total: $('gasto-total').value.trim(), fecha_documento: $('gasto-fecha').value, dias_credito: Number(credito),
       tipo_comprobante: $('gasto-comprobante').value, metodo_sat: $('gasto-sat').value || null, beneficiario: $('gasto-beneficiario').value.trim() || null,
+      iva: $('gasto-comprobante').value === 'factura' ? ($('gasto-iva').value.trim() || null) : null,
       factura_folio: $('gasto-folio').value, lead_id: leadId, equipo: $('gasto-equipo').value,
       ya_pagado: $('gasto-pagado').checked, metodo: metodoElegido('gasto-metodos'),
       fecha_pago: $('gasto-pagado').checked ? $('gasto-fecha-pago').value : null, referencia: $('gasto-pagado').checked ? $('gasto-referencia').value : null });

@@ -73,7 +73,8 @@ const HOY = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Mexico_City' }
 
   console.log('6. Resultados: la inversión no se resta como gasto');
   [s, j] = await pedir('GET', '/tablero?desde=' + HOY + '&hasta=' + HOY, A);
-  revisa(Math.round(j.actual.no_gasto * 100) === 182500000 && j.actual.gasto < 100000, 'el tracto camión ($1,825,000) va en «no es gasto», no en gastos', [j.actual.gasto, j.actual.no_gasto]);
+  // Es factura sin IVA capturado: se cuenta sin IVA (16 % incluido estimado): $1,825,000 − $251,724.14.
+  revisa(Math.round(j.actual.no_gasto * 100) === 182500000 - Math.round(182500000 * 16 / 116) && j.actual.gasto < 100000, 'el tracto camión ($1,825,000 con IVA) va en «no es gasto» (sin IVA), no en gastos', [j.actual.gasto, j.actual.no_gasto]);
   revisa(j.gastos.find(g => g.categoria === 'activos')?.es_gasto === false, 'en la lista de gastos aparece marcado como inversión');
 
   { const [si, ri] = await pedir('GET', '/admin/integridad', A); const m = (ri.resultados || []).filter(r => r.gravedad === 'error' && r.total); revisa(si === 200 && ri.errores === 0, 'al terminar, la revisión de integridad no encuentra errores en los datos', m.map(r => r.titulo)); }

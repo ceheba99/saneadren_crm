@@ -69,7 +69,7 @@ const Panorama = (() => {
       + t.map((m, i) => '<circle class="' + clase + '-p" cx="' + (ml + i * ancho + ancho / 2).toFixed(1) + '" cy="' + y(m[campo]).toFixed(1) + '" r="3"/>').join('');
     return '<svg viewBox="0 0 ' + W + ' ' + H + '" class="pg-grafica" role="img" aria-label="Ventas, gastos, utilidad y cobrado de los últimos 12 meses">' + lineas
       + '<line x1="' + ml + '" x2="' + (W - mr) + '" y1="' + y0.toFixed(1) + '" y2="' + y0.toFixed(1) + '" class="pg-g-cero"/>' + cuerpo + linea('utilidad', 'pg-g-utilidad') + linea('cobrado', 'pg-g-cobrado') + '</svg>'
-      + '<div class="pg-leyenda"><span><i class="pg-l-venta"></i>Venta realizada (sin IVA)</span><span><i class="pg-l-gasto"></i>Gastos</span><span><i class="pg-l-utilidad"></i>Utilidad estimada</span><span><i class="pg-l-cobrado"></i>Dinero cobrado</span></div>';
+      + '<div class="pg-leyenda"><span><i class="pg-l-venta"></i>Venta realizada (sin IVA)</span><span><i class="pg-l-gasto"></i>Gastos (sin IVA)</span><span><i class="pg-l-utilidad"></i>Utilidad estimada</span><span><i class="pg-l-cobrado"></i>Dinero cobrado</span></div>';
   }
 
   function pintar() {
@@ -84,11 +84,11 @@ const Panorama = (() => {
       // 1. Lo principal del periodo
       + '<div class="pg-tarjetas">'
       + tarjeta('Venta realizada', dinero(a.venta), a.servicios + (a.servicios === 1 ? ' servicio' : ' servicios') + ' · sin IVA', delta(a.venta, p.venta), 'principal')
-      + tarjeta('Utilidad estimada', dinero(a.utilidad), 'Margen ' + pct(a.margen_pct) + ' · venta menos gastos', delta(a.utilidad, p.utilidad), a.utilidad < 0 ? 'negativo' : 'positivo')
+      + tarjeta('Utilidad estimada', dinero(a.utilidad), 'Margen ' + pct(a.margen_pct) + ' · venta menos gastos, ambos sin IVA', delta(a.utilidad, p.utilidad), a.utilidad < 0 ? 'negativo' : 'positivo')
       + tarjeta('Dinero cobrado', dinero(a.cobrado), a.cobros_n + (a.cobros_n === 1 ? ' pago recibido' : ' pagos recibidos'), delta(a.cobrado, p.cobrado))
       + tarjeta('Pagado a proveedores', dinero(a.pagado), 'Salida de dinero', delta(a.pagado, p.pagado, false))
       + tarjeta('Flujo de efectivo', dinero(a.flujo), 'Cobrado menos pagado', delta(a.flujo, p.flujo), a.flujo < 0 ? 'negativo' : '')
-      + tarjeta('Gastos del periodo', dinero(a.gasto), 'Facturas y gastos registrados', delta(a.gasto, p.gasto, false))
+      + tarjeta('Gastos del periodo (sin IVA)', dinero(a.gasto), 'Con IVA: ' + dinero(a.gasto_con_iva) + (a.iva_estimado_n ? ' · IVA estimado en ' + Number(a.iva_estimado_n) + (a.iva_estimado_n === 1 ? ' factura' : ' facturas') : ''), delta(a.gasto, p.gasto, false))
       + '</div>'
       // 1b. Comparativo por sucursal (solo si se ven varias)
       + ((d.por_sucursal || []).length > 1 ? '<div class="pg-caja"><div class="pg-caja-cab"><h3>Por sucursal</h3><span class="ayuda">Cada renglón solo con lo de esa sucursal; la suma es el total de arriba.</span></div><div class="tabla-scroll"><table class="pg-tabla pg-sucursales"><thead><tr><th>Sucursal</th><th class="st-num">Venta</th><th class="st-num">Gastos</th><th class="st-num">Utilidad</th><th class="st-num">Margen</th><th class="st-num">Cobrado</th><th class="st-num">Pagado</th><th class="st-num">Te deben</th><th class="st-num">Vencido</th><th class="st-num">Debes</th></tr></thead><tbody>'
@@ -109,8 +109,8 @@ const Panorama = (() => {
       + '</div>'
       + '<div class="pg-caja"><div class="pg-caja-cab"><h3>Debes hoy</h3><button type="button" class="enlace" data-pg-ir="pagar">Ver cuentas por pagar ›</button></div>'
       + '<div class="pg-mini">' + tarjeta('Por pagar', dinero(f.debes), 'A proveedores') + tarjeta('Vencido', dinero(f.debes_vencido), '', '', f.debes_vencido > 0 ? 'negativo' : '') + tarjeta('Esta semana', dinero(f.pagar_semana), 'Vence a más tardar el domingo') + '</div>'
-      + '<h4>Gastos del periodo por categoría</h4>' + barras(d.gastos.map(g => ({ nombre: g.nombre, venta: g.total, sin_orden: g.sin_orden })), 'venta', dinero, g => g.sin_orden ? dinero(g.sin_orden) + ' sin orden ligada' : 'ligado a órdenes')
-      + '<p class="ayuda">Costo de terceros en los servicios del periodo: <b>' + dinero(a.costo_directo) + '</b> · margen directo de servicios: <b>' + dinero(a.margen_directo) + '</b>.</p>'
+      + '<h4>Gastos del periodo por categoría (sin IVA)</h4>' + barras(d.gastos.map(g => ({ nombre: g.nombre, venta: g.total, sin_orden: g.sin_orden })), 'venta', dinero, g => g.sin_orden ? dinero(g.sin_orden) + ' sin orden ligada' : 'ligado a órdenes')
+      + '<p class="ayuda">Costo de terceros en los servicios del periodo (sin IVA): <b>' + dinero(a.costo_directo) + '</b> · margen directo de servicios: <b>' + dinero(a.margen_directo) + '</b>.</p>'
       + '</div></div>'
       // 5. Operación y ventas
       + '<div class="pg-caja"><h3>Operación y ventas del periodo</h3><div class="pg-tarjetas pg-tarjetas-chicas">'
@@ -131,7 +131,7 @@ const Panorama = (() => {
       + '<div class="pg-tres"><div class="pg-caja"><h3>Por canal de venta</h3>' + barras(d.por_canal) + '</div>'
       + '<div class="pg-caja"><h3>Por unidad</h3>' + barras(d.por_unidad) + '</div>'
       + '<div class="pg-caja"><h3>Por operador</h3>' + barras(d.por_operador) + '</div></div>'
-      + '<p class="ayuda pg-nota">Venta realizada: servicios marcados como realizados en el periodo, sin IVA (lo mismo que el Generador). Utilidad estimada: venta realizada menos facturas y gastos registrados en el periodo (como se capturaron, normalmente con IVA). Flujo: dinero que entró (pagos de clientes, sin descuentos) menos el que salió (pagos a proveedores). "Te deben" y "Debes" son al día de hoy.</p>';
+      + '<p class="ayuda pg-nota">Venta realizada: servicios marcados como realizados en el periodo, sin IVA (lo mismo que el Generador). Utilidad estimada: venta realizada menos facturas y gastos del periodo, los dos sin IVA. A cada factura de gasto se le quita su IVA (el capturado o, si no se capturó, el 16 % incluido, marcado como estimado); los gastos sin factura cuentan completos. No restan los comprobantes informativos ni lo que no es gasto (inversión, préstamos y traspasos). Flujo: dinero que entró (pagos de clientes, sin descuentos) menos el que salió (pagos a proveedores). "Te deben" y "Debes" son al día de hoy.</p>';
   }
 
   function exportar() {
@@ -140,10 +140,10 @@ const Panorama = (() => {
     const filas = [['Concepto', 'Periodo actual', 'Periodo anterior'],
       ['Periodo', d.desde + ' a ' + d.hasta, d.anterior.desde + ' a ' + d.anterior.hasta],
       ['Venta realizada (sin IVA)', a.venta, p.venta], ['Venta con IVA', a.venta_con_iva, p.venta_con_iva], ['Servicios realizados', a.servicios, p.servicios], ['Ticket promedio', a.ticket, p.ticket],
-      ['Gastos del periodo', a.gasto, p.gasto], ['Utilidad estimada', a.utilidad, p.utilidad], ['Margen %', a.margen_pct, p.margen_pct],
+      ['Gastos del periodo (sin IVA)', a.gasto, p.gasto], ['Gastos del periodo (con IVA)', a.gasto_con_iva, p.gasto_con_iva], ['Utilidad estimada', a.utilidad, p.utilidad], ['Margen %', a.margen_pct, p.margen_pct],
       ['Costo de terceros en servicios', a.costo_directo, p.costo_directo], ['Dinero cobrado', a.cobrado, p.cobrado], ['Pagado a proveedores', a.pagado, p.pagado], ['Flujo de efectivo', a.flujo, p.flujo],
       ['Cotizaciones', a.cotizaciones, p.cotizaciones], ['Tasa de cierre %', a.cierre_pct, p.cierre_pct], ['Clientes atendidos', a.clientes_activos, p.clientes_activos], ['Clientes nuevos', a.clientes_nuevos, p.clientes_nuevos],
-      [], ['Mes', 'Venta', 'Gastos', 'Utilidad', 'Cobrado', 'Pagado'], ...d.tendencia.map(m => [m.mes, m.venta, m.gasto, m.utilidad, m.cobrado, m.pagado]),
+      [], ['Mes', 'Venta (sin IVA)', 'Gastos (sin IVA)', 'Utilidad', 'Cobrado', 'Pagado'], ...d.tendencia.map(m => [m.mes, m.venta, m.gasto, m.utilidad, m.cobrado, m.pagado]),
       ...((d.por_sucursal || []).length > 1 ? [[], ['Sucursal', 'Venta', 'Gastos', 'Utilidad', 'Cobrado', 'Pagado', 'Te deben', 'Vencido', 'Debes'], ...d.por_sucursal.map(s => [s.clave + ' · ' + s.nombre, s.venta, s.gasto, s.utilidad, s.cobrado, s.pagado, s.te_deben, s.vencido, s.debes])] : [])];
     descargarCSV('panorama_' + d.desde + '_a_' + d.hasta + '.csv', filas[0].map((t, i) => ({ titulo: t, valor: f => f[i] ?? '' })), filas.slice(1));
   }

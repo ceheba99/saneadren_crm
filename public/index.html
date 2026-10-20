@@ -962,6 +962,7 @@
         <div class="campo"><label for="gasto-comprobante">Tipo de comprobante</label><select id="gasto-comprobante"></select></div>
         <div class="campo" id="gasto-sat-wrap"><label for="gasto-sat">Método del SAT</label><select id="gasto-sat"><option value="">Sin indicar</option><option value="PUE">PUE · una sola exhibición</option><option value="PPD">PPD · en parcialidades</option></select></div>
       </div>
+      <div class="campo" id="gasto-iva-wrap" hidden><label for="gasto-iva">IVA de la factura (MXN)</label><input id="gasto-iva" type="text" inputmode="decimal" autocomplete="off"><small class="ayuda">Se propone el 16 % incluido en el total; corrígelo con el que trae la factura (0 si es tasa 0 o exenta). Con él, Resultados calcula la utilidad sin IVA.</small></div>
       <div class="campo"><label for="gasto-beneficiario">¿A quién se le paga? (si no es el proveedor)</label><input id="gasto-beneficiario" maxlength="120" list="gasto-beneficiarios" placeholder="Vacío = al mismo proveedor (ej. reembolso a quien pagó con su tarjeta)"><datalist id="gasto-beneficiarios"></datalist></div>
       <div class="form-grid-2">
         <div class="campo"><label for="gasto-fecha">Fecha de la factura o gasto</label><input id="gasto-fecha" type="date"></div>
@@ -1172,9 +1173,9 @@
 <script src="servicios-tabla.js?v=perm1"></script>
 <script src="flujo.js?v=suc4"></script>
 <script src="cuentas.js?v=av1"></script>
-<script src="finanzas.js?v=perm3"></script>
+<script src="finanzas.js?v=iva1"></script>
 <script src="calendario.js?v=pg2"></script>
-<script src="tablero.js?v=suc2"></script>
+<script src="tablero.js?v=iva1"></script>
 <script src="bitacora.js?v=hc1"></script>
 <script src="compras.js?v=perm1"></script>
 <script src="solicitudes.js?v=perm1"></script>
