@@ -5,9 +5,9 @@ const Compras = (() => {
   const dinero = n => formatoMoneda(n);
   const hoy = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Mexico_City' }).format(new Date());
   const fechaTxt = f => (f ? f.split('-').reverse().join('/') : '—');
-  const esAdmin = () => USUARIO_ACTUAL?.rol === 'admin';
+  const esAdmin = () => Permisos.puede('compras.autorizar'); // autorizar, cancelar autorizadas, quitar documentos
   // Encargado de centro de costos (rol «costos») o administración: hacen y corrigen las órdenes y marcan lo recibido.
-  const esCostos = () => ['admin', 'costos'].includes(USUARIO_ACTUAL?.rol);
+  const esCostos = () => Permisos.puede('compras.gestionar');
   let DESDE_SOL = null; // solicitud de la que sale la orden nueva
   const ESTADOS = { borrador: ['Borrador · por autorizar', 'parcial'], autorizada: ['Autorizada', 'programada'], cancelada: ['Cancelada', 'vencida'] };
   let LISTA = [], ACTUAL = null, PROVEEDORES = [], CENTROS = [], CATEGORIAS = [], UNIDADES = [], consulta = 0;
@@ -132,7 +132,7 @@ const Compras = (() => {
     document.querySelectorAll('#oc-filas .oc-quitar').forEach(b => { b.hidden = !editable; });
     const bt = (id, txt, cl, extra = '') => '<button type="button" class="btn ' + cl + '" id="' + id + '"' + extra + '>' + txt + '</button>';
     $('oc-acciones').innerHTML = (editable ? bt('oc-guardar', 'Guardar borrador', 'btn-outline') + bt('oc-guardar-pdf', 'Guardar y descargar PDF', 'btn-primario') : bt('oc-pdf', 'Descargar PDF', 'btn-primario'))
-      + (o ? bt('oc-excel', 'Excel', 'btn-outline solo-admin') : '')
+      + (o ? bt('oc-excel', 'Excel', 'btn-outline perm-clientes-exportar') : '')
       + (o && o.estado === 'borrador' && esAdmin() ? bt('oc-autorizar', '✔ Autorizar y pasar a Cuentas por pagar', 'btn-verde') : '')
       + (o && o.estado === 'borrador' && !esAdmin() ? '<span class="ayuda">La autoriza un administrador.</span>' : '')
       + (o && esCostos() && (o.estado === 'borrador' || (o.estado === 'autorizada' && esAdmin())) ? bt('oc-cancelar', 'Cancelar orden', 'btn-eliminar') : '');
@@ -365,7 +365,7 @@ const Compras = (() => {
   }
   async function subirArchivoOC(archivoOBlob, tipo, nombre) {
     const r = await api('/compras/ordenes/' + ACTUAL.id + '/documentos', { method: 'POST', body: archivoOBlob,
-      headers: { 'Content-Type': 'application/octet-stream', Authorization: 'Bearer ' + USUARIO_ACTUAL.token, 'X-Tipo': tipo, 'X-Nombre': encodeURIComponent(nombre), 'X-Nota': encodeURIComponent('Recepción') } });
+      headers: { 'Content-Type': 'application/octet-stream', Authorization: 'Bearer ' + USUARIO_ACTUAL.token, ...encabezadoSucursal(), 'X-Tipo': tipo, 'X-Nombre': encodeURIComponent(nombre), 'X-Nota': encodeURIComponent('Recepción') } });
     const j = await r.json().catch(() => ({}));
     if (!r.ok && !(r.status === 409 && /ya está en este expediente/.test(j.error || ''))) throw new Error(j.error || 'No se pudo subir');
   }
@@ -386,7 +386,7 @@ const Compras = (() => {
     if (!archivo) { toast('Elige el archivo'); return; }
     if (archivo.size > 10 * 1024 * 1024) { toast('El archivo pasa de 10 MB'); return; }
     const r = await api('/compras/ordenes/' + ACTUAL.id + '/documentos', { method: 'POST', body: archivo,
-      headers: { 'Content-Type': 'application/octet-stream', Authorization: 'Bearer ' + USUARIO_ACTUAL.token, 'X-Tipo': tipo, 'X-Nombre': encodeURIComponent(archivo.name), 'X-Nota': encodeURIComponent($('oc-doc-nota').value.trim()) } });
+      headers: { 'Content-Type': 'application/octet-stream', Authorization: 'Bearer ' + USUARIO_ACTUAL.token, ...encabezadoSucursal(), 'X-Tipo': tipo, 'X-Nombre': encodeURIComponent(archivo.name), 'X-Nota': encodeURIComponent($('oc-doc-nota').value.trim()) } });
     const j = await r.json().catch(() => ({}));
     if (!r.ok) { toast(j.error || 'No se pudo subir'); return; }
     toast(j.avisos?.length ? '⚠ Subido, pero revisa: ' + j.avisos.join(' · ') : 'Documento agregado al expediente');

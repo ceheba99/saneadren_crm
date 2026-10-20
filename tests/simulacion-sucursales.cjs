@@ -34,6 +34,7 @@ const MARCA = /secretoqro|-QRO-/i; // nada de QRO: ni su marca ni sus folios
 (async () => {
   for (let i = 0; i < 100 && !/corriendo/.test(salida); i++) await espera(150);
   const A = (await pedir('POST', '/login', null, { nombre: ADMIN.correo, password: ADMIN.password }))[1].token;
+  await require('./ayuda-alcance.cjs').comoAntes(pedir, A); // esta prueba es de las sucursales, no de «qué ve cada rol»
   let s, j;
 
   console.log('1. Sucursales');

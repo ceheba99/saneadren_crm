@@ -10,7 +10,7 @@ const Prospeccion=(()=>{
   async function catalogos(){[sectores,usuarios]=await Promise.all([pedir('/sectores'),api('/usuarios').then(r=>r.json())]);
     for(const id of ['pr-sector_id','pr-f-sector']){const previo=$(id).value;$(id).innerHTML='<option value="">'+(id==='pr-f-sector'?'Todos los sectores':'Selecciona sector')+'</option>'+opciones(sectores,'id','nombre');$(id).value=previo;}
     for(const id of ['pr-responsable_id','pr-f-responsable']){const previo=$(id).value;$(id).innerHTML='<option value="">'+(id==='pr-f-responsable'?'Todos los responsables':'Selecciona responsable')+'</option>'+opciones(usuarios,'id','nombre');$(id).value=previo;}
-    $('pr-admin').hidden=USUARIO_ACTUAL?.rol!=='admin';
+    $('pr-admin').hidden=!Permisos.direccion();
     $('pr-sectores').innerHTML=sectores.map(s=>`<div class="servicio-row"><input aria-label="Nombre del sector" id="pr-sector-${s.id}" value="${esc(s.nombre)}" maxlength="80"><button class="btn btn-outline" data-sector="${s.id}">Guardar nombre</button></div>`).join('');
   }
   async function cargar(){const turno=++consulta;try{await catalogos();const q=new URLSearchParams({q:$('pr-buscar').value,sector_id:$('pr-f-sector').value,estado:$('pr-f-estado').value,responsable_id:$('pr-f-responsable').value,pendientes:$('pr-vencidos').checked?'1':''});const respuesta=await pedir('?'+q);if(turno!==consulta)return;filas=respuesta;render();}catch(e){$('pr-resumen').textContent='No se pudo cargar prospección: '+e.message;}}

@@ -19,6 +19,7 @@ const revisa = (cond, texto, extra) => { n++; if (!cond) { malos.push(texto); co
 (async () => {
   for (let i = 0; i < 100 && !/corriendo/.test(salida); i++) await espera(150);
   const A = (await pedir('POST', '/login', null, { nombre: ADMIN.correo, password: ADMIN.password }))[1].token;
+  await require('./ayuda-alcance.cjs').comoAntes(pedir, A); // esta prueba es de el flujo de solicitudes, no de «qué ve cada rol»
   let s, j;
   console.log('1. Rol «costos»');
   [s, j] = await pedir('POST', '/usuarios', A, { nombre: 'Isaac Compras', correo: 'isaac.compras@saneadren.com.mx', password: 'Isaac-Compras-2026', rol: 'costos' });

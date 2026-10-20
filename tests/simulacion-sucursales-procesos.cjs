@@ -38,6 +38,7 @@ const total = sub => Math.round(sub * 116) / 100;
 (async () => {
   for (let i = 0; i < 100 && !/corriendo/.test(salida); i++) await espera(150);
   const A = (await pedir('POST', '/login', null, { nombre: ADMIN.correo, password: ADMIN.password }))[1].token;
+  await require('./ayuda-alcance.cjs').comoAntes(pedir, A); // esta prueba es de las sucursales, no de «qué ve cada rol»
   let s, j, t;
   const [, canales] = await pedir('GET', '/canales', A), [, servicios] = await pedir('GET', '/servicios', A), [, centros] = await pedir('GET', '/compras/centros', A);
   const SERV = servicios[0];

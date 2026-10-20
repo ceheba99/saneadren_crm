@@ -3,7 +3,7 @@
 // minuto y rapidez con miles de registros. Uso: node tests/simulacion-buscador.cjs
 const { spawn } = require('child_process'); const fs = require('fs'), os = require('os'), path = require('path'), crypto = require('crypto');
 const { DatabaseSync } = require('node:sqlite');
-const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'crm-buscador-')); const PUERTO = String(6400 + Math.floor(Math.random() * 300));
+const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'crm-buscador-')); const PUERTO = String(7400 + Math.floor(Math.random() * 300)); // fuera de 6665-6669, que fetch bloquea
 const DB = path.join(dir, 'b.db');
 const ADMIN = { correo: 'marketing@saneadren.com.mx', password: 'Busca-' + Math.random().toString(36).slice(2) + '-9' };
 let salida = '';
@@ -26,6 +26,7 @@ const tiene = (j, tipo, id) => !!grupo(j, tipo)?.items.some(x => x.id === id);
 (async () => {
   for (let i = 0; i < 100 && !/corriendo/.test(salida); i++) await espera(150);
   const A = (await pedir('POST', '/login', null, { nombre: ADMIN.correo, password: ADMIN.password }))[1].token;
+  await require('./ayuda-alcance.cjs').comoAntes(pedir, A); // esta prueba es de el buscador, no de «qué ve cada rol»
   await pedir('POST', '/usuarios', A, { nombre: 'Vende Busca', correo: 'vende.busca@saneadren.com.mx', password: 'Vende-Busca-2026', rol: 'ventas' });
   await pedir('POST', '/usuarios', A, { nombre: 'Tecnico Busca', correo: 'tec.busca@saneadren.com.mx', password: 'Tecnico-Busca-2026', rol: 'tecnico' });
   await pedir('POST', '/usuarios', A, { nombre: 'Costos Busca', correo: 'costos.busca@saneadren.com.mx', password: 'Costos-Busca-2026', rol: 'costos' });

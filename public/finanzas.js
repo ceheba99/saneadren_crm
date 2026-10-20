@@ -9,12 +9,12 @@ const Finanzas = (() => {
   const METODOS_PROV = [...METODOS.slice(0, -1), ['nomina', 'Nómina'], ['layout', 'Layout'], ['pagadora', 'Pagadora'], ['domiciliado', 'Domiciliado'], ['linea_captura', 'Línea de captura'], ['directo', 'Directo'], ['otro', 'Otro']];
   const COMPROBANTES = [['factura', 'Factura (CFDI)'], ['recibo', 'Recibo'], ['estado_cuenta', 'Estado de cuenta / corrida'], ['linea_captura', 'Línea de captura (impuestos)'], ['nomina', 'Nómina, finiquito o liquidación'], ['pagadora', 'Pagadora'], ['sin_factura', 'Sin factura'], ['informativo', 'Informativo (no se suma)'], ['otro', 'Otro']];
   const NOMBRE_METODO = Object.fromEntries(METODOS_PROV);
-  const esAdmin = () => USUARIO_ACTUAL?.rol === 'admin';
-  // Todos los usuarios con sesión ven las cuentas; crédito y factura los cambian admin y atención.
-  const puedeCartera = () => !!USUARIO_ACTUAL;
-  const puedeEditarFactura = () => !!USUARIO_ACTUAL;
-  // Todos operan las cuentas; los pagos que registran ventas o técnicos quedan "por confirmar".
-  const cobroQuedaConfirmado = () => ['admin', 'atencion'].includes(USUARIO_ACTUAL?.rol);
+  // Lo que puede cada quien lo decide su rol (permisos.js); el servidor lo vuelve a revisar.
+  const esAdmin = () => Permisos.puede('cobros.ajustes'); // ajustes, descuentos y revisión inicial
+  const puedeCartera = (seccion = 'cobrar') => Permisos.puede(seccion === 'pagar' ? 'cxp.ver' : 'cxc.ver');
+  const puedeEditarFactura = () => Permisos.puede('cobranza.factura');
+  // Sin «cobros.directo», lo que registra queda «por confirmar».
+  const cobroQuedaConfirmado = () => Permisos.puede('cobros.directo');
   const hoy = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Mexico_City', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
   const sumarDias = (f, d) => { const x = new Date(f + 'T00:00:00Z'); x.setUTCDate(x.getUTCDate() + (Number(d) || 0)); return x.toISOString().slice(0, 10); };
   const fechaTxt = f => (f ? new Date(f + 'T12:00:00').toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' }) : '—');
@@ -141,7 +141,7 @@ const Finanzas = (() => {
           <small>Registró ${esc(k.registrado_por_nombre || '—')}${k.referencia ? ' · Ref. ' + esc(k.referencia) : ''}${k.notas ? ' · ' + esc(k.notas) : ''}</small>
           ${k.cancelado ? `<small class="motivo">Cancelado: ${esc(k.motivo_cancelacion || '')}</small>` : (!k.confirmado ? '<span class="estado-cxc por-confirmar">Por confirmar</span>' : '')}
         </div>
-        ${r.puede_operar && !k.cancelado ? `<div class="btn-group">${!k.confirmado ? `<button type="button" class="btn btn-outline" data-cobro-confirmar="${Number(k.id)}">Confirmar</button>` : ''}<button type="button" class="btn btn-outline solo-costos" data-cobro-cancelar="${Number(k.id)}">Cancelar</button></div>` : ''}
+        ${r.puede_operar && !k.cancelado ? `<div class="btn-group">${!k.confirmado && (k.registrado_por !== USUARIO_ACTUAL?.id || cobroQuedaConfirmado()) ? `<button type="button" class="btn btn-outline" data-cobro-confirmar="${Number(k.id)}">Confirmar</button>` : ''}<button type="button" class="btn btn-outline perm-dinero-mover" data-cobro-cancelar="${Number(k.id)}">Cancelar</button></div>` : ''}
       </div>`).join('') : '<p class="util-45">Sin pagos registrados.</p>';
     cont.innerHTML = `
       ${c.por_revisar ? '<p class="cuentas-aviso">Orden anterior al módulo de cuentas: está pendiente de la revisión inicial (Finanzas → Cuentas por cobrar).</p>' : ''}
@@ -207,7 +207,7 @@ const Finanzas = (() => {
   $('cobrar-buscar').addEventListener('input', () => { clearTimeout(tBuscar); tBuscar = setTimeout(cargarLista, 300); });
 
   async function cargar(opciones = {}) {
-    if (!puedeCartera()) return;
+    if (!puedeCartera(opciones.seccion || SECCION)) return;
     if (opciones.filtro || opciones.pestana) $('cobrar-buscar').value = '';
     if (opciones.seccion) SECCION = opciones.seccion;
     else if (opciones.pestana) SECCION = opciones.pestana === 'cobrar' ? 'cobrar' : 'pagar';
@@ -270,7 +270,7 @@ const Finanzas = (() => {
     const lista = await api('/finanzas/por-confirmar').then(json).catch(() => []);
     cont.innerHTML = lista.length ? `<div class="inicio-bloque inicio-bloque-aviso"><h3>Pagos por confirmar</h3><p class="ayuda">Los registraron vendedores o técnicos. Confírmalos cuando verifiques que el dinero llegó.</p>
       ${lista.map(k => `<div class="pago-fila"><div><b>${formatoMoneda(k.monto)}</b> · ${esc(NOMBRE_METODO[k.metodo] || k.metodo)} · ${esc(fechaTxt(k.fecha))}<small>${esc(k.cliente_nombre)} · ${esc(folioOrdenServicio({ id: k.lead_id, created_at: k.lead_created_at }))} · registró ${esc(k.registrado_por_nombre || '—')}</small></div>
-        <div class="btn-group"><button type="button" class="btn btn-outline" data-confirmar="${Number(k.id)}">Confirmar</button><button type="button" class="btn btn-outline solo-costos" data-cancelar="${Number(k.id)}">Cancelar</button></div></div>`).join('')}</div>` : '';
+        <div class="btn-group">${k.registrado_por !== USUARIO_ACTUAL?.id || cobroQuedaConfirmado() ? `<button type="button" class="btn btn-outline" data-confirmar="${Number(k.id)}">Confirmar</button>` : '<span class="ayuda">Lo registraste tú: lo confirma otra persona</span>'}<button type="button" class="btn btn-outline perm-dinero-mover" data-cancelar="${Number(k.id)}">Cancelar</button></div></div>`).join('')}</div>` : '';
   }
   $('cuentas-por-confirmar').addEventListener('click', async e => {
     const btn = e.target.closest('button'); if (!btn) return;
@@ -582,7 +582,7 @@ const Finanzas = (() => {
       + '<td>' + (x.lead_id ? '<button type="button" class="enlace" data-cp-orden="' + Number(x.lead_id) + '">' + esc(x.orden_folio) + '</button>' : '—') + '</td>'
       + '<td class="st-num">' + formatoMoneda(x.total) + '</td><td class="st-num">' + formatoMoneda(x.pagado) + '</td><td class="st-num"><b>' + formatoMoneda(x.saldo) + '</b></td>'
       + '<td>' + esc(fechaTxt(x.fecha_vencimiento)) + '<small class="celda-sub">' + Math.max(0, Math.round((Date.parse(x.fecha_vencimiento) - Date.parse(x.fecha_documento)) / 86400000)) + ' días de crédito</small></td><td>' + estado(x) + '</td>'
-      + '<td class="celda-acciones"><div class="acciones-fila">' + (x.saldo > 0 ? '<button type="button" class="btn btn-primario btn-chico solo-costos" data-cp-pagar="' + Number(x.id) + '">Pagar</button>' : '')
+      + '<td class="celda-acciones"><div class="acciones-fila">' + (x.saldo > 0 ? '<button type="button" class="btn btn-primario btn-chico perm-dinero-mover" data-cp-pagar="' + Number(x.id) + '">Pagar</button>' : '')
       + '<button type="button" class="btn btn-outline btn-chico" data-cp-pagos="' + Number(x.id) + '">Pagos</button></div></td></tr>';
     const filaPago = g => '<tr class="' + (g.cancelado ? 'fila-cancelada' : '') + '"><td>' + esc(fechaTxt(g.fecha)) + '</td><td>' + esc(g.concepto) + (g.factura_folio ? '<small class="celda-sub">Factura ' + esc(g.factura_folio) + '</small>' : '') + '</td>'
       + '<td class="st-num">' + formatoMoneda(g.monto) + '</td><td>' + esc(NOMBRE_METODO[g.metodo] || g.metodo) + '</td><td>' + esc(g.cuenta_origen || '—') + '</td><td>' + esc(g.referencia || '—') + '</td>'
@@ -607,7 +607,7 @@ const Finanzas = (() => {
       + '<div><small>Último pago</small><b>' + (r.ultimo_pago ? esc(fechaTxt(r.ultimo_pago.fecha)) + ' · ' + formatoMoneda(r.ultimo_pago.monto) : '—') + '</b></div>'
       + '<div><small>Cotizaciones</small><b>' + r.cotizaciones.length + ' enviadas · ' + ganadas + ' ganadas</b></div></div>'
       + (p.notas ? '<p class="ayuda">📝 ' + esc(p.notas) + '</p>' : '')
-      + '<div class="btn-group cc-acciones"><button type="button" class="btn btn-outline solo-costos" data-cp-editar>Editar datos del proveedor</button></div>'
+      + '<div class="btn-group cc-acciones"><button type="button" class="btn btn-outline perm-dinero-mover" data-cp-editar>Editar datos del proveedor</button></div>'
       + seccion('Facturas y gastos', '<label class="cc-check"><input type="checkbox" data-cp-pagadas' + (PROV_VER_PAGADAS ? ' checked' : '') + '> Mostrar también las pagadas</label>',
         cuentas.length ? tabla(['Fecha', 'Concepto', 'Factura', 'Orden', '$Total', '$Pagado', '$Saldo', 'Vence', 'Status', ''], cuentas.map(filaCuenta).join(''))
           + '<p class="ayuda cp-total">Totales · ' + cuentas.length + ': ' + formatoMoneda(cuentas.reduce((s, x) => s + x.total, 0)) + ' · pagado ' + formatoMoneda(cuentas.reduce((s, x) => s + x.pagado, 0)) + ' · saldo <b>' + formatoMoneda(cuentas.reduce((s, x) => s + x.saldo, 0)) + '</b></p>'
@@ -669,9 +669,9 @@ const Finanzas = (() => {
       { k: 'saldo', t: 'Saldo', n: true, fija: true, v: x => '<b>' + formatoMoneda(x.saldo) + '</b>', s: x => x.saldo, sum: x => x.saldo },
       { k: 'ultimo_pago', t: 'Último pago', v: x => esc(ultimoPagoTxt(x.ultimo_pago)), s: x => x.ultimo_pago || '' },
       { k: 'notas', t: 'Notas', clase: 'celda-notas', v: x => esc(x.notas || ''), s: x => x.notas || '' },
-      { k: 'acciones', t: '', fija: true, sinOrden: true, clase: 'celda-acciones', v: x => '<div class="acciones-fila">' + (x.saldo > 0 ? '<button type="button" class="btn btn-primario btn-chico solo-costos" data-pagar-cxp="' + Number(x.id) + '">Pagar</button>' : '')
+      { k: 'acciones', t: '', fija: true, sinOrden: true, clase: 'celda-acciones', v: x => '<div class="acciones-fila">' + (x.saldo > 0 ? '<button type="button" class="btn btn-primario btn-chico perm-dinero-mover" data-pagar-cxp="' + Number(x.id) + '">Pagar</button>' : '')
         + '<button type="button" class="btn btn-outline btn-chico" data-detalle-cxp="' + Number(x.id) + '">Pagos</button>'
-        + (x.pagado === 0 ? '<button type="button" class="btn btn-outline btn-chico solo-costos" data-cancelar-cxp="' + Number(x.id) + '">Cancelar</button>' : '') + '</div>' },
+        + (x.pagado === 0 ? '<button type="button" class="btn btn-outline btn-chico perm-dinero-mover" data-cancelar-cxp="' + Number(x.id) + '">Cancelar</button>' : '') + '</div>' },
     ];
     if (!CXP.length) { cont.innerHTML = '<p class="util-45">No hay cuentas por pagar. 🎉</p>'; return; }
     TABLAS.pagar = { ...TABLAS.pagar, contenedor: 'pagar-lista', orden: TABLAS.pagar?.orden || { k: 'vence', dir: 1 } };
@@ -686,8 +686,8 @@ const Finanzas = (() => {
           <div class="info"><button type="button" class="enlace enlace-fuerte" data-prov-cuenta="${Number(x.proveedor_id)}">${esc(x.proveedor_nombre)}</button> · ${esc(x.concepto)}
             <small>${esc(x.categoria_nombre)} · vence ${esc(fechaTxt(x.fecha_vencimiento))}${x.factura_folio ? ' · factura ' + esc(x.factura_folio) : ''}${x.orden_folio ? ' · orden ' + esc(x.orden_folio) : ''}${x.equipo ? ' · ' + esc(x.equipo) : ''}</small></div>
           <div class="montos"><b>${formatoMoneda(x.saldo)}</b><small>de ${formatoMoneda(x.total)}</small></div>
-          <div class="btn-group">${x.saldo > 0 ? `<button type="button" class="btn btn-primario solo-costos" data-pagar-cxp="${Number(x.id)}">Pagar</button>` : ''}<button type="button" class="btn btn-outline" data-detalle-cxp="${Number(x.id)}">Pagos</button>
-            ${x.pagado === 0 ? `<button type="button" class="btn btn-outline solo-costos" data-cancelar-cxp="${Number(x.id)}">Cancelar</button>` : ''}</div>
+          <div class="btn-group">${x.saldo > 0 ? `<button type="button" class="btn btn-primario perm-dinero-mover" data-pagar-cxp="${Number(x.id)}">Pagar</button>` : ''}<button type="button" class="btn btn-outline" data-detalle-cxp="${Number(x.id)}">Pagos</button>
+            ${x.pagado === 0 ? `<button type="button" class="btn btn-outline perm-dinero-mover" data-cancelar-cxp="${Number(x.id)}">Cancelar</button>` : ''}</div>
         </div>`).join('');
     }).join('');
     return html || '<p class="util-45">No hay cuentas por pagar. 🎉</p>';
@@ -724,7 +724,7 @@ const Finanzas = (() => {
     $('pagoprov-historial').innerHTML = pagos.length ? '<div class="seccion-tit">Pagos registrados</div>' + pagos.map(g => `
       <div class="pago-fila${g.cancelado ? ' cancelado' : ''}"><div><b>${formatoMoneda(g.monto)}</b> · ${esc(NOMBRE_METODO[g.metodo] || g.metodo)} · ${esc(fechaTxt(g.fecha))}
         <small>Registró ${esc(g.registrado_por_nombre || '—')}${g.referencia ? ' · Ref. ' + esc(g.referencia) : ''}</small>${g.cancelado ? `<small class="motivo">Cancelado: ${esc(g.motivo_cancelacion || '')}</small>` : ''}</div>
-        ${!g.cancelado ? `<button type="button" class="btn btn-outline solo-costos" data-cancelar-pagoprov="${Number(g.id)}">Cancelar</button>` : ''}</div>`).join('') : '<p class="util-45">Sin pagos registrados.</p>';
+        ${!g.cancelado ? `<button type="button" class="btn btn-outline perm-dinero-mover" data-cancelar-pagoprov="${Number(g.id)}">Cancelar</button>` : ''}</div>`).join('') : '<p class="util-45">Sin pagos registrados.</p>';
   }
   $('pagoprov-historial').addEventListener('click', async e => {
     const btn = e.target.closest('[data-cancelar-pagoprov]'); if (!btn) return;
@@ -743,7 +743,7 @@ const Finanzas = (() => {
   // ---- Orden de servicio relacionada al gasto: búsqueda, vista previa y datos que se cargan ----
   let ORDENES_GASTO = [];
   async function cargarOrdenesGasto() {
-    try { ORDENES_GASTO = await api('/leads?estatus=ganado').then(json); } catch { ORDENES_GASTO = []; }
+    try { ORDENES_GASTO = await api('/finanzas/ordenes-para-gasto').then(json); } catch { ORDENES_GASTO = []; }
   }
   const sinAcentosGasto = t => String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
   // Busca por folio (OS-202610-0001), número (1), cliente, servicio, unidad, operador o ubicación.
@@ -761,7 +761,7 @@ const Finanzas = (() => {
   function pintarSugerenciasGasto() {
     const caja = $('gasto-orden-sugerencias'), lista = buscarOrdenesGasto($('gasto-orden').value);
     caja.hidden = !lista.length; $('gasto-orden').setAttribute('aria-expanded', String(!!lista.length));
-    caja.innerHTML = lista.map(o => `<button type="button" role="option" class="gasto-orden-opcion" data-orden-gasto="${Number(o.id)}"><b>${esc(folioOrdenServicio(o))}</b> · ${esc(o.empresa_contacto || o.nombre || 'Sin cliente')} · ${esc(o.servicio_nombre || 'Servicio')}<small>${esc(fechaTxt(o.fecha_servicio))}${o.equipo ? ' · Unidad ' + esc(o.equipo) : ''} · ${formatoMoneda(totalOrden(o))}</small></button>`).join('');
+    caja.innerHTML = lista.map(o => `<button type="button" role="option" class="gasto-orden-opcion" data-orden-gasto="${Number(o.id)}"><b>${esc(folioOrdenServicio(o))}</b> · ${esc(o.empresa_contacto || o.nombre || 'Sin cliente')} · ${esc(o.servicio_nombre || 'Servicio')}<small>${esc(fechaTxt(o.fecha_servicio))}${o.equipo ? ' · Unidad ' + esc(o.equipo) : ''}${o.valor != null ? ' · ' + formatoMoneda(totalOrden(o)) : ''}</small></button>`).join('');
   }
   // Muestra la información de la orden elegida y carga equipo y concepto si la orden los tiene.
   function elegirOrdenGasto(o, cargarDatos = true) {
@@ -856,7 +856,7 @@ const Finanzas = (() => {
     const orden = $('gasto-orden').value.trim();
     const leadId = orden ? Number($('gasto-orden').dataset.leadId) || null : null;
     if (orden && !leadId) { toast('Elige la orden de servicio de la lista (o deja el campo vacío)'); $('gasto-orden').focus(); return; }
-    if (!leadId && !['admin', 'costos'].includes(USUARIO_ACTUAL?.rol)) { toast('Elige la orden de servicio. Las compras se piden con una Solicitud de compra.'); $('gasto-orden').focus(); return; }
+    if (!leadId && !Permisos.puede('dinero.mover')) { toast('Elige la orden de servicio. Las compras se piden con una Solicitud de compra.'); $('gasto-orden').focus(); return; }
     if (!$('gasto-comprobante').value) { toast('Elige el tipo de comprobante (factura, recibo, sin factura…)'); $('gasto-comprobante').focus(); return; }
     const credito = $('gasto-pagado').checked ? '0' : $('gasto-credito').value.trim();
     if (!/^\d{1,3}$/.test(credito) || Number(credito) > 365) { toast('Escribe los días de crédito (0 si es de contado)'); $('gasto-credito').focus(); return; }

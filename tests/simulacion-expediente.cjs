@@ -25,6 +25,7 @@ const CFDI = ({ total, rfc = 'RBA010101AB1', uuid = 'A1B2C3D4-0000-4000-8000-000
 (async () => {
   for (let i = 0; i < 100 && !/corriendo/.test(salida); i++) await espera(150);
   const A = (await pedir('POST', '/login', null, { nombre: ADMIN.correo, password: ADMIN.password }))[1].token;
+  await require('./ayuda-alcance.cjs').comoAntes(pedir, A); // esta prueba es de el expediente de compras, no de «qué ve cada rol»
   await pedir('POST', '/usuarios', A, { nombre: 'Compras Exp', correo: 'compras.exp@saneadren.com.mx', password: 'Compras-Exp-2026', rol: 'costos' }); // encargado de centro de costos: hace las órdenes de compra
   const V = (await pedir('POST', '/login', null, { nombre: 'compras.exp@saneadren.com.mx', password: 'Compras-Exp-2026' }))[1].token;
   let s, j;
@@ -114,7 +115,7 @@ const CFDI = ({ total, rfc = 'RBA010101AB1', uuid = 'A1B2C3D4-0000-4000-8000-000
   const textos = (Array.isArray(hist) ? hist : hist.historial || []).map(h => h.texto);
   const tiene = re => textos.some(t => re.test(t));
   revisa(tiene(/Servicio registrado directamente como contratado/), 'alta de la orden');
-  revisa(tiene(/Servicio realizado .*Renta de pipa 20 m³ para lodos/), 'realizado, con el concepto de cada costo con terceros');
+  revisa(tiene(/Servicio realizado el/) && tiene(/Gastos generados cargados.*Renta de pipa 20 m³ para lodos/), 'realizado y, en su anotación de gastos, el concepto de cada costo con terceros');
   revisa(tiene(/Costo con terceros registrado: «Disposición final de lodos» de Pipas del Centro/), 'costo agregado después desde Cuentas por pagar');
   revisa(tiene(/Cambios: .*ubicación: Planta → Cárcamo norte.*equipo: \(vacío\) → E-37.*operador: \(vacío\) → Bogar Tamayo/), 'cambios de ubicación, equipo y operador (de qué a qué)', textos.filter(t => /Cambios/.test(t)));
   [s, j] = await pedir('POST', '/leads', V, { cliente_id: cli.id, direccion: 'Planta', responsable_id: vid, forzar_duplicado: true, iva_modo: 'mas_iva', partidas_json: JSON.stringify([{ servicio: servicios[0].nombre, leyenda: 'x', importe: 1000 }]), valor: 1000, fecha_cotizacion: HOY });

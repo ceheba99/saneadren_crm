@@ -58,7 +58,7 @@ const ServiciosTabla = (() => {
       <td data-label="Fecha" class="st-fecha">${escapar(fechaTxt)}</td>
       <td data-label="Importe" class="st-num servicio-importe">${importeTarjeta(s)}${s.valor != null && !s.iva_modo ? '<small>IVA por definir</small>' : ''}</td>
       <td data-label="Atendió">${escapar(s.responsable_nombre || 'Sin asignar')}</td>
-      <td class="st-acciones"><button type="button" class="btn btn-outline" data-accion="abrir" data-id="${Number(s.id)}">Abrir</button>${duplicar}<button type="button" class="btn-eliminar solo-admin" data-accion="eliminar" data-id="${Number(s.id)}" aria-label="Eliminar ${escapar(folioDe(s))}">Eliminar</button></td>
+      <td class="st-acciones"><button type="button" class="btn btn-outline" data-accion="abrir" data-id="${Number(s.id)}">Abrir</button>${duplicar}<button type="button" class="btn-eliminar perm-ordenes-eliminar" data-accion="eliminar" data-id="${Number(s.id)}" aria-label="Eliminar ${escapar(folioDe(s))}">Eliminar</button></td>
     </tr>`;
   }
   function pintar(id) {

@@ -145,6 +145,9 @@ app.use('/api', (req, res, next) => {
 // Sucursales: alcance de cada petición (qué sucursales ve) y candados en la base. Va antes de las demás rutas.
 const suc = require('./sucursales')(app, db, h, { audit: { registrar: (...a) => app.locals.auditoria?.registrar(...a), diferencias: (...a) => app.locals.auditoria?.diferencias(...a) } });
 app.locals.sucursales = suc;
+// Roles y permisos: qué puede hacer cada rol (lo decide Dirección en «Roles y permisos»).
+const permisos = require('./permisos')(db, app, h);
+app.locals.permisos = permisos;
 
 // Bitácora general de movimientos (clientes, proveedores, compras, usuarios, catálogos, eliminados).
 const audit = require('./auditoria')(app, db, h);
@@ -166,7 +169,7 @@ const demo = require('./demo')(app, db, { sesiones, PORT, SESSION_TTL_MS });
 // ---------- Catálogos ----------
 app.get('/api/usuarios', h((req, res) => {
   // El correo solo lo ve el administrador (para gestionar cuentas).
-  const columnas = req.usuarioSesion.rol === 'admin' ? 'id, nombre, rol, activo, correo, correo_verificado' : 'id, nombre, rol, activo';
+  const columnas = permisos.puede(req, 'usuarios.administrar') ? 'id, nombre, rol, activo, correo, correo_verificado' : 'id, nombre, rol, activo';
   const a = req.alcanceSuc;
   const filas = db.prepare(`SELECT ${columnas} FROM usuarios WHERE activo = 1 ORDER BY nombre`).all().map(u => ({ ...u, sucursales: suc.sucursalesDe(u.id) }));
   res.json(filas.filter(u => a.todo || u.id === req.usuarioSesion.id || u.sucursales.some(s => a.ids.has(s))));
@@ -249,7 +252,7 @@ app.post('/api/cambiar-password', h((req, res) => {
 // ---------- Crear usuario (solo admin) ----------
 app.post('/api/usuarios', h((req, res) => {
   const { nombre, password, rol } = req.body;
-  if (req.usuarioSesion.rol !== 'admin') return res.status(403).json({ error: 'Solo un administrador puede crear usuarios' });
+  if (!permisos.puede(req, 'usuarios.administrar')) return res.status(403).json({ error: 'No tienes permiso para crear usuarios' });
   const problemaN = problemaNombre(nombre);
   if (problemaN) return res.status(400).json({ error: problemaN });
   const correo = req.body.correo ? normalizarCorreo(req.body.correo) : null;
@@ -257,8 +260,9 @@ app.post('/api/usuarios', h((req, res) => {
   if (correo && db.prepare('SELECT id FROM usuarios WHERE correo = ?').get(correo)) return res.status(409).json({ error: 'Ya existe un usuario con ese correo' });
   const problema = problemaPassword(password, { nombre, correo: correo || '' });
   if (problema) return res.status(400).json({ error: problema });
-  if (![...['admin', 'ventas', 'atencion', 'tecnico', 'costos'], 'gerente'].includes(rol)) return res.status(400).json({ error: 'Rol inválido' });
+  if (!permisos.rolValido(rol)) return res.status(400).json({ error: 'Rol inválido' });
   if (['admin', 'gerente'].includes(rol) && !suc.esGeneral(req)) return res.status(403).json({ error: 'Solo el administrador general crea administradores o gerentes' });
+  if (!permisos.cabe(req, rol)) return res.status(403).json({ error: 'No puedes dar un rol con más permisos que el tuyo' });
   const sucs = suc.sucursalesParaUsuario(req, req.body.sucursales, rol);
   if (sucs.error) return res.status(400).json({ error: sucs.error });
 
@@ -279,7 +283,7 @@ app.get('/api/servicios', h((req, res) => {
 })); 
 // ---------- Administrar un usuario (solo admin): nombre, correo y rol ----------
 app.put('/api/usuarios/:id', h((req, res) => {
-  if (soloAdmin(req, res, 'Solo un administrador puede administrar usuarios')) return;
+  if (!permisos.exigir(req, res, 'usuarios.administrar', 'No tienes permiso para administrar usuarios')) return;
   const usuario = db.prepare('SELECT * FROM usuarios WHERE id = ? AND activo = 1').get(req.params.id);
   if (!usuario || !suc.puedeAdministrar(req, usuario)) return res.status(404).json({ error: 'Usuario no encontrado' });
   const nombre = req.body.nombre !== undefined ? String(req.body.nombre).trim().replace(/\s+/g, ' ') : usuario.nombre;
@@ -287,8 +291,9 @@ app.put('/api/usuarios/:id', h((req, res) => {
   if (problemaN) return res.status(400).json({ error: problemaN });
   if (db.prepare('SELECT id FROM usuarios WHERE lower(nombre) = lower(?) AND id <> ?').get(nombre, usuario.id)) return res.status(409).json({ error: 'Ya existe un usuario con ese nombre' });
   const rol = req.body.rol !== undefined ? req.body.rol : usuario.rol;
-  if (![...['admin', 'ventas', 'atencion', 'tecnico', 'costos'], 'gerente'].includes(rol)) return res.status(400).json({ error: 'Rol inválido' });
+  if (rol !== usuario.rol && !permisos.rolValido(rol)) return res.status(400).json({ error: 'Rol inválido' });
   if (['admin', 'gerente'].includes(rol) && rol !== usuario.rol && !suc.esGeneral(req)) return res.status(403).json({ error: 'Solo el administrador general asigna administradores o gerentes' });
+  if (rol !== usuario.rol && !permisos.cabe(req, rol)) return res.status(403).json({ error: 'No puedes dar un rol con más permisos que el tuyo' });
   const sucsNuevas = req.body.sucursales !== undefined || (usuario.rol === 'admin' && rol !== 'admin') ? suc.sucursalesParaUsuario(req, req.body.sucursales, rol) : null;
   if (sucsNuevas?.error) return res.status(400).json({ error: sucsNuevas.error });
   if (usuario.rol === 'admin' && rol !== 'admin' && db.prepare("SELECT COUNT(*) c FROM usuarios WHERE rol = 'admin' AND activo = 1").get().c <= 1) {
@@ -315,7 +320,7 @@ app.put('/api/usuarios/:id', h((req, res) => {
 // Asignar una contraseña temporal (solo admin). El usuario deberá cambiarla al entrar y se
 // cierran sus sesiones abiertas.
 app.post('/api/usuarios/:id/password', h((req, res) => {
-  if (soloAdmin(req, res, 'Solo un administrador puede asignar contraseñas')) return;
+  if (!permisos.exigir(req, res, 'usuarios.administrar', 'No tienes permiso para asignar contraseñas')) return;
   const usuario = db.prepare('SELECT * FROM usuarios WHERE id = ? AND activo = 1').get(req.params.id);
   if (!usuario || (usuario.id !== req.usuarioSesion.id && !suc.puedeAdministrar(req, usuario))) return res.status(404).json({ error: 'Usuario no encontrado' });
   const problema = problemaPassword(req.body.password, { nombre: usuario.nombre, correo: usuario.correo || '' });
@@ -329,8 +334,8 @@ app.post('/api/usuarios/:id/password', h((req, res) => {
 
 /* ---------- Eliminar usuario (soft delete, solo admin) ---------- */
 app.delete('/api/usuarios/:id', h((req, res) => {
-  if (req.usuarioSesion.rol !== 'admin') {
-    return res.status(403).json({ error: 'Solo un administrador puede eliminar usuarios' });
+  if (!permisos.puede(req, 'usuarios.administrar')) {
+    return res.status(403).json({ error: 'No tienes permiso para desactivar usuarios' });
   }
   const usuario = db.prepare('SELECT * FROM usuarios WHERE id = ?').get(req.params.id);
   if (!usuario || !suc.puedeAdministrar(req, usuario)) return res.status(404).json({ error: 'Usuario no encontrado' });
@@ -356,8 +361,8 @@ app.delete('/api/usuarios/:id', h((req, res) => {
 // Todos: editar la descripción de los servicios, tipos de cliente y canales ("cómo se enteró"),
 // y reordenar servicios y canales. Solo admin: dar de alta / eliminar servicios, la recurrencia
 // de recompra y todo lo de usuarios y respaldos.
-const esAdmin = req => req.usuarioSesion.rol === 'admin';
-const soloAdmin = (req, res, mensaje) => { if (esAdmin(req)) return false; res.status(403).json({ error: mensaje }); return true; };
+// Alta y baja de servicios y su recompra: solo Dirección (el catálogo es de todas las sucursales).
+const soloServicios = (req, res, mensaje) => { if (permisos.direccion(req)) return false; res.status(403).json({ error: mensaje }); return true; };
 
 // Reordenar un catálogo: recibe la lista completa de ids en el nuevo orden.
 function reordenar(tabla, req, res) {
@@ -376,7 +381,7 @@ app.put('/api/canales/orden', h((req, res) => reordenar('canales', req, res)));
 // Editar un servicio: la descripción la puede cambiar cualquiera; la recurrencia solo un admin.
 app.put('/api/servicios/:id', h((req, res) => {
   const { dias_recurrencia } = req.body;
-  if (dias_recurrencia !== undefined && soloAdmin(req, res, 'Solo un administrador puede cambiar la recurrencia de un servicio')) return;
+  if (dias_recurrencia !== undefined && soloServicios(req, res, 'La recompra de un servicio la decide Dirección')) return;
   const servicio = db.prepare('SELECT * FROM catalogo_servicios WHERE id = ? AND activo = 1').get(req.params.id);
   if (!servicio) return res.status(404).json({ error: 'Servicio no encontrado' });
   let dias = null;
@@ -392,7 +397,7 @@ app.put('/api/servicios/:id', h((req, res) => {
 // Eliminar un servicio del catálogo (solo admin). Es una baja lógica: las cotizaciones y
 // órdenes que ya lo usan lo conservan; solo deja de ofrecerse en las nuevas.
 app.delete('/api/servicios/:id', h((req, res) => {
-  if (soloAdmin(req, res, 'Solo un administrador puede eliminar servicios')) return;
+  if (soloServicios(req, res, 'Los servicios los quita Dirección')) return;
   const servicio = db.prepare('SELECT * FROM catalogo_servicios WHERE id = ? AND activo = 1').get(req.params.id);
   if (!servicio) return res.status(404).json({ error: 'Servicio no encontrado' });
   if (db.prepare('SELECT COUNT(*) c FROM catalogo_servicios WHERE activo = 1').get().c <= 1) return res.status(400).json({ error: 'Debe quedar al menos un servicio en el catálogo' });
@@ -403,7 +408,7 @@ app.delete('/api/servicios/:id', h((req, res) => {
 // Agregar un servicio nuevo al catálogo (solo admin). Si existía y se había eliminado, se reactiva.
 app.post('/api/servicios', h((req, res) => {
   const { nombre, dias_recurrencia } = req.body;
-  if (soloAdmin(req, res, 'Solo un administrador puede agregar servicios')) return;
+  if (soloServicios(req, res, 'Los servicios los agrega Dirección')) return;
   if (typeof nombre !== 'string' || !nombre.trim() || nombre.trim().length > 120) return res.status(400).json({ error: 'El nombre del servicio es requerido (máximo 120 caracteres)' });
   const existente = db.prepare('SELECT id, activo FROM catalogo_servicios WHERE nombre = ?').get(nombre.trim());
   if (existente?.activo) return res.status(409).json({ error: 'Ya existe un servicio con ese nombre' });
@@ -462,6 +467,21 @@ app.post('/api/canales', h((req, res) => {
   res.status(201).json(db.prepare('SELECT * FROM canales WHERE id = ?').get(info.lastInsertRowid));
 }));
 
+// ---------- Qué ve cada rol en ventas (permisos.js) ----------
+// Nivel de ventas de quien pide: 0 nada, 1 lo suyo (sus clientes y órdenes), 2 toda su sucursal.
+const nivelVentas = () => require('./alcance').nivel('ventas');
+// ¿Este cliente ya lo atiende OTRO vendedor en mis sucursales? Devuelve su nombre (o null). Solo aplica a quien ve
+// «lo suyo»: no puede abrirle cotizaciones ni ver lo que tiene (así no se duplican clientes ni se cruza la cartera).
+// Los clientes de otras sucursales se siguen compartiendo como antes.
+function atendidoPorOtro(req, clienteId) {
+  if (nivelVentas() >= 2 || !clienteId) return null;
+  const filas = db.prepare(`SELECT l.responsable_id, l.tecnico_id, u.nombre FROM main.leads l LEFT JOIN usuarios u ON u.id = l.responsable_id
+    WHERE l.cliente_id = ? AND en_alcance(l.sucursal_id) ORDER BY l.id DESC`).all(clienteId);
+  if (!filas.length || filas.some(f => f.responsable_id === req.usuarioSesion.id)) return null;
+  return filas[0].nombre || 'otro vendedor';
+}
+const CLIENTE_DE_OTRO = nombre => ({ error: `Este cliente ya lo atiende ${nombre}. Pídele a ${nombre} o al gerente que te lo pase.`, codigo: 'CLIENTE_DE_OTRO', atendido_por: nombre });
+
 // ---------- Verificar duplicado por teléfono (búsqueda en vivo) ----------
 // Devuelve el cliente (si existe) + sus solicitudes, para distinguir entre
 // "ya tiene una solicitud abierta" (bloquea) y "cliente recurrente, todo cerrado" (permite nueva solicitud).
@@ -470,7 +490,9 @@ app.get('/api/leads/buscar-telefono/:telefono', h((req, res) => {
   if (norm.length < 8) return res.json({ cliente: null, solicitudes: [] });
   const encontrado = unicos.porTelefono(norm);
   if (!encontrado) return res.json({ cliente: null, solicitudes: [] });
-  if (!suc.verCliente(encontrado.id)) return res.json({ cliente: { ...unicos.resumen(encontrado), telefono: req.params.telefono }, solicitudes: [], tiene_abierta: false });
+  // Cliente que no ve (de otra sucursal o, con «lo suyo», de otro vendedor): solo se dice que existe y, si es de su
+  // sucursal, quién lo atiende; nada de sus cotizaciones, órdenes ni montos.
+  if (!suc.verCliente(encontrado.id)) return res.json({ cliente: { ...unicos.resumen(encontrado), telefono: req.params.telefono }, solicitudes: [], tiene_abierta: false, atendido_por: atendidoPorOtro(req, encontrado.id) });
   const cliente = encontrado;
   const solicitudes = db.prepare(`
     SELECT l.*, s.nombre AS servicio_nombre, u.nombre AS responsable_nombre, ca.nombre AS canal_nombre
@@ -652,6 +674,8 @@ app.post('/api/leads', validarPartidas, validarRegistro, h((req, res) => {
     if (dueño && dueño.id !== agregarTelA) return res.status(409).json({ error: `Ese teléfono ya es de ${unicos.etiqueta(dueño)}` });
   }
   if (!responsable_id || !db.prepare('SELECT id FROM usuarios WHERE id = ? AND activo = 1').get(responsable_id)) return res.status(400).json({error:'Selecciona un responsable activo'});
+  if (nivelVentas() < 1) return res.status(403).json({ error: 'Tu rol no registra cotizaciones ni órdenes' });
+  if (nivelVentas() < 2 && Number(responsable_id) !== req.usuarioSesion.id) return res.status(403).json({ error: 'Solo puedes registrar cotizaciones a tu nombre' });
   let { estatus } = req.body;
   if (!telefono) return res.status(400).json({ error: 'Teléfono requerido' });
   const norm = normalizarTelefono(telefono);
@@ -690,6 +714,8 @@ app.post('/api/leads', validarPartidas, validarRegistro, h((req, res) => {
   if (!existe('usuarios', responsable_id)) return res.status(400).json({ error: 'El responsable indicado no existe' });
 
   let cliente = contactoElegido || unicos.porTelefono(norm);
+  const otro = cliente && atendidoPorOtro(req, cliente.id);
+  if (otro) return res.status(409).json(CLIENTE_DE_OTRO(otro));
   // Cliente nuevo: antes de crearlo se revisa que no exista uno parecido (salvo que ya se haya dicho que es otro).
   const distintoDe = Array.isArray(req.body.distinto_de) ? req.body.distinto_de.map(Number).filter(Boolean) : [];
   if (!cliente) {
@@ -769,7 +795,7 @@ app.post('/api/leads', validarPartidas, validarRegistro, h((req, res) => {
     const orig = db.prepare('SELECT id, created_at FROM leads WHERE id = ?').get(duplicadoDe);
     const folioOrig = require('./sucursales').folio('OS', 'leads', orig.id, orig.created_at);
     const suma = finanzas.duplicarCostos(info.lastInsertRowid, costosDup.items, fechaServicioFinal, textoOrden(req.body.equipo), req.usuarioSesion.id, folioOrig);
-    db.prepare(`INSERT INTO main.historial (lead_id, tipo, texto, usuario, origen) VALUES (?, 'observacion', ?, ?, 'sistema')`)
+    db.prepare(`INSERT INTO main.historial (lead_id, tipo, texto, usuario, origen, area, usuario_id) VALUES (?, 'observacion', ?, ?, 'sistema', 'cxp', ${Number(req.usuarioSesion.id)})`)
       .run(info.lastInsertRowid, `Costos con terceros copiados de ${folioOrig}: ${costosDup.items.length} por $${(suma / 100).toLocaleString('es-MX', { minimumFractionDigits: 2 })} (pendientes de pago en Cuentas por pagar).`, creado_por || null);
   }
   return db.prepare('SELECT * FROM leads WHERE id = ?').get(info.lastInsertRowid);
@@ -791,6 +817,7 @@ function cambiosDeOrden(antes, b) {
   if (cambio('incluye_vigencia') || cambio('vigencia_hasta')) lista.push(`vigencia: ${Number(b.incluye_vigencia ?? antes.incluye_vigencia) ? 'hasta ' + fecha(b.vigencia_hasta ?? antes.vigencia_hasta) : 'sin vigencia'}`);
   if (cambio('etapa') && !(b.estatus && b.estatus !== antes.estatus)) lista.push(`etapa ${ETAPAS_TXT[antes.etapa] || antes.etapa} → ${ETAPAS_TXT[b.etapa] || b.etapa}`);
   if (cambio('responsable_id')) lista.push(`responsable ${nombreDe('usuarios', antes.responsable_id)} → ${nombreDe('usuarios', b.responsable_id)}`);
+  if (cambio('tecnico_id')) lista.push(`técnico asignado ${antes.tecnico_id ? nombreDe('usuarios', antes.tecnico_id) : 'ninguno'} → ${b.tecnico_id ? nombreDe('usuarios', b.tecnico_id) : 'ninguno'}`);
   if (cambio('canal_id')) lista.push(`canal ${nombreDe('canales', antes.canal_id)} → ${nombreDe('canales', b.canal_id)}`);
   if (cambio('servicio_id')) lista.push(`servicio principal ${nombreDe('catalogo_servicios', antes.servicio_id)} → ${nombreDe('catalogo_servicios', b.servicio_id)}`);
   if (b.partidas_json !== undefined && b.partidas_json !== antes.partidas_json) {
@@ -813,6 +840,8 @@ app.put('/api/leads/:id', validarPartidas, validarRegistro, h((req, res) => {
   const id = req.params.id;
   const actual = db.prepare('SELECT * FROM leads WHERE id = ?').get(id);
   if (!actual) return res.status(404).json({ error: 'Cotización no encontrada' });
+  // Quien solo ve la orden por la cobranza (p. ej. Cobranza) no la modifica: crédito y factura van por su propia ruta.
+  if (nivelVentas() < 1) return res.status(403).json({ error: 'Tu rol no modifica cotizaciones ni órdenes' });
   if (req.body.version !== undefined && Number(req.body.version) !== actual.version) {
     return res.status(409).json({ error: 'Otra persona actualizó esta cotización mientras la tenías abierta. Ciérrala y vuelve a abrirla para ver los cambios antes de guardar los tuyos.' });
   }
@@ -822,6 +851,14 @@ app.put('/api/leads/:id', validarPartidas, validarRegistro, h((req, res) => {
   if (req.body.canal_id !== undefined && !existe('canales', req.body.canal_id)) return res.status(400).json({ error: 'El canal indicado no existe' });
   if (req.body.servicio_id !== undefined && !existe('catalogo_servicios', req.body.servicio_id)) return res.status(400).json({ error: 'El servicio indicado no existe' });
   if (req.body.responsable_id !== undefined && !existe('usuarios', req.body.responsable_id)) return res.status(400).json({ error: 'El responsable indicado no existe' });
+  // Con «lo suyo», el responsable lo cambia el gerente (quien ve toda la sucursal): ni pasarla a otro ni quedársela
+  // (p. ej. el técnico asignado no se vuelve el vendedor de la orden).
+  if (req.body.responsable_id !== undefined && Number(req.body.responsable_id) !== actual.responsable_id && nivelVentas() < 2)
+    return res.status(403).json({ error: 'El responsable de esta cotización lo cambia el gerente' });
+  if (req.body.tecnico_id !== undefined) {
+    req.body.tecnico_id = req.body.tecnico_id === null || req.body.tecnico_id === '' ? null : Number(req.body.tecnico_id);
+    if (req.body.tecnico_id !== null && !db.prepare('SELECT 1 FROM usuarios WHERE id = ? AND activo = 1').get(req.body.tecnico_id)) return res.status(400).json({ error: 'El técnico indicado no existe o está desactivado' });
+  }
   if (req.body.etapa !== undefined && !(Number(req.body.etapa) >= 1 && Number(req.body.etapa) <= 4)) return res.status(400).json({ error: 'Etapa inválida (1-4)' });
   if (req.body.estatus !== undefined && !['abierto', 'ganado', 'perdido'].includes(req.body.estatus)) return res.status(400).json({ error: 'Estatus inválido: use abierto, ganado o perdido' });
   if (req.body.valor !== undefined && req.body.valor !== null && (isNaN(Number(req.body.valor)) || Number(req.body.valor) < 0)) {
@@ -855,10 +892,10 @@ app.put('/api/leads/:id', validarPartidas, validarRegistro, h((req, res) => {
   // Indicar o cambiar el IVA de una orden cambia cómo se lee su importe: misma regla que el importe.
   const cambiaIva = actual.estatus === 'ganado' && req.totalNuevoCent !== undefined
     && (req.body.iva_modo !== actual.iva_modo || req.body.iva_tasa !== actual.iva_tasa);
-  if ((cambiaImporte || cambiaIva) && !['admin', 'atencion'].includes(req.usuarioSesion.rol)) {
+  if ((cambiaImporte || cambiaIva) && !permisos.puede(req, 'ordenes.importe_ganada')) {
     return res.status(403).json({ error: cambiaImporte
-      ? 'Solo administración o atención pueden cambiar el importe de una orden de servicio. Para un descuento, pide un ajuste al administrador.'
-      : 'Solo administración o atención pueden indicar o cambiar el IVA de una orden de servicio.' });
+      ? 'No tienes permiso para cambiar el importe de una orden de servicio. Para un descuento, pide un ajuste a administración.'
+      : 'No tienes permiso para indicar o cambiar el IVA de una orden de servicio.' });
   }
   if (actual.estatus === 'ganado' && actual.factura_total_cent == null && totalNuevoCent !== null
     && totalNuevoCent < finanzas.cobradoCent(actual.id)) {
@@ -897,7 +934,7 @@ app.put('/api/leads/:id', validarPartidas, validarRegistro, h((req, res) => {
   const errorOrden = validarDatosOrden(req.body);
   if (errorOrden) return res.status(400).json({ error: errorOrden });
   ['equipo', 'operador', 'observaciones', 'proyecto', 'manifiestos', 'tiros', 'notas_cotizacion'].forEach(c => { if (req.body[c] !== undefined) req.body[c] = textoOrden(req.body[c]); });
-  const campos = ['equipo', 'operador', 'observaciones', 'proyecto', 'manifiestos', 'tiros', 'partidas_json', 'iva_modo', 'iva_tasa', 'iva_cent','direccion', 'canal_id', 'servicio_id', 'responsable_id', 'etapa', 'estatus', 'valor', 'fecha_servicio', 'notas_iniciales', 'urgente', 'encuesta_calificacion', 'encuesta_comentario', 'fecha_cotizacion', 'incluye_vigencia', 'vigencia_hasta', 'notas_cotizacion'];
+  const campos = ['equipo', 'operador', 'observaciones', 'proyecto', 'manifiestos', 'tiros', 'partidas_json', 'iva_modo', 'iva_tasa', 'iva_cent','direccion', 'canal_id', 'servicio_id', 'responsable_id', 'tecnico_id', 'etapa', 'estatus', 'valor', 'fecha_servicio', 'notas_iniciales', 'urgente', 'encuesta_calificacion', 'encuesta_comentario', 'fecha_cotizacion', 'incluye_vigencia', 'vigencia_hasta', 'notas_cotizacion'];
   const set = [];
   const params = [];
   campos.forEach(c => {
@@ -970,15 +1007,16 @@ app.put('/api/historial/:id/resolver', h((req, res) => {
 // ---------- Eliminar cotización ----------
 // Borrar es definitivo (se pierden importe, notas y bitácora): solo un administrador puede hacerlo.
 app.delete('/api/leads/:id', h((req, res) => {
-  if (req.usuarioSesion.rol !== 'admin') return res.status(403).json({ error: 'Solo un administrador puede eliminar cotizaciones u órdenes de servicio' });
+  if (!permisos.puede(req, 'ordenes.eliminar')) return res.status(403).json({ error: 'No tienes permiso para eliminar cotizaciones u órdenes de servicio' });
   const lead = db.prepare('SELECT * FROM leads WHERE id = ?').get(req.params.id);
   if (!lead) return res.status(404).json({ error: 'Cotización no encontrada' });
   // Los pagos son el rastro del dinero: una orden que alguna vez tuvo pagos no se borra.
-  if (db.prepare('SELECT 1 FROM cobros WHERE lead_id = ? LIMIT 1').get(lead.id)) {
+  // Se revisa TODO lo de la orden (aunque quien borra no vea esos cobros o gastos).
+  if (db.prepare('SELECT 1 FROM main.cobros WHERE lead_id = ? LIMIT 1').get(lead.id)) {
     return res.status(409).json({ error: 'Esta orden tiene pagos registrados y no se puede eliminar, para conservar el rastro del dinero.' });
   }
   // Tampoco una con gastos en Cuentas por pagar (quedarían sueltos, sin su orden).
-  if (db.prepare('SELECT 1 FROM cuentas_por_pagar WHERE lead_id = ? AND cancelada = 0 LIMIT 1').get(lead.id)) {
+  if (db.prepare('SELECT 1 FROM main.cuentas_por_pagar WHERE lead_id = ? AND cancelada = 0 LIMIT 1').get(lead.id)) {
     return res.status(409).json({ error: 'Esta orden tiene gastos en Cuentas por pagar. Cancélalos primero si de verdad quieres eliminarla.' });
   }
   const motivoEl = typeof req.body?.motivo === 'string' ? req.body.motivo.trim().replace(/\s+/g, ' ').slice(0, 300) : '';
@@ -991,7 +1029,7 @@ app.delete('/api/leads/:id', h((req, res) => {
   // Antes de borrar, su historial pasa al archivo (la ficha del cliente lo sigue mostrando) junto con quién la
   // eliminó y por qué. El cliente y sus otros servicios/cotizaciones no se tocan.
   db.transaction(() => {
-    db.prepare('INSERT INTO main.historial_archivo (lead_id, cliente_id, folio, tipo, texto, usuario, created_at) SELECT lead_id, ?, ?, tipo, texto, usuario, created_at FROM historial WHERE lead_id = ?').run(lead.cliente_id, folioEl, lead.id);
+    db.prepare('INSERT INTO main.historial_archivo (lead_id, cliente_id, folio, tipo, texto, usuario, created_at) SELECT lead_id, ?, ?, tipo, texto, usuario, created_at FROM main.historial WHERE lead_id = ?').run(lead.cliente_id, folioEl, lead.id); // completa, aunque quien elimina no vea todo
     db.prepare("INSERT INTO main.historial_archivo (lead_id, cliente_id, folio, tipo, texto, usuario, created_at) VALUES (?, ?, ?, 'eliminado', ?, ?, datetime('now','localtime'))")
       .run(lead.id, lead.cliente_id, folioEl, `${lead.estatus === 'ganado' ? 'Orden de servicio' : 'Cotización'} ELIMINADA (importe $${Number(lead.valor || 0).toLocaleString('es-MX', { minimumFractionDigits: 2 })} sin IVA). Motivo: ${motivoEl}`, req.usuarioSesion.nombre);
     db.prepare('UPDATE main.historial_archivo SET sucursal_id = ? WHERE lead_id = ? AND sucursal_id IS NULL').run(lead.sucursal_id, lead.id);
@@ -1057,7 +1095,7 @@ app.get('/api/contactos/sin-cotizacion', h((req,res)=>{
   const { q, desde, hasta } = req.query;
   let sql = `SELECT c.id, c.nombre, c.telefono, c.empresa_contacto, c.created_at, c.updated_at, ca.nombre AS canal_nombre
     FROM clientes c LEFT JOIN canales ca ON ca.id = c.canal_origen_id
-    WHERE NOT EXISTS (SELECT 1 FROM leads l WHERE l.cliente_id = c.id) AND en_alcance(c.sucursal_id)`;
+    WHERE NOT EXISTS (SELECT 1 FROM leads l WHERE l.cliente_id = c.id) AND cliente_en_alcance(c.sucursal_id, c.id)`;
   const params = [];
   if (q) { sql += ' AND (c.nombre LIKE ? OR c.telefono LIKE ? OR c.empresa_contacto LIKE ?)'; params.push(`%${q}%`, `%${q}%`, `%${q}%`); }
   if (desde) { sql += ' AND date(c.created_at) >= date(?)'; params.push(desde); }
@@ -1070,6 +1108,7 @@ const RFC = /^[A-ZÑ&]{3,4}\d{6}[A-Z0-9]{3}$/;
 const normalizarRfc = v => (v === undefined || v === null) ? v : String(v).trim().toUpperCase();
 app.post('/api/contactos', h((req,res)=>{
   const {nombre,telefono,empresa_contacto,direccion,correo,telefono_alterno,giro,rfc,notas_generales}=req.body;
+  if (nivelVentas() < 1) return res.status(403).json({ error: 'Tu rol no da de alta contactos' });
   if (!nombre || !String(nombre).trim()) return res.status(400).json({error:'El nombre del contacto es obligatorio'});
   const malNombre = unicos.problemaNombreCliente(nombre, 'El nombre') || (empresa_contacto && String(empresa_contacto).trim() ? unicos.problemaNombreCliente(empresa_contacto, 'La empresa') : null);
   if (malNombre) return res.status(400).json({ error: malNombre });
@@ -1093,7 +1132,7 @@ app.post('/api/contactos', h((req,res)=>{
     const destino = db.prepare('SELECT * FROM clientes WHERE id = ?').get(Number(req.body.agregar_telefono_a));
     if (!destino) return res.status(404).json({ error: 'Cliente no encontrado' });
     // De otra sucursal: no se le cambian los datos; se usa ese mismo cliente para cotizarle.
-    if (!suc.puedeEditarCliente(req, destino.id)) return res.status(409).json({ error: 'Es cliente de otra sucursal: le cotizarás a ese mismo cliente (sus datos no se cambian)', cliente_id: destino.id, cliente: unicos.resumen(destino) });
+    if (!suc.puedeEditarCliente(req, destino.id)) return res.status(409).json(suc.clienteDeSuSucursal(req, destino.id) ? suc.NO_EDITA(req, destino.id) : { error: 'Es cliente de otra sucursal: le cotizarás a ese mismo cliente (sus datos no se cambian)', cliente_id: destino.id, cliente: unicos.resumen(destino) });
     const r = unicos.agregarTelefono(destino.id, telefono, 'Contacto: ' + String(nombre).trim().slice(0, 50));
     if (r.error) return res.status(409).json(r);
     audit.registrar(req, 'cliente', destino.id, 'teléfono agregado', `${norm} (${String(nombre).trim()}) · se dijo que es el mismo cliente`);
@@ -1125,7 +1164,7 @@ app.get('/api/clientes', h((req, res) => {
       MAX(COALESCE(l.updated_at,c.updated_at)) AS ultima_actividad
     FROM clientes c
     LEFT JOIN leads l ON l.cliente_id = c.id
-    WHERE (en_alcance(c.sucursal_id) OR EXISTS (SELECT 1 FROM leads lv WHERE lv.cliente_id = c.id))
+    WHERE (cliente_en_alcance(c.sucursal_id, c.id) OR EXISTS (SELECT 1 FROM leads lv WHERE lv.cliente_id = c.id))
   `;
   const params = [];
   if (q) {
@@ -1306,7 +1345,7 @@ app.get('/api/kpis', h((req, res) => {
       SELECT cliente_id, SUM(CASE WHEN estatus = 'ganado' THEN 1 ELSE 0 END) AS ganados
       FROM leads GROUP BY cliente_id
     ) g ON g.cliente_id = c.id
-    WHERE (en_alcance(c.sucursal_id) OR EXISTS (SELECT 1 FROM leads lv WHERE lv.cliente_id = c.id))
+    WHERE (cliente_en_alcance(c.sucursal_id, c.id) OR EXISTS (SELECT 1 FROM leads lv WHERE lv.cliente_id = c.id))
   `).get();
   const valorHistorico = db.prepare(`SELECT COALESCE(SUM(valor), 0) AS v FROM leads WHERE estatus = 'ganado'`).get().v;
 
@@ -1470,7 +1509,7 @@ app.get('/api/analisis/comercial', h((req,res)=>{
       SUM(CASE WHEN estatus='abierto' AND (? IS NULL OR date(created_at)>=?) AND (? IS NULL OR date(created_at)<=?) THEN COALESCE(valor,0) ELSE 0 END) propuesto,
       MAX(CASE WHEN estatus='ganado' THEN fecha_servicio END) ultima_fecha
       FROM leads GROUP BY cliente_id) a ON a.cliente_id=c.id
-    WHERE (en_alcance(c.sucursal_id) OR EXISTS (SELECT 1 FROM leads lv WHERE lv.cliente_id = c.id))`).all(...Array.from({length:6},()=>[desde,desde,hasta,hasta]).flat());
+    WHERE (cliente_en_alcance(c.sucursal_id, c.id) OR EXISTS (SELECT 1 FROM leads lv WHERE lv.cliente_id = c.id))`).all(...Array.from({length:6},()=>[desde,desde,hasta,hasta]).flat());
   const canales=new Map();
   for(const c of clientes){const k=c.canal_origen_id||0;if(!canales.has(k))canales.set(k,{canal:c.canal,nuevos:0,convertidos:0,clientes:0,recurrentes:0,servicios:0,contratado:0,registros:0,abiertas:0,propuesto:0});const r=canales.get(k);r.nuevos+=c.nuevo;r.convertidos+=c.nuevo&&c.ganados_historicos>0?1:0;r.clientes+=c.servicios>0?1:0;r.recurrentes+=c.servicios>0&&c.ganados_historicos>1?1:0;for(const campo of ['servicios','contratado','registros','abiertas','propuesto'])r[campo]+=c[campo];}
   const filas=[...canales.values()].sort((a,b)=>b.contratado-a.contratado);
@@ -1562,7 +1601,7 @@ app.get('/api/analisis/resumen-mensual', h((req, res) => {
 // aunque haya escrituras en curso en ese momento.
 app.get('/api/admin/backup', async (req, res) => {
   try {
-    if (!req.usuarioSesion || req.usuarioSesion.rol !== 'admin') {
+    if (!req.usuarioSesion?.admin_general) {
       return res.status(403).json({ error: 'Solo un administrador puede respaldar la base de datos' });
     }
     const nombreArchivo = `saneadren_backup_${hoyMexico()}.db`;

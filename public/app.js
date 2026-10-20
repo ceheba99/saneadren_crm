@@ -66,7 +66,8 @@ function errorConEstado(mensaje, status, codigo) {
   return err;
 }
 // Sucursal que se está viendo (la elige el selector de arriba; vacío = todas las permitidas).
-function encabezadoSucursal() { let v = ''; try { v = localStorage.getItem('sucursal_vista') || ''; } catch {} return v ? { 'X-Sucursal': v } : {}; }
+// También lleva «Ver como este rol» si Dirección lo activó (permisos.js).
+function encabezadoSucursal() { let v = ''; try { v = localStorage.getItem('sucursal_vista') || ''; } catch {} return { ...(v ? { 'X-Sucursal': v } : {}), ...(typeof Permisos !== 'undefined' ? Permisos.encabezado() : {}) }; }
 async function api(path, opts) {
   // Sin sesión no se intenta nada: evita peticiones repetidas tras un 401 y pantallas a medias.
   const token = USUARIO_ACTUAL?.token;
@@ -89,6 +90,7 @@ async function api(path, opts) {
     const j = await res.clone().json().catch(() => ({}));
     if (j.codigo === 'CAMBIAR_PASSWORD') { Cuentas.pedirCambioObligatorio(); throw errorConEstado(j.error, 403, j.codigo); }
     if (j.codigo === 'SIN_SUCURSAL') { toast(j.error); throw errorConEstado(j.error, 403, j.codigo); }
+    if (j.codigo === 'VER_COMO') { toast(j.error); throw errorConEstado(j.error, 403, j.codigo); }
     if (j.codigo === 'SUCURSAL') { try { localStorage.removeItem('sucursal_vista'); } catch {} location.reload(); throw errorConEstado(j.error, 403, j.codigo); }
   }
   if (res.status === 401) {
@@ -122,7 +124,9 @@ document.querySelectorAll('header nav [data-vista]').forEach(btn => {
   btn.addEventListener('click', () => cambiarVista(btn.dataset.vista));
 });
 function cambiarVista(v, opciones) {
-  if (v === 'usuarios' && USUARIO_ACTUAL?.rol !== 'admin') v = 'inicio';
+  if (v === 'usuarios' && !Permisos.puede('usuarios.administrar')) v = 'inicio';
+  if ((v === 'cobrar' || (v === 'cuentas' && !['pagar', 'proveedores'].includes(opciones?.pestana))) && !Permisos.puede('cxc.ver')) v = 'inicio';
+  if ((v === 'pagar' || (v === 'cuentas' && ['pagar', 'proveedores'].includes(opciones?.pestana))) && !Permisos.puede('cxp.ver')) v = 'inicio';
   if (v === 'pendientes') v = 'inicio'; // Pendientes ahora es parte de Inicio
   // Cuentas por cobrar y por pagar son dos secciones del menú Finanzas que usan la misma pantalla.
   if (v === 'cuentas') v = ['pagar', 'proveedores'].includes(opciones?.pestana) ? 'pagar' : 'cobrar';
@@ -159,7 +163,7 @@ async function cargarCatalogos() {
   origen.innerHTML = '<option value="">Selecciona una opción</option>' + c.map(x=>`<option value="${x.id}">${escaparHtml(x.nombre)}</option>`).join('');
   origen.value = origenPrevio;
 
-  const optU = u.map(x => `<option value="${x.id}">${escaparHtml(x.nombre)} (${escaparHtml(x.rol)})</option>`).join('');
+  const optU = u.map(x => `<option value="${x.id}">${escaparHtml(x.nombre)} (${escaparHtml(nombreRol(x.rol))})</option>`).join('');
   const optS = s.map(x => `<option value="${x.id}">${escaparHtml(x.nombre)}</option>`).join('');
   const optC = c.map(x => `<option value="${Number(x.id)}">${escaparHtml(x.nombre)}</option>`).join('');
 
@@ -167,6 +171,7 @@ async function cargarCatalogos() {
   document.getElementById('ed-servicio').innerHTML = optS;
   document.getElementById('ed-canal').innerHTML = optC;
   document.getElementById('ed-responsable').innerHTML = optU;
+  document.getElementById('ed-tecnico').innerHTML = '<option value="">Sin asignar</option>' + optU;
   document.getElementById('f-responsable').innerHTML =
     '<option value="">Todos los responsables</option>' + optU;
 }
@@ -190,6 +195,12 @@ async function verificarDuplicado(telefono) {
   const panel = document.getElementById('alerta-dup');
   panel.classList.toggle('mostrar',!!data.cliente);
   if (!data.cliente) return;
+  if (data.cliente.otro_vendedor) {
+    // De otro vendedor de su sucursal (y su rol ve «lo suyo»): no se le cotiza ni se ve lo que tiene.
+    document.getElementById('dup-titulo').textContent = 'Este cliente ya lo atiende ' + data.cliente.atendido_por + ' (' + data.cliente.folio + ')';
+    document.getElementById('dup-lista').innerHTML = '<p>Para no cruzar la cartera, no puedes ver sus cotizaciones ni cotizarle. Pídele a ' + escaparHtml(data.cliente.atendido_por) + ' o al gerente que te lo pase.</p>';
+    return;
+  }
   if (data.cliente.otra_sucursal) {
     // De otra sucursal: solo se sabe que existe (su ID); se le cotiza al mismo cliente para no duplicarlo.
     document.getElementById('dup-titulo').textContent = 'Este teléfono ya está registrado en otra sucursal (' + data.cliente.folio + ')';
@@ -776,7 +787,7 @@ let RESULTADOS_ACTUALES=null,consultaResultados=0;
 // Resultados: "Panorama general" (solo administración) y "Análisis comercial" en pestañas.
 let RES_TAB = null;
 function abrirResultados(tab) {
-  const admin = USUARIO_ACTUAL?.rol === 'admin';
+  const admin = Permisos.puede('reportes.panorama');
   RES_TAB = tab || RES_TAB || (admin ? 'panorama' : 'comercial');
   if (!admin) RES_TAB = 'comercial';
   document.querySelectorAll('[data-res-tab]').forEach(b => { const on = b.dataset.resTab === RES_TAB; b.classList.toggle('activo', on); b.setAttribute('aria-selected', on); });
@@ -1431,7 +1442,7 @@ function prepararEditorCotizacion(lead,modo){
   // IVA: un registro nuevo empieza "más IVA" (casilla sin marcar); los demás traen el suyo.
   document.getElementById('gc-iva-modo').value=(lead && 'iva_modo' in lead ? lead.iva_modo : 'mas_iva')||'';
   IVA_TASA=lead?.iva_tasa||Importes.TASA_DEFAULT;
-  IVA_BLOQUEADO=modo!=='nuevo'&&lead?.estatus==='ganado'&&!['admin','atencion'].includes(USUARIO_ACTUAL?.rol);
+  IVA_BLOQUEADO=modo!=='nuevo'&&lead?.estatus==='ganado'&&!Permisos.puede('ordenes.importe_ganada');
   document.getElementById('gc-notas').value=lead?.notas_cotizacion||'';
   document.getElementById('gc-items').innerHTML='';GC_CONTADOR=0;
   let items;try{items=JSON.parse(lead?.partidas_json||'null');}catch{}
@@ -1511,9 +1522,9 @@ on('btn-gc-generar','click',async e=>{
 });
 
 // ---------- Exportar a Excel (CSV con BOM, se abre directo con Excel) ----------
-// Exportar a Excel es solo para administradores (los botones también se ocultan con .solo-admin).
+// Exportar a Excel: permiso «clientes.exportar» (los botones también se ocultan con .perm-clientes-exportar).
 function descargarCSV(nombreArchivo, columnas, filas) {
-  if (USUARIO_ACTUAL?.rol !== 'admin') { toast('Solo un administrador puede exportar a Excel'); return; }
+  if (!Permisos.puede('clientes.exportar')) { toast('No tienes permiso para exportar a Excel'); return; }
   const escaparCelda = valor => {
     let texto = String(valor ?? '');
     // Un texto que empieza con = + - @ Excel lo ejecuta como fórmula (p. ej. =HYPERLINK que manda
@@ -1790,7 +1801,7 @@ on('btn-guardar-cliente', 'click', async () => {
           toast('Datos del cliente actualizados'); FlujoCRM.marcarGuardado('overlay-ficha-cliente'); await abrirFichaCliente(CLIENTE_ACTUAL.id); await cargarClientes();
           return;
         }
-        if (USUARIO_ACTUAL?.rol !== 'admin') { toast('Es el mismo cliente: pide a un administrador que los junte (Contactos → Revisar duplicados). No se guardó el cambio de nombre.'); return; }
+        if (!Permisos.direccion()) { toast('Es el mismo cliente: pide a un administrador que los junte (Contactos → Revisar duplicados). No se guardó el cambio de nombre.'); return; }
         if (!await solicitarDialogo({ titulo: 'Juntar clientes', mensaje: 'Todo lo de ' + folioCliente(CLIENTE_ACTUAL.id) + ' pasa a ' + folioCliente(d.mismo) + ' y ' + folioCliente(CLIENTE_ACTUAL.id) + ' deja de existir (su ID queda apuntando a ' + folioCliente(d.mismo) + ').', aceptar: 'Juntar en ' + folioCliente(d.mismo) })) return;
         const rj = await api('/clientes/' + CLIENTE_ACTUAL.id + '/fusionar', { method: 'POST', body: JSON.stringify({ con: d.mismo }) });
         const dj = await rj.json();
@@ -1800,7 +1811,7 @@ on('btn-guardar-cliente', 'click', async () => {
         return;
       }
       // Mismo RFC = misma razón social: un administrador puede juntar los dos clientes en uno.
-      if (data.rfc_de && USUARIO_ACTUAL?.rol === 'admin') {
+      if (data.rfc_de && Permisos.direccion()) {
         const ok = await solicitarDialogo({ titulo: 'Este RFC ya es de otro cliente', mensaje: data.error.split('. Si')[0] + '. Si es la misma razón social, junta ' + folioCliente(CLIENTE_ACTUAL.id) + ' dentro de ' + data.rfc_de.folio + ': sus cotizaciones, órdenes, cobros y teléfonos pasan a ' + data.rfc_de.folio + ' y ' + folioCliente(CLIENTE_ACTUAL.id) + ' deja de existir (su ID queda apuntando a ' + data.rfc_de.folio + ').', aceptar: 'Juntar en ' + data.rfc_de.folio });
         if (!ok) return;
         const rj = await api('/clientes/' + CLIENTE_ACTUAL.id + '/fusionar', { method: 'POST', body: JSON.stringify({ con: data.rfc_de.id }) });
@@ -1846,6 +1857,11 @@ async function abrirFicha(id) {
   document.getElementById('ed-canal').value = lead.canal_id || '';
   document.getElementById('ed-servicio').value = lead.servicio_id || '';
   document.getElementById('ed-responsable').value = lead.responsable_id || '';
+  // Con «lo suyo» en ventas, pasar la cotización a otro vendedor lo hace el gerente.
+  const soloSuyo = (Permisos.datos.alcances?.ventas ?? 2) < 2;
+  document.getElementById('ed-responsable').disabled = soloSuyo;
+  document.getElementById('ed-responsable').title = soloSuyo ? 'Para pasarla a otro vendedor, pídeselo al gerente' : '';
+  document.getElementById('ed-tecnico').value = lead.tecnico_id || '';
   document.getElementById('ed-valor').value = lead.valor != null ? lead.valor : '';
   document.getElementById('ed-fecha-servicio').value = lead.fecha_servicio || '';
   // Orden que viene de una cotización: su fecha de servicio no puede ser antes de la cotización.
@@ -2015,6 +2031,7 @@ function recolectarPayloadFicha() {
     canal_id: document.getElementById('ed-canal').value || null,
     servicio_id: document.getElementById('ed-servicio').value || null,
     responsable_id: document.getElementById('ed-responsable').value || null,
+    tecnico_id: document.getElementById('ed-tecnico').value || null,
     valor: valorRaw === '' ? null : Number(valorRaw),
     fecha_servicio: document.getElementById('ed-fecha-servicio').value || null,
     fecha_cotizacion: document.getElementById('ed-fecha-cotizacion').value || null,
@@ -2262,17 +2279,22 @@ on('btn-descargar-respaldo', 'click', async () => {
 
 function mostrarUsuarioEnHeader() {
   document.getElementById('sesion-nombre').textContent = USUARIO_ACTUAL.nombre;
-  document.body.classList.toggle('es-admin', USUARIO_ACTUAL.rol === 'admin');
-  document.body.classList.toggle('es-costos', ['admin', 'costos'].includes(USUARIO_ACTUAL.rol));
-  // Todos los usuarios ven Cuentas; las acciones delicadas se ocultan con .solo-admin (y el servidor las valida).
+  // Lo que cada rol no puede hacer se oculta con las clases perm-<permiso> (permisos.js); el servidor lo valida.
   document.body.classList.toggle('puede-cobranza', !!USUARIO_ACTUAL);
 }
 
 // ---------- Gestión de usuarios (solo admin) ----------
-const ROLES = ['admin', 'gerente', 'ventas', 'atencion', 'tecnico', 'costos'];
-const NOMBRE_ROL = { admin: 'admin (general: todas las sucursales)', gerente: 'gerente (admin de su sucursal)', costos: 'costos (encargado de centro de costos)' };
+// Roles: vienen de la base (Dirección puede crear más en «Roles y permisos»). «cabe» = este usuario puede darlo.
+let ROLES_DATOS = [];
+const NOMBRES_DE_FABRICA = { admin: 'Dirección', gerente: 'Gerente', ventas: 'Ventas', atencion: 'Atención a clientes', tecnico: 'Técnico', costos: 'Costos y compras' };
+const nombreRol = clave => ROLES_DATOS.find(r => r.clave === clave)?.nombre || NOMBRES_DE_FABRICA[clave] || clave;
+const opcionesRol = actual => ROLES_DATOS.filter(r => (r.cabe && (Sucursales.datos.admin_general || !['admin', 'gerente'].includes(r.clave))) || r.clave === actual)
+  .map(r => `<option value="${escaparHtml(r.clave)}" ${r.clave === actual ? 'selected' : ''}>${escaparHtml(r.nombre + (r.descripcion ? ' · ' + r.descripcion : ''))}</option>`).join('');
 async function cargarUsuarios() {
-  const usuarios = await api('/usuarios').then(r => r.json());
+  const [usuarios, roles] = await Promise.all([api('/usuarios').then(r => r.json()), api('/roles').then(r => r.json())]);
+  ROLES_DATOS = roles;
+  const nuRol = document.getElementById('nu-rol'); if (nuRol) { const v = nuRol.value; nuRol.innerHTML = opcionesRol(''); if ([...nuRol.options].some(o => o.value === v)) nuRol.value = v; else if ([...nuRol.options].some(o => o.value === 'ventas')) nuRol.value = 'ventas'; }
+  if (Permisos.datos.direccion) Roles.cargar();
   const nuS = document.getElementById('nu-sucursales'); if (nuS) nuS.innerHTML = Sucursales.casillas('nu', Sucursales.datos.sucursales.length === 1 ? [Sucursales.datos.sucursales[0].id] : []);
   const admins = usuarios.filter(x => x.rol === 'admin').length;
   document.getElementById('lista-usuarios').innerHTML = usuarios.map(u => {
@@ -2280,7 +2302,7 @@ async function cargarUsuarios() {
     return `<div class="servicio-row fila-usuario" data-usuario="${id}">
       <div><label for="usr-nombre-${id}">Nombre${propio ? ' (tú)' : ''}</label><input id="usr-nombre-${id}" value="${escaparHtml(u.nombre)}" maxlength="60"></div>
       <div><label for="usr-correo-${id}">Correo${u.correo && !u.correo_verificado ? ' · sin confirmar' : ''}</label><input id="usr-correo-${id}" type="email" value="${escaparHtml(u.correo || '')}" placeholder="nombre@saneadren.com.mx" maxlength="254"></div>
-      <div><label for="usr-rol-${id}">Rol</label><select id="usr-rol-${id}" ${u.rol === 'admin' && admins === 1 ? 'disabled title="Debe quedar al menos un administrador"' : ''}>${ROLES.filter(r => Sucursales.datos.admin_general || !['admin', 'gerente'].includes(r) || r === u.rol).map(r => `<option value="${r}" ${r === u.rol ? 'selected' : ''}>${NOMBRE_ROL[r] || r}</option>`).join('')}</select></div>
+      <div><label for="usr-rol-${id}">Rol</label><select id="usr-rol-${id}" ${u.rol === 'admin' && admins === 1 ? 'disabled title="Debe quedar al menos un administrador"' : ''}>${opcionesRol(u.rol)}</select></div>
       ${Sucursales.varias() ? `<div><label>Sucursales</label>${u.rol === 'admin' ? '<p class="ayuda">Todas</p>' : Sucursales.casillas('usr-' + id, u.sucursales || [])}</div>` : ''}
       <div class="acciones-catalogo">
         <button type="button" class="btn btn-secundario" data-accion="guardar">Guardar</button>
@@ -2332,13 +2354,13 @@ async function cargarCatalogoServicios() {
   if (!cont) return;
   const servicios = await api('/servicios').then(r => r.json());
   IDS_SERVICIOS = servicios.map(s => s.id);
-  const admin = USUARIO_ACTUAL.rol === 'admin';
+  const admin = Permisos.direccion(); // alta, baja y recompra de servicios: solo Dirección
   cont.innerHTML = servicios.map((s, i) => `
     <div class="servicio-row fila-catalogo" data-servicio="${Number(s.id)}">
       <div class="orden-btns"><button type="button" class="btn btn-outline" data-mover="-1" ${i === 0 ? 'disabled' : ''} aria-label="Subir ${escaparHtml(s.nombre)}">↑</button><button type="button" class="btn btn-outline" data-mover="1" ${i === servicios.length - 1 ? 'disabled' : ''} aria-label="Bajar ${escaparHtml(s.nombre)}">↓</button></div>
       <div class="info"><div class="tit">${escaparHtml(s.nombre)}</div><label for="desc-${s.id}">Descripción predeterminada para cotizaciones</label><textarea id="desc-${s.id}" rows="3" maxlength="10000" placeholder="Descripción que se precargará al elegir este servicio">${escaparHtml(s.descripcion || '')}</textarea></div>
       <div class="acciones-catalogo">
-        <span class="solo-admin"><input class="util-48" type="number" min="1" step="1" placeholder="Sin recompra" value="${s.dias_recurrencia != null ? s.dias_recurrencia : ''}" id="rec-${s.id}" aria-label="Recompra cada (días)"> <span class="util-49">días</span></span>
+        <span class="solo-general"><input class="util-48" type="number" min="1" step="1" placeholder="Sin recompra" value="${s.dias_recurrencia != null ? s.dias_recurrencia : ''}" id="rec-${s.id}" aria-label="Recompra cada (días)"> <span class="util-49">días</span></span>
         <button type="button" class="btn btn-secundario" data-guardar>Guardar</button>
         ${admin ? '<button type="button" class="btn btn-peligro" data-eliminar>Eliminar</button>' : ''}
       </div>
@@ -2356,7 +2378,7 @@ on('lista-servicios-catalogo', 'click', async e => {
     }
     if (btn.hasAttribute('data-guardar')) {
       const cuerpo = { descripcion: document.getElementById('desc-' + id).value };
-      if (USUARIO_ACTUAL.rol === 'admin') { const v = document.getElementById('rec-' + id).value; cuerpo.dias_recurrencia = v === '' ? null : Number(v); }
+      if (Permisos.direccion()) { const v = document.getElementById('rec-' + id).value; cuerpo.dias_recurrencia = v === '' ? null : Number(v); }
       await api('/servicios/' + id, { method: 'PUT', body: JSON.stringify(cuerpo) });
       toast('Servicio guardado');
       cargarCatalogos();
@@ -2480,6 +2502,8 @@ on('btn-crear-usuario', 'click', async () => {
 
 // ---------- Inicio ----------
 async function iniciarApp() {
+  await Permisos.cargar();
+  if (!USUARIO_ACTUAL) return; // la sesión expiró mientras cargaba: ya se pidió volver a entrar
   mostrarUsuarioEnHeader();
   await Sucursales.cargar();
   // Si otra persona inicia sesión en el mismo navegador, no debe quedar a la vista lo del usuario anterior.
@@ -2488,7 +2512,7 @@ async function iniciarApp() {
   await cargarCatalogos();
   await cargarLeads();
   actualizarBadgePendientes();
-  setInterval(actualizarBadgePendientes, 60000);
+  setInterval(() => actualizarBadgePendientes().catch(() => {}), 60000); // sin conexión: se reintenta al siguiente minuto
 }
 cargarSesion();
 if (Cuentas.atenderEnlace()) {

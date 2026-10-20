@@ -50,6 +50,13 @@ function revisar(db, { dirArchivos } = {}) {
     db.prepare("SELECT COUNT(*) n FROM usuarios WHERE rol = 'admin' AND activo = 1").get().n ? [] : [{ ref: 'usuarios', detalle: 'No hay administradores activos' }]);
 
   // ---------- Ventas: cotizaciones y órdenes ----------
+  // Qué ve cada rol (permisos.js): con «lo suyo», un vendedor ve sus cotizaciones y un técnico sus órdenes asignadas.
+  const activos = new Set(db.prepare('SELECT id FROM usuarios WHERE activo = 1').all().map(u => u.id));
+  chequeo('Qué ve cada rol', 'Cotizaciones u órdenes vivas sin responsable activo', 'aviso', () => L.filter(l => (l.estatus === 'abierto' || (l.estatus === 'ganado' && !l.ejecucion)) && !activos.has(l.responsable_id))
+    .map(l => ({ ref: folioL(l), detalle: (l.responsable_id ? 'su responsable está desactivado' : 'no tiene responsable') + ': solo la ve quien ve toda su sucursal; asígnala a un vendedor' })));
+  if (columnas(db, 'leads').includes('tecnico_id')) chequeo('Qué ve cada rol', 'Órdenes por realizar sin técnico asignado', 'aviso', () => L.filter(l => l.estatus === 'ganado' && !l.ejecucion && !activos.has(l.tecnico_id))
+    .map(l => ({ ref: folioL(l), detalle: 'servicio ' + (l.fecha_servicio ? dma(l.fecha_servicio) : 'sin fecha') + (l.tecnico_id ? ': su técnico está desactivado' : '') + ': ningún técnico la ve hasta que se le asigne' })));
+
   chequeo('Ventas', 'Fechas de creación en el futuro', 'error', () => L.filter(l => String(l.created_at) > ahora).map(l => ({ ref: folioL(l), detalle: 'creada el ' + l.created_at })));
   chequeo('Ventas', 'Fecha de cotización en el futuro', 'error', () => L.filter(l => l.fecha_cotizacion && l.fecha_cotizacion > hoy).map(l => ({ ref: folioL(l), detalle: 'cotización del ' + dma(l.fecha_cotizacion) })));
   chequeo('Ventas', 'Órdenes de servicio sin fecha de servicio', 'aviso', () => L.filter(l => l.estatus === 'ganado' && !l.fecha_servicio).map(l => ({ ref: folioL(l), detalle: 'no saldrá en el calendario ni en «por realizar»' })));
@@ -142,7 +149,7 @@ function revisar(db, { dirArchivos } = {}) {
 module.exports = function integridad(app, db, h) {
   const base = process.env.DB_PATH ? path.dirname(path.resolve(process.env.DB_PATH)) : path.join(__dirname, '..');
   app.get('/api/admin/integridad', h((req, res) => {
-    if (req.usuarioSesion.rol !== 'admin') return res.status(403).json({ error: 'Solo administración revisa la integridad de los datos' });
+    if (!req.usuarioSesion.admin_general) return res.status(403).json({ error: 'La revisión de integridad es solo para Dirección (revisa todas las sucursales)' });
     const r = require('./alcance').global(() => revisar(db, { dirArchivos: path.join(base, 'archivos') })); // siempre toda la base
     app.locals.auditoria?.registrar(req, 'catalogo', null, 'revisión de integridad', `${r.revisiones} revisiones · ${r.errores} errores · ${r.avisos} avisos`);
     res.json(r);

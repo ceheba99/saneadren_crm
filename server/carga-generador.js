@@ -49,7 +49,7 @@ module.exports = function cargaGenerador(app, db, h, unicos) {
   if (!cols.includes('import_huella')) db.exec('ALTER TABLE leads ADD COLUMN import_huella TEXT');
   db.exec('CREATE INDEX IF NOT EXISTS idx_leads_import_huella ON leads(import_huella)');
 
-  const puede = req => ['admin', 'atencion', 'ventas'].includes(req.usuarioSesion?.rol);
+  const puede = req => !!req.usuarioSesion && app.locals.permisos.puede(req, 'generador.cargar');
 
   // ---------- Catálogos y equivalencias ----------
   function catalogos() {
@@ -76,7 +76,7 @@ module.exports = function cargaGenerador(app, db, h, unicos) {
     const cat = catalogos();
     const porResolver = { clientes: new Map(), productos: new Map(), canales: new Map() };
     const huellasArchivo = new Map();
-    const existeHuella = db.prepare("SELECT id, created_at FROM leads WHERE import_huella = ?");
+    const existeHuella = db.prepare("SELECT id, created_at FROM main.leads WHERE import_huella = ? AND en_alcance(sucursal_id)");
     const resultado = [];
     // Nombres de producto / canal que no están en el catálogo, con su texto y cuántas veces vienen (para sugerir «igual que»).
     const vistos = { productos: new Map(), canales: new Map() };

@@ -11,6 +11,9 @@
 //  · Clientes, proveedores y catálogos son compartidos (un solo KFC para todos). Un usuario de sucursal ve los
 //    clientes que dio de alta su sucursal o con los que su sucursal ha trabajado.
 //  · Folios con clave y consecutivo propio por sucursal: OS-CDMX-202610-0001. Los anteriores no cambian.
+//  · Dentro de sus sucursales, cada ROL ve en cada área nada, «lo suyo» o todo (permisos.js). Las mismas vistas lo
+//    aplican: ve_lead (órdenes donde es responsable o técnico asignado; cobranza de esas), ve_registro (lo que él
+//    registró o pidió) y nivel_area. Así ninguna pantalla, reporte ni Excel puede mostrar lo de otro.
 //  · Roles: admin (general, ve todas y crea sucursales), gerente (admin, pero solo en sus sucursales) y los demás
 //    roles limitados a sus sucursales. Un usuario puede tener varias y cambia con el selector (X-Sucursal).
 const alcance = require('./alcance');
@@ -18,14 +21,14 @@ const alcance = require('./alcance');
 // Tablas con sucursal propia y tablas que la heredan de su registro (en orden: primero las de arriba).
 const CON_SUCURSAL = ['leads', 'cuentas_por_pagar', 'solicitudes_compra', 'ordenes_compra', 'establecimientos', 'historial_archivo', 'clientes'];
 const VISTAS = [
-  ['leads', 'en_alcance(sucursal_id)'],
-  ['cuentas_por_pagar', 'en_alcance(sucursal_id)'],
-  ['solicitudes_compra', 'en_alcance(sucursal_id)'],
-  ['ordenes_compra', 'en_alcance(sucursal_id)'],
-  ['establecimientos', 'en_alcance(sucursal_id)'],
+  ['leads', 'en_alcance(sucursal_id) AND ve_lead(responsable_id, tecnico_id, estatus)'],
+  ['cuentas_por_pagar', "en_alcance(sucursal_id) AND ve_registro('cxp', registrado_por)"],
+  ['solicitudes_compra', "en_alcance(sucursal_id) AND ve_registro('compras', solicitante_id)"],
+  ['ordenes_compra', "en_alcance(sucursal_id) AND (ve_registro('compras', creado_por) OR solicitud_id IN (SELECT id FROM solicitudes_compra))"],
+  ['establecimientos', "en_alcance(sucursal_id) AND nivel_area('ventas') >= 1"], // prospección: quien ve ventas
   ['historial_archivo', 'en_alcance(sucursal_id)'],
   ['cobros', 'lead_id IN (SELECT id FROM leads)'],
-  ['historial', 'lead_id IN (SELECT id FROM leads)'],
+  ['historial', 'lead_id IN (SELECT id FROM leads) AND ve_bitacora(area, usuario_id, lead_id)'],
   ['pagos_proveedor', 'cxp_id IN (SELECT id FROM cuentas_por_pagar)'],
   ['documentos_solicitud', 'solicitud_id IN (SELECT id FROM solicitudes_compra)'],
   ['documentos_oc', 'oc_id IN (SELECT id FROM ordenes_compra)'],
@@ -42,15 +45,18 @@ const RUTAS_REGISTRO = [
   [/^\/compras\/solicitudes\/(\d+)(?:\/|$)/, 'solicitudes_compra'], [/^\/prospeccion\/(\d+)(?:\/|$)/, 'establecimientos'],
 ];
 const RUTA_CLIENTE = /^\/(?:finanzas\/)?clientes\/(\d+)(?:\/|$)/;
-// Lo que solo hace el administrador GENERAL (afecta a todas las sucursales o lo ve todo).
+// Lo que solo hace el administrador GENERAL (Dirección): afecta a todas las sucursales o lo ve todo. Aplica a
+// cualquier otro rol, incluidos los que Dirección invente. (Los catálogos compartidos —canales, tipos de cliente,
+// centros, unidades, categorías y descripción de servicios— los decide el permiso «catalogos.editar».)
 const SOLO_GENERAL = [
   [/^(POST|PUT|DELETE)$/, /^\/sucursales(\/|$)/],
   [/./, /^\/admin\//],
   [/./, /^\/clientes\/(duplicados|distintos)$/], [/./, /^\/clientes\/\d+\/fusionar$/],
-  [/^(POST|PUT|DELETE)$/, /^\/servicios(\/|$)/], [/^(POST|PUT|DELETE)$/, /^\/canales(\/|$)/], [/^(POST|PUT|DELETE)$/, /^\/tipos-cliente(\/|$)/],
-  [/^(POST|PUT|DELETE)$/, /^\/finanzas\/categorias(\/|$)/], [/^(POST|PUT|DELETE)$/, /^\/prospeccion\/sectores(\/|$)/],
-  [/^(PUT)$/, /^\/compras\/formato$/], [/^(POST|PUT|DELETE)$/, /^\/compras\/(centros|unidades)(\/|$)/],
+  [/^POST$/, /^\/servicios$/], [/^DELETE$/, /^\/servicios\/\d+$/],
+  [/^(POST|PUT|DELETE)$/, /^\/prospeccion\/sectores(\/|$)/],
+  [/^(PUT)$/, /^\/compras\/formato$/],
 ];
+const esSoloGeneral = req => (req.path === '/auditoria' && !(req.query.entidad && req.query.id)) || SOLO_GENERAL.some(([m, r]) => m.test(req.method) && r.test(req.path));
 
 // Folio de un registro a partir de su id (busca su sucursal y su consecutivo). Lo usan todos los módulos.
 let DB = null, LISTA = [];
@@ -146,11 +152,10 @@ module.exports = function sucursales(app, db, h, { audit }) {
       return res.status(403).json({ error: 'Tu sucursal está desactivada o no tienes sucursal asignada. Pide a Dirección que te asigne una.', codigo: 'SIN_SUCURSAL' });
     req.alcanceSuc = a;
     u.rol_real = u.rol; u.admin_general = u.rol === 'admin';
-    if (u.rol === 'gerente') {
-      u.rol = 'admin';
-      const bitacoraCompleta = req.path === '/auditoria' && !(req.query.entidad && req.query.id);
-      if (bitacoraCompleta || SOLO_GENERAL.some(([m, r]) => m.test(req.method) && r.test(req.path))) return res.status(403).json({ error: 'Esto solo lo hace el administrador general (afecta a todas las sucursales)' });
-    }
+    if (u.rol === 'gerente') u.rol = 'admin';
+    if (!u.admin_general && esSoloGeneral(req)) return res.status(403).json({ error: 'Esto solo lo hace Dirección (afecta a todas las sucursales)' });
+    // Qué ve el rol (lo suyo / toda la sucursal): antes del candado por número, para que también lo aplique.
+    app.locals.permisos?.prepararAlcance(req, a);
     const visible = alcance.correr(a, () => {
       const c = req.path.match(RUTA_CLIENTE);
       if (c) return verCliente(Number(c[1]));
@@ -226,6 +231,7 @@ module.exports = function sucursales(app, db, h, { audit }) {
   function puedeAdministrar(req, usuario) {
     if (esGeneral(req)) return true;
     if (['admin', 'gerente'].includes(usuario.rol)) return false;
+    if (!app.locals.permisos.cabe(req, usuario.rol)) return false; // nadie administra a quien tiene más permisos
     const suyas = sucursalesDe(usuario.id);
     return suyas.length > 0 && suyas.every(s => req.alcanceSuc.permitidas.includes(s));
   }
@@ -254,6 +260,42 @@ module.exports = function sucursales(app, db, h, { audit }) {
   function activarCandados() {
     migrar();
     db.db.function('en_alcance', { deterministic: false }, s => (alcance.ve(s) ? 1 : 0));
+    // Qué ve el rol (0 nada, 1 lo suyo, 2 toda su sucursal) y si una fila es «suya».
+    db.db.function('nivel_area', { deterministic: false }, area => alcance.nivel(area));
+    db.db.function('ve_registro', { deterministic: false }, (area, quien) => {
+      const n = alcance.nivel(area);
+      return n >= 2 || (n === 1 && quien != null && quien === alcance.usuario()) ? 1 : 0;
+    });
+    // Una orden o cotización: la ve quien ve las ventas de su sucursal, su responsable y su técnico asignado; y,
+    // ya contratada, quien ve la cobranza (de toda la sucursal o de las suyas).
+    db.db.function('ve_lead', { deterministic: false }, (resp, tec, estatus) => {
+      const v = alcance.nivel('ventas');
+      if (v >= 2) return 1;
+      const yo = alcance.usuario(), mia = yo != null && (resp === yo || tec === yo);
+      if (v === 1 && mia) return 1;
+      if (estatus === 'ganado') { const c = alcance.nivel('cxc'); if (c >= 2 || (c === 1 && mia)) return 1; }
+      return 0;
+    });
+    // Bitácora de una orden visible: lo de cobranza ('cxc') lo ve quien ve la cobranza de esa orden; lo de gastos
+    // ('cxp'), quien ve esos gastos (toda la sucursal o lo que él registró).
+    const delLead = db.db.prepare('SELECT responsable_id, tecnico_id FROM main.leads WHERE id = ?');
+    db.db.function('ve_bitacora', { deterministic: false }, (area, quien, leadId) => {
+      if (!area) return 1;
+      const n = alcance.nivel(area), yo = alcance.usuario();
+      if (n >= 2) return 1;
+      if (n === 0 || yo == null) return 0;
+      if (area === 'cxp') return quien === yo ? 1 : 0;
+      const l = delLead.get(leadId);
+      return l && (l.responsable_id === yo || l.tecnico_id === yo) ? 1 : 0;
+    });
+    // Un cliente de su sucursal sin ninguna cotización todavía: lo ve quien ve las ventas (los de otro vendedor solo
+    // si ve toda la sucursal; los demás clientes se ven por sus cotizaciones visibles).
+    const conCotizacion = db.db.prepare('SELECT 1 FROM main.leads WHERE cliente_id = ? LIMIT 1');
+    db.db.function('cliente_en_alcance', { deterministic: false }, (s, id) => {
+      if (!alcance.ve(s)) return 0;
+      const v = alcance.nivel('ventas');
+      return v >= 2 || (v === 1 && !conCotizacion.get(id)) ? 1 : 0;
+    });
     for (const [t, filtro] of VISTAS) {
       if (!existeTabla(t)) continue;
       db.exec(`DROP VIEW IF EXISTS temp.${t}`);
@@ -262,19 +304,34 @@ module.exports = function sucursales(app, db, h, { audit }) {
   }
 
   // Clientes compartidos: los ve quien los dio de alta en su sucursal o ha trabajado con ellos (SQL para «c»).
-  const clienteVisible = (a = 'c') => `(en_alcance(${a}.sucursal_id) OR EXISTS (SELECT 1 FROM leads lv WHERE lv.cliente_id = ${a}.id))`;
+  const clienteVisible = (a = 'c') => `(cliente_en_alcance(${a}.sucursal_id, ${a}.id) OR EXISTS (SELECT 1 FROM leads lv WHERE lv.cliente_id = ${a}.id))`;
   const verCliente = id => !!db.prepare(`SELECT 1 FROM main.clientes c WHERE c.id = ? AND ${clienteVisible('c')}`).get(id);
   // Los datos de un cliente compartido (teléfonos, RFC, correo, dirección, crédito) los corrige Dirección o la
   // sucursal que lo dio de alta; las demás sucursales le venden, pero no le cambian los datos.
   function puedeEditarCliente(req, id) {
-    if (req.usuarioSesion?.admin_general) return true;
+    if (req.usuarioSesion?.admin_general && !req.usuarioSesion?.ver_como) return true;
+    return clienteDeSuSucursal(req, id) && clienteEsSuyo(id);
+  }
+  // Solo la regla de sucursal (para lo que no es de ventas, p. ej. el crédito que captura cobranza).
+  function clienteDeSuSucursal(req, id) {
+    if (req.usuarioSesion?.admin_general && !req.usuarioSesion?.ver_como) return true;
     const c = db.prepare('SELECT sucursal_id FROM main.clientes WHERE id = ?').get(id);
     return !!c && (c.sucursal_id == null ? req.alcanceSuc.permitidas.includes(alcance.matriz()) : req.alcanceSuc.permitidas.includes(c.sucursal_id));
   }
+  // Según su rol (permisos.js): quien ve las ventas de su sucursal toca cualquier cliente; con «lo suyo», solo los que
+  // atiende como responsable (o los que todavía nadie atiende); quien no ve ventas (Cobranza, Compras) no los toca.
+  function clienteEsSuyo(id) {
+    const v = alcance.nivel('ventas');
+    if (v >= 2) return true;
+    if (v < 1) return false;
+    const resp = db.prepare('SELECT responsable_id FROM main.leads WHERE cliente_id = ? AND en_alcance(sucursal_id)').all(id).map(r => r.responsable_id);
+    return !resp.length || resp.includes(alcance.usuario());
+  }
   const sucursalDeCliente = id => { const c = db.prepare('SELECT sucursal_id FROM main.clientes WHERE id = ?').get(id); return lista().find(s => s.id === c?.sucursal_id) || null; };
-  const NO_EDITA = (req, id) => { const s = sucursalDeCliente(id); return { error: `Este cliente lo dio de alta ${s ? s.nombre + ' (' + s.clave + ')' : 'otra sucursal'}: sus datos (teléfonos, RFC, correo, dirección y crédito) los corrige esa sucursal o Dirección. Tú sí puedes cotizarle y venderle.`, codigo: 'CLIENTE_DE_OTRA_SUCURSAL' }; };
+  const NO_EDITA = (req, id) => { if (!clienteEsSuyo(id)) return { error: alcance.nivel('ventas') < 1 ? 'Tu rol no modifica los datos de los clientes' : 'Este cliente lo atiende otro vendedor: sus datos los corrige él o el gerente', codigo: 'CLIENTE_DE_OTRO' };
+    const s = sucursalDeCliente(id); return { error: `Este cliente lo dio de alta ${s ? s.nombre + ' (' + s.clave + ')' : 'otra sucursal'}: sus datos (teléfonos, RFC, correo, dirección y crédito) los corrige esa sucursal o Dirección. Tú sí puedes cotizarle y venderle.`, codigo: 'CLIENTE_DE_OTRA_SUCURSAL' }; };
 
-  return { puedeEditarCliente, NO_EDITA, activarCandados, folio: folioDe, claveDe, asignar, de, siguienteFolio, lista, clienteVisible, verCliente, esGeneral, sucursalesParaUsuario, guardarSucursalesUsuario, puedeAdministrar, sucursalesDe };
+  return { puedeEditarCliente, clienteDeSuSucursal, NO_EDITA, activarCandados, folio: folioDe, claveDe, asignar, de, siguienteFolio, lista, clienteVisible, verCliente, esGeneral, sucursalesParaUsuario, guardarSucursalesUsuario, puedeAdministrar, sucursalesDe };
 };
 module.exports.VISTAS = VISTAS;
 // «OS-CDMX-202610-0001»; los registros de antes de las sucursales conservan «OS-202610-0087».
@@ -291,3 +348,4 @@ module.exports.leadPorFolio = texto => {
 };
 module.exports.folioLead = (l, id = l.id) => folioDe(l.estatus === 'ganado' ? 'OS' : 'COT', 'leads', id, l.created_at);
 module.exports.CON_SUCURSAL = CON_SUCURSAL;
+module.exports.esSoloGeneral = esSoloGeneral;

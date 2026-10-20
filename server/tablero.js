@@ -143,7 +143,7 @@ module.exports = function tablero(app, db, h, finanzas) {
   }
 
   app.get('/api/tablero', h((req, res) => {
-    if (req.usuarioSesion.rol !== 'admin') return res.status(403).json({ error: 'El panorama general es solo para administración' });
+    if (!app.locals.permisos.puede(req, 'reportes.panorama')) return res.status(403).json({ error: 'No tienes permiso para ver el panorama general' });
     const hoy = hoyMexico();
     const desde = req.query.desde || hoy.slice(0, 8) + '01', hasta = req.query.hasta || hoy;
     if (!fechaOk(desde) || !fechaOk(hasta) || desde > hasta) return res.status(400).json({ error: 'Revisa el rango de fechas' });

@@ -44,6 +44,7 @@ let telSec = 0; const telefono = pre => pre + String(10 ** (10 - pre.length) + M
   for (let i = 0; i < 100 && !/corriendo/.test(salida); i++) await espera(150);
   console.log(`Semilla ${SEMILLA} · ${OPS} operaciones`);
   const A = (await pedir('POST', '/login', null, { nombre: ADMIN.correo, password: ADMIN.password }))[1].token;
+  await require('./ayuda-alcance.cjs').comoAntes(pedir, A); // esta prueba es de las sucursales, no de «qué ve cada rol»
   const [, canales] = await pedir('GET', '/canales', A), [, servicios] = await pedir('GET', '/servicios', A), [, centros] = await pedir('GET', '/compras/centros', A);
   const qro = (await pedir('GET', '/sucursales', A))[1].sucursales[0];
   const cdmx = (await pedir('POST', '/sucursales', A, { nombre: 'Ciudad de México', clave: 'CDMX' }))[1];

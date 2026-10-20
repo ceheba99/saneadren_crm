@@ -56,7 +56,7 @@ module.exports = function buscador(app, db, h) {
   const FUENTES = [
     {
       tipo: 'cliente', titulo: 'Clientes', prefijo: 'cli', puede: () => true,
-      base: `FROM clientes c WHERE (en_alcance(c.sucursal_id) OR EXISTS (SELECT 1 FROM leads lv WHERE lv.cliente_id = c.id))`,
+      base: `FROM clientes c WHERE (cliente_en_alcance(c.sucursal_id, c.id) OR EXISTS (SELECT 1 FROM leads lv WHERE lv.cliente_id = c.id))`,
       texto: `'cli-' || printf('%04d', c.id) || ' ' || COALESCE(c.nombre,'') || ' ' || COALESCE(c.empresa_contacto,'') || ' ' || COALESCE(c.rfc,'') || ' ' || COALESCE(c.direccion,'') || ' ' || COALESCE(c.correo,'')`,
       telefono: `(c.telefono_normalizado LIKE ? OR solo_digitos(c.telefono_alterno) LIKE ? OR EXISTS (SELECT 1 FROM telefonos_cliente t WHERE t.cliente_id = c.id AND t.telefono_normalizado LIKE ?))`, telParams: 3,
       porId: `c.id = ?`,

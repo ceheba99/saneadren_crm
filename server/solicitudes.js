@@ -68,7 +68,7 @@ module.exports = function solicitudes(app, db, h, { texto, fechaOk, hoyMexico, c
   migrar(db);
   const base = process.env.DB_PATH ? path.dirname(path.resolve(process.env.DB_PATH)) : path.join(__dirname, '..');
   const DIR = path.join(base, 'archivos', 'solicitudes');
-  const esCostos = req => ['admin', 'costos'].includes(req.usuarioSesion.rol);
+  const esCostos = req => app.locals.permisos.puede(req, 'compras.gestionar');
   const audit = (req, id, accion, detalle) => app.locals.auditoria?.registrar(req, 'solicitud_compra', id, accion, detalle);
   const fmt = c => '$' + (Number(c || 0) / 100).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const ahora = () => db.prepare("SELECT datetime('now','localtime') AS t").get().t;
@@ -108,7 +108,7 @@ module.exports = function solicitudes(app, db, h, { texto, fechaOk, hoyMexico, c
     if (fecha && !fechaOk(fecha)) return { error: 'La fecha para cuándo no es válida' };
     if (fecha && fecha < (antes ? String(antes.created_at).slice(0, 10) : hoyMexico())) return { error: 'La fecha para cuándo no puede ser en el pasado' };
     let leadId = null;
-    if (b.lead_id) { const l = db.prepare("SELECT id FROM leads WHERE id = ? AND estatus = 'ganado'").get(Number(b.lead_id) || 0); if (!l) return { error: 'La orden de servicio relacionada no existe' }; leadId = l.id; }
+    if (b.lead_id) { const l = require('./finanzas').ordenParaLigar(b.lead_id); if (!l) return { error: 'La orden de servicio relacionada no existe' }; leadId = l.id; }
     const equipo = texto(b.equipo, 80);
     if (equipo && /[<>{}]/.test(equipo)) return { error: 'Revisa la unidad o equipo' };
     return { datos: { que, para_que: para, urgente: b.urgente ? 1 : 0, fecha_requerida: fecha, centro_id: centro.id, equipo, lead_id: leadId } };
@@ -133,6 +133,7 @@ module.exports = function solicitudes(app, db, h, { texto, fechaOk, hoyMexico, c
 
   // ----- Crear (cualquier usuario) y corregir -----
   app.post('/api/compras/solicitudes', h((req, res) => {
+    if (!app.locals.permisos.puede(req, 'compras.ver')) return res.status(403).json({ error: 'Tu rol no hace solicitudes de compra' });
     const v = validar(req.body || {});
     if (v.error) return res.status(400).json({ error: v.error });
     const d = v.datos;
@@ -172,7 +173,7 @@ module.exports = function solicitudes(app, db, h, { texto, fechaOk, hoyMexico, c
     if (!s) return res.status(404).json({ error: 'Solicitud no encontrada' });
     if (s.estado !== 'por_aprobar') return res.status(409).json({ error: 'Esta solicitud ya no está por aprobar (' + ESTADOS[s.estado].toLowerCase() + ')' });
     // Nadie se aprueba a sí mismo: si el encargado pidió algo, lo aprueba un administrador (u otro encargado).
-    if (s.solicitante_id === req.usuarioSesion.id && req.usuarioSesion.rol !== 'admin') return res.status(403).json({ error: 'Tú pediste esta solicitud: la aprueba un administrador u otro encargado de centro de costos' });
+    if (s.solicitante_id === req.usuarioSesion.id && !app.locals.permisos.puede(req, 'compras.aprobar_propias')) return res.status(403).json({ error: 'Tú pediste esta solicitud: la aprueba un administrador u otro encargado de centro de costos' });
     actualizar(s.id, { estado: 'cotizando', aprobada_por: req.usuarioSesion.nombre, aprobada_at: ahora() });
     audit(req, s.id, 'aprobada', `Pasa a cotizar: se piden ${COTIZACIONES_REQUERIDAS} cotizaciones de proveedores distintos`);
     res.json(leer(s.id));

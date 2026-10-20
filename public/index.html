@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Saneadren · Cotizaciones y Servicios</title>
-<link rel="stylesheet" href="styles.css?v=cer2">
+<link rel="stylesheet" href="styles.css?v=perm3">
 <link rel="stylesheet" href="servicios-tabla.css">
 <link rel="stylesheet" href="flujo.css">
 </head>
@@ -26,33 +26,33 @@
     </button>
     <div class="menu-items" id="menu-items">
       <button type="button" class="menu-item activa" data-vista="inicio"><span class="menu-icono" aria-hidden="true">🏠</span>Inicio <span id="badge-pendientes" style="display:none">0</span></button>
-      <button type="button" class="menu-item" data-vista="calendario"><span class="menu-icono" aria-hidden="true">📅</span>Calendario</button>
-      <div class="menu-grupo" data-grupo="ventas">
+      <button type="button" class="menu-item perm-ventas-ver" data-vista="calendario"><span class="menu-icono" aria-hidden="true">📅</span>Calendario</button>
+      <div class="menu-grupo perm-ventas-ver" data-grupo="ventas">
         <button type="button" class="menu-grupo-btn" aria-expanded="false"><span class="menu-icono" aria-hidden="true">💼</span>Ventas<span class="menu-flecha" aria-hidden="true">▾</span></button>
         <div class="menu-sub">
-          <button type="button" class="menu-item" data-vista="alta"><span class="menu-icono" aria-hidden="true">➕</span>Nuevo contacto</button>
-          <button type="button" class="menu-item" data-vista="clientes"><span class="menu-icono" aria-hidden="true">👥</span>Contactos</button>
-          <button type="button" class="menu-item" data-vista="generador"><span class="menu-icono" aria-hidden="true">📒</span>Generador</button>
-          <button type="button" class="menu-item" data-vista="leads"><span class="menu-icono" aria-hidden="true">📄</span>Cotizaciones</button>
-          <button type="button" class="menu-item" data-vista="prospeccion"><span class="menu-icono" aria-hidden="true">🔎</span>Prospección</button>
+          <button type="button" class="menu-item perm-ventas-ver" data-vista="alta"><span class="menu-icono" aria-hidden="true">➕</span>Nuevo contacto</button>
+          <button type="button" class="menu-item perm-ventas-ver" data-vista="clientes"><span class="menu-icono" aria-hidden="true">👥</span>Contactos</button>
+          <button type="button" class="menu-item perm-ventas-ver" data-vista="generador"><span class="menu-icono" aria-hidden="true">📒</span>Generador</button>
+          <button type="button" class="menu-item perm-ventas-ver" data-vista="leads"><span class="menu-icono" aria-hidden="true">📄</span>Cotizaciones</button>
+          <button type="button" class="menu-item perm-ventas-ver" data-vista="prospeccion"><span class="menu-icono" aria-hidden="true">🔎</span>Prospección</button>
         </div>
       </div>
       <div class="menu-grupo" data-grupo="dinero">
         <button type="button" class="menu-grupo-btn" aria-expanded="false"><span class="menu-icono" aria-hidden="true">💰</span>Finanzas<span class="menu-flecha" aria-hidden="true">▾</span></button>
         <div class="menu-sub">
-          <button type="button" class="menu-item solo-cobranza" data-vista="cobrar" id="nav-cobrar"><span class="menu-icono" aria-hidden="true">📥</span>Cuentas por cobrar</button>
-          <button type="button" class="menu-item solo-cobranza" data-vista="pagar" id="nav-pagar"><span class="menu-icono" aria-hidden="true">📤</span>Cuentas por pagar</button>
-          <button type="button" class="menu-item" data-vista="solicitudes"><span class="menu-icono" aria-hidden="true">📝</span>Solicitudes de compra</button>
-          <button type="button" class="menu-item" data-vista="compras"><span class="menu-icono" aria-hidden="true">🛒</span>Órdenes de compra</button>
+          <button type="button" class="menu-item solo-cobranza perm-cxc-ver" data-vista="cobrar" id="nav-cobrar"><span class="menu-icono" aria-hidden="true">📥</span>Cuentas por cobrar</button>
+          <button type="button" class="menu-item solo-cobranza perm-cxp-ver" data-vista="pagar" id="nav-pagar"><span class="menu-icono" aria-hidden="true">📤</span>Cuentas por pagar</button>
+          <button type="button" class="menu-item perm-compras-ver" data-vista="solicitudes"><span class="menu-icono" aria-hidden="true">📝</span>Solicitudes de compra</button>
+          <button type="button" class="menu-item perm-compras-ver" data-vista="compras"><span class="menu-icono" aria-hidden="true">🛒</span>Órdenes de compra</button>
           <button type="button" class="menu-item" data-vista="resultados"><span class="menu-icono" aria-hidden="true">📊</span>Resultados</button>
         </div>
       </div>
       <div class="menu-grupo" data-grupo="ajustes">
         <button type="button" class="menu-grupo-btn" aria-expanded="false"><span class="menu-icono" aria-hidden="true">⚙️</span>Ajustes<span class="menu-flecha" aria-hidden="true">▾</span></button>
         <div class="menu-sub">
-          <button type="button" class="menu-item" data-vista="catalogos" id="nav-catalogos"><span class="menu-icono" aria-hidden="true">📚</span>Catálogos</button>
-          <button type="button" class="menu-item solo-admin" data-vista="usuarios" id="nav-usuarios"><span class="menu-icono" aria-hidden="true">👤</span>Usuarios</button>
-          <button type="button" class="menu-item solo-admin solo-general" data-vista="bitacora" id="nav-bitacora"><span class="menu-icono" aria-hidden="true">🗂️</span>Bitácora</button>
+          <button type="button" class="menu-item perm-catalogos-editar" data-vista="catalogos" id="nav-catalogos"><span class="menu-icono" aria-hidden="true">📚</span>Catálogos</button>
+          <button type="button" class="menu-item perm-usuarios-administrar" data-vista="usuarios" id="nav-usuarios"><span class="menu-icono" aria-hidden="true">👤</span>Usuarios</button>
+          <button type="button" class="menu-item solo-general" data-vista="bitacora" id="nav-bitacora"><span class="menu-icono" aria-hidden="true">🗂️</span>Bitácora</button>
         </div>
       </div>
     </div>
@@ -73,24 +73,24 @@
       <p class="ayuda">Tus pendientes en un solo lugar: avisos y recordatorios que vencen hoy, cotizaciones sin movimiento y recompras. Cada tarjeta te lleva directo al registro.</p>
     </div>
 
-    <div class="inicio-bloque inicio-bloque-dinero solo-cobranza">
+    <div class="inicio-bloque inicio-bloque-dinero solo-cobranza perm-cxc-ver">
       <h3>💰 Finanzas</h3>
       <div id="inicio-dinero" class="inicio-lista"></div>
     </div>
 
-    <div class="inicio-bloque inicio-bloque-cotizacion">
+    <div class="inicio-bloque inicio-bloque-cotizacion perm-ventas-ver">
       <h3>⏰ Avisos y seguimiento</h3>
       <p class="ayuda">Recordatorios de cotizaciones u órdenes que vencen hoy o ya vencieron, y cotizaciones abiertas sin movimiento hace más de 7 días.</p>
       <div id="inicio-cotizaciones" class="inicio-lista"></div>
     </div>
 
-    <div class="inicio-bloque inicio-bloque-concluir">
+    <div class="inicio-bloque inicio-bloque-concluir perm-ventas-ver">
       <h3>🧾 Servicios por concluir</h3>
       <p class="ayuda">Órdenes cuya fecha ya pasó y que todavía no se marcan como realizadas o no realizadas. No aparecen en el Generador hasta concluirlas.</p>
       <div id="inicio-concluir" class="inicio-lista"></div>
     </div>
 
-    <div class="inicio-bloque inicio-bloque-servicio">
+    <div class="inicio-bloque inicio-bloque-servicio perm-ventas-ver">
       <h3><span class="cadena-nodo activo">🧾 Recompras</span> listas para registrar como nuevo servicio</h3>
       <p class="ayuda">Clientes que ya contrataron antes y, según el ciclo del servicio, probablemente ya lo necesiten otra vez.</p>
       <div id="inicio-recompras" class="inicio-lista"></div>
@@ -134,7 +134,7 @@
       <input type="date" id="f-hasta" title="Filtrar hasta esta fecha de creación">
       <label><input type="checkbox" id="f-urgente"> Solo urgentes</label>
       <button class="btn btn-outline util-8" onclick="limpiarFiltros()">Limpiar filtros</button>
-      <button class="btn btn-secundario solo-admin" id="btn-exportar-leads">📥 Exportar a Excel</button>
+      <button class="btn btn-secundario perm-clientes-exportar" id="btn-exportar-leads">📥 Exportar a Excel</button>
     </div>
 
     <div class="kpi-grid" id="kpi-leads">
@@ -216,7 +216,7 @@
   <section class="vista" id="vista-clientes">
     <div class="vista-encabezado">
       <div><h2>Contactos</h2><p class="ayuda">Personas y empresas. Abre un contacto para ver sus cotizaciones y órdenes, o para crear una nueva.</p></div>
-      <div class="btn-group"><button type="button" class="btn btn-outline solo-admin" id="btn-revisar-duplicados">Revisar duplicados</button><button type="button" class="btn btn-primario" onclick="cambiarVista('alta')">➕ Nuevo contacto</button></div>
+      <div class="btn-group"><button type="button" class="btn btn-outline solo-general" id="btn-revisar-duplicados">Revisar duplicados</button><button type="button" class="btn btn-primario" onclick="cambiarVista('alta')">➕ Nuevo contacto</button></div>
     </div>
 
     <div class="rc-grid">
@@ -249,7 +249,7 @@
       <input type="date" id="fc-desde" title="Filtrar desde esta fecha">
       <span class="filtro-fecha-label">Hasta</span>
       <input type="date" id="fc-hasta" title="Filtrar hasta esta fecha">
-      <button class="btn btn-secundario solo-admin" id="btn-exportar-clientes">📥 Exportar a Excel</button>
+      <button class="btn btn-secundario perm-clientes-exportar" id="btn-exportar-clientes">📥 Exportar a Excel</button>
     </div>
 
     <div class="tabla-clientes-wrap">
@@ -293,7 +293,7 @@
   <section class="vista" id="vista-compras">
     <div class="vista-encabezado">
       <div><h2>Órdenes de compra</h2><p class="ayuda">Se capturan como borrador; al autorizarlas (administración) pasan solas a Cuentas por pagar como factura pendiente del proveedor. Se descargan con el formato CM-F-03.</p></div>
-      <div class="btn-group"><button type="button" class="btn btn-primario solo-costos" id="oc-nueva" title="Orden sin solicitud (solo encargado de centro de costos y administración)">+ Nueva orden de compra</button><button type="button" class="btn btn-outline" id="oc-ir-solicitudes">📝 Solicitudes de compra</button><button type="button" class="btn btn-outline" id="oc-unidades">Unidades de medida</button><button type="button" class="btn btn-outline" id="oc-centros">Centros de costo</button><button type="button" class="btn btn-outline" id="oc-categorias">Categorías de gasto</button><button type="button" class="btn btn-outline solo-admin" id="oc-formato">Datos del formato</button></div>
+      <div class="btn-group"><button type="button" class="btn btn-primario perm-compras-gestionar" id="oc-nueva" title="Orden sin solicitud (solo encargado de centro de costos y administración)">+ Nueva orden de compra</button><button type="button" class="btn btn-outline" id="oc-ir-solicitudes">📝 Solicitudes de compra</button><button type="button" class="btn btn-outline" id="oc-unidades">Unidades de medida</button><button type="button" class="btn btn-outline" id="oc-centros">Centros de costo</button><button type="button" class="btn btn-outline" id="oc-categorias">Categorías de gasto</button><button type="button" class="btn btn-outline solo-general" id="oc-formato">Datos del formato</button></div>
     </div>
     <div class="filtros">
       <select id="oc-filtro" aria-label="Mostrar"><option value="">Todas</option><option value="borrador">Borradores (por autorizar)</option><option value="pendiente_pago">Autorizadas por pagar</option><option value="autorizada">Autorizadas</option><option value="cancelada">Canceladas</option></select>
@@ -319,7 +319,7 @@
   <section class="vista" id="vista-generador">
     <div class="vista-encabezado">
       <div><h2>Generador</h2><p class="ayuda">Ventas de las órdenes de servicio <b>realizadas</b>, un renglón por cada servicio. Las columnas en gris son los gastos generados de cada orden (en Cuentas por pagar). Toca un renglón para abrir su orden.</p></div>
-      <div class="btn-group"><button type="button" class="btn btn-outline" id="cg-plantilla">📄 Descargar plantilla</button><button type="button" class="btn btn-secundario" id="cg-subir">📤 Cargar generador (Excel)</button><button type="button" class="btn btn-outline solo-admin" id="gen-exportar">📥 Exportar a Excel</button></div>
+      <div class="btn-group"><button type="button" class="btn btn-outline" id="cg-plantilla">📄 Descargar plantilla</button><button type="button" class="btn btn-secundario" id="cg-subir">📤 Cargar generador (Excel)</button><button type="button" class="btn btn-outline perm-clientes-exportar" id="gen-exportar">📥 Exportar a Excel</button></div>
     </div>
     <div class="filtros">
       <label>Desde <input type="date" id="gen-desde"></label>
@@ -339,10 +339,10 @@
   <section class="vista" id="vista-resultados">
     <div class="vista-encabezado"><div><h2>Resultados</h2><p class="ayuda">Cómo va la empresa: ventas, utilidad, dinero que entra y sale, cobranza y operación.</p></div></div>
     <div class="res-pestanas" role="tablist">
-      <button type="button" role="tab" class="solo-admin activo" data-res-tab="panorama" aria-selected="true">📊 Panorama general</button>
+      <button type="button" role="tab" class="perm-reportes-panorama activo" data-res-tab="panorama" aria-selected="true">📊 Panorama general</button>
       <button type="button" role="tab" data-res-tab="comercial" aria-selected="false">📈 Análisis comercial</button>
     </div>
-    <div id="res-panorama" class="solo-admin">
+    <div id="res-panorama" class="perm-reportes-panorama">
       <div class="filtros pg-filtros">
         <div class="segmentado pg-presets" role="group" aria-label="Periodo">
           <button type="button" data-pg-preset="mes">Este mes</button><button type="button" data-pg-preset="mes_pasado">Mes pasado</button><button type="button" data-pg-preset="trimestre">Trimestre</button><button type="button" data-pg-preset="anio">Este año</button><button type="button" data-pg-preset="12m">12 meses</button>
@@ -356,7 +356,7 @@
       <div id="pg-cuerpo"></div>
     </div>
     <div id="res-comercial" hidden>
-    <div class="filtros"><label>Desde <input type="date" id="res-desde"></label><label>Hasta <input type="date" id="res-hasta"></label><button class="btn btn-primario" id="res-aplicar">Consultar</button><button class="btn btn-outline" id="res-todo">Todo el historial</button><button class="btn btn-outline solo-admin" id="res-exportar">Exportar canales a Excel</button></div>
+    <div class="filtros"><label>Desde <input type="date" id="res-desde"></label><label>Hasta <input type="date" id="res-hasta"></label><button class="btn btn-primario" id="res-aplicar">Consultar</button><button class="btn btn-outline" id="res-todo">Todo el historial</button><button class="btn btn-outline perm-clientes-exportar" id="res-exportar">Exportar canales a Excel</button></div>
     <p class="ayuda">Contactos nuevos: fecha de registro. Importe contratado: fecha acordada del servicio. Cada contacto y sus servicios se atribuyen a “Cómo se enteró de nosotros”. El importe contratado no equivale a cobros ni utilidad. Los importes son sin IVA (la venta real); lo cobrado y los gastos sí incluyen IVA.</p>
     <p id="res-estado" role="status"></p><div class="res-grid" id="res-kpis"></div>
     <div class="solo-cobranza" id="res-dinero-periodo"></div>
@@ -376,7 +376,7 @@
 
 <section class="vista" id="vista-prospeccion">
 <h2>Prospección de establecimientos</h2><p class="ayuda">Investiga restaurantes, hoteles y hospitales sin crear cotizaciones vacías. Sector describe el negocio; el estado indica tu seguimiento comercial.</p>
-<div class="filtros"><input id="pr-buscar" aria-label="Buscar establecimiento" placeholder="Establecimiento, zona, persona o teléfono"><select id="pr-f-sector" aria-label="Sector"></select><select id="pr-f-estado" aria-label="Seguimiento"></select><select id="pr-f-responsable" aria-label="Responsable"></select><label><input type="checkbox" id="pr-vencidos"> Seguimiento para hoy o vencido</label><button class="btn btn-primario" id="pr-nuevo">Registrar establecimiento</button><button class="btn btn-outline solo-admin" id="pr-exportar">Exportar selección</button></div>
+<div class="filtros"><input id="pr-buscar" aria-label="Buscar establecimiento" placeholder="Establecimiento, zona, persona o teléfono"><select id="pr-f-sector" aria-label="Sector"></select><select id="pr-f-estado" aria-label="Seguimiento"></select><select id="pr-f-responsable" aria-label="Responsable"></select><label><input type="checkbox" id="pr-vencidos"> Seguimiento para hoy o vencido</label><button class="btn btn-primario" id="pr-nuevo">Registrar establecimiento</button><button class="btn btn-outline perm-clientes-exportar" id="pr-exportar">Exportar selección</button></div>
 <p id="pr-resumen" role="status"></p><div class="tabla-scroll"><table class="tabla-resumen"><thead><tr><th>Establecimiento</th><th>Sector / zona</th><th>Persona / teléfono</th><th>Seguimiento</th><th>Responsable</th><th>Próximo contacto</th><th>Contacto CRM</th><th>Ficha</th></tr></thead><tbody id="pr-tabla"></tbody></table></div>
 <details id="pr-admin" hidden><summary>Administrar sectores</summary><p class="ayuda">Renombrar conserva los establecimientos asociados.</p><div id="pr-sectores"></div><label for="pr-sector-nuevo">Nuevo sector</label><input id="pr-sector-nuevo" maxlength="80"><button class="btn btn-outline" id="pr-agregar-sector">Agregar sector</button></details>
 </section>
@@ -436,14 +436,7 @@
         </div>
         <div class="campo">
           <label>Rol</label>
-          <select id="nu-rol">
-            <option value="admin" class="solo-general">admin (general: todas las sucursales)</option>
-            <option value="gerente" class="solo-general">gerente (admin de su sucursal)</option>
-            <option value="ventas">ventas</option>
-            <option value="atencion">atencion</option>
-            <option value="tecnico">tecnico</option>
-            <option value="costos">costos (encargado de centro de costos)</option>
-          </select>
+          <select id="nu-rol"></select>
         </div>
         <div class="campo solo-varias-sucursales" id="nu-sucursales-campo">
           <label>Sucursales</label>
@@ -454,6 +447,11 @@
           <button class="btn btn-primario" id="btn-crear-usuario">Crear usuario</button>
         </div>
       </div>
+    </div>
+    <div class="panel-alta solo-general" id="panel-roles">
+      <h2>Roles y permisos</h2>
+      <p class="ayuda">Marca qué puede ver y hacer cada rol y pulsa Guardar. Dirección siempre tiene todo. Con «Ver como» revisas cómo le queda el sistema a un rol sin cambiar nada. Cada cambio queda en la bitácora.</p>
+      <div id="roles-permisos"></div>
     </div>
     <h3 class="util-13">Usuarios activos</h3>
     <p class="ayuda">Cambia nombre, correo o rol y pulsa Guardar. "Nueva contraseña" asigna una temporal que la persona deberá cambiar al entrar; al cambiar el rol o la contraseña se cierran sus sesiones abiertas.</p>
@@ -472,7 +470,7 @@
     </div>
 
     <div class="cuentas-panel" data-panel="cobrar">
-      <div id="cuentas-revision" class="cuentas-aviso solo-admin" hidden></div>
+      <div id="cuentas-revision" class="cuentas-aviso perm-cobros-ajustes" hidden></div>
       <div id="cuentas-por-confirmar"></div>
       <div class="pendientes-filtros" id="cobrar-filtros">
         <button type="button" class="activo" data-filtro-cobro="con_saldo">Por cobrar</button>
@@ -489,7 +487,7 @@
       </div>
       <div class="filtros">
         <input type="text" id="cobrar-buscar" placeholder="Cliente, empresa, teléfono, servicio o factura" aria-label="Buscar en cuentas por cobrar">
-        <button type="button" class="btn btn-outline solo-admin" id="cobrar-exportar">📥 Exportar a Excel</button>
+        <button type="button" class="btn btn-outline perm-clientes-exportar" id="cobrar-exportar">📥 Exportar a Excel</button>
         <button type="button" class="btn btn-outline" data-plantilla-descargar="cxc">📄 Descargar plantilla</button>
         <button type="button" class="btn btn-secundario" data-plantilla-subir="cxc">📤 Subir plantilla</button>
       </div>
@@ -500,10 +498,10 @@
       <div class="filtros">
         <button type="button" class="btn btn-primario" id="pagar-nuevo">+ Registrar gasto o factura</button>
         <select id="pagar-vista" aria-label="Mostrar"><option value="pendientes">Por pagar</option><option value="todas">Todas (incluye pagadas)</option></select>
-        <button type="button" class="btn btn-outline solo-admin" id="pagar-exportar">📥 Exportar a Excel</button>
-        <button type="button" class="btn btn-outline solo-admin" id="pagar-formato-cxp" title="Mismas 19 columnas del Excel CXP, más el detalle de cada pago">📗 Descargar como «CXP»</button>
+        <button type="button" class="btn btn-outline perm-clientes-exportar" id="pagar-exportar">📥 Exportar a Excel</button>
+        <button type="button" class="btn btn-outline perm-clientes-exportar" id="pagar-formato-cxp" title="Mismas 19 columnas del Excel CXP, más el detalle de cada pago">📗 Descargar como «CXP»</button>
         <button type="button" class="btn btn-outline" data-plantilla-descargar="cxp">📄 Descargar plantilla</button>
-        <button type="button" class="btn btn-secundario solo-costos" data-plantilla-subir="cxp">📤 Subir plantilla</button>
+        <button type="button" class="btn btn-secundario perm-dinero-mover" data-plantilla-subir="cxp">📤 Subir plantilla</button>
       </div>
       <div id="pagar-lista"></div>
     </div>
@@ -534,10 +532,10 @@
     <div id="lista-tipos-cliente"></div>
     <div class="campo"><label for="nuevo-tipo-cliente">Nuevo tipo de cliente</label><input id="nuevo-tipo-cliente" maxlength="80" placeholder="Ej. Gobierno"><button type="button" class="btn btn-primario" id="btn-agregar-tipo">Agregar tipo</button></div>
     <h3 class="util-14">Catálogo de servicios</h3>
-    <p class="ayuda util-15">Usa ↑ ↓ para cambiar el orden en que aparecen en las listas. <span class="solo-admin">La recompra (cada cuántos días volver a ofrecer el servicio) alimenta la vista "Recompras"; déjala vacía si es de una sola vez.</span></p>
+    <p class="ayuda util-15">Usa ↑ ↓ para cambiar el orden en que aparecen en las listas. <span class="solo-general">La recompra (cada cuántos días volver a ofrecer el servicio) alimenta la vista "Recompras"; déjala vacía si es de una sola vez.</span></p>
     <p class="ayuda">Guarda aquí la descripción base de cada servicio. Al elegirlo en una cotización se precarga y puedes editarla solo para ese documento, sin cambiar el catálogo.</p>
     <div id="lista-servicios-catalogo"></div>
-    <div class="panel-alta solo-admin">
+    <div class="panel-alta solo-general">
       <h2>Agregar servicio nuevo</h2>
       <div class="form-grid">
         <div class="campo">
@@ -607,6 +605,7 @@
           </div>
           <div class="campo-modal" id="wrap-vigencia-hasta"><label for="ed-vigencia-hasta">Vigencia hasta</label><input type="date" id="ed-vigencia-hasta"></div>
           <div class="campo-modal solo-orden"><label for="ed-equipo">Equipo</label><input type="text" id="ed-equipo" maxlength="200" placeholder="Ej. E-37-04"></div>
+          <div class="campo-modal solo-orden"><label for="ed-tecnico">Técnico asignado</label><select id="ed-tecnico"></select><small class="ayuda">Ve esta orden y registra si se realizó y sus gastos.</small></div>
           <div class="campo-modal solo-orden"><label for="ed-operador">Operador(es)</label><input type="text" id="ed-operador" maxlength="300" placeholder="Nombre de quien ejecuta el servicio"></div>
           <div class="campo-modal solo-orden"><label for="ed-manifiestos">Manifiestos</label><input type="text" id="ed-manifiestos" maxlength="200" placeholder="Folio(s) de manifiesto"></div>
           <div class="campo-modal solo-orden"><label for="ed-tiros">Tiros</label><input type="text" id="ed-tiros" maxlength="60" placeholder="Ej. 2"></div>
@@ -632,7 +631,7 @@
         </div>
         <div class="zona-peligro util-18">
           <button class="btn btn-peligro diseno-btn-marcar-perdido" id="btn-marcar-perdido">✕ Descartar cotización</button>
-          <button class="btn-eliminar solo-admin" id="btn-eliminar-lead">Eliminar este registro</button>
+          <button class="btn-eliminar perm-ordenes-eliminar" id="btn-eliminar-lead">Eliminar este registro</button>
         </div>
       </div>
 
@@ -924,7 +923,7 @@
       <div class="campo"><label for="cobro-monto">Monto (MXN)</label><input id="cobro-monto" type="text" inputmode="decimal" autocomplete="off"></div>
       <div class="campo"><span class="etiqueta-campo">¿Cómo pagó?</span><div class="metodos" id="cobro-metodos"></div></div>
       <div class="campo"><label for="cobro-fecha">Fecha en que llegó el dinero</label><input id="cobro-fecha" type="date"></div>
-      <div class="campo solo-admin"><label for="cobro-tipo">Tipo</label><select id="cobro-tipo"><option value="">Automático (anticipo o pago)</option><option value="anticipo">Anticipo</option><option value="pago">Pago</option><option value="ajuste">Ajuste o descuento</option></select></div>
+      <div class="campo perm-cobros-ajustes"><label for="cobro-tipo">Tipo</label><select id="cobro-tipo"><option value="">Automático (anticipo o pago)</option><option value="anticipo">Anticipo</option><option value="pago">Pago</option><option value="ajuste">Ajuste o descuento</option></select></div>
       <details><summary>Más datos (referencia y nota)</summary>
         <div class="campo"><label for="cobro-referencia">Referencia (núm. de transferencia o cheque)</label><input id="cobro-referencia" maxlength="120"></div>
         <div class="campo"><label for="cobro-notas">Nota</label><input id="cobro-notas" maxlength="500"></div>
@@ -940,7 +939,7 @@
   <div class="modal modal-dinero">
     <div class="modal-header"><h2>Registrar gasto o factura</h2><button class="close-btn" type="button">✕</button></div>
     <div class="modal-body">
-      <p class="cuentas-aviso solo-no-costos">Aquí se registran los <b>costos de un servicio</b> (pipas, tiros, casetas…): elige la orden de servicio. Las compras van por <b>Solicitudes de compra</b>.</p>
+      <p class="cuentas-aviso noperm-dinero-mover">Aquí se registran los <b>costos de un servicio</b> (pipas, tiros, casetas…): elige la orden de servicio. Las compras van por <b>Solicitudes de compra</b>.</p>
       <div class="campo"><label for="gasto-proveedor">Proveedor</label><select id="gasto-proveedor"></select><small class="ayuda">¿No está? Agrégalo en la pestaña Proveedores.</small></div>
       <div class="campo"><label for="gasto-categoria">Categoría</label><select id="gasto-categoria"></select></div>
       <!-- Orden de servicio relacionada: se busca por folio, número, cliente, servicio o unidad y se muestra su información. -->
@@ -1158,21 +1157,23 @@
 
 <!-- ?v= obliga a los navegadores (sobre todo celulares) a tomar la versión nueva tras publicar. -->
 <script src="ui.js?v=cer1"></script>
+<script src="permisos.js?v=perm3"></script>
+<script src="roles.js?v=perm3"></script>
 <script src="importes.js?v=red1"></script>
-<script src="servicios-tabla.js?v=fe1"></script>
+<script src="servicios-tabla.js?v=perm1"></script>
 <script src="flujo.js?v=suc4"></script>
 <script src="cuentas.js?v=av1"></script>
-<script src="finanzas.js?v=cer2"></script>
+<script src="finanzas.js?v=perm3"></script>
 <script src="calendario.js?v=pg2"></script>
 <script src="tablero.js?v=suc2"></script>
 <script src="bitacora.js?v=hc1"></script>
-<script src="compras.js?v=fe1"></script>
-<script src="solicitudes.js?v=rec1"></script>
+<script src="compras.js?v=perm1"></script>
+<script src="solicitudes.js?v=perm1"></script>
 <script src="carga-generador.js?v=con1"></script>
-<script src="sucursales.js?v=suc1"></script>
-<script src="app.js?v=suc4"></script>
+<script src="sucursales.js?v=perm2"></script>
+<script src="app.js?v=perm3"></script>
 <script src="buscador.js?v=suc1"></script>
 <script src="demo.js?v=demo1"></script>
-<script src="prospeccion.js?v=suc4"></script>
+<script src="prospeccion.js?v=perm1"></script>
 </body>
 </html>

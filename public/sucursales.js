@@ -15,7 +15,8 @@ const Sucursales = (() => {
   async function cargar() {
     try { DATOS = await api('/sucursales').then(r => r.json()); } catch { return; }
     window.SUCURSALES_MAPA = mapa();
-    document.body.classList.toggle('es-general', !!DATOS.admin_general);
+    // «Ver como» otro rol: también se esconde lo que es solo de Dirección.
+    document.body.classList.toggle('es-general', !!DATOS.admin_general && !Permisos.datos.ver_como);
     document.body.classList.toggle('varias-sucursales', varias());
     pintarSelector();
     pintarAjustes();

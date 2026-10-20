@@ -7,7 +7,7 @@ const Solicitudes = (() => {
   const $ = id => document.getElementById(id), esc = t => escaparHtml(t);
   const dinero = n => formatoMoneda(n);
   const fechaTxt = f => (f ? String(f).slice(0, 10).split('-').reverse().join('/') : '—');
-  const esCostos = () => ['admin', 'costos'].includes(USUARIO_ACTUAL?.rol);
+  const esCostos = () => Permisos.puede('compras.gestionar');
   const ESTADOS = { por_aprobar: ['Por aprobar', 'parcial'], cotizando: ['Cotizando', 'programada'], elegida: ['Cotización elegida', 'programada'], con_orden: ['Con orden de compra', 'pagada'], recibida: ['Recibida ✓', 'pagada'], rechazada: ['Rechazada', 'vencida'], cancelada: ['Cancelada', 'vencida'] };
   const PASOS = [['por_aprobar', 'Pedida'], ['cotizando', 'Aprobada'], ['elegida', 'Cotización elegida'], ['con_orden', 'Orden de compra'], ['recibida', 'Recibida']];
   let LISTA = [], ACTUAL = null, CENTROS = [], PROVEEDORES = [], EDITANDO = false, consulta = 0;
@@ -105,7 +105,7 @@ const Solicitudes = (() => {
   function acciones(s) {
     const propia = s.solicitante_id === USUARIO_ACTUAL?.id, b = (id, txt, cl) => '<button type="button" class="btn ' + cl + '" id="' + id + '">' + txt + '</button>';
     let h = '';
-    const meAprueba = esCostos() && (!propia || USUARIO_ACTUAL?.rol === 'admin');
+    const meAprueba = esCostos() && (!propia || Permisos.puede('compras.aprobar_propias'));
     if (s.estado === 'por_aprobar' && meAprueba) h += b('sol-aprobar', '✔ Aprobar para cotizar', 'btn-verde') + b('sol-rechazar', 'Rechazar', 'btn-eliminar');
     if (s.estado === 'por_aprobar' && !meAprueba) h += '<span class="ayuda">' + (propia && esCostos() ? 'Tú la pediste: la aprueba un administrador u otro encargado de centro de costos.' : 'La aprueba el encargado de centro de costos o administración.') + '</span>';
     if (s.estado === 'elegida' && esCostos()) h += b('sol-crear-oc', '🛒 Crear orden de compra', 'btn-primario');
@@ -134,7 +134,7 @@ const Solicitudes = (() => {
   // ---------- Acciones ----------
   async function subir(ruta, archivo, encabezados) {
     if (archivo.size > 10 * 1024 * 1024) throw new Error('El archivo pasa de 10 MB');
-    const h = { 'Content-Type': 'application/octet-stream', Authorization: 'Bearer ' + USUARIO_ACTUAL.token, 'X-Nombre': encodeURIComponent(archivo.name) };
+    const h = { 'Content-Type': 'application/octet-stream', Authorization: 'Bearer ' + USUARIO_ACTUAL.token, ...encabezadoSucursal(), 'X-Nombre': encodeURIComponent(archivo.name) };
     for (const [k, v] of Object.entries(encabezados)) h[k] = encodeURIComponent(v);
     return json(await api(ruta, { method: 'POST', body: archivo, headers: h }));
   }
