@@ -27,7 +27,9 @@ test('cualquier alteración se detecta (no devuelve basura)', () => conClave({ C
   const a = C.cifrar('PEGR800101AB1', 'personal.rfc:7');
   for (let i = 14; i < a.length; i += 3) {
     const t = a.slice(0, i) + (a[i] === 'A' ? 'B' : 'A') + a.slice(i + 1);
-    if (t !== a) assert.throws(() => C.descifrar(t, 'personal.rfc:7'), C.ErrorCifrado);
+    // El último carácter base64 lleva bits de relleno: cambiarlos da los mismos bytes (no es una alteración real).
+    if (Buffer.from(t.slice(14), 'base64url').equals(Buffer.from(a.slice(14), 'base64url'))) continue;
+    assert.throws(() => C.descifrar(t, 'personal.rfc:7'), C.ErrorCifrado);
   }
   assert.throws(() => C.descifrar('enc1:zzzzzzzz:AAAA', 'x'), C.ErrorCifrado);
   assert.throws(() => C.descifrar('PEGR800101AB1', 'x'), C.ErrorCifrado); // en claro no pasa por cifrado

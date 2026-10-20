@@ -16,6 +16,16 @@ const USUARIOS_DEMO = [
   ['admin', 'admin', 'Dirección - Demo', 'Dirección (todas)', null], ['ventas', 'ventas', 'Laura Ventas - Demo', 'Ventas QRO', 'QRO'], ['costos', 'costos', 'Isaac Compras - Demo', 'Compras QRO', 'QRO'],
   ['tecnico', 'tecnico', 'Raúl Técnico - Demo', 'Técnico QRO', 'QRO'], ['atencion', 'atencion', 'Ana Atención - Demo', 'Atención QRO', 'QRO'],
   ['gerente_cdmx', 'gerente', 'Mónica Gerente CDMX - Demo', 'Gerente CDMX', 'CDMX'], ['ventas_cdmx', 'ventas', 'Pedro Ventas CDMX - Demo', 'Ventas CDMX', 'CDMX'],
+  // Personal con distintos permisos (roles hechos por Dirección; ver ROLES_RH): mismo módulo, cada uno ve y hace distinto.
+  ['rh', 'rh', 'Karla Recursos Humanos - Demo', 'Recursos humanos QRO (todo, con datos sensibles)', 'QRO'],
+  ['supervisor', 'supervisor', 'Sergio Supervisor - Demo', 'Supervisor de campo QRO (sin datos sensibles)', 'QRO'],
+  ['nomina', 'nomina', 'Carlos Nómina - Demo', 'Nómina QRO (solo consulta, con CLABE y salario)', 'QRO'],
+];
+// Roles de ejemplo para Personal: [clave en USUARIOS_DEMO, nombre, descripción, permisos, qué ve en cada área (0 nada, 1 lo suyo, 2 su sucursal)].
+const ROLES_RH = [
+  ['rh', 'Recursos humanos', 'Altas, bajas, vacaciones, expediente y datos de pago del personal', ['personal.ver', 'personal.editar', 'personal.sensibles'], {}],
+  ['supervisor', 'Supervisor de campo', 'Coordina cuadrillas: ve las órdenes de su sucursal y al personal, sin datos sensibles', ['personal.ver', 'personal.editar'], { ventas: 2 }],
+  ['nomina', 'Nómina', 'Consulta CLABE y salarios para pagar; no cambia fichas', ['personal.ver', 'personal.sensibles'], { cxp: 2 }],
 ];
 const nombreDemo = clave => (USUARIOS_DEMO.find(([c]) => c === clave) || [])[2] || '';
 const activo = () => process.env.MODO_DEMO === '1';
@@ -55,7 +65,8 @@ module.exports = function demo(app, db, { sesiones, PORT, SESSION_TTL_MS }) {
   async function sembrar() {
     // Usuarios de ejemplo (contraseña aleatoria que nadie conoce: se entra con los botones del demo).
     const ins = db.prepare('INSERT INTO usuarios (nombre, password, rol) VALUES (?, ?, ?)');
-    for (const [clave, rol, nombre] of USUARIOS_DEMO) if (!usuarioDemo(clave)) ins.run(nombre, hashPassword(crypto.randomBytes(24).toString('hex')), rol);
+    // Los de Personal entran primero como «ventas» y se les pone su rol en cuanto Dirección lo crea (abajo).
+    for (const [clave, rol, nombre] of USUARIOS_DEMO) if (!usuarioDemo(clave)) ins.run(nombre, hashPassword(crypto.randomBytes(24).toString('hex')), ROLES_RH.some(r => r[0] === clave) ? 'ventas' : rol);
     db.prepare("INSERT INTO config_servidor (clave, valor) VALUES ('base_demo', '1') ON CONFLICT(clave) DO UPDATE SET valor = '1'").run();
     const tok = rol => { const t = crypto.randomBytes(32).toString('hex'); sesiones.set(t, { usuarioId: usuarioDemo(rol).id, expira: Date.now() + 3600000 }); return t; };
     const A = tok('admin'), V = tok('ventas'), C = tok('costos'), T = tok('tecnico');
@@ -85,18 +96,46 @@ module.exports = function demo(app, db, { sesiones, PORT, SESSION_TTL_MS }) {
       db.prepare('INSERT INTO usuario_sucursales (usuario_id, sucursal_id) VALUES (?, ?)').run(u.id, s === 'CDMX' ? cdmx.id : qroId);
     }
     const GC = tok('gerente_cdmx'), VC = tok('ventas_cdmx');
+    // Roles de Personal hechos por Dirección (Ajustes → Roles y permisos) y sus usuarios.
+    for (const [clave, nombre, descripcion, permisos, alcances] of ROLES_RH) {
+      const r = await pedir('POST', '/roles', A, { nombre, descripcion });
+      await pedir('PUT', '/roles/' + r.clave + '/permisos', A, { permisos, alcances });
+      db.prepare('UPDATE usuarios SET rol = ? WHERE id = ?').run(r.clave, usuarioDemo(clave).id);
+    }
     const usuarios = await pedir('GET', '/usuarios', A), idDe = clave => usuarios.find(u => u.nombre === nombreDemo(clave)).id;
     const [canales, servicios, centros] = await Promise.all([pedir('GET', '/canales', A), pedir('GET', '/servicios', A), pedir('GET', '/compras/centros', A)]);
     const servicio = n => { const s = servicios.find(x => x.nombre === n); if (!s) throw new Error('Servicio no está en el catálogo: ' + n); return s; };
     const canal = n => (canales.find(c => c.nombre === n) || canales[0]).id;
     // Personal (RH): el técnico con cuenta, un operador y un ayudante sin cuenta en QRO, y un operador en CDMX.
     const persona = async datos => { const p = await pedir('POST', '/personal', A, datos); if (!p.id) throw new Error('Personal de ejemplo: ' + JSON.stringify(p)); return p.id; };
+    // CLABE de ejemplo con su dígito verificador correcto (el sistema rechaza las mal tecleadas).
+    const clabe = p17 => { const w = [3, 7, 1]; let s = 0; for (let i = 0; i < 17; i++) s += (Number(p17[i]) * w[i % 3]) % 10; return p17 + ((10 - (s % 10)) % 10); };
     const PER = {
       raul: await persona({ nombre: 'Raúl Técnico - Demo', puesto: 'Técnico', usuario_id: idDe('tecnico'), telefono: '442 555 1001', fecha_ingreso: dia(-900), licencia_tipo: 'Federal B', licencia_numero: 'QRO-123456', licencia_vence: dia(20), contacto_emergencia: 'María (esposa)', tel_emergencia: '442 555 1002', banco: 'BBVA', clabe: '012180001234567899', salario: 520, salario_periodo: 'diario', tipo_contrato: 'Indeterminado' }),
       diego: await persona({ nombre: 'Diego Arturo Hernández', puesto: 'Operador', telefono: '442 555 1003', fecha_ingreso: dia(-420), licencia_tipo: 'Federal E', licencia_vence: dia(300), tipo_contrato: 'Indeterminado' }),
       luis: await persona({ nombre: 'Luis Ángel Pérez', puesto: 'Ayudante', telefono: '442 555 1004', fecha_ingreso: dia(-120), tipo_contrato: 'Periodo de prueba', contrato_vence: dia(15) }),
       oscar: await persona({ nombre: 'Óscar Medina', puesto: 'Operador', telefono: '55 5555 1005', fecha_ingreso: dia(-200), sucursal_id: cdmx.id, licencia_tipo: 'Federal B', licencia_vence: dia(-5) }),
+      juan: await persona({ nombre: 'Juan Carlos Ríos', puesto: 'Operador', telefono: '442 555 1006', fecha_ingreso: dia(-1500), licencia_tipo: 'Federal E', licencia_numero: 'QRO-778812', licencia_vence: dia(400), banco: 'Banorte', clabe: clabe('07268001033789100'), rfc: 'RIJC850214AB1', curp: 'RIJC850214HQTSRN08', nss: '12348501234', salario: 480, salario_periodo: 'diario', tipo_contrato: 'Indeterminado' }),
+      miguel: await persona({ nombre: 'Miguel Ángel Soto', puesto: 'Operador', telefono: '442 555 1007', fecha_ingreso: dia(-700), licencia_tipo: 'Federal B', licencia_vence: dia(25), banco: 'BBVA', clabe: clabe('01218000123456781'), salario: 470, salario_periodo: 'diario', tipo_contrato: 'Indeterminado' }),
+      sergio: await persona({ nombre: 'Sergio Supervisor - Demo', puesto: 'Supervisor', usuario_id: idDe('supervisor'), telefono: '442 555 1008', fecha_ingreso: dia(-2300), banco: 'Santander', clabe: clabe('01468065503952000'), salario: 18500, salario_periodo: 'quincenal', tipo_contrato: 'Indeterminado' }),
+      karla: await persona({ nombre: 'Karla Recursos Humanos - Demo', puesto: 'Administración', usuario_id: idDe('rh'), telefono: '442 555 1009', fecha_ingreso: dia(-1100), salario: 16000, salario_periodo: 'quincenal', tipo_contrato: 'Indeterminado' }),
+      carlos: await persona({ nombre: 'Carlos Nómina - Demo', puesto: 'Contabilidad', usuario_id: idDe('nomina'), telefono: '442 555 1010', fecha_ingreso: dia(-500), salario: 15000, salario_periodo: 'quincenal', tipo_contrato: 'Indeterminado' }),
+      laura: await persona({ nombre: 'Laura Ventas - Demo', puesto: 'Ventas', usuario_id: idDe('ventas'), telefono: '442 555 1011', fecha_ingreso: dia(-650), salario: 12000, salario_periodo: 'quincenal', tipo_contrato: 'Indeterminado' }),
+      ana: await persona({ nombre: 'Ana Atención - Demo', puesto: 'Atención a clientes', usuario_id: idDe('atencion'), telefono: '442 555 1012', fecha_ingreso: dia(-300), tipo_contrato: 'Determinado', contrato_vence: dia(20) }),
+      isaac: await persona({ nombre: 'Isaac Compras - Demo', puesto: 'Compras', usuario_id: idDe('costos'), telefono: '442 555 1013', fecha_ingreso: dia(-950), tipo_contrato: 'Indeterminado' }),
+      monica: await persona({ nombre: 'Mónica Gerente CDMX - Demo', puesto: 'Supervisor', usuario_id: idDe('gerente_cdmx'), telefono: '55 5555 1014', fecha_ingreso: dia(-400), sucursal_id: cdmx.id, banco: 'BBVA', clabe: clabe('01218000987654321'), salario: 22000, salario_periodo: 'quincenal', tipo_contrato: 'Indeterminado' }),
+      pedro: await persona({ nombre: 'Pedro Ventas CDMX - Demo', puesto: 'Ventas', usuario_id: idDe('ventas_cdmx'), telefono: '55 5555 1015', fecha_ingreso: dia(-90), sucursal_id: cdmx.id, tipo_contrato: 'Periodo de prueba', contrato_vence: dia(0) }),
+      roberto: await persona({ nombre: 'Roberto Salinas', puesto: 'Ayudante', telefono: '442 555 1016', fecha_ingreso: dia(-600) }),
     };
+    // Expediente (PDF o foto), incidencias de cada tipo y una baja.
+    for (const [p, tipo, nombre, archivo] of [[PER.raul, 'ine', 'INE Raúl.pdf', pdf('INE Raul')], [PER.raul, 'domicilio', 'Comprobante de domicilio.png', png()], [PER.diego, 'contrato', 'Contrato Diego.pdf', pdf('Contrato Diego')], [PER.juan, 'licencia', 'Licencia federal Juan Carlos.png', png()], [PER.juan, 'banco', 'Estado de cuenta Banorte.pdf', pdf('Estado de cuenta')]])
+      await subir('/personal/' + p + '/documentos', A, archivo, { 'X-Tipo': tipo, 'X-Nombre': nombre });
+    for (const [p, b] of [[PER.luis, { tipo: 'falta', fecha_inicio: dia(-9), notas: 'No avisó' }], [PER.juan, { tipo: 'permiso', fecha_inicio: dia(-6), notas: 'Trámite personal' }], [PER.miguel, { tipo: 'retardo', fecha_inicio: dia(-3), dias: 0.5, notas: 'Llegó a las 10:30' }],
+      [PER.diego, { tipo: 'vacaciones', fecha_inicio: dia(12), fecha_fin: dia(15), notas: 'Vacaciones programadas' }], [PER.juan, { tipo: 'vacaciones', fecha_inicio: dia(-120), fecha_fin: dia(-111), notas: 'Vacaciones de semana santa' }]])
+      await pedir('POST', '/personal/' + p + '/incidencias', A, b);
+    await pedir('POST', '/personal/' + PER.roberto + '/baja', A, { fecha: dia(-20), motivo: 'Renuncia voluntaria (se cambió de ciudad)' });
+    // El operador escrito en cada orden, como persona del equipo.
+    const PER_OPERADOR = { 'Diego Arturo Hdz': PER.diego, 'Juan Carlos Ríos': PER.juan, 'Miguel Ángel Soto': PER.miguel };
     await pedir('POST', '/personal/' + PER.raul + '/incidencias', A, { tipo: 'vacaciones', fecha_inicio: dia(-60), fecha_fin: dia(-56), notas: 'Vacaciones de verano' });
     await pedir('POST', '/personal/' + PER.diego + '/incidencias', A, { tipo: 'incapacidad', fecha_inicio: dia(-30), fecha_fin: dia(-28), con_goce: false, notas: 'Incapacidad IMSS' });
     const contacto = async (nombre, telefono, empresa, direccion, canalNombre, rfc) => {
@@ -105,14 +144,14 @@ module.exports = function demo(app, db, { sesiones, PORT, SESSION_TTL_MS }) {
       return c;
     };
     // Cotización → (opcional) orden de servicio → realizado → factura → cobros
-    const orden = async ({ cliente, serv, partidas, iva = 'mas_iva', fCot, fServ, direccion, proyecto, equipo, operador, realizado, sub, propio, factura, cobros = [], quien = V, tec, resp = 'ventas', etapa, tecnico = resp === 'ventas' ? 'tecnico' : null }) => {
+    const orden = async ({ cliente, serv, partidas, iva = 'mas_iva', fCot, fServ, direccion, proyecto, equipo, operador, realizado, sub, propio, factura, cobros = [], quien = V, tec, resp = 'ventas', etapa, tecnico = resp === 'ventas' ? 'tecnico' : null, eq }) => {
       const s = servicio(serv);
       const items = partidas.map(p => ({ servicio: s.nombre, leyenda: p.leyenda, ...(p.cantidad ? { cantidad: p.cantidad, precio: p.precio, importe: p.cantidad * p.precio } : { importe: p.importe }) }));
       const c = await pedir('POST', '/leads', quien, { cliente_id: cliente.id, direccion: direccion || cliente.direccion, canal_id: canal('Llamada telefónica'), servicio_id: s.id, responsable_id: idDe(resp),
         forzar_duplicado: true, partidas_json: JSON.stringify(items), iva_modo: iva, valor: 1, fecha_cotizacion: fCot });
       if (etapa) await pedir('PUT', '/leads/' + c.id, quien, { version: (await pedir('GET', '/leads/' + c.id, quien)).version, etapa });
       if (!fServ) return c;
-      await pedir('PUT', '/leads/' + c.id, quien, { version: (await pedir('GET', '/leads/' + c.id, quien)).version, estatus: 'ganado', fecha_servicio: fServ, ...(tecnico ? { equipo_personal: [{ personal_id: PER.raul, papel: 'responsable' }, { personal_id: PER.diego, papel: 'operador' }] } : {}), ...(proyecto ? { proyecto } : {}), ...(equipo ? { equipo } : {}), ...(operador ? { operador } : {}) });
+      await pedir('PUT', '/leads/' + c.id, quien, { version: (await pedir('GET', '/leads/' + c.id, quien)).version, estatus: 'ganado', fecha_servicio: fServ, ...(eq || tecnico ? { equipo_personal: eq || [{ personal_id: PER.raul, papel: 'responsable' }, { personal_id: PER_OPERADOR[operador] || PER.diego, papel: 'operador' }, ...(/fosa|aceitos|cárcamo/i.test(JSON.stringify(partidas)) ? [{ personal_id: PER.luis, papel: 'ayudante' }] : [])] } : {}), ...(proyecto ? { proyecto } : {}), ...(equipo ? { equipo } : {}), ...(operador ? { operador } : {}) });
       if (realizado) await pedir('POST', '/leads/' + c.id + '/ejecucion', tec || T, { estado: 'realizado', fecha: realizado, realizado_por: sub ? 'subcontratado' : 'propio', gastos: sub || propio || [] });
       if (factura) await pedir('PUT', '/leads/' + c.id + '/facturacion', A, { dias_credito: factura.dias, factura_folio: factura.folio, factura_fecha: factura.fecha, factura_metodo: factura.metodo || 'PUE' });
       for (const k of cobros) if (k.fecha <= HOY) await pedir('POST', '/leads/' + c.id + '/cobros', A, { monto: k.monto, metodo: k.metodo || 'transferencia', fecha: k.fecha, referencia: k.ref || null });
@@ -250,7 +289,7 @@ module.exports = function demo(app, db, { sesiones, PORT, SESSION_TTL_MS }) {
     await cxp({ proveedor_id: prov.banorte.id, categoria: 'creditos', concepto: 'Mensualidad 4 de 36 · crédito empresarial Banorte', total: 68450.20, fecha_documento: dia(-15), dias_credito: 0, tipo_comprobante: 'estado_cuenta' });
     const renta1 = await cxp({ proveedor_id: prov.renta.id, categoria: 'renta_inmuebles', concepto: 'Renta de oficina y patio · mes anterior', total: 28000, fecha_documento: dia(-32), dias_credito: 5, tipo_comprobante: 'factura', metodo_sat: 'PUE', factura_folio: 'R-501' });
     await pagar(renta1.id, 28000, dia(-28), 'transferencia', 'Santander empresa', 'SPEI renta');
-    await cxp({ proveedor_id: prov.renta.id, categoria: 'renta_inmuebles', concepto: 'Renta de oficina y patio · este mes', total: 28000, fecha_documento: dia(-2), dias_credito: 5, tipo_comprobante: 'factura', metodo_sat: 'PUE', factura_folio: 'R-502' });
+    await cxp({ proveedor_id: prov.renta.id, categoria: 'renta_inmuebles', concepto: 'Renta de oficina y patio · este mes', total: 28000, fecha_documento: dia(-2), dias_credito: 5, tipo_comprobante: 'factura', metodo_sat: 'PUE', factura_folio: 'R-502', iva: 3862.07 });
     const luz = await cxp({ proveedor_id: prov.cfe.id, categoria: 'servicios_oficina', concepto: 'Luz de oficina y taller · bimestre', total: 7157, fecha_documento: dia(-20), dias_credito: 10, tipo_comprobante: 'recibo' });
     await pagar(luz.id, 7157, dia(-12), 'transferencia', 'Santander empresa');
     await cxp({ proveedor_id: prov.imss.id, categoria: 'impuestos', concepto: 'Cuotas IMSS, RCV e INFONAVIT del mes', total: 48360, fecha_documento: dia(-6), dias_credito: 10, tipo_comprobante: 'linea_captura' });
@@ -262,17 +301,18 @@ module.exports = function demo(app, db, { sesiones, PORT, SESSION_TTL_MS }) {
       tipo_comprobante: 'factura', metodo_sat: 'PUE', factura_folio: '285987', beneficiario: 'Luis Ángel Perea García', notas: 'Reembolsar a Luis Perea' });
     const camion = await cxp({ proveedor_id: prov.camiones.id, categoria: 'activos', concepto: 'Tracto camión FAW 2026 (enganche)', total: 1825000, fecha_documento: dia(-40), dias_credito: 60, tipo_comprobante: 'factura', metodo_sat: 'PPD', factura_folio: 'GROSO-77' }, A);
     await pagar(camion.id, 500000, dia(-38), 'transferencia', 'Santander empresa', 'Enganche camión');
-    await cxp({ proveedor_id: prov.disposicion.id, categoria: 'residuos', concepto: 'Disposición de lodos del mes (todas las órdenes)', total: 9860, fecha_documento: dia(-8), dias_credito: 30, tipo_comprobante: 'factura', metodo_sat: 'PUE', factura_folio: 'DB-311' });
+    await cxp({ proveedor_id: prov.disposicion.id, categoria: 'residuos', concepto: 'Disposición de lodos del mes (todas las órdenes)', total: 9860, fecha_documento: dia(-8), dias_credito: 30, tipo_comprobante: 'factura', metodo_sat: 'PUE', factura_folio: 'DB-311', iva: 1360 });
 
     // ===== 7. Sucursal CDMX: opera lo suyo; solo Dirección ve las dos =====
     const torre = await pedir('POST', '/contactos', VC, { nombre: 'Arq. Daniela Ríos · Mantenimiento', telefono: '55 5250 7700', empresa_contacto: 'Corporativo Torre Reforma', direccion: 'Paseo de la Reforma 483, Cuauhtémoc', canal_origen_id: canal('Correo electrónico') });
-    await orden({ cliente: torre, quien: VC, tec: GC, resp: 'ventas_cdmx', serv: 'Desazolve de drenaje', partidas: [{ leyenda: 'Desazolve de bajadas pluviales y cárcamo del sótano 3', importe: 28500 }], fCot: dia(-14), fServ: dia(-12), realizado: dia(-12),
+    const EQ_CDMX = [{ personal_id: PER.oscar, papel: 'responsable' }];
+    await orden({ cliente: torre, quien: VC, tec: GC, resp: 'ventas_cdmx', eq: EQ_CDMX, serv: 'Desazolve de drenaje', partidas: [{ leyenda: 'Desazolve de bajadas pluviales y cárcamo del sótano 3', importe: 28500 }], fCot: dia(-14), fServ: dia(-12), realizado: dia(-12),
       factura: { dias: 15, folio: 'C-101', fecha: dia(-12) }, cobros: [{ monto: total(28500), fecha: dia(-2), ref: 'SPEI Torre Reforma' }] });
     const antara = await pedir('POST', '/contactos', VC, { nombre: 'Ing. Mauricio Peña', telefono: '55 5280 4411', empresa_contacto: 'Centro Comercial Plaza Lomas', direccion: 'Av. Ejército Nacional 843, Granada', canal_origen_id: canal('Llamada telefónica') });
-    await orden({ cliente: antara, quien: VC, tec: GC, resp: 'ventas_cdmx', serv: 'Limpieza de fosas y cárcamos', partidas: [{ leyenda: 'Limpieza de cárcamo de aguas negras y retiro de lodos', importe: 36000 }], fCot: dia(-8), fServ: dia(-4), realizado: dia(-4),
+    await orden({ cliente: antara, quien: VC, tec: GC, resp: 'ventas_cdmx', eq: EQ_CDMX, serv: 'Limpieza de fosas y cárcamos', partidas: [{ leyenda: 'Limpieza de cárcamo de aguas negras y retiro de lodos', importe: 36000 }], fCot: dia(-8), fServ: dia(-4), realizado: dia(-4),
       factura: { dias: 30, folio: 'C-102', fecha: dia(-4) } });
     for (const [s, dir, d, cobrar] of [['Reforma', 'Paseo de la Reforma 222', -10, false], ['Polanco', 'Av. Presidente Masaryk 101', -6, false], ['Coyoacán', 'Av. Miguel Ángel de Quevedo 450', 3, false]])
-      await orden({ cliente: kfc, quien: VC, tec: GC, resp: 'ventas_cdmx', serv: 'Limpieza de trampas de grasa', partidas: [{ leyenda: `Limpieza de trampa de grasa · sucursal ${s} (CDMX)`, importe: 5200 }], fCot: dia(Math.min(d, 0) - 2), fServ: dia(d),
+      await orden({ cliente: kfc, quien: VC, tec: GC, resp: 'ventas_cdmx', eq: EQ_CDMX, serv: 'Limpieza de trampas de grasa', partidas: [{ leyenda: `Limpieza de trampa de grasa · sucursal ${s} (CDMX)`, importe: 5200 }], fCot: dia(Math.min(d, 0) - 2), fServ: dia(d),
         direccion: `Sucursal ${s} · ${dir}`, proyecto: `Sucursal ${s}`, equipo: 'CDMX-01', operador: 'Óscar Medina', realizado: d < 0 ? dia(d) : null, factura: d < 0 ? { dias: 30, folio: 'C-1' + (200 - d), fecha: dia(d) } : null,
         cobros: cobrar ? [{ monto: total(5200), fecha: dia(d + 14), ref: 'SPEI KFC CDMX' }] : [] });
     const hotelC = await pedir('POST', '/contactos', VC, { nombre: 'Lic. Ernesto Salas', telefono: '55 5512 3344', empresa_contacto: 'Hotel Centro Histórico', direccion: 'República de Uruguay 40, Centro', canal_origen_id: canal('WhatsApp') });
@@ -282,6 +322,24 @@ module.exports = function demo(app, db, { sesiones, PORT, SESSION_TTL_MS }) {
     await pedir('POST', '/finanzas/cxp/' + rentaC.id + '/pagos', GC, { monto: 18500, metodo: 'transferencia', fecha: dia(-4), referencia: 'SPEI renta CDMX', cuenta_origen: 'BBVA sucursal CDMX' });
     await pedir('POST', '/finanzas/cxp', GC, { proveedor_id: prov.gasolinera.id, categoria: 'combustible', concepto: 'Diésel unidad CDMX-01 · semana', total: 6400, fecha_documento: dia(-2), dias_credito: 0, tipo_comprobante: 'factura', metodo_sat: 'PUE', factura_folio: 'CB-9921' });
     await pedir('POST', '/compras/solicitudes', VC, { que: 'Hidrolavadora de agua caliente para la unidad CDMX-01', para_que: 'Las trampas de grasa de KFC CDMX requieren agua caliente', centro_id: opera.id, equipo: 'CDMX-01', urgente: false });
+
+    // ===== 8. Prospección: establecimientos por investigar, contactar y dar seguimiento =====
+    const sectores = await pedir('GET', '/prospeccion/sectores', A), sector = n => (sectores.find(s => s.nombre === n) || sectores[0]).id;
+    for (const [nombre, sec, zona, dir, tel, persona, cargo, estado, prox, necesidades] of [
+      ['Restaurante El Mesón de Santa Rosa', 'Restaurantes', 'Centro', 'Pasteur Sur 17', '442 224 2623', 'Gerente de turno', 'Gerente', 'interesado', dia(0), 'Trampa de grasa se tapa cada mes; quieren contrato mensual'],
+      ['Hotel Misión Juriquilla', 'Hoteles', 'Juriquilla', 'Paseo de la República 1500', '442 234 0000', 'Ing. Felipe Cruz', 'Mantenimiento', 'contactado', dia(3), 'Cárcamo de aguas negras; pidió visita técnica'],
+      ['Hospital Ángeles Querétaro', 'Hospitales', 'Centro Sur', 'Bernardino del Razo 21', '442 192 3000', 'Lic. Rocío Aguilar', 'Compras', 'pendiente', dia(-1), 'Mantenimiento a planta de tratamiento; llamar para agendar'],
+      ['Taquería Los Compadres', 'Restaurantes', 'El Marqués', 'Av. Paseo Constitución 300', '', '', '', 'investigar', null, ''],
+      ['Hotel Plaza Boutique', 'Hoteles', 'Centro', 'Madero 50', '442 212 1111', 'Recepción', '', 'no_contactar', null, 'Ya tienen contrato con otra empresa hasta 2027']])
+      await pedir('POST', '/prospeccion', V, { nombre, sector_id: sector(sec), zona, direccion: dir, telefono: tel, persona, cargo, fuente: 'Recorrido de campo', necesidades, estado, responsable_id: idDe('ventas'), proximo_contacto: prox });
+    // Seguimientos y recordatorios en cotizaciones abiertas; encuestas de satisfacción en servicios realizados.
+    const abiertas = (await pedir('GET', '/leads', V)).filter(l => l.estatus === 'abierto').slice(0, 3);
+    for (const [i, l] of abiertas.entries()) {
+      await pedir('POST', '/leads/' + l.id + '/historial', V, { tipo: 'observacion', texto: ['Se envió la cotización por correo; el cliente la revisa con su jefe', 'Pidió descuento por pago de contado', 'Quiere hacerlo después de la temporada de lluvias'][i] });
+      await pedir('POST', '/leads/' + l.id + '/historial', V, { tipo: 'alerta', texto: ['Llamar para confirmar si aceptan', 'Mandar propuesta con 5 % de descuento', 'Volver a llamar'][i], fecha_alerta: dia([-1, 0, 2][i]) + ' 10:00:00' });
+    }
+    const realizadas = (await pedir('GET', '/leads', A)).filter(l => l.ejecucion === 'realizado').slice(0, 4);
+    for (const [i, l] of realizadas.entries()) await pedir('PUT', '/leads/' + l.id, A, { version: (await pedir('GET', '/leads/' + l.id, A)).version, encuesta_calificacion: [4, 4, 3, 2][i], encuesta_comentario: ['Muy puntuales y limpios', 'Excelente servicio', 'Bien, pero llegaron tarde', 'El operador no traía la manguera adecuada'][i] });
 
     // Al final: la revisión de integridad debe salir limpia.
     const r = require('./alcance').global(() => require('./integridad').revisar(db, {}));
