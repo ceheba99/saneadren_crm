@@ -103,7 +103,8 @@ function revisar(db, { dirArchivos } = {}) {
   chequeo('Cuentas por pagar', 'Se le pagó al proveedor más de lo que se debía', 'error', () => cxp.filter(x => pagadoCxp(x.id) > x.total_cent).map(x => ({ ref: refCxp(x), detalle: `debía ${pesos(x.total_cent)}, se pagó ${pesos(pagadoCxp(x.id))}` })));
   chequeo('Cuentas por pagar', 'Pagos a proveedor con fecha futura', 'error', () => pagos.filter(g => !g.cancelado && g.fecha > hoy).map(g => ({ ref: refCxp(cxp.find(x => x.id === g.cxp_id) || {}), detalle: 'pago del ' + dma(g.fecha) })));
   chequeo('Cuentas por pagar', 'Cuenta cancelada con pagos vigentes', 'error', () => cxp.filter(x => x.cancelada && pagadoCxp(x.id) > 0).map(x => ({ ref: refCxp(x), detalle: 'tiene ' + pesos(pagadoCxp(x.id)) + ' pagados' })));
-  chequeo('Cuentas por pagar', 'Costos ligados a una orden de servicio que ya no existe o no es orden', 'error', () => cxp.filter(x => x.lead_id && leadPorId.get(x.lead_id)?.estatus !== 'ganado').map(x => ({ ref: refCxp(x), detalle: 'orden #' + x.lead_id })));
+  // Solo los costos vivos: uno cancelado puede quedar ligado a una orden que después se descartó (es lo correcto).
+  chequeo('Cuentas por pagar', 'Costos ligados a una orden de servicio que ya no existe o no es orden', 'error', () => cxp.filter(x => x.lead_id && !x.cancelada && leadPorId.get(x.lead_id)?.estatus !== 'ganado').map(x => ({ ref: refCxp(x), detalle: 'orden #' + x.lead_id })));
 
   // ---------- Compras ----------
   const ocs = existe(db, 'ordenes_compra') ? db.prepare('SELECT * FROM ordenes_compra').all() : [];

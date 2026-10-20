@@ -887,6 +887,13 @@ app.put('/api/leads/:id', validarPartidas, validarRegistro, h((req, res) => {
   if (actual.estatus === 'ganado' && req.body.estatus !== undefined && req.body.estatus !== 'ganado' && finanzas.tieneCobros(actual.id)) {
     return res.status(409).json({ error: 'Esta orden tiene pagos registrados: no puede reabrirse ni descartarse. Si fue un error, un administrador debe cancelar primero esos pagos.' });
   }
+  // Igual con sus costos: gastos de proveedores u órdenes de compra ligadas (si no, quedan colgados de algo que ya no
+  // es orden). Se cuentan todos, aunque quien edita no los vea (main.*).
+  if (actual.estatus === 'ganado' && req.body.estatus !== undefined && req.body.estatus !== 'ganado') {
+    const gastos = db.prepare('SELECT COUNT(*) n FROM main.cuentas_por_pagar WHERE lead_id = ? AND cancelada = 0').get(actual.id).n;
+    const compras = db.prepare("SELECT COUNT(*) n FROM main.ordenes_compra WHERE lead_id = ? AND estado <> 'cancelada'").get(actual.id).n;
+    if (gastos || compras) return res.status(409).json({ error: `Esta orden tiene ${[gastos ? gastos + ' gasto(s) de proveedores' : '', compras ? compras + ' orden(es) de compra' : ''].filter(Boolean).join(' y ')} ligados: no puede reabrirse ni descartarse. Cancélalos primero en Cuentas por pagar o Compras.`, codigo: 'TIENE_COSTOS' });
+  }
   // El importe de una orden de servicio es lo que el cliente debe: solo administración o atención
   // pueden cambiarlo (un vendedor o técnico podría, si no, "saldar" una deuda editando las partidas).
   // Se comparan totales con IVA (valor + iva_cent): cambiar solo el IVA también cambia lo que se debe.
