@@ -97,7 +97,7 @@ module.exports = function compras(app, db, h, finanzas) {
 
   const SQL_OC = `SELECT o.*, p.nombre AS proveedor_nombre, p.rfc AS proveedor_rfc, p.dias_credito AS proveedor_credito, c.nombre AS centro_nombre, c.responsable AS centro_responsable,
       u.nombre AS creado_por_nombre, ua.nombre AS autorizada_por_nombre,
-      (SELECT created_at FROM leads l WHERE l.id = o.lead_id) AS lead_created_at,
+      (SELECT created_at FROM main.leads l WHERE l.id = o.lead_id) AS lead_created_at,
       (SELECT created_at FROM solicitudes_compra s WHERE s.id = o.solicitud_id) AS solicitud_created_at,
       (SELECT excepcion_motivo FROM solicitudes_compra s WHERE s.id = o.solicitud_id) AS excepcion_motivo,
       (SELECT COALESCE(SUM(g.monto_cent), 0) FROM pagos_proveedor g WHERE g.cxp_id = o.cxp_id AND g.cancelado = 0) AS pagado_cent
@@ -142,7 +142,7 @@ module.exports = function compras(app, db, h, finanzas) {
     if (!finanzas.categoriaActiva(categoria)) return { error: CATEGORIAS[categoria] ? `La categoría «${CATEGORIAS[categoria]}» está dada de baja: elige otra` : 'Elige la categoría del gasto' };
     let leadId = null;
     if (b.lead_id) {
-      const l = db.prepare("SELECT id FROM leads WHERE id = ? AND estatus = 'ganado'").get(b.lead_id);
+      const l = require('./finanzas').ordenParaLigar(b.lead_id);
       if (!l) return { error: 'La orden de servicio relacionada no existe' };
       leadId = l.id;
     }

@@ -26,6 +26,7 @@ const tiene = (j, tipo, id) => !!grupo(j, tipo)?.items.some(x => x.id === id);
 (async () => {
   for (let i = 0; i < 100 && !/corriendo/.test(salida); i++) await espera(150);
   const A = (await pedir('POST', '/login', null, { nombre: ADMIN.correo, password: ADMIN.password }))[1].token;
+  await require('./ayuda-alcance.cjs').comoAntes(pedir, A); // esta prueba es de el buscador, no de «qué ve cada rol»
   await pedir('POST', '/usuarios', A, { nombre: 'Vende Busca', correo: 'vende.busca@saneadren.com.mx', password: 'Vende-Busca-2026', rol: 'ventas' });
   await pedir('POST', '/usuarios', A, { nombre: 'Tecnico Busca', correo: 'tec.busca@saneadren.com.mx', password: 'Tecnico-Busca-2026', rol: 'tecnico' });
   await pedir('POST', '/usuarios', A, { nombre: 'Costos Busca', correo: 'costos.busca@saneadren.com.mx', password: 'Costos-Busca-2026', rol: 'costos' });

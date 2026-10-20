@@ -309,6 +309,33 @@ if(!db.prepare('PRAGMA table_info(leads)').all().some(c=>c.name==='duplicado_de'
 for(const c of ['equipo','operador','observaciones','proyecto','manifiestos','tiros','notas_cotizacion'])if(!db.prepare('PRAGMA table_info(leads)').all().some(x=>x.name===c))db.exec(`ALTER TABLE leads ADD COLUMN ${c} TEXT`);
 // Ejecución del servicio: una orden pasa al Generador cuando se marca como realizada.
 // ejecucion: NULL (por concluir) | 'realizado' | 'no_realizado'; realizado_por: 'propio' | 'subcontratado'.
+// Bitácora de cada orden por área (permisos.js, «qué ve»): area NULL = de la orden (la ve quien ve la orden),
+// 'cxc' = cobros y factura, 'cxp' = gastos y pagos a terceros; usuario_id = quién lo registró (para «lo suyo»).
+// Las anotaciones anteriores se clasifican por su texto; las que mezclaban el servicio con sus gastos se separan.
+if (!db.prepare('PRAGMA table_info(historial)').all().some(c => c.name === 'area')) {
+  db.exec('ALTER TABLE historial ADD COLUMN area TEXT');
+  db.exec('ALTER TABLE historial ADD COLUMN usuario_id INTEGER REFERENCES usuarios(id)');
+  db.transaction(() => {
+    db.exec(`UPDATE historial SET area = 'cxc' WHERE area IS NULL AND (texto LIKE 'Anticipo registrado:%' OR texto LIKE 'Pago registrado:%' OR texto LIKE 'Ajuste registrado:%'
+      OR texto LIKE 'Pago de $%' OR texto LIKE 'Facturación:%' OR texto LIKE 'Revisión inicial de cobranza%' OR texto LIKE 'Orden importada desde la plantilla de cobranza%')`);
+    db.exec(`UPDATE historial SET area = 'cxp' WHERE area IS NULL AND (texto LIKE 'Costo con terceros registrado:%' OR texto LIKE 'Pago a tercero%'
+      OR texto LIKE 'Costo con terceros CANCELADO:%' OR texto LIKE 'Costos con terceros copiados de%')`);
+    const ins = db.prepare("INSERT INTO historial (lead_id, tipo, texto, usuario, origen, area, created_at) VALUES (?, 'observacion', ?, ?, 'sistema', ?, ?)");
+    for (const h of db.prepare("SELECT * FROM historial WHERE area IS NULL AND texto LIKE 'Servicio realizado el %. Gastos generados cargados%'").all()) {
+      const i = h.texto.indexOf(' Gastos generados cargados');
+      db.prepare('UPDATE historial SET texto = ? WHERE id = ?').run(h.texto.slice(0, i), h.id);
+      ins.run(h.lead_id, h.texto.slice(i + 1), h.usuario, 'cxp', h.created_at);
+    }
+    for (const h of db.prepare("SELECT * FROM historial WHERE area IS NULL AND texto LIKE 'Servicio marcado como NO realizado.%'").all()) {
+      const partes = h.texto.split(/\. (?=El cliente ya pagó|Tiene \d+ gasto)/);
+      if (partes.length < 2) continue;
+      db.prepare('UPDATE historial SET texto = ? WHERE id = ?').run(partes[0] + '.', h.id);
+      for (const p of partes.slice(1)) ins.run(h.lead_id, p.replace(/\.?$/, '.'), h.usuario, p.startsWith('El cliente') ? 'cxc' : 'cxp', h.created_at);
+    }
+  })();
+}
+// Técnico asignado: ve la orden, registra sus gastos y si se realizó (lo suyo, ver permisos.js).
+if(!db.prepare('PRAGMA table_info(leads)').all().some(c=>c.name==='tecnico_id')){db.exec('ALTER TABLE leads ADD COLUMN tecnico_id INTEGER REFERENCES usuarios(id)');db.exec('CREATE INDEX IF NOT EXISTS idx_leads_tecnico ON leads(tecnico_id)');}
 for(const c of ['ejecucion','realizado_por','fecha_realizado','motivo_no_realizado'])if(!db.prepare('PRAGMA table_info(leads)').all().some(x=>x.name===c))db.exec(`ALTER TABLE leads ADD COLUMN ${c} TEXT`);
 // IVA del documento (public/importes.js). iva_modo: 'mas_iva' (los importes son sin IVA),
 // 'incluido' (ya lo traen) o 'sin_iva' (no lleva IVA; tasa 0); iva_tasa en porcentaje entero; iva_cent lo calcula el servidor.

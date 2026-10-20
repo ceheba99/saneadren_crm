@@ -20,6 +20,7 @@ const HOY = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Mexico_City' }
   for (let i = 0; i < 400; i++) { [s, j] = await pedir('GET', '/demo/estado'); if (j.listo || j.error) break; await espera(250); }
   const entrar = async rol => (await pedir('POST', '/demo/entrar', null, { rol }))[1].token;
   const A = await entrar('admin'), V = await entrar('ventas'), C = await entrar('costos');
+  await require('./ayuda-alcance.cjs').comoAntes(pedir, A); // esta prueba es de la ficha del proveedor, no de «qué ve cada rol»
 
   console.log('1. La ficha cuadra con «Por pagar» para cada proveedor');
   const [, provs] = await pedir('GET', '/finanzas/proveedores', A);

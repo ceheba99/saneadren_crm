@@ -95,15 +95,15 @@ module.exports = function demo(app, db, { sesiones, PORT, SESSION_TTL_MS }) {
       return c;
     };
     // Cotización → (opcional) orden de servicio → realizado → factura → cobros
-    const orden = async ({ cliente, serv, partidas, iva = 'mas_iva', fCot, fServ, direccion, proyecto, equipo, operador, realizado, sub, propio, factura, cobros = [], quien = V, tec, resp = 'ventas', etapa }) => {
+    const orden = async ({ cliente, serv, partidas, iva = 'mas_iva', fCot, fServ, direccion, proyecto, equipo, operador, realizado, sub, propio, factura, cobros = [], quien = V, tec, resp = 'ventas', etapa, tecnico = resp === 'ventas' ? 'tecnico' : null }) => {
       const s = servicio(serv);
       const items = partidas.map(p => ({ servicio: s.nombre, leyenda: p.leyenda, ...(p.cantidad ? { cantidad: p.cantidad, precio: p.precio, importe: p.cantidad * p.precio } : { importe: p.importe }) }));
       const c = await pedir('POST', '/leads', quien, { cliente_id: cliente.id, direccion: direccion || cliente.direccion, canal_id: canal('Llamada telefónica'), servicio_id: s.id, responsable_id: idDe(resp),
         forzar_duplicado: true, partidas_json: JSON.stringify(items), iva_modo: iva, valor: 1, fecha_cotizacion: fCot });
       if (etapa) await pedir('PUT', '/leads/' + c.id, quien, { version: (await pedir('GET', '/leads/' + c.id, quien)).version, etapa });
       if (!fServ) return c;
-      await pedir('PUT', '/leads/' + c.id, quien, { version: (await pedir('GET', '/leads/' + c.id, quien)).version, estatus: 'ganado', fecha_servicio: fServ, ...(proyecto ? { proyecto } : {}), ...(equipo ? { equipo } : {}), ...(operador ? { operador } : {}) });
-      if (realizado) await pedir('POST', '/leads/' + c.id + '/ejecucion', tec || (propio ? C : T), { estado: 'realizado', fecha: realizado, realizado_por: sub ? 'subcontratado' : 'propio', gastos: sub || propio || [] });
+      await pedir('PUT', '/leads/' + c.id, quien, { version: (await pedir('GET', '/leads/' + c.id, quien)).version, estatus: 'ganado', fecha_servicio: fServ, ...(tecnico ? { tecnico_id: idDe(tecnico) } : {}), ...(proyecto ? { proyecto } : {}), ...(equipo ? { equipo } : {}), ...(operador ? { operador } : {}) });
+      if (realizado) await pedir('POST', '/leads/' + c.id + '/ejecucion', tec || T, { estado: 'realizado', fecha: realizado, realizado_por: sub ? 'subcontratado' : 'propio', gastos: sub || propio || [] });
       if (factura) await pedir('PUT', '/leads/' + c.id + '/facturacion', A, { dias_credito: factura.dias, factura_folio: factura.folio, factura_fecha: factura.fecha, factura_metodo: factura.metodo || 'PUE' });
       for (const k of cobros) if (k.fecha <= HOY) await pedir('POST', '/leads/' + c.id + '/cobros', A, { monto: k.monto, metodo: k.metodo || 'transferencia', fecha: k.fecha, referencia: k.ref || null });
       return c;

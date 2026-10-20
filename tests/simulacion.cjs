@@ -39,6 +39,7 @@ const espera = ms => new Promise(r => setTimeout(r, ms));
   [s, j] = await pedir('POST', '/login', null, { nombre: ADMIN.correo, password: ADMIN.password });
   ok(s === 200 && j.rol === 'admin' && !j.cambiar_password, 'admin entra con su correo', j);
   const A = j.token;
+  await require('./ayuda-alcance.cjs').comoAntes(pedir, A); // esta prueba es de el núcleo del CRM, no de «qué ve cada rol»
 
   ok(salida.includes('[usuario de prueba] Creado "Karla Prueba" con rol tecnico'), 'el usuario de prueba se crea desde variables de entorno');
   [s, j] = await pedir('POST', '/login', null, { nombre: 'Karla Prueba', password: 'Pruebas-Campo-31' });

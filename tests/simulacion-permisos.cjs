@@ -49,7 +49,8 @@ function rutas() {
     const s = fs.readFileSync(path.join(NUEVO, 'server', f), 'utf8');
     for (const m of s.matchAll(/app\.(get|post|put|patch|delete)\(\s*'(\/api\/[^']+)'/g)) set.add(m[1].toUpperCase() + ' ' + m[2]);
   }
-  const fuera = /^(POST|GET) \/api\/(login|logout|registro|cambiar-password|verificar-correo|olvide-password|restablecer-password|demo\/)|\/api\/(permisos|roles)(\/|$)/;
+  // Fuera: sesión, demo y lo que no existía en el código anterior (roles, permisos, lista mínima de órdenes para gastos).
+  const fuera = /^(POST|GET) \/api\/(login|logout|registro|cambiar-password|verificar-correo|olvide-password|restablecer-password|demo\/)|\/api\/(permisos|roles)(\/|$)|\/api\/finanzas\/ordenes-para-gasto$/;
   return [...set].filter(r => !fuera.test(r)).sort().map(r => { const [m, p] = r.split(' '); return [m, p.replace(/:[a-z_]+/gi, '1').replace(/^\/api/, '')]; });
 }
 // Cambios a propósito respecto al código anterior: [rol, expresión "MÉTODO /ruta", motivo].
@@ -75,6 +76,8 @@ const CAMBIOS_ESPERADOS = [
         const DB = path.join(dir, `${nombre}-${rol}.db`);
         fs.copyFileSync(BASE, DB);
         await arrancar(codigo, DB);
+        // Con «qué ve cada rol» igual que antes (cada quien ve su sucursal), todo debe responder igual que el publicado.
+        if (codigo === NUEVO) await require('./ayuda-alcance.cjs').comoAntes((m, r, t, b) => pedir(m, r, t, b), await login('admin', ADMIN.password));
         const t = await login(usuarioDe(rol), rol === 'admin' ? ADMIN.password : CLAVE);
         const f = fotos[nombre][rol] = {};
         for (const [m, r] of RUTAS) f[m + ' ' + r] = (await pedir(m, r, t, m === 'GET' ? undefined : {}))[0];
@@ -111,7 +114,7 @@ const CAMBIOS_ESPERADOS = [
   let [s, j] = await pedir('GET', '/permisos', A);
   revisa(s === 200 && j.roles.length === 6 && j.catalogo.length >= 18, `la tabla de permisos trae los 6 roles y ${j.catalogo?.length} permisos`);
   const tabla = j, permisosDe = clave => tabla.roles.find(r => r.clave === clave).permisos;
-  revisa(permisosDe('admin').length === j.catalogo.length, 'Dirección tiene todos los permisos');
+  revisa(j.catalogo.every(p => permisosDe('admin').includes(p.clave)) && Object.values(j.roles.find(r => r.clave === 'admin').alcances).every(n => n === 2), 'Dirección tiene todos los permisos y lo ve todo');
   revisa(permisosDe('costos').includes('dinero.mover') && !permisosDe('ventas').includes('dinero.mover'), 'al inicio, costos mueve dinero y ventas no (como antes)');
   for (const rol of ['gerente', 'ventas', 'tecnico']) { [s] = await pedir('GET', '/permisos', T[rol]); revisa(s === 403, `${rol} no puede ver la tabla de permisos`); }
   [s] = await pedir('PUT', '/roles/ventas/permisos', T.gerente, { permisos: [] }); revisa(s === 403, 'el gerente no puede cambiar permisos');
@@ -120,15 +123,15 @@ const CAMBIOS_ESPERADOS = [
   // Quitar y dar permisos aplica al momento (sin volver a entrar).
   [s] = await pedir('GET', '/finanzas/cartera', T.ventas); revisa(s === 200, 'ventas ve cuentas por cobrar');
   let ventas = permisosDe('ventas');
-  [s, j] = await pedir('PUT', '/roles/ventas/permisos', A, { permisos: ventas.filter(c => c !== 'cxc.ver') });
+  [s, j] = await pedir('PUT', '/roles/ventas/permisos', A, { permisos: ventas, alcances: { cxc: 0 } });
   revisa(s === 400 && /necesita/.test(j.error), 'no se le quita «Ver cuentas por cobrar» dejando «Confirmar cobros» (lo necesita)', j);
-  [s, j] = await pedir('PUT', '/roles/ventas/permisos', A, { permisos: ventas.filter(c => c !== 'cxc.ver' && c !== 'cobros.confirmar') });
+  [s, j] = await pedir('PUT', '/roles/ventas/permisos', A, { permisos: ventas.filter(c => c !== 'cobros.confirmar'), alcances: { cxc: 0 } });
   revisa(s === 200 && j.cambios === 2, 'Dirección le quita a ventas «Ver cuentas por cobrar» (y «Confirmar cobros»)', j);
   [s] = await pedir('GET', '/finanzas/cartera', T.ventas); revisa(s === 403, 'ventas ya no ve cuentas por cobrar (sin volver a entrar)');
   [s, j] = await pedir('GET', '/permisos/mios', T.ventas); revisa(!j.permisos.includes('cxc.ver') && j.todas.includes('cxc.ver'), 'la pantalla de ventas sabe que no lo tiene (para esconderlo)');
   [s] = await pedir('GET', '/finanzas/cartera', T.atencion); revisa(s === 200, 'atención sigue viéndolas (es otro rol)');
   [s] = await pedir('GET', '/finanzas/revision-inicial', T.ventas); revisa(s === 403, 'ventas no hace la revisión inicial');
-  [s] = await pedir('PUT', '/roles/ventas/permisos', A, { permisos: [...ventas, 'cobros.ajustes'] }); revisa(s === 200, 'Dirección le devuelve cuentas por cobrar y le da «Ajustes»');
+  [s] = await pedir('PUT', '/roles/ventas/permisos', A, { permisos: [...ventas, 'cobros.ajustes'], alcances: { cxc: 1 } }); revisa(s === 200, 'Dirección le devuelve cuentas por cobrar y le da «Ajustes»');
   [s] = await pedir('GET', '/finanzas/revision-inicial', T.ventas); revisa(s === 200, 'ventas ya puede hacer la revisión inicial');
   [s] = await pedir('GET', '/finanzas/cartera', T.ventas); revisa(s === 200, 'y vuelve a ver cuentas por cobrar');
   [s] = await pedir('GET', '/finanzas/cxp/formato-excel', T.tecnico); revisa(s === 403, 'el técnico no exporta a Excel');
@@ -193,7 +196,7 @@ const CAMBIOS_ESPERADOS = [
   // Bitácora y reinicio.
   [s, j] = await pedir('GET', '/auditoria?entidad=rol', A);
   const lista = Array.isArray(j) ? j : j.filas || j.registros || [];
-  revisa(s === 200 && JSON.stringify(j).includes('Ver cuentas por cobrar') && JSON.stringify(j).includes('Contador'), 'la bitácora registra los cambios de permisos y roles', JSON.stringify(j).slice(0, 300));
+  revisa(s === 200 && JSON.stringify(j).includes('ve en Cuentas por cobrar: Lo suyo → Nada') && JSON.stringify(j).includes('Contador'), 'la bitácora registra los cambios de permisos y roles', JSON.stringify(j).slice(0, 300));
   const ventasAntes = (await pedir('GET', '/permisos', A))[1].roles.find(r => r.clave === 'ventas').permisos.sort();
   [s] = await pedir('PUT', '/roles/ventas/permisos', A, { permisos: ventasAntes.filter(c => c !== 'cobranza.factura') });
   await parar(); await arrancar(NUEVO, DB);

@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Saneadren · Cotizaciones y Servicios</title>
-<link rel="stylesheet" href="styles.css?v=perm1">
+<link rel="stylesheet" href="styles.css?v=perm3">
 <link rel="stylesheet" href="servicios-tabla.css">
 <link rel="stylesheet" href="flujo.css">
 </head>
@@ -26,15 +26,15 @@
     </button>
     <div class="menu-items" id="menu-items">
       <button type="button" class="menu-item activa" data-vista="inicio"><span class="menu-icono" aria-hidden="true">🏠</span>Inicio <span id="badge-pendientes" style="display:none">0</span></button>
-      <button type="button" class="menu-item" data-vista="calendario"><span class="menu-icono" aria-hidden="true">📅</span>Calendario</button>
-      <div class="menu-grupo" data-grupo="ventas">
+      <button type="button" class="menu-item perm-ventas-ver" data-vista="calendario"><span class="menu-icono" aria-hidden="true">📅</span>Calendario</button>
+      <div class="menu-grupo perm-ventas-ver" data-grupo="ventas">
         <button type="button" class="menu-grupo-btn" aria-expanded="false"><span class="menu-icono" aria-hidden="true">💼</span>Ventas<span class="menu-flecha" aria-hidden="true">▾</span></button>
         <div class="menu-sub">
-          <button type="button" class="menu-item" data-vista="alta"><span class="menu-icono" aria-hidden="true">➕</span>Nuevo contacto</button>
-          <button type="button" class="menu-item" data-vista="clientes"><span class="menu-icono" aria-hidden="true">👥</span>Contactos</button>
-          <button type="button" class="menu-item" data-vista="generador"><span class="menu-icono" aria-hidden="true">📒</span>Generador</button>
-          <button type="button" class="menu-item" data-vista="leads"><span class="menu-icono" aria-hidden="true">📄</span>Cotizaciones</button>
-          <button type="button" class="menu-item" data-vista="prospeccion"><span class="menu-icono" aria-hidden="true">🔎</span>Prospección</button>
+          <button type="button" class="menu-item perm-ventas-ver" data-vista="alta"><span class="menu-icono" aria-hidden="true">➕</span>Nuevo contacto</button>
+          <button type="button" class="menu-item perm-ventas-ver" data-vista="clientes"><span class="menu-icono" aria-hidden="true">👥</span>Contactos</button>
+          <button type="button" class="menu-item perm-ventas-ver" data-vista="generador"><span class="menu-icono" aria-hidden="true">📒</span>Generador</button>
+          <button type="button" class="menu-item perm-ventas-ver" data-vista="leads"><span class="menu-icono" aria-hidden="true">📄</span>Cotizaciones</button>
+          <button type="button" class="menu-item perm-ventas-ver" data-vista="prospeccion"><span class="menu-icono" aria-hidden="true">🔎</span>Prospección</button>
         </div>
       </div>
       <div class="menu-grupo" data-grupo="dinero">
@@ -42,8 +42,8 @@
         <div class="menu-sub">
           <button type="button" class="menu-item solo-cobranza perm-cxc-ver" data-vista="cobrar" id="nav-cobrar"><span class="menu-icono" aria-hidden="true">📥</span>Cuentas por cobrar</button>
           <button type="button" class="menu-item solo-cobranza perm-cxp-ver" data-vista="pagar" id="nav-pagar"><span class="menu-icono" aria-hidden="true">📤</span>Cuentas por pagar</button>
-          <button type="button" class="menu-item" data-vista="solicitudes"><span class="menu-icono" aria-hidden="true">📝</span>Solicitudes de compra</button>
-          <button type="button" class="menu-item" data-vista="compras"><span class="menu-icono" aria-hidden="true">🛒</span>Órdenes de compra</button>
+          <button type="button" class="menu-item perm-compras-ver" data-vista="solicitudes"><span class="menu-icono" aria-hidden="true">📝</span>Solicitudes de compra</button>
+          <button type="button" class="menu-item perm-compras-ver" data-vista="compras"><span class="menu-icono" aria-hidden="true">🛒</span>Órdenes de compra</button>
           <button type="button" class="menu-item" data-vista="resultados"><span class="menu-icono" aria-hidden="true">📊</span>Resultados</button>
         </div>
       </div>
@@ -78,19 +78,19 @@
       <div id="inicio-dinero" class="inicio-lista"></div>
     </div>
 
-    <div class="inicio-bloque inicio-bloque-cotizacion">
+    <div class="inicio-bloque inicio-bloque-cotizacion perm-ventas-ver">
       <h3>⏰ Avisos y seguimiento</h3>
       <p class="ayuda">Recordatorios de cotizaciones u órdenes que vencen hoy o ya vencieron, y cotizaciones abiertas sin movimiento hace más de 7 días.</p>
       <div id="inicio-cotizaciones" class="inicio-lista"></div>
     </div>
 
-    <div class="inicio-bloque inicio-bloque-concluir">
+    <div class="inicio-bloque inicio-bloque-concluir perm-ventas-ver">
       <h3>🧾 Servicios por concluir</h3>
       <p class="ayuda">Órdenes cuya fecha ya pasó y que todavía no se marcan como realizadas o no realizadas. No aparecen en el Generador hasta concluirlas.</p>
       <div id="inicio-concluir" class="inicio-lista"></div>
     </div>
 
-    <div class="inicio-bloque inicio-bloque-servicio">
+    <div class="inicio-bloque inicio-bloque-servicio perm-ventas-ver">
       <h3><span class="cadena-nodo activo">🧾 Recompras</span> listas para registrar como nuevo servicio</h3>
       <p class="ayuda">Clientes que ya contrataron antes y, según el ciclo del servicio, probablemente ya lo necesiten otra vez.</p>
       <div id="inicio-recompras" class="inicio-lista"></div>
@@ -605,6 +605,7 @@
           </div>
           <div class="campo-modal" id="wrap-vigencia-hasta"><label for="ed-vigencia-hasta">Vigencia hasta</label><input type="date" id="ed-vigencia-hasta"></div>
           <div class="campo-modal solo-orden"><label for="ed-equipo">Equipo</label><input type="text" id="ed-equipo" maxlength="200" placeholder="Ej. E-37-04"></div>
+          <div class="campo-modal solo-orden"><label for="ed-tecnico">Técnico asignado</label><select id="ed-tecnico"></select><small class="ayuda">Ve esta orden y registra si se realizó y sus gastos.</small></div>
           <div class="campo-modal solo-orden"><label for="ed-operador">Operador(es)</label><input type="text" id="ed-operador" maxlength="300" placeholder="Nombre de quien ejecuta el servicio"></div>
           <div class="campo-modal solo-orden"><label for="ed-manifiestos">Manifiestos</label><input type="text" id="ed-manifiestos" maxlength="200" placeholder="Folio(s) de manifiesto"></div>
           <div class="campo-modal solo-orden"><label for="ed-tiros">Tiros</label><input type="text" id="ed-tiros" maxlength="60" placeholder="Ej. 2"></div>
@@ -1156,13 +1157,13 @@
 
 <!-- ?v= obliga a los navegadores (sobre todo celulares) a tomar la versión nueva tras publicar. -->
 <script src="ui.js?v=cer1"></script>
-<script src="permisos.js?v=perm2"></script>
-<script src="roles.js?v=perm2"></script>
+<script src="permisos.js?v=perm3"></script>
+<script src="roles.js?v=perm3"></script>
 <script src="importes.js?v=red1"></script>
 <script src="servicios-tabla.js?v=perm1"></script>
 <script src="flujo.js?v=suc4"></script>
 <script src="cuentas.js?v=av1"></script>
-<script src="finanzas.js?v=perm1"></script>
+<script src="finanzas.js?v=perm3"></script>
 <script src="calendario.js?v=pg2"></script>
 <script src="tablero.js?v=suc2"></script>
 <script src="bitacora.js?v=hc1"></script>
@@ -1170,7 +1171,7 @@
 <script src="solicitudes.js?v=perm1"></script>
 <script src="carga-generador.js?v=con1"></script>
 <script src="sucursales.js?v=perm2"></script>
-<script src="app.js?v=perm1"></script>
+<script src="app.js?v=perm3"></script>
 <script src="buscador.js?v=suc1"></script>
 <script src="demo.js?v=demo1"></script>
 <script src="prospeccion.js?v=perm1"></script>

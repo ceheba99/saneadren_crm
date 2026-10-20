@@ -1514,3 +1514,5 @@ body:not(.varias-sucursales) .solo-varias-sucursales{display:none!important;}
 .rp-celda input:disabled{cursor:default;}
 .rp-tabla tr.rp-seccion th{background:var(--gris-100,#f3f4f6);text-align:left;position:sticky;left:0;font-size:12px;text-transform:uppercase;letter-spacing:.04em;}
 @media (max-width:600px){.rp-tabla .rp-permiso{min-width:150px;max-width:170px;}.rp-rol{min-width:96px;}}
+.rp-nivel{min-width:110px;padding:4px 6px;font-size:13px;}
+.rp-todo{font-size:12px;color:var(--texto-sec,#666);}

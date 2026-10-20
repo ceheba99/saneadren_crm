@@ -12,6 +12,7 @@
 // - Pagos y gastos no se borran: solo un admin los cancela, con motivo; queda quién y cuándo.
 // - Cada movimiento lo anota el servidor en la bitácora (historial) de la orden.
 const { hoyMexico } = require('./fechas');
+const alcance = require('./alcance');
 const Importes = require('../public/importes.js');
 
 const METODOS = ['transferencia', 'efectivo', 'deposito', 'cheque', 'tarjeta', 'otro'];
@@ -311,9 +312,10 @@ module.exports = function finanzas(app, db, h, unicos) {
     if (delServicio.some(t => k(t) && k(t) === k(concepto))) return 'el concepto es igual al servicio que se le vende al cliente: escribe en qué se gastó (ej. «Renta de pipa 20 m³», «Diésel»)';
     return null;
   }
-  const bitacora = (leadId, textoEvento, req) => db.prepare(
-    "INSERT INTO main.historial (lead_id, tipo, texto, usuario, origen) VALUES (?, 'observacion', ?, ?, 'sistema')"
-  ).run(leadId, textoEvento, req.usuarioSesion.nombre);
+  // area: 'cxc' (cobros y factura) o 'cxp' (gastos y pagos a terceros); solo lo ve quien ve esa área (permisos.js).
+  const bitacora = (leadId, textoEvento, req, area = null) => db.prepare(
+    "INSERT INTO main.historial (lead_id, tipo, texto, usuario, origen, area, usuario_id) VALUES (?, 'observacion', ?, ?, 'sistema', ?, ?)"
+  ).run(leadId, textoEvento, req.usuarioSesion.nombre, area, req.usuarioSesion.id);
   const fmt = cent => '$' + aPesos(cent).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
   function cuentaDeOrden(leadId) {
@@ -450,7 +452,7 @@ module.exports = function finanzas(app, db, h, unicos) {
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ${confirmado ? "datetime('now','localtime')" : 'NULL'}, ?)`)
         .run(lead.id, fecha, monto, tipo, metodo, texto(req.body.referencia, 120), texto(req.body.notas, 500), confirmado, confirmado ? req.usuarioSesion.id : null, req.usuarioSesion.id);
       if (lead.cobranza_por_revisar) db.prepare('UPDATE main.leads SET cobranza_por_revisar = 0 WHERE id = ?').run(lead.id);
-      bitacora(lead.id, `${tipo === 'anticipo' ? 'Anticipo' : tipo === 'ajuste' ? 'Ajuste' : 'Pago'} registrado: ${fmt(monto)} por ${metodo} (${fecha})${confirmado ? '' : ' · por confirmar'}.`, req);
+      bitacora(lead.id, `${tipo === 'anticipo' ? 'Anticipo' : tipo === 'ajuste' ? 'Ajuste' : 'Pago'} registrado: ${fmt(monto)} por ${metodo} (${fecha})${confirmado ? '' : ' · por confirmar'}.`, req, 'cxc');
       return info.lastInsertRowid;
     })();
     res.status(201).json({ id, confirmado: !!confirmado, cuenta: cuentaDeOrden(lead.id) });
@@ -465,7 +467,7 @@ module.exports = function finanzas(app, db, h, unicos) {
     if (c.registrado_por === req.usuarioSesion.id && !P.puede(req, 'cobros.directo')) return res.status(403).json({ error: 'Tú registraste este pago: lo confirma otra persona' });
     db.transaction(() => {
       db.prepare("UPDATE main.cobros SET confirmado = 1, confirmado_por = ?, confirmado_at = datetime('now','localtime') WHERE id = ?").run(req.usuarioSesion.id, c.id);
-      bitacora(c.lead_id, `Pago de ${fmt(c.monto_cent)} (${c.fecha}) confirmado por ${req.usuarioSesion.nombre}.`, req);
+      bitacora(c.lead_id, `Pago de ${fmt(c.monto_cent)} (${c.fecha}) confirmado por ${req.usuarioSesion.nombre}.`, req, 'cxc');
     })();
     res.json({ ok: true });
   }));
@@ -479,7 +481,7 @@ module.exports = function finanzas(app, db, h, unicos) {
     if (c.cancelado) return res.status(400).json({ error: 'Ese pago ya estaba cancelado' });
     db.transaction(() => {
       db.prepare("UPDATE main.cobros SET cancelado = 1, cancelado_por = ?, cancelado_at = datetime('now','localtime'), motivo_cancelacion = ? WHERE id = ?").run(req.usuarioSesion.id, motivo, c.id);
-      bitacora(c.lead_id, `Pago de ${fmt(c.monto_cent)} (${c.fecha}) CANCELADO. Motivo: ${motivo}`, req);
+      bitacora(c.lead_id, `Pago de ${fmt(c.monto_cent)} (${c.fecha}) CANCELADO. Motivo: ${motivo}`, req, 'cxc');
     })();
     res.json({ ok: true, cuenta: cuentaDeOrden(c.lead_id) });
   }));
@@ -517,7 +519,7 @@ module.exports = function finanzas(app, db, h, unicos) {
     // Una factura es de UNA orden: el mismo folio en otra orden es casi siempre un error de captura.
     const llaveFolio = t => String(t || '').toUpperCase().replace(/[\s-]+/g, '');
     if (folio && folio !== lead.factura_folio) {
-      const otra = db.prepare("SELECT id, created_at, factura_folio FROM leads WHERE id <> ? AND factura_folio IS NOT NULL AND factura_folio <> ''").all(lead.id).find(o => llaveFolio(o.factura_folio) === llaveFolio(folio));
+      const otra = db.prepare("SELECT id, created_at, factura_folio FROM main.leads WHERE id <> ? AND factura_folio IS NOT NULL AND factura_folio <> '' AND en_alcance(sucursal_id)").all(lead.id).find(o => llaveFolio(o.factura_folio) === llaveFolio(folio));
       if (otra) return res.status(409).json({ error: `La factura ${otra.factura_folio} ya está en la orden ${folioOS(otra.id, otra.created_at)}. Revisa el folio.` });
     }
     const cambios = [];
@@ -528,7 +530,7 @@ module.exports = function finanzas(app, db, h, unicos) {
     if (totalFactura !== lead.factura_total_cent) cambios.push(`total facturado ${totalFactura == null ? '(igual al total de la orden)' : fmt(totalFactura)}`);
     db.transaction(() => {
       db.prepare('UPDATE main.leads SET dias_credito = ?, factura_folio = ?, factura_fecha = ?, factura_total_cent = ?, factura_metodo = ? WHERE id = ?').run(dias, folio, fechaF, totalFactura, metodoF, lead.id);
-      if (cambios.length) bitacora(lead.id, 'Facturación: ' + cambios.join(', ') + '.', req);
+      if (cambios.length) bitacora(lead.id, 'Facturación: ' + cambios.join(', ') + '.', req, 'cxc');
     })();
     res.json({ ok: true, cuenta: cuentaDeOrden(lead.id) });
   }));
@@ -617,21 +619,37 @@ module.exports = function finanzas(app, db, h, unicos) {
             .run(id, fechaValida(c.fecha_servicio) && c.fecha_servicio <= hoy ? c.fecha_servicio : hoy, saldo, req.usuarioSesion.id, req.usuarioSesion.id);
         }
         db.prepare('UPDATE main.leads SET cobranza_por_revisar = 0 WHERE id = ?').run(id);
-        bitacora(id, 'Revisión inicial de cobranza: marcada como ya cobrada.', req);
+        bitacora(id, 'Revisión inicial de cobranza: marcada como ya cobrada.', req, 'cxc');
         n++;
       }
       for (const id of pendientes) {
         const info = db.prepare('UPDATE main.leads SET cobranza_por_revisar = 0 WHERE id = ? AND cobranza_por_revisar = 1').run(id);
-        if (info.changes) { bitacora(id, 'Revisión inicial de cobranza: sigue pendiente de cobro.', req); n++; }
+        if (info.changes) { bitacora(id, 'Revisión inicial de cobranza: sigue pendiente de cobro.', req, 'cxc'); n++; }
       }
     })();
     res.json({ ok: true, revisadas: n });
   }));
 
-  // ===================== CUENTAS POR PAGAR (solo admin) =====================
+  // ===================== CUENTAS POR PAGAR =====================
+  // Orden de servicio a la que se puede ligar un gasto o una compra: una que se ve; o, si el rol ve todas las cuentas
+  // por pagar o compras de su sucursal (Compras), cualquier orden contratada de su sucursal aunque no vea sus ventas.
+  function ordenParaLigar(id) {
+    const n = Number(id) || 0;
+    return db.prepare("SELECT * FROM leads WHERE id = ? AND estatus = 'ganado'").get(n)
+      || (alcance.nivel('cxp') >= 2 || alcance.nivel('compras') >= 2 ? db.prepare("SELECT * FROM main.leads WHERE id = ? AND estatus = 'ganado' AND en_alcance(sucursal_id)").get(n) : null) || null;
+  }
+  // Órdenes para elegir al registrar un gasto: solo folio, cliente, servicio, fecha, unidad y lugar (sin montos).
+  app.get('/api/finanzas/ordenes-para-gasto', h((req, res) => {
+    if (!P.puede(req, 'gastos.registrar') && !P.puede(req, 'compras.ver')) return res.status(403).json({ error: 'No tienes permiso para esta acción' });
+    const todas = alcance.nivel('cxp') >= 2 || alcance.nivel('compras') >= 2;
+    res.json(db.prepare(`SELECT l.id, l.created_at, l.folio_num, l.sucursal_id, l.estatus, l.nombre, l.empresa_contacto, l.fecha_servicio, l.equipo, l.operador, l.direccion, l.proyecto, s.nombre AS servicio_nombre
+      FROM ${todas ? 'main.leads' : 'leads'} l LEFT JOIN catalogo_servicios s ON s.id = l.servicio_id
+      WHERE l.estatus = 'ganado'${todas ? ' AND en_alcance(l.sucursal_id)' : ''} ORDER BY l.fecha_servicio DESC, l.id DESC`).all());
+  }));
+  module.exports.ordenParaLigar = ordenParaLigar;
   function cuentasPorPagar() {
     const hoy = hoyMexico();
-    return db.prepare(`SELECT x.*, p.nombre AS proveedor_nombre, (SELECT created_at FROM leads l WHERE l.id = x.lead_id) AS lead_created_at,
+    return db.prepare(`SELECT x.*, p.nombre AS proveedor_nombre, (SELECT created_at FROM main.leads l WHERE l.id = x.lead_id) AS lead_created_at,
         (SELECT COALESCE(SUM(monto_cent), 0) FROM pagos_proveedor g WHERE g.cxp_id = x.id AND g.cancelado = 0) AS pagado_cent,
         (SELECT fecha || '|' || metodo || '|' || COALESCE(referencia, '') FROM pagos_proveedor g WHERE g.cxp_id = x.id AND g.cancelado = 0 ORDER BY fecha DESC, id DESC LIMIT 1) AS ultimo_pago
       FROM cuentas_por_pagar x JOIN proveedores p ON p.id = x.proveedor_id WHERE x.cancelada = 0`).all()
@@ -649,7 +667,7 @@ module.exports = function finanzas(app, db, h, unicos) {
   app.get('/api/finanzas/cxp/formato-excel', h((req, res) => {
     if (!P.puede(req, 'clientes.exportar')) return res.status(403).json({ error: 'No tienes permiso para exportar a Excel' });
     const cuentas = db.prepare(`SELECT x.*, p.nombre AS proveedor_nombre, p.clabe, p.banco, u.nombre AS capturo,
-        (SELECT created_at FROM leads l WHERE l.id = x.lead_id) AS lead_created_at
+        (SELECT created_at FROM main.leads l WHERE l.id = x.lead_id) AS lead_created_at
       FROM cuentas_por_pagar x JOIN proveedores p ON p.id = x.proveedor_id LEFT JOIN usuarios u ON u.id = x.registrado_por
       ORDER BY x.fecha_documento, x.id`).all();
     const pagos = db.prepare('SELECT g.*, u.nombre AS registro FROM pagos_proveedor g LEFT JOIN usuarios u ON u.id = g.registrado_por ORDER BY g.fecha, g.id').all();
@@ -929,9 +947,9 @@ module.exports = function finanzas(app, db, h, unicos) {
       db.transaction(() => {
         if (vg.listos.length) cargarGastos(vg.listos, lead, fechaGasto, 'Gasto generado aunque el servicio no se realizó', req);
         db.prepare("UPDATE main.leads SET ejecucion = 'no_realizado', realizado_por = NULL, fecha_realizado = NULL, motivo_no_realizado = ?, updated_at = datetime('now','localtime'), version = version + 1 WHERE id = ?").run(motivo, lead.id);
-        bitacora(lead.id, 'Servicio marcado como NO realizado. Motivo: ' + motivo
-          + (cobrado ? `. El cliente ya pagó ${fmt(cobrado)}: queda a su favor (devolver o aplicar a otro servicio)` : '')
-          + (gastos.length ? `. Tiene ${gastos.length} gasto(s) en Cuentas por pagar${pendiente ? ' (' + fmt(pendiente) + ' sin pagar)' : ''}: revisa si se cancelan` : '') + '.', req);
+        bitacora(lead.id, 'Servicio marcado como NO realizado. Motivo: ' + motivo + '.', req);
+        if (cobrado) bitacora(lead.id, `El cliente ya pagó ${fmt(cobrado)}: queda a su favor (devolver o aplicar a otro servicio).`, req, 'cxc');
+        if (gastos.length) bitacora(lead.id, `Tiene ${gastos.length} gasto(s) en Cuentas por pagar${pendiente ? ' (' + fmt(pendiente) + ' sin pagar)' : ''}: revisa si se cancelan.`, req, 'cxp');
       })();
       return res.json({ ok: true, gastos: vg.listos.length, a_favor: aPesos(cobrado), gastos_ligados: gastos.length + vg.listos.length, gastos_pendientes: aPesos(pendiente), lead: db.prepare('SELECT * FROM leads WHERE id = ?').get(lead.id) });
     }
@@ -945,7 +963,8 @@ module.exports = function finanzas(app, db, h, unicos) {
     const v = validarGastos(b.gastos, lead, fecha, hoy); if (v.error) return res.status(400).json({ error: v.error });
     const listos = v.listos;
     // Al volver a marcar realizado (p. ej. tras un "no realizado"), no se repiten los gastos que ya están cargados.
-    const yaCargado = g => db.prepare('SELECT 1 FROM cuentas_por_pagar WHERE lead_id = ? AND proveedor_id = ? AND concepto = ? AND total_cent = ? AND cancelada = 0').get(lead.id, g.prov.id, g.concepto, g.total);
+    // Contra TODOS los gastos de la orden (aunque otro los haya registrado y quien marca no los vea).
+    const yaCargado = g => db.prepare('SELECT 1 FROM main.cuentas_por_pagar WHERE lead_id = ? AND proveedor_id = ? AND concepto = ? AND total_cent = ? AND cancelada = 0').get(lead.id, g.prov.id, g.concepto, g.total);
     const omitidos = listos.filter(yaCargado).length;
     for (let i = listos.length - 1; i >= 0; i--) if (yaCargado(listos[i])) listos.splice(i, 1);
     db.transaction(() => {
@@ -953,8 +972,8 @@ module.exports = function finanzas(app, db, h, unicos) {
         .run(b.realizado_por, fecha, lead.id);
       cargarGastos(listos, lead, fecha, 'Registrado al marcar el servicio como realizado', req);
       const suma = listos.reduce((t, g) => t + g.total, 0);
-      bitacora(lead.id, `Servicio realizado el ${fmtFecha(fecha)}.`
-        + (listos.length ? ` Gastos generados cargados en Cuentas por pagar: ${listos.map(g => `«${g.concepto}» de ${g.prov.nombre} ${fmt(g.total)}${g.ya_pagado ? ' (pagado)' : ''}`).join('; ')}.` : ' Sin gastos generados.'), req);
+      bitacora(lead.id, `Servicio realizado el ${fmtFecha(fecha)}.`, req);
+      if (listos.length) bitacora(lead.id, `Gastos generados cargados en Cuentas por pagar: ${listos.map(g => `«${g.concepto}» de ${g.prov.nombre} ${fmt(g.total)}${g.ya_pagado ? ' (pagado)' : ''}`).join('; ')}.`, req, 'cxp');
     })();
     res.json({ ok: true, gastos: listos.length, omitidos, lead: db.prepare('SELECT * FROM leads WHERE id = ?').get(lead.id) });
   }));
@@ -983,7 +1002,7 @@ module.exports = function finanzas(app, db, h, unicos) {
     const vence = sumarDias(fecha, dias);
     let leadId = null;
     if (b.lead_id) {
-      const l = db.prepare("SELECT * FROM leads WHERE id = ? AND estatus = 'ganado'").get(b.lead_id);
+      const l = ordenParaLigar(b.lead_id);
       if (!l) return res.status(400).json({ error: 'La orden de servicio indicada no existe' });
       const malConcepto = problemaConceptoCosto(concepto, l);
       if (malConcepto) return res.status(400).json({ error: malConcepto.charAt(0).toUpperCase() + malConcepto.slice(1) });
@@ -1001,7 +1020,7 @@ module.exports = function finanzas(app, db, h, unicos) {
     if (metodoSat && (!['PUE', 'PPD'].includes(metodoSat) || tipoComp !== 'factura')) return res.status(400).json({ error: 'El método del SAT (PUE o PPD) solo aplica a facturas' });
     const beneficiario = texto(b.beneficiario, 120);
     if (beneficiario && !conSentido(beneficiario, 3)) return res.status(400).json({ error: 'Escribe a quién se le paga' });
-    if (folioFactura && !b.forzar && db.prepare("SELECT id FROM cuentas_por_pagar WHERE proveedor_id = ? AND replace(upper(factura_folio), ' ', '') = replace(upper(?), ' ', '') AND cancelada = 0").get(prov.id, folioFactura)) {
+    if (folioFactura && !b.forzar && db.prepare("SELECT id FROM main.cuentas_por_pagar WHERE en_alcance(sucursal_id) AND proveedor_id = ? AND replace(upper(factura_folio), ' ', '') = replace(upper(?), ' ', '') AND cancelada = 0").get(prov.id, folioFactura)) {
       return res.status(409).json({ error: `Ya registraste la factura ${folioFactura} de ${prov.nombre}. ¿Es otra factura?`, codigo: 'POSIBLE_DUPLICADO' });
     }
     const id = db.transaction(() => {
@@ -1013,7 +1032,7 @@ module.exports = function finanzas(app, db, h, unicos) {
         db.prepare('INSERT INTO main.pagos_proveedor (cxp_id, fecha, monto_cent, metodo, referencia, registrado_por, cuenta_origen) VALUES (?, ?, ?, ?, ?, ?, ?)')
           .run(info.lastInsertRowid, fechaPagoGasto || (fecha > hoyMexico() ? hoyMexico() : fecha), total, b.metodo, texto(b.referencia, 120), req.usuarioSesion.id, texto(b.cuenta_origen, 80));
       }
-      if (leadId) bitacora(leadId, `Costo con terceros registrado: «${concepto}» de ${prov.nombre} por ${fmt(total)}${b.ya_pagado ? ' (ya pagado)' : ' (pendiente de pago en Cuentas por pagar)'}.`, req);
+      if (leadId) bitacora(leadId, `Costo con terceros registrado: «${concepto}» de ${prov.nombre} por ${fmt(total)}${b.ya_pagado ? ' (ya pagado)' : ' (pendiente de pago en Cuentas por pagar)'}.`, req, 'cxp');
       app.locals.auditoria?.registrar(req, 'cuenta_por_pagar', Number(info.lastInsertRowid), 'creada', `${prov.nombre} · «${concepto}» · ${fmt(total)}${folioFactura ? ' · factura ' + folioFactura : ''}${b.ya_pagado ? ' · pagada al registrar' : ''}`);
       return info.lastInsertRowid;
     })();
@@ -1036,7 +1055,7 @@ module.exports = function finanzas(app, db, h, unicos) {
     }
     const info = db.prepare('INSERT INTO main.pagos_proveedor (cxp_id, fecha, monto_cent, metodo, referencia, registrado_por, cuenta_origen) VALUES (?, ?, ?, ?, ?, ?, ?)')
       .run(x.id, fecha, monto, req.body.metodo, texto(req.body.referencia, 120), req.usuarioSesion.id, texto(req.body.cuenta_origen, 80));
-    if (x.lead_id) bitacora(x.lead_id, `Pago a tercero: ${fmt(monto)} a ${x.proveedor_nombre || 'proveedor'} por «${x.concepto}» (${req.body.metodo}, ${fecha}).`, req);
+    if (x.lead_id) bitacora(x.lead_id, `Pago a tercero: ${fmt(monto)} a ${x.proveedor_nombre || 'proveedor'} por «${x.concepto}» (${req.body.metodo}, ${fecha}).`, req, 'cxp');
     app.locals.auditoria?.registrar(req, 'cuenta_por_pagar', x.id, 'pago', `${fmt(monto)} por ${req.body.metodo} el ${fecha}${texto(req.body.referencia, 120) ? ' · ref. ' + texto(req.body.referencia, 120) : ''}`);
     res.status(201).json({ id: info.lastInsertRowid });
   }));
@@ -1055,7 +1074,7 @@ module.exports = function finanzas(app, db, h, unicos) {
     const info = db.prepare("UPDATE main.pagos_proveedor SET cancelado = 1, cancelado_por = ?, cancelado_at = datetime('now','localtime'), motivo_cancelacion = ? WHERE id = ? AND cancelado = 0")
       .run(req.usuarioSesion.id, motivo, req.params.id);
     if (!info.changes) return res.status(404).json({ error: 'Pago no encontrado o ya cancelado' });
-    if (pagoAntes?.lead_id) bitacora(pagoAntes.lead_id, `Pago a tercero CANCELADO: ${fmt(pagoAntes.monto_cent)} por «${pagoAntes.concepto}». Motivo: ${motivo}`, req);
+    if (pagoAntes?.lead_id) bitacora(pagoAntes.lead_id, `Pago a tercero CANCELADO: ${fmt(pagoAntes.monto_cent)} por «${pagoAntes.concepto}». Motivo: ${motivo}`, req, 'cxp');
     app.locals.auditoria?.registrar(req, 'cuenta_por_pagar', pagoAntes?.cxp_id ?? null, 'pago cancelado', `${fmt(pagoAntes?.monto_cent || 0)} · motivo: ${motivo}`);
     res.json({ ok: true });
   }));
@@ -1070,7 +1089,7 @@ module.exports = function finanzas(app, db, h, unicos) {
     const info = db.prepare("UPDATE main.cuentas_por_pagar SET cancelada = 1, cancelada_por = ?, cancelada_at = datetime('now','localtime'), motivo_cancelacion = ? WHERE id = ? AND cancelada = 0")
       .run(req.usuarioSesion.id, motivo, req.params.id);
     if (!info.changes) return res.status(404).json({ error: 'Cuenta no encontrada o ya cancelada' });
-    if (cxpAntes?.lead_id) bitacora(cxpAntes.lead_id, `Costo con terceros CANCELADO: «${cxpAntes.concepto}» por ${fmt(cxpAntes.total_cent)}. Motivo: ${motivo}`, req);
+    if (cxpAntes?.lead_id) bitacora(cxpAntes.lead_id, `Costo con terceros CANCELADO: «${cxpAntes.concepto}» por ${fmt(cxpAntes.total_cent)}. Motivo: ${motivo}`, req, 'cxp');
     app.locals.auditoria?.registrar(req, 'cuenta_por_pagar', Number(req.params.id), 'cancelada', `«${cxpAntes?.concepto}» · ${fmt(cxpAntes?.total_cent || 0)} · motivo: ${motivo}`);
     res.json({ ok: true });
   }));
@@ -1179,7 +1198,7 @@ module.exports = function finanzas(app, db, h, unicos) {
     for (const c of db.prepare('SELECT * FROM clientes ORDER BY id').all()) {
       for (const k of [claveNombre(c.nombre), claveNombre(c.empresa_contacto)]) if (k && !porNombre.has(k)) porNombre.set(k, c);
     }
-    const facturaExiste = db.prepare("SELECT 1 FROM leads WHERE lower(factura_folio) = lower(?)");
+    const facturaExiste = db.prepare("SELECT 1 FROM main.leads WHERE lower(factura_folio) = lower(?) AND en_alcance(sucursal_id)");
     const vistos = new Set(), nuevosEnArchivo = new Set(), nuevosParecidos = [];
     const resultado = filas.map((f, i) => {
       const errores = [];
@@ -1334,7 +1353,7 @@ module.exports = function finanzas(app, db, h, unicos) {
       const orden = celda(f.orden);
       if (orden) {
         const idOrden = require('./sucursales').leadPorFolio(orden);
-        const l = idOrden ? db.prepare("SELECT id FROM leads WHERE id = ? AND estatus = 'ganado'").get(idOrden) : null;
+        const l = idOrden ? ordenParaLigar(idOrden) : null;
         if (!l) errores.push(`Orden "${orden}" no existe o no es una orden de servicio`); else leadId = l.id;
       }
       const equipo = textoMax(f.equipo, LIM.equipo, 'Equipo', errores);
@@ -1343,7 +1362,7 @@ module.exports = function finanzas(app, db, h, unicos) {
         const llave = claveNombre(proveedor) + '|' + folio;
         if (vistos.has(llave)) errores.push('Factura repetida dentro del archivo');
         vistos.add(llave);
-        if (prov && db.prepare('SELECT 1 FROM cuentas_por_pagar WHERE proveedor_id = ? AND factura_folio = ? AND cancelada = 0').get(prov.id, folio)) errores.push(`La factura ${folio} de ${prov.nombre} ya está registrada`);
+        if (prov && db.prepare('SELECT 1 FROM main.cuentas_por_pagar WHERE en_alcance(sucursal_id) AND proveedor_id = ? AND factura_folio = ? AND cancelada = 0').get(prov.id, folio)) errores.push(`La factura ${folio} de ${prov.nombre} ya está registrada`);
       }
       return { fila, errores, datos: { proveedor, prov, categoria, concepto, folio, fecha, vence, total, pagado, metodo, leadId, equipo, notas },
         resumen: { proveedor: prov?.nombre || proveedor, concepto, total: total ? aPesos(total) : null, pagado: pagado ? aPesos(pagado) : 0, proveedor_nuevo: !prov } };
@@ -1374,7 +1393,7 @@ module.exports = function finanzas(app, db, h, unicos) {
     // Centavos cobrados (no cancelados) de una orden.
     cobradoCent: leadId => db.prepare('SELECT COALESCE(SUM(monto_cent), 0) t FROM cobros WHERE lead_id = ? AND cancelado = 0').get(leadId).t,
     // ¿Tiene pagos activos? (no se puede borrar ni reabrir como cotización)
-    tieneCobros: leadId => !!db.prepare('SELECT 1 FROM cobros WHERE lead_id = ? AND cancelado = 0 LIMIT 1').get(leadId),
+    tieneCobros: leadId => !!db.prepare('SELECT 1 FROM main.cobros WHERE lead_id = ? AND cancelado = 0 LIMIT 1').get(leadId),
     // Al nacer una orden se copian los días de crédito del cliente (si la orden no tiene).
     copiarCredito: leadId => db.prepare(`UPDATE main.leads SET dias_credito = (SELECT dias_credito FROM clientes WHERE clientes.id = leads.cliente_id)
       WHERE id = ? AND dias_credito IS NULL`).run(leadId),

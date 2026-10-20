@@ -147,10 +147,15 @@ module.exports = function clientesUnicos(app, db, h) {
   const quienDistintos = db.prepare('SELECT u.nombre, u.rol FROM clientes_distintos d LEFT JOIN usuarios u ON u.id = d.confirmado_por WHERE d.a = ? AND d.b = ?');
   // Un cliente de otra sucursal (que esta no ve): solo se dice que existe y su ID, sin nombre, teléfono ni RFC.
   const ve = c => !app.locals.sucursales || app.locals.sucursales.verCliente(c.id);
-  const resumen = c => c && (ve(c) ? { id: c.id, folio: folioCliente(c.id), nombre: c.nombre, empresa: c.empresa_contacto, telefono: esTelReal(c.telefono_normalizado) ? c.telefono : null, rfc: c.rfc || null }
-    : { id: c.id, folio: folioCliente(c.id), nombre: 'Cliente de otra sucursal', empresa: null, telefono: null, rfc: null, otra_sucursal: true });
-  // «CLI-0039 · KFC» o «CLI-0039 (cliente de otra sucursal)» para los mensajes.
-  const etiqueta = c => (c ? (ve(c) ? folioCliente(c.id) + ' · ' + (c.empresa_contacto || c.nombre) : folioCliente(c.id) + ' (cliente de otra sucursal)') : '');
+  // Con «lo suyo» (permisos.js), el cliente de OTRO vendedor de su sucursal tampoco se ve: solo quién lo atiende.
+  let atiende = null; // se prepara al usarse: en_alcance existe hasta que se activan los candados
+  const quienAtiende = c => { atiende ||= db.prepare('SELECT u.nombre FROM main.leads l LEFT JOIN usuarios u ON u.id = l.responsable_id WHERE l.cliente_id = ? AND en_alcance(l.sucursal_id) ORDER BY l.id DESC LIMIT 1'); return atiende.get(c.id)?.nombre || null; };
+  const resumen = c => { if (!c) return c; if (ve(c)) return { id: c.id, folio: folioCliente(c.id), nombre: c.nombre, empresa: c.empresa_contacto, telefono: esTelReal(c.telefono_normalizado) ? c.telefono : null, rfc: c.rfc || null };
+    const quien = quienAtiende(c);
+    return quien ? { id: c.id, folio: folioCliente(c.id), nombre: 'Cliente que atiende ' + quien, empresa: null, telefono: null, rfc: null, otro_vendedor: true, atendido_por: quien }
+      : { id: c.id, folio: folioCliente(c.id), nombre: 'Cliente de otra sucursal', empresa: null, telefono: null, rfc: null, otra_sucursal: true }; };
+  // «CLI-0039 · KFC», «CLI-0039 (lo atiende Laura)» o «CLI-0039 (cliente de otra sucursal)» para los mensajes.
+  const etiqueta = c => { if (!c) return ''; if (ve(c)) return folioCliente(c.id) + ' · ' + (c.empresa_contacto || c.nombre); const quien = quienAtiende(c); return folioCliente(c.id) + (quien ? ' (lo atiende ' + quien + ')' : ' (cliente de otra sucursal)'); };
 
   // ---------- Búsquedas ----------
   function porTelefono(tel) {
@@ -275,7 +280,7 @@ module.exports = function clientesUnicos(app, db, h) {
   // Todos los clientes con su ID (para las listas de las plantillas y los buscadores).
   app.get('/api/clientes/catalogo', h((req, res) => {
     // Solo los de la sucursal: los dio de alta o ha trabajado con ellos.
-    res.json(db.prepare('SELECT * FROM clientes c WHERE (en_alcance(c.sucursal_id) OR EXISTS (SELECT 1 FROM leads lv WHERE lv.cliente_id = c.id)) ORDER BY lower(COALESCE(empresa_contacto, nombre))').all().map(resumen));
+    res.json(db.prepare('SELECT * FROM clientes c WHERE (cliente_en_alcance(c.sucursal_id, c.id) OR EXISTS (SELECT 1 FROM leads lv WHERE lv.cliente_id = c.id)) ORDER BY lower(COALESCE(empresa_contacto, nombre))').all().map(resumen));
   }));
   app.get('/api/clientes/duplicados', h((req, res) => {
     if (!esAdmin(req)) return res.status(403).json({ error: 'Solo un administrador revisa duplicados' });

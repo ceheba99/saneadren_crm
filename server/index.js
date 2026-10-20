@@ -467,6 +467,21 @@ app.post('/api/canales', h((req, res) => {
   res.status(201).json(db.prepare('SELECT * FROM canales WHERE id = ?').get(info.lastInsertRowid));
 }));
 
+// ---------- Qué ve cada rol en ventas (permisos.js) ----------
+// Nivel de ventas de quien pide: 0 nada, 1 lo suyo (sus clientes y órdenes), 2 toda su sucursal.
+const nivelVentas = () => require('./alcance').nivel('ventas');
+// ¿Este cliente ya lo atiende OTRO vendedor en mis sucursales? Devuelve su nombre (o null). Solo aplica a quien ve
+// «lo suyo»: no puede abrirle cotizaciones ni ver lo que tiene (así no se duplican clientes ni se cruza la cartera).
+// Los clientes de otras sucursales se siguen compartiendo como antes.
+function atendidoPorOtro(req, clienteId) {
+  if (nivelVentas() >= 2 || !clienteId) return null;
+  const filas = db.prepare(`SELECT l.responsable_id, l.tecnico_id, u.nombre FROM main.leads l LEFT JOIN usuarios u ON u.id = l.responsable_id
+    WHERE l.cliente_id = ? AND en_alcance(l.sucursal_id) ORDER BY l.id DESC`).all(clienteId);
+  if (!filas.length || filas.some(f => f.responsable_id === req.usuarioSesion.id)) return null;
+  return filas[0].nombre || 'otro vendedor';
+}
+const CLIENTE_DE_OTRO = nombre => ({ error: `Este cliente ya lo atiende ${nombre}. Pídele a ${nombre} o al gerente que te lo pase.`, codigo: 'CLIENTE_DE_OTRO', atendido_por: nombre });
+
 // ---------- Verificar duplicado por teléfono (búsqueda en vivo) ----------
 // Devuelve el cliente (si existe) + sus solicitudes, para distinguir entre
 // "ya tiene una solicitud abierta" (bloquea) y "cliente recurrente, todo cerrado" (permite nueva solicitud).
@@ -475,7 +490,9 @@ app.get('/api/leads/buscar-telefono/:telefono', h((req, res) => {
   if (norm.length < 8) return res.json({ cliente: null, solicitudes: [] });
   const encontrado = unicos.porTelefono(norm);
   if (!encontrado) return res.json({ cliente: null, solicitudes: [] });
-  if (!suc.verCliente(encontrado.id)) return res.json({ cliente: { ...unicos.resumen(encontrado), telefono: req.params.telefono }, solicitudes: [], tiene_abierta: false });
+  // Cliente que no ve (de otra sucursal o, con «lo suyo», de otro vendedor): solo se dice que existe y, si es de su
+  // sucursal, quién lo atiende; nada de sus cotizaciones, órdenes ni montos.
+  if (!suc.verCliente(encontrado.id)) return res.json({ cliente: { ...unicos.resumen(encontrado), telefono: req.params.telefono }, solicitudes: [], tiene_abierta: false, atendido_por: atendidoPorOtro(req, encontrado.id) });
   const cliente = encontrado;
   const solicitudes = db.prepare(`
     SELECT l.*, s.nombre AS servicio_nombre, u.nombre AS responsable_nombre, ca.nombre AS canal_nombre
@@ -657,6 +674,8 @@ app.post('/api/leads', validarPartidas, validarRegistro, h((req, res) => {
     if (dueño && dueño.id !== agregarTelA) return res.status(409).json({ error: `Ese teléfono ya es de ${unicos.etiqueta(dueño)}` });
   }
   if (!responsable_id || !db.prepare('SELECT id FROM usuarios WHERE id = ? AND activo = 1').get(responsable_id)) return res.status(400).json({error:'Selecciona un responsable activo'});
+  if (nivelVentas() < 1) return res.status(403).json({ error: 'Tu rol no registra cotizaciones ni órdenes' });
+  if (nivelVentas() < 2 && Number(responsable_id) !== req.usuarioSesion.id) return res.status(403).json({ error: 'Solo puedes registrar cotizaciones a tu nombre' });
   let { estatus } = req.body;
   if (!telefono) return res.status(400).json({ error: 'Teléfono requerido' });
   const norm = normalizarTelefono(telefono);
@@ -695,6 +714,8 @@ app.post('/api/leads', validarPartidas, validarRegistro, h((req, res) => {
   if (!existe('usuarios', responsable_id)) return res.status(400).json({ error: 'El responsable indicado no existe' });
 
   let cliente = contactoElegido || unicos.porTelefono(norm);
+  const otro = cliente && atendidoPorOtro(req, cliente.id);
+  if (otro) return res.status(409).json(CLIENTE_DE_OTRO(otro));
   // Cliente nuevo: antes de crearlo se revisa que no exista uno parecido (salvo que ya se haya dicho que es otro).
   const distintoDe = Array.isArray(req.body.distinto_de) ? req.body.distinto_de.map(Number).filter(Boolean) : [];
   if (!cliente) {
@@ -774,7 +795,7 @@ app.post('/api/leads', validarPartidas, validarRegistro, h((req, res) => {
     const orig = db.prepare('SELECT id, created_at FROM leads WHERE id = ?').get(duplicadoDe);
     const folioOrig = require('./sucursales').folio('OS', 'leads', orig.id, orig.created_at);
     const suma = finanzas.duplicarCostos(info.lastInsertRowid, costosDup.items, fechaServicioFinal, textoOrden(req.body.equipo), req.usuarioSesion.id, folioOrig);
-    db.prepare(`INSERT INTO main.historial (lead_id, tipo, texto, usuario, origen) VALUES (?, 'observacion', ?, ?, 'sistema')`)
+    db.prepare(`INSERT INTO main.historial (lead_id, tipo, texto, usuario, origen, area, usuario_id) VALUES (?, 'observacion', ?, ?, 'sistema', 'cxp', ${Number(req.usuarioSesion.id)})`)
       .run(info.lastInsertRowid, `Costos con terceros copiados de ${folioOrig}: ${costosDup.items.length} por $${(suma / 100).toLocaleString('es-MX', { minimumFractionDigits: 2 })} (pendientes de pago en Cuentas por pagar).`, creado_por || null);
   }
   return db.prepare('SELECT * FROM leads WHERE id = ?').get(info.lastInsertRowid);
@@ -796,6 +817,7 @@ function cambiosDeOrden(antes, b) {
   if (cambio('incluye_vigencia') || cambio('vigencia_hasta')) lista.push(`vigencia: ${Number(b.incluye_vigencia ?? antes.incluye_vigencia) ? 'hasta ' + fecha(b.vigencia_hasta ?? antes.vigencia_hasta) : 'sin vigencia'}`);
   if (cambio('etapa') && !(b.estatus && b.estatus !== antes.estatus)) lista.push(`etapa ${ETAPAS_TXT[antes.etapa] || antes.etapa} → ${ETAPAS_TXT[b.etapa] || b.etapa}`);
   if (cambio('responsable_id')) lista.push(`responsable ${nombreDe('usuarios', antes.responsable_id)} → ${nombreDe('usuarios', b.responsable_id)}`);
+  if (cambio('tecnico_id')) lista.push(`técnico asignado ${antes.tecnico_id ? nombreDe('usuarios', antes.tecnico_id) : 'ninguno'} → ${b.tecnico_id ? nombreDe('usuarios', b.tecnico_id) : 'ninguno'}`);
   if (cambio('canal_id')) lista.push(`canal ${nombreDe('canales', antes.canal_id)} → ${nombreDe('canales', b.canal_id)}`);
   if (cambio('servicio_id')) lista.push(`servicio principal ${nombreDe('catalogo_servicios', antes.servicio_id)} → ${nombreDe('catalogo_servicios', b.servicio_id)}`);
   if (b.partidas_json !== undefined && b.partidas_json !== antes.partidas_json) {
@@ -827,6 +849,13 @@ app.put('/api/leads/:id', validarPartidas, validarRegistro, h((req, res) => {
   if (req.body.canal_id !== undefined && !existe('canales', req.body.canal_id)) return res.status(400).json({ error: 'El canal indicado no existe' });
   if (req.body.servicio_id !== undefined && !existe('catalogo_servicios', req.body.servicio_id)) return res.status(400).json({ error: 'El servicio indicado no existe' });
   if (req.body.responsable_id !== undefined && !existe('usuarios', req.body.responsable_id)) return res.status(400).json({ error: 'El responsable indicado no existe' });
+  // Con «lo suyo», pasar la cotización a otro vendedor lo hace el gerente (quien ve toda la sucursal).
+  if (req.body.responsable_id !== undefined && Number(req.body.responsable_id) !== actual.responsable_id && nivelVentas() < 2 && Number(req.body.responsable_id) !== req.usuarioSesion.id)
+    return res.status(403).json({ error: 'Para pasar esta cotización a otro vendedor, pídeselo al gerente' });
+  if (req.body.tecnico_id !== undefined) {
+    req.body.tecnico_id = req.body.tecnico_id === null || req.body.tecnico_id === '' ? null : Number(req.body.tecnico_id);
+    if (req.body.tecnico_id !== null && !db.prepare('SELECT 1 FROM usuarios WHERE id = ? AND activo = 1').get(req.body.tecnico_id)) return res.status(400).json({ error: 'El técnico indicado no existe o está desactivado' });
+  }
   if (req.body.etapa !== undefined && !(Number(req.body.etapa) >= 1 && Number(req.body.etapa) <= 4)) return res.status(400).json({ error: 'Etapa inválida (1-4)' });
   if (req.body.estatus !== undefined && !['abierto', 'ganado', 'perdido'].includes(req.body.estatus)) return res.status(400).json({ error: 'Estatus inválido: use abierto, ganado o perdido' });
   if (req.body.valor !== undefined && req.body.valor !== null && (isNaN(Number(req.body.valor)) || Number(req.body.valor) < 0)) {
@@ -902,7 +931,7 @@ app.put('/api/leads/:id', validarPartidas, validarRegistro, h((req, res) => {
   const errorOrden = validarDatosOrden(req.body);
   if (errorOrden) return res.status(400).json({ error: errorOrden });
   ['equipo', 'operador', 'observaciones', 'proyecto', 'manifiestos', 'tiros', 'notas_cotizacion'].forEach(c => { if (req.body[c] !== undefined) req.body[c] = textoOrden(req.body[c]); });
-  const campos = ['equipo', 'operador', 'observaciones', 'proyecto', 'manifiestos', 'tiros', 'partidas_json', 'iva_modo', 'iva_tasa', 'iva_cent','direccion', 'canal_id', 'servicio_id', 'responsable_id', 'etapa', 'estatus', 'valor', 'fecha_servicio', 'notas_iniciales', 'urgente', 'encuesta_calificacion', 'encuesta_comentario', 'fecha_cotizacion', 'incluye_vigencia', 'vigencia_hasta', 'notas_cotizacion'];
+  const campos = ['equipo', 'operador', 'observaciones', 'proyecto', 'manifiestos', 'tiros', 'partidas_json', 'iva_modo', 'iva_tasa', 'iva_cent','direccion', 'canal_id', 'servicio_id', 'responsable_id', 'tecnico_id', 'etapa', 'estatus', 'valor', 'fecha_servicio', 'notas_iniciales', 'urgente', 'encuesta_calificacion', 'encuesta_comentario', 'fecha_cotizacion', 'incluye_vigencia', 'vigencia_hasta', 'notas_cotizacion'];
   const set = [];
   const params = [];
   campos.forEach(c => {
@@ -979,11 +1008,12 @@ app.delete('/api/leads/:id', h((req, res) => {
   const lead = db.prepare('SELECT * FROM leads WHERE id = ?').get(req.params.id);
   if (!lead) return res.status(404).json({ error: 'Cotización no encontrada' });
   // Los pagos son el rastro del dinero: una orden que alguna vez tuvo pagos no se borra.
-  if (db.prepare('SELECT 1 FROM cobros WHERE lead_id = ? LIMIT 1').get(lead.id)) {
+  // Se revisa TODO lo de la orden (aunque quien borra no vea esos cobros o gastos).
+  if (db.prepare('SELECT 1 FROM main.cobros WHERE lead_id = ? LIMIT 1').get(lead.id)) {
     return res.status(409).json({ error: 'Esta orden tiene pagos registrados y no se puede eliminar, para conservar el rastro del dinero.' });
   }
   // Tampoco una con gastos en Cuentas por pagar (quedarían sueltos, sin su orden).
-  if (db.prepare('SELECT 1 FROM cuentas_por_pagar WHERE lead_id = ? AND cancelada = 0 LIMIT 1').get(lead.id)) {
+  if (db.prepare('SELECT 1 FROM main.cuentas_por_pagar WHERE lead_id = ? AND cancelada = 0 LIMIT 1').get(lead.id)) {
     return res.status(409).json({ error: 'Esta orden tiene gastos en Cuentas por pagar. Cancélalos primero si de verdad quieres eliminarla.' });
   }
   const motivoEl = typeof req.body?.motivo === 'string' ? req.body.motivo.trim().replace(/\s+/g, ' ').slice(0, 300) : '';
@@ -996,7 +1026,7 @@ app.delete('/api/leads/:id', h((req, res) => {
   // Antes de borrar, su historial pasa al archivo (la ficha del cliente lo sigue mostrando) junto con quién la
   // eliminó y por qué. El cliente y sus otros servicios/cotizaciones no se tocan.
   db.transaction(() => {
-    db.prepare('INSERT INTO main.historial_archivo (lead_id, cliente_id, folio, tipo, texto, usuario, created_at) SELECT lead_id, ?, ?, tipo, texto, usuario, created_at FROM historial WHERE lead_id = ?').run(lead.cliente_id, folioEl, lead.id);
+    db.prepare('INSERT INTO main.historial_archivo (lead_id, cliente_id, folio, tipo, texto, usuario, created_at) SELECT lead_id, ?, ?, tipo, texto, usuario, created_at FROM main.historial WHERE lead_id = ?').run(lead.cliente_id, folioEl, lead.id); // completa, aunque quien elimina no vea todo
     db.prepare("INSERT INTO main.historial_archivo (lead_id, cliente_id, folio, tipo, texto, usuario, created_at) VALUES (?, ?, ?, 'eliminado', ?, ?, datetime('now','localtime'))")
       .run(lead.id, lead.cliente_id, folioEl, `${lead.estatus === 'ganado' ? 'Orden de servicio' : 'Cotización'} ELIMINADA (importe $${Number(lead.valor || 0).toLocaleString('es-MX', { minimumFractionDigits: 2 })} sin IVA). Motivo: ${motivoEl}`, req.usuarioSesion.nombre);
     db.prepare('UPDATE main.historial_archivo SET sucursal_id = ? WHERE lead_id = ? AND sucursal_id IS NULL').run(lead.sucursal_id, lead.id);
@@ -1062,7 +1092,7 @@ app.get('/api/contactos/sin-cotizacion', h((req,res)=>{
   const { q, desde, hasta } = req.query;
   let sql = `SELECT c.id, c.nombre, c.telefono, c.empresa_contacto, c.created_at, c.updated_at, ca.nombre AS canal_nombre
     FROM clientes c LEFT JOIN canales ca ON ca.id = c.canal_origen_id
-    WHERE NOT EXISTS (SELECT 1 FROM leads l WHERE l.cliente_id = c.id) AND en_alcance(c.sucursal_id)`;
+    WHERE NOT EXISTS (SELECT 1 FROM leads l WHERE l.cliente_id = c.id) AND cliente_en_alcance(c.sucursal_id, c.id)`;
   const params = [];
   if (q) { sql += ' AND (c.nombre LIKE ? OR c.telefono LIKE ? OR c.empresa_contacto LIKE ?)'; params.push(`%${q}%`, `%${q}%`, `%${q}%`); }
   if (desde) { sql += ' AND date(c.created_at) >= date(?)'; params.push(desde); }
@@ -1075,6 +1105,7 @@ const RFC = /^[A-ZÑ&]{3,4}\d{6}[A-Z0-9]{3}$/;
 const normalizarRfc = v => (v === undefined || v === null) ? v : String(v).trim().toUpperCase();
 app.post('/api/contactos', h((req,res)=>{
   const {nombre,telefono,empresa_contacto,direccion,correo,telefono_alterno,giro,rfc,notas_generales}=req.body;
+  if (nivelVentas() < 1) return res.status(403).json({ error: 'Tu rol no da de alta contactos' });
   if (!nombre || !String(nombre).trim()) return res.status(400).json({error:'El nombre del contacto es obligatorio'});
   const malNombre = unicos.problemaNombreCliente(nombre, 'El nombre') || (empresa_contacto && String(empresa_contacto).trim() ? unicos.problemaNombreCliente(empresa_contacto, 'La empresa') : null);
   if (malNombre) return res.status(400).json({ error: malNombre });
@@ -1130,7 +1161,7 @@ app.get('/api/clientes', h((req, res) => {
       MAX(COALESCE(l.updated_at,c.updated_at)) AS ultima_actividad
     FROM clientes c
     LEFT JOIN leads l ON l.cliente_id = c.id
-    WHERE (en_alcance(c.sucursal_id) OR EXISTS (SELECT 1 FROM leads lv WHERE lv.cliente_id = c.id))
+    WHERE (cliente_en_alcance(c.sucursal_id, c.id) OR EXISTS (SELECT 1 FROM leads lv WHERE lv.cliente_id = c.id))
   `;
   const params = [];
   if (q) {
@@ -1311,7 +1342,7 @@ app.get('/api/kpis', h((req, res) => {
       SELECT cliente_id, SUM(CASE WHEN estatus = 'ganado' THEN 1 ELSE 0 END) AS ganados
       FROM leads GROUP BY cliente_id
     ) g ON g.cliente_id = c.id
-    WHERE (en_alcance(c.sucursal_id) OR EXISTS (SELECT 1 FROM leads lv WHERE lv.cliente_id = c.id))
+    WHERE (cliente_en_alcance(c.sucursal_id, c.id) OR EXISTS (SELECT 1 FROM leads lv WHERE lv.cliente_id = c.id))
   `).get();
   const valorHistorico = db.prepare(`SELECT COALESCE(SUM(valor), 0) AS v FROM leads WHERE estatus = 'ganado'`).get().v;
 
@@ -1475,7 +1506,7 @@ app.get('/api/analisis/comercial', h((req,res)=>{
       SUM(CASE WHEN estatus='abierto' AND (? IS NULL OR date(created_at)>=?) AND (? IS NULL OR date(created_at)<=?) THEN COALESCE(valor,0) ELSE 0 END) propuesto,
       MAX(CASE WHEN estatus='ganado' THEN fecha_servicio END) ultima_fecha
       FROM leads GROUP BY cliente_id) a ON a.cliente_id=c.id
-    WHERE (en_alcance(c.sucursal_id) OR EXISTS (SELECT 1 FROM leads lv WHERE lv.cliente_id = c.id))`).all(...Array.from({length:6},()=>[desde,desde,hasta,hasta]).flat());
+    WHERE (cliente_en_alcance(c.sucursal_id, c.id) OR EXISTS (SELECT 1 FROM leads lv WHERE lv.cliente_id = c.id))`).all(...Array.from({length:6},()=>[desde,desde,hasta,hasta]).flat());
   const canales=new Map();
   for(const c of clientes){const k=c.canal_origen_id||0;if(!canales.has(k))canales.set(k,{canal:c.canal,nuevos:0,convertidos:0,clientes:0,recurrentes:0,servicios:0,contratado:0,registros:0,abiertas:0,propuesto:0});const r=canales.get(k);r.nuevos+=c.nuevo;r.convertidos+=c.nuevo&&c.ganados_historicos>0?1:0;r.clientes+=c.servicios>0?1:0;r.recurrentes+=c.servicios>0&&c.ganados_historicos>1?1:0;for(const campo of ['servicios','contratado','registros','abiertas','propuesto'])r[campo]+=c[campo];}
   const filas=[...canales.values()].sort((a,b)=>b.contratado-a.contratado);

@@ -17,6 +17,7 @@ const HOY = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Mexico_City' }
 (async () => {
   for (let i = 0; i < 100 && !/corriendo/.test(salida); i++) await espera(150);
   const A = (await pedir('POST', '/login', null, { nombre: ADMIN.correo, password: ADMIN.password }))[1].token;
+  await require('./ayuda-alcance.cjs').comoAntes(pedir, A); // esta prueba es de cobros y cuentas, no de «qué ve cada rol»
   const servicios = (await pedir('GET', '/servicios', A))[1], canales = (await pedir('GET', '/canales', A))[1];
   const yo = (await pedir('GET', '/usuarios', A))[1].find(u => u.rol === 'admin').id;
   // Usuario de ventas (sus pagos quedan por confirmar).

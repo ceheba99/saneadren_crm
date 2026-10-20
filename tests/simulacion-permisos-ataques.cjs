@@ -54,8 +54,16 @@ const azar = () => { semilla = (semilla * 1103515245 + 12345) % 2147483648; retu
   let [s, j] = await pedir('GET', '/permisos', A);
   const CATALOGO = j.catalogo.map(p => p.clave);
   const sucs = (await pedir('GET', '/sucursales', A))[1].sucursales, QRO = sucs.find(x => x.clave === 'QRO').id, CDMX = sucs.find(x => x.clave === 'CDMX')?.id;
-  const crearRol = async (nombre, permisos) => { const [, r] = await pedir('POST', '/roles', A, { nombre }); await pedir('PUT', '/roles/' + r.clave + '/permisos', A, { permisos }); return r.clave; };
-  const ROL_TODO = await crearRol('Todo de prueba', CATALOGO), ROL_NADA = await crearRol('Nada de prueba', []);
+  const AREAS = j.areas.map(a => a.clave);
+  const VIRTUALES = AREAS.flatMap(a => [a + '.ver', a + '.sucursal']);
+  const cuerpo = (lista, extra = {}) => {
+    if (!Array.isArray(lista)) return { permisos: lista, ...extra };
+    const alcances = Object.fromEntries(AREAS.map(a => [a, lista.includes(a + '.sucursal') ? 2 : lista.includes(a + '.ver') ? 1 : 0]));
+    return { permisos: lista.filter(c => !VIRTUALES.includes(c)), alcances, ...extra };
+  };
+  const TODO = [...CATALOGO, ...VIRTUALES];
+  const crearRol = async (nombre, permisos) => { const [, r] = await pedir('POST', '/roles', A, { nombre }); await pedir('PUT', '/roles/' + r.clave + '/permisos', A, cuerpo(permisos)); return r.clave; };
+  const ROL_TODO = await crearRol('Todo de prueba', TODO), ROL_NADA = await crearRol('Nada de prueba', []);
   const crearUsuario = async (nombre, rol, sucursales = [QRO]) => (await pedir('POST', '/usuarios', A, { nombre, password: CLAVE, rol, sucursales }));
   for (const [nombre, rol] of [['Prueba Gerente', 'gerente'], ['Prueba Todo', ROL_TODO], ['Prueba Nada', ROL_NADA], ['Prueba Ventas', 'ventas'], ['Prueba Atencion', 'atencion'], ['Prueba Costos', 'costos']]) {
     [s, j] = await crearUsuario(nombre, rol); if (s !== 201) throw new Error('No se creó ' + nombre + ': ' + JSON.stringify(j));
@@ -76,7 +84,7 @@ const azar = () => { semilla = (semilla * 1103515245 + 12345) % 2147483648; retu
   const difs = (a, b) => Object.keys(a).filter(k => a[k] !== b[k]).map(k => `${k}: ${a[k]} vs ${b[k]}`);
   const fG = await foto('Prueba Gerente'), fT = await foto('Prueba Todo');
   revisa(!difs(fG, fT).length, `un rol inventado con todos los permisos se comporta igual que el gerente en las ${RUTAS.length} rutas`, difs(fG, fT));
-  const fGN = await foto('Prueba Gerente', t => pedir('PUT', '/roles/gerente/permisos', t, { permisos: [] })), fN = await foto('Prueba Nada');
+  const fGN = await foto('Prueba Gerente', t => pedir('PUT', '/roles/gerente/permisos', t, cuerpo([]))), fN = await foto('Prueba Nada');
   revisa(!difs(fGN, fN).length, 'un gerente sin permisos se comporta igual que un rol inventado sin permisos', difs(fGN, fN));
   const con500 = Object.entries({ ...Object.fromEntries(Object.entries(fT).map(([k, v]) => ['todo ' + k, v])), ...Object.fromEntries(Object.entries(fN).map(([k, v]) => ['nada ' + k, v])), ...Object.fromEntries(Object.entries(fGN).map(([k, v]) => ['gerente-nada ' + k, v])) }).filter(([, v]) => v >= 500);
   revisa(!con500.length, 'ninguna ruta truena (error 500) con todos o sin ningún permiso', con500);
@@ -93,14 +101,17 @@ const azar = () => { semilla = (semilla * 1103515245 + 12345) % 2147483648; retu
   const T = {}; for (const u of ['Prueba Gerente', 'Prueba Todo', 'Prueba Nada', 'Prueba Ventas', 'Prueba Atencion', 'Prueba Costos']) T[u] = await login(u);
   const tabla = async () => (await pedir('GET', '/permisos', A))[1];
   const permisosDe = async rol => (await tabla()).roles.find(r => r.clave === rol).permisos;
-  const guardar = (rol, permisos, extra = {}) => pedir('PUT', '/roles/' + rol + '/permisos', A, { permisos, ...extra });
+  const guardar = (rol, permisos, extra = {}) => pedir('PUT', '/roles/' + rol + '/permisos', A, cuerpo(permisos, extra));
+  // Lo que no es el tema de esta parte (cobros propios, escalar privilegios): los roles de fábrica como antes de los niveles.
+  await require('./ayuda-alcance.cjs').comoAntes(pedir, A);
 
   console.log('\n2. Permisos que se contraponen o dependen de otro');
   const DEP = (await pedir('GET', '/permisos', A))[1].dependencias || {};
   revisa(Object.keys(DEP).length >= 4, 'la pantalla recibe qué permiso necesita a cuál (para marcarlos juntos)', DEP);
-  const DEPENDE = Object.entries(DEP).flatMap(([a, req]) => req.map(b => [a, b]));
+  // Más «toda su sucursal» → «al menos lo suyo» en cada área.
+  const DEPENDE = Object.entries(DEP).flatMap(([a, req]) => req.map(b => [a, b])).concat(AREAS.map(a => [a + '.sucursal', a + '.ver']));
   const cerrar = set => { let cambio = true; while (cambio) { cambio = false; for (const [a, b] of DEPENDE) if (set.has(a) && !set.has(b)) { set.add(b); cambio = true; } } return set; };
-  for (const [p, req] of DEPENDE) {
+  for (const [p, req] of DEPENDE.filter(([a]) => !VIRTUALES.includes(a))) {
     [s, j] = await guardar(ROL_NADA, [...cerrar(new Set([p]))].filter(x => x !== req));
     revisa(s === 400 && /necesita/i.test(j.error || ''), `«${p}» sin «${req}» no se guarda (no tiene sentido)`, [s, j]);
     const completo = [...cerrar(new Set([p]))];
@@ -204,7 +215,7 @@ const azar = () => { semilla = (semilla * 1103515245 + 12345) % 2147483648; retu
   ].filter(([p]) => CATALOGO.includes(p));
   let fallas = [], vueltas = 0;
   for (; vueltas < 150; vueltas++) {
-    const set = cerrar(new Set(CATALOGO.filter(() => azar() < 0.5)));
+    const set = cerrar(new Set(TODO.filter(() => azar() < 0.5)));
     [s, j] = await guardar(ROL_NADA, [...set]);
     if (s !== 200) { fallas.push(['no guardó', [...set], j]); continue; }
     const [, mios] = await pedir('GET', '/permisos/mios', T['Prueba Nada']);

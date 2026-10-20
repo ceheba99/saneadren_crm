@@ -743,7 +743,7 @@ const Finanzas = (() => {
   // ---- Orden de servicio relacionada al gasto: búsqueda, vista previa y datos que se cargan ----
   let ORDENES_GASTO = [];
   async function cargarOrdenesGasto() {
-    try { ORDENES_GASTO = await api('/leads?estatus=ganado').then(json); } catch { ORDENES_GASTO = []; }
+    try { ORDENES_GASTO = await api('/finanzas/ordenes-para-gasto').then(json); } catch { ORDENES_GASTO = []; }
   }
   const sinAcentosGasto = t => String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
   // Busca por folio (OS-202610-0001), número (1), cliente, servicio, unidad, operador o ubicación.
@@ -761,7 +761,7 @@ const Finanzas = (() => {
   function pintarSugerenciasGasto() {
     const caja = $('gasto-orden-sugerencias'), lista = buscarOrdenesGasto($('gasto-orden').value);
     caja.hidden = !lista.length; $('gasto-orden').setAttribute('aria-expanded', String(!!lista.length));
-    caja.innerHTML = lista.map(o => `<button type="button" role="option" class="gasto-orden-opcion" data-orden-gasto="${Number(o.id)}"><b>${esc(folioOrdenServicio(o))}</b> · ${esc(o.empresa_contacto || o.nombre || 'Sin cliente')} · ${esc(o.servicio_nombre || 'Servicio')}<small>${esc(fechaTxt(o.fecha_servicio))}${o.equipo ? ' · Unidad ' + esc(o.equipo) : ''} · ${formatoMoneda(totalOrden(o))}</small></button>`).join('');
+    caja.innerHTML = lista.map(o => `<button type="button" role="option" class="gasto-orden-opcion" data-orden-gasto="${Number(o.id)}"><b>${esc(folioOrdenServicio(o))}</b> · ${esc(o.empresa_contacto || o.nombre || 'Sin cliente')} · ${esc(o.servicio_nombre || 'Servicio')}<small>${esc(fechaTxt(o.fecha_servicio))}${o.equipo ? ' · Unidad ' + esc(o.equipo) : ''}${o.valor != null ? ' · ' + formatoMoneda(totalOrden(o)) : ''}</small></button>`).join('');
   }
   // Muestra la información de la orden elegida y carga equipo y concepto si la orden los tiene.
   function elegirOrdenGasto(o, cargarDatos = true) {

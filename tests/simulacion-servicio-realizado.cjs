@@ -35,8 +35,10 @@ const dia = k => { const x = new Date(HOY + 'T12:00:00Z'); x.setUTCDate(x.getUTC
   [s, j] = await pedir('GET', '/finanzas/cxp?vista=todas', A); const g1 = j.find(x => x.lead_id === o1.id);
   revisa(g1 && g1.concepto === 'Renta de pipa 20 m³' && g1.total === 5800 && g1.saldo === 0 && g1.orden_folio && /^OS-/.test(g1.orden_folio), 'el gasto queda en Cuentas por pagar con el número de la orden, pagado', g1);
   [s, j] = await pedir('GET', '/leads/' + o1.id, A);
-  const nota = j.historial.find(h => /Servicio realizado/.test(h.texto))?.texto || '';
-  revisa(/Gastos generados/.test(nota) && !/tercero|subcontrat|nuestro equipo/i.test(nota), 'la bitácora dice «gastos generados» (sin «tercero», «subcontratado» ni «nuestro equipo»)', nota);
+  // «Realizado» es de la orden; los gastos van en su propia anotación (solo la ve quien ve esos gastos).
+  const nota = j.historial.find(h => /Servicio realizado/.test(h.texto))?.texto || '', notaGastos = j.historial.find(h => /Gastos generados/.test(h.texto)) || {};
+  revisa(/Servicio realizado el/.test(nota) && !/tercero|subcontrat|nuestro equipo/i.test(nota), 'la bitácora dice que se realizó (sin «tercero», «subcontratado» ni «nuestro equipo»)', nota);
+  revisa(notaGastos.area === 'cxp' && /Renta de pipa/.test(notaGastos.texto || '') && !/tercero|subcontrat|nuestro equipo/i.test(notaGastos.texto || ''), 'y aparte, en el área de gastos, dice «gastos generados» con su concepto', notaGastos);
   [s, j] = await pedir('GET', '/generador?desde=' + dia(-5) + '&hasta=' + HOY, A);
   revisa(j.filas.some(f => f.lead_id === o1.id && f.costo === 5800), 'en el Generador aparece con su gasto');
 

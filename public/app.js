@@ -171,6 +171,7 @@ async function cargarCatalogos() {
   document.getElementById('ed-servicio').innerHTML = optS;
   document.getElementById('ed-canal').innerHTML = optC;
   document.getElementById('ed-responsable').innerHTML = optU;
+  document.getElementById('ed-tecnico').innerHTML = '<option value="">Sin asignar</option>' + optU;
   document.getElementById('f-responsable').innerHTML =
     '<option value="">Todos los responsables</option>' + optU;
 }
@@ -194,6 +195,12 @@ async function verificarDuplicado(telefono) {
   const panel = document.getElementById('alerta-dup');
   panel.classList.toggle('mostrar',!!data.cliente);
   if (!data.cliente) return;
+  if (data.cliente.otro_vendedor) {
+    // De otro vendedor de su sucursal (y su rol ve «lo suyo»): no se le cotiza ni se ve lo que tiene.
+    document.getElementById('dup-titulo').textContent = 'Este cliente ya lo atiende ' + data.cliente.atendido_por + ' (' + data.cliente.folio + ')';
+    document.getElementById('dup-lista').innerHTML = '<p>Para no cruzar la cartera, no puedes ver sus cotizaciones ni cotizarle. Pídele a ' + escaparHtml(data.cliente.atendido_por) + ' o al gerente que te lo pase.</p>';
+    return;
+  }
   if (data.cliente.otra_sucursal) {
     // De otra sucursal: solo se sabe que existe (su ID); se le cotiza al mismo cliente para no duplicarlo.
     document.getElementById('dup-titulo').textContent = 'Este teléfono ya está registrado en otra sucursal (' + data.cliente.folio + ')';
@@ -1850,6 +1857,11 @@ async function abrirFicha(id) {
   document.getElementById('ed-canal').value = lead.canal_id || '';
   document.getElementById('ed-servicio').value = lead.servicio_id || '';
   document.getElementById('ed-responsable').value = lead.responsable_id || '';
+  // Con «lo suyo» en ventas, pasar la cotización a otro vendedor lo hace el gerente.
+  const soloSuyo = (Permisos.datos.alcances?.ventas ?? 2) < 2;
+  document.getElementById('ed-responsable').disabled = soloSuyo;
+  document.getElementById('ed-responsable').title = soloSuyo ? 'Para pasarla a otro vendedor, pídeselo al gerente' : '';
+  document.getElementById('ed-tecnico').value = lead.tecnico_id || '';
   document.getElementById('ed-valor').value = lead.valor != null ? lead.valor : '';
   document.getElementById('ed-fecha-servicio').value = lead.fecha_servicio || '';
   // Orden que viene de una cotización: su fecha de servicio no puede ser antes de la cotización.
@@ -2019,6 +2031,7 @@ function recolectarPayloadFicha() {
     canal_id: document.getElementById('ed-canal').value || null,
     servicio_id: document.getElementById('ed-servicio').value || null,
     responsable_id: document.getElementById('ed-responsable').value || null,
+    tecnico_id: document.getElementById('ed-tecnico').value || null,
     valor: valorRaw === '' ? null : Number(valorRaw),
     fecha_servicio: document.getElementById('ed-fecha-servicio').value || null,
     fecha_cotizacion: document.getElementById('ed-fecha-cotizacion').value || null,
@@ -2273,7 +2286,8 @@ function mostrarUsuarioEnHeader() {
 // ---------- Gestión de usuarios (solo admin) ----------
 // Roles: vienen de la base (Dirección puede crear más en «Roles y permisos»). «cabe» = este usuario puede darlo.
 let ROLES_DATOS = [];
-const nombreRol = clave => ROLES_DATOS.find(r => r.clave === clave)?.nombre || clave;
+const NOMBRES_DE_FABRICA = { admin: 'Dirección', gerente: 'Gerente', ventas: 'Ventas', atencion: 'Atención a clientes', tecnico: 'Técnico', costos: 'Costos y compras' };
+const nombreRol = clave => ROLES_DATOS.find(r => r.clave === clave)?.nombre || NOMBRES_DE_FABRICA[clave] || clave;
 const opcionesRol = actual => ROLES_DATOS.filter(r => (r.cabe && (Sucursales.datos.admin_general || !['admin', 'gerente'].includes(r.clave))) || r.clave === actual)
   .map(r => `<option value="${escaparHtml(r.clave)}" ${r.clave === actual ? 'selected' : ''}>${escaparHtml(r.nombre + (r.descripcion ? ' · ' + r.descripcion : ''))}</option>`).join('');
 async function cargarUsuarios() {
@@ -2489,6 +2503,7 @@ on('btn-crear-usuario', 'click', async () => {
 // ---------- Inicio ----------
 async function iniciarApp() {
   await Permisos.cargar();
+  if (!USUARIO_ACTUAL) return; // la sesión expiró mientras cargaba: ya se pidió volver a entrar
   mostrarUsuarioEnHeader();
   await Sucursales.cargar();
   // Si otra persona inicia sesión en el mismo navegador, no debe quedar a la vista lo del usuario anterior.
@@ -2497,7 +2512,7 @@ async function iniciarApp() {
   await cargarCatalogos();
   await cargarLeads();
   actualizarBadgePendientes();
-  setInterval(actualizarBadgePendientes, 60000);
+  setInterval(() => actualizarBadgePendientes().catch(() => {}), 60000); // sin conexión: se reintenta al siguiente minuto
 }
 cargarSesion();
 if (Cuentas.atenderEnlace()) {
