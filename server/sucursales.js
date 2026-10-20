@@ -309,14 +309,29 @@ module.exports = function sucursales(app, db, h, { audit }) {
   // Los datos de un cliente compartido (teléfonos, RFC, correo, dirección, crédito) los corrige Dirección o la
   // sucursal que lo dio de alta; las demás sucursales le venden, pero no le cambian los datos.
   function puedeEditarCliente(req, id) {
-    if (req.usuarioSesion?.admin_general) return true;
+    if (req.usuarioSesion?.admin_general && !req.usuarioSesion?.ver_como) return true;
+    return clienteDeSuSucursal(req, id) && clienteEsSuyo(id);
+  }
+  // Solo la regla de sucursal (para lo que no es de ventas, p. ej. el crédito que captura cobranza).
+  function clienteDeSuSucursal(req, id) {
+    if (req.usuarioSesion?.admin_general && !req.usuarioSesion?.ver_como) return true;
     const c = db.prepare('SELECT sucursal_id FROM main.clientes WHERE id = ?').get(id);
     return !!c && (c.sucursal_id == null ? req.alcanceSuc.permitidas.includes(alcance.matriz()) : req.alcanceSuc.permitidas.includes(c.sucursal_id));
   }
+  // Según su rol (permisos.js): quien ve las ventas de su sucursal toca cualquier cliente; con «lo suyo», solo los que
+  // atiende como responsable (o los que todavía nadie atiende); quien no ve ventas (Cobranza, Compras) no los toca.
+  function clienteEsSuyo(id) {
+    const v = alcance.nivel('ventas');
+    if (v >= 2) return true;
+    if (v < 1) return false;
+    const resp = db.prepare('SELECT responsable_id FROM main.leads WHERE cliente_id = ? AND en_alcance(sucursal_id)').all(id).map(r => r.responsable_id);
+    return !resp.length || resp.includes(alcance.usuario());
+  }
   const sucursalDeCliente = id => { const c = db.prepare('SELECT sucursal_id FROM main.clientes WHERE id = ?').get(id); return lista().find(s => s.id === c?.sucursal_id) || null; };
-  const NO_EDITA = (req, id) => { const s = sucursalDeCliente(id); return { error: `Este cliente lo dio de alta ${s ? s.nombre + ' (' + s.clave + ')' : 'otra sucursal'}: sus datos (teléfonos, RFC, correo, dirección y crédito) los corrige esa sucursal o Dirección. Tú sí puedes cotizarle y venderle.`, codigo: 'CLIENTE_DE_OTRA_SUCURSAL' }; };
+  const NO_EDITA = (req, id) => { if (!clienteEsSuyo(id)) return { error: alcance.nivel('ventas') < 1 ? 'Tu rol no modifica los datos de los clientes' : 'Este cliente lo atiende otro vendedor: sus datos los corrige él o el gerente', codigo: 'CLIENTE_DE_OTRO' };
+    const s = sucursalDeCliente(id); return { error: `Este cliente lo dio de alta ${s ? s.nombre + ' (' + s.clave + ')' : 'otra sucursal'}: sus datos (teléfonos, RFC, correo, dirección y crédito) los corrige esa sucursal o Dirección. Tú sí puedes cotizarle y venderle.`, codigo: 'CLIENTE_DE_OTRA_SUCURSAL' }; };
 
-  return { puedeEditarCliente, NO_EDITA, activarCandados, folio: folioDe, claveDe, asignar, de, siguienteFolio, lista, clienteVisible, verCliente, esGeneral, sucursalesParaUsuario, guardarSucursalesUsuario, puedeAdministrar, sucursalesDe };
+  return { puedeEditarCliente, clienteDeSuSucursal, NO_EDITA, activarCandados, folio: folioDe, claveDe, asignar, de, siguienteFolio, lista, clienteVisible, verCliente, esGeneral, sucursalesParaUsuario, guardarSucursalesUsuario, puedeAdministrar, sucursalesDe };
 };
 module.exports.VISTAS = VISTAS;
 // «OS-CDMX-202610-0001»; los registros de antes de las sucursales conservan «OS-202610-0087».

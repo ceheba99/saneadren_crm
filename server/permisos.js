@@ -64,7 +64,7 @@ const DEPENDE = {
   'ordenes.estatus': ['ventas.ver'],
   'ordenes.importe_ganada': ['ventas.ver'],
   'ordenes.eliminar': ['ventas.ver'],
-  'generador.cargar': ['ventas.ver'],
+  'generador.cargar': ['ventas.sucursal'], // crea órdenes de cualquier cliente de la sucursal
 };
 const nombreDe = c => {
   const p = CATALOGO.find(x => x.clave === c); if (p) return p.nombre;

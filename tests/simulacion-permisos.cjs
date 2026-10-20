@@ -58,6 +58,7 @@ const CATALOGOS = /^(POST|PUT|DELETE) \/(canales|tipos-cliente|compras\/(centros
 const CAMBIOS_ESPERADOS = [
   ['gerente', CATALOGOS, 'el gerente ya edita los catálogos compartidos como ventas o atención (lo decide «Catálogos compartidos»)'],
   ...['ventas', 'atencion', 'tecnico', 'costos'].map(r => [r, /^POST \/clientes\/distintos$/, 'marcar clientes «distintos» es parte de revisar duplicados: solo Dirección']),
+  ...['ventas', 'atencion', 'tecnico'].map(r => [r, /^PUT \/finanzas\/proveedores\/1$/, 'los datos del proveedor (CLABE, banco) los corrige quien hace los pagos']),
 ];
 
 (async () => {

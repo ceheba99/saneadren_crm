@@ -539,7 +539,8 @@ module.exports = function finanzas(app, db, h, unicos) {
   app.put('/api/finanzas/clientes/:id/credito', h((req, res) => {
     if (!permitido(req, res, 'cobranza.factura', 'No tienes permiso para cambiar el crédito')) return;
     const suc = app.locals.sucursales;
-    if (suc && !suc.puedeEditarCliente(req, Number(req.params.id))) return res.status(403).json(suc.NO_EDITA(req, Number(req.params.id)));
+    // El crédito es de cobranza: basta que el cliente sea de su sucursal (y que lo vea, lo revisa el candado por número).
+    if (suc && !suc.clienteDeSuSucursal(req, Number(req.params.id))) return res.status(403).json(suc.NO_EDITA(req, Number(req.params.id)));
     if (!diasCreditoValidos(req.body.dias_credito)) return res.status(400).json({ error: 'Los días de crédito deben ser un número entero de 0 a 180' });
     const info = db.prepare('UPDATE clientes SET dias_credito = ? WHERE id = ?').run(req.body.dias_credito === '' || req.body.dias_credito == null ? null : Number(req.body.dias_credito), req.params.id);
     if (!info.changes) return res.status(404).json({ error: 'Cliente no encontrado' });
@@ -782,8 +783,9 @@ module.exports = function finanzas(app, db, h, unicos) {
     app.locals.auditoria?.registrar(req, 'proveedor', Number(info.lastInsertRowid), 'creado', `${d.nombre}${d.rfc ? ' · RFC ' + d.rfc : ''} · ${CATEGORIAS[d.categoria] || d.categoria}${req.body.forzar ? ' · confirmado como distinto de uno parecido' : ''}`);
     res.status(201).json(db.prepare('SELECT * FROM proveedores WHERE id = ?').get(info.lastInsertRowid));
   }));
+  // Corregir un proveedor (sobre todo su CLABE o banco: a dónde se le paga) lo hace quien mueve dinero.
   app.put('/api/finanzas/proveedores/:id', h((req, res) => {
-    if (!permitido(req, res, 'gastos.registrar', 'No tienes permiso para esta acción')) return;
+    if (!permitido(req, res, 'dinero.mover', 'Los datos del proveedor (CLABE, banco…) los corrige quien hace los pagos')) return;
     const p = db.prepare('SELECT * FROM proveedores WHERE id = ?').get(req.params.id);
     if (!p) return res.status(404).json({ error: 'Proveedor no encontrado' });
     const d = datosProveedor({ ...p, ...req.body });
@@ -1188,6 +1190,8 @@ module.exports = function finanzas(app, db, h, unicos) {
   const esBanco = t => /banorte|santander|bbva|bancomer|banamex|citi|hsbc|scotia|inbursa|afirme|banbaj|banregio|azteca|bajio|banco|spei/i.test(t || '');
 
   app.post('/api/finanzas/importar/cxc', h((req, res) => {
+    // Crea órdenes y cobros de cualquier cliente de la sucursal: quien ve ventas y cobranza de toda su sucursal.
+    if (!P.puede(req, 'ventas.sucursal') || !P.puede(req, 'cxc.sucursal') || !P.puede(req, 'cobros.registrar')) return res.status(403).json({ error: 'La cobranza la importa quien ve ventas y cobranza de toda su sucursal' });
     const filas = leerFilas(req, res); if (!filas) return;
     const simular = req.query.simular === '1';
     const hoy = hoyMexico();

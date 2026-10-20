@@ -840,6 +840,8 @@ app.put('/api/leads/:id', validarPartidas, validarRegistro, h((req, res) => {
   const id = req.params.id;
   const actual = db.prepare('SELECT * FROM leads WHERE id = ?').get(id);
   if (!actual) return res.status(404).json({ error: 'Cotización no encontrada' });
+  // Quien solo ve la orden por la cobranza (p. ej. Cobranza) no la modifica: crédito y factura van por su propia ruta.
+  if (nivelVentas() < 1) return res.status(403).json({ error: 'Tu rol no modifica cotizaciones ni órdenes' });
   if (req.body.version !== undefined && Number(req.body.version) !== actual.version) {
     return res.status(409).json({ error: 'Otra persona actualizó esta cotización mientras la tenías abierta. Ciérrala y vuelve a abrirla para ver los cambios antes de guardar los tuyos.' });
   }
@@ -849,9 +851,10 @@ app.put('/api/leads/:id', validarPartidas, validarRegistro, h((req, res) => {
   if (req.body.canal_id !== undefined && !existe('canales', req.body.canal_id)) return res.status(400).json({ error: 'El canal indicado no existe' });
   if (req.body.servicio_id !== undefined && !existe('catalogo_servicios', req.body.servicio_id)) return res.status(400).json({ error: 'El servicio indicado no existe' });
   if (req.body.responsable_id !== undefined && !existe('usuarios', req.body.responsable_id)) return res.status(400).json({ error: 'El responsable indicado no existe' });
-  // Con «lo suyo», pasar la cotización a otro vendedor lo hace el gerente (quien ve toda la sucursal).
-  if (req.body.responsable_id !== undefined && Number(req.body.responsable_id) !== actual.responsable_id && nivelVentas() < 2 && Number(req.body.responsable_id) !== req.usuarioSesion.id)
-    return res.status(403).json({ error: 'Para pasar esta cotización a otro vendedor, pídeselo al gerente' });
+  // Con «lo suyo», el responsable lo cambia el gerente (quien ve toda la sucursal): ni pasarla a otro ni quedársela
+  // (p. ej. el técnico asignado no se vuelve el vendedor de la orden).
+  if (req.body.responsable_id !== undefined && Number(req.body.responsable_id) !== actual.responsable_id && nivelVentas() < 2)
+    return res.status(403).json({ error: 'El responsable de esta cotización lo cambia el gerente' });
   if (req.body.tecnico_id !== undefined) {
     req.body.tecnico_id = req.body.tecnico_id === null || req.body.tecnico_id === '' ? null : Number(req.body.tecnico_id);
     if (req.body.tecnico_id !== null && !db.prepare('SELECT 1 FROM usuarios WHERE id = ? AND activo = 1').get(req.body.tecnico_id)) return res.status(400).json({ error: 'El técnico indicado no existe o está desactivado' });
@@ -1129,7 +1132,7 @@ app.post('/api/contactos', h((req,res)=>{
     const destino = db.prepare('SELECT * FROM clientes WHERE id = ?').get(Number(req.body.agregar_telefono_a));
     if (!destino) return res.status(404).json({ error: 'Cliente no encontrado' });
     // De otra sucursal: no se le cambian los datos; se usa ese mismo cliente para cotizarle.
-    if (!suc.puedeEditarCliente(req, destino.id)) return res.status(409).json({ error: 'Es cliente de otra sucursal: le cotizarás a ese mismo cliente (sus datos no se cambian)', cliente_id: destino.id, cliente: unicos.resumen(destino) });
+    if (!suc.puedeEditarCliente(req, destino.id)) return res.status(409).json(suc.clienteDeSuSucursal(req, destino.id) ? suc.NO_EDITA(req, destino.id) : { error: 'Es cliente de otra sucursal: le cotizarás a ese mismo cliente (sus datos no se cambian)', cliente_id: destino.id, cliente: unicos.resumen(destino) });
     const r = unicos.agregarTelefono(destino.id, telefono, 'Contacto: ' + String(nombre).trim().slice(0, 50));
     if (r.error) return res.status(409).json(r);
     audit.registrar(req, 'cliente', destino.id, 'teléfono agregado', `${norm} (${String(nombre).trim()}) · se dijo que es el mismo cliente`);
