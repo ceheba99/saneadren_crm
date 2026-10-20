@@ -178,9 +178,10 @@ function migrar(db) {
   { const max = db.prepare('SELECT COALESCE(MAX(orden), 0) m FROM categorias_gasto').get().m, ins = db.prepare('INSERT OR IGNORE INTO categorias_gasto (clave, nombre, orden, es_gasto) VALUES (?, ?, ?, ?)');
     db.transaction(() => CATEGORIAS_CXP.forEach(([k, n, g], i) => ins.run(k, n, max + i + 1, g)))(); }
   // Columnas nuevas del Excel: a quién se paga, tipo de comprobante y método del SAT; cuenta de salida del pago; CLABE y banco del proveedor.
+  // iva_cent: IVA incluido en el total de un gasto (NULL = no se capturó; ver ivaDeGasto).
   { const cols = t => db.prepare(`PRAGMA table_info(${t})`).all().map(c => c.name);
     for (const [t, c, tipo] of [['cuentas_por_pagar', 'beneficiario', 'TEXT'], ['cuentas_por_pagar', 'tipo_comprobante', 'TEXT'], ['cuentas_por_pagar', 'metodo_sat', 'TEXT'],
-      ['pagos_proveedor', 'cuenta_origen', 'TEXT'], ['proveedores', 'clabe', 'TEXT'], ['proveedores', 'banco', 'TEXT']])
+      ['pagos_proveedor', 'cuenta_origen', 'TEXT'], ['proveedores', 'clabe', 'TEXT'], ['proveedores', 'banco', 'TEXT'], ['cuentas_por_pagar', 'iva_cent', 'INTEGER']])
       if (!cols(t).includes(c)) db.exec(`ALTER TABLE ${t} ADD COLUMN ${c} ${tipo}`); }
 }
 // Categorías del Excel de Cuentas por pagar (sus 200 conceptos se agrupan en éstas). «es_gasto» = 0: compras de
@@ -194,6 +195,17 @@ const CATEGORIAS_CXP = [
   ['activos', 'Compra de vehículos, maquinaria e inmuebles (inversión)', 0], ['prestamos', 'Préstamos y anticipos', 0], ['movimientos', 'Traspasos y devoluciones (no es gasto)', 0],
 ];
 const CATEGORIAS_NO_GASTO = new Set();
+// IVA de un gasto (incluido en su total). La venta se cuenta sin IVA; para comparar parejo, a los gastos también
+// se les quita el IVA que se puede acreditar, que es el de una FACTURA (CFDI):
+//  · si se capturó (o vino de una orden de compra), ese;
+//  · si es factura y no se capturó, se estima al 16 % incluido en el total (y se marca «estimado»);
+//  · sin factura (recibo, nómina, impuestos, estado de cuenta…) no hay IVA que acreditar: el gasto es el total.
+// Sin tipo de comprobante, un folio de factura cuenta como factura (igual que al registrar).
+const esFactura = x => (x.tipo_comprobante ? x.tipo_comprobante === 'factura' : !!String(x.factura_folio || '').trim());
+function ivaDeGasto(x) {
+  if (x.iva_cent !== null && x.iva_cent !== undefined) return { iva_cent: x.iva_cent, estimado: false };
+  return esFactura(x) ? { iva_cent: Math.round(x.total_cent * 16 / 116), estimado: true } : { iva_cent: 0, estimado: false };
+}
 function cargarCategorias(db) {
   for (const k of Object.keys(CATEGORIAS)) delete CATEGORIAS[k];
   CATEGORIAS_ACTIVAS.clear(); CATEGORIAS_NO_GASTO.clear();
@@ -648,6 +660,15 @@ module.exports = function finanzas(app, db, h, unicos) {
       WHERE l.estatus = 'ganado'${todas ? ' AND en_alcance(l.sucursal_id)' : ''} ORDER BY l.fecha_servicio DESC, l.id DESC`).all());
   }));
   module.exports.ordenParaLigar = ordenParaLigar;
+  // IVA capturado por la persona: 0 o un monto menor que el total; solo una factura lleva IVA acreditable.
+  function ivaCapturado(valor, totalCent, x) {
+    if (valor === undefined || valor === null || valor === '') return { cent: null };
+    const cent = valor === 0 || (typeof valor === 'string' && /^\s*\$?\s*0+(\.0+)?\s*$/.test(valor)) ? 0 : aCentavos(valor);
+    if (cent === null) return { error: 'Revisa el IVA (un monto con máximo 2 decimales, o 0)' };
+    if (cent >= totalCent) return { error: 'El IVA debe ser menor que el total' };
+    if (cent > 0 && !esFactura(x)) return { error: 'Solo una factura (CFDI) trae IVA que se pueda acreditar: en otro comprobante déjalo vacío o en 0' };
+    return { cent };
+  }
   function cuentasPorPagar() {
     const hoy = hoyMexico();
     return db.prepare(`SELECT x.*, p.nombre AS proveedor_nombre, (SELECT created_at FROM main.leads l WHERE l.id = x.lead_id) AS lead_created_at,
@@ -656,7 +677,9 @@ module.exports = function finanzas(app, db, h, unicos) {
       FROM cuentas_por_pagar x JOIN proveedores p ON p.id = x.proveedor_id WHERE x.cancelada = 0`).all()
       .map(x => {
         const saldo = x.total_cent - x.pagado_cent;
+        const iva = ivaDeGasto(x);
         return { ...x, orden_folio: x.lead_id ? folioOS(x.lead_id, x.lead_created_at) : null, categoria_nombre: CATEGORIAS[x.categoria] || x.categoria, total: aPesos(x.total_cent), pagado: aPesos(x.pagado_cent),
+          iva: aPesos(iva.iva_cent), iva_estimado: iva.estimado, es_factura: esFactura(x),
           saldo: aPesos(Math.max(saldo, 0)), vencida: saldo > 0 && x.fecha_vencimiento < hoy, dias_para_vencer: diasEntre(hoy, x.fecha_vencimiento) };
       });
   }
@@ -1022,23 +1045,40 @@ module.exports = function finanzas(app, db, h, unicos) {
     if (metodoSat && (!['PUE', 'PPD'].includes(metodoSat) || tipoComp !== 'factura')) return res.status(400).json({ error: 'El método del SAT (PUE o PPD) solo aplica a facturas' });
     const beneficiario = texto(b.beneficiario, 120);
     if (beneficiario && !conSentido(beneficiario, 3)) return res.status(400).json({ error: 'Escribe a quién se le paga' });
+    // IVA de la factura (opcional): vacío = no se capturó (Resultados lo estima al 16 %).
+    const iva = ivaCapturado(b.iva, total, { tipo_comprobante: tipoComp, factura_folio: folioFactura });
+    if (iva.error) return res.status(400).json({ error: iva.error });
     if (folioFactura && !b.forzar && db.prepare("SELECT id FROM main.cuentas_por_pagar WHERE en_alcance(sucursal_id) AND proveedor_id = ? AND replace(upper(factura_folio), ' ', '') = replace(upper(?), ' ', '') AND cancelada = 0").get(prov.id, folioFactura)) {
       return res.status(409).json({ error: `Ya registraste la factura ${folioFactura} de ${prov.nombre}. ¿Es otra factura?`, codigo: 'POSIBLE_DUPLICADO' });
     }
     const id = db.transaction(() => {
-      const info = db.prepare(`INSERT INTO main.cuentas_por_pagar (proveedor_id, categoria, concepto, factura_folio, fecha_documento, fecha_vencimiento, total_cent, lead_id, equipo, notas, registrado_por, dias_credito, beneficiario, tipo_comprobante, metodo_sat)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(prov.id, categoria, concepto, texto(b.factura_folio, 60), fecha, vence, total, leadId, texto(b.equipo, 200), texto(b.notas, 1000), req.usuarioSesion.id, dias,
-        beneficiario && unicos.clave(beneficiario) !== unicos.clave(prov.nombre) ? beneficiario : null, tipoComp, metodoSat);
+      const info = db.prepare(`INSERT INTO main.cuentas_por_pagar (proveedor_id, categoria, concepto, factura_folio, fecha_documento, fecha_vencimiento, total_cent, lead_id, equipo, notas, registrado_por, dias_credito, beneficiario, tipo_comprobante, metodo_sat, iva_cent)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(prov.id, categoria, concepto, texto(b.factura_folio, 60), fecha, vence, total, leadId, texto(b.equipo, 200), texto(b.notas, 1000), req.usuarioSesion.id, dias,
+        beneficiario && unicos.clave(beneficiario) !== unicos.clave(prov.nombre) ? beneficiario : null, tipoComp, metodoSat, iva.cent);
       app.locals.sucursales.asignar('cuentas_por_pagar', Number(info.lastInsertRowid), leadId ? app.locals.sucursales.de('leads', leadId) : undefined);
       if (b.ya_pagado) {
         db.prepare('INSERT INTO main.pagos_proveedor (cxp_id, fecha, monto_cent, metodo, referencia, registrado_por, cuenta_origen) VALUES (?, ?, ?, ?, ?, ?, ?)')
           .run(info.lastInsertRowid, fechaPagoGasto || (fecha > hoyMexico() ? hoyMexico() : fecha), total, b.metodo, texto(b.referencia, 120), req.usuarioSesion.id, texto(b.cuenta_origen, 80));
       }
       if (leadId) bitacora(leadId, `Costo con terceros registrado: «${concepto}» de ${prov.nombre} por ${fmt(total)}${b.ya_pagado ? ' (ya pagado)' : ' (pendiente de pago en Cuentas por pagar)'}.`, req, 'cxp');
-      app.locals.auditoria?.registrar(req, 'cuenta_por_pagar', Number(info.lastInsertRowid), 'creada', `${prov.nombre} · «${concepto}» · ${fmt(total)}${folioFactura ? ' · factura ' + folioFactura : ''}${b.ya_pagado ? ' · pagada al registrar' : ''}`);
+      app.locals.auditoria?.registrar(req, 'cuenta_por_pagar', Number(info.lastInsertRowid), 'creada', `${prov.nombre} · «${concepto}» · ${fmt(total)}${iva.cent != null ? ' (IVA ' + fmt(iva.cent) + ')' : ''}${folioFactura ? ' · factura ' + folioFactura : ''}${b.ya_pagado ? ' · pagada al registrar' : ''}`);
       return info.lastInsertRowid;
     })();
     res.status(201).json({ id });
+  }));
+
+  // Capturar o corregir el IVA de un gasto ya registrado (los viejos no lo traen): cambia la utilidad de Resultados.
+  app.post('/api/finanzas/cxp/:id/iva', h((req, res) => {
+    if (!puedePagar(req, res)) return;
+    const x = db.prepare('SELECT * FROM cuentas_por_pagar WHERE id = ? AND cancelada = 0').get(Number(req.params.id) || 0);
+    if (!x) return res.status(404).json({ error: 'Cuenta por pagar no encontrada' });
+    if (req.body?.iva === undefined || req.body?.iva === null || req.body?.iva === '') return res.status(400).json({ error: 'Escribe el IVA de la factura (0 si no trae)' });
+    const iva = ivaCapturado(req.body.iva, x.total_cent, x);
+    if (iva.error) return res.status(400).json({ error: iva.error });
+    const antes = ivaDeGasto(x);
+    db.prepare("UPDATE main.cuentas_por_pagar SET iva_cent = ?, updated_at = datetime('now','localtime') WHERE id = ?").run(iva.cent, x.id);
+    app.locals.auditoria?.registrar(req, 'cuenta_por_pagar', x.id, 'IVA', `«${x.concepto}»: IVA ${fmt(antes.iva_cent)}${antes.estimado ? ' (estimado)' : ''} → ${fmt(iva.cent)}`);
+    res.json({ ok: true, iva: aPesos(iva.cent) });
   }));
 
   app.post('/api/finanzas/cxp/:id/pagos', h((req, res) => {
@@ -1431,5 +1471,6 @@ module.exports.aCentavos = aCentavos;
 module.exports.migrar = migrar;
 module.exports.folioOS = folioOS;
 module.exports.CATEGORIAS_NO_GASTO = CATEGORIAS_NO_GASTO;
+module.exports.ivaDeGasto = ivaDeGasto;
 module.exports.COMPROBANTES = COMPROBANTES;
 module.exports.describirCuenta = describirCuenta;

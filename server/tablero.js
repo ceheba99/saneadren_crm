@@ -2,6 +2,9 @@
 // de la misma duración. Un solo pedido que junta ventas, utilidad estimada, flujo de dinero, cartera,
 // cuentas por pagar, operación, comercial, clientes y una tendencia de 12 meses. Todo en centavos
 // internamente; se responde en pesos. Solo administración (incluye utilidad y márgenes).
+// Utilidad = venta SIN IVA menos gastos SIN IVA (el IVA de las facturas de gastos se acredita: ver ivaDeGasto en
+// finanzas.js). Los comprobantes «informativo» no se suman, y lo que no es gasto (inversión, préstamos, traspasos)
+// no resta a la utilidad, tampoco en la tendencia.
 const Importes = require('../public/importes.js');
 const { hoyMexico } = require('./fechas');
 const alcance = require('./alcance');
@@ -43,10 +46,19 @@ module.exports = function tablero(app, db, h, finanzas) {
       LEFT JOIN catalogo_servicios s ON s.id = l.servicio_id
       WHERE l.estatus = 'ganado' AND l.ejecucion = 'realizado' AND ${FECHA_VENTA} BETWEEN ? AND ?`).all(d, h);
   }
+  const { ivaDeGasto } = require('./finanzas');
+  // Gastos vivos (sin cancelados ni informativos), cada uno con su importe sin IVA.
+  const COLS_GASTO = 'id, categoria, lead_id, total_cent, iva_cent, tipo_comprobante, factura_folio, fecha_documento';
+  const sinIva = x => { const i = ivaDeGasto(x); return { ...x, iva: i.iva_cent, estimado: i.estimado, neto: x.total_cent - i.iva_cent }; };
+  const vivos = (where, ...p) => db.prepare(`SELECT ${COLS_GASTO} FROM cuentas_por_pagar WHERE cancelada = 0 AND COALESCE(tipo_comprobante, '') <> 'informativo' AND ${where}`).all(...p).map(sinIva);
+  // Costo de terceros (sin IVA) de cada orden.
   const costosDe = ids => {
-    if (!ids.length) return new Map();
-    const filas = db.prepare(`SELECT lead_id, SUM(total_cent) t FROM cuentas_por_pagar WHERE cancelada = 0 AND lead_id IN (${ids.map(() => '?').join(',')}) GROUP BY lead_id`).all(...ids);
-    return new Map(filas.map(f => [f.lead_id, f.t]));
+    const m = new Map();
+    for (let i = 0; i < ids.length; i += 500) {
+      const parte = ids.slice(i, i + 500);
+      for (const x of vivos(`lead_id IN (${parte.map(() => '?').join(',')})`, ...parte)) m.set(x.lead_id, (m.get(x.lead_id) || 0) + x.neto);
+    }
+    return m;
   };
   const uno = (sql, ...p) => db.prepare(sql).get(...p);
 
@@ -57,12 +69,17 @@ module.exports = function tablero(app, db, h, finanzas) {
     const ventaTotal = ventas.reduce((t, l) => t + subtotalCent(l) + (l.iva_cent || 0), 0);
     const costos = costosDe(ventas.map(l => l.id));
     const costoDirecto = [...costos.values()].reduce((t, x) => t + x, 0);
-    const gastos = db.prepare(`SELECT categoria, SUM(total_cent) t, SUM(CASE WHEN lead_id IS NULL THEN total_cent ELSE 0 END) sin_orden FROM cuentas_por_pagar
-      WHERE cancelada = 0 AND fecha_documento BETWEEN ? AND ? GROUP BY categoria ORDER BY t DESC`).all(d, h);
+    // Gastos del periodo por categoría, sin IVA (también con IVA, como se pagan).
+    const delPeriodo = vivos('fecha_documento BETWEEN ? AND ?', d, h);
+    const porCat = new Map();
+    for (const x of delPeriodo) { const g = porCat.get(x.categoria) || { categoria: x.categoria, t: 0, con_iva: 0, sin_orden: 0 }; g.t += x.neto; g.con_iva += x.total_cent; if (!x.lead_id) g.sin_orden += x.neto; porCat.set(x.categoria, g); }
+    const gastos = [...porCat.values()].sort((a, b) => b.t - a.t);
     // Compras de bienes (inversión), préstamos y traspasos no son gasto: se muestran aparte y no restan a la utilidad.
     const { CATEGORIAS_NO_GASTO } = require('./finanzas');
-    const gastoTotal = gastos.filter(g => !CATEGORIAS_NO_GASTO.has(g.categoria)).reduce((t, g) => t + g.t, 0);
-    const noGasto = gastos.filter(g => CATEGORIAS_NO_GASTO.has(g.categoria)).reduce((t, g) => t + g.t, 0);
+    const deGasto = delPeriodo.filter(x => !CATEGORIAS_NO_GASTO.has(x.categoria));
+    const gastoTotal = deGasto.reduce((t, x) => t + x.neto, 0), gastoConIva = deGasto.reduce((t, x) => t + x.total_cent, 0);
+    const estimados = deGasto.filter(x => x.estimado);
+    const noGasto = delPeriodo.filter(x => CATEGORIAS_NO_GASTO.has(x.categoria)).reduce((t, x) => t + x.neto, 0);
     const cobrado = uno("SELECT COALESCE(SUM(monto_cent), 0) t, COUNT(*) n FROM cobros WHERE cancelado = 0 AND tipo <> 'ajuste' AND fecha BETWEEN ? AND ?", d, h);
     const descuentos = uno("SELECT COALESCE(SUM(monto_cent), 0) t FROM cobros WHERE cancelado = 0 AND tipo = 'ajuste' AND fecha BETWEEN ? AND ?", d, h).t;
     const pagado = uno('SELECT COALESCE(SUM(monto_cent), 0) t FROM pagos_proveedor WHERE cancelado = 0 AND fecha BETWEEN ? AND ?', d, h).t;
@@ -83,7 +100,8 @@ module.exports = function tablero(app, db, h, finanzas) {
       r: {
         venta: pesos(ventaSub), venta_con_iva: pesos(ventaTotal), servicios: ventas.length, ticket: ventas.length ? pesos(ventaSub / ventas.length) : 0,
         costo_directo: pesos(costoDirecto), margen_directo: pesos(ventaSub - costoDirecto),
-        gasto: pesos(gastoTotal), no_gasto: pesos(noGasto), utilidad: pesos(ventaSub - gastoTotal), margen_pct: ventaSub ? Math.round((ventaSub - gastoTotal) / ventaSub * 1000) / 10 : null,
+        gasto: pesos(gastoTotal), gasto_con_iva: pesos(gastoConIva), iva_gastos: pesos(gastoConIva - gastoTotal), iva_estimado: pesos(estimados.reduce((t, x) => t + x.iva, 0)), iva_estimado_n: estimados.length,
+        no_gasto: pesos(noGasto), utilidad: pesos(ventaSub - gastoTotal), margen_pct: ventaSub ? Math.round((ventaSub - gastoTotal) / ventaSub * 1000) / 10 : null,
         cobrado: pesos(cobrado.t), cobros_n: cobrado.n, descuentos: pesos(descuentos), pagado: pesos(pagado), flujo: pesos(cobrado.t - pagado),
         cotizaciones: cot.n, cotizado: Math.round((cot.v || 0) * 100) / 100, cot_ganadas: cot.ganadas || 0, cot_perdidas: cot.perdidas || 0,
         cierre_pct: (cot.ganadas || 0) + (cot.perdidas || 0) ? Math.round(cot.ganadas / (cot.ganadas + cot.perdidas) * 1000) / 10 : null,
@@ -91,7 +109,7 @@ module.exports = function tablero(app, db, h, finanzas) {
         contactos_nuevos: contactos, clientes_activos: activos.size, clientes_nuevos: nuevos, clientes_recurrentes: activos.size - nuevos,
         subcontratado_pct: ventaSub ? Math.round(subcontratado.reduce((t, l) => t + subtotalCent(l), 0) / ventaSub * 1000) / 10 : null,
       },
-      gastos: gastos.map(g => ({ categoria: g.categoria, nombre: finanzas.CATEGORIAS[g.categoria] || g.categoria, total: pesos(g.t), sin_orden: pesos(g.sin_orden), es_gasto: !CATEGORIAS_NO_GASTO.has(g.categoria) })),
+      gastos: gastos.map(g => ({ categoria: g.categoria, nombre: finanzas.CATEGORIAS[g.categoria] || g.categoria, total: pesos(g.t), con_iva: pesos(g.con_iva), sin_orden: pesos(g.sin_orden), es_gasto: !CATEGORIAS_NO_GASTO.has(g.categoria) })),
     };
   }
 
@@ -134,7 +152,8 @@ module.exports = function tablero(app, db, h, finanzas) {
     const venta = mapa(db.prepare(`SELECT substr(${FECHA_VENTA}, 1, 7) mes, SUM(CAST(ROUND(COALESCE(l.valor, 0) * 100) AS INTEGER)) t FROM leads l
       WHERE l.estatus = 'ganado' AND l.ejecucion = 'realizado' AND ${FECHA_VENTA} BETWEEN ? AND ? GROUP BY mes`).all(ini, fin));
     const cobrado = mapa(db.prepare("SELECT substr(fecha, 1, 7) mes, SUM(monto_cent) t FROM cobros WHERE cancelado = 0 AND tipo <> 'ajuste' AND fecha BETWEEN ? AND ? GROUP BY mes").all(ini, fin));
-    const gasto = mapa(db.prepare('SELECT substr(fecha_documento, 1, 7) mes, SUM(total_cent) t FROM cuentas_por_pagar WHERE cancelada = 0 AND fecha_documento BETWEEN ? AND ? GROUP BY mes').all(ini, fin));
+    const { CATEGORIAS_NO_GASTO } = require('./finanzas'), gasto = new Map();
+    for (const x of vivos('fecha_documento BETWEEN ? AND ?', ini, fin)) if (!CATEGORIAS_NO_GASTO.has(x.categoria)) { const mes = x.fecha_documento.slice(0, 7); gasto.set(mes, (gasto.get(mes) || 0) + x.neto); }
     const pagado = mapa(db.prepare('SELECT substr(fecha, 1, 7) mes, SUM(monto_cent) t FROM pagos_proveedor WHERE cancelado = 0 AND fecha BETWEEN ? AND ? GROUP BY mes').all(ini, fin));
     return meses.map(mes => {
       const v = venta.get(mes) || 0, g = gasto.get(mes) || 0;
@@ -159,7 +178,7 @@ module.exports = function tablero(app, db, h, finanzas) {
       .map(([k, nombre]) => { const xs = conSaldo.filter(c => c.tramo === k); return { tramo: k, nombre, total: suma(xs), ordenes: xs.length }; });
     const deudores = new Map();
     for (const c of conSaldo) { const g = deudores.get(c.cliente_id) || { cliente_id: c.cliente_id, nombre: c.empresa_contacto || c.cliente_nombre, saldo: 0, vencido: 0, dias: 0 }; g.saldo += c.saldo; if (c.vencida) g.vencido += c.saldo; g.dias = Math.max(g.dias, c.dias_vencido); deudores.set(c.cliente_id, g); }
-    const cxp = finanzas.cuentasPorPagar().filter(x => x.saldo > 0);
+    const cxp = finanzas.cuentasPorPagar().filter(x => x.saldo > 0 && x.tipo_comprobante !== 'informativo');
     const domingo = sumarDias(hoy, (7 - new Date(hoy + 'T00:00:00Z').getUTCDay()) % 7);
     // Días promedio de cobro: de que se hizo el servicio a su último pago, en órdenes liquidadas en el periodo.
     const dso = uno(`SELECT AVG(julianday(u.ultimo) - julianday(COALESCE(l.fecha_realizado, l.fecha_servicio))) d, COUNT(*) n FROM leads l
@@ -199,15 +218,16 @@ module.exports = function tablero(app, db, h, finanzas) {
     if (top && top.pct >= 40 && act.ventas.length > 1) alertas.push({ nivel: 'amarillo', texto: `Concentración: ${top.nombre} es el ${top.pct} % de las ventas del periodo`, ir: null });
     if (foto.pipeline.vencen_7 > 0) alertas.push({ nivel: 'azul', texto: `${foto.pipeline.vencen_7} ${foto.pipeline.vencen_7 === 1 ? 'cotización vence' : 'cotizaciones vencen'} en los próximos 7 días (${fmt(foto.pipeline.vencen_7_valor)})`, ir: 'leads' });
     if (foto.a_favor > 0) alertas.push({ nivel: 'azul', texto: `${fmt(foto.a_favor)} a favor de clientes por servicios no realizados (devolver o aplicar)`, ir: 'cobrar' });
+    if (act.r.iva_estimado_n > 0) alertas.push({ nivel: 'azul', texto: `${act.r.iva_estimado_n} ${act.r.iva_estimado_n === 1 ? 'factura de gasto' : 'facturas de gastos'} sin IVA capturado: se estimó al 16 % (${fmt(act.r.iva_estimado)}). Captúralo en Cuentas por pagar para una utilidad exacta`, ir: 'pagar' });
     if (foto.iva_por_definir > 0) alertas.push({ nivel: 'azul', texto: `${foto.iva_por_definir} servicios realizados con IVA por definir (su importe se toma como se capturó)`, ir: null });
 
     // Viendo varias sucursales: el mismo cálculo para cada una (cada número sale solo con lo de esa sucursal).
     const sucs = [...req.alcanceSuc.ids];
     const porSucursal = sucs.length < 2 ? [] : db.prepare(`SELECT id, nombre, clave FROM sucursales WHERE id IN (${sucs.map(() => '?').join(',')}) ORDER BY id`).all(...sucs).map(s =>
       alcance.correr({ todo: false, ids: new Set([s.id]), alta: s.id }, () => {
-        const r = periodo(desde, hasta).r, ca = finanzas.cartera().filter(c => c.saldo > 0 && !c.programada), px = finanzas.cuentasPorPagar().filter(x => x.saldo > 0);
+        const r = periodo(desde, hasta).r, ca = finanzas.cartera().filter(c => c.saldo > 0 && !c.programada), px = finanzas.cuentasPorPagar().filter(x => x.saldo > 0 && x.tipo_comprobante !== 'informativo');
         const cent = arr => Math.round(arr.reduce((t, x) => t + x.saldo * 100, 0)) / 100;
-        return { id: s.id, nombre: s.nombre, clave: s.clave, venta: r.venta, servicios: r.servicios, gasto: r.gasto, utilidad: r.utilidad, margen_pct: r.margen_pct, cobrado: r.cobrado, pagado: r.pagado, flujo: r.flujo,
+        return { id: s.id, nombre: s.nombre, clave: s.clave, venta: r.venta, servicios: r.servicios, gasto: r.gasto, gasto_con_iva: r.gasto_con_iva, utilidad: r.utilidad, margen_pct: r.margen_pct, cobrado: r.cobrado, pagado: r.pagado, flujo: r.flujo,
           te_deben: cent(ca), vencido: cent(ca.filter(c => c.vencida)), debes: cent(px) };
       }));
     res.json({

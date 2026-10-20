@@ -373,9 +373,10 @@ module.exports = function compras(app, db, h, finanzas) {
     const resumen = o.partidas[0].descripcion + (o.partidas.length > 1 ? ` y ${o.partidas.length - 1} más` : '');
     const concepto = (o.folio + ' · ' + resumen).slice(0, 200);
     const cxpId = db.transaction(() => {
-      const info = db.prepare(`INSERT INTO main.cuentas_por_pagar (proveedor_id, categoria, concepto, fecha_documento, fecha_vencimiento, total_cent, lead_id, notas, registrado_por, dias_credito)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(o.proveedor_id, o.categoria, concepto, o.fecha, vence, o.total_cent, o.lead_id,
-        `Orden de compra ${o.folio} · Centro de costos: ${o.centro_nombre} · Crédito: ${dias ? dias + ' días' : 'de contado'}`, req.usuarioSesion.id, dias);
+      // El IVA de la orden pasa a la cuenta por pagar (así Resultados no tiene que estimarlo).
+      const info = db.prepare(`INSERT INTO main.cuentas_por_pagar (proveedor_id, categoria, concepto, fecha_documento, fecha_vencimiento, total_cent, lead_id, notas, registrado_por, dias_credito, iva_cent)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(o.proveedor_id, o.categoria, concepto, o.fecha, vence, o.total_cent, o.lead_id,
+        `Orden de compra ${o.folio} · Centro de costos: ${o.centro_nombre} · Crédito: ${dias ? dias + ' días' : 'de contado'}`, req.usuarioSesion.id, dias, o.iva_cent ?? null);
       app.locals.sucursales.asignar('cuentas_por_pagar', Number(info.lastInsertRowid), o.sucursal_id);
       db.prepare("UPDATE main.ordenes_compra SET estado = 'autorizada', cxp_id = ?, autorizada_por = ?, autorizada_at = datetime('now','localtime'), version = version + 1 WHERE id = ?")
         .run(info.lastInsertRowid, req.usuarioSesion.id, o.id);
