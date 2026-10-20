@@ -24,7 +24,9 @@ const conteo = () => { const d = new DatabaseSync(DB); const r = { usuarios: d.p
   await arrancar(ANTERIOR, { MODO_DEMO: '1' });
   for (let i = 0; i < 400; i++) { const [, j] = await pedir('GET', '/demo/estado'); if (j.listo || j.error) break; await esp(250); }
   await parar();
-  let A = conteo(); ok(A.check, 'la base de producción tiene la lista fija de roles', A);
+  // Si la versión publicada ya trae roles y permisos, la tabla de usuarios ya no tiene la lista fija.
+  const anteriorConRoles = fs.existsSync(path.join(ANTERIOR, 'server', 'permisos.js'));
+  let A = conteo(); ok(anteriorConRoles ? !A.check : A.check, anteriorConRoles ? 'la base de producción ya acepta roles nuevos' : 'la base de producción tiene la lista fija de roles', A);
   console.log('2. Código nuevo');
   await arrancar(NUEVO);
   let [s, j] = await pedir('POST', '/login', null, { nombre: 'admin', password: PASS }); let T = j.token;
@@ -42,7 +44,7 @@ const conteo = () => { const d = new DatabaseSync(DB); const r = { usuarios: d.p
   [s] = await pedir('GET', '/finanzas/cartera', TV); ok(s === 200, 'y ve la cartera como siempre');
   [s, j] = await pedir('POST', '/usuarios', T, { nombre: 'Persona Vuelta', password: PASS, rol: 'tecnico', sucursales: [qro] }); ok(s === 201, 'el código anterior sigue creando usuarios', j);
   [s, j] = await pedir('POST', '/login', null, { nombre: 'Persona Contador', password: PASS }); const TC = j.token;
-  [s] = await pedir('GET', '/finanzas/cartera', TC); ok(s === 403 || s === 401, 'quien tiene un rol nuevo, con el código anterior no ve de más (' + s + ')');
+  [s] = await pedir('GET', '/finanzas/cartera', TC); ok(anteriorConRoles ? s === 200 : (s === 403 || s === 401), anteriorConRoles ? 'quien tiene un rol nuevo, con el código anterior ve según sus permisos' : 'quien tiene un rol nuevo, con el código anterior no ve de más (' + s + ')');
   [s] = await pedir('GET', '/leads', T); ok(s === 200, 'las órdenes siguen');
   await parar();
   console.log('4. Otra vez el nuevo');

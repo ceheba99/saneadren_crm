@@ -50,7 +50,7 @@ function rutas() {
     for (const m of s.matchAll(/app\.(get|post|put|patch|delete)\(\s*'(\/api\/[^']+)'/g)) set.add(m[1].toUpperCase() + ' ' + m[2]);
   }
   // Fuera: sesión, demo y lo que no existía en el código anterior (roles, permisos, lista mínima de órdenes para gastos).
-  const fuera = /^(POST|GET) \/api\/(login|logout|registro|cambiar-password|verificar-correo|olvide-password|restablecer-password|demo\/)|\/api\/(permisos|roles)(\/|$)|\/api\/finanzas\/ordenes-para-gasto$/;
+  const fuera = /^(POST|GET) \/api\/(login|logout|registro|cambiar-password|verificar-correo|olvide-password|restablecer-password|demo\/)|\/api\/(permisos|roles|personal)(\/|$)|\/api\/finanzas\/ordenes-para-gasto$/;
   return [...set].filter(r => !fuera.test(r)).sort().map(r => { const [m, p] = r.split(' '); return [m, p.replace(/:[a-z_]+/gi, '1').replace(/^\/api/, '')]; });
 }
 // Cambios a propósito respecto al código anterior: [rol, expresión "MÉTODO /ruta", motivo].
@@ -78,7 +78,7 @@ const CAMBIOS_ESPERADOS = [
         fs.copyFileSync(BASE, DB);
         await arrancar(codigo, DB);
         // Con «qué ve cada rol» igual que antes (cada quien ve su sucursal), todo debe responder igual que el publicado.
-        if (codigo === NUEVO) await require('./ayuda-alcance.cjs').comoAntes((m, r, t, b) => pedir(m, r, t, b), await login('admin', ADMIN.password));
+        if (fs.existsSync(path.join(codigo, 'server', 'permisos.js'))) await require('./ayuda-alcance.cjs').comoAntes((m, r, t, b) => pedir(m, r, t, b), await login('admin', ADMIN.password));
         const t = await login(usuarioDe(rol), rol === 'admin' ? ADMIN.password : CLAVE);
         const f = fotos[nombre][rol] = {};
         for (const [m, r] of RUTAS) f[m + ' ' + r] = (await pedir(m, r, t, m === 'GET' ? undefined : {}))[0];

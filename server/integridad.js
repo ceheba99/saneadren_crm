@@ -54,7 +54,10 @@ function revisar(db, { dirArchivos } = {}) {
   const activos = new Set(db.prepare('SELECT id FROM usuarios WHERE activo = 1').all().map(u => u.id));
   chequeo('Qué ve cada rol', 'Cotizaciones u órdenes vivas sin responsable activo', 'aviso', () => L.filter(l => (l.estatus === 'abierto' || (l.estatus === 'ganado' && !l.ejecucion)) && !activos.has(l.responsable_id))
     .map(l => ({ ref: folioL(l), detalle: (l.responsable_id ? 'su responsable está desactivado' : 'no tiene responsable') + ': solo la ve quien ve toda su sucursal; asígnala a un vendedor' })));
-  if (columnas(db, 'leads').includes('tecnico_id')) chequeo('Qué ve cada rol', 'Órdenes por realizar sin técnico asignado', 'aviso', () => L.filter(l => l.estatus === 'ganado' && !l.ejecucion && !activos.has(l.tecnico_id))
+  const conResponsable = new Set(existe(db, 'orden_personal') ? db.prepare("SELECT op.lead_id FROM orden_personal op JOIN personal p ON p.id = op.personal_id WHERE op.papel = 'responsable' AND p.activo = 1").all().map(r => r.lead_id) : []);
+  if (existe(db, 'personal')) chequeo('Personal', 'Licencias de manejo vencidas (personal activo)', 'aviso', () => db.prepare('SELECT id, nombre, licencia_vence FROM personal WHERE activo = 1 AND licencia_vence IS NOT NULL AND licencia_vence < ?').all(hoy)
+    .map(p => ({ ref: p.nombre, detalle: 'licencia vencida el ' + dma(p.licencia_vence) })));
+  if (columnas(db, 'leads').includes('tecnico_id')) chequeo('Qué ve cada rol', 'Órdenes por realizar sin técnico responsable', 'aviso', () => L.filter(l => l.estatus === 'ganado' && !l.ejecucion && !activos.has(l.tecnico_id) && !conResponsable.has(l.id))
     .map(l => ({ ref: folioL(l), detalle: 'servicio ' + (l.fecha_servicio ? dma(l.fecha_servicio) : 'sin fecha') + (l.tecnico_id ? ': su técnico está desactivado' : '') + ': ningún técnico la ve hasta que se le asigne' })));
 
   chequeo('Ventas', 'Fechas de creación en el futuro', 'error', () => L.filter(l => String(l.created_at) > ahora).map(l => ({ ref: folioL(l), detalle: 'creada el ' + l.created_at })));

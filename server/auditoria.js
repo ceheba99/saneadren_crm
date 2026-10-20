@@ -62,6 +62,7 @@ module.exports = function auditoria(app, db, h) {
         : entidad === 'orden_servicio' ? !!db.prepare('SELECT 1 FROM leads WHERE id = ?').get(n)
         : entidad === 'cliente' ? !!suc?.verCliente(n)
         : entidad === 'usuario' ? n === req.usuarioSesion.id || (app.locals.permisos.puede(req, 'usuarios.administrar') && !!db.prepare('SELECT 1 FROM usuarios WHERE id = ?').get(n) && suc?.puedeAdministrar(req, db.prepare('SELECT * FROM usuarios WHERE id = ?').get(n)))
+        : entidad === 'personal' ? !!app.locals.permisos?.puede(req, 'personal.ver') && !!db.prepare('SELECT 1 FROM personal WHERE id = ?').get(n)
         : entidad === 'proveedor';
       if (!visible) return res.json([]);
       return res.json(db.prepare('SELECT * FROM auditoria WHERE entidad = ? AND entidad_id = ? ORDER BY id DESC LIMIT 500').all(String(entidad), Number(id)));

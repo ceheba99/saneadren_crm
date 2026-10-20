@@ -148,6 +148,7 @@ app.locals.sucursales = suc;
 // Roles y permisos: qué puede hacer cada rol (lo decide Dirección en «Roles y permisos»).
 const permisos = require('./permisos')(db, app, h);
 app.locals.permisos = permisos;
+app.locals.sesiones = sesiones;
 
 // Bitácora general de movimientos (clientes, proveedores, compras, usuarios, catálogos, eliminados).
 const audit = require('./auditoria')(app, db, h);
@@ -163,6 +164,8 @@ require('./carga-generador')(app, db, h, unicos); // Carga masiva del Generador 
 require('./buscador')(app, db, h); // Buscador general (caja de arriba): folios, clientes, compras, proveedores
 require('./respaldos')(db, { hoyMexico }); // Copia diaria automática de la base (últimos 14 días) junto a la base
 require('./integridad')(app, db, h); // Revisión de integridad de los datos guardados (solo administración)
+// Personal (RH): fichas, expediente, vacaciones e incidencias, y el equipo de cada orden de servicio.
+const personalMod = require('./personal')(app, db, h);
 // Versión DEMO con datos de ejemplo: solo con MODO_DEMO=1 y en una base vacía (nunca en el sistema real).
 const demo = require('./demo')(app, db, { sesiones, PORT, SESSION_TTL_MS });
 
@@ -566,7 +569,7 @@ app.get('/api/leads/:id', h((req, res) => {
   `).get(lead.cliente_id) : { valor_cotizado_total: 0, valor_ganado_total: 0 };
   const historial = db.prepare('SELECT * FROM historial WHERE lead_id = ? ORDER BY created_at DESC, id DESC').all(lead.id);
   res.json({
-    ...lead, otras_solicitudes, historial,
+    ...lead, otras_solicitudes, historial, equipo_personal: personalMod.equipoDe(lead.id),
     veces_contratado: otras_solicitudes.length + 1,
     primer_contacto,
     valor_cotizado_total: valorCliente.valor_cotizado_total,
@@ -940,12 +943,21 @@ app.put('/api/leads/:id', validarPartidas, validarRegistro, h((req, res) => {
   campos.forEach(c => {
     if (req.body[c] !== undefined) { set.push(`${c} = ?`); params.push(req.body[c]); }
   });
-  if (set.length === 0) return res.status(400).json({ error: 'Sin cambios' });
+  // Equipo de personas de la orden (técnico responsable, operadores, ayudantes): se elige de Personal.
+  let equipoNuevo = null;
+  if (req.body.equipo_personal !== undefined) { const ve = personalMod.validarEquipo(req.body.equipo_personal, actual); if (ve.error) return res.status(400).json({ error: ve.error }); equipoNuevo = ve.lista; }
+  if (set.length === 0 && !equipoNuevo) return res.status(400).json({ error: 'Sin cambios' });
   set.push("updated_at = datetime('now','localtime')");
   set.push('version = version + 1');
   params.push(id);
 
   db.prepare(`UPDATE main.leads SET ${set.join(', ')} WHERE id = ?`).run(...params);
+  if (equipoNuevo) {
+    const antesEq = personalMod.textoEquipo(personalMod.equipoDe(id));
+    personalMod.guardarEquipo(id, equipoNuevo);
+    const despuesEq = personalMod.textoEquipo(personalMod.equipoDe(id));
+    if (antesEq !== despuesEq) db.prepare(`INSERT INTO main.historial (lead_id, tipo, texto, usuario, origen) VALUES (?, 'observacion', ?, ?, 'sistema')`).run(id, 'Equipo: ' + antesEq + ' → ' + despuesEq + '.', req.usuarioSesion.nombre);
+  } else if (req.body.tecnico_id !== undefined) personalMod.responsableDesdeUsuario(id, req.body.tecnico_id);
 
   // Queda registro de cualquier otro dato que cambie (fechas, etapa, responsable, servicios, notas…).
   const otrosCambios = cambiosDeOrden(actual, req.body);

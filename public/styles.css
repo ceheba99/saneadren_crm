@@ -1516,3 +1516,31 @@ body:not(.varias-sucursales) .solo-varias-sucursales{display:none!important;}
 @media (max-width:600px){.rp-tabla .rp-permiso{min-width:150px;max-width:170px;}.rp-rol{min-width:96px;}}
 .rp-nivel{min-width:110px;padding:4px 6px;font-size:13px;}
 .rp-todo{font-size:12px;color:var(--texto-sec,#666);}
+/* Personal (Ajustes → Personal) y equipo de la orden */
+.pe-encabezado{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px;}
+.pe-tabla th,.pe-tabla td{text-align:left !important;vertical-align:top;}
+.pe-nombre{background:none;border:0;padding:0;font:inherit;font-weight:600;color:var(--azul,#1d4ed8);cursor:pointer;text-align:left;}
+.pe-nombre:hover{text-decoration:underline;}
+.pe-cuenta{display:block;color:var(--texto-sec,#666);font-size:12px;}
+.pe-baja td{opacity:.6;}
+.pe-sub{margin:0 0 12px;font-size:15px;}
+.pe-sub2{margin:16px 0 8px;font-size:14px;}
+.pe-candado{font-size:12px;font-weight:400;color:var(--texto-sec,#666);margin-left:6px;}
+.pe-salario{display:flex;gap:6px;}
+.pe-salario input{flex:1;min-width:0;}
+.pe-docs{display:grid;gap:6px;}
+.pe-doc{display:flex;flex-wrap:wrap;justify-content:space-between;gap:8px;padding:8px 10px;border:1px solid var(--gris-200,#e5e7eb);border-radius:8px;}
+.pe-doc small{color:var(--texto-sec,#666);}
+.pe-subir{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:10px;}
+.pe-vac{margin:0 0 10px;}
+.pe-inc-nueva{margin-top:12px;}
+.pe-ordenes{margin:0;padding-left:18px;display:grid;gap:4px;}
+.pe-pie{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:10px;}
+.etiqueta-campo{font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:var(--texto-sec,#666);}
+.pe-eq{display:grid;gap:8px;}
+.pe-eq-etq{font-size:13px;}
+.pe-eq-fila{display:flex;flex-wrap:wrap;gap:6px;align-items:center;}
+.pe-eq-fila select{flex:1;min-width:140px;}
+@media (max-width:600px){.pe-salario{flex-direction:column;}}
+/* Barra de sesión en celular: el selector de sucursal, el nombre y «Salir» se acomodan en dos renglones si no caben. */
+@media (max-width:600px){.util-2{flex-wrap:wrap;justify-content:flex-end;max-width:100%;min-width:0;}.sucursal-selector{margin-right:0;max-width:100%;}.sucursal-selector select{max-width:min(220px,60vw);}}

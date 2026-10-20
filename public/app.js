@@ -125,6 +125,7 @@ document.querySelectorAll('header nav [data-vista]').forEach(btn => {
 });
 function cambiarVista(v, opciones) {
   if (v === 'usuarios' && !Permisos.puede('usuarios.administrar')) v = 'inicio';
+  if (v === 'personal' && !Permisos.puede('personal.ver')) v = 'inicio';
   if ((v === 'cobrar' || (v === 'cuentas' && !['pagar', 'proveedores'].includes(opciones?.pestana))) && !Permisos.puede('cxc.ver')) v = 'inicio';
   if ((v === 'pagar' || (v === 'cuentas' && ['pagar', 'proveedores'].includes(opciones?.pestana))) && !Permisos.puede('cxp.ver')) v = 'inicio';
   if (v === 'pendientes') v = 'inicio'; // Pendientes ahora es parte de Inicio
@@ -138,6 +139,7 @@ function cambiarVista(v, opciones) {
   if (v === 'leads') cargarLeads();
   if (v === 'clientes') cargarClientes();
   if (v === 'prospeccion') Prospeccion.cargar();
+  if (v === 'personal') Personal.cargar();
   if (v === 'resultados') abrirResultados();
   if (v === 'generador') cargarGenerador();
   if (v === 'calendario') Calendario.cargar();
@@ -171,7 +173,6 @@ async function cargarCatalogos() {
   document.getElementById('ed-servicio').innerHTML = optS;
   document.getElementById('ed-canal').innerHTML = optC;
   document.getElementById('ed-responsable').innerHTML = optU;
-  document.getElementById('ed-tecnico').innerHTML = '<option value="">Sin asignar</option>' + optU;
   document.getElementById('f-responsable').innerHTML =
     '<option value="">Todos los responsables</option>' + optU;
 }
@@ -1063,7 +1064,7 @@ function datosOrdenServicioDesdeLead(lead, items) {
       direccion: lead.direccion || ''
     },
     equipo: lead.equipo || '',
-    operador: lead.operador || '',
+    operador: (lead.equipo_personal || []).map(x => x.nombre).join(', ') || lead.operador || '',
     proyecto: lead.proyecto || '',
     observaciones: lead.observaciones || '',
     items,
@@ -1861,7 +1862,7 @@ async function abrirFicha(id) {
   const soloSuyo = (Permisos.datos.alcances?.ventas ?? 2) < 2;
   document.getElementById('ed-responsable').disabled = soloSuyo;
   document.getElementById('ed-responsable').title = soloSuyo ? 'Para pasarla a otro vendedor, pídeselo al gerente' : '';
-  document.getElementById('ed-tecnico').value = lead.tecnico_id || '';
+  EquipoOrden.mostrar(lead);
   document.getElementById('ed-valor').value = lead.valor != null ? lead.valor : '';
   document.getElementById('ed-fecha-servicio').value = lead.fecha_servicio || '';
   // Orden que viene de una cotización: su fecha de servicio no puede ser antes de la cotización.
@@ -2031,7 +2032,7 @@ function recolectarPayloadFicha() {
     canal_id: document.getElementById('ed-canal').value || null,
     servicio_id: document.getElementById('ed-servicio').value || null,
     responsable_id: document.getElementById('ed-responsable').value || null,
-    tecnico_id: document.getElementById('ed-tecnico').value || null,
+    ...EquipoOrden.payload(),
     valor: valorRaw === '' ? null : Number(valorRaw),
     fecha_servicio: document.getElementById('ed-fecha-servicio').value || null,
     fecha_cotizacion: document.getElementById('ed-fecha-cotizacion').value || null,
@@ -2182,7 +2183,7 @@ async function duplicarRegistro(leadId) {
       iva_modo: lead.iva_modo,
       iva_tasa: lead.iva_tasa,
       equipo: lead.equipo,
-      operador: lead.operador,
+      operador: (lead.equipo_personal || []).map(x => x.nombre).join(', ') || lead.operador,
       proyecto: lead.proyecto,
       duplicado_de: lead.id,
       folio: folioOrdenServicio(lead)

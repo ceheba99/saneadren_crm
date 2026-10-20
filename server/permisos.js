@@ -35,6 +35,9 @@ const CATALOGO = [
   ['compras.autorizar', 'Compras', 'Autorizar órdenes de compra', 'Autorizar (se vuelven deuda), cancelar autorizadas y quitar documentos', ['gerente']],
   ['reportes.panorama', 'Reportes', 'Panorama general', 'Ventas, cobranza, gastos y utilidad de la empresa', ['gerente']],
   ['catalogos.editar', 'Catálogos', 'Catálogos compartidos', 'Canales, tipos de cliente, centros de costo, unidades, categorías de gasto y descripción y orden de los servicios (los usan todas las sucursales)', TODOS],
+  ['personal.ver', 'Personal', 'Ver personal', 'Lista y fichas del personal de su sucursal (sin datos de pago ni expediente)', ['gerente']],
+  ['personal.editar', 'Personal', 'Editar personal', 'Altas, cambios, bajas, vacaciones e incidencias', ['gerente']],
+  ['personal.sensibles', 'Personal', 'Datos sensibles del personal', 'CLABE, RFC, CURP, NSS, salario, contrato y documentos del expediente', ['gerente']],
   ['usuarios.administrar', 'Administración', 'Usuarios', 'Crear usuarios, cambiar su rol, contraseña y sucursales', ['gerente']],
 ].map(([clave, seccion, nombre, ayuda, roles]) => ({ clave, seccion, nombre, ayuda, roles }));
 // Áreas y lo que ve cada rol en ellas: 0 nada, 1 lo suyo, 2 toda su sucursal (Dirección: todo).
@@ -65,6 +68,8 @@ const DEPENDE = {
   'ordenes.importe_ganada': ['ventas.ver'],
   'ordenes.eliminar': ['ventas.ver'],
   'generador.cargar': ['ventas.sucursal'], // crea órdenes de cualquier cliente de la sucursal
+  'personal.editar': ['personal.ver'],
+  'personal.sensibles': ['personal.ver'],
 };
 const nombreDe = c => {
   const p = CATALOGO.find(x => x.clave === c); if (p) return p.nombre;
