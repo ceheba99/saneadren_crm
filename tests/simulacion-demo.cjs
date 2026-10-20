@@ -44,13 +44,40 @@ const pedir = async (m, r, t, b) => { const x = await fetch(`http://localhost:${
   await arrancar('demo.db', { MODO_DEMO: '1' });
   for (let i = 0; i < 400; i++) { [s, j] = await pedir('GET', '/demo/estado'); if (j.listo || j.error) break; await espera(250); }
   revisa(j.demo === true && j.listo === true && !j.error, 'los ejemplos se sembraron sin errores', j.error || j);
-  { const [, us] = await pedir('GET', '/usuarios', (await pedir('POST', '/demo/entrar', null, { rol: 'admin' }))[1].token); revisa(us.filter(u => / - Demo$/.test(u.nombre)).length === 7, 'los 7 usuarios de ejemplo tienen nombres válidos (se pueden editar)', us.map(u => u.nombre)); }
+  { const [, us] = await pedir('GET', '/usuarios', (await pedir('POST', '/demo/entrar', null, { rol: 'admin' }))[1].token); revisa(us.filter(u => / - Demo$/.test(u.nombre)).length === 10, 'los 10 usuarios de ejemplo tienen nombres válidos (se pueden editar)', us.map(u => u.nombre)); }
   [s] = await pedir('POST', '/demo/entrar', null, { rol: 'inventado' }); revisa(s === 400, 'un rol que no existe no entra');
   const tok = {};
   for (const rol of ['admin', 'ventas', 'costos', 'tecnico', 'atencion', 'gerente_cdmx', 'ventas_cdmx']) { [s, j] = await pedir('POST', '/demo/entrar', null, { rol }); tok[rol] = j.token; revisa(s === 200 && j.token && (j.rol === rol || j.rol_real === rol.split('_')[0]), 'entra como ' + rol + ' sin contraseña'); }
+  // Personal con roles hechos por Dirección: Recursos humanos, Supervisor de campo y Nómina.
+  for (const [rol, nombreRol] of [['rh', 'recursos_humanos'], ['supervisor', 'supervisor_de_campo'], ['nomina', 'nomina']]) { [s, j] = await pedir('POST', '/demo/entrar', null, { rol }); tok[rol] = j.token; revisa(s === 200 && j.token && j.rol_real === nombreRol, 'entra como ' + rol + ' (rol «' + nombreRol + '» hecho por Dirección)', [s, j.rol_real]); }
   [s, j] = await pedir('GET', '/admin/integridad', tok.ventas); revisa(s === 403, 'cada usuario de ejemplo conserva los permisos de su rol (ventas no ve la revisión de integridad)');
   [s, j] = await pedir('GET', '/admin/integridad', tok.admin);
   revisa(s === 200 && j.errores === 0, 'la revisión de integridad no encuentra errores en los datos de ejemplo', (j.resultados || []).filter(r => r.gravedad === 'error' && r.total).map(r => r.titulo));
+  revisa(!(j.resultados || []).some(r => r.grupo === 'Seguridad' && r.total), 'en el demo no sale el aviso de la clave de cifrado (su base se borra en cada reinicio)', (j.resultados || []).filter(r => r.grupo === 'Seguridad' && r.total));
+
+  console.log('2b. Personal: qué ve y qué hace cada quien');
+  const [, todos] = await pedir('GET', '/personal?estado=todos', tok.admin);
+  revisa(todos.length === 15 && todos.filter(p => !p.activo).length === 1 && todos.filter(p => p.usuario_nombre).length === 9, 'Dirección ve a las 15 personas (1 dada de baja; 9 con cuenta en el sistema)', [todos.length, todos.filter(p => !p.activo).length, todos.filter(p => p.usuario_nombre).length]);
+  const raul = todos.find(p => p.nombre === 'Raúl Técnico - Demo'), juan = todos.find(p => p.nombre === 'Juan Carlos Ríos');
+  const [, fichaRaul] = await pedir('GET', '/personal/' + raul.id, tok.admin), doc = fichaRaul.documentos?.[0];
+  revisa(fichaRaul.clabe === '012180001234567899' && fichaRaul.documentos.length === 2 && fichaRaul.incidencias.length >= 1, 'la ficha de Raúl trae CLABE, 2 documentos y sus vacaciones', [fichaRaul.clabe, fichaRaul.documentos?.length]);
+  [s, j] = await pedir('GET', '/personal/' + juan.id, tok.rh); revisa(s === 200 && j.clabe && j.rfc && j.salario === 480, 'Recursos humanos ve los datos sensibles (CLABE, RFC, salario)', [s, j.clabe ? 'clabe' : null]);
+  [s] = await pedir('PUT', '/personal/' + juan.id, tok.rh, { telefono: '442 555 2006', version: j.version }); revisa(s === 200, 'Recursos humanos cambia la ficha', s);
+  [s] = await pedir('GET', '/personal/documentos/' + doc.id, tok.rh); revisa(s === 200, 'y descarga documentos del expediente', s);
+  [s, j] = await pedir('GET', '/personal/' + juan.id, tok.supervisor); revisa(s === 200 && !('clabe' in j) && !('rfc' in j) && !('salario' in j) && j.clabe_mascara, 'el supervisor ve la ficha SIN datos sensibles (solo los últimos 4 de la CLABE)', Object.keys(j).filter(k => /clabe|rfc|salario/.test(k)));
+  [s] = await pedir('PUT', '/personal/' + juan.id, tok.supervisor, { clabe: '012180001234567899' }); revisa(s === 403, 'el supervisor no cambia la CLABE', s);
+  [s] = await pedir('GET', '/personal/documentos/' + doc.id, tok.supervisor); revisa(s === 403, 'ni descarga documentos', s);
+  [s] = await pedir('POST', '/personal/' + juan.id + '/incidencias', tok.supervisor, { tipo: 'falta', fecha_inicio: '2020-01-01' }); revisa(s === 201, 'pero sí registra incidencias (faltas, permisos…)', s);
+  [s, j] = await pedir('GET', '/personal/' + juan.id, tok.nomina); revisa(s === 200 && j.clabe && j.salario === 480 && j.puede && !j.puede.editar, 'Nómina ve CLABE y salario para pagar…', [s, j.puede]);
+  [s] = await pedir('PUT', '/personal/' + juan.id, tok.nomina, { telefono: '1' }); revisa(s === 403, '…pero no cambia fichas', s);
+  [s] = await pedir('POST', '/personal/' + juan.id + '/incidencias', tok.nomina, { tipo: 'falta', fecha_inicio: '2020-01-02' }); revisa(s === 403, '…ni registra incidencias', s);
+  [s, j] = await pedir('GET', '/personal', tok.gerente_cdmx); revisa(s === 200 && j.length === 3 && j.every(p => /Óscar|Mónica|Pedro/.test(p.nombre)), 'la gerente de CDMX solo ve al personal de CDMX', j.map?.(p => p.nombre));
+  [s] = await pedir('GET', '/personal/' + raul.id, tok.gerente_cdmx); revisa(s === 404, 'y el de Querétaro «no existe» para ella', s);
+  for (const r of ['ventas', 'tecnico', 'atencion', 'costos']) { [s] = await pedir('GET', '/personal', tok[r]); revisa(s === 403, r + ' no entra a Personal', s); }
+  [s, j] = await pedir('GET', '/personal/para-asignar', tok.ventas); revisa(s === 200 && j.length >= 10 && !JSON.stringify(j).includes('clabe'), 'ventas sí puede elegir personal para el equipo de una orden (solo nombre y puesto)', j.length);
+  { const [, ls] = await pedir('GET', '/leads', tok.tecnico); const conEquipo = ls.filter(l => l.tecnico_id); revisa(conEquipo.length > 0, 'el técnico ve las órdenes donde es responsable', conEquipo.length); }
+  [s, j] = await pedir('GET', '/prospeccion', tok.ventas); revisa(s === 200 && j.length === 5 && new Set(j.map(e => e.estado)).size === 5, 'prospección: 5 establecimientos, uno en cada estado', j.map?.(e => e.estado));
+  [s, j] = await pedir('GET', '/tablero', tok.admin); revisa(j.alertas?.some(a => /sin IVA capturado/.test(a.texto)), 'Resultados avisa de las facturas con IVA estimado (para enseñar a capturarlo)', j.alertas?.map(a => a.texto));
   const [, leads] = await pedir('GET', '/leads', tok.admin);
   const de = emp => leads.filter(l => (l.empresa_contacto || l.cliente_empresa || l.empresa || '').includes(emp) || JSON.stringify(l).includes(emp));
   const kfc = de('KFC'), sym = de('Symrise');
