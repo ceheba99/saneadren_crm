@@ -22,7 +22,7 @@ const Roles = (() => {
   const nombreDe = c => {
     const p = DATOS.catalogo.find(x => x.clave === c); if (p) return p.nombre;
     const [area, tipo] = c.split('.'), a = (DATOS.areas || []).find(x => x.clave === area);
-    return a ? `ver ${tipo === 'sucursal' ? 'toda su sucursal' : 'lo suyo'} en ${a.nombre}` : c;
+    return a ? `ver ${tipo === 'sucursal' ? 'toda su sucursal' : 'lo suyo'} en ${a.nombre}` : c; // sin HTML: va a toast (textContent)
   };
 
   async function cargar() {

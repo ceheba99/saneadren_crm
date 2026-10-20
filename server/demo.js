@@ -89,6 +89,16 @@ module.exports = function demo(app, db, { sesiones, PORT, SESSION_TTL_MS }) {
     const [canales, servicios, centros] = await Promise.all([pedir('GET', '/canales', A), pedir('GET', '/servicios', A), pedir('GET', '/compras/centros', A)]);
     const servicio = n => { const s = servicios.find(x => x.nombre === n); if (!s) throw new Error('Servicio no está en el catálogo: ' + n); return s; };
     const canal = n => (canales.find(c => c.nombre === n) || canales[0]).id;
+    // Personal (RH): el técnico con cuenta, un operador y un ayudante sin cuenta en QRO, y un operador en CDMX.
+    const persona = async datos => { const p = await pedir('POST', '/personal', A, datos); if (!p.id) throw new Error('Personal de ejemplo: ' + JSON.stringify(p)); return p.id; };
+    const PER = {
+      raul: await persona({ nombre: 'Raúl Técnico - Demo', puesto: 'Técnico', usuario_id: idDe('tecnico'), telefono: '442 555 1001', fecha_ingreso: dia(-900), licencia_tipo: 'Federal B', licencia_numero: 'QRO-123456', licencia_vence: dia(20), contacto_emergencia: 'María (esposa)', tel_emergencia: '442 555 1002', banco: 'BBVA', clabe: '012180001234567899', salario: 520, salario_periodo: 'diario', tipo_contrato: 'Indeterminado' }),
+      diego: await persona({ nombre: 'Diego Arturo Hernández', puesto: 'Operador', telefono: '442 555 1003', fecha_ingreso: dia(-420), licencia_tipo: 'Federal E', licencia_vence: dia(300), tipo_contrato: 'Indeterminado' }),
+      luis: await persona({ nombre: 'Luis Ángel Pérez', puesto: 'Ayudante', telefono: '442 555 1004', fecha_ingreso: dia(-120), tipo_contrato: 'Periodo de prueba', contrato_vence: dia(15) }),
+      oscar: await persona({ nombre: 'Óscar Medina', puesto: 'Operador', telefono: '55 5555 1005', fecha_ingreso: dia(-200), sucursal_id: cdmx.id, licencia_tipo: 'Federal B', licencia_vence: dia(-5) }),
+    };
+    await pedir('POST', '/personal/' + PER.raul + '/incidencias', A, { tipo: 'vacaciones', fecha_inicio: dia(-60), fecha_fin: dia(-56), notas: 'Vacaciones de verano' });
+    await pedir('POST', '/personal/' + PER.diego + '/incidencias', A, { tipo: 'incapacidad', fecha_inicio: dia(-30), fecha_fin: dia(-28), con_goce: false, notas: 'Incapacidad IMSS' });
     const contacto = async (nombre, telefono, empresa, direccion, canalNombre, rfc) => {
       const c = await pedir('POST', '/contactos', V, { nombre, telefono, empresa_contacto: empresa, direccion, canal_origen_id: canal(canalNombre) });
       if (rfc) await pedir('PUT', '/clientes/' + c.id, A, { ...c, rfc });
@@ -102,7 +112,7 @@ module.exports = function demo(app, db, { sesiones, PORT, SESSION_TTL_MS }) {
         forzar_duplicado: true, partidas_json: JSON.stringify(items), iva_modo: iva, valor: 1, fecha_cotizacion: fCot });
       if (etapa) await pedir('PUT', '/leads/' + c.id, quien, { version: (await pedir('GET', '/leads/' + c.id, quien)).version, etapa });
       if (!fServ) return c;
-      await pedir('PUT', '/leads/' + c.id, quien, { version: (await pedir('GET', '/leads/' + c.id, quien)).version, estatus: 'ganado', fecha_servicio: fServ, ...(tecnico ? { tecnico_id: idDe(tecnico) } : {}), ...(proyecto ? { proyecto } : {}), ...(equipo ? { equipo } : {}), ...(operador ? { operador } : {}) });
+      await pedir('PUT', '/leads/' + c.id, quien, { version: (await pedir('GET', '/leads/' + c.id, quien)).version, estatus: 'ganado', fecha_servicio: fServ, ...(tecnico ? { equipo_personal: [{ personal_id: PER.raul, papel: 'responsable' }, { personal_id: PER.diego, papel: 'operador' }] } : {}), ...(proyecto ? { proyecto } : {}), ...(equipo ? { equipo } : {}), ...(operador ? { operador } : {}) });
       if (realizado) await pedir('POST', '/leads/' + c.id + '/ejecucion', tec || T, { estado: 'realizado', fecha: realizado, realizado_por: sub ? 'subcontratado' : 'propio', gastos: sub || propio || [] });
       if (factura) await pedir('PUT', '/leads/' + c.id + '/facturacion', A, { dias_credito: factura.dias, factura_folio: factura.folio, factura_fecha: factura.fecha, factura_metodo: factura.metodo || 'PUE' });
       for (const k of cobros) if (k.fecha <= HOY) await pedir('POST', '/leads/' + c.id + '/cobros', A, { monto: k.monto, metodo: k.metodo || 'transferencia', fecha: k.fecha, referencia: k.ref || null });

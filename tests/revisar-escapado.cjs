@@ -4,10 +4,12 @@
 const fs = require('fs');
 const path = require('path');
 
-const ARCHIVOS = ['app.js', 'flujo.js', 'servicios-tabla.js', 'prospeccion.js', 'cuentas.js', 'ui.js', 'finanzas.js', 'calendario.js', 'tablero.js', 'compras.js', 'carga-generador.js', 'bitacora.js', 'solicitudes.js', 'buscador.js']
-  .map(f => path.join(__dirname, '..', 'public', f)).filter(f => fs.existsSync(f));
+// Todos los .js de la pantalla, para que ninguno nuevo se quede sin revisar.
+const ARCHIVOS = fs.readdirSync(path.join(__dirname, '..', 'public')).filter(f => f.endsWith('.js')).sort()
+  .map(f => path.join(__dirname, '..', 'public', f));
 // Funciones que devuelven texto ya seguro (escapan o solo producen números/fechas/folios).
-const SEGURAS = /^(escaparHtml|escapar|esc|Number|formatoMoneda|fechaCorta|fechaLarga|folioCotizacion|folioOrdenServicio|encodeURIComponent|Math\.|String\(Number|diasTexto|\d)/;
+// input(…) de personal.js escapa su valor; campo(…) solo junta etiquetas fijas con ese input.
+const SEGURAS = /^(escaparHtml|escapar|esc|Number|input\(|campo\(|formatoMoneda|fechaCorta|fechaLarga|folioCotizacion|folioOrdenServicio|encodeURIComponent|Math\.|String\(Number|diasTexto|\d)/;
 // Campos con texto libre que vienen de la base o del usuario.
 const CAMPOS = /\.(nombre|telefono|telefono_alterno|texto|direccion|empresa|empresa_contacto|notas|notas_iniciales|notas_generales|servicio_nombre|correo|canal|canal_nombre|responsable_nombre|lead_nombre|usuario|descripcion|leyenda|servicio|giro|rfc|persona|cargo|zona|sector|fuente|estado|creado_por|operador|equipo|observaciones|encuesta_comentario|motivo|necesidades|referencia|concepto|proveedor|proveedor_nombre|cliente_nombre|categoria|metodo|factura|ultima_fecha|fecha_sugerida|factura_folio|motivo_cancelacion|registrado_por_nombre|categoria_nombre)\b/;
 
@@ -15,7 +17,8 @@ let hallazgos = 0;
 for (const archivo of ARCHIVOS) {
   fs.readFileSync(archivo, 'utf8').split('\n').forEach((linea, i) => {
     // textContent y los diálogos (que usan textContent) no interpretan HTML: son seguros.
-    if (/\.textContent\s*=|solicitarDialogo\(|mensaje\s*:/.test(linea)) return;
+    // «// sin HTML» marca líneas que arman texto para textContent o toast (no se interpreta como HTML).
+    if (/\.textContent\s*=|solicitarDialogo\(|mensaje\s*:|\/\/ sin HTML/.test(linea)) return;
     const re = /\$\{([^{}]*(?:\{[^{}]*\}[^{}]*)*)\}/g;
     let m;
     while ((m = re.exec(linea))) {

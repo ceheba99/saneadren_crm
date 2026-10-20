@@ -8,6 +8,8 @@ db.pragma('journal_mode = WAL');
 db.pragma('foreign_keys = ON');
 db.pragma('busy_timeout = 5000');
 db.pragma('synchronous = FULL');
+// Lo que se borra o se reemplaza se sobreescribe con ceros en el archivo (no quedan restos de datos sensibles).
+db.pragma('secure_delete = ON');
 
 db.exec(`
 CREATE TABLE IF NOT EXISTS usuarios (

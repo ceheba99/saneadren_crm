@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Saneadren · Cotizaciones y Servicios</title>
-<link rel="stylesheet" href="styles.css?v=perm3">
+<link rel="stylesheet" href="styles.css?v=rh2">
 <link rel="stylesheet" href="servicios-tabla.css">
 <link rel="stylesheet" href="flujo.css">
 </head>
@@ -50,6 +50,7 @@
       <div class="menu-grupo" data-grupo="ajustes">
         <button type="button" class="menu-grupo-btn" aria-expanded="false"><span class="menu-icono" aria-hidden="true">⚙️</span>Ajustes<span class="menu-flecha" aria-hidden="true">▾</span></button>
         <div class="menu-sub">
+          <button type="button" class="menu-item perm-personal-ver" data-vista="personal" id="nav-personal"><span class="menu-icono" aria-hidden="true">👷</span>Personal</button>
           <button type="button" class="menu-item perm-catalogos-editar" data-vista="catalogos" id="nav-catalogos"><span class="menu-icono" aria-hidden="true">📚</span>Catálogos</button>
           <button type="button" class="menu-item perm-usuarios-administrar" data-vista="usuarios" id="nav-usuarios"><span class="menu-icono" aria-hidden="true">👤</span>Usuarios</button>
           <button type="button" class="menu-item solo-general" data-vista="bitacora" id="nav-bitacora"><span class="menu-icono" aria-hidden="true">🗂️</span>Bitácora</button>
@@ -374,6 +375,13 @@
     </div>
   </section>
 
+<section class="vista" id="vista-personal">
+<div class="pe-encabezado"><h2>Personal</h2><button type="button" class="btn btn-primario perm-personal-editar" id="pe-nuevo">+ Nueva persona</button></div>
+<p class="ayuda">Todas las personas de la empresa —técnicos, operadores, ayudantes y administrativos—, tengan o no cuenta en el sistema. De aquí se elige al técnico responsable y al equipo de cada orden de servicio.</p>
+<div class="filtros"><input id="pe-buscar" aria-label="Buscar persona" placeholder="Nombre, puesto o teléfono"><select id="pe-f-puesto" aria-label="Puesto"></select><select id="pe-f-estado" aria-label="Estado"><option value="activos">Activos</option><option value="bajas">Dados de baja</option><option value="todos">Todos</option></select><label><input type="checkbox" id="pe-f-alertas"> Solo con avisos</label></div>
+<p id="pe-resumen" role="status"></p>
+<div class="tabla-scroll"><table class="tabla-resumen pe-tabla"><thead><tr><th>Nombre</th><th>Puesto</th><th>Teléfono</th><th>Antigüedad</th><th>Vacaciones disponibles</th><th>Licencia</th><th>Órdenes del mes</th><th>Avisos</th></tr></thead><tbody id="pe-tabla"></tbody></table></div>
+</section>
 <section class="vista" id="vista-prospeccion">
 <h2>Prospección de establecimientos</h2><p class="ayuda">Investiga restaurantes, hoteles y hospitales sin crear cotizaciones vacías. Sector describe el negocio; el estado indica tu seguimiento comercial.</p>
 <div class="filtros"><input id="pr-buscar" aria-label="Buscar establecimiento" placeholder="Establecimiento, zona, persona o teléfono"><select id="pr-f-sector" aria-label="Sector"></select><select id="pr-f-estado" aria-label="Seguimiento"></select><select id="pr-f-responsable" aria-label="Responsable"></select><label><input type="checkbox" id="pr-vencidos"> Seguimiento para hoy o vencido</label><button class="btn btn-primario" id="pr-nuevo">Registrar establecimiento</button><button class="btn btn-outline perm-clientes-exportar" id="pr-exportar">Exportar selección</button></div>
@@ -605,7 +613,7 @@
           </div>
           <div class="campo-modal" id="wrap-vigencia-hasta"><label for="ed-vigencia-hasta">Vigencia hasta</label><input type="date" id="ed-vigencia-hasta"></div>
           <div class="campo-modal solo-orden"><label for="ed-equipo">Equipo</label><input type="text" id="ed-equipo" maxlength="200" placeholder="Ej. E-37-04"></div>
-          <div class="campo-modal solo-orden"><label for="ed-tecnico">Técnico asignado</label><select id="ed-tecnico"></select><small class="ayuda">Ve esta orden y registra si se realizó y sus gastos.</small></div>
+          <div class="campo-modal full solo-orden" id="ed-equipo-campo"><span class="etiqueta-campo">Técnico responsable y equipo</span><div id="ed-equipo-personal"></div><small class="ayuda">El responsable ve esta orden y la marca realizada (si tiene cuenta en el sistema). El personal se da de alta en Ajustes → Personal.</small></div>
           <div class="campo-modal solo-orden"><label for="ed-operador">Operador(es)</label><input type="text" id="ed-operador" maxlength="300" placeholder="Nombre de quien ejecuta el servicio"></div>
           <div class="campo-modal solo-orden"><label for="ed-manifiestos">Manifiestos</label><input type="text" id="ed-manifiestos" maxlength="200" placeholder="Folio(s) de manifiesto"></div>
           <div class="campo-modal solo-orden"><label for="ed-tiros">Tiros</label><input type="text" id="ed-tiros" maxlength="60" placeholder="Ej. 2"></div>
@@ -1151,6 +1159,7 @@
 <script src="https://unpkg.com/docx@8.5.0/build/index.umd.js" integrity="sha384-4xaIisuLEy2lo2HkB2C4rEf7v8jbTb2kuogX6TkuEt9feTWKBSFSOzsqNNbV+sKh" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/1.3.8/FileSaver.js" integrity="sha384-ph76mR0W+Z/3+JTfCgW7I+2WZrKUE1M2EabdJVneuKwpssRuQggPhzQJ3oDectWZ" crossorigin="anonymous"></script>
 
+<div class="overlay" id="overlay-personal"><div class="modal" style="max-width:940px"><div class="modal-header"><h2 id="pe-titulo">Persona</h2><button class="close-btn" id="pe-cerrar" aria-label="Cerrar ficha de la persona">✕</button></div><div class="modal-body" id="pe-cuerpo"></div></div></div>
 <div class="overlay" id="overlay-prospeccion"><div class="modal" style="max-width:920px"><div class="modal-header"><h2 id="pr-titulo">Establecimiento</h2><button class="close-btn" id="pr-cerrar" aria-label="Cerrar establecimiento">✕</button></div><div class="modal-body"><div class="modal-section"><p class="ayuda">Para investigar solo necesitas nombre, sector y ciudad o zona. Completa el teléfono cuando lo consigas. Guardar aquí no crea un cliente ni una cotización.</p><div class="form-grid-2">
 <div class="campo-modal"><label for="pr-nombre">Nombre del establecimiento o sucursal *</label><input id="pr-nombre" maxlength="500"></div><div class="campo-modal"><label for="pr-sector_id">Sector *</label><select id="pr-sector_id"></select></div><div class="campo-modal"><label for="pr-zona">Ciudad / zona *</label><input id="pr-zona" maxlength="500"></div><div class="campo-modal"><label for="pr-direccion">Domicilio (opcional)</label><input id="pr-direccion" maxlength="500"></div><div class="campo-modal"><label for="pr-telefono">Teléfono (opcional)</label><input id="pr-telefono" type="tel"></div><div class="campo-modal"><label for="pr-correo">Correo (opcional)</label><input id="pr-correo" type="email"></div><div class="campo-modal"><label for="pr-persona">Persona de contacto (opcional)</label><input id="pr-persona" maxlength="500"></div><div class="campo-modal"><label for="pr-cargo">Cargo / área (opcional)</label><input id="pr-cargo" maxlength="500"></div><div class="campo-modal"><label for="pr-fuente">Fuente de investigación / enlace (opcional)</label><input id="pr-fuente" maxlength="500"></div><div class="campo-modal"><label for="pr-estado">Estado del seguimiento</label><select id="pr-estado"></select></div><div class="campo-modal"><label for="pr-responsable_id">Responsable *</label><select id="pr-responsable_id"></select></div><div class="campo-modal"><label for="pr-proximo_contacto">Próxima fecha de contacto (opcional)</label><input id="pr-proximo_contacto" type="date"></div>
 </div><div class="campo-modal"><label for="pr-necesidades">Necesidades y notas de investigación</label><textarea id="pr-necesidades" rows="3" maxlength="5000"></textarea></div><p id="pr-aviso" role="status"></p><div class="btn-group"><button class="btn btn-primario" id="pr-guardar">Guardar establecimiento</button><button class="btn btn-outline" id="pr-vincular">Guardar y abrir contacto</button></div><p class="ayuda">Abrir contacto requiere teléfono. Si ya existe un contacto, podrás confirmar su vinculación. Desde su ficha usa Crear cotización o Crear orden de servicio; el domicilio del establecimiento se propone como ubicación.</p></div></div></div></div>
@@ -1172,7 +1181,8 @@
 <script src="solicitudes.js?v=perm1"></script>
 <script src="carga-generador.js?v=con1"></script>
 <script src="sucursales.js?v=perm2"></script>
-<script src="app.js?v=perm3"></script>
+<script src="app.js?v=rh1"></script>
+<script src="personal.js?v=rh1"></script>
 <script src="buscador.js?v=suc1"></script>
 <script src="demo.js?v=demo1"></script>
 <script src="prospeccion.js?v=perm1"></script>

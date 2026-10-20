@@ -19,7 +19,7 @@
 const alcance = require('./alcance');
 
 // Tablas con sucursal propia y tablas que la heredan de su registro (en orden: primero las de arriba).
-const CON_SUCURSAL = ['leads', 'cuentas_por_pagar', 'solicitudes_compra', 'ordenes_compra', 'establecimientos', 'historial_archivo', 'clientes'];
+const CON_SUCURSAL = ['leads', 'cuentas_por_pagar', 'solicitudes_compra', 'ordenes_compra', 'establecimientos', 'historial_archivo', 'clientes', 'personal'];
 const VISTAS = [
   ['leads', 'en_alcance(sucursal_id) AND ve_lead(responsable_id, tecnico_id, estatus)'],
   ['cuentas_por_pagar', "en_alcance(sucursal_id) AND ve_registro('cxp', registrado_por)"],
@@ -32,6 +32,10 @@ const VISTAS = [
   ['pagos_proveedor', 'cxp_id IN (SELECT id FROM cuentas_por_pagar)'],
   ['documentos_solicitud', 'solicitud_id IN (SELECT id FROM solicitudes_compra)'],
   ['documentos_oc', 'oc_id IN (SELECT id FROM ordenes_compra)'],
+  ['personal', 'en_alcance(sucursal_id)'], // qué se ve de cada persona lo decide personal.js (permisos)
+  ['documentos_personal', 'personal_id IN (SELECT id FROM personal)'],
+  ['incidencias_personal', 'personal_id IN (SELECT id FROM personal)'],
+  ['orden_personal', 'lead_id IN (SELECT id FROM leads)'],
 ];
 // Tablas con folio propio por sucursal y su tipo de contador.
 const FOLIO = { leads: 'leads', solicitudes_compra: 'solicitudes', ordenes_compra: 'ordenes_compra' };
@@ -43,6 +47,7 @@ const RUTAS_REGISTRO = [
   [/^\/finanzas\/pagos-proveedor\/(\d+)(?:\/|$)/, 'pagos_proveedor'], [/^\/compras\/ordenes\/(\d+)(?:\/|$)/, 'ordenes_compra'],
   [/^\/compras\/documentos\/(\d+)(?:\/|$)/, 'documentos_oc'], [/^\/compras\/solicitudes\/documentos\/(\d+)(?:\/|$)/, 'documentos_solicitud'],
   [/^\/compras\/solicitudes\/(\d+)(?:\/|$)/, 'solicitudes_compra'], [/^\/prospeccion\/(\d+)(?:\/|$)/, 'establecimientos'],
+  [/^\/personal\/(\d+)(?:\/|$)/, 'personal'],
 ];
 const RUTA_CLIENTE = /^\/(?:finanzas\/)?clientes\/(\d+)(?:\/|$)/;
 // Lo que solo hace el administrador GENERAL (Dirección): afecta a todas las sucursales o lo ve todo. Aplica a
