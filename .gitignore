@@ -8,3 +8,6 @@ saneadren.db-wal
 test-simulacion.mjs
 entregables/
 archivos/
+# Clave de cifrado de datos sensibles (si no está en la variable CLAVE_CIFRADO): NUNCA al repositorio.
+clave-cifrado.key
+*.key

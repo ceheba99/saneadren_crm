@@ -140,7 +140,9 @@ function encabezadosSeguridad(req, res, next) {
     "form-action 'self'",
     "frame-ancestors 'none'"
   ].join('; '));
-  if (req.secure) res.setHeader('Strict-Transport-Security', 'max-age=31536000');
+  // HTTPS obligatorio para el navegador. Detrás del proxy de Plesk req.secure puede ser falso aunque el sitio sea
+  // https: si APP_URL es https, también se manda.
+  if (req.secure || /^https:\/\//i.test(process.env.APP_URL || '')) res.setHeader('Strict-Transport-Security', 'max-age=31536000');
   next();
 }
 

@@ -742,7 +742,9 @@ module.exports = function finanzas(app, db, h, unicos) {
     res.json(db.prepare('SELECT * FROM proveedores ORDER BY activo DESC, nombre').all().map(p => ({ ...p, saldo: saldos.get(p.id) || 0 })));
   }));
 
-  function datosProveedor(b) {
+  // actual: el proveedor como está guardado (al editar). El dígito verificador de la CLABE se exige al capturarla o
+  // cambiarla (una CLABE mal tecleada manda el pago a otra cuenta); una ya guardada no impide corregir lo demás.
+  function datosProveedor(b, actual = null) {
     const nombre = texto(b.nombre, 120);
     if (!nombre) return { error: 'Escribe el nombre del proveedor' };
     const categoria = b.categoria || 'otro';
@@ -752,6 +754,7 @@ module.exports = function finanzas(app, db, h, unicos) {
     if (rfc && !/^[A-ZÑ&]{3,4}\d{6}[A-Z0-9]{3}$/.test(rfc)) return { error: 'El RFC no es válido (p. ej. ABC010101AB1)' };
     const clabe = b.clabe === undefined || b.clabe === null || String(b.clabe).trim() === '' ? null : String(b.clabe).replace(/[\s-]/g, '');
     if (clabe && !/^\d{18}$/.test(clabe)) return { error: 'La CLABE lleva 18 dígitos' };
+    if (clabe && clabe !== actual?.clabe && !require('./personal').clabeValida(clabe)) return { error: 'La CLABE no es válida: revisa los 18 dígitos (el último es de verificación)' };
     return { nombre, categoria, rfc, telefono: texto(b.telefono, 25), contacto: texto(b.contacto, 120), dias_credito: Number(b.dias_credito) || 0, notas: texto(b.notas, 1000), clabe, banco: texto(b.banco, 60) };
   }
   // Proveedores sin duplicados (mismas reglas que los clientes): nombre igual o parecido (acentos, mayúsculas,
@@ -788,7 +791,7 @@ module.exports = function finanzas(app, db, h, unicos) {
     if (!permitido(req, res, 'dinero.mover', 'Los datos del proveedor (CLABE, banco…) los corrige quien hace los pagos')) return;
     const p = db.prepare('SELECT * FROM proveedores WHERE id = ?').get(req.params.id);
     if (!p) return res.status(404).json({ error: 'Proveedor no encontrado' });
-    const d = datosProveedor({ ...p, ...req.body });
+    const d = datosProveedor({ ...p, ...req.body }, p);
     if (d.error) return res.status(400).json(d);
     // Al renombrar, también se revisa que no quede igual o parecido a otro (salvo que se confirme).
     const prob = problemaProveedor(d, p.id, !!req.body.forzar || unicos.clave(d.nombre) === unicos.clave(p.nombre));

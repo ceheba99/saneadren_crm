@@ -4,8 +4,11 @@
 //    (RFC, CURP, NSS, salario, contrato, documentos escaneados), vacaciones e incidencias.
 //  · Permisos (permisos.js): «personal.ver» (lista y fichas sin datos sensibles), «personal.editar» (altas, cambios,
 //    bajas e incidencias) y «personal.sensibles» (pagos, expediente y documentos). Sin ese último, la CLABE sale
-//    enmascarada y lo sensible no se manda ni se acepta. Cada cambio queda en la bitácora (la CLABE solo con sus
-//    últimos 4 dígitos).
+//    enmascarada y lo sensible no se manda ni se acepta. Cada cambio queda en la bitácora, pero sin los datos
+//    sensibles (la CLABE solo con sus últimos 4 dígitos; RFC, CURP, NSS, salario y contrato solo «cambió»).
+//  · Cifrado (cifrado.js): CLABE, RFC, CURP, NSS y salario se guardan cifrados (AES-256-GCM) y amarrados a su
+//    persona y campo; los documentos del expediente, también. La lista nunca los manda (ni con permiso): solo la
+//    ficha de una persona, y cada consulta de datos sensibles queda en la bitácora.
 //  · Por sucursal, como lo demás: la vista «personal» solo muestra la gente de las sucursales de quien pide.
 //  · En cada orden de servicio: un técnico responsable y, opcional, operadores y ayudantes (tabla orden_personal).
 //    El responsable, si tiene cuenta, es el «técnico asignado» de la orden (leads.tecnico_id): la ve y la marca
@@ -19,6 +22,7 @@ const express = require('express');
 const { tipoReal } = require('./expediente-oc');
 const { hoyMexico } = require('./fechas');
 const alcance = require('./alcance');
+const C = require('./cifrado');
 
 const MAX_BYTES = 10 * 1024 * 1024;
 const MIME = { pdf: 'application/pdf', jpg: 'image/jpeg', png: 'image/png' };
@@ -31,11 +35,19 @@ const INCIDENCIAS = { vacaciones: 'Vacaciones', falta: 'Falta', incapacidad: 'In
 const PAPELES = { responsable: 'Técnico responsable', operador: 'Operador', ayudante: 'Ayudante' };
 // Lo que solo se ve y cambia con «personal.sensibles».
 const SENSIBLES = ['banco', 'clabe', 'rfc', 'curp', 'nss', 'salario', 'salario_periodo', 'tipo_contrato', 'contrato_vence'];
+// Columnas que se guardan cifradas (el salario, en centavos).
+const CIFRADOS = ['clabe', 'rfc', 'curp', 'nss', 'salario_cent'];
+const contexto = (col, id) => `personal.${col}:${id}`;
+const contextoDoc = id => `documentos_personal:${id}`;
+const contextoNota = id => `incidencias_personal.notas:${id}`;
+// En la bitácora (la ve quien tiene «Ver personal») nunca va el valor de un dato sensible: solo que cambió.
+const OCULTOS_BITACORA = new Set(['banco', 'rfc', 'curp', 'nss', 'salario', 'salario_periodo', 'tipo_contrato', 'contrato_vence']);
 const GENERALES = ['nombre', 'puesto', 'telefono', 'correo', 'direccion', 'fecha_ingreso', 'contacto_emergencia', 'tel_emergencia', 'licencia_tipo', 'licencia_numero', 'licencia_vence', 'notas', 'usuario_id', 'sucursal_id'];
 
 const fechaOk = v => /^\d{4}-\d{2}-\d{2}$/.test(v) && !Number.isNaN(Date.parse(v + 'T00:00:00Z')) && new Date(v + 'T00:00:00Z').toISOString().slice(0, 10) === v;
 const nombreSeguro = t => String(t || 'documento').normalize('NFC').replace(/[\\/:*?"<>|\u0000-\u001f]+/g, '_').slice(0, 120) || 'documento';
 const encabezado = (req, k) => { try { return decodeURIComponent(String(req.get(k) || '')); } catch { return ''; } };
+const idDe = v => { if (!/^\d{1,15}$/.test(String(v))) return 0; const n = Number(v); return Number.isSafeInteger(n) && n > 0 ? n : 0; };
 const texto = (v, max) => { const t = String(v ?? '').trim().replace(/\s+/g, ' '); return t ? t.slice(0, max) : null; };
 // CLABE: 18 dígitos con dígito verificador (pesos 3, 7, 1).
 function clabeValida(c) {
@@ -119,19 +131,40 @@ module.exports = function personal(app, db, h) {
   const negar = (res, msg) => res.status(403).json({ error: msg || 'No tienes permiso para ver el personal' });
 
   // Lo que se manda de una persona: lo sensible solo con permiso (si no, la CLABE enmascarada y lo demás fuera).
-  function presentar(req, p, hoy = hoyMexico()) {
+  // En la lista (lista = true) nunca va lo sensible, ni con permiso: así no sale todo de golpe en una sola respuesta.
+  function presentar(req, p, hoy = hoyMexico(), { lista = false } = {}) {
     const x = { ...p };
-    const conSens = sensible(req);
-    if (!conSens) { for (const k of SENSIBLES) delete x[k]; delete x.salario_cent; x.clabe_mascara = mascaraClabe(p.clabe); x.tiene_clabe = !!p.clabe; }
+    delete x._ilegibles;
+    const conSens = sensible(req) && !lista;
+    if (sensible(req) && p._ilegibles?.length) x.datos_ilegibles = p._ilegibles;
+    if (!conSens) { for (const k of SENSIBLES) delete x[k]; delete x.salario_cent; x.clabe_mascara = mascaraClabe(p.clabe); x.tiene_clabe = !!p.clabe || !!p._ilegibles?.includes('clabe'); }
     else { x.salario = p.salario_cent == null ? null : p.salario_cent / 100; x.clabe_mascara = mascaraClabe(p.clabe); }
     x.vacaciones = vacacionesDe(p, usadas, hoy);
     x.alertas = [];
+    if (x.datos_ilegibles) x.alertas.push('Datos cifrados que no se pueden leer: revisa la clave de cifrado');
     if (p.activo && p.licencia_vence) { const d = diasEntre(hoy, p.licencia_vence); if (d < 0) x.alertas.push('Licencia vencida'); else if (d <= 30) x.alertas.push(`Licencia vence en ${d} día${d === 1 ? '' : 's'}`); }
-    if (conSens && p.activo && p.contrato_vence) { const d = diasEntre(hoy, p.contrato_vence); if (d < 0) x.alertas.push('Contrato vencido'); else if (d <= 30) x.alertas.push(`Contrato vence en ${d} día${d === 1 ? '' : 's'}`); }
+    if (sensible(req) && p.activo && p.contrato_vence) { const d = diasEntre(hoy, p.contrato_vence); if (d < 0) x.alertas.push('Contrato vencido'); else if (d <= 30) x.alertas.push(`Contrato vence en ${d} día${d === 1 ? '' : 's'}`); }
     x.usuario_nombre = p.usuario_id ? db.prepare('SELECT nombre FROM usuarios WHERE id = ?').get(p.usuario_id)?.nombre || null : null;
     return x;
   }
-  const leer = id => db.prepare('SELECT * FROM personal WHERE id = ?').get(Number(id) || 0);
+  // Una fila con sus datos sensibles ya descifrados. Si alguno no se puede descifrar (otra clave o dato alterado),
+  // queda en null y se anota en _ilegibles: nunca se manda el texto cifrado ni se tumba la petición.
+  function abrir(fila) {
+    if (!fila) return fila;
+    const p = { ...fila, _ilegibles: [] };
+    for (const k of CIFRADOS) {
+      if (p[k] === null || p[k] === undefined) continue;
+      try { const t = C.descifrar(p[k], contexto(k, p.id)); p[k] = k === 'salario_cent' ? Number(t) : t; }
+      catch { p[k] = null; p._ilegibles.push(k === 'salario_cent' ? 'salario' : k); }
+    }
+    return p;
+  }
+  const leer = id => abrir(db.prepare('SELECT * FROM personal WHERE id = ?').get(idDe(id)));
+  const sellar = (id, d) => Object.fromEntries(Object.entries(d).map(([k, v]) => [k, CIFRADOS.includes(k) ? C.cifrar(v === null || v === undefined ? null : String(v), contexto(k, id)) : v]));
+  // Quién consultó datos sensibles de quién (una vez por hora por persona consultada, para no llenar la bitácora).
+  const consultas = new Map();
+  setInterval(() => { const t = Date.now(); for (const [k, v] of consultas) if (v < t) consultas.delete(k); }, 3600000).unref();
+  const anotarConsulta = (req, p, que) => { const k = req.usuarioSesion.id + ':' + p.id + ':' + que; if ((consultas.get(k) || 0) > Date.now()) return; consultas.set(k, Date.now() + 3600000); audit(req, p.id, 'consulta', `${p.nombre}: ${que}`); };
   // Cuentas que puede ligar quien pide: activas, sin ficha y de sus sucursales (Dirección: todas).
   const deMisSucursales = (req, usuarioId) => { const a = req.alcanceSuc; if (!a || a.todo) return true; return app.locals.sucursales.sucursalesDe(usuarioId).some(s => a.ids.has(s)); };
   const usuariosSinFicha = req => db.prepare('SELECT u.id, u.nombre, u.rol FROM usuarios u WHERE u.activo = 1 AND NOT EXISTS (SELECT 1 FROM main.personal x WHERE x.usuario_id = u.id) ORDER BY u.nombre').all().filter(u => deMisSucursales(req, u.id));
@@ -175,7 +208,7 @@ module.exports = function personal(app, db, h) {
     }
     return { datos: d };
   }
-  const descripcion = (k, v) => (k === 'clabe' ? mascaraClabe(v) || '(sin CLABE)' : k === 'salario_cent' ? (v == null ? '(sin salario)' : '$' + (v / 100).toLocaleString('es-MX', { minimumFractionDigits: 2 })) : k === 'usuario_id' ? (v ? db.prepare('SELECT nombre FROM usuarios WHERE id = ?').get(v)?.nombre : '(sin cuenta)') : (v ?? '(vacío)'));
+  const descripcion = (k, v) => (OCULTOS_BITACORA.has(k.replace('_cent', '')) ? null : k === 'clabe' ? mascaraClabe(v) || '(sin CLABE)' : k === 'salario_cent' ? (v == null ? '(sin salario)' : '$' + (v / 100).toLocaleString('es-MX', { minimumFractionDigits: 2 })) : k === 'usuario_id' ? (v ? db.prepare('SELECT nombre FROM usuarios WHERE id = ?').get(v)?.nombre : '(sin cuenta)') : (v ?? '(vacío)'));
   // Al ligar o desligar la cuenta de una persona, las órdenes donde es responsable cambian de «técnico asignado».
   const sincronizarOrdenes = personalId => db.prepare("UPDATE main.leads SET tecnico_id = (SELECT usuario_id FROM main.personal WHERE id = ?) WHERE id IN (SELECT lead_id FROM main.orden_personal WHERE personal_id = ? AND papel = 'responsable')").run(personalId, personalId);
 
@@ -190,13 +223,13 @@ module.exports = function personal(app, db, h) {
     if (!ve(req)) return negar(res);
     const hoy = hoyMexico(), mes = hoy.slice(0, 7);
     const estado = req.query.estado || 'activos', q = String(req.query.q || '').trim().toLowerCase();
-    let filas = db.prepare('SELECT * FROM personal ORDER BY activo DESC, nombre').all();
+    let filas = db.prepare('SELECT * FROM personal ORDER BY activo DESC, nombre').all().map(abrir);
     if (estado === 'activos') filas = filas.filter(p => p.activo); else if (estado === 'bajas') filas = filas.filter(p => !p.activo);
     if (req.query.puesto) filas = filas.filter(p => p.puesto === req.query.puesto);
     if (q) filas = filas.filter(p => [p.nombre, p.puesto, p.telefono, p.correo].some(v => String(v || '').toLowerCase().includes(q)));
     const ordenes = new Map(db.prepare(`SELECT op.personal_id, COUNT(*) n FROM orden_personal op JOIN leads l ON l.id = op.lead_id
       WHERE COALESCE(l.fecha_realizado, l.fecha_servicio) LIKE ? GROUP BY op.personal_id`).all(mes + '%').map(r => [r.personal_id, r.n]));
-    const lista = filas.map(p => ({ ...presentar(req, p, hoy), ordenes_mes: ordenes.get(p.id) || 0 }));
+    const lista = filas.map(p => ({ ...presentar(req, p, hoy, { lista: true }), ordenes_mes: ordenes.get(p.id) || 0 }));
     if (req.query.alertas === '1') return res.json(lista.filter(p => p.alertas.length));
     res.json(lista);
   }));
@@ -204,7 +237,13 @@ module.exports = function personal(app, db, h) {
     if (!ve(req)) return negar(res);
     const p = leer(req.params.id);
     if (!p) return res.status(404).json({ error: 'Persona no encontrada' });
-    const incidencias = db.prepare('SELECT * FROM incidencias_personal WHERE personal_id = ? ORDER BY fecha_inicio DESC, id DESC').all(p.id);
+    // Las notas de una incapacidad pueden traer datos de salud: solo con «Datos sensibles».
+    const incidencias = db.prepare('SELECT * FROM incidencias_personal WHERE personal_id = ? ORDER BY fecha_inicio DESC, id DESC').all(p.id).map(i => {
+      if (i.notas === null) return i;
+      if (i.tipo === 'incapacidad' && !sensible(req)) return { ...i, notas: null, notas_ocultas: true };
+      try { return { ...i, notas: C.descifrar(i.notas, contextoNota(i.id)) }; } catch { return { ...i, notas: null, notas_ilegibles: true }; }
+    });
+    if (sensible(req) && CIFRADOS.some(k => p[k] !== null && p[k] !== undefined)) anotarConsulta(req, p, 'vio sus datos sensibles');
     const documentos = sensible(req) ? db.prepare('SELECT id, tipo, nombre, formato, bytes, subido_por_nombre, created_at FROM documentos_personal WHERE personal_id = ? AND eliminado = 0 ORDER BY id DESC').all(p.id) : [];
     const ordenes = db.prepare(`SELECT l.id, l.created_at, l.folio_num, l.sucursal_id, l.estatus, l.fecha_servicio, l.fecha_realizado, l.ejecucion, COALESCE(l.empresa_contacto, l.nombre) AS cliente, op.papel
       FROM orden_personal op JOIN leads l ON l.id = op.lead_id WHERE op.personal_id = ? ORDER BY COALESCE(l.fecha_realizado, l.fecha_servicio) DESC LIMIT 30`).all(p.id);
@@ -223,11 +262,14 @@ module.exports = function personal(app, db, h) {
     if (v.error) return res.status(v.status || 400).json({ error: v.error });
     const d = v.datos;
     if (db.prepare('SELECT 1 FROM personal WHERE lower(nombre) = lower(?) AND activo = 1').get(d.nombre)) return res.status(409).json({ error: 'Ya hay una persona activa con ese nombre' });
-    const cols = Object.keys(d);
+    // Primero la fila sin lo cifrado (el cifrado se amarra al número de la persona) y luego sus datos sensibles.
+    const cols = Object.keys(d).filter(k => !CIFRADOS.includes(k)), sens = Object.keys(d).filter(k => CIFRADOS.includes(k) && d[k] !== null);
     const id = db.transaction(() => {
       const info = db.prepare(`INSERT INTO main.personal (${cols.join(', ')}) VALUES (${cols.map(() => '?').join(', ')})`).run(...cols.map(k => d[k]));
-      if (!d.sucursal_id) app.locals.sucursales.asignar('personal', Number(info.lastInsertRowid));
-      return Number(info.lastInsertRowid);
+      const nuevo = Number(info.lastInsertRowid);
+      if (sens.length) { const c = sellar(nuevo, Object.fromEntries(sens.map(k => [k, d[k]]))); db.prepare(`UPDATE main.personal SET ${sens.map(k => k + ' = ?').join(', ')} WHERE id = ?`).run(...sens.map(k => c[k]), nuevo); }
+      if (!d.sucursal_id) app.locals.sucursales.asignar('personal', nuevo);
+      return nuevo;
     })();
     audit(req, id, 'alta', `${d.nombre} · ${d.puesto}${d.usuario_id ? ' · cuenta ' + descripcion('usuario_id', d.usuario_id) : ''}${d.clabe ? ' · CLABE ' + mascaraClabe(d.clabe) : ''}`);
     res.status(201).json(presentar(req, leer(id)));
@@ -243,11 +285,12 @@ module.exports = function personal(app, db, h) {
     if (d.nombre && d.nombre.toLowerCase() !== p.nombre.toLowerCase() && db.prepare('SELECT 1 FROM personal WHERE lower(nombre) = lower(?) AND activo = 1 AND id <> ?').get(d.nombre, p.id)) return res.status(409).json({ error: 'Ya hay una persona activa con ese nombre' });
     const cambian = Object.keys(d).filter(k => String(d[k] ?? '') !== String(p[k] ?? ''));
     if (!cambian.length) return res.json(presentar(req, p));
+    const c = sellar(p.id, Object.fromEntries(cambian.map(k => [k, d[k]])));
     db.transaction(() => {
-      db.prepare(`UPDATE main.personal SET ${cambian.map(k => k + ' = ?').join(', ')}, updated_at = datetime('now','localtime'), version = version + 1 WHERE id = ?`).run(...cambian.map(k => d[k]), p.id);
+      db.prepare(`UPDATE main.personal SET ${cambian.map(k => k + ' = ?').join(', ')}, updated_at = datetime('now','localtime'), version = version + 1 WHERE id = ?`).run(...cambian.map(k => c[k]), p.id);
       if (cambian.includes('usuario_id')) sincronizarOrdenes(p.id);
     })();
-    audit(req, p.id, 'cambios', `${p.nombre}: ` + cambian.map(k => `${k.replace('_cent', '')} ${descripcion(k, p[k])} → ${descripcion(k, d[k])}`).join(' · '));
+    audit(req, p.id, 'cambios', `${p.nombre}: ` + cambian.map(k => { const e = k.replace('_cent', ''); return OCULTOS_BITACORA.has(e) ? `${e} (cambió)` : `${e} ${descripcion(k, p[k])} → ${descripcion(k, d[k])}`; }).join(' · '));
     res.json(presentar(req, leer(p.id)));
   }));
   app.post('/api/personal/:id/baja', h((req, res) => {
@@ -303,14 +346,19 @@ module.exports = function personal(app, db, h) {
     }
     const empalme = db.prepare('SELECT tipo, fecha_inicio, fecha_fin FROM incidencias_personal WHERE personal_id = ? AND cancelada = 0 AND fecha_inicio <= ? AND fecha_fin >= ?').get(p.id, fin, ini);
     if (empalme && !b.forzar) return res.status(409).json({ error: `Se empalma con ${INCIDENCIAS[empalme.tipo].toLowerCase()} del ${empalme.fecha_inicio} al ${empalme.fecha_fin}`, codigo: 'EMPALME' });
-    const info = db.prepare('INSERT INTO main.incidencias_personal (personal_id, tipo, fecha_inicio, fecha_fin, dias, con_goce, notas, registrado_por, registrado_por_nombre) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
-      .run(p.id, b.tipo, ini, fin, dias, b.con_goce === false || b.con_goce === 0 ? 0 : 1, texto(b.notas, 300), req.usuarioSesion.id, req.usuarioSesion.nombre);
+    const nota = texto(b.notas, 300);
+    const info = db.transaction(() => {
+      const r = db.prepare('INSERT INTO main.incidencias_personal (personal_id, tipo, fecha_inicio, fecha_fin, dias, con_goce, notas, registrado_por, registrado_por_nombre) VALUES (?, ?, ?, ?, ?, ?, NULL, ?, ?)')
+        .run(p.id, b.tipo, ini, fin, dias, b.con_goce === false || b.con_goce === 0 ? 0 : 1, req.usuarioSesion.id, req.usuarioSesion.nombre);
+      if (nota) db.prepare('UPDATE main.incidencias_personal SET notas = ? WHERE id = ?').run(C.cifrar(nota, contextoNota(r.lastInsertRowid)), r.lastInsertRowid);
+      return r;
+    })();
     audit(req, p.id, INCIDENCIAS[b.tipo].toLowerCase(), `${p.nombre}: ${ini}${fin !== ini ? ' al ' + fin : ''} · ${dias} día(s)`);
     res.status(201).json({ id: Number(info.lastInsertRowid), vacaciones: vacacionesDe(p, usadas, hoyMexico()) });
   }));
   app.post('/api/personal/incidencias/:id/cancelar', h((req, res) => {
     if (!edita(req)) return negar(res, 'No tienes permiso para cancelar incidencias');
-    const i = db.prepare('SELECT * FROM incidencias_personal WHERE id = ? AND personal_id IN (SELECT id FROM personal)').get(Number(req.params.id) || 0);
+    const i = db.prepare('SELECT * FROM incidencias_personal WHERE id = ? AND personal_id IN (SELECT id FROM personal)').get(idDe(req.params.id));
     if (!i || i.cancelada) return res.status(404).json({ error: 'Registro no encontrado' });
     const motivo = texto(req.body?.motivo, 200);
     if (!motivo || motivo.length < 4) return res.status(400).json({ error: 'Escribe por qué se cancela' });
@@ -331,15 +379,16 @@ module.exports = function personal(app, db, h) {
     if (buf.length > MAX_BYTES) return res.status(413).json({ error: 'El archivo pasa de 10 MB' });
     const formato = tipoReal(buf);
     if (!['pdf', 'jpg', 'png'].includes(formato)) return res.status(400).json({ error: 'El documento debe ser PDF, JPG o PNG' });
-    const sha = crypto.createHash('sha256').update(buf).digest('hex');
+    const sha = C.huella(buf); // huella con clave: reconoce el mismo archivo sin guardar un hash comparable
     if (db.prepare('SELECT 1 FROM documentos_personal WHERE personal_id = ? AND sha256 = ? AND eliminado = 0').get(p.id, sha)) return res.status(409).json({ error: 'Ese mismo archivo ya está en su expediente' });
     const nombre = nombreSeguro(encabezado(req, 'x-nombre'));
     const id = db.transaction(() => {
       const r = db.prepare('INSERT INTO main.documentos_personal (personal_id, tipo, nombre, archivo, formato, bytes, sha256, subido_por, subido_por_nombre) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
         .run(p.id, tipo, nombre, '', formato, buf.length, sha, req.usuarioSesion.id, req.usuarioSesion.nombre);
-      const archivo = path.join(String(p.id), `${r.lastInsertRowid}-${sha.slice(0, 12)}.${formato}`);
-      fs.mkdirSync(path.join(DIR, String(p.id)), { recursive: true });
-      fs.writeFileSync(path.join(DIR, archivo), buf);
+      // Nombre al azar (no revela nada del contenido); el archivo va cifrado.
+      const archivo = path.join(String(p.id), `${r.lastInsertRowid}-${crypto.randomBytes(8).toString('hex')}.${formato}.cifrado`);
+      fs.mkdirSync(path.join(DIR, String(p.id)), { recursive: true, mode: 0o700 });
+      C.escribirSeguro(path.join(DIR, archivo), C.cifrarArchivo(buf, contextoDoc(r.lastInsertRowid)));
       db.prepare('UPDATE main.documentos_personal SET archivo = ? WHERE id = ?').run(archivo, r.lastInsertRowid);
       return Number(r.lastInsertRowid);
     })();
@@ -348,17 +397,21 @@ module.exports = function personal(app, db, h) {
   }));
   app.get('/api/personal/documentos/:id', h((req, res) => {
     if (!sensible(req)) return negar(res, 'El expediente lo ve quien tiene permiso de datos sensibles');
-    const d = db.prepare('SELECT * FROM documentos_personal WHERE id = ? AND eliminado = 0 AND personal_id IN (SELECT id FROM personal)').get(Number(req.params.id) || 0);
+    const d = db.prepare('SELECT * FROM documentos_personal WHERE id = ? AND eliminado = 0 AND personal_id IN (SELECT id FROM personal)').get(idDe(req.params.id));
     if (!d) return res.status(404).json({ error: 'Documento no encontrado' });
     const ruta = path.join(DIR, d.archivo);
-    if (!ruta.startsWith(DIR) || !fs.existsSync(ruta)) return res.status(404).json({ error: 'El archivo ya no está en el servidor' });
+    if (!ruta.startsWith(DIR + path.sep) || !fs.existsSync(ruta)) return res.status(404).json({ error: 'El archivo ya no está en el servidor' });
+    let contenido;
+    try { contenido = C.descifrarArchivo(fs.readFileSync(ruta), contextoDoc(d.id)); }
+    catch (e) { console.error('[personal] documento ' + d.id + ':', e.message); return res.status(409).json({ error: 'El documento está cifrado con otra clave o fue alterado: no se puede abrir. Revisa la clave de cifrado del servidor.' }); }
+    const dueno = leer(d.personal_id); if (dueno) audit(req, dueno.id, 'consulta', `${dueno.nombre}: descargó ${DOCUMENTOS[d.tipo] || d.tipo} «${d.nombre}»`);
     res.set({ 'Content-Type': MIME[d.formato] || 'application/octet-stream', 'X-Content-Type-Options': 'nosniff', 'Cache-Control': 'private, no-store',
       'Content-Disposition': `attachment; filename="documento.${d.formato}"; filename*=UTF-8''${encodeURIComponent(d.nombre)}` });
-    res.send(fs.readFileSync(ruta));
+    res.send(contenido);
   }));
   app.post('/api/personal/documentos/:id/quitar', h((req, res) => {
     if (!sensible(req) || !edita(req)) return negar(res, 'El expediente lo maneja quien tiene permiso de datos sensibles');
-    const d = db.prepare('SELECT * FROM documentos_personal WHERE id = ? AND eliminado = 0 AND personal_id IN (SELECT id FROM personal)').get(Number(req.params.id) || 0);
+    const d = db.prepare('SELECT * FROM documentos_personal WHERE id = ? AND eliminado = 0 AND personal_id IN (SELECT id FROM personal)').get(idDe(req.params.id));
     if (!d) return res.status(404).json({ error: 'Documento no encontrado' });
     db.prepare("UPDATE main.documentos_personal SET eliminado = 1, eliminado_por = ?, eliminado_at = datetime('now','localtime') WHERE id = ?").run(req.usuarioSesion.nombre, d.id);
     audit(req, d.personal_id, 'documento quitado', `${DOCUMENTOS[d.tipo] || d.tipo} «${d.nombre}» (el archivo se conserva en el servidor)`);
@@ -414,6 +467,57 @@ module.exports = function personal(app, db, h) {
       db.prepare("INSERT OR IGNORE INTO orden_personal (lead_id, personal_id, papel) SELECT id, ?, 'responsable' FROM leads WHERE tecnico_id = ?").run(p.id, u);
     }
   })();
+
+  // ---------- Cifrado de lo ya guardado ----------
+  // Al arrancar: lo que esté en claro (versiones anteriores) se cifra, y lo cifrado con una clave anterior se vuelve
+  // a cifrar con la actual. Lo que no se puede descifrar se deja como está (no se pierde: sirve con la clave correcta).
+  // Lo mismo con los archivos del expediente. Con secure_delete (db.js) no quedan restos en claro en la base.
+  function asegurarCifrado() {
+    // La clave se valida al arrancar (una clave mal escrita detiene el arranque en vez de fallar después).
+    const e = C.estado();
+    console.log(`[cifrado] Clave de datos sensibles: ${e.origen === 'variable' ? 'variable CLAVE_CIFRADO' : 'archivo ' + C.NOMBRE_ARCHIVO} (id ${e.kid}${e.claves > 1 ? ', más ' + (e.claves - 1) + ' anterior(es)' : ''}).`);
+    let datos = 0, archivos = 0, fallas = 0;
+    db.transaction(() => {
+      for (const f of db.prepare(`SELECT id, ${CIFRADOS.join(', ')} FROM main.personal`).all()) {
+        const nuevos = {};
+        for (const k of CIFRADOS) {
+          if (!C.pendiente(f[k])) continue;
+          let claro = f[k];
+          if (C.esCifrado(claro)) { try { claro = C.descifrar(claro, contexto(k, f.id)); } catch { fallas++; continue; } }
+          nuevos[k] = C.cifrar(String(claro), contexto(k, f.id));
+        }
+        const ks = Object.keys(nuevos);
+        if (ks.length) { db.prepare(`UPDATE main.personal SET ${ks.map(k => k + ' = ?').join(', ')} WHERE id = ?`).run(...ks.map(k => nuevos[k]), f.id); datos += ks.length; }
+      }
+      for (const i of db.prepare('SELECT id, notas FROM main.incidencias_personal WHERE notas IS NOT NULL').all()) {
+        if (!C.pendiente(i.notas)) continue;
+        let claro = i.notas;
+        if (C.esCifrado(claro)) { try { claro = C.descifrar(claro, contextoNota(i.id)); } catch { fallas++; continue; } }
+        db.prepare('UPDATE main.incidencias_personal SET notas = ? WHERE id = ?').run(C.cifrar(claro, contextoNota(i.id)), i.id); datos++;
+      }
+      // La bitácora de versiones anteriores pudo guardar RFC, CURP, NSS o salario: se dejan solo como «cambió».
+      for (const a of db.prepare("SELECT id, detalle FROM auditoria WHERE entidad = 'personal' AND accion = 'cambios' AND detalle IS NOT NULL").all()) {
+        const i = a.detalle.indexOf(': '); if (i < 0) continue;
+        const segs = a.detalle.slice(i + 2).split(' · '), limpio = segs.map(x => { const k = x.split(' ')[0]; return OCULTOS_BITACORA.has(k) && x !== k + ' (cambió)' ? k + ' (cambió)' : x; });
+        if (limpio.some((x, j) => x !== segs[j])) { db.prepare('UPDATE auditoria SET detalle = ? WHERE id = ?').run(a.detalle.slice(0, i + 2) + limpio.join(' · '), a.id); datos++; }
+      }
+    })();
+    for (const d of db.prepare("SELECT id, archivo FROM main.documentos_personal WHERE archivo <> ''").all()) {
+      const ruta = path.join(DIR, d.archivo);
+      if (!ruta.startsWith(DIR + path.sep) || !fs.existsSync(ruta)) continue;
+      try {
+        const buf = fs.readFileSync(ruta), kid = C.kidDeArchivo(buf);
+        if (kid === C.estado().kid) continue;
+        const claro = kid ? C.descifrarArchivo(buf, contextoDoc(d.id)) : buf;
+        C.escribirSeguro(ruta, C.cifrarArchivo(claro, contextoDoc(d.id)));
+        db.prepare('UPDATE main.documentos_personal SET sha256 = ? WHERE id = ?').run(C.huella(claro), d.id);
+        archivos++;
+      } catch (e) { fallas++; console.error('[cifrado] documento ' + d.id + ':', e.message); }
+    }
+    if (datos || archivos) { db.pragma('wal_checkpoint(TRUNCATE)'); console.log(`[cifrado] Se cifraron o limpiaron ${datos} dato(s) y ${archivos} documento(s) del personal con la clave actual.`); }
+    if (fallas) console.error(`[cifrado] ${fallas} dato(s) o documento(s) no se pudieron descifrar con las claves disponibles (¿falta CLAVE_CIFRADO_ANTERIOR?). Se dejaron como estaban.`);
+  }
+  asegurarCifrado();
 
   return { validarEquipo, guardarEquipo, responsableDesdeUsuario, equipoDe, textoEquipo, PAPELES, vacacionesDe: p => vacacionesDe(p, usadas, hoyMexico()), clabeValida, diasLFT };
 };

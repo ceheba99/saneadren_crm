@@ -30,6 +30,8 @@ const IP_VALIDA = /^(\d{1,3}\.){3}\d{1,3}$|^[0-9a-f:]{2,39}$/i;
 app.use((req, res, next) => { const cf = String(req.get('cf-connecting-ip') || '').trim(); req.ipCliente = IP_VALIDA.test(cf) ? cf : req.ip; next(); });
 app.disable('x-powered-by');
 app.use(encabezadosSeguridad);
+// Ninguna respuesta de la API se guarda en la memoria del navegador ni en proxies: llevan datos del negocio y personales.
+app.use('/api', (req, res, next) => { res.set({ 'Cache-Control': 'no-store', Pragma: 'no-cache' }); next(); });
 // Las plantillas de Excel pueden traer hasta 1,000 renglones: esas rutas aceptan un cuerpo mayor.
 // El parser global se salta las peticiones que ya se leyeron aquí.
 app.use('/api/finanzas/importar', express.json({ limit: '5mb' }));

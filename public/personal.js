@@ -95,12 +95,12 @@ const Personal = (() => {
       </div></div>`;
     if (sens) {
       h += `<div class="modal-section"><h3 class="pe-sub">Pagos y expediente <span class="pe-candado">🔒 datos sensibles</span></h3><div class="form-grid-2">
-        ${campo('banco', 'Banco', input('banco', p.banco, 'maxlength="60"' + ro))}
+        ${campo('banco', 'Banco', input('banco', p.banco, 'maxlength="60" autocomplete="off"' + ro))}
         ${campo('clabe', 'CLABE (18 dígitos)', input('clabe', p.clabe, 'maxlength="22" inputmode="numeric" autocomplete="off"' + ro))}
-        ${campo('rfc', 'RFC', input('rfc', p.rfc, 'maxlength="13" autocapitalize="characters"' + ro))}
-        ${campo('curp', 'CURP', input('curp', p.curp, 'maxlength="18" autocapitalize="characters"' + ro))}
-        ${campo('nss', 'Número de seguro social', input('nss', p.nss, 'maxlength="11" inputmode="numeric"' + ro))}
-        ${campo('salario', 'Salario', `<div class="pe-salario"><input id="pe-salario" type="number" min="0" step="0.01" value="${p.salario ?? ''}"${ro}><select id="pe-salario_periodo" aria-label="Periodo del salario"${ro}>${opciones(CAT.periodos, p.salario_periodo, 'Periodo')}</select></div>`)}
+        ${campo('rfc', 'RFC', input('rfc', p.rfc, 'maxlength="13" autocapitalize="characters" autocomplete="off"' + ro))}
+        ${campo('curp', 'CURP', input('curp', p.curp, 'maxlength="18" autocapitalize="characters" autocomplete="off"' + ro))}
+        ${campo('nss', 'Número de seguro social', input('nss', p.nss, 'maxlength="11" inputmode="numeric" autocomplete="off"' + ro))}
+        ${campo('salario', 'Salario', `<div class="pe-salario"><input id="pe-salario" type="number" min="0" step="0.01" autocomplete="off" value="${Number.isFinite(p.salario) ? p.salario : ''}"${ro}><select id="pe-salario_periodo" aria-label="Periodo del salario"${ro}>${opciones(CAT.periodos, p.salario_periodo, 'Periodo')}</select></div>`)}
         ${campo('tipo_contrato', 'Contrato', `<select id="pe-tipo_contrato"${ro}>${opciones(CAT.contratos, p.tipo_contrato, 'Sin especificar')}</select>`)}
         ${campo('contrato_vence', 'Contrato vence', input('contrato_vence', p.contrato_vence, 'type="date"' + ro))}
         </div>`;
@@ -116,7 +116,7 @@ const Personal = (() => {
       h += `<div class="modal-section"><h3 class="pe-sub">Vacaciones e incidencias</h3>
         <p class="pe-vac">${!v ? 'Captura la fecha de ingreso para calcular sus vacaciones.' : !v.anios ? `Aún no cumple su primer año (lo cumple el ${esc(fecha(v.proximo))}); por ley todavía no le corresponden vacaciones.` : `<b>${v.disponibles}</b> día(s) disponibles de ${v.corresponden} que le corresponden por ${v.anios} año(s) de antigüedad (del ${esc(fecha(v.desde))} al ${esc(fecha(v.proximo))}).`}</p>
         <div class="tabla-scroll"><table class="tabla-resumen pe-tabla"><thead><tr><th>Tipo</th><th>Fechas</th><th>Días</th><th>Notas</th><th></th></tr></thead><tbody>
-        ${(p.incidencias || []).map(i => `<tr class="${i.cancelada ? 'pe-baja' : ''}"><td>${esc(CAT.incidencias[i.tipo] || i.tipo)}${i.con_goce ? '' : ' <small>(sin goce)</small>'}</td><td>${esc(fecha(i.fecha_inicio))}${i.fecha_fin !== i.fecha_inicio ? ' – ' + esc(fecha(i.fecha_fin)) : ''}</td><td>${Number(i.dias)}</td><td>${esc(i.notas || '')}${i.cancelada ? '<small> · Cancelada: ' + esc(i.motivo_cancelacion || '') + '</small>' : ''}</td><td>${edita && !i.cancelada ? `<button type="button" class="btn btn-outline btn-chico" data-pe-inc-cancelar="${Number(i.id)}">Cancelar</button>` : ''}</td></tr>`).join('') || '<tr><td colspan="5"><p class="ayuda">Sin registros.</p></td></tr>'}
+        ${(p.incidencias || []).map(i => `<tr class="${i.cancelada ? 'pe-baja' : ''}"><td>${esc(CAT.incidencias[i.tipo] || i.tipo)}${i.con_goce ? '' : ' <small>(sin goce)</small>'}</td><td>${esc(fecha(i.fecha_inicio))}${i.fecha_fin !== i.fecha_inicio ? ' – ' + esc(fecha(i.fecha_fin)) : ''}</td><td>${Number(i.dias)}</td><td>${i.notas_ocultas ? '<small>🔒 Notas solo con datos sensibles</small>' : i.notas_ilegibles ? '<small>⚠ No se pueden leer (clave de cifrado)</small>' : esc(i.notas || '')}${i.cancelada ? '<small> · Cancelada: ' + esc(i.motivo_cancelacion || '') + '</small>' : ''}</td><td>${edita && !i.cancelada ? `<button type="button" class="btn btn-outline btn-chico" data-pe-inc-cancelar="${Number(i.id)}">Cancelar</button>` : ''}</td></tr>`).join('') || '<tr><td colspan="5"><p class="ayuda">Sin registros.</p></td></tr>'}
         </tbody></table></div>
         ${edita && p.activo ? `<div class="pe-inc-nueva form-grid-2">
           ${campo('inc-tipo', 'Registrar', `<select id="pe-inc-tipo">${opciones(Object.entries(CAT.incidencias), 'vacaciones')}</select>`)}
@@ -224,6 +224,9 @@ const Personal = (() => {
     else if (t.dataset.peDoc) descargar(t.dataset.peDoc);
     else if (t.dataset.peDocQuitar) quitarDocumento(t.dataset.peDocQuitar);
   });
+  // Al cerrar la ficha (con la X, Esc o desde otra pantalla) se borra de la página: lo sensible no se queda ahí.
+  new MutationObserver(() => { if (!$('overlay-personal').classList.contains('mostrar') && !ocupado) { $('pe-cuerpo').innerHTML = ''; actual = null; base = ''; } })
+    .observe($('overlay-personal'), { attributes: true, attributeFilter: ['class'] });
   window.addEventListener('beforeunload', e => { if ($('overlay-personal').classList.contains('mostrar') && pendiente()) { e.preventDefault(); e.returnValue = ''; } });
   return { cargar, abrir };
 })();

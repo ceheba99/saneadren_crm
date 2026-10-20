@@ -137,8 +137,22 @@ function revisar(db, { dirArchivos } = {}) {
       GROUP BY upper(rfc) HAVING COUNT(*) > 1`).all().map(r => ({ ref: r.r, detalle: 'clientes ' + r.ids.split(',').map(i => 'CLI-' + i.padStart(4, '0')).join(', ') })));
 
   // ---------- Archivos ----------
+  // ---------- Seguridad: datos sensibles del personal cifrados (cifrado.js) ----------
+  if (existe(db, 'personal')) {
+    const C = require('./cifrado'), CIFRADOS = ['clabe', 'rfc', 'curp', 'nss', 'salario_cent'];
+    const filas = db.prepare('SELECT id, nombre, ' + CIFRADOS.join(', ') + ' FROM main.personal').all();
+    chequeo('Seguridad', 'Datos sensibles del personal guardados sin cifrar', 'error', () => filas.flatMap(p => CIFRADOS.filter(k => p[k] !== null && p[k] !== '' && !C.esCifrado(p[k])).map(k => ({ ref: p.nombre, detalle: k.replace('_cent', '') + ' sin cifrar (se cifra solo al reiniciar el sistema)' })))
+      .concat(existe(db, 'incidencias_personal') ? db.prepare('SELECT i.id, p.nombre, i.notas FROM main.incidencias_personal i JOIN main.personal p ON p.id = i.personal_id WHERE i.notas IS NOT NULL').all().filter(i => !C.esCifrado(i.notas)).map(i => ({ ref: i.nombre, detalle: 'notas de una incidencia sin cifrar (se cifran solo al reiniciar el sistema)' })) : []));
+    // Se intenta descifrar cada dato: falla si se cifró con otra clave o si alguien lo alteró directo en la base.
+    const legible = (p, k) => { try { C.descifrar(p[k], 'personal.' + k + ':' + p.id); return true; } catch { return false; } };
+    chequeo('Seguridad', 'Datos cifrados que no se pueden leer (otra clave o alterados)', 'error', () => filas.flatMap(p => CIFRADOS.filter(k => C.esCifrado(p[k]) && !legible(p, k)).map(k => ({ ref: p.nombre, detalle: k.replace('_cent', '') + (C.tieneClave(C.kidDe(p[k])) ? ': fue alterado fuera del sistema (no corresponde a esta persona o se cambió a mano)' : ': se cifró con otra clave; pon esa clave en CLAVE_CIFRADO_ANTERIOR y reinicia') }))));
+    chequeo('Seguridad', 'Clave de cifrado guardada en la variable de entorno del servidor', 'aviso', () => C.estado().origen === 'variable' ? [] : [{ ref: C.NOMBRE_ARCHIVO, detalle: 'La clave está en un archivo junto a la base. Cópiala a la variable CLAVE_CIFRADO del servidor (Plesk), guárdala aparte en un lugar seguro y reinicia; después borra el archivo del servidor.' }]);
+    if (dirArchivos && existe(db, 'documentos_personal')) chequeo('Seguridad', 'Documentos del expediente del personal sin cifrar', 'error', () => db.prepare("SELECT id, nombre, archivo FROM main.documentos_personal WHERE archivo <> ''").all()
+      .filter(d => { const r = path.join(dirArchivos, 'personal', d.archivo); if (!fs.existsSync(r)) return false; const fd = fs.openSync(r, 'r'), b = Buffer.alloc(4); try { fs.readSync(fd, b, 0, 4, 0); } finally { fs.closeSync(fd); } return !C.archivoCifrado(b); })
+      .map(d => ({ ref: d.nombre, detalle: 'el archivo está en claro (se cifra solo al reiniciar el sistema)' })));
+  }
   if (dirArchivos) {
-    for (const [tabla, sub, etiqueta] of [['documentos_oc', 'ordenes_compra', 'Expediente de órdenes de compra'], ['documentos_solicitud', 'solicitudes', 'Cotizaciones y fotos de solicitudes']]) {
+    for (const [tabla, sub, etiqueta] of [['documentos_oc', 'ordenes_compra', 'Expediente de órdenes de compra'], ['documentos_solicitud', 'solicitudes', 'Cotizaciones y fotos de solicitudes'], ['documentos_personal', 'personal', 'Expediente del personal']]) {
       if (!existe(db, tabla)) continue;
       chequeo('Archivos', etiqueta + ': archivos que faltan en el servidor', 'error', () => db.prepare(`SELECT id, nombre, archivo FROM ${tabla} WHERE eliminado = 0`).all()
         .filter(d => !d.archivo || !fs.existsSync(path.join(dirArchivos, sub, d.archivo))).map(d => ({ ref: d.nombre, detalle: 'no se encuentra el archivo' })));
