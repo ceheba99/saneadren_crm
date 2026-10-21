@@ -965,6 +965,21 @@ module.exports = function finanzas(app, db, h, unicos) {
     if (!lead || lead.estatus !== 'ganado') return res.status(400).json({ error: 'Solo las órdenes de servicio se marcan como realizadas' });
     const b = req.body || {}, hoy = hoyMexico();
     const fmtFecha = f => f.split('-').reverse().join('/');
+    // Deshacer: se marcó realizado (o no realizado) por error. Solo Dirección, con motivo; queda en la bitácora de la orden.
+    // Los gastos y cobros ligados no se tocan (se revisan aparte).
+    if (b.estado === 'pendiente') {
+      if (!P.direccion(req)) return res.status(403).json({ error: 'Solo Dirección regresa un servicio a «por realizar»' });
+      if (!lead.ejecucion) return res.status(409).json({ error: 'Este servicio ya está por realizar' });
+      const motivo = texto(b.motivo, 300);
+      if (!motivo || !conSentido(motivo, 5)) return res.status(400).json({ error: 'Escribe por qué se regresa (mínimo 5 caracteres)' });
+      const antes = lead.ejecucion === 'realizado' ? 'realizado el ' + fmtFecha(lead.fecha_realizado || lead.fecha_servicio || hoy) : 'no realizado';
+      db.transaction(() => {
+        db.prepare("UPDATE main.leads SET ejecucion = NULL, realizado_por = NULL, fecha_realizado = NULL, motivo_no_realizado = NULL, updated_at = datetime('now','localtime'), version = version + 1 WHERE id = ?").run(lead.id);
+        bitacora(lead.id, `Se regresó a «por realizar» (estaba ${antes}). Motivo: ${motivo}.`, req);
+      })();
+      app.locals.auditoria?.registrar(req, 'orden_servicio', lead.id, 'regresada a por realizar', `Estaba ${antes}. Motivo: ${motivo}`);
+      return res.json({ ok: true, lead: db.prepare('SELECT * FROM leads WHERE id = ?').get(lead.id) });
+    }
     if (b.estado === 'no_realizado') {
       const motivo = texto(b.motivo, 300);
       if (!motivo || !conSentido(motivo, 5)) return res.status(400).json({ error: 'Escribe por qué no se realizó (mínimo 5 caracteres)' });

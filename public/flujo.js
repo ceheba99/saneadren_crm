@@ -35,8 +35,12 @@ const FlujoCRM = (() => {
     $('fc-meta').innerHTML=metaClienteHTML(c);
     const origen=CATALOGOS.canales.find(x=>Number(x.id)===Number(c.canal_origen_id));
     $('contacto-identidad').insertAdjacentHTML('beforeend',`<p>Cómo se enteró: <b>${escapar(origen?.nombre || 'Sin registrar')}</b></p>`);
+    // Las notas generales (acceso al predio, preferencias…) se leen sin abrir el formulario de edición; también salen en sus órdenes.
+    if(c.notas_generales)$('contacto-identidad').insertAdjacentHTML('beforeend',`<p class="ayuda">📝 Notas del contacto: ${escapar(c.notas_generales)}</p>`);
   }
   function presentarRegistro(lead,contacto){
+    $('registro-motivo-perdida').hidden=lead.estatus!=='perdido';
+    $('registro-motivo-perdida').textContent=lead.estatus==='perdido'?'❌ No aceptada. Motivo: '+(lead.motivo_perdida||'sin registrar'):'';
     const contratado=lead.estatus==='ganado';
     const nombre=contratado?'servicio contratado':'cotización';
     const icono=contratado?'🟢':'🔵';
@@ -68,7 +72,7 @@ const FlujoCRM = (() => {
     rotularEditorContenido(contratado);
     document.querySelectorAll('#overlay-ficha .solo-orden').forEach(e=>e.hidden=!contratado);
     const c=contacto||{id:lead.cliente_id,nombre:lead.nombre,telefono:lead.telefono,empresa_contacto:lead.empresa_contacto};
-    $('registro-contacto').innerHTML=`<div><span class="flujo-kicker">CONTACTO ASOCIADO · SOLO CONSULTA</span><strong>${escapar(c.nombre||'Sin nombre')}</strong><span>${escapar(c.telefono||'')} ${c.empresa_contacto?'· '+escapar(c.empresa_contacto):''}</span></div>${c.id?`<button type="button" class="btn btn-outline" data-abrir-contacto="${Number(c.id)}">Ver / editar contacto #${Number(c.id)}</button>`:''}`;
+    $('registro-contacto').innerHTML=`<div><span class="flujo-kicker">CONTACTO ASOCIADO · SOLO CONSULTA</span><strong>${escapar(c.nombre||'Sin nombre')}</strong><span>${escapar(c.telefono||'')} ${c.empresa_contacto?'· '+escapar(c.empresa_contacto):''}</span>${c.notas_generales?`<p class="ayuda">📝 Notas del contacto: ${escapar(c.notas_generales)}</p>`:''}</div>${c.id?`<button type="button" class="btn btn-outline" data-abrir-contacto="${Number(c.id)}">Ver / editar contacto #${Number(c.id)}</button>`:''}`;
   }
   async function nuevoRegistro(id,modo,prefill,clienteOculto){
     if(!await permitirCambio('overlay-ficha') || !await permitirCambio('overlay-ficha-cliente') || !await permitirCambio('overlay-servicio-nuevo'))return;

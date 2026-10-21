@@ -44,10 +44,10 @@ const Solicitudes = (() => {
   function formulario(s) {
     const centros = CENTROS.filter(c => c.activo || c.id === s?.centro_id);
     return '<form id="sol-form" class="sol-form" autocomplete="off">'
-      + campo('sol-que', '¿Qué necesitas?', '<input id="sol-que" maxlength="500" placeholder="Ej. 4 llantas 11R22.5" value="' + esc(s?.que || '') + '">', ' full')
-      + campo('sol-para', '¿Para qué?', '<textarea id="sol-para" rows="2" maxlength="500" placeholder="Ej. Al camión C-22 se le reventó una y las demás están lisas">' + esc(s?.para_que || '') + '</textarea>', ' full')
+      + campo('sol-que', '¿Qué necesitas? (obligatorio)', '<input id="sol-que" maxlength="500" placeholder="Ej. 4 llantas 11R22.5" value="' + esc(s?.que || '') + '">', ' full')
+      + campo('sol-para', '¿Para qué? (obligatorio)', '<textarea id="sol-para" rows="2" maxlength="500" placeholder="Ej. Al camión C-22 se le reventó una y las demás están lisas">' + esc(s?.para_que || '') + '</textarea>', ' full')
       + '<div class="form-grid-2">'
-      + campo('sol-centro', 'Área (centro de costos)', '<select id="sol-centro"><option value="">Selecciona…</option>' + centros.map(c => '<option value="' + Number(c.id) + '"' + (c.id === s?.centro_id ? ' selected' : '') + '>' + esc(c.nombre) + '</option>').join('') + '</select>')
+      + campo('sol-centro', 'Área (centro de costos, obligatorio)', '<select id="sol-centro"><option value="">Selecciona…</option>' + centros.map(c => '<option value="' + Number(c.id) + '"' + (c.id === s?.centro_id ? ' selected' : '') + '>' + esc(c.nombre) + '</option>').join('') + '</select>')
       + campo('sol-fecha', '¿Para cuándo? (opcional)', '<input type="date" id="sol-fecha" value="' + esc(s?.fecha_requerida || '') + '">')
       + campo('sol-equipo', 'Unidad o equipo (opcional)', '<input id="sol-equipo" maxlength="80" placeholder="Ej. C-22" value="' + esc(s?.equipo || '') + '">')
       + campo('sol-lead', 'Orden de servicio (opcional)', '<input id="sol-lead" inputmode="numeric" placeholder="Número, ej. 125" value="' + esc(s?.lead_id ? String(s.lead_id) : '') + '">')

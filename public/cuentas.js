@@ -65,7 +65,8 @@ const Cuentas = (() => {
           mostrar('login', { mensaje: r.mensaje });
         } else {
           const res = await api('/cambiar-password', { method: 'POST', body: JSON.stringify({ actual: $('np-actual').value, nueva }) });
-          const r = await res.json();
+          const r = await res.json().catch(() => ({}));
+          if (!res.ok || !r.token) return error('nueva-error', r.error || 'No se pudo cambiar la contraseña');
           guardarSesion({ ...USUARIO_ACTUAL, token: r.token, cambiar_password: false });
           location.reload();
         }

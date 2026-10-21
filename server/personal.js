@@ -353,7 +353,8 @@ module.exports = function personal(app, db, h) {
     if (db.prepare('SELECT 1 FROM personal WHERE lower(nombre) = lower(?) AND activo = 1').get(p.nombre)) return res.status(409).json({ error: 'Ya hay una persona activa con ese nombre' });
     db.prepare("UPDATE main.personal SET activo = 1, fecha_baja = NULL, motivo_baja = NULL, updated_at = datetime('now','localtime'), version = version + 1 WHERE id = ?").run(p.id);
     audit(req, p.id, 'reingreso', p.nombre);
-    res.json(presentar(req, leer(p.id)));
+    const cuenta = p.usuario_id ? db.prepare('SELECT activo FROM usuarios WHERE id = ?').get(p.usuario_id) : null;
+    res.json({ ...presentar(req, leer(p.id)), ...(cuenta && !cuenta.activo ? { aviso: 'Su cuenta del sistema sigue desactivada: la reactiva quien administra usuarios (Ajustes → Usuarios desactivados).' } : {}) });
   }));
 
   // ---------- Vacaciones e incidencias ----------
@@ -454,8 +455,8 @@ module.exports = function personal(app, db, h) {
     const vistos = new Set(); let responsables = 0;
     for (const x of lista) {
       const id = Number(x?.personal_id);
-      if (!PAPELES[x?.papel]) return { error: 'Papel inválido en el equipo' };
-      if (vistos.has(id)) return { error: 'Una persona aparece dos veces en el equipo' };
+      if (!PAPELES[x?.papel]) return { error: 'Papel inválido en el personal de la orden' };
+      if (vistos.has(id)) return { error: 'Una persona aparece dos veces en el personal de la orden' };
       vistos.add(id);
       const p = db.prepare('SELECT id, activo, sucursal_id FROM personal WHERE id = ?').get(id || 0);
       if (!p) return { error: 'Esa persona no existe en tu personal' };
@@ -481,7 +482,7 @@ module.exports = function personal(app, db, h) {
     const p = usuarioId ? db.prepare('SELECT id FROM main.personal WHERE usuario_id = ?').get(Number(usuarioId)) : null;
     if (p) db.prepare("INSERT INTO main.orden_personal (lead_id, personal_id, papel) VALUES (?, ?, 'responsable') ON CONFLICT(lead_id, personal_id) DO UPDATE SET papel = 'responsable'").run(leadId, p.id);
   }
-  const textoEquipo = lista => lista.map(x => `${x.nombre} (${PAPELES[x.papel].toLowerCase()})`).join(', ') || 'sin equipo';
+  const textoEquipo = lista => lista.map(x => `${x.nombre} (${PAPELES[x.papel].toLowerCase()})`).join(', ') || 'nadie asignado';
 
   // Migración: quien ya era técnico asignado (usuario) obtiene su ficha y queda como responsable de sus órdenes.
   db.transaction(() => {

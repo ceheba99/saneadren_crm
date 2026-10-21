@@ -147,6 +147,8 @@ module.exports = {
         canal: 'al crear se toma de «¿Cómo se enteró?» del contacto',
         responsable: 'al crear queda a nombre de quien la registra («Atendido por» se cambia después)',
         urgente: 'se marca después en «Avisos y notas» del registro, junto con notas y recordatorios',
+        'encuesta-calificacion': 'la encuesta se contesta después de hacer el servicio',
+        'encuesta-comentario': 'la encuesta se contesta después de hacer el servicio',
       },
       soloAlta: {},
     },

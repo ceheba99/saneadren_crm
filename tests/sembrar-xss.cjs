@@ -6,6 +6,8 @@
 // una: tests/buscar-marcas.js las busca en las pantallas para saber qué dato capturado no se ve en ningún lado.
 const BASE = (process.argv.slice(2).find(x => !x.startsWith('--')) || 'http://localhost:3917').replace(/\/$/, '') + '/api';
 const MARCAS = process.argv.includes('--marcas'), MAPA = {};
+// Versión corta para campos de hasta 60–120 caracteres (con la larga, el servidor rechazaba el registro y el campo no se revisaba).
+const XC = n => MARCAS ? X(n) : '<img src=x onerror=__xss++>';
 const X = n => MARCAS ? (MAPA['QQ' + (Object.keys(MAPA).length + 1) + 'QQ'] = n, 'QQ' + Object.keys(MAPA).length + 'QQ') : `<img src=x onerror="window.__xss=(window.__xss||0)+1;window.__xssDe=(window.__xssDe||[]).concat('${n}')">"><svg onload="window.__xss=(window.__xss||0)+1">'+alert(1)+'`;
 let ok = 0, rechazados = 0;
 const pedir = async (m, r, t, b) => { const x = await fetch(BASE + r, { method: m, headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + t }, body: b === undefined ? undefined : JSON.stringify(b) }); const j = await x.json().catch(() => ({})); if (x.status < 300) ok++; else { rechazados++; console.error(`rechazado: ${m} ${r} → ${x.status} ${j.error || ""}`); } return [x.status, j]; };
@@ -18,27 +20,28 @@ const HOY = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Mexico_City' }
   const vend = usuarios.find(u => u.rol === 'ventas').id;
   // Cliente y cotización/orden con trampas en cada texto libre.
   const [, cli] = await pedir('POST', '/contactos', A, { nombre: 'Trampa Cliente Xss', telefono: '4425550199', empresa_contacto: 'Empresa Trampa SA', direccion: X('direccion cliente'), canal_origen_id: canales[0].id, notas_generales: X('notas cliente') });
-  if (cli.id) await pedir('PUT', '/clientes/' + cli.id, A, { notas_generales: X('notas cliente 2'), direccion: X('direccion cliente 2'), giro: X('giro') });
+  if (cli.id) await pedir('PUT', '/clientes/' + cli.id, A, { notas_generales: X('notas cliente 2'), direccion: X('direccion cliente 2') });
   const [, l] = await pedir('POST', '/leads', A, { cliente_id: cli.id, direccion: X('direccion orden'), canal_id: canales[0].id, servicio_id: servicios[0].id, responsable_id: vend, forzar_duplicado: true, notas_iniciales: X('notas iniciales'),
     partidas_json: JSON.stringify([{ servicio: servicios[0].nombre, leyenda: X('leyenda partida'), importe: 1000 }]), iva_modo: 'mas_iva', valor: 1, notas_cotizacion: X('notas cotizacion') });
   const [, lx] = await pedir('GET', '/leads/' + l.id, A);
-  await pedir('PUT', '/leads/' + l.id, A, { version: lx.version, estatus: 'ganado', fecha_servicio: HOY, equipo: X('equipo'), operador: X('operador'), observaciones: X('observaciones'), proyecto: X('proyecto'), manifiestos: X('manifiestos'), tiros: X('tiros') });
+  await pedir('PUT', '/leads/' + l.id, A, { version: lx.version, estatus: 'ganado', fecha_servicio: HOY, equipo: X('equipo'), operador: X('operador'), observaciones: X('observaciones'), proyecto: X('proyecto'), manifiestos: X('manifiestos'), tiros: XC('tiros') });
   await pedir('POST', '/leads/' + l.id + '/historial', A, { tipo: 'observacion', texto: X('historial') });
   await pedir('POST', '/leads/' + l.id + '/historial', A, { tipo: 'alerta', texto: X('recordatorio'), fecha_alerta: HOY + ' 09:00:00' });
   const [, provs] = await pedir('GET', '/finanzas/proveedores', A);
   await pedir('POST', '/leads/' + l.id + '/ejecucion', A, { estado: 'realizado', fecha: HOY, gastos: [{ proveedor_id: provs[0].id, categoria: 'combustible', concepto: X('concepto gasto orden'), total: 100 }] });
-  await pedir('PUT', '/leads/' + l.id + '/facturacion', A, { dias_credito: 5, factura_folio: X('folio factura'), factura_fecha: HOY });
-  await pedir('POST', '/leads/' + l.id + '/cobros', A, { monto: 10, metodo: 'efectivo', fecha: HOY, referencia: X('referencia cobro'), notas: X('notas cobro') });
+  await pedir('PUT', '/leads/' + l.id + '/facturacion', A, { dias_credito: 5, factura_folio: XC('folio factura'), factura_fecha: HOY });
+  await pedir('POST', '/leads/' + l.id + '/cobros', A, { monto: 10, metodo: 'efectivo', fecha: HOY, referencia: XC('referencia cobro'), notas: X('notas cobro') });
   const [, lx2] = await pedir('GET', '/leads/' + l.id, A);
   await pedir('PUT', '/leads/' + l.id, A, { version: lx2.version, encuesta_calificacion: 2, encuesta_comentario: X('encuesta') });
   // Proveedor, cuentas por pagar y pagos.
   const [, prov] = await pedir('POST', '/finanzas/proveedores', A, { nombre: 'Proveedor Trampa', categoria: 'otro', dias_credito: 0, contacto: X('contacto proveedor'), notas: X('notas proveedor'), banco: X('banco'), telefono: '4425550198' });
   const [, cx] = await pedir('POST', '/finanzas/cxp', A, { proveedor_id: prov.id || provs[0].id, categoria: 'otro', concepto: X('concepto cxp'), total: 500, fecha_documento: HOY, dias_credito: 5, tipo_comprobante: 'recibo', notas: X('notas cxp'), equipo: X('equipo cxp'), beneficiario: X('beneficiario') });
-  if (cx.id) await pedir('POST', '/finanzas/cxp/' + cx.id + '/pagos', A, { monto: 100, metodo: 'transferencia', fecha: HOY, referencia: X('referencia pago'), cuenta_origen: X('cuenta origen') });
+  if (cx.id) await pedir('POST', '/finanzas/cxp/' + cx.id + '/pagos', A, { monto: 100, metodo: 'transferencia', fecha: HOY, referencia: XC('referencia pago'), cuenta_origen: X('cuenta origen') });
   // Compras: solicitud, cotización (nombre de archivo), orden de compra. La unidad de la partida tiene que ser del catálogo:
   // la trampa va en el nombre de una unidad nueva (antes iba en la partida, la orden se rechazaba y sus textos no se revisaban).
   await pedir('POST', '/compras/unidades', A, { clave: 'TRP', nombre: X('nombre unidad') });
-  const [, so] = await pedir('POST', '/compras/solicitudes', A, { que: X('que solicitud'), para_que: X('para que solicitud') + ' con suficiente texto', centro_id: centros[0].id, equipo: X('equipo solicitud'), urgente: true });
+  const [, so] = await pedir('POST', '/compras/solicitudes', A, { que: 'Guantes de prueba ' + (MARCAS ? X('que solicitud') : 'sin trampa'), // «qué necesitas» no admite < > (bien): la trampa va en los demás campos
+     para_que: 'Para la cuadrilla de limpieza' + (MARCAS ? ' ' + X('para que solicitud') : ''), centro_id: centros[0].id, equipo: MARCAS ? X('equipo solicitud') : 'C-22', urgente: true });
   // La cotización solo se sube a una solicitud aprobada (antes se rechazaba y sus textos no se revisaban).
   if (so.id) await pedir('POST', '/compras/solicitudes/' + so.id + '/aprobar', A, {});
   if (so.id) await subir('/compras/solicitudes/' + so.id + '/documentos', A, Buffer.from('%PDF-1.4\n%%EOF'), { 'X-Tipo': 'cotizacion', 'X-Proveedor': provs[0].id, 'X-Monto': 900, 'X-Entrega': X('entrega'), 'X-Nombre': X('nombre archivo') + '.pdf' });
@@ -58,4 +61,6 @@ const HOY = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Mexico_City' }
   const [, pro] = await pedir('POST', '/prospeccion', A, { nombre: 'Establecimiento Trampa', sector_id: sectores[0].id, zona: X('zona'), direccion: X('direccion prospecto'), persona: X('persona'), cargo: X('cargo prospecto'), fuente: X('fuente'), necesidades: X('necesidades'), estado: 'pendiente', responsable_id: vend, proximo_contacto: HOY });
   await pedir('POST', '/roles', A, { nombre: 'Rol Trampa', descripcion: X('descripcion rol') });
   console.log(JSON.stringify({ ...(MARCAS ? { marcas: MAPA } : {}), guardados: ok, rechazados, lead: l.id, cliente: cli.id, solicitud: so.id, oc: oc.id, persona: per.id, prospecto: pro.id, cxp: cx.id, proveedor: prov.id }));
+  // Un campo que el servidor rechaza no se siembra y su pantalla no se revisa: eso es una falla de la prueba, no un éxito.
+  if (rechazados) { console.error(`${rechazados} envío(s) rechazados: esos campos no se revisaron (ver arriba)`); process.exitCode = 1; }
 })().catch(e => { console.error(e); process.exit(1); });
