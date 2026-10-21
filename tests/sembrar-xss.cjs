@@ -2,11 +2,14 @@
 // servidor de prueba en modo demo. Después se recorre la pantalla en el navegador: si alguna vista no escapa un texto,
 // el código se ejecuta y deja window.__xss > 0 (o aparecen elementos con onerror/onload en la página).
 // Uso: node tests/sembrar-xss.cjs http://localhost:3917   (solo contra un servidor con MODO_DEMO=1)
-const BASE = (process.argv[2] || 'http://localhost:3917').replace(/\/$/, '') + '/api';
-const X = n => `<img src=x onerror="window.__xss=(window.__xss||0)+1;window.__xssDe=(window.__xssDe||[]).concat('${n}')">"><svg onload="window.__xss=(window.__xss||0)+1">'+alert(1)+'`;
+// Con --marcas, en vez de código trampa siembra una marca única por campo (QQ1QQ, QQ2QQ…) e imprime de qué campo es cada
+// una: tests/buscar-marcas.js las busca en las pantallas para saber qué dato capturado no se ve en ningún lado.
+const BASE = (process.argv.slice(2).find(x => !x.startsWith('--')) || 'http://localhost:3917').replace(/\/$/, '') + '/api';
+const MARCAS = process.argv.includes('--marcas'), MAPA = {};
+const X = n => MARCAS ? (MAPA['QQ' + (Object.keys(MAPA).length + 1) + 'QQ'] = n, 'QQ' + Object.keys(MAPA).length + 'QQ') : `<img src=x onerror="window.__xss=(window.__xss||0)+1;window.__xssDe=(window.__xssDe||[]).concat('${n}')">"><svg onload="window.__xss=(window.__xss||0)+1">'+alert(1)+'`;
 let ok = 0, rechazados = 0;
-const pedir = async (m, r, t, b) => { const x = await fetch(BASE + r, { method: m, headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + t }, body: b === undefined ? undefined : JSON.stringify(b) }); const j = await x.json().catch(() => ({})); if (x.status < 300) ok++; else rechazados++; return [x.status, j]; };
-const subir = async (r, t, buf, enc) => { const h = { 'Content-Type': 'application/octet-stream', Authorization: 'Bearer ' + t }; for (const [k, v] of Object.entries(enc)) h[k] = encodeURIComponent(String(v)); const x = await fetch(BASE + r, { method: 'POST', headers: h, body: buf }); if (x.status < 300) ok++; else rechazados++; return x.status; };
+const pedir = async (m, r, t, b) => { const x = await fetch(BASE + r, { method: m, headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + t }, body: b === undefined ? undefined : JSON.stringify(b) }); const j = await x.json().catch(() => ({})); if (x.status < 300) ok++; else { rechazados++; console.error(`rechazado: ${m} ${r} → ${x.status} ${j.error || ""}`); } return [x.status, j]; };
+const subir = async (r, t, buf, enc) => { const h = { 'Content-Type': 'application/octet-stream', Authorization: 'Bearer ' + t }; for (const [k, v] of Object.entries(enc)) h[k] = encodeURIComponent(String(v)); const x = await fetch(BASE + r, { method: 'POST', headers: h, body: buf }); if (x.status < 300) ok++; else { rechazados++; console.error(`rechazado: subir ${r} → ${x.status}`); } return x.status; };
 const HOY = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Mexico_City' }).format(new Date());
 (async () => {
   const est = await fetch(BASE + '/demo/estado').then(r => r.json()); if (!est.demo) throw new Error('Solo contra un servidor demo');
@@ -32,12 +35,16 @@ const HOY = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Mexico_City' }
   const [, prov] = await pedir('POST', '/finanzas/proveedores', A, { nombre: 'Proveedor Trampa', categoria: 'otro', dias_credito: 0, contacto: X('contacto proveedor'), notas: X('notas proveedor'), banco: X('banco'), telefono: '4425550198' });
   const [, cx] = await pedir('POST', '/finanzas/cxp', A, { proveedor_id: prov.id || provs[0].id, categoria: 'otro', concepto: X('concepto cxp'), total: 500, fecha_documento: HOY, dias_credito: 5, tipo_comprobante: 'recibo', notas: X('notas cxp'), equipo: X('equipo cxp'), beneficiario: X('beneficiario') });
   if (cx.id) await pedir('POST', '/finanzas/cxp/' + cx.id + '/pagos', A, { monto: 100, metodo: 'transferencia', fecha: HOY, referencia: X('referencia pago'), cuenta_origen: X('cuenta origen') });
-  // Compras: solicitud, cotización (nombre de archivo), orden de compra.
+  // Compras: solicitud, cotización (nombre de archivo), orden de compra. La unidad de la partida tiene que ser del catálogo:
+  // la trampa va en el nombre de una unidad nueva (antes iba en la partida, la orden se rechazaba y sus textos no se revisaban).
+  await pedir('POST', '/compras/unidades', A, { clave: 'TRP', nombre: X('nombre unidad') });
   const [, so] = await pedir('POST', '/compras/solicitudes', A, { que: X('que solicitud'), para_que: X('para que solicitud') + ' con suficiente texto', centro_id: centros[0].id, equipo: X('equipo solicitud'), urgente: true });
+  // La cotización solo se sube a una solicitud aprobada (antes se rechazaba y sus textos no se revisaban).
+  if (so.id) await pedir('POST', '/compras/solicitudes/' + so.id + '/aprobar', A, {});
   if (so.id) await subir('/compras/solicitudes/' + so.id + '/documentos', A, Buffer.from('%PDF-1.4\n%%EOF'), { 'X-Tipo': 'cotizacion', 'X-Proveedor': provs[0].id, 'X-Monto': 900, 'X-Entrega': X('entrega'), 'X-Nombre': X('nombre archivo') + '.pdf' });
   const [, oc] = await pedir('POST', '/compras/ordenes', A, { forzar: true, proveedor_id: provs[0].id, centro_id: centros[0].id, categoria: 'otro', fecha: HOY, fecha_requerida: HOY, iva_modo: 'sin_iva', nota: X('nota oc'), observaciones: X('observaciones oc'),
-    solicitante_nombre: X('solicitante'), solicitante_cargo: X('cargo'), partidas: [{ cantidad: 1, descripcion: X('descripcion partida oc'), unidad: X('unidad'), clave: X('clave'), precio: 100 }] });
-  if (oc.id) await subir('/compras/ordenes/' + oc.id + '/documentos', A, Buffer.from('%PDF-1.4\n%%EOF'), { 'X-Tipo': 'factura', 'X-Nombre': X('archivo oc') + '.pdf' });
+    solicitante_nombre: X('solicitante'), solicitante_cargo: X('cargo'), partidas: [{ cantidad: 1, descripcion: X('descripcion partida oc'), unidad: 'PZA', clave: X('clave'), precio: 100 }] });
+  if (oc.id) await subir('/compras/ordenes/' + oc.id + '/documentos', A, Buffer.from('%PDF-1.4\n%%EOF'), { 'X-Tipo': 'factura_pdf', 'X-Nombre': X('archivo oc') + '.pdf' });
   // Catálogos, personal y prospección.
   await pedir('POST', '/compras/centros', A, { nombre: 'Centro Trampa', responsable: X('responsable centro') });
   await pedir('POST', '/tipos-cliente', A, { nombre: 'Tipo Trampa', descripcion: X('descripcion tipo') });
@@ -48,7 +55,7 @@ const HOY = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Mexico_City' }
     await subir('/personal/' + per.id + '/documentos', A, Buffer.from('%PDF-1.4\n%%EOF'), { 'X-Tipo': 'otro', 'X-Nombre': X('archivo persona') + '.pdf' });
   }
   const [, sectores] = await pedir('GET', '/prospeccion/sectores', A);
-  await pedir('POST', '/prospeccion', A, { nombre: 'Establecimiento Trampa', sector_id: sectores[0].id, zona: X('zona'), direccion: X('direccion prospecto'), persona: X('persona'), cargo: X('cargo prospecto'), fuente: X('fuente'), necesidades: X('necesidades'), estado: 'pendiente', responsable_id: vend, proximo_contacto: HOY });
+  const [, pro] = await pedir('POST', '/prospeccion', A, { nombre: 'Establecimiento Trampa', sector_id: sectores[0].id, zona: X('zona'), direccion: X('direccion prospecto'), persona: X('persona'), cargo: X('cargo prospecto'), fuente: X('fuente'), necesidades: X('necesidades'), estado: 'pendiente', responsable_id: vend, proximo_contacto: HOY });
   await pedir('POST', '/roles', A, { nombre: 'Rol Trampa', descripcion: X('descripcion rol') });
-  console.log(JSON.stringify({ guardados: ok, rechazados, lead: l.id, cliente: cli.id, solicitud: so.id, oc: oc.id, persona: per.id, cxp: cx.id, proveedor: prov.id }));
+  console.log(JSON.stringify({ ...(MARCAS ? { marcas: MAPA } : {}), guardados: ok, rechazados, lead: l.id, cliente: cli.id, solicitud: so.id, oc: oc.id, persona: per.id, prospecto: pro.id, cxp: cx.id, proveedor: prov.id }));
 })().catch(e => { console.error(e); process.exit(1); });

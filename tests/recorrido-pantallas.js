@@ -21,6 +21,7 @@ async function recorrerPantallas({ maxClicsPorVista = 30 } = {}) {
   const reporte = { usuario: USUARIO_ACTUAL?.nombre, rol: Permisos?.datos?.rol, vistas: {}, clics: 0, errores, permisosVisibles: new Set(), desbordes: new Set(), xss: 0 };
   const cerrarTodo = async () => { const dlg = document.getElementById('dialogo-cancelar'); if (dlg && visible(dlg)) dlg.click(); document.querySelectorAll('.overlay.mostrar').forEach(o => o.classList.remove('mostrar')); await espera(150); };
   const revisarPermisos = donde => {
+    window.__alRevisar?.(donde); // tests/buscar-marcas.js junta aquí lo que se ve en cada paso
     for (const el of document.querySelectorAll('[class*="perm-"]')) {
       if (!visible(el)) continue;
       for (const c of el.classList) { const m = c.match(/^perm-([a-z_]+)-([a-z_]+)$/); if (m && !Permisos.puede(m[1] + '.' + m[2])) reporte.permisosVisibles.add(`${donde}: .${c} visible («${(el.id || el.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 40)}»)`); }
