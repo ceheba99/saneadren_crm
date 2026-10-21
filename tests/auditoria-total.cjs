@@ -117,6 +117,45 @@ const botonesMudos = [...HTML.matchAll(/<button\b([^>]*)>([\s\S]*?)<\/button>/g)
 revisa(!botonesMudos.length, 'accesibilidad', 'botones sin texto ni descripción', botonesMudos);
 const imgsSinAlt = [...HTML.matchAll(/<img\b([^>]*)>/g)].filter(m => !/\balt=/.test(m[1])).map(m => m[0].slice(0, 80));
 revisa(!imgsSinAlt.length, 'accesibilidad', 'imágenes sin texto alternativo', imgsSinAlt);
+// B6b. «Guardado» de verdad: cada llamada que guarda (POST/PUT/DELETE) revisa la respuesta del servidor antes de decir
+// que se guardó (r.ok, exigirOk, o un ayudante del módulo que lanza el error). api() lanza los rechazos salvo el 409
+// (conflicto), que deja pasar: quien no revisa la respuesta dice «guardado» con un 409. Así pasaba al crear una orden o
+// cotización cuando el servidor respondía conflicto (p. ej. un teléfono que ya es de otro cliente).
+const SIN_RESPUESTA = { 'app.js': [/api\('\/logout'/] }; // cerrar sesión: se sale aunque falle
+// Revisan la respuesta más abajo, después de preguntar «¿es otro?» ante un posible duplicado (se comprueba en 15 renglones).
+const REVISAN_DESPUES = { 'finanzas.js': [/let res = await api\(ruta, \{ method: metodo/, /const enviar = c => api\('\/finanzas\/proveedores'/], 'flujo.js': [/let r=await api\('\/contactos'/] };
+for (const [f, t] of Object.entries(PUBLICO)) {
+  const lineas = t.split('\n');
+  lineas.forEach((l, i) => {
+    if (!/\bapi\(/.test(l) || !/['"](POST|PUT|DELETE)['"]|method: *(id \?|metodo)/.test(l) || /\.then\(json\)|\bjson\(await api\(/.test(l)) return;
+    if ((SIN_RESPUESTA[f] || []).some(re => re.test(l))) return;
+    // Hasta la siguiente llamada (o 8 renglones): ahí debe revisarse la respuesta.
+    const sig = lineas.slice(i + 1, i + 9).findIndex(x => /\bapi\(/.test(x) && !/^\s*\/\//.test(x)); // los comentarios no cuentan
+    const despues = (REVISAN_DESPUES[f] || []).some(re => re.test(l));
+    const tramo = [l, ...lineas.slice(i + 1, despues ? i + 16 : sig < 0 ? i + 9 : i + 1 + sig)].join('\n');
+    revisa(/\.ok\b|exigirOk\(|\bjson\(res\)/.test(tramo), 'pantalla', `${f}:${i + 1} guarda sin revisar si el servidor lo aceptó (diría «guardado» aunque lo rechace)`, l.trim().slice(0, 90));
+  });
+}
+// B6c. Un solo modo de marcar: en los formularios de captura cada campo dice «(obligatorio)» u «(opcional)» (había
+// «(obligatorio)», «*» o nada, y lo obligatorio se descubría al guardar). Lo que no se captura a mano se declara con su razón.
+const FORMULARIOS_CAPTURA = ['in-', 'fc-ed-', 'sn-', 'ed-', 'gasto-', 'cobro-', 'pagoprov-', 'oc-', 'prov-', 'nu-', 'ns-', 'pr-'];
+const SIN_MARCA = {
+  'sn-servicio': 'escondido: sale de las partidas', 'sn-valor': 'escondido: sale de las partidas', 'ed-servicio': 'escondido: sale de las partidas',
+  'ed-valor': 'escondido: sale de las partidas', 'ed-canal': 'escondido: sale de «¿Cómo se enteró?» del contacto', 'gasto-vence': 'se calcula solo',
+  'sn-vigencia-hasta': 'va con la casilla «La cotización tiene vigencia»', 'pr-sector-nuevo': 'agrega un sector al catálogo, no es parte de la ficha',
+};
+const marcado = t => /\([^)]*\b(obligatori[oa]|opcional)\b/i.test(t);
+for (const m of HTML.matchAll(/<(input|select|textarea)\b([^>]*)>/g)) {
+  const id = (m[2].match(/\sid="([\w-]+)"/) || [])[1];
+  if (!id || !FORMULARIOS_CAPTURA.some(p => id.startsWith(p)) || /type="(hidden|checkbox|radio|file)"/.test(m[2]) || /-(buscar|filtro)$|^pr-f-/.test(id) || SIN_MARCA[id]) continue;
+  const etiqueta = ((HTML.match(new RegExp('<label[^>]*for="' + id + '"[^>]*>([\\s\\S]*?)</label>')) || [])[1] || '').replace(/<[^>]+>/g, ' ');
+  revisa(marcado(etiqueta), 'formularios', `#${id}: la etiqueta no dice si es obligatorio u opcional («${etiqueta.trim().slice(0, 50)}»)`);
+}
+for (const id of Object.keys(SIN_MARCA)) revisa(new RegExp(`id="${id}"`).test(HTML), 'formularios', `la excepción de marca «${id}» ya no existe: quítala`);
+// Los que arma la pantalla con campo('id', 'Etiqueta', …) (Personal, Solicitudes).
+for (const [f, t] of Object.entries(PUBLICO)) for (const m of t.matchAll(/\bcampo\('([\w-]+)', '([^']*)'/g)) revisa(marcado(m[2]), 'formularios', `${f}: «${m[2]}» no dice si es obligatorio u opcional`);
+// Nada de «*» como marca.
+for (const m of (HTML + '\n' + TODO_JS_PUBLICO).matchAll(/<label[^>]*>[^<]*\s\*\s*<\/label>|campo\('[\w-]+', '[^']*\*'/g)) revisa(false, 'formularios', `marca «*»: usa «(obligatorio)» (${m[0].slice(0, 60)})`);
 // B7. Variables de entorno usadas en el servidor: documentadas en .env.example.
 const ENV_USADAS = [...new Set(Object.values(SERVER).flatMap(t => [...t.matchAll(/process\.env\.([A-Z_0-9]+)/g)].map(m => m[1])))].filter(v => !['RENDER', 'TZ'].includes(v));
 const ENV_DOC = fs.existsSync(path.join(RAIZ, '.env.example')) ? leer('.env.example') : '';

@@ -65,6 +65,14 @@ function errorConEstado(mensaje, status, codigo) {
   if (codigo) err.codigo = codigo;
   return err;
 }
+// Toda escritura revisa la respuesta. api() ya lanza los rechazos, salvo el 409 (conflicto: teléfono de otro cliente, nombre
+// repetido…), que deja pasar para que cada pantalla lo resuelva; quien no lo revisa diría «guardado» sin haberse guardado.
+// Este ayudante lanza también el 409 con su mensaje (la auditoría total exige revisar cada llamada que guarda).
+async function exigirOk(res, porDefecto = 'No se pudo guardar') {
+  const j = await res.json().catch(() => ({}));
+  if (!res.ok) throw errorConEstado(j.error || porDefecto, res.status, j.codigo);
+  return j;
+}
 // Sucursal que se está viendo (la elige el selector de arriba; vacío = todas las permitidas).
 // También lleva «Ver como este rol» si Dirección lo activó (permisos.js).
 function encabezadoSucursal() { let v = ''; try { v = localStorage.getItem('sucursal_vista') || ''; } catch {} return { ...(v ? { 'X-Sucursal': v } : {}), ...(typeof Permisos !== 'undefined' ? Permisos.encabezado() : {}) }; }
@@ -258,7 +266,7 @@ function abrirServicioNuevo(modo, prefill) {
     ? '<span class="tag-estatus ganado">🧾 Orden de servicio</span> Crear orden de servicio · NUEVA'
     : '<span class="tag-estatus abierto">🔵 Cotización</span> Crear cotización · NUEVA';
   document.getElementById('sn-ayuda').innerHTML = CONVERTIR_ID
-    ? 'El cliente aceptó la cotización: ya están cargados sus servicios, importes, IVA y ubicación. Indica la fecha acordada, el equipo y quién realiza el servicio. La cotización se convierte en esta orden (no se crea otro registro).'
+    ? 'El cliente aceptó la cotización: ya están cargados sus servicios, importes, IVA y ubicación. Indica la fecha acordada, el equipo (unidad) y el personal que realiza el servicio. La cotización se convierte en esta orden (no se crea otro registro).'
     : DUPLICADO_DE
     ? 'Se copiaron las partidas, importe, ubicación y notas de la orden original. Indica la nueva fecha acordada y ajusta lo que cambie. No se crea ninguna cotización.'
     : esDirecto
@@ -387,7 +395,9 @@ async function guardarServicioNuevo(descargar=false) {
       creado = await res.json();
       if (!res.ok) { toast(creado.error || 'No se pudo convertir la cotización'); return; }
     } else {
-      creado = await api('/leads', { method: 'POST', body: JSON.stringify(payload) }).then(r => r.json());
+      const res = await api('/leads', { method: 'POST', body: JSON.stringify(payload) });
+      creado = await res.json().catch(() => ({}));
+      if (!res.ok) { toast(creado.error || 'No se pudo guardar'); return; }
     }
     FlujoCRM.marcarGuardado('overlay-servicio-nuevo');
     const folio = esDirecto ? folioOrdenServicio(creado) : folioCotizacion(creado);
@@ -1746,12 +1756,14 @@ async function pintarTelefonosCliente(id) {
     + ' <button type="button" class="tel-quitar" data-tel-quitar="' + escaparHtml(t.telefono_normalizado) + '" aria-label="Quitar teléfono">✕</button></span>').join('') : '<span class="util-45">Ninguno</span>')
     + ' <button type="button" class="btn btn-outline btn-chico" id="fc-tel-agregar">+ Agregar teléfono</button>';
 }
-document.addEventListener('click', async e => {
+document.addEventListener('click', e => manejarTelefonos(e).catch(err => toast(err.message)));
+async function manejarTelefonos(e) {
   if (!CLIENTE_ACTUAL) return;
   const quitar = e.target.closest('[data-tel-quitar]');
   if (quitar && quitar.closest('#fc-telefonos')) {
     if (!await solicitarDialogo({ titulo: 'Quitar teléfono', mensaje: 'Este teléfono ya no identificará a ' + folioCliente(CLIENTE_ACTUAL.id) + '.', aceptar: 'Quitar' })) return;
-    await api('/clientes/' + CLIENTE_ACTUAL.id + '/telefonos/' + encodeURIComponent(quitar.dataset.telQuitar), { method: 'DELETE' });
+    const rq = await api('/clientes/' + CLIENTE_ACTUAL.id + '/telefonos/' + encodeURIComponent(quitar.dataset.telQuitar), { method: 'DELETE' });
+    if (!rq.ok) { toast((await rq.json().catch(() => ({}))).error || 'No se pudo quitar el teléfono'); return; }
     pintarTelefonosCliente(CLIENTE_ACTUAL.id); return;
   }
   if (e.target.id === 'fc-tel-agregar') {
@@ -1762,7 +1774,7 @@ document.addEventListener('click', async e => {
     if (!r.ok) { toast(d.error || 'No se pudo agregar'); return; }
     toast('Teléfono agregado'); pintarTelefonosCliente(CLIENTE_ACTUAL.id);
   }
-});
+}
 
 function renderServiciosCliente(servicios) {
   ServiciosTabla.render('fc-servicios', servicios, CLIENTE_ACTUAL.id, 'cliente');
@@ -1784,6 +1796,8 @@ on('btn-cerrar-modal-cliente', 'click', () => {
 
 on('btn-guardar-cliente', 'click', async () => {
   if (!CLIENTE_ACTUAL) return;
+  // Igual que al crear el contacto: «¿Cómo se enteró?» es obligatorio (un contacto importado sin origen lo completa aquí).
+  if (!document.getElementById('fc-ed-origen').value) { toast('Selecciona cómo se enteró de nosotros'); document.getElementById('fc-ed-origen').focus(); return; }
   const payload = {
     telefono: document.getElementById('fc-ed-telefono').value.trim(),
     telefono_alterno: document.getElementById('fc-ed-telefono-alterno').value.trim(),
@@ -1794,11 +1808,12 @@ on('btn-guardar-cliente', 'click', async () => {
     direccion: document.getElementById('fc-ed-direccion').value.trim(),
     giro: document.getElementById('fc-ed-giro').value,
     notas_generales: document.getElementById('fc-ed-notas-generales').value.trim(),
-    // Sin elegir no se manda (un contacto viejo sin origen se puede guardar igual).
-    ...(document.getElementById('fc-ed-origen').value ? { canal_origen_id: Number(document.getElementById('fc-ed-origen').value) } : {})
+    canal_origen_id: Number(document.getElementById('fc-ed-origen').value)
   };
   try {
     const res = await api('/clientes/' + CLIENTE_ACTUAL.id, { method: 'PUT', body: JSON.stringify(payload) });
+    // api() ya lanza los rechazos salvo el 409 (conflicto), que se resuelve abajo; esto es por si algún otro llegara aquí.
+    if (!res.ok && res.status !== 409) { const d = await res.json().catch(() => ({})); toast(d.error || 'No se pudieron guardar los datos del contacto'); return; }
     if (res.status === 409) {
       const data = await res.json();
       // El nuevo nombre lo deja igual a otro cliente: ¿es el mismo? (se juntan) o es otro (se guarda).
@@ -1890,6 +1905,8 @@ async function abrirFicha(id) {
   document.getElementById('ed-manifiestos').value = lead.manifiestos || '';
   document.getElementById('ed-tiros').value = lead.tiros || '';
   document.getElementById('ed-observaciones').value = lead.observaciones || '';
+  document.getElementById('ed-encuesta-calificacion').value = lead.encuesta_calificacion ? String(lead.encuesta_calificacion) : '';
+  document.getElementById('ed-encuesta-comentario').value = lead.encuesta_comentario || '';
   document.getElementById('ed-creado-por').textContent = lead.creado_por || '—';
   document.getElementById('ed-created-at').textContent = fechaCorta(lead.created_at) || '—';
   document.getElementById('ed-estatus-actual').textContent = lead.estatus || '—';
@@ -1960,7 +1977,8 @@ function actualizarBotonesEstatusFicha(lead) {
 // (nunca debe bloquear una descarga o un guardado por un problema de red al loguear).
 async function registrarEventoSistema(leadId, texto) {
   try {
-    await api('/leads/' + leadId + '/historial', { method: 'POST', body: JSON.stringify({ tipo: 'observacion', texto, origen: 'sistema' }) });
+    const r = await api('/leads/' + leadId + '/historial', { method: 'POST', body: JSON.stringify({ tipo: 'observacion', texto, origen: 'sistema' }) });
+    if (!r.ok) return; // se anota «si se puede»: nunca interrumpe lo que se estaba haciendo
     if (LEAD_ACTUAL?.id === leadId) {
       const lead = await api('/leads/' + leadId).then(r => r.json());
       if (LEAD_ACTUAL?.id === leadId) { LEAD_ACTUAL = lead; renderBitacora(lead); }
@@ -1992,8 +2010,8 @@ function renderBitacora(lead) {
       ? `Para: ${fechaCorta(item.fecha_alerta)}${item.resuelta ? ' · Resuelta' : ' · Pendiente'}`
       : fechaCorta(item.created_at);
     const accion = (item.tipo === 'alerta' && !item.resuelta)
-      ? `<button class="btn btn-outline" data-resolver-obs="${item.id}">Resuelta</button>`
-      : '';
+      ? `<button class="btn btn-outline" data-resolver-obs="${Number(item.id)}">Resuelta</button>`
+      : (item.tipo === 'alerta' && Permisos.direccion()) ? `<button class="btn btn-outline" data-reabrir-obs="${Number(item.id)}">Reabrir</button>` : '';
     return `<div class="bitacora-item ${clase}">
       <div class="bitacora-icono">${icono}</div>
       <div class="bitacora-texto">${escaparHtml(item.texto)}<div class="bitacora-meta">${meta}${item.usuario ? ' · ' + escaparHtml(item.usuario) : ''}</div></div>
@@ -2002,11 +2020,20 @@ function renderBitacora(lead) {
   }).join('');
 }
 document.getElementById('bitacora-lista').addEventListener('click', async e => {
+  const reabrir = e.target.closest('[data-reabrir-obs]');
+  if (reabrir && LEAD_ACTUAL) {
+    reabrir.disabled = true;
+    try {
+      await exigirOk(await api('/historial/' + Number(reabrir.dataset.reabrirObs) + '/reabrir', { method: 'PUT' }), 'No se pudo reabrir');
+      LEAD_ACTUAL = await api('/leads/' + LEAD_ACTUAL.id).then(r => r.json()); renderBitacora(LEAD_ACTUAL); toast('Aviso reabierto');
+    } catch (err) { toast(err.message); reabrir.disabled = false; }
+    return;
+  }
   const btn = e.target.closest('[data-resolver-obs]');
   if (!btn || !LEAD_ACTUAL) return;
   btn.disabled = true;
   try {
-    await api('/historial/' + btn.dataset.resolverObs + '/resolver', { method: 'PUT' });
+    await exigirOk(await api('/historial/' + btn.dataset.resolverObs + '/resolver', { method: 'PUT' }), 'No se pudo resolver');
     const lead = await api('/leads/' + LEAD_ACTUAL.id).then(r => r.json());
     LEAD_ACTUAL = lead;
     renderBitacora(lead);
@@ -2054,6 +2081,8 @@ function recolectarPayloadFicha() {
     manifiestos: document.getElementById('ed-manifiestos').value.trim(),
     tiros: document.getElementById('ed-tiros').value.trim(),
     observaciones: document.getElementById('ed-observaciones').value.trim(),
+    // La encuesta solo existe en órdenes de servicio (se contesta después del servicio).
+    ...(LEAD_ACTUAL?.estatus === 'ganado' ? { encuesta_calificacion: Number(document.getElementById('ed-encuesta-calificacion').value) || null, encuesta_comentario: document.getElementById('ed-encuesta-comentario').value.trim() || null } : {}),
     ...(LEAD_ACTUAL?.estatus === 'abierto' ? { notas_cotizacion: document.getElementById('gc-notas').value.trim() } : {}),
     ...ivaPayload()
   };
@@ -2204,7 +2233,8 @@ async function duplicarRegistro(leadId) {
   }
 }
 async function resolverAlertaGlobal(id) {
-  await api('/historial/' + id + '/resolver', { method: 'PUT' });
+  try { await exigirOk(await api('/historial/' + id + '/resolver', { method: 'PUT' }), 'No se pudo marcar como resuelto'); }
+  catch (err) { toast('No se pudo marcar como resuelto: ' + err.message); return; }
   cargarInicio();
   actualizarBadgePendientes();
 }
@@ -2303,6 +2333,7 @@ const opcionesRol = actual => ROLES_DATOS.filter(r => (r.cabe && (Sucursales.dat
   .map(r => `<option value="${escaparHtml(r.clave)}" ${r.clave === actual ? 'selected' : ''}>${escaparHtml(r.nombre + (r.descripcion ? ' · ' + r.descripcion : ''))}</option>`).join('');
 async function cargarUsuarios() {
   const [usuarios, roles] = await Promise.all([api('/usuarios').then(r => r.json()), api('/roles').then(r => r.json())]);
+  pintarDesactivados();
   ROLES_DATOS = roles;
   const nuRol = document.getElementById('nu-rol'); if (nuRol) { const v = nuRol.value; nuRol.innerHTML = opcionesRol(''); if ([...nuRol.options].some(o => o.value === v)) nuRol.value = v; else if ([...nuRol.options].some(o => o.value === 'ventas')) nuRol.value = 'ventas'; }
   if (Permisos.datos.direccion) Roles.cargar();
@@ -2323,6 +2354,26 @@ async function cargarUsuarios() {
     </div>`;
   }).join('');
 }
+// Desactivados: se pueden reactivar (vuelven con su rol y sus sucursales; deben cambiar su contraseña al entrar).
+async function pintarDesactivados() {
+  const cont = document.getElementById('lista-usuarios-desactivados'); if (!cont) return;
+  const r = await api('/usuarios/desactivados'); const lista = r.ok ? await r.json() : [];
+  cont.innerHTML = lista.length ? lista.map(u => `<div class="servicio-row fila-usuario"><div><b>${escaparHtml(u.nombre)}</b> · ${escaparHtml(nombreRol(u.rol))}${u.correo ? ' · ' + escaparHtml(u.correo) : ''}</div>`
+    + `<div class="acciones-catalogo"><button type="button" class="btn btn-outline" data-reactivar="${Number(u.id)}" data-nombre="${escaparHtml(u.nombre)}">Reactivar</button></div></div>`).join('')
+    : '<p class="ayuda">Ninguno.</p>';
+}
+async function reactivarUsuario(id, nombre) {
+  if (!await solicitarDialogo({ titulo: 'Reactivar usuario', aceptar: 'Reactivar', mensaje: `¿Reactivar a «${nombre}»?\n\nVuelve con su rol y sus sucursales. Al entrar tendrá que cambiar su contraseña (si no la recuerda, asígnale una nueva).` })) return false;
+  await exigirOk(await api('/usuarios/' + Number(id) + '/reactivar', { method: 'POST', body: '{}' }), 'No se pudo reactivar');
+  toast('Usuario reactivado: al entrar deberá cambiar su contraseña');
+  await cargarUsuarios(); cargarCatalogos();
+  return true;
+}
+on('lista-usuarios-desactivados', 'click', async e => {
+  const b = e.target.closest('[data-reactivar]'); if (!b) return;
+  b.disabled = true;
+  try { await reactivarUsuario(b.dataset.reactivar, b.dataset.nombre); } catch (err) { toast(err.message); } finally { b.disabled = false; }
+});
 on('lista-usuarios', 'click', async e => {
   const btn = e.target.closest('[data-accion]'); if (!btn) return;
   const fila = btn.closest('[data-usuario]'), id = Number(fila.dataset.usuario);
@@ -2339,11 +2390,11 @@ on('lista-usuarios', 'click', async e => {
     } else if (btn.dataset.accion === 'password') {
       const password = await solicitarDialogo({ titulo: 'Nueva contraseña para ' + nombre, mensaje: 'Mínimo 10 caracteres, con letras y números. Compártela por un medio privado: deberá cambiarla al iniciar sesión.', aceptar: 'Asignar', campo: { tipo: 'password' } });
       if (!password) return;
-      await api('/usuarios/' + id + '/password', { method: 'POST', body: JSON.stringify({ password }) });
+      await exigirOk(await api('/usuarios/' + id + '/password', { method: 'POST', body: JSON.stringify({ password }) }), 'No se pudo asignar la contraseña');
       toast('Contraseña asignada; se cerraron sus sesiones abiertas');
     } else if (btn.dataset.accion === 'desactivar') {
       if (!await solicitarDialogo({ titulo: 'Desactivar usuario', aceptar: 'Desactivar', mensaje: `¿Desactivar a "${nombre}"?\n\nSus registros históricos se conservan, pero ya no podrá iniciar sesión.` })) return;
-      await api('/usuarios/' + id, { method: 'DELETE' });
+      await exigirOk(await api('/usuarios/' + id, { method: 'DELETE' }), 'No se pudo desactivar');
       toast('Usuario desactivado');
     }
     await cargarUsuarios();
@@ -2356,7 +2407,7 @@ async function moverEnCatalogo(ruta, ids, id, delta) {
   const i = ids.indexOf(id), j = i + delta;
   if (i < 0 || j < 0 || j >= ids.length) return false;
   [ids[i], ids[j]] = [ids[j], ids[i]];
-  await api(ruta, { method: 'PUT', body: JSON.stringify({ ids }) });
+  await exigirOk(await api(ruta, { method: 'PUT', body: JSON.stringify({ ids }) }), 'No se pudo cambiar el orden');
   return true;
 }
 let IDS_SERVICIOS = [];
@@ -2390,14 +2441,14 @@ on('lista-servicios-catalogo', 'click', async e => {
     if (btn.hasAttribute('data-guardar')) {
       const cuerpo = { descripcion: document.getElementById('desc-' + id).value };
       if (Permisos.direccion()) { const v = document.getElementById('rec-' + id).value; cuerpo.dias_recurrencia = v === '' ? null : Number(v); }
-      await api('/servicios/' + id, { method: 'PUT', body: JSON.stringify(cuerpo) });
+      await exigirOk(await api('/servicios/' + id, { method: 'PUT', body: JSON.stringify(cuerpo) }));
       toast('Servicio guardado');
       cargarCatalogos();
     }
     if (btn.hasAttribute('data-eliminar')) {
       const nombre = fila.querySelector('.tit').textContent;
       if (!await solicitarDialogo({ titulo: 'Eliminar servicio', aceptar: 'Eliminar', mensaje: `¿Eliminar "${nombre}" del catálogo?\n\nLas cotizaciones y órdenes que ya lo usan lo conservan; solo dejará de aparecer para registros nuevos.` })) return;
-      await api('/servicios/' + id, { method: 'DELETE' });
+      await exigirOk(await api('/servicios/' + id, { method: 'DELETE' }), 'No se pudo eliminar');
       toast('Servicio eliminado del catálogo');
       await cargarCatalogoServicios(); cargarCatalogos();
     }
@@ -2453,7 +2504,7 @@ on('lista-canales-catalogo', 'click', async e => {
       if (await moverEnCatalogo('/canales/orden', [...IDS_CANALES], id, Number(btn.dataset.mover))) { await cargarCanalesCatalogo(); cargarCatalogos(); }
     } else {
       const r = await api('/canales/' + id, { method: 'PUT', body: JSON.stringify({ nombre: document.getElementById('canal-' + id).value }) });
-      if (r.status === 409) throw new Error((await r.json()).error);
+      await exigirOk(r);
       toast('Canal actualizado; los contactos conservan su canal');
       cargarCatalogos();
     }
@@ -2497,6 +2548,8 @@ on('btn-crear-usuario', 'click', async () => {
     });
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
+      // Era alguien desactivado: en vez de crear otro, se ofrece reactivarlo.
+      if (data.codigo === 'USUARIO_DESACTIVADO') { await reactivarUsuario(data.usuario_id, nombre).catch(err => toast(err.message)); return; }
       toast(data.error || 'No se pudo crear el usuario');
       return;
     }

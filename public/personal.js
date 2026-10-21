@@ -76,33 +76,33 @@ const Personal = (() => {
     const usuarios = [...(p.usuario_id ? [{ id: p.usuario_id, nombre: p.usuario_nombre }] : []), ...(p.usuarios_sin_ficha || [])].map(u => [u.id, u.nombre]);
     const sucursales = window.Sucursales?.varias?.() ? (Sucursales.datos.sucursales || []).filter(s => s.activo).map(s => [s.id, s.clave + ' · ' + s.nombre]) : null;
     let h = `<div class="modal-section"><h3 class="pe-sub">Datos generales</h3><div class="form-grid-2">
-      ${campo('nombre', 'Nombre completo *', input('nombre', p.nombre, 'maxlength="120" autocomplete="off"' + ro))}
-      ${campo('puesto', 'Puesto *', `<select id="pe-puesto"${ro}>${opciones(CAT.puestos, p.puesto, 'Elige el puesto')}</select>`)}
-      ${campo('telefono', 'Teléfono', input('telefono', p.telefono, 'maxlength="25" inputmode="tel"' + ro))}
-      ${campo('correo', 'Correo', input('correo', p.correo, 'type="email" maxlength="120"' + ro))}
-      ${campo('fecha_ingreso', 'Fecha de ingreso', input('fecha_ingreso', p.fecha_ingreso, 'type="date" max="' + hoy() + '"' + ro))}
-      ${sucursales ? campo('sucursal_id', 'Sucursal', `<select id="pe-sucursal_id"${ro}>${opciones(sucursales, p.sucursal_id, nuevo ? 'La que estás viendo' : undefined)}</select>`) : ''}
-      ${campo('direccion', 'Dirección', input('direccion', p.direccion, 'maxlength="200"' + ro), 'full')}
-      ${campo('contacto_emergencia', 'Contacto de emergencia', input('contacto_emergencia', p.contacto_emergencia, 'maxlength="120" placeholder="Nombre y parentesco"' + ro))}
-      ${campo('tel_emergencia', 'Teléfono de emergencia', input('tel_emergencia', p.tel_emergencia, 'maxlength="25" inputmode="tel"' + ro))}
-      ${campo('usuario_id', 'Cuenta en el sistema', `<select id="pe-usuario_id"${ro}>${opciones(usuarios, p.usuario_id, 'Sin cuenta (no entra al sistema)')}</select><small class="ayuda">Si es técnico responsable de una orden, con su cuenta la ve y la marca realizada.</small>`)}
-      ${campo('notas', 'Notas', `<textarea id="pe-notas" rows="2" maxlength="2000"${ro}>${esc(p.notas || '')}</textarea>`, 'full')}
+      ${campo('nombre', 'Nombre completo (obligatorio)', input('nombre', p.nombre, 'maxlength="120" autocomplete="off"' + ro))}
+      ${campo('puesto', 'Puesto (obligatorio)', `<select id="pe-puesto"${ro}>${opciones(CAT.puestos, p.puesto, 'Elige el puesto')}</select>`)}
+      ${campo('telefono', 'Teléfono (opcional)', input('telefono', p.telefono, 'maxlength="25" inputmode="tel"' + ro))}
+      ${campo('correo', 'Correo (opcional)', input('correo', p.correo, 'type="email" maxlength="120"' + ro))}
+      ${campo('fecha_ingreso', 'Fecha de ingreso (opcional)', input('fecha_ingreso', p.fecha_ingreso, 'type="date" max="' + hoy() + '"' + ro))}
+      ${sucursales ? campo('sucursal_id', 'Sucursal (obligatorio)', `<select id="pe-sucursal_id"${ro}>${opciones(sucursales, p.sucursal_id, nuevo ? 'La que estás viendo' : undefined)}</select>`) : ''}
+      ${campo('direccion', 'Dirección (opcional)', input('direccion', p.direccion, 'maxlength="200"' + ro), 'full')}
+      ${campo('contacto_emergencia', 'Contacto de emergencia (opcional)', input('contacto_emergencia', p.contacto_emergencia, 'maxlength="120" placeholder="Nombre y parentesco"' + ro))}
+      ${campo('tel_emergencia', 'Teléfono de emergencia (opcional)', input('tel_emergencia', p.tel_emergencia, 'maxlength="25" inputmode="tel"' + ro))}
+      ${campo('usuario_id', 'Cuenta en el sistema (opcional)', `<select id="pe-usuario_id"${ro}>${opciones(usuarios, p.usuario_id, 'Sin cuenta (no entra al sistema)')}</select><small class="ayuda">Si es técnico responsable de una orden, con su cuenta la ve y la marca realizada.</small>`)}
+      ${campo('notas', 'Notas (opcional)', `<textarea id="pe-notas" rows="2" maxlength="2000"${ro}>${esc(p.notas || '')}</textarea>`, 'full')}
       </div></div>
       <div class="modal-section"><h3 class="pe-sub">Licencia de manejo</h3><div class="form-grid-2">
-      ${campo('licencia_tipo', 'Tipo', `<select id="pe-licencia_tipo"${ro}>${opciones(CAT.licencias, p.licencia_tipo, 'No aplica')}</select>`)}
-      ${campo('licencia_numero', 'Número', input('licencia_numero', p.licencia_numero, 'maxlength="40"' + ro))}
-      ${campo('licencia_vence', 'Vence', input('licencia_vence', p.licencia_vence, 'type="date"' + ro))}
+      ${campo('licencia_tipo', 'Tipo (opcional)', `<select id="pe-licencia_tipo"${ro}>${opciones(CAT.licencias, p.licencia_tipo, 'No aplica')}</select>`)}
+      ${campo('licencia_numero', 'Número (opcional)', input('licencia_numero', p.licencia_numero, 'maxlength="40"' + ro))}
+      ${campo('licencia_vence', 'Vence (opcional)', input('licencia_vence', p.licencia_vence, 'type="date"' + ro))}
       </div></div>`;
     if (sens) {
       h += `<div class="modal-section"><h3 class="pe-sub">Pagos y expediente <span class="pe-candado">🔒 datos sensibles</span></h3><div class="form-grid-2">
-        ${campo('banco', 'Banco', input('banco', p.banco, 'maxlength="60" autocomplete="off"' + ro))}
-        ${campo('clabe', 'CLABE (18 dígitos)', input('clabe', p.clabe, 'maxlength="22" inputmode="numeric" autocomplete="off"' + ro))}
-        ${campo('rfc', 'RFC', input('rfc', p.rfc, 'maxlength="13" autocapitalize="characters" autocomplete="off"' + ro))}
-        ${campo('curp', 'CURP', input('curp', p.curp, 'maxlength="18" autocapitalize="characters" autocomplete="off"' + ro))}
-        ${campo('nss', 'Número de seguro social', input('nss', p.nss, 'maxlength="11" inputmode="numeric" autocomplete="off"' + ro))}
-        ${campo('salario', 'Salario', `<div class="pe-salario"><input id="pe-salario" type="number" min="0" step="0.01" autocomplete="off" value="${Number.isFinite(p.salario) ? p.salario : ''}"${ro}><select id="pe-salario_periodo" aria-label="Periodo del salario"${ro}>${opciones(CAT.periodos, p.salario_periodo, 'Periodo')}</select></div>`)}
-        ${campo('tipo_contrato', 'Contrato', `<select id="pe-tipo_contrato"${ro}>${opciones(CAT.contratos, p.tipo_contrato, 'Sin especificar')}</select>`)}
-        ${campo('contrato_vence', 'Contrato vence', input('contrato_vence', p.contrato_vence, 'type="date"' + ro))}
+        ${campo('banco', 'Banco (opcional)', input('banco', p.banco, 'maxlength="60" autocomplete="off"' + ro))}
+        ${campo('clabe', 'CLABE (opcional, 18 dígitos)', input('clabe', p.clabe, 'maxlength="22" inputmode="numeric" autocomplete="off"' + ro))}
+        ${campo('rfc', 'RFC (opcional)', input('rfc', p.rfc, 'maxlength="13" autocapitalize="characters" autocomplete="off"' + ro))}
+        ${campo('curp', 'CURP (opcional)', input('curp', p.curp, 'maxlength="18" autocapitalize="characters" autocomplete="off"' + ro))}
+        ${campo('nss', 'Número de seguro social (opcional)', input('nss', p.nss, 'maxlength="11" inputmode="numeric" autocomplete="off"' + ro))}
+        ${campo('salario', 'Salario (opcional)', `<div class="pe-salario"><input id="pe-salario" type="number" min="0" step="0.01" autocomplete="off" value="${Number.isFinite(p.salario) ? p.salario : ''}"${ro}><select id="pe-salario_periodo" aria-label="Periodo del salario"${ro}>${opciones(CAT.periodos, p.salario_periodo, 'Periodo')}</select></div>`)}
+        ${campo('tipo_contrato', 'Contrato (opcional)', `<select id="pe-tipo_contrato"${ro}>${opciones(CAT.contratos, p.tipo_contrato, 'Sin especificar')}</select>`)}
+        ${campo('contrato_vence', 'Contrato vence (opcional)', input('contrato_vence', p.contrato_vence, 'type="date"' + ro))}
         </div>`;
       if (!nuevo) h += `<h4 class="pe-sub2">Documentos del expediente</h4>
         <div class="pe-docs">${(p.documentos || []).map(d => `<div class="pe-doc"><span><b>${esc(CAT.documentos[d.tipo] || d.tipo)}</b> · ${esc(d.nombre)} <small>${esc(fecha(d.created_at.slice(0, 10)))} · ${esc(d.subido_por_nombre || '')}</small></span><span class="btn-group"><button type="button" class="btn btn-outline btn-chico" data-pe-doc="${Number(d.id)}">Descargar</button>${edita ? `<button type="button" class="btn btn-outline btn-chico" data-pe-doc-quitar="${Number(d.id)}">Quitar</button>` : ''}</span></div>`).join('') || '<p class="ayuda">Sin documentos todavía.</p>'}</div>
@@ -119,11 +119,11 @@ const Personal = (() => {
         ${(p.incidencias || []).map(i => `<tr class="${i.cancelada ? 'pe-baja' : ''}"><td>${esc(CAT.incidencias[i.tipo] || i.tipo)}${i.con_goce ? '' : ' <small>(sin goce)</small>'}</td><td>${esc(fecha(i.fecha_inicio))}${i.fecha_fin !== i.fecha_inicio ? ' – ' + esc(fecha(i.fecha_fin)) : ''}</td><td>${Number(i.dias)}</td><td>${i.notas_ocultas ? '<small>🔒 Notas solo con datos sensibles</small>' : i.notas_ilegibles ? '<small>⚠ No se pueden leer (clave de cifrado)</small>' : esc(i.notas || '')}${i.cancelada ? '<small> · Cancelada: ' + esc(i.motivo_cancelacion || '') + '</small>' : ''}</td><td>${edita && !i.cancelada ? `<button type="button" class="btn btn-outline btn-chico" data-pe-inc-cancelar="${Number(i.id)}">Cancelar</button>` : ''}</td></tr>`).join('') || '<tr><td colspan="5"><p class="ayuda">Sin registros.</p></td></tr>'}
         </tbody></table></div>
         ${edita && p.activo ? `<div class="pe-inc-nueva form-grid-2">
-          ${campo('inc-tipo', 'Registrar', `<select id="pe-inc-tipo">${opciones(Object.entries(CAT.incidencias), 'vacaciones')}</select>`)}
+          ${campo('inc-tipo', 'Registrar (obligatorio)', `<select id="pe-inc-tipo">${opciones(Object.entries(CAT.incidencias), 'vacaciones')}</select>`)}
           ${campo('inc-dias', 'Días (opcional)', '<input id="pe-inc-dias" type="number" min="0.5" step="0.5" placeholder="Se calculan de las fechas">')}
-          ${campo('inc-inicio', 'Desde', `<input id="pe-inc-inicio" type="date" value="${hoy()}">`)}
-          ${campo('inc-fin', 'Hasta', `<input id="pe-inc-fin" type="date" value="${hoy()}">`)}
-          ${campo('inc-notas', 'Notas', '<input id="pe-inc-notas" maxlength="300">')}
+          ${campo('inc-inicio', 'Desde (obligatorio)', `<input id="pe-inc-inicio" type="date" value="${hoy()}">`)}
+          ${campo('inc-fin', 'Hasta (opcional)', `<input id="pe-inc-fin" type="date" value="${hoy()}">`)}
+          ${campo('inc-notas', 'Notas (opcional)', '<input id="pe-inc-notas" maxlength="300">')}
           <div class="campo-modal"><label class="check-linea"><input type="checkbox" id="pe-inc-goce" checked> Con goce de sueldo</label><button type="button" class="btn btn-secundario" id="pe-inc-registrar">Registrar</button></div>
         </div>` : ''}</div>
         <div class="modal-section"><h3 class="pe-sub">Órdenes donde participó</h3>${(p.ordenes || []).length ? '<ul class="pe-ordenes">' + p.ordenes.map(o => `<li><b>${esc(folioOrdenServicio(o))}</b> · ${esc(o.cliente || '')} · ${esc(fecha(o.fecha_realizado || o.fecha_servicio))} · ${esc(CAT.papeles[o.papel] || o.papel)}${o.ejecucion === 'realizado' ? ' ✔' : ''}</li>`).join('') + '</ul>' : '<p class="ayuda">Todavía no está en ninguna orden.</p>'}</div>`;
@@ -163,7 +163,7 @@ const Personal = (() => {
     } catch (e) { toast(e.message); }
   }
   async function reactivar() {
-    try { await pedir('/' + actual.id + '/reactivar', { method: 'POST', body: '{}' }); toast('Reingreso registrado'); actual = await pedir('/' + actual.id); pintarFicha(); cargar(); } catch (e) { toast(e.message); }
+    try { const r = await pedir('/' + actual.id + '/reactivar', { method: 'POST', body: '{}' }); toast(r.aviso ? 'Reingreso registrado. ' + r.aviso : 'Reingreso registrado'); actual = await pedir('/' + actual.id); pintarFicha(); cargar(); } catch (e) { toast(e.message); }
   }
   async function registrarIncidencia(forzar = false) {
     const cuerpo = { tipo: $('pe-inc-tipo').value, fecha_inicio: $('pe-inc-inicio').value, fecha_fin: $('pe-inc-fin').value || $('pe-inc-inicio').value, dias: $('pe-inc-dias').value || null, notas: $('pe-inc-notas').value, con_goce: $('pe-inc-goce').checked, forzar };
@@ -268,7 +268,7 @@ const EquipoOrden = (() => {
     const deLaSucursal = p => sucursal == null || p.sucursal_id === sucursal;
     const opcionesGente = (sel, vacio) => `<option value="">${esc(vacio)}</option>` + gente.filter(p => deLaSucursal(p) || String(p.id) === String(sel)).map(p => `<option value="${Number(p.id)}"${String(p.id) === String(sel) ? ' selected' : ''}>${esc(p.nombre)} · ${esc(p.puesto)}${p.con_cuenta ? '' : ' (sin cuenta)'}</option>`).join('');
     function fila(x) {
-      return `<div class="pe-eq-fila" data-eq-fila><select data-eq-persona aria-label="Persona del equipo">${opcionesGente(x?.personal_id, 'Elige a la persona')}</select><select data-eq-papel aria-label="Papel en la orden">${PAPELES.map(([v, t]) => `<option value="${v}"${x?.papel === v ? ' selected' : ''}>${esc(t)}</option>`).join('')}</select><button type="button" class="btn btn-outline btn-chico" data-eq-quitar aria-label="Quitar del equipo">✕</button></div>`;
+      return `<div class="pe-eq-fila" data-eq-fila><select data-eq-persona aria-label="Persona asignada">${opcionesGente(x?.personal_id, 'Elige a la persona')}</select><select data-eq-papel aria-label="Papel en la orden">${PAPELES.map(([v, t]) => `<option value="${v}"${x?.papel === v ? ' selected' : ''}>${esc(t)}</option>`).join('')}</select><button type="button" class="btn btn-outline btn-chico" data-eq-quitar aria-label="Quitar del equipo">✕</button></div>`;
     }
     async function mostrar(lead) {
       const cont = caja(); if (!cont) return;

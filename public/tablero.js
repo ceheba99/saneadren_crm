@@ -124,13 +124,18 @@ const Panorama = (() => {
       + tarjeta('Propuestas abiertas', String(f.pipeline.abiertas), dinero(f.pipeline.valor) + ' en negociación')
       + tarjeta('Clientes atendidos', String(a.clientes_activos), a.clientes_nuevos + ' nuevos · ' + a.clientes_recurrentes + ' recurrentes', delta(a.clientes_activos, p.clientes_activos))
       + tarjeta('Contactos nuevos', String(a.contactos_nuevos), 'Registrados en el periodo', delta(a.contactos_nuevos, p.contactos_nuevos))
+      + tarjeta('Satisfacción', a.calificacion == null ? '—' : Number(a.calificacion) + ' de 4', a.encuestas ? Number(a.encuestas) + (a.encuestas === 1 ? ' encuesta' : ' encuestas') + ' capturadas' : 'Sin encuestas capturadas en las órdenes')
       + '</div></div>'
+      + '<div class="pg-caja"><h3>¿Por qué no se aceptan las cotizaciones?</h3>' + ((d.perdidas || []).length
+        ? '<ul class="pg-perdidas">' + d.perdidas.map(x => '<li><button type="button" class="enlace" data-pg-lead="' + Number(x.id) + '">' + esc(folioCotizacion(x)) + '</button> · ' + esc(x.cliente || '') + ' · ' + dinero(x.valor || 0) + ': '
+          + (x.motivo_perdida ? esc(x.motivo_perdida) : '<span class="ayuda">sin motivo registrado</span>') + '</li>').join('') + '</ul>'
+        : '<p class="ayuda">Ninguna cotización del periodo se marcó como no aceptada.</p>') + '</div>'
       // 6. Rankings
       + '<div class="pg-dos"><div class="pg-caja"><h3>Clientes que más compraron</h3>' + barras(d.top_clientes) + '</div>'
       + '<div class="pg-caja"><h3>Servicios que más se vendieron</h3>' + barras(d.por_servicio, 'venta', dinero, x => x.servicios + (x.servicios === 1 ? ' vez' : ' veces')) + '</div></div>'
       + '<div class="pg-tres"><div class="pg-caja"><h3>Por canal de venta</h3>' + barras(d.por_canal) + '</div>'
       + '<div class="pg-caja"><h3>Por unidad</h3>' + barras(d.por_unidad) + '</div>'
-      + '<div class="pg-caja"><h3>Por técnico y equipo</h3><p class="ayuda">Cada persona del equipo de la orden (Personal) suma el servicio completo.</p>' + barras(d.por_operador) + '</div></div>'
+      + '<div class="pg-caja"><h3>Por técnico y personal</h3><p class="ayuda">Cada persona asignada a la orden (Personal) suma el servicio completo.</p>' + barras(d.por_operador) + '</div></div>'
       + '<p class="ayuda pg-nota">Venta realizada: servicios marcados como realizados en el periodo, sin IVA (lo mismo que el Generador). Utilidad estimada: venta realizada menos facturas y gastos del periodo, los dos sin IVA. A cada factura de gasto se le quita su IVA (el capturado o, si no se capturó, el 16 % incluido, marcado como estimado); los gastos sin factura cuentan completos. No restan los comprobantes informativos ni lo que no es gasto (inversión, préstamos y traspasos). Flujo: dinero que entró (pagos de clientes, sin descuentos) menos el que salió (pagos a proveedores). "Te deben" y "Debes" son al día de hoy.</p>';
   }
 
@@ -152,6 +157,7 @@ const Panorama = (() => {
     const pr = e.target.closest('[data-pg-preset]'); if (pr) { cargar(pr.dataset.pgPreset); return; }
     if (e.target.closest('[data-pg-reintentar]')) { cargar(); return; }
     const ir = e.target.closest('[data-pg-ir]'); if (ir) { cambiarVista(ir.dataset.pgIr); return; }
+    const cot = e.target.closest('[data-pg-lead]'); if (cot) { abrirFicha(Number(cot.dataset.pgLead)); return; }
     if (e.target.closest('#pg-aplicar')) { cargar('personalizado'); return; }
     if (e.target.closest('#pg-exportar')) exportar();
     if (e.target.closest('#pg-imprimir')) window.print();

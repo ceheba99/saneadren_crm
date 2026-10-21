@@ -815,6 +815,8 @@ const Finanzas = (() => {
   async function nuevoGasto(prellenado = {}, alGuardar = null) {
     try { await catalogosPagos(); } catch (err) { toast('No se pudo cargar: ' + err.message); return; }
     llenarProveedoresGasto();
+    // Quien no mueve dinero solo registra costos de una orden (las compras van por Solicitud de compra): ahí es obligatoria.
+    document.querySelector('label[for="gasto-orden"]').textContent = Permisos.puede('dinero.mover') ? 'Orden de servicio relacionada (opcional)' : 'Orden de servicio relacionada (obligatorio)';
     ['gasto-concepto', 'gasto-total', 'gasto-folio', 'gasto-orden', 'gasto-equipo', 'gasto-referencia'].forEach(id => { $(id).value = prellenado[id] || ''; });
     $('gasto-fecha').value = hoy(); $('gasto-vence').value = ''; $('gasto-fecha-pago').value = hoy(); $('gasto-pagado').checked = false; $('gasto-metodo-wrap').hidden = true;
     $('gasto-credito').value = ''; $('gasto-credito').disabled = false; $('gasto-credito-ayuda').textContent = '';
@@ -1410,12 +1412,14 @@ const Finanzas = (() => {
     if (!lead || lead.estatus !== 'ganado') { sec.hidden = true; EJECUCION_ORDEN = null; return; }
     sec.hidden = false; EJECUCION_ORDEN = lead;
     const botones = `<div class="btn-group"><button type="button" class="btn btn-verde" data-ejecucion="estatus">🔄 Actualizar estatus del servicio</button></div>`;
+    // Si se marcó por error, Dirección lo regresa a «por realizar» (con motivo; queda en la bitácora).
+    const deshacer = lead.ejecucion && Permisos.direccion() ? '<div class="btn-group"><button type="button" class="btn btn-outline" data-ejecucion="deshacer">↩ Regresar a «por realizar»</button></div>' : '';
     if (lead.ejecucion === 'realizado') {
       cont.innerHTML = `<p class="ejecucion-estado realizado"><b>✔ Servicio realizado</b> el ${esc(fechaTxt(lead.fecha_realizado))}. Ya cuenta en el Generador.</p>
-        <p class="ayuda">¿Hubo otro gasto? Agrégalo en «Gastos generados de esta orden», abajo.</p>`;
+        <p class="ayuda">¿Hubo otro gasto? Agrégalo en «Gastos generados de esta orden», abajo.</p>${deshacer}`;
     } else if (lead.ejecucion === 'no_realizado') {
       cont.innerHTML = `<p class="ejecucion-estado no-realizado"><b>✖ No realizado.</b> Motivo: ${esc(lead.motivo_no_realizado || '—')}. No cuenta en el Generador y no se le cobra; si ya había pagado, ese dinero queda a su favor (devolverlo o aplicarlo a otro servicio).</p>
-        <p class="ayuda">Si al final sí se realizó, actualízalo:</p>${botones}`;
+        <p class="ayuda">Si al final sí se realizó, actualízalo:</p>${botones}${deshacer}`;
     } else {
       const vencida = lead.fecha_servicio && lead.fecha_servicio <= hoy();
       cont.innerHTML = `<p class="ayuda">${vencida ? '<b>Por concluir:</b> la fecha del servicio ya pasó.' : 'Programado para el ' + esc(fechaTxt(lead.fecha_servicio)) + '.'} Cuando termine, actualiza su estatus: si se realizó (pasa al Generador y se registran sus gastos) o no.</p>${botones}`;
@@ -1423,6 +1427,10 @@ const Finanzas = (() => {
   }
   $('ejecucion-orden').addEventListener('click', async e => {
     const b = e.target.closest('[data-ejecucion]'); const lead = EJECUCION_ORDEN; if (!b || !lead) return;
+    if (b.dataset.ejecucion === 'deshacer') {
+      const motivo = await pedirMotivo('Regresar a «por realizar»'); if (!motivo) return;
+      return conBoton(b, async () => { await enviar('/leads/' + lead.id + '/ejecucion', 'POST', { estado: 'pendiente', motivo }); toast('El servicio quedó «por realizar»'); await abrirFicha(lead.id); });
+    }
     return abrirRealizado(lead, null);
   });
   // Avisos claros al marcar «no realizado»: el cliente no debe nada; lo pagado queda a su favor; los gastos siguen en Cuentas por pagar.

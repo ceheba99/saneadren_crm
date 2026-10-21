@@ -329,6 +329,13 @@ module.exports = function solicitudes(app, db, h, { texto, fechaOk, hoyMexico, c
     actualizar(s.id, { estado: 'recibida' });
     audit(req, s.id, 'recibida', `${oc.folio}: ${detalle}`);
   }
-  return { paraOrden, vincular, ordenCancelada, ordenRecibida, folioSol, COTIZACIONES_REQUERIDAS };
+  // Se deshizo la recepción de su orden: la solicitud vuelve a «con orden de compra».
+  function recepcionDeshecha(req, oc, motivo) {
+    const s = db.prepare('SELECT * FROM solicitudes_compra WHERE oc_id = ?').get(oc.id);
+    if (!s || s.estado !== 'recibida') return;
+    actualizar(s.id, { estado: 'con_orden' });
+    audit(req, s.id, 'recepción deshecha', `${oc.folio}: ${motivo}`);
+  }
+  return { paraOrden, vincular, ordenCancelada, ordenRecibida, recepcionDeshecha, folioSol, COTIZACIONES_REQUERIDAS };
 };
 module.exports.folioSol = folioSol;

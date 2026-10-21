@@ -40,7 +40,7 @@ module.exports = function tablero(app, db, h, finanzas) {
 
   // Servicios realizados en el periodo (la venta real: lo mismo que cuenta el Generador).
   function realizados(d, h) {
-    return db.prepare(`SELECT l.id, l.cliente_id, l.valor, l.iva_cent, l.iva_modo, l.iva_tasa, l.partidas_json, l.equipo, l.operador,
+    return db.prepare(`SELECT l.id, l.cliente_id, l.valor, l.iva_cent, l.iva_modo, l.iva_tasa, l.partidas_json, l.equipo, l.operador, l.encuesta_calificacion,
         (SELECT group_concat(p.nombre, '|') FROM orden_personal op JOIN personal p ON p.id = op.personal_id WHERE op.lead_id = l.id) AS equipo_personal,
         ${FECHA_VENTA} AS fecha, COALESCE(c.empresa_contacto, c.nombre, l.nombre) AS cliente, COALESCE(cl.nombre, cc.nombre, 'Sin canal') AS canal, s.nombre AS servicio_nombre
       FROM leads l LEFT JOIN clientes c ON c.id = l.cliente_id LEFT JOIN canales cl ON cl.id = l.canal_id LEFT JOIN canales cc ON cc.id = c.canal_origen_id
@@ -106,6 +106,9 @@ module.exports = function tablero(app, db, h, finanzas) {
         cotizaciones: cot.n, cotizado: Math.round((cot.v || 0) * 100) / 100, cot_ganadas: cot.ganadas || 0, cot_perdidas: cot.perdidas || 0,
         cierre_pct: (cot.ganadas || 0) + (cot.perdidas || 0) ? Math.round(cot.ganadas / (cot.ganadas + cot.perdidas) * 1000) / 10 : null,
         no_realizados: noRealizados.n, no_realizado_valor: Math.round((noRealizados.v || 0) * 100) / 100,
+        // Encuesta de calidad de los servicios realizados en el periodo (1 malo … 4 excelente; se captura en la orden).
+        encuestas: ventas.filter(l => l.encuesta_calificacion).length,
+        calificacion: ventas.some(l => l.encuesta_calificacion) ? Math.round(ventas.filter(l => l.encuesta_calificacion).reduce((t, l) => t + l.encuesta_calificacion, 0) / ventas.filter(l => l.encuesta_calificacion).length * 10) / 10 : null,
         contactos_nuevos: contactos, clientes_activos: activos.size, clientes_nuevos: nuevos, clientes_recurrentes: activos.size - nuevos,
       },
       gastos: gastos.map(g => ({ categoria: g.categoria, nombre: finanzas.CATEGORIAS[g.categoria] || g.categoria, total: pesos(g.t), con_iva: pesos(g.con_iva), sin_orden: pesos(g.sin_orden), es_gasto: !CATEGORIAS_NO_GASTO.has(g.categoria) })),
@@ -237,6 +240,10 @@ module.exports = function tablero(app, db, h, finanzas) {
       actual: act.r, previo: ant.r, foto, alertas, por_sucursal: porSucursal,
       gastos: act.gastos, tendencia: tendencia(hasta),
       top_clientes: ranking(act.ventas, act.costos, l => l.cliente), por_servicio: porServicio(act.ventas),
+      // Cotizaciones del periodo que no se aceptaron, con el motivo que se pide al marcarlas (antes solo quedaba en su historial).
+      perdidas: db.prepare(`SELECT l.id, l.folio_num, l.sucursal_id, l.created_at, l.valor, l.motivo_perdida, COALESCE(NULLIF(c.empresa_contacto, ''), c.nombre, l.nombre) AS cliente
+        FROM leads l LEFT JOIN clientes c ON c.id = l.cliente_id WHERE l.origen = 'cotizacion' AND l.estatus = 'perdido' AND date(l.created_at) BETWEEN ? AND ?
+        ORDER BY l.created_at DESC LIMIT 30`).all(desde, hasta),
       por_canal: ranking(act.ventas, act.costos, l => l.canal), por_unidad: ranking(act.ventas, act.costos, l => l.equipo), por_operador: ranking(act.ventas, act.costos, l => (l.equipo_personal ? l.equipo_personal.split('|') : []).concat(l.operador ? [l.operador] : [])),
     });
   }));

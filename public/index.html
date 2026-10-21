@@ -439,10 +439,10 @@
       <h2>Sucursales</h2>
       <p class="ayuda">Cada sucursal ve solo lo suyo; el administrador general ve todas (elige arriba cuál ver). La clave va en los folios (OS-CDMX-202610-0001) y no se cambia después. Clientes, proveedores y catálogos son de todas.</p>
       <div class="form-grid">
-        <div class="campo"><label for="ns-nombre">Nombre</label><input id="ns-nombre" maxlength="60" placeholder="Ciudad de México"></div>
-        <div class="campo"><label for="ns-clave">Clave</label><input id="ns-clave" maxlength="6" placeholder="CDMX" autocapitalize="characters"></div>
-        <div class="campo"><label for="ns-direccion">Dirección</label><input id="ns-direccion" maxlength="200"></div>
-        <div class="campo"><label for="ns-telefono">Teléfono</label><input id="ns-telefono" maxlength="25"></div>
+        <div class="campo"><label for="ns-nombre">Nombre (obligatorio)</label><input id="ns-nombre" maxlength="60" placeholder="Ciudad de México"></div>
+        <div class="campo"><label for="ns-clave">Clave (obligatorio)</label><input id="ns-clave" maxlength="6" placeholder="CDMX" autocapitalize="characters"></div>
+        <div class="campo"><label for="ns-direccion">Dirección (opcional)</label><input id="ns-direccion" maxlength="200"></div>
+        <div class="campo"><label for="ns-telefono">Teléfono (opcional)</label><input id="ns-telefono" maxlength="25"></div>
         <div class="campo"><button class="btn btn-primario" id="btn-crear-sucursal">Crear sucursal</button></div>
       </div>
       <div id="lista-sucursales"></div>
@@ -452,11 +452,11 @@
       <p class="ayuda">Solo un administrador crea cuentas. La persona podrá iniciar sesión con su nombre o su correo; con su correo puede recuperar la contraseña si la olvida.</p>
       <div class="form-grid">
         <div class="campo">
-          <label for="nu-nombre">Nombre</label>
+          <label for="nu-nombre">Nombre (obligatorio)</label>
           <input type="text" id="nu-nombre" placeholder="Nombre del usuario">
         </div>
         <div class="campo">
-          <label for="nu-password">Contraseña</label>
+          <label for="nu-password">Contraseña (obligatorio)</label>
           <input type="password" id="nu-password" placeholder="Mínimo 10 caracteres, letras y números" autocomplete="new-password">
         </div>
         <div class="campo">
@@ -464,7 +464,7 @@
           <input type="email" id="nu-correo" placeholder="nombre@saneadren.com.mx" autocomplete="off">
         </div>
         <div class="campo">
-          <label for="nu-rol">Rol</label>
+          <label for="nu-rol">Rol (obligatorio)</label>
           <select id="nu-rol"></select>
         </div>
         <div class="campo solo-varias-sucursales" id="nu-sucursales-campo">
@@ -485,6 +485,9 @@
     <h3 class="util-13">Usuarios activos</h3>
     <p class="ayuda">Cambia nombre, correo o rol y pulsa Guardar. "Nueva contraseña" asigna una temporal que la persona deberá cambiar al entrar; al cambiar el rol o la contraseña se cierran sus sesiones abiertas.</p>
     <div id="lista-usuarios"></div>
+    <h3 class="util-13">Usuarios desactivados</h3>
+    <p class="ayuda">No pueden entrar. Al reactivar a alguien vuelve con su rol y sus sucursales, y al entrar debe cambiar su contraseña.</p>
+    <div id="lista-usuarios-desactivados"></div>
 
   </section>
 
@@ -539,9 +542,9 @@
       <div class="panel-alta">
         <h2 id="prov-form-titulo">Agregar proveedor</h2>
         <div class="form-grid">
-          <div class="campo"><label for="prov-nombre">Nombre</label><input id="prov-nombre" maxlength="120" placeholder="Ej. Disposición del Bajío"></div>
-          <div class="campo"><label for="prov-categoria">Categoría de sus gastos</label><select id="prov-categoria"></select></div>
-          <div class="campo"><label for="prov-credito">Días de crédito que nos da</label><input id="prov-credito" type="number" min="0" max="180" step="1" value="0"></div>
+          <div class="campo"><label for="prov-nombre">Nombre (obligatorio)</label><input id="prov-nombre" maxlength="120" placeholder="Ej. Disposición del Bajío"></div>
+          <div class="campo"><label for="prov-categoria">Categoría de sus gastos (obligatorio)</label><select id="prov-categoria"></select></div>
+          <div class="campo"><label for="prov-credito">Días de crédito que nos da (obligatorio)</label><input id="prov-credito" type="number" min="0" max="180" step="1" value="0"></div>
           <div class="campo"><label for="prov-rfc">RFC (opcional)</label><input id="prov-rfc" maxlength="13"></div>
           <div class="campo"><label for="prov-telefono">Teléfono (opcional)</label><input id="prov-telefono" maxlength="25" inputmode="tel"></div>
           <div class="campo"><label for="prov-contacto">Contacto (opcional)</label><input id="prov-contacto" maxlength="120"></div>
@@ -570,7 +573,7 @@
         <div class="campo">
           <label for="nserv-nombre">Nombre del servicio</label>
           <input type="text" id="nserv-nombre" placeholder="Ej. Renta de maquinaria">
-          <label for="ns-descripcion">Descripción predeterminada</label>
+          <label for="ns-descripcion">Descripción predeterminada (opcional)</label>
           <textarea id="ns-descripcion" rows="3" maxlength="10000" placeholder="Texto editable que aparecerá en la cotización"></textarea>
         </div>
         <div class="campo">
@@ -615,6 +618,7 @@
 
       <div class="modal-section">
         <div id="registro-contacto" class="contacto-resumen"></div>
+        <p class="ayuda" id="registro-motivo-perdida" hidden></p>
         <div class="ficha-meta" id="ficha-meta"></div>
       </div>
 
@@ -623,27 +627,29 @@
         <div class="seccion-tit" id="registro-datos-titulo">Datos de esta cotización</div>
         <p class="ayuda">Los cambios de esta sección afectan únicamente a este registro. Los datos de contacto se editan desde su ficha.</p>
         <div class="form-grid-2">
-          <div class="campo-modal"><label for="ed-fecha-cotizacion">Fecha de la cotización</label><input type="date" id="ed-fecha-cotizacion"></div>
-          <div class="campo-modal solo-orden"><label for="ed-fecha-servicio">Fecha acordada del servicio</label><input type="date" id="ed-fecha-servicio"></div>
+          <div class="campo-modal"><label for="ed-fecha-cotizacion">Fecha de la cotización (obligatorio)</label><input type="date" id="ed-fecha-cotizacion"></div>
+          <div class="campo-modal solo-orden"><label for="ed-fecha-servicio">Fecha acordada del servicio (obligatorio)</label><input type="date" id="ed-fecha-servicio"></div>
           <div class="campo-modal">
-            <label for="ed-responsable">Atendido por</label><select id="ed-responsable"></select>
+            <label for="ed-responsable">Atendido por (obligatorio)</label><select id="ed-responsable"></select>
           </div>
-          <div class="campo-modal full"><label for="ed-direccion">Ubicación de este servicio</label><input type="text" id="ed-direccion"></div>
+          <div class="campo-modal full"><label for="ed-direccion">Ubicación del servicio (obligatorio)</label><input type="text" id="ed-direccion"></div>
           <div class="campo-modal campo-check">
             <label class="diseno-campo-checkbox"><input type="checkbox" id="ed-incluye-vigencia" checked> Incluir vigencia en la cotización</label>
           </div>
-          <div class="campo-modal" id="wrap-vigencia-hasta"><label for="ed-vigencia-hasta">Vigencia hasta</label><input type="date" id="ed-vigencia-hasta"></div>
-          <div class="campo-modal solo-orden"><label for="ed-equipo">Equipo</label><input type="text" id="ed-equipo" maxlength="200" placeholder="Ej. E-37-04"></div>
-          <div class="campo-modal full solo-orden" id="ed-equipo-campo"><span class="etiqueta-campo">Técnico responsable y equipo</span><div id="ed-equipo-personal" data-campo></div><small class="ayuda">El responsable ve esta orden y la marca realizada (si tiene cuenta en el sistema). El personal se da de alta en Ajustes → Personal.</small></div>
-          <div class="campo-modal solo-orden"><label for="ed-operador">Operadores externos (si no están en Personal)</label><input type="text" id="ed-operador" maxlength="300" placeholder="Ej. operador de la pipa rentada"></div>
-          <div class="campo-modal solo-orden"><label for="ed-manifiestos">Manifiestos</label><input type="text" id="ed-manifiestos" maxlength="200" placeholder="Folio(s) de manifiesto"></div>
-          <div class="campo-modal solo-orden"><label for="ed-tiros">Tiros</label><input type="text" id="ed-tiros" maxlength="60" placeholder="Ej. 2"></div>
-          <div class="campo-modal full solo-orden"><label for="ed-proyecto">Proyecto</label><input type="text" id="ed-proyecto" maxlength="200" placeholder="Ej. Mantenimiento planta 2026"></div>
+          <div class="campo-modal" id="wrap-vigencia-hasta"><label for="ed-vigencia-hasta">Vigencia hasta (obligatoria si tiene vigencia)</label><input type="date" id="ed-vigencia-hasta"></div>
+          <div class="campo-modal solo-orden"><label for="ed-equipo">Equipo (unidad, opcional)</label><input type="text" id="ed-equipo" maxlength="200" placeholder="Ej. E-37-04"></div>
+          <div class="campo-modal full solo-orden" id="ed-equipo-campo"><span class="etiqueta-campo">Técnico responsable y personal (opcional)</span><div id="ed-equipo-personal" data-campo></div><small class="ayuda">El responsable ve esta orden y la marca realizada (si tiene cuenta en el sistema). El personal se da de alta en Ajustes → Personal.</small></div>
+          <div class="campo-modal solo-orden"><label for="ed-operador">Operadores externos (opcional, si no están en Personal)</label><input type="text" id="ed-operador" maxlength="300" placeholder="Ej. operador de la pipa rentada"></div>
+          <div class="campo-modal solo-orden"><label for="ed-manifiestos">Manifiestos (opcional)</label><input type="text" id="ed-manifiestos" maxlength="200" placeholder="Folio(s) de manifiesto"></div>
+          <div class="campo-modal solo-orden"><label for="ed-tiros">Tiros (opcional)</label><input type="text" id="ed-tiros" maxlength="60" placeholder="Ej. 2"></div>
+          <div class="campo-modal full solo-orden"><label for="ed-proyecto">Proyecto (opcional)</label><input type="text" id="ed-proyecto" maxlength="200" placeholder="Ej. Mantenimiento planta 2026"></div>
           <!-- Canal, servicio y valor salen de las partidas: se conservan ocultos para el guardado -->
           <div class="campo-modal"><label for="ed-canal">Canal</label><select id="ed-canal"></select></div>
           <div class="campo-modal"><label for="ed-servicio">Servicio</label><select id="ed-servicio"></select></div>
           <div class="campo-modal"><label for="ed-valor">Valor del servicio (MXN)</label><input type="number" id="ed-valor" min="0" step="0.01" placeholder="0.00"></div>
-          <div class="campo-modal full solo-orden"><label for="ed-observaciones">Observaciones de la orden</label><textarea id="ed-observaciones" rows="2" maxlength="3000" placeholder="Se imprimen en la orden de servicio; también puedes capturar lo que anotó el operador"></textarea></div>
+          <div class="campo-modal solo-orden"><label for="ed-encuesta-calificacion">Encuesta del cliente: calificación (opcional)</label><select id="ed-encuesta-calificacion"><option value="">Sin respuesta</option><option value="4">4 · Excelente</option><option value="3">3 · Bueno</option><option value="2">2 · Regular</option><option value="1">1 · Malo</option></select></div>
+          <div class="campo-modal solo-orden"><label for="ed-encuesta-comentario">Comentario de la encuesta (opcional)</label><input type="text" id="ed-encuesta-comentario" maxlength="1000" placeholder="Lo que contestó en la encuesta (QR de la orden)"></div>
+          <div class="campo-modal full solo-orden"><label for="ed-observaciones">Observaciones de la orden (opcional)</label><textarea id="ed-observaciones" rows="2" maxlength="3000" placeholder="Se imprimen en la orden de servicio; también puedes capturar lo que anotó el operador"></textarea></div>
         </div>
         <div class="util-16">
           <span class="chip util-17">Creado por: <b id="ed-creado-por">—</b></span>
@@ -745,21 +751,21 @@
         <div class="seccion-tit">✏️ Datos del contacto</div>
         <p class="ayuda">Esta ficha pertenece a la persona o empresa. Guardar aquí no modifica importes, fechas ni ubicaciones de cotizaciones anteriores.</p>
         <div class="form-grid-2">
-          <div class="campo-modal"><label for="fc-ed-telefono">Teléfono</label><input type="tel" id="fc-ed-telefono"></div>
+          <div class="campo-modal"><label for="fc-ed-telefono">Teléfono (obligatorio)</label><input type="tel" id="fc-ed-telefono"></div>
           <div class="campo-modal"><label for="fc-ed-telefono-alterno">Teléfono alterno (opcional)</label><input type="tel" id="fc-ed-telefono-alterno"></div>
-          <div class="campo-modal"><label for="fc-ed-nombre">Nombre / contacto</label><input type="text" id="fc-ed-nombre"></div>
+          <div class="campo-modal"><label for="fc-ed-nombre">Nombre del contacto (obligatorio)</label><input type="text" id="fc-ed-nombre"></div>
           <div class="campo-modal"><label for="fc-ed-correo">Correo electrónico (opcional)</label><input type="email" id="fc-ed-correo" placeholder="correo@ejemplo.com"></div>
-          <div class="campo-modal"><label for="fc-ed-empresa">Empresa</label><input type="text" id="fc-ed-empresa"></div>
+          <div class="campo-modal"><label for="fc-ed-empresa">Empresa (opcional)</label><input type="text" id="fc-ed-empresa"></div>
           <div class="campo-modal"><label for="fc-ed-rfc">RFC (opcional, para facturación)</label><input type="text" id="fc-ed-rfc" maxlength="13" placeholder="XAXX010101000"></div>
-          <div class="campo-modal"><label for="fc-ed-direccion">Dirección habitual del contacto</label><input type="text" id="fc-ed-direccion"></div>
+          <div class="campo-modal"><label for="fc-ed-direccion">Domicilio del contacto (opcional)</label><input type="text" id="fc-ed-direccion"></div>
           <div class="campo-modal">
-            <label for="fc-ed-giro">Tipo de cliente</label>
+            <label for="fc-ed-giro">Tipo de cliente (opcional)</label>
             <select id="fc-ed-giro">
               <option value="">Sin especificar</option>
               
             </select>
           </div>
-          <div class="campo-modal"><label for="fc-ed-origen">¿Cómo se enteró de nosotros?</label><select id="fc-ed-origen"><option value="">Sin registrar</option></select></div>
+          <div class="campo-modal"><label for="fc-ed-origen">¿Cómo se enteró de nosotros? (obligatorio)</label><select id="fc-ed-origen"><option value="">Sin registrar</option></select></div>
           <div class="campo-modal full"><label>Otros teléfonos de este cliente</label><div class="fc-telefonos" id="fc-telefonos"></div></div>
           <div class="campo-modal full"><label for="fc-ed-notas-generales">Notas generales del contacto (opcional)</label><textarea id="fc-ed-notas-generales" rows="2" placeholder="Información permanente sobre este contacto: acceso al predio, preferencias, referencias, etc."></textarea></div>
         </div>
@@ -818,14 +824,14 @@
       <p class="cuentas-aviso" id="oc-estado" hidden></p>
       <p class="oc-origen" id="oc-origen" hidden></p>
       <div class="form-grid-2">
-        <div class="campo"><label for="oc-proveedor">Proveedor</label><select id="oc-proveedor"></select></div>
-        <div class="campo"><label for="oc-centro">Centro de costos</label><select id="oc-centro"></select></div>
-        <div class="campo"><label for="oc-categoria">Categoría del gasto</label><select id="oc-categoria"></select></div>
-        <div class="campo"><label for="oc-factura-a">Factura a</label><input id="oc-factura-a" maxlength="120" placeholder="SANEADREN"></div>
-        <div class="campo"><label for="oc-fecha">Fecha</label><input type="date" id="oc-fecha"></div>
-        <div class="campo"><label for="oc-requerida">Fecha requerida</label><input type="date" id="oc-requerida"></div>
+        <div class="campo"><label for="oc-proveedor">Proveedor (obligatorio)</label><select id="oc-proveedor"></select></div>
+        <div class="campo"><label for="oc-centro">Centro de costos (obligatorio)</label><select id="oc-centro"></select></div>
+        <div class="campo"><label for="oc-categoria">Categoría del gasto (obligatorio)</label><select id="oc-categoria"></select></div>
+        <div class="campo"><label for="oc-factura-a">Factura a (opcional)</label><input id="oc-factura-a" maxlength="120" placeholder="SANEADREN"></div>
+        <div class="campo"><label for="oc-fecha">Fecha (obligatorio)</label><input type="date" id="oc-fecha"></div>
+        <div class="campo"><label for="oc-requerida">Fecha requerida (opcional)</label><input type="date" id="oc-requerida"></div>
         <div class="campo"><label for="oc-lead">Orden de servicio relacionada (opcional)</label><input id="oc-lead" inputmode="numeric" placeholder="Número de la orden, ej. 125"></div>
-        <div class="campo full"><label for="oc-nota">Nota</label><input id="oc-nota" maxlength="500" placeholder="Ej. GASTOS PAGADORA SEM 40"></div>
+        <div class="campo full"><label for="oc-nota">Nota (opcional)</label><input id="oc-nota" maxlength="500" placeholder="Ej. GASTOS PAGADORA SEM 40"></div>
       </div>
       <div class="oc-partidas-caja">
         <div class="seccion-tit">Partidas</div>
@@ -840,10 +846,10 @@
         <button type="button" class="btn btn-outline" id="oc-agregar">+ Agregar partida</button>
         <table class="gc-totales oc-totales" aria-label="Totales"><tbody id="oc-totales"></tbody></table>
       </div>
-      <div class="campo"><label for="oc-observaciones">Observaciones</label><textarea id="oc-observaciones" rows="2" maxlength="2000"></textarea></div>
+      <div class="campo"><label for="oc-observaciones">Observaciones (opcional)</label><textarea id="oc-observaciones" rows="2" maxlength="2000"></textarea></div>
       <div class="form-grid-2">
-        <div class="campo"><label for="oc-solicitante">Área solicitante: nombre</label><input id="oc-solicitante" maxlength="120"></div>
-        <div class="campo"><label for="oc-cargo">Cargo</label><input id="oc-cargo" maxlength="120"></div>
+        <div class="campo"><label for="oc-solicitante">Área solicitante: nombre (opcional)</label><input id="oc-solicitante" maxlength="120"></div>
+        <div class="campo"><label for="oc-cargo">Cargo (opcional)</label><input id="oc-cargo" maxlength="120"></div>
       </div>
       <div class="barra-acciones oc-acciones" id="oc-acciones"></div>
       <div class="oc-expediente" id="oc-expediente" hidden></div>
@@ -950,13 +956,13 @@
     <div class="modal-header"><h2 id="cobro-titulo">Registrar pago</h2><button class="close-btn" type="button">✕</button></div>
     <div class="modal-body">
       <p class="chip" id="cobro-info"></p>
-      <div class="campo"><label for="cobro-monto">Monto (MXN)</label><input id="cobro-monto" type="text" inputmode="decimal" autocomplete="off"></div>
-      <div class="campo"><span class="etiqueta-campo">¿Cómo pagó?</span><div class="metodos" id="cobro-metodos"></div></div>
-      <div class="campo"><label for="cobro-fecha">Fecha en que llegó el dinero</label><input id="cobro-fecha" type="date"></div>
-      <div class="campo perm-cobros-ajustes"><label for="cobro-tipo">Tipo</label><select id="cobro-tipo"><option value="">Automático (anticipo o pago)</option><option value="anticipo">Anticipo</option><option value="pago">Pago</option><option value="ajuste">Ajuste o descuento</option></select></div>
+      <div class="campo"><label for="cobro-monto">Monto (MXN, obligatorio)</label><input id="cobro-monto" type="text" inputmode="decimal" autocomplete="off"></div>
+      <div class="campo"><span class="etiqueta-campo">¿Cómo pagó? (obligatorio)</span><div class="metodos" id="cobro-metodos"></div></div>
+      <div class="campo"><label for="cobro-fecha">Fecha en que llegó el dinero (obligatorio)</label><input id="cobro-fecha" type="date"></div>
+      <div class="campo perm-cobros-ajustes"><label for="cobro-tipo">Tipo (opcional)</label><select id="cobro-tipo"><option value="">Automático (anticipo o pago)</option><option value="anticipo">Anticipo</option><option value="pago">Pago</option><option value="ajuste">Ajuste o descuento</option></select></div>
       <details><summary>Más datos (referencia y nota)</summary>
-        <div class="campo"><label for="cobro-referencia">Referencia (núm. de transferencia o cheque)</label><input id="cobro-referencia" maxlength="120"></div>
-        <div class="campo"><label for="cobro-notas">Nota</label><input id="cobro-notas" maxlength="500"></div>
+        <div class="campo"><label for="cobro-referencia">Referencia (opcional: núm. de transferencia o cheque)</label><input id="cobro-referencia" maxlength="120"></div>
+        <div class="campo"><label for="cobro-notas">Nota (opcional)</label><input id="cobro-notas" maxlength="500"></div>
       </details>
       <p class="ayuda" id="cobro-aviso"></p>
       <button type="button" class="btn btn-primario btn-ancho" id="cobro-guardar">Guardar pago</button>
@@ -970,8 +976,8 @@
     <div class="modal-header"><h2>Registrar gasto o factura</h2><button class="close-btn" type="button">✕</button></div>
     <div class="modal-body">
       <p class="cuentas-aviso noperm-dinero-mover">Aquí se registran los <b>costos de un servicio</b> (pipas, tiros, casetas…): elige la orden de servicio. Las compras van por <b>Solicitudes de compra</b>.</p>
-      <div class="campo"><label for="gasto-proveedor">Proveedor</label><select id="gasto-proveedor"></select><small class="ayuda">¿No está? Agrégalo en la pestaña Proveedores.</small></div>
-      <div class="campo"><label for="gasto-categoria">Categoría</label><select id="gasto-categoria"></select></div>
+      <div class="campo"><label for="gasto-proveedor">Proveedor (obligatorio)</label><select id="gasto-proveedor"></select><small class="ayuda">¿No está? Agrégalo en la pestaña Proveedores.</small></div>
+      <div class="campo"><label for="gasto-categoria">Categoría (obligatorio)</label><select id="gasto-categoria"></select></div>
       <!-- Orden de servicio relacionada: se busca por folio, número, cliente, servicio o unidad y se muestra su información. -->
       <div class="campo gasto-orden-campo"><label for="gasto-orden">Orden de servicio relacionada (opcional)</label>
         <input id="gasto-orden" type="search" maxlength="80" autocomplete="off" placeholder="Folio OS, número, cliente, servicio o unidad" role="combobox" aria-expanded="false" aria-controls="gasto-orden-sugerencias">
@@ -979,28 +985,28 @@
         <div class="gasto-orden-info" id="gasto-orden-info" role="status" hidden></div>
       </div>
       <div class="campo"><label for="gasto-concepto">Concepto del costo (obligatorio)</label><input id="gasto-concepto" maxlength="200" required placeholder="Concepto del gasto (ej. Renta de pipa 20 m³, diésel, disposición de lodos)"></div>
-      <div class="campo"><label for="gasto-total">Total a pagar con IVA (MXN)</label><input id="gasto-total" type="text" inputmode="decimal" autocomplete="off"></div>
+      <div class="campo"><label for="gasto-total">Total a pagar con IVA (MXN, obligatorio)</label><input id="gasto-total" type="text" inputmode="decimal" autocomplete="off"></div>
       <div class="form-grid-2">
-        <div class="campo"><label for="gasto-comprobante">Tipo de comprobante</label><select id="gasto-comprobante"></select></div>
-        <div class="campo" id="gasto-sat-wrap"><label for="gasto-sat">Método del SAT</label><select id="gasto-sat"><option value="">Sin indicar</option><option value="PUE">PUE · una sola exhibición</option><option value="PPD">PPD · en parcialidades</option></select></div>
+        <div class="campo"><label for="gasto-comprobante">Tipo de comprobante (obligatorio)</label><select id="gasto-comprobante"></select></div>
+        <div class="campo" id="gasto-sat-wrap"><label for="gasto-sat">Método del SAT (opcional)</label><select id="gasto-sat"><option value="">Sin indicar</option><option value="PUE">PUE · una sola exhibición</option><option value="PPD">PPD · en parcialidades</option></select></div>
       </div>
-      <div class="campo" id="gasto-iva-wrap" hidden><label for="gasto-iva">IVA de la factura (MXN)</label><input id="gasto-iva" type="text" inputmode="decimal" autocomplete="off"><small class="ayuda">Se propone el 16 % incluido en el total; corrígelo con el que trae la factura (0 si es tasa 0 o exenta). Con él, Resultados calcula la utilidad sin IVA.</small></div>
-      <div class="campo"><label for="gasto-beneficiario">¿A quién se le paga? (si no es el proveedor)</label><input id="gasto-beneficiario" maxlength="120" list="gasto-beneficiarios" placeholder="Vacío = al mismo proveedor (ej. reembolso a quien pagó con su tarjeta)"><datalist id="gasto-beneficiarios"></datalist></div>
+      <div class="campo" id="gasto-iva-wrap" hidden><label for="gasto-iva">IVA de la factura (MXN, opcional)</label><input id="gasto-iva" type="text" inputmode="decimal" autocomplete="off"><small class="ayuda">Se propone el 16 % incluido en el total; corrígelo con el que trae la factura (0 si es tasa 0 o exenta). Con él, Resultados calcula la utilidad sin IVA.</small></div>
+      <div class="campo"><label for="gasto-beneficiario">¿A quién se le paga? (opcional, si no es el proveedor)</label><input id="gasto-beneficiario" maxlength="120" list="gasto-beneficiarios" placeholder="Vacío = al mismo proveedor (ej. reembolso a quien pagó con su tarjeta)"><datalist id="gasto-beneficiarios"></datalist></div>
       <div class="form-grid-2">
-        <div class="campo"><label for="gasto-fecha">Fecha de la factura o gasto</label><input id="gasto-fecha" type="date"></div>
+        <div class="campo"><label for="gasto-fecha">Fecha de la factura o gasto (obligatorio)</label><input id="gasto-fecha" type="date"></div>
         <div class="campo"><label for="gasto-credito">Días de crédito (obligatorio)</label><input id="gasto-credito" type="number" min="0" max="365" step="1" inputmode="numeric" placeholder="0 = de contado"><small class="ayuda" id="gasto-credito-ayuda"></small></div>
         <div class="campo"><label for="gasto-vence">Vence</label><input id="gasto-vence" type="date" readonly tabindex="-1" title="Se calcula: fecha + días de crédito"></div>
       </div>
-      <details><summary>Factura y equipo (opcional)</summary>
-        <div class="campo"><label for="gasto-folio">Folio de la factura del proveedor</label><input id="gasto-folio" maxlength="60"></div>
-        <div class="campo"><label for="gasto-equipo">Equipo</label><input id="gasto-equipo" maxlength="200" placeholder="Ej. E-37-04"></div>
+      <details><summary>Factura y equipo o unidad (opcional)</summary>
+        <div class="campo"><label for="gasto-folio">Folio de la factura del proveedor (opcional)</label><input id="gasto-folio" maxlength="60"></div>
+        <div class="campo"><label for="gasto-equipo">Equipo (unidad, opcional)</label><input id="gasto-equipo" maxlength="200" placeholder="Ej. E-37-04"></div>
       </details>
       <label class="diseno-campo-checkbox"><input type="checkbox" id="gasto-pagado"> Ya lo pagué (gasto de contado)</label>
       <div id="gasto-metodo-wrap" hidden>
-        <div class="campo"><span class="etiqueta-campo">¿Cómo se pagó?</span><div class="metodos" id="gasto-metodos"></div></div>
+        <div class="campo"><span class="etiqueta-campo">¿Cómo se pagó? (obligatorio)</span><div class="metodos" id="gasto-metodos"></div></div>
         <div class="form-grid-2">
-          <div class="campo"><label for="gasto-fecha-pago">Fecha de pago</label><input id="gasto-fecha-pago" type="date"></div>
-          <div class="campo"><label for="gasto-referencia">Referencia / vía de pago</label><input id="gasto-referencia" maxlength="120" placeholder="Ej. Nómina semana 40"></div>
+          <div class="campo"><label for="gasto-fecha-pago">Fecha de pago (obligatorio)</label><input id="gasto-fecha-pago" type="date"></div>
+          <div class="campo"><label for="gasto-referencia">Referencia / vía de pago (opcional)</label><input id="gasto-referencia" maxlength="120" placeholder="Ej. Nómina semana 40"></div>
         </div>
       </div>
       <button type="button" class="btn btn-primario btn-ancho" id="gasto-guardar">Guardar</button>
@@ -1071,9 +1077,9 @@
     <div class="modal-header"><h2>Pagar a proveedor</h2><button class="close-btn" type="button">✕</button></div>
     <div class="modal-body">
       <p class="chip" id="pagoprov-info"></p>
-      <div class="campo"><label for="pagoprov-monto">Monto (MXN)</label><input id="pagoprov-monto" type="text" inputmode="decimal" autocomplete="off"></div>
-      <div class="campo"><span class="etiqueta-campo">¿Cómo se pagó?</span><div class="metodos" id="pagoprov-metodos"></div></div>
-      <div class="campo"><label for="pagoprov-fecha">Fecha del pago</label><input id="pagoprov-fecha" type="date"></div>
+      <div class="campo"><label for="pagoprov-monto">Monto (MXN, obligatorio)</label><input id="pagoprov-monto" type="text" inputmode="decimal" autocomplete="off"></div>
+      <div class="campo"><span class="etiqueta-campo">¿Cómo se pagó? (obligatorio)</span><div class="metodos" id="pagoprov-metodos"></div></div>
+      <div class="campo"><label for="pagoprov-fecha">Fecha del pago (obligatorio)</label><input id="pagoprov-fecha" type="date"></div>
       <div class="campo"><label for="pagoprov-referencia">Referencia (opcional)</label><input id="pagoprov-referencia" maxlength="120"></div>
       <div class="campo"><label for="pagoprov-cuenta">¿De qué cuenta salió? (opcional)</label><input id="pagoprov-cuenta" maxlength="80" list="pagoprov-cuentas" placeholder="Ej. Santander empresa, tarjeta de Luis Perea"><datalist id="pagoprov-cuentas"><option value="Santander empresa"></option><option value="Banamex"></option><option value="Banorte"></option><option value="Efectivo caja"></option></datalist></div>
       <div id="pagoprov-historial"></div>
@@ -1105,21 +1111,21 @@
         <!-- La fecha del servicio es solo de la orden de servicio (una cotización todavía no tiene fecha acordada).
              Notas, recordatorios y "urgente" se ponen después en Avisos y notas del registro. -->
         <div class="campo" id="sn-campo-fecha">
-          <label id="sn-label-fecha" for="sn-fecha">Fecha acordada del servicio</label>
+          <label id="sn-label-fecha" for="sn-fecha">Fecha acordada del servicio (obligatorio)</label>
           <input type="date" id="sn-fecha">
         </div>
       </div>
       <div class="sn-vigencia" id="sn-vigencia">
-        <div class="campo"><label for="sn-fecha-cotizacion">Fecha de la cotización</label><input type="date" id="sn-fecha-cotizacion"></div>
+        <div class="campo"><label for="sn-fecha-cotizacion">Fecha de la cotización (obligatorio)</label><input type="date" id="sn-fecha-cotizacion"></div>
         <div class="campo"><label class="sn-vigencia-check"><input type="checkbox" id="sn-incluye-vigencia" checked> La cotización tiene vigencia</label>
           <div id="sn-wrap-vigencia"><input type="date" id="sn-vigencia-hasta" aria-label="Vigente hasta"></div><p class="sn-sin-vigencia" id="sn-sin-vigencia" hidden>Sin fecha de vigencia</p></div>
       </div>
-      <div class="campo"><label for="sn-ubicacion">Ubicación del servicio <small class="label-nota">(puedes cambiar el domicilio propuesto)</small></label><input id="sn-ubicacion" type="text"></div>
+      <div class="campo"><label for="sn-ubicacion">Ubicación del servicio (obligatorio) <small class="label-nota">(puedes cambiar el domicilio propuesto)</small></label><input id="sn-ubicacion" type="text"></div>
       <div id="sn-datos-orden" hidden>
-        <div class="campo" id="sn-equipo-campo"><span class="etiqueta-campo">Técnico responsable y equipo</span><div id="sn-equipo-personal" data-campo></div><small class="ayuda">De Personal. El responsable con cuenta ve la orden y la marca realizada.</small></div>
+        <div class="campo" id="sn-equipo-campo"><span class="etiqueta-campo">Técnico responsable y personal (opcional)</span><div id="sn-equipo-personal" data-campo></div><small class="ayuda">De Personal. El responsable con cuenta ve la orden y la marca realizada.</small></div>
         <div class="form-grid-2">
-          <div class="campo"><label for="sn-equipo">Equipo</label><input type="text" id="sn-equipo" maxlength="200" placeholder="Ej. E-37-04"></div>
-          <div class="campo"><label for="sn-operador">Operadores externos (si no están en Personal)</label><input type="text" id="sn-operador" maxlength="300" placeholder="Ej. operador de la pipa rentada"></div>
+          <div class="campo"><label for="sn-equipo">Equipo (unidad, opcional)</label><input type="text" id="sn-equipo" maxlength="200" placeholder="Ej. E-37-04"></div>
+          <div class="campo"><label for="sn-operador">Operadores externos (opcional, si no están en Personal)</label><input type="text" id="sn-operador" maxlength="300" placeholder="Ej. operador de la pipa rentada"></div>
         </div>
         <div class="form-grid-2"><div class="campo"><label for="sn-manifiestos">Manifiestos (opcional)</label><input type="text" id="sn-manifiestos" maxlength="200" placeholder="Folio(s) de manifiesto"></div><div class="campo"><label for="sn-tiros">Tiros (opcional)</label><input type="text" id="sn-tiros" maxlength="60" placeholder="Ej. 2"></div></div>
         <div class="campo"><label for="sn-proyecto">Proyecto (opcional)</label><input type="text" id="sn-proyecto" maxlength="200" placeholder="Ej. Mantenimiento planta 2026"></div>
@@ -1184,8 +1190,8 @@
 
 <div class="overlay" id="overlay-personal"><div class="modal" style="max-width:940px"><div class="modal-header"><h2 id="pe-titulo">Persona</h2><button class="close-btn" id="pe-cerrar" aria-label="Cerrar ficha de la persona">✕</button></div><div class="modal-body" id="pe-cuerpo"></div></div></div>
 <div class="overlay" id="overlay-prospeccion"><div class="modal" style="max-width:920px"><div class="modal-header"><h2 id="pr-titulo">Establecimiento</h2><button class="close-btn" id="pr-cerrar" aria-label="Cerrar establecimiento">✕</button></div><div class="modal-body"><div class="modal-section"><p class="ayuda">Para investigar solo necesitas nombre, sector y ciudad o zona. Completa el teléfono cuando lo consigas. Guardar aquí no crea un cliente ni una cotización.</p><div class="form-grid-2">
-<div class="campo-modal"><label for="pr-nombre">Nombre del establecimiento o sucursal *</label><input id="pr-nombre" maxlength="500"></div><div class="campo-modal"><label for="pr-sector_id">Sector *</label><select id="pr-sector_id"></select></div><div class="campo-modal"><label for="pr-zona">Ciudad / zona *</label><input id="pr-zona" maxlength="500"></div><div class="campo-modal"><label for="pr-direccion">Domicilio (opcional)</label><input id="pr-direccion" maxlength="500"></div><div class="campo-modal"><label for="pr-telefono">Teléfono (opcional)</label><input id="pr-telefono" type="tel"></div><div class="campo-modal"><label for="pr-correo">Correo (opcional)</label><input id="pr-correo" type="email"></div><div class="campo-modal"><label for="pr-persona">Persona de contacto (opcional)</label><input id="pr-persona" maxlength="500"></div><div class="campo-modal"><label for="pr-cargo">Cargo / área (opcional)</label><input id="pr-cargo" maxlength="500"></div><div class="campo-modal"><label for="pr-fuente">Fuente de investigación / enlace (opcional)</label><input id="pr-fuente" maxlength="500"></div><div class="campo-modal"><label for="pr-estado">Estado del seguimiento</label><select id="pr-estado"></select></div><div class="campo-modal"><label for="pr-responsable_id">Responsable *</label><select id="pr-responsable_id"></select></div><div class="campo-modal"><label for="pr-proximo_contacto">Próxima fecha de contacto (opcional)</label><input id="pr-proximo_contacto" type="date"></div>
-</div><div class="campo-modal"><label for="pr-necesidades">Necesidades y notas de investigación</label><textarea id="pr-necesidades" rows="3" maxlength="5000"></textarea></div><p id="pr-aviso" role="status"></p><div class="btn-group"><button class="btn btn-primario" id="pr-guardar">Guardar establecimiento</button><button class="btn btn-outline" id="pr-vincular">Guardar y abrir contacto</button></div><p class="ayuda">Abrir contacto requiere teléfono. Si ya existe un contacto, podrás confirmar su vinculación. Desde su ficha usa Crear cotización o Crear orden de servicio; el domicilio del establecimiento se propone como ubicación.</p></div></div></div></div>
+<div class="campo-modal"><label for="pr-nombre">Nombre del establecimiento o sucursal (obligatorio)</label><input id="pr-nombre" maxlength="500"></div><div class="campo-modal"><label for="pr-sector_id">Sector (obligatorio)</label><select id="pr-sector_id"></select></div><div class="campo-modal"><label for="pr-zona">Ciudad / zona (obligatorio)</label><input id="pr-zona" maxlength="500"></div><div class="campo-modal"><label for="pr-direccion">Domicilio (opcional)</label><input id="pr-direccion" maxlength="500"></div><div class="campo-modal"><label for="pr-telefono">Teléfono (opcional)</label><input id="pr-telefono" type="tel"></div><div class="campo-modal"><label for="pr-correo">Correo (opcional)</label><input id="pr-correo" type="email"></div><div class="campo-modal"><label for="pr-persona">Persona de contacto (opcional)</label><input id="pr-persona" maxlength="500"></div><div class="campo-modal"><label for="pr-cargo">Cargo / área (opcional)</label><input id="pr-cargo" maxlength="500"></div><div class="campo-modal"><label for="pr-fuente">Fuente de investigación / enlace (opcional)</label><input id="pr-fuente" maxlength="500"></div><div class="campo-modal"><label for="pr-estado">Estado del seguimiento (obligatorio)</label><select id="pr-estado"></select></div><div class="campo-modal"><label for="pr-responsable_id">Responsable (obligatorio)</label><select id="pr-responsable_id"></select></div><div class="campo-modal"><label for="pr-proximo_contacto">Próxima fecha de contacto (opcional)</label><input id="pr-proximo_contacto" type="date"></div>
+</div><div class="campo-modal"><label for="pr-necesidades">Necesidades y notas de investigación (opcional)</label><textarea id="pr-necesidades" rows="3" maxlength="5000"></textarea></div><p id="pr-aviso" role="status"></p><div class="btn-group"><button class="btn btn-primario" id="pr-guardar">Guardar establecimiento</button><button class="btn btn-outline" id="pr-vincular">Guardar y abrir contacto</button></div><p class="ayuda">Abrir contacto requiere teléfono. Si ya existe un contacto, podrás confirmar su vinculación. Desde su ficha usa Crear cotización o Crear orden de servicio; el domicilio del establecimiento se propone como ubicación.</p></div></div></div></div>
 
 
 <!-- ?v= obliga a los navegadores (sobre todo celulares) a tomar la versión nueva tras publicar. -->
@@ -1194,18 +1200,18 @@
 <script src="roles.js?v=perm3"></script>
 <script src="importes.js?v=red1"></script>
 <script src="servicios-tabla.js?v=perm1"></script>
-<script src="flujo.js?v=par1"></script>
-<script src="cuentas.js?v=av1"></script>
-<script src="finanzas.js?v=aud1"></script>
+<script src="flujo.js?v=rev1"></script>
+<script src="cuentas.js?v=rev1"></script>
+<script src="finanzas.js?v=rev1"></script>
 <script src="calendario.js?v=pg2"></script>
-<script src="tablero.js?v=ret1"></script>
+<script src="tablero.js?v=rev1"></script>
 <script src="bitacora.js?v=hc1"></script>
-<script src="compras.js?v=ret1"></script>
-<script src="solicitudes.js?v=perm1"></script>
+<script src="compras.js?v=rev1"></script>
+<script src="solicitudes.js?v=rev1"></script>
 <script src="carga-generador.js?v=con1"></script>
 <script src="sucursales.js?v=perm2"></script>
-<script src="app.js?v=par1"></script>
-<script src="personal.js?v=eq1"></script>
+<script src="app.js?v=rev1"></script>
+<script src="personal.js?v=rev1"></script>
 <script src="buscador.js?v=suc1"></script>
 <script src="demo.js?v=demo1"></script>
 <script src="prospeccion.js?v=aud1"></script>

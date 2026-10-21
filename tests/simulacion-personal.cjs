@@ -130,7 +130,7 @@ const CLABE = '014680655039528945', CLABE2 = '012180001234567899';
   [s, j] = await pedir('PUT', '/leads/' + orden.id, L, { version: await v(), equipo_personal: [{ personal_id: pRaul.id, papel: 'responsable' }, { personal_id: pDiego.id, papel: 'operador' }, { personal_id: pLuis.id, papel: 'ayudante' }] });
   revisa(s === 200 && j.tecnico_id === ID.Raul, 'Laura arma el equipo: Raúl responsable, Diego operador, Luis ayudante', j.tecnico_id);
   [s, j] = await pedir('GET', '/leads/' + orden.id, R); revisa(s === 200 && j.equipo_personal.length === 3, 'Raúl ya ve su orden con su equipo');
-  revisa(j.historial.some(h => /^Equipo: sin equipo → Raúl Pérez Gómez \(técnico responsable\)/.test(h.texto)), 'la bitácora de la orden dice quién quedó en el equipo', j.historial.map(h => h.texto).slice(0, 4));
+  revisa(j.historial.some(h => /^Personal de la orden: nadie asignado → Raúl Pérez Gómez \(técnico responsable\)/.test(h.texto)), 'la bitácora de la orden dice quién quedó en el equipo', j.historial.map(h => h.texto).slice(0, 4));
   for (const [eq, que] of [[[{ personal_id: pRaul.id, papel: 'responsable' }, { personal_id: pDiego.id, papel: 'responsable' }], 'dos responsables'], [[{ personal_id: pOscar.id, papel: 'operador' }], 'alguien de CDMX'],
     [[{ personal_id: pRaul.id, papel: 'responsable' }, { personal_id: pRaul.id, papel: 'operador' }], 'la misma persona dos veces'], [[{ personal_id: 99999, papel: 'operador' }], 'alguien que no existe'],
     [[{ personal_id: pDiego.id, papel: 'jefe' }], 'un papel inventado'], ['Raúl', 'texto en vez de lista']]) {

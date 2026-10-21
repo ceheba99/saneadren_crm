@@ -17,10 +17,11 @@ async function recorrerPantallas({ maxClicsPorVista = 30 } = {}) {
   window.__xss = window.__xss || 0;
   const visible = el => !!el && el.getClientRects().length > 0 && getComputedStyle(el).visibility !== 'hidden';
   const mostrado = el => !!el && getComputedStyle(el).display !== 'none';
-  const PROHIBIDO = /guardar|eliminar|borrar|cancelar|pagar|registrar|autorizar|aprobar|rechazar|recibir|subir|baja|quitar|enviar|confirmar|salir|exportar|descargar|imprimir|pdf|resuelta|fusionar|juntar|reactivar|desactivar|contraseña|aplicar|elegir|marcar|realizad|vincular|duplicar|restablecer|crear|agregar|alta|entrar|respaldo|revisar|cambiar|asignar|mover|liberar|ver como|copiar|reintentar|sí,|aceptar|descartar|cerrar sesión|plantilla|cargar|importar|limpiar|consultar|avanzar|ordenar/i;
+  const PROHIBIDO = /guardar|eliminar|borrar|cancelar|pagar|registrar|autorizar|aprobar|rechazar|recibir|subir|baja|quitar|enviar|confirmar|salir|exportar|descargar|imprimir|pdf|resuelta|fusionar|juntar|reactivar|desactivar|contraseña|aplicar|elegir|marcar|realizad|vincular|duplicar|restablecer|crear|agregar|alta|entrar|respaldo|revisar|cambiar|asignar|mover|liberar|ver como|copiar|reintentar|sí,|aceptar|descartar|cerrar sesión|plantilla|cargar|importar|limpiar|consultar|avanzar|ordenar|deshacer|reabrir|regresar/i;
   const reporte = { usuario: USUARIO_ACTUAL?.nombre, rol: Permisos?.datos?.rol, vistas: {}, clics: 0, errores, permisosVisibles: new Set(), desbordes: new Set(), xss: 0 };
   const cerrarTodo = async () => { const dlg = document.getElementById('dialogo-cancelar'); if (dlg && visible(dlg)) dlg.click(); document.querySelectorAll('.overlay.mostrar').forEach(o => o.classList.remove('mostrar')); await espera(150); };
   const revisarPermisos = donde => {
+    window.__alRevisar?.(donde); // tests/buscar-marcas.js junta aquí lo que se ve en cada paso
     for (const el of document.querySelectorAll('[class*="perm-"]')) {
       if (!visible(el)) continue;
       for (const c of el.classList) { const m = c.match(/^perm-([a-z_]+)-([a-z_]+)$/); if (m && !Permisos.puede(m[1] + '.' + m[2])) reporte.permisosVisibles.add(`${donde}: .${c} visible («${(el.id || el.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 40)}»)`); }

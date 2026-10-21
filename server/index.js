@@ -180,6 +180,23 @@ app.get('/api/usuarios', h((req, res) => {
   res.json(filas.filter(u => a.todo || u.id === req.usuarioSesion.id || u.sucursales.some(s => a.ids.has(s))));
 }));
 
+// Usuarios desactivados: se pueden reactivar (antes no había vuelta atrás y su nombre o correo ya no se podía volver a usar).
+app.get('/api/usuarios/desactivados', h((req, res) => {
+  if (!permisos.puede(req, 'usuarios.administrar')) return res.status(403).json({ error: 'No tienes permiso para administrar usuarios' });
+  res.json(db.prepare('SELECT id, nombre, rol, correo FROM usuarios WHERE activo = 0 ORDER BY nombre').all().filter(u => suc.puedeAdministrar(req, u)).map(u => ({ ...u, sucursales: suc.sucursalesDe(u.id) })));
+}));
+app.post('/api/usuarios/:id/reactivar', h((req, res) => {
+  if (!permisos.puede(req, 'usuarios.administrar')) return res.status(403).json({ error: 'No tienes permiso para administrar usuarios' });
+  const usuario = db.prepare('SELECT * FROM usuarios WHERE id = ? AND activo = 0').get(req.params.id);
+  if (!usuario || !suc.puedeAdministrar(req, usuario)) return res.status(404).json({ error: 'Usuario desactivado no encontrado' });
+  if (['admin', 'gerente'].includes(usuario.rol) && !suc.esGeneral(req)) return res.status(403).json({ error: 'Solo el administrador general reactiva administradores o gerentes' });
+  if (db.prepare('SELECT 1 FROM usuarios WHERE activo = 1 AND id <> ? AND (lower(nombre) = lower(?) OR (correo IS NOT NULL AND correo = ?))').get(usuario.id, usuario.nombre, usuario.correo)) return res.status(409).json({ error: 'Ya hay un usuario activo con ese nombre o correo' });
+  // Vuelve con su rol y sus sucursales; su contraseña anterior ya no sirve sola: al entrar debe cambiarla.
+  db.prepare('UPDATE usuarios SET activo = 1, debe_cambiar_password = 1 WHERE id = ?').run(usuario.id);
+  audit.registrar(req, 'usuario', usuario.id, 'reactivado', usuario.nombre + ' puede volver a entrar (debe cambiar su contraseña)');
+  res.json({ id: usuario.id, nombre: usuario.nombre, rol: usuario.rol });
+}));
+
 // ---------- Login ----------
 // Además del bloqueo por usuario, un tope por IP: evita que un desconocido pruebe miles de
 // nombres distintos (cada intento cuesta un cálculo de contraseña y frena al servidor).
@@ -262,7 +279,9 @@ app.post('/api/usuarios', h((req, res) => {
   if (problemaN) return res.status(400).json({ error: problemaN });
   const correo = req.body.correo ? normalizarCorreo(req.body.correo) : null;
   if (correo && !correoPermitido(correo)) return res.status(400).json({ error: `El correo debe ser @${DOMINIO}` });
-  if (correo && db.prepare('SELECT id FROM usuarios WHERE correo = ?').get(correo)) return res.status(409).json({ error: 'Ya existe un usuario con ese correo' });
+  const delCorreo = correo ? db.prepare('SELECT id, nombre, activo FROM usuarios WHERE correo = ?').get(correo) : null;
+  if (delCorreo && !delCorreo.activo) return res.status(409).json({ error: `Ese correo es de ${delCorreo.nombre}, que está desactivado: puedes reactivarlo`, codigo: 'USUARIO_DESACTIVADO', usuario_id: delCorreo.id });
+  if (delCorreo) return res.status(409).json({ error: 'Ya existe un usuario con ese correo' });
   const problema = problemaPassword(password, { nombre, correo: correo || '' });
   if (problema) return res.status(400).json({ error: problema });
   if (!permisos.rolValido(rol)) return res.status(400).json({ error: 'Rol inválido' });
@@ -271,7 +290,8 @@ app.post('/api/usuarios', h((req, res) => {
   const sucs = suc.sucursalesParaUsuario(req, req.body.sucursales, rol);
   if (sucs.error) return res.status(400).json({ error: sucs.error });
 
-  const existente = db.prepare('SELECT id FROM usuarios WHERE nombre = ?').get(nombre.trim());
+  const existente = db.prepare('SELECT id, activo FROM usuarios WHERE nombre = ?').get(nombre.trim());
+  if (existente && !existente.activo) return res.status(409).json({ error: `${nombre.trim()} ya existe pero está desactivado: puedes reactivarlo`, codigo: 'USUARIO_DESACTIVADO', usuario_id: existente.id });
   if (existente) return res.status(409).json({ error: 'Ya existe un usuario con ese nombre' });
 
   // El correo que captura un admin se da por confirmado (el admin responde por él). Con «temporal», la persona
@@ -802,7 +822,7 @@ app.post('/api/leads', validarPartidas, validarRegistro, h((req, res) => {
   if(req.body.establecimiento_id)db.prepare('UPDATE main.leads SET establecimiento_id=? WHERE id=?').run(req.body.establecimiento_id,info.lastInsertRowid);
   if (equipoAlta) {
     personalMod.guardarEquipo(Number(info.lastInsertRowid), equipoAlta);
-    db.prepare("INSERT INTO main.historial (lead_id, tipo, texto, usuario, origen) VALUES (?, 'observacion', ?, ?, 'sistema')").run(info.lastInsertRowid, 'Equipo: ' + personalMod.textoEquipo(personalMod.equipoDe(Number(info.lastInsertRowid))) + '.', creado_por);
+    db.prepare("INSERT INTO main.historial (lead_id, tipo, texto, usuario, origen) VALUES (?, 'observacion', ?, ?, 'sistema')").run(info.lastInsertRowid, 'Personal de la orden: ' + personalMod.textoEquipo(personalMod.equipoDe(Number(info.lastInsertRowid))) + '.', creado_por);
   }
   // Crear una cotización nunca modifica los datos maestros del contacto.
   db.prepare(`INSERT INTO main.historial (lead_id, tipo, texto, usuario, origen) VALUES (?, 'observacion', ?, ?, 'sistema')`)
@@ -979,7 +999,7 @@ app.put('/api/leads/:id', validarPartidas, validarRegistro, h((req, res) => {
     const antesEq = personalMod.textoEquipo(personalMod.equipoDe(id));
     personalMod.guardarEquipo(id, equipoNuevo);
     const despuesEq = personalMod.textoEquipo(personalMod.equipoDe(id));
-    if (antesEq !== despuesEq) db.prepare(`INSERT INTO main.historial (lead_id, tipo, texto, usuario, origen) VALUES (?, 'observacion', ?, ?, 'sistema')`).run(id, 'Equipo: ' + antesEq + ' → ' + despuesEq + '.', req.usuarioSesion.nombre);
+    if (antesEq !== despuesEq) db.prepare(`INSERT INTO main.historial (lead_id, tipo, texto, usuario, origen) VALUES (?, 'observacion', ?, ?, 'sistema')`).run(id, 'Personal de la orden: ' + antesEq + ' → ' + despuesEq + '.', req.usuarioSesion.nombre);
   } else if (req.body.tecnico_id !== undefined) personalMod.responsableDesdeUsuario(id, req.body.tecnico_id);
 
   // Queda registro de cualquier otro dato que cambie (fechas, etapa, responsable, servicios, notas…).
@@ -1036,6 +1056,18 @@ app.post('/api/leads/:id/historial', h((req, res) => {
 app.put('/api/historial/:id/resolver', h((req, res) => {
   const info = db.prepare('UPDATE main.historial SET resuelta = 1 WHERE id = ?').run(req.params.id);
   if (info.changes === 0) return res.status(404).json({ error: 'Registro de historial no encontrado' });
+  res.json({ ok: true });
+}));
+
+// Reabrir un aviso que se marcó resuelto por error: solo Dirección; queda anotado en la bitácora del registro.
+app.put('/api/historial/:id/reabrir', h((req, res) => {
+  if (!permisos.direccion(req)) return res.status(403).json({ error: 'Solo Dirección reabre un aviso resuelto' });
+  const item = db.prepare("SELECT * FROM historial WHERE id = ? AND tipo = 'alerta'").get(req.params.id);
+  if (!item) return res.status(404).json({ error: 'Aviso no encontrado' });
+  if (!item.resuelta) return res.status(409).json({ error: 'Este aviso no está resuelto' });
+  db.prepare('UPDATE main.historial SET resuelta = 0 WHERE id = ?').run(item.id);
+  db.prepare("INSERT INTO main.historial (lead_id, tipo, texto, usuario, origen) VALUES (?, 'observacion', ?, ?, 'sistema')").run(item.lead_id, 'Se reabrió el aviso: «' + String(item.texto || '').slice(0, 200) + '».', req.usuarioSesion.nombre);
+  audit.registrar(req, 'orden_servicio', item.lead_id, 'aviso reabierto', String(item.texto || '').slice(0, 200));
   res.json({ ok: true });
 }));
 

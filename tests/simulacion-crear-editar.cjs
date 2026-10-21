@@ -76,7 +76,7 @@ const HOY = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Mexico_City' }
   revisa(s === 200 && j.equipo_personal.length === 3 && j.equipo_personal.find(x => x.papel === 'responsable')?.personal_id === pTec.id, 'se guardó el equipo completo, con su responsable', j.equipo_personal);
   revisa(j.tecnico_id === ID['Tecnico Uno'], 'el responsable con cuenta queda como técnico de la orden', j.tecnico_id);
   revisa(j.operador === 'Pipa rentada', 'y el operador externo (texto) también', j.operador);
-  revisa((j.historial || []).some(h => /^Equipo: /.test(h.texto || '') && /Técnico Uno Pérez/.test(h.texto)), 'queda en el historial de la orden quién la hace', (j.historial || []).map(h => h.texto));
+  revisa((j.historial || []).some(h => /^Personal de la orden: /.test(h.texto || '') && /Técnico Uno Pérez/.test(h.texto)), 'queda en el historial de la orden quién la hace', (j.historial || []).map(h => h.texto));
   [s, j] = await pedir('GET', '/leads/' + os1.id, TEC); revisa(s === 200, 'el técnico responsable ya la ve desde que se crea (sin editarla después)', s);
   [s, j] = await orden({ estatus: 'ganado', fecha_servicio: HOY, equipo_personal: [] });
   const os2 = j; revisa(s === 201, 'orden sin equipo (lista vacía): se crea igual', [s, j]);

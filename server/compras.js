@@ -456,4 +456,18 @@ module.exports = function compras(app, db, h, finanzas) {
     Sol.ordenRecibida(req, o, `recibió ${recibio} (con ${conQue})`);
     res.json(leer(o.id));
   }));
+  // Deshacer la recepción (se marcó por error o con datos equivocados): solo Dirección, con motivo; queda en la bitácora.
+  // La foto y la firma siguen en el expediente; después se vuelve a marcar recibida con los datos correctos.
+  app.post('/api/compras/ordenes/:id/deshacer-recepcion', h((req, res) => {
+    if (!app.locals.permisos.direccion(req)) return res.status(403).json({ error: 'Solo Dirección deshace una recepción' });
+    const o = leer(req.params.id);
+    if (!o) return res.status(404).json({ error: 'Orden de compra no encontrada' });
+    if (!o.recibida_at) return res.status(409).json({ error: 'Esta orden no está marcada como recibida' });
+    const motivo = texto(req.body?.motivo, 300);
+    if (!motivo || !conSentido(motivo, 5)) return res.status(400).json({ error: 'Escribe por qué se deshace (mínimo 5 caracteres)' });
+    db.prepare('UPDATE main.ordenes_compra SET recibida_at = NULL, recibida_por = NULL, recibida_por_nombre = NULL, recibio_nombre = NULL, recepcion_nota = NULL WHERE id = ?').run(o.id);
+    audit(req, o.id, 'recepción deshecha', `Estaba recibida por ${o.recibio_nombre || '—'}. Motivo: ${motivo}`);
+    Sol.recepcionDeshecha(req, o, motivo);
+    res.json(leer(o.id));
+  }));
 };
