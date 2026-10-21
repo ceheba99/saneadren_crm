@@ -7,7 +7,7 @@ const T = f => path.join(__dirname, f);
 const PASOS = [
   ['pruebas unitarias', ['--test', ...require('fs').readdirSync(__dirname).filter(f => f.endsWith('.test.cjs')).map(T)], /ℹ fail 0/],
   ['textos escapados', [T('revisar-escapado.cjs')], /Sin interpolaciones sin escapar/],
-  ...['simulacion', 'simulacion-dinero', 'simulacion-dinero-2', 'simulacion-conflictos', 'simulacion-tablero', 'simulacion-utilidad-iva', 'simulacion-compras', 'simulacion-admin', 'simulacion-clientes',
+  ...['simulacion', 'simulacion-dinero', 'simulacion-dinero-2', 'simulacion-conflictos', 'simulacion-tablero', 'simulacion-utilidad-iva', 'simulacion-crear-editar', 'simulacion-compras', 'simulacion-admin', 'simulacion-clientes',
     'simulacion-generador', 'simulacion-tramposa', 'simulacion-principio-a-fin', 'simulacion-expediente', 'simulacion-solicitudes', 'simulacion-folios', 'simulacion-buscador',
     'simulacion-auditoria', 'simulacion-historial-cliente', 'simulacion-fechas', 'simulacion-integridad', 'simulacion-cxp-formato', 'simulacion-demo', 'simulacion-ficha-proveedor',
     'simulacion-sucursales', 'simulacion-sucursales-procesos', 'simulacion-servicio-realizado', 'simulacion-datos-raros', 'simulacion-sucursales-aleatoria', 'simulacion-migracion-sucursales', 'simulacion-permisos', 'simulacion-permisos-ataques', 'simulacion-alcance-roles', 'simulacion-procesos-ataques', 'simulacion-personal', 'simulacion-seguridad-personal', 'simulacion-caos', 'auditoria-total', 'simulacion-regreso-version']

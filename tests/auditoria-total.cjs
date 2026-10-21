@@ -143,6 +143,58 @@ for (const [k, m] of Object.entries(M.modulos)) {
   for (const p of m.permisos) revisa(PERMISOS.has(p), k, `declara el permiso «${p}», que no existe`);
 }
 
+// Columnas de negocio que la pantalla muestra (f.columna, x.columna…) sin que ningún formulario las capture ni el
+// sistema las genere. «Capturar» = la pantalla manda la llave (columna: …, o sin _cent en pesos) o un campo/lista la
+// nombra (id «xx-columna», 'columna' en una lista de campos). Lo que genera el sistema va en M.generados (con su razón).
+function retirados(js, db, tablas) {
+  const negocio = tablas.filter(t => !M.internas[t]);
+  const cols = new Map(); for (const t of negocio) for (const c of db.prepare(`PRAGMA table_info(${t})`).all()) cols.set(c.name, (cols.get(c.name) || []).concat(t));
+  const mostrados = new Set([...js.matchAll(/\b(?:f|x|l|o|c|p|r|a|d|s|g|k|e|i|u|lead|orden|fila|item|cuenta|persona|actual|cliente|sol|oc)\.([a-z][a-z0-9_]+)\b/g)].map(m => m[1]));
+  // M.generados: { campo: 'razón' } si lo genera el sistema, o { campo: { como: 'llave', razon } } si la pantalla lo
+  // captura con otro nombre (p. ej. el «motivo» de una cancelación se guarda en motivo_cancelacion); «como» se comprueba.
+  const G = M.generados || {};
+  // «Quién lo hizo» lo pone el sistema con la sesión: SOLO estos nombres exactos (no cualquier «…_por»: «realizado_por»
+  // —propio/subcontratado— es un dato de negocio y así se colaba como generado).
+  const QUIEN = /^(registrad|cancelad|autorizad|recibid|elegid|aprobad|cerrad|eliminad|confirmad|subid|cread|resuelt)[oa]_por(_nombre|_id)?$/;
+  const generado = c => /_at$/.test(c) || QUIEN.test(c) || ['id', 'version', 'created_at', 'updated_at', 'folio_num', 'sucursal_id'].includes(c) || (typeof G[c] === 'string' && G[c].length > 10);
+  // Se manda como llave (x: …), abreviada ({ x, … }), asignada (d.x = …) o nombrada entre comillas (listas de campos).
+  const manda = k => new RegExp(`\\b${k}\\s*:|[{,]\\s*${k}\\s*[,}]|\\.${k}\\s*=[^=]|'${k}'`).test(js);
+  const comoOtro = c => !!G[c] && typeof G[c] === 'object' && !!G[c].razon && manda(G[c].como);
+  const capturado = c => { const base = c.replace(/_cent$/, ''); return comoOtro(c) || manda(c) || manda(base) ||new RegExp(`id="[\\w]+-(${c}|${base})"`).test(HTML) || new RegExp(`'(${c}|${base})'`).test(js) || new RegExp(`-(${c}|${base})['"\`]`).test(js); };
+  return [...mostrados].filter(c => cols.has(c) && !generado(c) && !capturado(c)).map(c => `${c} (${cols.get(c).join(', ')})`);
+}
+
+// ================= D. Crear = editar =================
+// Los campos de un formulario: input/select/textarea y los selectores que arma la pantalla (data-campo), sin los ocultos.
+function camposDe(prefijo) {
+  const ids = [];
+  for (const m of HTML.matchAll(/<(input|select|textarea|div)\b[^>]*>/g)) {
+    const id = (m[0].match(/\sid="([\w-]+)"/) || [])[1];
+    if (!id || !id.startsWith(prefijo) || /\stype="hidden"/.test(m[0]) || (m[1] === 'div' && !/\sdata-campo\b/.test(m[0]))) continue;
+    ids.push(id.slice(prefijo.length));
+  }
+  return ids;
+}
+function formularios() {
+  console.log('D. Formularios: lo que se pide al crear es lo mismo que se puede editar');
+  for (const [nombre, f] of Object.entries(M.formularios || {})) {
+    const eq = f.equivalentes || {}, soloE = f.soloEdicion || {}, soloA = f.soloAlta || {};
+    const crudosA = camposDe(f.alta), crudosE = camposDe(f.edicion);
+    const alta = new Set(crudosA.map(c => eq[c] || c)), edicion = new Set(crudosE);
+    revisa(alta.size > 2 && edicion.size > 2, 'formularios', `${nombre}: no se encontraron sus campos (${f.alta}… / ${f.edicion}…)`);
+    for (const c of edicion) if (!alta.has(c)) revisa(!!soloE[c], 'formularios', `${nombre}: «${c}» se puede editar pero NO se pide al crear (agrégalo al crear o declara por qué en el manifiesto)`);
+    for (const c of alta) if (!edicion.has(c)) revisa(!!soloA[c], 'formularios', `${nombre}: «${c}» se pide al crear pero NO se puede editar después`);
+    // Las excepciones declaradas siguen siendo ciertas (si ya se igualaron, sobran) y equivalen a campos que existen.
+    for (const c of Object.keys(soloE)) revisa(edicion.has(c) && !alta.has(c), 'formularios', `${nombre}: la excepción «${c}» (solo al editar) ya no aplica: quítala del manifiesto`);
+    for (const c of Object.keys(soloA)) revisa(alta.has(c) && !edicion.has(c), 'formularios', `${nombre}: la excepción «${c}» (solo al crear) ya no aplica: quítala del manifiesto`);
+    for (const [a, e] of Object.entries(eq)) revisa(crudosA.includes(a) && edicion.has(e), 'formularios', `${nombre}: la equivalencia «${a}» = «${e}» ya no corresponde a campos que existan`);
+    // Cada campo lo lee algún código de la pantalla: un campo que nadie lee se pide y no se guarda.
+    for (const id of [...crudosA.map(c => f.alta + c), ...crudosE.map(c => f.edicion + c)])
+      revisa(new RegExp(`['"\`]${id}['"\`]`).test(TODO_JS_PUBLICO), 'formularios', `${nombre}: #${id} está en la pantalla pero ningún código lo lee (se pediría y no se guardaría)`);
+  }
+}
+formularios();
+
 // ================= C. Servidor con datos del demo =================
 (async () => {
   console.log('C. Servidor (todas las rutas con datos del demo)');
@@ -170,6 +222,10 @@ for (const [k, m] of Object.entries(M.modulos)) {
     }
   }
   for (const [k, m] of Object.entries(M.modulos)) for (const t of m.demo) revisa(TABLAS.includes(t) && db.prepare(`SELECT COUNT(*) n FROM ${t}`).get().n > 0, k, `el demo no trae ejemplos de «${t}»`);
+  // A3. Datos que se muestran pero ya no se capturan (p. ej. «Realizó: propio/subcontratado» cuando ya nadie lo escribe):
+  // cada columna de la base que la pantalla muestra debe tener de dónde salir: un formulario que la mande, o que la
+  // genere el propio sistema (fechas, folios, quién registró, montos que se capturan en pesos…), declarado en el manifiesto.
+  revisa(retirados(TODO_JS_PUBLICO, db, TABLAS).length === 0, 'datos', 'la pantalla muestra datos que ya no se capturan en ningún formulario (o que el sistema no genera)', retirados(TODO_JS_PUBLICO, db, TABLAS));
 
   // C1. Cada ruta, con cada quien. Los números de registro se toman de la base (de Querétaro, para probar CDMX).
   const qro = db.prepare("SELECT id FROM sucursales WHERE clave = 'QRO'").get()?.id;

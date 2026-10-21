@@ -160,10 +160,11 @@ async function cargarCatalogos() {
   ]);
   CATALOGOS = { usuarios: u, servicios: s, canales: c };
   await cargarTiposCliente();
-  const origen = document.getElementById("in-origen");
-  const origenPrevio = origen.value;
-  origen.innerHTML = '<option value="">Selecciona una opción</option>' + c.map(x=>`<option value="${x.id}">${escaparHtml(x.nombre)}</option>`).join('');
-  origen.value = origenPrevio;
+  for (const [idSel, vacio] of [['in-origen', 'Selecciona una opción'], ['fc-ed-origen', 'Sin registrar']]) {
+    const origen = document.getElementById(idSel), origenPrevio = origen.value;
+    origen.innerHTML = `<option value="">${escaparHtml(vacio)}</option>` + c.map(x=>`<option value="${Number(x.id)}">${escaparHtml(x.nombre)}</option>`).join('');
+    origen.value = origenPrevio;
+  }
 
   const optU = u.map(x => `<option value="${x.id}">${escaparHtml(x.nombre)} (${escaparHtml(nombreRol(x.rol))})</option>`).join('');
   const optS = s.map(x => `<option value="${x.id}">${escaparHtml(x.nombre)}</option>`).join('');
@@ -293,6 +294,7 @@ function abrirServicioNuevo(modo, prefill) {
   document.getElementById('sn-vigencia-hasta').min = hoyISO();
   document.getElementById('sn-vigencia-hasta').value = sumarDiasISO(hoyISO(), EMPRESA_COTIZACION.vigenciaDias);
   document.getElementById('sn-datos-orden').hidden = !esDirecto;
+  if (esDirecto) EquipoOrden.alta.mostrar({ sucursal_id: CONVERTIR_ID ? (prefill?.sucursal_id ?? null) : (window.Sucursales?.datos?.alta ?? null), equipo_personal: DUPLICADO_DE ? (prefill?.equipo_personal || []) : [] });
   document.getElementById('sn-equipo').value = prefill?.equipo || '';
   document.getElementById('sn-operador').value = prefill?.operador || '';
   document.getElementById('sn-observaciones').value = CONVERTIR_ID ? (prefill?.observaciones || '') : '';
@@ -369,7 +371,8 @@ async function guardarServicioNuevo(descargar=false) {
     notas_cotizacion: esDirecto ? null : document.getElementById('gc-notas').value.trim(),
     vigencia_hasta: conVigencia ? vigenciaHasta : null,
     ...ivaPayload(),
-    ...(DUPLICADO_DE ? { costos_duplicar: costosADuplicar() } : {})
+    ...(DUPLICADO_DE ? { costos_duplicar: costosADuplicar() } : {}),
+    ...(esDirecto ? EquipoOrden.alta.payloadNuevo() : {})
   };
   botonGuardar.disabled = true;
   try {
@@ -380,7 +383,7 @@ async function guardarServicioNuevo(descargar=false) {
       if (actual.estatus !== 'abierto') { toast('Esta cotización ya no está abierta; vuelve a abrirla para revisar.'); return; }
       const res = await api('/leads/' + CONVERTIR_ID, { method: 'PUT', body: JSON.stringify({
         version: actual.version, estatus: 'ganado', partidas_json: payload.partidas_json, servicio_id: payload.servicio_id, direccion: payload.direccion,
-        fecha_servicio: payload.fecha_servicio, equipo: payload.equipo, operador: payload.operador, observaciones: payload.observaciones, proyecto: payload.proyecto, manifiestos: payload.manifiestos, tiros: payload.tiros, ...ivaPayload() }) });
+        fecha_servicio: payload.fecha_servicio, equipo: payload.equipo, operador: payload.operador, observaciones: payload.observaciones, proyecto: payload.proyecto, manifiestos: payload.manifiestos, tiros: payload.tiros, ...ivaPayload(), ...(payload.equipo_personal ? { equipo_personal: payload.equipo_personal } : {}) }) });
       creado = await res.json();
       if (!res.ok) { toast(creado.error || 'No se pudo convertir la cotización'); return; }
     } else {
@@ -433,6 +436,7 @@ function limpiarFormAlta() {
   document.getElementById('in-correo').value = '';
   document.getElementById('in-giro').value = '';
   document.getElementById('in-direccion').value = '';
+  for (const id of ['in-telefono-alterno', 'in-rfc', 'in-notas-generales']) document.getElementById(id).value = '';
   document.getElementById('alerta-dup').classList.remove('mostrar');
 }
 
@@ -764,9 +768,9 @@ async function cargarGenerador() {
       <td>${escaparHtml(f.mes)}</td><td class="st-fecha">${escaparHtml(f.fecha.split('-').reverse().join('/'))}</td><td class="st-folio">${escaparHtml(f.orden)}${f.orden_generador ? `<small class="celda-sub">orden ${escaparHtml(f.orden_generador)}</small>` : ''}</td><td>${escaparHtml(f.factura || '—')}</td>
       <td>${escaparHtml(f.cliente || '—')}</td><td>${escaparHtml(f.proyecto || '—')}</td><td>${escaparHtml(f.producto)}</td><td class="st-num">${Number(f.cantidad)}</td><td class="st-num">${m(f.precio_sin_iva)}</td><td class="st-num">${m(f.precio_con_iva)}</td>
       <td class="st-num">${m(f.subtotal)}</td><td class="st-num">${f.iva_por_definir ? '<small>Por definir</small>' : m(f.iva)}</td><td class="st-num"><b>${m(f.total)}</b></td>
-      <td>${escaparHtml(f.canal || '—')}</td><td>${escaparHtml(f.unidad || '—')}</td><td>${escaparHtml(f.empleado || '—')}</td><td>${escaparHtml(f.manifiestos || '—')}</td><td>${escaparHtml(f.tiros || '—')}</td><td>${escaparHtml(f.realizado_por)}</td>
+      <td>${escaparHtml(f.canal || '—')}</td><td>${escaparHtml(f.unidad || '—')}</td><td>${escaparHtml(f.empleado || '—')}</td><td>${escaparHtml(f.manifiestos || '—')}</td><td>${escaparHtml(f.tiros || '—')}</td>
       <td class="gen-costo">${escaparHtml(f.proveedor || '')}</td><td class="gen-costo">${escaparHtml(f.concepto || '')}</td><td class="gen-costo st-num">${f.costo == null ? '' : formatoMoneda(f.costo)}</td><td class="gen-costo">${escaparHtml(f.estatus_pago || '')}</td><td class="gen-costo">${escaparHtml(f.via_pago || '')}</td>
-    </tr>`).join('') : '<tr><td colspan="24" class="servicios-vacio">No hay servicios realizados en este periodo.</td></tr>';
+    </tr>`).join('') : '<tr><td colspan="23" class="servicios-vacio">No hay servicios realizados en este periodo.</td></tr>';
 }
 on('gen-desde', 'change', cargarGenerador);
 on('gen-hasta', 'change', cargarGenerador);
@@ -781,7 +785,7 @@ on('gen-exportar', 'click', () => {
     { titulo: 'MES LETRA', valor: f => f.mes }, { titulo: 'FECHA', valor: f => f.fecha }, { titulo: 'NO. ORDEN', valor: f => f.orden }, { titulo: 'ORDEN GENERADOR', valor: f => f.orden_generador || '' }, { titulo: 'NO. FACTURA', valor: f => f.factura },
     { titulo: 'CLIENTE', valor: f => f.cliente }, { titulo: 'PROYECTO', valor: f => f.proyecto }, { titulo: 'CONCEPTO', valor: f => f.producto }, { titulo: 'CANTIDAD', valor: f => f.cantidad },
     { titulo: 'PRECIO UNITARIO S/IVA', valor: f => f.precio_sin_iva }, { titulo: 'PRECIO UNITARIO C/IVA', valor: f => f.precio_con_iva }, { titulo: 'SUBTOTAL', valor: f => f.subtotal }, { titulo: 'IVA', valor: f => f.iva ?? '' }, { titulo: 'TOTAL', valor: f => f.total },
-    { titulo: 'CANAL DE VENTA', valor: f => f.canal }, { titulo: 'UNIDAD', valor: f => f.unidad }, { titulo: 'EMPLEADO', valor: f => f.empleado }, { titulo: 'MANIFIESTOS', valor: f => f.manifiestos }, { titulo: 'TIROS', valor: f => f.tiros }, { titulo: 'REALIZÓ', valor: f => f.realizado_por },
+    { titulo: 'CANAL DE VENTA', valor: f => f.canal }, { titulo: 'UNIDAD', valor: f => f.unidad }, { titulo: 'EMPLEADO', valor: f => f.empleado }, { titulo: 'MANIFIESTOS', valor: f => f.manifiestos }, { titulo: 'TIROS', valor: f => f.tiros },
     { titulo: 'PROVEEDOR', valor: f => f.proveedor }, { titulo: 'CONCEPTO DEL COSTO', valor: f => f.concepto }, { titulo: 'COSTO', valor: f => f.costo ?? '' }, { titulo: 'ESTATUS PAGO', valor: f => f.estatus_pago }, { titulo: 'VIA PAGO', valor: f => f.via_pago }
   ], GENERADOR.filas);
 });
@@ -814,8 +818,8 @@ async function cargarResultados(){
     const tarjetas=[['Contactos nuevos',r.nuevos],['Clientes con servicios en el periodo',r.clientes],['Importe contratado (sin IVA)',formatoMoneda(r.contratado)],['Servicios contratados',r.servicios],['Conversión de contactos nuevos',pct(r.convertidos,r.nuevos)],['Promedio por servicio (sin IVA)',r.servicios?formatoMoneda(r.contratado/r.servicios):'—'],['Clientes recurrentes activos',r.recurrentes],['Importe en propuestas abiertas (sin IVA)',formatoMoneda(r.propuesto)]];
     Finanzas.pintarResultados(desde, hasta);
     document.getElementById('res-kpis').innerHTML=tarjetas.map(([label,value])=>`<div class="res-card"><div class="res-num">${value}</div><div class="res-label">${label}</div></div>`).join('');
-    document.getElementById('res-canales').innerHTML=d.canales.map(c=>`<tr><td>${escaparHtml(c.canal)}</td><td>${c.nuevos}</td><td>${c.convertidos}</td><td>${pct(c.convertidos,c.nuevos)}</td><td>${c.clientes}</td><td>${c.servicios}</td><td>${formatoMoneda(c.contratado)}</td><td>${c.servicios?formatoMoneda(c.contratado/c.servicios):'—'}</td><td>${c.abiertas}</td><td>${formatoMoneda(c.propuesto)}</td></tr>`).join('')||'<tr><td colspan="10">Sin datos.</td></tr>';
-    document.getElementById('res-clientes').innerHTML=d.clientes.map(c=>`<tr><td>${escaparHtml(c.nombre||c.telefono)}</td><td>${escaparHtml(c.canal)}</td><td>${c.ganados_historicos>1?'Cliente recurrente':c.ganados_historicos?'Cliente':'Prospecto'}</td><td>${c.servicios}</td><td>${formatoMoneda(c.contratado)}</td><td>${formatoMoneda(c.total_historico)}</td><td>${c.abiertas}</td><td>${escaparHtml(c.ultima_fecha||'Sin fecha')}</td><td><button class="btn btn-outline" data-resultado-cliente="${Number(c.id)}">Abrir ficha</button></td></tr>`).join('')||'<tr><td colspan="9">Sin contactos ni actividad en el periodo.</td></tr>';
+    document.getElementById('res-canales').innerHTML=d.canales.map(c=>`<tr><td>${escaparHtml(c.canal)}</td><td>${Number(c.nuevos)}</td><td>${Number(c.convertidos)}</td><td>${pct(c.convertidos,c.nuevos)}</td><td>${Number(c.clientes)}</td><td>${Number(c.servicios)}</td><td>${formatoMoneda(c.contratado)}</td><td>${Number(c.servicios)?formatoMoneda(c.contratado/c.servicios):'—'}</td><td>${Number(c.abiertas)}</td><td>${formatoMoneda(c.propuesto)}</td></tr>`).join('')||'<tr><td colspan="10">Sin datos.</td></tr>';
+    document.getElementById('res-clientes').innerHTML=d.clientes.map(c=>`<tr><td>${escaparHtml(c.nombre||c.telefono)}</td><td>${escaparHtml(c.canal)}</td><td>${c.ganados_historicos>1?'Cliente recurrente':c.ganados_historicos?'Cliente':'Prospecto'}</td><td>${Number(c.servicios)}</td><td>${formatoMoneda(c.contratado)}</td><td>${formatoMoneda(c.total_historico)}</td><td>${Number(c.abiertas)}</td><td>${escaparHtml(c.ultima_fecha||'Sin fecha')}</td><td><button class="btn btn-outline" data-resultado-cliente="${Number(c.id)}">Abrir ficha</button></td></tr>`).join('')||'<tr><td colspan="9">Sin contactos ni actividad en el periodo.</td></tr>';
     renderBarChart('res-dinero-canal',d.canales,'canal','contratado',formatoMoneda);renderBarChart('res-contactos-canal',[...d.canales].sort((a,b)=>b.nuevos-a.nuevos),'canal','nuevos',v=>v+' contactos');
     renderGraficosComerciales(d);
     estado.textContent=(desde||hasta?'Periodo: '+(desde||'inicio')+' a '+(hasta||'sin límite'):'Todo el historial')+(d.sinFecha?' · '+d.sinFecha+' servicios contratados sin fecha: no se incluyen al filtrar por fechas.':'')
@@ -1067,7 +1071,7 @@ function datosOrdenServicioDesdeLead(lead, items) {
       direccion: lead.direccion || ''
     },
     equipo: lead.equipo || '',
-    operador: (lead.equipo_personal || []).map(x => x.nombre).join(', ') || lead.operador || '',
+    operador: [...(lead.equipo_personal || []).map(x => x.nombre), lead.operador].filter(Boolean).join(', '),
     proyecto: lead.proyecto || '',
     observaciones: lead.observaciones || '',
     items,
@@ -1692,6 +1696,7 @@ async function abrirFichaCliente(id) {
   document.getElementById('fc-ed-direccion').value = cliente.direccion || '';
   document.getElementById('fc-ed-giro').value = cliente.giro || '';
   document.getElementById('fc-ed-notas-generales').value = cliente.notas_generales || '';
+  document.getElementById('fc-ed-origen').value = cliente.canal_origen_id ? String(cliente.canal_origen_id) : '';
 
   renderServiciosCliente(cliente.servicios || []);
   abrirVentana('overlay-ficha-cliente');
@@ -1788,7 +1793,9 @@ on('btn-guardar-cliente', 'click', async () => {
     rfc: document.getElementById('fc-ed-rfc').value.trim(),
     direccion: document.getElementById('fc-ed-direccion').value.trim(),
     giro: document.getElementById('fc-ed-giro').value,
-    notas_generales: document.getElementById('fc-ed-notas-generales').value.trim()
+    notas_generales: document.getElementById('fc-ed-notas-generales').value.trim(),
+    // Sin elegir no se manda (un contacto viejo sin origen se puede guardar igual).
+    ...(document.getElementById('fc-ed-origen').value ? { canal_origen_id: Number(document.getElementById('fc-ed-origen').value) } : {})
   };
   try {
     const res = await api('/clientes/' + CLIENTE_ACTUAL.id, { method: 'PUT', body: JSON.stringify(payload) });
@@ -2566,5 +2573,5 @@ function renderGraficosComerciales(d){
   while(fecha.toISOString().slice(0,7)<=ultimo && serie.length<1200){const mes=fecha.toISOString().slice(0,7);serie.push(meses.get(mes)||{mes,importe:0,servicios:0});fecha.setUTCMonth(fecha.getUTCMonth()+1);}
   const max=Math.max(1,...serie.map(m=>m.importe)),w=960,h=240;
   const puntos=serie.map((m,i)=>({x:70+(serie.length===1?420:i*840/(serie.length-1)),y:190-160*m.importe/max,...m}));
-  cont.innerHTML=`<svg viewBox="0 0 ${w} ${h}" role="img" aria-label="Importe contratado por mes" style="display:block;width:100%;max-height:300px"><line x1="70" y1="190" x2="910" y2="190" stroke="#9aa4ad"/><text x="2" y="24" font-size="12">${formatoMoneda(max)}</text><text x="12" y="192" font-size="12">$0</text><polyline points="${puntos.map(p=>p.x+','+p.y).join(' ')}" fill="none" stroke="#bb8200" stroke-width="3"/>${puntos.map((p,i)=>`<circle cx="${p.x}" cy="${p.y}" r="4" fill="#f6b103"><title>${p.mes}: ${formatoMoneda(p.importe)} · ${p.servicios} servicios</title></circle>${i===0||i===puntos.length-1||i%Math.max(1,Math.ceil(puntos.length/8))===0?`<text x="${p.x}" y="215" text-anchor="middle" font-size="12">${p.mes}</text>`:''}`).join('')}</svg><details><summary>Ver cifras mensuales</summary><div class="tabla-scroll"><table class="tabla-resumen"><thead><tr><th>Mes</th><th>Servicios</th><th>Importe contratado</th></tr></thead><tbody>${serie.map(m=>`<tr><td>${m.mes}</td><td>${m.servicios}</td><td>${formatoMoneda(m.importe)}</td></tr>`).join('')}</tbody></table></div></details>`;
+  cont.innerHTML=`<svg viewBox="0 0 ${w} ${h}" role="img" aria-label="Importe contratado por mes" style="display:block;width:100%;max-height:300px"><line x1="70" y1="190" x2="910" y2="190" stroke="#9aa4ad"/><text x="2" y="24" font-size="12">${formatoMoneda(max)}</text><text x="12" y="192" font-size="12">$0</text><polyline points="${puntos.map(p=>p.x+','+p.y).join(' ')}" fill="none" stroke="#bb8200" stroke-width="3"/>${puntos.map((p,i)=>`<circle cx="${p.x}" cy="${p.y}" r="4" fill="#f6b103"><title>${escaparHtml(p.mes)}: ${formatoMoneda(p.importe)} · ${Number(p.servicios)} servicios</title></circle>${i===0||i===puntos.length-1||i%Math.max(1,Math.ceil(puntos.length/8))===0?`<text x="${p.x}" y="215" text-anchor="middle" font-size="12">${escaparHtml(p.mes)}</text>`:''}`).join('')}</svg><details><summary>Ver cifras mensuales</summary><div class="tabla-scroll"><table class="tabla-resumen"><thead><tr><th>Mes</th><th>Servicios</th><th>Importe contratado</th></tr></thead><tbody>${serie.map(m=>`<tr><td>${escaparHtml(m.mes)}</td><td>${Number(m.servicios)}</td><td>${formatoMoneda(m.importe)}</td></tr>`).join('')}</tbody></table></div></details>`;
 }

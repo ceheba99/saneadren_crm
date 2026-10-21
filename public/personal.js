@@ -252,40 +252,50 @@ const Personal = (() => {
 
 // Equipo de una orden de servicio: técnico responsable y, opcional, operadores y ayudantes (de Personal).
 const EquipoOrden = (() => {
-  const $ = id => document.getElementById(id);
   const esc = t => escaparHtml(t == null ? '' : String(t));
-  let gente = [], inicial = '[]', sucursal = null;
   const PAPELES = [['operador', 'Operador'], ['ayudante', 'Ayudante']];
-  function lista() {
-    const resp = $('pe-eq-resp')?.value;
-    const otros = [...document.querySelectorAll('[data-eq-fila]')].map(f => ({ personal_id: Number(f.querySelector('[data-eq-persona]').value), papel: f.querySelector('[data-eq-papel]').value })).filter(x => x.personal_id);
-    return [...(resp ? [{ personal_id: Number(resp), papel: 'responsable' }] : []), ...otros.filter(x => String(x.personal_id) !== resp)];
+  // Un selector por contenedor: el de «editar orden» (ed-equipo-personal) y el de «crear orden» (sn-equipo-personal).
+  function crear(contId) {
+    const caja = () => document.getElementById(contId);
+    let gente = [], inicial = '[]', sucursal = null;
+    function lista() {
+      const c = caja(); if (!c) return [];
+      const resp = c.querySelector('[data-eq-resp]')?.value;
+      const otros = [...c.querySelectorAll('[data-eq-fila]')].map(f => ({ personal_id: Number(f.querySelector('[data-eq-persona]').value), papel: f.querySelector('[data-eq-papel]').value })).filter(x => x.personal_id);
+      return [...(resp ? [{ personal_id: Number(resp), papel: 'responsable' }] : []), ...otros.filter(x => String(x.personal_id) !== resp)];
+    }
+    // Sin sucursal conocida (p. ej. Dirección viendo todas) se ofrece todo el personal; el servidor revisa la sucursal.
+    const deLaSucursal = p => sucursal == null || p.sucursal_id === sucursal;
+    const opcionesGente = (sel, vacio) => `<option value="">${esc(vacio)}</option>` + gente.filter(p => deLaSucursal(p) || String(p.id) === String(sel)).map(p => `<option value="${Number(p.id)}"${String(p.id) === String(sel) ? ' selected' : ''}>${esc(p.nombre)} · ${esc(p.puesto)}${p.con_cuenta ? '' : ' (sin cuenta)'}</option>`).join('');
+    function fila(x) {
+      return `<div class="pe-eq-fila" data-eq-fila><select data-eq-persona aria-label="Persona del equipo">${opcionesGente(x?.personal_id, 'Elige a la persona')}</select><select data-eq-papel aria-label="Papel en la orden">${PAPELES.map(([v, t]) => `<option value="${v}"${x?.papel === v ? ' selected' : ''}>${esc(t)}</option>`).join('')}</select><button type="button" class="btn btn-outline btn-chico" data-eq-quitar aria-label="Quitar del equipo">✕</button></div>`;
+    }
+    async function mostrar(lead) {
+      const cont = caja(); if (!cont) return;
+      sucursal = lead.sucursal_id ?? null;
+      const equipo = lead.equipo_personal || [];
+      inicial = JSON.stringify(equipo.map(x => ({ personal_id: x.personal_id, papel: x.papel })));
+      cont.innerHTML = '<p class="util-45" role="status">Cargando personal…</p>';
+      try { gente = await api('/personal/para-asignar').then(r => r.ok ? r.json() : Promise.reject(new Error('sin acceso'))); }
+      catch { gente = []; cont.innerHTML = '<p class="ayuda">No se pudo cargar el personal.</p>'; inicial = null; return; }
+      // Quien ya está en la orden aunque ya no esté activo, sigue apareciendo.
+      for (const x of equipo) if (!gente.some(p => p.id === x.personal_id)) gente.push({ id: x.personal_id, nombre: x.nombre + ' (baja)', puesto: x.puesto, sucursal_id: sucursal, con_cuenta: !!x.usuario_id });
+      const resp = equipo.find(x => x.papel === 'responsable');
+      cont.innerHTML = `<div class="pe-eq"><label for="${contId}-resp" class="pe-eq-etq">Técnico responsable</label><select id="${contId}-resp" data-eq-resp>${opcionesGente(resp?.personal_id, 'Sin responsable')}</select>
+        <div data-eq-otros>${equipo.filter(x => x.papel !== 'responsable').map(fila).join('')}</div>
+        <button type="button" class="btn btn-outline btn-chico" data-eq-agregar>+ Operador o ayudante</button>
+        ${gente.some(deLaSucursal) ? '' : '<p class="ayuda">No hay personal dado de alta en esta sucursal (agrégalo en Personal).</p>'}</div>`;
+    }
+    // Al editar solo se manda si cambió (así una lista que no cargó no borra el equipo).
+    function payload() { if (inicial === null || !caja()?.querySelector('[data-eq-resp]')) return {}; const l = lista(); return JSON.stringify(l) === inicial ? {} : { equipo_personal: l }; }
+    // Al crear se manda lo que se eligió (si se eligió algo).
+    function payloadNuevo() { if (inicial === null || !caja()?.querySelector('[data-eq-resp]')) return {}; const l = lista(); return l.length ? { equipo_personal: l } : {}; }
+    caja()?.addEventListener('click', e => {
+      if (e.target.closest('[data-eq-agregar]')) caja().querySelector('[data-eq-otros]').insertAdjacentHTML('beforeend', fila(null));
+      else if (e.target.closest('[data-eq-quitar]')) e.target.closest('[data-eq-fila]').remove();
+    });
+    return { mostrar, payload, payloadNuevo, lista };
   }
-  const opcionesGente = (sel, vacio) => `<option value="">${esc(vacio)}</option>` + gente.filter(p => p.sucursal_id === sucursal || String(p.id) === String(sel)).map(p => `<option value="${Number(p.id)}"${String(p.id) === String(sel) ? ' selected' : ''}>${esc(p.nombre)} · ${esc(p.puesto)}${p.con_cuenta ? '' : ' (sin cuenta)'}</option>`).join('');
-  function fila(x) {
-    return `<div class="pe-eq-fila" data-eq-fila><select data-eq-persona aria-label="Persona del equipo">${opcionesGente(x?.personal_id, 'Elige a la persona')}</select><select data-eq-papel aria-label="Papel en la orden">${PAPELES.map(([v, t]) => `<option value="${v}"${x?.papel === v ? ' selected' : ''}>${t}</option>`).join('')}</select><button type="button" class="btn btn-outline btn-chico" data-eq-quitar aria-label="Quitar del equipo">✕</button></div>`;
-  }
-  async function mostrar(lead) {
-    const cont = $('ed-equipo-personal'); if (!cont) return;
-    sucursal = lead.sucursal_id;
-    const equipo = lead.equipo_personal || [];
-    inicial = JSON.stringify(equipo.map(x => ({ personal_id: x.personal_id, papel: x.papel })));
-    cont.innerHTML = '<p class="util-45" role="status">Cargando personal…</p>';
-    try { gente = await api('/personal/para-asignar').then(r => r.ok ? r.json() : Promise.reject(new Error('sin acceso'))); }
-    catch { gente = []; cont.innerHTML = '<p class="ayuda">No se pudo cargar el personal.</p>'; inicial = null; return; }
-    // Quien ya está en la orden aunque ya no esté activo, sigue apareciendo.
-    for (const x of equipo) if (!gente.some(p => p.id === x.personal_id)) gente.push({ id: x.personal_id, nombre: x.nombre + ' (baja)', puesto: x.puesto, sucursal_id: sucursal, con_cuenta: !!x.usuario_id });
-    const resp = equipo.find(x => x.papel === 'responsable');
-    cont.innerHTML = `<div class="pe-eq"><label for="pe-eq-resp" class="pe-eq-etq">Técnico responsable</label><select id="pe-eq-resp">${opcionesGente(resp?.personal_id, 'Sin responsable')}</select>
-      <div id="pe-eq-otros">${equipo.filter(x => x.papel !== 'responsable').map(fila).join('')}</div>
-      <button type="button" class="btn btn-outline btn-chico" id="pe-eq-agregar">+ Operador o ayudante</button>
-      ${gente.some(p => p.sucursal_id === sucursal) ? '' : '<p class="ayuda">No hay personal dado de alta en esta sucursal.</p>'}</div>`;
-  }
-  // Solo se manda si cambió (así una lista que no cargó no borra el equipo).
-  function payload() { if (inicial === null || !$('pe-eq-resp')) return {}; const l = lista(); return JSON.stringify(l) === inicial ? {} : { equipo_personal: l }; }
-  document.addEventListener('click', e => {
-    if (e.target.id === 'pe-eq-agregar') $('pe-eq-otros').insertAdjacentHTML('beforeend', fila(null));
-    else if (e.target.closest('[data-eq-quitar]')) e.target.closest('[data-eq-fila]').remove();
-  });
-  return { mostrar, payload };
+  const edicion = crear('ed-equipo-personal'), alta = crear('sn-equipo-personal');
+  return { mostrar: lead => edicion.mostrar(lead), payload: () => edicion.payload(), alta };
 })();

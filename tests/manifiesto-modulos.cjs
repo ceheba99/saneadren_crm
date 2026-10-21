@@ -113,6 +113,45 @@ module.exports = {
     clientes: 'los clientes se comparten entre sucursales (decisión del 2026-10); los de otra sucursal se enmascaran',
     contadores_folio: 'contador interno de folios por sucursal; nadie lo consulta desde la pantalla',
   },
+  // Datos que la pantalla muestra y que NO salen de un formulario con su mismo nombre: los genera el sistema (razón) o
+  // se capturan con otro nombre ({ como, razon }: la auditoría comprueba que la pantalla mande esa llave). Un dato que se
+  // muestra y no está aquí ni se captura es un dato muerto (como «Realizó: propio/subcontratado», que se quitó).
+  generados: {
+    orden_generador: 'número de orden que trae el Excel del Generador al cargarlo',
+    correo_verificado: 'lo marca el sistema al confirmar el correo o cuando un administrador lo captura',
+    accion: 'la escribe el sistema en la bitácora',
+    bytes: 'tamaño del archivo subido',
+    oc_id: 'liga que pone el sistema al hacer la orden de compra de una solicitud',
+    confirmado: 'lo marca el botón «Confirmar» de los cobros por confirmar',
+    solicitante_id: 'quien capturó la solicitud (su sesión)',
+    motivo_cancelacion: { como: 'motivo', razon: 'se pide al cancelar un cobro, una cuenta, un pago, una orden de compra o una incidencia' },
+    motivo_eliminado: { como: 'motivo', razon: 'se pide al quitar un documento' },
+    motivo_no_realizado: { como: 'motivo', razon: 'se pide al marcar que un servicio no se realizó' },
+    motivo_cierre: { como: 'motivo', razon: 'se pide al rechazar o cancelar una solicitud de compra' },
+    recibio_nombre: { como: 'recibio', razon: 'quién recibió, al marcar recibida la orden de compra' },
+    recepcion_nota: { como: 'nota', razon: 'nota de la recepción de la orden de compra' },
+    fecha_realizado: { como: 'fecha', razon: 'fecha en que se realizó, al marcar el servicio' },
+    fecha_baja: { como: 'fecha', razon: 'fecha de la baja del personal' },
+    ganadora_id: { como: 'cotizacion_id', razon: 'la cotización elegida de la solicitud' },
+  },
+  // Formularios con una ventana para CREAR y otra para EDITAR lo mismo: deben pedir los mismos datos (la auditoría compara
+  // sus campos: input, select, textarea y los selectores que arma la pantalla, marcados con data-campo). Lo que solo está
+  // en uno se declara aquí con su razón. Así se detecta lo que pasó con el equipo de la orden: al crear era texto libre y
+  // al editar, la lista de Personal. Los formularios que sirven para crear y editar a la vez (proveedor, persona, orden de
+  // compra, catálogos) son iguales por construcción.
+  formularios: {
+    'orden de servicio / cotización': {
+      alta: 'sn-', edicion: 'ed-',
+      equivalentes: { fecha: 'fecha-servicio', ubicacion: 'direccion' },
+      soloEdicion: {
+        canal: 'al crear se toma de «¿Cómo se enteró?» del contacto',
+        responsable: 'al crear queda a nombre de quien la registra («Atendido por» se cambia después)',
+        urgente: 'se marca después en «Avisos y notas» del registro, junto con notas y recordatorios',
+      },
+      soloAlta: {},
+    },
+    contacto: { alta: 'in-', edicion: 'fc-ed-', equivalentes: {}, soloEdicion: {}, soloAlta: {} },
+  },
   // Entradas del menú que llevan a una pantalla con otro nombre (pestañas de la misma pantalla).
   aliasMenu: { cobrar: 'cuentas', pagar: 'cuentas' },
   // Rutas que no pertenecen a un módulo: públicas y de cuenta propia.

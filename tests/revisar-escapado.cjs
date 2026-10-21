@@ -11,7 +11,7 @@ const ARCHIVOS = fs.readdirSync(path.join(__dirname, '..', 'public')).filter(f =
 // input(…) de personal.js escapa su valor; campo(…) solo junta etiquetas fijas con ese input.
 const SEGURAS = /^(escaparHtml|escapar|esc|Number|input\(|campo\(|formatoMoneda|fechaCorta|fechaLarga|folioCotizacion|folioOrdenServicio|encodeURIComponent|Math\.|String\(Number|diasTexto|\d)/;
 // Campos con texto libre que vienen de la base o del usuario.
-const CAMPOS = /\.(nombre|telefono|telefono_alterno|texto|direccion|empresa|empresa_contacto|notas|notas_iniciales|notas_generales|servicio_nombre|correo|canal|canal_nombre|responsable_nombre|lead_nombre|usuario|descripcion|leyenda|servicio|giro|rfc|persona|cargo|zona|sector|fuente|estado|creado_por|operador|equipo|observaciones|encuesta_comentario|motivo|necesidades|referencia|concepto|proveedor|proveedor_nombre|cliente_nombre|categoria|metodo|factura|ultima_fecha|fecha_sugerida|factura_folio|motivo_cancelacion|registrado_por_nombre|categoria_nombre)\b/;
+const CAMPOS = /\.(nombre|telefono|telefono_alterno|texto|direccion|empresa|empresa_contacto|notas|notas_iniciales|notas_generales|servicio_nombre|correo|canal|canal_nombre|responsable_nombre|lead_nombre|usuario|descripcion|leyenda|servicio|giro|rfc|persona|cargo|zona|sector|fuente|estado|creado_por|operador|equipo|observaciones|encuesta_comentario|motivo|necesidades|referencia|concepto|proveedor|proveedor_nombre|cliente_nombre|categoria|metodo|factura|ultima_fecha|fecha_sugerida|factura_folio|motivo_cancelacion|registrado_por_nombre|categoria_nombre)\w*\b/; // también sus variantes (motivo_diferencia, notas_internas…)
 
 let hallazgos = 0;
 for (const archivo of ARCHIVOS) {
@@ -26,7 +26,8 @@ for (const archivo of ARCHIVOS) {
       if (SEGURAS.test(expr)) continue;
       // Quita lo que ya va escapado y las comparaciones que solo producen textos fijos.
       // En un ternario, la condición no se imprime: solo cuentan las ramas.
-      const resto = expr.replace(/^[^?'"`]+\?/, '').replace(/(escaparHtml|escapar|esc)\([^()]*(\([^()]*\))?[^()]*\)/g, '')
+      // (el «?.» de acceso opcional y el «??» no son ternarios)
+      const resto = expr.replace(/^(?:[^?'"`]|\?[.?])+\?(?![.?])/, '').replace(/:\s*(?:[^?'"`:]|\?[.?])+\?(?![.?])/g, ':').replace(/(escaparHtml|escapar|esc|Number|formatoMoneda|opciones\w*)\([^()]*(\([^()]*\))?[^()]*\)/g, '')
         .replace(/^[^?]*\?\s*'[^']*'\s*:\s*'[^']*'$/, '')
         .replace(/^\w+\[[^\]]+\]$/, ''); // búsqueda en un mapa de textos fijos
       if (!CAMPOS.test(resto)) continue;

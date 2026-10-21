@@ -95,6 +95,13 @@ const pedir = async (m, r, t, b) => { const x = await fetch(`http://localhost:${
   { const [st] = await pedir('GET', '/compras/avisos', tok.rh); revisa(st === 403, 'Recursos humanos (sin compras) no recibe avisos de compras', st); }
   // Prospección en Inicio: el vendedor ve sus llamadas de hoy o atrasadas.
   { const [st, pr] = await pedir('GET', '/prospeccion?pendientes=1&responsable_id=' + j0Ventas, tok.ventas); revisa(st === 200 && pr.length >= 2 && pr.every(e => e.estado !== 'no_contactar'), 'Inicio de Ventas: sus prospectos a los que toca llamar (hoy o atrasados)', pr.map?.(e => e.nombre)); }
+  // Datos que salen del equipo de la orden (Personal), no de textos viejos.
+  { const [, g] = await pedir('GET', '/generador', tok.admin); const conEquipo = (g.filas || []).filter(f => /Raúl Técnico - Demo/.test(f.empleado));
+    revisa(conEquipo.length > 0 && !(g.filas || []).some(f => 'realizado_por' in f), 'Generador: «Empleado» trae el equipo de la orden (Personal) y ya no hay columna «Realizó»', conEquipo.length); }
+  { const [, t] = await pedir('GET', '/tablero', tok.admin); revisa(t.por_operador?.some(x => x.nombre === 'Raúl Técnico - Demo') && !('subcontratado_pct' in t.actual), 'Resultados: «por técnico y equipo» con las personas de Personal; sin «% subcontratado»', t.por_operador?.map(x => x.nombre)); }
+  // «Cuenta como gasto» se decide al crear la categoría (solo Dirección).
+  { const [st, c] = await pedir('POST', '/finanzas/categorias', tok.admin, { nombre: 'Préstamo de socios', es_gasto: false }); const [, cats] = await pedir('GET', '/finanzas/categorias', tok.admin);
+    revisa(st === 201 && cats.find(x => x.clave === c.clave)?.es_gasto === 0, 'Dirección crea una categoría que NO cuenta como gasto (préstamo)', [st, c]); }
   [s, j] = await pedir('GET', '/prospeccion', tok.ventas); revisa(s === 200 && j.length === 5 && new Set(j.map(e => e.estado)).size === 5, 'prospección: 5 establecimientos, uno en cada estado', j.map?.(e => e.estado));
   [s, j] = await pedir('GET', '/tablero', tok.admin); revisa(j.alertas?.some(a => /sin IVA capturado/.test(a.texto)), 'Resultados avisa de las facturas con IVA estimado (para enseñar a capturarlo)', j.alertas?.map(a => a.texto));
   const [, leads] = await pedir('GET', '/leads', tok.admin);

@@ -130,6 +130,9 @@
 <div class="campo"><label for="in-empresa">Empresa (opcional)</label><input type="text" id="in-empresa" placeholder="Si aplica" autocomplete="organization"></div>
 <div class="campo"><label for="in-correo">Correo electrónico (opcional)</label><input type="email" id="in-correo" placeholder="correo@ejemplo.com" autocomplete="email"></div>
 <div class="campo captura-ancha"><label for="in-direccion">Domicilio del contacto (opcional)</label><input type="text" id="in-direccion" placeholder="Calle, número, colonia, municipio..." autocomplete="street-address"></div>
+<div class="campo"><label for="in-telefono-alterno">Teléfono alterno (opcional)</label><input type="tel" id="in-telefono-alterno" placeholder="10 dígitos"></div>
+<div class="campo"><label for="in-rfc">RFC (opcional, para facturación)</label><input type="text" id="in-rfc" maxlength="13" placeholder="XAXX010101000"></div>
+<div class="campo captura-ancha"><label for="in-notas-generales">Notas generales del contacto (opcional)</label><textarea id="in-notas-generales" rows="2" placeholder="Información permanente sobre este contacto: acceso al predio, preferencias, referencias, etc."></textarea></div>
 </div>
       <div class="util-4">
         <button class="btn btn-primario" id="btn-guardar-contacto-nuevo">Guardar contacto</button>
@@ -349,7 +352,7 @@
     </div>
     <p class="gen-resumen" id="gen-resumen" role="status"></p>
     <div class="tabla-scroll"><table class="tabla-resumen tabla-generador">
-      <thead><tr><th>Mes</th><th>Fecha</th><th>No. orden</th><th>No. factura</th><th>Cliente</th><th>Proyecto</th><th>Concepto</th><th class="st-num">Cantidad</th><th class="st-num">Precio unitario s/IVA</th><th class="st-num">Precio unitario c/IVA</th><th class="st-num">Subtotal</th><th class="st-num">IVA</th><th class="st-num">Total</th><th>Canal de venta</th><th>Unidad</th><th>Empleado</th><th>Manifiestos</th><th>Tiros</th><th>Realizó</th><th class="gen-costo">Proveedor</th><th class="gen-costo">Concepto del costo</th><th class="gen-costo st-num">Costo</th><th class="gen-costo">Estatus pago</th><th class="gen-costo">Vía de pago</th></tr></thead>
+      <thead><tr><th>Mes</th><th>Fecha</th><th>No. orden</th><th>No. factura</th><th>Cliente</th><th>Proyecto</th><th>Concepto</th><th class="st-num">Cantidad</th><th class="st-num">Precio unitario s/IVA</th><th class="st-num">Precio unitario c/IVA</th><th class="st-num">Subtotal</th><th class="st-num">IVA</th><th class="st-num">Total</th><th>Canal de venta</th><th>Unidad</th><th>Empleado</th><th>Manifiestos</th><th>Tiros</th><th class="gen-costo">Proveedor</th><th class="gen-costo">Concepto del costo</th><th class="gen-costo st-num">Costo</th><th class="gen-costo">Estatus pago</th><th class="gen-costo">Vía de pago</th></tr></thead>
       <tbody id="gen-tabla"></tbody>
     </table></div>
   </section>
@@ -631,8 +634,8 @@
           </div>
           <div class="campo-modal" id="wrap-vigencia-hasta"><label for="ed-vigencia-hasta">Vigencia hasta</label><input type="date" id="ed-vigencia-hasta"></div>
           <div class="campo-modal solo-orden"><label for="ed-equipo">Equipo</label><input type="text" id="ed-equipo" maxlength="200" placeholder="Ej. E-37-04"></div>
-          <div class="campo-modal full solo-orden" id="ed-equipo-campo"><span class="etiqueta-campo">Técnico responsable y equipo</span><div id="ed-equipo-personal"></div><small class="ayuda">El responsable ve esta orden y la marca realizada (si tiene cuenta en el sistema). El personal se da de alta en Ajustes → Personal.</small></div>
-          <div class="campo-modal solo-orden"><label for="ed-operador">Operador(es)</label><input type="text" id="ed-operador" maxlength="300" placeholder="Nombre de quien ejecuta el servicio"></div>
+          <div class="campo-modal full solo-orden" id="ed-equipo-campo"><span class="etiqueta-campo">Técnico responsable y equipo</span><div id="ed-equipo-personal" data-campo></div><small class="ayuda">El responsable ve esta orden y la marca realizada (si tiene cuenta en el sistema). El personal se da de alta en Ajustes → Personal.</small></div>
+          <div class="campo-modal solo-orden"><label for="ed-operador">Operadores externos (si no están en Personal)</label><input type="text" id="ed-operador" maxlength="300" placeholder="Ej. operador de la pipa rentada"></div>
           <div class="campo-modal solo-orden"><label for="ed-manifiestos">Manifiestos</label><input type="text" id="ed-manifiestos" maxlength="200" placeholder="Folio(s) de manifiesto"></div>
           <div class="campo-modal solo-orden"><label for="ed-tiros">Tiros</label><input type="text" id="ed-tiros" maxlength="60" placeholder="Ej. 2"></div>
           <div class="campo-modal full solo-orden"><label for="ed-proyecto">Proyecto</label><input type="text" id="ed-proyecto" maxlength="200" placeholder="Ej. Mantenimiento planta 2026"></div>
@@ -756,6 +759,7 @@
               
             </select>
           </div>
+          <div class="campo-modal"><label for="fc-ed-origen">¿Cómo se enteró de nosotros?</label><select id="fc-ed-origen"><option value="">Sin registrar</option></select></div>
           <div class="campo-modal full"><label>Otros teléfonos de este cliente</label><div class="fc-telefonos" id="fc-telefonos"></div></div>
           <div class="campo-modal full"><label for="fc-ed-notas-generales">Notas generales del contacto (opcional)</label><textarea id="fc-ed-notas-generales" rows="2" placeholder="Información permanente sobre este contacto: acceso al predio, preferencias, referencias, etc."></textarea></div>
         </div>
@@ -1112,9 +1116,10 @@
       </div>
       <div class="campo"><label for="sn-ubicacion">Ubicación del servicio <small class="label-nota">(puedes cambiar el domicilio propuesto)</small></label><input id="sn-ubicacion" type="text"></div>
       <div id="sn-datos-orden" hidden>
+        <div class="campo" id="sn-equipo-campo"><span class="etiqueta-campo">Técnico responsable y equipo</span><div id="sn-equipo-personal" data-campo></div><small class="ayuda">De Personal. El responsable con cuenta ve la orden y la marca realizada.</small></div>
         <div class="form-grid-2">
           <div class="campo"><label for="sn-equipo">Equipo</label><input type="text" id="sn-equipo" maxlength="200" placeholder="Ej. E-37-04"></div>
-          <div class="campo"><label for="sn-operador">Operador(es)</label><input type="text" id="sn-operador" maxlength="300" placeholder="Nombre de quien ejecuta el servicio"></div>
+          <div class="campo"><label for="sn-operador">Operadores externos (si no están en Personal)</label><input type="text" id="sn-operador" maxlength="300" placeholder="Ej. operador de la pipa rentada"></div>
         </div>
         <div class="form-grid-2"><div class="campo"><label for="sn-manifiestos">Manifiestos (opcional)</label><input type="text" id="sn-manifiestos" maxlength="200" placeholder="Folio(s) de manifiesto"></div><div class="campo"><label for="sn-tiros">Tiros (opcional)</label><input type="text" id="sn-tiros" maxlength="60" placeholder="Ej. 2"></div></div>
         <div class="campo"><label for="sn-proyecto">Proyecto (opcional)</label><input type="text" id="sn-proyecto" maxlength="200" placeholder="Ej. Mantenimiento planta 2026"></div>
@@ -1189,18 +1194,18 @@
 <script src="roles.js?v=perm3"></script>
 <script src="importes.js?v=red1"></script>
 <script src="servicios-tabla.js?v=perm1"></script>
-<script src="flujo.js?v=suc4"></script>
+<script src="flujo.js?v=par1"></script>
 <script src="cuentas.js?v=av1"></script>
 <script src="finanzas.js?v=aud1"></script>
 <script src="calendario.js?v=pg2"></script>
-<script src="tablero.js?v=iva1"></script>
+<script src="tablero.js?v=ret1"></script>
 <script src="bitacora.js?v=hc1"></script>
-<script src="compras.js?v=aud1"></script>
+<script src="compras.js?v=ret1"></script>
 <script src="solicitudes.js?v=perm1"></script>
 <script src="carga-generador.js?v=con1"></script>
 <script src="sucursales.js?v=perm2"></script>
-<script src="app.js?v=aud1"></script>
-<script src="personal.js?v=rh2"></script>
+<script src="app.js?v=par1"></script>
+<script src="personal.js?v=eq1"></script>
 <script src="buscador.js?v=suc1"></script>
 <script src="demo.js?v=demo1"></script>
 <script src="prospeccion.js?v=aud1"></script>

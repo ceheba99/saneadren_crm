@@ -99,7 +99,7 @@ const FlujoCRM = (() => {
   async function crearContacto(cotizar=false){
     const botones=[$('btn-guardar-contacto-nuevo'),$('btn-guardar-lead')];
     if(botones.some(b=>b.disabled))return;
-    const payload={canal_origen_id:$('in-origen').value,nombre:$('in-nombre').value.trim(),telefono:$('in-telefono').value.trim(),empresa_contacto:$('in-empresa').value.trim(),direccion:$('in-direccion').value.trim(),correo:$('in-correo').value.trim(),giro:$('in-giro').value};
+    const payload={canal_origen_id:$('in-origen').value,nombre:$('in-nombre').value.trim(),telefono:$('in-telefono').value.trim(),empresa_contacto:$('in-empresa').value.trim(),direccion:$('in-direccion').value.trim(),correo:$('in-correo').value.trim(),giro:$('in-giro').value,telefono_alterno:$('in-telefono-alterno').value.trim(),rfc:$('in-rfc').value.trim(),notas_generales:$('in-notas-generales').value.trim()};
     if(payload.telefono.replace(/\D/g,'').length<10){toast('Escribe un teléfono de 10 dígitos');$('in-telefono').focus();return;}
     if(!payload.nombre){toast('Escribe el nombre del contacto');$('in-nombre').focus();return;}
     if(!$('in-correo').checkValidity()){$('in-correo').reportValidity();return;}
@@ -114,6 +114,7 @@ const FlujoCRM = (() => {
         r=await api('/contactos',{method:'POST',body:JSON.stringify(decision.mismo?{...payload,agregar_telefono_a:decision.mismo}:{...payload,distinto_de:decision.distinto})});c=await r.json();
         if(!r.ok&&r.status!==409){toast(c.error||'No se pudo guardar');return;}
       }
+      if(!r.ok&&r.status!==409){toast(c.error||'No se pudo guardar');return;}
       if(r.status===409&&!c.cliente_id){toast(c.error||'No se pudo guardar');return;}
       const id=r.status===409?c.cliente_id:c.id;
       if(r.status===409)toast((c.error||'Este teléfono ya está registrado')+'. Usaremos ese cliente; sus datos se conservan.');

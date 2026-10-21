@@ -118,7 +118,7 @@ const Panorama = (() => {
       + tarjeta('No realizados', String(a.no_realizados), a.no_realizados ? dinero(a.no_realizado_valor) + ' que no se hizo' : 'Ninguno', '', a.no_realizados ? 'negativo' : '')
       + tarjeta('Sin marcar', String(f.por_concluir), 'Fecha pasada, falta marcar si se hizo', '', f.por_concluir ? 'aviso' : '')
       + tarjeta('Próximos 7 días', String(f.proximos_7), dinero(f.proximos_7_valor) + ' programado')
-      + tarjeta('Subcontratado', pct(a.subcontratado_pct), 'De la venta, hecho por terceros')
+
       + tarjeta('Cotizaciones', String(a.cotizaciones), dinero(a.cotizado) + ' cotizado', delta(a.cotizaciones, p.cotizaciones))
       + tarjeta('Tasa de cierre', pct(a.cierre_pct), a.cot_ganadas + ' ganadas · ' + a.cot_perdidas + ' perdidas')
       + tarjeta('Propuestas abiertas', String(f.pipeline.abiertas), dinero(f.pipeline.valor) + ' en negociación')
@@ -130,7 +130,7 @@ const Panorama = (() => {
       + '<div class="pg-caja"><h3>Servicios que más se vendieron</h3>' + barras(d.por_servicio, 'venta', dinero, x => x.servicios + (x.servicios === 1 ? ' vez' : ' veces')) + '</div></div>'
       + '<div class="pg-tres"><div class="pg-caja"><h3>Por canal de venta</h3>' + barras(d.por_canal) + '</div>'
       + '<div class="pg-caja"><h3>Por unidad</h3>' + barras(d.por_unidad) + '</div>'
-      + '<div class="pg-caja"><h3>Por operador</h3>' + barras(d.por_operador) + '</div></div>'
+      + '<div class="pg-caja"><h3>Por técnico y equipo</h3><p class="ayuda">Cada persona del equipo de la orden (Personal) suma el servicio completo.</p>' + barras(d.por_operador) + '</div></div>'
       + '<p class="ayuda pg-nota">Venta realizada: servicios marcados como realizados en el periodo, sin IVA (lo mismo que el Generador). Utilidad estimada: venta realizada menos facturas y gastos del periodo, los dos sin IVA. A cada factura de gasto se le quita su IVA (el capturado o, si no se capturó, el 16 % incluido, marcado como estimado); los gastos sin factura cuentan completos. No restan los comprobantes informativos ni lo que no es gasto (inversión, préstamos y traspasos). Flujo: dinero que entró (pagos de clientes, sin descuentos) menos el que salió (pagos a proveedores). "Te deben" y "Debes" son al día de hoy.</p>';
   }
 
