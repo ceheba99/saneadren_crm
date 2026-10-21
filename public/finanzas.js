@@ -207,7 +207,14 @@ const Finanzas = (() => {
   $('cobrar-buscar').addEventListener('input', () => { clearTimeout(tBuscar); tBuscar = setTimeout(cargarLista, 300); });
 
   async function cargar(opciones = {}) {
-    if (!puedeCartera(opciones.seccion || SECCION)) return;
+    // Quien solo ve una de las dos (p. ej. Nómina o Compras: solo por pagar) entra directo a la que sí ve, en vez de
+    // quedarse con la pantalla en blanco.
+    const pedida = opciones.seccion || (opciones.pestana ? (opciones.pestana === 'cobrar' ? 'cobrar' : 'pagar') : SECCION);
+    if (!puedeCartera(pedida)) {
+      const otra = pedida === 'cobrar' ? 'pagar' : 'cobrar';
+      if (!puedeCartera(otra)) return;
+      opciones = { ...opciones, seccion: otra, pestana: otra === 'cobrar' ? 'cobrar' : undefined };
+    }
     if (opciones.filtro || opciones.pestana) $('cobrar-buscar').value = '';
     if (opciones.seccion) SECCION = opciones.seccion;
     else if (opciones.pestana) SECCION = opciones.pestana === 'cobrar' ? 'cobrar' : 'pagar';

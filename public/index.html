@@ -85,6 +85,18 @@
       <div id="inicio-personal" class="inicio-lista"></div>
     </div>
 
+    <div class="inicio-bloque inicio-bloque-compras perm-compras-ver">
+      <h3>🛒 Compras</h3>
+      <p class="ayuda">Solicitudes por aprobar, por cotizar o por convertir en orden de compra; órdenes por autorizar y por recibir; y cómo van tus solicitudes.</p>
+      <div id="inicio-compras" class="inicio-lista"></div>
+    </div>
+
+    <div class="inicio-bloque inicio-bloque-prospeccion perm-ventas-ver">
+      <h3>🔎 Prospección</h3>
+      <p class="ayuda">Establecimientos a los que toca llamar hoy o cuyo seguimiento ya se pasó.</p>
+      <div id="inicio-prospeccion" class="inicio-lista"></div>
+    </div>
+
     <div class="inicio-bloque inicio-bloque-cotizacion perm-ventas-ver">
       <h3>⏰ Avisos y seguimiento</h3>
       <p class="ayuda">Recordatorios de cotizaciones u órdenes que vencen hoy o ya vencieron, y cotizaciones abiertas sin movimiento hace más de 7 días.</p>
@@ -133,12 +145,12 @@
       <span class="tabla-conteo diseno-tabla-leads-conteo" id="tabla-leads-conteo">0 cotizaciones</span>
     </div>
     <div class="filtros">
-      <input type="text" id="f-buscar" placeholder="Nombre, empresa, teléfono o folio (COT-202610-0125, OS-…)">
-      <select id="f-responsable"><option value="">Todos los responsables</option></select>
+      <input type="text" id="f-buscar" aria-label="Buscar cotizaciones y órdenes" placeholder="Nombre, empresa, teléfono o folio (COT-202610-0125, OS-…)">
+      <select id="f-responsable" aria-label="Filtrar por responsable"><option value="">Todos los responsables</option></select>
       <span class="filtro-fecha-label">Desde</span>
-      <input type="date" id="f-desde" title="Filtrar desde esta fecha de creación">
+      <input type="date" id="f-desde" aria-label="Desde (fecha de creación)" title="Filtrar desde esta fecha de creación">
       <span class="filtro-fecha-label">Hasta</span>
-      <input type="date" id="f-hasta" title="Filtrar hasta esta fecha de creación">
+      <input type="date" id="f-hasta" aria-label="Hasta (fecha de creación)" title="Filtrar hasta esta fecha de creación">
       <label><input type="checkbox" id="f-urgente"> Solo urgentes</label>
       <button class="btn btn-outline util-8" onclick="limpiarFiltros()">Limpiar filtros</button>
       <button class="btn btn-secundario perm-clientes-exportar" id="btn-exportar-leads">📥 Exportar a Excel</button>
@@ -253,9 +265,9 @@
       <input type="text" id="fc-buscar" aria-label="Buscar contacto" placeholder="Nombre, empresa, teléfono o ID (CLI-0039)">
       <select id="fc-tipo" aria-label="Tipo de contacto"><option value="todos">Todos los contactos</option><option value="prospectos">Prospectos · sin servicios contratados</option><option value="clientes">Clientes · con servicios contratados</option></select>
       <span class="filtro-fecha-label">Desde</span>
-      <input type="date" id="fc-desde" title="Filtrar desde esta fecha">
+      <input type="date" id="fc-desde" aria-label="Desde (fecha)" title="Filtrar desde esta fecha">
       <span class="filtro-fecha-label">Hasta</span>
-      <input type="date" id="fc-hasta" title="Filtrar hasta esta fecha">
+      <input type="date" id="fc-hasta" aria-label="Hasta (fecha)" title="Filtrar hasta esta fecha">
       <button class="btn btn-secundario perm-clientes-exportar" id="btn-exportar-clientes">📥 Exportar a Excel</button>
     </div>
 
@@ -437,19 +449,19 @@
       <p class="ayuda">Solo un administrador crea cuentas. La persona podrá iniciar sesión con su nombre o su correo; con su correo puede recuperar la contraseña si la olvida.</p>
       <div class="form-grid">
         <div class="campo">
-          <label>Nombre</label>
+          <label for="nu-nombre">Nombre</label>
           <input type="text" id="nu-nombre" placeholder="Nombre del usuario">
         </div>
         <div class="campo">
-          <label>Contraseña</label>
+          <label for="nu-password">Contraseña</label>
           <input type="password" id="nu-password" placeholder="Mínimo 10 caracteres, letras y números" autocomplete="new-password">
         </div>
         <div class="campo">
-          <label>Correo (opcional)</label>
+          <label for="nu-correo">Correo (opcional)</label>
           <input type="email" id="nu-correo" placeholder="nombre@saneadren.com.mx" autocomplete="off">
         </div>
         <div class="campo">
-          <label>Rol</label>
+          <label for="nu-rol">Rol</label>
           <select id="nu-rol"></select>
         </div>
         <div class="campo solo-varias-sucursales" id="nu-sucursales-campo">
@@ -553,13 +565,13 @@
       <h2>Agregar servicio nuevo</h2>
       <div class="form-grid">
         <div class="campo">
-          <label>Nombre del servicio</label>
-          <input type="text" id="ns-nombre" placeholder="Ej. Renta de maquinaria">
+          <label for="nserv-nombre">Nombre del servicio</label>
+          <input type="text" id="nserv-nombre" placeholder="Ej. Renta de maquinaria">
           <label for="ns-descripcion">Descripción predeterminada</label>
           <textarea id="ns-descripcion" rows="3" maxlength="10000" placeholder="Texto editable que aparecerá en la cotización"></textarea>
         </div>
         <div class="campo">
-          <label>Recompra cada (días, opcional)</label>
+          <label for="ns-dias">Recompra cada (días, opcional)</label>
           <input type="number" id="ns-dias" min="1" step="1" placeholder="Sin recompra">
         </div>
         <div class="campo">
@@ -576,7 +588,7 @@
       <h2>Agregar canal nuevo</h2>
       <div class="form-grid">
         <div class="campo">
-          <label>Nombre del canal</label>
+          <label for="nc-nombre">Nombre del canal</label>
           <input type="text" id="nc-nombre" placeholder="Ej. Google Ads">
         </div>
         <div class="campo">
@@ -625,9 +637,9 @@
           <div class="campo-modal solo-orden"><label for="ed-tiros">Tiros</label><input type="text" id="ed-tiros" maxlength="60" placeholder="Ej. 2"></div>
           <div class="campo-modal full solo-orden"><label for="ed-proyecto">Proyecto</label><input type="text" id="ed-proyecto" maxlength="200" placeholder="Ej. Mantenimiento planta 2026"></div>
           <!-- Canal, servicio y valor salen de las partidas: se conservan ocultos para el guardado -->
-          <div class="campo-modal"><label>Canal</label><select id="ed-canal"></select></div>
-          <div class="campo-modal"><label>Servicio</label><select id="ed-servicio"></select></div>
-          <div class="campo-modal"><label>Valor del servicio (MXN)</label><input type="number" id="ed-valor" min="0" step="0.01" placeholder="0.00"></div>
+          <div class="campo-modal"><label for="ed-canal">Canal</label><select id="ed-canal"></select></div>
+          <div class="campo-modal"><label for="ed-servicio">Servicio</label><select id="ed-servicio"></select></div>
+          <div class="campo-modal"><label for="ed-valor">Valor del servicio (MXN)</label><input type="number" id="ed-valor" min="0" step="0.01" placeholder="0.00"></div>
           <div class="campo-modal full solo-orden"><label for="ed-observaciones">Observaciones de la orden</label><textarea id="ed-observaciones" rows="2" maxlength="3000" placeholder="Se imprimen en la orden de servicio; también puedes capturar lo que anotó el operador"></textarea></div>
         </div>
         <div class="util-16">
@@ -684,7 +696,7 @@
               <button type="button" data-rapido="3dias">En 3 días</button>
               <button type="button" data-rapido="semana">En 1 semana</button>
             </div>
-            <input type="datetime-local" id="obs-fecha">
+            <input type="datetime-local" id="obs-fecha" aria-label="Fecha y hora del recordatorio">
             <button class="btn btn-primario diseno-btn-agregar-obs" id="btn-agregar-obs">Agregar nota</button>
           </div>
         </div>
@@ -730,22 +742,22 @@
         <div class="seccion-tit">✏️ Datos del contacto</div>
         <p class="ayuda">Esta ficha pertenece a la persona o empresa. Guardar aquí no modifica importes, fechas ni ubicaciones de cotizaciones anteriores.</p>
         <div class="form-grid-2">
-          <div class="campo-modal"><label>Teléfono</label><input type="tel" id="fc-ed-telefono"></div>
-          <div class="campo-modal"><label>Teléfono alterno (opcional)</label><input type="tel" id="fc-ed-telefono-alterno"></div>
-          <div class="campo-modal"><label>Nombre / contacto</label><input type="text" id="fc-ed-nombre"></div>
-          <div class="campo-modal"><label>Correo electrónico (opcional)</label><input type="email" id="fc-ed-correo" placeholder="correo@ejemplo.com"></div>
-          <div class="campo-modal"><label>Empresa</label><input type="text" id="fc-ed-empresa"></div>
-          <div class="campo-modal"><label>RFC (opcional, para facturación)</label><input type="text" id="fc-ed-rfc" maxlength="13" placeholder="XAXX010101000"></div>
-          <div class="campo-modal"><label>Dirección habitual del contacto</label><input type="text" id="fc-ed-direccion"></div>
+          <div class="campo-modal"><label for="fc-ed-telefono">Teléfono</label><input type="tel" id="fc-ed-telefono"></div>
+          <div class="campo-modal"><label for="fc-ed-telefono-alterno">Teléfono alterno (opcional)</label><input type="tel" id="fc-ed-telefono-alterno"></div>
+          <div class="campo-modal"><label for="fc-ed-nombre">Nombre / contacto</label><input type="text" id="fc-ed-nombre"></div>
+          <div class="campo-modal"><label for="fc-ed-correo">Correo electrónico (opcional)</label><input type="email" id="fc-ed-correo" placeholder="correo@ejemplo.com"></div>
+          <div class="campo-modal"><label for="fc-ed-empresa">Empresa</label><input type="text" id="fc-ed-empresa"></div>
+          <div class="campo-modal"><label for="fc-ed-rfc">RFC (opcional, para facturación)</label><input type="text" id="fc-ed-rfc" maxlength="13" placeholder="XAXX010101000"></div>
+          <div class="campo-modal"><label for="fc-ed-direccion">Dirección habitual del contacto</label><input type="text" id="fc-ed-direccion"></div>
           <div class="campo-modal">
-            <label>Tipo de cliente</label>
+            <label for="fc-ed-giro">Tipo de cliente</label>
             <select id="fc-ed-giro">
               <option value="">Sin especificar</option>
               
             </select>
           </div>
           <div class="campo-modal full"><label>Otros teléfonos de este cliente</label><div class="fc-telefonos" id="fc-telefonos"></div></div>
-          <div class="campo-modal full"><label>Notas generales del contacto (opcional)</label><textarea id="fc-ed-notas-generales" rows="2" placeholder="Información permanente sobre este contacto: acceso al predio, preferencias, referencias, etc."></textarea></div>
+          <div class="campo-modal full"><label for="fc-ed-notas-generales">Notas generales del contacto (opcional)</label><textarea id="fc-ed-notas-generales" rows="2" placeholder="Información permanente sobre este contacto: acceso al predio, preferencias, referencias, etc."></textarea></div>
         </div>
         <div class="btn-group">
           <button class="btn btn-primario" id="btn-guardar-cliente">Guardar datos del contacto</button>
@@ -1079,17 +1091,17 @@
       <p class="ayuda diseno-sn-ayuda" id="sn-ayuda"></p>
       <div class="form-grid util-25">
         <div class="campo">
-          <label>Servicio</label>
+          <label for="sn-servicio">Servicio</label>
           <select id="sn-servicio"></select>
         </div>
         <div class="campo">
-          <label id="sn-label-valor">Costo del servicio (MXN, opcional)</label>
+          <label id="sn-label-valor" for="sn-valor">Costo del servicio (MXN, opcional)</label>
           <input type="number" id="sn-valor" min="0" step="0.01" placeholder="Si ya se conoce">
         </div>
         <!-- La fecha del servicio es solo de la orden de servicio (una cotización todavía no tiene fecha acordada).
              Notas, recordatorios y "urgente" se ponen después en Avisos y notas del registro. -->
         <div class="campo" id="sn-campo-fecha">
-          <label id="sn-label-fecha">Fecha acordada del servicio</label>
+          <label id="sn-label-fecha" for="sn-fecha">Fecha acordada del servicio</label>
           <input type="date" id="sn-fecha">
         </div>
       </div>
@@ -1179,18 +1191,18 @@
 <script src="servicios-tabla.js?v=perm1"></script>
 <script src="flujo.js?v=suc4"></script>
 <script src="cuentas.js?v=av1"></script>
-<script src="finanzas.js?v=iva1"></script>
+<script src="finanzas.js?v=aud1"></script>
 <script src="calendario.js?v=pg2"></script>
 <script src="tablero.js?v=iva1"></script>
 <script src="bitacora.js?v=hc1"></script>
-<script src="compras.js?v=perm1"></script>
+<script src="compras.js?v=aud1"></script>
 <script src="solicitudes.js?v=perm1"></script>
 <script src="carga-generador.js?v=con1"></script>
 <script src="sucursales.js?v=perm2"></script>
-<script src="app.js?v=rh2"></script>
+<script src="app.js?v=aud1"></script>
 <script src="personal.js?v=rh2"></script>
 <script src="buscador.js?v=suc1"></script>
 <script src="demo.js?v=demo1"></script>
-<script src="prospeccion.js?v=perm1"></script>
+<script src="prospeccion.js?v=aud1"></script>
 </body>
 </html>

@@ -667,6 +667,25 @@ const Compras = (() => {
       }
     } catch (err) { toast(err.message); } finally { b.disabled = false; }
   });
-  return { cargar, pdf, abrir, desdeSolicitud: sol => abrir(null, sol) };
+  // ---------- Bloque «Compras» de Inicio ----------
+  const TAG_INICIO = { por_aprobar: '📝 Por aprobar', cotizar: '📑 Cotizar', hacer_oc: '🧾 Hacer orden', por_autorizar: '✅ Por autorizar', por_recibir: '📦 Por recibir', mi_solicitud: '🙋 Tu solicitud' };
+  async function pintarInicio() {
+    const cont = $('inicio-compras'); if (!cont || !Permisos.puede('compras.ver')) return;
+    cont.innerHTML = '<p class="util-45" role="status">Cargando…</p>';
+    let avisos;
+    try { avisos = await api('/compras/avisos').then(json); } catch (e) { if (e.status !== 401) cont.innerHTML = `<div class="aviso-error-carga" role="alert"><p>${esc(e.message)}</p><button type="button" class="btn btn-outline" data-co-inicio-reintentar="1">Reintentar</button></div>`; return; }
+    cont.innerHTML = avisos.length ? avisos.map(a => `<div class="fila-alerta ${a.nivel === 'rojo' ? 'vencido' : a.nivel === 'azul' ? 'tipo-alerta' : 'tipo-recompra'}">
+        <div class="info"><span class="tipo-tag ${a.nivel === 'rojo' ? 'rojo' : a.nivel === 'azul' ? 'alerta' : 'recompra'}">${esc(TAG_INICIO[a.tipo] || a.tipo)}</span>
+          <div><b>${esc(a.folio || '')}</b> · ${esc(a.nombre || '')}</div><div class="txt">${esc(a.texto)}</div>${a.fecha ? `<div class="fecha">${esc(String(a.fecha).split('-').reverse().join('/'))}</div>` : ''}</div>
+        <div class="util-46">${a.oc_id ? `<button type="button" class="btn btn-outline" data-co-inicio-oc="${Number(a.oc_id)}">Abrir orden de compra</button>` : `<button type="button" class="btn btn-outline" data-co-inicio-sol="${Number(a.solicitud_id)}">Abrir solicitud</button>`}</div></div>`).join('')
+      : '<p class="util-45">Nada pendiente en compras. 🎉</p>';
+  }
+  $('inicio-compras')?.addEventListener('click', e => {
+    const b = e.target.closest('button'); if (!b) return;
+    if (b.dataset.coInicioOc) abrir(Number(b.dataset.coInicioOc));
+    else if (b.dataset.coInicioSol) Solicitudes.abrir(Number(b.dataset.coInicioSol));
+    else if (b.dataset.coInicioReintentar) pintarInicio();
+  });
+  return { cargar, pdf, abrir, desdeSolicitud: sol => abrir(null, sol), pintarInicio };
 })();
 window.Compras = Compras;
