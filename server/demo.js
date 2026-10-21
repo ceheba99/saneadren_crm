@@ -131,7 +131,7 @@ module.exports = function demo(app, db, { sesiones, PORT, SESSION_TTL_MS }) {
     for (const [p, tipo, nombre, archivo] of [[PER.raul, 'ine', 'INE Raúl.pdf', pdf('INE Raul')], [PER.raul, 'domicilio', 'Comprobante de domicilio.png', png()], [PER.diego, 'contrato', 'Contrato Diego.pdf', pdf('Contrato Diego')], [PER.juan, 'licencia', 'Licencia federal Juan Carlos.png', png()], [PER.juan, 'banco', 'Estado de cuenta Banorte.pdf', pdf('Estado de cuenta')]])
       await subir('/personal/' + p + '/documentos', A, archivo, { 'X-Tipo': tipo, 'X-Nombre': nombre });
     for (const [p, b] of [[PER.luis, { tipo: 'falta', fecha_inicio: dia(-9), notas: 'No avisó' }], [PER.juan, { tipo: 'permiso', fecha_inicio: dia(-6), notas: 'Trámite personal' }], [PER.miguel, { tipo: 'retardo', fecha_inicio: dia(-3), dias: 0.5, notas: 'Llegó a las 10:30' }],
-      [PER.diego, { tipo: 'vacaciones', fecha_inicio: dia(12), fecha_fin: dia(15), notas: 'Vacaciones programadas' }], [PER.juan, { tipo: 'vacaciones', fecha_inicio: dia(-120), fecha_fin: dia(-111), notas: 'Vacaciones de semana santa' }]])
+      [PER.diego, { tipo: 'vacaciones', fecha_inicio: dia(3), fecha_fin: dia(6), notas: 'Vacaciones programadas' }], [PER.luis, { tipo: 'permiso', fecha_inicio: dia(0), notas: 'Cita médica' }], [PER.juan, { tipo: 'vacaciones', fecha_inicio: dia(-120), fecha_fin: dia(-111), notas: 'Vacaciones de semana santa' }]])
       await pedir('POST', '/personal/' + p + '/incidencias', A, b);
     await pedir('POST', '/personal/' + PER.roberto + '/baja', A, { fecha: dia(-20), motivo: 'Renuncia voluntaria (se cambió de ciudad)' });
     // El operador escrito en cada orden, como persona del equipo.
