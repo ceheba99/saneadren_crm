@@ -751,6 +751,15 @@ app.post('/api/leads', validarPartidas, validarRegistro, h((req, res) => {
   if (costosDup.error) return res.status(400).json({ error: costosDup.error });
 
   if(req.body.establecimiento_id && !db.prepare("SELECT id FROM establecimientos WHERE id=? AND cliente_id=? AND estado<>'no_contactar'").get(req.body.establecimiento_id,req.body.cliente_id))return res.status(400).json({error:'El establecimiento no está vinculado a este contacto o está marcado como no contactar'});
+  // Equipo de la orden (Personal) desde que se crea, igual que al editarla. Se revisa antes de guardar nada, con la
+  // sucursal donde va a quedar la orden.
+  let equipoAlta = null;
+  if (req.body.equipo_personal !== undefined && req.body.equipo_personal !== null) {
+    if (estatus !== 'ganado') return res.status(400).json({ error: 'El equipo se asigna a órdenes de servicio, no a cotizaciones' });
+    const ve = personalMod.validarEquipo(req.body.equipo_personal, { sucursal_id: alcance.sucursalAlta() });
+    if (ve.error) return res.status(400).json({ error: ve.error });
+    equipoAlta = ve.lista.length ? ve.lista : null;
+  }
   const creado=db.transaction(()=>{
   if (!cliente) {
     const infoC = db.prepare(`INSERT INTO clientes (telefono, telefono_normalizado, nombre, empresa_contacto, direccion, correo, giro)
@@ -791,6 +800,10 @@ app.post('/api/leads', validarPartidas, validarRegistro, h((req, res) => {
   db.prepare('UPDATE main.leads SET notas_cotizacion = ? WHERE id = ?').run(textoOrden(req.body.notas_cotizacion), info.lastInsertRowid);
   db.prepare('UPDATE main.leads SET equipo = ?, operador = ?, observaciones = ?, proyecto = ?, manifiestos = ?, tiros = ? WHERE id = ?').run(textoOrden(req.body.equipo), textoOrden(req.body.operador), textoOrden(req.body.observaciones), textoOrden(req.body.proyecto), textoOrden(req.body.manifiestos), textoOrden(req.body.tiros), info.lastInsertRowid);
   if(req.body.establecimiento_id)db.prepare('UPDATE main.leads SET establecimiento_id=? WHERE id=?').run(req.body.establecimiento_id,info.lastInsertRowid);
+  if (equipoAlta) {
+    personalMod.guardarEquipo(Number(info.lastInsertRowid), equipoAlta);
+    db.prepare("INSERT INTO main.historial (lead_id, tipo, texto, usuario, origen) VALUES (?, 'observacion', ?, ?, 'sistema')").run(info.lastInsertRowid, 'Equipo: ' + personalMod.textoEquipo(personalMod.equipoDe(Number(info.lastInsertRowid))) + '.', creado_por);
+  }
   // Crear una cotización nunca modifica los datos maestros del contacto.
   db.prepare(`INSERT INTO main.historial (lead_id, tipo, texto, usuario, origen) VALUES (?, 'observacion', ?, ?, 'sistema')`)
     .run(info.lastInsertRowid, duplicadoDe ? `Orden de servicio duplicada a partir del registro #${duplicadoDe}.` : estatus === 'ganado' ? 'Servicio registrado directamente como contratado.' : 'Cotización creada.', creado_por || null);
@@ -955,6 +968,7 @@ app.put('/api/leads/:id', validarPartidas, validarRegistro, h((req, res) => {
   // Equipo de personas de la orden (técnico responsable, operadores, ayudantes): se elige de Personal.
   let equipoNuevo = null;
   if (req.body.equipo_personal !== undefined) { const ve = personalMod.validarEquipo(req.body.equipo_personal, actual); if (ve.error) return res.status(400).json({ error: ve.error }); equipoNuevo = ve.lista; }
+  if (equipoNuevo?.length && (req.body.estatus ?? actual.estatus) !== 'ganado') return res.status(400).json({ error: 'El equipo se asigna a órdenes de servicio, no a cotizaciones' });
   if (set.length === 0 && !equipoNuevo) return res.status(400).json({ error: 'Sin cambios' });
   set.push("updated_at = datetime('now','localtime')");
   set.push('version = version + 1');
@@ -1251,6 +1265,12 @@ app.put('/api/clientes/:id', h((req, res) => {
   if (req.body.correo !== undefined && !validarCorreo(req.body.correo)) return res.status(400).json({ error: 'El correo electrónico no es válido' });
   if (req.body.giro !== undefined && req.body.giro !== null && req.body.giro !== '' && !tipoClienteValido(req.body.giro)) return res.status(400).json({ error: 'Giro inválido' });
   if (req.body.rfc !== undefined) { req.body.rfc = normalizarRfc(req.body.rfc) || null; if (req.body.rfc && !RFC.test(req.body.rfc)) return res.status(400).json({ error: 'El RFC no es válido (p. ej. ABC010101AB1)' }); }
+  // «¿Cómo se enteró?» también se corrige después (antes solo se capturaba al crear el contacto).
+  if (req.body.canal_origen_id !== undefined) {
+    const co = Number(req.body.canal_origen_id);
+    if (!Number.isInteger(co) || co <= 0 || !db.prepare('SELECT id FROM canales WHERE id = ?').get(co)) return res.status(400).json({ error: 'Selecciona cómo se enteró de nosotros' });
+    req.body.canal_origen_id = co;
+  }
   const id = req.params.id;
   const cliente = db.prepare('SELECT * FROM clientes WHERE id = ?').get(id);
   if (!cliente) return res.status(404).json({ error: 'Cliente no encontrado' });
@@ -1295,7 +1315,7 @@ app.put('/api/clientes/:id', h((req, res) => {
     if (deRfc) return res.status(409).json({ error: `Este RFC ya es de ${unicos.etiqueta(deRfc)}. Si es la misma razón social, un administrador puede juntarlos.`, rfc_de: unicos.resumen(deRfc) });
   }
 
-  const campos = ['nombre', 'empresa_contacto', 'direccion', 'telefono', 'correo', 'telefono_alterno', 'giro', 'rfc', 'notas_generales'];
+  const campos = ['nombre', 'empresa_contacto', 'direccion', 'telefono', 'correo', 'telefono_alterno', 'giro', 'rfc', 'notas_generales', 'canal_origen_id'];
   const set = [];
   const params = [];
   campos.forEach(c => {
@@ -1307,7 +1327,7 @@ app.put('/api/clientes/:id', h((req, res) => {
   params.push(id);
 
   db.prepare(`UPDATE clientes SET ${set.join(', ')} WHERE id = ?`).run(...params);
-  const difCliente = audit.diferencias(cliente, req.body, ['nombre', 'empresa_contacto', 'telefono', 'telefono_alterno', 'correo', 'rfc', 'direccion', 'giro', 'notas_generales']);
+  const difCliente = audit.diferencias(cliente, req.body, ['nombre', 'empresa_contacto', 'telefono', 'telefono_alterno', 'correo', 'rfc', 'direccion', 'giro', 'notas_generales', 'canal_origen_id']);
   if (difCliente) audit.registrar(req, 'cliente', Number(id), 'editado', difCliente);
   if (altNorm.length === 10 && altNorm !== normalizarTelefono(db.prepare('SELECT telefono FROM clientes WHERE id = ?').get(id).telefono || '')) unicos.agregarTelefono(Number(id), req.body.telefono_alterno, 'Alterno');
   res.json(db.prepare('SELECT * FROM clientes WHERE id = ?').get(id));

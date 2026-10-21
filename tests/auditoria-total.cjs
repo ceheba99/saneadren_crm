@@ -164,6 +164,37 @@ function retirados(js, db, tablas) {
   return [...mostrados].filter(c => cols.has(c) && !generado(c) && !capturado(c)).map(c => `${c} (${cols.get(c).join(', ')})`);
 }
 
+// ================= D. Crear = editar =================
+// Los campos de un formulario: input/select/textarea y los selectores que arma la pantalla (data-campo), sin los ocultos.
+function camposDe(prefijo) {
+  const ids = [];
+  for (const m of HTML.matchAll(/<(input|select|textarea|div)\b[^>]*>/g)) {
+    const id = (m[0].match(/\sid="([\w-]+)"/) || [])[1];
+    if (!id || !id.startsWith(prefijo) || /\stype="hidden"/.test(m[0]) || (m[1] === 'div' && !/\sdata-campo\b/.test(m[0]))) continue;
+    ids.push(id.slice(prefijo.length));
+  }
+  return ids;
+}
+function formularios() {
+  console.log('D. Formularios: lo que se pide al crear es lo mismo que se puede editar');
+  for (const [nombre, f] of Object.entries(M.formularios || {})) {
+    const eq = f.equivalentes || {}, soloE = f.soloEdicion || {}, soloA = f.soloAlta || {};
+    const crudosA = camposDe(f.alta), crudosE = camposDe(f.edicion);
+    const alta = new Set(crudosA.map(c => eq[c] || c)), edicion = new Set(crudosE);
+    revisa(alta.size > 2 && edicion.size > 2, 'formularios', `${nombre}: no se encontraron sus campos (${f.alta}… / ${f.edicion}…)`);
+    for (const c of edicion) if (!alta.has(c)) revisa(!!soloE[c], 'formularios', `${nombre}: «${c}» se puede editar pero NO se pide al crear (agrégalo al crear o declara por qué en el manifiesto)`);
+    for (const c of alta) if (!edicion.has(c)) revisa(!!soloA[c], 'formularios', `${nombre}: «${c}» se pide al crear pero NO se puede editar después`);
+    // Las excepciones declaradas siguen siendo ciertas (si ya se igualaron, sobran) y equivalen a campos que existen.
+    for (const c of Object.keys(soloE)) revisa(edicion.has(c) && !alta.has(c), 'formularios', `${nombre}: la excepción «${c}» (solo al editar) ya no aplica: quítala del manifiesto`);
+    for (const c of Object.keys(soloA)) revisa(alta.has(c) && !edicion.has(c), 'formularios', `${nombre}: la excepción «${c}» (solo al crear) ya no aplica: quítala del manifiesto`);
+    for (const [a, e] of Object.entries(eq)) revisa(crudosA.includes(a) && edicion.has(e), 'formularios', `${nombre}: la equivalencia «${a}» = «${e}» ya no corresponde a campos que existan`);
+    // Cada campo lo lee algún código de la pantalla: un campo que nadie lee se pide y no se guarda.
+    for (const id of [...crudosA.map(c => f.alta + c), ...crudosE.map(c => f.edicion + c)])
+      revisa(new RegExp(`['"\`]${id}['"\`]`).test(TODO_JS_PUBLICO), 'formularios', `${nombre}: #${id} está en la pantalla pero ningún código lo lee (se pediría y no se guardaría)`);
+  }
+}
+formularios();
+
 // ================= C. Servidor con datos del demo =================
 (async () => {
   console.log('C. Servidor (todas las rutas con datos del demo)');

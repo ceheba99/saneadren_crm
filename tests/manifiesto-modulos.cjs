@@ -134,6 +134,24 @@ module.exports = {
     fecha_baja: { como: 'fecha', razon: 'fecha de la baja del personal' },
     ganadora_id: { como: 'cotizacion_id', razon: 'la cotización elegida de la solicitud' },
   },
+  // Formularios con una ventana para CREAR y otra para EDITAR lo mismo: deben pedir los mismos datos (la auditoría compara
+  // sus campos: input, select, textarea y los selectores que arma la pantalla, marcados con data-campo). Lo que solo está
+  // en uno se declara aquí con su razón. Así se detecta lo que pasó con el equipo de la orden: al crear era texto libre y
+  // al editar, la lista de Personal. Los formularios que sirven para crear y editar a la vez (proveedor, persona, orden de
+  // compra, catálogos) son iguales por construcción.
+  formularios: {
+    'orden de servicio / cotización': {
+      alta: 'sn-', edicion: 'ed-',
+      equivalentes: { fecha: 'fecha-servicio', ubicacion: 'direccion' },
+      soloEdicion: {
+        canal: 'al crear se toma de «¿Cómo se enteró?» del contacto',
+        responsable: 'al crear queda a nombre de quien la registra («Atendido por» se cambia después)',
+        urgente: 'se marca después en «Avisos y notas» del registro, junto con notas y recordatorios',
+      },
+      soloAlta: {},
+    },
+    contacto: { alta: 'in-', edicion: 'fc-ed-', equivalentes: {}, soloEdicion: {}, soloAlta: {} },
+  },
   // Entradas del menú que llevan a una pantalla con otro nombre (pestañas de la misma pantalla).
   aliasMenu: { cobrar: 'cuentas', pagar: 'cuentas' },
   // Rutas que no pertenecen a un módulo: públicas y de cuenta propia.

@@ -160,10 +160,11 @@ async function cargarCatalogos() {
   ]);
   CATALOGOS = { usuarios: u, servicios: s, canales: c };
   await cargarTiposCliente();
-  const origen = document.getElementById("in-origen");
-  const origenPrevio = origen.value;
-  origen.innerHTML = '<option value="">Selecciona una opción</option>' + c.map(x=>`<option value="${x.id}">${escaparHtml(x.nombre)}</option>`).join('');
-  origen.value = origenPrevio;
+  for (const [idSel, vacio] of [['in-origen', 'Selecciona una opción'], ['fc-ed-origen', 'Sin registrar']]) {
+    const origen = document.getElementById(idSel), origenPrevio = origen.value;
+    origen.innerHTML = `<option value="">${escaparHtml(vacio)}</option>` + c.map(x=>`<option value="${Number(x.id)}">${escaparHtml(x.nombre)}</option>`).join('');
+    origen.value = origenPrevio;
+  }
 
   const optU = u.map(x => `<option value="${x.id}">${escaparHtml(x.nombre)} (${escaparHtml(nombreRol(x.rol))})</option>`).join('');
   const optS = s.map(x => `<option value="${x.id}">${escaparHtml(x.nombre)}</option>`).join('');
@@ -293,6 +294,7 @@ function abrirServicioNuevo(modo, prefill) {
   document.getElementById('sn-vigencia-hasta').min = hoyISO();
   document.getElementById('sn-vigencia-hasta').value = sumarDiasISO(hoyISO(), EMPRESA_COTIZACION.vigenciaDias);
   document.getElementById('sn-datos-orden').hidden = !esDirecto;
+  if (esDirecto) EquipoOrden.alta.mostrar({ sucursal_id: CONVERTIR_ID ? (prefill?.sucursal_id ?? null) : (window.Sucursales?.datos?.alta ?? null), equipo_personal: DUPLICADO_DE ? (prefill?.equipo_personal || []) : [] });
   document.getElementById('sn-equipo').value = prefill?.equipo || '';
   document.getElementById('sn-operador').value = prefill?.operador || '';
   document.getElementById('sn-observaciones').value = CONVERTIR_ID ? (prefill?.observaciones || '') : '';
@@ -369,7 +371,8 @@ async function guardarServicioNuevo(descargar=false) {
     notas_cotizacion: esDirecto ? null : document.getElementById('gc-notas').value.trim(),
     vigencia_hasta: conVigencia ? vigenciaHasta : null,
     ...ivaPayload(),
-    ...(DUPLICADO_DE ? { costos_duplicar: costosADuplicar() } : {})
+    ...(DUPLICADO_DE ? { costos_duplicar: costosADuplicar() } : {}),
+    ...(esDirecto ? EquipoOrden.alta.payloadNuevo() : {})
   };
   botonGuardar.disabled = true;
   try {
@@ -380,7 +383,7 @@ async function guardarServicioNuevo(descargar=false) {
       if (actual.estatus !== 'abierto') { toast('Esta cotización ya no está abierta; vuelve a abrirla para revisar.'); return; }
       const res = await api('/leads/' + CONVERTIR_ID, { method: 'PUT', body: JSON.stringify({
         version: actual.version, estatus: 'ganado', partidas_json: payload.partidas_json, servicio_id: payload.servicio_id, direccion: payload.direccion,
-        fecha_servicio: payload.fecha_servicio, equipo: payload.equipo, operador: payload.operador, observaciones: payload.observaciones, proyecto: payload.proyecto, manifiestos: payload.manifiestos, tiros: payload.tiros, ...ivaPayload() }) });
+        fecha_servicio: payload.fecha_servicio, equipo: payload.equipo, operador: payload.operador, observaciones: payload.observaciones, proyecto: payload.proyecto, manifiestos: payload.manifiestos, tiros: payload.tiros, ...ivaPayload(), ...(payload.equipo_personal ? { equipo_personal: payload.equipo_personal } : {}) }) });
       creado = await res.json();
       if (!res.ok) { toast(creado.error || 'No se pudo convertir la cotización'); return; }
     } else {
@@ -433,6 +436,7 @@ function limpiarFormAlta() {
   document.getElementById('in-correo').value = '';
   document.getElementById('in-giro').value = '';
   document.getElementById('in-direccion').value = '';
+  for (const id of ['in-telefono-alterno', 'in-rfc', 'in-notas-generales']) document.getElementById(id).value = '';
   document.getElementById('alerta-dup').classList.remove('mostrar');
 }
 
@@ -1692,6 +1696,7 @@ async function abrirFichaCliente(id) {
   document.getElementById('fc-ed-direccion').value = cliente.direccion || '';
   document.getElementById('fc-ed-giro').value = cliente.giro || '';
   document.getElementById('fc-ed-notas-generales').value = cliente.notas_generales || '';
+  document.getElementById('fc-ed-origen').value = cliente.canal_origen_id ? String(cliente.canal_origen_id) : '';
 
   renderServiciosCliente(cliente.servicios || []);
   abrirVentana('overlay-ficha-cliente');
@@ -1788,7 +1793,9 @@ on('btn-guardar-cliente', 'click', async () => {
     rfc: document.getElementById('fc-ed-rfc').value.trim(),
     direccion: document.getElementById('fc-ed-direccion').value.trim(),
     giro: document.getElementById('fc-ed-giro').value,
-    notas_generales: document.getElementById('fc-ed-notas-generales').value.trim()
+    notas_generales: document.getElementById('fc-ed-notas-generales').value.trim(),
+    // Sin elegir no se manda (un contacto viejo sin origen se puede guardar igual).
+    ...(document.getElementById('fc-ed-origen').value ? { canal_origen_id: Number(document.getElementById('fc-ed-origen').value) } : {})
   };
   try {
     const res = await api('/clientes/' + CLIENTE_ACTUAL.id, { method: 'PUT', body: JSON.stringify(payload) });
