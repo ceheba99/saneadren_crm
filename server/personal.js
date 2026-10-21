@@ -233,6 +233,35 @@ module.exports = function personal(app, db, h) {
     if (req.query.alertas === '1') return res.json(lista.filter(p => p.alertas.length));
     res.json(lista);
   }));
+  // Avisos para Inicio (bloque «Personal»): licencias y contratos vencidos o por vencer (30 días), quién falta de hoy a
+  // 7 días (vacaciones, incapacidades, permisos) y órdenes por realizar sin técnico responsable. Todo de las sucursales
+  // de quien pide; los contratos solo con «Datos sensibles»; las órdenes, solo las que quien pide ve (vistas de la base).
+  app.get('/api/personal/avisos', h((req, res) => {
+    if (!ve(req)) return negar(res);
+    const hoy = hoyMexico(), en = n => { const x = new Date(hoy + 'T12:00:00Z'); x.setUTCDate(x.getUTCDate() + n); return x.toISOString().slice(0, 10); }, semana = en(7);
+    const dma = f => String(f).split('-').reverse().join('/'), conSens = sensible(req), avisos = [];
+    const vence = (p, campo, que, vencido) => {
+      const d = diasEntre(hoy, p[campo]);
+      if (d < 0) avisos.push({ tipo: campo, nivel: 'rojo', persona_id: p.id, nombre: p.nombre, texto: `${que} ${vencido} hace ${-d} día${d === -1 ? '' : 's'}`, fecha: p[campo] });
+      else if (d <= 30) avisos.push({ tipo: campo, nivel: 'amarillo', persona_id: p.id, nombre: p.nombre, texto: d === 0 ? `${que} vence hoy` : `${que} vence en ${d} día${d === 1 ? '' : 's'}`, fecha: p[campo] });
+    };
+    for (const p of db.prepare('SELECT * FROM personal WHERE activo = 1 ORDER BY nombre').all().map(abrir)) {
+      if (p.licencia_vence) vence(p, 'licencia_vence', 'Licencia de manejo', 'vencida');
+      if (conSens && p.contrato_vence) vence(p, 'contrato_vence', 'Contrato', 'vencido');
+      if (conSens && p._ilegibles.length) avisos.push({ tipo: 'cifrado', nivel: 'rojo', persona_id: p.id, nombre: p.nombre, texto: 'Datos cifrados que no se pueden leer: revisa la clave de cifrado', fecha: hoy });
+    }
+    for (const i of db.prepare(`SELECT i.personal_id, i.tipo, i.fecha_inicio, i.fecha_fin, p.nombre FROM incidencias_personal i JOIN personal p ON p.id = i.personal_id
+      WHERE p.activo = 1 AND i.cancelada = 0 AND i.tipo IN ('vacaciones', 'incapacidad', 'permiso') AND i.fecha_fin >= ? AND i.fecha_inicio <= ? ORDER BY i.fecha_inicio`).all(hoy, semana))
+      avisos.push({ tipo: 'ausencia', nivel: 'azul', persona_id: i.personal_id, nombre: i.nombre, fecha: i.fecha_inicio,
+        texto: `${INCIDENCIAS[i.tipo]} ${i.fecha_inicio <= hoy ? (i.fecha_fin === hoy ? 'hoy' : 'hasta el ' + dma(i.fecha_fin)) : i.fecha_inicio === i.fecha_fin ? 'el ' + dma(i.fecha_inicio) : 'del ' + dma(i.fecha_inicio) + ' al ' + dma(i.fecha_fin)}` });
+    for (const l of db.prepare(`SELECT l.id, l.estatus, l.created_at, l.fecha_servicio, COALESCE(c.empresa_contacto, c.nombre, l.nombre) AS cliente FROM leads l LEFT JOIN clientes c ON c.id = l.cliente_id
+      WHERE l.estatus = 'ganado' AND l.ejecucion IS NULL AND l.fecha_servicio BETWEEN ? AND ? AND l.tecnico_id IS NULL
+        AND NOT EXISTS (SELECT 1 FROM orden_personal op WHERE op.lead_id = l.id AND op.papel = 'responsable') ORDER BY l.fecha_servicio`).all(en(-30), semana))
+      avisos.push({ tipo: 'sin_responsable', nivel: l.fecha_servicio < hoy ? 'rojo' : 'amarillo', lead_id: l.id, nombre: l.cliente, folio: require('./sucursales').folioLead(l), fecha: l.fecha_servicio,
+        texto: l.fecha_servicio < hoy ? 'Orden ya pasada de fecha y sin técnico responsable' : 'Orden sin técnico responsable' });
+    const peso = { rojo: 0, amarillo: 1, azul: 2 };
+    res.json(avisos.sort((a, b) => peso[a.nivel] - peso[b.nivel] || String(a.fecha).localeCompare(String(b.fecha))));
+  }));
   app.get('/api/personal/:id', h((req, res) => {
     if (!ve(req)) return negar(res);
     const p = leer(req.params.id);

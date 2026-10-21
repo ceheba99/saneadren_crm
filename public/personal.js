@@ -227,8 +227,27 @@ const Personal = (() => {
   // Al cerrar la ficha (con la X, Esc o desde otra pantalla) se borra de la página: lo sensible no se queda ahí.
   new MutationObserver(() => { if (!$('overlay-personal').classList.contains('mostrar') && !ocupado) { $('pe-cuerpo').innerHTML = ''; actual = null; base = ''; } })
     .observe($('overlay-personal'), { attributes: true, attributeFilter: ['class'] });
+  // ---------- Bloque «Personal» de Inicio ----------
+  const TAG = { licencia_vence: '🪪 Licencia', contrato_vence: '📄 Contrato', ausencia: '🏖️ Ausencia', sin_responsable: '👷 Sin responsable', cifrado: '🔒 Cifrado' };
+  async function pintarInicio() {
+    const cont = $('inicio-personal'); if (!cont || !Permisos.puede('personal.ver')) return;
+    cont.innerHTML = '<p class="util-45" role="status">Cargando…</p>';
+    let avisos;
+    try { avisos = await pedir('/avisos'); } catch (e) { cont.innerHTML = `<div class="aviso-error-carga" role="alert"><p>${esc(e.message)}</p><button type="button" class="btn btn-outline" data-pe-inicio-reintentar="1">Reintentar</button></div>`; return; }
+    cont.innerHTML = avisos.length ? avisos.map(a => `<div class="fila-alerta ${a.nivel === 'rojo' ? 'vencido' : a.nivel === 'azul' ? 'tipo-alerta' : 'tipo-recompra'}">
+        <div class="info"><span class="tipo-tag ${a.nivel === 'rojo' ? 'rojo' : a.nivel === 'azul' ? 'alerta' : 'recompra'}">${esc(TAG[a.tipo] || a.tipo)}</span>
+          <div><b>${esc(a.nombre || 'Sin nombre')}</b>${a.folio ? ' · ' + esc(a.folio) : ''}</div><div class="txt">${esc(a.texto)}</div>${a.fecha ? `<div class="fecha">${esc(fecha(a.fecha))}</div>` : ''}</div>
+        <div class="util-46">${a.lead_id ? `<button type="button" class="btn btn-outline" data-pe-inicio-orden="${Number(a.lead_id)}">Abrir orden</button>` : `<button type="button" class="btn btn-outline" data-pe-inicio-persona="${Number(a.persona_id)}">Abrir ficha</button>`}</div></div>`).join('')
+      : '<p class="util-45">Todo en orden con el personal: sin licencias ni contratos por vencer, nadie falta esta semana y las órdenes próximas tienen responsable. 🎉</p>';
+  }
+  $('inicio-personal')?.addEventListener('click', e => {
+    const b = e.target.closest('button'); if (!b) return;
+    if (b.dataset.peInicioOrden) abrirFicha(Number(b.dataset.peInicioOrden));
+    else if (b.dataset.peInicioPersona) abrir(b.dataset.peInicioPersona);
+    else if (b.dataset.peInicioReintentar) pintarInicio();
+  });
   window.addEventListener('beforeunload', e => { if ($('overlay-personal').classList.contains('mostrar') && pendiente()) { e.preventDefault(); e.returnValue = ''; } });
-  return { cargar, abrir };
+  return { cargar, abrir, pintarInicio };
 })();
 
 // Equipo de una orden de servicio: técnico responsable y, opcional, operadores y ayudantes (de Personal).

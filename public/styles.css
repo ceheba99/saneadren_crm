@@ -248,6 +248,7 @@ main{max-width:1400px;margin:0 auto;padding:22px 24px 60px;}
 .fila-alerta.tipo-alerta{border-left-color:var(--azul-500);}
 .fila-alerta.vencido{border-left-color:var(--rojo);}
 .tipo-tag.estancada{background:#eaf2fb;color:var(--azul-600);}
+.tipo-tag.rojo{background:#fdecec;color:var(--rojo);}
 .fila-alerta.tipo-estancada{border-left-color:var(--azul-500);}
 
 /* Panel de Inicio: dos zonas con el mismo color que ya usamos en todo el sistema para

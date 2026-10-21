@@ -495,6 +495,7 @@ async function cargarInicio() {
     ? recompras.map(r => filaRecompra(r, r.dias_restantes <= 0)).join('')
     : '<p class="util-45">No hay recompras próximas todavía.</p>';
   Finanzas.pintarInicio();
+  if (typeof Personal !== 'undefined') Personal.pintarInicio(); // bloque «Personal» (licencias, contratos, ausencias, órdenes sin responsable)
 }
 function filaEstancada(l) {
   const dias = diasSinMovimiento(l.updated_at);

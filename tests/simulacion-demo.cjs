@@ -76,6 +76,15 @@ const pedir = async (m, r, t, b) => { const x = await fetch(`http://localhost:${
   for (const r of ['ventas', 'tecnico', 'atencion', 'costos']) { [s] = await pedir('GET', '/personal', tok[r]); revisa(s === 403, r + ' no entra a Personal', s); }
   [s, j] = await pedir('GET', '/personal/para-asignar', tok.ventas); revisa(s === 200 && j.length >= 10 && !JSON.stringify(j).includes('clabe'), 'ventas sí puede elegir personal para el equipo de una orden (solo nombre y puesto)', j.length);
   { const [, ls] = await pedir('GET', '/leads', tok.tecnico); const conEquipo = ls.filter(l => l.tecnico_id); revisa(conEquipo.length > 0, 'el técnico ve las órdenes donde es responsable', conEquipo.length); }
+  // Avisos de Personal en Inicio: cada quien ve los de su sucursal; contratos solo con datos sensibles.
+  { const [st, av] = await pedir('GET', '/personal/avisos', tok.admin), t = av.map?.(a => a.tipo + ':' + a.nombre) || [];
+    revisa(st === 200 && t.includes('licencia_vence:Óscar Medina') && av.find(a => a.nombre === 'Óscar Medina').nivel === 'rojo' && t.includes('licencia_vence:Raúl Técnico - Demo') && t.includes('contrato_vence:Pedro Ventas CDMX - Demo')
+      && t.includes('ausencia:Diego Arturo Hernández') && t.includes('ausencia:Luis Ángel Pérez'), 'Inicio de Dirección: licencias vencidas y por vencer, contratos por vencer y quién falta esta semana', t);
+    revisa(av[0]?.nivel === 'rojo', 'lo vencido sale primero', av.slice(0, 2)); }
+  { const [st, av] = await pedir('GET', '/personal/avisos', tok.supervisor); revisa(st === 200 && av.length > 0 && !av.some(a => a.tipo === 'contrato_vence') && !av.some(a => /Óscar|Mónica|Pedro/.test(a.nombre)), 'Inicio del supervisor: avisos de su sucursal, sin contratos (son dato sensible)', av.map?.(a => a.tipo + ':' + a.nombre)); }
+  { const [st, av] = await pedir('GET', '/personal/avisos', tok.nomina); revisa(st === 200 && av.some(a => a.tipo === 'contrato_vence') && !av.some(a => a.tipo === 'sin_responsable'), 'Inicio de Nómina: ve contratos por vencer, pero no órdenes (no ve ventas)', av.map?.(a => a.tipo)); }
+  { const [st, av] = await pedir('GET', '/personal/avisos', tok.gerente_cdmx); revisa(st === 200 && av.length > 0 && av.every(a => /Óscar|Mónica|Pedro/.test(a.nombre) || a.tipo === 'sin_responsable'), 'Inicio de la gerente de CDMX: solo avisos de CDMX', av.map?.(a => a.tipo + ':' + a.nombre)); }
+  for (const r of ['ventas', 'tecnico']) { const [st] = await pedir('GET', '/personal/avisos', tok[r]); revisa(st === 403, r + ' no recibe avisos de Personal', st); }
   [s, j] = await pedir('GET', '/prospeccion', tok.ventas); revisa(s === 200 && j.length === 5 && new Set(j.map(e => e.estado)).size === 5, 'prospección: 5 establecimientos, uno en cada estado', j.map?.(e => e.estado));
   [s, j] = await pedir('GET', '/tablero', tok.admin); revisa(j.alertas?.some(a => /sin IVA capturado/.test(a.texto)), 'Resultados avisa de las facturas con IVA estimado (para enseñar a capturarlo)', j.alertas?.map(a => a.texto));
   const [, leads] = await pedir('GET', '/leads', tok.admin);
