@@ -1585,29 +1585,33 @@ app.get('/api/analisis/comercial', h((req,res)=>{
   const clientes=db.prepare(`SELECT c.id,c.nombre,c.telefono,c.canal_origen_id,COALESCE(ca.nombre,'Sin origen registrado') canal,c.created_at,
     CASE WHEN (? IS NULL OR date(c.created_at)>=?) AND (? IS NULL OR date(c.created_at)<=?) THEN 1 ELSE 0 END nuevo,
     COALESCE(a.ganados_historicos,0) ganados_historicos,COALESCE(a.total_historico,0) total_historico,
-    COALESCE(a.servicios,0) servicios,COALESCE(a.contratado,0) contratado,COALESCE(a.registros,0) registros,
+    COALESCE(a.servicios,0) servicios,COALESCE(a.contratado,0) contratado,COALESCE(a.por_realizar_n,0) por_realizar_n,COALESCE(a.por_realizar,0) por_realizar,COALESCE(a.registros,0) registros,
     COALESCE(a.abiertas,0) abiertas,COALESCE(a.propuesto,0) propuesto,a.ultima_fecha
     FROM clientes c LEFT JOIN canales ca ON ca.id=c.canal_origen_id
     LEFT JOIN (SELECT cliente_id,
-      SUM(CASE WHEN estatus='ganado' THEN 1 ELSE 0 END) ganados_historicos,
-      SUM(CASE WHEN estatus='ganado' THEN COALESCE(valor,0) ELSE 0 END) total_historico,
-      SUM(CASE WHEN estatus='ganado' AND (? IS NULL OR date(fecha_servicio)>=?) AND (? IS NULL OR date(fecha_servicio)<=?) THEN 1 ELSE 0 END) servicios,
-      SUM(CASE WHEN estatus='ganado' AND (? IS NULL OR date(fecha_servicio)>=?) AND (? IS NULL OR date(fecha_servicio)<=?) THEN COALESCE(valor,0) ELSE 0 END) contratado,
+      SUM(CASE WHEN estatus='ganado' AND ejecucion='realizado' THEN 1 ELSE 0 END) ganados_historicos,
+      SUM(CASE WHEN estatus='ganado' AND ejecucion='realizado' THEN COALESCE(valor,0) ELSE 0 END) total_historico,
+      SUM(CASE WHEN estatus='ganado' AND ejecucion='realizado' AND (? IS NULL OR date(COALESCE(fecha_realizado,fecha_servicio))>=?) AND (? IS NULL OR date(COALESCE(fecha_realizado,fecha_servicio))<=?) THEN 1 ELSE 0 END) servicios,
+      SUM(CASE WHEN estatus='ganado' AND ejecucion='realizado' AND (? IS NULL OR date(COALESCE(fecha_realizado,fecha_servicio))>=?) AND (? IS NULL OR date(COALESCE(fecha_realizado,fecha_servicio))<=?) THEN COALESCE(valor,0) ELSE 0 END) contratado,
+      SUM(CASE WHEN estatus='ganado' AND ejecucion IS NULL AND (? IS NULL OR date(fecha_servicio)>=?) AND (? IS NULL OR date(fecha_servicio)<=?) THEN 1 ELSE 0 END) por_realizar_n,
+      SUM(CASE WHEN estatus='ganado' AND ejecucion IS NULL AND (? IS NULL OR date(fecha_servicio)>=?) AND (? IS NULL OR date(fecha_servicio)<=?) THEN COALESCE(valor,0) ELSE 0 END) por_realizar,
       SUM(CASE WHEN (? IS NULL OR date(created_at)>=?) AND (? IS NULL OR date(created_at)<=?) THEN 1 ELSE 0 END) registros,
       SUM(CASE WHEN estatus='abierto' AND (? IS NULL OR date(created_at)>=?) AND (? IS NULL OR date(created_at)<=?) THEN 1 ELSE 0 END) abiertas,
       SUM(CASE WHEN estatus='abierto' AND (? IS NULL OR date(created_at)>=?) AND (? IS NULL OR date(created_at)<=?) THEN COALESCE(valor,0) ELSE 0 END) propuesto,
       MAX(CASE WHEN estatus='ganado' THEN fecha_servicio END) ultima_fecha
       FROM leads GROUP BY cliente_id) a ON a.cliente_id=c.id
-    WHERE (cliente_en_alcance(c.sucursal_id, c.id) OR EXISTS (SELECT 1 FROM leads lv WHERE lv.cliente_id = c.id))`).all(...Array.from({length:6},()=>[desde,desde,hasta,hasta]).flat());
+    WHERE (cliente_en_alcance(c.sucursal_id, c.id) OR EXISTS (SELECT 1 FROM leads lv WHERE lv.cliente_id = c.id))`).all(...Array.from({length:8},()=>[desde,desde,hasta,hasta]).flat());
   const canales=new Map();
-  for(const c of clientes){const k=c.canal_origen_id||0;if(!canales.has(k))canales.set(k,{canal:c.canal,nuevos:0,convertidos:0,clientes:0,recurrentes:0,servicios:0,contratado:0,registros:0,abiertas:0,propuesto:0});const r=canales.get(k);r.nuevos+=c.nuevo;r.convertidos+=c.nuevo&&c.ganados_historicos>0?1:0;r.clientes+=c.servicios>0?1:0;r.recurrentes+=c.servicios>0&&c.ganados_historicos>1?1:0;for(const campo of ['servicios','contratado','registros','abiertas','propuesto'])r[campo]+=c[campo];}
+  for(const c of clientes){const k=c.canal_origen_id||0;if(!canales.has(k))canales.set(k,{canal:c.canal,nuevos:0,convertidos:0,clientes:0,recurrentes:0,servicios:0,contratado:0,por_realizar_n:0,por_realizar:0,registros:0,abiertas:0,propuesto:0});const r=canales.get(k);r.nuevos+=c.nuevo;r.convertidos+=c.nuevo&&c.ganados_historicos>0?1:0;r.clientes+=c.servicios>0?1:0;r.recurrentes+=c.servicios>0&&c.ganados_historicos>1?1:0;for(const campo of ['servicios','contratado','por_realizar_n','por_realizar','registros','abiertas','propuesto'])r[campo]+=c[campo];}
   const filas=[...canales.values()].sort((a,b)=>b.contratado-a.contratado);
-  const resumen={nuevos:0,convertidos:0,clientes:0,recurrentes:0,servicios:0,contratado:0,registros:0,abiertas:0,propuesto:0};for(const r of filas)for(const k of Object.keys(resumen))resumen[k]+=r[k];
+  // Decisión del dueño (2026-10-21): una orden cuenta como servicio y venta cuando se marca realizada (por la fecha en que se
+  // realizó, igual que Panorama y el Generador); la contratada sin concluir va aparte («por realizar»); la no realizada no cuenta.
+  const resumen={nuevos:0,convertidos:0,clientes:0,recurrentes:0,servicios:0,contratado:0,por_realizar_n:0,por_realizar:0,registros:0,abiertas:0,propuesto:0};for(const r of filas)for(const k of Object.keys(resumen))resumen[k]+=r[k];
   const sinFecha=db.prepare("SELECT COUNT(*) total FROM leads WHERE estatus='ganado' AND fecha_servicio IS NULL").get().total;
-  const mensual=db.prepare("SELECT strftime('%Y-%m',fecha_servicio) mes,COUNT(*) servicios,SUM(COALESCE(valor,0)) importe FROM leads WHERE estatus='ganado' AND date(fecha_servicio) IS NOT NULL AND (? IS NULL OR date(fecha_servicio)>=?) AND (? IS NULL OR date(fecha_servicio)<=?) GROUP BY mes ORDER BY mes").all(desde,desde,hasta,hasta);
+  const mensual=db.prepare("SELECT strftime('%Y-%m',COALESCE(fecha_realizado,fecha_servicio)) mes,COUNT(*) servicios,SUM(COALESCE(valor,0)) importe FROM leads WHERE estatus='ganado' AND ejecucion='realizado' AND date(COALESCE(fecha_realizado,fecha_servicio)) IS NOT NULL AND (? IS NULL OR date(COALESCE(fecha_realizado,fecha_servicio))>=?) AND (? IS NULL OR date(COALESCE(fecha_realizado,fecha_servicio))<=?) GROUP BY mes ORDER BY mes").all(desde,desde,hasta,hasta);
   const antiguedad=db.prepare(`SELECT CASE WHEN julianday(date('now','localtime'))-julianday(date(created_at))<=7 THEN 0 WHEN julianday(date('now','localtime'))-julianday(date(created_at))<=30 THEN 1 WHEN julianday(date('now','localtime'))-julianday(date(created_at))<=60 THEN 2 ELSE 3 END grupo,COUNT(*) cantidad,SUM(COALESCE(valor,0)) importe FROM leads WHERE estatus='abierto' AND (? IS NULL OR date(created_at)>=?) AND (? IS NULL OR date(created_at)<=?) GROUP BY grupo ORDER BY grupo`).all(desde,desde,hasta,hasta);
   // Órdenes anteriores al IVA: su importe se suma como se capturó (puede o no incluir IVA).
-  const ivaPorDefinir=db.prepare("SELECT COUNT(*) servicios,COALESCE(SUM(valor),0) importe FROM leads WHERE estatus='ganado' AND iva_modo IS NULL AND (? IS NULL OR date(fecha_servicio)>=?) AND (? IS NULL OR date(fecha_servicio)<=?)").get(desde,desde,hasta,hasta);
+  const ivaPorDefinir=db.prepare("SELECT COUNT(*) servicios,COALESCE(SUM(valor),0) importe FROM leads WHERE estatus='ganado' AND ejecucion='realizado' AND iva_modo IS NULL AND (? IS NULL OR date(COALESCE(fecha_realizado,fecha_servicio))>=?) AND (? IS NULL OR date(COALESCE(fecha_realizado,fecha_servicio))<=?)").get(desde,desde,hasta,hasta);
   res.json({resumen,mensual,antiguedad,canales:filas,clientes:clientes.filter(c=>c.nuevo||c.registros||c.servicios).sort((a,b)=>b.contratado-a.contratado),sinFecha,ivaPorDefinir});
 }));
 app.get('/api/analisis/top-clientes', h((req, res) => {

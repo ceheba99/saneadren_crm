@@ -199,7 +199,8 @@ module.exports = function tablero(app, db, h, finanzas) {
 
     const foto = {
       te_deben: suma(conSaldo), vencido: suma(conSaldo.filter(c => c.vencida)), vencido_30: suma(conSaldo.filter(c => c.dias_vencido > 30)),
-      ordenes_por_cobrar: conSaldo.length, por_realizar: suma(cart.filter(c => c.saldo > 0 && c.programada)),
+      ordenes_por_cobrar: conSaldo.length, por_realizar: suma(cart.filter(c => c.saldo > 0 && c.programada && !c.por_concluir)),
+      por_concluir_monto: suma(cart.filter(c => c.saldo > 0 && c.por_concluir)), ordenes_por_concluir: cart.filter(c => c.saldo > 0 && c.por_concluir).length,
       a_favor: Math.round(cart.reduce((t, c) => t + (c.a_favor || 0) * 100, 0)) / 100, tramos,
       deudores: [...deudores.values()].sort((a, b) => b.saldo - a.saldo).slice(0, 8).map(g => ({ ...g, saldo: Math.round(g.saldo * 100) / 100, vencido: Math.round(g.vencido * 100) / 100 })),
       debes: Math.round(cxp.reduce((t, x) => t + x.saldo * 100, 0)) / 100, debes_vencido: Math.round(cxp.filter(x => x.vencida).reduce((t, x) => t + x.saldo * 100, 0)) / 100,

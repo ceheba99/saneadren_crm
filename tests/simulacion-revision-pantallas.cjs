@@ -202,6 +202,32 @@ const PDF = Buffer.from('%PDF-1.4\n% prueba\n%%EOF');
   [s] = await pedir('PUT', '/leads/' + cp.id, T.ventas, { version: await vv(cp.id), estatus: 'perdido', motivo_perdida: 'Precio alto por ahora' });
   [s] = await pedir('PUT', '/leads/' + cp.id, T.ventas, { version: await vv(cp.id), estatus: 'abierto' }); revisa(s === 200, 'una cotización no aceptada la reabre el vendedor (nunca fue orden)', s);
 
+  console.log('8. Una orden cuenta cuando se concluye (decisión del dueño, 2026-10-21)');
+  const D1 = HOY.slice(0, 8) + '01';
+  const numeros = async () => {
+    const [, r] = await pedir('GET', '/finanzas/resumen', T.admin), [, c] = await pedir('GET', `/analisis/comercial?desde=${D1}&hasta=${HOY}`, T.admin), [, t] = await pedir('GET', `/tablero?desde=${D1}&hasta=${HOY}&tipo=mes`, T.admin);
+    return { teDeben: r.por_cobrar, porConcluir: r.por_concluir, servicios: c.resumen.servicios, vendido: c.resumen.contratado, porRealizar: c.resumen.por_realizar, venta: t.actual.venta, teDebenPanorama: t.foto.te_deben };
+  };
+  const n0 = await numeros();
+  const [ox] = await cotOrden(20000);
+  const n1 = await numeros();
+  revisa(n1.teDeben === n0.teDeben && n1.teDebenPanorama === n0.teDebenPanorama, 'orden de hoy sin concluir: no cuenta en «Te deben» (ni en Cuentas por cobrar ni en Panorama)', [n0.teDeben, n1.teDeben]);
+  revisa(Math.round((n1.porConcluir - n0.porConcluir) * 100) === 2320000, 'aparece aparte como «por concluir» ($23,200 con IVA)', [n0.porConcluir, n1.porConcluir]);
+  revisa(n1.servicios === n0.servicios && n1.vendido === n0.vendido && n1.venta === n0.venta, 'ni como servicio ni como venta (Análisis comercial y Panorama)', [n0, n1]);
+  revisa(n1.porRealizar - n0.porRealizar === 20000, 'en Análisis comercial sale como «por realizar» ($20,000 sin IVA)', [n0.porRealizar, n1.porRealizar]);
+  [s] = await pedir('POST', '/leads/' + ox.id + '/ejecucion', T.admin, { estado: 'realizado', fecha: HOY });
+  const n2 = await numeros();
+  revisa(Math.round((n2.teDeben - n1.teDeben) * 100) === 2320000 && n2.porConcluir === n0.porConcluir, 'al marcarla realizada pasa a «Te deben» ($23,200)', [n1.teDeben, n2.teDeben]);
+  revisa(n2.servicios === n0.servicios + 1 && n2.vendido - n0.vendido === 20000 && n2.venta - n0.venta === 20000, 'y cuenta como servicio y venta, igual en las dos pestañas de Resultados ($20,000 sin IVA)', [n2.vendido - n0.vendido, n2.venta - n0.venta]);
+  const [oy] = await cotOrden(5000);
+  [s] = await pedir('PUT', '/leads/' + oy.id + '/facturacion', T.admin, { dias_credito: 15, factura_folio: 'F-REV-1', factura_fecha: HOY });
+  const n3 = await numeros();
+  revisa(s === 200 && Math.round((n3.teDeben - n2.teDeben) * 100) === 580000, 'facturada sin concluir también se debe ($5,800): hay servicios sin factura, por eso basta cualquiera de las dos', [s, n2.teDeben, n3.teDeben]);
+  const [oz] = await cotOrden(3000);
+  [s] = await pedir('POST', '/leads/' + oz.id + '/ejecucion', T.admin, { estado: 'no_realizado', motivo: 'El cliente canceló el servicio' });
+  const n4 = await numeros();
+  revisa(n4.teDeben === n3.teDeben && n4.servicios === n3.servicios && n4.vendido === n3.vendido && n4.porConcluir === n3.porConcluir && n4.porRealizar === n3.porRealizar, 'una orden NO realizada no cuenta en ningún lado (antes seguía como «contratado»)', [n3, n4]);
+
   console.log(`\n${n - malos.length}/${n} correctas`);
   if (malos.length) { console.log('FALLARON:\n - ' + malos.join('\n - ')); process.exitCode = 1; }
   const errores = salida.split('\n').filter(l => /Error en|no manejado|uncaught/i.test(l));

@@ -478,8 +478,15 @@ const espera = ms => new Promise(r => setTimeout(r, ms));
   [s, j] = await altaIva({ partidas_json: part(3500), estatus: 'ganado', fecha_servicio: '2026-12-01', duplicado_de: ordenMas.id });
   ok(s === 201 && j.iva_modo === 'mas_iva' && j.iva_cent === 56000, 'duplicar sin mandar el IVA (versión anterior) hereda el IVA de la orden original', j);
 
+  // Resultados solo cuenta lo realizado (decisión del dueño, 2026-10-21): un servicio con IVA por definir aparece al realizarse.
+  const hoyMx = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Mexico_City' }).format(new Date());
+  [s, j] = await pedir('GET', '/analisis/comercial', A); const ivaAntes = j.ivaPorDefinir.servicios;
+  [s, j] = await altaIva({ partidas_json: part(700), estatus: 'ganado', fecha_servicio: hoyMx }); const ordenIvaReal = j;
   [s, j] = await pedir('GET', '/analisis/comercial', A);
-  ok(s === 200 && j.ivaPorDefinir && j.ivaPorDefinir.servicios >= 1, 'Resultados cuenta los servicios con IVA por definir', j.ivaPorDefinir);
+  ok(j.ivaPorDefinir.servicios === ivaAntes, 'una orden con IVA por definir que aún no se realiza no cuenta en Resultados', j.ivaPorDefinir);
+  [s] = await pedir('POST', '/leads/' + ordenIvaReal.id + '/ejecucion', A, { estado: 'realizado', fecha: hoyMx });
+  [s, j] = await pedir('GET', '/analisis/comercial', A);
+  ok(s === 200 && j.ivaPorDefinir.servicios === ivaAntes + 1, 'Resultados cuenta los servicios realizados con IVA por definir', j.ivaPorDefinir);
 
   seccion('12. Cantidad × precio unitario, proyecto y Generador');
   const partCant = JSON.stringify([
