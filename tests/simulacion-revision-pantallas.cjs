@@ -123,6 +123,25 @@ const PDF = Buffer.from('%PDF-1.4\n% prueba\n%%EOF');
   [s] = await pedir('PUT', '/historial/' + aviso.id + '/reabrir', T.admin, {}); revisa(s === 409, 'si no está resuelto: no aplica', s);
   [s] = await pedir('PUT', '/historial/999999/reabrir', T.admin, {}); revisa(s === 404, 'un aviso que no existe: 404', s);
 
+  console.log('5. Prospección: cada quien lo suyo (decisión del dueño, 2026-10-21)');
+  [s, j] = await pedir('POST', '/usuarios', T.admin, { nombre: 'Segundo Vendedor Qro', password: 'Clave-Otro-2026x', rol: 'ventas', sucursales: [qro.id] }); const v2 = j;
+  const V2 = (await pedir('POST', '/login', null, { nombre: 'Segundo Vendedor Qro', password: 'Clave-Otro-2026x' }))[1].token;
+  const est = extra => ({ nombre: 'Restaurante La Esquina', sector_id: sectores[0].id, zona: 'Querétaro', direccion: 'Av. Universidad 12', telefono: '', correo: '', persona: '', cargo: '', fuente: '', necesidades: '', estado: 'investigar', responsable_id: ID.ventas, proximo_contacto: '', ...extra });
+  [s, j] = await pedir('POST', '/prospeccion', T.ventas, est()); const e1 = j; revisa(s === 201, 'Laura registra un establecimiento a su nombre', j);
+  [s, j] = await pedir('GET', '/prospeccion', V2); revisa(s === 200 && !j.some(e => e.id === e1.id), 'otro vendedor de la misma sucursal no lo ve en su lista', s);
+  [s] = await pedir('GET', '/prospeccion/' + e1.id, V2); revisa(s === 404, 'ni abriéndolo directo', s);
+  [s] = await pedir('PUT', '/prospeccion/' + e1.id, V2, est({ version: e1.version, responsable_id: v2.id })); revisa(s === 404, 'ni puede quitárselo a Laura', s);
+  [s, j] = await pedir('POST', '/prospeccion', V2, est({ responsable_id: v2.id }));
+  revisa(s === 409 && /ya lo trabaja Laura/.test(j.error || '') && !j.id, 'si lo da de alta otra vez: «Ese establecimiento ya lo trabaja Laura…», sin más datos', j);
+  [s, j] = await pedir('POST', '/prospeccion', V2, est({ nombre: 'Hotel Centro', responsable_id: ID.ventas })); revisa(s === 403, 'un vendedor no registra a nombre de otro', [s, j.error]);
+  [s, j] = await pedir('POST', '/prospeccion', V2, est({ nombre: 'Hotel Centro', responsable_id: v2.id })); revisa(s === 201, 'a su nombre sí', j);
+  [s, j] = await pedir('GET', '/prospeccion', T.ventas); revisa(s === 200 && j.some(e => e.id === e1.id) && !j.some(e => e.responsable_id === v2.id), 'Laura ve los suyos y no los del otro vendedor', s);
+  for (const rol of ['tecnico', 'costos']) { [s] = await pedir('GET', '/prospeccion', T[rol]); revisa(s === 403, `${rol}: no ve Prospección`, s); }
+  [s, j] = await pedir('GET', '/prospeccion', T.atencion); revisa(s === 200 && j.some(e => e.id === e1.id) && j.some(e => e.responsable_id === v2.id), 'Atención (ve toda la sucursal) ve los de los dos vendedores', s);
+  [s, j] = await pedir('POST', '/prospeccion', T.atencion, est({ nombre: 'Hospital Norte', responsable_id: ID.tecnico })); revisa(s === 403 && /no tiene acceso a Prospección/.test(j.error || ''), 'no se asigna a quien no tiene Prospección (el técnico)', j);
+  [s, j] = await pedir('POST', '/prospeccion', T.atencion, est({ nombre: 'Hospital Norte', responsable_id: v2.id })); revisa(s === 201, 'Atención sí asigna a un vendedor', j);
+  [s, j] = await pedir('GET', '/permisos', T.admin); revisa(s === 200 && JSON.stringify(j).includes('prospeccion.ver'), '«Prospección» aparece en Roles y permisos (Dirección la da o la quita por rol)', s);
+
   console.log(`\n${n - malos.length}/${n} correctas`);
   if (malos.length) { console.log('FALLARON:\n - ' + malos.join('\n - ')); process.exitCode = 1; }
   const errores = salida.split('\n').filter(l => /Error en|no manejado|uncaught/i.test(l));

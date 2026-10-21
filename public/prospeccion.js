@@ -9,7 +9,8 @@ const Prospeccion=(()=>{
   const opciones=(lista,valor,nombre)=>lista.map(x=>`<option value="${esc(x[valor])}">${esc(x[nombre])}</option>`).join('');
   async function catalogos(){[sectores,usuarios]=await Promise.all([pedir('/sectores'),api('/usuarios').then(r=>r.json())]);
     for(const id of ['pr-sector_id','pr-f-sector']){const previo=$(id).value;$(id).innerHTML='<option value="">'+(id==='pr-f-sector'?'Todos los sectores':'Selecciona sector')+'</option>'+opciones(sectores,'id','nombre');$(id).value=previo;}
-    for(const id of ['pr-responsable_id','pr-f-responsable']){const previo=$(id).value;$(id).innerHTML='<option value="">'+(id==='pr-f-responsable'?'Todos los responsables':'Selecciona responsable')+'</option>'+opciones(usuarios,'id','nombre');$(id).value=previo;}
+    const elegibles=Permisos.puede('ventas.sucursal')?usuarios:usuarios.filter(u=>u.id===USUARIO_ACTUAL.id);
+    for(const id of ['pr-responsable_id','pr-f-responsable']){const previo=$(id).value;$(id).innerHTML='<option value="">'+(id==='pr-f-responsable'?'Todos los responsables':'Selecciona responsable')+'</option>'+opciones(elegibles,'id','nombre');$(id).value=previo;}
     $('pr-admin').hidden=!Permisos.direccion();
     $('pr-sectores').innerHTML=sectores.map(s=>`<div class="servicio-row"><input aria-label="Nombre del sector" id="pr-sector-${s.id}" value="${esc(s.nombre)}" maxlength="80"><button class="btn btn-outline" data-sector="${s.id}">Guardar nombre</button></div>`).join('');
   }
@@ -39,7 +40,7 @@ const Prospeccion=(()=>{
   // ---------- Bloque «Prospección» de Inicio: a quién toca llamar hoy (o ya pasó la fecha). ----------
   // Vendedor: los suyos; quien ve toda su sucursal: todos los de su sucursal.
   async function pintarInicio(){
-    const cont=$('inicio-prospeccion');if(!cont||!Permisos.puede('ventas.ver'))return;
+    const cont=$('inicio-prospeccion');if(!cont||!Permisos.puede('prospeccion.ver'))return;
     cont.innerHTML='<p class="util-45" role="status">Cargando…</p>';
     let lista;
     try{lista=await pedir('?pendientes=1'+(Permisos.puede('ventas.sucursal')?'':'&responsable_id='+Number(USUARIO_ACTUAL.id)));}

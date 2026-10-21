@@ -18,6 +18,7 @@
 const TODOS = ['gerente', 'ventas', 'atencion', 'tecnico', 'costos'];
 const CATALOGO = [
   // [clave, sección, nombre, explicación, roles que lo tienen al inicio (además de Dirección)]
+  ['prospeccion.ver', 'Contactos y clientes', 'Prospección', 'Buscar establecimientos y darles seguimiento: los suyos, o los de toda su sucursal si ve las ventas de la sucursal', ['gerente', 'ventas', 'atencion']],
   ['clientes.exportar', 'Contactos y clientes', 'Exportar a Excel', 'Descargar contactos, cotizaciones, cuentas y órdenes de compra en Excel', ['gerente']],
   ['generador.cargar', 'Cotizaciones y órdenes', 'Cargar el generador', 'Subir el Excel del generador de órdenes', ['gerente', 'atencion', 'ventas']],
   ['ordenes.importe_ganada', 'Cotizaciones y órdenes', 'Cambiar importe o IVA de una orden', 'Modificar el importe o el IVA cuando la cotización ya es orden de servicio', ['gerente', 'atencion']],
@@ -57,6 +58,7 @@ const CLAVES = new Set([...CATALOGO.map(p => p.clave), ...VIRTUALES]);
 const REALES = new Set(CATALOGO.map(p => p.clave));
 // Permiso → los que necesita para tener sentido (y para que la pantalla los marque juntos).
 const DEPENDE = {
+  'prospeccion.ver': ['ventas.ver'],
   'dinero.mover': ['cxp.ver', 'gastos.registrar'],
   'cobros.confirmar': ['cxc.ver'],
   'cobros.directo': ['cobros.registrar'],
@@ -122,6 +124,16 @@ module.exports = function crearPermisos(db, app, h) {
       db.prepare('INSERT INTO permisos_sembrados (permiso) VALUES (?)').run('area:' + a.clave);
     });
     db.prepare("DELETE FROM rol_permisos WHERE permiso IN ('cxc.ver', 'cxp.ver')").run(); // ahora son el área
+    // «Prospección» (2026-10-21): antes la veía todo el que veía ventas. Los roles que inventó Dirección y ya veían
+    // ventas la conservan; de los de fábrica la tienen Gerente, Ventas y Atención (el técnico no busca clientes).
+    if (!ya.has('prospeccion:otros')) {
+      for (const r of roles) {
+        if (r === 'admin' || ALCANCE_INICIAL[r]) continue;
+        const v = db.prepare("SELECT nivel FROM rol_alcances WHERE rol = ? AND area = 'ventas'").get(r);
+        if (v && v.nivel >= 1) dar.run(r, 'prospeccion.ver');
+      }
+      db.prepare('INSERT INTO permisos_sembrados (permiso) VALUES (?)').run('prospeccion:otros');
+    }
     // Al sembrar los niveles, lo que quedó sin sentido (p. ej. «Actualizar estatus» para quien ya no ve órdenes) se quita.
     if (sembroAlgo) for (const r of roles) {
       if (r === 'admin') continue;
@@ -209,7 +221,7 @@ module.exports = function crearPermisos(db, app, h) {
   });
 
   // Prospección es de ventas: quien no ve ventas no entra (las vistas tampoco le muestran establecimientos).
-  app.use('/api/prospeccion', (req, res, next) => (!req.usuarioSesion || puede(req, 'ventas.ver') ? next() : res.status(403).json({ error: 'Tu rol no ve prospección' })));
+  app.use('/api/prospeccion', (req, res, next) => (!req.usuarioSesion || puede(req, 'prospeccion.ver') ? next() : res.status(403).json({ error: 'Tu rol no ve prospección' })));
 
   // Catálogos compartidos (los usan todas las sucursales): agregar, corregir, ordenar o quitar pide «catalogos.editar».
   const CATALOGOS = [/^\/(canales|tipos-cliente)(\/|$)/, /^\/compras\/(centros|unidades)(\/|$)/, /^\/finanzas\/categorias(\/|$)/, /^\/servicios\/(\d+|orden)$/];

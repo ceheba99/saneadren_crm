@@ -1,4 +1,20 @@
 module.exports=function registrarProspeccion(app,db,h,unicos){
+  const P=()=>app.locals.permisos,yo=req=>req.usuarioSesion.id;
+  // ¿Ve toda su sucursal o solo lo suyo? (como en cotizaciones: el vendedor, lo suyo).
+  const veSucursal=req=>P().puede(req,'ventas.sucursal');
+  // A nombre de quién: quien ve solo lo suyo, a su nombre; el responsable debe poder usar Prospección.
+  function responsableValido(req,x){
+    if(!veSucursal(req)&&x.responsable_id!==yo(req))return 'Solo puedes registrar establecimientos a tu nombre';
+    const u=db.prepare('SELECT rol FROM usuarios WHERE id=? AND activo=1').get(x.responsable_id);
+    if(u&&!P().tieneRol(u.rol,'prospeccion.ver'))return 'Esa persona no tiene acceso a Prospección: elige a otra';
+    return null;
+  }
+  // Repetido: se busca en TODOS (aunque sea de otro vendedor); si no lo puede ver, solo se dice quién lo trabaja.
+  function repetido(req,x,excepto=0){
+    const r=db.prepare('SELECT e.id,u.nombre responsable FROM main.establecimientos e JOIN usuarios u ON u.id=e.responsable_id WHERE lower(trim(e.nombre))=lower(?) AND lower(trim(e.zona))=lower(?) AND lower(trim(e.direccion))=lower(?) AND e.id<>?').get(x.nombre,x.zona,x.direccion,excepto);
+    if(!r)return null;
+    return db.prepare('SELECT id FROM establecimientos WHERE id=?').get(r.id)?{error:'Ya existe ese establecimiento en esta zona y domicilio',id:r.id}:{error:'Ese establecimiento ya lo trabaja '+r.responsable};
+  }
   db.transaction(()=>{
     db.exec(`CREATE TABLE IF NOT EXISTS sectores_prospeccion(id INTEGER PRIMARY KEY,nombre TEXT NOT NULL COLLATE NOCASE UNIQUE);
     CREATE TABLE IF NOT EXISTS establecimientos(
@@ -54,16 +70,16 @@ module.exports=function registrarProspeccion(app,db,h,unicos){
   app.get('/api/prospeccion/:id',h((req,res)=>{const e=detalle(req.params.id);if(!e)return res.status(404).json({error:'Establecimiento no encontrado'});res.json(e);}));
   app.post('/api/prospeccion',h((req,res)=>{
     let x;try{x=validar(req.body);}catch(e){return res.status(400).json({error:e.message});}
-    const existe=db.prepare('SELECT id FROM establecimientos WHERE lower(trim(nombre))=lower(?) AND lower(trim(zona))=lower(?) AND lower(trim(direccion))=lower(?)').get(x.nombre,x.zona,x.direccion);
-    if(existe)return res.status(409).json({error:'Ya existe ese establecimiento en esta zona y domicilio',id:existe.id});
+    const mal=responsableValido(req,x);if(mal)return res.status(403).json({error:mal});
+    const existe=repetido(req,x);if(existe)return res.status(409).json(existe);
     const ks=Object.keys(x);const info=db.prepare('INSERT INTO main.establecimientos('+ks.join(',')+') VALUES ('+ks.map(()=>'?').join(',')+')').run(...Object.values(x));app.locals.sucursales.asignar('establecimientos',Number(info.lastInsertRowid));res.status(201).json(detalle(info.lastInsertRowid));
   }));
   app.put('/api/prospeccion/:id',h((req,res)=>{
     const actual=detalle(req.params.id);if(!actual)return res.status(404).json({error:'Establecimiento no encontrado'});
     if(req.body.version!==actual.version)return res.status(409).json({error:'Otra persona actualizó esta ficha. Vuelve a abrirla antes de guardar.'});
     let x;try{x=validar(req.body);}catch(e){return res.status(400).json({error:e.message});}
-    const repetido=db.prepare('SELECT id FROM establecimientos WHERE lower(trim(nombre))=lower(?) AND lower(trim(zona))=lower(?) AND lower(trim(direccion))=lower(?) AND id<>?').get(x.nombre,x.zona,x.direccion,actual.id);
-    if(repetido)return res.status(409).json({error:'Ya existe otro establecimiento con estos datos'});
+    if(x.responsable_id!==actual.responsable_id){const mal=responsableValido(req,x);if(mal)return res.status(403).json({error:mal});}
+    const otro=repetido(req,x,actual.id);if(otro)return res.status(409).json({error:otro.id?'Ya existe otro establecimiento con estos datos':otro.error});
     db.prepare('UPDATE main.establecimientos SET '+Object.keys(x).map(k=>k+'=?').join(',')+",version=version+1,updated_at=datetime('now','localtime') WHERE id=?").run(...Object.values(x),actual.id);res.json(detalle(actual.id));
   }));
   app.post('/api/prospeccion/:id/vincular',h((req,res)=>{
