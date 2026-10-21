@@ -303,6 +303,29 @@ module.exports = function compras(app, db, h, finanzas) {
     const peso = { rojo: 0, amarillo: 1, azul: 2 };
     res.json(avisos.sort((a, b) => peso[a.nivel] - peso[b.nivel] || String(a.fecha).localeCompare(String(b.fecha))));
   }));
+  // Artículos ya comprados, para sugerirlos al capturar una partida (decisión del dueño, 2026-10-21): de las órdenes de
+  // compra que quien captura puede ver (su sucursal), sin canceladas. Por artículo, su última compra (unidad, clave, precio,
+  // proveedor y fecha) y, si se indica el proveedor, la última con ese proveedor. No distingue acentos ni mayúsculas.
+  const llaveArticulo = t => String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
+  app.get('/api/compras/articulos', h((req, res) => {
+    if (!esCostos(req)) return res.status(403).json({ error: 'Lo usa quien hace órdenes de compra' });
+    const q = llaveArticulo(req.query.q).slice(0, 80), prov = Number(req.query.proveedor_id) || null;
+    if (q.length < 2) return res.json([]);
+    const palabras = q.split(' ');
+    const ordenes = db.prepare("SELECT o.fecha, o.proveedor_id, p.nombre AS proveedor, o.partidas_json FROM ordenes_compra o LEFT JOIN proveedores p ON p.id = o.proveedor_id WHERE o.estado <> 'cancelada' ORDER BY o.fecha DESC, o.id DESC LIMIT 5000").all();
+    const vistos = new Map();
+    for (const o of ordenes) {
+      let partidas; try { partidas = JSON.parse(o.partidas_json); } catch { continue; }
+      for (const p of Array.isArray(partidas) ? partidas : []) {
+        const k = llaveArticulo(p.descripcion); if (!k || !palabras.every(w => k.includes(w))) continue;
+        let a = vistos.get(k);
+        if (!a) vistos.set(k, a = { descripcion: String(p.descripcion).trim(), unidad: p.unidad || '', clave: p.clave || '', precio: Number(p.precio) || 0, proveedor: o.proveedor || '', fecha: o.fecha, veces: 0, empieza: k.startsWith(q) });
+        a.veces++;
+        if (prov && o.proveedor_id === prov && a.precio_proveedor === undefined) { a.precio_proveedor = Number(p.precio) || 0; a.fecha_proveedor = o.fecha; }
+      }
+    }
+    res.json([...vistos.values()].sort((x, y) => (y.empieza - x.empieza) || (x.fecha < y.fecha ? 1 : x.fecha > y.fecha ? -1 : 0)).slice(0, 8));
+  }));
   app.get('/api/compras/ordenes', h((req, res) => {
     const estado = String(req.query.estado || '');
     let filas = db.prepare(SQL_OC + ' ORDER BY o.fecha DESC, o.id DESC').all().map(describir);

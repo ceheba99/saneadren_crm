@@ -142,6 +142,26 @@ const PDF = Buffer.from('%PDF-1.4\n% prueba\n%%EOF');
   [s, j] = await pedir('POST', '/prospeccion', T.atencion, est({ nombre: 'Hospital Norte', responsable_id: v2.id })); revisa(s === 201, 'Atención sí asigna a un vendedor', j);
   [s, j] = await pedir('GET', '/permisos', T.admin); revisa(s === 200 && JSON.stringify(j).includes('prospeccion.ver'), '«Prospección» aparece en Roles y permisos (Dirección la da o la quita por rol)', s);
 
+  console.log('6. Orden de compra: recordar artículos ya comprados (decisión del dueño, 2026-10-21)');
+  const oc_ = (prov, partidas) => pedir('POST', '/compras/ordenes', T.costos, { forzar: true, proveedor_id: prov.id, centro_id: centros[0].id, categoria: cats[0].clave, factura_a: '', fecha: HOY, fecha_requerida: null, lead_id: null, nota: '', observaciones: '', solicitante_nombre: '', solicitante_cargo: '', iva_modo: 'mas_iva', partidas });
+  const [provA, provB] = provs;
+  [s, j] = await oc_(provA, [{ cantidad: 4, descripcion: 'Llanta Prueba Revisión 11R22.5', unidad: 'PZA', clave: 'LL-11R', precio: 4850 }]); revisa(s === 201, 'orden con 4 llantas a $4,850 (proveedor A)', j);
+  [s, j] = await oc_(provB, [{ cantidad: 2, descripcion: 'llanta prueba revision 11R22.5', unidad: 'PZA', clave: '', precio: 5200 }, { cantidad: 300, descripcion: 'Diésel de prueba revisión', unidad: 'L', clave: '', precio: 23.8 }]);
+  revisa(s === 201, 'después, 2 de la misma llanta a $5,200 (proveedor B) y diésel', j);
+  [s, j] = await oc_(provA, [{ cantidad: 1, descripcion: 'Llanta Prueba Revisión cancelada', unidad: 'PZA', clave: '', precio: 99 }]); const ocCancelada = j;
+  [s] = await pedir('POST', '/compras/ordenes/' + ocCancelada.id + '/cancelar', T.costos, { motivo: 'Se pidió por error' }); revisa(s === 200, 'una orden cancelada', s);
+  [s, j] = await pedir('GET', '/compras/articulos?q=' + encodeURIComponent('llanta prueba'), T.costos);
+  const ll = (j || []).find(a => /11R22\.5/.test(a.descripcion));
+  revisa(s === 200 && ll && ll.unidad === 'PZA' && ll.precio === 5200 && ll.veces === 2, 'sugiere la llanta una sola vez (aunque se escribió distinto), con su unidad y el último precio ($5,200)', j);
+  revisa(!(j || []).some(a => /cancelada/.test(a.descripcion)), 'no sugiere artículos de órdenes canceladas', j);
+  [s, j] = await pedir('GET', '/compras/articulos?q=' + encodeURIComponent('llanta prueba') + '&proveedor_id=' + provA.id, T.costos);
+  revisa((j || []).find(a => /11R22\.5/.test(a.descripcion))?.precio_proveedor === 4850, 'con el proveedor A elegido, sugiere el último precio de ese proveedor ($4,850)', j);
+  [s, j] = await pedir('GET', '/compras/articulos?q=diesel%20prueba', T.costos); revisa(s === 200 && j.some(a => a.unidad === 'L' && a.precio === 23.8), 'sin acentos también lo encuentra (diesel → Diésel), con su unidad L', j);
+  [s, j] = await pedir('GET', '/compras/articulos?q=l', T.costos); revisa(s === 200 && Array.isArray(j) && !j.length, 'con una sola letra no sugiere nada', j);
+  [s] = await pedir('GET', '/compras/articulos?q=llanta', T.ventas); revisa(s === 403, 'quien no hace órdenes de compra no consulta artículos', s);
+  const G2 = (await pedir('POST', '/demo/entrar', null, { rol: 'gerente_cdmx' }))[1].token;
+  [s, j] = await pedir('GET', '/compras/articulos?q=' + encodeURIComponent('llanta prueba'), G2); revisa(s === 200 && !j.length, 'otra sucursal (CDMX) no ve lo que compró Querétaro', [s, j]);
+
   console.log(`\n${n - malos.length}/${n} correctas`);
   if (malos.length) { console.log('FALLARON:\n - ' + malos.join('\n - ')); process.exitCode = 1; }
   const errores = salida.split('\n').filter(l => /Error en|no manejado|uncaught/i.test(l));
