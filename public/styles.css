@@ -1218,14 +1218,13 @@ button.enlace{background:none;border:0;padding:0;color:var(--azul-600);text-deco
 .oc-tabla th:nth-child(1){width:34px;}
 .oc-tabla th:nth-child(3){width:84px;}
 .oc-tabla th:nth-child(4){width:140px;}
-.oc-tabla th:nth-child(5){width:110px;}
-.oc-tabla th:nth-child(6){width:118px;}
-.oc-tabla th:nth-child(7){width:100px;}
-.oc-tabla th:nth-child(8){width:44px;}
+.oc-tabla th:nth-child(5){width:118px;}
+.oc-tabla th:nth-child(6){width:100px;}
+.oc-tabla th:nth-child(7){width:44px;}
 .oc-tabla .oc-cantidad,.oc-tabla .oc-precio{text-align:right;}
 .oc-tabla .oc-cantidad::placeholder,.oc-tabla .oc-precio::placeholder{text-align:right;}
 .oc-tabla .oc-num{color:var(--texto-sec);font-weight:700;text-align:center;}
-.oc-tabla th:nth-child(1),.oc-tabla th:nth-child(8){text-align:center;}
+.oc-tabla th:nth-child(1),.oc-tabla th:nth-child(7){text-align:center;}
 .oc-tabla td:last-child{text-align:center;}
 .oc-tabla .oc-importe{font-weight:700;white-space:nowrap;}
 .oc-tabla .oc-quitar{padding:4px 8px;}
@@ -1256,6 +1255,18 @@ button.enlace{background:none;border:0;padding:0;color:var(--azul-600);text-deco
 .etiqueta-contacto.etiqueta-id{font-variant-numeric:tabular-nums;letter-spacing:.02em;}
 
 .oc-tabla .oc-descripcion{min-width:240px;}
+.oc-sug{margin-top:4px;border:1px solid var(--gris-300);border-radius:6px;background:#fff;max-height:260px;overflow-y:auto;text-align:left;}
+.oc-sug-op{display:flex;justify-content:space-between;gap:10px;padding:7px 9px;cursor:pointer;font-size:13px;border-bottom:1px solid var(--gris-200);}
+.oc-sug-op small{color:var(--texto-sec);white-space:nowrap;}
+.oc-sug-op:hover,.oc-sug-op.activa{background:var(--gris-100);}
+.oc-sug-nuevo{padding:6px 9px;font-size:12px;color:var(--texto-sec);}
+.oc-clave-caja{margin-top:4px;}
+.oc-tabla .oc-clave{height:30px;font-size:12px;}
+.oc-con-clave{display:block;font-size:12px;margin-top:3px;}
+.oc-desc-celda{white-space:normal;}
+.oc-tabla tbody td{vertical-align:top;}
+.oc-tabla tbody .oc-num,.oc-tabla tbody .oc-importe{padding-top:13px;}
+.oc-aviso-precio{display:block;color:#8a5a00;font-size:12px;line-height:1.35;margin-top:4px;white-space:normal;}
 
 /* ===== Órdenes de compra: autorización (deuda) y catálogos editables ===== */
 .oc-deuda{display:inline-block;font-size:12px;font-weight:700;white-space:nowrap;}

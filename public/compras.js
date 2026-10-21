@@ -62,13 +62,16 @@ const Compras = (() => {
     return '<option value="">—</option>' + [...activas, ...extra].map(u => '<option value="' + esc(u.clave) + '"' + (sel && u.clave.toLowerCase() === String(sel).toLowerCase() ? ' selected' : '') + '>'
       + esc(u.nombre ? u.nombre + ' (' + u.clave + ')' : u.clave) + '</option>').join('') + '<option value="__nueva">+ Agregar unidad…</option>';
   };
-  const filaHTML = (p = {}) => '<tr class="oc-fila"><td class="oc-num"></td>'
-    + '<td><input class="oc-descripcion" maxlength="300" value="' + esc(p.descripcion || '') + '" placeholder="Qué se compra o qué servicio" aria-label="Descripción"></td>'
+  let SUG_N = 0;
+  const filaHTML = (p = {}) => { const n = ++SUG_N; return '<tr class="oc-fila"><td class="oc-num"></td>'
+    + '<td class="oc-desc-celda"><input class="oc-descripcion" maxlength="300" value="' + esc(p.descripcion || '') + '" placeholder="Qué se compra o qué servicio" aria-label="Descripción" autocomplete="off" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="oc-sug-' + n + '">'
+    + '<div class="oc-sug" id="oc-sug-' + n + '" role="listbox" aria-label="Artículos ya comprados" hidden></div>'
+    + '<div class="oc-clave-caja"' + (p.clave ? '' : ' hidden') + '><input class="oc-clave" maxlength="60" value="' + esc(p.clave || '') + '" placeholder="Clave del artículo (opcional)" aria-label="Clave del artículo (opcional)"></div>'
+    + '<button type="button" class="enlace oc-con-clave"' + (p.clave ? ' hidden' : '') + '>+ Clave del artículo (opcional)</button><small class="oc-aviso-precio" role="status" hidden></small></td>'
     + '<td><input type="number" class="oc-cantidad" min="0.001" step="any" value="' + esc(String(p.cantidad ?? 1)) + '" aria-label="Cantidad"></td>'
     + '<td><select class="oc-unidad" aria-label="Unidad">' + opcionesUnidad(p.unidad) + '</select></td>'
-    + '<td><input class="oc-clave" maxlength="60" value="' + esc(p.clave || '') + '" aria-label="Clave artículo"></td>'
     + '<td><input type="number" class="oc-precio" min="0.01" step="0.01" value="' + esc(p.precio === undefined ? '' : String(p.precio)) + '" placeholder="Precio" aria-label="Precio unitario"></td>'
-    + '<td class="st-num oc-importe"></td><td><button type="button" class="btn-eliminar oc-quitar" title="Quitar partida" aria-label="Quitar partida">🗑</button></td></tr>';
+    + '<td class="st-num oc-importe"></td><td><button type="button" class="btn-eliminar oc-quitar" title="Quitar partida" aria-label="Quitar partida">🗑</button></td></tr>'; };
   const modo = () => document.querySelector('input[name="oc-iva"]:checked')?.value || null;
   function recolectar() {
     return [...document.querySelectorAll('#oc-filas .oc-fila')].map(f => ({ cantidad: Number(f.querySelector('.oc-cantidad').value), descripcion: f.querySelector('.oc-descripcion').value.trim(),
@@ -130,6 +133,7 @@ const Compras = (() => {
     if ($('oc-proveedor').dataset.fijo) $('oc-proveedor').disabled = true; // el de la cotización elegida
     $('oc-agregar').hidden = !editable;
     document.querySelectorAll('#oc-filas .oc-quitar').forEach(b => { b.hidden = !editable; });
+    if (!editable) document.querySelectorAll('#oc-filas .oc-con-clave').forEach(b => { b.hidden = true; });
     const bt = (id, txt, cl, extra = '') => '<button type="button" class="btn ' + cl + '" id="' + id + '"' + extra + '>' + txt + '</button>';
     $('oc-acciones').innerHTML = (editable ? bt('oc-guardar', 'Guardar borrador', 'btn-outline') + bt('oc-guardar-pdf', 'Guardar y descargar PDF', 'btn-primario') : bt('oc-pdf', 'Descargar PDF', 'btn-primario'))
       + (o ? bt('oc-excel', 'Excel', 'btn-outline perm-clientes-exportar') : '')
@@ -648,7 +652,63 @@ const Compras = (() => {
     if (b.dataset.ocPdf) { try { await pdf(await pedir('/compras/ordenes/' + Number(b.dataset.ocPdf))); } catch (err) { toast(err.message); } }
   });
   $('oc-agregar').addEventListener('click', () => { $('oc-filas').insertAdjacentHTML('beforeend', filaHTML()); recalcular(); $('oc-filas').lastElementChild.querySelector('.oc-descripcion').focus(); });
-  $('oc-filas').addEventListener('input', recalcular);
+  $('oc-filas').addEventListener('input', e => {
+    recalcular();
+    if (e.target.classList.contains('oc-descripcion')) { const f = e.target.closest('.oc-fila'); delete f.dataset.refPrecio; avisoPrecio(f); sugerir(e.target); }
+    if (e.target.classList.contains('oc-precio')) avisoPrecio(e.target.closest('.oc-fila'));
+  });
+  // ---------- Recordar artículos: al escribir la descripción se sugiere lo ya comprado, con su unidad y último precio ----------
+  let SUG_TURNO = 0, SUG_TIEMPO = null;
+  const cerrarSugerencias = input => { const caja = input?.closest('.oc-desc-celda')?.querySelector('.oc-sug'); if (caja) { caja.hidden = true; caja.innerHTML = ''; } input?.setAttribute('aria-expanded', 'false'); };
+  function sugerir(input) {
+    clearTimeout(SUG_TIEMPO);
+    const q = input.value.trim(); if (q.length < 2) return cerrarSugerencias(input);
+    SUG_TIEMPO = setTimeout(async () => {
+      const turno = ++SUG_TURNO;
+      let lista; try { lista = await pedir('/compras/articulos?q=' + encodeURIComponent(q) + '&proveedor_id=' + (Number($('oc-proveedor').value) || '')); } catch { return; }
+      if (turno !== SUG_TURNO || document.activeElement !== input) return;
+      const caja = input.closest('.oc-desc-celda').querySelector('.oc-sug');
+      if (!lista.length) return cerrarSugerencias(input);
+      caja._lista = lista;
+      caja.innerHTML = lista.map((a, i) => { const precio = a.precio_proveedor ?? a.precio, de = a.precio_proveedor !== undefined ? 'este proveedor' : a.proveedor;
+        return '<div class="oc-sug-op" role="option" id="' + caja.id + '-' + i + '" data-i="' + i + '" aria-selected="false"><span><b>' + esc(a.descripcion) + '</b>' + (a.unidad ? ' · ' + esc(a.unidad) : '') + '</span><small>' + dinero(precio) + ' · ' + esc(de || '') + ' · ' + esc(fechaTxt(a.precio_proveedor !== undefined ? a.fecha_proveedor : a.fecha)) + '</small></div>'; }).join('')
+        + '<div class="oc-sug-nuevo">¿Es algo nuevo? Sigue escribiendo y elige su unidad.</div>';
+      caja.hidden = false; input.setAttribute('aria-expanded', 'true');
+    }, 200);
+  }
+  function elegirArticulo(input, a) {
+    const f = input.closest('.oc-fila');
+    input.value = a.descripcion;
+    const sel = f.querySelector('.oc-unidad'); if (a.unidad && [...sel.options].some(o => o.value.toLowerCase() === a.unidad.toLowerCase())) sel.value = [...sel.options].find(o => o.value.toLowerCase() === a.unidad.toLowerCase()).value;
+    if (a.clave) { f.querySelector('.oc-clave').value = a.clave; f.querySelector('.oc-clave-caja').hidden = false; f.querySelector('.oc-con-clave').hidden = true; }
+    const precio = a.precio_proveedor ?? a.precio;
+    if (precio > 0) f.querySelector('.oc-precio').value = String(precio);
+    // Referencia para avisar si el precio sube: la última compra (con ese proveedor si la hay).
+    f.dataset.refPrecio = String(precio); f.dataset.refTexto = dinero(precio) + ' el ' + fechaTxt(a.precio_proveedor !== undefined ? a.fecha_proveedor : a.fecha) + (a.precio_proveedor !== undefined ? ' con este proveedor' : (a.proveedor ? ', ' + a.proveedor : ''));
+    cerrarSugerencias(input); recalcular(); avisoPrecio(f);
+    f.querySelector('.oc-cantidad').focus(); f.querySelector('.oc-cantidad').select();
+  }
+  // Más de 10 % arriba de la última compra: se avisa (no se bloquea).
+  function avisoPrecio(f) {
+    const aviso = f.querySelector('.oc-aviso-precio'), ref = Number(f.dataset.refPrecio) || 0, precio = Number(f.querySelector('.oc-precio').value) || 0;
+    const pct = ref > 0 && precio > ref * 1.1 ? Math.round((precio / ref - 1) * 100) : 0;
+    aviso.hidden = !pct; aviso.textContent = pct ? '⚠ Precio ' + pct + ' % más alto que la última compra (' + (f.dataset.refTexto || '') + ')' : '';
+  }
+  $('oc-filas').addEventListener('keydown', e => {
+    if (!e.target.classList.contains('oc-descripcion')) return;
+    const caja = e.target.closest('.oc-desc-celda').querySelector('.oc-sug'); if (caja.hidden) return;
+    const ops = [...caja.querySelectorAll('.oc-sug-op')], i = ops.findIndex(o => o.classList.contains('activa'));
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault(); const j = e.key === 'ArrowDown' ? Math.min(ops.length - 1, i + 1) : Math.max(0, i - 1);
+      ops.forEach((o, k) => { o.classList.toggle('activa', k === j); o.setAttribute('aria-selected', k === j ? 'true' : 'false'); });
+      e.target.setAttribute('aria-activedescendant', ops[j].id); ops[j].scrollIntoView({ block: 'nearest' });
+    } else if (e.key === 'Enter' && i >= 0) { e.preventDefault(); elegirArticulo(e.target, caja._lista[i]); }
+    else if (e.key === 'Escape') cerrarSugerencias(e.target);
+  });
+  // mousedown (no click) para elegir antes de que el campo pierda el foco.
+  $('oc-filas').addEventListener('mousedown', e => { const op = e.target.closest('.oc-sug-op'); if (!op) return; e.preventDefault(); const caja = op.closest('.oc-sug'); elegirArticulo(caja.closest('.oc-desc-celda').querySelector('.oc-descripcion'), caja._lista[Number(op.dataset.i)]); });
+  $('oc-filas').addEventListener('focusout', e => { if (e.target.classList.contains('oc-descripcion')) setTimeout(() => { if (document.activeElement !== e.target) cerrarSugerencias(e.target); }, 150); });
+  $('oc-filas').addEventListener('click', e => { const b = e.target.closest('.oc-con-clave'); if (!b) return; const f = b.closest('.oc-fila'); f.querySelector('.oc-clave-caja').hidden = false; b.hidden = true; f.querySelector('.oc-clave').focus(); });
   $('oc-filas').addEventListener('click', e => { const q = e.target.closest('.oc-quitar'); if (!q) return; if (document.querySelectorAll('#oc-filas .oc-fila').length === 1) { toast('La orden necesita al menos una partida'); return; } q.closest('tr').remove(); recalcular(); });
   document.querySelectorAll('input[name="oc-iva"]').forEach(r => r.addEventListener('change', recalcular));
   $('oc-proveedor').addEventListener('change', async e => {
