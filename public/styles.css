@@ -1276,7 +1276,7 @@ button.enlace{background:none;border:0;padding:0;color:var(--azul-600);text-deco
 .cg-resumen{margin:0 0 12px;line-height:1.5;}
 .cg-mal{color:var(--rojo, #b8443a);}
 .cg-pendiente{color:var(--naranja, #b26a00);}
-.cg-bloque{margin:14px 0;}
+.cg-bloque{margin:14px 0;overflow-x:auto;} /* en pantallas angostas la tabla se desplaza en vez de cortarse */
 .cg-tabla td{vertical-align:middle;padding:5px 6px;}
 .cg-tabla select{width:100%;min-width:260px;min-height:36px;border:1px solid var(--gris-300);border-radius:6px;padding:4px 6px;font:inherit;font-size:13px;}
 .cg-tabla select.cg-falta{border-color:var(--naranja, #b26a00);box-shadow:0 0 0 2px rgba(246,177,3,.25);}
@@ -1538,10 +1538,11 @@ body:not(.varias-sucursales) .solo-varias-sucursales{display:none!important;}
 .pe-ordenes{margin:0;padding-left:18px;display:grid;gap:4px;}
 .pe-pie{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:10px;}
 .etiqueta-campo{font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:var(--texto-sec,#666);}
-.pe-eq{display:grid;gap:8px;}
+.pe-eq{display:grid;grid-template-columns:minmax(0,1fr);gap:8px;}
+.pe-eq select{max-width:100%;min-width:0;}
 .pe-eq-etq{font-size:13px;}
 .pe-eq-fila{display:flex;flex-wrap:wrap;gap:6px;align-items:center;}
-.pe-eq-fila select{flex:1;min-width:140px;}
+.pe-eq-fila select{flex:1 1 140px;min-width:0;max-width:100%;}
 @media (max-width:600px){.pe-salario{flex-direction:column;}}
 /* Barra de sesión en celular: el selector de sucursal, el nombre y «Salir» se acomodan en dos renglones si no caben. */
 @media (max-width:600px){.util-2{flex-wrap:wrap;justify-content:flex-end;max-width:100%;min-width:0;}.sucursal-selector{margin-right:0;max-width:100%;}.sucursal-selector select{max-width:min(220px,60vw);}}
