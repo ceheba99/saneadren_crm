@@ -282,10 +282,12 @@ function describirCuenta(f, hoy) {
   const vence = sumarDias(base, f.dias_credito || 0);
   const diasVencido = diasEntre(vence, hoy);
   let estado = noRealizado ? (aFavor > 0 ? 'a_favor' : 'cancelada') : saldo <= 0 ? 'pagada' : f.cobrado_cent > 0 ? 'parcial' : 'pendiente';
-  // Programada: servicio todavía futuro y sin factura. No cuenta como "te deben" (aún no se hace el trabajo).
-  // Un servicio ya marcado como realizado se debe aunque su fecha acordada fuera posterior.
-  const programada = !!(f.fecha_servicio && f.fecha_servicio > hoy && !f.factura_folio && !realizado);
-  const vencida = saldo > 0 && diasVencido > 0;
+  // Se debe cuando el servicio se marca realizado o cuando se factura (hay servicios sin factura: basta con concluirlo).
+  // Mientras tanto no cuenta como «te deben» (decisión del dueño, 2026-10-21): si su fecha es futura está «programada»
+  // (por realizar); si ya pasó, «por concluir», para que se marque y no se olvide cobrarla.
+  const programada = !realizado && !noRealizado && !f.factura_folio;
+  const porConcluir = programada && (!f.fecha_servicio || f.fecha_servicio <= hoy);
+  const vencida = saldo > 0 && diasVencido > 0 && !programada;
   let tramo = null;
   if (saldo > 0) tramo = diasVencido <= 0 ? 'por_vencer' : diasVencido <= 15 ? '1-15' : diasVencido <= 30 ? '16-30' : diasVencido <= 60 ? '31-60' : '60+';
   return {
@@ -294,7 +296,7 @@ function describirCuenta(f, hoy) {
     dias_credito: f.dias_credito || 0, factura_folio: f.factura_folio, factura_fecha: f.factura_fecha, factura_metodo: f.factura_metodo || null,
     factura_total: f.factura_total_cent == null ? null : aPesos(f.factura_total_cent),
     total: aPesos(f.total_cent), cobrado: aPesos(f.cobrado_cent), saldo: aPesos(Math.max(saldo, 0)), a_favor: aPesos(aFavor),
-    vence, dias_vencido: saldo > 0 ? diasVencido : 0, estado, vencida, programada, tramo: programada ? null : tramo,
+    vence, dias_vencido: saldo > 0 && !programada ? diasVencido : 0, estado, vencida, programada, por_concluir: porConcluir, tramo: programada ? null : tramo,
     por_confirmar: f.por_confirmar, por_revisar: !!f.cobranza_por_revisar,
     ejecucion: f.ejecucion || null, realizado_por: f.realizado_por || null, fecha_realizado: f.fecha_realizado || null,
     por_concluir: !f.ejecucion && !!f.fecha_servicio && f.fecha_servicio <= hoy,
@@ -360,7 +362,8 @@ module.exports = function finanzas(app, db, h, unicos) {
     const suma = arr => Math.round(arr.reduce((t, c) => t + c.saldo * 100, 0)) / 100;
     const r = {
       por_cobrar: suma(cuentas), vencido: suma(cuentas.filter(c => c.vencida)),
-      programado: suma(conSaldo.filter(c => c.programada)), ordenes_programadas: conSaldo.filter(c => c.programada).length,
+      programado: suma(conSaldo.filter(c => c.programada && !c.por_concluir)), ordenes_programadas: conSaldo.filter(c => c.programada && !c.por_concluir).length,
+      por_concluir: suma(conSaldo.filter(c => c.por_concluir)), ordenes_por_concluir: conSaldo.filter(c => c.por_concluir).length,
       a_favor: suma(cartera().map(c => ({ saldo: c.a_favor || 0 }))), ordenes_a_favor: cartera().filter(c => c.a_favor > 0).length,
       cuentas_con_saldo: cuentas.length, clientes_con_vencido: new Set(cuentas.filter(c => c.vencida).map(c => c.cliente_id)).size,
       cobrado_mes: aPesos(db.prepare("SELECT COALESCE(SUM(monto_cent), 0) t FROM cobros WHERE cancelado = 0 AND tipo <> 'ajuste' AND substr(fecha, 1, 7) = ?").get(mes).t),
@@ -391,7 +394,8 @@ module.exports = function finanzas(app, db, h, unicos) {
     if (filtro === 'todas') { /* incluye pagadas */ }
     else if (filtro === 'vencido') cuentas = cuentas.filter(c => c.vencida);
     else if (filtro === 'por_vencer') cuentas = cuentas.filter(c => c.saldo > 0 && !c.vencida && !c.programada);
-    else if (filtro === 'programadas') cuentas = cuentas.filter(c => c.saldo > 0 && c.programada);
+    else if (filtro === 'programadas') cuentas = cuentas.filter(c => c.saldo > 0 && c.programada && !c.por_concluir);
+    else if (filtro === 'por_concluir') cuentas = cuentas.filter(c => c.saldo > 0 && c.por_concluir);
     else if (filtro === 'por_concluir') cuentas = cuentas.filter(c => c.saldo > 0 && c.por_concluir);
     else if (['1-15', '16-30', '31-60', '60+'].includes(filtro)) cuentas = cuentas.filter(c => c.tramo === filtro);
     else if (filtro === 'sin_factura') cuentas = cuentas.filter(c => c.saldo > 0 && !c.factura_folio && !c.programada);
@@ -582,12 +586,12 @@ module.exports = function finanzas(app, db, h, unicos) {
         .map(k => ({ ...k, monto: aPesos(k.monto_cent), folio: folioOS(k.lead_id, k.lead_created_at) }));
       const vivas = cobros.filter(k => !k.cancelado && k.tipo !== 'ajuste');
       return res.json({ ...r, cliente: c, saldo: suma(activas.filter(x => x.saldo > 0 && !x.programada)), vencido: suma(vencidas),
-        programado: suma(activas.filter(x => x.saldo > 0 && x.programada)), a_favor: Math.round(activas.reduce((t, x) => t + (x.a_favor || 0) * 100, 0)) / 100,
+        programado: suma(activas.filter(x => x.saldo > 0 && x.programada && !x.por_concluir)), por_concluir: suma(activas.filter(x => x.saldo > 0 && x.por_concluir)), a_favor: Math.round(activas.reduce((t, x) => t + (x.a_favor || 0) * 100, 0)) / 100,
         total: Math.round(activas.reduce((t, x) => t + x.total * 100, 0)) / 100, pagado: aPesos(vivas.reduce((t, k) => t + k.monto_cent, 0)),
         ordenes: activas, cobros });
     }
     res.json({ ...r, saldo: suma(activas.filter(c => c.saldo > 0 && !c.programada)), vencido: suma(vencidas),
-      programado: suma(activas.filter(c => c.saldo > 0 && c.programada)), por_revisar_n: cuentas.filter(c => c.por_revisar).length,
+      programado: suma(activas.filter(c => c.saldo > 0 && c.programada && !c.por_concluir)), por_concluir: suma(activas.filter(c => c.saldo > 0 && c.por_concluir)), por_revisar_n: cuentas.filter(c => c.por_revisar).length,
       ordenes: activas.filter(c => c.saldo > 0), ultimos_cobros: ultimos });
   }));
 

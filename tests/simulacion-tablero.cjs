@@ -72,7 +72,10 @@ const HOY = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Mexico_City' }
   revisa(t.length === 12 && t[11].mes === HOY.slice(0, 7) && t.reduce((x, m) => x + m.venta, 0) >= 22000, 'tendencia de 12 meses que termina este mes', t.slice(-2));
   const f = j.foto;
   revisa(f.vencido_30 === 1000 && f.tramos.find(x => x.tramo === '31-60')?.total === 1000, 'cartera: $1,000 con más de 30 días vencido (tramo 31 a 60)', [f.vencido_30, f.tramos]);
-  revisa(f.te_deben === 1000 + 5700 + 2000 + 812 + 4640, 'te deben: viejo ,000 + o2 ,700 + o3 ,000 + sin marcar 12 + periodo anterior ,640', f.te_deben);
+  // El servicio con fecha pasada sin marcar ($812) ya no cuenta como deuda hasta concluirlo (decisión del dueño, 2026-10-21):
+  // aparece aparte como «por concluir».
+  revisa(f.te_deben === 1000 + 5700 + 2000 + 4640, 'te deben: viejo $1,000 + o2 $5,700 + o3 $2,000 + periodo anterior $4,640 (sin el que falta concluir)', f.te_deben);
+  revisa(f.por_concluir_monto === 812 && f.ordenes_por_concluir === 1, 'el servicio sin marcar ($812) aparece aparte como «por concluir»', [f.por_concluir_monto, f.ordenes_por_concluir]);
   revisa(f.por_concluir === 1 && f.pipeline.abiertas === 1 && f.pipeline.vencen_7 === 1, 'operación y comercial: 1 por concluir, 1 cotización abierta que vence en 7 días', [f.por_concluir, f.pipeline]);
   revisa(f.debes === 800 && f.dias_cobro === 4, 'debes $800 a proveedores; el pago de o1 llegó 4 días después del servicio', [f.debes, f.dias_cobro]);
   revisa(j.alertas.some(x => x.nivel === 'rojo' && /30 días/.test(x.texto)) && j.alertas.some(x => /sin marcar/.test(x.texto)) && j.alertas.some(x => /Concentración/.test(x.texto)) && j.alertas.some(x => /vence/.test(x.texto)),

@@ -43,7 +43,7 @@ const Finanzas = (() => {
     const falta = c.estado === 'parcial' ? `pagó una parte, falta ${formatoMoneda(c.saldo)}` : 'pendiente de cobrar';
     if (c.ejecucion === 'no_realizado') return c.a_favor > 0 ? ['a-favor', `No realizado · ${formatoMoneda(c.a_favor)} a favor del cliente (devolver o aplicar)`] : ['programada', 'No realizado · no se cobra'];
     if (c.estado === 'pagada') return ['pagada', 'Cobrado completo ✓'];
-    if (c.programada) return ['programada', 'Por realizar · aún no se cobra'];
+    if (c.programada) return c.por_concluir ? ['parcial', 'Por concluir · se cobra al marcarlo realizado'] : ['programada', 'Por realizar · aún no se cobra'];
     const servicio = c.ejecucion === 'realizado' ? 'Servicio realizado' : c.por_concluir ? 'Falta marcar si se realizó' : 'Servicio';
     if (c.vencida) return ['vencida', `${servicio} · cobro vencido hace ${dias(c.dias_vencido)}`];
     if (c.por_concluir && c.ejecucion !== 'realizado') return ['por-concluir', `${servicio} · ${falta}`];
@@ -238,6 +238,7 @@ const Finanzas = (() => {
         + (r.pagado_mes !== undefined ? t('Pagado este mes', formatoMoneda(r.pagado_mes), '') : '')
       : t('Te deben', formatoMoneda(r.por_cobrar), `${Number(r.cuentas_con_saldo)} ${Number(r.cuentas_con_saldo) === 1 ? 'orden' : 'órdenes'} por cobrar`)
       + t('Vencido', formatoMoneda(r.vencido), `${Number(r.clientes_con_vencido)} ${Number(r.clientes_con_vencido) === 1 ? 'cliente' : 'clientes'}`, r.vencido > 0 ? 'alerta' : '')
+      + (r.por_concluir > 0 ? t('Por concluir', formatoMoneda(r.por_concluir), `${Number(r.ordenes_por_concluir)} ${Number(r.ordenes_por_concluir) === 1 ? 'servicio con fecha pasada' : 'servicios con fecha pasada'}: márcalos realizados para cobrarlos`, 'aviso') : '')
       + (r.programado > 0 ? t('Por realizar', formatoMoneda(r.programado), `${Number(r.ordenes_programadas)} ${Number(r.ordenes_programadas) === 1 ? 'servicio programado' : 'servicios programados'} (aún no se cobran)`) : '')
       + (r.a_favor > 0 ? t('A favor de clientes', formatoMoneda(r.a_favor), `${Number(r.ordenes_a_favor)} ${Number(r.ordenes_a_favor) === 1 ? 'servicio no realizado' : 'servicios no realizados'} con pago (devolver o aplicar)`, 'aviso') : '')
       + t('Cobrado este mes', formatoMoneda(r.cobrado_mes), '')
@@ -528,7 +529,7 @@ const Finanzas = (() => {
     $('cc-cuerpo').innerHTML =
       '<p class="cc-aviso">👤 Estás viendo el <b>estado de cuenta completo</b> de este cliente: todas sus órdenes y todos sus pagos. Cierra esta ventana para volver a la lista general.</p>'
       + '<div class="cc-tarjetas">' + t('Debe hoy', formatoMoneda(r.saldo), r.saldo > 0 ? 'aviso' : '') + t('Vencido', formatoMoneda(r.vencido), r.vencido > 0 ? 'alerta' : '')
-      + t('Por realizar', formatoMoneda(r.programado)) + (r.a_favor > 0 ? t('A favor del cliente', formatoMoneda(r.a_favor), 'favor') : '')
+      + t('Por realizar', formatoMoneda(r.programado)) + (r.por_concluir > 0 ? t('Por concluir', formatoMoneda(r.por_concluir)) : '') + (r.a_favor > 0 ? t('A favor del cliente', formatoMoneda(r.a_favor), 'favor') : '')
       + t('Pagado en total', formatoMoneda(r.pagado)) + '<div class="cc-tarjeta"><small>Crédito</small><b>' + Number(r.dias_credito) + ' días</b>' + (puedeEditarFactura() ? '<button type="button" class="enlace" data-cc-credito>Cambiar</button>' : '') + '</div></div>'
       + '<div class="btn-group cc-acciones">' + wa + '<button type="button" class="btn btn-outline" data-cc-ficha>Abrir ficha del contacto</button></div>'
       + '<div class="cc-seccion"><div class="cc-seccion-cab"><h3>Órdenes de servicio</h3><label class="cc-check"><input type="checkbox" data-cc-pagadas' + (VER_PAGADAS ? ' checked' : '') + '> Mostrar también las pagadas</label></div>'
@@ -1063,7 +1064,7 @@ const Finanzas = (() => {
       folios: deudas.map(c => c.folio), proximo_vence: deudas.map(c => c.vence).sort()[0] })).replace('Recordar por WhatsApp', 'Recordar todo el saldo por WhatsApp') : '';
     cont.innerHTML = `<div class="modal-section" data-plegable="estado-cuenta"><div class="seccion-tit">💰 Estado de cuenta</div>
       <div class="cobranza-resumen"><div><small>Saldo</small><b>${formatoMoneda(r.saldo)}</b></div><div><small>Vencido</small><b class="${r.vencido > 0 ? 'rojo' : ''}">${formatoMoneda(r.vencido)}</b></div>
-        <div><small>Por realizar</small><b>${formatoMoneda(r.programado)}</b></div><div><small>Crédito</small><b>${Number(r.dias_credito)} días</b>${puedeEditarFactura() ? '<button type="button" class="enlace" data-fc-credito>Cambiar</button>' : ''}</div></div>
+        <div><small>Por realizar</small><b>${formatoMoneda(r.programado)}</b></div>${r.por_concluir > 0 ? `<div><small>Por concluir</small><b>${formatoMoneda(r.por_concluir)}</b></div>` : ''}<div><small>Crédito</small><b>${Number(r.dias_credito)} días</b>${puedeEditarFactura() ? '<button type="button" class="enlace" data-fc-credito>Cambiar</button>' : ''}</div></div>
       ${r.por_revisar_n ? `<p class="ayuda">${Number(r.por_revisar_n)} órdenes anteriores al módulo están pendientes de la revisión inicial.</p>` : ''}
       ${waCliente ? `<div class="btn-group">${waCliente}</div>` : ''}
       <div class="pagos-lista">${ordenes || '<p class="util-45">Sin saldos pendientes. 🎉</p>'}</div></div>`;
