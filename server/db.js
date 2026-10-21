@@ -289,6 +289,8 @@ if(!db.prepare('PRAGMA table_info(leads)').all().some(c=>c.name==='encuesta_come
 // se reutiliza una sola fecha con dos significados. incluye_vigencia por default en 1
 // para no cambiar el comportamiento de las cotizaciones ya existentes.
 if(!db.prepare('PRAGMA table_info(leads)').all().some(c=>c.name==='motivo_perdida'))db.exec('ALTER TABLE leads ADD COLUMN motivo_perdida TEXT');
+// Total (con IVA, en centavos) que tenía la orden cuando se regresó a cotización; al volver a ganarla se compara.
+if(!db.prepare('PRAGMA table_info(leads)').all().some(c=>c.name==='reabierta_total_cent'))db.exec('ALTER TABLE leads ADD COLUMN reabierta_total_cent INTEGER');
 if(!db.prepare('PRAGMA table_info(leads)').all().some(c=>c.name==='fecha_cotizacion'))db.exec('ALTER TABLE leads ADD COLUMN fecha_cotizacion TEXT');
 if(!db.prepare('PRAGMA table_info(leads)').all().some(c=>c.name==='incluye_vigencia'))db.exec('ALTER TABLE leads ADD COLUMN incluye_vigencia INTEGER NOT NULL DEFAULT 1');
 if(!db.prepare('PRAGMA table_info(leads)').all().some(c=>c.name==='vigencia_hasta'))db.exec('ALTER TABLE leads ADD COLUMN vigencia_hasta TEXT');

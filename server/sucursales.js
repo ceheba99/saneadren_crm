@@ -276,7 +276,7 @@ module.exports = function sucursales(app, db, h, { audit }) {
     db.db.function('ve_lead', { deterministic: false }, (resp, tec, estatus) => {
       const v = alcance.nivel('ventas');
       if (v >= 2) return 1;
-      const yo = alcance.usuario(), mia = yo != null && (resp === yo || tec === yo);
+      const yo = alcance.usuario(), mia = yo != null && (resp === yo || (tec === yo && estatus === 'ganado'));
       if (v === 1 && mia) return 1;
       if (estatus === 'ganado') { const c = alcance.nivel('cxc'); if (c >= 2 || (c === 1 && mia)) return 1; }
       return 0;
