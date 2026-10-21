@@ -349,7 +349,7 @@
     </div>
     <p class="gen-resumen" id="gen-resumen" role="status"></p>
     <div class="tabla-scroll"><table class="tabla-resumen tabla-generador">
-      <thead><tr><th>Mes</th><th>Fecha</th><th>No. orden</th><th>No. factura</th><th>Cliente</th><th>Proyecto</th><th>Concepto</th><th class="st-num">Cantidad</th><th class="st-num">Precio unitario s/IVA</th><th class="st-num">Precio unitario c/IVA</th><th class="st-num">Subtotal</th><th class="st-num">IVA</th><th class="st-num">Total</th><th>Canal de venta</th><th>Unidad</th><th>Empleado</th><th>Manifiestos</th><th>Tiros</th><th>Realizó</th><th class="gen-costo">Proveedor</th><th class="gen-costo">Concepto del costo</th><th class="gen-costo st-num">Costo</th><th class="gen-costo">Estatus pago</th><th class="gen-costo">Vía de pago</th></tr></thead>
+      <thead><tr><th>Mes</th><th>Fecha</th><th>No. orden</th><th>No. factura</th><th>Cliente</th><th>Proyecto</th><th>Concepto</th><th class="st-num">Cantidad</th><th class="st-num">Precio unitario s/IVA</th><th class="st-num">Precio unitario c/IVA</th><th class="st-num">Subtotal</th><th class="st-num">IVA</th><th class="st-num">Total</th><th>Canal de venta</th><th>Unidad</th><th>Empleado</th><th>Manifiestos</th><th>Tiros</th><th class="gen-costo">Proveedor</th><th class="gen-costo">Concepto del costo</th><th class="gen-costo st-num">Costo</th><th class="gen-costo">Estatus pago</th><th class="gen-costo">Vía de pago</th></tr></thead>
       <tbody id="gen-tabla"></tbody>
     </table></div>
   </section>
@@ -632,7 +632,7 @@
           <div class="campo-modal" id="wrap-vigencia-hasta"><label for="ed-vigencia-hasta">Vigencia hasta</label><input type="date" id="ed-vigencia-hasta"></div>
           <div class="campo-modal solo-orden"><label for="ed-equipo">Equipo</label><input type="text" id="ed-equipo" maxlength="200" placeholder="Ej. E-37-04"></div>
           <div class="campo-modal full solo-orden" id="ed-equipo-campo"><span class="etiqueta-campo">Técnico responsable y equipo</span><div id="ed-equipo-personal"></div><small class="ayuda">El responsable ve esta orden y la marca realizada (si tiene cuenta en el sistema). El personal se da de alta en Ajustes → Personal.</small></div>
-          <div class="campo-modal solo-orden"><label for="ed-operador">Operador(es)</label><input type="text" id="ed-operador" maxlength="300" placeholder="Nombre de quien ejecuta el servicio"></div>
+          <div class="campo-modal solo-orden"><label for="ed-operador">Operadores externos (si no están en Personal)</label><input type="text" id="ed-operador" maxlength="300" placeholder="Ej. operador de la pipa rentada"></div>
           <div class="campo-modal solo-orden"><label for="ed-manifiestos">Manifiestos</label><input type="text" id="ed-manifiestos" maxlength="200" placeholder="Folio(s) de manifiesto"></div>
           <div class="campo-modal solo-orden"><label for="ed-tiros">Tiros</label><input type="text" id="ed-tiros" maxlength="60" placeholder="Ej. 2"></div>
           <div class="campo-modal full solo-orden"><label for="ed-proyecto">Proyecto</label><input type="text" id="ed-proyecto" maxlength="200" placeholder="Ej. Mantenimiento planta 2026"></div>
@@ -1114,7 +1114,7 @@
       <div id="sn-datos-orden" hidden>
         <div class="form-grid-2">
           <div class="campo"><label for="sn-equipo">Equipo</label><input type="text" id="sn-equipo" maxlength="200" placeholder="Ej. E-37-04"></div>
-          <div class="campo"><label for="sn-operador">Operador(es)</label><input type="text" id="sn-operador" maxlength="300" placeholder="Nombre de quien ejecuta el servicio"></div>
+          <div class="campo"><label for="sn-operador">Operadores externos (si no están en Personal)</label><input type="text" id="sn-operador" maxlength="300" placeholder="Ej. operador de la pipa rentada"><small class="ayuda">El técnico responsable y su equipo se eligen de Personal al abrir la orden.</small></div>
         </div>
         <div class="form-grid-2"><div class="campo"><label for="sn-manifiestos">Manifiestos (opcional)</label><input type="text" id="sn-manifiestos" maxlength="200" placeholder="Folio(s) de manifiesto"></div><div class="campo"><label for="sn-tiros">Tiros (opcional)</label><input type="text" id="sn-tiros" maxlength="60" placeholder="Ej. 2"></div></div>
         <div class="campo"><label for="sn-proyecto">Proyecto (opcional)</label><input type="text" id="sn-proyecto" maxlength="200" placeholder="Ej. Mantenimiento planta 2026"></div>
@@ -1193,13 +1193,13 @@
 <script src="cuentas.js?v=av1"></script>
 <script src="finanzas.js?v=aud1"></script>
 <script src="calendario.js?v=pg2"></script>
-<script src="tablero.js?v=iva1"></script>
+<script src="tablero.js?v=ret1"></script>
 <script src="bitacora.js?v=hc1"></script>
-<script src="compras.js?v=aud1"></script>
+<script src="compras.js?v=ret1"></script>
 <script src="solicitudes.js?v=perm1"></script>
 <script src="carga-generador.js?v=con1"></script>
 <script src="sucursales.js?v=perm2"></script>
-<script src="app.js?v=aud1"></script>
+<script src="app.js?v=ret2"></script>
 <script src="personal.js?v=rh2"></script>
 <script src="buscador.js?v=suc1"></script>
 <script src="demo.js?v=demo1"></script>

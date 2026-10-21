@@ -726,7 +726,9 @@ module.exports = function finanzas(app, db, h, unicos) {
     let clave = claveDe(nombre);
     for (let n = 2; db.prepare('SELECT 1 FROM categorias_gasto WHERE clave = ?').get(clave); n++) clave = claveDe(nombre).slice(0, 27) + '_' + n;
     const orden = db.prepare('SELECT COALESCE(MAX(orden), 0) + 1 o FROM categorias_gasto').get().o;
-    db.prepare('INSERT INTO categorias_gasto (clave, nombre, orden) VALUES (?, ?, ?)').run(clave, nombre, orden);
+    // Si cuenta como gasto en Resultados (inversión, préstamos y traspasos no): lo decide Dirección; por omisión sí.
+    if (req.body.es_gasto !== undefined && !req.body.es_gasto && !P.direccion(req)) return res.status(403).json({ error: 'Solo administración decide si una categoría cuenta como gasto en Resultados' });
+    db.prepare('INSERT INTO categorias_gasto (clave, nombre, orden, es_gasto) VALUES (?, ?, ?, ?)').run(clave, nombre, orden, req.body.es_gasto === undefined || req.body.es_gasto ? 1 : 0);
     cargarCategorias(db);
     app.locals.auditoria?.registrar(req, 'catalogo', null, 'categoría agregada', nombre);
     res.status(201).json(db.prepare('SELECT clave, nombre, activo FROM categorias_gasto WHERE clave = ?').get(clave));

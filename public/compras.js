@@ -491,20 +491,23 @@ const Compras = (() => {
       campos: [{ k: 'nombre', t: 'Centro de costos', max: 80, ph: 'Ej. Mantenimiento' }, { k: 'responsable', t: 'Responsable (opcional)', max: 120, ph: 'Ej. Isaac Hernández', vacio: true }] },
     categorias: { titulo: 'Categorías de gasto', singular: 'categoría', lista: '/finanzas/categorias', alta: '/finanzas/categorias', item: c => '/finanzas/categorias/' + encodeURIComponent(c.clave),
       ayuda: 'Se usan en órdenes de compra, Cuentas por pagar y Resultados. Si cambias el nombre se actualiza en todo lo capturado. «Otro» no se puede eliminar.',
-      campos: [{ k: 'nombre', t: 'Categoría', max: 80, ph: 'Ej. Papelería' }], fija: c => c.clave === 'otro' },
+      campos: [{ k: 'nombre', t: 'Categoría', max: 80, ph: 'Ej. Papelería' }, { k: 'es_gasto', t: 'Cuenta como gasto en Resultados', tipo: 'casilla', soloDireccion: true }], fija: c => c.clave === 'otro',
+      nota: x => (x.es_gasto === 0 ? 'No cuenta como gasto en Resultados (inversión, préstamo o traspaso)' : '') },
     unidades: { titulo: 'Unidades de medida', singular: 'unidad', lista: '/compras/unidades', alta: '/compras/unidades', item: u => '/compras/unidades/' + u.id,
       ayuda: 'Las unidades de las partidas de la orden de compra (pieza, litro, metro…).',
       campos: [{ k: 'nombre', t: 'Nombre', max: 40, ph: 'Ej. Metro lineal' }, { k: 'clave', t: 'Abreviatura', max: 10, ph: 'Ej. ML', ancho: '8rem' }] },
   };
   let CAT = null, CAT_FILAS = [], CAT_EDITANDO = null;
   const nombreDe = x => x.nombre + (x.clave && CAT === CATALOGOS.unidades ? ' (' + x.clave + ')' : '');
-  const campoCat = (c, v, extra = '') => '<input data-campo="' + esc(c.k) + '" maxlength="' + c.max + '" value="' + esc(v ?? '') + '" placeholder="' + esc(c.ph) + '" aria-label="' + esc(c.t) + '"' + (c.ancho ? ' style="max-width:' + esc(c.ancho) + '"' : '') + extra + '>';
+  // Campos que se muestran a quien pide: las casillas «solo Dirección» no se le muestran (ni se mandan) a los demás.
+  const camposDe = () => CAT.campos.filter(c => !c.soloDireccion || Permisos.datos?.direccion);
+  const campoCat = (c, v, extra = '') => c.tipo === 'casilla' ? '<label class="check-linea"><input type="checkbox" data-campo="' + esc(c.k) + '"' + (v === 0 || v === false ? '' : ' checked') + '> ' + esc(c.t) + '</label>' : '<input data-campo="' + esc(c.k) + '" maxlength="' + c.max + '" value="' + esc(v ?? '') + '" placeholder="' + esc(c.ph) + '" aria-label="' + esc(c.t) + '"' + (c.ancho ? ' style="max-width:' + esc(c.ancho) + '"' : '') + extra + '>';
   // Mensaje fijo arriba de la lista: deja claro qué se acaba de guardar (no se pierde como un aviso flotante).
   function estadoCat(texto, tipo = 'ok') { const e = $('cat-estado'); e.className = 'cat-estado ' + tipo; e.textContent = texto; e.hidden = !texto; }
   async function abrirCatalogo(tipo) {
     CAT = CATALOGOS[tipo]; CAT_EDITANDO = null;
     $('cat-titulo').textContent = CAT.titulo; $('cat-ayuda').textContent = CAT.ayuda;
-    $('cat-alta').innerHTML = CAT.campos.map(c => '<label class="cat-campo"><span>' + esc(c.t) + '</span>' + campoCat(c, '') + '</label>').join('') + '<button type="submit" class="btn btn-primario">+ Agregar</button>';
+    $('cat-alta').innerHTML = camposDe().map(c => c.tipo === 'casilla' ? campoCat(c, 1) : '<label class="cat-campo"><span>' + esc(c.t) + '</span>' + campoCat(c, '') + '</label>').join('') + '<button type="submit" class="btn btn-primario">+ Agregar</button>';
     estadoCat('');
     await pintarCatalogo();
     abrirVentana('overlay-catalogo');
@@ -513,15 +516,15 @@ const Compras = (() => {
   async function pintarCatalogo(resaltar = null) {
     try { CAT_FILAS = (await pedir(CAT.lista)).filter(x => x.activo !== 0); } catch (err) { estadoCat(err.message, 'mal'); return; }
     $('cat-lista').innerHTML = CAT_FILAS.length ? CAT_FILAS.map((x, i) => {
-      if (CAT_EDITANDO === i) return '<li class="cat-item editando" data-i="' + i + '"><div class="cat-edicion">' + CAT.campos.map(c => campoCat(c, x[c.k])).join('') + '</div>'
+      if (CAT_EDITANDO === i) return '<li class="cat-item editando" data-i="' + i + '"><div class="cat-edicion">' + camposDe().map(c => campoCat(c, x[c.k])).join('') + '</div>'
         + '<div class="cat-botones"><button type="button" class="btn btn-primario btn-chico" data-cat-guardar="' + i + '">Guardar</button><button type="button" class="btn btn-outline btn-chico" data-cat-cancelar="' + i + '">Cancelar</button></div></li>';
       return '<li class="cat-item' + (resaltar !== null && String(CAT === CATALOGOS.categorias ? x.clave : x.id) === String(resaltar) ? ' recien' : '') + '" data-i="' + i + '">'
-        + '<div class="cat-texto"><b>' + esc(nombreDe(x)) + '</b>' + (x.responsable ? '<small>' + esc(x.responsable) + '</small>' : '') + '</div>'
+        + '<div class="cat-texto"><b>' + esc(nombreDe(x)) + '</b>' + (x.responsable ? '<small>' + esc(x.responsable) + '</small>' : '') + (CAT.nota?.(x) ? '<small>' + esc(CAT.nota(x)) + '</small>' : '') + '</div>'
         + '<div class="cat-botones"><button type="button" class="btn btn-outline btn-chico" data-cat-editar="' + i + '">Editar</button>'
         + (CAT.fija?.(x) ? '' : '<button type="button" class="btn btn-outline btn-chico cat-eliminar" data-cat-eliminar="' + i + '">Eliminar</button>') + '</div></li>';
     }).join('') : '<li class="cat-vacio">Todavía no hay ninguno. Agrégalo arriba.</li>';
   }
-  const leerCampos = cont => Object.fromEntries([...cont.querySelectorAll('[data-campo]')].map(x => [x.dataset.campo, x.value.trim()]));
+  const leerCampos = cont => Object.fromEntries([...cont.querySelectorAll('[data-campo]')].map(x => [x.dataset.campo, x.type === 'checkbox' ? x.checked : x.value.trim()]));
   const idDe = x => (CAT === CATALOGOS.categorias ? x.clave : x.id);
   async function despuesDeCambio(texto, resaltar) {
     estadoCat(texto, 'ok');
@@ -530,7 +533,7 @@ const Compras = (() => {
   }
   async function agregarCat() {
     const datos = leerCampos($('cat-alta'));
-    const falta = CAT.campos.find(c => !c.vacio && !datos[c.k]);
+    const falta = camposDe().find(c => c.tipo !== 'casilla' && !c.vacio && !datos[c.k]);
     if (falta) { estadoCat('Escribe ' + falta.t.toLowerCase().replace(' (opcional)', ''), 'mal'); $('cat-alta').querySelector('[data-campo="' + falta.k + '"]').focus(); return; }
     if (CAT === CATALOGOS.unidades && !datos.clave) { const p = datos.nombre.split(/\s+/); datos.clave = (p.length > 1 ? p.map(x => x[0]).join('') : datos.nombre.slice(0, 3)).toUpperCase(); }
     try {
@@ -542,7 +545,7 @@ const Compras = (() => {
   }
   async function guardarEdicion(i) {
     const x = CAT_FILAS[i], li = $('cat-lista').querySelector('[data-i="' + i + '"]'), datos = leerCampos(li);
-    const falta = CAT.campos.find(c => !c.vacio && !datos[c.k]);
+    const falta = camposDe().find(c => c.tipo !== 'casilla' && !c.vacio && !datos[c.k]);
     if (falta) { estadoCat('Escribe ' + falta.t.toLowerCase().replace(' (opcional)', ''), 'mal'); return; }
     try {
       await pedir(CAT.item(x), 'PUT', datos);

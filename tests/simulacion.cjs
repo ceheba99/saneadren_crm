@@ -533,8 +533,8 @@ const espera = ms => new Promise(r => setTimeout(r, ms));
     'los gastos quedan en Cuentas por pagar ligados a la orden (el pagado por nómina con saldo 0, el otro pendiente)', j);
   [s, j] = await pedir('GET', '/generador?desde=2026-10-01&hasta=2026-10-01', L);
   const filaSub = j.filas.find(f => f.lead_id === ordenSub.id);
-  ok(filaSub && filaSub.realizado_por === 'Subcontratado' && filaSub.costo === 7850 && filaSub.estatus_pago.startsWith('Pagado en parte') && filaSub.via_pago === 'Nómina · Semana 40',
-    'el generador muestra el servicio subcontratado con su costo total y el estatus de pago', filaSub);
+  ok(filaSub && !('realizado_por' in filaSub) && filaSub.costo === 7850 && filaSub.estatus_pago.startsWith('Pagado en parte') && filaSub.via_pago === 'Nómina · Semana 40',
+    'el generador muestra el servicio con su costo con terceros total y el estatus de pago (sin la columna «Realizó», que ya no se captura)', filaSub);
   // Cuentas por cobrar: la orden realizada se cobra con los datos de su ejecución; el crédito corre desde que se realizó.
   const enCartera = async id => (await pedir('GET', '/finanzas/cartera?filtro=todas', A))[1].find(c => c.lead_id === id);
   let cxc = await enCartera(ordenSub.id);

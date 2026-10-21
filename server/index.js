@@ -1451,7 +1451,8 @@ app.get('/api/generador', h((req, res) => {
   if (!fechaOk(desde) || !fechaOk(hasta) || (desde && hasta && desde > hasta)) return res.status(400).json({ error: 'Revisa el rango de fechas' });
   const q = String(req.query.q || '').trim().toLowerCase();
   const ordenes = db.prepare(`SELECT l.id, l.created_at, l.fecha_servicio, l.factura_folio, l.orden_generador, l.cliente_id, l.sucursal_id, l.partidas_json, l.valor, l.iva_modo, l.iva_tasa, l.iva_cent,
-      l.proyecto, l.equipo, l.operador, l.manifiestos, l.tiros, l.realizado_por, COALESCE(c.empresa_contacto, c.nombre, l.empresa_contacto, l.nombre) AS cliente,
+      l.proyecto, l.equipo, l.operador, l.manifiestos, l.tiros, COALESCE(c.empresa_contacto, c.nombre, l.empresa_contacto, l.nombre) AS cliente,
+      (SELECT group_concat(p.nombre, ', ') FROM (SELECT p.nombre FROM orden_personal op JOIN personal p ON p.id = op.personal_id WHERE op.lead_id = l.id ORDER BY op.papel = 'responsable' DESC, op.papel, p.nombre) p) AS equipo_personal,
       COALESCE(cl.nombre, cc.nombre) AS canal, s.nombre AS servicio_nombre,
       COALESCE(l.fecha_realizado, l.fecha_servicio, date(l.created_at)) AS fecha
     FROM leads l LEFT JOIN clientes c ON c.id = l.cliente_id LEFT JOIN canales cl ON cl.id = l.canal_id
@@ -1495,8 +1496,8 @@ app.get('/api/generador', h((req, res) => {
         producto: it.servicio || o.servicio_nombre || 'Servicio', cantidad,
         precio_con_iva: Math.round(l.total_cent / cantidad) / 100, precio_sin_iva: Math.round(l.subtotal_cent / cantidad) / 100,
         subtotal: pesos(l.subtotal_cent), iva: pesos(l.iva_cent), total: pesos(l.total_cent), iva_por_definir: !o.iva_modo,
-        canal: o.canal || '', cliente: o.cliente || '', proyecto: o.proyecto || '', unidad: o.equipo || '', empleado: o.operador || '',
-        manifiestos: o.manifiestos || '', tiros: o.tiros || '', realizado_por: o.realizado_por === 'subcontratado' ? 'Subcontratado' : 'Propio',
+        canal: o.canal || '', cliente: o.cliente || '', proyecto: o.proyecto || '', unidad: o.equipo || '', empleado: [o.equipo_personal, o.operador].filter(Boolean).join(', '),
+        manifiestos: o.manifiestos || '', tiros: o.tiros || '',
         // El costo con terceros es de la orden: va solo en su primer renglón para no sumarlo dos veces.
         ...(n === 0 ? costo : { proveedor: '', concepto: '', costo: null, estatus_pago: '', via_pago: '' }),
       });

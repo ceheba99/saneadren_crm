@@ -143,6 +143,27 @@ for (const [k, m] of Object.entries(M.modulos)) {
   for (const p of m.permisos) revisa(PERMISOS.has(p), k, `declara el permiso «${p}», que no existe`);
 }
 
+// Columnas de negocio que la pantalla muestra (f.columna, x.columna…) sin que ningún formulario las capture ni el
+// sistema las genere. «Capturar» = la pantalla manda la llave (columna: …, o sin _cent en pesos) o un campo/lista la
+// nombra (id «xx-columna», 'columna' en una lista de campos). Lo que genera el sistema va en M.generados (con su razón).
+function retirados(js, db, tablas) {
+  const negocio = tablas.filter(t => !M.internas[t]);
+  const cols = new Map(); for (const t of negocio) for (const c of db.prepare(`PRAGMA table_info(${t})`).all()) cols.set(c.name, (cols.get(c.name) || []).concat(t));
+  const mostrados = new Set([...js.matchAll(/\b(?:f|x|l|o|c|p|r|a|d|s|g|k|e|i|u|lead|orden|fila|item|cuenta|persona|actual|cliente|sol|oc)\.([a-z][a-z0-9_]+)\b/g)].map(m => m[1]));
+  // M.generados: { campo: 'razón' } si lo genera el sistema, o { campo: { como: 'llave', razon } } si la pantalla lo
+  // captura con otro nombre (p. ej. el «motivo» de una cancelación se guarda en motivo_cancelacion); «como» se comprueba.
+  const G = M.generados || {};
+  // «Quién lo hizo» lo pone el sistema con la sesión: SOLO estos nombres exactos (no cualquier «…_por»: «realizado_por»
+  // —propio/subcontratado— es un dato de negocio y así se colaba como generado).
+  const QUIEN = /^(registrad|cancelad|autorizad|recibid|elegid|aprobad|cerrad|eliminad|confirmad|subid|cread|resuelt)[oa]_por(_nombre|_id)?$/;
+  const generado = c => /_at$/.test(c) || QUIEN.test(c) || ['id', 'version', 'created_at', 'updated_at', 'folio_num', 'sucursal_id'].includes(c) || (typeof G[c] === 'string' && G[c].length > 10);
+  // Se manda como llave (x: …), abreviada ({ x, … }), asignada (d.x = …) o nombrada entre comillas (listas de campos).
+  const manda = k => new RegExp(`\\b${k}\\s*:|[{,]\\s*${k}\\s*[,}]|\\.${k}\\s*=[^=]|'${k}'`).test(js);
+  const comoOtro = c => !!G[c] && typeof G[c] === 'object' && !!G[c].razon && manda(G[c].como);
+  const capturado = c => { const base = c.replace(/_cent$/, ''); return comoOtro(c) || manda(c) || manda(base) ||new RegExp(`id="[\\w]+-(${c}|${base})"`).test(HTML) || new RegExp(`'(${c}|${base})'`).test(js) || new RegExp(`-(${c}|${base})['"\`]`).test(js); };
+  return [...mostrados].filter(c => cols.has(c) && !generado(c) && !capturado(c)).map(c => `${c} (${cols.get(c).join(', ')})`);
+}
+
 // ================= C. Servidor con datos del demo =================
 (async () => {
   console.log('C. Servidor (todas las rutas con datos del demo)');
@@ -170,6 +191,10 @@ for (const [k, m] of Object.entries(M.modulos)) {
     }
   }
   for (const [k, m] of Object.entries(M.modulos)) for (const t of m.demo) revisa(TABLAS.includes(t) && db.prepare(`SELECT COUNT(*) n FROM ${t}`).get().n > 0, k, `el demo no trae ejemplos de «${t}»`);
+  // A3. Datos que se muestran pero ya no se capturan (p. ej. «Realizó: propio/subcontratado» cuando ya nadie lo escribe):
+  // cada columna de la base que la pantalla muestra debe tener de dónde salir: un formulario que la mande, o que la
+  // genere el propio sistema (fechas, folios, quién registró, montos que se capturan en pesos…), declarado en el manifiesto.
+  revisa(retirados(TODO_JS_PUBLICO, db, TABLAS).length === 0, 'datos', 'la pantalla muestra datos que ya no se capturan en ningún formulario (o que el sistema no genera)', retirados(TODO_JS_PUBLICO, db, TABLAS));
 
   // C1. Cada ruta, con cada quien. Los números de registro se toman de la base (de Querétaro, para probar CDMX).
   const qro = db.prepare("SELECT id FROM sucursales WHERE clave = 'QRO'").get()?.id;

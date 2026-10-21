@@ -61,7 +61,7 @@ const HOY = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Mexico_City' }
   revisa(a.gasto === 2000 && a.utilidad === 15000 && a.margen_pct === 88.2, 'gastos del periodo $2,000; utilidad estimada $15,000 (88.2 %)', [a.gasto, a.utilidad, a.margen_pct]);
   revisa(a.cobrado === 11600 && a.descuentos === 100 && a.pagado === 1200 && a.flujo === 10400, 'flujo: cobrado $11,600 − pagado $1,200 = $10,400 (el descuento no es cobro)', [a.cobrado, a.descuentos, a.pagado, a.flujo]);
   revisa(a.clientes_activos === 2 && a.clientes_nuevos === 1 && a.clientes_recurrentes === 1, 'clientes: 2 activos, 1 nuevo (Hotel Dos) y 1 recurrente (Planta Uno)', [a.clientes_activos, a.clientes_nuevos, a.clientes_recurrentes]);
-  revisa(a.subcontratado_pct === 11.8, 'el 11.8 % de la venta se subcontrató', a.subcontratado_pct);
+  revisa(!('subcontratado_pct' in a), 'Resultados ya no muestra «% subcontratado» (ese dato ya no se captura)', a.subcontratado_pct);
   revisa(p.venta === 4000 && p.servicios === 1, 'periodo anterior: $4,000 en 1 servicio', [p.venta, p.servicios]);
   const tc = j.top_clientes;
   revisa(tc[0].nombre === 'Planta Uno SA' && tc[0].venta === 15000 && tc[0].pct === 88.2 && tc[1].costo === 1200, 'top clientes: Planta Uno SA $15,000 (88.2 %), Hotel Dos con su costo', tc);

@@ -40,7 +40,8 @@ module.exports = function tablero(app, db, h, finanzas) {
 
   // Servicios realizados en el periodo (la venta real: lo mismo que cuenta el Generador).
   function realizados(d, h) {
-    return db.prepare(`SELECT l.id, l.cliente_id, l.valor, l.iva_cent, l.iva_modo, l.iva_tasa, l.partidas_json, l.equipo, l.operador, l.realizado_por,
+    return db.prepare(`SELECT l.id, l.cliente_id, l.valor, l.iva_cent, l.iva_modo, l.iva_tasa, l.partidas_json, l.equipo, l.operador,
+        (SELECT group_concat(p.nombre, '|') FROM orden_personal op JOIN personal p ON p.id = op.personal_id WHERE op.lead_id = l.id) AS equipo_personal,
         ${FECHA_VENTA} AS fecha, COALESCE(c.empresa_contacto, c.nombre, l.nombre) AS cliente, COALESCE(cl.nombre, cc.nombre, 'Sin canal') AS canal, s.nombre AS servicio_nombre
       FROM leads l LEFT JOIN clientes c ON c.id = l.cliente_id LEFT JOIN canales cl ON cl.id = l.canal_id LEFT JOIN canales cc ON cc.id = c.canal_origen_id
       LEFT JOIN catalogo_servicios s ON s.id = l.servicio_id
@@ -94,7 +95,6 @@ module.exports = function tablero(app, db, h, finanzas) {
     let nuevos = 0;
     const primero = db.prepare(`SELECT MIN(${FECHA_VENTA}) f FROM leads l WHERE l.cliente_id = ? AND l.estatus = 'ganado' AND l.ejecucion = 'realizado'`);
     for (const c of activos) if ((primero.get(c).f || '') >= d) nuevos++;
-    const subcontratado = ventas.filter(l => l.realizado_por === 'subcontratado');
     return {
       ventas, costos,
       r: {
@@ -107,20 +107,22 @@ module.exports = function tablero(app, db, h, finanzas) {
         cierre_pct: (cot.ganadas || 0) + (cot.perdidas || 0) ? Math.round(cot.ganadas / (cot.ganadas + cot.perdidas) * 1000) / 10 : null,
         no_realizados: noRealizados.n, no_realizado_valor: Math.round((noRealizados.v || 0) * 100) / 100,
         contactos_nuevos: contactos, clientes_activos: activos.size, clientes_nuevos: nuevos, clientes_recurrentes: activos.size - nuevos,
-        subcontratado_pct: ventaSub ? Math.round(subcontratado.reduce((t, l) => t + subtotalCent(l), 0) / ventaSub * 1000) / 10 : null,
       },
       gastos: gastos.map(g => ({ categoria: g.categoria, nombre: finanzas.CATEGORIAS[g.categoria] || g.categoria, total: pesos(g.t), con_iva: pesos(g.con_iva), sin_orden: pesos(g.sin_orden), es_gasto: !CATEGORIAS_NO_GASTO.has(g.categoria) })),
     };
   }
 
-  // Ranking por una clave (cliente, canal, unidad, operador) con venta, servicios, costo y margen.
+  // Ranking por una clave (cliente, canal, unidad, persona) con venta, servicios, costo y margen. La clave puede ser
+  // una lista (las personas del equipo): cada una suma la orden completa.
   function ranking(ventas, costos, clave, limite = 8) {
     const m = new Map();
     for (const l of ventas) {
-      const k = clave(l) || 'Sin dato';
-      const g = m.get(k) || { nombre: k, venta: 0, servicios: 0, costo: 0 };
-      g.venta += subtotalCent(l); g.servicios++; g.costo += costos.get(l.id) || 0;
-      m.set(k, g);
+      const ks = [].concat(clave(l) || []).filter(Boolean);
+      for (const k of ks.length ? ks : ['Sin dato']) {
+        const g = m.get(k) || { nombre: k, venta: 0, servicios: 0, costo: 0 };
+        g.venta += subtotalCent(l); g.servicios++; g.costo += costos.get(l.id) || 0;
+        m.set(k, g);
+      }
     }
     const total = ventas.reduce((t, l) => t + subtotalCent(l), 0);
     return [...m.values()].sort((a, b) => b.venta - a.venta).slice(0, limite)
@@ -235,7 +237,7 @@ module.exports = function tablero(app, db, h, finanzas) {
       actual: act.r, previo: ant.r, foto, alertas, por_sucursal: porSucursal,
       gastos: act.gastos, tendencia: tendencia(hasta),
       top_clientes: ranking(act.ventas, act.costos, l => l.cliente), por_servicio: porServicio(act.ventas),
-      por_canal: ranking(act.ventas, act.costos, l => l.canal), por_unidad: ranking(act.ventas, act.costos, l => l.equipo), por_operador: ranking(act.ventas, act.costos, l => l.operador),
+      por_canal: ranking(act.ventas, act.costos, l => l.canal), por_unidad: ranking(act.ventas, act.costos, l => l.equipo), por_operador: ranking(act.ventas, act.costos, l => (l.equipo_personal ? l.equipo_personal.split('|') : []).concat(l.operador ? [l.operador] : [])),
     });
   }));
 };
