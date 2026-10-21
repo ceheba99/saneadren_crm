@@ -275,6 +275,34 @@ module.exports = function compras(app, db, h, finanzas) {
   }));
 
   // ----- Órdenes de compra -----
+  // Avisos para Inicio (bloque «Compras»), según lo que hace cada quien y lo que ve (vistas de la base):
+  //  · quien gestiona compras: solicitudes por aprobar (las propias solo con «aprobar sus propias»), por cotizar y
+  //    con cotización elegida sin orden; órdenes autorizadas por recibir (rojo si ya pasó la fecha requerida);
+  //  · quien autoriza: órdenes de compra en borrador por autorizar;
+  //  · quien pidió: en qué va cada una de sus solicitudes abiertas.
+  app.get('/api/compras/avisos', h((req, res) => {
+    if (!P.puede(req, 'compras.ver')) return res.status(403).json({ error: 'Tu rol no ve compras' });
+    const yo = req.usuarioSesion.id, hoy = hoyMexico(), gestiona = P.puede(req, 'compras.gestionar'), autoriza = P.puede(req, 'compras.autorizar'), propias = P.puede(req, 'compras.aprobar_propias');
+    const dma = f => String(f).slice(0, 10).split('-').reverse().join('/'), avisos = [];
+    const EST = { por_aprobar: 'por aprobar', cotizando: 'buscando cotizaciones', elegida: 'cotización elegida, falta la orden de compra' };
+    for (const s of db.prepare(`SELECT s.*, (SELECT COUNT(DISTINCT d.proveedor_id) FROM documentos_solicitud d WHERE d.solicitud_id = s.id AND d.tipo = 'cotizacion' AND d.eliminado = 0) AS cots
+      FROM solicitudes_compra s WHERE s.estado IN ('por_aprobar', 'cotizando', 'elegida') ORDER BY s.urgente DESC, s.created_at`).all()) {
+      const base = { solicitud_id: s.id, folio: folioSol(s), nombre: s.que, fecha: s.fecha_requerida || String(s.created_at).slice(0, 10) };
+      const tarde = s.fecha_requerida && s.fecha_requerida < hoy;
+      if (gestiona && s.estado === 'por_aprobar' && (propias || s.solicitante_id !== yo)) avisos.push({ ...base, tipo: 'por_aprobar', nivel: s.urgente || tarde ? 'rojo' : 'amarillo', texto: `Por aprobar · la pidió ${s.solicitante_nombre}${s.urgente ? ' · URGENTE' : ''}` });
+      else if (gestiona && s.estado === 'cotizando') avisos.push({ ...base, tipo: 'cotizar', nivel: s.urgente || tarde ? 'rojo' : 'amarillo', texto: `Faltan cotizaciones (${s.cots} de 3)${s.urgente ? ' · URGENTE' : ''}` });
+      else if (gestiona && s.estado === 'elegida') avisos.push({ ...base, tipo: 'hacer_oc', nivel: tarde ? 'rojo' : 'amarillo', texto: 'Cotización elegida: falta hacer la orden de compra' });
+      else if (s.solicitante_id === yo) avisos.push({ ...base, tipo: 'mi_solicitud', nivel: 'azul', texto: 'Tu solicitud va: ' + EST[s.estado] });
+    }
+    for (const o of db.prepare(`SELECT o.*, p.nombre AS proveedor FROM ordenes_compra o LEFT JOIN proveedores p ON p.id = o.proveedor_id
+      WHERE (o.estado = 'borrador') OR (o.estado = 'autorizada' AND o.recibida_at IS NULL) ORDER BY COALESCE(o.fecha_requerida, o.fecha)`).all()) {
+      const tarde = o.fecha_requerida && o.fecha_requerida < hoy, total = '$' + (o.total_cent / 100).toLocaleString('es-MX', { minimumFractionDigits: 2 });
+      if (o.estado === 'borrador' && autoriza) avisos.push({ tipo: 'por_autorizar', nivel: tarde ? 'rojo' : 'amarillo', oc_id: o.id, folio: folioOC(o), nombre: o.proveedor, fecha: o.fecha_requerida || o.fecha, texto: `Por autorizar · ${total}` });
+      if (o.estado === 'autorizada' && gestiona) avisos.push({ tipo: 'por_recibir', nivel: tarde ? 'rojo' : 'azul', oc_id: o.id, folio: folioOC(o), nombre: o.proveedor, fecha: o.fecha_requerida || o.fecha, texto: tarde ? `Por recibir · se requería el ${dma(o.fecha_requerida)}` : 'Autorizada, por recibir' });
+    }
+    const peso = { rojo: 0, amarillo: 1, azul: 2 };
+    res.json(avisos.sort((a, b) => peso[a.nivel] - peso[b.nivel] || String(a.fecha).localeCompare(String(b.fecha))));
+  }));
   app.get('/api/compras/ordenes', h((req, res) => {
     const estado = String(req.query.estado || '');
     let filas = db.prepare(SQL_OC + ' ORDER BY o.fecha DESC, o.id DESC').all().map(describir);

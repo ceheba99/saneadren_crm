@@ -496,6 +496,8 @@ async function cargarInicio() {
     : '<p class="util-45">No hay recompras próximas todavía.</p>';
   Finanzas.pintarInicio();
   if (typeof Personal !== 'undefined') Personal.pintarInicio(); // bloque «Personal» (licencias, contratos, ausencias, órdenes sin responsable)
+  if (typeof Compras !== 'undefined') Compras.pintarInicio(); // bloque «Compras» (aprobar, cotizar, autorizar, recibir)
+  if (typeof Prospeccion !== 'undefined') Prospeccion.pintarInicio(); // bloque «Prospección» (a quién llamar hoy)
 }
 function filaEstancada(l) {
   const dias = diasSinMovimiento(l.updated_at);
@@ -2397,7 +2399,7 @@ on('lista-servicios-catalogo', 'click', async e => {
 });
 
 on('btn-crear-servicio', 'click', async () => {
-  const nombre = document.getElementById('ns-nombre').value.trim();
+  const nombre = document.getElementById('nserv-nombre').value.trim();
   const dias = document.getElementById('ns-dias').value;
   if (!nombre) { toast('Escribe un nombre para el servicio'); return; }
   try {
@@ -2411,7 +2413,7 @@ on('btn-crear-servicio', 'click', async () => {
       return;
     }
     toast('Servicio agregado');
-    document.getElementById('ns-nombre').value = '';
+    document.getElementById('nserv-nombre').value = '';
     document.getElementById('ns-descripcion').value = '';
     document.getElementById('ns-dias').value = '';
     cargarCatalogoServicios();

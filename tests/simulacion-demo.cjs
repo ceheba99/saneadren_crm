@@ -56,6 +56,7 @@ const pedir = async (m, r, t, b) => { const x = await fetch(`http://localhost:${
   revisa(!(j.resultados || []).some(r => r.grupo === 'Seguridad' && r.total), 'en el demo no sale el aviso de la clave de cifrado (su base se borra en cada reinicio)', (j.resultados || []).filter(r => r.grupo === 'Seguridad' && r.total));
 
   console.log('2b. Personal: qué ve y qué hace cada quien');
+  const j0Ventas = (await pedir('GET', '/permisos/mios', tok.ventas))[1] && (await pedir('GET', '/usuarios', tok.admin))[1].find(u => u.nombre === 'Laura Ventas - Demo').id;
   const [, todos] = await pedir('GET', '/personal?estado=todos', tok.admin);
   revisa(todos.length === 15 && todos.filter(p => !p.activo).length === 1 && todos.filter(p => p.usuario_nombre).length === 9, 'Dirección ve a las 15 personas (1 dada de baja; 9 con cuenta en el sistema)', [todos.length, todos.filter(p => !p.activo).length, todos.filter(p => p.usuario_nombre).length]);
   const raul = todos.find(p => p.nombre === 'Raúl Técnico - Demo'), juan = todos.find(p => p.nombre === 'Juan Carlos Ríos');
@@ -85,6 +86,15 @@ const pedir = async (m, r, t, b) => { const x = await fetch(`http://localhost:${
   { const [st, av] = await pedir('GET', '/personal/avisos', tok.nomina); revisa(st === 200 && av.some(a => a.tipo === 'contrato_vence') && !av.some(a => a.tipo === 'sin_responsable'), 'Inicio de Nómina: ve contratos por vencer, pero no órdenes (no ve ventas)', av.map?.(a => a.tipo)); }
   { const [st, av] = await pedir('GET', '/personal/avisos', tok.gerente_cdmx); revisa(st === 200 && av.length > 0 && av.every(a => /Óscar|Mónica|Pedro/.test(a.nombre) || a.tipo === 'sin_responsable'), 'Inicio de la gerente de CDMX: solo avisos de CDMX', av.map?.(a => a.tipo + ':' + a.nombre)); }
   for (const r of ['ventas', 'tecnico']) { const [st] = await pedir('GET', '/personal/avisos', tok[r]); revisa(st === 403, r + ' no recibe avisos de Personal', st); }
+  // Avisos de Compras en Inicio: cada quien lo que le toca hacer.
+  { const [st, av] = await pedir('GET', '/compras/avisos', tok.admin), t = new Set((av || []).map(a => a.tipo));
+    revisa(st === 200 && t.has('por_aprobar') && t.has('cotizar') && t.has('por_recibir'), 'Inicio de Dirección: solicitudes por aprobar y por cotizar, y órdenes de compra por recibir', [...t]); }
+  { const [st, av] = await pedir('GET', '/compras/avisos', tok.costos); revisa(st === 200 && av.some(a => ['por_aprobar', 'cotizar', 'hacer_oc', 'por_recibir'].includes(a.tipo)) && !av.some(a => a.tipo === 'por_autorizar'), 'Inicio de Compras: lo que gestiona, sin autorizar (no tiene ese permiso)', av.map?.(a => a.tipo)); }
+  { const [st, av] = await pedir('GET', '/compras/avisos', tok.ventas); revisa(st === 200 && av.every(a => a.tipo === 'mi_solicitud'), 'Inicio de Ventas: solo cómo van sus propias solicitudes', av.map?.(a => a.tipo)); }
+  { const [st, av] = await pedir('GET', '/compras/avisos', tok.ventas_cdmx); revisa(st === 200 && av.every(a => /CDMX/.test(a.folio || '')), 'Inicio de Ventas CDMX: nada de compras de Querétaro', av.map?.(a => a.folio)); }
+  { const [st] = await pedir('GET', '/compras/avisos', tok.rh); revisa(st === 403, 'Recursos humanos (sin compras) no recibe avisos de compras', st); }
+  // Prospección en Inicio: el vendedor ve sus llamadas de hoy o atrasadas.
+  { const [st, pr] = await pedir('GET', '/prospeccion?pendientes=1&responsable_id=' + j0Ventas, tok.ventas); revisa(st === 200 && pr.length >= 2 && pr.every(e => e.estado !== 'no_contactar'), 'Inicio de Ventas: sus prospectos a los que toca llamar (hoy o atrasados)', pr.map?.(e => e.nombre)); }
   [s, j] = await pedir('GET', '/prospeccion', tok.ventas); revisa(s === 200 && j.length === 5 && new Set(j.map(e => e.estado)).size === 5, 'prospección: 5 establecimientos, uno en cada estado', j.map?.(e => e.estado));
   [s, j] = await pedir('GET', '/tablero', tok.admin); revisa(j.alertas?.some(a => /sin IVA capturado/.test(a.texto)), 'Resultados avisa de las facturas con IVA estimado (para enseñar a capturarlo)', j.alertas?.map(a => a.texto));
   const [, leads] = await pedir('GET', '/leads', tok.admin);

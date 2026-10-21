@@ -36,5 +36,22 @@ const Prospeccion=(()=>{
   $('pr-agregar-sector').onclick=async()=>{try{await pedir('/sectores',{nombre:$('pr-sector-nuevo').value},'POST');$('pr-sector-nuevo').value='';await cargar();}catch(e){toast(e.message);}};
   $('pr-sectores').onclick=async e=>{const btn=e.target.closest('[data-sector]');if(!btn)return;try{await pedir('/sectores/'+btn.dataset.sector,{nombre:$('pr-sector-'+btn.dataset.sector).value},'PUT');await cargar();}catch(e){toast(e.message);}};
   $('pr-exportar').onclick=()=>descargarCSV('establecimientos-prospeccion.csv',['nombre','sector','zona','direccion','persona','cargo','telefono','correo','fuente','estado','responsable','proximo_contacto','necesidades'].map(k=>({titulo:k,valor:e=>{const v=k==='estado'?estados[e[k]]:String(e[k]||'');return /^[=+@\-\t\r\n]/.test(v)?"'"+v:v;}})),filas);
-  return {cargar};
+  // ---------- Bloque «Prospección» de Inicio: a quién toca llamar hoy (o ya pasó la fecha). ----------
+  // Vendedor: los suyos; quien ve toda su sucursal: todos los de su sucursal.
+  async function pintarInicio(){
+    const cont=$('inicio-prospeccion');if(!cont||!Permisos.puede('ventas.ver'))return;
+    cont.innerHTML='<p class="util-45" role="status">Cargando…</p>';
+    let lista;
+    try{lista=await pedir('?pendientes=1'+(Permisos.puede('ventas.sucursal')?'':'&responsable_id='+Number(USUARIO_ACTUAL.id)));}
+    catch(e){cont.innerHTML=`<div class="aviso-error-carga" role="alert"><p>${esc(e.message)}</p></div>`;return;}
+    const hoy=new Intl.DateTimeFormat('en-CA',{timeZone:'America/Mexico_City'}).format(new Date());
+    cont.innerHTML=lista.length?lista.slice(0,15).map(e=>`<div class="fila-alerta ${e.proximo_contacto<hoy?'vencido':'tipo-alerta'}">
+        <div class="info"><span class="tipo-tag ${e.proximo_contacto<hoy?'rojo':'alerta'}">🔎 ${e.proximo_contacto<hoy?'Seguimiento atrasado':'Llamar hoy'}</span>
+          <div><b>${esc(e.nombre)}</b> · ${esc(e.sector||'')} · ${esc(e.zona||'')}</div><div class="txt">${esc(estados[e.estado]||e.estado)}${e.persona?' · '+esc(e.persona):''}${e.telefono?' · '+esc(e.telefono):''}</div>
+          <div class="fecha">${esc(String(e.proximo_contacto).split('-').reverse().join('/'))} · ${esc(e.responsable||'')}</div></div>
+        <div class="util-46"><button type="button" class="btn btn-outline" data-pr-inicio="${Number(e.id)}">Abrir</button></div></div>`).join('')+(lista.length>15?`<p class="util-45">Y ${lista.length-15} más en Prospección.</p>`:'')
+      :'<p class="util-45">No hay llamadas de prospección pendientes para hoy. 🎉</p>';
+  }
+  $('inicio-prospeccion')?.addEventListener('click',e=>{const b=e.target.closest('[data-pr-inicio]');if(b)abrir(Number(b.dataset.prInicio));});
+  return {cargar,abrir,pintarInicio};
 })();
