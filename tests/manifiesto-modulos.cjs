@@ -122,6 +122,7 @@ module.exports = {
     accion: 'la escribe el sistema en la bitácora',
     bytes: 'tamaño del archivo subido',
     oc_id: 'liga que pone el sistema al hacer la orden de compra de una solicitud',
+    reabierta_total_cent: 'lo anota el sistema al regresar una orden a cotización, para avisar si se vuelve a ganar con otro importe',
     confirmado: 'lo marca el botón «Confirmar» de los cobros por confirmar',
     solicitante_id: 'quien capturó la solicitud (su sesión)',
     motivo_cancelacion: { como: 'motivo', razon: 'se pide al cancelar un cobro, una cuenta, un pago, una orden de compra o una incidencia' },

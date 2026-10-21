@@ -927,6 +927,13 @@ app.put('/api/leads/:id', validarPartidas, validarRegistro, h((req, res) => {
     const compras = db.prepare("SELECT COUNT(*) n FROM main.ordenes_compra WHERE lead_id = ? AND estado <> 'cancelada'").get(actual.id).n;
     if (gastos || compras) return res.status(409).json({ error: `Esta orden tiene ${[gastos ? gastos + ' gasto(s) de proveedores' : '', compras ? compras + ' orden(es) de compra' : ''].filter(Boolean).join(' y ')} ligados: no puede reabrirse ni descartarse. Cancélalos primero en Cuentas por pagar o Compras.`, codigo: 'TIENE_COSTOS' });
   }
+  // Regresar una orden a cotización (o descartarla) cambia lo que el cliente debe: lo hace quien puede cambiar el importe
+  // de una orden (si no, un vendedor «bajaba» el importe reabriendo, cambiando el precio y volviéndola a ganar). Una orden
+  // ya marcada realizada o no realizada no se reabre: primero Dirección la regresa a «por realizar».
+  if (actual.estatus === 'ganado' && req.body.estatus !== undefined && req.body.estatus !== 'ganado') {
+    if (!permisos.puede(req, 'ordenes.importe_ganada')) return res.status(403).json({ error: 'Regresar una orden de servicio a cotización lo hace quien puede cambiar su importe: pídelo a administración.' });
+    if (actual.ejecucion) return res.status(409).json({ error: `Esta orden ya está marcada como ${actual.ejecucion === 'realizado' ? 'realizada' : 'no realizada'}: primero Dirección la regresa a «por realizar».` });
+  }
   // El importe de una orden de servicio es lo que el cliente debe: solo administración o atención
   // pueden cambiarlo (un vendedor o técnico podría, si no, "saldar" una deuda editando las partidas).
   // Se comparan totales con IVA (valor + iva_cent): cambiar solo el IVA también cambia lo que se debe.
@@ -1020,6 +1027,14 @@ app.put('/api/leads/:id', validarPartidas, validarRegistro, h((req, res) => {
     db.prepare(`INSERT INTO main.historial (lead_id, tipo, texto, usuario, origen) VALUES (?, 'observacion', ?, ?, 'sistema')`)
       .run(id, textoEvento, req.usuarioSesion?.nombre || null);
     if (req.body.estatus === 'ganado') finanzas.copiarCredito(id);
+    const fmtTotal = cent => '$' + (Number(cent || 0) / 100).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    if (actual.estatus === 'ganado') db.prepare('UPDATE main.leads SET reabierta_total_cent = ? WHERE id = ?').run(totalActualCent, id);
+    if (req.body.estatus === 'ganado' && actual.reabierta_total_cent != null) {
+      const n = db.prepare('SELECT valor, iva_cent FROM main.leads WHERE id = ?').get(id), nuevo = Math.round(Number(n.valor || 0) * 100) + (n.iva_cent || 0);
+      if (nuevo !== actual.reabierta_total_cent) db.prepare(`INSERT INTO main.historial (lead_id, tipo, texto, usuario, origen) VALUES (?, 'observacion', ?, ?, 'sistema')`)
+        .run(id, `Se volvió a ganar con otro importe: ${fmtTotal(actual.reabierta_total_cent)} → ${fmtTotal(nuevo)}. Si ya se entregó el PDF de la orden anterior, ese ya no vale: entrega el nuevo.`, req.usuarioSesion.nombre);
+      db.prepare('UPDATE main.leads SET reabierta_total_cent = NULL WHERE id = ?').run(id);
+    }
   }
   if (cambiaImporte || cambiaIva) {
     const fmt = cent => '$' + (Number(cent || 0) / 100).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 });

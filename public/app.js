@@ -1967,7 +1967,8 @@ function actualizarBotonesEstatusFicha(lead) {
   const esAbierto = !!lead && lead.estatus === 'abierto';
   document.getElementById('btn-marcar-perdido').style.display = esAbierto ? 'inline-flex' : 'none';
   // Una orden directa/duplicada nunca fue cotización: no se puede "reabrir" ni descartar como tal.
-  document.getElementById('btn-reabrir').style.display = (lead && !esAbierto && lead.origen !== 'directo') ? 'inline-flex' : 'none';
+  const puedeReabrir = lead && !esAbierto && lead.origen !== 'directo' && (lead.estatus !== 'ganado' || Permisos.puede('ordenes.importe_ganada'));
+  document.getElementById('btn-reabrir').style.display = puedeReabrir ? 'inline-flex' : 'none';
   // Solo las órdenes de servicio se duplican (servicio recurrente); las cotizaciones no.
   document.getElementById('btn-recomprar').style.display = (lead && lead.estatus === 'ganado' && lead.cliente_id) ? 'inline-flex' : 'none';
   // Solo una cotización abierta se convierte en orden; en la orden ya está "Guardar y descargar".
