@@ -134,6 +134,7 @@ document.querySelectorAll('header nav [data-vista]').forEach(btn => {
 function cambiarVista(v, opciones) {
   if (v === 'usuarios' && !Permisos.puede('usuarios.administrar')) v = 'inicio';
   if (v === 'personal' && !Permisos.puede('personal.ver')) v = 'inicio';
+  if (v === 'prospeccion' && !Permisos.puede('prospeccion.ver')) v = 'inicio';
   if ((v === 'cobrar' || (v === 'cuentas' && !['pagar', 'proveedores'].includes(opciones?.pestana))) && !Permisos.puede('cxc.ver')) v = 'inicio';
   if ((v === 'pagar' || (v === 'cuentas' && ['pagar', 'proveedores'].includes(opciones?.pestana))) && !Permisos.puede('cxp.ver')) v = 'inicio';
   if (v === 'pendientes') v = 'inicio'; // Pendientes ahora es parte de Inicio

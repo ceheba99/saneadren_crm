@@ -4,9 +4,9 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Saneadren · Cotizaciones y Servicios</title>
-<link rel="stylesheet" href="styles.css?v=rh3">
+<link rel="stylesheet" href="styles.css?v=cel1">
 <link rel="stylesheet" href="servicios-tabla.css">
-<link rel="stylesheet" href="flujo.css">
+<link rel="stylesheet" href="flujo.css?v=cel1">
 </head>
 <body>
 
@@ -34,7 +34,7 @@
           <button type="button" class="menu-item perm-ventas-ver" data-vista="clientes"><span class="menu-icono" aria-hidden="true">👥</span>Contactos</button>
           <button type="button" class="menu-item perm-ventas-ver" data-vista="generador"><span class="menu-icono" aria-hidden="true">📒</span>Generador</button>
           <button type="button" class="menu-item perm-ventas-ver" data-vista="leads"><span class="menu-icono" aria-hidden="true">📄</span>Cotizaciones</button>
-          <button type="button" class="menu-item perm-ventas-ver" data-vista="prospeccion"><span class="menu-icono" aria-hidden="true">🔎</span>Prospección</button>
+          <button type="button" class="menu-item perm-prospeccion-ver" data-vista="prospeccion"><span class="menu-icono" aria-hidden="true">🔎</span>Prospección</button>
         </div>
       </div>
       <div class="menu-grupo" data-grupo="dinero">
@@ -639,7 +639,7 @@
           <div class="campo-modal" id="wrap-vigencia-hasta"><label for="ed-vigencia-hasta">Vigencia hasta (obligatoria si tiene vigencia)</label><input type="date" id="ed-vigencia-hasta"></div>
           <div class="campo-modal solo-orden"><label for="ed-equipo">Equipo (unidad, opcional)</label><input type="text" id="ed-equipo" maxlength="200" placeholder="Ej. E-37-04"></div>
           <div class="campo-modal full solo-orden" id="ed-equipo-campo"><span class="etiqueta-campo">Técnico responsable y personal (opcional)</span><div id="ed-equipo-personal" data-campo></div><small class="ayuda">El responsable ve esta orden y la marca realizada (si tiene cuenta en el sistema). El personal se da de alta en Ajustes → Personal.</small></div>
-          <div class="campo-modal solo-orden"><label for="ed-operador">Operadores externos (opcional, si no están en Personal)</label><input type="text" id="ed-operador" maxlength="300" placeholder="Ej. operador de la pipa rentada"></div>
+          <div class="campo-modal solo-orden"><label for="ed-operador">Operadores externos (opcional)</label><input type="text" id="ed-operador" maxlength="300" placeholder="Si no están en Personal (ej. pipa rentada)"></div>
           <div class="campo-modal solo-orden"><label for="ed-manifiestos">Manifiestos (opcional)</label><input type="text" id="ed-manifiestos" maxlength="200" placeholder="Folio(s) de manifiesto"></div>
           <div class="campo-modal solo-orden"><label for="ed-tiros">Tiros (opcional)</label><input type="text" id="ed-tiros" maxlength="60" placeholder="Ej. 2"></div>
           <div class="campo-modal full solo-orden"><label for="ed-proyecto">Proyecto (opcional)</label><input type="text" id="ed-proyecto" maxlength="200" placeholder="Ej. Mantenimiento planta 2026"></div>
@@ -1125,7 +1125,7 @@
         <div class="campo" id="sn-equipo-campo"><span class="etiqueta-campo">Técnico responsable y personal (opcional)</span><div id="sn-equipo-personal" data-campo></div><small class="ayuda">De Personal. El responsable con cuenta ve la orden y la marca realizada.</small></div>
         <div class="form-grid-2">
           <div class="campo"><label for="sn-equipo">Equipo (unidad, opcional)</label><input type="text" id="sn-equipo" maxlength="200" placeholder="Ej. E-37-04"></div>
-          <div class="campo"><label for="sn-operador">Operadores externos (opcional, si no están en Personal)</label><input type="text" id="sn-operador" maxlength="300" placeholder="Ej. operador de la pipa rentada"></div>
+          <div class="campo"><label for="sn-operador">Operadores externos (opcional)</label><input type="text" id="sn-operador" maxlength="300" placeholder="Si no están en Personal (ej. pipa rentada)"></div>
         </div>
         <div class="form-grid-2"><div class="campo"><label for="sn-manifiestos">Manifiestos (opcional)</label><input type="text" id="sn-manifiestos" maxlength="200" placeholder="Folio(s) de manifiesto"></div><div class="campo"><label for="sn-tiros">Tiros (opcional)</label><input type="text" id="sn-tiros" maxlength="60" placeholder="Ej. 2"></div></div>
         <div class="campo"><label for="sn-proyecto">Proyecto (opcional)</label><input type="text" id="sn-proyecto" maxlength="200" placeholder="Ej. Mantenimiento planta 2026"></div>
@@ -1190,7 +1190,7 @@
 
 <div class="overlay" id="overlay-personal"><div class="modal" style="max-width:940px"><div class="modal-header"><h2 id="pe-titulo">Persona</h2><button class="close-btn" id="pe-cerrar" aria-label="Cerrar ficha de la persona">✕</button></div><div class="modal-body" id="pe-cuerpo"></div></div></div>
 <div class="overlay" id="overlay-prospeccion"><div class="modal" style="max-width:920px"><div class="modal-header"><h2 id="pr-titulo">Establecimiento</h2><button class="close-btn" id="pr-cerrar" aria-label="Cerrar establecimiento">✕</button></div><div class="modal-body"><div class="modal-section"><p class="ayuda">Para investigar solo necesitas nombre, sector y ciudad o zona. Completa el teléfono cuando lo consigas. Guardar aquí no crea un cliente ni una cotización.</p><div class="form-grid-2">
-<div class="campo-modal"><label for="pr-nombre">Nombre del establecimiento o sucursal (obligatorio)</label><input id="pr-nombre" maxlength="500"></div><div class="campo-modal"><label for="pr-sector_id">Sector (obligatorio)</label><select id="pr-sector_id"></select></div><div class="campo-modal"><label for="pr-zona">Ciudad / zona (obligatorio)</label><input id="pr-zona" maxlength="500"></div><div class="campo-modal"><label for="pr-direccion">Domicilio (opcional)</label><input id="pr-direccion" maxlength="500"></div><div class="campo-modal"><label for="pr-telefono">Teléfono (opcional)</label><input id="pr-telefono" type="tel"></div><div class="campo-modal"><label for="pr-correo">Correo (opcional)</label><input id="pr-correo" type="email"></div><div class="campo-modal"><label for="pr-persona">Persona de contacto (opcional)</label><input id="pr-persona" maxlength="500"></div><div class="campo-modal"><label for="pr-cargo">Cargo / área (opcional)</label><input id="pr-cargo" maxlength="500"></div><div class="campo-modal"><label for="pr-fuente">Fuente de investigación / enlace (opcional)</label><input id="pr-fuente" maxlength="500"></div><div class="campo-modal"><label for="pr-estado">Estado del seguimiento (obligatorio)</label><select id="pr-estado"></select></div><div class="campo-modal"><label for="pr-responsable_id">Responsable (obligatorio)</label><select id="pr-responsable_id"></select></div><div class="campo-modal"><label for="pr-proximo_contacto">Próxima fecha de contacto (opcional)</label><input id="pr-proximo_contacto" type="date"></div>
+<div class="campo-modal"><label for="pr-nombre">Establecimiento o sucursal (obligatorio)</label><input id="pr-nombre" maxlength="500"></div><div class="campo-modal"><label for="pr-sector_id">Sector (obligatorio)</label><select id="pr-sector_id"></select></div><div class="campo-modal"><label for="pr-zona">Ciudad / zona (obligatorio)</label><input id="pr-zona" maxlength="500"></div><div class="campo-modal"><label for="pr-direccion">Domicilio (opcional)</label><input id="pr-direccion" maxlength="500"></div><div class="campo-modal"><label for="pr-telefono">Teléfono (opcional)</label><input id="pr-telefono" type="tel"></div><div class="campo-modal"><label for="pr-correo">Correo (opcional)</label><input id="pr-correo" type="email"></div><div class="campo-modal"><label for="pr-persona">Persona de contacto (opcional)</label><input id="pr-persona" maxlength="500"></div><div class="campo-modal"><label for="pr-cargo">Cargo / área (opcional)</label><input id="pr-cargo" maxlength="500"></div><div class="campo-modal"><label for="pr-fuente">Fuente de investigación / enlace (opcional)</label><input id="pr-fuente" maxlength="500"></div><div class="campo-modal"><label for="pr-estado">Estado del seguimiento (obligatorio)</label><select id="pr-estado"></select></div><div class="campo-modal"><label for="pr-responsable_id">Responsable (obligatorio)</label><select id="pr-responsable_id"></select></div><div class="campo-modal"><label for="pr-proximo_contacto">Próxima fecha de contacto (opcional)</label><input id="pr-proximo_contacto" type="date"></div>
 </div><div class="campo-modal"><label for="pr-necesidades">Necesidades y notas de investigación (opcional)</label><textarea id="pr-necesidades" rows="3" maxlength="5000"></textarea></div><p id="pr-aviso" role="status"></p><div class="btn-group"><button class="btn btn-primario" id="pr-guardar">Guardar establecimiento</button><button class="btn btn-outline" id="pr-vincular">Guardar y abrir contacto</button></div><p class="ayuda">Abrir contacto requiere teléfono. Si ya existe un contacto, podrás confirmar su vinculación. Desde su ficha usa Crear cotización o Crear orden de servicio; el domicilio del establecimiento se propone como ubicación.</p></div></div></div></div>
 
 
@@ -1206,14 +1206,14 @@
 <script src="calendario.js?v=pg2"></script>
 <script src="tablero.js?v=rev1"></script>
 <script src="bitacora.js?v=hc1"></script>
-<script src="compras.js?v=rev1"></script>
+<script src="compras.js?v=cel1"></script>
 <script src="solicitudes.js?v=rev1"></script>
 <script src="carga-generador.js?v=con1"></script>
 <script src="sucursales.js?v=perm2"></script>
-<script src="app.js?v=rev1"></script>
+<script src="app.js?v=pro1"></script>
 <script src="personal.js?v=rev1"></script>
 <script src="buscador.js?v=suc1"></script>
 <script src="demo.js?v=demo1"></script>
-<script src="prospeccion.js?v=aud1"></script>
+<script src="prospeccion.js?v=pro1"></script>
 </body>
 </html>

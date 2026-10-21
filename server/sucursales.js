@@ -25,7 +25,7 @@ const VISTAS = [
   ['cuentas_por_pagar', "en_alcance(sucursal_id) AND ve_registro('cxp', registrado_por)"],
   ['solicitudes_compra', "en_alcance(sucursal_id) AND ve_registro('compras', solicitante_id)"],
   ['ordenes_compra', "en_alcance(sucursal_id) AND (ve_registro('compras', creado_por) OR solicitud_id IN (SELECT id FROM solicitudes_compra))"],
-  ['establecimientos', "en_alcance(sucursal_id) AND nivel_area('ventas') >= 1"], // prospección: quien ve ventas
+  ['establecimientos', "en_alcance(sucursal_id) AND ve_registro('ventas', responsable_id)"], // prospección: los suyos, o toda su sucursal
   ['historial_archivo', 'en_alcance(sucursal_id)'],
   ['cobros', 'lead_id IN (SELECT id FROM leads)'],
   ['historial', 'lead_id IN (SELECT id FROM leads) AND ve_bitacora(area, usuario_id, lead_id)'],

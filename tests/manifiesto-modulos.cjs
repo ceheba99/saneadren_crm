@@ -77,7 +77,7 @@ module.exports = {
       demo: ['establecimientos'],
       integridad: null, integridadRazon: 'son prospectos sin dinero ni folios: no hay nada que deba cuadrar',
       buscador: null, buscadorRazon: 'se buscan dentro de Prospección (filtro propio)',
-      permisos: ['ventas.ver'],
+      permisos: ['prospeccion.ver', 'ventas.ver', 'ventas.sucursal'],
     },
     reportes: {
       nombre: 'Resultados y análisis',
