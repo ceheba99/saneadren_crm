@@ -968,12 +968,19 @@ module.exports = function finanzas(app, db, h, unicos) {
     for (const a of db.prepare(`SELECT h.id, h.lead_id, h.texto, h.fecha_alerta, ${cliente} AS cliente FROM historial h JOIN leads l ON l.id = h.lead_id LEFT JOIN clientes c ON c.id = l.cliente_id
         WHERE h.tipo = 'alerta' AND h.resuelta = 0 AND date(h.fecha_alerta) < ? ORDER BY h.fecha_alerta LIMIT ${TOPE}`).all(hoy))
       eventos.push({ tipo: 'alerta', fecha: String(a.fecha_alerta).slice(0, 10), hora: String(a.fecha_alerta).slice(11, 16), estado: 'vencido', lead_id: a.lead_id, historial_id: a.id, titulo: a.texto, detalle: a.cliente || '' });
-    for (const c of (veCobranza(req) ? cartera() : []).filter(c => c.saldo > 0 && c.vencida && !c.programada).sort((x, y) => x.vence.localeCompare(y.vence)).slice(0, TOPE))
+    const cobrosV = (veCobranza(req) ? cartera() : []).filter(c => c.saldo > 0 && c.vencida && !c.programada), pagosV = cuentasPorPagar().filter(x => x.saldo > 0 && x.vencida);
+    for (const c of cobrosV.sort((x, y) => x.vence.localeCompare(y.vence)).slice(0, TOPE))
       eventos.push({ tipo: 'cobro', fecha: c.vence, estado: 'vencido', lead_id: c.lead_id, monto: c.saldo, titulo: `Cobrar ${c.cliente_nombre || c.empresa_contacto || ''}`, detalle: c.folio + (c.factura_folio ? ' · factura ' + c.factura_folio : '') });
-    for (const x of cuentasPorPagar().filter(x => x.saldo > 0 && x.vencida).sort((a, b) => a.fecha_vencimiento.localeCompare(b.fecha_vencimiento)).slice(0, TOPE))
+    for (const x of pagosV.sort((a, b) => a.fecha_vencimiento.localeCompare(b.fecha_vencimiento)).slice(0, TOPE))
       eventos.push({ tipo: 'pago', fecha: x.fecha_vencimiento, estado: 'vencido', cxp_id: x.id, lead_id: x.lead_id || null, monto: x.saldo, titulo: `Pagar ${x.proveedor_nombre}`, detalle: x.concepto + (x.orden_folio ? ' · ' + x.orden_folio : '') });
     eventos.sort((a, b) => (a.fecha + (a.hora || '')).localeCompare(b.fecha + (b.hora || '')));
-    res.json({ hoy, eventos });
+    // Cuántos hay en total de cada tipo (la lista trae como máximo TOPE por tipo): el encabezado no debe decir 60 si hay 300.
+    const totales = {
+      orden: db.prepare("SELECT COUNT(*) n FROM leads WHERE estatus = 'ganado' AND ejecucion IS NULL AND fecha_servicio < ?").get(hoy).n,
+      alerta: db.prepare("SELECT COUNT(*) n FROM historial h JOIN leads l ON l.id = h.lead_id WHERE h.tipo = 'alerta' AND h.resuelta = 0 AND date(h.fecha_alerta) < ?").get(hoy).n,
+      cobro: cobrosV.length, pago: pagosV.length,
+    };
+    res.json({ hoy, eventos, totales, tope: TOPE });
   }));
 
   // ===================== Ejecución del servicio =====================
