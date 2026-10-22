@@ -336,6 +336,9 @@ module.exports = function finanzas(app, db, h, unicos) {
 
   // ¿Ve las cuentas por cobrar? (al menos la cobranza de sus órdenes). Sin esto solo ve los cobros que él registró.
   const veCobranza = req => P.puede(req, 'cxc.ver');
+  // La CLABE y el banco de un proveedor (a dónde se le paga) solo los ve y los captura quien paga (decisión 2026-10-22).
+  const veClabe = req => P.puede(req, 'dinero.mover');
+  const sinBanco = ({ clabe, banco, ...resto }) => resto;
   // ¿Ve la cobranza de ESTA orden? Toda su sucursal, o con «lo suyo» solo sus órdenes (responsable o técnico asignado),
   // aunque vea las ventas de toda la sucursal. Lee el alcance de la petición (vale también dentro de cartera()).
   const cobranzaDe = l => { const n = alcance.nivel('cxc'), yo = alcance.usuario(); return n >= 2 || (n === 1 && yo != null && (l.responsable_id === yo || l.tecnico_id === yo)); };
@@ -724,7 +727,7 @@ module.exports = function finanzas(app, db, h, unicos) {
     res.json({ comprobantes: COMPROBANTES, categorias: CATEGORIAS, no_gasto: [...CATEGORIAS_NO_GASTO],
       cuentas: cuentas.map(x => ({ id: x.id, sucursal: app.locals.sucursales?.claveDe(x.sucursal_id) || '', proveedor: x.proveedor_nombre, beneficiario: x.beneficiario || x.proveedor_nombre, concepto: x.concepto, fecha_documento: x.fecha_documento,
         fecha_vencimiento: x.fecha_vencimiento, capturo: x.capturo, factura_folio: x.factura_folio, tipo_comprobante: x.tipo_comprobante, metodo_sat: x.metodo_sat,
-        total: aPesos(x.total_cent), clabe: x.clabe, banco: x.banco, dias_credito: x.dias_credito, categoria: CATEGORIAS[x.categoria] || x.categoria, es_gasto: !CATEGORIAS_NO_GASTO.has(x.categoria),
+        total: aPesos(x.total_cent), clabe: veClabe(req) ? x.clabe : null, banco: veClabe(req) ? x.banco : null, dias_credito: x.dias_credito, categoria: CATEGORIAS[x.categoria] || x.categoria, es_gasto: !CATEGORIAS_NO_GASTO.has(x.categoria),
         notas: x.notas, cancelada: !!x.cancelada, motivo_cancelacion: x.motivo_cancelacion, orden_folio: x.lead_id ? folioOS(x.lead_id, x.lead_created_at) : null, equipo: x.equipo })),
       pagos: pagos.map(g => ({ id: g.id, cxp_id: g.cxp_id, fecha: g.fecha, monto: aPesos(g.monto_cent), metodo: g.metodo, referencia: g.referencia, cuenta_origen: g.cuenta_origen,
         registro: g.registro, cancelado: !!g.cancelado, motivo_cancelacion: g.motivo_cancelacion })) });
@@ -795,7 +798,7 @@ module.exports = function finanzas(app, db, h, unicos) {
     }
     const saldos = new Map();
     for (const x of cuentasPorPagar()) saldos.set(x.proveedor_id, Math.round(((saldos.get(x.proveedor_id) || 0) + x.saldo) * 100) / 100);
-    res.json(db.prepare('SELECT * FROM proveedores ORDER BY activo DESC, nombre').all().map(p => ({ ...p, saldo: saldos.get(p.id) || 0 })));
+    res.json(db.prepare('SELECT * FROM proveedores ORDER BY activo DESC, nombre').all().map(p => ({ ...(veClabe(req) ? p : sinBanco(p)), saldo: saldos.get(p.id) || 0 })));
   }));
 
   // actual: el proveedor como está guardado (al editar). El dígito verificador de la CLABE se exige al capturarla o
@@ -833,14 +836,16 @@ module.exports = function finanzas(app, db, h, unicos) {
   }
   app.post('/api/finanzas/proveedores', h((req, res) => {
     if (!permitido(req, res, 'gastos.registrar', 'No tienes permiso para esta acción')) return;
-    const d = datosProveedor(req.body);
+    // Quien no paga puede dar de alta al proveedor de su gasto, pero no su CLABE ni su banco (los captura quien paga).
+    const d = datosProveedor(veClabe(req) ? req.body : { ...req.body, clabe: null, banco: null });
     if (d.error) return res.status(400).json(d);
     const p = problemaProveedor(d, 0, !!req.body.forzar);
     if (p) return res.status(p.status).json(p.cuerpo);
     const info = db.prepare('INSERT INTO proveedores (nombre, categoria, rfc, telefono, contacto, dias_credito, notas, clabe, banco) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
       .run(d.nombre, d.categoria, d.rfc, d.telefono, d.contacto, d.dias_credito, d.notas, d.clabe, d.banco);
     app.locals.auditoria?.registrar(req, 'proveedor', Number(info.lastInsertRowid), 'creado', `${d.nombre}${d.rfc ? ' · RFC ' + d.rfc : ''} · ${CATEGORIAS[d.categoria] || d.categoria}${req.body.forzar ? ' · confirmado como distinto de uno parecido' : ''}`);
-    res.status(201).json(db.prepare('SELECT * FROM proveedores WHERE id = ?').get(info.lastInsertRowid));
+    const nuevo = db.prepare('SELECT * FROM proveedores WHERE id = ?').get(info.lastInsertRowid);
+    res.status(201).json(veClabe(req) ? nuevo : sinBanco(nuevo));
   }));
   // Corregir un proveedor (sobre todo su CLABE o banco: a dónde se le paga) lo hace quien mueve dinero.
   app.put('/api/finanzas/proveedores/:id', h((req, res) => {
@@ -894,7 +899,7 @@ module.exports = function finanzas(app, db, h, unicos) {
       .map(d => ({ id: d.id, solicitud_id: d.solicitud_id, solicitud_folio: folioSolx({ id: d.solicitud_id, created_at: d.sol_created_at }), que: d.que, monto: d.monto_cent == null ? null : aPesos(d.monto_cent),
         entrega: d.entrega, fecha: String(d.created_at).slice(0, 10), gano: d.ganadora_id === d.id, decidida: !!d.ganadora_id })) : [];
     const historial = db.prepare("SELECT fecha, accion, detalle, usuario FROM auditoria WHERE entidad = 'proveedor' AND entidad_id = ? ORDER BY fecha DESC, id DESC LIMIT 100").all(p.id);
-    res.json({ proveedor: p,
+    res.json({ proveedor: veClabe(req) ? p : sinBanco(p),
       debe: aPesos(cent(conSaldo.map(x => x.saldo))), vencido: aPesos(cent(conSaldo.filter(x => x.vencida).map(x => x.saldo))),
       esta_semana: aPesos(cent(conSaldo.filter(x => !x.vencida && x.fecha_vencimiento <= semana).map(x => x.saldo))),
       comprado: aPesos(cent(cuentas.map(x => x.total))), pagado: aPesos(vivos.reduce((t, g) => t + g.monto_cent, 0)),

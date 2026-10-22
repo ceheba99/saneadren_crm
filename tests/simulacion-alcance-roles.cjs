@@ -87,7 +87,12 @@ const RANGO = 'desde=2020-01-01&hasta=' + dia(60);
   [s, j] = await pedir('GET', '/finanzas/proveedores', TSOL);
   revisa(s === 200 && j.length && j.every(p => Object.keys(p).sort().join() === 'activo,categoria,dias_credito,id,nombre'), 'quien solo pide compras recibe la lista de proveedores sin CLABE, contacto ni saldos', [s, j[0]]);
   [s, j] = await pedir('GET', '/finanzas/categorias', TSOL); revisa(s === 200 && j.length > 0, 'y las categorías de gasto (las usan las pantallas de compras)', s);
-  [s, j] = await pedir('GET', '/finanzas/proveedores', L); revisa(s === 200 && j.length && 'clabe' in j[0] && 'saldo' in j[0], 'Laura (ve sus cuentas por pagar) recibe la ficha completa del proveedor', [s, Object.keys(j[0] || {})]);
+  // CLABE y banco del proveedor: solo quien paga (decisión 2026-10-22).
+  [s, j] = await pedir('GET', '/finanzas/proveedores', L); revisa(s === 200 && j.length && 'saldo' in j[0] && !('clabe' in j[0]) && !('banco' in j[0]), 'Laura (ve sus cuentas por pagar) recibe sus proveedores sin CLABE ni banco', [s, Object.keys(j[0] || {})]);
+  [s, j] = await pedir('POST', '/finanzas/proveedores', R, { nombre: 'Taller Mecánico Raúl', categoria: 'otro', clabe: '012180555888222117', banco: 'BBVA' });
+  const provR = j; [s, j] = await pedir('GET', '/finanzas/proveedores/' + provR.id + '/estado-cuenta', I);
+  revisa(provR.id && j.proveedor && j.proveedor.clabe === null && j.proveedor.banco === null, 'Raúl da de alta un proveedor, pero la CLABE que mandó no se guarda (la captura quien paga)', j.proveedor && { clabe: j.proveedor.clabe, banco: j.proveedor.banco });
+  [s, j] = await pedir('GET', '/finanzas/proveedores/' + prov.id + '/estado-cuenta', I); revisa(s === 200 && 'clabe' in j.proveedor, 'Isaac (compras, paga) sí ve la CLABE en la ficha del proveedor', Object.keys(j.proveedor || {}));
   // Resumen de cuentas: cada parte a quien ve esa área (antes Técnico y Compras recibían 403 y veían «No se pudo cargar»).
   for (const [quien, t, cobrar, pagar] of [['Raúl (técnico)', R, false, true], ['Isaac (compras)', I, false, true], ['Ana (atención)', N, true, true], ['Laura (ventas)', L, true, true]]) {
     [s, j] = await pedir('GET', '/finanzas/resumen', t);

@@ -630,8 +630,9 @@ const Finanzas = (() => {
       + '<div class="cc-tarjetas">' + t('Le debemos', formatoMoneda(r.debe), r.debe > 0 ? 'aviso' : '') + t('Vencido', formatoMoneda(r.vencido), r.vencido > 0 ? 'alerta' : '')
       + t('Vence en 7 días', formatoMoneda(r.esta_semana)) + t('Pagado en total', formatoMoneda(r.pagado)) + t('Comprado en total', formatoMoneda(r.comprado))
       + t('Crédito', Number(p.dias_credito) + ' días') + '</div>'
-      + '<div class="cp-datos"><div><small>Banco</small><b>' + esc(p.banco || '—') + '</b></div><div><small>CLABE</small><b>' + esc(p.clabe || '—') + '</b>'
-      + (p.clabe ? ' <button type="button" class="enlace" data-cp-copiar="' + esc(p.clabe) + '">Copiar</button>' : '') + '</div>'
+      // Banco y CLABE solo para quien paga (decisión 2026-10-22); a los demás el servidor ni siquiera los manda.
+      + '<div class="cp-datos">' + (Permisos.puede('dinero.mover') ? '<div><small>Banco</small><b>' + esc(p.banco || '—') + '</b></div><div><small>CLABE</small><b>' + esc(p.clabe || '—') + '</b>'
+      + (p.clabe ? ' <button type="button" class="enlace" data-cp-copiar="' + esc(p.clabe) + '">Copiar</button>' : '') + '</div>' : '')
       + '<div><small>Último pago</small><b>' + (r.ultimo_pago ? esc(fechaTxt(r.ultimo_pago.fecha)) + ' · ' + formatoMoneda(r.ultimo_pago.monto) : '—') + '</b></div>'
       + '<div><small>Cotizaciones</small><b>' + r.cotizaciones.length + ' enviadas · ' + ganadas + ' ganadas</b></div></div>'
       + (p.notas ? '<p class="ayuda">📝 ' + esc(p.notas) + '</p>' : '')

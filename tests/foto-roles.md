@@ -64,6 +64,12 @@ Dirección la revisa y la aprueba. Si un cambio altera lo que ve un rol, la prue
 | Gasto que registró Carlos (compras) en la orden de Bruno | ✔ | ✔ | — | — | — | ✔ |
 | Gasto que registró Alicia (atención) en la orden de Bruno | ✔ | ✔ | — | ✔ | — | ✔ |
 
+### Proveedores
+
+| Dato | Dirección | Gerente | Ventas | Atención | Técnico | Costos y compras |
+|---|:-:|:-:|:-:|:-:|:-:|:-:|
+| Datos bancarios de un proveedor (CLABE) | ✔ | ✔ | — | — | — | ✔ |
+
 ### Compras
 
 | Dato | Dirección | Gerente | Ventas | Atención | Técnico | Costos y compras |
@@ -133,6 +139,7 @@ Dirección la revisa y la aprueba. Si un cambio altera lo que ve un rol, la prue
 - **2026-10-22** · Atención, en cuentas por pagar: solo los gastos que ella registró.
 - **2026-10-22** · Catálogos compartidos: los cambian Dirección, Gerente y Compras; Ventas, Atención y Técnico no.
 - **2026-10-22** · Costos y compras no registra cobros (no abre órdenes de servicio).
+- **2026-10-22** · La CLABE de los proveedores solo la ve quien paga (Dirección, Gerente y Compras); Ventas, Atención y Técnico no.
 - **2026-10-19** · En compras, ventas y técnico ven solo lo que ellos pidieron.
 - **2026-10-19** · Atención: ventas y cobranza de toda su sucursal.
 - **2026-10-19** · Técnico: solo las órdenes que tiene asignadas.

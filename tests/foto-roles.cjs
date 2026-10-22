@@ -69,7 +69,8 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
   exigir(await pedir('POST', '/leads/' + O1.id + '/cobros', T.Tomas, { monto: 503.61, metodo: 'efectivo' }), 'cobro de Tomás');
   const saldoO1 = (await pedir('GET', '/leads/' + O1.id + '/cobros', A))[1].cuenta.saldo;
   // Gastos: Tomás al marcar realizado; Valeria y Carlos en cuentas por pagar.
-  const prov = exigir(await pedir('POST', '/finanzas/proveedores', T.Carlos, { nombre: 'Pipas del Centro', tipo_comprobante: 'factura' }), 'crear proveedor');
+  const clabeProv = '012180555888222117'; // CLABE válida (dígito verificador), marcada para buscarla
+  const prov = exigir(await pedir('POST', '/finanzas/proveedores', T.Carlos, { nombre: 'Pipas del Centro', tipo_comprobante: 'factura', clabe: clabeProv, banco: 'BBVA' }), 'crear proveedor');
   exigir(await pedir('POST', '/leads/' + O1.id + '/ejecucion', T.Tomas, { estado: 'realizado', fecha: dia(-1), gastos: [{ proveedor_id: prov.id, categoria: 'combustible', concepto: 'Diesel de campo', total: 813.37 }] }), 'realizado con gasto');
   exigir(await pedir('POST', '/finanzas/cxp', T.Valeria, { proveedor_id: prov.id, categoria: 'otro', concepto: 'Casetas de visita', total: 311.13, fecha_documento: HOY, lead_id: O1.id, dias_credito: 0 }), 'gasto de Valeria');
   exigir(await pedir('POST', '/finanzas/cxp', T.Carlos, { proveedor_id: prov.id, categoria: 'renta_maquinaria', concepto: 'Renta de pipa', total: 2577.19, fecha_documento: HOY, lead_id: O4.id, dias_credito: 15 }), 'gasto de Carlos');
@@ -106,6 +107,9 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
       ['gastoValeria', 'Gasto que registró Valeria (ventas) en su orden', formas(311.13)],
       ['gastoCarlos', 'Gasto que registró Carlos (compras) en la orden de Bruno', formas(2577.19)],
       ['gastoAlicia', 'Gasto que registró Alicia (atención) en la orden de Bruno', formas(419.23)],
+    ]],
+    ['Proveedores', [
+      ['clabeProv', 'Datos bancarios de un proveedor (CLABE)', [clabeProv]],
     ]],
     ['Compras', [
       ['jade', 'Solicitud de compra de Tomás', ['Jade']],
@@ -179,6 +183,7 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
     ['2026-10-22', 'Atención, en cuentas por pagar: solo los gastos que ella registró.', { atencion: { gastoAlicia: 1, gastoTomas: 0, gastoValeria: 0, gastoCarlos: 0 } }],
     ['2026-10-22', 'Catálogos compartidos: los cambian Dirección, Gerente y Compras; Ventas, Atención y Técnico no.', { gerente: { 'perm:catalogos.editar': 1 }, costos: { 'perm:catalogos.editar': 1 }, ventas: { 'perm:catalogos.editar': 0 }, atencion: { 'perm:catalogos.editar': 0 }, tecnico: { 'perm:catalogos.editar': 0 } }],
     ['2026-10-22', 'Costos y compras no registra cobros (no abre órdenes de servicio).', { costos: { 'perm:cobros.registrar': 0 } }],
+    ['2026-10-22', 'La CLABE de los proveedores solo la ve quien paga (Dirección, Gerente y Compras); Ventas, Atención y Técnico no.', { admin: { clabeProv: 1 }, gerente: { clabeProv: 1 }, costos: { clabeProv: 1 }, ventas: { clabeProv: 0 }, atencion: { clabeProv: 0 }, tecnico: { clabeProv: 0 } }],
     ['2026-10-19', 'En compras, ventas y técnico ven solo lo que ellos pidieron.', { ventas: { perla: 1, jade: 0 }, tecnico: { jade: 1, perla: 0 } }],
     ['2026-10-19', 'Atención: ventas y cobranza de toda su sucursal.', { atencion: { ambar: 1, berilo: 1, diamante: 1, coral: 0, cobroTomas: 1, saldo: 1 } }],
     ['2026-10-19', 'Técnico: solo las órdenes que tiene asignadas.', { tecnico: { ambar: 1, diamante: 0, berilo: 0, coral: 0 } }],
