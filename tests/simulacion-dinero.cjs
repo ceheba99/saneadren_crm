@@ -244,6 +244,29 @@ const HOY = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Mexico_City' }
   revisa(cal2.eventos.some(e => e.tipo === 'orden' && e.lead_id === sinConcluir.id && e.estado === 'por_concluir') && !cal2.eventos.some(e => e.tipo === 'cobro' && e.lead_id === sinConcluir.id),
     'calendario: la orden sin concluir sale como orden por concluir, no como cobro', cal2.eventos.filter(e => e.lead_id === sinConcluir.id));
 
+  sec('9c. Estados de cobranza: por realizar, por concluir y facturado sin marcar (2026-10-22)');
+  // Un cliente nuevo con cuatro órdenes, una de cada caso. Antes la facturada sin marcar se contaba en «Te deben» Y en
+  // «Por concluir» (la misma deuda en dos tarjetas).
+  [s, j] = await pedir('POST', '/contactos', A, { nombre: 'Cliente Cuatro Casos', telefono: '4425550444', direccion: 'Calle 4', canal_origen_id: canales[0].id }); const C4 = j.id;
+  const r0 = await resumen();
+  const ordA = (await alta(C4, { partidas_json: P(partida(1000)), iva_modo: 'sin_iva', estatus: 'ganado', fecha_servicio: sumarDias(HOY, -10) }))[1];
+  await pedir('POST', '/leads/' + ordA.id + '/ejecucion', A, { estado: 'realizado', realizado_por: 'propio', fecha: sumarDias(HOY, -10) });
+  const ordB = (await alta(C4, { partidas_json: P(partida(2000)), iva_modo: 'sin_iva', estatus: 'ganado', fecha_servicio: sumarDias(HOY, -10) }))[1];
+  await pedir('PUT', '/leads/' + ordB.id + '/facturacion', A, { dias_credito: 0, factura_folio: 'F-CUATRO', factura_fecha: sumarDias(HOY, -9) });
+  const ordC = (await alta(C4, { partidas_json: P(partida(3000)), iva_modo: 'sin_iva', estatus: 'ganado', fecha_servicio: sumarDias(HOY, -3) }))[1];
+  const ordD = (await alta(C4, { partidas_json: P(partida(4000)), iva_modo: 'sin_iva', estatus: 'ganado', fecha_servicio: sumarDias(HOY, 5) }))[1];
+  const r1 = await resumen(), dif = k => Math.round((r1[k] - r0[k]) * 100) / 100;
+  revisa(dif('por_cobrar') === 3000 && dif('por_concluir') === 3000 && dif('programado') === 4000,
+    'tarjetas: «Te deben» suma la realizada y la facturada ($3,000); «Por concluir» solo la de fecha pasada sin marcar ($3,000); «Por realizar» la futura ($4,000)', { te_deben: dif('por_cobrar'), por_concluir: dif('por_concluir'), por_realizar: dif('programado') });
+  const deCliente = async f => (await pedir('GET', '/finanzas/cartera?filtro=' + f, A))[1].filter(c => c.cliente_id === C4).map(c => c.lead_id).sort();
+  revisa(JSON.stringify(await deCliente('por_concluir')) === JSON.stringify([ordC.id]), 'filtro «Por concluir»: solo la de fecha pasada sin marcar ni factura', await deCliente('por_concluir'));
+  revisa(JSON.stringify(await deCliente('facturado_sin_marcar')) === JSON.stringify([ordB.id]), 'filtro «Facturado sin marcar»: solo la facturada que nadie marcó realizada', await deCliente('facturado_sin_marcar'));
+  revisa(JSON.stringify(await deCliente('programadas')) === JSON.stringify([ordD.id]), 'filtro «Por realizar»: solo la de fecha futura', await deCliente('programadas'));
+  const cB = (await pedir('GET', '/finanzas/cartera?filtro=todas', A))[1].find(c => c.lead_id === ordB.id);
+  revisa(cB && cB.sin_marcar === true && cB.por_concluir === false && cB.programada === false, 'la facturada sin marcar: se debe (no es «por concluir») y avisa que falta marcarla', cB && { sin_marcar: cB.sin_marcar, por_concluir: cB.por_concluir, programada: cB.programada });
+  [s, j] = await pedir('GET', '/finanzas/clientes/' + C4 + '/estado-cuenta?completo=1', A);
+  revisa(j.saldo === 3000 && j.por_concluir === 3000 && j.programado === 4000, 'estado de cuenta del cliente: debe $3,000, por concluir $3,000, por realizar $4,000 (sin contar dos veces)', { saldo: j.saldo, por_concluir: j.por_concluir, programado: j.programado });
+
   sec('10. Consistencia general');
   const todas = await cartera();
   revisa(todas.every(c => c.saldo >= 0), 'ningún saldo negativo', todas.filter(c => c.saldo < 0));

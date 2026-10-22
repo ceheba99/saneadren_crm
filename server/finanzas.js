@@ -301,7 +301,9 @@ function describirCuenta(f, hoy) {
     vence, dias_vencido: saldo > 0 && !programada ? diasVencido : 0, estado, vencida, programada, por_concluir: porConcluir, tramo: programada ? null : tramo,
     por_confirmar: f.por_confirmar, por_revisar: !!f.cobranza_por_revisar,
     ejecucion: f.ejecucion || null, realizado_por: f.realizado_por || null, fecha_realizado: f.fecha_realizado || null,
-    por_concluir: !f.ejecucion && !!f.fecha_servicio && f.fecha_servicio <= hoy,
+    // Ya facturada (se debe) pero nadie marcó si el servicio se hizo: falta marcarla para el Generador y Resultados.
+    // No es «por concluir»: esa todavía no se debe. (Antes una línea vieja pisaba por_concluir y la contaba dos veces.)
+    sin_marcar: !f.ejecucion && !!f.factura_folio && !!f.fecha_servicio && f.fecha_servicio <= hoy,
     equipo: f.equipo || null, operador: f.operador || null, proyecto: f.proyecto || null,
     ultimo_pago: f.ultimo_pago || null, pagos_n: f.pagos_n || 0, notas: f.notas_iniciales || null,
     iva_modo: f.iva_modo, iva_tasa: f.iva_tasa, subtotal: aPesos(f.total_orden_cent - (f.iva_cent || 0)),
@@ -407,7 +409,7 @@ module.exports = function finanzas(app, db, h, unicos) {
     else if (filtro === 'por_vencer') cuentas = cuentas.filter(c => c.saldo > 0 && !c.vencida && !c.programada);
     else if (filtro === 'programadas') cuentas = cuentas.filter(c => c.saldo > 0 && c.programada && !c.por_concluir);
     else if (filtro === 'por_concluir') cuentas = cuentas.filter(c => c.saldo > 0 && c.por_concluir);
-    else if (filtro === 'por_concluir') cuentas = cuentas.filter(c => c.saldo > 0 && c.por_concluir);
+    else if (filtro === 'facturado_sin_marcar') cuentas = cuentas.filter(c => c.saldo > 0 && c.sin_marcar);
     else if (['1-15', '16-30', '31-60', '60+'].includes(filtro)) cuentas = cuentas.filter(c => c.tramo === filtro);
     else if (filtro === 'sin_factura') cuentas = cuentas.filter(c => c.saldo > 0 && !c.factura_folio && !c.programada);
     else cuentas = cuentas.filter(c => c.saldo > 0 && !c.programada);

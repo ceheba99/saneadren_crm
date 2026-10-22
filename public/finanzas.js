@@ -35,7 +35,7 @@ const Finanzas = (() => {
   function textoEjecucion(c) {
     if (c.ejecucion === 'realizado') return 'realizado el ' + fechaTxt(c.fecha_realizado || c.fecha_servicio);
     if (c.ejecucion === 'no_realizado') return 'no realizado';
-    return (c.por_concluir ? 'por concluir · servicio ' : 'servicio ') + fechaTxt(c.fecha_servicio);
+    return (c.sin_marcar ? 'facturado, sin marcar realizado · servicio ' : c.por_concluir ? 'por concluir · servicio ' : 'servicio ') + fechaTxt(c.fecha_servicio);
   }
   // Estado de la cuenta en palabras claras: si el servicio ya se hizo y qué falta (realizarlo, marcarlo o cobrarlo).
   function textoEstado(c) {
@@ -43,10 +43,10 @@ const Finanzas = (() => {
     const falta = c.estado === 'parcial' ? `pagó una parte, falta ${formatoMoneda(c.saldo)}` : 'pendiente de cobrar';
     if (c.ejecucion === 'no_realizado') return c.a_favor > 0 ? ['a-favor', `No realizado · ${formatoMoneda(c.a_favor)} a favor del cliente (devolver o aplicar)`] : ['programada', 'No realizado · no se cobra'];
     if (c.estado === 'pagada') return ['pagada', 'Cobrado completo ✓'];
-    if (c.programada) return c.por_concluir ? ['parcial', 'Por concluir · se cobra al marcarlo realizado'] : ['programada', 'Por realizar · aún no se cobra'];
-    const servicio = c.ejecucion === 'realizado' ? 'Servicio realizado' : c.por_concluir ? 'Falta marcar si se realizó' : 'Servicio';
+    if (c.programada) return c.por_concluir ? ['parcial', 'Por concluir · se cobra cuando se marque realizado'] : ['programada', 'Por realizar · aún no se cobra'];
+    const servicio = c.ejecucion === 'realizado' ? 'Servicio realizado' : c.sin_marcar ? 'Facturado, sin marcar realizado' : 'Servicio';
     if (c.vencida) return ['vencida', `${servicio} · cobro vencido hace ${dias(c.dias_vencido)}`];
-    if (c.por_concluir && c.ejecucion !== 'realizado') return ['por-concluir', `${servicio} · ${falta}`];
+    if (c.sin_marcar) return ['por-concluir', `${servicio} · ${falta}`];
     return [c.estado === 'parcial' ? 'parcial' : 'pendiente', `${servicio} · ${falta}${c.dias_vencido < 0 ? ' (vence en ' + dias(-c.dias_vencido) + ')' : c.dias_vencido === 0 ? ' (vence hoy)' : ''}`];
   }
   function etiquetaEstado(c) {
@@ -248,21 +248,49 @@ const Finanzas = (() => {
     pintarTarjetas();
     irPestana(pestana);
   }
+  // Qué es cada tarjeta, para quien la ve por primera vez (decisión del dueño, 2026-10-22).
+  const EXPLICA = {
+    te_deben: ['Te deben', 'Lo que los clientes ya deben: servicios marcados como realizados o ya facturados que todavía no se cobran completos.', 'Una limpieza realizada de $3,000 de la que el cliente pagó $1,000: aquí suma $2,000.'],
+    vencido: ['Vencido', 'La parte de «Te deben» cuya fecha límite de pago ya pasó. La fecha límite es la de la factura (o la del servicio, si no hay factura) más los días de crédito del cliente.', 'Factura del 1 de octubre con 15 días de crédito: vence el 16; desde el 17 aparece aquí.'],
+    por_concluir: ['Por concluir', 'Servicios cuya fecha ya pasó, pero nadie ha marcado si se hicieron y no están facturados. Todavía no se cobran: ábrelos y márcalos como realizados (pasan a «Te deben») o como no realizados.', 'Una limpieza del 15 de octubre que nadie ha marcado.'],
+    por_realizar: ['Por realizar', 'Servicios agendados para una fecha que todavía no llega. Aún no se cobran.', 'Una limpieza programada para el 30 de octubre.'],
+    a_favor: ['A favor de clientes', 'Dinero que un cliente pagó por un servicio que al final no se hizo: hay que devolvérselo o aplicarlo a otro servicio.', 'Dio $1,000 de anticipo y el servicio se canceló.'],
+    cobrado_mes: ['Cobrado este mes', 'Todo lo que se registró como cobrado en el mes, incluidos los pagos que aún falta confirmar (sin ajustes ni descuentos).', 'Tres pagos de $2,000 en octubre: $6,000.'],
+    por_confirmar: ['Por confirmar', 'Pagos que anotaron vendedores o técnicos y que administración todavía debe revisar (que el dinero sí llegó).', 'El técnico anotó $1,250 en efectivo; queda aquí hasta que alguien lo confirme.'],
+    pagar_semana: ['Pagar esta semana', 'Facturas y gastos de proveedores que vencen de hoy al domingo, más los que ya están vencidos.', 'Una renta de pipa que vence el viernes y un diésel que venció ayer.'],
+    por_pagar: ['Total por pagar', 'Todo lo que se les debe a proveedores, venza cuando venza.', 'Lo de esta semana más lo que vence el próximo mes.'],
+    pagado_mes: ['Pagado este mes', 'Lo que se les pagó a proveedores en el mes.', 'Dos transferencias de $5,000 en octubre: $10,000.'],
+  };
+  $('cuentas-tarjetas').addEventListener('click', e => {
+    const b = e.target.closest('[data-explica]'); if (!b) return;
+    const caja = $('cuentas-explica'), abierta = b.getAttribute('aria-expanded') === 'true';
+    document.querySelectorAll('#cuentas-tarjetas [data-explica]').forEach(x => x.setAttribute('aria-expanded', 'false'));
+    if (abierta) { caja.hidden = true; return; }
+    const [titulo, texto, ejemplo] = EXPLICA[b.dataset.explica] || [];
+    caja.innerHTML = `<b>${esc(titulo)}</b><p>${esc(texto)}</p><p class="cuentas-explica-ej">Ejemplo: ${esc(ejemplo)}</p>`;
+    caja.hidden = false; b.setAttribute('aria-expanded', 'true');
+  });
+  $('cobrar-leyenda-btn').addEventListener('click', e => {
+    const abrir = e.currentTarget.getAttribute('aria-expanded') !== 'true';
+    e.currentTarget.setAttribute('aria-expanded', String(abrir)); $('cobrar-leyenda').hidden = !abrir;
+  });
   async function pintarTarjetas() {
     const cont = $('cuentas-tarjetas');
     try { RESUMEN = await api('/finanzas/resumen').then(json); } catch (err) { cont.innerHTML = `<div class="aviso-error-carga" role="alert"><p>No se pudo cargar el resumen: ${esc(err.message)}</p></div>`; return; }
-    const r = RESUMEN, t = (titulo, valor, detalle, clase = '') => `<div class="tarjeta-dinero ${clase}"><small>${titulo}</small><b>${valor}</b>${detalle ? `<span>${detalle}</span>` : ''}</div>`;
+    // Cada tarjeta lleva «?»: la explicación sale debajo de las tarjetas (EXPLICA), en palabras de todos los días.
+    const r = RESUMEN, t = (titulo, valor, detalle, clase = '', ayuda = '') => `<div class="tarjeta-dinero ${clase}"><small>${titulo}${ayuda ? `<button type="button" class="tarjeta-ayuda" data-explica="${ayuda}" aria-expanded="false" aria-controls="cuentas-explica" aria-label="Qué es: ${titulo}">?</button>` : ''}</small><b>${valor}</b>${detalle ? `<span>${detalle}</span>` : ''}</div>`;
     cont.innerHTML = SECCION === 'pagar'
-      ? (r.pagar_semana !== undefined ? t('Pagar esta semana', formatoMoneda(r.pagar_semana), `${Number(r.facturas_semana)} facturas (incluye vencidas)`, r.pagar_semana > 0 ? 'aviso' : '') : '')
-        + (r.por_pagar !== undefined ? t('Total por pagar', formatoMoneda(r.por_pagar), '') : '')
-        + (r.pagado_mes !== undefined ? t('Pagado este mes', formatoMoneda(r.pagado_mes), '') : '')
-      : t('Te deben', formatoMoneda(r.por_cobrar), `${Number(r.cuentas_con_saldo)} ${Number(r.cuentas_con_saldo) === 1 ? 'orden' : 'órdenes'} por cobrar`)
-      + t('Vencido', formatoMoneda(r.vencido), `${Number(r.clientes_con_vencido)} ${Number(r.clientes_con_vencido) === 1 ? 'cliente' : 'clientes'}`, r.vencido > 0 ? 'alerta' : '')
-      + (r.por_concluir > 0 ? t('Por concluir', formatoMoneda(r.por_concluir), `${Number(r.ordenes_por_concluir)} ${Number(r.ordenes_por_concluir) === 1 ? 'servicio con fecha pasada' : 'servicios con fecha pasada'}: márcalos realizados para cobrarlos`, 'aviso') : '')
-      + (r.programado > 0 ? t('Por realizar', formatoMoneda(r.programado), `${Number(r.ordenes_programadas)} ${Number(r.ordenes_programadas) === 1 ? 'servicio programado' : 'servicios programados'} (aún no se cobran)`) : '')
-      + (r.a_favor > 0 ? t('A favor de clientes', formatoMoneda(r.a_favor), `${Number(r.ordenes_a_favor)} ${Number(r.ordenes_a_favor) === 1 ? 'servicio no realizado' : 'servicios no realizados'} con pago (devolver o aplicar)`, 'aviso') : '')
-      + t('Cobrado este mes', formatoMoneda(r.cobrado_mes), '')
-      + (r.por_confirmar ? t('Por confirmar', formatoMoneda(r.por_confirmar.monto), `${Number(r.por_confirmar.cantidad)} pagos`, r.por_confirmar.cantidad ? 'aviso' : '') : '');
+      ? (r.pagar_semana !== undefined ? t('Pagar esta semana', formatoMoneda(r.pagar_semana), `${Number(r.facturas_semana)} facturas (incluye vencidas)`, r.pagar_semana > 0 ? 'aviso' : '', 'pagar_semana') : '')
+        + (r.por_pagar !== undefined ? t('Total por pagar', formatoMoneda(r.por_pagar), '', '', 'por_pagar') : '')
+        + (r.pagado_mes !== undefined ? t('Pagado este mes', formatoMoneda(r.pagado_mes), '', '', 'pagado_mes') : '')
+      : t('Te deben', formatoMoneda(r.por_cobrar), `${Number(r.cuentas_con_saldo)} ${Number(r.cuentas_con_saldo) === 1 ? 'orden' : 'órdenes'} por cobrar`, '', 'te_deben')
+      + t('Vencido', formatoMoneda(r.vencido), `${Number(r.clientes_con_vencido)} ${Number(r.clientes_con_vencido) === 1 ? 'cliente' : 'clientes'}`, r.vencido > 0 ? 'alerta' : '', 'vencido')
+      + (r.por_concluir > 0 ? t('Por concluir', formatoMoneda(r.por_concluir), `${Number(r.ordenes_por_concluir)} ${Number(r.ordenes_por_concluir) === 1 ? 'servicio con fecha pasada' : 'servicios con fecha pasada'}: márcalos realizados para cobrarlos`, 'aviso', 'por_concluir') : '')
+      + (r.programado > 0 ? t('Por realizar', formatoMoneda(r.programado), `${Number(r.ordenes_programadas)} ${Number(r.ordenes_programadas) === 1 ? 'servicio programado' : 'servicios programados'} (aún no se cobran)`, '', 'por_realizar') : '')
+      + (r.a_favor > 0 ? t('A favor de clientes', formatoMoneda(r.a_favor), `${Number(r.ordenes_a_favor)} ${Number(r.ordenes_a_favor) === 1 ? 'servicio no realizado' : 'servicios no realizados'} con pago (devolver o aplicar)`, 'aviso', 'a_favor') : '')
+      + t('Cobrado este mes', formatoMoneda(r.cobrado_mes), '', '', 'cobrado_mes')
+      + (r.por_confirmar ? t('Por confirmar', formatoMoneda(r.por_confirmar.monto), `${Number(r.por_confirmar.cantidad)} pagos`, r.por_confirmar.cantidad ? 'aviso' : '', 'por_confirmar') : '');
+    $('cuentas-explica').hidden = true;
     pintarRevision();
   }
 
@@ -424,7 +452,7 @@ const Finanzas = (() => {
     return c.dias_vencido === 0 ? 'Vence hoy' : 'en ' + Number(-c.dias_vencido) + ' d';
   };
   const ejecucionCorta = c => c.ejecucion === 'realizado' ? 'Realizado ' + fechaTxt(c.fecha_realizado || c.fecha_servicio)
-    : c.ejecucion === 'no_realizado' ? 'No realizado' : c.por_concluir ? 'Falta marcar' : 'Programado';
+    : c.ejecucion === 'no_realizado' ? 'No realizado' : c.sin_marcar ? 'Facturado, sin marcar' : c.por_concluir ? 'Por concluir' : 'Programado';
   // Mismo orden que la plantilla de cobranza (COBRANZA_QRO_2026): SERIE-FOLIO, FECHA, NOMBRE, M.P., SUBTOTAL, IVA, TOTAL,
   // CRÉDITO, FECHA VENCE, DÍAS VENCIDOS, OS, STATUS, FECHA PAGO, CP, A/C, OBSERVACIONES; después, datos extra del CRM.
   const pagoParte = (u, n) => (u ? String(u).split('|')[n] || '' : '');
@@ -500,7 +528,7 @@ const Finanzas = (() => {
         { titulo: 'Cliente', valor: c => c.cliente_nombre }, { titulo: 'Empresa', valor: c => c.empresa_contacto }, { titulo: 'RFC', valor: c => c.rfc }, { titulo: 'Teléfono', valor: c => c.telefono },
         { titulo: 'Servicio', valor: c => c.servicio_nombre },
         { titulo: 'Fecha del servicio', valor: c => c.fecha_servicio },
-        { titulo: 'Ejecución', valor: c => (c.ejecucion === 'realizado' ? 'Realizado' : c.ejecucion === 'no_realizado' ? 'No realizado' : c.por_concluir ? 'Por concluir' : 'Programado') },
+        { titulo: 'Ejecución', valor: c => (c.ejecucion === 'realizado' ? 'Realizado' : c.ejecucion === 'no_realizado' ? 'No realizado' : c.sin_marcar ? 'Facturado, sin marcar' : c.por_concluir ? 'Por concluir' : 'Programado') },
         { titulo: 'Fecha realizado', valor: c => c.fecha_realizado },
         { titulo: 'Unidad', valor: c => c.equipo }, { titulo: 'Operador', valor: c => c.operador }, { titulo: 'Proyecto', valor: c => c.proyecto },
         { titulo: 'Subtotal', valor: c => c.subtotal.toFixed(2) }, { titulo: 'IVA', valor: c => (c.iva == null ? '' : c.iva.toFixed(2)) }, { titulo: 'Total', valor: c => c.total.toFixed(2) },
