@@ -31,7 +31,7 @@ const ServiciosTabla = (() => {
         <input type="search" class="st-buscar" data-filtro="busqueda" aria-label="Buscar por folio o servicio" placeholder="Buscar folio o servicio">
       </div>
       <div class="servicios-resumen st-resumen" role="status" aria-live="polite"></div>
-      <div class="st-scroll"><table class="st-tabla"><thead><tr><th scope="col">Folio</th><th scope="col">Servicio</th><th scope="col">Estado</th><th scope="col">Fecha</th><th scope="col" class="st-num">Importe</th><th scope="col">Atendió</th><th scope="col"><span class="sr-only">Acciones</span></th></tr></thead><tbody></tbody></table></div>`;
+      <div class="st-scroll"><table class="st-tabla"><thead><tr><th scope="col">Folio</th><th scope="col">Servicio</th><th scope="col">Estado</th><th scope="col">Fecha</th><th scope="col" class="st-num perm-ordenes-importes">Importe</th><th scope="col">Atendió</th><th scope="col"><span class="sr-only">Acciones</span></th></tr></thead><tbody></tbody></table></div>`;
       cont.querySelector('[data-filtro="busqueda"]').addEventListener('input', e => { st.f.busqueda = e.target.value; pintar(id); });
       cont.addEventListener('click', manejarClick);
     }
@@ -50,13 +50,13 @@ const ServiciosTabla = (() => {
     const [clase, etiqueta] = estadoDe(s);
     const actual = st.tipo === 'lead' && s.id === LEAD_ACTUAL?.id;
     const fechaTxt = esOrden(s) ? (s.fecha_servicio ? 'Servicio: ' + fecha(s.fecha_servicio) : 'Servicio sin fecha') : 'Cotizada: ' + fecha(s.fecha_cotizacion || s.created_at);
-    const duplicar = esOrden(s) ? `<button type="button" class="btn btn-outline" data-accion="duplicar" data-id="${Number(s.id)}" title="Crea otra orden de servicio con los mismos datos (servicio recurrente)">Duplicar</button>` : '';
+    const duplicar = esOrden(s) ? `<button type="button" class="btn btn-outline perm-ordenes-importes" data-accion="duplicar" data-id="${Number(s.id)}" title="Crea otra orden de servicio con los mismos datos (servicio recurrente)">Duplicar</button>` : '';
     return `<tr class="fila-${clase}${actual ? ' st-actual' : ''}" data-abrir-fila="${Number(s.id)}">
       <td class="st-folio" data-label="Folio">${escapar(folioDe(s))}${actual ? '<small>Abierto ahora</small>' : ''}</td>
       <td data-label="Servicio">${escapar(s.servicio_nombre || 'Servicio')}</td>
       <td data-label="Estado"><span class="tag-estatus ${clase}">${escapar(etiqueta)}</span></td>
       <td data-label="Fecha" class="st-fecha">${escapar(fechaTxt)}</td>
-      <td data-label="Importe" class="st-num servicio-importe">${importeTarjeta(s)}${s.valor != null && !s.iva_modo ? '<small>IVA por definir</small>' : ''}</td>
+      <td data-label="Importe" class="st-num servicio-importe perm-ordenes-importes">${importeTarjeta(s)}${s.valor != null && !s.iva_modo ? '<small>IVA por definir</small>' : ''}</td>
       <td data-label="Atendió">${escapar(s.responsable_nombre || 'Sin asignar')}</td>
       <td class="st-acciones"><button type="button" class="btn btn-outline" data-accion="abrir" data-id="${Number(s.id)}">Abrir</button>${duplicar}<button type="button" class="btn-eliminar perm-ordenes-eliminar" data-accion="eliminar" data-id="${Number(s.id)}" aria-label="Eliminar ${escapar(folioDe(s))}">Eliminar</button></td>
     </tr>`;
@@ -68,7 +68,7 @@ const ServiciosTabla = (() => {
     const rows = ordenar(filtrar(st.datos, st.f));
     const abiertas = st.datos.filter(x => x.estatus === 'abierto').length;
     const contratado = st.datos.filter(esOrden).reduce((t, x) => t + (Number(x.valor) || 0), 0);
-    cont.querySelector('.servicios-resumen').textContent = `${abiertas} cotización${abiertas === 1 ? '' : 'es'} abierta${abiertas === 1 ? '' : 's'} · ${n.ordenes} orden${n.ordenes === 1 ? '' : 'es'} de servicio · Contratado: ${formatoMoneda(contratado)} sin IVA`;
+    cont.querySelector('.servicios-resumen').textContent = `${abiertas} cotización${abiertas === 1 ? '' : 'es'} abierta${abiertas === 1 ? '' : 's'} · ${n.ordenes} orden${n.ordenes === 1 ? '' : 'es'} de servicio${Permisos.puede('ordenes.importes') ? ` · Contratado: ${formatoMoneda(contratado)} sin IVA` : ''}`; // sin HTML
     const vacio = st.datos.length ? 'No hay registros con este filtro.' : 'Este contacto aún no tiene cotizaciones ni órdenes. Usa Crear cotización o Crear orden de servicio.';
     cont.querySelector('tbody').innerHTML = rows.length ? rows.map(s => filaHTML(s, st)).join('') : `<tr><td colspan="7" class="servicios-vacio">${vacio}</td></tr>`;
   }

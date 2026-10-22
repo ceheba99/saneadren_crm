@@ -325,7 +325,8 @@ function abrirServicioNuevo(modo, prefill) {
 function rotularEditorContenido(esOrden) {
   const doc = esOrden ? 'orden de servicio' : 'cotización';
   document.getElementById('gc-titulo-contenido').textContent = 'Contenido de la ' + doc;
-  document.getElementById('gc-ayuda-contenido').textContent = `Edita servicios, descripciones e importes. Se guardan con esta ${doc} y se usan en la descarga.`;
+  document.getElementById('gc-ayuda-contenido').textContent = Permisos.puede('ordenes.importes') ? `Edita servicios, descripciones e importes. Se guardan con esta ${doc} y se usan en la descarga.`
+    : `Servicios y descripción de la ${doc}. Tu rol no ve importes: se muestran sin precios y no se cambian aquí.`;
   document.getElementById('btn-gc-generar').textContent = 'Guardar y descargar ' + doc;
   // Las notas y condiciones son de la cotización (la orden tiene sus observaciones).
   document.getElementById('gc-notas-campo').hidden = esOrden;
@@ -596,7 +597,7 @@ function renderKpis(kpis, contactos = 0) {
     if (e === 1 && contactos > 0) chips.push(`<span class="kpi-chip">${contactos} contacto${contactos === 1 ? '' : 's'} sin cotización</span>`);
     if (k.con_alertas > 0) chips.push(`<span class="kpi-chip alerta">⏰ ${k.con_alertas} con alerta</span>`);
     document.getElementById(`kpi-${e}-desglose`).innerHTML = chips.join('') || '<span class="kpi-chip">Sin registros</span>';
-    document.getElementById(`kpi-${e}-valor`).innerHTML = k.valor_total > 0
+    document.getElementById(`kpi-${e}-valor`).innerHTML = k.valor_total > 0 && Permisos.puede('ordenes.importes')
       ? `Cotización en la etapa: <b>${formatoMoneda(k.valor_total)}</b>`
       : '';
     document.getElementById(`kpi-${e}-dias`).innerHTML = k.dias_promedio != null
@@ -666,7 +667,7 @@ function renderKanbanLeads(leads, contactos = []) {
 
     const valorColumna = lista.reduce((sum, l) => sum + (l.valor || 0), 0);
     if (valorColumna > 0) {
-      document.getElementById('footer-' + e).innerHTML = `<div class="kanban-footer-valor">Total sin IVA: <b>${formatoMoneda(valorColumna)}</b></div>`;
+      document.getElementById('footer-' + e).innerHTML = Permisos.puede('ordenes.importes') ? `<div class="kanban-footer-valor">Total sin IVA: <b>${formatoMoneda(valorColumna)}</b></div>` : '';
     }
 
     document.getElementById('col-' + e).innerHTML = lista.map(l => {
@@ -686,7 +687,7 @@ function renderKanbanLeads(leads, contactos = []) {
         <div class="lead-servicio">${escaparHtml(l.servicio_nombre || 'Sin servicio')}</div>
         <div class="lead-meta">
           <span class="lead-resp">${escaparHtml(l.responsable_nombre || '—')}</span>
-          <span class="lead-valor">${importeTarjeta(l)}</span>
+          <span class="lead-valor perm-ordenes-importes">${importeTarjeta(l)}</span>
         </div>
         <div class="lead-fecha">${fechaCorta(l.updated_at)}</div>
       </div>
@@ -1342,7 +1343,7 @@ function crearFilaServicioHTML(item) {
   ).join('');
   return `
     <div class="gc-fila" data-fila="${id}">
-      <div class="gc-fila-cab"><span class="gc-fila-num"></span><button type="button" class="btn-eliminar gc-quitar" data-fila="${id}">🗑 Quitar</button></div>
+      <div class="gc-fila-cab"><span class="gc-fila-num"></span><button type="button" class="btn-eliminar gc-quitar perm-ordenes-importes" data-fila="${id}">🗑 Quitar</button></div>
       <div class="gc-fila-grid">
         <div class="campo-modal gc-c-servicio">
           <label for="gc-servicio-${id}">Servicio</label>
@@ -1353,9 +1354,9 @@ function crearFilaServicioHTML(item) {
         </div>
           <div class="campo-modal gc-c-cantidad"><label for="gc-cantidad-${id}">Cantidad</label>
             <input type="number" class="gc-cantidad" id="gc-cantidad-${id}" data-fila="${id}" min="0.001" step="any" value="${Number(Importes.cantidadDe(item))}"></div>
-          <div class="campo-modal gc-c-precio"><label class="gc-etiqueta-importe" for="gc-precio-${id}">${etiquetaPrecio(modoIvaEditor())}</label>
+          <div class="campo-modal gc-c-precio perm-ordenes-importes"><label class="gc-etiqueta-importe" for="gc-precio-${id}">${etiquetaPrecio(modoIvaEditor())}</label>
             <input type="number" class="gc-precio" id="gc-precio-${id}" data-fila="${id}" min="0.01" step="0.01" placeholder="Precio" value="${item.importe === undefined && item.precio === undefined ? '' : Number(Importes.precioDe(item))}"></div>
-          <div class="campo-modal gc-c-importe"><label for="gc-importe-${id}">Importe</label>
+          <div class="campo-modal gc-c-importe perm-ordenes-importes"><label for="gc-importe-${id}">Importe</label>
             <input type="number" class="gc-importe" id="gc-importe-${id}" data-fila="${id}" readonly tabindex="-1" value="${item.importe ?? ''}"></div>
         <div class="campo-modal gc-c-leyenda">
           <label for="gc-leyenda-${id}">Descripción / leyenda</label>
@@ -1467,6 +1468,10 @@ function prepararEditorCotizacion(lead,modo){
   let items;try{items=JSON.parse(lead?.partidas_json||'null');}catch{}
   (items||[{servicio:lead?.servicio_nombre||'',leyenda:descripcionServicio(lead?.servicio_nombre||''),...(lead?.valor?{importe:lead.valor}:{})}]).forEach(agregarFilaCotizacion); // sin precio: el campo queda vacío, nunca en $0
   actualizarTotalCotizacion();sincronizarEditor();
+  // Sin «Ver importes»: las partidas se leen (servicio, descripción y cantidad) pero no se cambian; el servidor tampoco las cambia.
+  const soloLeer=!Permisos.puede('ordenes.importes');
+  document.querySelectorAll('#gc-items .gc-servicio').forEach(x=>{x.disabled=soloLeer;});
+  document.querySelectorAll('#gc-items .gc-leyenda, #gc-items .gc-cantidad').forEach(x=>{if(soloLeer)x.readOnly=true;});
 }
 function sincronizarEditor(){
   const items=recolectarItemsCotizacion(),prefijo=EDITOR_MODO==='nuevo'?'sn':'ed';
@@ -1475,6 +1480,7 @@ function sincronizarEditor(){
   document.getElementById(prefijo+'-valor').value=Importes.calcular(items,modoIvaEditor(),IVA_TASA).subtotal_cent/100;
 }
 function validarEditorCotizacion(){
+  if(!Permisos.puede('ordenes.importes'))return true; // sin importes las partidas no se cambian (el servidor las ignora)
   const filas=[...document.querySelectorAll('#gc-items .gc-fila')];
   if(!filas.length||filas.some(f=>!f.querySelector('.gc-servicio').value||f.querySelector('.gc-precio').value===''||!(Number(f.querySelector('.gc-precio').value)>0)||!(Number(f.querySelector('.gc-cantidad').value)>0))){toast('Selecciona un servicio y escribe cantidad y precio unitario (mayor a $0) en cada partida');return false;}
   // Un registro nuevo o una cotización abierta deben decir si sus importes llevan IVA.
@@ -1680,7 +1686,7 @@ function renderTablaClientesReales(clientes) {
       <td data-label="Tipo"><span class="tipo-contacto ${tipo(c)[0]}">${tipo(c)[1]}</span></td>
       <td data-label="Cotizaciones abiertas" class="st-num">${Number(c.solicitudes_abiertas) || '—'}</td>
       <td data-label="Órdenes de servicio" class="st-num">${Number(c.servicios_ganados) || '—'}</td>
-      <td data-label="Contratado (sin IVA)" class="st-num">${c.valor_ganado_total ? formatoMoneda(c.valor_ganado_total) : '—'}</td>
+      <td data-label="Contratado (sin IVA)" class="st-num perm-ordenes-importes">${c.valor_ganado_total ? formatoMoneda(c.valor_ganado_total) : '—'}</td>
       <td data-label="Última actividad">${fechaCorta(c.ultima_actividad)}</td>
       <td><button type="button" class="btn btn-outline">Abrir</button></td>
     </tr>

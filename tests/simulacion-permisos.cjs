@@ -136,8 +136,10 @@ const CAMBIOS_ESPERADOS = [
   [s] = await pedir('GET', '/finanzas/revision-inicial', T.ventas); revisa(s === 200, 'ventas ya puede hacer la revisión inicial');
   [s] = await pedir('GET', '/finanzas/cartera', T.ventas); revisa(s === 200, 'y vuelve a ver cuentas por cobrar');
   [s] = await pedir('GET', '/finanzas/cxp/formato-excel', T.tecnico); revisa(s === 403, 'el técnico no exporta a Excel');
-  [s] = await pedir('PUT', '/roles/tecnico/permisos', A, { permisos: [...permisosDe('tecnico'), 'clientes.exportar'] });
-  [s] = await pedir('GET', '/finanzas/cxp/formato-excel', T.tecnico); revisa(s === 200, 'con el permiso, el técnico sí exporta', s);
+  [s, j] = await pedir('PUT', '/roles/tecnico/permisos', A, { permisos: [...permisosDe('tecnico'), 'clientes.exportar'] });
+  revisa(s === 400 && /Ver importes/.test(j.error), 'exportar necesita «Ver importes» (el Excel lleva los importes)', j);
+  [s] = await pedir('PUT', '/roles/tecnico/permisos', A, { permisos: [...permisosDe('tecnico'), 'clientes.exportar', 'ordenes.importes'] });
+  [s] = await pedir('GET', '/finanzas/cxp/formato-excel', T.tecnico); revisa(s === 200, 'con el permiso (y «Ver importes»), el técnico sí exporta', s);
   [s] = await pedir('POST', '/servicios', T.gerente, { nombre: 'Servicio de prueba gerente' }); revisa(s === 403, 'agregar servicios al catálogo es solo de Dirección (ni el gerente)');
 
   // Candados.
@@ -216,12 +218,21 @@ const CAMBIOS_ESPERADOS = [
   { const d2 = new DatabaseSync(DB);
     d2.prepare("UPDATE rol_alcances SET nivel = 1 WHERE rol = 'tecnico' AND area = 'cxc'").run();
     for (const p of ['cobros.confirmar', 'cobranza.factura']) d2.prepare('INSERT OR IGNORE INTO rol_permisos (rol, permiso) VALUES (?, ?)').run('tecnico', p);
-    d2.prepare("DELETE FROM permisos_sembrados WHERE permiso = 'tecnico:solo-sus-cobros'").run(); d2.close(); }
+    d2.prepare("DELETE FROM permisos_sembrados WHERE permiso = 'tecnico:solo-sus-cobros'").run();
+    // Base anterior a «Ver importes»: nadie lo tiene todavía (antes todos los que veían órdenes veían sus importes).
+    d2.prepare("DELETE FROM rol_permisos WHERE permiso = 'ordenes.importes'").run();
+    d2.prepare("DELETE FROM permisos_sembrados WHERE permiso = 'ordenes.importes'").run();
+    d2.prepare("INSERT INTO roles (clave, nombre, descripcion, sistema, activo, orden) VALUES ('supervisor', 'Supervisor', '', 0, 1, 99)").run(); // un rol que inventó Dirección
+    for (const [area, nivel] of [['ventas', 1], ['cxc', 0], ['cxp', 0], ['compras', 1]]) d2.prepare('INSERT INTO rol_alcances (rol, area, nivel) VALUES (?, ?, ?)').run('supervisor', area, nivel);
+    d2.close(); }
   await arrancar(NUEVO, DB);
   const A3 = await login('admin', ADMIN.password);
   let tecMig = await rolDe(A3, 'tecnico');
   revisa(tecMig.alcances.cxc === 0 && tecMig.permisos.includes('cobros.registrar') && !tecMig.permisos.includes('cobros.confirmar') && !tecMig.permisos.includes('cobranza.factura'),
     'base anterior: el técnico pasa a «solo los cobros que él registra» y deja de confirmar cobros y de cambiar crédito y factura', { alcances: tecMig.alcances, permisos: tecMig.permisos });
+  const supMig = await rolDe(A3, 'supervisor');
+  revisa(!tecMig.permisos.includes('ordenes.importes') && (await rolDe(A3, 'ventas')).permisos.includes('ordenes.importes') && supMig?.permisos.includes('ordenes.importes'),
+    'base anterior a «Ver importes»: ventas y los roles que inventó Dirección lo conservan; el técnico no', { supervisor: supMig?.permisos });
   const ventasDesp = await rolDe(A3, 'ventas');
   revisa(JSON.stringify(ventasDesp.alcances) === JSON.stringify(ventasPrevias.alcances) && [...ventasDesp.permisos].sort().join() === [...ventasPrevias.permisos].sort().join(), 'los demás roles quedan igual', { antes: ventasPrevias.permisos, despues: ventasDesp.permisos });
   [s, j] = await pedir('PUT', '/roles/tecnico/permisos', A3, { permisos: tecMig.permisos.filter(c => !c.includes('.ver') && !c.includes('.sucursal')), alcances: { cxc: 1 } });

@@ -151,6 +151,8 @@ app.locals.sucursales = suc;
 const permisos = require('./permisos')(db, app, h);
 app.locals.permisos = permisos;
 app.locals.sesiones = sesiones;
+// «Ver importes»: sin ese permiso las órdenes se ven y se trabajan sin el dinero de la venta (server/sin-importes.js).
+app.use('/api', require('./sin-importes')(permisos));
 
 // Bitácora general de movimientos (clientes, proveedores, compras, usuarios, catálogos, eliminados).
 const audit = require('./auditoria')(app, db, h);

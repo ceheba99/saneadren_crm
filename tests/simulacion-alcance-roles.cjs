@@ -79,6 +79,18 @@ const RANGO = 'desde=2020-01-01&hasta=' + dia(60);
   [s, j] = await pedir('GET', '/finanzas/por-confirmar', R); revisa(s === 403, 'Raúl no confirma cobros (no ve la lista por confirmar)', s);
   [s, j] = await pedir('GET', '/leads/' + L2.id + '/cobros', L);
   revisa(s === 200 && j.cuenta && j.cobros.length === 2 && j.cuenta.cobrado === 1516.9, 'Laura (cobranza de sus órdenes) ve la cuenta completa con los dos cobros', j.cuenta);
+  // «Ver importes» (2026-10-21): el técnico trabaja su orden sin el dinero de la venta.
+  [s, j] = await pedir('GET', '/leads/' + L2.id, R);
+  const partR = JSON.parse(j.partidas_json || '[]');
+  revisa(s === 200 && j.valor === undefined && j.iva_cent === undefined && j.valor_ganado_total === undefined && partR.length && partR.every(p => p.servicio && p.precio === undefined && p.importe === undefined),
+    'Raúl abre su orden: servicio y descripción sí, precio, importe, IVA y totales no', { valor: j.valor, partidas: partR });
+  [s, j] = await pedir('PUT', '/leads/' + L2.id, R, { version: j.version, partidas_json: JSON.stringify([{ servicio: partR[0].servicio, leyenda: 'x', importe: 1 }]), valor: 1, observaciones: 'Acceso por la puerta 2' });
+  const tras = (await pedir('GET', '/leads/' + L2.id, L))[1];
+  revisa(s === 200 && tras.valor === 8231.57 && JSON.parse(tras.partidas_json)[0].leyenda !== 'x' && tras.observaciones === 'Acceso por la puerta 2', 'Raúl guarda sus datos de la orden; precios y partidas no cambian aunque los mande', { s, valor: tras.valor, obs: tras.observaciones });
+  [s] = await pedir('POST', '/leads', R, { cliente_id: cRubi, direccion: 'x', responsable_id: ID.Raul, partidas_json: JSON.stringify([{ servicio: partR[0].servicio, leyenda: 'x', importe: 100 }]) });
+  revisa(s === 403, 'Raúl no cotiza (necesita ver importes)', s);
+  for (const r of ['/generador?' + RANGO, '/analisis/comercial?' + RANGO]) { [s] = await pedir('GET', r, R); revisa(s === 403, 'Raúl no entra a ' + r.split('?')[0], s); }
+  [s, j] = await pedir('GET', '/leads/' + L2.id, L); revisa(s === 200 && j.valor === 8231.57, 'Laura (con «Ver importes») sí ve el importe de su orden', j.valor);
   [s, j] = await pedir('GET', '/calendario?desde=' + dia(-40) + '&hasta=' + dia(60), R);
   revisa(s === 200 && !j.eventos.some(e => e.tipo === 'cobro') && j.eventos.some(e => e.tipo === 'orden' && e.lead_id === L2.id), 'en el calendario de Raúl está su orden pero ningún cobro', j.eventos?.map(e => e.tipo));
   // Gastos: Raúl al marcar realizado; Laura uno en su orden; Isaac uno ligado a la orden de Beto (sin ver sus ventas).
@@ -129,7 +141,7 @@ const RANGO = 'desde=2020-01-01&hasta=' + dia(60);
   const ESPERADO = {
     Laura: ['Zafiro', 'Rubi', 'Cuarzo', 'SolPerla', '$venta-Zafiro', '$venta-Rubi', '$cobro-Ana-Rubi', '$cobro-Raul', '$gasto-Cuarzo'], // lo suyo y la cobranza de sus órdenes
     Beto: ['Topacio', 'Onix', '$venta-Topacio', '$venta-Onix', '$cobro-Ana-Topacio'],
-    Raul: ['Rubi', 'Amatista', 'SolCoral', 'Granate', '$venta-Rubi', '$cobro-Raul', '$gasto-Amatista'], // la orden asignada, solo el cobro que él registró, su gasto, su solicitud
+    Raul: ['Rubi', 'Amatista', 'SolCoral', 'Granate', '$cobro-Raul', '$gasto-Amatista'], // la orden asignada SIN importes, solo el cobro que él registró, su gasto, su solicitud
     Ana: ['Zafiro', 'Rubi', 'Topacio', 'Onix', 'Granate', '$venta-Zafiro', '$venta-Rubi', '$venta-Topacio', '$venta-Onix', '$cobro-Ana-Rubi', '$cobro-Ana-Topacio', '$cobro-Raul'], // nada de proveedores
     Isaac: ['Rubi', 'Topacio', 'Amatista', 'Cuarzo', 'Jade', 'SolPerla', 'SolCoral', '$gasto-Amatista', '$gasto-Cuarzo', '$gasto-Jade'], // folio y cliente (sin montos de venta), todo CxP y compras
     Monica: Object.keys(MARCAS).filter(m => !/Jaspe/.test(m)),
