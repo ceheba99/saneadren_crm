@@ -73,6 +73,7 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
   exigir(await pedir('POST', '/leads/' + O1.id + '/ejecucion', T.Tomas, { estado: 'realizado', fecha: dia(-1), gastos: [{ proveedor_id: prov.id, categoria: 'combustible', concepto: 'Diesel de campo', total: 813.37 }] }), 'realizado con gasto');
   exigir(await pedir('POST', '/finanzas/cxp', T.Valeria, { proveedor_id: prov.id, categoria: 'otro', concepto: 'Casetas de visita', total: 311.13, fecha_documento: HOY, lead_id: O1.id, dias_credito: 0 }), 'gasto de Valeria');
   exigir(await pedir('POST', '/finanzas/cxp', T.Carlos, { proveedor_id: prov.id, categoria: 'renta_maquinaria', concepto: 'Renta de pipa', total: 2577.19, fecha_documento: HOY, lead_id: O4.id, dias_credito: 15 }), 'gasto de Carlos');
+  exigir(await pedir('POST', '/finanzas/cxp', T.Alicia, { proveedor_id: prov.id, categoria: 'otro', concepto: 'Mensajería de documentos', total: 419.23, fecha_documento: HOY, lead_id: O4.id, dias_credito: 0 }), 'gasto de Alicia');
   // Solicitudes de compra.
   exigir(await pedir('POST', '/compras/solicitudes', T.Tomas, { que: 'Manguera Jade', para_que: 'Se rompió en servicio', centro_id: centros[0].id }), 'solicitud de Tomás');
   exigir(await pedir('POST', '/compras/solicitudes', T.Valeria, { que: 'Botas Perla', para_que: 'Para visitas de obra', centro_id: centros[0].id }), 'solicitud de Valeria');
@@ -101,9 +102,10 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
       ['saldo', 'Saldo de la orden de Valeria (lo que debe el cliente)', formas(saldoO1)],
     ]],
     ['Cuentas por pagar', [
-      ['gastoTomas', 'Gasto que registró Tomás (técnico)', formas(813.37)],
-      ['gastoValeria', 'Gasto que registró Valeria (ventas)', formas(311.13)],
-      ['gastoCarlos', 'Gasto que registró Carlos (compras)', formas(2577.19)],
+      ['gastoTomas', 'Gasto que registró Tomás (técnico) en la orden de Valeria', formas(813.37)],
+      ['gastoValeria', 'Gasto que registró Valeria (ventas) en su orden', formas(311.13)],
+      ['gastoCarlos', 'Gasto que registró Carlos (compras) en la orden de Bruno', formas(2577.19)],
+      ['gastoAlicia', 'Gasto que registró Alicia (atención) en la orden de Bruno', formas(419.23)],
     ]],
     ['Compras', [
       ['jade', 'Solicitud de compra de Tomás', ['Jade']],
@@ -160,6 +162,7 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
   const MENU = [...html.matchAll(/<button[^>]*class="(menu-item[^"]*)"[^>]*data-vista="([^"]+)"[^>]*>([\s\S]*?)<\/button>/g)]
     .map(([, clases, vista, txt]) => ({ vista, nombre: txt.replace(/<span id="badge[^>]*>[^<]*<\/span>/g, '').replace(/<span class="menu-icono"[^>]*>([^<]*)<\/span>/, '$1 ').replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim(), clases: clases.split(/\s+/) }));
   const veMenu = (rol, m) => m.clases.every(c => { const p = c.match(/^perm-([a-z_]+)-([a-z_]+)$/); return p ? rol === 'admin' || permisosDe(rol).has(p[1] + '.' + p[2]) : c === 'solo-general' ? rol === 'admin' : true; });
+  for (const [rol] of ROLES) for (const p of PERM.catalogo) VE[rol]['perm:' + p.clave] = rol === 'admin' || permisosDe(rol).has(p.clave);
   const nivelTxt = (rol, area) => {
     if (rol === 'admin') return 'Todo';
     const r = PERM.roles.find(x => x.clave === rol), nv = r.alcances[area], set = permisosDe(rol);
@@ -171,9 +174,13 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
     ['2026-10-19', 'Dirección ve todo, en todas las sucursales.', { admin: { ambar: 1, 'ambar$': 1, berilo: 1, coral: 1, cobroAlicia: 1, saldo: 1, gastoCarlos: 1, jade: 1, perla: 1, cuarzo: 1, obsidiana: 1, clabe: 1 } }],
     ['2026-10-19', 'Gerente: todo lo de su sucursal, nada de otra.', { gerente: { ambar: 1, 'ambar$': 1, berilo: 1, diamante: 1, coral: 0, cobroAlicia: 1, saldo: 1, gastoCarlos: 1, gastoTomas: 1, jade: 1, perla: 1, cuarzo: 1 } }],
     ['2026-10-19', 'Ventas ve lo suyo: sus clientes, cotizaciones y órdenes (no las de otro vendedor ni de otra sucursal) y la cobranza de sus órdenes.', { ventas: { ambar: 1, 'ambar$': 1, berilo: 0, diamante: 0, coral: 0, cobroAlicia: 1, cobroTomas: 1, saldo: 1 } }],
-    ['2026-10-19', 'Ventas y técnico, en cuentas por pagar: solo los gastos que él registró.', { ventas: { gastoValeria: 1, gastoTomas: 0, gastoCarlos: 0 }, tecnico: { gastoTomas: 1, gastoValeria: 0, gastoCarlos: 0 } }],
+    ['2026-10-19', 'Técnico, en cuentas por pagar: solo los gastos que él registró.', { tecnico: { gastoTomas: 1, gastoValeria: 0, gastoCarlos: 0, gastoAlicia: 0 } }],
+    ['2026-10-22', 'Ventas, en cuentas por pagar: los gastos que registró y todos los de sus órdenes, aunque los anote otra persona.', { ventas: { gastoValeria: 1, gastoTomas: 1, gastoCarlos: 0, gastoAlicia: 0 } }],
+    ['2026-10-22', 'Atención, en cuentas por pagar: solo los gastos que ella registró.', { atencion: { gastoAlicia: 1, gastoTomas: 0, gastoValeria: 0, gastoCarlos: 0 } }],
+    ['2026-10-22', 'Catálogos compartidos: los cambian Dirección, Gerente y Compras; Ventas, Atención y Técnico no.', { gerente: { 'perm:catalogos.editar': 1 }, costos: { 'perm:catalogos.editar': 1 }, ventas: { 'perm:catalogos.editar': 0 }, atencion: { 'perm:catalogos.editar': 0 }, tecnico: { 'perm:catalogos.editar': 0 } }],
+    ['2026-10-22', 'Costos y compras no registra cobros (no abre órdenes de servicio).', { costos: { 'perm:cobros.registrar': 0 } }],
     ['2026-10-19', 'En compras, ventas y técnico ven solo lo que ellos pidieron.', { ventas: { perla: 1, jade: 0 }, tecnico: { jade: 1, perla: 0 } }],
-    ['2026-10-19', 'Atención: ventas y cobranza de toda su sucursal; nada de proveedores.', { atencion: { ambar: 1, berilo: 1, diamante: 1, coral: 0, cobroTomas: 1, saldo: 1, gastoCarlos: 0, gastoTomas: 0 } }],
+    ['2026-10-19', 'Atención: ventas y cobranza de toda su sucursal.', { atencion: { ambar: 1, berilo: 1, diamante: 1, coral: 0, cobroTomas: 1, saldo: 1 } }],
     ['2026-10-19', 'Técnico: solo las órdenes que tiene asignadas.', { tecnico: { ambar: 1, diamante: 0, berilo: 0, coral: 0 } }],
     ['2026-10-19', 'Costos y compras: ve folio y cliente de las órdenes para ligar gastos, sin montos de venta ni cobranza; todas las cuentas por pagar y compras de su sucursal.', { costos: { ambar: 1, 'ambar$': 0, cobroAlicia: 0, cobroTomas: 0, saldo: 0, gastoTomas: 1, gastoValeria: 1, gastoCarlos: 1, jade: 1, perla: 1 } }],
     ['2026-10-21', 'Técnico, en cuentas por cobrar: solo los cobros que él registró (sin saldos ni vencidos).', { tecnico: { cobroTomas: 1, cobroAlicia: 0, saldo: 0 } }],
@@ -181,7 +188,7 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
     ['2026-10-21', 'Prospección: cada quien lo suyo (quien ve toda su sucursal en ventas, todos los de su sucursal); el técnico no prospecta.', { ventas: { granate: 1, cuarzo: 0 }, atencion: { granate: 1, cuarzo: 1 }, tecnico: { granate: 0, cuarzo: 0 } }],
     ['2026-10-19', 'Personal: quien ve órdenes ve nombre y puesto del personal activo, para asignarlo a una orden; la ficha y los datos sensibles, solo Gerente y Dirección.', { gerente: { obsidiana: 1, fichaEmp: 1, clabe: 1 }, ventas: { obsidiana: 1, fichaEmp: 0, clabe: 0 }, atencion: { obsidiana: 1, fichaEmp: 0, clabe: 0 }, tecnico: { obsidiana: 1, fichaEmp: 0, clabe: 0 }, costos: { obsidiana: 0, fichaEmp: 0, clabe: 0 } }],
   ];
-  const NOMBRE = Object.fromEntries(DATOS.flatMap(([, f]) => f.map(([k, t]) => [k, t])).concat(REPORTES.map(([k, t]) => ['rep:' + k, t])));
+  const NOMBRE = Object.fromEntries(DATOS.flatMap(([, f]) => f.map(([k, t]) => [k, t])).concat(REPORTES.map(([k, t]) => ['rep:' + k, t]), PERM.catalogo.map(p => ['perm:' + p.clave, 'puede: ' + p.nombre])));
   console.log('Reglas acordadas:');
   for (const [fecha, regla, esperado] of REGLAS) {
     const fallan = Object.entries(esperado).flatMap(([rol, filas]) => Object.entries(filas).filter(([k, v]) => VE[rol][k] !== !!v)

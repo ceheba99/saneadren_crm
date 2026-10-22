@@ -16,12 +16,12 @@ Dirección la revisa y la aprueba. Si un cambio altera lo que ve un rol, la prue
 | 📄 Cotizaciones | ✔ | ✔ | ✔ | ✔ | ✔ | — |
 | 🔎 Prospección | ✔ | ✔ | ✔ | ✔ | — | — |
 | 📥 Cuentas por cobrar | ✔ | ✔ | ✔ | ✔ | — | — |
-| 📤 Cuentas por pagar | ✔ | ✔ | ✔ | — | ✔ | ✔ |
+| 📤 Cuentas por pagar | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
 | 📝 Solicitudes de compra | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
 | 🛒 Órdenes de compra | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
 | 📊 Resultados | ✔ | ✔ | ✔ | ✔ | — | — |
 | 👷 Personal | ✔ | ✔ | — | — | — | — |
-| 📚 Catálogos | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| 📚 Catálogos | ✔ | ✔ | — | — | — | ✔ |
 | 👤 Usuarios | ✔ | ✔ | — | — | — | — |
 | 🗂️ Bitácora | ✔ | — | — | — | — | — |
 
@@ -31,7 +31,7 @@ Dirección la revisa y la aprueba. Si un cambio altera lo que ve un rol, la prue
 |---|:-:|:-:|:-:|:-:|:-:|:-:|
 | Contactos, cotizaciones y órdenes | Todo | Toda su sucursal | Lo suyo | Toda su sucursal | Lo suyo | Nada |
 | Cuentas por cobrar | Todo | Toda su sucursal | Lo suyo | Toda su sucursal | Solo lo que él registra | Nada |
-| Cuentas por pagar | Todo | Toda su sucursal | Lo suyo | Nada | Lo suyo | Toda su sucursal |
+| Cuentas por pagar | Todo | Toda su sucursal | Lo suyo | Lo suyo | Lo suyo | Toda su sucursal |
 | Solicitudes y órdenes de compra | Todo | Toda su sucursal | Lo suyo | Lo suyo | Lo suyo | Toda su sucursal |
 
 ## Qué datos le llegan
@@ -59,9 +59,10 @@ Dirección la revisa y la aprueba. Si un cambio altera lo que ve un rol, la prue
 
 | Dato | Dirección | Gerente | Ventas | Atención | Técnico | Costos y compras |
 |---|:-:|:-:|:-:|:-:|:-:|:-:|
-| Gasto que registró Tomás (técnico) | ✔ | ✔ | — | — | ✔ | ✔ |
-| Gasto que registró Valeria (ventas) | ✔ | ✔ | ✔ | — | — | ✔ |
-| Gasto que registró Carlos (compras) | ✔ | ✔ | — | — | — | ✔ |
+| Gasto que registró Tomás (técnico) en la orden de Valeria | ✔ | ✔ | ✔ | — | ✔ | ✔ |
+| Gasto que registró Valeria (ventas) en su orden | ✔ | ✔ | ✔ | — | — | ✔ |
+| Gasto que registró Carlos (compras) en la orden de Bruno | ✔ | ✔ | — | — | — | ✔ |
+| Gasto que registró Alicia (atención) en la orden de Bruno | ✔ | ✔ | — | ✔ | — | ✔ |
 
 ### Compras
 
@@ -104,18 +105,19 @@ Dirección la revisa y la aprueba. Si un cambio altera lo que ve un rol, la prue
 | Cotizaciones y órdenes · Cambiar importe o IVA de una orden | ✔ | ✔ | — | ✔ | — | — |
 | Cotizaciones y órdenes · Actualizar estatus del servicio | ✔ | ✔ | ✔ | ✔ | ✔ | — |
 | Cotizaciones y órdenes · Eliminar cotizaciones y órdenes | ✔ | ✔ | — | — | — | — |
-| Cuentas por cobrar · Registrar cobros | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| Cuentas por cobrar · Registrar cobros | ✔ | ✔ | ✔ | ✔ | ✔ | — |
 | Cuentas por cobrar · Confirmar cobros | ✔ | ✔ | ✔ | ✔ | — | — |
 | Cuentas por cobrar · Sus cobros entran ya confirmados | ✔ | ✔ | — | ✔ | — | — |
 | Cuentas por cobrar · Crédito y datos de factura | ✔ | ✔ | ✔ | ✔ | — | — |
 | Cuentas por cobrar · Ajustes, descuentos y revisión inicial | ✔ | ✔ | — | — | — | — |
 | Cuentas por pagar · Registrar gastos de una orden | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| Cuentas por pagar · Ver los gastos de sus órdenes | ✔ | ✔ | ✔ | — | — | — |
 | Cuentas por pagar · Mover dinero | ✔ | ✔ | — | — | — | ✔ |
 | Compras · Gestionar compras | ✔ | ✔ | — | — | — | ✔ |
 | Compras · Aprobar sus propias solicitudes | ✔ | ✔ | — | — | — | — |
 | Compras · Autorizar órdenes de compra | ✔ | ✔ | — | — | — | — |
 | Reportes · Panorama general | ✔ | ✔ | — | — | — | — |
-| Catálogos · Catálogos compartidos | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| Catálogos · Catálogos compartidos | ✔ | ✔ | — | — | — | ✔ |
 | Personal · Ver personal | ✔ | ✔ | — | — | — | — |
 | Personal · Editar personal | ✔ | ✔ | — | — | — | — |
 | Personal · Datos sensibles del personal | ✔ | ✔ | — | — | — | — |
@@ -126,9 +128,13 @@ Dirección la revisa y la aprueba. Si un cambio altera lo que ve un rol, la prue
 - **2026-10-19** · Dirección ve todo, en todas las sucursales.
 - **2026-10-19** · Gerente: todo lo de su sucursal, nada de otra.
 - **2026-10-19** · Ventas ve lo suyo: sus clientes, cotizaciones y órdenes (no las de otro vendedor ni de otra sucursal) y la cobranza de sus órdenes.
-- **2026-10-19** · Ventas y técnico, en cuentas por pagar: solo los gastos que él registró.
+- **2026-10-19** · Técnico, en cuentas por pagar: solo los gastos que él registró.
+- **2026-10-22** · Ventas, en cuentas por pagar: los gastos que registró y todos los de sus órdenes, aunque los anote otra persona.
+- **2026-10-22** · Atención, en cuentas por pagar: solo los gastos que ella registró.
+- **2026-10-22** · Catálogos compartidos: los cambian Dirección, Gerente y Compras; Ventas, Atención y Técnico no.
+- **2026-10-22** · Costos y compras no registra cobros (no abre órdenes de servicio).
 - **2026-10-19** · En compras, ventas y técnico ven solo lo que ellos pidieron.
-- **2026-10-19** · Atención: ventas y cobranza de toda su sucursal; nada de proveedores.
+- **2026-10-19** · Atención: ventas y cobranza de toda su sucursal.
 - **2026-10-19** · Técnico: solo las órdenes que tiene asignadas.
 - **2026-10-19** · Costos y compras: ve folio y cliente de las órdenes para ligar gastos, sin montos de venta ni cobranza; todas las cuentas por pagar y compras de su sucursal.
 - **2026-10-21** · Técnico, en cuentas por cobrar: solo los cobros que él registró (sin saldos ni vencidos).

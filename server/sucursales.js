@@ -22,7 +22,8 @@ const alcance = require('./alcance');
 const CON_SUCURSAL = ['leads', 'cuentas_por_pagar', 'solicitudes_compra', 'ordenes_compra', 'establecimientos', 'historial_archivo', 'clientes', 'personal'];
 const VISTAS = [
   ['leads', 'en_alcance(sucursal_id) AND ve_lead(responsable_id, tecnico_id, estatus)'],
-  ['cuentas_por_pagar', "en_alcance(sucursal_id) AND ve_registro('cxp', registrado_por)"],
+  // Gastos: los de su sucursal o los que él registró; con «Ver los gastos de sus órdenes», también los de sus órdenes.
+  ['cuentas_por_pagar', "en_alcance(sucursal_id) AND (ve_registro('cxp', registrado_por) OR ve_gasto_orden(lead_id))"],
   ['solicitudes_compra', "en_alcance(sucursal_id) AND ve_registro('compras', solicitante_id)"],
   ['ordenes_compra', "en_alcance(sucursal_id) AND (ve_registro('compras', creado_por) OR solicitud_id IN (SELECT id FROM solicitudes_compra))"],
   ['establecimientos', "en_alcance(sucursal_id) AND ve_registro('ventas', responsable_id)"], // prospección: los suyos, o toda su sucursal
@@ -275,6 +276,9 @@ module.exports = function sucursales(app, db, h, { audit }) {
     // Un cobro: lo ve quien ve la cobranza de toda su sucursal; con «lo suyo», solo en sus órdenes (responsable o técnico
     // asignado), aunque vea las ventas de toda la sucursal; y, siempre, quien lo registró.
     const respTec = db.db.prepare('SELECT responsable_id, tecnico_id FROM main.leads WHERE id = ?');
+    // Un gasto de una orden suya (responsable o técnico), para quien tiene «Ver los gastos de sus órdenes» (2026-10-22).
+    const deMiOrden = leadId => { const yo = alcance.usuario(), l = leadId == null || yo == null ? null : respTec.get(leadId); return !!l && (l.responsable_id === yo || l.tecnico_id === yo); };
+    db.db.function('ve_gasto_orden', { deterministic: false }, leadId => (alcance.actual().gastosOrden && alcance.nivel('cxp') >= 1 && deMiOrden(leadId) ? 1 : 0));
     db.db.function('ve_cobro', { deterministic: false }, (quien, leadId) => {
       const n = alcance.nivel('cxc'), yo = alcance.usuario();
       if (n >= 2 || (yo != null && quien === yo)) return 1;
@@ -299,7 +303,7 @@ module.exports = function sucursales(app, db, h, { audit }) {
       const n = alcance.nivel(area), yo = alcance.usuario();
       if (n >= 2) return 1;
       if (n === 0 || yo == null) return 0;
-      if (area === 'cxp') return quien === yo ? 1 : 0;
+      if (area === 'cxp') return quien === yo || (alcance.actual().gastosOrden && deMiOrden(leadId)) ? 1 : 0;
       const l = delLead.get(leadId);
       return l && (l.responsable_id === yo || l.tecnico_id === yo) ? 1 : 0;
     });

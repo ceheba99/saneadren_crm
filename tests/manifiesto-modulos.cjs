@@ -41,7 +41,7 @@ module.exports = {
       demo: ['cuentas_por_pagar', 'pagos_proveedor', 'proveedores'],
       integridad: ['cuentas_por_pagar', 'pagos_proveedor'],
       buscador: ['proveedores'],
-      permisos: ['cxp.ver', 'cxp.sucursal', 'gastos.registrar', 'dinero.mover'],
+      permisos: ['cxp.ver', 'cxp.sucursal', 'gastos.registrar', 'gastos.ver_orden', 'dinero.mover'],
     },
     compras: {
       nombre: 'Solicitudes y órdenes de compra',

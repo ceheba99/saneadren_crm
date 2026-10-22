@@ -25,18 +25,19 @@ const CATALOGO = [
   ['ordenes.importe_ganada', 'Cotizaciones y órdenes', 'Cambiar importe o IVA de una orden', 'Modificar el importe o el IVA cuando la cotización ya es orden de servicio, y regresar una orden a cotización', ['gerente', 'atencion']],
   ['ordenes.estatus', 'Cotizaciones y órdenes', 'Actualizar estatus del servicio', 'Marcar si el servicio se realizó, con sus gastos', TODOS],
   ['ordenes.eliminar', 'Cotizaciones y órdenes', 'Eliminar cotizaciones y órdenes', '', ['gerente']],
-  ['cobros.registrar', 'Cuentas por cobrar', 'Registrar cobros', 'Anotar pagos que hizo un cliente', TODOS],
+  ['cobros.registrar', 'Cuentas por cobrar', 'Registrar cobros', 'Anotar pagos que hizo un cliente', TODOS.filter(r => r !== 'costos')],
   ['cobros.confirmar', 'Cuentas por cobrar', 'Confirmar cobros', 'Revisar y confirmar cobros que están «por confirmar»', TODOS.filter(r => r !== 'tecnico')],
   ['cobros.directo', 'Cuentas por cobrar', 'Sus cobros entran ya confirmados', 'Si no lo tiene, lo que registra queda «por confirmar» para que otra persona lo revise', ['gerente', 'atencion']],
   ['cobranza.factura', 'Cuentas por cobrar', 'Crédito y datos de factura', 'Cambiar días de crédito y datos de facturación', TODOS],
   ['cobros.ajustes', 'Cuentas por cobrar', 'Ajustes, descuentos y revisión inicial', '', ['gerente']],
   ['gastos.registrar', 'Cuentas por pagar', 'Registrar gastos de una orden', 'Gastos de un servicio, proveedores y plantillas', TODOS],
+  ['gastos.ver_orden', 'Cuentas por pagar', 'Ver los gastos de sus órdenes', 'Todos los gastos de las órdenes donde es responsable o técnico, aunque los anote otra persona (para saber cuánto le deja la orden)', ['gerente', 'ventas']],
   ['dinero.mover', 'Cuentas por pagar', 'Mover dinero', 'Pagar a proveedores, cancelar cobros, pagos y cuentas, importar cuentas por pagar y compras directas', ['gerente', 'costos']],
   ['compras.gestionar', 'Compras', 'Gestionar compras', 'Aprobar solicitudes, elegir cotización, hacer y recibir órdenes de compra', ['gerente', 'costos']],
   ['compras.aprobar_propias', 'Compras', 'Aprobar sus propias solicitudes', 'Sin esto, una solicitud propia la aprueba otra persona', ['gerente']],
   ['compras.autorizar', 'Compras', 'Autorizar órdenes de compra', 'Autorizar (se vuelven deuda), cancelar autorizadas y quitar documentos', ['gerente']],
   ['reportes.panorama', 'Reportes', 'Panorama general', 'Ventas, cobranza, gastos y utilidad de la empresa', ['gerente']],
-  ['catalogos.editar', 'Catálogos', 'Catálogos compartidos', 'Canales, tipos de cliente, centros de costo, unidades, categorías de gasto y descripción y orden de los servicios (los usan todas las sucursales)', TODOS],
+  ['catalogos.editar', 'Catálogos', 'Catálogos compartidos', 'Canales, tipos de cliente, centros de costo, unidades, categorías de gasto y descripción y orden de los servicios (los usan todas las sucursales)', ['gerente', 'costos']],
   ['personal.ver', 'Personal', 'Ver personal', 'Lista y fichas del personal de su sucursal (sin datos de pago ni expediente)', ['gerente']],
   ['personal.editar', 'Personal', 'Editar personal', 'Altas, cambios, bajas, vacaciones e incidencias', ['gerente']],
   ['personal.sensibles', 'Personal', 'Datos sensibles del personal', 'CLABE, RFC, CURP, NSS, salario, contrato y documentos del expediente', ['gerente']],
@@ -51,8 +52,8 @@ const AREAS = [
 ].map(([clave, nombre, suyo, nada = '']) => ({ clave, nombre, suyo, nada }));
 const NIVELES = ['Nada', 'Lo suyo', 'Toda su sucursal'];
 // Con qué arranca cada rol (decidido con Dirección el 2026-10-19): [ventas, cxc, cxp, compras]. El técnico, en cuentas por
-// cobrar, solo los cobros que él registró (2026-10-21).
-const ALCANCE_INICIAL = { gerente: [2, 2, 2, 2], ventas: [1, 1, 1, 1], atencion: [2, 2, 0, 1], tecnico: [1, 0, 1, 1], costos: [0, 0, 2, 2] };
+// cobrar, solo los cobros que él registró (2026-10-21). Atención, en cuentas por pagar, los gastos que ella anota (2026-10-22).
+const ALCANCE_INICIAL = { gerente: [2, 2, 2, 2], ventas: [1, 1, 1, 1], atencion: [2, 2, 1, 1], tecnico: [1, 0, 1, 1], costos: [0, 0, 2, 2] };
 // Permisos virtuales de las áreas: «X.ver» (ve algo) y «X.sucursal» (ve toda su sucursal).
 const VIRTUALES = AREAS.flatMap(a => [a.clave + '.ver', a.clave + '.sucursal']);
 const virtualesDe = niv => AREAS.flatMap(a => [...(niv[a.clave] >= 1 ? [a.clave + '.ver'] : []), ...(niv[a.clave] >= 2 ? [a.clave + '.sucursal'] : [])]);
@@ -64,6 +65,7 @@ const DEPENDE = {
   'dinero.mover': ['cxp.ver', 'gastos.registrar'],
   'cobros.confirmar': ['cxc.ver'],
   'cobranza.factura': ['cxc.ver'], // crédito y datos de factura: solo quien ve la cobranza
+  'gastos.ver_orden': ['cxp.ver', 'ventas.ver'],
   'cobros.directo': ['cobros.registrar'],
   'cobros.ajustes': ['cobros.registrar', 'cxc.ver'],
   'compras.aprobar_propias': ['compras.gestionar'],
@@ -155,6 +157,17 @@ module.exports = function crearPermisos(db, app, h) {
       sembroAlgo = true; // «Crédito y factura» ahora necesita ver la cobranza: se quita a quien no la ve
       db.prepare('INSERT INTO permisos_sembrados (permiso) VALUES (?)').run('tecnico:solo-sus-cobros');
     }
+    // Decisiones de Dirección (2026-10-22), una sola vez: catálogos compartidos solo Gerente y Compras (además de
+    // Dirección); Atención ve en cuentas por pagar los gastos que ella anota; Compras deja «Registrar cobros» (no abre
+    // órdenes). «Ver los gastos de sus órdenes» lo siembra el catálogo (Ventas y Gerente). Lo que cambie después, se respeta.
+    if (!ya.has('decisiones:2026-10-22')) {
+      const quitar = db.prepare('DELETE FROM rol_permisos WHERE rol = ? AND permiso = ?');
+      for (const r of ['ventas', 'atencion', 'tecnico']) quitar.run(r, 'catalogos.editar');
+      quitar.run('costos', 'cobros.registrar');
+      db.prepare("UPDATE rol_alcances SET nivel = 1 WHERE rol = 'atencion' AND area = 'cxp' AND nivel = 0").run();
+      sembroAlgo = true;
+      db.prepare('INSERT INTO permisos_sembrados (permiso) VALUES (?)').run('decisiones:2026-10-22');
+    }
     // Al sembrar los niveles, lo que quedó sin sentido (p. ej. «Actualizar estatus» para quien ya no ve órdenes) se quita.
     if (sembroAlgo) for (const r of roles) {
       if (r === 'admin') continue;
@@ -198,7 +211,7 @@ module.exports = function crearPermisos(db, app, h) {
     const real = u.rol_real || u.rol;
     let rol = real;
     if (real === 'admin') { const v = req.get('X-Ver-Como'); if (!v || v === 'admin' || !rolValido(v)) return; rol = v; }
-    a.usuarioId = u.id; a.niveles = nivelesDe(rol);
+    a.usuarioId = u.id; a.niveles = nivelesDe(rol); a.gastosOrden = tieneRol(rol, 'gastos.ver_orden');
   }
   // Solo Dirección (lo que abarca todas las sucursales).
   const direccion = req => (req.usuarioSesion?.rol_real || req.usuarioSesion?.rol) === 'admin' && !req.usuarioSesion?.ver_como;
