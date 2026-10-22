@@ -254,19 +254,21 @@ const diasCreditoValidos = v => v === null || v === '' || v === undefined || (Nu
 // subtotal + IVA (public/importes.js). En órdenes con IVA por definir, iva_cent es NULL y el
 // total es el importe tal como se capturó.
 const SQL_TOTAL_ORDEN = 'CAST(ROUND(COALESCE(l.valor, 0) * 100) AS INTEGER) + COALESCE(l.iva_cent, 0)';
+// Los cobros se suman de la tabla completa (main.cobros): el saldo de una orden es el mismo para todos, aunque quien
+// consulta solo vea en las listas los cobros que él registró. Los montos solo salen por rutas que exigen cxc.ver.
 const SQL_CUENTA = `
   SELECT l.id, l.cliente_id, l.created_at, l.fecha_servicio, l.valor, l.dias_credito, l.factura_folio, l.factura_fecha, l.sucursal_id,
     l.factura_total_cent, l.factura_metodo, l.cobranza_por_revisar, l.servicio_id, l.estatus, l.iva_modo, l.iva_tasa, l.iva_cent,
     l.ejecucion, l.realizado_por, l.fecha_realizado, l.equipo, l.operador, l.proyecto, l.notas_iniciales,
-    (SELECT k.fecha || '|' || k.metodo || '|' || COALESCE(k.referencia, '') FROM cobros k WHERE k.lead_id = l.id AND k.cancelado = 0 AND k.tipo <> 'ajuste' ORDER BY k.fecha DESC, k.id DESC LIMIT 1) AS ultimo_pago,
-    (SELECT COUNT(*) FROM cobros k WHERE k.lead_id = l.id AND k.cancelado = 0) AS pagos_n,
+    (SELECT k.fecha || '|' || k.metodo || '|' || COALESCE(k.referencia, '') FROM main.cobros k WHERE k.lead_id = l.id AND k.cancelado = 0 AND k.tipo <> 'ajuste' ORDER BY k.fecha DESC, k.id DESC LIMIT 1) AS ultimo_pago,
+    (SELECT COUNT(*) FROM main.cobros k WHERE k.lead_id = l.id AND k.cancelado = 0) AS pagos_n,
     c.nombre AS cliente_nombre, c.empresa_contacto, c.telefono, c.rfc,
     s.nombre AS servicio_nombre,
     ${SQL_TOTAL_ORDEN} AS total_orden_cent,
     COALESCE(l.factura_total_cent, ${SQL_TOTAL_ORDEN}) AS total_cent,
-    (SELECT COALESCE(SUM(monto_cent), 0) FROM cobros k WHERE k.lead_id = l.id AND k.cancelado = 0) AS cobrado_cent,
-    (SELECT COALESCE(SUM(monto_cent), 0) FROM cobros k WHERE k.lead_id = l.id AND k.cancelado = 0 AND k.tipo <> 'ajuste') AS pagado_real_cent,
-    (SELECT COUNT(*) FROM cobros k WHERE k.lead_id = l.id AND k.cancelado = 0 AND k.confirmado = 0) AS por_confirmar
+    (SELECT COALESCE(SUM(monto_cent), 0) FROM main.cobros k WHERE k.lead_id = l.id AND k.cancelado = 0) AS cobrado_cent,
+    (SELECT COALESCE(SUM(monto_cent), 0) FROM main.cobros k WHERE k.lead_id = l.id AND k.cancelado = 0 AND k.tipo <> 'ajuste') AS pagado_real_cent,
+    (SELECT COUNT(*) FROM main.cobros k WHERE k.lead_id = l.id AND k.cancelado = 0 AND k.confirmado = 0) AS por_confirmar
   FROM leads l
   LEFT JOIN clientes c ON c.id = l.cliente_id
   LEFT JOIN catalogo_servicios s ON s.id = l.servicio_id`;
@@ -332,6 +334,8 @@ module.exports = function finanzas(app, db, h, unicos) {
   ).run(leadId, textoEvento, req.usuarioSesion.nombre, area, req.usuarioSesion.id);
   const fmt = cent => '$' + aPesos(cent).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
+  // ¿Ve las cuentas por cobrar? (al menos la cobranza de sus órdenes). Sin esto solo ve los cobros que él registró.
+  const veCobranza = req => P.puede(req, 'cxc.ver');
   function cuentaDeOrden(leadId) {
     const f = db.prepare(SQL_CUENTA + " WHERE l.id = ?").get(leadId);
     return f ? describirCuenta(f, hoyMexico()) : null;
@@ -423,12 +427,19 @@ module.exports = function finanzas(app, db, h, unicos) {
     res.json(cuentas);
   }));
 
-  // Cuenta de una orden: la puede consultar cualquiera que abra la orden (para registrar pagos en campo).
+  // Cobranza de una orden. Quien ve las cuentas por cobrar ve la cuenta completa; quien no (p. ej. el técnico que cobra
+  // en campo) solo puede registrar un pago y ver los que él registró: sin total, cobrado, saldo ni vencimiento.
   app.get('/api/leads/:id/cobros', h((req, res) => {
-    const lead = db.prepare('SELECT estatus FROM leads WHERE id = ?').get(req.params.id);
+    const lead = db.prepare('SELECT id, estatus, created_at, ejecucion, cliente_id FROM leads WHERE id = ?').get(req.params.id);
     if (!lead || lead.estatus !== 'ganado') return res.status(404).json({ error: 'Solo las órdenes de servicio tienen cobranza' });
+    const puede_registrar = P.puede(req, 'cobros.registrar');
+    if (!veCobranza(req)) {
+      const cliente = db.prepare('SELECT COALESCE(empresa_contacto, nombre) n FROM clientes WHERE id = ?').get(lead.cliente_id)?.n || '';
+      return res.json({ cuenta: null, solo_propios: true, orden: { lead_id: lead.id, folio: folioOS(lead.id, lead.created_at), cliente_nombre: cliente, ejecucion: lead.ejecucion },
+        cobros: cobrosDeOrden(lead.id), puede_registrar, puede_editar_factura: false, puede_operar: false, es_admin: false, directo: P.puede(req, 'cobros.directo') });
+    }
     const cuenta = cuentaDeOrden(req.params.id);
-    res.json({ cuenta, cobros: cobrosDeOrden(req.params.id), puede_editar_factura: P.puede(req, 'cobranza.factura'), puede_operar: P.puede(req, 'cobros.confirmar'), es_admin: P.puede(req, 'cobros.ajustes') });
+    res.json({ cuenta, cobros: cobrosDeOrden(req.params.id), puede_registrar, puede_editar_factura: P.puede(req, 'cobranza.factura'), puede_operar: P.puede(req, 'cobros.confirmar'), es_admin: P.puede(req, 'cobros.ajustes') });
   }));
 
   app.post('/api/leads/:id/cobros', h((req, res) => {
@@ -449,9 +460,10 @@ module.exports = function finanzas(app, db, h, unicos) {
     if (!TIPOS_COBRO.includes(tipo)) return res.status(400).json({ error: 'Tipo de pago inválido' });
     if (tipo === 'ajuste' && !P.puede(req, 'cobros.ajustes')) return res.status(403).json({ error: 'Solo un administrador puede registrar ajustes o descuentos' });
 
-    const cuenta = cuentaDeOrden(lead.id);
+    const cuenta = cuentaDeOrden(lead.id); // con todos los cobros de la orden (SQL_CUENTA), aunque quien registra solo vea los suyos
     const saldoCent = Math.round(cuenta.saldo * 100);
     if (monto > saldoCent) {
+      if (!veCobranza(req)) return res.status(400).json({ error: 'El pago es mayor que lo que falta por cobrar de esta orden. Revisa el monto con administración.' });
       return res.status(400).json({ error: `El pago (${fmt(monto)}) es mayor que el saldo de la orden (${fmt(saldoCent)}). ` + (lead.iva_modo
         ? 'Si la factura salió por otro total (retención o centavos), captúralo primero en Crédito y factura.'
         : 'Si el cliente pagó con IVA, captura primero el total facturado.') });
@@ -471,7 +483,7 @@ module.exports = function finanzas(app, db, h, unicos) {
       bitacora(lead.id, `${tipo === 'anticipo' ? 'Anticipo' : tipo === 'ajuste' ? 'Ajuste' : 'Pago'} registrado: ${fmt(monto)} por ${metodo} (${fecha})${confirmado ? '' : ' · por confirmar'}.`, req, 'cxc');
       return info.lastInsertRowid;
     })();
-    res.status(201).json({ id, confirmado: !!confirmado, cuenta: cuentaDeOrden(lead.id) });
+    res.status(201).json({ id, confirmado: !!confirmado, ...(veCobranza(req) ? { cuenta: cuentaDeOrden(lead.id) } : {}) });
   }));
 
   app.post('/api/finanzas/cobros/:id/confirmar', h((req, res) => {
@@ -512,6 +524,7 @@ module.exports = function finanzas(app, db, h, unicos) {
   // Crédito y datos de la factura de una orden (va aparte de "Guardar cambios" de la orden).
   app.put('/api/leads/:id/facturacion', h((req, res) => {
     if (!permitido(req, res, 'cobranza.factura', 'No tienes permiso para cambiar crédito y factura')) return;
+    if (!permitido(req, res, 'cxc.ver', 'No tienes permiso para cambiar crédito y factura')) return;
     const lead = db.prepare('SELECT * FROM leads WHERE id = ?').get(req.params.id);
     if (!lead || lead.estatus !== 'ganado') return res.status(400).json({ error: 'Solo las órdenes de servicio tienen facturación' });
     const b = req.body;
@@ -914,7 +927,8 @@ module.exports = function finanzas(app, db, h, unicos) {
       eventos.push({ tipo: 'cotizacion', fecha: q.vigencia_hasta, lead_id: q.id,
         titulo: 'Vence ' + require('./sucursales').folio('COT', 'leads', q.id, q.created_at) + ' · ' + (q.cliente || ''), detalle: q.servicio || '' });
     }
-    for (const c of cartera()) {
+    // Los cobros, solo para quien ve las cuentas por cobrar.
+    for (const c of veCobranza(req) ? cartera() : []) {
       // Lo que aún no se debe (orden sin concluir ni facturar) no es un cobro: la orden aparece como «por concluir».
       if (c.saldo <= 0 || c.programada || !c.vence || c.vence < desde || c.vence > hasta) continue;
       eventos.push({ tipo: 'cobro', fecha: c.vence, estado: c.vencida ? 'vencido' : 'por_vencer', lead_id: c.lead_id, monto: c.saldo,
@@ -940,7 +954,7 @@ module.exports = function finanzas(app, db, h, unicos) {
     for (const a of db.prepare(`SELECT h.id, h.lead_id, h.texto, h.fecha_alerta, ${cliente} AS cliente FROM historial h JOIN leads l ON l.id = h.lead_id LEFT JOIN clientes c ON c.id = l.cliente_id
         WHERE h.tipo = 'alerta' AND h.resuelta = 0 AND date(h.fecha_alerta) < ? ORDER BY h.fecha_alerta LIMIT ${TOPE}`).all(hoy))
       eventos.push({ tipo: 'alerta', fecha: String(a.fecha_alerta).slice(0, 10), hora: String(a.fecha_alerta).slice(11, 16), estado: 'vencido', lead_id: a.lead_id, historial_id: a.id, titulo: a.texto, detalle: a.cliente || '' });
-    for (const c of cartera().filter(c => c.saldo > 0 && c.vencida && !c.programada).sort((x, y) => x.vence.localeCompare(y.vence)).slice(0, TOPE))
+    for (const c of (veCobranza(req) ? cartera() : []).filter(c => c.saldo > 0 && c.vencida && !c.programada).sort((x, y) => x.vence.localeCompare(y.vence)).slice(0, TOPE))
       eventos.push({ tipo: 'cobro', fecha: c.vence, estado: 'vencido', lead_id: c.lead_id, monto: c.saldo, titulo: `Cobrar ${c.cliente_nombre || c.empresa_contacto || ''}`, detalle: c.folio + (c.factura_folio ? ' · factura ' + c.factura_folio : '') });
     for (const x of cuentasPorPagar().filter(x => x.saldo > 0 && x.vencida).sort((a, b) => a.fecha_vencimiento.localeCompare(b.fecha_vencimiento)).slice(0, TOPE))
       eventos.push({ tipo: 'pago', fecha: x.fecha_vencimiento, estado: 'vencido', cxp_id: x.id, lead_id: x.lead_id || null, monto: x.saldo, titulo: `Pagar ${x.proveedor_nombre}`, detalle: x.concepto + (x.orden_folio ? ' · ' + x.orden_folio : '') });
@@ -1011,7 +1025,7 @@ module.exports = function finanzas(app, db, h, unicos) {
       const fechaGasto = lead.fecha_servicio && lead.fecha_servicio <= hoy ? lead.fecha_servicio : hoy;
       const vg = validarGastos(b.gastos, lead, fechaGasto, hoy); if (vg.error) return res.status(400).json({ error: vg.error });
       // Avisos: lo que el cliente ya pagó queda a su favor, y los gastos ya cargados siguen en Cuentas por pagar.
-      const cobrado = db.prepare("SELECT COALESCE(SUM(monto_cent), 0) t FROM cobros WHERE lead_id = ? AND cancelado = 0 AND tipo <> 'ajuste'").get(lead.id).t;
+      const cobrado = db.prepare("SELECT COALESCE(SUM(monto_cent), 0) t FROM main.cobros WHERE lead_id = ? AND cancelado = 0 AND tipo <> 'ajuste'").get(lead.id).t;
       const gastos = cuentasPorPagar().filter(x => x.lead_id === lead.id);
       const pendiente = Math.round(gastos.reduce((t, x) => t + x.saldo * 100, 0));
       db.transaction(() => {
@@ -1021,7 +1035,7 @@ module.exports = function finanzas(app, db, h, unicos) {
         if (cobrado) bitacora(lead.id, `El cliente ya pagó ${fmt(cobrado)}: queda a su favor (devolver o aplicar a otro servicio).`, req, 'cxc');
         if (gastos.length) bitacora(lead.id, `Tiene ${gastos.length} gasto(s) en Cuentas por pagar${pendiente ? ' (' + fmt(pendiente) + ' sin pagar)' : ''}: revisa si se cancelan.`, req, 'cxp');
       })();
-      return res.json({ ok: true, gastos: vg.listos.length, a_favor: aPesos(cobrado), gastos_ligados: gastos.length + vg.listos.length, gastos_pendientes: aPesos(pendiente), lead: db.prepare('SELECT * FROM leads WHERE id = ?').get(lead.id) });
+      return res.json({ ok: true, gastos: vg.listos.length, a_favor: veCobranza(req) ? aPesos(cobrado) : undefined, gastos_ligados: gastos.length + vg.listos.length, gastos_pendientes: aPesos(pendiente), lead: db.prepare('SELECT * FROM leads WHERE id = ?').get(lead.id) });
     }
     if (b.estado !== 'realizado') return res.status(400).json({ error: 'Indica si el servicio se realizó o no' });
     const fecha = b.fecha || hoy;
@@ -1480,7 +1494,7 @@ module.exports = function finanzas(app, db, h, unicos) {
     // Para el panorama general de Resultados (server/tablero.js).
     cartera, cuentasPorPagar, CATEGORIAS, categoriaActiva, conSentido,
     // Centavos cobrados (no cancelados) de una orden.
-    cobradoCent: leadId => db.prepare('SELECT COALESCE(SUM(monto_cent), 0) t FROM cobros WHERE lead_id = ? AND cancelado = 0').get(leadId).t,
+    cobradoCent: leadId => db.prepare('SELECT COALESCE(SUM(monto_cent), 0) t FROM main.cobros WHERE lead_id = ? AND cancelado = 0').get(leadId).t,
     // ¿Tiene pagos activos? (no se puede borrar ni reabrir como cotización)
     tieneCobros: leadId => !!db.prepare('SELECT 1 FROM main.cobros WHERE lead_id = ? AND cancelado = 0 LIMIT 1').get(leadId),
     // Al nacer una orden se copian los días de crédito del cliente (si la orden no tiene).

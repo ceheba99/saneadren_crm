@@ -1661,3 +1661,6 @@ body:not(.varias-sucursales) .solo-varias-sucursales{display:none!important;}
   .inicio-cuerpo{padding:0 10px 12px;}
   .inicio-bloque p.inicio-ayuda{margin:-4px 12px 8px;}
 }
+
+/* Cobranza de una orden para quien solo ve sus propios cobros (técnico). */
+.pagos-titulo{margin:14px 0 6px;font-size:14px;}

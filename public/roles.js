@@ -19,6 +19,9 @@ const Roles = (() => {
   const nivelEn = (set, area) => set.has(area + '.sucursal') ? 2 : set.has(area + '.ver') ? 1 : 0;
   // Dependencias de la pantalla: las del servidor más «toda su sucursal» → «al menos lo suyo».
   const dependencias = () => ({ ...(DATOS.dependencias || {}), ...Object.fromEntries((DATOS.areas || []).map(a => [a.clave + '.sucursal', [a.clave + '.ver']])) });
+  // Cuentas por cobrar en «Nada» con «Registrar cobros» (y órdenes que abrir): ve solo los cobros que él registra (el
+  // técnico que cobra en campo).
+  const etiquetaNivel = (area, i, set) => (area === 'cxc' && i === 0 && set.has('cobros.registrar') && set.has('ventas.ver') ? 'Solo lo que él registra' : DATOS.niveles[i]);
   const nombreDe = c => {
     const p = DATOS.catalogo.find(x => x.clave === c); if (p) return p.nombre;
     const [area, tipo] = c.split('.'), a = (DATOS.areas || []).find(x => x.clave === area);
@@ -47,12 +50,12 @@ const Roles = (() => {
     // Qué ve: un selector por área y rol.
     let filas = '<tr class="rp-seccion"><th scope="rowgroup" colspan="' + cols + '">Qué ve (dentro de sus sucursales)</th></tr>';
     for (const a of DATOS.areas || []) {
-      filas += '<tr><th scope="row" class="rp-permiso"><span>' + esc(a.nombre) + '</span><small>Lo suyo: ' + esc(a.suyo) + '</small></th>'
+      filas += '<tr><th scope="row" class="rp-permiso"><span>' + esc(a.nombre) + '</span><small>Lo suyo: ' + esc(a.suyo) + '</small>' + (a.nada ? '<small>Nada: ' + esc(a.nada) + '</small>' : '') + '</th>'
         + roles.map(r => {
           if (!r.editable) return '<td class="rp-celda"><span class="rp-todo">Todo</span></td>';
           const n = nivelEn(permisosDe(r), a.clave);
           return '<td class="rp-celda"><select class="rp-nivel" data-rp-nivel-rol="' + esc(r.clave) + '" data-rp-area="' + esc(a.clave) + '" aria-label="' + esc(r.nombre + ': qué ve en ' + a.nombre) + '">'
-            + DATOS.niveles.map((t, i) => '<option value="' + i + '"' + (i === n ? ' selected' : '') + '>' + esc(t) + '</option>').join('') + '</select></td>';
+            + DATOS.niveles.map((t, i) => '<option value="' + i + '"' + (i === n ? ' selected' : '') + '>' + esc(etiquetaNivel(a.clave, i, permisosDe(r))) + '</option>').join('') + '</select></td>';
         }).join('') + '</tr>';
     }
     // Qué hace: casillas.
@@ -94,7 +97,10 @@ const Roles = (() => {
   function reflejar(rolClave, arrastrados) {
     const set = cambios.get(rolClave);
     document.querySelectorAll(`[data-rp-rol="${CSS.escape(rolClave)}"]`).forEach(c => { c.checked = set.has(c.dataset.rpPermiso); });
-    document.querySelectorAll(`[data-rp-nivel-rol="${CSS.escape(rolClave)}"]`).forEach(s => { s.value = String(nivelEn(set, s.dataset.rpArea)); });
+    document.querySelectorAll(`[data-rp-nivel-rol="${CSS.escape(rolClave)}"]`).forEach(s => {
+      s.value = String(nivelEn(set, s.dataset.rpArea));
+      [...s.options].forEach(o => { o.textContent = etiquetaNivel(s.dataset.rpArea, Number(o.value), set); });
+    });
     const visibles = arrastrados.filter(([, p]) => !esVirtual(p) || !p.endsWith('.ver') || !set.has(p.replace('.ver', '.sucursal')));
     if (visibles.length) toast(visibles.map(([s, p]) => (s === '+' ? 'También se marcó: ' : 'También se quitó: ') + nombreDe(p)).join(' · '));
     const n = pendientes().length, b = $('rp-guardar');

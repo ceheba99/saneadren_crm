@@ -126,8 +126,8 @@ const CAMBIOS_ESPERADOS = [
   let ventas = permisosDe('ventas');
   [s, j] = await pedir('PUT', '/roles/ventas/permisos', A, { permisos: ventas, alcances: { cxc: 0 } });
   revisa(s === 400 && /necesita/.test(j.error), 'no se le quita «Ver cuentas por cobrar» dejando «Confirmar cobros» (lo necesita)', j);
-  [s, j] = await pedir('PUT', '/roles/ventas/permisos', A, { permisos: ventas.filter(c => c !== 'cobros.confirmar'), alcances: { cxc: 0 } });
-  revisa(s === 200 && j.cambios === 2, 'Dirección le quita a ventas «Ver cuentas por cobrar» (y «Confirmar cobros»)', j);
+  [s, j] = await pedir('PUT', '/roles/ventas/permisos', A, { permisos: ventas.filter(c => c !== 'cobros.confirmar' && c !== 'cobranza.factura'), alcances: { cxc: 0 } });
+  revisa(s === 200 && j.cambios === 3, 'Dirección le quita a ventas «Ver cuentas por cobrar» (y lo que la necesita: confirmar cobros, crédito y factura)', j);
   [s] = await pedir('GET', '/finanzas/cartera', T.ventas); revisa(s === 403, 'ventas ya no ve cuentas por cobrar (sin volver a entrar)');
   [s, j] = await pedir('GET', '/permisos/mios', T.ventas); revisa(!j.permisos.includes('cxc.ver') && j.todas.includes('cxc.ver'), 'la pantalla de ventas sabe que no lo tiene (para esconderlo)');
   [s] = await pedir('GET', '/finanzas/cartera', T.atencion); revisa(s === 200, 'atención sigue viéndolas (es otro rol)');
@@ -188,7 +188,8 @@ const CAMBIOS_ESPERADOS = [
   const COMO = { 'X-Ver-Como': 'tecnico' };
   [s, j] = await pedir('GET', '/permisos/mios', A, undefined, COMO); revisa(j.rol === 'tecnico' && j.ver_como === 'tecnico', 'Dirección ve el sistema con los permisos del técnico');
   [s] = await pedir('GET', '/finanzas/revision-inicial', A, undefined, COMO); revisa(s === 403, 'como técnico, lo que el técnico no puede se niega');
-  [s] = await pedir('GET', '/finanzas/cartera', A, undefined, COMO); revisa(s === 200, 'y lo que sí puede, se ve');
+  [s] = await pedir('GET', '/finanzas/cxp', A, undefined, COMO); revisa(s === 200, 'y lo que sí puede (sus gastos), se ve');
+  [s] = await pedir('GET', '/finanzas/cartera', A, undefined, COMO); revisa(s === 403, 'como técnico no ve la cartera (solo los cobros que él registra)');
   [s, j] = await pedir('POST', '/servicios', A, { nombre: 'No se debe guardar' }, COMO); revisa(s === 403 && j.codigo === 'VER_COMO', 'en esa vista no se guarda nada', j);
   [s] = await pedir('GET', '/permisos/mios', T.ventas, undefined, COMO); revisa(s === 403, 'solo Dirección puede ver como otro rol');
   [s] = await pedir('GET', '/permisos/mios', A, undefined, { 'X-Ver-Como': 'admin' }); revisa(s === 400, 'no hay «ver como Dirección»');
@@ -206,6 +207,28 @@ const CAMBIOS_ESPERADOS = [
   revisa(!ventasDespues.includes('cobranza.factura') && ventasDespues.includes('cobros.ajustes'), 'tras reiniciar, los permisos siguen como los dejó Dirección (no regresan los de fábrica)');
   const d = new DatabaseSync(DB); const sql = d.prepare("SELECT sql FROM sqlite_master WHERE name = 'usuarios'").get().sql; d.close();
   revisa(!/CHECK\s*\(\s*rol\s+IN/i.test(sql) && /'costos'/.test(sql) && /'gerente'/.test(sql), 'la tabla de usuarios ya no limita la lista de roles (y el código anterior la sigue reconociendo)');
+
+  // Técnico (2026-10-21): una base con lo anterior (veía la cobranza de sus órdenes y confirmaba cobros) pasa, UNA sola
+  // vez, a «solo los cobros que él registra». Los demás roles no cambian; lo que decida después Dirección se respeta.
+  const rolDe = async (t, clave) => (await pedir('GET', '/permisos', t))[1].roles.find(r => r.clave === clave);
+  const ventasPrevias = await rolDe(A2, 'ventas');
+  await parar();
+  { const d2 = new DatabaseSync(DB);
+    d2.prepare("UPDATE rol_alcances SET nivel = 1 WHERE rol = 'tecnico' AND area = 'cxc'").run();
+    for (const p of ['cobros.confirmar', 'cobranza.factura']) d2.prepare('INSERT OR IGNORE INTO rol_permisos (rol, permiso) VALUES (?, ?)').run('tecnico', p);
+    d2.prepare("DELETE FROM permisos_sembrados WHERE permiso = 'tecnico:solo-sus-cobros'").run(); d2.close(); }
+  await arrancar(NUEVO, DB);
+  const A3 = await login('admin', ADMIN.password);
+  let tecMig = await rolDe(A3, 'tecnico');
+  revisa(tecMig.alcances.cxc === 0 && tecMig.permisos.includes('cobros.registrar') && !tecMig.permisos.includes('cobros.confirmar') && !tecMig.permisos.includes('cobranza.factura'),
+    'base anterior: el técnico pasa a «solo los cobros que él registra» y deja de confirmar cobros y de cambiar crédito y factura', { alcances: tecMig.alcances, permisos: tecMig.permisos });
+  const ventasDesp = await rolDe(A3, 'ventas');
+  revisa(JSON.stringify(ventasDesp.alcances) === JSON.stringify(ventasPrevias.alcances) && [...ventasDesp.permisos].sort().join() === [...ventasPrevias.permisos].sort().join(), 'los demás roles quedan igual', { antes: ventasPrevias.permisos, despues: ventasDesp.permisos });
+  [s, j] = await pedir('PUT', '/roles/tecnico/permisos', A3, { permisos: tecMig.permisos.filter(c => !c.includes('.ver') && !c.includes('.sucursal')), alcances: { cxc: 1 } });
+  revisa(s === 200, 'Dirección le puede devolver al técnico la cobranza de sus órdenes', j);
+  await parar(); await arrancar(NUEVO, DB);
+  tecMig = await rolDe(await login('admin', ADMIN.password), 'tecnico');
+  revisa(tecMig.alcances.cxc === 1, 'y tras reiniciar se respeta (el ajuste fue una sola vez)', tecMig.alcances);
   await parar();
 
   console.log(`\n${n - malos.length}/${n} correctas`);

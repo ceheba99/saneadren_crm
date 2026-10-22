@@ -68,6 +68,19 @@ const RANGO = 'desde=2020-01-01&hasta=' + dia(60);
   // Cobros: Ana (atención) en ambas órdenes; Raúl en campo en la suya.
   for (const [lead, monto] of [[L2, 1013.29], [L3, 1517.83]]) { [s, j] = await pedir('POST', '/leads/' + lead.id + '/cobros', N, { monto, metodo: 'transferencia', referencia: 'CobroAna' + lead.id }); revisa(s === 201, 'Ana registra un cobro en ' + lead.id, j); }
   [s, j] = await pedir('POST', '/leads/' + L2.id + '/cobros', R, { monto: 503.61, metodo: 'efectivo', referencia: 'CobroRaulGranate' }); revisa(s === 201 && j.confirmado === false, 'Raúl registra un cobro en campo (queda por confirmar)', j);
+  revisa(j.cuenta === undefined, 'al registrarlo no recibe la cuenta de la orden (total ni saldo)', j);
+  // El técnico, en cuentas por cobrar, solo ve los cobros que él registró (2026-10-21): sin total, saldo ni vencido.
+  [s, j] = await pedir('GET', '/leads/' + L2.id + '/cobros', R);
+  revisa(s === 200 && j.solo_propios === true && j.cuenta === null && j.cobros.length === 1 && j.cobros[0].referencia === 'CobroRaulGranate' && j.puede_registrar === true && j.puede_operar === false,
+    'Raúl abre la cobranza de su orden: solo su cobro, sin la cuenta', j);
+  [s, j] = await pedir('POST', '/leads/' + L2.id + '/cobros', R, { monto: 99999, metodo: 'efectivo' });
+  revisa(s === 400 && !/\$|\d{3}/.test(j.error), 'si el monto pasa lo que falta por cobrar, el aviso no dice cuánto falta', j);
+  [s, j] = await pedir('PUT', '/leads/' + L2.id + '/facturacion', R, { dias_credito: 30 }); revisa(s === 403, 'Raúl no cambia crédito ni factura', [s, j]);
+  [s, j] = await pedir('GET', '/finanzas/por-confirmar', R); revisa(s === 403, 'Raúl no confirma cobros (no ve la lista por confirmar)', s);
+  [s, j] = await pedir('GET', '/leads/' + L2.id + '/cobros', L);
+  revisa(s === 200 && j.cuenta && j.cobros.length === 2 && j.cuenta.cobrado === 1516.9, 'Laura (cobranza de sus órdenes) ve la cuenta completa con los dos cobros', j.cuenta);
+  [s, j] = await pedir('GET', '/calendario?desde=' + dia(-40) + '&hasta=' + dia(60), R);
+  revisa(s === 200 && !j.eventos.some(e => e.tipo === 'cobro') && j.eventos.some(e => e.tipo === 'orden' && e.lead_id === L2.id), 'en el calendario de Raúl está su orden pero ningún cobro', j.eventos?.map(e => e.tipo));
   // Gastos: Raúl al marcar realizado; Laura uno en su orden; Isaac uno ligado a la orden de Beto (sin ver sus ventas).
   [s, j] = await pedir('POST', '/leads/' + L2.id + '/ejecucion', R, { estado: 'realizado', fecha: dia(-1), gastos: [{ proveedor_id: prov.id, categoria: 'combustible', concepto: 'Diesel GastoAmatista', total: 813.37 }] });
   revisa(s === 200, 'Raúl marca su orden como realizada con un gasto', j);
@@ -116,7 +129,7 @@ const RANGO = 'desde=2020-01-01&hasta=' + dia(60);
   const ESPERADO = {
     Laura: ['Zafiro', 'Rubi', 'Cuarzo', 'SolPerla', '$venta-Zafiro', '$venta-Rubi', '$cobro-Ana-Rubi', '$cobro-Raul', '$gasto-Cuarzo'], // lo suyo y la cobranza de sus órdenes
     Beto: ['Topacio', 'Onix', '$venta-Topacio', '$venta-Onix', '$cobro-Ana-Topacio'],
-    Raul: ['Rubi', 'Amatista', 'SolCoral', 'Granate', '$venta-Rubi', '$cobro-Ana-Rubi', '$cobro-Raul', '$gasto-Amatista'], // la orden asignada y su cobranza, su gasto, su solicitud
+    Raul: ['Rubi', 'Amatista', 'SolCoral', 'Granate', '$venta-Rubi', '$cobro-Raul', '$gasto-Amatista'], // la orden asignada, solo el cobro que él registró, su gasto, su solicitud
     Ana: ['Zafiro', 'Rubi', 'Topacio', 'Onix', 'Granate', '$venta-Zafiro', '$venta-Rubi', '$venta-Topacio', '$venta-Onix', '$cobro-Ana-Rubi', '$cobro-Ana-Topacio', '$cobro-Raul'], // nada de proveedores
     Isaac: ['Rubi', 'Topacio', 'Amatista', 'Cuarzo', 'Jade', 'SolPerla', 'SolCoral', '$gasto-Amatista', '$gasto-Cuarzo', '$gasto-Jade'], // folio y cliente (sin montos de venta), todo CxP y compras
     Monica: Object.keys(MARCAS).filter(m => !/Jaspe/.test(m)),

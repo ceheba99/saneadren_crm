@@ -75,17 +75,19 @@ const Finanzas = (() => {
   async function abrirCobro(leadId, despues) {
     let r;
     try { r = await api('/leads/' + Number(leadId) + '/cobros').then(json); } catch (err) { toast('No se pudo abrir: ' + err.message); return; }
-    const c = r.cuenta;
+    // Sin ver la cobranza (r.solo_propios) no hay total ni saldo: se captura lo que pagó el cliente.
+    const c = r.cuenta || { ...r.orden, saldo: null };
     COBRO = { leadId: Number(leadId), despues };
     $('cobro-titulo').textContent = 'Registrar pago · ' + folioOS(c);
-    $('cobro-info').textContent = `${c.cliente_nombre || 'Cliente'} · Total ${formatoMoneda(c.total)} · Saldo ${formatoMoneda(c.saldo)}`;
+    $('cobro-info').textContent = r.cuenta ? `${c.cliente_nombre || 'Cliente'} · Total ${formatoMoneda(c.total)} · Saldo ${formatoMoneda(c.saldo)}` : (c.cliente_nombre || 'Cliente'); // sin HTML
     $('cobro-monto').value = c.saldo > 0 ? c.saldo.toFixed(2) : '';
     pintarMetodos('cobro-metodos', 'transferencia');
     $('cobro-fecha').value = hoy(); $('cobro-fecha').max = hoy();
     $('cobro-tipo').value = ''; $('cobro-referencia').value = ''; $('cobro-notas').value = '';
-    $('cobro-aviso').textContent = c.saldo <= 0 ? 'Esta orden ya está pagada.'
+    const pagada = c.saldo !== null && c.saldo <= 0;
+    $('cobro-aviso').textContent = pagada ? 'Esta orden ya está pagada.'
       : (cobroQuedaConfirmado() ? '' : 'Quedará "por confirmar" hasta que alguien verifique que el dinero llegó.');
-    $('cobro-guardar').disabled = c.saldo <= 0;
+    $('cobro-guardar').disabled = pagada;
     abrirVentana('overlay-cobro');
     setTimeout(() => $('cobro-monto').select(), 50);
   }
@@ -97,7 +99,7 @@ const Finanzas = (() => {
     const r = await enviar('/leads/' + COBRO.leadId + '/cobros', 'POST', cuerpo);
     if (!r) return;
     $('overlay-cobro').classList.remove('mostrar');
-    toast(r.confirmado ? `Pago guardado. Saldo: ${formatoMoneda(r.cuenta.saldo)}` : 'Pago guardado; queda por confirmar por administración');
+    toast(!r.confirmado ? 'Pago guardado; queda por confirmar por administración' : r.cuenta ? `Pago guardado. Saldo: ${formatoMoneda(r.cuenta.saldo)}` : 'Pago guardado');
     const despues = COBRO.despues; COBRO = null;
     if (despues) await despues();
   }));
@@ -123,6 +125,7 @@ const Finanzas = (() => {
     try { r = await api('/leads/' + Number(lead.id) + '/cobros').then(json); }
     catch (err) { cont.innerHTML = `<div class="aviso-error-carga" role="alert"><p>No se pudo cargar la cobranza: ${esc(err.message)}</p></div>`; return; }
     if (ORDEN_ACTUAL !== lead.id) return; // se abrió otra ficha mientras cargaba
+    if (r.solo_propios) { cont.innerHTML = cobranzaSoloPropios(r); return; }
     const c = r.cuenta;
     const fact = r.puede_editar_factura ? `
       <details class="cobranza-facturacion"><summary>Crédito y factura</summary>
@@ -155,6 +158,23 @@ const Finanzas = (() => {
       ${desgloseIva(c)}
       ${c.ejecucion === 'no_realizado' ? '' : `<button type="button" class="btn btn-primario" data-cobranza="registrar" ${c.saldo <= 0 ? 'disabled' : ''}>💵 Registrar pago</button>`}
       ${fact}
+      <div class="pagos-lista">${pagos}</div>`;
+  }
+  // Quien no ve las cuentas por cobrar (p. ej. el técnico): registra lo que cobró en campo y ve solo esos pagos, con su
+  // estado. Sin total, cobrado, saldo ni vencimiento.
+  const detalleCobro = k => { const t = [k.referencia ? 'Ref. ' + k.referencia : '', k.notas || ''].filter(Boolean).join(' · '); return t ? '<small>' + esc(t) + '</small>' : ''; };
+  function cobranzaSoloPropios(r) {
+    const pagos = r.cobros.length ? r.cobros.map(k => `
+      <div class="pago-fila${k.cancelado ? ' cancelado' : ''}">
+        <div><b>${formatoMoneda(k.monto)}</b> · ${esc(NOMBRE_METODO[k.metodo] || k.metodo)} · ${esc(fechaTxt(k.fecha))}${k.tipo !== 'pago' ? ' · ' + esc(k.tipo) : ''}
+          ${detalleCobro(k)}
+          ${k.cancelado ? `<small class="motivo">Cancelado: ${esc(k.motivo_cancelacion || '')}</small>` : `<span class="estado-cxc ${k.confirmado ? 'pagada' : 'por-confirmar'}">${k.confirmado ? 'Confirmado' : 'Por confirmar'}</span>`}
+        </div>
+      </div>`).join('') : '<p class="util-45">No has registrado pagos en esta orden.</p>';
+    const puede = r.puede_registrar && r.orden.ejecucion !== 'no_realizado';
+    return `<p class="ayuda">Aquí anotas lo que te pagó el cliente; administración lo confirma. Solo ves los pagos que tú registraste.</p>
+      ${puede ? '<button type="button" class="btn btn-primario" data-cobranza="registrar">💵 Registrar pago</button>' : ''}
+      <h4 class="pagos-titulo">Pagos que registraste</h4>
       <div class="pagos-lista">${pagos}</div>`;
   }
   $('cobranza-orden').addEventListener('click', async e => {

@@ -25,7 +25,7 @@ const CATALOGO = [
   ['ordenes.estatus', 'Cotizaciones y órdenes', 'Actualizar estatus del servicio', 'Marcar si el servicio se realizó, con sus gastos', TODOS],
   ['ordenes.eliminar', 'Cotizaciones y órdenes', 'Eliminar cotizaciones y órdenes', '', ['gerente']],
   ['cobros.registrar', 'Cuentas por cobrar', 'Registrar cobros', 'Anotar pagos que hizo un cliente', TODOS],
-  ['cobros.confirmar', 'Cuentas por cobrar', 'Confirmar cobros', 'Revisar y confirmar cobros que están «por confirmar»', TODOS],
+  ['cobros.confirmar', 'Cuentas por cobrar', 'Confirmar cobros', 'Revisar y confirmar cobros que están «por confirmar»', TODOS.filter(r => r !== 'tecnico')],
   ['cobros.directo', 'Cuentas por cobrar', 'Sus cobros entran ya confirmados', 'Si no lo tiene, lo que registra queda «por confirmar» para que otra persona lo revise', ['gerente', 'atencion']],
   ['cobranza.factura', 'Cuentas por cobrar', 'Crédito y datos de factura', 'Cambiar días de crédito y datos de facturación', TODOS],
   ['cobros.ajustes', 'Cuentas por cobrar', 'Ajustes, descuentos y revisión inicial', '', ['gerente']],
@@ -44,13 +44,14 @@ const CATALOGO = [
 // Áreas y lo que ve cada rol en ellas: 0 nada, 1 lo suyo, 2 toda su sucursal (Dirección: todo).
 const AREAS = [
   ['ventas', 'Contactos, cotizaciones y órdenes', 'sus clientes y las órdenes donde es responsable o técnico asignado'],
-  ['cxc', 'Cuentas por cobrar', 'la cobranza de sus órdenes'],
+  ['cxc', 'Cuentas por cobrar', 'la cobranza de sus órdenes', 'si puede registrar cobros, solo ve los que él registró (sin saldos ni vencidos)'],
   ['cxp', 'Cuentas por pagar', 'los gastos y facturas que él registró'],
   ['compras', 'Solicitudes y órdenes de compra', 'lo que él pidió'],
-].map(([clave, nombre, suyo]) => ({ clave, nombre, suyo }));
+].map(([clave, nombre, suyo, nada = '']) => ({ clave, nombre, suyo, nada }));
 const NIVELES = ['Nada', 'Lo suyo', 'Toda su sucursal'];
-// Con qué arranca cada rol (decidido con Dirección el 2026-10-19): [ventas, cxc, cxp, compras].
-const ALCANCE_INICIAL = { gerente: [2, 2, 2, 2], ventas: [1, 1, 1, 1], atencion: [2, 2, 0, 1], tecnico: [1, 1, 1, 1], costos: [0, 0, 2, 2] };
+// Con qué arranca cada rol (decidido con Dirección el 2026-10-19): [ventas, cxc, cxp, compras]. El técnico, en cuentas por
+// cobrar, solo los cobros que él registró (2026-10-21).
+const ALCANCE_INICIAL = { gerente: [2, 2, 2, 2], ventas: [1, 1, 1, 1], atencion: [2, 2, 0, 1], tecnico: [1, 0, 1, 1], costos: [0, 0, 2, 2] };
 // Permisos virtuales de las áreas: «X.ver» (ve algo) y «X.sucursal» (ve toda su sucursal).
 const VIRTUALES = AREAS.flatMap(a => [a.clave + '.ver', a.clave + '.sucursal']);
 const virtualesDe = niv => AREAS.flatMap(a => [...(niv[a.clave] >= 1 ? [a.clave + '.ver'] : []), ...(niv[a.clave] >= 2 ? [a.clave + '.sucursal'] : [])]);
@@ -61,6 +62,7 @@ const DEPENDE = {
   'prospeccion.ver': ['ventas.ver'],
   'dinero.mover': ['cxp.ver', 'gastos.registrar'],
   'cobros.confirmar': ['cxc.ver'],
+  'cobranza.factura': ['cxc.ver'], // crédito y datos de factura: solo quien ve la cobranza
   'cobros.directo': ['cobros.registrar'],
   'cobros.ajustes': ['cobros.registrar', 'cxc.ver'],
   'compras.aprobar_propias': ['compras.gestionar'],
@@ -133,6 +135,16 @@ module.exports = function crearPermisos(db, app, h) {
         if (v && v.nivel >= 1) dar.run(r, 'prospeccion.ver');
       }
       db.prepare('INSERT INTO permisos_sembrados (permiso) VALUES (?)').run('prospeccion:otros');
+    }
+    // Técnico (2026-10-21, acordado con Dirección): en cuentas por cobrar solo los cobros que él registra, sin saldos ni
+    // vencidos, y no confirma cobros de otros. Una sola vez; después Dirección lo cambia en Roles y permisos.
+    if (!ya.has('tecnico:solo-sus-cobros')) {
+      if (roles.has('tecnico')) {
+        db.prepare("UPDATE rol_alcances SET nivel = 0 WHERE rol = 'tecnico' AND area = 'cxc' AND nivel = 1").run();
+        db.prepare("DELETE FROM rol_permisos WHERE rol = 'tecnico' AND permiso = 'cobros.confirmar'").run();
+      }
+      sembroAlgo = true; // «Crédito y factura» ahora necesita ver la cobranza: se quita a quien no la ve
+      db.prepare('INSERT INTO permisos_sembrados (permiso) VALUES (?)').run('tecnico:solo-sus-cobros');
     }
     // Al sembrar los niveles, lo que quedó sin sentido (p. ej. «Actualizar estatus» para quien ya no ve órdenes) se quita.
     if (sembroAlgo) for (const r of roles) {
