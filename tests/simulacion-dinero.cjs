@@ -224,6 +224,20 @@ const HOY = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Mexico_City' }
   [s, j] = await pedir('POST', '/leads/' + ord1.id + '/ejecucion', A, { estado: 'no_realizado', motivo: 'xx' });
   revisa(s === 400, 'motivo demasiado corto se rechaza');
 
+  sec('9b. Calendario: lo atrasado (vista «Hoy»)');
+  [s, j] = await alta(C3, { partidas_json: P(partida(2500)), estatus: 'ganado', fecha_servicio: sumarDias(HOY, -3) });
+  const sinConcluir = j;
+  [s, j] = await pedir('GET', '/calendario/atrasados', A);
+  const atr = j.eventos || [];
+  revisa(s === 200 && atr.some(e => e.tipo === 'cobro' && e.lead_id === ord4.id && e.estado === 'vencido' && e.monto === 3300), 'atrasado: el cobro vencido con su saldo', atr.filter(e => e.lead_id === ord4.id));
+  revisa(atr.some(e => e.tipo === 'orden' && e.lead_id === sinConcluir.id && e.estado === 'por_concluir' && e.fecha === sumarDias(HOY, -3)), 'atrasado: la orden con fecha pasada sin concluir', atr.filter(e => e.lead_id === sinConcluir.id));
+  revisa(!atr.some(e => e.tipo === 'cobro' && e.lead_id === sinConcluir.id), 'atrasado: una orden sin concluir ni facturar no es un cobro');
+  revisa(!atr.some(e => e.tipo === 'orden' && e.lead_id === ord4.id), 'atrasado: la orden ya realizada no sale como por concluir');
+  revisa(atr.every(e => e.fecha < j.hoy), 'atrasado: solo lo de días anteriores a hoy', atr.filter(e => e.fecha >= j.hoy));
+  const cal2 = (await pedir('GET', `/calendario?desde=${sumarDias(HOY, -45)}&hasta=${sumarDias(HOY, 40)}`, A))[1];
+  revisa(cal2.eventos.some(e => e.tipo === 'orden' && e.lead_id === sinConcluir.id && e.estado === 'por_concluir') && !cal2.eventos.some(e => e.tipo === 'cobro' && e.lead_id === sinConcluir.id),
+    'calendario: la orden sin concluir sale como orden por concluir, no como cobro', cal2.eventos.filter(e => e.lead_id === sinConcluir.id));
+
   sec('10. Consistencia general');
   const todas = await cartera();
   revisa(todas.every(c => c.saldo >= 0), 'ningún saldo negativo', todas.filter(c => c.saldo < 0));

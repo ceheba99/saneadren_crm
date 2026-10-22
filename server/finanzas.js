@@ -915,7 +915,8 @@ module.exports = function finanzas(app, db, h, unicos) {
         titulo: 'Vence ' + require('./sucursales').folio('COT', 'leads', q.id, q.created_at) + ' · ' + (q.cliente || ''), detalle: q.servicio || '' });
     }
     for (const c of cartera()) {
-      if (c.saldo <= 0 || !c.vence || c.vence < desde || c.vence > hasta) continue;
+      // Lo que aún no se debe (orden sin concluir ni facturar) no es un cobro: la orden aparece como «por concluir».
+      if (c.saldo <= 0 || c.programada || !c.vence || c.vence < desde || c.vence > hasta) continue;
       eventos.push({ tipo: 'cobro', fecha: c.vence, estado: c.vencida ? 'vencido' : 'por_vencer', lead_id: c.lead_id, monto: c.saldo,
         titulo: `Cobrar ${c.cliente_nombre || c.empresa_contacto || ''}`, detalle: c.folio + (c.factura_folio ? ' · factura ' + c.factura_folio : '') });
     }
@@ -925,6 +926,26 @@ module.exports = function finanzas(app, db, h, unicos) {
         titulo: `Pagar ${x.proveedor_nombre}`, detalle: x.concepto + (x.orden_folio ? ' · ' + x.orden_folio : '') });
     }
     res.json({ desde, hasta, hoy, eventos });
+  }));
+  // Lo atrasado (vista «Hoy» del calendario): lo que quedó pendiente de días anteriores. Órdenes con fecha pasada sin
+  // concluir, avisos vencidos sin resolver, cobros y pagos vencidos. Cada lista con un tope; lo más viejo primero.
+  app.get('/api/calendario/atrasados', h((req, res) => {
+    const hoy = hoyMexico(), eventos = [], TOPE = 60;
+    const cliente = 'COALESCE(c.empresa_contacto, c.nombre, l.empresa_contacto, l.nombre)';
+    for (const o of db.prepare(`SELECT l.id, l.created_at, l.fecha_servicio, l.equipo, l.operador, ${cliente} AS cliente, s.nombre AS servicio
+        FROM leads l LEFT JOIN clientes c ON c.id = l.cliente_id LEFT JOIN catalogo_servicios s ON s.id = l.servicio_id
+        WHERE l.estatus = 'ganado' AND l.ejecucion IS NULL AND l.fecha_servicio < ? ORDER BY l.fecha_servicio, l.id LIMIT ${TOPE}`).all(hoy))
+      eventos.push({ tipo: 'orden', fecha: o.fecha_servicio, estado: 'por_concluir', lead_id: o.id, titulo: `${folioOS(o.id, o.created_at)} · ${o.cliente || 'Sin cliente'}`,
+        detalle: [o.servicio, o.equipo ? 'Unidad ' + o.equipo : '', o.operador].filter(Boolean).join(' · ') });
+    for (const a of db.prepare(`SELECT h.id, h.lead_id, h.texto, h.fecha_alerta, ${cliente} AS cliente FROM historial h JOIN leads l ON l.id = h.lead_id LEFT JOIN clientes c ON c.id = l.cliente_id
+        WHERE h.tipo = 'alerta' AND h.resuelta = 0 AND date(h.fecha_alerta) < ? ORDER BY h.fecha_alerta LIMIT ${TOPE}`).all(hoy))
+      eventos.push({ tipo: 'alerta', fecha: String(a.fecha_alerta).slice(0, 10), hora: String(a.fecha_alerta).slice(11, 16), estado: 'vencido', lead_id: a.lead_id, historial_id: a.id, titulo: a.texto, detalle: a.cliente || '' });
+    for (const c of cartera().filter(c => c.saldo > 0 && c.vencida && !c.programada).sort((x, y) => x.vence.localeCompare(y.vence)).slice(0, TOPE))
+      eventos.push({ tipo: 'cobro', fecha: c.vence, estado: 'vencido', lead_id: c.lead_id, monto: c.saldo, titulo: `Cobrar ${c.cliente_nombre || c.empresa_contacto || ''}`, detalle: c.folio + (c.factura_folio ? ' · factura ' + c.factura_folio : '') });
+    for (const x of cuentasPorPagar().filter(x => x.saldo > 0 && x.vencida).sort((a, b) => a.fecha_vencimiento.localeCompare(b.fecha_vencimiento)).slice(0, TOPE))
+      eventos.push({ tipo: 'pago', fecha: x.fecha_vencimiento, estado: 'vencido', cxp_id: x.id, lead_id: x.lead_id || null, monto: x.saldo, titulo: `Pagar ${x.proveedor_nombre}`, detalle: x.concepto + (x.orden_folio ? ' · ' + x.orden_folio : '') });
+    eventos.sort((a, b) => (a.fecha + (a.hora || '')).localeCompare(b.fecha + (b.hora || '')));
+    res.json({ hoy, eventos });
   }));
 
   // ===================== Ejecución del servicio =====================

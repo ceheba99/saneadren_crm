@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Saneadren · Cotizaciones y Servicios</title>
-<link rel="stylesheet" href="styles.css?v=art2">
+<link rel="stylesheet" href="styles.css?v=ini5">
 <link rel="stylesheet" href="servicios-tabla.css">
 <link rel="stylesheet" href="flujo.css?v=cel1">
 </head>
@@ -71,48 +71,51 @@
   <section class="vista activa" id="vista-inicio">
     <div class="inicio-saludo">
       <h2>Lo que necesita atención hoy</h2>
-      <p class="ayuda">Tus pendientes en un solo lugar: avisos y recordatorios que vencen hoy, cotizaciones sin movimiento y recompras. Cada tarjeta te lleva directo al registro.</p>
+      <p class="ayuda">Tus pendientes en un solo lugar. Toca un número para ir a su ficha; cada ficha se pliega desde su título y recuerda cómo la dejaste.</p>
     </div>
+    <div class="inicio-resumen" id="inicio-resumen" aria-label="Resumen de pendientes"></div>
 
-    <div class="inicio-bloque inicio-bloque-dinero solo-cobranza perm-cxc-ver">
+    <div class="inicio-rejilla" id="inicio-rejilla">
+    <div class="inicio-bloque inicio-bloque-dinero solo-cobranza perm-cxc-ver" data-titulo-corto="Finanzas">
       <h3>💰 Finanzas</h3>
       <div id="inicio-dinero" class="inicio-lista"></div>
     </div>
 
-    <div class="inicio-bloque inicio-bloque-personal perm-personal-ver">
+    <div class="inicio-bloque inicio-bloque-personal perm-personal-ver" data-titulo-corto="Personal">
       <h3>👷 Personal</h3>
       <p class="ayuda">Licencias y contratos vencidos o por vencer, quién falta esta semana (vacaciones, incapacidades, permisos) y órdenes próximas sin técnico responsable.</p>
       <div id="inicio-personal" class="inicio-lista"></div>
     </div>
 
-    <div class="inicio-bloque inicio-bloque-compras perm-compras-ver">
+    <div class="inicio-bloque inicio-bloque-compras perm-compras-ver" data-titulo-corto="Compras">
       <h3>🛒 Compras</h3>
       <p class="ayuda">Solicitudes por aprobar, por cotizar o por convertir en orden de compra; órdenes por autorizar y por recibir; y cómo van tus solicitudes.</p>
       <div id="inicio-compras" class="inicio-lista"></div>
     </div>
 
-    <div class="inicio-bloque inicio-bloque-prospeccion perm-ventas-ver">
+    <div class="inicio-bloque inicio-bloque-prospeccion perm-prospeccion-ver" data-titulo-corto="Prospección">
       <h3>🔎 Prospección</h3>
       <p class="ayuda">Establecimientos a los que toca llamar hoy o cuyo seguimiento ya se pasó.</p>
       <div id="inicio-prospeccion" class="inicio-lista"></div>
     </div>
 
-    <div class="inicio-bloque inicio-bloque-cotizacion perm-ventas-ver">
+    <div class="inicio-bloque inicio-bloque-cotizacion perm-ventas-ver" data-titulo-corto="Avisos">
       <h3>⏰ Avisos y seguimiento</h3>
       <p class="ayuda">Recordatorios de cotizaciones u órdenes que vencen hoy o ya vencieron, y cotizaciones abiertas sin movimiento hace más de 7 días.</p>
       <div id="inicio-cotizaciones" class="inicio-lista"></div>
     </div>
 
-    <div class="inicio-bloque inicio-bloque-concluir perm-ventas-ver">
+    <div class="inicio-bloque inicio-bloque-concluir perm-ventas-ver" data-titulo-corto="Por concluir">
       <h3>🧾 Servicios por concluir</h3>
       <p class="ayuda">Órdenes cuya fecha ya pasó y que todavía no se marcan como realizadas o no realizadas. No aparecen en el Generador hasta concluirlas.</p>
       <div id="inicio-concluir" class="inicio-lista"></div>
     </div>
 
-    <div class="inicio-bloque inicio-bloque-servicio perm-ventas-ver">
+    <div class="inicio-bloque inicio-bloque-servicio perm-ventas-ver" data-titulo-corto="Recompras">
       <h3><span class="cadena-nodo activo">🧾 Recompras</span> listas para registrar como nuevo servicio</h3>
       <p class="ayuda">Clientes que ya contrataron antes y, según el ciclo del servicio, probablemente ya lo necesiten otra vez.</p>
       <div id="inicio-recompras" class="inicio-lista"></div>
+    </div>
     </div>
   </section>
 
@@ -327,14 +330,24 @@
   <!-- ====== VISTA: CALENDARIO ====== -->
   <section class="vista" id="vista-calendario">
     <div class="vista-encabezado">
-      <div><h2>Calendario</h2><p class="ayuda">Órdenes de servicio, alertas, cobros y pagos por día. Toca un día para ver su lista y un evento para abrirlo.</p></div>
-      <div class="cal-nav"><button type="button" class="btn btn-outline" id="cal-anterior" aria-label="Mes anterior">‹</button><b id="cal-titulo"></b><button type="button" class="btn btn-outline" id="cal-siguiente" aria-label="Mes siguiente">›</button><button type="button" class="btn btn-outline" id="cal-hoy">Hoy</button></div>
+      <div><h2>Calendario</h2><p class="ayuda">Órdenes de servicio, avisos, cobros y pagos. Hoy: lo atrasado y la agenda del día; Semana y Mes para planear. Toca un evento para abrirlo.</p></div>
+      <div class="cal-controles">
+        <div class="cal-vistas" role="group" aria-label="Vista del calendario"><button type="button" data-cal-vista="hoy">Hoy</button><button type="button" data-cal-vista="semana">Semana</button><button type="button" data-cal-vista="mes">Mes</button></div>
+        <div class="cal-nav"><button type="button" class="btn btn-outline" id="cal-anterior" aria-label="Día anterior">‹</button><b id="cal-titulo"></b><button type="button" class="btn btn-outline" id="cal-siguiente" aria-label="Día siguiente">›</button><button type="button" class="btn btn-outline" id="cal-hoy">Ir a hoy</button></div>
+      </div>
     </div>
     <div class="cal-filtros" id="cal-filtros"></div>
     <p class="ayuda" id="cal-estado" role="status"></p>
-    <div class="cal-semana" aria-hidden="true"><span>Lun</span><span>Mar</span><span>Mié</span><span>Jue</span><span>Vie</span><span>Sáb</span><span>Dom</span></div>
-    <div class="cal-grid" id="cal-grid"></div>
-    <div class="cal-lista-caja"><div class="cal-lista-cab"><h3 id="cal-lista-titulo"></h3><button type="button" class="btn btn-outline" id="cal-ver-mes" hidden>Ver todo el mes</button></div><div id="cal-lista"></div></div>
+    <!-- Hoy: lo atrasado y la agenda del día -->
+    <div class="cal-hoy" id="cal-vista-hoy" hidden><div class="cal-panel cal-panel-atrasado" id="cal-atrasado"></div><div class="cal-panel" id="cal-agenda"></div></div>
+    <!-- Semana: lunes a domingo -->
+    <div id="cal-vista-semana" hidden><div class="cal-semana-grid" id="cal-semana-grid"></div></div>
+    <!-- Mes: cuadrícula y la lista del día elegido -->
+    <div id="cal-vista-mes" hidden>
+      <div class="cal-semana" aria-hidden="true"><span>Lun</span><span>Mar</span><span>Mié</span><span>Jue</span><span>Vie</span><span>Sáb</span><span>Dom</span></div>
+      <div class="cal-grid" id="cal-grid"></div>
+      <div class="cal-lista-caja"><div class="cal-lista-cab"><h3 id="cal-lista-titulo"></h3><button type="button" class="btn btn-outline" id="cal-ver-mes" hidden>Ver todo el mes</button></div><div id="cal-lista"></div></div>
+    </div>
   </section>
 
   <!-- ====== VISTA: GENERADOR (ventas por servicio de cada orden) ====== -->
@@ -1203,8 +1216,8 @@
 <script src="servicios-tabla.js?v=perm1"></script>
 <script src="flujo.js?v=rev1"></script>
 <script src="cuentas.js?v=rev1"></script>
-<script src="finanzas.js?v=con1"></script>
-<script src="calendario.js?v=pg2"></script>
+<script src="finanzas.js?v=ini1"></script>
+<script src="calendario.js?v=ini4"></script>
 <script src="tablero.js?v=con1"></script>
 <script src="bitacora.js?v=hc1"></script>
 <script src="compras.js?v=art2"></script>
@@ -1216,5 +1229,6 @@
 <script src="buscador.js?v=suc1"></script>
 <script src="demo.js?v=demo1"></script>
 <script src="prospeccion.js?v=pro1"></script>
+<script src="inicio.js?v=ini3"></script>
 </body>
 </html>
