@@ -1577,6 +1577,8 @@ const Finanzas = (() => {
     const sec = $('seccion-costos'), cont = $('costos-orden');
     if (!lead || lead.estatus !== 'ganado') { sec.hidden = true; COSTOS_ORDEN = null; return; }
     sec.hidden = false; COSTOS_ORDEN = lead;
+    // Quien no ve cuentas por pagar (p. ej. Atención) no recibe los gastos: se dice, sin pedirlos (antes: «No tienes permiso»).
+    if (!puedeCartera('pagar')) { cont.innerHTML = '<p class="ayuda">Tu rol no ve las cuentas por pagar: los gastos de esta orden los revisa administración.</p>'; return; }
     cont.innerHTML = '<p class="util-45" role="status">Cargando…</p>';
     let lista;
     try { lista = await api('/finanzas/cxp?vista=todas&lead_id=' + Number(lead.id)).then(json); }

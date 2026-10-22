@@ -32,6 +32,9 @@ async function recorrerPantallas({ maxClicsPorVista = 30 } = {}) {
     // Avisos de error visibles en la pantalla (cajas de error, alertas y mensajes flotantes).
     for (const el of document.querySelectorAll('.aviso-error-carga, [role="alert"], .toast, #toast'))
       if (visible(el) && /no se pudo|no tienes permiso|error|falló/i.test(el.textContent || '')) reporte.avisos.add(`${donde}: «${el.textContent.trim().replace(/\s+/g, ' ').slice(0, 90)}»`);
+    // También en cualquier otro texto de la página (p. ej. «No se pudieron cargar los gastos…» en letra chica).
+    for (const el of document.querySelectorAll('p, span, small, div, td, li'))
+      if (!el.children.length && visible(el) && /no se pudo|no se pudieron|no tienes permiso/i.test(el.textContent || '')) reporte.avisos.add(`${donde}: «${el.textContent.trim().replace(/\s+/g, ' ').slice(0, 90)}»`);
     window.__alRevisar?.(donde); // tests/buscar-marcas.js junta aquí lo que se ve en cada paso
     for (const el of document.querySelectorAll('[class*="perm-"]')) {
       if (!visible(el)) continue;
