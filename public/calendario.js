@@ -23,7 +23,7 @@ const Calendario = (() => {
   const mayus = t => t.charAt(0).toUpperCase() + t.slice(1);
   const fechaCortaTxt = f => fechaDe(f).toLocaleDateString('es-MX', { day: 'numeric', month: 'short' });
   const porHora = (a, b) => (a.fecha + (a.hora || '99')).localeCompare(b.fecha + (b.hora || '99'));
-  let VISTA = 'hoy', FECHA = null, EVENTOS = [], ATRASADOS = [], DIA = null, consulta = 0, ATR_TODO = false;
+  let VISTA = 'hoy', FECHA = null, EVENTOS = [], ATRASADOS = [], ATR_TOTALES = {}, ATR_TOPE = 0, DIA = null, consulta = 0, ATR_TODO = false;
   const ATR_VISIBLES = 5; // lo atrasado: los más viejos primero; el resto con «Ver los N»
   try { const v = localStorage.getItem('calendario-vista'); if (VISTAS.includes(v)) VISTA = v; } catch { /* sin preferencias guardadas */ }
   const activos = new Set(Object.keys(TIPOS));
@@ -75,7 +75,7 @@ const Calendario = (() => {
     EVENTOS = r.eventos.concat((recompras || []).filter(x => x.fecha_sugerida >= iso(desde) && x.fecha_sugerida <= iso(hasta)).map(x => ({
       tipo: 'recompra', fecha: x.fecha_sugerida, cliente_id: x.cliente_id, lead_id: x.ultimo_lead_id,
       titulo: 'Recompra · ' + (x.empresa_contacto || x.nombre || ''), detalle: x.servicio_nombre || '' })));
-    ATRASADOS = atr.eventos || [];
+    ATRASADOS = atr.eventos || []; ATR_TOTALES = atr.totales || {}; ATR_TOPE = atr.tope || 0;
     $('cal-estado').textContent = '';
     pintar();
   }
@@ -83,7 +83,7 @@ const Calendario = (() => {
   // Cuántos hay de cada tipo en lo que se ve (en Mes, solo los días del mes).
   function pintarFiltros() {
     const mes = FECHA.slice(0, 7), enVista = e => VISTA !== 'mes' || e.fecha.slice(0, 7) === mes;
-    const n = t => EVENTOS.filter(e => e.tipo === t && enVista(e)).length + (VISTA === 'hoy' ? ATRASADOS.filter(e => e.tipo === t).length : 0);
+    const n = t => EVENTOS.filter(e => e.tipo === t && enVista(e)).length + (VISTA === 'hoy' ? ATR_TOTALES[t] ?? ATRASADOS.filter(e => e.tipo === t).length : 0);
     $('cal-filtros').innerHTML = Object.entries(TIPOS).map(([t, d]) => `<button type="button" class="cal-filtro cal-${t}${activos.has(t) ? ' activo' : ''}" data-cal-tipo="${t}" aria-pressed="${activos.has(t)}">${d.icono} ${esc(d.nombre)} <span>${n(t)}</span></button>`).join('');
   }
   const estadoHTML = e => e.estado ? `<small class="cal-estado-${esc(e.estado)}">${esc(ESTADOS[e.estado] || e.estado)}</small>` : '';
@@ -109,7 +109,10 @@ const Calendario = (() => {
     const atr = ATRASADOS.filter(e => activos.has(e.tipo));
     $('cal-atrasado').hidden = FECHA !== hoy;
     const mostrar = ATR_TODO ? atr : atr.slice(0, ATR_VISIBLES);
-    $('cal-atrasado').innerHTML = `<h3>Atrasado · ${atr.length}</h3>` + (atr.length ? mostrar.map(e => filaHTML(e, true)).join('') : '<p class="cal-nada">Nada atrasado ✓</p>')
+    // El servidor manda como máximo ATR_TOPE de cada tipo (los más viejos); el total real viene aparte.
+    const total = [...activos].reduce((t, k) => t + (ATR_TOTALES[k] ?? atr.filter(e => e.tipo === k).length), 0);
+    $('cal-atrasado').innerHTML = `<h3>Atrasado · ${total}</h3>` + (atr.length ? mostrar.map(e => filaHTML(e, true)).join('') : '<p class="cal-nada">Nada atrasado ✓</p>')
+      + (total > atr.length ? `<p class="cal-nada">Aquí salen los ${ATR_TOPE} más viejos de cada tipo; el resto está en su pantalla (Inicio, Cuentas).</p>` : '')
       + (atr.length > ATR_VISIBLES ? `<button type="button" class="enlace" data-cal-atr-todo>${ATR_TODO ? 'Ver menos' : 'Ver los ' + atr.length}</button>` : '');
     $('cal-agenda').innerHTML = `<h3>${FECHA === hoy ? 'Hoy' : esc(mayus(fechaLarga(FECHA)))} · ${dia.length}</h3>` + (dia.length ? dia.map(e => filaHTML(e, false)).join('') : '<p class="cal-nada">Sin eventos este día.</p>');
   }

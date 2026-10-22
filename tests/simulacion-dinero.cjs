@@ -234,6 +234,12 @@ const HOY = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Mexico_City' }
   revisa(!atr.some(e => e.tipo === 'cobro' && e.lead_id === sinConcluir.id), 'atrasado: una orden sin concluir ni facturar no es un cobro');
   revisa(!atr.some(e => e.tipo === 'orden' && e.lead_id === ord4.id), 'atrasado: la orden ya realizada no sale como por concluir');
   revisa(atr.every(e => e.fecha < j.hoy), 'atrasado: solo lo de días anteriores a hoy', atr.filter(e => e.fecha >= j.hoy));
+  // Tope de 60 por tipo: con más órdenes atrasadas, el total dice la cifra real (auditoría 2026-10-21).
+  for (let i = 0; i < 61; i++) await alta(C3, { partidas_json: P(partida(100 + i)), estatus: 'ganado', fecha_servicio: sumarDias(HOY, -10) });
+  [s, j] = await pedir('GET', '/calendario/atrasados', A);
+  const ordAtr = j.eventos.filter(e => e.tipo === 'orden').length;
+  revisa(s === 200 && j.tope === 60 && ordAtr === 60 && j.totales.orden >= 62 && j.totales.cobro === j.eventos.filter(e => e.tipo === 'cobro').length,
+    'atrasado: con más de 60 órdenes trae las 60 más viejas y el total real', { mostradas: ordAtr, total: j.totales });
   const cal2 = (await pedir('GET', `/calendario?desde=${sumarDias(HOY, -45)}&hasta=${sumarDias(HOY, 40)}`, A))[1];
   revisa(cal2.eventos.some(e => e.tipo === 'orden' && e.lead_id === sinConcluir.id && e.estado === 'por_concluir') && !cal2.eventos.some(e => e.tipo === 'cobro' && e.lead_id === sinConcluir.id),
     'calendario: la orden sin concluir sale como orden por concluir, no como cobro', cal2.eventos.filter(e => e.lead_id === sinConcluir.id));
