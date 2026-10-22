@@ -39,8 +39,11 @@ const HOY = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Mexico_City' }
 
   console.log('2. Proveedor de pipas (Symrise)');
   const pipas = provs.find(p => p.nombre === 'Pipas Hermanos Ramírez');
+  // Banco y CLABE: solo quien paga (decisión 2026-10-22); Ventas consulta la ficha sin ellos.
+  [s, j] = await pedir('GET', '/finanzas/proveedores/' + pipas.id + '/estado-cuenta', C);
+  revisa(s === 200 && j.proveedor.clabe === '014680655039528945' && j.proveedor.banco === 'Santander', 'trae banco y CLABE para pagar (Compras, que paga)', [s, j.proveedor?.clabe]);
   [s, j] = await pedir('GET', '/finanzas/proveedores/' + pipas.id + '/estado-cuenta', V);
-  revisa(s === 200 && j.proveedor.clabe === '014680655039528945' && j.proveedor.banco === 'Santander', 'trae banco y CLABE para pagar (y todos la pueden consultar)', [s, j.proveedor?.clabe]);
+  revisa(s === 200 && !('clabe' in j.proveedor) && !('banco' in j.proveedor), 'Ventas consulta la ficha, pero sin banco ni CLABE (no paga)', [s, Object.keys(j.proveedor || {})]);
   revisa(j.cuentas.every(x => x.orden_folio && /^OS-/.test(x.orden_folio)), 'cada renta de pipa dice de qué orden de servicio viene');
   revisa(j.cuentas.every((x, i, a) => i === 0 || a[i - 1].fecha_documento >= x.fecha_documento), 'las facturas van de la más nueva a la más vieja');
   const semana = new Date(Date.parse(HOY + 'T00:00:00Z') + 7 * 86400000).toISOString().slice(0, 10);

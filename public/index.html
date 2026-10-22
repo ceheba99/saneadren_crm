@@ -562,8 +562,8 @@
           <div class="campo"><label for="prov-rfc">RFC (opcional)</label><input id="prov-rfc" maxlength="13"></div>
           <div class="campo"><label for="prov-telefono">Teléfono (opcional)</label><input id="prov-telefono" maxlength="25" inputmode="tel"></div>
           <div class="campo"><label for="prov-contacto">Contacto (opcional)</label><input id="prov-contacto" maxlength="120"></div>
-          <div class="campo"><label for="prov-clabe">CLABE para transferencias (opcional)</label><input id="prov-clabe" maxlength="22" inputmode="numeric" placeholder="18 dígitos"></div>
-          <div class="campo"><label for="prov-banco">Banco (opcional)</label><input id="prov-banco" maxlength="60" placeholder="Ej. Santander"></div>
+          <div class="campo perm-dinero-mover"><label for="prov-clabe">CLABE para transferencias (opcional)</label><input id="prov-clabe" maxlength="22" inputmode="numeric" placeholder="18 dígitos"></div>
+          <div class="campo perm-dinero-mover"><label for="prov-banco">Banco (opcional)</label><input id="prov-banco" maxlength="60" placeholder="Ej. Santander"></div>
         </div>
         <div class="btn-group"><button type="button" class="btn btn-primario" id="prov-guardar">Guardar proveedor</button><button type="button" class="btn btn-outline" id="prov-cancelar" hidden>Cancelar edición</button></div>
       </div>
@@ -1216,7 +1216,7 @@
 <script src="servicios-tabla.js?v=imp1"></script>
 <script src="flujo.js?v=rev1"></script>
 <script src="cuentas.js?v=rev1"></script>
-<script src="finanzas.js?v=aud1"></script>
+<script src="finanzas.js?v=clabe1"></script>
 <script src="calendario.js?v=aud1"></script>
 <script src="tablero.js?v=con1"></script>
 <script src="bitacora.js?v=hc1"></script>
