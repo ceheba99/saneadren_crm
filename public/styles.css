@@ -1664,3 +1664,21 @@ body:not(.varias-sucursales) .solo-varias-sucursales{display:none!important;}
 
 /* Cobranza de una orden para quien solo ve sus propios cobros (técnico). */
 .pagos-titulo{margin:14px 0 6px;font-size:14px;}
+
+/* Cuentas por cobrar: «?» en cada tarjeta y qué significa cada estado (2026-10-22). */
+.tarjeta-dinero small{display:flex;align-items:center;gap:6px;}
+.tarjeta-ayuda{flex:none;width:20px;height:20px;border-radius:50%;border:1px solid var(--gris-300);background:var(--blanco);color:var(--texto-sec);font:inherit;font-size:12px;font-weight:700;line-height:1;cursor:pointer;padding:0;text-transform:none;letter-spacing:0;}
+.tarjeta-ayuda[aria-expanded="true"]{background:var(--azul-950);border-color:var(--azul-950);color:#fff;}
+.tarjeta-ayuda:focus-visible,.cobrar-leyenda-btn:focus-visible{outline:2px solid var(--azul-500);outline-offset:1px;}
+.cuentas-explica{margin:-4px 0 14px;padding:12px 14px;border-radius:var(--radio);background:#eaf2fb;border:1px solid #c9dcef;font-size:14px;line-height:1.5;}
+.cuentas-explica[hidden],.cobrar-leyenda[hidden]{display:none;}
+.cuentas-explica p{margin:4px 0 0;}
+.cuentas-explica .cuentas-explica-ej{color:var(--texto-sec);font-size:13px;}
+.cobrar-leyenda-btn{margin:2px 0 8px;}
+.cobrar-leyenda{margin:0 0 14px;padding:12px 14px;border-radius:var(--radio);background:var(--blanco);border:1px solid var(--gris-200);font-size:14px;line-height:1.5;}
+.cobrar-leyenda p{margin:0 0 8px;}
+.cobrar-leyenda dl{margin:0 0 8px;display:grid;grid-template-columns:minmax(150px,max-content) minmax(0,1fr);gap:6px 14px;}
+.cobrar-leyenda dt{font-weight:700;}
+.cobrar-leyenda dd{margin:0;color:var(--texto-sec);}
+.cobrar-leyenda dd i{color:var(--texto);font-style:normal;font-size:13px;}
+@media (max-width:600px){.cobrar-leyenda dl{grid-template-columns:minmax(0,1fr);gap:2px;}.cobrar-leyenda dd{margin-bottom:8px;}}
