@@ -357,30 +357,31 @@ module.exports = function finanzas(app, db, h, unicos) {
 
   // ===================== CUENTAS POR COBRAR =====================
 
-  // Resumen para Inicio y las tarjetas de la vista Cuentas.
+  // Resumen para Inicio y las tarjetas de la vista Cuentas. Cada parte, solo a quien ve esa área: la de cobrar a quien
+  // ve cuentas por cobrar y la de pagar a quien ve cuentas por pagar (p. ej. el técnico: solo sus gastos, sin cobranza).
   app.get('/api/finanzas/resumen', h((req, res) => {
-    if (!permitido(req, res, 'cxc.ver')) return;
-    const hoy = hoyMexico(), mes = hoy.slice(0, 7);
-    const conSaldo = cartera().filter(c => c.saldo > 0);
-    const cuentas = conSaldo.filter(c => !c.programada);
-    const suma = arr => Math.round(arr.reduce((t, c) => t + c.saldo * 100, 0)) / 100;
-    const r = {
-      por_cobrar: suma(cuentas), vencido: suma(cuentas.filter(c => c.vencida)),
-      programado: suma(conSaldo.filter(c => c.programada && !c.por_concluir)), ordenes_programadas: conSaldo.filter(c => c.programada && !c.por_concluir).length,
-      por_concluir: suma(conSaldo.filter(c => c.por_concluir)), ordenes_por_concluir: conSaldo.filter(c => c.por_concluir).length,
-      a_favor: suma(cartera().map(c => ({ saldo: c.a_favor || 0 }))), ordenes_a_favor: cartera().filter(c => c.a_favor > 0).length,
-      cuentas_con_saldo: cuentas.length, clientes_con_vencido: new Set(cuentas.filter(c => c.vencida).map(c => c.cliente_id)).size,
-      cobrado_mes: aPesos(db.prepare("SELECT COALESCE(SUM(monto_cent), 0) t FROM cobros WHERE cancelado = 0 AND tipo <> 'ajuste' AND substr(fecha, 1, 7) = ?").get(mes).t),
-      por_revisar: db.prepare("SELECT COUNT(*) n FROM leads WHERE estatus = 'ganado' AND cobranza_por_revisar = 1").get().n,
-    };
-    {
+    const veCxc = P.puede(req, 'cxc.ver'), veCxp = P.puede(req, 'cxp.ver');
+    if (!veCxc && !veCxp) return res.status(403).json({ error: 'No tienes permiso para esta sección' });
+    const hoy = hoyMexico(), mes = hoy.slice(0, 7), r = {};
+    if (veCxc) {
+      const conSaldo = cartera().filter(c => c.saldo > 0);
+      const cuentas = conSaldo.filter(c => !c.programada);
+      const suma = arr => Math.round(arr.reduce((t, c) => t + c.saldo * 100, 0)) / 100;
+      Object.assign(r, {
+        por_cobrar: suma(cuentas), vencido: suma(cuentas.filter(c => c.vencida)),
+        programado: suma(conSaldo.filter(c => c.programada && !c.por_concluir)), ordenes_programadas: conSaldo.filter(c => c.programada && !c.por_concluir).length,
+        por_concluir: suma(conSaldo.filter(c => c.por_concluir)), ordenes_por_concluir: conSaldo.filter(c => c.por_concluir).length,
+        a_favor: suma(cartera().map(c => ({ saldo: c.a_favor || 0 }))), ordenes_a_favor: cartera().filter(c => c.a_favor > 0).length,
+        cuentas_con_saldo: cuentas.length, clientes_con_vencido: new Set(cuentas.filter(c => c.vencida).map(c => c.cliente_id)).size,
+        cobrado_mes: aPesos(db.prepare("SELECT COALESCE(SUM(monto_cent), 0) t FROM cobros WHERE cancelado = 0 AND tipo <> 'ajuste' AND substr(fecha, 1, 7) = ?").get(mes).t),
+        por_revisar: db.prepare("SELECT COUNT(*) n FROM leads WHERE estatus = 'ganado' AND cobranza_por_revisar = 1").get().n,
+      });
       const pc = db.prepare('SELECT COUNT(*) n, COALESCE(SUM(monto_cent), 0) t FROM cobros WHERE cancelado = 0 AND confirmado = 0').get();
       r.por_confirmar = { cantidad: pc.n, monto: aPesos(pc.t) };
     }
-    {
+    if (veCxp) {
       const domingo = sumarDias(hoy, (7 - new Date(hoy + 'T00:00:00Z').getUTCDay()) % 7);
-      const cxp = cuentasPorPagar();
-      const pend = cxp.filter(x => x.saldo > 0);
+      const pend = cuentasPorPagar().filter(x => x.saldo > 0);
       r.por_pagar = Math.round(pend.reduce((t, x) => t + x.saldo * 100, 0)) / 100;
       r.pagar_semana = Math.round(pend.filter(x => x.fecha_vencimiento <= domingo).reduce((t, x) => t + x.saldo * 100, 0)) / 100;
       r.facturas_semana = pend.filter(x => x.fecha_vencimiento <= domingo).length;
@@ -721,7 +722,7 @@ module.exports = function finanzas(app, db, h, unicos) {
         registro: g.registro, cancelado: !!g.cancelado, motivo_cancelacion: g.motivo_cancelacion })) });
   }));
   app.get('/api/finanzas/categorias', h((req, res) => {
-    if (!permitido(req, res, 'cxp.ver')) return;
+    if (!P.puede(req, 'compras.ver') && !permitido(req, res, 'cxp.ver')) return; // las usan cuentas por pagar y compras
     const todas = req.query.todas === '1';
     res.json(db.prepare(`SELECT clave, nombre, activo, es_gasto FROM categorias_gasto ${todas ? '' : 'WHERE activo = 1'} ORDER BY activo DESC, orden, nombre`).all());
   }));
@@ -778,7 +779,12 @@ module.exports = function finanzas(app, db, h, unicos) {
   }));
 
   app.get('/api/finanzas/proveedores', h((req, res) => {
-    if (!permitido(req, res, 'cxp.ver')) return;
+    // Quien ve compras pero no cuentas por pagar (p. ej. Atención, que pide compras): solo lo que usan las pantallas de
+    // compras para mostrar y elegir proveedor; sin CLABE, contacto, RFC ni saldos.
+    if (!P.puede(req, 'cxp.ver')) {
+      if (!permitido(req, res, 'compras.ver')) return;
+      return res.json(db.prepare('SELECT id, nombre, categoria, activo, dias_credito FROM proveedores ORDER BY activo DESC, nombre').all());
+    }
     const saldos = new Map();
     for (const x of cuentasPorPagar()) saldos.set(x.proveedor_id, Math.round(((saldos.get(x.proveedor_id) || 0) + x.saldo) * 100) / 100);
     res.json(db.prepare('SELECT * FROM proveedores ORDER BY activo DESC, nombre').all().map(p => ({ ...p, saldo: saldos.get(p.id) || 0 })));

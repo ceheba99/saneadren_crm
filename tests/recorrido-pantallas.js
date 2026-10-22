@@ -5,7 +5,10 @@
 //  · código trampa ejecutado (window.__xss, ver tests/sembrar-xss.cjs);
 //  · elementos visibles que el rol NO debería ver (clases perm-* de permisos que no tiene);
 //  · desbordes horizontales (la página más ancha que la pantalla; útil con el tamaño de celular);
-//  · pantallas en blanco (el rol entra pero no se dibuja nada).
+//  · pantallas en blanco (el rol entra pero no se dibuja nada);
+//  · avisos de error pintados en la pantalla («No se pudo cargar…», cajas de error, mensajes de «No tienes permiso»),
+//    que no salen en la consola (2026-10-21: así se escapó el resumen de Cuentas por pagar para Técnico y Compras);
+//  · respuestas del servidor con error (403, 404, 500…) mientras el rol navega: lo que su pantalla pide y no le dan.
 // Uso (herramienta del navegador): como la página no permite eval (bien), se inserta como <script> y se llama
 // window.recorrerPantallas(); tarda varios minutos por usuario, así que se deja corriendo y se consulta después.
 async function recorrerPantallas({ maxClicsPorVista = 30 } = {}) {
@@ -15,12 +18,20 @@ async function recorrerPantallas({ maxClicsPorVista = 30 } = {}) {
   const alError = e => errores.push('excepción: ' + String(e.message || e.reason?.message || e.reason || e).slice(0, 180));
   window.addEventListener('error', alError); window.addEventListener('unhandledrejection', alError);
   window.__xss = window.__xss || 0;
+  // Cada respuesta con error del servidor durante el recorrido (409 = choque esperado, no cuenta).
+  let donde = 'inicio';
+  const respuestas = new Set(), fetchOrig = window.fetch;
+  window.fetch = async (...a) => { const r = await fetchOrig(...a); if (r.status >= 400 && r.status !== 409) respuestas.add(`${donde}: ${r.status} ${(a[1]?.method || 'GET')} ${String(a[0]).replace(location.origin, '').replace(/\?.*/, '')}`); return r; };
   const visible = el => !!el && el.getClientRects().length > 0 && getComputedStyle(el).visibility !== 'hidden';
   const mostrado = el => !!el && getComputedStyle(el).display !== 'none';
   const PROHIBIDO = /guardar|eliminar|borrar|cancelar|pagar|registrar|autorizar|aprobar|rechazar|recibir|subir|baja|quitar|enviar|confirmar|salir|exportar|descargar|imprimir|pdf|resuelta|fusionar|juntar|reactivar|desactivar|contraseña|aplicar|elegir|marcar|realizad|vincular|duplicar|restablecer|crear|agregar|alta|entrar|respaldo|revisar|cambiar|asignar|mover|liberar|ver como|copiar|reintentar|sí,|aceptar|descartar|cerrar sesión|plantilla|cargar|importar|limpiar|consultar|avanzar|ordenar|deshacer|reabrir|regresar/i;
-  const reporte = { usuario: USUARIO_ACTUAL?.nombre, rol: Permisos?.datos?.rol, vistas: {}, clics: 0, errores, permisosVisibles: new Set(), desbordes: new Set(), xss: 0 };
+  const reporte = { usuario: USUARIO_ACTUAL?.nombre, rol: Permisos?.datos?.rol, vistas: {}, clics: 0, errores, permisosVisibles: new Set(), desbordes: new Set(), avisos: new Set(), xss: 0 };
   const cerrarTodo = async () => { const dlg = document.getElementById('dialogo-cancelar'); if (dlg && visible(dlg)) dlg.click(); document.querySelectorAll('.overlay.mostrar').forEach(o => o.classList.remove('mostrar')); await espera(150); };
-  const revisarPermisos = donde => {
+  const revisarPermisos = aqui => {
+    const donde = aqui;
+    // Avisos de error visibles en la pantalla (cajas de error, alertas y mensajes flotantes).
+    for (const el of document.querySelectorAll('.aviso-error-carga, [role="alert"], .toast, #toast'))
+      if (visible(el) && /no se pudo|no tienes permiso|error|falló/i.test(el.textContent || '')) reporte.avisos.add(`${donde}: «${el.textContent.trim().replace(/\s+/g, ' ').slice(0, 90)}»`);
     window.__alRevisar?.(donde); // tests/buscar-marcas.js junta aquí lo que se ve en cada paso
     for (const el of document.querySelectorAll('[class*="perm-"]')) {
       if (!visible(el)) continue;
@@ -32,6 +43,7 @@ async function recorrerPantallas({ maxClicsPorVista = 30 } = {}) {
   const alcanzables = ['inicio', ...new Set([...document.querySelectorAll('.menu-item[data-vista]')].filter(mostrado).map(b => b.dataset.vista))];
   for (const v of alcanzables) {
     await cerrarTodo();
+    donde = v;
     try { cambiarVista(v); } catch (e) { errores.push(`cambiarVista(${v}): ${e.message}`); continue; }
     await espera(2600); revisarPermisos(v);
     const sec = document.querySelector('section.vista.activa'); const yaPulsados = new Set(); let clics = 0;
@@ -46,7 +58,7 @@ async function recorrerPantallas({ maxClicsPorVista = 30 } = {}) {
         && !b.matches('.btn-avanzar') && !/^[›‹↑↓×✕]$/.test((b.textContent || '').trim()) && !/avanzar|mover|eliminar|guardar|ordenar|quitar|resolver/i.test(b.getAttribute('onclick') || ''));
       if (!candidatos.length) break;
       for (const b of candidatos.slice(0, maxClicsPorVista - clics)) {
-        yaPulsados.add(b); const etiqueta = (b.textContent || b.title || '').trim().replace(/\s+/g, ' ').slice(0, 30);
+        yaPulsados.add(b); const etiqueta = (b.textContent || b.title || '').trim().replace(/\s+/g, ' ').slice(0, 30); donde = `${v} › «${etiqueta}»`;
         try { b.click(); } catch (e) { errores.push(`${v} › «${etiqueta}»: ${e.message}`); }
         clics++; reporte.clics++; await espera(500); revisarPermisos(`${v} › «${etiqueta}»`); await cerrarTodo();
         if (!sec.classList.contains('activa')) { try { cambiarVista(v); } catch { /* sigue */ } await espera(900); }
@@ -55,7 +67,7 @@ async function recorrerPantallas({ maxClicsPorVista = 30 } = {}) {
     reporte.vistas[v] = clics;
   }
   await cerrarTodo();
-  console.error = origErr; window.removeEventListener('error', alError); window.removeEventListener('unhandledrejection', alError);
+  console.error = origErr; window.fetch = fetchOrig; window.removeEventListener('error', alError); window.removeEventListener('unhandledrejection', alError);
   reporte.xss = window.__xss || 0;
-  return { ...reporte, vacias: reporte.vacias || [], errores: [...new Set(errores)], permisosVisibles: [...reporte.permisosVisibles], desbordes: [...reporte.desbordes] };
+  return { ...reporte, vacias: reporte.vacias || [], errores: [...new Set(errores)], permisosVisibles: [...reporte.permisosVisibles], desbordes: [...reporte.desbordes], avisos: [...reporte.avisos], respuestas: [...respuestas] };
 }

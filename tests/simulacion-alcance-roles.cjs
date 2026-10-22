@@ -79,6 +79,17 @@ const RANGO = 'desde=2020-01-01&hasta=' + dia(60);
   [s, j] = await pedir('GET', '/finanzas/por-confirmar', R); revisa(s === 403, 'Raúl no confirma cobros (no ve la lista por confirmar)', s);
   [s, j] = await pedir('GET', '/leads/' + L2.id + '/cobros', L);
   revisa(s === 200 && j.cuenta && j.cobros.length === 2 && j.cuenta.cobrado === 1516.9, 'Laura (cobranza de sus órdenes) ve la cuenta completa con los dos cobros', j.cuenta);
+  // Proveedores: quien solo ve compras (Ana) recibe nombre, categoría y crédito para las pantallas de compras; sin CLABE ni saldos.
+  [s, j] = await pedir('GET', '/finanzas/proveedores', N);
+  revisa(s === 200 && j.length && j.every(p => Object.keys(p).sort().join() === 'activo,categoria,dias_credito,id,nombre'), 'Ana (atención) recibe la lista de proveedores sin CLABE, contacto ni saldos', [s, j[0]]);
+  [s, j] = await pedir('GET', '/finanzas/categorias', N); revisa(s === 200 && j.length > 0, 'Ana recibe las categorías de gasto (las usan las pantallas de compras)', s);
+  [s, j] = await pedir('GET', '/finanzas/proveedores', L); revisa(s === 200 && j.length && 'clabe' in j[0] && 'saldo' in j[0], 'Laura (ve sus cuentas por pagar) recibe la ficha completa del proveedor', [s, Object.keys(j[0] || {})]);
+  // Resumen de cuentas: cada parte a quien ve esa área (antes Técnico y Compras recibían 403 y veían «No se pudo cargar»).
+  for (const [quien, t, cobrar, pagar] of [['Raúl (técnico)', R, false, true], ['Isaac (compras)', I, false, true], ['Ana (atención)', N, true, false], ['Laura (ventas)', L, true, true]]) {
+    [s, j] = await pedir('GET', '/finanzas/resumen', t);
+    revisa(s === 200 && (j.por_cobrar !== undefined) === cobrar && (j.por_pagar !== undefined) === pagar,
+      `${quien}: el resumen trae ${[cobrar && 'lo de cobrar', pagar && 'lo de pagar'].filter(Boolean).join(' y ')}${!cobrar ? ', sin cobranza' : ''}${!pagar ? ', sin proveedores' : ''}`, [s, Object.keys(j)]);
+  }
   // «Ver importes» (2026-10-21): el técnico trabaja su orden sin el dinero de la venta.
   [s, j] = await pedir('GET', '/leads/' + L2.id, R);
   const partR = JSON.parse(j.partidas_json || '[]');
