@@ -16,7 +16,7 @@ module.exports = {
       demo: ['clientes', 'leads', 'historial', 'orden_personal'],
       integridad: ['leads', 'clientes'],
       buscador: ['leads', 'clientes'],
-      permisos: ['ventas.ver', 'ventas.sucursal', 'generador.cargar', 'ordenes.importe_ganada', 'ordenes.estatus', 'ordenes.eliminar', 'clientes.exportar'],
+      permisos: ['ventas.ver', 'ventas.sucursal', 'ordenes.importes', 'generador.cargar', 'ordenes.importe_ganada', 'ordenes.estatus', 'ordenes.eliminar', 'clientes.exportar'],
     },
     cobranza: {
       nombre: 'Cuentas por cobrar',

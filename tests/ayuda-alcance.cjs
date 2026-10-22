@@ -6,11 +6,12 @@
 //   (pedir(método, ruta, token, cuerpo) → [estado, json])
 const TODO = { ventas: 2, cxc: 2, cxp: 2, compras: 2 };
 // Lo que cada rol podía hacer antes de los niveles (al sembrar niveles se quitan los permisos que ya no tienen sentido).
+// Antes todos veían los importes («Ver importes» existe desde 2026-10-21).
 const ANTES = {
-  ventas: ['generador.cargar', 'ordenes.estatus', 'cobros.registrar', 'cobros.confirmar', 'cobranza.factura', 'gastos.registrar', 'catalogos.editar'],
-  atencion: ['generador.cargar', 'ordenes.importe_ganada', 'ordenes.estatus', 'cobros.registrar', 'cobros.confirmar', 'cobros.directo', 'cobranza.factura', 'gastos.registrar', 'catalogos.editar'],
-  tecnico: ['ordenes.estatus', 'cobros.registrar', 'cobros.confirmar', 'cobranza.factura', 'gastos.registrar', 'catalogos.editar'],
-  costos: ['ordenes.estatus', 'cobros.registrar', 'cobros.confirmar', 'cobranza.factura', 'gastos.registrar', 'dinero.mover', 'compras.gestionar', 'catalogos.editar'],
+  ventas: ['ordenes.importes', 'generador.cargar', 'ordenes.estatus', 'cobros.registrar', 'cobros.confirmar', 'cobranza.factura', 'gastos.registrar', 'catalogos.editar'],
+  atencion: ['ordenes.importes', 'generador.cargar', 'ordenes.importe_ganada', 'ordenes.estatus', 'cobros.registrar', 'cobros.confirmar', 'cobros.directo', 'cobranza.factura', 'gastos.registrar', 'catalogos.editar'],
+  tecnico: ['ordenes.importes', 'ordenes.estatus', 'cobros.registrar', 'cobros.confirmar', 'cobranza.factura', 'gastos.registrar', 'catalogos.editar'],
+  costos: ['ordenes.importes', 'ordenes.estatus', 'cobros.registrar', 'cobros.confirmar', 'cobranza.factura', 'gastos.registrar', 'dinero.mover', 'compras.gestionar', 'catalogos.editar'],
 };
 async function comoAntes(pedir, A) {
   for (const [rol, permisos] of Object.entries(ANTES)) {

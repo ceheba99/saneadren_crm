@@ -32,7 +32,7 @@
         <div class="menu-sub">
           <button type="button" class="menu-item perm-ventas-ver" data-vista="alta"><span class="menu-icono" aria-hidden="true">➕</span>Nuevo contacto</button>
           <button type="button" class="menu-item perm-ventas-ver" data-vista="clientes"><span class="menu-icono" aria-hidden="true">👥</span>Contactos</button>
-          <button type="button" class="menu-item perm-ventas-ver" data-vista="generador"><span class="menu-icono" aria-hidden="true">📒</span>Generador</button>
+          <button type="button" class="menu-item perm-ventas-ver perm-ordenes-importes" data-vista="generador"><span class="menu-icono" aria-hidden="true">📒</span>Generador</button>
           <button type="button" class="menu-item perm-ventas-ver" data-vista="leads"><span class="menu-icono" aria-hidden="true">📄</span>Cotizaciones</button>
           <button type="button" class="menu-item perm-prospeccion-ver" data-vista="prospeccion"><span class="menu-icono" aria-hidden="true">🔎</span>Prospección</button>
         </div>
@@ -44,7 +44,7 @@
           <button type="button" class="menu-item solo-cobranza perm-cxp-ver" data-vista="pagar" id="nav-pagar"><span class="menu-icono" aria-hidden="true">📤</span>Cuentas por pagar</button>
           <button type="button" class="menu-item perm-compras-ver" data-vista="solicitudes"><span class="menu-icono" aria-hidden="true">📝</span>Solicitudes de compra</button>
           <button type="button" class="menu-item perm-compras-ver" data-vista="compras"><span class="menu-icono" aria-hidden="true">🛒</span>Órdenes de compra</button>
-          <button type="button" class="menu-item" data-vista="resultados"><span class="menu-icono" aria-hidden="true">📊</span>Resultados</button>
+          <button type="button" class="menu-item perm-ordenes-importes" data-vista="resultados"><span class="menu-icono" aria-hidden="true">📊</span>Resultados</button>
         </div>
       </div>
       <div class="menu-grupo" data-grupo="ajustes">
@@ -139,7 +139,7 @@
 </div>
       <div class="util-4">
         <button class="btn btn-primario" id="btn-guardar-contacto-nuevo">Guardar contacto</button>
-        <button class="btn btn-secundario" id="btn-guardar-lead" title="Guarda el contacto y abre su ficha, donde están Crear cotización y Crear orden de servicio">Guardar y crear cotización</button>
+        <button class="btn btn-secundario perm-ordenes-importes" id="btn-guardar-lead" title="Guarda el contacto y abre su ficha, donde están Crear cotización y Crear orden de servicio">Guardar y crear cotización</button>
       </div>
     </div>
   </section>
@@ -261,7 +261,7 @@
         <div class="rc-num" id="rc-recurrentes">0</div>
         <div class="rc-label">Recurrentes · 2 o más órdenes</div>
       </div>
-      <div class="rc-card valor">
+      <div class="rc-card valor perm-ordenes-importes">
         <div class="rc-num" id="rc-valor">$0</div>
         <div class="rc-label">Contratado histórico (sin IVA)</div>
       </div>
@@ -290,7 +290,7 @@
               <th>Tipo</th>
               <th class="st-num">Cotizaciones abiertas</th>
               <th class="st-num">Órdenes de servicio</th>
-              <th class="st-num">Contratado (sin IVA)</th>
+              <th class="st-num perm-ordenes-importes">Contratado (sin IVA)</th>
               <th>Última actividad</th>
               <th><span class="sr-only">Abrir</span></th>
             </tr>
@@ -674,7 +674,7 @@
         <div class="btn-group">
           <span id="estado-guardado-registro" class="estado-guardado" role="status"></span>
           <button class="btn btn-secundario" id="btn-guardar-ficha" style="display:none">Guardar cambios de este registro</button>
-          <button class="btn btn-ghost diseno-nav-usuarios" id="btn-recomprar" title="Crea otra orden de servicio con los mismos datos — útil para servicio recurrente">⧉ Duplicar esta orden de servicio</button>
+          <button class="btn btn-ghost diseno-nav-usuarios perm-ordenes-importes" id="btn-recomprar" title="Crea otra orden de servicio con los mismos datos — útil para servicio recurrente">⧉ Duplicar esta orden de servicio</button>
           <button class="btn btn-outline diseno-nav-usuarios" id="btn-reabrir">↺ Reabrir cotización</button>
           <span id="btn-generar-cotizacion" hidden></span>
         </div>
@@ -792,7 +792,7 @@
 
       <div class="modal-section" data-plegable="registros-contacto">
         <div class="relacion-registros"><div><div class="seccion-tit" data-plegable-cabecera>Cotizaciones y servicios de este contacto</div><p class="ayuda">Una cotización abierta es una propuesta. Al aceptarla, el mismo registro pasa a servicio contratado; conserva su número e importe.</p></div>
-        <div class="btn-group"><button class="btn btn-primario" id="btn-contacto-cotizar">📄 Crear cotización</button><button class="btn btn-secundario" id="btn-recapturar-servicio" title="Para cuando el cliente ya confirmó: registra el servicio sin pasar por cotización">🧾 Crear orden de servicio</button></div></div>
+        <div class="btn-group"><button class="btn btn-primario perm-ordenes-importes" id="btn-contacto-cotizar">📄 Crear cotización</button><button class="btn btn-secundario perm-ordenes-importes" id="btn-recapturar-servicio" title="Para cuando el cliente ya confirmó: registra el servicio sin pasar por cotización">🧾 Crear orden de servicio</button></div></div>
         <div class="ficha-meta" id="fc-meta"></div>
         <div id="fc-servicios" class="servicios-list"></div>
       </div>
@@ -1162,7 +1162,7 @@
   <div class="seccion-tit" id="gc-titulo-contenido">Contenido de la cotización</div>
   <p class="ayuda" id="gc-ayuda-contenido">Edita servicios, descripciones e importes. Se guardan con esta cotización y se usan en la descarga.</p>
   <!-- IVA: el valor real vive en #gc-iva-modo ('' = por definir, 'mas_iva', 'incluido', 'sin_iva'); las tres opciones lo eligen. -->
-  <div class="gc-iva" id="gc-iva">
+  <div class="gc-iva perm-ordenes-importes" id="gc-iva">
     <input type="hidden" id="gc-iva-modo">
     <div class="gc-iva-opciones" role="radiogroup" aria-label="IVA de los importes">
       <label class="gc-iva-opcion"><input type="radio" name="gc-iva-opcion" value="mas_iva"> <span>Más IVA 16 %</span></label>
@@ -1174,8 +1174,8 @@
       <span id="gc-iva-aviso-texto"></span>
     </div>
   </div>
-  <div id="gc-items"></div><button type="button" class="btn btn-outline" id="btn-gc-agregar-servicio">+ Agregar servicio</button>
-  <table class="gc-totales" aria-label="Totales">
+  <div id="gc-items"></div><button type="button" class="btn btn-outline perm-ordenes-importes" id="btn-gc-agregar-servicio">+ Agregar servicio</button>
+  <table class="gc-totales perm-ordenes-importes" aria-label="Totales">
     <tr id="gc-fila-subtotal"><th id="gc-etiqueta-subtotal">Subtotal</th><td id="gc-subtotal">$0.00</td></tr>
     <tr id="gc-fila-iva"><th id="gc-etiqueta-iva">IVA 16%</th><td id="gc-iva-monto">$0.00</td></tr>
     <tr class="gc-fila-total"><th id="gc-etiqueta-total">Total</th><td><b id="gc-total">$0.00</b></td></tr>
@@ -1189,10 +1189,10 @@
 <!-- Única barra para guardar: solo "Guardar" y "Guardar y descargar" (y, en una cotización abierta,
      "Convertir en orden de servicio", que es otra acción). Se coloca al final de la ventana o de la ficha. -->
 <div class="barra-acciones" id="barra-acciones" hidden>
-  <div class="barra-formato"><span>Descargar en:</span> <label><input type="radio" name="gc-formato" id="gc-formato-pdf" value="pdf" checked> PDF</label> <label><input type="radio" name="gc-formato" value="word"> Word</label></div>
+  <div class="barra-formato perm-ordenes-importes"><span>Descargar en:</span> <label><input type="radio" name="gc-formato" id="gc-formato-pdf" value="pdf" checked> PDF</label> <label><input type="radio" name="gc-formato" value="word"> Word</label></div>
   <div class="barra-botones">
     <button type="button" class="btn btn-secundario" id="btn-barra-guardar">Guardar</button>
-    <button type="button" class="btn btn-primario" id="btn-gc-generar">Guardar y descargar</button>
+    <button type="button" class="btn btn-primario perm-ordenes-importes" id="btn-gc-generar">Guardar y descargar</button>
   </div>
   <button type="button" class="btn btn-verde" id="btn-generar-orden-servicio" hidden>🧾 Convertir en orden de servicio</button>
 </div>
@@ -1213,7 +1213,7 @@
 <script src="permisos.js?v=perm3"></script>
 <script src="roles.js?v=cob2"></script>
 <script src="importes.js?v=red1"></script>
-<script src="servicios-tabla.js?v=perm1"></script>
+<script src="servicios-tabla.js?v=imp1"></script>
 <script src="flujo.js?v=rev1"></script>
 <script src="cuentas.js?v=rev1"></script>
 <script src="finanzas.js?v=cob2"></script>
@@ -1224,7 +1224,7 @@
 <script src="solicitudes.js?v=rev1"></script>
 <script src="carga-generador.js?v=con1"></script>
 <script src="sucursales.js?v=perm2"></script>
-<script src="app.js?v=con1"></script>
+<script src="app.js?v=imp2"></script>
 <script src="personal.js?v=rev1"></script>
 <script src="buscador.js?v=suc1"></script>
 <script src="demo.js?v=demo1"></script>

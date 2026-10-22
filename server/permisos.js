@@ -20,6 +20,7 @@ const CATALOGO = [
   // [clave, sección, nombre, explicación, roles que lo tienen al inicio (además de Dirección)]
   ['prospeccion.ver', 'Contactos y clientes', 'Prospección', 'Buscar establecimientos y darles seguimiento: los suyos, o los de toda su sucursal si ve las ventas de la sucursal', ['gerente', 'ventas', 'atencion']],
   ['clientes.exportar', 'Contactos y clientes', 'Exportar a Excel', 'Descargar contactos, cotizaciones, cuentas y órdenes de compra en Excel', ['gerente']],
+  ['ordenes.importes', 'Cotizaciones y órdenes', 'Ver importes', 'Precios, totales e IVA de cotizaciones y órdenes, el Generador y Resultados. Sin esto ve sus órdenes para trabajar (cliente, dirección, fecha y servicio) sin dinero, y no cotiza', ['gerente', 'ventas', 'atencion']],
   ['generador.cargar', 'Cotizaciones y órdenes', 'Cargar el generador', 'Subir el Excel del generador de órdenes', ['gerente', 'atencion', 'ventas']],
   ['ordenes.importe_ganada', 'Cotizaciones y órdenes', 'Cambiar importe o IVA de una orden', 'Modificar el importe o el IVA cuando la cotización ya es orden de servicio, y regresar una orden a cotización', ['gerente', 'atencion']],
   ['ordenes.estatus', 'Cotizaciones y órdenes', 'Actualizar estatus del servicio', 'Marcar si el servicio se realizó, con sus gastos', TODOS],
@@ -69,9 +70,11 @@ const DEPENDE = {
   'compras.gestionar': ['compras.sucursal'],
   'compras.autorizar': ['compras.sucursal'],
   'ordenes.estatus': ['ventas.ver'],
-  'ordenes.importe_ganada': ['ventas.ver'],
+  'ordenes.importe_ganada': ['ventas.ver', 'ordenes.importes'],
   'ordenes.eliminar': ['ventas.ver'],
-  'generador.cargar': ['ventas.sucursal'], // crea órdenes de cualquier cliente de la sucursal
+  'generador.cargar': ['ventas.sucursal', 'ordenes.importes'], // crea órdenes de cualquier cliente de la sucursal
+  'reportes.panorama': ['ordenes.importes'],
+  'clientes.exportar': ['ordenes.importes'], // el Excel lleva los importes
   'personal.editar': ['personal.ver'],
   'personal.sensibles': ['personal.ver'],
 };
@@ -135,6 +138,12 @@ module.exports = function crearPermisos(db, app, h) {
         if (v && v.nivel >= 1) dar.run(r, 'prospeccion.ver');
       }
       db.prepare('INSERT INTO permisos_sembrados (permiso) VALUES (?)').run('prospeccion:otros');
+    }
+    // «Ver importes» (2026-10-21): antes todos los que veían órdenes veían sus importes. Los de fábrica arrancan con la
+    // tabla (sin el técnico ni costos); los roles que inventó Dirección lo conservan para no quitarles nada.
+    if (!ya.has('ordenes.importes')) {
+      for (const r of roles) if (r !== 'admin' && !ALCANCE_INICIAL[r]) dar.run(r, 'ordenes.importes');
+      sembroAlgo = true; // lo que necesita ver importes (cambiar el importe, cargar el generador…) se quita a quien no los ve
     }
     // Técnico (2026-10-21, acordado con Dirección): en cuentas por cobrar solo los cobros que él registra, sin saldos ni
     // vencidos, y no confirma cobros de otros. Una sola vez; después Dirección lo cambia en Roles y permisos.
