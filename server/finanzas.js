@@ -257,7 +257,7 @@ const SQL_TOTAL_ORDEN = 'CAST(ROUND(COALESCE(l.valor, 0) * 100) AS INTEGER) + CO
 // Los cobros se suman de la tabla completa (main.cobros): el saldo de una orden es el mismo para todos, aunque quien
 // consulta solo vea en las listas los cobros que él registró. Los montos solo salen por rutas que exigen cxc.ver.
 const SQL_CUENTA = `
-  SELECT l.id, l.cliente_id, l.created_at, l.fecha_servicio, l.valor, l.dias_credito, l.factura_folio, l.factura_fecha, l.sucursal_id,
+  SELECT l.id, l.cliente_id, l.created_at, l.fecha_servicio, l.valor, l.dias_credito, l.factura_folio, l.factura_fecha, l.sucursal_id, l.responsable_id, l.tecnico_id,
     l.factura_total_cent, l.factura_metodo, l.cobranza_por_revisar, l.servicio_id, l.estatus, l.iva_modo, l.iva_tasa, l.iva_cent,
     l.ejecucion, l.realizado_por, l.fecha_realizado, l.equipo, l.operador, l.proyecto, l.notas_iniciales,
     (SELECT k.fecha || '|' || k.metodo || '|' || COALESCE(k.referencia, '') FROM main.cobros k WHERE k.lead_id = l.id AND k.cancelado = 0 AND k.tipo <> 'ajuste' ORDER BY k.fecha DESC, k.id DESC LIMIT 1) AS ultimo_pago,
@@ -336,6 +336,9 @@ module.exports = function finanzas(app, db, h, unicos) {
 
   // ¿Ve las cuentas por cobrar? (al menos la cobranza de sus órdenes). Sin esto solo ve los cobros que él registró.
   const veCobranza = req => P.puede(req, 'cxc.ver');
+  // ¿Ve la cobranza de ESTA orden? Toda su sucursal, o con «lo suyo» solo sus órdenes (responsable o técnico asignado),
+  // aunque vea las ventas de toda la sucursal. Lee el alcance de la petición (vale también dentro de cartera()).
+  const cobranzaDe = l => { const n = alcance.nivel('cxc'), yo = alcance.usuario(); return n >= 2 || (n === 1 && yo != null && (l.responsable_id === yo || l.tecnico_id === yo)); };
   function cuentaDeOrden(leadId) {
     const f = db.prepare(SQL_CUENTA + " WHERE l.id = ?").get(leadId);
     return f ? describirCuenta(f, hoyMexico()) : null;
@@ -351,8 +354,8 @@ module.exports = function finanzas(app, db, h, unicos) {
     const hoy = hoyMexico();
     // Un servicio NO realizado no se cobra (salvo que ya tenga pagos registrados, p. ej. un anticipo).
     return db.prepare(SQL_CUENTA + ` WHERE l.estatus = 'ganado' AND l.cobranza_por_revisar = 0
-      AND (COALESCE(l.ejecucion, '') <> 'no_realizado' OR EXISTS (SELECT 1 FROM cobros k WHERE k.lead_id = l.id AND k.cancelado = 0))`).all()
-      .map(f => describirCuenta(f, hoy));
+      AND (COALESCE(l.ejecucion, '') <> 'no_realizado' OR EXISTS (SELECT 1 FROM main.cobros k WHERE k.lead_id = l.id AND k.cancelado = 0))`).all()
+      .filter(cobranzaDe).map(f => describirCuenta(f, hoy));
   }
 
   // ===================== CUENTAS POR COBRAR =====================
@@ -431,10 +434,10 @@ module.exports = function finanzas(app, db, h, unicos) {
   // Cobranza de una orden. Quien ve las cuentas por cobrar ve la cuenta completa; quien no (p. ej. el técnico que cobra
   // en campo) solo puede registrar un pago y ver los que él registró: sin total, cobrado, saldo ni vencimiento.
   app.get('/api/leads/:id/cobros', h((req, res) => {
-    const lead = db.prepare('SELECT id, estatus, created_at, ejecucion, cliente_id FROM leads WHERE id = ?').get(req.params.id);
+    const lead = db.prepare('SELECT id, estatus, created_at, ejecucion, cliente_id, responsable_id, tecnico_id FROM leads WHERE id = ?').get(req.params.id);
     if (!lead || lead.estatus !== 'ganado') return res.status(404).json({ error: 'Solo las órdenes de servicio tienen cobranza' });
     const puede_registrar = P.puede(req, 'cobros.registrar');
-    if (!veCobranza(req)) {
+    if (!cobranzaDe(lead)) {
       const cliente = db.prepare('SELECT COALESCE(empresa_contacto, nombre) n FROM clientes WHERE id = ?').get(lead.cliente_id)?.n || '';
       return res.json({ cuenta: null, solo_propios: true, orden: { lead_id: lead.id, folio: folioOS(lead.id, lead.created_at), cliente_nombre: cliente, ejecucion: lead.ejecucion },
         cobros: cobrosDeOrden(lead.id), puede_registrar, puede_editar_factura: false, puede_operar: false, es_admin: false, directo: P.puede(req, 'cobros.directo') });
@@ -464,7 +467,7 @@ module.exports = function finanzas(app, db, h, unicos) {
     const cuenta = cuentaDeOrden(lead.id); // con todos los cobros de la orden (SQL_CUENTA), aunque quien registra solo vea los suyos
     const saldoCent = Math.round(cuenta.saldo * 100);
     if (monto > saldoCent) {
-      if (!veCobranza(req)) return res.status(400).json({ error: 'El pago es mayor que lo que falta por cobrar de esta orden. Revisa el monto con administración.' });
+      if (!cobranzaDe(lead)) return res.status(400).json({ error: 'El pago es mayor que lo que falta por cobrar de esta orden. Revisa el monto con administración.' });
       return res.status(400).json({ error: `El pago (${fmt(monto)}) es mayor que el saldo de la orden (${fmt(saldoCent)}). ` + (lead.iva_modo
         ? 'Si la factura salió por otro total (retención o centavos), captúralo primero en Crédito y factura.'
         : 'Si el cliente pagó con IVA, captura primero el total facturado.') });
@@ -484,7 +487,7 @@ module.exports = function finanzas(app, db, h, unicos) {
       bitacora(lead.id, `${tipo === 'anticipo' ? 'Anticipo' : tipo === 'ajuste' ? 'Ajuste' : 'Pago'} registrado: ${fmt(monto)} por ${metodo} (${fecha})${confirmado ? '' : ' · por confirmar'}.`, req, 'cxc');
       return info.lastInsertRowid;
     })();
-    res.status(201).json({ id, confirmado: !!confirmado, ...(veCobranza(req) ? { cuenta: cuentaDeOrden(lead.id) } : {}) });
+    res.status(201).json({ id, confirmado: !!confirmado, ...(cobranzaDe(lead) ? { cuenta: cuentaDeOrden(lead.id) } : {}) });
   }));
 
   app.post('/api/finanzas/cobros/:id/confirmar', h((req, res) => {
@@ -528,6 +531,7 @@ module.exports = function finanzas(app, db, h, unicos) {
     if (!permitido(req, res, 'cxc.ver', 'No tienes permiso para cambiar crédito y factura')) return;
     const lead = db.prepare('SELECT * FROM leads WHERE id = ?').get(req.params.id);
     if (!lead || lead.estatus !== 'ganado') return res.status(400).json({ error: 'Solo las órdenes de servicio tienen facturación' });
+    if (!cobranzaDe(lead)) return res.status(403).json({ error: 'No tienes permiso para cambiar crédito y factura de esta orden' });
     const b = req.body;
     if (!diasCreditoValidos(b.dias_credito)) return res.status(400).json({ error: 'Los días de crédito deben ser un número entero de 0 a 180' });
     if (b.factura_fecha && !fechaValida(b.factura_fecha)) return res.status(400).json({ error: 'La fecha de la factura no es válida' });
@@ -583,11 +587,15 @@ module.exports = function finanzas(app, db, h, unicos) {
     const cli = db.prepare('SELECT id, dias_credito FROM clientes WHERE id = ?').get(req.params.id);
     if (!cli) return res.status(404).json({ error: 'Cliente no encontrado' });
     const hoy = hoyMexico();
-    const cuentas = db.prepare(SQL_CUENTA + " WHERE l.estatus = 'ganado' AND l.cliente_id = ?").all(cli.id).map(f => describirCuenta(f, hoy));
+    const filas = db.prepare(SQL_CUENTA + " WHERE l.estatus = 'ganado' AND l.cliente_id = ?").all(cli.id);
+    // El aviso (tiene adeudo vencido, sin montos) mira todas sus órdenes visibles; los montos, solo las órdenes cuya
+    // cobranza ve quien consulta (con «lo suyo», las suyas).
+    const vencidasTodas = filas.map(f => describirCuenta(f, hoy)).filter(c => !c.por_revisar && c.vencida);
+    const r = { cliente_id: cli.id, dias_credito: cli.dias_credito || 0, tiene_vencido: vencidasTodas.length > 0, dias_max_vencido: Math.max(0, ...vencidasTodas.map(c => c.dias_vencido)) };
+    if (!P.puede(req, 'cxc.ver')) return res.json(r);
+    const cuentas = filas.filter(cobranzaDe).map(f => describirCuenta(f, hoy));
     const activas = cuentas.filter(c => !c.por_revisar);
     const vencidas = activas.filter(c => c.vencida);
-    const r = { cliente_id: cli.id, dias_credito: cli.dias_credito || 0, tiene_vencido: vencidas.length > 0, dias_max_vencido: Math.max(0, ...vencidas.map(c => c.dias_vencido)) };
-    if (!P.puede(req, 'cxc.ver')) return res.json(r);
     const suma = arr => Math.round(arr.reduce((t, c) => t + c.saldo * 100, 0)) / 100;
     const ultimos = db.prepare(`SELECT k.id, k.lead_id, k.fecha, k.monto_cent, k.metodo, k.tipo, k.confirmado, l.created_at AS lead_created_at
       FROM cobros k JOIN leads l ON l.id = k.lead_id WHERE l.cliente_id = ? AND k.cancelado = 0 ORDER BY k.fecha DESC, k.id DESC LIMIT 5`).all(cli.id)
@@ -1041,7 +1049,7 @@ module.exports = function finanzas(app, db, h, unicos) {
         if (cobrado) bitacora(lead.id, `El cliente ya pagó ${fmt(cobrado)}: queda a su favor (devolver o aplicar a otro servicio).`, req, 'cxc');
         if (gastos.length) bitacora(lead.id, `Tiene ${gastos.length} gasto(s) en Cuentas por pagar${pendiente ? ' (' + fmt(pendiente) + ' sin pagar)' : ''}: revisa si se cancelan.`, req, 'cxp');
       })();
-      return res.json({ ok: true, gastos: vg.listos.length, a_favor: veCobranza(req) ? aPesos(cobrado) : undefined, gastos_ligados: gastos.length + vg.listos.length, gastos_pendientes: aPesos(pendiente), lead: db.prepare('SELECT * FROM leads WHERE id = ?').get(lead.id) });
+      return res.json({ ok: true, gastos: vg.listos.length, a_favor: cobranzaDe(lead) ? aPesos(cobrado) : undefined, gastos_ligados: gastos.length + vg.listos.length, gastos_pendientes: aPesos(pendiente), lead: db.prepare('SELECT * FROM leads WHERE id = ?').get(lead.id) });
     }
     if (b.estado !== 'realizado') return res.status(400).json({ error: 'Indica si el servicio se realizó o no' });
     const fecha = b.fecha || hoy;

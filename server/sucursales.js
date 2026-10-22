@@ -28,7 +28,7 @@ const VISTAS = [
   ['establecimientos', "en_alcance(sucursal_id) AND ve_registro('ventas', responsable_id)"], // prospección: los suyos, o toda su sucursal
   ['historial_archivo', 'en_alcance(sucursal_id)'],
   // Cobros: los de las órdenes que ve, si ve cuentas por cobrar; si no, solo los que él registró (el técnico que cobra en campo).
-  ['cobros', 'lead_id IN (SELECT id FROM leads) AND ve_cobro(registrado_por)'],
+  ['cobros', 'lead_id IN (SELECT id FROM leads) AND ve_cobro(registrado_por, lead_id)'],
   ['historial', 'lead_id IN (SELECT id FROM leads) AND ve_bitacora(area, usuario_id, lead_id)'],
   ['pagos_proveedor', 'cxp_id IN (SELECT id FROM cuentas_por_pagar)'],
   ['documentos_solicitud', 'solicitud_id IN (SELECT id FROM solicitudes_compra)'],
@@ -272,9 +272,15 @@ module.exports = function sucursales(app, db, h, { audit }) {
       const n = alcance.nivel(area);
       return n >= 2 || (n === 1 && quien != null && quien === alcance.usuario()) ? 1 : 0;
     });
-    // Un cobro: lo ve quien ve las cuentas por cobrar (de su sucursal o de sus órdenes, según la vista de leads) y,
-    // aunque no las vea, quien lo registró.
-    db.db.function('ve_cobro', { deterministic: false }, quien => (alcance.nivel('cxc') >= 1 || (quien != null && quien === alcance.usuario()) ? 1 : 0));
+    // Un cobro: lo ve quien ve la cobranza de toda su sucursal; con «lo suyo», solo en sus órdenes (responsable o técnico
+    // asignado), aunque vea las ventas de toda la sucursal; y, siempre, quien lo registró.
+    const respTec = db.db.prepare('SELECT responsable_id, tecnico_id FROM main.leads WHERE id = ?');
+    db.db.function('ve_cobro', { deterministic: false }, (quien, leadId) => {
+      const n = alcance.nivel('cxc'), yo = alcance.usuario();
+      if (n >= 2 || (yo != null && quien === yo)) return 1;
+      if (n === 1 && yo != null) { const l = respTec.get(leadId); return l && (l.responsable_id === yo || l.tecnico_id === yo) ? 1 : 0; }
+      return 0;
+    });
     // Una orden o cotización: la ve quien ve las ventas de su sucursal, su responsable y su técnico asignado; y,
     // ya contratada, quien ve la cobranza (de toda la sucursal o de las suyas).
     db.db.function('ve_lead', { deterministic: false }, (resp, tec, estatus) => {

@@ -226,6 +226,18 @@ const RANGO = 'desde=2020-01-01&hasta=' + dia(60);
   [s] = await pedir('POST', '/compras/solicitudes', C, { que: 'Algo', para_que: 'Prueba', centro_id: centros[0].id }); revisa(s === 403, 'sin compras no hace solicitudes');
   [s] = await pedir('POST', '/leads', C, { cliente_id: cRubi.id, direccion: 'x', canal_id: canales[0].id, servicio_id: SERV.id, responsable_id: (await pedir('GET', '/usuarios', A))[1].find(u => u.nombre === 'Carla Cobranza').id, partidas_json: partidas('x', 1), iva_modo: 'sin_iva', valor: 1, forzar_duplicado: true });
   revisa(s === 403, 'sin ventas no cotiza');
+  // Rol inventado con ventas de toda la sucursal pero cobranza «lo suyo» (auditoría 2026-10-21): la cobranza solo de
+  // sus órdenes, aunque vea todas las ventas. Antes veía la de toda la sucursal.
+  [s, j] = await pedir('POST', '/roles', A, { nombre: 'Vendedor senior' }); const SEN = j.clave;
+  [s, j] = await pedir('PUT', '/roles/' + SEN + '/permisos', A, { permisos: ['ordenes.importes', 'cobros.registrar', 'cobranza.factura'], alcances: { ventas: 2, cxc: 1, cxp: 0, compras: 0 } }); revisa(s === 200, 'rol «Vendedor senior»: ventas de toda la sucursal, cobranza lo suyo', j);
+  [s] = await pedir('POST', '/usuarios', A, { nombre: 'Sara Senior', password: CLAVE, rol: SEN, sucursales: [qro.id] });
+  const SS = (await pedir('POST', '/login', null, { nombre: 'Sara Senior', password: CLAVE }))[1].token;
+  [s, j] = await pedir('GET', '/leads/' + L2.id, SS); revisa(s === 200 && j.valor === 8231.57, 'Sara ve la orden de Laura (ventas de toda la sucursal)', s);
+  [s, j] = await pedir('GET', '/leads/' + L2.id + '/cobros', SS); revisa(s === 200 && j.cuenta === null && j.cobros.length === 0, 'pero no su cobranza: ni la cuenta ni los cobros de otros', { cuenta: j.cuenta, cobros: j.cobros?.length });
+  [s, j] = await pedir('GET', '/finanzas/cartera', SS); revisa(s === 200 && !j.some(c => c.lead_id === L2.id || c.lead_id === L3.id), 'ni en la cartera', j.map?.(c => c.folio));
+  [s, j] = await pedir('PUT', '/leads/' + L2.id + '/facturacion', SS, { dias_credito: 30 }); revisa(s === 403, 'ni cambia crédito y factura de una orden que no es suya', s);
+  [s, j] = await pedir('GET', '/calendario?desde=' + dia(-40) + '&hasta=' + dia(60), SS); revisa(s === 200 && !j.eventos.some(e => e.tipo === 'cobro' && (e.lead_id === L2.id || e.lead_id === L3.id)), 'ni sus cobros en el calendario', j.eventos?.filter(e => e.tipo === 'cobro').map(e => e.lead_id));
+  [s, j] = await pedir('GET', '/finanzas/clientes/' + cRubi.id + '/estado-cuenta?completo=1', SS); revisa(s === 200 && !(j.ordenes || []).length && !(j.cobros || []).length && !j.saldo, 'ni en el estado de cuenta del cliente', { ordenes: j.ordenes?.length, cobros: j.cobros?.length, saldo: j.saldo });
   // «Ver como»: Dirección mira con los niveles de ventas (lo suyo de Dirección: nada).
   [s, j] = await pedir('GET', '/leads', A, undefined, { 'X-Ver-Como': 'ventas' }); revisa(s === 200 && !j.length, 'Dirección «viendo como ventas» no ve las cotizaciones de los vendedores', j.length);
   [s, j] = await pedir('GET', '/permisos/mios', L); revisa(j.alcances?.ventas === 1 && j.permisos.includes('ventas.ver') && !j.permisos.includes('ventas.sucursal'), 'la pantalla de Laura sabe qué ve (para esconder menús)', j.alcances);
