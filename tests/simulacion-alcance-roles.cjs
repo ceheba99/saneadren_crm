@@ -79,13 +79,17 @@ const RANGO = 'desde=2020-01-01&hasta=' + dia(60);
   [s, j] = await pedir('GET', '/finanzas/por-confirmar', R); revisa(s === 403, 'Raúl no confirma cobros (no ve la lista por confirmar)', s);
   [s, j] = await pedir('GET', '/leads/' + L2.id + '/cobros', L);
   revisa(s === 200 && j.cuenta && j.cobros.length === 2 && j.cuenta.cobrado === 1516.9, 'Laura (cobranza de sus órdenes) ve la cuenta completa con los dos cobros', j.cuenta);
-  // Proveedores: quien solo ve compras (Ana) recibe nombre, categoría y crédito para las pantallas de compras; sin CLABE ni saldos.
-  [s, j] = await pedir('GET', '/finanzas/proveedores', N);
-  revisa(s === 200 && j.length && j.every(p => Object.keys(p).sort().join() === 'activo,categoria,dias_credito,id,nombre'), 'Ana (atención) recibe la lista de proveedores sin CLABE, contacto ni saldos', [s, j[0]]);
-  [s, j] = await pedir('GET', '/finanzas/categorias', N); revisa(s === 200 && j.length > 0, 'Ana recibe las categorías de gasto (las usan las pantallas de compras)', s);
+  // Proveedores: quien pide compras sin ver cuentas por pagar recibe nombre, categoría y crédito; sin CLABE ni saldos.
+  [s, j] = await pedir('POST', '/roles', A, { nombre: 'Solicitante' }); const SOL = j.clave;
+  [s, j] = await pedir('PUT', '/roles/' + SOL + '/permisos', A, { permisos: [], alcances: { ventas: 0, cxc: 0, cxp: 0, compras: 1 } });
+  [s] = await pedir('POST', '/usuarios', A, { nombre: 'Sol Solicitante', password: CLAVE, rol: SOL, sucursales: [qro.id] });
+  const TSOL = (await pedir('POST', '/login', null, { nombre: 'Sol Solicitante', password: CLAVE }))[1].token;
+  [s, j] = await pedir('GET', '/finanzas/proveedores', TSOL);
+  revisa(s === 200 && j.length && j.every(p => Object.keys(p).sort().join() === 'activo,categoria,dias_credito,id,nombre'), 'quien solo pide compras recibe la lista de proveedores sin CLABE, contacto ni saldos', [s, j[0]]);
+  [s, j] = await pedir('GET', '/finanzas/categorias', TSOL); revisa(s === 200 && j.length > 0, 'y las categorías de gasto (las usan las pantallas de compras)', s);
   [s, j] = await pedir('GET', '/finanzas/proveedores', L); revisa(s === 200 && j.length && 'clabe' in j[0] && 'saldo' in j[0], 'Laura (ve sus cuentas por pagar) recibe la ficha completa del proveedor', [s, Object.keys(j[0] || {})]);
   // Resumen de cuentas: cada parte a quien ve esa área (antes Técnico y Compras recibían 403 y veían «No se pudo cargar»).
-  for (const [quien, t, cobrar, pagar] of [['Raúl (técnico)', R, false, true], ['Isaac (compras)', I, false, true], ['Ana (atención)', N, true, false], ['Laura (ventas)', L, true, true]]) {
+  for (const [quien, t, cobrar, pagar] of [['Raúl (técnico)', R, false, true], ['Isaac (compras)', I, false, true], ['Ana (atención)', N, true, true], ['Laura (ventas)', L, true, true]]) {
     [s, j] = await pedir('GET', '/finanzas/resumen', t);
     revisa(s === 200 && (j.por_cobrar !== undefined) === cobrar && (j.por_pagar !== undefined) === pagar,
       `${quien}: el resumen trae ${[cobrar && 'lo de cobrar', pagar && 'lo de pagar'].filter(Boolean).join(' y ')}${!cobrar ? ', sin cobranza' : ''}${!pagar ? ', sin proveedores' : ''}`, [s, Object.keys(j)]);
@@ -150,8 +154,8 @@ const RANGO = 'desde=2020-01-01&hasta=' + dia(60);
   const aparece = (todo, m) => MARCAS[m].find(f => todo.includes(f));
   // Lo que cada uno DEBE ver (lo demás no debe aparecer en ninguna respuesta).
   const ESPERADO = {
-    Laura: ['Zafiro', 'Rubi', 'Cuarzo', 'SolPerla', '$venta-Zafiro', '$venta-Rubi', '$cobro-Ana-Rubi', '$cobro-Raul', '$gasto-Cuarzo'], // lo suyo y la cobranza de sus órdenes
-    Beto: ['Topacio', 'Onix', '$venta-Topacio', '$venta-Onix', '$cobro-Ana-Topacio'],
+    Laura: ['Zafiro', 'Rubi', 'Cuarzo', 'SolPerla', '$venta-Zafiro', '$venta-Rubi', '$cobro-Ana-Rubi', '$cobro-Raul', '$gasto-Cuarzo', 'Amatista', '$gasto-Amatista'], // lo suyo, la cobranza y los gastos de sus órdenes (2026-10-22)
+    Beto: ['Topacio', 'Onix', '$venta-Topacio', '$venta-Onix', '$cobro-Ana-Topacio', 'Jade', '$gasto-Jade'], // el gasto que Isaac ligó a su orden (2026-10-22)
     Raul: ['Rubi', 'Amatista', 'SolCoral', 'Granate', '$cobro-Raul', '$gasto-Amatista'], // la orden asignada SIN importes, solo el cobro que él registró, su gasto, su solicitud
     Ana: ['Zafiro', 'Rubi', 'Topacio', 'Onix', 'Granate', '$venta-Zafiro', '$venta-Rubi', '$venta-Topacio', '$venta-Onix', '$cobro-Ana-Rubi', '$cobro-Ana-Topacio', '$cobro-Raul'], // nada de proveedores
     Isaac: ['Rubi', 'Topacio', 'Amatista', 'Cuarzo', 'Jade', 'SolPerla', 'SolCoral', '$gasto-Amatista', '$gasto-Cuarzo', '$gasto-Jade'], // folio y cliente (sin montos de venta), todo CxP y compras
@@ -171,7 +175,7 @@ const RANGO = 'desde=2020-01-01&hasta=' + dia(60);
   // Isaac ve folio y cliente de las órdenes, pero nada de la venta: ni montos ni cobranza.
   [s] = await pedir('GET', '/finanzas/cartera', I); revisa(s === 403, 'Isaac no entra a cuentas por cobrar');
   [s] = await pedir('GET', '/leads/' + L3.id, I); revisa(s === 404, 'Isaac no abre la orden de venta (no existe para él)');
-  [s] = await pedir('GET', '/finanzas/cxp', N); revisa(s === 403, 'Ana no entra a cuentas por pagar');
+  [s, j] = await pedir('GET', '/finanzas/cxp?vista=todas', N); revisa(s === 200 && !j.some(x => /Amatista|Cuarzo|Jade/.test(x.concepto)), 'Ana (atención) entra a cuentas por pagar y solo ve lo que ella anota (2026-10-22)', j.map?.(x => x.concepto));
 
   // ----- Acceso directo por número: lo ajeno «no existe» -----
   for (const [quien, t, lead] of [['Laura', L, L3], ['Laura', L, L4], ['Beto', B, L1], ['Raul', R, L1], ['Raul', R, L3], ['Pedro', P, L2], ['Isaac', I, L2]]) {
@@ -181,7 +185,9 @@ const RANGO = 'desde=2020-01-01&hasta=' + dia(60);
   }
   [s] = await pedir('GET', '/clientes/' + cTopacio.id, L); revisa(s === 404, 'Laura no abre la ficha del cliente de Beto');
   const cxpRaul = cxpTodas.find(x => /Amatista/.test(x.concepto));
-  [s] = await pedir('GET', '/finanzas/cxp/' + cxpRaul.id + '/pagos', L); revisa(s === 404 || s === 403, 'Laura no ve los pagos del gasto de Raúl', s);
+  [s] = await pedir('GET', '/finanzas/cxp/' + cxpRaul.id + '/pagos', L); revisa(s === 200, 'Laura ve los pagos del gasto que Raúl anotó en su orden (2026-10-22)', s);
+  const cxpJade = cxpTodas.find(x => /Jade/.test(x.concepto));
+  [s] = await pedir('GET', '/finanzas/cxp/' + cxpJade.id + '/pagos', L); revisa(s === 404 || s === 403, 'pero no los del gasto ligado a la orden de Beto', s);
 
   console.log('\nReglas de «lo suyo»');
   // Beto intenta cotizarle al cliente de Laura.
