@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Saneadren · Cotizaciones y Servicios</title>
-<link rel="stylesheet" href="styles.css?v=cxc1">
+<link rel="stylesheet" href="styles.css?v=ay1">
 <link rel="stylesheet" href="servicios-tabla.css">
 <link rel="stylesheet" href="flujo.css?v=cel1">
 </head>
@@ -312,6 +312,19 @@
       <select id="sol-filtro" aria-label="Mostrar"><option value="abiertas">Abiertas</option><option value="mias">Las que yo pedí</option><option value="por_aprobar">Por aprobar</option><option value="cotizando">Cotizando</option><option value="elegida">Cotización elegida</option><option value="con_orden">Con orden de compra</option><option value="recibida">Recibidas</option><option value="rechazada">Rechazadas</option><option value="cancelada">Canceladas</option><option value="">Todas</option></select>
       <input type="search" id="sol-buscar" placeholder="Folio, qué se necesita, área o quién pidió" aria-label="Buscar solicitudes">
     </div>
+    <button type="button" class="enlace cobrar-leyenda-btn" data-leyenda="sol-leyenda" aria-expanded="false" aria-controls="sol-leyenda">¿Qué significa cada estado?</button>
+    <div class="cobrar-leyenda" id="sol-leyenda" hidden>
+      <p>Así avanza una solicitud de compra:</p>
+      <dl>
+        <dt>Por aprobar</dt><dd>Alguien pidió algo; falta que el encargado de compras o administración lo apruebe.</dd>
+        <dt>Cotizando</dt><dd>Ya se aprobó; se juntan las cotizaciones de los proveedores (normalmente tres).</dd>
+        <dt>Cotización elegida</dt><dd>Ya se escogió a qué proveedor comprarle; falta hacer la orden de compra.</dd>
+        <dt>Con orden de compra</dt><dd>Ya se hizo la orden de compra; falta que llegue.</dd>
+        <dt>Recibida</dt><dd>Ya llegó lo que se pidió.</dd>
+        <dt>Rechazada</dt><dd>No se aprobó.</dd>
+        <dt>Cancelada</dt><dd>Se canceló antes de terminar.</dd>
+      </dl>
+    </div>
     <div id="sol-lista"></div>
   </section>
 
@@ -323,6 +336,14 @@
     <div class="filtros">
       <select id="oc-filtro" aria-label="Mostrar"><option value="">Todas</option><option value="borrador">Borradores (por autorizar)</option><option value="pendiente_pago">Autorizadas por pagar</option><option value="autorizada">Autorizadas</option><option value="cancelada">Canceladas</option></select>
       <input type="search" id="oc-buscar" placeholder="Folio OC o SOL, proveedor, centro de costos o concepto" aria-label="Buscar órdenes de compra">
+    </div>
+    <button type="button" class="enlace cobrar-leyenda-btn" data-leyenda="oc-leyenda" aria-expanded="false" aria-controls="oc-leyenda">¿Qué significa cada estado?</button>
+    <div class="cobrar-leyenda" id="oc-leyenda" hidden>
+      <dl>
+        <dt>Borrador · por autorizar</dt><dd>La orden de compra está hecha, pero todavía no se autoriza: aún no es una deuda con el proveedor.</dd>
+        <dt>Autorizada</dt><dd>Ya se autorizó: pasa a Cuentas por pagar como deuda con el proveedor. «Autorizadas por pagar» son las que todavía no se pagan completas.</dd>
+        <dt>Cancelada</dt><dd>Se canceló: no se compra ni se paga.</dd>
+      </dl>
     </div>
     <div id="oc-lista"></div>
   </section>
@@ -337,6 +358,19 @@
       </div>
     </div>
     <div class="cal-filtros" id="cal-filtros"></div>
+    <button type="button" class="enlace cobrar-leyenda-btn" data-leyenda="cal-leyenda" aria-expanded="false" aria-controls="cal-leyenda">¿Qué significa cada color y cada estado?</button>
+    <div class="cobrar-leyenda" id="cal-leyenda" hidden>
+      <p>Cada color es un tipo de evento; los botones de arriba los muestran u ocultan.</p>
+      <dl>
+        <dt>Órdenes de servicio</dt><dd>Un servicio contratado, en la fecha acordada.</dd>
+        <dt>Alertas y recordatorios</dt><dd>Avisos que alguien dejó en una cotización u orden («llamar el martes»).</dd>
+        <dt>Por cobrar</dt><dd>El día que vence el pago de un servicio que ya se debe (realizado o facturado).</dd>
+        <dt>Por pagar</dt><dd>El día que vence el pago a un proveedor.</dd>
+        <dt>Cotizaciones que vencen</dt><dd>El último día de vigencia de una cotización abierta.</dd>
+        <dt>Recompras sugeridas</dt><dd>Clientes a los que, por el ciclo de su servicio, probablemente ya les toca otra vez.</dd>
+      </dl>
+      <p><b>Estados:</b> «Programada», todavía no llega su fecha; «Por concluir», ya pasó y nadie marcó si se hizo; «Realizada» o «No realizada», ya se marcó; «Pendiente» o «Resuelta», un aviso por atender o ya atendido; «Por vencer» o «Vencido», un cobro o pago antes o después de su fecha límite. «Atrasado» (en Hoy) junta lo de días anteriores que sigue pendiente.</p>
+    </div>
     <p class="ayuda" id="cal-estado" role="status"></p>
     <!-- Hoy: lo atrasado y la agenda del día -->
     <div class="cal-hoy" id="cal-vista-hoy" hidden><div class="cal-panel cal-panel-atrasado" id="cal-atrasado"></div><div class="cal-panel" id="cal-agenda"></div></div>
@@ -393,7 +427,7 @@
     <div id="res-comercial" hidden>
     <div class="filtros"><label>Desde <input type="date" id="res-desde"></label><label>Hasta <input type="date" id="res-hasta"></label><button class="btn btn-primario" id="res-aplicar">Consultar</button><button class="btn btn-outline" id="res-todo">Todo el historial</button><button class="btn btn-outline perm-clientes-exportar" id="res-exportar">Exportar canales a Excel</button></div>
     <p class="ayuda">Contactos nuevos: fecha de registro. Vendido: servicios realizados, por la fecha en que se realizaron (igual que Panorama y el Generador); los contratados que aún no se concluyen aparecen aparte como «Por realizar». Cada contacto y sus servicios se atribuyen a “Cómo se enteró de nosotros”. Lo vendido no equivale a cobros ni utilidad. Los importes son sin IVA (la venta real); lo cobrado y los gastos sí incluyen IVA.</p>
-    <p id="res-estado" role="status"></p><div class="res-grid" id="res-kpis"></div>
+    <p id="res-estado" role="status"></p><div class="res-grid" id="res-kpis" data-ayuda-zona></div>
     <div class="solo-cobranza" id="res-dinero-periodo"></div>
     <div class="res-section"><h3>¿Qué canales traen contactos y generan ventas?</h3><p class="ayuda">Conversión: contactos nuevos del periodo que ya tienen un servicio realizado al día de hoy / contactos nuevos del periodo. Las ventas pueden provenir de contactos registrados antes.</p><div class="tabla-scroll"><table class="tabla-resumen"><thead><tr><th>Canal de origen</th><th>Leads nuevos (contactos)</th><th>Convertidos a cliente</th><th>Conversión</th><th>Clientes con servicio</th><th>Servicios realizados</th><th>Vendido (sin IVA)</th><th>Promedio por servicio</th><th>Propuestas abiertas</th><th>Importe abierto (sin IVA)</th></tr></thead><tbody id="res-canales"></tbody></table></div></div>
     <div class="res-two-col"><div class="res-section"><h3>Vendido por canal (sin IVA)</h3><div id="res-dinero-canal" class="bar-chart"></div></div><div class="res-section"><h3>Contactos nuevos por canal</h3><div id="res-contactos-canal" class="bar-chart"></div></div></div>
@@ -507,8 +541,7 @@
   <!-- ====== VISTA: CUENTAS POR COBRAR Y POR PAGAR (admin y atención; por pagar solo admin) ====== -->
   <section class="vista solo-cobranza" id="vista-cuentas">
     <h2 class="util-13" id="cuentas-titulo">Cuentas por cobrar</h2>
-    <div class="cuentas-tarjetas" id="cuentas-tarjetas"></div>
-    <div class="cuentas-explica" id="cuentas-explica" role="status" hidden></div>
+    <div class="cuentas-tarjetas" id="cuentas-tarjetas" data-ayuda-zona></div>
     <!-- Cuentas por cobrar y por pagar son secciones separadas del menú Finanzas; las pestañas solo existen en Por pagar. -->
     <div class="cuentas-pestanas" role="tablist" id="cuentas-pestanas">
       <button type="button" role="tab" data-pestana="pagar">Facturas y gastos</button>
@@ -533,7 +566,7 @@
         <button type="button" data-filtro-cobro="todas">Todas</button>
       </div>
       <!-- Qué significa cada estado y cada filtro, para quien entra por primera vez (2026-10-22). -->
-      <button type="button" class="enlace cobrar-leyenda-btn" id="cobrar-leyenda-btn" aria-expanded="false" aria-controls="cobrar-leyenda">¿Qué significa cada estado y cada filtro?</button>
+      <button type="button" class="enlace cobrar-leyenda-btn" id="cobrar-leyenda-btn" data-leyenda="cobrar-leyenda" aria-expanded="false" aria-controls="cobrar-leyenda">¿Qué significa cada estado y cada filtro?</button>
       <div class="cobrar-leyenda" id="cobrar-leyenda" hidden>
         <p>Cada orden de servicio pasa por estos pasos. Se cobra desde que <b>se marca como realizada o se factura</b>.</p>
         <dl>
@@ -1227,21 +1260,22 @@
 
 <!-- ?v= obliga a los navegadores (sobre todo celulares) a tomar la versión nueva tras publicar. -->
 <script src="ui.js?v=cer1"></script>
+<script src="ayuda.js?v=ay1"></script>
 <script src="permisos.js?v=perm3"></script>
 <script src="roles.js?v=cob2"></script>
 <script src="importes.js?v=red1"></script>
 <script src="servicios-tabla.js?v=imp1"></script>
 <script src="flujo.js?v=rev1"></script>
 <script src="cuentas.js?v=rev1"></script>
-<script src="finanzas.js?v=cxc1"></script>
+<script src="finanzas.js?v=ay1"></script>
 <script src="calendario.js?v=aud1"></script>
-<script src="tablero.js?v=con1"></script>
+<script src="tablero.js?v=ay1"></script>
 <script src="bitacora.js?v=hc1"></script>
 <script src="compras.js?v=dec1"></script>
 <script src="solicitudes.js?v=rev1"></script>
 <script src="carga-generador.js?v=con1"></script>
 <script src="sucursales.js?v=perm2"></script>
-<script src="app.js?v=imp2"></script>
+<script src="app.js?v=ay1"></script>
 <script src="personal.js?v=rev1"></script>
 <script src="buscador.js?v=suc1"></script>
 <script src="demo.js?v=demo1"></script>

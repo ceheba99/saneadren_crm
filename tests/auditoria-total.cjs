@@ -138,6 +138,7 @@ for (const [f, t] of Object.entries(PUBLICO)) {
 }
 // B6c. Un solo modo de marcar: en los formularios de captura cada campo dice «(obligatorio)» u «(opcional)» (había
 // «(obligatorio)», «*» o nada, y lo obligatorio se descubría al guardar). Lo que no se captura a mano se declara con su razón.
+// En pantalla ayuda.js cambia «(obligatorio)» por un * rojo (con «(obligatorio)» para lectores de pantalla); aquí se revisa el texto fuente.
 const FORMULARIOS_CAPTURA = ['in-', 'fc-ed-', 'sn-', 'ed-', 'gasto-', 'cobro-', 'pagoprov-', 'oc-', 'prov-', 'nu-', 'ns-', 'pr-'];
 const SIN_MARCA = {
   'sn-servicio': 'escondido: sale de las partidas', 'sn-valor': 'escondido: sale de las partidas', 'ed-servicio': 'escondido: sale de las partidas',
