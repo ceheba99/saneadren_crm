@@ -929,11 +929,11 @@ module.exports = function finanzas(app, db, h, unicos) {
     if (!fechaValida(desde) || !fechaValida(hasta) || desde > hasta || diasEntre(desde, hasta) > 100) return res.status(400).json({ error: 'Revisa el rango de fechas (máximo 100 días)' });
     const hoy = hoyMexico(), eventos = [];
     const cliente = 'COALESCE(c.empresa_contacto, c.nombre, l.empresa_contacto, l.nombre)';
-    for (const o of db.prepare(`SELECT l.id, l.created_at, l.fecha_servicio, l.ejecucion, l.equipo, l.operador, ${cliente} AS cliente, s.nombre AS servicio
+    for (const o of db.prepare(`SELECT l.id, l.created_at, l.fecha_servicio, l.hora_servicio, l.ejecucion, l.equipo, l.operador, ${cliente} AS cliente, s.nombre AS servicio
         FROM leads l LEFT JOIN clientes c ON c.id = l.cliente_id LEFT JOIN catalogo_servicios s ON s.id = l.servicio_id
         WHERE l.estatus = 'ganado' AND l.fecha_servicio BETWEEN ? AND ? ORDER BY l.fecha_servicio, l.id`).all(desde, hasta)) {
       const estado = o.ejecucion === 'realizado' ? 'realizada' : o.ejecucion === 'no_realizado' ? 'no_realizada' : o.fecha_servicio <= hoy ? 'por_concluir' : 'programada';
-      eventos.push({ tipo: 'orden', fecha: o.fecha_servicio, estado, lead_id: o.id, titulo: `${folioOS(o.id, o.created_at)} · ${o.cliente || 'Sin cliente'}`,
+      eventos.push({ tipo: 'orden', fecha: o.fecha_servicio, ...(o.hora_servicio ? { hora: o.hora_servicio } : {}), estado, lead_id: o.id, titulo: `${folioOS(o.id, o.created_at)} · ${o.cliente || 'Sin cliente'}`,
         detalle: [o.servicio, o.equipo ? 'Unidad ' + o.equipo : '', o.operador].filter(Boolean).join(' · ') });
     }
     for (const a of db.prepare(`SELECT h.id, h.lead_id, h.texto, h.fecha_alerta, h.resuelta, ${cliente} AS cliente

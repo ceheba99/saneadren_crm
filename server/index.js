@@ -613,6 +613,8 @@ function fechaServicioValida(valor){
 }
 function validarRegistro(req,res,next){
   if(!fechaServicioValida(req.body.fecha_servicio))return res.status(400).json({error:'La fecha del servicio no es válida'});
+  // Hora del servicio: «HH:MM» de 24 horas, o vacía.
+  if(req.body.hora_servicio!==undefined){if(req.body.hora_servicio===''||req.body.hora_servicio===null)req.body.hora_servicio=null;else if(typeof req.body.hora_servicio!=='string'||!/^([01]\d|2[0-3]):[0-5]\d$/.test(req.body.hora_servicio))return res.status(400).json({error:'La hora del servicio no es válida (ej. 09:30)'});}
   if(req.body.valor!==undefined&&req.body.valor!==null&&(typeof req.body.valor!=='number'||!Number.isFinite(req.body.valor)||req.body.valor<0||req.body.valor>1e12))return res.status(400).json({error:'El importe debe ser un número válido entre 0 y 1 billón'});
   if(req.body.etapa!==undefined&&(!Number.isInteger(req.body.etapa)||req.body.etapa<1||req.body.etapa>4))return res.status(400).json({error:'Etapa inválida'});
   next();
@@ -825,6 +827,7 @@ app.post('/api/leads', validarPartidas, validarRegistro, h((req, res) => {
   suc.asignar('leads', Number(info.lastInsertRowid));
   if(req.body.partidas_json!==undefined)db.prepare('UPDATE main.leads SET partidas_json = ?, iva_modo = ?, iva_tasa = ?, iva_cent = ? WHERE id = ?').run(req.body.partidas_json,req.body.iva_modo??null,req.body.iva_tasa??null,req.body.iva_cent??null,info.lastInsertRowid);
   db.prepare('UPDATE main.leads SET incluye_vigencia = ?, vigencia_hasta = ? WHERE id = ?').run(incluyeVigencia, vigenciaHasta, info.lastInsertRowid);
+  if (req.body.hora_servicio) db.prepare('UPDATE main.leads SET hora_servicio = ? WHERE id = ?').run(req.body.hora_servicio, info.lastInsertRowid);
   db.prepare('UPDATE main.leads SET notas_cotizacion = ? WHERE id = ?').run(textoOrden(req.body.notas_cotizacion), info.lastInsertRowid);
   db.prepare('UPDATE main.leads SET equipo = ?, operador = ?, observaciones = ?, proyecto = ?, manifiestos = ?, tiros = ? WHERE id = ?').run(textoOrden(req.body.equipo), textoOrden(req.body.operador), textoOrden(req.body.observaciones), textoOrden(req.body.proyecto), textoOrden(req.body.manifiestos), textoOrden(req.body.tiros), info.lastInsertRowid);
   if(req.body.establecimiento_id)db.prepare('UPDATE main.leads SET establecimiento_id=? WHERE id=?').run(req.body.establecimiento_id,info.lastInsertRowid);
@@ -859,6 +862,7 @@ function cambiosDeOrden(antes, b) {
   const cambio = k => b[k] !== undefined && String(b[k] ?? '') !== String(antes[k] ?? '');
   const lista = [];
   if (cambio('fecha_servicio')) lista.push(`fecha del servicio ${fecha(antes.fecha_servicio)} → ${fecha(b.fecha_servicio)}`);
+  if (cambio('hora_servicio')) lista.push(`hora del servicio ${antes.hora_servicio || '(sin hora)'} → ${b.hora_servicio || '(sin hora)'}`);
   if (cambio('fecha_cotizacion')) lista.push(`fecha de la cotización ${fecha(antes.fecha_cotizacion)} → ${fecha(b.fecha_cotizacion)}`);
   if (cambio('incluye_vigencia') || cambio('vigencia_hasta')) lista.push(`vigencia: ${Number(b.incluye_vigencia ?? antes.incluye_vigencia) ? 'hasta ' + fecha(b.vigencia_hasta ?? antes.vigencia_hasta) : 'sin vigencia'}`);
   if (cambio('etapa') && !(b.estatus && b.estatus !== antes.estatus)) lista.push(`etapa ${ETAPAS_TXT[antes.etapa] || antes.etapa} → ${ETAPAS_TXT[b.etapa] || b.etapa}`);
@@ -996,7 +1000,7 @@ app.put('/api/leads/:id', validarPartidas, validarRegistro, h((req, res) => {
   const errorOrden = validarDatosOrden(req.body);
   if (errorOrden) return res.status(400).json({ error: errorOrden });
   ['equipo', 'operador', 'observaciones', 'proyecto', 'manifiestos', 'tiros', 'notas_cotizacion'].forEach(c => { if (req.body[c] !== undefined) req.body[c] = textoOrden(req.body[c]); });
-  const campos = ['equipo', 'operador', 'observaciones', 'proyecto', 'manifiestos', 'tiros', 'partidas_json', 'iva_modo', 'iva_tasa', 'iva_cent','direccion', 'canal_id', 'servicio_id', 'responsable_id', 'tecnico_id', 'etapa', 'estatus', 'valor', 'fecha_servicio', 'notas_iniciales', 'urgente', 'encuesta_calificacion', 'encuesta_comentario', 'fecha_cotizacion', 'incluye_vigencia', 'vigencia_hasta', 'notas_cotizacion'];
+  const campos = ['equipo', 'operador', 'observaciones', 'proyecto', 'manifiestos', 'tiros', 'partidas_json', 'iva_modo', 'iva_tasa', 'iva_cent','direccion', 'canal_id', 'servicio_id', 'responsable_id', 'tecnico_id', 'etapa', 'estatus', 'valor', 'fecha_servicio', 'hora_servicio', 'notas_iniciales', 'urgente', 'encuesta_calificacion', 'encuesta_comentario', 'fecha_cotizacion', 'incluye_vigencia', 'vigencia_hasta', 'notas_cotizacion'];
   const set = [];
   const params = [];
   campos.forEach(c => {

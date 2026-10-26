@@ -275,6 +275,7 @@ function abrirServicioNuevo(modo, prefill) {
     : 'Completa la propuesta y pulsa Crear cotización. Cerrar esta ventana no crea ningún registro.';
   document.getElementById('sn-label-valor').textContent = esDirecto ? 'Importe contratado (MXN)' : 'Importe propuesto (MXN, opcional)';
   document.getElementById('sn-campo-fecha').hidden = !esDirecto;
+  document.getElementById('sn-campo-hora').hidden = !esDirecto;
   document.getElementById('sn-cliente-info').innerHTML =
     `<b>${escaparHtml(CLIENTE_DUP.nombre || 'Sin nombre')}</b> · ${escaparHtml(CLIENTE_DUP.telefono)}${CLIENTE_DUP.direccion ? ' · ' + escaparHtml(CLIENTE_DUP.direccion) : ''}`;
   Finanzas.avisoAdeudo(CLIENTE_DUP.id, 'sn-aviso-adeudo');
@@ -289,6 +290,7 @@ function abrirServicioNuevo(modo, prefill) {
     ? `Última vez: ${formatoMoneda(CLIENTE_DUP.ultimo_valor)}`
     : 'Si ya se conoce';
   document.getElementById('sn-fecha').value = '';
+  document.getElementById('sn-hora-servicio').value = '';
   // Al convertir, el servicio no puede ser antes de la fecha de la cotización.
   FECHA_MIN_SERVICIO = CONVERTIR_ID ? (prefill?.fecha_cotizacion || '') : '';
   document.getElementById('sn-fecha').min = FECHA_MIN_SERVICIO;
@@ -366,6 +368,7 @@ async function guardarServicioNuevo(descargar=false) {
     responsable_id: USUARIO_ACTUAL.id,
     valor: valorRaw === '' ? null : Number(valorRaw),
     fecha_servicio: esDirecto ? (document.getElementById('sn-fecha').value || null) : null,
+    hora_servicio: esDirecto ? (document.getElementById('sn-hora-servicio').value || null) : null,
     creado_por: USUARIO_ACTUAL.nombre,
     forzar_duplicado: true,
     estatus: esDirecto ? 'ganado' : undefined,
@@ -393,7 +396,7 @@ async function guardarServicioNuevo(descargar=false) {
       if (actual.estatus !== 'abierto') { toast('Esta cotización ya no está abierta; vuelve a abrirla para revisar.'); return; }
       const res = await api('/leads/' + CONVERTIR_ID, { method: 'PUT', body: JSON.stringify({
         version: actual.version, estatus: 'ganado', partidas_json: payload.partidas_json, servicio_id: payload.servicio_id, direccion: payload.direccion,
-        fecha_servicio: payload.fecha_servicio, equipo: payload.equipo, operador: payload.operador, observaciones: payload.observaciones, proyecto: payload.proyecto, manifiestos: payload.manifiestos, tiros: payload.tiros, ...ivaPayload(), ...(payload.equipo_personal ? { equipo_personal: payload.equipo_personal } : {}) }) });
+        fecha_servicio: payload.fecha_servicio, hora_servicio: payload.hora_servicio, equipo: payload.equipo, operador: payload.operador, observaciones: payload.observaciones, proyecto: payload.proyecto, manifiestos: payload.manifiestos, tiros: payload.tiros, ...ivaPayload(), ...(payload.equipo_personal ? { equipo_personal: payload.equipo_personal } : {}) }) });
       creado = await res.json();
       if (!res.ok) { toast(creado.error || 'No se pudo convertir la cotización'); return; }
     } else {
@@ -1900,6 +1903,7 @@ async function abrirFicha(id) {
   EquipoOrden.mostrar(lead);
   document.getElementById('ed-valor').value = lead.valor != null ? lead.valor : '';
   document.getElementById('ed-fecha-servicio').value = lead.fecha_servicio || '';
+  document.getElementById('ed-hora-servicio').value = lead.hora_servicio || '';
   // Orden que viene de una cotización: su fecha de servicio no puede ser antes de la cotización.
   document.getElementById('ed-fecha-servicio').min = lead.origen === 'cotizacion' && lead.fecha_cotizacion ? lead.fecha_cotizacion : '';
   document.getElementById('ed-fecha-cotizacion').value = lead.fecha_cotizacion || '';
@@ -2087,6 +2091,7 @@ function recolectarPayloadFicha() {
     ...EquipoOrden.payload(),
     valor: valorRaw === '' ? null : Number(valorRaw),
     fecha_servicio: document.getElementById('ed-fecha-servicio').value || null,
+    hora_servicio: document.getElementById('ed-hora-servicio').value || null,
     fecha_cotizacion: document.getElementById('ed-fecha-cotizacion').value || null,
     incluye_vigencia: document.getElementById('ed-incluye-vigencia').checked,
     vigencia_hasta: document.getElementById('ed-incluye-vigencia').checked ? (document.getElementById('ed-vigencia-hasta').value || null) : null,
