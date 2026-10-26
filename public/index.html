@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Saneadren · Cotizaciones y Servicios</title>
-<link rel="stylesheet" href="styles.css?v=pf1">
+<link rel="stylesheet" href="styles.css?v=ac1">
 <link rel="stylesheet" href="servicios-tabla.css">
 <link rel="stylesheet" href="flujo.css?v=cel1">
 </head>
@@ -713,8 +713,9 @@
           <div class="campo-modal"><label for="ed-valor">Valor del servicio (MXN)</label><input type="number" id="ed-valor" min="0" step="0.01" placeholder="0.00"></div>
           <div class="campo-modal solo-orden"><label for="ed-encuesta-calificacion">Encuesta del cliente: calificación (opcional)</label><select id="ed-encuesta-calificacion"><option value="">Sin respuesta</option><option value="4">4 · Excelente</option><option value="3">3 · Bueno</option><option value="2">2 · Regular</option><option value="1">1 · Malo</option></select></div>
           <div class="campo-modal solo-orden"><label for="ed-encuesta-comentario">Comentario de la encuesta (opcional)</label><input type="text" id="ed-encuesta-comentario" maxlength="1000" placeholder="Lo que contestó en la encuesta (QR de la orden)"></div>
-          <div class="campo-modal full solo-orden"><label for="ed-observaciones">Observaciones de la orden (opcional)</label><textarea id="ed-observaciones" rows="2" maxlength="3000" placeholder="Se imprimen en la orden de servicio; también puedes capturar lo que anotó el operador"></textarea></div>
         </div>
+        <!-- Observaciones: debajo de los servicios e importes (el editor se coloca antes, ver prepararEditorCotizacion). -->
+        <div class="campo-modal full solo-orden ed-observaciones-campo" id="ed-observaciones-campo"><label for="ed-observaciones">Observaciones de la orden (opcional)</label><textarea id="ed-observaciones" rows="2" maxlength="3000" placeholder="Se imprimen en la orden de servicio; también puedes capturar lo que anotó el operador"></textarea></div>
         <div class="util-16">
           <span class="chip util-17">Creado por: <b id="ed-creado-por">—</b></span>
           <span class="chip util-17">Fecha de creación: <b id="ed-created-at">—</b></span>
@@ -754,6 +755,13 @@
       </div>
 
       <!-- Notas con fecha y la bitácora van juntas y dicen de qué registro son (no del contacto ni de sus otros servicios). -->
+      <div class="modal-section" data-plegable="historial-contacto" data-plegado-defecto="1">
+        <div class="seccion-tit">Otros registros de este contacto (solo consulta)</div>
+        <p class="ayuda util-22">Lista de todas las cotizaciones y órdenes del contacto. Aquí no se escriben notas: abrir otra fila cambia el registro que estás editando.</p>
+        <div class="servicios-list" id="ficha-anteriores"></div>
+      </div>
+
+      <!-- Avisos, notas y todo lo que le ha pasado al registro: al final de la ventana (2026-10-26). -->
       <div class="modal-section" data-plegable="bitacora">
         <div class="seccion-tit" id="bitacora-titulo">Avisos y notas de este registro</div>
         <label class="diseno-campo-checkbox aviso-urgente"><input type="checkbox" id="ed-urgente"> 🔴 Urgente <span class="ayuda">(se guarda al marcarlo y se ve en el Pipeline)</span></label>
@@ -775,12 +783,6 @@
         </div>
         <p class="ayuda">Abajo: todo lo que le ha pasado a este registro (eventos del sistema y notas del equipo), de lo más reciente a lo más antiguo.</p>
         <div id="bitacora-lista" class="bitacora-lista"></div>
-      </div>
-
-      <div class="modal-section" data-plegable="historial-contacto" data-plegado-defecto="1">
-        <div class="seccion-tit">Otros registros de este contacto (solo consulta)</div>
-        <p class="ayuda util-22">Lista de todas las cotizaciones y órdenes del contacto. Aquí no se escriben notas: abrir otra fila cambia el registro que estás editando.</p>
-        <div class="servicios-list" id="ficha-anteriores"></div>
       </div>
 
 
@@ -1211,6 +1213,9 @@
 <div id="editor-cotizacion" hidden>
   <div class="seccion-tit" id="gc-titulo-contenido">Contenido de la cotización</div>
   <p class="ayuda" id="gc-ayuda-contenido">Edita servicios, descripciones e importes. Se guardan con esta cotización y se usan en la descarga.</p>
+  <div id="gc-items"></div><button type="button" class="btn btn-outline perm-ordenes-importes" id="btn-gc-agregar-servicio">+ Agregar servicio</button>
+  <!-- El IVA va junto a los totales (decisión de Dirección, 2026-10-26): al cambiar la opción se ve cómo cambian. -->
+  <div class="gc-resumen">
   <!-- IVA: el valor real vive en #gc-iva-modo ('' = por definir, 'mas_iva', 'incluido', 'sin_iva'); las tres opciones lo eligen. -->
   <div class="gc-iva perm-ordenes-importes" id="gc-iva">
     <input type="hidden" id="gc-iva-modo">
@@ -1224,12 +1229,12 @@
       <span id="gc-iva-aviso-texto"></span>
     </div>
   </div>
-  <div id="gc-items"></div><button type="button" class="btn btn-outline perm-ordenes-importes" id="btn-gc-agregar-servicio">+ Agregar servicio</button>
   <table class="gc-totales perm-ordenes-importes" aria-label="Totales">
     <tr id="gc-fila-subtotal"><th id="gc-etiqueta-subtotal">Subtotal</th><td id="gc-subtotal">$0.00</td></tr>
     <tr id="gc-fila-iva"><th id="gc-etiqueta-iva">IVA 16%</th><td id="gc-iva-monto">$0.00</td></tr>
     <tr class="gc-fila-total"><th id="gc-etiqueta-total">Total</th><td><b id="gc-total">$0.00</b></td></tr>
   </table>
+  </div>
   <div class="campo gc-notas" id="gc-notas-campo">
     <label for="gc-notas">Notas y condiciones (opcional)</label>
     <textarea id="gc-notas" rows="4" maxlength="3000" placeholder="Ej. Forma de pago: 50 % de anticipo. Incluye: retiro de lodos y limpieza del área. No incluye: obra civil. Horario: lunes a sábado de 8 a 18 h."></textarea>
