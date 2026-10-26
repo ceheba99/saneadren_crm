@@ -948,17 +948,33 @@ module.exports = function finanzas(app, db, h, unicos) {
       eventos.push({ tipo: 'cotizacion', fecha: q.vigencia_hasta, lead_id: q.id,
         titulo: 'Vence ' + require('./sucursales').folio('COT', 'leads', q.id, q.created_at) + ' · ' + (q.cliente || ''), detalle: q.servicio || '' });
     }
-    // Los cobros, solo para quien ve las cuentas por cobrar.
+    // Los cobros, solo para quien ve las cuentas por cobrar. Lo que aún no se debe (orden por realizar, con fecha futura) sale
+    // como cobro «esperado» (2026-10-26, pedido de Dirección): fecha del servicio más los días de crédito, para ver cuánto
+    // va a entrar cada día. No cuenta en «Te deben» ni en lo atrasado.
     for (const c of veCobranza(req) ? cartera() : []) {
-      // Lo que aún no se debe (orden sin concluir ni facturar) no es un cobro: la orden aparece como «por concluir».
-      if (c.saldo <= 0 || c.programada || !c.vence || c.vence < desde || c.vence > hasta) continue;
-      eventos.push({ tipo: 'cobro', fecha: c.vence, estado: c.vencida ? 'vencido' : 'por_vencer', lead_id: c.lead_id, monto: c.saldo,
-        titulo: `Cobrar ${c.cliente_nombre || c.empresa_contacto || ''}`, detalle: c.folio + (c.factura_folio ? ' · factura ' + c.factura_folio : '') });
+      if (c.saldo <= 0 || !c.vence || c.vence < desde || c.vence > hasta) continue;
+      if (c.programada && (c.por_concluir || !c.fecha_servicio)) continue; // la de fecha pasada sin marcar sale como orden «por concluir»
+      eventos.push({ tipo: 'cobro', fecha: c.vence, estado: c.programada ? 'esperado' : c.vencida ? 'vencido' : 'por_vencer', lead_id: c.lead_id, monto: c.saldo,
+        titulo: `${c.programada ? 'Cobro esperado' : 'Cobrar'} ${c.cliente_nombre || c.empresa_contacto || ''}`,
+        detalle: c.folio + (c.factura_folio ? ' · factura ' + c.factura_folio : c.programada ? ' · servicio del ' + c.fecha_servicio.split('-').reverse().join('/') + (c.dias_credito ? ' + ' + c.dias_credito + ' días de crédito' : '') : '') });
     }
     for (const x of cuentasPorPagar()) {
       if (x.saldo <= 0 || x.fecha_vencimiento < desde || x.fecha_vencimiento > hasta) continue;
       eventos.push({ tipo: 'pago', fecha: x.fecha_vencimiento, estado: x.vencida ? 'vencido' : 'por_vencer', cxp_id: x.id, lead_id: x.lead_id || null, monto: x.saldo,
         titulo: `Pagar ${x.proveedor_nombre}`, detalle: x.concepto + (x.orden_folio ? ' · ' + x.orden_folio : '') });
+    }
+    // Pagos esperados (2026-10-26): órdenes de compra por autorizar, en su fecha más el crédito del proveedor. Al
+    // autorizarlas pasan a cuentas por pagar y salen como pago. Para quien ve cuentas por pagar y esas órdenes; el monto,
+    // solo con «Ver montos de compras».
+    if (P.puede(req, 'cxp.ver') && P.puede(req, 'ordenes_compra.ver')) {
+      const conMonto = P.puede(req, 'compras.importes');
+      for (const o of db.prepare(`SELECT o.id, o.created_at, o.fecha, o.total_cent, p.nombre AS proveedor, COALESCE(p.dias_credito, 0) AS credito
+          FROM ordenes_compra o JOIN proveedores p ON p.id = o.proveedor_id WHERE o.estado = 'borrador'`).all()) {
+        const f = sumarDias(o.fecha, Number(o.credito) || 0);
+        if (f < desde || f > hasta) continue;
+        eventos.push({ tipo: 'pago', fecha: f, estado: 'esperado', oc_id: o.id, lead_id: null, ...(conMonto ? { monto: aPesos(o.total_cent) } : {}),
+          titulo: `Pago esperado ${o.proveedor}`, detalle: `${folioOCx(o)} · por autorizar` + (Number(o.credito) ? ` · ${o.credito} días de crédito` : ' · de contado') });
+      }
     }
     res.json({ desde, hasta, hoy, eventos });
   }));
