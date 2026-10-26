@@ -1711,3 +1711,9 @@ body:not(.varias-sucursales) .solo-varias-sucursales{display:none!important;}
 .modal-proveedor .campo.full{grid-column:1/-1;}
 /* En listas (usuarios, catálogos): solo el botón «✏️ Editar», sin el aviso de solo lectura. */
 .solo-lectura-barra.compacta{background:none;border:0;padding:0;margin:0 0 6px;justify-content:flex-end;}
+/* Encuesta del cliente en la ficha de la orden (2026-10-26). */
+.encuesta-enlace{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:6px 0;}
+.encuesta-enlace input{flex:1 1 240px;min-width:0;font-size:.85rem;}
+.enc-tabla td{font-size:.85rem;}
+.enc-tabla .enc-modulo th{text-align:left;background:#f6f7f9;font-size:.82rem;}
+.enc-detalle summary{cursor:pointer;font-weight:600;margin:6px 0;}

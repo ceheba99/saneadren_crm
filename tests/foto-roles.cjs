@@ -79,6 +79,10 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
   // Solicitudes de compra.
   exigir(await pedir('POST', '/compras/solicitudes', T.Tomas, { que: 'Manguera Jade', para_que: 'Se rompió en servicio', centro_id: centros[0].id }), 'solicitud de Tomás');
   exigir(await pedir('POST', '/compras/solicitudes', T.Valeria, { que: 'Botas Perla', para_que: 'Para visitas de obra', centro_id: centros[0].id }), 'solicitud de Valeria');
+  // Encuesta de la orden de Valeria, contestada por el cliente (insatisfecho): genera un aviso (2026-10-26).
+  const tokenEnc = String((await pedir('GET', '/leads/' + O1.id + '/encuesta', T.Valeria))[1].url).split('/e/')[1];
+  const [, pregEnc] = await pedir('GET', '/publico/encuesta/' + tokenEnc);
+  exigir(await pedir('POST', '/publico/encuesta/' + tokenEnc, null, { aspectos: Object.fromEntries(pregEnc.preguntas.aspectos.flatMap(m => m.items.map(i => [i.clave, 2]))), facturacion: 'si', nps: 4, preventivo: 'no' }), 'contestar la encuesta');
   // Prospección.
   const [, sectores] = await pedir('GET', '/prospeccion/sectores', T.Valeria);
   const prospecto = async (t, quien, nombre) => exigir(await pedir('POST', '/prospeccion', t, { nombre, sector_id: sectores[0].id, zona: 'Querétaro', direccion: '', telefono: '', correo: '', persona: '', cargo: '', fuente: '', necesidades: '', estado: 'investigar', responsable_id: ID[quien], proximo_contacto: '' }), 'prospecto ' + nombre);
@@ -115,6 +119,9 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
     ['Compras', [
       ['jade', 'Solicitud de compra de Tomás', ['Jade']],
       ['perla', 'Solicitud de compra de Valeria', ['Perla']],
+    ]],
+    ['Encuesta', [
+      ['avisoEnc', 'Aviso «cliente insatisfecho» de la encuesta de la orden de Valeria', ['Cliente insatisfecho en la encuesta']],
     ]],
     ['Prospección', [
       ['granate', 'Prospecto de Valeria', ['Granate']],
@@ -218,6 +225,7 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
       atencion: { editaO1: 0, editaO4: 0, editaAmbar: 0 }, tecnico: { editaO1: 0, editaO4: 0, editaAmbar: 0 }, costos: { editaO1: 0, editaO4: 0, editaAmbar: 0 } }],
     ['2026-10-26', 'Marcar si se realizó: quien hizo la orden, el Gerente y Dirección (el técnico todavía no).', { admin: { realizado: 1 }, gerente: { realizado: 1 }, ventas: { realizado: 1 }, atencion: { realizado: 0 }, tecnico: { realizado: 0 }, costos: { realizado: 0 } }],
     ['2026-10-26', 'Borrar (cotizaciones, órdenes, usuarios, roles, catálogos): solo Dirección.', { admin: { borra: 1 }, gerente: { borra: 0 }, ventas: { borra: 0 }, atencion: { borra: 0 }, tecnico: { borra: 0 }, costos: { borra: 0 } }],
+    ['2026-10-26', 'Encuesta: el aviso de cliente insatisfecho le llega a Dirección, al gerente y al responsable de la orden; no a quien solo ve la orden.', { admin: { avisoEnc: 1 }, gerente: { avisoEnc: 1 }, ventas: { avisoEnc: 1 }, atencion: { avisoEnc: 0 }, tecnico: { avisoEnc: 0 }, costos: { avisoEnc: 0 } }],
     ['2026-10-26', 'Técnico: ve su solicitud de compra, no las de otros, y no ve montos de compras.', { tecnico: { jade: 1, perla: 0, 'perm:compras.importes': 0 } }],
     ['2026-10-21', 'Prospección: cada quien lo suyo (quien ve toda su sucursal en ventas, todos los de su sucursal); el técnico no prospecta.', { ventas: { granate: 1, cuarzo: 0 }, atencion: { granate: 1, cuarzo: 1 }, tecnico: { granate: 0, cuarzo: 0 } }],
     ['2026-10-19', 'Personal: quien ve órdenes ve nombre y puesto del personal activo, para asignarlo a una orden; la ficha y los datos sensibles, solo Gerente y Dirección.', { gerente: { obsidiana: 1, fichaEmp: 1, clabe: 1 }, ventas: { obsidiana: 1, fichaEmp: 0, clabe: 0 }, atencion: { obsidiana: 1, fichaEmp: 0, clabe: 0 }, tecnico: { obsidiana: 1, fichaEmp: 0, clabe: 0 }, costos: { obsidiana: 0, fichaEmp: 0, clabe: 0 } }],

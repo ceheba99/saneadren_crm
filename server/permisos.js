@@ -245,7 +245,7 @@ module.exports = function crearPermisos(db, app, h) {
     const real = u.rol_real || u.rol;
     let rol = real;
     if (real === 'admin') { const v = req.get('X-Ver-Como'); if (!v || v === 'admin' || !rolValido(v)) return; rol = v; }
-    a.usuarioId = u.id; a.niveles = nivelesDe(rol); a.gastosOrden = tieneRol(rol, 'gastos.ver_orden');
+    a.usuarioId = u.id; a.niveles = nivelesDe(rol); a.gastosOrden = tieneRol(rol, 'gastos.ver_orden'); a.editarOtros = tieneRol(rol, 'ventas.editar_otros');
   }
   // ¿Puede editar este contacto, cotización u orden? (2026-10-26) Dirección siempre; los demás, si su rol edita esa área
   // y es suyo (lo capturó o está a su nombre), o si tiene «Editar lo de otros» (Gerente). Ver una orden no basta.

@@ -40,6 +40,7 @@ const VISTAS = [
   ['documentos_personal', 'personal_id IN (SELECT id FROM personal)'],
   ['incidencias_personal', 'personal_id IN (SELECT id FROM personal)'],
   ['orden_personal', 'lead_id IN (SELECT id FROM leads)'],
+  ['encuestas', 'lead_id IN (SELECT id FROM leads)'], // la encuesta, con su orden
 ];
 // Tablas con folio propio por sucursal y su tipo de contador.
 const FOLIO = { leads: 'leads', solicitudes_compra: 'solicitudes', ordenes_compra: 'ordenes_compra' };
@@ -305,6 +306,13 @@ module.exports = function sucursales(app, db, h, { audit }) {
     const delLead = db.db.prepare('SELECT responsable_id, tecnico_id FROM main.leads WHERE id = ?');
     db.db.function('ve_bitacora', { deterministic: false }, (area, quien, leadId) => {
       if (!area) return 1;
+      // Avisos de la encuesta (cliente insatisfecho, quiere mantenimiento preventivo): Dirección, el gerente («Editar lo
+      // de otros») y el responsable de la orden (2026-10-26).
+      if (area === 'encuesta') {
+        const a = alcance.actual(); if (!a.niveles) return 1;
+        if (a.editarOtros) return 1;
+        const l = delLead.get(leadId); return l && l.responsable_id === alcance.usuario() ? 1 : 0;
+      }
       const n = alcance.nivel(area), yo = alcance.usuario();
       if (n >= 2) return 1;
       if (n === 0 || yo == null) return 0;
