@@ -54,6 +54,9 @@ const SEMANA_40 = [['REPARACION FLECHA CARDAN JOSE LUIS ACOSTA', 2000], ['PAGO R
   [s, j] = await pedir('POST', '/compras/ordenes', A, { ...base, iva_modo: 'mas_iva', partidas: [{ cantidad: 3, descripcion: 'Manguera 4 pulgadas', unidad: 'PZA', clave: 'MG-4', precio: 1000 }] });
   revisa(s === 201 && j.subtotal === 3000 && j.iva === 480 && j.total === 3480 && j.partidas[0].importe === 3000, 'más IVA: 3 × $1,000 = $3,000 + IVA $480 = $3,480', [j.subtotal, j.iva, j.total]);
   const oc2 = j;
+  // Calendario (2026-10-26): una orden por autorizar sale como pago «esperado» en su fecha más el crédito del proveedor (7 días).
+  [s, j] = await pedir('GET', '/calendario?desde=2026-10-01&hasta=2026-10-31', A);
+  revisa(s === 200 && j.eventos.some(e => e.tipo === 'pago' && e.estado === 'esperado' && e.oc_id === oc2.id && e.fecha === '2026-10-09' && e.monto === 3480), 'la orden por autorizar sale en el calendario como pago esperado (fecha + 7 días de crédito)', j.eventos?.filter(e => e.oc_id));
   [s, j] = await pedir('POST', '/compras/ordenes', A, { ...base, iva_modo: 'incluido', partidas: [{ cantidad: 1, descripcion: 'Bomba', precio: 1160 }] });
   revisa(s === 201 && j.subtotal === 1000 && j.iva === 160 && j.total === 1160, 'IVA incluido: $1,160 = $1,000 + $160', [j.subtotal, j.iva, j.total]);
   // Validaciones

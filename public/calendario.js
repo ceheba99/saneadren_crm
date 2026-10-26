@@ -12,7 +12,7 @@ const Calendario = (() => {
     cotizacion: { nombre: 'Cotizaciones que vencen', corto: 'Cotización', icono: '📄' },
     recompra: { nombre: 'Recompras sugeridas', corto: 'Recompra', icono: '🔁' },
   };
-  const ESTADOS = { programada: 'Programada', por_concluir: 'Por concluir', realizada: 'Realizada', no_realizada: 'No realizada', pendiente: 'Pendiente', resuelta: 'Resuelta', vencido: 'Vencido', por_vencer: 'Por vencer' };
+  const ESTADOS = { programada: 'Programada', por_concluir: 'Por concluir', realizada: 'Realizada', no_realizada: 'No realizada', pendiente: 'Pendiente', resuelta: 'Resuelta', vencido: 'Vencido', por_vencer: 'Por vencer', esperado: 'Esperado' };
   const MESES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
   const DIAS = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
   const VISTAS = ['hoy', 'semana', 'mes'];
@@ -154,6 +154,7 @@ const Calendario = (() => {
   }
   function abrirEvento(e) {
     if (!e) return;
+    if (e.oc_id) { cambiarVista('compras'); Compras.abrir(e.oc_id); return; } // pago esperado: su orden de compra
     if (e.tipo === 'pago' && !e.lead_id) { cambiarVista('pagar'); return; }
     if (e.tipo === 'recompra' && e.cliente_id) { abrirFichaCliente(e.cliente_id); return; }
     if (e.lead_id) abrirFicha(e.lead_id);

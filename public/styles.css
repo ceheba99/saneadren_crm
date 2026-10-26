@@ -1697,3 +1697,6 @@ body:not(.varias-sucursales) .solo-varias-sucursales{display:none!important;}
 .solo-lectura-barra{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;margin:6px 0 12px;padding:8px 12px;border-radius:8px;background:#f3f4f6;border:1px solid #e2e5ea;color:var(--texto);font-size:.9rem}
 .solo-lectura input:disabled,.solo-lectura select:disabled,.solo-lectura textarea:disabled{background:transparent;color:inherit;opacity:1;cursor:default}
 .rp-edita{display:flex;align-items:center;gap:4px;margin-top:4px;font-size:.8rem;white-space:nowrap}
+/* Cobros y pagos «esperados» (aún no se deben): borde punteado para distinguirlos de los que ya vencen. */
+.cal-e-esperado{border-style:dashed!important;opacity:.9}
+.cal-e-esperado .cal-fila-tag em{color:var(--texto-sec);}
