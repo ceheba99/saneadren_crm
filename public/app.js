@@ -2216,7 +2216,7 @@ function filaAlerta(r) {
         <span class="tipo-tag alerta">⏰ Alerta</span>
         <div><b>${escaparHtml(r.lead_nombre || 'Sin nombre')} · ${escaparHtml(r.telefono)}</b></div>
         <div class="txt">${escaparHtml(r.texto)}</div>
-        <div class="fecha">Para: ${fechaCorta(r.fecha_alerta)} · Responsable: ${escaparHtml(r.responsable_nombre || '—')}</div>
+        <div class="fecha">Para: ${fechaCorta(r.fecha_alerta)} · <b>Lo puso: ${escaparHtml(r.usuario || '—')}</b>${r.responsable_nombre && r.responsable_nombre !== r.usuario ? ' · Responsable del registro: ' + escaparHtml(r.responsable_nombre) : ''}</div>
       </div>
       <div class="util-46">
         <button class="btn btn-outline" onclick="abrirFicha(${r.lead_id})">Ver ficha</button>
