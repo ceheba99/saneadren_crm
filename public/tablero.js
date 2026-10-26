@@ -44,7 +44,7 @@ const Panorama = (() => {
     const sube = pct > 0, clase = sube === bueno ? 'bien' : 'mal';
     return '<span class="pg-delta ' + clase + '">' + (sube ? '▲' : '▼') + ' ' + Math.abs(pct).toFixed(pct > -10 && pct < 10 ? 1 : 0) + ' %</span>';
   }
-  const tarjeta = (titulo, valor, sub, extra = '', clase = '') => '<div class="pg-tarjeta ' + clase + '"><small>' + esc(titulo) + '</small><b>' + valor + '</b><div class="pg-tarjeta-pie">' + extra + (sub ? '<span>' + sub + '</span>' : '') + '</div></div>';
+  const tarjeta = (titulo, valor, sub, extra = '', clase = '', ayuda = '') => '<div class="pg-tarjeta ' + clase + '"><small>' + esc(titulo) + Ayuda.boton(ayuda) + '</small><b>' + valor + '</b><div class="pg-tarjeta-pie">' + extra + (sub ? '<span>' + sub + '</span>' : '') + '</div></div>';
   const barras = (lista, campo = 'venta', fmtFn = dinero, detalle = x => x.servicios + (x.servicios === 1 ? ' servicio' : ' servicios')) => {
     if (!lista.length) return '<p class="util-45">Sin datos en el periodo.</p>';
     const max = Math.max(...lista.map(x => x[campo])) || 1;
@@ -82,13 +82,13 @@ const Panorama = (() => {
     $('pg-cuerpo').innerHTML =
       '<p class="pg-periodo">Periodo: <b>' + esc(periodoTxt) + '</b> · comparado con <b>' + esc(anteriorTxt) + '</b></p>'
       // 1. Lo principal del periodo
-      + '<div class="pg-tarjetas">'
-      + tarjeta('Venta realizada', dinero(a.venta), a.servicios + (a.servicios === 1 ? ' servicio' : ' servicios') + ' · sin IVA', delta(a.venta, p.venta), 'principal')
-      + tarjeta('Utilidad estimada', dinero(a.utilidad), 'Margen ' + pct(a.margen_pct) + ' · venta menos gastos, ambos sin IVA', delta(a.utilidad, p.utilidad), a.utilidad < 0 ? 'negativo' : 'positivo')
-      + tarjeta('Dinero cobrado', dinero(a.cobrado), a.cobros_n + (a.cobros_n === 1 ? ' pago recibido' : ' pagos recibidos'), delta(a.cobrado, p.cobrado))
-      + tarjeta('Pagado a proveedores', dinero(a.pagado), 'Salida de dinero', delta(a.pagado, p.pagado, false))
-      + tarjeta('Flujo de efectivo', dinero(a.flujo), 'Cobrado menos pagado', delta(a.flujo, p.flujo), a.flujo < 0 ? 'negativo' : '')
-      + tarjeta('Gastos del periodo (sin IVA)', dinero(a.gasto), 'Con IVA: ' + dinero(a.gasto_con_iva) + (a.iva_estimado_n ? ' · IVA estimado en ' + Number(a.iva_estimado_n) + (a.iva_estimado_n === 1 ? ' factura' : ' facturas') : ''), delta(a.gasto, p.gasto, false))
+      + '<div class="pg-tarjetas" data-ayuda-zona>'
+      + tarjeta('Venta realizada', dinero(a.venta), a.servicios + (a.servicios === 1 ? ' servicio' : ' servicios') + ' · sin IVA', delta(a.venta, p.venta), 'principal', 'pg_venta')
+      + tarjeta('Utilidad estimada', dinero(a.utilidad), 'Margen ' + pct(a.margen_pct) + ' · venta menos gastos, ambos sin IVA', delta(a.utilidad, p.utilidad), a.utilidad < 0 ? 'negativo' : 'positivo', 'pg_utilidad')
+      + tarjeta('Dinero cobrado', dinero(a.cobrado), a.cobros_n + (a.cobros_n === 1 ? ' pago recibido' : ' pagos recibidos'), delta(a.cobrado, p.cobrado), '', 'pg_cobrado')
+      + tarjeta('Pagado a proveedores', dinero(a.pagado), 'Salida de dinero', delta(a.pagado, p.pagado, false), '', 'pg_pagado')
+      + tarjeta('Flujo de efectivo', dinero(a.flujo), 'Cobrado menos pagado', delta(a.flujo, p.flujo), a.flujo < 0 ? 'negativo' : '', 'pg_flujo')
+      + tarjeta('Gastos del periodo (sin IVA)', dinero(a.gasto), 'Con IVA: ' + dinero(a.gasto_con_iva) + (a.iva_estimado_n ? ' · IVA estimado en ' + Number(a.iva_estimado_n) + (a.iva_estimado_n === 1 ? ' factura' : ' facturas') : ''), delta(a.gasto, p.gasto, false), '', 'pg_gastos')
       + '</div>'
       // 1b. Comparativo por sucursal (solo si se ven varias)
       + ((d.por_sucursal || []).length > 1 ? '<div class="pg-caja"><div class="pg-caja-cab"><h3>Por sucursal</h3><span class="ayuda">Cada renglón solo con lo de esa sucursal; la suma es el total de arriba.</span></div><div class="tabla-scroll"><table class="pg-tabla pg-sucursales"><thead><tr><th>Sucursal</th><th class="st-num">Venta</th><th class="st-num">Gastos</th><th class="st-num">Utilidad</th><th class="st-num">Margen</th><th class="st-num">Cobrado</th><th class="st-num">Pagado</th><th class="st-num">Te deben</th><th class="st-num">Vencido</th><th class="st-num">Debes</th></tr></thead><tbody>'
@@ -101,31 +101,31 @@ const Panorama = (() => {
       // 4. Hoy: lo que te deben y lo que debes
       + '<div class="pg-dos">'
       + '<div class="pg-caja"><div class="pg-caja-cab"><h3>Te deben hoy</h3><button type="button" class="enlace" data-pg-ir="cobrar">Ver cuentas por cobrar ›</button></div>'
-      + '<div class="pg-mini">' + tarjeta('Por cobrar', dinero(f.te_deben), f.ordenes_por_cobrar + ' órdenes') + tarjeta('Vencido', dinero(f.vencido), 'Más de 30 días: ' + dinero(f.vencido_30), '', f.vencido > 0 ? 'negativo' : '')
-      + tarjeta('Días para cobrar', f.dias_cobro === null ? '—' : f.dias_cobro + ' días', 'Promedio, de servicio a pago') + '</div>'
+      + '<div class="pg-mini" data-ayuda-zona>' + tarjeta('Por cobrar', dinero(f.te_deben), f.ordenes_por_cobrar + ' órdenes', '', '', 'te_deben') + tarjeta('Vencido', dinero(f.vencido), 'Más de 30 días: ' + dinero(f.vencido_30), '', f.vencido > 0 ? 'negativo' : '', 'vencido')
+      + tarjeta('Días para cobrar', f.dias_cobro === null ? '—' : f.dias_cobro + ' días', 'Promedio, de servicio a pago', '', '', 'pg_dias_cobro') + '</div>'
       + '<div class="pg-tramos">' + f.tramos.map(t => '<div class="pg-tramo ' + (t.tramo === 'por_vencer' ? 'ok' : t.tramo === '1-15' ? 'leve' : t.tramo === '16-30' ? 'medio' : 'alto') + '"><span>' + esc(t.nombre) + '</span><div class="pg-barra-fondo"><div class="pg-barra-relleno" style="width:' + Math.max(t.total ? 2 : 0, t.total / tramoMax * 100).toFixed(1) + '%"></div></div><b>' + dinero(t.total) + '</b></div>').join('') + '</div>'
       + (f.deudores.length ? '<h4>Quién debe más</h4><table class="pg-tabla"><tbody>' + f.deudores.map(x => '<tr><td>' + esc(x.nombre || 'Sin nombre') + '</td><td class="st-num">' + dinero(x.saldo) + '</td><td class="st-num">' + (x.vencido > 0 ? '<span class="rojo">' + dinero(x.vencido) + ' vencido</span>' : '<span class="util-45">al corriente</span>') + '</td></tr>').join('') + '</tbody></table>' : '')
       + (f.por_concluir_monto > 0 ? '<p class="ayuda"><b>' + dinero(f.por_concluir_monto) + ' por concluir</b>: ' + Number(f.ordenes_por_concluir) + (f.ordenes_por_concluir === 1 ? ' servicio' : ' servicios') + ' con fecha pasada sin marcar. No cuentan aquí hasta marcarlos realizados (o facturarlos).</p>' : '')
       + (f.por_realizar > 0 || f.a_favor > 0 ? '<p class="ayuda">' + (f.por_realizar > 0 ? 'Además hay ' + dinero(f.por_realizar) + ' de servicios por realizar (aún no se cobran). ' : '') + (f.a_favor > 0 ? dinero(f.a_favor) + ' a favor de clientes.' : '') + '</p>' : '')
       + '</div>'
       + '<div class="pg-caja"><div class="pg-caja-cab"><h3>Debes hoy</h3><button type="button" class="enlace" data-pg-ir="pagar">Ver cuentas por pagar ›</button></div>'
-      + '<div class="pg-mini">' + tarjeta('Por pagar', dinero(f.debes), 'A proveedores') + tarjeta('Vencido', dinero(f.debes_vencido), '', '', f.debes_vencido > 0 ? 'negativo' : '') + tarjeta('Esta semana', dinero(f.pagar_semana), 'Vence a más tardar el domingo') + '</div>'
+      + '<div class="pg-mini" data-ayuda-zona>' + tarjeta('Por pagar', dinero(f.debes), 'A proveedores', '', '', 'por_pagar') + tarjeta('Vencido', dinero(f.debes_vencido), '', '', f.debes_vencido > 0 ? 'negativo' : '', 'debes_vencido') + tarjeta('Esta semana', dinero(f.pagar_semana), 'Vence a más tardar el domingo', '', '', 'pagar_semana') + '</div>'
       + '<h4>Gastos del periodo por categoría (sin IVA)</h4>' + barras(d.gastos.map(g => ({ nombre: g.nombre, venta: g.total, sin_orden: g.sin_orden })), 'venta', dinero, g => g.sin_orden ? dinero(g.sin_orden) + ' sin orden ligada' : 'ligado a órdenes')
       + '<p class="ayuda">Costo de terceros en los servicios del periodo (sin IVA): <b>' + dinero(a.costo_directo) + '</b> · margen directo de servicios: <b>' + dinero(a.margen_directo) + '</b>.</p>'
       + '</div></div>'
       // 5. Operación y ventas
-      + '<div class="pg-caja"><h3>Operación y ventas del periodo</h3><div class="pg-tarjetas pg-tarjetas-chicas">'
-      + tarjeta('Servicios realizados', String(a.servicios), 'Ticket promedio ' + dinero(a.ticket), delta(a.servicios, p.servicios))
-      + tarjeta('No realizados', String(a.no_realizados), a.no_realizados ? dinero(a.no_realizado_valor) + ' que no se hizo' : 'Ninguno', '', a.no_realizados ? 'negativo' : '')
-      + tarjeta('Sin marcar', String(f.por_concluir), 'Fecha pasada, falta marcar si se hizo', '', f.por_concluir ? 'aviso' : '')
-      + tarjeta('Próximos 7 días', String(f.proximos_7), dinero(f.proximos_7_valor) + ' programado')
+      + '<div class="pg-caja"><h3>Operación y ventas del periodo</h3><div class="pg-tarjetas pg-tarjetas-chicas" data-ayuda-zona>'
+      + tarjeta('Servicios realizados', String(a.servicios), 'Ticket promedio ' + dinero(a.ticket), delta(a.servicios, p.servicios), '', 'pg_servicios')
+      + tarjeta('No realizados', String(a.no_realizados), a.no_realizados ? dinero(a.no_realizado_valor) + ' que no se hizo' : 'Ninguno', '', a.no_realizados ? 'negativo' : '', 'pg_no_realizados')
+      + tarjeta('Sin marcar', String(f.por_concluir), 'Fecha pasada, falta marcar si se hizo', '', f.por_concluir ? 'aviso' : '', 'pg_sin_marcar')
+      + tarjeta('Próximos 7 días', String(f.proximos_7), dinero(f.proximos_7_valor) + ' programado', '', '', 'pg_proximos')
 
-      + tarjeta('Cotizaciones', String(a.cotizaciones), dinero(a.cotizado) + ' cotizado', delta(a.cotizaciones, p.cotizaciones))
-      + tarjeta('Tasa de cierre', pct(a.cierre_pct), a.cot_ganadas + ' ganadas · ' + a.cot_perdidas + ' perdidas')
-      + tarjeta('Propuestas abiertas', String(f.pipeline.abiertas), dinero(f.pipeline.valor) + ' en negociación')
-      + tarjeta('Clientes atendidos', String(a.clientes_activos), a.clientes_nuevos + ' nuevos · ' + a.clientes_recurrentes + ' recurrentes', delta(a.clientes_activos, p.clientes_activos))
-      + tarjeta('Contactos nuevos', String(a.contactos_nuevos), 'Registrados en el periodo', delta(a.contactos_nuevos, p.contactos_nuevos))
-      + tarjeta('Satisfacción', a.calificacion == null ? '—' : Number(a.calificacion) + ' de 4', a.encuestas ? Number(a.encuestas) + (a.encuestas === 1 ? ' encuesta' : ' encuestas') + ' capturadas' : 'Sin encuestas capturadas en las órdenes')
+      + tarjeta('Cotizaciones', String(a.cotizaciones), dinero(a.cotizado) + ' cotizado', delta(a.cotizaciones, p.cotizaciones), '', 'pg_cotizaciones')
+      + tarjeta('Tasa de cierre', pct(a.cierre_pct), a.cot_ganadas + ' ganadas · ' + a.cot_perdidas + ' perdidas', '', '', 'pg_cierre')
+      + tarjeta('Propuestas abiertas', String(f.pipeline.abiertas), dinero(f.pipeline.valor) + ' en negociación', '', '', 'pg_abiertas')
+      + tarjeta('Clientes atendidos', String(a.clientes_activos), a.clientes_nuevos + ' nuevos · ' + a.clientes_recurrentes + ' recurrentes', delta(a.clientes_activos, p.clientes_activos), '', 'pg_clientes')
+      + tarjeta('Contactos nuevos', String(a.contactos_nuevos), 'Registrados en el periodo', delta(a.contactos_nuevos, p.contactos_nuevos), '', 'pg_contactos')
+      + tarjeta('Satisfacción', a.calificacion == null ? '—' : Number(a.calificacion) + ' de 4', a.encuestas ? Number(a.encuestas) + (a.encuestas === 1 ? ' encuesta' : ' encuestas') + ' capturadas' : 'Sin encuestas capturadas en las órdenes', '', '', 'pg_satisfaccion')
       + '</div></div>'
       + '<div class="pg-caja"><h3>¿Por qué no se aceptan las cotizaciones?</h3>' + ((d.perdidas || []).length
         ? '<ul class="pg-perdidas">' + d.perdidas.map(x => '<li><button type="button" class="enlace" data-pg-lead="' + Number(x.id) + '">' + esc(folioCotizacion(x)) + '</button> · ' + esc(x.cliente || '') + ' · ' + dinero(x.valor || 0) + ': '

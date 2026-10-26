@@ -248,37 +248,11 @@ const Finanzas = (() => {
     pintarTarjetas();
     irPestana(pestana);
   }
-  // Qué es cada tarjeta, para quien la ve por primera vez (decisión del dueño, 2026-10-22).
-  const EXPLICA = {
-    te_deben: ['Te deben', 'Lo que los clientes ya deben: servicios marcados como realizados o ya facturados que todavía no se cobran completos.', 'Una limpieza realizada de $3,000 de la que el cliente pagó $1,000: aquí suma $2,000.'],
-    vencido: ['Vencido', 'La parte de «Te deben» cuya fecha límite de pago ya pasó. La fecha límite es la de la factura (o la del servicio, si no hay factura) más los días de crédito del cliente.', 'Factura del 1 de octubre con 15 días de crédito: vence el 16; desde el 17 aparece aquí.'],
-    por_concluir: ['Por concluir', 'Servicios cuya fecha ya pasó, pero nadie ha marcado si se hicieron y no están facturados. Todavía no se cobran: ábrelos y márcalos como realizados (pasan a «Te deben») o como no realizados.', 'Una limpieza del 15 de octubre que nadie ha marcado.'],
-    por_realizar: ['Por realizar', 'Servicios agendados para una fecha que todavía no llega. Aún no se cobran.', 'Una limpieza programada para el 30 de octubre.'],
-    a_favor: ['A favor de clientes', 'Dinero que un cliente pagó por un servicio que al final no se hizo: hay que devolvérselo o aplicarlo a otro servicio.', 'Dio $1,000 de anticipo y el servicio se canceló.'],
-    cobrado_mes: ['Cobrado este mes', 'Todo lo que se registró como cobrado en el mes, incluidos los pagos que aún falta confirmar (sin ajustes ni descuentos).', 'Tres pagos de $2,000 en octubre: $6,000.'],
-    por_confirmar: ['Por confirmar', 'Pagos que anotaron vendedores o técnicos y que administración todavía debe revisar (que el dinero sí llegó).', 'El técnico anotó $1,250 en efectivo; queda aquí hasta que alguien lo confirme.'],
-    pagar_semana: ['Pagar esta semana', 'Facturas y gastos de proveedores que vencen de hoy al domingo, más los que ya están vencidos.', 'Una renta de pipa que vence el viernes y un diésel que venció ayer.'],
-    por_pagar: ['Total por pagar', 'Todo lo que se les debe a proveedores, venza cuando venza.', 'Lo de esta semana más lo que vence el próximo mes.'],
-    pagado_mes: ['Pagado este mes', 'Lo que se les pagó a proveedores en el mes.', 'Dos transferencias de $5,000 en octubre: $10,000.'],
-  };
-  $('cuentas-tarjetas').addEventListener('click', e => {
-    const b = e.target.closest('[data-explica]'); if (!b) return;
-    const caja = $('cuentas-explica'), abierta = b.getAttribute('aria-expanded') === 'true';
-    document.querySelectorAll('#cuentas-tarjetas [data-explica]').forEach(x => x.setAttribute('aria-expanded', 'false'));
-    if (abierta) { caja.hidden = true; return; }
-    const [titulo, texto, ejemplo] = EXPLICA[b.dataset.explica] || [];
-    caja.innerHTML = `<b>${esc(titulo)}</b><p>${esc(texto)}</p><p class="cuentas-explica-ej">Ejemplo: ${esc(ejemplo)}</p>`;
-    caja.hidden = false; b.setAttribute('aria-expanded', 'true');
-  });
-  $('cobrar-leyenda-btn').addEventListener('click', e => {
-    const abrir = e.currentTarget.getAttribute('aria-expanded') !== 'true';
-    e.currentTarget.setAttribute('aria-expanded', String(abrir)); $('cobrar-leyenda').hidden = !abrir;
-  });
   async function pintarTarjetas() {
     const cont = $('cuentas-tarjetas');
     try { RESUMEN = await api('/finanzas/resumen').then(json); } catch (err) { cont.innerHTML = `<div class="aviso-error-carga" role="alert"><p>No se pudo cargar el resumen: ${esc(err.message)}</p></div>`; return; }
-    // Cada tarjeta lleva «?»: la explicación sale debajo de las tarjetas (EXPLICA), en palabras de todos los días.
-    const r = RESUMEN, t = (titulo, valor, detalle, clase = '', ayuda = '') => `<div class="tarjeta-dinero ${clase}"><small>${titulo}${ayuda ? `<button type="button" class="tarjeta-ayuda" data-explica="${ayuda}" aria-expanded="false" aria-controls="cuentas-explica" aria-label="Qué es: ${titulo}">?</button>` : ''}</small><b>${valor}</b>${detalle ? `<span>${detalle}</span>` : ''}</div>`;
+    // Cada tarjeta lleva «?»: la explicación sale debajo de las tarjetas (public/ayuda.js).
+    const r = RESUMEN, t = (titulo, valor, detalle, clase = '', ayuda = '') => `<div class="tarjeta-dinero ${clase}"><small>${titulo}${Ayuda.boton(ayuda)}</small><b>${valor}</b>${detalle ? `<span>${detalle}</span>` : ''}</div>`;
     cont.innerHTML = SECCION === 'pagar'
       ? (r.pagar_semana !== undefined ? t('Pagar esta semana', formatoMoneda(r.pagar_semana), `${Number(r.facturas_semana)} facturas (incluye vencidas)`, r.pagar_semana > 0 ? 'aviso' : '', 'pagar_semana') : '')
         + (r.por_pagar !== undefined ? t('Total por pagar', formatoMoneda(r.por_pagar), '', '', 'por_pagar') : '')
@@ -290,7 +264,7 @@ const Finanzas = (() => {
       + (r.a_favor > 0 ? t('A favor de clientes', formatoMoneda(r.a_favor), `${Number(r.ordenes_a_favor)} ${Number(r.ordenes_a_favor) === 1 ? 'servicio no realizado' : 'servicios no realizados'} con pago (devolver o aplicar)`, 'aviso', 'a_favor') : '')
       + t('Cobrado este mes', formatoMoneda(r.cobrado_mes), '', '', 'cobrado_mes')
       + (r.por_confirmar ? t('Por confirmar', formatoMoneda(r.por_confirmar.monto), `${Number(r.por_confirmar.cantidad)} pagos`, r.por_confirmar.cantidad ? 'aviso' : '', 'por_confirmar') : '');
-    $('cuentas-explica').hidden = true;
+    Ayuda.cerrar(cont);
     pintarRevision();
   }
 
@@ -559,7 +533,7 @@ const Finanzas = (() => {
     const deudas = r.ordenes.filter(sePuedeRecordar);
     const wa = deudas.length ? botonWhatsApp(cli.telefono, textoWhatsApp({ cliente_nombre: cli.nombre, saldo: deudas.reduce((t, c) => t + c.saldo, 0), vencido: r.vencido,
       folios: deudas.map(c => c.folio), proximo_vence: deudas.map(c => c.vence).sort()[0] })).replace('Recordar por WhatsApp', 'Recordar todo el saldo') : '';
-    const t = (titulo, valor, clase = '') => '<div class="cc-tarjeta ' + clase + '"><small>' + esc(titulo) + '</small><b>' + valor + '</b></div>';
+    const t = (titulo, valor, clase = '', ayuda = '') => '<div class="cc-tarjeta ' + clase + '"><small>' + esc(titulo) + Ayuda.boton(ayuda) + '</small><b>' + valor + '</b></div>';
     const ordenes = VER_PAGADAS ? r.ordenes : r.ordenes.filter(c => c.saldo > 0 || c.a_favor > 0);
     const filaOrden = c => '<tr class="' + (c.vencida ? 'fila-vencida' : '') + '"><td><b>' + esc(c.folio) + '</b></td><td>' + esc(c.factura_folio || '—') + '</td>'
       + '<td>' + esc(c.servicio_nombre || '—') + '<small class="celda-sub">' + esc(ejecucionCorta(c)) + '</small></td>'
@@ -576,9 +550,9 @@ const Finanzas = (() => {
     $('cc-sub').textContent = [cli.empresa_contacto, cli.telefono, cli.rfc ? 'RFC ' + cli.rfc : ''].filter(Boolean).join(' · ');
     $('cc-cuerpo').innerHTML =
       '<p class="cc-aviso">👤 Estás viendo el <b>estado de cuenta completo</b> de este cliente: todas sus órdenes y todos sus pagos. Cierra esta ventana para volver a la lista general.</p>'
-      + '<div class="cc-tarjetas">' + t('Debe hoy', formatoMoneda(r.saldo), r.saldo > 0 ? 'aviso' : '') + t('Vencido', formatoMoneda(r.vencido), r.vencido > 0 ? 'alerta' : '')
-      + t('Por realizar', formatoMoneda(r.programado)) + (r.por_concluir > 0 ? t('Por concluir', formatoMoneda(r.por_concluir)) : '') + (r.a_favor > 0 ? t('A favor del cliente', formatoMoneda(r.a_favor), 'favor') : '')
-      + t('Pagado en total', formatoMoneda(r.pagado)) + '<div class="cc-tarjeta"><small>Crédito</small><b>' + Number(r.dias_credito) + ' días</b>' + (puedeEditarFactura() ? '<button type="button" class="enlace" data-cc-credito>Cambiar</button>' : '') + '</div></div>'
+      + '<div class="cc-tarjetas" data-ayuda-zona>' + t('Debe hoy', formatoMoneda(r.saldo), r.saldo > 0 ? 'aviso' : '', 'debe_hoy') + t('Vencido', formatoMoneda(r.vencido), r.vencido > 0 ? 'alerta' : '', 'vencido')
+      + t('Por realizar', formatoMoneda(r.programado), '', 'por_realizar') + (r.por_concluir > 0 ? t('Por concluir', formatoMoneda(r.por_concluir), '', 'por_concluir') : '') + (r.a_favor > 0 ? t('A favor del cliente', formatoMoneda(r.a_favor), 'favor', 'a_favor') : '')
+      + t('Pagado en total', formatoMoneda(r.pagado), '', 'pagado_total') + '<div class="cc-tarjeta"><small>Crédito</small><b>' + Number(r.dias_credito) + ' días</b>' + (puedeEditarFactura() ? '<button type="button" class="enlace" data-cc-credito>Cambiar</button>' : '') + '</div></div>'
       + '<div class="btn-group cc-acciones">' + wa + '<button type="button" class="btn btn-outline" data-cc-ficha>Abrir ficha del contacto</button></div>'
       + '<div class="cc-seccion"><div class="cc-seccion-cab"><h3>Órdenes de servicio</h3><label class="cc-check"><input type="checkbox" data-cc-pagadas' + (VER_PAGADAS ? ' checked' : '') + '> Mostrar también las pagadas</label></div>'
       + (ordenes.length ? '<div class="tabla-scroll tabla-dinero-caja"><table class="tabla-resumen tabla-dinero"><thead><tr><th>OS</th><th>Factura</th><th>Servicio</th><th class="st-num">Total</th><th class="st-num">A/C</th><th class="st-num">Saldo</th><th>Vence</th><th class="st-num">Días</th><th>Status</th><th></th></tr></thead><tbody>'
@@ -628,7 +602,7 @@ const Finanzas = (() => {
     const p = r.proveedor, cat = (CATEGORIAS.find(c => c.clave === p.categoria) || {}).nombre || p.categoria;
     $('cp-titulo').textContent = p.nombre + (p.activo ? '' : ' (inactivo)');
     $('cp-sub').textContent = [cat, p.rfc ? 'RFC ' + p.rfc : '', p.contacto, p.telefono].filter(Boolean).join(' · ');
-    const t = (titulo, valor, clase = '') => '<div class="cc-tarjeta ' + clase + '"><small>' + esc(titulo) + '</small><b>' + valor + '</b></div>';
+    const t = (titulo, valor, clase = '', ayuda = '') => '<div class="cc-tarjeta ' + clase + '"><small>' + esc(titulo) + Ayuda.boton(ayuda) + '</small><b>' + valor + '</b></div>';
     const cuentas = PROV_VER_PAGADAS ? r.cuentas : r.cuentas.filter(x => x.saldo > 0);
     const estado = x => x.saldo <= 0 ? '<span class="estado-cxc pagada">Pagada ✓</span>' : x.vencida ? '<span class="estado-cxc vencida">Vencida hace ' + Number(-x.dias_para_vencer) + ' d</span>'
       : x.dias_para_vencer === 0 ? '<span class="estado-cxc parcial">Vence hoy</span>' : '<span class="estado-cxc programada">En ' + Number(x.dias_para_vencer) + ' d</span>';
