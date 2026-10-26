@@ -816,6 +816,11 @@ header.app nav.menu-principal .menu-sub .menu-item:focus-visible{outline:3px sol
 .gc-iva-aviso[hidden]{display:none;}
 .gc-iva-aviso .btn{font-weight:600;}
 .gc-totales{margin:12px 0 14px auto;border-collapse:collapse;min-width:260px;max-width:100%;}
+/* IVA y totales en el mismo renglón; en celular, uno debajo del otro. */
+.gc-resumen{display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:space-between;gap:12px 20px;margin:12px 0 14px;}
+.gc-resumen .gc-iva{flex:1 1 280px;margin:0;}
+.gc-resumen .gc-totales{margin:0 0 0 auto;}
+.ed-observaciones-campo{margin-top:12px;}
 .gc-totales th{text-align:left;font-weight:600;color:var(--texto-sec);padding:3px 16px 3px 0;}
 .gc-totales td{text-align:right;padding:3px 0;font-variant-numeric:tabular-nums;}
 .gc-totales .gc-fila-total th,.gc-totales .gc-fila-total td{border-top:1px solid var(--gris-300);padding-top:6px;color:var(--texto);font-size:15px;}
