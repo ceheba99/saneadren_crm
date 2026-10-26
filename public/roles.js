@@ -46,7 +46,7 @@ const Roles = (() => {
     const roles = DATOS.roles, cols = roles.length + 1;
     const cab = roles.map(r => '<th scope="col" class="rp-rol"><span class="rp-rol-nombre">' + esc(r.nombre) + '</span>'
       + '<span class="rp-rol-gente">' + (r.usuarios === 1 ? '1 persona' : r.usuarios + ' personas') + '</span>'
-      + (r.editable ? '<span class="rp-rol-acciones"><button type="button" class="btn btn-outline btn-chico" data-rp-ver="' + esc(r.clave) + '" aria-label="Ver el sistema como ' + esc(r.nombre) + '">Ver como</button>'
+      + (r.editable ? '<span class="rp-rol-acciones"><button type="button" class="btn btn-outline btn-chico" data-sl-libre data-rp-ver="' + esc(r.clave) + '" aria-label="Ver el sistema como ' + esc(r.nombre) + '">Ver como</button>'
         + '<button type="button" class="btn btn-outline btn-chico" data-rp-renombrar="' + esc(r.clave) + '" aria-label="Renombrar ' + esc(r.nombre) + '">Renombrar</button>'
         + (!r.sistema ? '<button type="button" class="btn btn-outline btn-chico" data-rp-quitar="' + esc(r.clave) + '" aria-label="Quitar el rol ' + esc(r.nombre) + '">Quitar</button>' : '') + '</span>' : '<span class="rp-rol-gente">Siempre todo</span>')
       + '</th>').join('');
@@ -85,6 +85,8 @@ const Roles = (() => {
       + '<p class="ayuda">«Lo suyo» se aplica en todo el sistema (listas, Inicio, calendario, buscador, reportes y Excel). «Toda la empresa» ve todas las sucursales con el selector en «Todas». Sin ✎ Edita, esa área es solo de consulta; con ✎, en contactos, cotizaciones y órdenes cada quien edita solo lo que capturó o tiene a su nombre (lo de otros, con «Editar lo de otros»). Borrar solo lo hace Dirección. El gerente además nunca hace lo que afecta a todas las sucursales (sucursales, catálogos, bitácora completa, respaldo). Los cambios aplican de inmediato a cada persona con ese rol (la pantalla se actualiza al recargarla).</p>'
       + '<div class="btn-group"><button type="button" class="btn btn-primario" id="rp-guardar"' + (n ? '' : ' disabled') + '>' + (n ? 'Guardar cambios (' + n + (n === 1 ? ' rol' : ' roles') + ')' : 'Sin cambios') + '</button>'
       + (n ? '<button type="button" class="btn btn-outline" id="rp-descartar">Descartar</button>' : '') + '</div>';
+    // En vista: las casillas no se tocan por accidente; «✏️ Editar» las abre y al guardar vuelve a la vista (2026-10-26).
+    if (!n) SoloLectura.poner(cont, true, { que: 'roles y permisos' });
   }
 
   // Aplica marcar/quitar un permiso (real o virtual) con todo lo que arrastra; devuelve lo arrastrado.
