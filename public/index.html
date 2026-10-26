@@ -693,6 +693,7 @@
         <div class="form-grid-2">
           <div class="campo-modal"><label for="ed-fecha-cotizacion">Fecha de la cotización (obligatorio)</label><input type="date" id="ed-fecha-cotizacion"></div>
           <div class="campo-modal solo-orden"><label for="ed-fecha-servicio">Fecha acordada del servicio (obligatorio)</label><input type="date" id="ed-fecha-servicio"></div>
+          <div class="campo-modal solo-orden"><label for="ed-hora-servicio">Hora del servicio (opcional, interna)</label><input type="time" id="ed-hora-servicio"><small class="ayuda">Para el calendario del equipo; no sale en la orden que recibe el cliente.</small></div>
           <div class="campo-modal">
             <label for="ed-responsable">Atendido por (obligatorio)</label><select id="ed-responsable"></select>
           </div>
@@ -1180,6 +1181,11 @@
           <label id="sn-label-fecha" for="sn-fecha">Fecha acordada del servicio (obligatorio)</label>
           <input type="date" id="sn-fecha">
         </div>
+        <div class="campo" id="sn-campo-hora">
+          <label for="sn-hora-servicio">Hora del servicio (opcional, interna)</label>
+          <input type="time" id="sn-hora-servicio">
+          <small class="ayuda">Para el calendario del equipo; no sale en la orden que recibe el cliente.</small>
+        </div>
       </div>
       <div class="sn-vigencia" id="sn-vigencia">
         <div class="campo"><label for="sn-fecha-cotizacion">Fecha de la cotización (obligatorio)</label><input type="date" id="sn-fecha-cotizacion"></div>
@@ -1271,7 +1277,7 @@
 <script src="roles.js?v=pf1"></script>
 <script src="importes.js?v=red1"></script>
 <script src="servicios-tabla.js?v=pf1"></script>
-<script src="flujo.js?v=rev1"></script>
+<script src="flujo.js?v=hr1"></script>
 <script src="cuentas.js?v=rev1"></script>
 <script src="finanzas.js?v=pf1"></script>
 <script src="calendario.js?v=aud1"></script>
@@ -1281,7 +1287,7 @@
 <script src="solicitudes.js?v=rev1"></script>
 <script src="carga-generador.js?v=con1"></script>
 <script src="sucursales.js?v=perm2"></script>
-<script src="app.js?v=pf2"></script>
+<script src="app.js?v=hr1"></script>
 <script src="personal.js?v=pf1"></script>
 <script src="buscador.js?v=suc1"></script>
 <script src="demo.js?v=demo1"></script>

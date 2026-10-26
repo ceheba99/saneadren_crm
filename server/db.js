@@ -347,6 +347,8 @@ for(const t of ['leads','clientes'])if(!db.prepare(`PRAGMA table_info(${t})`).al
   db.exec(`ALTER TABLE ${t} ADD COLUMN capturado_por INTEGER REFERENCES usuarios(id)`);
   if(t==='leads')db.exec("UPDATE leads SET capturado_por = (SELECT MIN(u.id) FROM usuarios u WHERE u.nombre = leads.creado_por) WHERE capturado_por IS NULL AND creado_por IS NOT NULL");
 }
+// Hora acordada del servicio (2026-10-26): opcional y solo interna (calendario); no sale en la orden impresa.
+if(!db.prepare('PRAGMA table_info(leads)').all().some(x=>x.name==='hora_servicio'))db.exec('ALTER TABLE leads ADD COLUMN hora_servicio TEXT');
 // IVA del documento (public/importes.js). iva_modo: 'mas_iva' (los importes son sin IVA),
 // 'incluido' (ya lo traen) o 'sin_iva' (no lleva IVA; tasa 0); iva_tasa en porcentaje entero; iva_cent lo calcula el servidor.
 // Los tres en NULL = registro anterior al IVA ("por definir"): valor se interpreta como hoy.

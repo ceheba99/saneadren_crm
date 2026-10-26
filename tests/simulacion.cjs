@@ -585,9 +585,15 @@ const espera = ms => new Promise(r => setTimeout(r, ms));
   [s, j] = await pedir('GET', '/calendario?desde=2026-01-01&hasta=2026-12-31', A); ok(s === 400, 'calendario: rango de más de 100 días rechazado');
   [s, j] = await pedir('POST', '/leads/' + ordenDup.id + '/historial', A, { tipo: 'alerta', texto: 'Llamar para confirmar acceso', fecha_alerta: '2026-11-01T09:30' });
   const costoDup = (await pedir('GET', '/finanzas/cxp?vista=todas&lead_id=' + ordenDup.id, A))[1][0];
+  // Hora del servicio (2026-10-26): opcional e interna; sale en el calendario.
+  const verDup = async () => (await pedir('GET', '/leads/' + ordenDup.id, A))[1];
+  [s, j] = await pedir('PUT', '/leads/' + ordenDup.id, A, { version: (await verDup()).version, hora_servicio: '25:00' }); ok(s === 400, 'una hora que no existe se rechaza', [s, j.error]);
+  [s, j] = await pedir('PUT', '/leads/' + ordenDup.id, A, { version: (await verDup()).version, hora_servicio: '08:15' }); ok(s === 200 && (await verDup()).hora_servicio === '08:15', 'se guarda la hora del servicio', [s, j.error]);
+  ok((await verDup()).historial.some(h => /hora del servicio \(sin hora\) → 08:15/.test(h.texto || '')), 'el cambio de hora queda en la bitácora');
   [s, j] = await pedir('GET', '/calendario?desde=2026-10-26&hasta=2026-12-06', L);
   const evs = j.eventos || [];
   ok(s === 200 && evs.some(e => e.tipo === 'orden' && e.lead_id === ordenDup.id && e.fecha === '2026-11-01' && /^OS-/.test(e.titulo)), 'calendario: la orden aparece en su fecha de servicio', evs.filter(e => e.tipo === 'orden'));
+  ok(evs.some(e => e.tipo === 'orden' && e.lead_id === ordenDup.id && e.hora === '08:15'), 'calendario: la orden aparece con su hora', evs.filter(e => e.lead_id === ordenDup.id));
   ok(evs.some(e => e.tipo === 'alerta' && e.lead_id === ordenDup.id && e.fecha === '2026-11-01' && e.hora === '09:30' && e.estado === 'pendiente'), 'calendario: la alerta aparece con su hora', evs.filter(e => e.tipo === 'alerta'));
   ok(evs.some(e => e.tipo === 'cobro' && e.lead_id === cot.id && e.fecha === (d => { const x = new Date(d + 'T00:00:00Z'); x.setUTCDate(x.getUTCDate() + 15); return x.toISOString().slice(0, 10); })(hoy) && e.monto > 0), 'calendario: el cobro aparece el día que vence', evs.filter(e => e.tipo === 'cobro'));
   ok(costoDup.fecha_vencimiento < '2026-10-26' || costoDup.fecha_vencimiento > '2026-12-06' || evs.some(e => e.tipo === 'pago' && e.cxp_id === costoDup.id && e.fecha === costoDup.fecha_vencimiento && e.monto === 8000), 'calendario: el pago al proveedor aparece el día que vence', evs.filter(e => e.tipo === 'pago'));
