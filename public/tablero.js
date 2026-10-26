@@ -72,8 +72,22 @@ const Panorama = (() => {
       + '<div class="pg-leyenda"><span><i class="pg-l-venta"></i>Venta realizada (sin IVA)</span><span><i class="pg-l-gasto"></i>Gastos (sin IVA)</span><span><i class="pg-l-utilidad"></i>Utilidad estimada</span><span><i class="pg-l-cobrado"></i>Dinero cobrado</span></div>';
   }
 
+  // Encuesta de satisfacción del periodo (2026-10-26): por quién y en qué aspecto; los comentarios abren su orden.
+  function cajaSatisfaccion(s) {
+    if (!s.encuestas) return '';
+    const num = v => (v == null ? '—' : esc(String(v)));
+    const tablaGrupo = (titulo, filas) => filas.length ? '<div><h4>' + esc(titulo) + '</h4><div class="tabla-scroll"><table class="pg-tabla"><thead><tr><th></th><th class="st-num">Encuestas</th><th class="st-num">Promedio</th><th class="st-num">NPS</th></tr></thead><tbody>'
+      + filas.map(x => '<tr><td>' + esc(x.nombre) + '</td><td class="st-num">' + Number(x.encuestas) + '</td><td class="st-num">' + num(x.promedio) + '</td><td class="st-num">' + num(x.nps) + '</td></tr>').join('') + '</tbody></table></div></div>' : '';
+    return '<div class="pg-caja"><div class="pg-caja-cab"><h3>Satisfacción del cliente</h3><span class="ayuda">' + Number(s.encuestas) + ' encuestas contestadas · promedio ' + num(s.promedio) + ' de 5 · NPS ' + num(s.nps)
+      + (s.insatisfechos ? ' · <b class="rojo">' + Number(s.insatisfechos) + ' insatisfechos</b>' : '') + (s.quieren_preventivo ? ' · ' + Number(s.quieren_preventivo) + ' quieren mantenimiento preventivo' : '') + '</span></div>'
+      + '<div class="pg-dos">' + tablaGrupo('Por vendedor', s.por_vendedor) + tablaGrupo('Por técnico', s.por_tecnico) + tablaGrupo('Por servicio', s.por_servicio) + (s.por_sucursal.length > 1 ? tablaGrupo('Por sucursal', s.por_sucursal) : '') + '</div>'
+      + '<h4>Cada aspecto (promedio de 5)</h4><div class="tabla-scroll"><table class="pg-tabla"><tbody>' + s.aspectos.map(x => '<tr><td>' + esc(x.texto) + '<small class="celda-sub">' + esc(x.modulo) + '</small></td><td class="st-num">' + num(x.promedio) + '</td></tr>').join('') + '</tbody></table></div>'
+      + (s.comentarios.length ? '<h4>Comentarios</h4><ul class="pg-perdidas">' + s.comentarios.map(c => '<li><button type="button" class="enlace" data-pg-lead="' + Number(c.lead_id) + '">' + esc(c.folio) + '</button> · ' + esc(c.cliente || '') + ' · ' + num(c.promedio) + ' de 5 · ' + Number(c.nps) + '/10'
+        + (c.mejorar ? '<br>💬 ' + esc(c.mejorar) : '') + (c.reconocimiento ? '<br>👏 ' + esc(c.reconocimiento) : '') + '</li>').join('') + '</ul>' : '')
+      + '</div>';
+  }
   function pintar() {
-    const d = DATOS, a = d.actual, p = d.previo, f = d.foto;
+    const d = DATOS, a = d.actual, p = d.previo, f = d.foto, sat = d.satisfaccion || { encuestas: 0, por_sucursal: [], aspectos: [], comentarios: [] };
     const periodoTxt = fechaTxt(d.desde) + ' – ' + fechaTxt(d.hasta), anteriorTxt = fechaTxt(d.anterior.desde) + ' – ' + fechaTxt(d.anterior.hasta);
     const pct = v => (v === null || v === undefined ? '—' : v + ' %');
     const alertas = d.alertas.length ? d.alertas.map(x => '<li class="pg-alerta ' + esc(x.nivel) + '">' + (x.ir ? '<button type="button" class="enlace" data-pg-ir="' + esc(x.ir) + '">' + esc(x.texto) + ' ›</button>' : esc(x.texto)) + '</li>').join('')
@@ -125,8 +139,10 @@ const Panorama = (() => {
       + tarjeta('Propuestas abiertas', String(f.pipeline.abiertas), dinero(f.pipeline.valor) + ' en negociación', '', '', 'pg_abiertas')
       + tarjeta('Clientes atendidos', String(a.clientes_activos), a.clientes_nuevos + ' nuevos · ' + a.clientes_recurrentes + ' recurrentes', delta(a.clientes_activos, p.clientes_activos), '', 'pg_clientes')
       + tarjeta('Contactos nuevos', String(a.contactos_nuevos), 'Registrados en el periodo', delta(a.contactos_nuevos, p.contactos_nuevos), '', 'pg_contactos')
-      + tarjeta('Satisfacción', a.calificacion == null ? '—' : Number(a.calificacion) + ' de 4', a.encuestas ? Number(a.encuestas) + (a.encuestas === 1 ? ' encuesta' : ' encuestas') + ' capturadas' : 'Sin encuestas capturadas en las órdenes', '', '', 'pg_satisfaccion')
+      + tarjeta('Satisfacción', sat.promedio == null ? '—' : Number(sat.promedio) + ' de 5', sat.encuestas ? Number(sat.encuestas) + (sat.encuestas === 1 ? ' encuesta' : ' encuestas') + (sat.nps != null ? ' · NPS ' + Number(sat.nps) : '') : 'Sin encuestas contestadas en el periodo',
+        sat.promedio != null && sat.previo?.promedio != null ? delta(sat.promedio, sat.previo.promedio) : '', sat.insatisfechos ? 'aviso' : '', 'pg_satisfaccion')
       + '</div></div>'
+      + cajaSatisfaccion(sat)
       + '<div class="pg-caja"><h3>¿Por qué no se aceptan las cotizaciones?</h3>' + ((d.perdidas || []).length
         ? '<ul class="pg-perdidas">' + d.perdidas.map(x => '<li><button type="button" class="enlace" data-pg-lead="' + Number(x.id) + '">' + esc(folioCotizacion(x)) + '</button> · ' + esc(x.cliente || '') + ' · ' + dinero(x.valor || 0) + ': '
           + (x.motivo_perdida ? esc(x.motivo_perdida) : '<span class="ayuda">sin motivo registrado</span>') + '</li>').join('') + '</ul>'

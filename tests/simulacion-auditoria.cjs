@@ -25,7 +25,7 @@ const seccion = t => console.log('\n' + t);
   seccion('1. Sin sesión no se entra a nada');
   const fuentes = fs.readdirSync(path.join(__dirname, '..', 'server')).filter(f => f.endsWith('.js')).map(f => fs.readFileSync(path.join(__dirname, '..', 'server', f), 'utf8')).join('\n');
   const rutas = [...fuentes.matchAll(/app\.(get|post|put|delete)\('(\/api\/[^']+)'/g)].map(m => [m[1].toUpperCase(), m[2].replace(/:[a-z_]+/gi, '1')]);
-  const publicas = ['/api/salud', '/api/login', '/api/registro', '/api/verificar-correo', '/api/olvide-password', '/api/restablecer-password', '/api/demo/estado', '/api/demo/entrar'];
+  const publicas = ['/api/salud', '/api/login', '/api/registro', '/api/verificar-correo', '/api/olvide-password', '/api/restablecer-password', '/api/demo/estado', '/api/demo/entrar', '/api/publico/encuesta/1']; // la encuesta del QR no pide sesión (2026-10-26)
   const abiertas = [];
   for (const [m, r] of rutas) { if (publicas.includes(r)) continue; const x = await fetch(URL + r, { method: m, headers: { 'Content-Type': 'application/json' }, body: m === 'GET' ? undefined : '{}' }); if (x.status !== 401) abiertas.push(m + ' ' + r + ' → ' + x.status); }
   revisa(rutas.length > 100 && !abiertas.length, `las ${rutas.length} rutas de la API piden sesión (salvo entrar, salud y recuperar contraseña)`, abiertas);

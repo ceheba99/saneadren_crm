@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Encuesta de calidad · Saneadren</title>
+<!-- Encuesta de satisfacción que abre el cliente con el QR de su orden (server/encuestas.js). Página pública: sin
+     sesión, sin datos de dinero; el script va aquí mismo (la CSP permite scripts en línea del mismo origen). -->
+<style>
+  :root{--oscuro:#1a1d23;--amarillo:#f6b103;--texto:#1f2937;--sec:#6b7280;--linea:#e5e7eb;--fondo:#f4f5f7;--verde:#15803d;--rojo:#b91c1c;}
+  *{box-sizing:border-box;}
+  body{margin:0;font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;background:var(--fondo);color:var(--texto);line-height:1.45;}
+  header{background:var(--oscuro);color:#fff;padding:16px;border-bottom:4px solid var(--amarillo);}
+  header img{height:42px;display:block;margin-bottom:8px;}
+  header h1{font-size:1.15rem;margin:0;}
+  header p{margin:4px 0 0;color:#d1d5db;font-size:.9rem;}
+  main{max-width:720px;margin:0 auto;padding:16px;}
+  .tarjeta{background:#fff;border:1px solid var(--linea);border-radius:12px;padding:16px;margin-bottom:14px;}
+  .tarjeta h2{font-size:1rem;margin:0 0 4px;}
+  .tarjeta .ayuda{color:var(--sec);font-size:.88rem;margin:0 0 10px;}
+  .datos dl{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;margin:0;font-size:.92rem;}
+  .datos dt{color:var(--sec);}
+  .datos dd{margin:0;font-weight:600;}
+  .pregunta{border-top:1px solid var(--linea);padding:12px 0 4px;}
+  .pregunta:first-of-type{border-top:0;}
+  .pregunta legend,.pregunta .etiqueta{font-weight:600;font-size:.95rem;padding:0;margin-bottom:8px;display:block;}
+  fieldset{border:0;margin:0;padding:0;}
+  .opciones{display:flex;flex-wrap:wrap;gap:6px;}
+  .opciones label{position:relative;flex:1 1 auto;min-width:44px;text-align:center;border:1px solid var(--linea);border-radius:8px;padding:10px 6px;cursor:pointer;font-size:.9rem;background:#fff;user-select:none;}
+  .opciones input{position:absolute;opacity:0;pointer-events:none;}
+  .opciones label:has(input:checked){background:var(--amarillo);border-color:var(--amarillo);font-weight:700;}
+  .opciones label:has(input:focus-visible){outline:3px solid #2563eb;outline-offset:1px;}
+  .escala small{display:flex;justify-content:space-between;color:var(--sec);font-size:.78rem;margin-top:4px;}
+  .lista label{display:flex;gap:10px;align-items:flex-start;border:1px solid var(--linea);border-radius:8px;padding:10px;margin-bottom:6px;cursor:pointer;}
+  .lista label:has(input:checked){border-color:var(--amarillo);background:#fff8e1;}
+  input[type=text],textarea,select{width:100%;font:inherit;border:1px solid #cbd0d8;border-radius:8px;padding:10px;background:#fff;}
+  textarea{min-height:84px;resize:vertical;}
+  .req{color:var(--rojo);margin-left:2px;}
+  .falta{border-color:var(--rojo)!important;background:#fef2f2;}
+  button.enviar{width:100%;background:var(--oscuro);color:#fff;border:0;border-radius:10px;padding:14px;font-size:1rem;font-weight:700;cursor:pointer;}
+  button.enviar:disabled{opacity:.6;cursor:wait;}
+  .aviso{padding:12px;border-radius:8px;margin:0 0 14px;font-weight:600;}
+  .aviso.error{background:#fef2f2;color:var(--rojo);border:1px solid #fecaca;}
+  .aviso.ok{background:#f0fdf4;color:var(--verde);border:1px solid #bbf7d0;}
+  .privacidad{color:var(--sec);font-size:.8rem;text-align:center;margin:16px 0 32px;}
+  .gracias{text-align:center;padding:32px 16px;}
+  .gracias b{font-size:2.5rem;display:block;}
+  [hidden]{display:none!important;}
+</style>
+</head>
+<body>
+<header>
+  <img src="/logo-saneadren.png" alt="Saneadren">
+  <h1>Encuesta de calidad y satisfacción del servicio</h1>
+  <p>Le tomará menos de 2 minutos. Nos ayuda a mantener nuestros estándares de calidad y seguridad.</p>
+</header>
+<main>
+  <p class="aviso error" id="error" role="alert" hidden></p>
+  <div id="cargando" class="tarjeta">Cargando…</div>
+  <div id="gracias" class="tarjeta gracias" hidden><b>¡Gracias!</b><p id="gracias-texto">Recibimos su opinión. Nos ayuda a mejorar cada servicio.</p></div>
+  <form id="forma" hidden novalidate>
+    <section class="tarjeta datos">
+      <h2>Su servicio</h2>
+      <p class="ayuda">Estos datos vienen de su orden de servicio.</p>
+      <dl><dt>Orden</dt><dd id="d-folio"></dd><dt>Empresa o cliente</dt><dd id="d-empresa"></dd><dt>Tipo de cliente</dt><dd id="d-tipo"></dd><dt>Servicio</dt><dd id="d-servicios"></dd><dt>Fecha</dt><dd id="d-fecha"></dd></dl>
+      <div class="pregunta"><label class="etiqueta" for="contacto">Nombre y puesto de quien supervisó o solicitó el servicio en sitio (opcional)</label><input type="text" id="contacto" maxlength="200" autocomplete="name"></div>
+    </section>
+    <div id="modulos"></div>
+    <section class="tarjeta">
+      <h2>Gestión administrativa</h2>
+      <fieldset class="pregunta" id="q-facturacion"><legend>¿El trámite de facturación y entrega de manifiestos oficiales de disposición de residuos cumplió en tiempo y forma?<span class="req" aria-hidden="true">*</span></legend><div class="lista" id="op-facturacion"></div></fieldset>
+    </section>
+    <section class="tarjeta">
+      <h2>Lealtad y recomendación</h2>
+      <fieldset class="pregunta escala" id="q-nps"><legend>Con base en esta experiencia, ¿con qué probabilidad recomendaría a Saneadren con un colega, cliente o familiar?<span class="req" aria-hidden="true">*</span></legend>
+        <div class="opciones" id="op-nps"></div><small><span>0 · Nada probable</span><span>10 · Definitivamente</span></small></fieldset>
+      <fieldset class="pregunta" id="q-preventivo"><legend>¿Le interesaría recibir una propuesta para un programa de mantenimiento preventivo periódico?<span class="req" aria-hidden="true">*</span></legend><div class="lista" id="op-preventivo"></div></fieldset>
+      <div class="pregunta"><label class="etiqueta" for="mejorar">¿Qué aspecto considera que podríamos mejorar? (opcional)</label><textarea id="mejorar" maxlength="2000"></textarea></div>
+      <div class="pregunta"><label class="etiqueta" for="reconocido">Si desea reconocer la labor de algún operador o cuadrilla (opcional)</label>
+        <select id="reconocido" hidden><option value="">Elija a quién (opcional)</option></select>
+        <input type="text" id="reconocimiento" maxlength="500" placeholder="¿Qué hizo bien?" style="margin-top:6px"></div>
+    </section>
+    <p class="aviso error" id="error-enviar" role="alert" hidden></p>
+    <button type="submit" class="enviar" id="enviar">Enviar encuesta</button>
+    <p class="privacidad">Sus respuestas se usan solo para mejorar nuestro servicio. No compartimos su información.</p>
+  </form>
+</main>
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  const token = location.pathname.split('/').filter(Boolean).pop();
+  const api = '/api/publico/encuesta/' + encodeURIComponent(token);
+  const esc = t => String(t ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const fecha = f => f ? new Date(f + 'T12:00:00').toLocaleDateString('es-MX', { day: 'numeric', month: 'long', year: 'numeric' }) : '—';
+  const radio = (nombre, valor, texto) => `<label><input type="radio" name="${esc(nombre)}" value="${esc(valor)}"> ${esc(texto)}</label>`;
+  const error = t => { $('error').textContent = t; $('error').hidden = !t; $('cargando').hidden = true; };
+  let P = null;
+  async function cargar() {
+    let r, j;
+    try { r = await fetch(api); j = await r.json(); } catch { return error('No se pudo cargar la encuesta. Revisa tu conexión e intenta de nuevo.'); }
+    if (!r.ok) return error(j.error || 'No se pudo cargar la encuesta.');
+    $('cargando').hidden = true;
+    if (j.respondida) { $('gracias-texto').textContent = 'Esta encuesta ya se contestó. ¡Gracias por su opinión!'; $('gracias').hidden = false; return; }
+    P = j.preguntas;
+    $('d-folio').textContent = j.folio; $('d-empresa').textContent = j.empresa || '—'; $('d-tipo').textContent = j.tipo_cliente || '—';
+    $('d-servicios').textContent = (j.servicios || []).join(', ') || '—'; $('d-fecha').textContent = fecha(j.fecha);
+    const escala = n => [1, 2, 3, 4, 5].map(v => radio(n, v, String(v))).join('') + radio(n, 'na', 'N/A');
+    $('modulos').innerHTML = P.aspectos.map(m => `<section class="tarjeta"><h2>${esc(m.titulo)}</h2><p class="ayuda">Califique del 1 (pésimo) al 5 (excelente). N/A si no aplica.</p>`
+      + m.items.map(i => `<fieldset class="pregunta escala" id="q-${esc(i.clave)}"><legend>${esc(i.texto)}<span class="req" aria-hidden="true">*</span></legend><div class="opciones">${escala(i.clave)}</div><small><span>1 · Pésimo</span><span>5 · Excelente</span></small></fieldset>`).join('')
+      + '</section>').join('');
+    $('op-facturacion').innerHTML = P.facturacion.map(([k, t]) => radio('facturacion', k, t)).join('');
+    $('op-preventivo').innerHTML = P.preventivo.map(([k, t]) => radio('preventivo', k, t)).join('');
+    $('op-nps').innerHTML = Array.from({ length: 11 }, (_, i) => radio('nps', i, String(i))).join('');
+    if ((j.personal || []).length) { $('reconocido').innerHTML += j.personal.map(p => `<option value="${Number(p.id)}">${esc(p.nombre)}</option>`).join(''); $('reconocido').hidden = false; }
+    $('forma').hidden = false;
+  }
+  const elegido = n => document.querySelector(`input[name="${n}"]:checked`)?.value;
+  $('forma').addEventListener('change', e => e.target.closest('fieldset')?.classList.remove('falta'));
+  $('forma').addEventListener('submit', async e => {
+    e.preventDefault();
+    const claves = P.aspectos.flatMap(m => m.items.map(i => i.clave));
+    const faltan = [...claves, 'facturacion', 'nps', 'preventivo'].filter(k => elegido(k) === undefined);
+    document.querySelectorAll('fieldset.falta').forEach(f => f.classList.remove('falta'));
+    if (faltan.length) {
+      faltan.forEach(k => $('q-' + k)?.classList.add('falta'));
+      $('error-enviar').textContent = 'Falta contestar ' + faltan.length + (faltan.length === 1 ? ' pregunta (marcada en rojo).' : ' preguntas (marcadas en rojo).'); $('error-enviar').hidden = false;
+      $('q-' + faltan[0])?.scrollIntoView({ behavior: 'smooth', block: 'center' }); return;
+    }
+    const cuerpo = { contacto: $('contacto').value, aspectos: Object.fromEntries(claves.map(k => [k, elegido(k)])), facturacion: elegido('facturacion'), nps: Number(elegido('nps')),
+      preventivo: elegido('preventivo'), mejorar: $('mejorar').value, reconocimiento: $('reconocimiento').value, reconocido_personal_id: $('reconocido').value || null };
+    $('enviar').disabled = true; $('error-enviar').hidden = true;
+    try {
+      const r = await fetch(api, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(cuerpo) }), j = await r.json().catch(() => ({}));
+      if (!r.ok && j.codigo !== 'YA_CONTESTADA') throw new Error(j.error || 'No se pudo enviar');
+      $('forma').hidden = true; $('gracias').hidden = false; window.scrollTo(0, 0);
+    } catch (err) { $('error-enviar').textContent = err.message + '. Intente de nuevo.'; $('error-enviar').hidden = false; $('enviar').disabled = false; }
+  });
+  cargar();
+})();
+</script>
+</body>
+</html>

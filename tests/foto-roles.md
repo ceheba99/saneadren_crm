@@ -83,6 +83,12 @@ Dirección la revisa y la aprueba. Si un cambio altera lo que ve un rol, la prue
 | Solicitud de compra de Tomás | ✔ | ✔ | — | — | ✔ | ✔ |
 | Solicitud de compra de Valeria | ✔ | ✔ | ✔ | — | — | ✔ |
 
+### Encuesta
+
+| Dato | Dirección | Gerente | Ventas | Atención | Técnico | Costos y compras |
+|---|:-:|:-:|:-:|:-:|:-:|:-:|
+| Aviso «cliente insatisfecho» de la encuesta de la orden de Valeria | ✔ | ✔ | ✔ | — | — | — |
+
 ### Prospección
 
 | Dato | Dirección | Gerente | Ventas | Atención | Técnico | Costos y compras |
@@ -163,6 +169,7 @@ Dirección la revisa y la aprueba. Si un cambio altera lo que ve un rol, la prue
 - **2026-10-26** · Contactos, cotizaciones y órdenes: los edita quien los capturó o los tiene a su nombre, el Gerente y Dirección. Quien solo los ve (Atención con lo de otra persona, Técnico, Compras) no los cambia.
 - **2026-10-26** · Marcar si se realizó: quien hizo la orden, el Gerente y Dirección (el técnico todavía no).
 - **2026-10-26** · Borrar (cotizaciones, órdenes, usuarios, roles, catálogos): solo Dirección.
+- **2026-10-26** · Encuesta: el aviso de cliente insatisfecho le llega a Dirección, al gerente y al responsable de la orden; no a quien solo ve la orden.
 - **2026-10-26** · Técnico: ve su solicitud de compra, no las de otros, y no ve montos de compras.
 - **2026-10-21** · Prospección: cada quien lo suyo (quien ve toda su sucursal en ventas, todos los de su sucursal); el técnico no prospecta.
 - **2026-10-19** · Personal: quien ve órdenes ve nombre y puesto del personal activo, para asignarlo a una orden; la ficha y los datos sensibles, solo Gerente y Dirección.

@@ -293,7 +293,8 @@ formularios();
     [/^\/api\/finanzas\/categorias\//, 'categorias_gasto'], [/^\/api\/leads\//, 'leads'], [/^\/api\/historial\//, 'historial'], [/^\/api\/clientes\//, 'clientes'], [/^\/api\/usuarios\//, 'usuarios'], [/^\/api\/roles\//, 'roles'],
     [/^\/api\/servicios\//, 'catalogo_servicios'], [/^\/api\/canales\//, 'canales'], [/^\/api\/tipos-cliente\//, 'tipos_cliente'], [/^\/api\/sucursales\//, 'sucursales'], [/^\/api\/prospeccion\/sectores\//, 'sectores_prospeccion'], [/^\/api\/prospeccion\//, 'establecimientos']];
   const concreta = r => { const t = (TABLA_DE.find(([re]) => re.test(r.ruta)) || [])[1]; return r.ruta.replace(':telefono', TEL).replace(':tel', TEL).replace(/:(id|clave)\b/, String(ID[t] ?? 1)).replace(/:[a-zA-Z_]+/g, '1'); };
-  const PUBLICAS = /^\/api\/(salud|login|registro|verificar-correo|olvide-password|restablecer-password|demo\/estado|demo\/entrar)$/;
+  // La encuesta que abre el cliente con el QR de su orden no pide sesión (2026-10-26, server/encuestas.js).
+  const PUBLICAS = /^\/api\/(salud|login|registro|verificar-correo|olvide-password|restablecer-password|demo\/estado|demo\/entrar|publico\/encuesta\/:token)$/;
   const ROLES = Object.keys(TOK), CDMX = ROLES.filter(r => /cdmx/.test(r));
   const lento = [], errores500 = [];
   const pedir = async (m, url, t, cuerpo) => {

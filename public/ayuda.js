@@ -41,7 +41,7 @@ const Ayuda = (() => {
     pg_abiertas: ['Propuestas abiertas', 'Las cotizaciones que siguen abiertas hoy (de cualquier fecha) y su importe: lo que está en negociación.', '8 cotizaciones sin respuesta por $95,000.'],
     pg_clientes: ['Clientes atendidos', 'Los clientes con al menos un servicio realizado en el periodo. Nuevos: su primer servicio realizado fue en el periodo. Recurrentes: ya tenían servicios antes.', '15 clientes: 4 nuevos y 11 que ya eran clientes.'],
     pg_contactos: ['Contactos nuevos', 'Los contactos que se dieron de alta en el periodo, con o sin cotización.', 'Llamaron 20 personas nuevas y se registraron.'],
-    pg_satisfaccion: ['Satisfacción', 'El promedio de la encuesta de los servicios realizados en el periodo: 4 excelente, 3 bueno, 2 regular, 1 malo. Se captura en la orden.', 'Dos encuestas de 4 y una de 3: 3.7 de 4.'],
+    pg_satisfaccion: ['Satisfacción', 'El promedio de las encuestas que contestaron los clientes en el periodo (con el QR de su orden), del 1 pésimo al 5 excelente. El NPS es el % que nos recomendaría (9 o 10) menos el % que no (0 a 6): va de −100 a 100.', 'Dos encuestas de 5 y una de 4: 4.7 de 5. Si de 10 clientes 7 dan 9 o 10 y 1 da 5 o menos: NPS 60.'],
     // Resultados · Análisis comercial
     ac_nuevos: ['Contactos nuevos', 'Los contactos que se dieron de alta en el periodo.', '20 personas nuevas registradas en octubre.'],
     ac_clientes: ['Clientes con servicios realizados', 'Los clientes con al menos un servicio realizado en el periodo, por la fecha en que se realizó.', '15 clientes distintos atendidos en octubre.'],

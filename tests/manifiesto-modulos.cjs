@@ -93,6 +93,17 @@ module.exports = {
       buscador: null, buscadorRazon: 'no tiene registros propios',
       permisos: ['reportes.analisis', 'reportes.panorama'],
     },
+    encuestas: {
+      nombre: 'Encuesta de satisfacción (QR por orden)',
+      vistas: [], vistasRazon: 'vive en la ficha de la orden (sección «Encuesta del cliente»), en Panorama y en la página pública public/encuesta.html',
+      tablas: ['encuestas'],
+      rutas: [/^\/api\/publico\/encuesta(\/|$)/, /^\/api\/leads\/:id\/encuesta$/],
+      pendientes: 'avisos de cliente insatisfecho y de quien pide mantenimiento preventivo (en Avisos de Inicio)',
+      inicio: ['inicio-cotizaciones'],
+      demo: [], integridad: null, integridadRazon: 'cada encuesta cuelga de su orden; no hay montos ni folios propios que cuadrar',
+      buscador: null, buscadorRazon: 'se consulta en la ficha de su orden',
+      permisos: [],
+    },
     administracion: {
       nombre: 'Usuarios, roles, sucursales, catálogos, bitácora y respaldos',
       vistas: ['usuarios', 'catalogos', 'bitacora'],
@@ -120,6 +131,12 @@ module.exports = {
   // se capturan con otro nombre ({ como, razon }: la auditoría comprueba que la pantalla mande esa llave). Un dato que se
   // muestra y no está aquí ni se captura es un dato muerto (como «Realizó: propio/subcontratado», que se quitó).
   generados: {
+    // Encuesta de satisfacción (2026-10-26): la contesta el cliente en public/encuesta.html (página pública, fuera de index.html).
+    encuesta_calificacion: 'capturada a mano antes de la encuesta propia: ya no se captura, solo se muestra como historial',
+    encuesta_comentario: 'capturado a mano antes de la encuesta propia: ya no se captura, solo se muestra como historial',
+    promedio: 'lo calcula el sistema con las calificaciones de la encuesta del cliente (sin contar N/A)',
+    nps: 'lo contesta el cliente en la página pública de la encuesta (public/encuesta.html)',
+    reconocimiento: 'lo escribe el cliente en la página pública de la encuesta (public/encuesta.html)',
     orden_generador: 'número de orden que trae el Excel del Generador al cargarlo',
     correo_verificado: 'lo marca el sistema al confirmar el correo o cuando un administrador lo captura',
     accion: 'la escribe el sistema en la bitácora',
@@ -151,8 +168,6 @@ module.exports = {
         canal: 'al crear se toma de «¿Cómo se enteró?» del contacto',
         responsable: 'al crear queda a nombre de quien la registra («Atendido por» se cambia después)',
         urgente: 'se marca después en «Avisos y notas» del registro, junto con notas y recordatorios',
-        'encuesta-calificacion': 'la encuesta se contesta después de hacer el servicio',
-        'encuesta-comentario': 'la encuesta se contesta después de hacer el servicio',
       },
       soloAlta: {},
     },

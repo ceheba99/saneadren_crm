@@ -966,8 +966,10 @@ function cargarMembrete(archivo) {
 const cargarMembreteCotizacion = () => cargarMembrete('membrete-cotizacion.png');
 const cargarMembreteOrdenServicio = () => cargarMembrete('membrete-orden-servicio.png');
 
+// QR de la encuesta: el propio de cada orden (2026-10-26, public/encuestas.js); si no se puede generar, el QR fijo de antes.
 let qrEncuestaCache;
-async function cargarQREncuesta() {
+async function cargarQREncuesta(leadId) {
+  if (leadId) { try { return await Encuestas.qrPng(leadId); } catch { /* se usa el QR fijo */ } }
   if (!qrEncuestaCache) {
     qrEncuestaCache = fetch('/QR_Encuesta_Calidad_Saneadren.png').then(async respuesta => {
       if (!respuesta.ok) throw new Error('No se pudo cargar el QR de la encuesta');
@@ -1077,6 +1079,7 @@ function nombreArchivoOrdenServicio(datos, extension) {
 
 function datosOrdenServicioDesdeLead(lead, items) {
   return {
+    leadId: lead.id, // para el QR de su encuesta
     folio: folioOrdenServicio(lead),
     // Solo se cita la cotización si la orden realmente salió de una (no en directas ni duplicadas).
     folioCotizacion: lead.origen === 'directo' ? '' : folioCotizacion(lead),
@@ -1132,7 +1135,7 @@ const COLOR_ORDEN = { oscuro: [26, 29, 35], amarillo: [246, 177, 3], gris: [107,
 
 async function generarPDFOrdenServicio(datos) {
   const membrete = await cargarMembreteOrdenServicio();
-  const qr = await cargarQREncuesta().catch(() => null);
+  const qr = await cargarQREncuesta(datos.leadId).catch(() => null);
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({unit:'pt', format:[612,918]});
   const C = COLOR_ORDEN, margen = 48, derecha = 564, ancho = 516, inicio = 126, limite = 706;
@@ -1247,7 +1250,7 @@ async function generarPDFOrdenServicio(datos) {
 
 async function generarWordOrdenServicio(datos) {
   const membrete=await cargarMembreteOrdenServicio();
-  const qr=await cargarQREncuesta().catch(()=>null);
+  const qr=await cargarQREncuesta(datos.leadId).catch(()=>null);
   const {Document,Packer,Paragraph,TextRun,Table,TableRow,TableCell,WidthType,Header,ImageRun,AlignmentType,HeightRule,VerticalAlign,BorderStyle,TabStopType}=docx;
   const OSC='1A1D23',AMA='F6B103',GRI='6B7280',LIN='D6D9DE',FON='F6F7F9';
   const nada={style:BorderStyle.NONE,size:0,color:'FFFFFF'};
@@ -1921,8 +1924,6 @@ async function abrirFicha(id) {
   document.getElementById('ed-manifiestos').value = lead.manifiestos || '';
   document.getElementById('ed-tiros').value = lead.tiros || '';
   document.getElementById('ed-observaciones').value = lead.observaciones || '';
-  document.getElementById('ed-encuesta-calificacion').value = lead.encuesta_calificacion ? String(lead.encuesta_calificacion) : '';
-  document.getElementById('ed-encuesta-comentario').value = lead.encuesta_comentario || '';
   document.getElementById('ed-creado-por').textContent = lead.creado_por || '—';
   document.getElementById('ed-created-at').textContent = fechaCorta(lead.created_at) || '—';
   document.getElementById('ed-estatus-actual').textContent = lead.estatus || '—';
@@ -1939,6 +1940,7 @@ async function abrirFicha(id) {
   Finanzas.pintarEjecucion(lead);
   Finanzas.pintarCobranzaOrden(lead);
   Finanzas.pintarCostosOrden(lead);
+  Encuestas.pintarOrden(lead);
   prepararEditorCotizacion(lead,'existente');
   // Se abre en solo lectura; quien la puede editar pulsa «Editar» (2026-10-26).
   const esOrden = lead.estatus === 'ganado';
@@ -2103,8 +2105,6 @@ function recolectarPayloadFicha() {
     manifiestos: document.getElementById('ed-manifiestos').value.trim(),
     tiros: document.getElementById('ed-tiros').value.trim(),
     observaciones: document.getElementById('ed-observaciones').value.trim(),
-    // La encuesta solo existe en órdenes de servicio (se contesta después del servicio).
-    ...(LEAD_ACTUAL?.estatus === 'ganado' ? { encuesta_calificacion: Number(document.getElementById('ed-encuesta-calificacion').value) || null, encuesta_comentario: document.getElementById('ed-encuesta-comentario').value.trim() || null } : {}),
     ...(LEAD_ACTUAL?.estatus === 'abierto' ? { notas_cotizacion: document.getElementById('gc-notas').value.trim() } : {}),
     ...ivaPayload()
   };

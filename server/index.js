@@ -141,7 +141,8 @@ app.get('/api/salud', (req, res) => {
 const RUTAS_PUBLICAS = new Set(['/salud', '/login', '/registro', '/verificar-correo', '/olvide-password', '/restablecer-password', '/demo/estado', '/demo/entrar']);
 require('./cuentas')(app, db, h, { sesiones, urlBase: URL_BASE });
 app.use('/api', (req, res, next) => {
-  if (RUTAS_PUBLICAS.has(req.path)) return next();
+  // La encuesta que abre el cliente con el QR de su orden (server/encuestas.js) no pide sesión.
+  if (RUTAS_PUBLICAS.has(req.path) || /^\/publico\/encuesta\/[\w-]+$/.test(req.path)) return next();
   requireAuth(req, res, next);
 });
 // Sucursales: alcance de cada petición (qué sucursales ve) y candados en la base. Va antes de las demás rutas.
@@ -164,6 +165,8 @@ const unicos = require('./clientes-unicos')(app, db, h);
 require('./prospeccion')(app,db,h,unicos);
 // Cuentas por cobrar y por pagar. Devuelve ganchos que usan las rutas de órdenes de abajo.
 const finanzas = require('./finanzas')(app, db, h, unicos);
+const encuestas = require('./encuestas')(app, db, h, { urlBase: URL_BASE }); // encuesta de satisfacción con QR por orden
+app.locals.encuestas = encuestas;
 require('./tablero')(app, db, h, finanzas); // Resultados: panorama general
 require('./compras')(app, db, h, finanzas); // Órdenes de compra (formato CM-F-03)
 require('./carga-generador')(app, db, h, unicos); // Carga masiva del Generador (Excel por meses)
@@ -1131,6 +1134,7 @@ app.delete('/api/leads/:id', h((req, res) => {
     db.prepare("INSERT INTO main.historial_archivo (lead_id, cliente_id, folio, tipo, texto, usuario, created_at) VALUES (?, ?, ?, 'eliminado', ?, ?, datetime('now','localtime'))")
       .run(lead.id, lead.cliente_id, folioEl, `${lead.estatus === 'ganado' ? 'Orden de servicio' : 'Cotización'} ELIMINADA (importe $${Number(lead.valor || 0).toLocaleString('es-MX', { minimumFractionDigits: 2 })} sin IVA). Motivo: ${motivoEl}`, req.usuarioSesion.nombre);
     db.prepare('UPDATE main.historial_archivo SET sucursal_id = ? WHERE lead_id = ? AND sucursal_id IS NULL').run(lead.sucursal_id, lead.id);
+    db.prepare('DELETE FROM main.encuestas WHERE lead_id = ?').run(req.params.id);
     db.prepare('DELETE FROM main.leads WHERE id = ?').run(req.params.id);
   })();
   res.json({ ok: true, id: Number(req.params.id) });

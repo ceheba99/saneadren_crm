@@ -239,6 +239,8 @@ module.exports = function tablero(app, db, h, finanzas) {
     res.json({
       desde, hasta, anterior: { desde: antDesde, hasta: antHasta }, generado: new Date().toISOString(),
       actual: act.r, previo: ant.r, foto, alertas, por_sucursal: porSucursal,
+      // Encuesta de satisfacción (2026-10-26): lo contestado en el periodo, por vendedor, técnico, servicio y sucursal.
+      satisfaccion: app.locals.encuestas ? { ...app.locals.encuestas.reporte(desde, hasta), previo: app.locals.encuestas.reporte(antDesde, antHasta) } : null,
       gastos: act.gastos, tendencia: tendencia(hasta),
       top_clientes: ranking(act.ventas, act.costos, l => l.cliente), por_servicio: porServicio(act.ventas),
       // Cotizaciones del periodo que no se aceptaron, con el motivo que se pide al marcarlas (antes solo quedaba en su historial).

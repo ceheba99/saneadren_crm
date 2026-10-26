@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Saneadren · Cotizaciones y Servicios</title>
-<link rel="stylesheet" href="styles.css?v=ed1">
+<link rel="stylesheet" href="styles.css?v=enc1">
 <link rel="stylesheet" href="servicios-tabla.css">
 <link rel="stylesheet" href="flujo.css?v=cel1">
 </head>
@@ -711,8 +711,6 @@
           <div class="campo-modal"><label for="ed-canal">Canal</label><select id="ed-canal"></select></div>
           <div class="campo-modal"><label for="ed-servicio">Servicio</label><select id="ed-servicio"></select></div>
           <div class="campo-modal"><label for="ed-valor">Valor del servicio (MXN)</label><input type="number" id="ed-valor" min="0" step="0.01" placeholder="0.00"></div>
-          <div class="campo-modal solo-orden"><label for="ed-encuesta-calificacion">Encuesta del cliente: calificación (opcional)</label><select id="ed-encuesta-calificacion"><option value="">Sin respuesta</option><option value="4">4 · Excelente</option><option value="3">3 · Bueno</option><option value="2">2 · Regular</option><option value="1">1 · Malo</option></select></div>
-          <div class="campo-modal solo-orden"><label for="ed-encuesta-comentario">Comentario de la encuesta (opcional)</label><input type="text" id="ed-encuesta-comentario" maxlength="1000" placeholder="Lo que contestó en la encuesta (QR de la orden)"></div>
         </div>
         <!-- Observaciones: debajo de los servicios e importes (el editor se coloca antes, ver prepararEditorCotizacion). -->
         <div class="campo-modal full solo-orden ed-observaciones-campo" id="ed-observaciones-campo"><label for="ed-observaciones">Observaciones de la orden (opcional)</label><textarea id="ed-observaciones" rows="2" maxlength="3000" placeholder="Se imprimen en la orden de servicio; también puedes capturar lo que anotó el operador"></textarea></div>
@@ -747,6 +745,11 @@
       </div>
 
       <!-- Gastos que generó esta orden (diésel, casetas, renta de equipo, disposición…): van a Cuentas por pagar con su número de orden. -->
+      <!-- Encuesta de satisfacción: el enlace (QR de la orden) y lo que contestó el cliente (2026-10-26). -->
+      <div class="modal-section" id="seccion-encuesta" data-plegable="encuesta" hidden>
+        <div class="seccion-tit">⭐ Encuesta del cliente</div>
+        <div id="encuesta-orden"></div>
+      </div>
       <div class="modal-section" id="seccion-costos" data-plegable="costos" hidden>
         <div class="seccion-tit">🧾 Gastos generados de esta orden</div>
         <p class="ayuda">Lo que se gastó para este servicio (diésel, casetas, renta de equipo, disposición de residuos…). Queda en Cuentas por pagar con el número de esta orden y se ve en el Generador.</p>
@@ -1319,8 +1322,10 @@
 
 
 <!-- ?v= obliga a los navegadores (sobre todo celulares) a tomar la versión nueva tras publicar. -->
+<!-- Generador de QR para la encuesta de cada orden (MIT, Kazuhiko Arase) -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js" integrity="sha384-mZT2gIty7ZDdOGkxfP6joZcYdMW1Jvj9dRlfpTmaJAKKXTqzygtB22k7FLe+KZC1" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 <script src="ui.js?v=cer1"></script>
-<script src="ayuda.js?v=ay1"></script>
+<script src="ayuda.js?v=enc1"></script>
 <script src="solo-lectura.js?v=ed1"></script>
 <script src="permisos.js?v=pf1"></script>
 <script src="roles.js?v=ed1"></script>
@@ -1330,13 +1335,14 @@
 <script src="cuentas.js?v=rev1"></script>
 <script src="finanzas.js?v=ed1"></script>
 <script src="calendario.js?v=esp1"></script>
-<script src="tablero.js?v=ay1"></script>
+<script src="tablero.js?v=enc1"></script>
 <script src="bitacora.js?v=hc1"></script>
 <script src="compras.js?v=ed1"></script>
 <script src="solicitudes.js?v=rev1"></script>
 <script src="carga-generador.js?v=con1"></script>
 <script src="sucursales.js?v=perm2"></script>
-<script src="app.js?v=ed1"></script>
+<script src="encuestas.js?v=enc1"></script>
+<script src="app.js?v=enc1"></script>
 <script src="personal.js?v=ed1"></script>
 <script src="buscador.js?v=suc1"></script>
 <script src="demo.js?v=demo1"></script>
