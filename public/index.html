@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Saneadren · Cotizaciones y Servicios</title>
-<link rel="stylesheet" href="styles.css?v=prv1">
+<link rel="stylesheet" href="styles.css?v=prv3">
 <link rel="stylesheet" href="servicios-tabla.css">
 <link rel="stylesheet" href="flujo.css?v=cel1">
 </head>
@@ -615,21 +615,6 @@
         <select id="prov-filtro"><option value="activos">Activos</option><option value="saldo">Con saldo por pagar</option><option value="inactivos">Inactivos</option><option value="todos">Todos</option></select>
       </div>
       <p class="ayuda" id="prov-resumen" role="status"></p>
-      <div class="panel-alta" id="prov-form" hidden>
-        <h2 id="prov-form-titulo">Agregar proveedor</h2>
-        <div class="form-grid">
-          <div class="campo"><label for="prov-nombre">Nombre (obligatorio)</label><input id="prov-nombre" maxlength="120" placeholder="Ej. Disposición del Bajío"></div>
-          <div class="campo"><label for="prov-categoria">Categoría de sus gastos (obligatorio)</label><select id="prov-categoria"></select></div>
-          <div class="campo"><label for="prov-credito">Días de crédito que nos da (obligatorio)</label><input id="prov-credito" type="number" min="0" max="180" step="1" value="0"></div>
-          <div class="campo"><label for="prov-rfc">RFC (opcional)</label><input id="prov-rfc" maxlength="13"></div>
-          <div class="campo"><label for="prov-telefono">Teléfono (opcional)</label><input id="prov-telefono" maxlength="25" inputmode="tel"></div>
-          <div class="campo"><label for="prov-contacto">Contacto (opcional)</label><input id="prov-contacto" maxlength="120"></div>
-          <div class="campo perm-dinero-mover"><label for="prov-clabe">CLABE para transferencias (opcional)</label><input id="prov-clabe" maxlength="22" inputmode="numeric" placeholder="18 dígitos"></div>
-          <div class="campo perm-dinero-mover"><label for="prov-banco">Banco (opcional)</label><input id="prov-banco" maxlength="60" placeholder="Ej. Santander"></div>
-          <div class="campo full"><label for="prov-notas">Notas (opcional)</label><textarea id="prov-notas" rows="2" maxlength="1000" placeholder="Ej. Entrega en planta; pedir factura con orden de compra"></textarea></div>
-        </div>
-        <div class="btn-group"><button type="button" class="btn btn-primario" id="prov-guardar">Guardar proveedor</button><button type="button" class="btn btn-outline" id="prov-cancelar">Cancelar</button></div>
-      </div>
       <div id="prov-lista" class="inicio-lista"></div>
     </div>
   </section>
@@ -987,6 +972,56 @@
   </div>
 </div>
 
+<!-- ====== VENTANA: AGREGAR / EDITAR PROVEEDOR (2026-10-26: en su propia ventana, no arriba de la lista) ====== -->
+<div class="overlay" id="overlay-proveedor">
+  <div class="modal modal-proveedor">
+    <div class="modal-header">
+      <div><span class="flujo-kicker">PROVEEDOR</span><h2 id="prov-form-titulo">Agregar proveedor</h2></div>
+      <button class="close-btn" type="button" id="prov-cerrar" aria-label="Cerrar">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="modal-section">
+        <div class="seccion-tit">Datos generales</div>
+        <div class="form-grid">
+          <div class="campo"><label for="prov-nombre">Nombre comercial (obligatorio)</label><input id="prov-nombre" maxlength="120" placeholder="Ej. Disposición del Bajío"></div>
+          <div class="campo"><label for="prov-categoria">Categoría de sus gastos (obligatorio)</label><select id="prov-categoria"></select></div>
+          <div class="campo full"><label for="prov-que-vende">Qué vende o qué servicio da (opcional)</label><input id="prov-que-vende" maxlength="300" placeholder="Ej. Renta de pipas, diésel, refacciones para bombas"></div>
+        </div>
+      </div>
+      <div class="modal-section">
+        <div class="seccion-tit">Contacto</div>
+        <div class="form-grid">
+          <div class="campo"><label for="prov-contacto">Persona de contacto (opcional)</label><input id="prov-contacto" maxlength="120"></div>
+          <div class="campo"><label for="prov-telefono">Teléfono (opcional)</label><input id="prov-telefono" maxlength="25" inputmode="tel"></div>
+          <div class="campo"><label for="prov-telefono2">Otro teléfono o WhatsApp (opcional)</label><input id="prov-telefono2" maxlength="25" inputmode="tel"></div>
+          <div class="campo"><label for="prov-correo">Correo (opcional)</label><input id="prov-correo" type="email" maxlength="120" placeholder="ventas@proveedor.com"></div>
+          <div class="campo full"><label for="prov-domicilio">Domicilio (opcional)</label><input id="prov-domicilio" maxlength="300" placeholder="Calle, número, colonia, ciudad"></div>
+        </div>
+      </div>
+      <div class="modal-section">
+        <div class="seccion-tit">Datos fiscales</div>
+        <div class="form-grid">
+          <div class="campo"><label for="prov-razon-social">Razón social (opcional)</label><input id="prov-razon-social" maxlength="200" placeholder="Como sale en su factura"></div>
+          <div class="campo"><label for="prov-rfc">RFC (opcional)</label><input id="prov-rfc" maxlength="13"></div>
+          <div class="campo"><label for="prov-regimen">Régimen fiscal (opcional)</label><input id="prov-regimen" maxlength="120" placeholder="Ej. 601 General de Ley Personas Morales"></div>
+          <div class="campo"><label for="prov-cp">Código postal fiscal (opcional)</label><input id="prov-cp" maxlength="5" inputmode="numeric"></div>
+        </div>
+      </div>
+      <div class="modal-section">
+        <div class="seccion-tit">Pago</div>
+        <div class="form-grid">
+          <div class="campo"><label for="prov-credito">Días de crédito que nos da (obligatorio)</label><input id="prov-credito" type="number" min="0" max="180" step="1" value="0"></div>
+          <div class="campo"><label for="prov-forma-pago">Forma de pago habitual (opcional)</label><select id="prov-forma-pago"></select></div>
+          <div class="campo perm-dinero-mover"><label for="prov-clabe">CLABE para transferencias (opcional)</label><input id="prov-clabe" maxlength="22" inputmode="numeric" placeholder="18 dígitos"></div>
+          <div class="campo perm-dinero-mover"><label for="prov-banco">Banco (opcional)</label><input id="prov-banco" maxlength="60" placeholder="Ej. Santander"></div>
+          <div class="campo full"><label for="prov-notas">Notas (opcional)</label><textarea id="prov-notas" rows="2" maxlength="1000" placeholder="Ej. Entrega en planta; pedir factura con orden de compra"></textarea></div>
+        </div>
+      </div>
+      <div class="btn-group"><button type="button" class="btn btn-primario" id="prov-guardar">Guardar proveedor</button><button type="button" class="btn btn-outline" id="prov-cancelar">Cancelar</button></div>
+    </div>
+  </div>
+</div>
+
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
 <!-- ====== OVERLAY: LOGIN ====== -->
@@ -1292,7 +1327,7 @@
 <script src="servicios-tabla.js?v=pf1"></script>
 <script src="flujo.js?v=hr1"></script>
 <script src="cuentas.js?v=rev1"></script>
-<script src="finanzas.js?v=prv1"></script>
+<script src="finanzas.js?v=prv2"></script>
 <script src="calendario.js?v=esp1"></script>
 <script src="tablero.js?v=ay1"></script>
 <script src="bitacora.js?v=hc1"></script>

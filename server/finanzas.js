@@ -181,7 +181,9 @@ function migrar(db) {
   // iva_cent: IVA incluido en el total de un gasto (NULL = no se capturó; ver ivaDeGasto).
   { const cols = t => db.prepare(`PRAGMA table_info(${t})`).all().map(c => c.name);
     for (const [t, c, tipo] of [['cuentas_por_pagar', 'beneficiario', 'TEXT'], ['cuentas_por_pagar', 'tipo_comprobante', 'TEXT'], ['cuentas_por_pagar', 'metodo_sat', 'TEXT'],
-      ['pagos_proveedor', 'cuenta_origen', 'TEXT'], ['proveedores', 'clabe', 'TEXT'], ['proveedores', 'banco', 'TEXT'], ['cuentas_por_pagar', 'iva_cent', 'INTEGER']])
+      ['pagos_proveedor', 'cuenta_origen', 'TEXT'], ['proveedores', 'clabe', 'TEXT'], ['proveedores', 'banco', 'TEXT'], ['cuentas_por_pagar', 'iva_cent', 'INTEGER'],
+      // Más datos del proveedor (2026-10-26): razón social y datos fiscales, correo, otro teléfono, domicilio, qué vende y cómo se le paga.
+      ...['razon_social', 'correo', 'telefono2', 'domicilio', 'codigo_postal', 'regimen_fiscal', 'que_vende', 'forma_pago'].map(c => ['proveedores', c, 'TEXT'])])
       if (!cols(t).includes(c)) db.exec(`ALTER TABLE ${t} ADD COLUMN ${c} ${tipo}`); }
 }
 // Categorías del Excel de Cuentas por pagar (sus 200 conceptos se agrupan en éstas). «es_gasto» = 0: compras de
@@ -816,7 +818,15 @@ module.exports = function finanzas(app, db, h, unicos) {
     const clabe = b.clabe === undefined || b.clabe === null || String(b.clabe).trim() === '' ? null : String(b.clabe).replace(/[\s-]/g, '');
     if (clabe && !/^\d{18}$/.test(clabe)) return { error: 'La CLABE lleva 18 dígitos' };
     if (clabe && clabe !== actual?.clabe && !require('./personal').clabeValida(clabe)) return { error: 'La CLABE no es válida: revisa los 18 dígitos (el último es de verificación)' };
-    return { nombre, categoria, rfc, telefono: texto(b.telefono, 25), contacto: texto(b.contacto, 120), dias_credito: Number(b.dias_credito) || 0, notas: texto(b.notas, 1000), clabe, banco: texto(b.banco, 60) };
+    const correo = texto(b.correo, 120)?.toLowerCase() || null;
+    if (correo && !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(correo)) return { error: 'El correo no es válido (p. ej. ventas@proveedor.com)' };
+    const cp = texto(b.codigo_postal, 10);
+    if (cp && !/^\d{5}$/.test(cp)) return { error: 'El código postal lleva 5 dígitos' };
+    const formaPago = texto(b.forma_pago, 30);
+    if (formaPago && !METODOS_PROV.includes(formaPago)) return { error: 'Forma de pago inválida' };
+    return { nombre, categoria, rfc, telefono: texto(b.telefono, 25), contacto: texto(b.contacto, 120), dias_credito: Number(b.dias_credito) || 0, notas: texto(b.notas, 1000), clabe, banco: texto(b.banco, 60),
+      razon_social: texto(b.razon_social, 200), correo, telefono2: texto(b.telefono2, 25), domicilio: texto(b.domicilio, 300), codigo_postal: cp, regimen_fiscal: texto(b.regimen_fiscal, 120),
+      que_vende: texto(b.que_vende, 300), forma_pago: formaPago };
   }
   // Proveedores sin duplicados (mismas reglas que los clientes): nombre igual o parecido (acentos, mayúsculas,
   // «S.A. de C.V.», errores de dedo) se pregunta; el mismo RFC no se repite.
@@ -843,8 +853,8 @@ module.exports = function finanzas(app, db, h, unicos) {
     if (d.error) return res.status(400).json(d);
     const p = problemaProveedor(d, 0, !!req.body.forzar);
     if (p) return res.status(p.status).json(p.cuerpo);
-    const info = db.prepare('INSERT INTO proveedores (nombre, categoria, rfc, telefono, contacto, dias_credito, notas, clabe, banco) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
-      .run(d.nombre, d.categoria, d.rfc, d.telefono, d.contacto, d.dias_credito, d.notas, d.clabe, d.banco);
+    const info = db.prepare('INSERT INTO proveedores (nombre, categoria, rfc, telefono, contacto, dias_credito, notas, clabe, banco, razon_social, correo, telefono2, domicilio, codigo_postal, regimen_fiscal, que_vende, forma_pago) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+      .run(d.nombre, d.categoria, d.rfc, d.telefono, d.contacto, d.dias_credito, d.notas, d.clabe, d.banco, d.razon_social, d.correo, d.telefono2, d.domicilio, d.codigo_postal, d.regimen_fiscal, d.que_vende, d.forma_pago);
     app.locals.auditoria?.registrar(req, 'proveedor', Number(info.lastInsertRowid), 'creado', `${d.nombre}${d.rfc ? ' · RFC ' + d.rfc : ''} · ${CATEGORIAS[d.categoria] || d.categoria}${req.body.forzar ? ' · confirmado como distinto de uno parecido' : ''}`);
     const nuevo = db.prepare('SELECT * FROM proveedores WHERE id = ?').get(info.lastInsertRowid);
     res.status(201).json(veClabe(req) ? nuevo : sinBanco(nuevo));
@@ -859,11 +869,11 @@ module.exports = function finanzas(app, db, h, unicos) {
     // Al renombrar, también se revisa que no quede igual o parecido a otro (salvo que se confirme).
     const prob = problemaProveedor(d, p.id, !!req.body.forzar || unicos.clave(d.nombre) === unicos.clave(p.nombre));
     if (prob) return res.status(prob.status).json(prob.cuerpo);
-    const difProv = app.locals.auditoria?.diferencias(p, { ...d, activo: req.body.activo === undefined ? p.activo : (req.body.activo ? 1 : 0) }, ['nombre', 'rfc', 'categoria', 'dias_credito', 'telefono', 'contacto', 'notas', 'activo', 'clabe', 'banco']);
+    const difProv = app.locals.auditoria?.diferencias(p, { ...d, activo: req.body.activo === undefined ? p.activo : (req.body.activo ? 1 : 0) }, ['nombre', 'rfc', 'categoria', 'dias_credito', 'telefono', 'contacto', 'notas', 'activo', 'clabe', 'banco', 'razon_social', 'correo', 'telefono2', 'domicilio', 'codigo_postal', 'regimen_fiscal', 'que_vende', 'forma_pago']);
     if (difProv) app.locals.auditoria.registrar(req, 'proveedor', p.id, 'editado', difProv);
     const activo = req.body.activo === undefined ? p.activo : (req.body.activo ? 1 : 0);
-    db.prepare('UPDATE proveedores SET nombre = ?, categoria = ?, rfc = ?, telefono = ?, contacto = ?, dias_credito = ?, notas = ?, activo = ?, clabe = ?, banco = ? WHERE id = ?')
-      .run(d.nombre, d.categoria, d.rfc, d.telefono, d.contacto, d.dias_credito, d.notas, activo, d.clabe, d.banco, p.id);
+    db.prepare('UPDATE proveedores SET nombre = ?, categoria = ?, rfc = ?, telefono = ?, contacto = ?, dias_credito = ?, notas = ?, activo = ?, clabe = ?, banco = ?, razon_social = ?, correo = ?, telefono2 = ?, domicilio = ?, codigo_postal = ?, regimen_fiscal = ?, que_vende = ?, forma_pago = ? WHERE id = ?')
+      .run(d.nombre, d.categoria, d.rfc, d.telefono, d.contacto, d.dias_credito, d.notas, activo, d.clabe, d.banco, d.razon_social, d.correo, d.telefono2, d.domicilio, d.codigo_postal, d.regimen_fiscal, d.que_vende, d.forma_pago, p.id);
     res.json(db.prepare('SELECT * FROM proveedores WHERE id = ?').get(p.id));
   }));
 

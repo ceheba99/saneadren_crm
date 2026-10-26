@@ -37,6 +37,17 @@ const HOY = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Mexico_City' }
   }
   revisa(provs.length >= 13 && !descuadres.length, `los ${provs.length} proveedores: le debemos, vencido, pagado, comprado y número de facturas igual que en Por pagar y en el catálogo`, descuadres);
 
+  console.log('1b. Más datos del proveedor (2026-10-26)');
+  [s, j] = await pedir('POST', '/finanzas/proveedores', A, { nombre: 'Refacciones Datos Completos', categoria: 'otro', dias_credito: 15, correo: 'no-es-correo' }); revisa(s === 400 && /correo/i.test(j.error), 'un correo mal escrito se rechaza', [s, j.error]);
+  [s, j] = await pedir('POST', '/finanzas/proveedores', A, { nombre: 'Refacciones Datos Completos', categoria: 'otro', dias_credito: 15, codigo_postal: '7600' }); revisa(s === 400 && /postal/i.test(j.error), 'un código postal sin 5 dígitos se rechaza', [s, j.error]);
+  const completo = { nombre: 'Refacciones Datos Completos', categoria: 'otro', dias_credito: 15, razon_social: 'Refacciones Completas SA de CV', correo: 'Ventas@Refacciones.mx', telefono2: '442 111 2233',
+    domicilio: 'Av. Industrias 10, Querétaro', codigo_postal: '76120', regimen_fiscal: '601 General de Ley Personas Morales', que_vende: 'Refacciones para bombas', forma_pago: 'transferencia' };
+  [s, j] = await pedir('POST', '/finanzas/proveedores', A, completo); const pNuevo = j;
+  revisa(s === 201 && j.correo === 'ventas@refacciones.mx' && j.codigo_postal === '76120' && j.que_vende === 'Refacciones para bombas' && j.forma_pago === 'transferencia', 'se guardan razón social, correo, otro teléfono, domicilio, CP, régimen, qué vende y forma de pago', j);
+  [s, j] = await pedir('PUT', '/finanzas/proveedores/' + pNuevo.id, A, { que_vende: 'Refacciones y motores' });
+  [s, j] = await pedir('GET', '/finanzas/proveedores/' + pNuevo.id + '/estado-cuenta', A);
+  revisa(j.proveedor.que_vende === 'Refacciones y motores' && j.proveedor.razon_social === 'Refacciones Completas SA de CV' && j.historial.some(h => /Qué vende/.test(h.detalle || '')), 'al editar solo un dato los demás se conservan, y el cambio queda en su historial', j.proveedor);
+
   console.log('2. Proveedor de pipas (Symrise)');
   const pipas = provs.find(p => p.nombre === 'Pipas Hermanos Ramírez');
   // Banco y CLABE: solo quien paga (decisión 2026-10-22); Ventas consulta la ficha sin ellos.

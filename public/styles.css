@@ -1706,3 +1706,6 @@ body:not(.varias-sucursales) .solo-varias-sucursales{display:none!important;}
 .prov-cabecera h2{margin:0 0 4px;}
 .prov-filtros{display:flex;flex-wrap:wrap;gap:8px;}
 .prov-filtros input[type=search]{flex:1 1 260px;min-width:0;}
+.modal-proveedor{max-width:760px;}
+.modal-proveedor .modal-section{padding-bottom:4px;}
+.modal-proveedor .campo.full{grid-column:1/-1;}

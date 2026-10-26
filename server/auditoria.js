@@ -23,7 +23,8 @@ function migrar(db) {
 const ETIQUETAS = {
   nombre: 'Nombre', empresa_contacto: 'Empresa', telefono: 'Teléfono', telefono_alterno: 'Teléfono alterno', correo: 'Correo', rfc: 'RFC',
   direccion: 'Dirección', giro: 'Tipo de cliente', notas_generales: 'Notas', categoria: 'Categoría', dias_credito: 'Días de crédito',
-  contacto: 'Contacto', notas: 'Notas', activo: 'Activo', rol: 'Rol', responsable: 'Responsable', clave: 'Abreviatura',
+  contacto: 'Contacto', notas: 'Notas', activo: 'Activo', razon_social: 'Razón social', telefono2: 'Otro teléfono', domicilio: 'Domicilio', codigo_postal: 'Código postal',
+  regimen_fiscal: 'Régimen fiscal', que_vende: 'Qué vende', forma_pago: 'Forma de pago', rol: 'Rol', responsable: 'Responsable', clave: 'Abreviatura',
   proveedor_id: 'Proveedor', centro_id: 'Centro de costos', fecha: 'Fecha', fecha_requerida: 'Fecha requerida', factura_a: 'Factura a',
   que: 'Qué se necesita', para_que: 'Para qué', urgente: 'Urgente', equipo: 'Unidad o equipo',
   nota: 'Nota', observaciones: 'Observaciones', total_cent: 'Total', iva_modo: 'IVA', solicitante_nombre: 'Solicitante', solicitante_cargo: 'Cargo', lead_id: 'Orden de servicio', proveedor_nombre: 'Proveedor', centro_nombre: 'Centro de costos',
