@@ -17,6 +17,7 @@ Dirección la revisa y la aprueba. Si un cambio altera lo que ve un rol, la prue
 | 🔎 Prospección | ✔ | ✔ | ✔ | ✔ | — | — |
 | 📥 Cuentas por cobrar | ✔ | ✔ | ✔ | ✔ | — | — |
 | 📤 Cuentas por pagar | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| 🏭 Proveedores | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
 | 📝 Solicitudes de compra | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
 | 🛒 Órdenes de compra | ✔ | ✔ | ✔ | ✔ | — | ✔ |
 | 📊 Resultados | ✔ | ✔ | ✔ | ✔ | — | — |

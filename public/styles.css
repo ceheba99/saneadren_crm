@@ -1700,3 +1700,9 @@ body:not(.varias-sucursales) .solo-varias-sucursales{display:none!important;}
 /* Cobros y pagos «esperados» (aún no se deben): borde punteado para distinguirlos de los que ya vencen. */
 .cal-e-esperado{border-style:dashed!important;opacity:.9}
 .cal-e-esperado .cal-fila-tag em{color:var(--texto-sec);}
+
+/* Proveedores (Cuentas por pagar): cabecera con «+ Agregar», búsqueda y filtro. */
+.prov-cabecera{display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:space-between;gap:8px 16px;margin-bottom:8px;}
+.prov-cabecera h2{margin:0 0 4px;}
+.prov-filtros{display:flex;flex-wrap:wrap;gap:8px;}
+.prov-filtros input[type=search]{flex:1 1 260px;min-width:0;}
