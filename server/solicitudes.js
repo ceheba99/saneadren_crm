@@ -133,7 +133,7 @@ module.exports = function solicitudes(app, db, h, { texto, fechaOk, hoyMexico, c
 
   // ----- Crear (cualquier usuario) y corregir -----
   app.post('/api/compras/solicitudes', h((req, res) => {
-    if (!app.locals.permisos.puede(req, 'compras.ver')) return res.status(403).json({ error: 'Tu rol no hace solicitudes de compra' });
+    if (!app.locals.permisos.puede(req, 'solicitudes.editar')) return res.status(403).json({ error: 'Tu rol no hace solicitudes de compra' });
     const v = validar(req.body || {});
     if (v.error) return res.status(400).json({ error: v.error });
     const d = v.datos;

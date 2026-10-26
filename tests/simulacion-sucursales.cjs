@@ -221,7 +221,7 @@ const MARCA = /secretoqro|-QRO-/i; // nada de QRO: ni su marca ni sus folios
   }
   [s, j] = await pedir('GET', '/compras/ordenes', C.gerente); const ocC = j.find(o => o.id === RC.oc.id);
   revisa(ocC && !j.some(o => o.id === RQ.oc.id), 'el gerente ve las compras de su sucursal (no las de Querétaro)');
-  [s, j] = await pedir('DELETE', '/leads/' + RC.cot.id, C.gerente, { motivo: 'La borra el gerente de su sucursal' }); revisa(s === 200, 'y administra lo suyo (p. ej. eliminar una cotización de CDMX)', [s, j.error]);
+  [s, j] = await pedir('DELETE', '/leads/' + RC.cot.id, C.gerente, { motivo: 'La borra el gerente de su sucursal' }); revisa(s === 403, 'pero no borra ni lo de su sucursal: borrar solo lo hace Dirección (2026-10-26)', [s, j.error]);
 
   console.log('9. Al final');
   { const [si, ri] = await pedir('GET', '/admin/integridad', A, undefined, { 'X-Sucursal': String(cdmx.id) }); const m = (ri.resultados || []).filter(r => r.gravedad === 'error' && r.total); revisa(si === 200 && ri.errores === 0, 'la revisión de integridad (siempre de toda la base) no encuentra errores', m.map(r => r.titulo + ': ' + JSON.stringify(r.casos.slice(0, 2)))); }

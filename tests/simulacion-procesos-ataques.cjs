@@ -38,7 +38,7 @@ const dia = k => { const x = new Date(HOY + 'T12:00:00Z'); x.setUTCDate(x.getUTC
   [, j] = await pedir('POST', '/sucursales', A, { nombre: 'Ciudad de México', clave: 'CDMX' }); const cdmx = j;
   // Rol inventado «Cobranza»: toda la cobranza, nada de ventas.
   [, j] = await pedir('POST', '/roles', A, { nombre: 'Cobranza' }); const COB = j.clave;
-  await pedir('PUT', '/roles/' + COB + '/permisos', A, { permisos: ['cobros.registrar', 'cobros.confirmar', 'cobranza.factura'], alcances: { ventas: 0, cxc: 2, cxp: 0, compras: 0 } });
+  await pedir('PUT', '/roles/' + COB + '/permisos', A, { permisos: ['cobros.registrar', 'cobros.confirmar', 'cobranza.factura'], alcances: { cxc: 2 } });
   const T = {}, ID = {};
   for (const [nombre, rol, suc] of [['Laura Ventas', 'ventas', qro.id], ['Beto Ventas', 'ventas', qro.id], ['Raul Tecnico', 'tecnico', qro.id], ['Ana Atencion', 'atencion', qro.id],
     ['Isaac Compras', 'costos', qro.id], ['Carla Cobranza', COB, qro.id], ['Monica Gerente', 'gerente', qro.id], ['Pedro Ventas', 'ventas', cdmx.id]]) {
@@ -174,8 +174,8 @@ const dia = k => { const x = new Date(HOY + 'T12:00:00Z'); x.setUTCDate(x.getUTC
     ['Usuarios', 'Laura crea un usuario', L, 'POST', '/usuarios', { nombre: 'Intruso Uno', password: CLAVE, rol: 'gerente', sucursales: [qro.id] }],
     ['Usuarios', 'Ana se sube a gerente', N, 'PUT', '/usuarios/' + ID.Ana, { rol: 'gerente' }],
     ['Usuarios', 'Laura le cambia la contraseña a Beto', L, 'POST', '/usuarios/' + ID.Beto + '/password', { password: 'Otra-Clave-2026x' }],
-    ['Roles', 'Mónica (gerente) se da más permisos', M, 'PUT', '/roles/gerente/permisos', { permisos: [], alcances: { ventas: 2 } }],
-    ['Roles', 'Laura cambia lo que ve ventas', L, 'PUT', '/roles/ventas/permisos', { permisos: [], alcances: { ventas: 2, cxc: 2 } }],
+    ['Roles', 'Mónica (gerente) se da más permisos', M, 'PUT', '/roles/gerente/permisos', { permisos: [], alcances: { ordenes: 2 } }],
+    ['Roles', 'Laura cambia lo que ve ventas', L, 'PUT', '/roles/ventas/permisos', { permisos: [], alcances: { ordenes: 2, cxc: 2 } }],
     ['Generador', 'Laura carga el generador (crea órdenes a cualquier cliente)', L, 'POST', '/generador/importar', { filas: [] }],
     ['Prospección', 'Isaac (compras) entra a prospección', I, 'GET', '/prospeccion', undefined],
     // Lógica de negocio (personas que SÍ tienen permiso, haciendo algo que no cuadra).

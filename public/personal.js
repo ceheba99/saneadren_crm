@@ -85,7 +85,7 @@ const Personal = (() => {
       ${campo('direccion', 'Dirección (opcional)', input('direccion', p.direccion, 'maxlength="200"' + ro), 'full')}
       ${campo('contacto_emergencia', 'Contacto de emergencia (opcional)', input('contacto_emergencia', p.contacto_emergencia, 'maxlength="120" placeholder="Nombre y parentesco"' + ro))}
       ${campo('tel_emergencia', 'Teléfono de emergencia (opcional)', input('tel_emergencia', p.tel_emergencia, 'maxlength="25" inputmode="tel"' + ro))}
-      ${campo('usuario_id', 'Cuenta en el sistema (opcional)', `<select id="pe-usuario_id"${ro}>${opciones(usuarios, p.usuario_id, 'Sin cuenta (no entra al sistema)')}</select><small class="ayuda">Si es técnico responsable de una orden, con su cuenta la ve y la marca realizada.</small>`)}
+      ${campo('usuario_id', 'Cuenta en el sistema (opcional)', `<select id="pe-usuario_id"${ro}>${opciones(usuarios, p.usuario_id, 'Sin cuenta (no entra al sistema)')}</select><small class="ayuda">Si es técnico responsable de una orden, con su cuenta la ve.</small>`)}
       ${campo('notas', 'Notas (opcional)', `<textarea id="pe-notas" rows="2" maxlength="2000"${ro}>${esc(p.notas || '')}</textarea>`, 'full')}
       </div></div>
       <div class="modal-section"><h3 class="pe-sub">Licencia de manejo</h3><div class="form-grid-2">

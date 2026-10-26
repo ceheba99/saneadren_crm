@@ -55,13 +55,16 @@ const azar = () => { semilla = (semilla * 1103515245 + 12345) % 2147483648; retu
   const CATALOGO = j.catalogo.map(p => p.clave);
   const sucs = (await pedir('GET', '/sucursales', A))[1].sucursales, QRO = sucs.find(x => x.clave === 'QRO').id, CDMX = sucs.find(x => x.clave === 'CDMX')?.id;
   const AREAS = j.areas.map(a => a.clave);
-  const VIRTUALES = AREAS.flatMap(a => [a + '.ver', a + '.sucursal']);
+  const EDITABLES = j.areas.filter(a => a.editable).map(a => a.clave);
+  const VIRTUALES = [...AREAS.flatMap(a => [a + '.ver', a + '.sucursal', a + '.empresa']), ...EDITABLES.map(a => a + '.editar'), 'ventas.ver', 'compras.ver'];
   const cuerpo = (lista, extra = {}) => {
     if (!Array.isArray(lista)) return { permisos: lista, ...extra };
-    const alcances = Object.fromEntries(AREAS.map(a => [a, lista.includes(a + '.sucursal') ? 2 : lista.includes(a + '.ver') ? 1 : 0]));
-    return { permisos: lista.filter(c => !VIRTUALES.includes(c)), alcances, ...extra };
+    const alcances = Object.fromEntries(AREAS.map(a => [a, lista.includes(a + '.empresa') ? 3 : lista.includes(a + '.sucursal') ? 2 : lista.includes(a + '.ver') ? 1 : 0]));
+    const ediciones = Object.fromEntries(EDITABLES.map(a => [a, lista.includes(a + '.editar')]));
+    return { permisos: lista.filter(c => !VIRTUALES.includes(c)), alcances, ediciones, ...extra };
   };
-  const TODO = [...CATALOGO, ...VIRTUALES];
+  // «Todo» como el gerente: toda su sucursal (no toda la empresa) y edita.
+  const TODO = [...CATALOGO, ...VIRTUALES.filter(c => !c.endsWith('.empresa'))];
   const crearRol = async (nombre, permisos) => { const [, r] = await pedir('POST', '/roles', A, { nombre }); await pedir('PUT', '/roles/' + r.clave + '/permisos', A, cuerpo(permisos)); return r.clave; };
   const ROL_TODO = await crearRol('Todo de prueba', TODO), ROL_NADA = await crearRol('Nada de prueba', []);
   const crearUsuario = async (nombre, rol, sucursales = [QRO]) => (await pedir('POST', '/usuarios', A, { nombre, password: CLAVE, rol, sucursales }));
@@ -93,7 +96,9 @@ const azar = () => { semilla = (semilla * 1103515245 + 12345) % 2147483648; retu
   // Además de lo de todas las sucursales: «deshacer» (recepción de compra, aviso resuelto) es solo de Dirección por decisión
   // del dueño (2026-10-21), con motivo y registro en la bitácora.
   const DIRECCION_ESPERADO = /\/(admin\/|sucursales|auditoria$|roles|permisos$|clientes\/(duplicados|distintos)|clientes\/1\/fusionar|servicios|canales|tipos-cliente|finanzas\/categorias|prospeccion\/sectores|compras\/(formato|centros|unidades)|compras\/ordenes\/1\/deshacer-recepcion$|historial\/1\/reabrir$)/;
-  revisa(soloDireccion.every(k => DIRECCION_ESPERADO.test(k)), `lo que el rol con todo NO puede y Dirección sí son solo cosas de todas las sucursales (${soloDireccion.length})`, soloDireccion.filter(k => !DIRECCION_ESPERADO.test(k)));
+  // Y borrar (cotizaciones, órdenes, usuarios…): solo Dirección (2026-10-26).
+  const deDireccion = k => DIRECCION_ESPERADO.test(k) || /^DELETE /.test(k);
+  revisa(soloDireccion.every(deDireccion), `lo que el rol con todo NO puede y Dirección sí son solo cosas de todas las sucursales o borrar (${soloDireccion.length})`, soloDireccion.filter(k => !deDireccion(k)));
   revisa(fT['GET /permisos'] === 403 && fT['PUT /roles/1/permisos'] === 403 && fT['POST /roles'] === 403, 'ni con todos los permisos se editan roles (solo Dirección)');
 
   // ---------- Base de trabajo para lo demás ----------
@@ -111,7 +116,7 @@ const azar = () => { semilla = (semilla * 1103515245 + 12345) % 2147483648; retu
   const DEP = (await pedir('GET', '/permisos', A))[1].dependencias || {};
   revisa(Object.keys(DEP).length >= 4, 'la pantalla recibe qué permiso necesita a cuál (para marcarlos juntos)', DEP);
   // Más «toda su sucursal» → «al menos lo suyo» en cada área.
-  const DEPENDE = Object.entries(DEP).flatMap(([a, req]) => req.map(b => [a, b])).concat(AREAS.map(a => [a + '.sucursal', a + '.ver']));
+  const DEPENDE = Object.entries(DEP).flatMap(([a, req]) => req.map(b => [a, b])).concat(AREAS.map(a => [a + '.sucursal', a + '.ver']), AREAS.map(a => [a + '.empresa', a + '.sucursal']), EDITABLES.map(a => [a + '.editar', a + '.ver']));
   const cerrar = set => { let cambio = true; while (cambio) { cambio = false; for (const [a, b] of DEPENDE) if (set.has(a) && !set.has(b)) { set.add(b); cambio = true; } } return set; };
   for (const [p, req] of DEPENDE.filter(([a]) => !VIRTUALES.includes(a))) {
     [s, j] = await guardar(ROL_NADA, [...cerrar(new Set([p]))].filter(x => x !== req));
@@ -164,7 +169,7 @@ const azar = () => { semilla = (semilla * 1103515245 + 12345) % 2147483648; retu
   [s, j] = await pedir('PUT', '/usuarios/' + idJefe, TJ, { rol: ROL_TODO }); revisa(s === 403 || s === 404, 'no se sube a sí mismo a un rol más fuerte', [s, j]);
   [s, j] = await pedir('PUT', '/usuarios/' + idJefe, TJ, { rol: 'gerente' }); revisa(s === 403 || s === 404, 'ni se hace gerente', [s, j]);
   [s] = await pedir('PUT', '/usuarios/' + id('Prueba Costos'), TJ, { nombre: 'Costos Editado' }); revisa(s === 404, 'no edita a quien tiene más permisos que él');
-  [s] = await pedir('DELETE', '/usuarios/' + id('Prueba Costos'), TJ); revisa(s === 404, 'ni lo desactiva');
+  [s] = await pedir('DELETE', '/usuarios/' + id('Prueba Costos'), TJ); revisa(s === 404 || s === 403, 'ni lo desactiva', s);
   [s] = await pedir('GET', '/permisos/mios', TJ, undefined, { 'X-Ver-Como': ROL_TODO }); revisa(s === 403, 'no puede «ver como» otro rol para brincar candados');
   [s] = await pedir('PUT', '/roles/' + ROL_JEFE + '/permisos', TJ, { permisos: CATALOGO }); revisa(s === 403, 'no se da permisos a sí mismo');
   // Si Dirección le quita «Usuarios» a su rol, al momento ya no administra nada.
@@ -221,7 +226,8 @@ const azar = () => { semilla = (semilla * 1103515245 + 12345) % 2147483648; retu
     [s, j] = await guardar(ROL_NADA, [...set]);
     if (s !== 200) { fallas.push(['no guardó', [...set], j]); continue; }
     const [, mios] = await pedir('GET', '/permisos/mios', T['Prueba Nada']);
-    if ([...set].sort().join() !== [...mios.permisos].sort().join()) fallas.push(['permisos/mios no coincide', vueltas]);
+    const sinGrupos = l => [...l].filter(c => c !== 'ventas.ver' && c !== 'compras.ver').sort().join(); // «ve algo de ventas/compras» sale de las áreas
+    if (sinGrupos(set) !== sinGrupos(mios.permisos)) fallas.push(['permisos/mios no coincide', vueltas]);
     for (const [p, m, r, b] of PRUEBAS) {
       const [st] = await pedir(m, r, T['Prueba Nada'], b);
       if ((st === 403) === set.has(p)) fallas.push([vueltas, p, m + ' ' + r, st, set.has(p) ? 'tenía permiso y se negó' : 'NO tenía permiso y pasó']);

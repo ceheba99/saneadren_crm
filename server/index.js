@@ -153,6 +153,8 @@ app.locals.permisos = permisos;
 app.locals.sesiones = sesiones;
 // «Ver importes»: sin ese permiso las órdenes se ven y se trabajan sin el dinero de la venta (server/sin-importes.js).
 app.use('/api', require('./sin-importes')(permisos));
+// «Ver montos de compras»: sin ese permiso, solicitudes y órdenes de compra sin precios (server/sin-montos-compras.js).
+app.use('/api', require('./sin-montos-compras')(permisos));
 
 // Bitácora general de movimientos (clientes, proveedores, compras, usuarios, catálogos, eliminados).
 const audit = require('./auditoria')(app, db, h);
@@ -361,8 +363,8 @@ app.post('/api/usuarios/:id/password', h((req, res) => {
 
 /* ---------- Eliminar usuario (soft delete, solo admin) ---------- */
 app.delete('/api/usuarios/:id', h((req, res) => {
-  if (!permisos.puede(req, 'usuarios.administrar')) {
-    return res.status(403).json({ error: 'No tienes permiso para desactivar usuarios' });
+  if (!permisos.direccion(req)) {
+    return res.status(403).json({ error: 'Desactivar usuarios solo lo hace Dirección' });
   }
   const usuario = db.prepare('SELECT * FROM usuarios WHERE id = ?').get(req.params.id);
   if (!usuario || !suc.puedeAdministrar(req, usuario)) return res.status(404).json({ error: 'Usuario no encontrado' });
@@ -494,19 +496,20 @@ app.post('/api/canales', h((req, res) => {
   res.status(201).json(db.prepare('SELECT * FROM canales WHERE id = ?').get(info.lastInsertRowid));
 }));
 
-// ---------- Qué ve cada rol en ventas (permisos.js) ----------
-// Nivel de ventas de quien pide: 0 nada, 1 lo suyo (sus clientes y órdenes), 2 toda su sucursal.
-const nivelVentas = () => require('./alcance').nivel('ventas');
+// ---------- Qué ve y edita cada rol en ventas (permisos.js) ----------
 // ¿Este cliente ya lo atiende OTRO vendedor en mis sucursales? Devuelve su nombre (o null). Solo aplica a quien ve
-// «lo suyo»: no puede abrirle cotizaciones ni ver lo que tiene (así no se duplican clientes ni se cruza la cartera).
-// Los clientes de otras sucursales se siguen compartiendo como antes.
+// «lo suyo» en cotizaciones: no puede abrirle cotizaciones ni ver lo que tiene (así no se duplican clientes ni se
+// cruza la cartera). Los clientes de otras sucursales se siguen compartiendo como antes.
 function atendidoPorOtro(req, clienteId) {
-  if (nivelVentas() >= 2 || !clienteId) return null;
+  if (require('./alcance').nivel('cotizaciones') >= 2 || permisos.puede(req, 'ventas.editar_otros') || !clienteId) return null;
   const filas = db.prepare(`SELECT l.responsable_id, l.tecnico_id, u.nombre FROM main.leads l LEFT JOIN usuarios u ON u.id = l.responsable_id
     WHERE l.cliente_id = ? AND en_alcance(l.sucursal_id) ORDER BY l.id DESC`).all(clienteId);
   if (!filas.length || filas.some(f => f.responsable_id === req.usuarioSesion.id)) return null;
   return filas[0].nombre || 'otro vendedor';
 }
+// ¿Edita esta cotización u orden? Suya = la capturó o está a su nombre (el técnico asignado no: solo la ve).
+const puedeEditarLead = (req, l) => permisos.puedeEditar(req, l.estatus === 'ganado' ? 'ordenes' : 'cotizaciones', l.responsable_id === req.usuarioSesion.id || l.capturado_por === req.usuarioSesion.id);
+app.locals.puedeEditarLead = puedeEditarLead;
 const CLIENTE_DE_OTRO = nombre => ({ error: `Este cliente ya lo atiende ${nombre}. Pídele a ${nombre} o al gerente que te lo pase.`, codigo: 'CLIENTE_DE_OTRO', atendido_por: nombre });
 
 // ---------- Verificar duplicado por teléfono (búsqueda en vivo) ----------
@@ -594,6 +597,7 @@ app.get('/api/leads/:id', h((req, res) => {
   const historial = db.prepare('SELECT * FROM historial WHERE lead_id = ? ORDER BY created_at DESC, id DESC').all(lead.id);
   res.json({
     ...lead, otras_solicitudes, historial, equipo_personal: personalMod.equipoDe(lead.id),
+    puede_editar: puedeEditarLead(req, lead), // la pantalla la abre en solo lectura si no (2026-10-26)
     veces_contratado: otras_solicitudes.length + 1,
     primer_contacto,
     valor_cotizado_total: valorCliente.valor_cotizado_total,
@@ -690,6 +694,7 @@ app.post('/api/leads', validarPartidas, validarRegistro, h((req, res) => {
   let agregarTelA = req.body.agregar_telefono_a ? Number(req.body.agregar_telefono_a) : null;
   if (agregarTelA && !suc.puedeEditarCliente(req, agregarTelA)) { req.body.cliente_id = agregarTelA; agregarTelA = null; }
   const idElegido = agregarTelA || req.body.cliente_id;
+  if (idElegido != null && idElegido !== '' && !(Number.isInteger(Number(idElegido)) && Number(idElegido) > 0)) return res.status(400).json({ error: 'Contacto inválido' });
   const contactoElegido = idElegido ? db.prepare('SELECT * FROM clientes WHERE id = ?').get(idElegido) : null;
   if (idElegido && !contactoElegido) return res.status(404).json({error:'Contacto no encontrado'});
   if (contactoElegido) {
@@ -701,8 +706,9 @@ app.post('/api/leads', validarPartidas, validarRegistro, h((req, res) => {
     if (dueño && dueño.id !== agregarTelA) return res.status(409).json({ error: `Ese teléfono ya es de ${unicos.etiqueta(dueño)}` });
   }
   if (!responsable_id || !db.prepare('SELECT id FROM usuarios WHERE id = ? AND activo = 1').get(responsable_id)) return res.status(400).json({error:'Selecciona un responsable activo'});
-  if (nivelVentas() < 1) return res.status(403).json({ error: 'Tu rol no registra cotizaciones ni órdenes' });
-  if (nivelVentas() < 2 && Number(responsable_id) !== req.usuarioSesion.id) return res.status(403).json({ error: 'Solo puedes registrar cotizaciones a tu nombre' });
+  // Registrar pide editar cotizaciones (u órdenes, si entra directo como orden); a nombre de otro, «Editar lo de otros».
+  if (!permisos.puede(req, (req.body.estatus === 'ganado' ? 'ordenes' : 'cotizaciones') + '.editar')) return res.status(403).json({ error: req.body.estatus === 'ganado' ? 'Tu rol no registra órdenes de servicio' : 'Tu rol no registra cotizaciones' });
+  if (Number(responsable_id) !== req.usuarioSesion.id && !permisos.puedeEditar(req, 'ordenes', false)) return res.status(403).json({ error: 'Solo puedes registrar cotizaciones a tu nombre' });
   let { estatus } = req.body;
   if (!telefono) return res.status(400).json({ error: 'Teléfono requerido' });
   const norm = normalizarTelefono(telefono);
@@ -880,8 +886,10 @@ app.put('/api/leads/:id', validarPartidas, validarRegistro, h((req, res) => {
   const id = req.params.id;
   const actual = db.prepare('SELECT * FROM leads WHERE id = ?').get(id);
   if (!actual) return res.status(404).json({ error: 'Cotización no encontrada' });
-  // Quien solo ve la orden por la cobranza (p. ej. Cobranza) no la modifica: crédito y factura van por su propia ruta.
-  if (nivelVentas() < 1) return res.status(403).json({ error: 'Tu rol no modifica cotizaciones ni órdenes' });
+  // Solo la edita quien la capturó o la tiene a su nombre (si su rol edita esa área), el Gerente («Editar lo de otros»)
+  // y Dirección (2026-10-26). Quien solo la ve (Cobranza, el técnico asignado) no la modifica: crédito y factura van por
+  // su propia ruta, y los cobros y gastos también.
+  if (!puedeEditarLead(req, actual)) return res.status(403).json({ error: actual.estatus === 'ganado' ? 'Esta orden de servicio solo la edita quien la hizo, el gerente o Dirección' : 'Esta cotización solo la edita quien la hizo, el gerente o Dirección', codigo: 'SOLO_LECTURA' });
   if (req.body.version !== undefined && Number(req.body.version) !== actual.version) {
     return res.status(409).json({ error: 'Otra persona actualizó esta cotización mientras la tenías abierta. Ciérrala y vuelve a abrirla para ver los cambios antes de guardar los tuyos.' });
   }
@@ -893,7 +901,7 @@ app.put('/api/leads/:id', validarPartidas, validarRegistro, h((req, res) => {
   if (req.body.responsable_id !== undefined && !existe('usuarios', req.body.responsable_id)) return res.status(400).json({ error: 'El responsable indicado no existe' });
   // Con «lo suyo», el responsable lo cambia el gerente (quien ve toda la sucursal): ni pasarla a otro ni quedársela
   // (p. ej. el técnico asignado no se vuelve el vendedor de la orden).
-  if (req.body.responsable_id !== undefined && Number(req.body.responsable_id) !== actual.responsable_id && nivelVentas() < 2)
+  if (req.body.responsable_id !== undefined && Number(req.body.responsable_id) !== actual.responsable_id && !permisos.puedeEditar(req, 'ordenes', false))
     return res.status(403).json({ error: 'El responsable de esta cotización lo cambia el gerente' });
   if (req.body.tecnico_id !== undefined) {
     req.body.tecnico_id = req.body.tecnico_id === null || req.body.tecnico_id === '' ? null : Number(req.body.tecnico_id);
@@ -999,6 +1007,8 @@ app.put('/api/leads/:id', validarPartidas, validarRegistro, h((req, res) => {
   if (req.body.equipo_personal !== undefined) { const ve = personalMod.validarEquipo(req.body.equipo_personal, actual); if (ve.error) return res.status(400).json({ error: ve.error }); equipoNuevo = ve.lista; }
   if (equipoNuevo?.length && (req.body.estatus ?? actual.estatus) !== 'ganado') return res.status(400).json({ error: 'El equipo se asigna a órdenes de servicio, no a cotizaciones' });
   if (set.length === 0 && !equipoNuevo) return res.status(400).json({ error: 'Sin cambios' });
+  // Al pasarla a otro responsable, la cotización ya es de él: quien la capturó deja de verla y editarla como suya.
+  if (req.body.responsable_id !== undefined && Number(req.body.responsable_id) !== actual.responsable_id) set.push('capturado_por = NULL');
   set.push("updated_at = datetime('now','localtime')");
   set.push('version = version + 1');
   params.push(id);
@@ -1091,7 +1101,7 @@ app.put('/api/historial/:id/reabrir', h((req, res) => {
 // ---------- Eliminar cotización ----------
 // Borrar es definitivo (se pierden importe, notas y bitácora): solo un administrador puede hacerlo.
 app.delete('/api/leads/:id', h((req, res) => {
-  if (!permisos.puede(req, 'ordenes.eliminar')) return res.status(403).json({ error: 'No tienes permiso para eliminar cotizaciones u órdenes de servicio' });
+  if (!permisos.direccion(req)) return res.status(403).json({ error: 'Eliminar cotizaciones u órdenes de servicio solo lo hace Dirección' });
   const lead = db.prepare('SELECT * FROM leads WHERE id = ?').get(req.params.id);
   if (!lead) return res.status(404).json({ error: 'Cotización no encontrada' });
   // Los pagos son el rastro del dinero: una orden que alguna vez tuvo pagos no se borra.
@@ -1179,7 +1189,7 @@ app.get('/api/contactos/sin-cotizacion', h((req,res)=>{
   const { q, desde, hasta } = req.query;
   let sql = `SELECT c.id, c.nombre, c.telefono, c.empresa_contacto, c.created_at, c.updated_at, ca.nombre AS canal_nombre
     FROM clientes c LEFT JOIN canales ca ON ca.id = c.canal_origen_id
-    WHERE NOT EXISTS (SELECT 1 FROM leads l WHERE l.cliente_id = c.id) AND cliente_en_alcance(c.sucursal_id, c.id)`;
+    WHERE NOT EXISTS (SELECT 1 FROM leads l WHERE l.cliente_id = c.id) AND cliente_en_alcance(c.sucursal_id, c.id, c.capturado_por)`;
   const params = [];
   if (q) { sql += ' AND (c.nombre LIKE ? OR c.telefono LIKE ? OR c.empresa_contacto LIKE ?)'; params.push(`%${q}%`, `%${q}%`, `%${q}%`); }
   if (desde) { sql += ' AND date(c.created_at) >= date(?)'; params.push(desde); }
@@ -1192,7 +1202,7 @@ const RFC = /^[A-ZÑ&]{3,4}\d{6}[A-Z0-9]{3}$/;
 const normalizarRfc = v => (v === undefined || v === null) ? v : String(v).trim().toUpperCase();
 app.post('/api/contactos', h((req,res)=>{
   const {nombre,telefono,empresa_contacto,direccion,correo,telefono_alterno,giro,rfc,notas_generales}=req.body;
-  if (nivelVentas() < 1) return res.status(403).json({ error: 'Tu rol no da de alta contactos' });
+  if (!permisos.puede(req, 'contactos.editar')) return res.status(403).json({ error: 'Tu rol no da de alta contactos' });
   if (!nombre || !String(nombre).trim()) return res.status(400).json({error:'El nombre del contacto es obligatorio'});
   const malNombre = unicos.problemaNombreCliente(nombre, 'El nombre') || (empresa_contacto && String(empresa_contacto).trim() ? unicos.problemaNombreCliente(empresa_contacto, 'La empresa') : null);
   if (malNombre) return res.status(400).json({ error: malNombre });
@@ -1248,7 +1258,7 @@ app.get('/api/clientes', h((req, res) => {
       MAX(COALESCE(l.updated_at,c.updated_at)) AS ultima_actividad
     FROM clientes c
     LEFT JOIN leads l ON l.cliente_id = c.id
-    WHERE (cliente_en_alcance(c.sucursal_id, c.id) OR EXISTS (SELECT 1 FROM leads lv WHERE lv.cliente_id = c.id))
+    WHERE (cliente_en_alcance(c.sucursal_id, c.id, c.capturado_por) OR EXISTS (SELECT 1 FROM leads lv WHERE lv.cliente_id = c.id))
   `;
   const params = [];
   if (q) {
@@ -1305,7 +1315,7 @@ app.get('/api/clientes/:id', h((req, res) => {
     return { servicio_nombre: r.servicio_nombre, fecha_sugerida: sugerida, dias_restantes: diasEntre(hoyMexico(), sugerida) };
   }).sort((a, b) => a.dias_restantes - b.dias_restantes);
 
-  res.json({ ...cliente, servicios, ...totales, proxima_recompra: recurrentes[0] || null });
+  res.json({ ...cliente, servicios, ...totales, proxima_recompra: recurrentes[0] || null, puede_editar: suc.puedeEditarCliente(req, cliente.id) });
 }));
 
 // Edición de los datos maestros del cliente (independiente de cualquier solicitud puntual).
@@ -1435,7 +1445,7 @@ app.get('/api/kpis', h((req, res) => {
       SELECT cliente_id, SUM(CASE WHEN estatus = 'ganado' THEN 1 ELSE 0 END) AS ganados
       FROM leads GROUP BY cliente_id
     ) g ON g.cliente_id = c.id
-    WHERE (cliente_en_alcance(c.sucursal_id, c.id) OR EXISTS (SELECT 1 FROM leads lv WHERE lv.cliente_id = c.id))
+    WHERE (cliente_en_alcance(c.sucursal_id, c.id, c.capturado_por) OR EXISTS (SELECT 1 FROM leads lv WHERE lv.cliente_id = c.id))
   `).get();
   const valorHistorico = db.prepare(`SELECT COALESCE(SUM(valor), 0) AS v FROM leads WHERE estatus = 'ganado'`).get().v;
 
@@ -1519,7 +1529,7 @@ app.get('/api/generador', h((req, res) => {
   const fechaOk = v => !v || (/^\d{4}-\d{2}-\d{2}$/.test(v) && !isNaN(Date.parse(v)));
   if (!fechaOk(desde) || !fechaOk(hasta) || (desde && hasta && desde > hasta)) return res.status(400).json({ error: 'Revisa el rango de fechas' });
   const q = String(req.query.q || '').trim().toLowerCase();
-  const ordenes = db.prepare(`SELECT l.id, l.created_at, l.fecha_servicio, l.factura_folio, l.orden_generador, l.cliente_id, l.sucursal_id, l.partidas_json, l.valor, l.iva_modo, l.iva_tasa, l.iva_cent,
+  const ordenes = db.prepare(`SELECT l.id, l.responsable_id, l.capturado_por, l.created_at, l.fecha_servicio, l.factura_folio, l.orden_generador, l.cliente_id, l.sucursal_id, l.partidas_json, l.valor, l.iva_modo, l.iva_tasa, l.iva_cent,
       l.proyecto, l.equipo, l.operador, l.manifiestos, l.tiros, COALESCE(c.empresa_contacto, c.nombre, l.empresa_contacto, l.nombre) AS cliente,
       (SELECT group_concat(p.nombre, ', ') FROM (SELECT p.nombre FROM orden_personal op JOIN personal p ON p.id = op.personal_id WHERE op.lead_id = l.id ORDER BY op.papel = 'responsable' DESC, op.papel, p.nombre) p) AS equipo_personal,
       COALESCE(cl.nombre, cc.nombre) AS canal, s.nombre AS servicio_nombre,
@@ -1527,7 +1537,9 @@ app.get('/api/generador', h((req, res) => {
     FROM leads l LEFT JOIN clientes c ON c.id = l.cliente_id LEFT JOIN canales cl ON cl.id = l.canal_id
     LEFT JOIN canales cc ON cc.id = c.canal_origen_id LEFT JOIN catalogo_servicios s ON s.id = l.servicio_id
     WHERE l.estatus = 'ganado' AND l.ejecucion = 'realizado' AND (? IS NULL OR COALESCE(l.fecha_realizado, l.fecha_servicio, date(l.created_at)) >= ?) AND (? IS NULL OR COALESCE(l.fecha_realizado, l.fecha_servicio, date(l.created_at)) <= ?)
-    ORDER BY fecha DESC, l.id DESC`).all(desde, desde, hasta, hasta);
+    ORDER BY fecha DESC, l.id DESC`).all(desde, desde, hasta, hasta)
+    // Con «lo suyo» en Generador, solo sus órdenes aunque vea más órdenes de servicio (2026-10-26).
+    .filter(o => require('./alcance').nivel('generador') >= 2 || [o.responsable_id, o.capturado_por].includes(req.usuarioSesion.id));
   const pesos = cent => cent == null ? null : Math.round(cent) / 100;
   // Costos con terceros: gastos de Cuentas por pagar ligados a cada orden (proveedor que hizo el servicio).
   const METODO_TXT = { transferencia: 'Transferencia', efectivo: 'Efectivo', deposito: 'Depósito', cheque: 'Cheque', tarjeta: 'Tarjeta', otro: 'Otro', nomina: 'Nómina' };
@@ -1602,7 +1614,7 @@ app.get('/api/analisis/comercial', h((req,res)=>{
       SUM(CASE WHEN estatus='abierto' AND (? IS NULL OR date(created_at)>=?) AND (? IS NULL OR date(created_at)<=?) THEN COALESCE(valor,0) ELSE 0 END) propuesto,
       MAX(CASE WHEN estatus='ganado' THEN fecha_servicio END) ultima_fecha
       FROM leads GROUP BY cliente_id) a ON a.cliente_id=c.id
-    WHERE (cliente_en_alcance(c.sucursal_id, c.id) OR EXISTS (SELECT 1 FROM leads lv WHERE lv.cliente_id = c.id))`).all(...Array.from({length:8},()=>[desde,desde,hasta,hasta]).flat());
+    WHERE (cliente_en_alcance(c.sucursal_id, c.id, c.capturado_por) OR EXISTS (SELECT 1 FROM leads lv WHERE lv.cliente_id = c.id))`).all(...Array.from({length:8},()=>[desde,desde,hasta,hasta]).flat());
   const canales=new Map();
   for(const c of clientes){const k=c.canal_origen_id||0;if(!canales.has(k))canales.set(k,{canal:c.canal,nuevos:0,convertidos:0,clientes:0,recurrentes:0,servicios:0,contratado:0,por_realizar_n:0,por_realizar:0,registros:0,abiertas:0,propuesto:0});const r=canales.get(k);r.nuevos+=c.nuevo;r.convertidos+=c.nuevo&&c.ganados_historicos>0?1:0;r.clientes+=c.servicios>0?1:0;r.recurrentes+=c.servicios>0&&c.ganados_historicos>1?1:0;for(const campo of ['servicios','contratado','por_realizar_n','por_realizar','registros','abiertas','propuesto'])r[campo]+=c[campo];}
   const filas=[...canales.values()].sort((a,b)=>b.contratado-a.contratado);

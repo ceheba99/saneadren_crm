@@ -11,9 +11,10 @@
 //  · Clientes, proveedores y catálogos son compartidos (un solo KFC para todos). Un usuario de sucursal ve los
 //    clientes que dio de alta su sucursal o con los que su sucursal ha trabajado.
 //  · Folios con clave y consecutivo propio por sucursal: OS-CDMX-202610-0001. Los anteriores no cambian.
-//  · Dentro de sus sucursales, cada ROL ve en cada área nada, «lo suyo» o todo (permisos.js). Las mismas vistas lo
-//    aplican: ve_lead (órdenes donde es responsable o técnico asignado; cobranza de esas), ve_registro (lo que él
-//    registró o pidió) y nivel_area. Así ninguna pantalla, reporte ni Excel puede mostrar lo de otro.
+//  · Cada ROL ve en cada área nada, «lo suyo», toda su sucursal o toda la empresa (permisos.js). Las mismas vistas lo
+//    aplican: en_area (la sucursal, o cualquiera con «toda la empresa»), ve_lead (cotizaciones y órdenes que capturó,
+//    tiene a su nombre o como técnico; cobranza de esas), ve_registro (lo que él registró o pidió) y nivel_area. Así
+//    ninguna pantalla, reporte ni Excel puede mostrar lo de otro.
 //  · Roles: admin (general, ve todas y crea sucursales), gerente (admin, pero solo en sus sucursales) y los demás
 //    roles limitados a sus sucursales. Un usuario puede tener varias y cambia con el selector (X-Sucursal).
 const alcance = require('./alcance');
@@ -21,12 +22,13 @@ const alcance = require('./alcance');
 // Tablas con sucursal propia y tablas que la heredan de su registro (en orden: primero las de arriba).
 const CON_SUCURSAL = ['leads', 'cuentas_por_pagar', 'solicitudes_compra', 'ordenes_compra', 'establecimientos', 'historial_archivo', 'clientes', 'personal'];
 const VISTAS = [
-  ['leads', 'en_alcance(sucursal_id) AND ve_lead(responsable_id, tecnico_id, estatus)'],
+  ['leads', 've_lead(sucursal_id, responsable_id, tecnico_id, estatus, capturado_por)'],
   // Gastos: los de su sucursal o los que él registró; con «Ver los gastos de sus órdenes», también los de sus órdenes.
-  ['cuentas_por_pagar', "en_alcance(sucursal_id) AND (ve_registro('cxp', registrado_por) OR ve_gasto_orden(lead_id))"],
-  ['solicitudes_compra', "en_alcance(sucursal_id) AND ve_registro('compras', solicitante_id)"],
-  ['ordenes_compra', "en_alcance(sucursal_id) AND (ve_registro('compras', creado_por) OR solicitud_id IN (SELECT id FROM solicitudes_compra))"],
-  ['establecimientos', "en_alcance(sucursal_id) AND ve_registro('ventas', responsable_id)"], // prospección: los suyos, o toda su sucursal
+  ['cuentas_por_pagar', "en_area('cxp', sucursal_id) AND (ve_registro('cxp', registrado_por) OR ve_gasto_orden(lead_id))"],
+  ['solicitudes_compra', "en_area('solicitudes', sucursal_id) AND ve_registro('solicitudes', solicitante_id)"],
+  // Órdenes de compra: las que él hizo, o las que salen de sus solicitudes (si ve órdenes de compra: el técnico, no).
+  ['ordenes_compra', "en_area('ordenes_compra', sucursal_id) AND (ve_registro('ordenes_compra', creado_por) OR (nivel_area('ordenes_compra') >= 1 AND solicitud_id IN (SELECT id FROM solicitudes_compra)))"],
+  ['establecimientos', "en_area('prospeccion', sucursal_id) AND ve_registro('prospeccion', responsable_id)"], // prospección: los suyos, o toda su sucursal
   ['historial_archivo', 'en_alcance(sucursal_id)'],
   // Cobros: los de las órdenes que ve, si ve cuentas por cobrar; si no, solo los que él registró (el técnico que cobra en campo).
   ['cobros', 'lead_id IN (SELECT id FROM leads) AND ve_cobro(registrado_por, lead_id)'],
@@ -145,9 +147,9 @@ module.exports = function sucursales(app, db, h, { audit }) {
       if (!permitidas.includes(n)) return { error: 'No tienes acceso a esa sucursal' };
       ids = [n];
     }
-    const todo = general && ids.length === permitidas.length;
+    const todo = general && ids.length === permitidas.length, todas = ids === permitidas; // «Todas» en el selector
     const alta = ids.length === 1 ? ids[0] : (general ? alcance.matriz() : permitidas[0]) ?? null;
-    return { todo, ids: new Set(ids), alta, permitidas, general };
+    return { todo, todas, ids: new Set(ids), alta, permitidas, general };
   }
   // Después de la sesión: fija el alcance y, para el gerente, sus permisos de administrador (solo en sus sucursales).
   app.use('/api', (req, res, next) => {
@@ -256,6 +258,8 @@ module.exports = function sucursales(app, db, h, { audit }) {
     if (!s) throw new Error('Sin sucursal para el registro');
     if (tipo) db.prepare(`UPDATE main.${tabla} SET sucursal_id = ?, folio_num = COALESCE(folio_num, ?) WHERE id = ?`).run(s, siguienteFolio(tipo, s), id);
     else db.prepare(`UPDATE main.${tabla} SET sucursal_id = ? WHERE id = ?`).run(s, id);
+    // Quién capturó el contacto o la cotización (con su responsable, quienes lo editan; 2026-10-26).
+    if ((tabla === 'clientes' || tabla === 'leads') && alcance.usuario() != null) db.prepare(`UPDATE main.${tabla} SET capturado_por = COALESCE(capturado_por, ?) WHERE id = ?`).run(alcance.usuario(), id);
     return s;
   }
   // Sucursal de un registro (sin importar el alcance): para heredarla.
@@ -267,7 +271,8 @@ module.exports = function sucursales(app, db, h, { audit }) {
   function activarCandados() {
     migrar();
     db.db.function('en_alcance', { deterministic: false }, s => (alcance.ve(s) ? 1 : 0));
-    // Qué ve el rol (0 nada, 1 lo suyo, 2 toda su sucursal) y si una fila es «suya».
+    db.db.function('en_area', { deterministic: false }, (area, s) => (alcance.veEnArea(area, s) ? 1 : 0));
+    // Qué ve el rol (0 nada, 1 lo suyo, 2 toda su sucursal, 3 toda la empresa) y si una fila es «suya».
     db.db.function('nivel_area', { deterministic: false }, area => alcance.nivel(area));
     db.db.function('ve_registro', { deterministic: false }, (area, quien) => {
       const n = alcance.nivel(area);
@@ -285,14 +290,14 @@ module.exports = function sucursales(app, db, h, { audit }) {
       if (n === 1 && yo != null) { const l = respTec.get(leadId); return l && (l.responsable_id === yo || l.tecnico_id === yo) ? 1 : 0; }
       return 0;
     });
-    // Una orden o cotización: la ve quien ve las ventas de su sucursal, su responsable y su técnico asignado; y,
-    // ya contratada, quien ve la cobranza (de toda la sucursal o de las suyas).
-    db.db.function('ve_lead', { deterministic: false }, (resp, tec, estatus) => {
-      const v = alcance.nivel('ventas');
-      if (v >= 2) return 1;
-      const yo = alcance.usuario(), mia = yo != null && (resp === yo || (tec === yo && estatus === 'ganado'));
-      if (v === 1 && mia) return 1;
-      if (estatus === 'ganado') { const c = alcance.nivel('cxc'); if (c >= 2 || (c === 1 && mia)) return 1; }
+    // Una cotización (área «cotizaciones») u orden («ordenes»): la ve quien ve esa área de su sucursal (o de toda la
+    // empresa), quien la capturó, su responsable y, si es orden, su técnico asignado; y, ya contratada, quien ve la
+    // cobranza (de toda la sucursal o de las suyas).
+    db.db.function('ve_lead', { deterministic: false }, (s, resp, tec, estatus, capt) => {
+      const orden = estatus === 'ganado', area = orden ? 'ordenes' : 'cotizaciones', v = alcance.nivel(area);
+      const yo = alcance.usuario(), mia = yo != null && (resp === yo || capt === yo || (orden && tec === yo));
+      if (alcance.veEnArea(area, s) && (v >= 2 || (v === 1 && mia))) return 1;
+      if (orden && alcance.veEnArea('cxc', s)) { const c = alcance.nivel('cxc'); if (c >= 2 || (c === 1 && mia)) return 1; }
       return 0;
     });
     // Bitácora de una orden visible: lo de cobranza ('cxc') lo ve quien ve la cobranza de esa orden; lo de gastos
@@ -307,13 +312,14 @@ module.exports = function sucursales(app, db, h, { audit }) {
       const l = delLead.get(leadId);
       return l && (l.responsable_id === yo || l.tecnico_id === yo) ? 1 : 0;
     });
-    // Un cliente de su sucursal sin ninguna cotización todavía: lo ve quien ve las ventas (los de otro vendedor solo
-    // si ve toda la sucursal; los demás clientes se ven por sus cotizaciones visibles).
+    // Un contacto: lo ve quien ve los contactos de su sucursal (o de toda la empresa) y, con «lo suyo», el que lo
+    // capturó (los de antes, sin quién los capturó, mientras no tengan cotización). Los demás se ven por sus
+    // cotizaciones u órdenes visibles: quien ve una orden siempre ve los datos de su cliente.
     const conCotizacion = db.db.prepare('SELECT 1 FROM main.leads WHERE cliente_id = ? LIMIT 1');
-    db.db.function('cliente_en_alcance', { deterministic: false }, (s, id) => {
-      if (!alcance.ve(s)) return 0;
-      const v = alcance.nivel('ventas');
-      return v >= 2 || (v === 1 && !conCotizacion.get(id)) ? 1 : 0;
+    db.db.function('cliente_en_alcance', { deterministic: false }, (s, id, capt) => {
+      if (!alcance.veEnArea('contactos', s)) return 0;
+      const v = alcance.nivel('contactos'), yo = alcance.usuario();
+      return v >= 2 || (v === 1 && ((yo != null && capt === yo) || (capt == null && !conCotizacion.get(id)))) ? 1 : 0;
     });
     for (const [t, filtro] of VISTAS) {
       if (!existeTabla(t)) continue;
@@ -323,13 +329,13 @@ module.exports = function sucursales(app, db, h, { audit }) {
   }
 
   // Clientes compartidos: los ve quien los dio de alta en su sucursal o ha trabajado con ellos (SQL para «c»).
-  const clienteVisible = (a = 'c') => `(cliente_en_alcance(${a}.sucursal_id, ${a}.id) OR EXISTS (SELECT 1 FROM leads lv WHERE lv.cliente_id = ${a}.id))`;
+  const clienteVisible = (a = 'c') => `(cliente_en_alcance(${a}.sucursal_id, ${a}.id, ${a}.capturado_por) OR EXISTS (SELECT 1 FROM leads lv WHERE lv.cliente_id = ${a}.id))`;
   const verCliente = id => !!db.prepare(`SELECT 1 FROM main.clientes c WHERE c.id = ? AND ${clienteVisible('c')}`).get(id);
   // Los datos de un cliente compartido (teléfonos, RFC, correo, dirección, crédito) los corrige Dirección o la
   // sucursal que lo dio de alta; las demás sucursales le venden, pero no le cambian los datos.
   function puedeEditarCliente(req, id) {
     if (req.usuarioSesion?.admin_general && !req.usuarioSesion?.ver_como) return true;
-    return clienteDeSuSucursal(req, id) && clienteEsSuyo(id);
+    return clienteDeSuSucursal(req, id) && clienteEsSuyo(req, id);
   }
   // Solo la regla de sucursal (para lo que no es de ventas, p. ej. el crédito que captura cobranza).
   function clienteDeSuSucursal(req, id) {
@@ -337,17 +343,17 @@ module.exports = function sucursales(app, db, h, { audit }) {
     const c = db.prepare('SELECT sucursal_id FROM main.clientes WHERE id = ?').get(id);
     return !!c && (c.sucursal_id == null ? req.alcanceSuc.permitidas.includes(alcance.matriz()) : req.alcanceSuc.permitidas.includes(c.sucursal_id));
   }
-  // Según su rol (permisos.js): quien ve las ventas de su sucursal toca cualquier cliente; con «lo suyo», solo los que
-  // atiende como responsable (o los que todavía nadie atiende); quien no ve ventas (Cobranza, Compras) no los toca.
-  function clienteEsSuyo(id) {
-    const v = alcance.nivel('ventas');
-    if (v >= 2) return true;
-    if (v < 1) return false;
-    const resp = db.prepare('SELECT responsable_id FROM main.leads WHERE cliente_id = ? AND en_alcance(sucursal_id)').all(id).map(r => r.responsable_id);
-    return !resp.length || resp.includes(alcance.usuario());
+  // Según su rol (2026-10-26): edita el contacto quien edita contactos y es suyo (lo capturó o atiende alguna de sus
+  // cotizaciones u órdenes; los de antes sin nadie que los atienda, cualquiera), o quien tiene «Editar lo de otros».
+  // Quien solo lo ve (Cobranza, Técnico) no lo toca.
+  function clienteEsSuyo(req, id) {
+    const yo = alcance.usuario(), c = db.prepare('SELECT capturado_por FROM main.clientes WHERE id = ?').get(id);
+    const resp = db.prepare('SELECT responsable_id, capturado_por FROM main.leads WHERE cliente_id = ? AND en_alcance(sucursal_id)').all(id);
+    const suyo = yo != null && (c?.capturado_por === yo || resp.some(r => r.responsable_id === yo || r.capturado_por === yo) || (c?.capturado_por == null && !resp.length));
+    return app.locals.permisos.puedeEditar(req, 'contactos', suyo);
   }
   const sucursalDeCliente = id => { const c = db.prepare('SELECT sucursal_id FROM main.clientes WHERE id = ?').get(id); return lista().find(s => s.id === c?.sucursal_id) || null; };
-  const NO_EDITA = (req, id) => { if (!clienteEsSuyo(id)) return { error: alcance.nivel('ventas') < 1 ? 'Tu rol no modifica los datos de los clientes' : 'Este cliente lo atiende otro vendedor: sus datos los corrige él o el gerente', codigo: 'CLIENTE_DE_OTRO' };
+  const NO_EDITA = (req, id) => { if (!clienteEsSuyo(req, id)) return { error: !app.locals.permisos.puede(req, 'contactos.editar') ? 'Tu rol no modifica los datos de los clientes' : 'Este cliente lo atiende otra persona: sus datos los corrige ella o el gerente', codigo: 'CLIENTE_DE_OTRO' };
     const s = sucursalDeCliente(id); return { error: `Este cliente lo dio de alta ${s ? s.nombre + ' (' + s.clave + ')' : 'otra sucursal'}: sus datos (teléfonos, RFC, correo, dirección y crédito) los corrige esa sucursal o Dirección. Tú sí puedes cotizarle y venderle.`, codigo: 'CLIENTE_DE_OTRA_SUCURSAL' }; };
 
   return { puedeEditarCliente, clienteDeSuSucursal, NO_EDITA, activarCandados, folio: folioDe, claveDe, asignar, de, siguienteFolio, lista, clienteVisible, verCliente, esGeneral, sucursalesParaUsuario, guardarSucursalesUsuario, puedeAdministrar, sucursalesDe };

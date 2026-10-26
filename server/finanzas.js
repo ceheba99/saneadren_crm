@@ -680,12 +680,12 @@ module.exports = function finanzas(app, db, h, unicos) {
   function ordenParaLigar(id) {
     const n = Number(id) || 0;
     return db.prepare("SELECT * FROM leads WHERE id = ? AND estatus = 'ganado'").get(n)
-      || (alcance.nivel('cxp') >= 2 || alcance.nivel('compras') >= 2 ? db.prepare("SELECT * FROM main.leads WHERE id = ? AND estatus = 'ganado' AND en_alcance(sucursal_id)").get(n) : null) || null;
+      || (alcance.nivel('cxp') >= 2 || alcance.nivel('ordenes_compra') >= 2 ? db.prepare("SELECT * FROM main.leads WHERE id = ? AND estatus = 'ganado' AND en_alcance(sucursal_id)").get(n) : null) || null;
   }
   // Órdenes para elegir al registrar un gasto: solo folio, cliente, servicio, fecha, unidad y lugar (sin montos).
   app.get('/api/finanzas/ordenes-para-gasto', h((req, res) => {
     if (!P.puede(req, 'gastos.registrar') && !P.puede(req, 'compras.ver')) return res.status(403).json({ error: 'No tienes permiso para esta acción' });
-    const todas = alcance.nivel('cxp') >= 2 || alcance.nivel('compras') >= 2;
+    const todas = alcance.nivel('cxp') >= 2 || alcance.nivel('ordenes_compra') >= 2;
     res.json(db.prepare(`SELECT l.id, l.created_at, l.folio_num, l.sucursal_id, l.estatus, l.nombre, l.empresa_contacto, l.fecha_servicio, l.equipo, l.operador, l.direccion, l.proyecto, s.nombre AS servicio_nombre
       FROM ${todas ? 'main.leads' : 'leads'} l LEFT JOIN catalogo_servicios s ON s.id = l.servicio_id
       WHERE l.estatus = 'ganado'${todas ? ' AND en_alcance(l.sucursal_id)' : ''} ORDER BY l.fecha_servicio DESC, l.id DESC`).all());
@@ -1027,9 +1027,11 @@ module.exports = function finanzas(app, db, h, unicos) {
     }
   }
   app.post('/api/leads/:id/ejecucion', h((req, res) => {
-    if (!permitido(req, res, 'ordenes.estatus', 'No tienes permiso para esta acción')) return;
     const lead = db.prepare('SELECT * FROM leads WHERE id = ?').get(req.params.id);
     if (!lead || lead.estatus !== 'ganado') return res.status(400).json({ error: 'Solo las órdenes de servicio se marcan como realizadas' });
+    // Marca si se realizó quien hizo la orden, el Gerente y Dirección (2026-10-26). El técnico todavía no: falta
+    // decidir cómo se conecta con los técnicos.
+    if (!app.locals.puedeEditarLead(req, lead)) return res.status(403).json({ error: 'Si el servicio se realizó lo marca quien hizo la orden, el gerente o Dirección' });
     const b = req.body || {}, hoy = hoyMexico();
     const fmtFecha = f => f.split('-').reverse().join('/');
     // Deshacer: se marcó realizado (o no realizado) por error. Solo Dirección, con motivo; queda en la bitácora de la orden.
@@ -1318,7 +1320,7 @@ module.exports = function finanzas(app, db, h, unicos) {
 
   app.post('/api/finanzas/importar/cxc', h((req, res) => {
     // Crea órdenes y cobros de cualquier cliente de la sucursal: quien ve ventas y cobranza de toda su sucursal.
-    if (!P.puede(req, 'ventas.sucursal') || !P.puede(req, 'cxc.sucursal') || !P.puede(req, 'cobros.registrar')) return res.status(403).json({ error: 'La cobranza la importa quien ve ventas y cobranza de toda su sucursal' });
+    if (!P.puede(req, 'ordenes.sucursal') || !P.puede(req, 'cxc.sucursal') || !P.puede(req, 'cobros.registrar')) return res.status(403).json({ error: 'La cobranza la importa quien ve ventas y cobranza de toda su sucursal' });
     const filas = leerFilas(req, res); if (!filas) return;
     const simular = req.query.simular === '1';
     const hoy = hoyMexico();

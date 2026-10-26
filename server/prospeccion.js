@@ -1,7 +1,7 @@
 module.exports=function registrarProspeccion(app,db,h,unicos){
   const P=()=>app.locals.permisos,yo=req=>req.usuarioSesion.id;
   // ¿Ve toda su sucursal o solo lo suyo? (como en cotizaciones: el vendedor, lo suyo).
-  const veSucursal=req=>P().puede(req,'ventas.sucursal');
+  const veSucursal=req=>P().puede(req,'prospeccion.sucursal');
   // A nombre de quién: quien ve solo lo suyo, a su nombre; el responsable debe poder usar Prospección.
   function responsableValido(req,x){
     if(!veSucursal(req)&&x.responsable_id!==yo(req))return 'Solo puedes registrar establecimientos a tu nombre';

@@ -21,6 +21,7 @@ const HOY = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Mexico_City' }
   const yo = (await pedir('GET', '/usuarios', A))[1].find(u => u.rol === 'admin').id;
   await pedir('POST', '/usuarios', A, { nombre: 'Atención Sim', correo: 'atn.sim@saneadren.com.mx', password: 'Atencion-Sim-2026', rol: 'atencion' });
   const B = (await pedir('POST', '/login', null, { nombre: 'atn.sim@saneadren.com.mx', password: 'Atencion-Sim-2026' }))[1].token;
+  await require('./ayuda-alcance.cjs').comoAntes(pedir, A); // aquí se prueban los choques, no quién edita qué
   const partida = (precio, cantidad = 1) => ({ servicio: servicios[0].nombre, leyenda: 'x', importe: precio, cantidad, precio });
   const P = (...p) => JSON.stringify(p);
   const lead = async id => (await pedir('GET', '/leads/' + id, A))[1];

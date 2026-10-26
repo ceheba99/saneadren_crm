@@ -16,7 +16,9 @@ module.exports = {
       demo: ['clientes', 'leads', 'historial', 'orden_personal'],
       integridad: ['leads', 'clientes'],
       buscador: ['leads', 'clientes'],
-      permisos: ['ventas.ver', 'ventas.sucursal', 'ordenes.importes', 'generador.cargar', 'ordenes.importe_ganada', 'ordenes.estatus', 'ordenes.eliminar', 'clientes.exportar'],
+      permisos: ['ventas.ver', 'contactos.ver', 'contactos.sucursal', 'contactos.empresa', 'contactos.editar', 'cotizaciones.ver', 'cotizaciones.sucursal', 'cotizaciones.empresa', 'cotizaciones.editar',
+        'ordenes.ver', 'ordenes.sucursal', 'ordenes.empresa', 'ordenes.editar', 'generador.ver', 'generador.sucursal', 'generador.empresa',
+        'ordenes.importes', 'ventas.editar_otros', 'generador.cargar', 'ordenes.importe_ganada', 'clientes.exportar'],
     },
     cobranza: {
       nombre: 'Cuentas por cobrar',
@@ -28,7 +30,7 @@ module.exports = {
       demo: ['cobros'],
       integridad: ['cobros'],
       buscador: null, buscadorRazon: 'los cobros se buscan por su orden de servicio (folio OS)',
-      permisos: ['cxc.ver', 'cxc.sucursal', 'cobros.registrar', 'cobros.confirmar', 'cobros.directo', 'cobranza.factura', 'cobros.ajustes'],
+      permisos: ['cxc.ver', 'cxc.sucursal', 'cxc.empresa', 'cobros.registrar', 'cobros.confirmar', 'cobros.directo', 'cobranza.factura', 'cobros.ajustes'],
     },
     pagar: {
       nombre: 'Cuentas por pagar y proveedores',
@@ -41,7 +43,7 @@ module.exports = {
       demo: ['cuentas_por_pagar', 'pagos_proveedor', 'proveedores'],
       integridad: ['cuentas_por_pagar', 'pagos_proveedor'],
       buscador: ['proveedores'],
-      permisos: ['cxp.ver', 'cxp.sucursal', 'gastos.registrar', 'gastos.ver_orden', 'dinero.mover'],
+      permisos: ['cxp.ver', 'cxp.sucursal', 'cxp.empresa', 'gastos.registrar', 'gastos.ver_orden', 'dinero.mover'],
     },
     compras: {
       nombre: 'Solicitudes y órdenes de compra',
@@ -53,7 +55,8 @@ module.exports = {
       demo: ['solicitudes_compra', 'documentos_solicitud', 'ordenes_compra', 'documentos_oc'],
       integridad: ['ordenes_compra', 'solicitudes_compra', 'documentos_oc', 'documentos_solicitud'],
       buscador: ['ordenes_compra', 'solicitudes_compra'],
-      permisos: ['compras.ver', 'compras.sucursal', 'compras.gestionar', 'compras.aprobar_propias', 'compras.autorizar'],
+      permisos: ['compras.ver', 'solicitudes.ver', 'solicitudes.sucursal', 'solicitudes.empresa', 'solicitudes.editar', 'ordenes_compra.ver', 'ordenes_compra.sucursal', 'ordenes_compra.empresa',
+        'compras.importes', 'compras.gestionar', 'compras.aprobar_propias', 'compras.autorizar'],
     },
     personal: {
       nombre: 'Personal (RH)',
@@ -77,7 +80,7 @@ module.exports = {
       demo: ['establecimientos'],
       integridad: null, integridadRazon: 'son prospectos sin dinero ni folios: no hay nada que deba cuadrar',
       buscador: null, buscadorRazon: 'se buscan dentro de Prospección (filtro propio)',
-      permisos: ['prospeccion.ver', 'ventas.ver', 'ventas.sucursal'],
+      permisos: ['prospeccion.ver', 'prospeccion.sucursal', 'prospeccion.empresa', 'prospeccion.editar'],
     },
     reportes: {
       nombre: 'Resultados y análisis',
@@ -88,7 +91,7 @@ module.exports = {
       inicio: [],
       demo: [], integridad: null, integridadRazon: 'no guarda datos propios; la auditoría compara Resultados con el Generador',
       buscador: null, buscadorRazon: 'no tiene registros propios',
-      permisos: ['reportes.panorama'],
+      permisos: ['reportes.analisis', 'reportes.panorama'],
     },
     administracion: {
       nombre: 'Usuarios, roles, sucursales, catálogos, bitácora y respaldos',

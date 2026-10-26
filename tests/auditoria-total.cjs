@@ -37,8 +37,10 @@ const patronRuta = r => new RegExp('^' + r.replace(/:[a-zA-Z_]+/g, '[^/]+') + '$
 const VISTAS_HTML = [...HTML.matchAll(/<section[^>]*id="vista-([\w-]+)"/g)].map(m => m[1]);
 const NAV = [...HTML.matchAll(/<[^>]*class="[^"]*\bmenu-item\b[^"]*"[^>]*data-vista="([\w-]+)"/g)].map(m => (M.aliasMenu || {})[m[1]] || m[1]);
 const CATALOGO = [...SERVER['permisos.js'].matchAll(/^\s*\['([a-z_]+\.[a-z_]+)',/gm)].map(m => m[1]);
-const AREAS = [...SERVER['permisos.js'].matchAll(/^\s*\['(ventas|cxc|cxp|compras)', '/gm)].map(m => m[1]);
-const VIRTUALES = AREAS.flatMap(a => [a + '.ver', a + '.sucursal']);
+// Áreas de «qué ve» (2026-10-26: cada pantalla la suya): ver, toda su sucursal, toda la empresa y, las editables, editar.
+const BLOQUE_AREAS = SERVER['permisos.js'].slice(SERVER['permisos.js'].indexOf('const AREAS = ['), SERVER['permisos.js'].indexOf('].map(([clave, nombre, suyo'));
+const AREAS = [...BLOQUE_AREAS.matchAll(/^\s*\['([a-z_]+)', '[^\n]*?(, true)?\],$/gm)].map(m => ({ clave: m[1], editable: !!m[2] }));
+const VIRTUALES = [...AREAS.flatMap(a => [a.clave + '.ver', a.clave + '.sucursal', a.clave + '.empresa', ...(a.editable ? [a.clave + '.editar'] : [])]), 'ventas.ver', 'compras.ver'];
 const PERMISOS = new Set([...CATALOGO, ...VIRTUALES]);
 console.log(`Inventario: ${RUTAS.length} rutas, ${VISTAS_HTML.length} pantallas, ${PERMISOS.size} permisos, ${Object.keys(PUBLICO).length} archivos de pantalla, ${Object.keys(SERVER).length} del servidor`);
 

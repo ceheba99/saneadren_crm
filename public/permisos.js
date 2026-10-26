@@ -8,7 +8,7 @@ const Permisos = (() => {
   const CLAVE_VER = 'ver_como';
   let DATOS = { rol: null, rol_nombre: '', permisos: [], direccion: false, ver_como: null };
   let TODAS = [];
-  const clase = c => String(c).replace(/[^a-z0-9]+/gi, '-');
+  const clase = c => String(c).replace(/[^a-z0-9_]+/gi, '-'); // ordenes_compra.ver → perm-ordenes_compra-ver
   const leerVerComo = () => { try { return sessionStorage.getItem(CLAVE_VER) || ''; } catch { return ''; } };
   const encabezado = () => { const v = leerVerComo(); return v ? { 'X-Ver-Como': v } : {}; };
   const puede = c => DATOS.rol === 'admin' || DATOS.permisos.includes(c);
