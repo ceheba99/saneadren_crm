@@ -635,6 +635,9 @@ const Finanzas = (() => {
       // Banco y CLABE solo para quien paga (decisión 2026-10-22); a los demás el servidor ni siquiera los manda.
       + '<div class="cp-datos">' + (Permisos.puede('dinero.mover') ? '<div><small>Banco</small><b>' + esc(p.banco || '—') + '</b></div><div><small>CLABE</small><b>' + esc(p.clabe || '—') + '</b>'
       + (p.clabe ? ' <button type="button" class="enlace" data-cp-copiar="' + esc(p.clabe) + '">Copiar</button>' : '') + '</div>' : '')
+      + [['Razón social', p.razon_social], ['Qué vende', p.que_vende], ['Contacto', p.contacto], ['Teléfono', [p.telefono, p.telefono2].filter(Boolean).join(' · ')], ['Correo', p.correo],
+        ['Domicilio', [p.domicilio, p.codigo_postal ? 'CP ' + p.codigo_postal : ''].filter(Boolean).join(' · ')], ['Régimen fiscal', p.regimen_fiscal],
+        ['Forma de pago', p.forma_pago ? (NOMBRE_METODO[p.forma_pago] || p.forma_pago) : '']].filter(([, v]) => v).map(([k, v]) => '<div><small>' + esc(k) + '</small><b>' + esc(v) + '</b></div>').join('')
       + '<div><small>Último pago</small><b>' + (r.ultimo_pago ? esc(fechaTxt(r.ultimo_pago.fecha)) + ' · ' + formatoMoneda(r.ultimo_pago.monto) : '—') + '</b></div>'
       + '<div><small>Cotizaciones</small><b>' + r.cotizaciones.length + ' enviadas · ' + ganadas + ' ganadas</b></div></div>'
       + (p.notas ? '<p class="ayuda">📝 ' + esc(p.notas) + '</p>' : '')
@@ -661,10 +664,7 @@ const Finanzas = (() => {
     if (b.dataset.cpOc) { cerrarCp(); cambiarVista('compras'); return Compras.abrir(Number(b.dataset.cpOc)); }
     if (b.dataset.cpSol) { cerrarCp(); cambiarVista('solicitudes'); return Solicitudes.abrir(Number(b.dataset.cpSol)); }
     if (b.dataset.cpCopiar) { try { await navigator.clipboard.writeText(b.dataset.cpCopiar); toast('CLABE copiada'); } catch { toast('No se pudo copiar'); } return; }
-    if (b.dataset.cpEditar !== undefined) {
-      const id = CUENTA_PROV; cerrarCp(); cambiarVista('cuentas', { pestana: 'proveedores' });
-      for (let i = 0; i < 50; i++) { const el = document.querySelector('[data-editar-prov="' + id + '"]'); if (el) { el.click(); el.closest('.fila-dinero')?.scrollIntoView({ block: 'center' }); return; } await new Promise(r => setTimeout(r, 120)); }
-    }
+    if (b.dataset.cpEditar !== undefined && CUENTA_PROV_DATOS) return abrirFormProveedor(CUENTA_PROV_DATOS.proveedor); // en su ventana, encima de la ficha
   });
 
   // ---------- Por pagar ----------
@@ -1001,34 +1001,34 @@ const Finanzas = (() => {
     const q = sinAcentos($('prov-buscar').value.trim()), filtro = $('prov-filtro').value;
     const digitos = q.replace(/\D/g, '');
     const lista = PROVEEDORES.filter(p => (filtro === 'todos' || (filtro === 'inactivos' ? !p.activo : p.activo && (filtro !== 'saldo' || p.saldo > 0)))
-      && (!q || sinAcentos([p.nombre, p.rfc, p.contacto, cat[p.categoria] || p.categoria, p.notas].join(' ')).includes(q) || (digitos.length >= 4 && String(p.telefono || '').replace(/\D/g, '').includes(digitos))));
+      && (!q || sinAcentos([p.nombre, p.razon_social, p.rfc, p.contacto, p.correo, p.que_vende, p.domicilio, cat[p.categoria] || p.categoria, p.notas].join(' ')).includes(q) || (digitos.length >= 4 && (String(p.telefono || '') + ' ' + String(p.telefono2 || '')).replace(/\D/g, '').includes(digitos))));
     const total = lista.reduce((t, p) => t + (p.saldo || 0), 0);
     $('prov-resumen').textContent = PROVEEDORES.length ? `${lista.length} de ${PROVEEDORES.length} proveedores` + (total > 0 ? ` · ${formatoMoneda(total)} por pagar` : '') : '';
     cont.innerHTML = lista.length ? lista.map(p => `
       <div class="fila-dinero${p.activo ? '' : ' inactivo'}"><div class="info"><button type="button" class="enlace enlace-fuerte" data-ficha-prov="${Number(p.id)}">${esc(p.nombre)}</button>${p.activo ? '' : ' · inactivo'}
-        <small>${esc(cat[p.categoria] || p.categoria)} · crédito ${Number(p.dias_credito)} días${p.contacto ? ' · ' + esc(p.contacto) : ''}${p.telefono ? ' · ' + esc(p.telefono) : ''}${p.rfc ? ' · RFC ' + esc(p.rfc) : ''}</small></div>
+        ${p.que_vende ? '<small>' + esc(p.que_vende) + '</small>' : ''}<small>${esc(cat[p.categoria] || p.categoria)} · crédito ${Number(p.dias_credito)} días${p.contacto ? ' · ' + esc(p.contacto) : ''}${p.telefono ? ' · ' + esc(p.telefono) : ''}${p.rfc ? ' · RFC ' + esc(p.rfc) : ''}</small></div>
         <div class="montos"><b>${formatoMoneda(p.saldo)}</b><small>por pagar</small></div>
         <div class="btn-group"><button type="button" class="btn btn-primario" data-ficha-prov="${Number(p.id)}">Ver ficha</button><button type="button" class="btn btn-outline perm-dinero-mover" data-editar-prov="${Number(p.id)}">Editar</button>
           <button type="button" class="btn btn-outline perm-dinero-mover" data-activo-prov="${Number(p.id)}">${p.activo ? 'Desactivar' : 'Activar'}</button></div></div>`).join('')
       : `<p class="util-45">${PROVEEDORES.length ? 'Ningún proveedor coincide con la búsqueda.' : 'Aún no hay proveedores. Agrega el primero con «+ Agregar proveedor».'}</p>`;
   }
+  // Agregar o editar: en su propia ventana (2026-10-26), sin salir de la lista ni de la ficha del proveedor.
+  const CAMPOS_PROV = { nombre: 'prov-nombre', rfc: 'prov-rfc', telefono: 'prov-telefono', telefono2: 'prov-telefono2', contacto: 'prov-contacto', correo: 'prov-correo',
+    domicilio: 'prov-domicilio', razon_social: 'prov-razon-social', regimen_fiscal: 'prov-regimen', codigo_postal: 'prov-cp', que_vende: 'prov-que-vende', forma_pago: 'prov-forma-pago',
+    clabe: 'prov-clabe', banco: 'prov-banco', notas: 'prov-notas', categoria: 'prov-categoria', dias_credito: 'prov-credito' };
   function cerrarFormProveedor() {
     PROV_EDITANDO = null;
-    ['prov-nombre', 'prov-rfc', 'prov-telefono', 'prov-contacto', 'prov-clabe', 'prov-banco', 'prov-notas'].forEach(id => { $(id).value = ''; });
-    $('prov-credito').value = 0; $('prov-categoria').value = 'otro';
-    $('prov-form-titulo').textContent = 'Agregar proveedor'; $('prov-form').hidden = true;
+    $('overlay-proveedor').classList.remove('mostrar');
   }
   function abrirFormProveedor(p = null) {
-    cerrarFormProveedor();
-    if (p) {
-      PROV_EDITANDO = p.id;
-      $('prov-nombre').value = p.nombre; $('prov-categoria').value = p.categoria; $('prov-credito').value = p.dias_credito;
-      $('prov-rfc').value = p.rfc || ''; $('prov-telefono').value = p.telefono || ''; $('prov-contacto').value = p.contacto || ''; $('prov-clabe').value = p.clabe || ''; $('prov-banco').value = p.banco || '';
-      $('prov-notas').value = p.notas || '';
-      $('prov-form-titulo').textContent = 'Editar proveedor';
-    }
-    $('prov-form').hidden = false; $('prov-form').scrollIntoView({ block: 'start', behavior: 'smooth' }); $('prov-nombre').focus();
+    PROV_EDITANDO = p ? p.id : null;
+    $('prov-forma-pago').innerHTML = '<option value="">Sin indicar</option>' + METODOS_PROV.map(([v, t]) => `<option value="${esc(v)}">${esc(t)}</option>`).join('');
+    for (const [k, id] of Object.entries(CAMPOS_PROV)) $(id).value = p ? (p[k] ?? '') : '';
+    if (!p) { $('prov-credito').value = 0; $('prov-categoria').value = 'otro'; }
+    $('prov-form-titulo').textContent = p ? 'Editar ' + p.nombre : 'Agregar proveedor';
+    abrirVentana('overlay-proveedor'); $('prov-nombre').focus();
   }
+  $('prov-cerrar').addEventListener('click', cerrarFormProveedor);
   $('prov-nuevo').addEventListener('click', () => abrirFormProveedor());
   $('prov-cancelar').addEventListener('click', cerrarFormProveedor);
   $('prov-buscar').addEventListener('input', pintarProveedores);
@@ -1058,10 +1058,12 @@ const Finanzas = (() => {
     return j;
   }
   $('prov-guardar').addEventListener('click', e => conBoton(e.currentTarget, async () => {
-    const cuerpo = { nombre: $('prov-nombre').value, categoria: $('prov-categoria').value, dias_credito: $('prov-credito').value,
-      rfc: $('prov-rfc').value, telefono: $('prov-telefono').value, contacto: $('prov-contacto').value, clabe: $('prov-clabe').value, banco: $('prov-banco').value, notas: $('prov-notas').value };
-    if (!await guardarProveedor(cuerpo, PROV_EDITANDO)) return;
-    toast(PROV_EDITANDO ? 'Proveedor actualizado' : 'Proveedor agregado'); cargarProveedores();
+    const cuerpo = Object.fromEntries(Object.entries(CAMPOS_PROV).map(([k, id]) => [k, $(id).value]));
+    const editado = PROV_EDITANDO;
+    if (!await guardarProveedor(cuerpo, editado)) return;
+    toast(editado ? 'Proveedor actualizado' : 'Proveedor agregado'); cerrarFormProveedor();
+    if ($('vista-cuentas').classList.contains('activa') && !document.querySelector('[data-panel="proveedores"]').hidden) cargarProveedores(); else await catalogosPagos().catch(() => {});
+    refrescarFichaProv();
   }));
 
   // ===================== Inicio: bloque "Dinero" =====================
