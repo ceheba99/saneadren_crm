@@ -53,7 +53,7 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
   // ----- Datos marcados -----
   const contacto = async (t, nombre, tel, empresa) => exigir(await pedir('POST', '/contactos', t, { nombre, telefono: tel, empresa_contacto: empresa, direccion: 'Querétaro centro', canal_origen_id: canales[0].id }), 'crear contacto ' + empresa);
   const cotizar = async (t, quien, cliente, leyenda, imp, ganada) => exigir(await pedir('POST', '/leads', t, { cliente_id: cliente.id, direccion: 'Querétaro', canal_id: canales[0].id, servicio_id: SERV.id, responsable_id: ID[quien],
-    partidas_json: partidas(leyenda, imp), iva_modo: 'mas_iva', valor: imp, ...(ganada ? { estatus: 'ganado', fecha_servicio: dia(-5) } : {}) }), 'cotizar ' + leyenda);
+    partidas_json: partidas(leyenda, imp), iva_modo: 'mas_iva', valor: imp, forzar_duplicado: true, ...(ganada ? { estatus: 'ganado', fecha_servicio: dia(-5) } : {}) }), 'cotizar ' + leyenda);
   const cAmbar = await contacto(T.Valeria, 'Lic. Ambar Uno', '442 222 0001', 'Planta Ambar');
   const cBerilo = await contacto(T.Bruno, 'Sra. Berilo Dos', '442 222 0002', 'Hotel Berilo');
   const cDiamante = await contacto(T.Bruno, 'Ing. Diamante Tres', '442 222 0003', 'Torre Diamante');
@@ -68,10 +68,11 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
   exigir(await pedir('POST', '/leads/' + O1.id + '/cobros', T.Alicia, { monto: 1013.29, metodo: 'transferencia' }), 'cobro de Alicia');
   exigir(await pedir('POST', '/leads/' + O1.id + '/cobros', T.Tomas, { monto: 503.61, metodo: 'efectivo' }), 'cobro de Tomás');
   const saldoO1 = (await pedir('GET', '/leads/' + O1.id + '/cobros', A))[1].cuenta.saldo;
-  // Gastos: Tomás al marcar realizado; Valeria y Carlos en cuentas por pagar.
+  // Gastos: Tomás, Valeria, Carlos y Alicia en cuentas por pagar; Valeria marca realizada su orden.
   const clabeProv = '012180555888222117'; // CLABE válida (dígito verificador), marcada para buscarla
   const prov = exigir(await pedir('POST', '/finanzas/proveedores', T.Carlos, { nombre: 'Pipas del Centro', tipo_comprobante: 'factura', clabe: clabeProv, banco: 'BBVA' }), 'crear proveedor');
-  exigir(await pedir('POST', '/leads/' + O1.id + '/ejecucion', T.Tomas, { estado: 'realizado', fecha: dia(-1), gastos: [{ proveedor_id: prov.id, categoria: 'combustible', concepto: 'Diesel de campo', total: 813.37 }] }), 'realizado con gasto');
+  exigir(await pedir('POST', '/finanzas/cxp', T.Tomas, { proveedor_id: prov.id, categoria: 'combustible', concepto: 'Diesel de campo', total: 813.37, fecha_documento: HOY, lead_id: O1.id, dias_credito: 0 }), 'gasto de Tomás');
+  exigir(await pedir('POST', '/leads/' + O1.id + '/ejecucion', T.Valeria, { estado: 'realizado', fecha: dia(-1) }), 'realizado');
   exigir(await pedir('POST', '/finanzas/cxp', T.Valeria, { proveedor_id: prov.id, categoria: 'otro', concepto: 'Casetas de visita', total: 311.13, fecha_documento: HOY, lead_id: O1.id, dias_credito: 0 }), 'gasto de Valeria');
   exigir(await pedir('POST', '/finanzas/cxp', T.Carlos, { proveedor_id: prov.id, categoria: 'renta_maquinaria', concepto: 'Renta de pipa', total: 2577.19, fecha_documento: HOY, lead_id: O4.id, dias_credito: 15 }), 'gasto de Carlos');
   exigir(await pedir('POST', '/finanzas/cxp', T.Alicia, { proveedor_id: prov.id, categoria: 'otro', concepto: 'Mensajería de documentos', total: 419.23, fecha_documento: HOY, lead_id: O4.id, dias_credito: 0 }), 'gasto de Alicia');
@@ -159,6 +160,28 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
   const REPORTES = [['generador', 'Generador', '/generador?' + RANGO], ['analisis', 'Resultados · análisis comercial', '/analisis/comercial?' + RANGO], ['panorama', 'Resultados · panorama general', '/tablero?' + RANGO]];
   for (const [rol] of ROLES) for (const [clave, , ruta] of REPORTES) VE[rol]['rep:' + clave] = (await pedir('GET', ruta, OBSERVA[rol]))[0] === 200;
 
+  // ----- Acciones: editar, marcar realizado y borrar (2026-10-26) -----
+  // Cada rol intenta cambios inofensivos; marcar realizado y borrar, cada uno sobre su propia orden o cotización nueva.
+  const ACCIONES = [
+    ['editaO1', 'Editar la orden de Valeria (cliente, servicio, técnico…)'],
+    ['editaO4', 'Editar la orden de Bruno (otro vendedor)'],
+    ['editaAmbar', 'Editar el contacto de Valeria'],
+    ['realizado', 'Marcar realizada una orden de Valeria'],
+    ['borra', 'Borrar una cotización de Valeria'],
+  ];
+  const ok = r => r[0] === 200 || r[0] === 201;
+  for (const [rol] of ROLES) {
+    const t = OBSERVA[rol];
+    const editar = async lead => { const v = (await pedir('GET', '/leads/' + lead.id, A))[1].version; return ok(await pedir('PUT', '/leads/' + lead.id, t, { version: v, observaciones: 'Revisión ' + rol })); };
+    VE[rol].editaO1 = await editar(O1);
+    VE[rol].editaO4 = await editar(O4);
+    VE[rol].editaAmbar = ok(await pedir('PUT', '/clientes/' + cAmbar.id, t, { notas_generales: 'Revisión ' + rol }));
+    const nueva = await cotizar(T.Valeria, 'Valeria', cAmbar, 'Prueba ' + rol, 1000, true);
+    VE[rol].realizado = ok(await pedir('POST', '/leads/' + nueva.id + '/ejecucion', t, { estado: 'realizado', fecha: dia(-1) }));
+    const cot = await cotizar(T.Valeria, 'Valeria', cAmbar, 'Borrar ' + rol, 1000);
+    VE[rol].borra = ok(await pedir('DELETE', '/leads/' + cot.id, t, { motivo: 'Prueba de la foto de roles' }));
+  }
+
   // ----- Pantallas, niveles y permisos de cada rol -----
   const [, PERM] = await pedir('GET', '/permisos', A);
   const permisosDe = rol => new Set(PERM.roles.find(r => r.clave === rol)?.permisos || []);
@@ -170,7 +193,7 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
   const nivelTxt = (rol, area) => {
     if (rol === 'admin') return 'Todo';
     const r = PERM.roles.find(x => x.clave === rol), nv = r.alcances[area], set = permisosDe(rol);
-    return area === 'cxc' && nv === 0 && set.has('cobros.registrar') && set.has('ventas.ver') ? 'Solo lo que él registra' : PERM.niveles[nv];
+    return area === 'cxc' && nv === 0 && set.has('cobros.registrar') && set.has('ventas.ver') ? 'Solo lo que él registra' : PERM.niveles[nv] + (r.ediciones[area] ? ' ✎' : '');
   };
 
   // ----- Reglas acordadas con Dirección (cada una con su fecha). No se ajustan al código. -----
@@ -189,11 +212,17 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
     ['2026-10-19', 'Técnico: solo las órdenes que tiene asignadas.', { tecnico: { ambar: 1, diamante: 0, berilo: 0, coral: 0 } }],
     ['2026-10-19', 'Costos y compras: ve folio y cliente de las órdenes para ligar gastos, sin montos de venta ni cobranza; todas las cuentas por pagar y compras de su sucursal.', { costos: { ambar: 1, 'ambar$': 0, cobroAlicia: 0, cobroTomas: 0, saldo: 0, gastoTomas: 1, gastoValeria: 1, gastoCarlos: 1, jade: 1, perla: 1 } }],
     ['2026-10-21', 'Técnico, en cuentas por cobrar: solo los cobros que él registró (sin saldos ni vencidos).', { tecnico: { cobroTomas: 1, cobroAlicia: 0, saldo: 0 } }],
-    ['2026-10-21', 'Técnico sin «Ver importes»: sus órdenes sin precios ni totales, sin Generador ni Resultados.', { tecnico: { 'ambar$': 0, 'rep:generador': 0, 'rep:analisis': 0, 'rep:panorama': 0 } }],
+    ['2026-10-26', 'Técnico: ve el importe de sus órdenes, pero no las modifica; sin Generador ni Resultados (antes, 2026-10-21, no veía importes).', { tecnico: { 'ambar$': 1, editaO1: 0, 'rep:generador': 0, 'rep:analisis': 0, 'rep:panorama': 0 } }],
+    ['2026-10-26', 'Contactos, cotizaciones y órdenes: los edita quien los capturó o los tiene a su nombre, el Gerente y Dirección. Quien solo los ve (Atención con lo de otra persona, Técnico, Compras) no los cambia.', {
+      admin: { editaO1: 1, editaO4: 1, editaAmbar: 1 }, gerente: { editaO1: 1, editaO4: 1, editaAmbar: 1 }, ventas: { editaO1: 1, editaO4: 0, editaAmbar: 1 },
+      atencion: { editaO1: 0, editaO4: 0, editaAmbar: 0 }, tecnico: { editaO1: 0, editaO4: 0, editaAmbar: 0 }, costos: { editaO1: 0, editaO4: 0, editaAmbar: 0 } }],
+    ['2026-10-26', 'Marcar si se realizó: quien hizo la orden, el Gerente y Dirección (el técnico todavía no).', { admin: { realizado: 1 }, gerente: { realizado: 1 }, ventas: { realizado: 1 }, atencion: { realizado: 0 }, tecnico: { realizado: 0 }, costos: { realizado: 0 } }],
+    ['2026-10-26', 'Borrar (cotizaciones, órdenes, usuarios, roles, catálogos): solo Dirección.', { admin: { borra: 1 }, gerente: { borra: 0 }, ventas: { borra: 0 }, atencion: { borra: 0 }, tecnico: { borra: 0 }, costos: { borra: 0 } }],
+    ['2026-10-26', 'Técnico: ve su solicitud de compra, no las de otros, y no ve montos de compras.', { tecnico: { jade: 1, perla: 0, 'perm:compras.importes': 0 } }],
     ['2026-10-21', 'Prospección: cada quien lo suyo (quien ve toda su sucursal en ventas, todos los de su sucursal); el técnico no prospecta.', { ventas: { granate: 1, cuarzo: 0 }, atencion: { granate: 1, cuarzo: 1 }, tecnico: { granate: 0, cuarzo: 0 } }],
     ['2026-10-19', 'Personal: quien ve órdenes ve nombre y puesto del personal activo, para asignarlo a una orden; la ficha y los datos sensibles, solo Gerente y Dirección.', { gerente: { obsidiana: 1, fichaEmp: 1, clabe: 1 }, ventas: { obsidiana: 1, fichaEmp: 0, clabe: 0 }, atencion: { obsidiana: 1, fichaEmp: 0, clabe: 0 }, tecnico: { obsidiana: 1, fichaEmp: 0, clabe: 0 }, costos: { obsidiana: 0, fichaEmp: 0, clabe: 0 } }],
   ];
-  const NOMBRE = Object.fromEntries(DATOS.flatMap(([, f]) => f.map(([k, t]) => [k, t])).concat(REPORTES.map(([k, t]) => ['rep:' + k, t]), PERM.catalogo.map(p => ['perm:' + p.clave, 'puede: ' + p.nombre])));
+  const NOMBRE = Object.fromEntries(DATOS.flatMap(([, f]) => f.map(([k, t]) => [k, t])).concat(REPORTES.map(([k, t]) => ['rep:' + k, t]), ACCIONES, PERM.catalogo.map(p => ['perm:' + p.clave, 'puede: ' + p.nombre])));
   console.log('Reglas acordadas:');
   for (const [fecha, regla, esperado] of REGLAS) {
     const fallan = Object.entries(esperado).flatMap(([rol, filas]) => Object.entries(filas).filter(([k, v]) => VE[rol][k] !== !!v)
@@ -227,6 +256,8 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
     tabla('Reporte', REPORTES.map(([k, t]) => [t, ROLES.map(([rol]) => si(VE[rol]['rep:' + k]))])),
     '',
     '## Qué puede hacer',
+    '',
+    tabla('Acción (se intenta de verdad)', ACCIONES.map(([k, t]) => [t, ROLES.map(([rol]) => si(VE[rol][k]))])),
     '',
     tabla('Permiso', PERM.catalogo.map(p => [`${p.seccion} · ${p.nombre}`, ROLES.map(([rol]) => si(rol === 'admin' || permisosDe(rol).has(p.clave)))])),
     '',

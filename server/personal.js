@@ -216,7 +216,7 @@ module.exports = function personal(app, db, h) {
   app.get('/api/personal/catalogos', h((req, res) => res.json({ puestos: PUESTOS, periodos: PERIODOS, contratos: CONTRATOS, licencias: LICENCIAS, documentos: DOCUMENTOS, incidencias: INCIDENCIAS, papeles: PAPELES })));
   // Para asignar gente a una orden: solo nombre y puesto de los activos de su sucursal.
   app.get('/api/personal/para-asignar', h((req, res) => {
-    if (!P.puede(req, 'ventas.ver')) return negar(res);
+    if (!P.puede(req, 'ordenes.ver')) return negar(res);
     res.json(db.prepare('SELECT id, nombre, puesto, sucursal_id, usuario_id IS NOT NULL AS con_cuenta FROM personal WHERE activo = 1 ORDER BY nombre').all());
   }));
   app.get('/api/personal', h((req, res) => {

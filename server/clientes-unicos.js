@@ -280,7 +280,7 @@ module.exports = function clientesUnicos(app, db, h) {
   // Todos los clientes con su ID (para las listas de las plantillas y los buscadores).
   app.get('/api/clientes/catalogo', h((req, res) => {
     // Solo los de la sucursal: los dio de alta o ha trabajado con ellos.
-    res.json(db.prepare('SELECT * FROM clientes c WHERE (cliente_en_alcance(c.sucursal_id, c.id) OR EXISTS (SELECT 1 FROM leads lv WHERE lv.cliente_id = c.id)) ORDER BY lower(COALESCE(empresa_contacto, nombre))').all().map(resumen));
+    res.json(db.prepare('SELECT * FROM clientes c WHERE (cliente_en_alcance(c.sucursal_id, c.id, c.capturado_por) OR EXISTS (SELECT 1 FROM leads lv WHERE lv.cliente_id = c.id)) ORDER BY lower(COALESCE(empresa_contacto, nombre))').all().map(resumen));
   }));
   app.get('/api/clientes/duplicados', h((req, res) => {
     if (!esAdmin(req)) return res.status(403).json({ error: 'Solo un administrador revisa duplicados' });

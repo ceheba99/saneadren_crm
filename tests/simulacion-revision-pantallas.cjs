@@ -174,28 +174,28 @@ const PDF = Buffer.from('%PDF-1.4\n% prueba\n%%EOF');
   [s, j] = await pedir('PUT', '/leads/' + r1.id, T.ventas, { version: await vv(r1.id), estatus: 'abierto' });
   revisa(s === 403 && /administración/.test(j.error || ''), 'el vendedor (sin permiso de cambiar importes) ya no la regresa a cotización', [s, j.error]);
   [s] = await pedir('PUT', '/leads/' + r1.id, T.ventas, { version: await vv(r1.id), estatus: 'perdido', motivo_perdida: 'Ya no lo necesita el cliente' }); revisa(s === 403, 'ni la descarta como no aceptada', s);
-  [s] = await pedir('PUT', '/leads/' + r1.id, T.atencion, { version: await vv(r1.id), estatus: 'abierto' }); revisa(s === 200, 'Atención (sí puede cambiar importes) la regresa a cotización', s);
+  [s] = await pedir('PUT', '/leads/' + r1.id, T.admin, { version: await vv(r1.id), estatus: 'abierto' }); revisa(s === 200, 'Dirección (puede cambiar importes) la regresa a cotización (Atención ya no: la orden no es suya, 2026-10-26)', s);
   [s] = await pedir('PUT', '/leads/' + r1.id, T.ventas, { version: await vv(r1.id), partidas_json: ptd(8000), valor: 8000, iva_modo: 'mas_iva' }); revisa(s === 200, 'ya como cotización, el vendedor ajusta el precio a $8,000', s);
   [s] = await pedir('PUT', '/leads/' + r1.id, T.ventas, { version: await vv(r1.id), estatus: 'ganado', fecha_servicio: HOY, partidas_json: ptd(8000), valor: 8000, iva_modo: 'mas_iva' }); revisa(s === 200, 'y la vuelve a ganar', s);
   [, j] = await pedir('GET', '/leads/' + r1.id, T.admin);
   revisa((j.historial || []).some(h => /Se volvió a ganar con otro importe: \$11,600\.00 → \$9,280\.00.*PDF/.test(h.texto || '')), 'el historial avisa: otro importe ($11,600 → $9,280 con IVA) y que el PDF anterior ya no vale', (j.historial || []).slice(0, 3).map(h => h.texto));
-  [s] = await pedir('PUT', '/leads/' + r1.id, T.atencion, { version: await vv(r1.id), estatus: 'abierto' });
-  [s] = await pedir('PUT', '/leads/' + r1.id, T.atencion, { version: await vv(r1.id), estatus: 'ganado', fecha_servicio: HOY, partidas_json: ptd(8000), valor: 8000, iva_modo: 'mas_iva' });
+  [s] = await pedir('PUT', '/leads/' + r1.id, T.admin, { version: await vv(r1.id), estatus: 'abierto' });
+  [s] = await pedir('PUT', '/leads/' + r1.id, T.admin, { version: await vv(r1.id), estatus: 'ganado', fecha_servicio: HOY, partidas_json: ptd(8000), valor: 8000, iva_modo: 'mas_iva' });
   [, j] = await pedir('GET', '/leads/' + r1.id, T.admin);
   revisa((j.historial || []).filter(h => /Se volvió a ganar con otro importe/.test(h.texto || '')).length === 1, 'si se vuelve a ganar con el mismo importe, no hay aviso de más', s);
   // Realizada: no se regresa a cotización hasta que Dirección la deja «por realizar».
   [s] = await pedir('POST', '/leads/' + r1.id + '/ejecucion', T.admin, { estado: 'realizado', fecha: HOY });
-  [s, j] = await pedir('PUT', '/leads/' + r1.id, T.atencion, { version: await vv(r1.id), estatus: 'abierto' });
+  [s, j] = await pedir('PUT', '/leads/' + r1.id, T.admin, { version: await vv(r1.id), estatus: 'abierto' });
   revisa(s === 409 && /realizada.*Dirección/.test(j.error || ''), 'una orden REALIZADA no se regresa a cotización (antes se salía de las ventas)', [s, j.error]);
   [s] = await pedir('POST', '/leads/' + r1.id + '/ejecucion', T.admin, { estado: 'pendiente', motivo: 'El cliente cambió lo que se hará' });
-  [s] = await pedir('PUT', '/leads/' + r1.id, T.atencion, { version: await vv(r1.id), estatus: 'abierto' }); revisa(s === 200, 'cuando Dirección la deja «por realizar», ya se puede regresar', s);
+  [s] = await pedir('PUT', '/leads/' + r1.id, T.admin, { version: await vv(r1.id), estatus: 'abierto' }); revisa(s === 200, 'cuando Dirección la deja «por realizar», ya se puede regresar', s);
   // Técnico asignado: solo ve órdenes.
   let [r2] = await cotOrden(7000, { tecnico_id: ID.tecnico });
   [s] = await pedir('GET', '/leads/' + r2.id, T.tecnico); revisa(s === 200, 'el técnico ve la orden que tiene asignada', s);
-  [s] = await pedir('PUT', '/leads/' + r2.id, T.atencion, { version: await vv(r2.id), estatus: 'abierto' });
+  [s] = await pedir('PUT', '/leads/' + r2.id, T.admin, { version: await vv(r2.id), estatus: 'abierto' });
   [s] = await pedir('GET', '/leads/' + r2.id, T.tecnico); revisa(s === 404, 'si regresa a cotización, el técnico deja de verla (ni su precio)', s);
   [s, j] = await pedir('GET', '/leads', T.tecnico); revisa(!j.some(l => l.id === r2.id), 'tampoco en sus listas', s);
-  [s] = await pedir('PUT', '/leads/' + r2.id, T.atencion, { version: await vv(r2.id), estatus: 'ganado', fecha_servicio: HOY, partidas_json: ptd(7000), valor: 7000, iva_modo: 'mas_iva' });
+  [s] = await pedir('PUT', '/leads/' + r2.id, T.admin, { version: await vv(r2.id), estatus: 'ganado', fecha_servicio: HOY, partidas_json: ptd(7000), valor: 7000, iva_modo: 'mas_iva' });
   [s, j] = await pedir('GET', '/leads/' + r2.id, T.tecnico); revisa(s === 200 && j.tecnico_id === ID.tecnico, 'al volverse orden, la ve otra vez (su asignación no se perdió)', s);
   // Una cotización no aceptada la reabre quien la edita (nunca fue orden).
   const [, cp] = await pedir('POST', '/leads', T.ventas, { cliente_id: cli.id, direccion: 'Planta', canal_id: canales[0].id, servicio_id: servicios[0].id, responsable_id: ID.ventas, forzar_duplicado: true, iva_modo: 'mas_iva', partidas_json: ptd(3000), valor: 3000, fecha_cotizacion: HOY });

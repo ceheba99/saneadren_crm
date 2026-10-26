@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Saneadren · Cotizaciones y Servicios</title>
-<link rel="stylesheet" href="styles.css?v=ay1">
+<link rel="stylesheet" href="styles.css?v=pf1">
 <link rel="stylesheet" href="servicios-tabla.css">
 <link rel="stylesheet" href="flujo.css?v=cel1">
 </head>
@@ -30,9 +30,9 @@
       <div class="menu-grupo perm-ventas-ver" data-grupo="ventas">
         <button type="button" class="menu-grupo-btn" aria-expanded="false"><span class="menu-icono" aria-hidden="true">💼</span>Ventas<span class="menu-flecha" aria-hidden="true">▾</span></button>
         <div class="menu-sub">
-          <button type="button" class="menu-item perm-ventas-ver" data-vista="alta"><span class="menu-icono" aria-hidden="true">➕</span>Nuevo contacto</button>
-          <button type="button" class="menu-item perm-ventas-ver" data-vista="clientes"><span class="menu-icono" aria-hidden="true">👥</span>Contactos</button>
-          <button type="button" class="menu-item perm-ventas-ver perm-ordenes-importes" data-vista="generador"><span class="menu-icono" aria-hidden="true">📒</span>Generador</button>
+          <button type="button" class="menu-item perm-contactos-editar" data-vista="alta"><span class="menu-icono" aria-hidden="true">➕</span>Nuevo contacto</button>
+          <button type="button" class="menu-item perm-contactos-ver" data-vista="clientes"><span class="menu-icono" aria-hidden="true">👥</span>Contactos</button>
+          <button type="button" class="menu-item perm-generador-ver perm-ordenes-importes" data-vista="generador"><span class="menu-icono" aria-hidden="true">📒</span>Generador</button>
           <button type="button" class="menu-item perm-ventas-ver" data-vista="leads"><span class="menu-icono" aria-hidden="true">📄</span>Cotizaciones</button>
           <button type="button" class="menu-item perm-prospeccion-ver" data-vista="prospeccion"><span class="menu-icono" aria-hidden="true">🔎</span>Prospección</button>
         </div>
@@ -42,9 +42,9 @@
         <div class="menu-sub">
           <button type="button" class="menu-item solo-cobranza perm-cxc-ver" data-vista="cobrar" id="nav-cobrar"><span class="menu-icono" aria-hidden="true">📥</span>Cuentas por cobrar</button>
           <button type="button" class="menu-item solo-cobranza perm-cxp-ver" data-vista="pagar" id="nav-pagar"><span class="menu-icono" aria-hidden="true">📤</span>Cuentas por pagar</button>
-          <button type="button" class="menu-item perm-compras-ver" data-vista="solicitudes"><span class="menu-icono" aria-hidden="true">📝</span>Solicitudes de compra</button>
-          <button type="button" class="menu-item perm-compras-ver" data-vista="compras"><span class="menu-icono" aria-hidden="true">🛒</span>Órdenes de compra</button>
-          <button type="button" class="menu-item perm-ordenes-importes" data-vista="resultados"><span class="menu-icono" aria-hidden="true">📊</span>Resultados</button>
+          <button type="button" class="menu-item perm-solicitudes-ver" data-vista="solicitudes"><span class="menu-icono" aria-hidden="true">📝</span>Solicitudes de compra</button>
+          <button type="button" class="menu-item perm-ordenes_compra-ver" data-vista="compras"><span class="menu-icono" aria-hidden="true">🛒</span>Órdenes de compra</button>
+          <button type="button" class="menu-item perm-reportes-analisis" data-vista="resultados"><span class="menu-icono" aria-hidden="true">📊</span>Resultados</button>
         </div>
       </div>
       <div class="menu-grupo" data-grupo="ajustes">
@@ -139,7 +139,7 @@
 </div>
       <div class="util-4">
         <button class="btn btn-primario" id="btn-guardar-contacto-nuevo">Guardar contacto</button>
-        <button class="btn btn-secundario perm-ordenes-importes" id="btn-guardar-lead" title="Guarda el contacto y abre su ficha, donde están Crear cotización y Crear orden de servicio">Guardar y crear cotización</button>
+        <button class="btn btn-secundario perm-contactos-editar perm-cotizaciones-editar" id="btn-guardar-lead" title="Guarda el contacto y abre su ficha, donde están Crear cotización y Crear orden de servicio">Guardar y crear cotización</button>
       </div>
     </div>
   </section>
@@ -241,7 +241,7 @@
   <section class="vista" id="vista-clientes">
     <div class="vista-encabezado">
       <div><h2>Contactos</h2><p class="ayuda">Personas y empresas. Abre un contacto para ver sus cotizaciones y órdenes, o para crear una nueva.</p></div>
-      <div class="btn-group"><button type="button" class="btn btn-outline solo-general" id="btn-revisar-duplicados">Revisar duplicados</button><button type="button" class="btn btn-primario" onclick="cambiarVista('alta')">➕ Nuevo contacto</button></div>
+      <div class="btn-group"><button type="button" class="btn btn-outline solo-general" id="btn-revisar-duplicados">Revisar duplicados</button><button type="button" class="btn btn-primario perm-contactos-editar" onclick="cambiarVista('alta')">➕ Nuevo contacto</button></div>
     </div>
 
     <div class="rc-grid">
@@ -702,7 +702,7 @@
           </div>
           <div class="campo-modal" id="wrap-vigencia-hasta"><label for="ed-vigencia-hasta">Vigencia hasta (obligatoria si tiene vigencia)</label><input type="date" id="ed-vigencia-hasta"></div>
           <div class="campo-modal solo-orden"><label for="ed-equipo">Equipo (unidad, opcional)</label><input type="text" id="ed-equipo" maxlength="200" placeholder="Ej. E-37-04"></div>
-          <div class="campo-modal full solo-orden" id="ed-equipo-campo"><span class="etiqueta-campo">Técnico responsable y personal (opcional)</span><div id="ed-equipo-personal" data-campo></div><small class="ayuda">El responsable ve esta orden y la marca realizada (si tiene cuenta en el sistema). El personal se da de alta en Ajustes → Personal.</small></div>
+          <div class="campo-modal full solo-orden" id="ed-equipo-campo"><span class="etiqueta-campo">Técnico responsable y personal (opcional)</span><div id="ed-equipo-personal" data-campo></div><small class="ayuda">El responsable ve esta orden con su cuenta en el sistema (si la tiene). Si se realizó lo marca quien hizo la orden, el gerente o Dirección. El personal se da de alta en Ajustes → Personal.</small></div>
           <div class="campo-modal solo-orden"><label for="ed-operador">Operadores externos (opcional)</label><input type="text" id="ed-operador" maxlength="300" placeholder="Si no están en Personal (ej. pipa rentada)"></div>
           <div class="campo-modal solo-orden"><label for="ed-manifiestos">Manifiestos (opcional)</label><input type="text" id="ed-manifiestos" maxlength="200" placeholder="Folio(s) de manifiesto"></div>
           <div class="campo-modal solo-orden"><label for="ed-tiros">Tiros (opcional)</label><input type="text" id="ed-tiros" maxlength="60" placeholder="Ej. 2"></div>
@@ -724,13 +724,13 @@
         <div class="btn-group">
           <span id="estado-guardado-registro" class="estado-guardado" role="status"></span>
           <button class="btn btn-secundario" id="btn-guardar-ficha" style="display:none">Guardar cambios de este registro</button>
-          <button class="btn btn-ghost diseno-nav-usuarios perm-ordenes-importes" id="btn-recomprar" title="Crea otra orden de servicio con los mismos datos — útil para servicio recurrente">⧉ Duplicar esta orden de servicio</button>
+          <button class="btn btn-ghost diseno-nav-usuarios perm-ordenes-editar perm-ordenes-importes" id="btn-recomprar" title="Crea otra orden de servicio con los mismos datos — útil para servicio recurrente">⧉ Duplicar esta orden de servicio</button>
           <button class="btn btn-outline diseno-nav-usuarios" id="btn-reabrir">↺ Reabrir cotización</button>
           <span id="btn-generar-cotizacion" hidden></span>
         </div>
         <div class="zona-peligro util-18">
           <button class="btn btn-peligro diseno-btn-marcar-perdido" id="btn-marcar-perdido">✕ Descartar cotización</button>
-          <button class="btn-eliminar perm-ordenes-eliminar" id="btn-eliminar-lead">Eliminar este registro</button>
+          <button class="btn-eliminar solo-general" id="btn-eliminar-lead">Eliminar este registro</button>
         </div>
       </div>
 
@@ -842,7 +842,7 @@
 
       <div class="modal-section" data-plegable="registros-contacto">
         <div class="relacion-registros"><div><div class="seccion-tit" data-plegable-cabecera>Cotizaciones y servicios de este contacto</div><p class="ayuda">Una cotización abierta es una propuesta. Al aceptarla, el mismo registro pasa a servicio contratado; conserva su número e importe.</p></div>
-        <div class="btn-group"><button class="btn btn-primario perm-ordenes-importes" id="btn-contacto-cotizar">📄 Crear cotización</button><button class="btn btn-secundario perm-ordenes-importes" id="btn-recapturar-servicio" title="Para cuando el cliente ya confirmó: registra el servicio sin pasar por cotización">🧾 Crear orden de servicio</button></div></div>
+        <div class="btn-group"><button class="btn btn-primario perm-cotizaciones-editar perm-ordenes-importes" id="btn-contacto-cotizar">📄 Crear cotización</button><button class="btn btn-secundario perm-ordenes-editar perm-ordenes-importes" id="btn-recapturar-servicio" title="Para cuando el cliente ya confirmó: registra el servicio sin pasar por cotización">🧾 Crear orden de servicio</button></div></div>
         <div class="ficha-meta" id="fc-meta"></div>
         <div id="fc-servicios" class="servicios-list"></div>
       </div>
@@ -1186,7 +1186,7 @@
       </div>
       <div class="campo"><label for="sn-ubicacion">Ubicación del servicio (obligatorio) <small class="label-nota">(puedes cambiar el domicilio propuesto)</small></label><input id="sn-ubicacion" type="text"></div>
       <div id="sn-datos-orden" hidden>
-        <div class="campo" id="sn-equipo-campo"><span class="etiqueta-campo">Técnico responsable y personal (opcional)</span><div id="sn-equipo-personal" data-campo></div><small class="ayuda">De Personal. El responsable con cuenta ve la orden y la marca realizada.</small></div>
+        <div class="campo" id="sn-equipo-campo"><span class="etiqueta-campo">Técnico responsable y personal (opcional)</span><div id="sn-equipo-personal" data-campo></div><small class="ayuda">De Personal. El responsable con cuenta ve la orden.</small></div>
         <div class="form-grid-2">
           <div class="campo"><label for="sn-equipo">Equipo (unidad, opcional)</label><input type="text" id="sn-equipo" maxlength="200" placeholder="Ej. E-37-04"></div>
           <div class="campo"><label for="sn-operador">Operadores externos (opcional)</label><input type="text" id="sn-operador" maxlength="300" placeholder="Si no están en Personal (ej. pipa rentada)"></div>
@@ -1261,13 +1261,14 @@
 <!-- ?v= obliga a los navegadores (sobre todo celulares) a tomar la versión nueva tras publicar. -->
 <script src="ui.js?v=cer1"></script>
 <script src="ayuda.js?v=ay1"></script>
-<script src="permisos.js?v=perm3"></script>
-<script src="roles.js?v=cob2"></script>
+<script src="solo-lectura.js?v=pf2"></script>
+<script src="permisos.js?v=pf1"></script>
+<script src="roles.js?v=pf1"></script>
 <script src="importes.js?v=red1"></script>
-<script src="servicios-tabla.js?v=imp1"></script>
+<script src="servicios-tabla.js?v=pf1"></script>
 <script src="flujo.js?v=rev1"></script>
 <script src="cuentas.js?v=rev1"></script>
-<script src="finanzas.js?v=ay1"></script>
+<script src="finanzas.js?v=pf1"></script>
 <script src="calendario.js?v=aud1"></script>
 <script src="tablero.js?v=ay1"></script>
 <script src="bitacora.js?v=hc1"></script>
@@ -1275,11 +1276,11 @@
 <script src="solicitudes.js?v=rev1"></script>
 <script src="carga-generador.js?v=con1"></script>
 <script src="sucursales.js?v=perm2"></script>
-<script src="app.js?v=ay1"></script>
-<script src="personal.js?v=rev1"></script>
+<script src="app.js?v=pf2"></script>
+<script src="personal.js?v=pf1"></script>
 <script src="buscador.js?v=suc1"></script>
 <script src="demo.js?v=demo1"></script>
-<script src="prospeccion.js?v=pro1"></script>
+<script src="prospeccion.js?v=pf1"></script>
 <script src="inicio.js?v=ini3"></script>
 </body>
 </html>

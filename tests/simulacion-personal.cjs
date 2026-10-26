@@ -39,7 +39,7 @@ const CLABE = '014680655039528945', CLABE2 = '012180001234567899';
   [, j] = await pedir('POST', '/sucursales', A, { nombre: 'Ciudad de México', clave: 'CDMX' }); const cdmx = j;
   // Rol «Supervisor de campo»: ve el personal (sin datos sensibles) y registra incidencias.
   [, j] = await pedir('POST', '/roles', A, { nombre: 'Supervisor de campo' }); const SUP = j.clave;
-  [s, j] = await pedir('PUT', '/roles/' + SUP + '/permisos', A, { permisos: ['personal.ver', 'personal.editar'], alcances: { ventas: 2, cxc: 0, cxp: 0, compras: 1 } });
+  [s, j] = await pedir('PUT', '/roles/' + SUP + '/permisos', A, { permisos: ['personal.ver', 'personal.editar'], alcances: { ordenes: 2, solicitudes: 1, ordenes_compra: 1 } });
   revisa(s === 200, 'rol «Supervisor de campo»: ve y edita personal, sin datos sensibles', j);
   [s, j] = await pedir('PUT', '/roles/' + SUP + '/permisos', A, { permisos: ['personal.sensibles'], alcances: {} }); revisa(s === 400, '«Datos sensibles» sin «Ver personal» no tiene sentido (no se guarda)', j);
   const T = {}, ID = {};

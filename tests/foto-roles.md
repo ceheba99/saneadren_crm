@@ -10,15 +10,15 @@ Dirección la revisa y la aprueba. Si un cambio altera lo que ve un rol, la prue
 |---|:-:|:-:|:-:|:-:|:-:|:-:|
 | 🏠 Inicio | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
 | 📅 Calendario | ✔ | ✔ | ✔ | ✔ | ✔ | — |
-| ➕ Nuevo contacto | ✔ | ✔ | ✔ | ✔ | ✔ | — |
-| 👥 Contactos | ✔ | ✔ | ✔ | ✔ | ✔ | — |
+| ➕ Nuevo contacto | ✔ | ✔ | ✔ | ✔ | — | — |
+| 👥 Contactos | ✔ | ✔ | ✔ | ✔ | — | — |
 | 📒 Generador | ✔ | ✔ | ✔ | ✔ | — | — |
 | 📄 Cotizaciones | ✔ | ✔ | ✔ | ✔ | ✔ | — |
 | 🔎 Prospección | ✔ | ✔ | ✔ | ✔ | — | — |
 | 📥 Cuentas por cobrar | ✔ | ✔ | ✔ | ✔ | — | — |
 | 📤 Cuentas por pagar | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
 | 📝 Solicitudes de compra | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
-| 🛒 Órdenes de compra | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| 🛒 Órdenes de compra | ✔ | ✔ | ✔ | ✔ | — | ✔ |
 | 📊 Resultados | ✔ | ✔ | ✔ | ✔ | — | — |
 | 👷 Personal | ✔ | ✔ | — | — | — | — |
 | 📚 Catálogos | ✔ | ✔ | — | — | — | ✔ |
@@ -29,10 +29,15 @@ Dirección la revisa y la aprueba. Si un cambio altera lo que ve un rol, la prue
 
 | Área | Dirección | Gerente | Ventas | Atención | Técnico | Costos y compras |
 |---|:-:|:-:|:-:|:-:|:-:|:-:|
-| Contactos, cotizaciones y órdenes | Todo | Toda su sucursal | Lo suyo | Toda su sucursal | Lo suyo | Nada |
+| Contactos | Todo | Toda su sucursal ✎ | Lo suyo ✎ | Toda su sucursal ✎ | Nada | Nada |
+| Prospección | Todo | Toda su sucursal ✎ | Lo suyo ✎ | Toda su sucursal ✎ | Nada | Nada |
+| Generador | Todo | Toda su sucursal | Lo suyo | Toda su sucursal | Nada | Nada |
+| Cotizaciones | Todo | Toda su sucursal ✎ | Lo suyo ✎ | Toda su sucursal ✎ | Nada | Nada |
+| Órdenes de servicio | Todo | Toda su sucursal ✎ | Lo suyo ✎ | Toda su sucursal ✎ | Lo suyo | Nada |
 | Cuentas por cobrar | Todo | Toda su sucursal | Lo suyo | Toda su sucursal | Solo lo que él registra | Nada |
 | Cuentas por pagar | Todo | Toda su sucursal | Lo suyo | Lo suyo | Lo suyo | Toda su sucursal |
-| Solicitudes y órdenes de compra | Todo | Toda su sucursal | Lo suyo | Lo suyo | Lo suyo | Toda su sucursal |
+| Solicitudes de compra | Todo | Toda su sucursal ✎ | Lo suyo ✎ | Lo suyo ✎ | Lo suyo ✎ | Toda su sucursal ✎ |
+| Órdenes de compra | Todo | Toda su sucursal | Lo suyo | Lo suyo | Nada | Toda su sucursal |
 
 ## Qué datos le llegan
 
@@ -41,7 +46,7 @@ Dirección la revisa y la aprueba. Si un cambio altera lo que ve un rol, la prue
 | Dato | Dirección | Gerente | Ventas | Atención | Técnico | Costos y compras |
 |---|:-:|:-:|:-:|:-:|:-:|:-:|
 | Orden de Valeria (vendedora), asignada a Tomás (técnico): cliente y servicio | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
-| … y su importe | ✔ | ✔ | ✔ | ✔ | — | — |
+| … y su importe | ✔ | ✔ | ✔ | ✔ | ✔ | — |
 | Cotización de Bruno (otro vendedor de la sucursal): cliente | ✔ | ✔ | — | ✔ | — | — |
 | … y su importe | ✔ | ✔ | — | ✔ | — | — |
 | Orden de Bruno asignada a Tito (otro técnico): cliente | ✔ | ✔ | — | ✔ | — | ✔ |
@@ -102,15 +107,21 @@ Dirección la revisa y la aprueba. Si un cambio altera lo que ve un rol, la prue
 
 ## Qué puede hacer
 
+| Acción (se intenta de verdad) | Dirección | Gerente | Ventas | Atención | Técnico | Costos y compras |
+|---|:-:|:-:|:-:|:-:|:-:|:-:|
+| Editar la orden de Valeria (cliente, servicio, técnico…) | ✔ | ✔ | ✔ | — | — | — |
+| Editar la orden de Bruno (otro vendedor) | ✔ | ✔ | — | — | — | — |
+| Editar el contacto de Valeria | ✔ | ✔ | ✔ | — | — | — |
+| Marcar realizada una orden de Valeria | ✔ | ✔ | ✔ | — | — | — |
+| Borrar una cotización de Valeria | ✔ | — | — | — | — | — |
+
 | Permiso | Dirección | Gerente | Ventas | Atención | Técnico | Costos y compras |
 |---|:-:|:-:|:-:|:-:|:-:|:-:|
-| Contactos y clientes · Prospección | ✔ | ✔ | ✔ | ✔ | — | — |
 | Contactos y clientes · Exportar a Excel | ✔ | ✔ | — | — | — | — |
-| Cotizaciones y órdenes · Ver importes | ✔ | ✔ | ✔ | ✔ | — | — |
+| Cotizaciones y órdenes · Ver importes | ✔ | ✔ | ✔ | ✔ | ✔ | — |
+| Cotizaciones y órdenes · Editar lo de otros | ✔ | ✔ | — | — | — | — |
 | Cotizaciones y órdenes · Cargar el generador | ✔ | ✔ | — | ✔ | — | — |
 | Cotizaciones y órdenes · Cambiar importe o IVA de una orden | ✔ | ✔ | — | ✔ | — | — |
-| Cotizaciones y órdenes · Actualizar estatus del servicio | ✔ | ✔ | ✔ | ✔ | ✔ | — |
-| Cotizaciones y órdenes · Eliminar cotizaciones y órdenes | ✔ | ✔ | — | — | — | — |
 | Cuentas por cobrar · Registrar cobros | ✔ | ✔ | ✔ | ✔ | ✔ | — |
 | Cuentas por cobrar · Confirmar cobros | ✔ | ✔ | ✔ | ✔ | — | — |
 | Cuentas por cobrar · Sus cobros entran ya confirmados | ✔ | ✔ | — | ✔ | — | — |
@@ -119,9 +130,11 @@ Dirección la revisa y la aprueba. Si un cambio altera lo que ve un rol, la prue
 | Cuentas por pagar · Registrar gastos de una orden | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
 | Cuentas por pagar · Ver los gastos de sus órdenes | ✔ | ✔ | ✔ | — | — | — |
 | Cuentas por pagar · Mover dinero | ✔ | ✔ | — | — | — | ✔ |
+| Compras · Ver montos de compras | ✔ | ✔ | ✔ | ✔ | — | ✔ |
 | Compras · Gestionar compras | ✔ | ✔ | — | — | — | ✔ |
 | Compras · Aprobar sus propias solicitudes | ✔ | ✔ | — | — | — | — |
 | Compras · Autorizar órdenes de compra | ✔ | ✔ | — | — | — | — |
+| Reportes · Análisis comercial | ✔ | ✔ | ✔ | ✔ | — | — |
 | Reportes · Panorama general | ✔ | ✔ | — | — | — | — |
 | Catálogos · Catálogos compartidos | ✔ | ✔ | — | — | — | ✔ |
 | Personal · Ver personal | ✔ | ✔ | — | — | — | — |
@@ -145,6 +158,10 @@ Dirección la revisa y la aprueba. Si un cambio altera lo que ve un rol, la prue
 - **2026-10-19** · Técnico: solo las órdenes que tiene asignadas.
 - **2026-10-19** · Costos y compras: ve folio y cliente de las órdenes para ligar gastos, sin montos de venta ni cobranza; todas las cuentas por pagar y compras de su sucursal.
 - **2026-10-21** · Técnico, en cuentas por cobrar: solo los cobros que él registró (sin saldos ni vencidos).
-- **2026-10-21** · Técnico sin «Ver importes»: sus órdenes sin precios ni totales, sin Generador ni Resultados.
+- **2026-10-26** · Técnico: ve el importe de sus órdenes, pero no las modifica; sin Generador ni Resultados (antes, 2026-10-21, no veía importes).
+- **2026-10-26** · Contactos, cotizaciones y órdenes: los edita quien los capturó o los tiene a su nombre, el Gerente y Dirección. Quien solo los ve (Atención con lo de otra persona, Técnico, Compras) no los cambia.
+- **2026-10-26** · Marcar si se realizó: quien hizo la orden, el Gerente y Dirección (el técnico todavía no).
+- **2026-10-26** · Borrar (cotizaciones, órdenes, usuarios, roles, catálogos): solo Dirección.
+- **2026-10-26** · Técnico: ve su solicitud de compra, no las de otros, y no ve montos de compras.
 - **2026-10-21** · Prospección: cada quien lo suyo (quien ve toda su sucursal en ventas, todos los de su sucursal); el técnico no prospecta.
 - **2026-10-19** · Personal: quien ve órdenes ve nombre y puesto del personal activo, para asignarlo a una orden; la ficha y los datos sensibles, solo Gerente y Dirección.

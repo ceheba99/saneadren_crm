@@ -18,13 +18,11 @@
 const TODOS = ['gerente', 'ventas', 'atencion', 'tecnico', 'costos'];
 const CATALOGO = [
   // [clave, sección, nombre, explicación, roles que lo tienen al inicio (además de Dirección)]
-  ['prospeccion.ver', 'Contactos y clientes', 'Prospección', 'Buscar establecimientos y darles seguimiento: los suyos, o los de toda su sucursal si ve las ventas de la sucursal', ['gerente', 'ventas', 'atencion']],
   ['clientes.exportar', 'Contactos y clientes', 'Exportar a Excel', 'Descargar contactos, cotizaciones, cuentas y órdenes de compra en Excel', ['gerente']],
-  ['ordenes.importes', 'Cotizaciones y órdenes', 'Ver importes', 'Precios, totales e IVA de cotizaciones y órdenes, el Generador y Resultados. Sin esto ve sus órdenes para trabajar (cliente, dirección, fecha y servicio) sin dinero, y no cotiza', ['gerente', 'ventas', 'atencion']],
+  ['ordenes.importes', 'Cotizaciones y órdenes', 'Ver importes', 'Precios, totales e IVA de las cotizaciones y órdenes que ve. Sin esto ve sus órdenes para trabajar (cliente, dirección, fecha y servicio) sin dinero', ['gerente', 'ventas', 'atencion', 'tecnico']],
+  ['ventas.editar_otros', 'Cotizaciones y órdenes', 'Editar lo de otros', 'Cambiar contactos, cotizaciones y órdenes de otras personas de su sucursal, pasarlas a otro responsable y marcar realizadas sus órdenes. Sin esto cada quien edita solo lo que capturó o tiene a su nombre', ['gerente']],
   ['generador.cargar', 'Cotizaciones y órdenes', 'Cargar el generador', 'Subir el Excel del generador de órdenes', ['gerente', 'atencion', 'ventas']],
   ['ordenes.importe_ganada', 'Cotizaciones y órdenes', 'Cambiar importe o IVA de una orden', 'Modificar el importe o el IVA cuando la cotización ya es orden de servicio, y regresar una orden a cotización', ['gerente', 'atencion']],
-  ['ordenes.estatus', 'Cotizaciones y órdenes', 'Actualizar estatus del servicio', 'Marcar si el servicio se realizó, con sus gastos', TODOS],
-  ['ordenes.eliminar', 'Cotizaciones y órdenes', 'Eliminar cotizaciones y órdenes', '', ['gerente']],
   ['cobros.registrar', 'Cuentas por cobrar', 'Registrar cobros', 'Anotar pagos que hizo un cliente', TODOS.filter(r => r !== 'costos')],
   ['cobros.confirmar', 'Cuentas por cobrar', 'Confirmar cobros', 'Revisar y confirmar cobros que están «por confirmar»', TODOS.filter(r => r !== 'tecnico')],
   ['cobros.directo', 'Cuentas por cobrar', 'Sus cobros entran ya confirmados', 'Si no lo tiene, lo que registra queda «por confirmar» para que otra persona lo revise', ['gerente', 'atencion']],
@@ -33,9 +31,11 @@ const CATALOGO = [
   ['gastos.registrar', 'Cuentas por pagar', 'Registrar gastos de una orden', 'Gastos de un servicio, proveedores y plantillas', TODOS],
   ['gastos.ver_orden', 'Cuentas por pagar', 'Ver los gastos de sus órdenes', 'Todos los gastos de las órdenes donde es responsable o técnico, aunque los anote otra persona (para saber cuánto le deja la orden)', ['gerente', 'ventas']],
   ['dinero.mover', 'Cuentas por pagar', 'Mover dinero', 'Pagar a proveedores, cancelar cobros, pagos y cuentas, importar cuentas por pagar y compras directas', ['gerente', 'costos']],
+  ['compras.importes', 'Compras', 'Ver montos de compras', 'Precios y totales de las cotizaciones de proveedores y de las órdenes de compra', ['gerente', 'ventas', 'atencion', 'costos']],
   ['compras.gestionar', 'Compras', 'Gestionar compras', 'Aprobar solicitudes, elegir cotización, hacer y recibir órdenes de compra', ['gerente', 'costos']],
   ['compras.aprobar_propias', 'Compras', 'Aprobar sus propias solicitudes', 'Sin esto, una solicitud propia la aprueba otra persona', ['gerente']],
   ['compras.autorizar', 'Compras', 'Autorizar órdenes de compra', 'Autorizar (se vuelven deuda), cancelar autorizadas y quitar documentos', ['gerente']],
+  ['reportes.analisis', 'Reportes', 'Análisis comercial', 'Contactos nuevos, conversión, vendido y recurrentes de lo que ve', ['gerente', 'ventas', 'atencion']],
   ['reportes.panorama', 'Reportes', 'Panorama general', 'Ventas, cobranza, gastos y utilidad de la empresa', ['gerente']],
   ['catalogos.editar', 'Catálogos', 'Catálogos compartidos', 'Canales, tipos de cliente, centros de costo, unidades, categorías de gasto y descripción y orden de los servicios (los usan todas las sucursales)', ['gerente', 'costos']],
   ['personal.ver', 'Personal', 'Ver personal', 'Lista y fichas del personal de su sucursal (sin datos de pago ni expediente)', ['gerente']],
@@ -43,47 +43,68 @@ const CATALOGO = [
   ['personal.sensibles', 'Personal', 'Datos sensibles del personal', 'CLABE, RFC, CURP, NSS, salario, contrato y documentos del expediente', ['gerente']],
   ['usuarios.administrar', 'Administración', 'Usuarios', 'Crear usuarios, cambiar su rol, contraseña y sucursales', ['gerente']],
 ].map(([clave, seccion, nombre, ayuda, roles]) => ({ clave, seccion, nombre, ayuda, roles }));
-// Áreas y lo que ve cada rol en ellas: 0 nada, 1 lo suyo, 2 toda su sucursal (Dirección: todo).
+// Áreas y lo que ve cada rol en ellas: 0 nada, 1 lo suyo, 2 toda su sucursal, 3 toda la empresa (Dirección: todo).
+// Cada pantalla es su propia área (decidido con Dirección el 2026-10-26). En las que tienen «editable», además de qué ve
+// se decide si edita (✎): sin eso, todo es solo lectura. Contactos, cotizaciones y órdenes se editan solo si son suyos
+// (los capturó o están a su nombre); lo de otros, con «Editar lo de otros» (Gerente).
 const AREAS = [
-  ['ventas', 'Contactos, cotizaciones y órdenes', 'sus clientes y las órdenes donde es responsable o técnico asignado'],
+  ['contactos', 'Contactos', 'los que él dio de alta o atiende', '', true],
+  ['prospeccion', 'Prospección', 'los establecimientos a su nombre', '', true],
+  ['generador', 'Generador', 'las órdenes realizadas donde es responsable'],
+  ['cotizaciones', 'Cotizaciones', 'las que capturó o están a su nombre', '', true],
+  ['ordenes', 'Órdenes de servicio', 'las que capturó, están a su nombre o tiene asignadas como técnico', '', true],
   ['cxc', 'Cuentas por cobrar', 'la cobranza de sus órdenes', 'si puede registrar cobros, solo ve los que él registró (sin saldos ni vencidos)'],
   ['cxp', 'Cuentas por pagar', 'los gastos y facturas que él registró'],
-  ['compras', 'Solicitudes y órdenes de compra', 'lo que él pidió'],
-].map(([clave, nombre, suyo, nada = '']) => ({ clave, nombre, suyo, nada }));
-const NIVELES = ['Nada', 'Lo suyo', 'Toda su sucursal'];
-// Con qué arranca cada rol (decidido con Dirección el 2026-10-19): [ventas, cxc, cxp, compras]. El técnico, en cuentas por
-// cobrar, solo los cobros que él registró (2026-10-21). Atención, en cuentas por pagar, los gastos que ella anota (2026-10-22).
-const ALCANCE_INICIAL = { gerente: [2, 2, 2, 2], ventas: [1, 1, 1, 1], atencion: [2, 2, 1, 1], tecnico: [1, 0, 1, 1], costos: [0, 0, 2, 2] };
-// Permisos virtuales de las áreas: «X.ver» (ve algo) y «X.sucursal» (ve toda su sucursal).
-const VIRTUALES = AREAS.flatMap(a => [a.clave + '.ver', a.clave + '.sucursal']);
-const virtualesDe = niv => AREAS.flatMap(a => [...(niv[a.clave] >= 1 ? [a.clave + '.ver'] : []), ...(niv[a.clave] >= 2 ? [a.clave + '.sucursal'] : [])]);
+  ['solicitudes', 'Solicitudes de compra', 'las que él pidió', '', true],
+  ['ordenes_compra', 'Órdenes de compra', 'las que él hizo o salen de sus solicitudes'],
+].map(([clave, nombre, suyo, nada = '', editable = false]) => ({ clave, nombre, suyo, nada, editable }));
+const NIVELES = ['Nada', 'Lo suyo', 'Toda su sucursal', 'Toda la empresa'];
+const EDITABLES = AREAS.filter(a => a.editable).map(a => a.clave);
+// Con qué arranca cada rol de fábrica (aprobado por Dirección el 2026-10-26), en el orden de AREAS: nivel y «e» si edita.
+const ALCANCE_INICIAL = {
+  gerente: ['2e', '2e', '2', '2e', '2e', '2', '2', '2e', '2'],
+  ventas: ['1e', '1e', '1', '1e', '1e', '1', '1', '1e', '1'],
+  atencion: ['2e', '2e', '2', '2e', '2e', '2', '1', '1e', '1'],
+  tecnico: ['0', '0', '0', '0', '1', '0', '1', '1e', '0'],
+  costos: ['0', '0', '0', '0', '0', '0', '2', '2e', '2'],
+};
+// Permisos virtuales de las áreas: «X.ver» (ve algo), «X.sucursal» (toda su sucursal), «X.empresa» (todas las
+// sucursales) y «X.editar». Además «ventas.ver» y «compras.ver»: ve alguna pantalla de ese grupo (menú e Inicio).
+const VIRTUALES = [...AREAS.flatMap(a => [a.clave + '.ver', a.clave + '.sucursal', a.clave + '.empresa', ...(a.editable ? [a.clave + '.editar'] : [])]), 'ventas.ver', 'compras.ver'];
+const GRUPO_VENTAS = ['contactos', 'prospeccion', 'generador', 'cotizaciones', 'ordenes'], GRUPO_COMPRAS = ['solicitudes', 'ordenes_compra'];
+const virtualesDe = (niv, edita = {}) => [
+  ...AREAS.flatMap(a => [...(niv[a.clave] >= 1 ? [a.clave + '.ver'] : []), ...(niv[a.clave] >= 2 ? [a.clave + '.sucursal'] : []), ...(niv[a.clave] >= 3 ? [a.clave + '.empresa'] : []),
+    ...(a.editable && edita[a.clave] && niv[a.clave] >= 1 ? [a.clave + '.editar'] : [])]),
+  ...(GRUPO_VENTAS.some(a => niv[a] >= 1) ? ['ventas.ver'] : []), ...(GRUPO_COMPRAS.some(a => niv[a] >= 1) ? ['compras.ver'] : []),
+];
 const CLAVES = new Set([...CATALOGO.map(p => p.clave), ...VIRTUALES]);
 const REALES = new Set(CATALOGO.map(p => p.clave));
 // Permiso → los que necesita para tener sentido (y para que la pantalla los marque juntos).
 const DEPENDE = {
-  'prospeccion.ver': ['ventas.ver'],
   'dinero.mover': ['cxp.ver', 'gastos.registrar'],
   'cobros.confirmar': ['cxc.ver'],
   'cobranza.factura': ['cxc.ver'], // crédito y datos de factura: solo quien ve la cobranza
-  'gastos.ver_orden': ['cxp.ver', 'ventas.ver'],
+  'gastos.ver_orden': ['cxp.ver', 'ordenes.ver'],
   'cobros.directo': ['cobros.registrar'],
   'cobros.ajustes': ['cobros.registrar', 'cxc.ver'],
   'compras.aprobar_propias': ['compras.gestionar'],
-  'compras.gestionar': ['compras.sucursal'],
-  'compras.autorizar': ['compras.sucursal'],
-  'ordenes.estatus': ['ventas.ver'],
-  'ordenes.importe_ganada': ['ventas.ver', 'ordenes.importes'],
-  'ordenes.eliminar': ['ventas.ver'],
-  'generador.cargar': ['ventas.sucursal', 'ordenes.importes'], // crea órdenes de cualquier cliente de la sucursal
-  'reportes.panorama': ['ordenes.importes'],
-  'clientes.exportar': ['ordenes.importes'], // el Excel lleva los importes
+  'compras.gestionar': ['solicitudes.sucursal', 'ordenes_compra.sucursal', 'compras.importes'],
+  'compras.autorizar': ['ordenes_compra.sucursal', 'compras.importes'],
+  'ordenes.importe_ganada': ['ordenes.editar', 'ordenes.importes'],
+  'ventas.editar_otros': ['ordenes.sucursal'],
+  'generador.cargar': ['generador.sucursal', 'ordenes.editar', 'ordenes.importes'], // crea órdenes de cualquier cliente de la sucursal
+  'reportes.analisis': ['ordenes.importes'],
+  'reportes.panorama': ['reportes.analisis'],
+  'clientes.exportar': ['ordenes.importes', 'contactos.ver'], // el Excel lleva los importes
   'personal.editar': ['personal.ver'],
   'personal.sensibles': ['personal.ver'],
 };
 const nombreDe = c => {
   const p = CATALOGO.find(x => x.clave === c); if (p) return p.nombre;
   const [area, tipo] = c.split('.'), a = AREAS.find(x => x.clave === area);
-  return a ? `${a.nombre}: ${tipo === 'sucursal' ? 'ver toda su sucursal' : 'ver al menos lo suyo'}` : c;
+  if (c === 'ventas.ver') return 'ver alguna pantalla de ventas';
+  if (c === 'compras.ver') return 'ver solicitudes u órdenes de compra';
+  return a ? `${a.nombre}: ${{ sucursal: 'ver toda su sucursal', empresa: 'ver toda la empresa', editar: 'editar' }[tipo] || 'ver al menos lo suyo'}` : c;
 };
 // Combinaciones sin sentido en un conjunto de permisos: [[permiso, el que le falta], …]
 const faltantes = set => Object.entries(DEPENDE).flatMap(([p, req]) => set.has(p) ? req.filter(r => !set.has(r)).map(r => [p, r]) : []);
@@ -101,78 +122,76 @@ module.exports = function crearPermisos(db, app, h) {
     clave TEXT PRIMARY KEY, nombre TEXT NOT NULL, descripcion TEXT, sistema INTEGER NOT NULL DEFAULT 0,
     activo INTEGER NOT NULL DEFAULT 1, orden INTEGER NOT NULL DEFAULT 0, creado_at TEXT DEFAULT CURRENT_TIMESTAMP);
   CREATE TABLE IF NOT EXISTS rol_permisos (rol TEXT NOT NULL REFERENCES roles(clave), permiso TEXT NOT NULL, PRIMARY KEY (rol, permiso));
-  CREATE TABLE IF NOT EXISTS permisos_sembrados (permiso TEXT PRIMARY KEY);
-  CREATE TABLE IF NOT EXISTS rol_alcances (rol TEXT NOT NULL REFERENCES roles(clave), area TEXT NOT NULL, nivel INTEGER NOT NULL CHECK(nivel BETWEEN 0 AND 2), PRIMARY KEY (rol, area));`);
+  CREATE TABLE IF NOT EXISTS permisos_sembrados (permiso TEXT PRIMARY KEY);`);
+  // Qué ve cada rol en cada área (0 a 3) y si edita. La tabla de antes (0 a 2, sin «editar») se rehace con lo que tenía.
+  const sqlAlcances = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'rol_alcances'").get()?.sql || '';
+  const TABLA_ALCANCES = `(rol TEXT NOT NULL REFERENCES roles(clave), area TEXT NOT NULL, nivel INTEGER NOT NULL CHECK(nivel BETWEEN 0 AND 3),
+    editar INTEGER NOT NULL DEFAULT 0 CHECK(editar IN (0, 1)), PRIMARY KEY (rol, area))`;
+  if (!sqlAlcances) db.exec('CREATE TABLE rol_alcances ' + TABLA_ALCANCES);
+  else if (!/editar/.test(sqlAlcances)) db.transaction(() => {
+    db.exec('CREATE TABLE rol_alcances_nueva ' + TABLA_ALCANCES);
+    db.exec('INSERT INTO rol_alcances_nueva (rol, area, nivel) SELECT rol, area, nivel FROM rol_alcances');
+    db.exec('DROP TABLE rol_alcances');
+    db.exec('ALTER TABLE rol_alcances_nueva RENAME TO rol_alcances');
+  })();
   db.transaction(() => {
     const insRol = db.prepare('INSERT OR IGNORE INTO roles (clave, nombre, descripcion, sistema, orden) VALUES (?, ?, ?, 1, ?)');
     ROLES_BASE.forEach(([c, n, d], i) => insRol.run(c, n, d, i));
     const ya = new Set(db.prepare('SELECT permiso FROM permisos_sembrados').all().map(r => r.permiso));
     const roles = new Set(db.prepare('SELECT clave FROM roles').all().map(r => r.clave));
     const dar = db.prepare('INSERT OR IGNORE INTO rol_permisos (rol, permiso) VALUES (?, ?)');
+    const marcar = m => db.prepare('INSERT OR IGNORE INTO permisos_sembrados (permiso) VALUES (?)').run(m);
+    const tenia = (rol, p) => !!db.prepare('SELECT 1 FROM rol_permisos WHERE rol = ? AND permiso = ?').get(rol, p);
+    // Los roles que inventó Dirección: lo que tenían antes de un permiso nuevo (para no quitarles ni darles de más).
+    const inventados = [...roles].filter(r => r !== 'admin' && !ALCANCE_INICIAL[r]);
+    const antes = Object.fromEntries(inventados.map(r => [r, { importes: tenia(r, 'ordenes.importes'), prospeccion: tenia(r, 'prospeccion.ver') }]));
+    let sembroAlgo = false;
     for (const p of CATALOGO) {
       if (ya.has(p.clave)) continue;
       p.roles.filter(r => roles.has(r)).forEach(r => dar.run(r, p.clave));
-      db.prepare('INSERT INTO permisos_sembrados (permiso) VALUES (?)').run(p.clave);
+      marcar(p.clave);
+      sembroAlgo = true;
     }
-    // Qué ve cada rol: se siembra una vez por área. Los roles de fábrica con la tabla acordada; los que inventó
-    // Dirección, a partir de lo que ya tenían (antes «Ver cuentas por cobrar/pagar» eran casillas).
-    const tenia = (rol, p) => !!db.prepare('SELECT 1 FROM rol_permisos WHERE rol = ? AND permiso = ?').get(rol, p);
-    const fijar = db.prepare('INSERT OR IGNORE INTO rol_alcances (rol, area, nivel) VALUES (?, ?, ?)');
-    let sembroAlgo = false;
+    // Qué ve cada rol: se siembra una vez por área. Los roles de fábrica con la tabla aprobada; los que inventó Dirección
+    // a partir de las áreas de antes (2026-10-26: «Contactos, cotizaciones y órdenes» y «Compras» se separaron), sin
+    // editar: Dirección prende ✎ donde sí deba editar (así lo decidió).
+    const nivelViejo = (r, area) => db.prepare('SELECT nivel FROM rol_alcances WHERE rol = ? AND area = ?').get(r, area)?.nivel ?? 0;
+    const fijar = db.prepare('INSERT OR IGNORE INTO rol_alcances (rol, area, nivel, editar) VALUES (?, ?, ?, ?)');
     AREAS.forEach((a, i) => {
       if (ya.has('area:' + a.clave)) return;
       sembroAlgo = true;
       for (const r of roles) {
         if (r === 'admin') continue;
-        const nivel = ALCANCE_INICIAL[r] ? ALCANCE_INICIAL[r][i]
-          : a.clave === 'ventas' ? 2 : a.clave === 'compras' ? (tenia(r, 'compras.gestionar') ? 2 : 1) : (tenia(r, a.clave + '.ver') ? 2 : 0);
-        fijar.run(r, a.clave, nivel);
+        if (ALCANCE_INICIAL[r]) { const v = ALCANCE_INICIAL[r][i]; fijar.run(r, a.clave, Number(v[0]), v.endsWith('e') ? 1 : 0); continue; }
+        const ventas = nivelViejo(r, 'ventas'), compras = nivelViejo(r, 'compras');
+        const nivel = { contactos: ventas, cotizaciones: ventas, ordenes: ventas, generador: antes[r].importes ? ventas : 0, prospeccion: antes[r].prospeccion ? ventas : 0,
+          solicitudes: compras, ordenes_compra: compras }[a.clave] ?? nivelViejo(r, a.clave);
+        fijar.run(r, a.clave, nivel, 0);
       }
-      db.prepare('INSERT INTO permisos_sembrados (permiso) VALUES (?)').run('area:' + a.clave);
+      marcar('area:' + a.clave);
     });
-    db.prepare("DELETE FROM rol_permisos WHERE permiso IN ('cxc.ver', 'cxp.ver')").run(); // ahora son el área
-    // «Prospección» (2026-10-21): antes la veía todo el que veía ventas. Los roles que inventó Dirección y ya veían
-    // ventas la conservan; de los de fábrica la tienen Gerente, Ventas y Atención (el técnico no busca clientes).
-    if (!ya.has('prospeccion:otros')) {
-      for (const r of roles) {
-        if (r === 'admin' || ALCANCE_INICIAL[r]) continue;
-        const v = db.prepare("SELECT nivel FROM rol_alcances WHERE rol = ? AND area = 'ventas'").get(r);
-        if (v && v.nivel >= 1) dar.run(r, 'prospeccion.ver');
+    // Decisiones de Dirección del 2026-10-26, una sola vez: el técnico ve el importe de sus órdenes; nadie más que Dirección
+    // borra (se quita «Eliminar»); marcar realizado es de quien hizo la orden, el Gerente y Dirección (se quita la casilla).
+    // Los roles inventados conservan el Análisis comercial y los montos de compras que ya veían.
+    if (!ya.has('decisiones:2026-10-26')) {
+      if (roles.has('tecnico')) dar.run('tecnico', 'ordenes.importes');
+      db.prepare("DELETE FROM rol_permisos WHERE permiso IN ('prospeccion.ver', 'ordenes.estatus', 'ordenes.eliminar', 'cxc.ver', 'cxp.ver')").run();
+      db.prepare("DELETE FROM rol_alcances WHERE area IN ('ventas', 'compras')").run();
+      for (const r of inventados) {
+        if (antes[r].importes) dar.run(r, 'reportes.analisis');
+        dar.run(r, 'compras.importes');
       }
-      db.prepare('INSERT INTO permisos_sembrados (permiso) VALUES (?)').run('prospeccion:otros');
-    }
-    // «Ver importes» (2026-10-21): antes todos los que veían órdenes veían sus importes. Los de fábrica arrancan con la
-    // tabla (sin el técnico ni costos); los roles que inventó Dirección lo conservan para no quitarles nada.
-    if (!ya.has('ordenes.importes')) {
-      for (const r of roles) if (r !== 'admin' && !ALCANCE_INICIAL[r]) dar.run(r, 'ordenes.importes');
-      sembroAlgo = true; // lo que necesita ver importes (cambiar el importe, cargar el generador…) se quita a quien no los ve
-    }
-    // Técnico (2026-10-21, acordado con Dirección): en cuentas por cobrar solo los cobros que él registra, sin saldos ni
-    // vencidos, y no confirma cobros de otros. Una sola vez; después Dirección lo cambia en Roles y permisos.
-    if (!ya.has('tecnico:solo-sus-cobros')) {
-      if (roles.has('tecnico')) {
-        db.prepare("UPDATE rol_alcances SET nivel = 0 WHERE rol = 'tecnico' AND area = 'cxc' AND nivel = 1").run();
-        db.prepare("DELETE FROM rol_permisos WHERE rol = 'tecnico' AND permiso = 'cobros.confirmar'").run();
-      }
-      sembroAlgo = true; // «Crédito y factura» ahora necesita ver la cobranza: se quita a quien no la ve
-      db.prepare('INSERT INTO permisos_sembrados (permiso) VALUES (?)').run('tecnico:solo-sus-cobros');
-    }
-    // Decisiones de Dirección (2026-10-22), una sola vez: catálogos compartidos solo Gerente y Compras (además de
-    // Dirección); Atención ve en cuentas por pagar los gastos que ella anota; Compras deja «Registrar cobros» (no abre
-    // órdenes). «Ver los gastos de sus órdenes» lo siembra el catálogo (Ventas y Gerente). Lo que cambie después, se respeta.
-    if (!ya.has('decisiones:2026-10-22')) {
-      const quitar = db.prepare('DELETE FROM rol_permisos WHERE rol = ? AND permiso = ?');
-      for (const r of ['ventas', 'atencion', 'tecnico']) quitar.run(r, 'catalogos.editar');
-      quitar.run('costos', 'cobros.registrar');
-      db.prepare("UPDATE rol_alcances SET nivel = 1 WHERE rol = 'atencion' AND area = 'cxp' AND nivel = 0").run();
       sembroAlgo = true;
-      db.prepare('INSERT INTO permisos_sembrados (permiso) VALUES (?)').run('decisiones:2026-10-22');
+      marcar('decisiones:2026-10-26');
     }
-    // Al sembrar los niveles, lo que quedó sin sentido (p. ej. «Actualizar estatus» para quien ya no ve órdenes) se quita.
+    // Las decisiones anteriores ya vienen en la tabla de arriba (técnico: solo sus cobros; Atención: sus gastos; catálogos).
+    ['prospeccion:otros', 'ordenes.importes', 'tecnico:solo-sus-cobros', 'decisiones:2026-10-22'].forEach(marcar);
+    // Al sembrar, lo que quedó sin sentido (p. ej. «Cambiar importe» para quien ya no edita órdenes) se quita.
     if (sembroAlgo) for (const r of roles) {
       if (r === 'admin') continue;
-      const niv = Object.fromEntries(db.prepare('SELECT area, nivel FROM rol_alcances WHERE rol = ?').all(r).map(x => [x.area, x.nivel]));
-      const set = new Set([...db.prepare('SELECT permiso FROM rol_permisos WHERE rol = ?').all(r).map(x => x.permiso), ...virtualesDe(niv)]);
+      const filas = db.prepare('SELECT area, nivel, editar FROM rol_alcances WHERE rol = ?').all(r);
+      const niv = Object.fromEntries(filas.map(x => [x.area, x.nivel])), ed = Object.fromEntries(filas.map(x => [x.area, !!x.editar]));
+      const set = new Set([...db.prepare('SELECT permiso FROM rol_permisos WHERE rol = ?').all(r).map(x => x.permiso), ...virtualesDe(niv, ed)]);
       for (let malas = faltantes(set); malas.length; malas = faltantes(set)) for (const [p] of malas) { set.delete(p); db.prepare('DELETE FROM rol_permisos WHERE rol = ? AND permiso = ?').run(r, p); }
     }
   })();
@@ -187,18 +206,32 @@ module.exports = function crearPermisos(db, app, h) {
     }
     return cache;
   };
-  // Qué ve el rol en cada área ({ ventas: 0|1|2, … }). Dirección: todo.
+  // Qué ve el rol en cada área ({ contactos: 0|1|2|3, … }) y en cuáles edita ({ contactos: true, … }). Dirección: todo.
+  const leerAlcances = () => {
+    if (cacheNiv) return cacheNiv;
+    cacheNiv = new Map();
+    for (const { rol: r, area, nivel, editar } of db.prepare('SELECT rol, area, nivel, editar FROM rol_alcances').all()) {
+      if (!cacheNiv.has(r)) cacheNiv.set(r, { niv: {}, ed: {} });
+      cacheNiv.get(r).niv[area] = nivel; cacheNiv.get(r).ed[area] = !!editar;
+    }
+    return cacheNiv;
+  };
   const nivelesDe = rol => {
-    if (rol === 'admin') return Object.fromEntries(AREAS.map(a => [a.clave, 2]));
-    if (!cacheNiv) { cacheNiv = new Map(); for (const { rol: r, area, nivel } of db.prepare('SELECT rol, area, nivel FROM rol_alcances').all()) { if (!cacheNiv.has(r)) cacheNiv.set(r, {}); cacheNiv.get(r)[area] = nivel; } }
-    const n = cacheNiv.get(rol) || {};
+    if (rol === 'admin') return Object.fromEntries(AREAS.map(a => [a.clave, 3]));
+    const n = leerAlcances().get(rol)?.niv || {};
     return Object.fromEntries(AREAS.map(a => [a.clave, n[a.clave] ?? 0]));
   };
+  const edicionesDe = rol => {
+    if (rol === 'admin') return Object.fromEntries(EDITABLES.map(a => [a, true]));
+    const e = leerAlcances().get(rol)?.ed || {};
+    return Object.fromEntries(EDITABLES.map(a => [a, !!e[a]]));
+  };
+  const virtualesRol = rol => virtualesDe(nivelesDe(rol), edicionesDe(rol));
   const olvidar = () => { cache = null; cacheNiv = null; };
   // «Ver como este rol» (solo Dirección): las revisiones usan los permisos de ese rol (ver las rutas).
   const rolDe = req => req.usuarioSesion?.ver_como || req.usuarioSesion?.rol_real || req.usuarioSesion?.rol;
-  const delRol = rol => (rol === 'admin' ? new Set(CLAVES) : new Set([...[...(mapa().get(rol) || [])].filter(c => REALES.has(c)), ...virtualesDe(nivelesDe(rol))]));
-  const tieneRol = (rol, clave) => rol === 'admin' || (REALES.has(clave) ? !!mapa().get(rol)?.has(clave) : virtualesDe(nivelesDe(rol)).includes(clave));
+  const delRol = rol => (rol === 'admin' ? new Set(CLAVES) : new Set([...[...(mapa().get(rol) || [])].filter(c => REALES.has(c)), ...virtualesRol(rol)]));
+  const tieneRol = (rol, clave) => rol === 'admin' || (REALES.has(clave) ? !!mapa().get(rol)?.has(clave) : virtualesRol(rol).includes(clave));
   const puede = (req, clave) => {
     if (!CLAVES.has(clave)) throw new Error('Permiso desconocido: ' + clave);
     return tieneRol(rolDe(req), clave);
@@ -208,11 +241,16 @@ module.exports = function crearPermisos(db, app, h) {
   // cuando «ve como» otro rol (encabezado X-Ver-Como válido; si no es válido, la petición se rechaza después).
   function prepararAlcance(req, a) {
     const u = req.usuarioSesion; if (!u || !a) return;
+    a.usuarioId = u.id; // quién pide (también Dirección: así queda quién capturó lo que registra)
     const real = u.rol_real || u.rol;
     let rol = real;
     if (real === 'admin') { const v = req.get('X-Ver-Como'); if (!v || v === 'admin' || !rolValido(v)) return; rol = v; }
     a.usuarioId = u.id; a.niveles = nivelesDe(rol); a.gastosOrden = tieneRol(rol, 'gastos.ver_orden');
   }
+  // ¿Puede editar este contacto, cotización u orden? (2026-10-26) Dirección siempre; los demás, si su rol edita esa área
+  // y es suyo (lo capturó o está a su nombre), o si tiene «Editar lo de otros» (Gerente). Ver una orden no basta.
+  // «suyo»: true si quien pide lo capturó o lo tiene a su nombre (lo calcula quien llama, según la tabla).
+  const puedeEditar = (req, area, suyo) => direccion(req) || (puede(req, area + '.editar') && (suyo || puede(req, 'ventas.editar_otros')));
   // Solo Dirección (lo que abarca todas las sucursales).
   const direccion = req => (req.usuarioSesion?.rol_real || req.usuarioSesion?.rol) === 'admin' && !req.usuarioSesion?.ver_como;
   // Para las rutas: true si puede; si no, responde 403 con el mensaje.
@@ -254,8 +292,30 @@ module.exports = function crearPermisos(db, app, h) {
     next();
   });
 
+  // Borrar es solo de Dirección (2026-10-26): cotizaciones, órdenes, usuarios, roles, servicios y catálogos. Quitar un
+  // teléfono de un contacto es corregirlo (lo hace quien edita el contacto). Cancelar cobros, pagos o documentos no
+  // borra: queda el rastro con su motivo.
+  app.use('/api', (req, res, next) => {
+    if (req.method !== 'DELETE' || !req.usuarioSesion || direccion(req) || /^\/clientes\/\d+\/telefonos\//.test(req.path)) return next();
+    res.status(403).json({ error: 'Borrar solo lo hace Dirección', codigo: 'SOLO_DIRECCION' });
+  });
+
+  // Reportes de ventas (2026-10-26): el Generador es su propia área y el Análisis comercial su propio permiso (el técnico
+  // ve el importe de sus órdenes, pero no los reportes).
+  app.use('/api', (req, res, next) => {
+    if (!req.usuarioSesion) return next();
+    if (/^\/generador(\/|$)/.test(req.path) && req.method === 'GET' && !puede(req, 'generador.ver')) return res.status(403).json({ error: 'Tu rol no ve el Generador' });
+    if (/^\/analisis(\/|$)/.test(req.path) && !puede(req, 'reportes.analisis')) return res.status(403).json({ error: 'Tu rol no ve el Análisis comercial' });
+    next();
+  });
+
   // Prospección es de ventas: quien no ve ventas no entra (las vistas tampoco le muestran establecimientos).
-  app.use('/api/prospeccion', (req, res, next) => (!req.usuarioSesion || puede(req, 'prospeccion.ver') ? next() : res.status(403).json({ error: 'Tu rol no ve prospección' })));
+  app.use('/api/prospeccion', (req, res, next) => {
+    if (!req.usuarioSesion) return next();
+    if (!puede(req, 'prospeccion.ver')) return res.status(403).json({ error: 'Tu rol no ve prospección' });
+    if (req.method !== 'GET' && !puede(req, 'prospeccion.editar')) return res.status(403).json({ error: 'Tu rol solo consulta la prospección' });
+    next();
+  });
 
   // Catálogos compartidos (los usan todas las sucursales): agregar, corregir, ordenar o quitar pide «catalogos.editar».
   const CATALOGOS = [/^\/(canales|tipos-cliente)(\/|$)/, /^\/compras\/(centros|unidades)(\/|$)/, /^\/finanzas\/categorias(\/|$)/, /^\/servicios\/(\d+|orden)$/];
@@ -268,7 +328,7 @@ module.exports = function crearPermisos(db, app, h) {
   // Lo que puede quien está conectado (la pantalla lo usa para esconder lo que no aplica).
   app.get('/api/permisos/mios', h((req, res) => {
     const rol = rolDe(req);
-    res.json({ rol, rol_nombre: nombreRol(rol), ver_como: req.usuarioSesion.ver_como || null, permisos: [...delRol(rol)], todas: [...CLAVES], alcances: nivelesDe(rol), direccion: esGeneral(req) });
+    res.json({ rol, rol_nombre: nombreRol(rol), ver_como: req.usuarioSesion.ver_como || null, permisos: [...delRol(rol)], todas: [...CLAVES], alcances: nivelesDe(rol), ediciones: edicionesDe(rol), direccion: esGeneral(req), usuario_id: req.usuarioSesion.id });
   }));
   // Nombres de los roles (para la lista de usuarios y el selector de rol).
   app.get('/api/roles', h((req, res) => res.json(roles().filter(r => r.activo).map(r => ({ ...r, cabe: cabe(req, r.clave) })))));
@@ -279,7 +339,7 @@ module.exports = function crearPermisos(db, app, h) {
     res.json({
       catalogo: CATALOGO.map(({ clave, seccion, nombre, ayuda }) => ({ clave, seccion, nombre, ayuda })),
       dependencias: DEPENDE, areas: AREAS, niveles: NIVELES,
-      roles: roles().filter(r => r.activo).map(r => ({ ...r, editable: r.clave !== 'admin', usuarios: usuarios[r.clave] || 0, permisos: [...delRol(r.clave)], alcances: nivelesDe(r.clave) })),
+      roles: roles().filter(r => r.activo).map(r => ({ ...r, editable: r.clave !== 'admin', usuarios: usuarios[r.clave] || 0, permisos: [...delRol(r.clave)], alcances: nivelesDe(r.clave), ediciones: edicionesDe(r.clave) })),
     });
   }));
   const nombreLimpio = t => String(t ?? '').trim().replace(/\s+/g, ' ');
@@ -300,29 +360,33 @@ module.exports = function crearPermisos(db, app, h) {
     if (rol.clave === 'admin') return res.status(400).json({ error: 'Dirección siempre tiene todos los permisos' });
     const lista = req.body?.permisos;
     if (!Array.isArray(lista) || lista.some(c => typeof c !== 'string' || !CLAVES.has(c))) return res.status(400).json({ error: 'Lista de permisos inválida' });
-    const nivAntes = nivelesDe(rol.clave), al = req.body.alcances;
-    if (al !== undefined && (al === null || typeof al !== 'object' || Array.isArray(al) || Object.entries(al).some(([k, v]) => !AREAS.some(a => a.clave === k) || ![0, 1, 2].includes(v))))
+    const nivAntes = nivelesDe(rol.clave), al = req.body.alcances, edAntes = edicionesDe(rol.clave), ed = req.body.ediciones;
+    if (al !== undefined && (al === null || typeof al !== 'object' || Array.isArray(al) || Object.entries(al).some(([k, v]) => !AREAS.some(a => a.clave === k) || ![0, 1, 2, 3].includes(v))))
       return res.status(400).json({ error: 'Niveles de «qué ve» inválidos' });
+    if (ed !== undefined && (ed === null || typeof ed !== 'object' || Array.isArray(ed) || Object.entries(ed).some(([k, v]) => !EDITABLES.includes(k) || typeof v !== 'boolean')))
+      return res.status(400).json({ error: 'Casillas de «edita» inválidas' });
     const nivNuevos = { ...nivAntes, ...(al || {}) };
+    // Sin ver nada en un área, tampoco la edita.
+    const edNuevos = Object.fromEntries(EDITABLES.map(a => [a, !!({ ...edAntes, ...(ed || {}) })[a] && nivNuevos[a] >= 1]));
     // Los permisos virtuales salen de los niveles, no de la lista.
-    const nuevos = new Set([...lista.filter(c => REALES.has(c)), ...virtualesDe(nivNuevos)]), antes = delRol(rol.clave);
+    const nuevos = new Set([...lista.filter(c => REALES.has(c)), ...virtualesDe(nivNuevos, edNuevos)]), antes = delRol(rol.clave);
     // «antes» = lo que la persona vio al abrir la pantalla. Si alguien más guardó este rol mientras tanto, no se pisa.
     if (Array.isArray(req.body.antes) && [...antes].sort().join() !== [...new Set(req.body.antes)].filter(c => CLAVES.has(c)).sort().join())
       return res.status(409).json({ error: `Alguien más cambió los permisos de «${rol.nombre}» mientras los editabas. Recarga para ver lo actual.`, codigo: 'CAMBIADO' });
     const malas = faltantes(nuevos);
     if (malas.length) return res.status(400).json({ error: malas.map(([p, r]) => `«${nombreDe(p)}» necesita «${nombreDe(r)}»`).join('; '), faltan: malas });
     const dados = [...nuevos].filter(c => REALES.has(c) && !antes.has(c)), quitados = [...antes].filter(c => REALES.has(c) && !nuevos.has(c));
-    const areasCambian = AREAS.filter(a => nivNuevos[a.clave] !== nivAntes[a.clave]);
+    const areasCambian = AREAS.filter(a => nivNuevos[a.clave] !== nivAntes[a.clave] || (a.editable && edNuevos[a.clave] !== edAntes[a.clave]));
     if (!dados.length && !quitados.length && !areasCambian.length) return res.json({ ok: true, cambios: 0 });
     db.transaction(() => {
       const del = db.prepare('DELETE FROM rol_permisos WHERE rol = ? AND permiso = ?'), ins = db.prepare('INSERT OR IGNORE INTO rol_permisos (rol, permiso) VALUES (?, ?)');
       quitados.forEach(c => del.run(rol.clave, c)); dados.forEach(c => ins.run(rol.clave, c));
-      const fija = db.prepare('INSERT INTO rol_alcances (rol, area, nivel) VALUES (?, ?, ?) ON CONFLICT(rol, area) DO UPDATE SET nivel = excluded.nivel');
-      areasCambian.forEach(a => fija.run(rol.clave, a.clave, nivNuevos[a.clave]));
+      const fija = db.prepare('INSERT INTO rol_alcances (rol, area, nivel, editar) VALUES (?, ?, ?, ?) ON CONFLICT(rol, area) DO UPDATE SET nivel = excluded.nivel, editar = excluded.editar');
+      areasCambian.forEach(a => fija.run(rol.clave, a.clave, nivNuevos[a.clave], edNuevos[a.clave] ? 1 : 0));
     })();
     olvidar();
     audit(req, rol.clave, 'permisos', `${rol.nombre}: ` + [dados.length ? 'se dio ' + dados.map(nombreDe).join(', ') : '', quitados.length ? 'se quitó ' + quitados.map(nombreDe).join(', ') : '',
-      ...areasCambian.map(a => `ve en ${a.nombre}: ${NIVELES[nivAntes[a.clave]]} → ${NIVELES[nivNuevos[a.clave]]}`)].filter(Boolean).join(' · '));
+      ...areasCambian.map(a => `${a.nombre}: ${NIVELES[nivAntes[a.clave]]}${edAntes[a.clave] ? ' ✎' : ''} → ${NIVELES[nivNuevos[a.clave]]}${edNuevos[a.clave] ? ' ✎' : ''}`)].filter(Boolean).join(' · '));
     res.json({ ok: true, cambios: dados.length + quitados.length + areasCambian.length });
   }));
   // Rol nuevo, copiando los permisos de otro (o sin permisos).
@@ -340,8 +404,8 @@ module.exports = function crearPermisos(db, app, h) {
     db.transaction(() => {
       db.prepare('INSERT INTO roles (clave, nombre, descripcion, sistema, orden) VALUES (?, ?, ?, 0, ?)').run(clave, nombre, nombreLimpio(req.body?.descripcion).slice(0, 120), orden);
       if (copiar) [...delRol(copiar.clave)].filter(c => REALES.has(c)).forEach(c => db.prepare('INSERT INTO rol_permisos (rol, permiso) VALUES (?, ?)').run(clave, c));
-      const niv = copiar ? nivelesDe(copiar.clave) : {};
-      AREAS.forEach(a => db.prepare('INSERT INTO rol_alcances (rol, area, nivel) VALUES (?, ?, ?)').run(clave, a.clave, niv[a.clave] ?? 0));
+      const niv = copiar ? nivelesDe(copiar.clave) : {}, edc = copiar ? edicionesDe(copiar.clave) : {};
+      AREAS.forEach(a => db.prepare('INSERT INTO rol_alcances (rol, area, nivel, editar) VALUES (?, ?, ?, ?)').run(clave, a.clave, niv[a.clave] ?? 0, edc[a.clave] ? 1 : 0));
     })();
     olvidar();
     audit(req, clave, 'creado', nombre + (copiar ? ' · copia de ' + nombreRol(copiar.clave) : ' · sin permisos'));
@@ -378,5 +442,5 @@ module.exports = function crearPermisos(db, app, h) {
     res.json({ ok: true });
   }));
 
-  return { CATALOGO, CLAVES, DEPENDE, AREAS, nivelesDe, prepararAlcance, puede, exigir, direccion, tieneRol, delRol, rolDe, cabe, roles, rolValido, nombreRol, olvidar };
+  return { CATALOGO, CLAVES, DEPENDE, AREAS, nivelesDe, edicionesDe, prepararAlcance, puede, puedeEditar, exigir, direccion, tieneRol, delRol, rolDe, cabe, roles, rolValido, nombreRol, olvidar };
 };

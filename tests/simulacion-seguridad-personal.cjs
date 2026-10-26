@@ -82,7 +82,7 @@ const conBase = fn => { const d = new DatabaseSync(DB); try { d.exec('PRAGMA bus
   const qro = (await pedir('GET', '/sucursales', A))[1].sucursales[0];
   [, j] = await pedir('POST', '/sucursales', A, { nombre: 'Ciudad de México', clave: 'CDMX' }); const cdmx = j;
   const rol = async (nombre, permisos, alcances = {}) => { const [, x] = await pedir('POST', '/roles', A, { nombre }); const [st, y] = await pedir('PUT', '/roles/' + x.clave + '/permisos', A, { permisos, alcances }); if (st !== 200) throw new Error(nombre + ': ' + JSON.stringify(y)); return x.clave; };
-  const SUP = await rol('Supervisor de campo', ['personal.ver', 'personal.editar'], { ventas: 2 });
+  const SUP = await rol('Supervisor de campo', ['personal.ver', 'personal.editar'], { ordenes: 2 });
   const CONS = await rol('Consulta de personal', ['personal.ver']);
   const RH = await rol('Recursos humanos', ['personal.ver', 'personal.editar', 'personal.sensibles']);
   const T = {}, ID = {};

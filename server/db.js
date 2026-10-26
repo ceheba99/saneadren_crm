@@ -338,9 +338,15 @@ if (!db.prepare('PRAGMA table_info(historial)').all().some(c => c.name === 'area
     }
   })();
 }
-// Técnico asignado: ve la orden, registra sus gastos y si se realizó (lo suyo, ver permisos.js).
+// Técnico asignado: ve la orden y registra sus gastos (lo suyo, ver permisos.js); si se realizó lo marca quien hizo la orden (2026-10-26).
 if(!db.prepare('PRAGMA table_info(leads)').all().some(c=>c.name==='tecnico_id')){db.exec('ALTER TABLE leads ADD COLUMN tecnico_id INTEGER REFERENCES usuarios(id)');db.exec('CREATE INDEX IF NOT EXISTS idx_leads_tecnico ON leads(tecnico_id)');}
 for(const c of ['ejecucion','realizado_por','fecha_realizado','motivo_no_realizado'])if(!db.prepare('PRAGMA table_info(leads)').all().some(x=>x.name===c))db.exec(`ALTER TABLE leads ADD COLUMN ${c} TEXT`);
+// Quién capturó la cotización u orden y el contacto (2026-10-26): con su responsable, son los únicos que los editan
+// (además del Gerente y Dirección). Las cotizaciones de antes lo toman del nombre guardado en creado_por.
+for(const t of ['leads','clientes'])if(!db.prepare(`PRAGMA table_info(${t})`).all().some(x=>x.name==='capturado_por')){
+  db.exec(`ALTER TABLE ${t} ADD COLUMN capturado_por INTEGER REFERENCES usuarios(id)`);
+  if(t==='leads')db.exec("UPDATE leads SET capturado_por = (SELECT MIN(u.id) FROM usuarios u WHERE u.nombre = leads.creado_por) WHERE capturado_por IS NULL AND creado_por IS NOT NULL");
+}
 // IVA del documento (public/importes.js). iva_modo: 'mas_iva' (los importes son sin IVA),
 // 'incluido' (ya lo traen) o 'sin_iva' (no lleva IVA; tasa 0); iva_tasa en porcentaje entero; iva_cent lo calcula el servidor.
 // Los tres en NULL = registro anterior al IVA ("por definir"): valor se interpreta como hoy.

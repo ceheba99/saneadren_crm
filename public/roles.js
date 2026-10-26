@@ -1,9 +1,11 @@
 // «Roles y permisos» (Ajustes → Usuarios, solo Dirección): tabla con los roles en columnas y, en filas, primero
-// QUÉ VE cada rol en cada área (nada / lo suyo / toda su sucursal) y luego QUÉ HACE (casillas). Se guarda; también
+// QUÉ VE cada rol en cada área (nada / lo suyo / toda su sucursal / toda la empresa) y si la EDITA (✎), y luego QUÉ HACE
+// (casillas). Se guarda; también
 // se crean roles nuevos (copiando otro), se renombran, se quitan los que nadie usa y se revisa cómo le queda el
 // sistema a un rol con «Ver como».
 // Lo que ve un rol viaja como permisos «virtuales» (cxc.ver = ve algo de cuentas por cobrar, cxc.sucursal = ve toda
-// su sucursal): así las dependencias («Confirmar cobros» necesita ver cuentas por cobrar) funcionan igual para todo.
+// su sucursal, cxc.empresa = toda la empresa, ordenes.editar = edita órdenes): así las dependencias («Confirmar
+// cobros» necesita ver cuentas por cobrar) funcionan igual para todo.
 const Roles = (() => {
   const $ = id => document.getElementById(id);
   const esc = t => escaparHtml(t == null ? '' : String(t));
@@ -15,17 +17,18 @@ const Roles = (() => {
     const r = DATOS.roles.find(x => x.clave === clave);
     return r && (set.size !== r.permisos.length || r.permisos.some(c => !set.has(c)));
   });
-  const esVirtual = c => (DATOS.areas || []).some(a => c === a.clave + '.ver' || c === a.clave + '.sucursal');
-  const nivelEn = (set, area) => set.has(area + '.sucursal') ? 2 : set.has(area + '.ver') ? 1 : 0;
-  // Dependencias de la pantalla: las del servidor más «toda su sucursal» → «al menos lo suyo».
-  const dependencias = () => ({ ...(DATOS.dependencias || {}), ...Object.fromEntries((DATOS.areas || []).map(a => [a.clave + '.sucursal', [a.clave + '.ver']])) });
+  const esVirtual = c => c === 'ventas.ver' || c === 'compras.ver' || (DATOS.areas || []).some(a => ['ver', 'sucursal', 'empresa', 'editar'].some(t => c === a.clave + '.' + t));
+  const nivelEn = (set, area) => set.has(area + '.empresa') ? 3 : set.has(area + '.sucursal') ? 2 : set.has(area + '.ver') ? 1 : 0;
+  // Dependencias de la pantalla: las del servidor más «toda la empresa» → «toda su sucursal» → «al menos lo suyo», y
+  // «edita» → «al menos lo suyo».
+  const dependencias = () => ({ ...(DATOS.dependencias || {}), ...Object.fromEntries((DATOS.areas || []).flatMap(a => [[a.clave + '.empresa', [a.clave + '.sucursal']], [a.clave + '.sucursal', [a.clave + '.ver']], [a.clave + '.editar', [a.clave + '.ver']]])) });
   // Cuentas por cobrar en «Nada» con «Registrar cobros» (y órdenes que abrir): ve solo los cobros que él registra (el
   // técnico que cobra en campo).
-  const etiquetaNivel = (area, i, set) => (area === 'cxc' && i === 0 && set.has('cobros.registrar') && set.has('ventas.ver') ? 'Solo lo que él registra' : DATOS.niveles[i]);
+  const etiquetaNivel = (area, i, set) => (area === 'cxc' && i === 0 && set.has('cobros.registrar') && set.has('ordenes.ver') ? 'Solo lo que él registra' : DATOS.niveles[i]);
   const nombreDe = c => {
     const p = DATOS.catalogo.find(x => x.clave === c); if (p) return p.nombre;
     const [area, tipo] = c.split('.'), a = (DATOS.areas || []).find(x => x.clave === area);
-    return a ? `ver ${tipo === 'sucursal' ? 'toda su sucursal' : 'lo suyo'} en ${a.nombre}` : c; // sin HTML: va a toast (textContent)
+    return a ? (tipo === 'editar' ? `editar ${a.nombre}` : `ver ${{ sucursal: 'toda su sucursal', empresa: 'toda la empresa' }[tipo] || 'lo suyo'} en ${a.nombre}`) : c; // sin HTML: va a toast (textContent)
   };
 
   async function cargar() {
@@ -48,14 +51,16 @@ const Roles = (() => {
         + (!r.sistema ? '<button type="button" class="btn btn-outline btn-chico" data-rp-quitar="' + esc(r.clave) + '" aria-label="Quitar el rol ' + esc(r.nombre) + '">Quitar</button>' : '') + '</span>' : '<span class="rp-rol-gente">Siempre todo</span>')
       + '</th>').join('');
     // Qué ve: un selector por área y rol.
-    let filas = '<tr class="rp-seccion"><th scope="rowgroup" colspan="' + cols + '">Qué ve (dentro de sus sucursales)</th></tr>';
+    let filas = '<tr class="rp-seccion"><th scope="rowgroup" colspan="' + cols + '">Qué ve y qué edita (✎)</th></tr>';
     for (const a of DATOS.areas || []) {
       filas += '<tr><th scope="row" class="rp-permiso"><span>' + esc(a.nombre) + '</span><small>Lo suyo: ' + esc(a.suyo) + '</small>' + (a.nada ? '<small>Nada: ' + esc(a.nada) + '</small>' : '') + '</th>'
         + roles.map(r => {
           if (!r.editable) return '<td class="rp-celda"><span class="rp-todo">Todo</span></td>';
           const n = nivelEn(permisosDe(r), a.clave);
+          const edita = a.editable ? '<label class="rp-edita"><input type="checkbox" data-rp-rol="' + esc(r.clave) + '" data-rp-permiso="' + esc(a.clave + '.editar') + '"'
+            + (permisosDe(r).has(a.clave + '.editar') ? ' checked' : '') + ' aria-label="' + esc(r.nombre + ': edita ' + a.nombre) + '"> ✎ Edita</label>' : '';
           return '<td class="rp-celda"><select class="rp-nivel" data-rp-nivel-rol="' + esc(r.clave) + '" data-rp-area="' + esc(a.clave) + '" aria-label="' + esc(r.nombre + ': qué ve en ' + a.nombre) + '">'
-            + DATOS.niveles.map((t, i) => '<option value="' + i + '"' + (i === n ? ' selected' : '') + '>' + esc(etiquetaNivel(a.clave, i, permisosDe(r))) + '</option>').join('') + '</select></td>';
+            + DATOS.niveles.map((t, i) => '<option value="' + i + '"' + (i === n ? ' selected' : '') + '>' + esc(etiquetaNivel(a.clave, i, permisosDe(r))) + '</option>').join('') + '</select>' + edita + '</td>';
         }).join('') + '</tr>';
     }
     // Qué hace: casillas.
@@ -77,7 +82,7 @@ const Roles = (() => {
       + roles.filter(r => r.editable).map(r => '<option value="' + esc(r.clave) + '">' + esc(r.nombre) + '</option>').join('') + '</select></div>'
       + '<div class="campo"><button type="button" class="btn btn-secundario" id="rp-crear">Crear rol</button></div></div>'
       + '<div class="tabla-scroll rp-tabla-caja"><table class="rp-tabla"><thead><tr><th scope="col" class="rp-permiso">Permiso</th>' + cab + '</tr></thead><tbody>' + filas + '</tbody></table></div>'
-      + '<p class="ayuda">«Lo suyo» se aplica en todo el sistema (listas, Inicio, calendario, buscador, reportes y Excel). El gerente además nunca hace lo que afecta a todas las sucursales (sucursales, catálogos, bitácora completa, respaldo). Los cambios aplican de inmediato a cada persona con ese rol (la pantalla se actualiza al recargarla).</p>'
+      + '<p class="ayuda">«Lo suyo» se aplica en todo el sistema (listas, Inicio, calendario, buscador, reportes y Excel). «Toda la empresa» ve todas las sucursales con el selector en «Todas». Sin ✎ Edita, esa área es solo de consulta; con ✎, en contactos, cotizaciones y órdenes cada quien edita solo lo que capturó o tiene a su nombre (lo de otros, con «Editar lo de otros»). Borrar solo lo hace Dirección. El gerente además nunca hace lo que afecta a todas las sucursales (sucursales, catálogos, bitácora completa, respaldo). Los cambios aplican de inmediato a cada persona con ese rol (la pantalla se actualiza al recargarla).</p>'
       + '<div class="btn-group"><button type="button" class="btn btn-primario" id="rp-guardar"' + (n ? '' : ' disabled') + '>' + (n ? 'Guardar cambios (' + n + (n === 1 ? ' rol' : ' roles') + ')' : 'Sin cambios') + '</button>'
       + (n ? '<button type="button" class="btn btn-outline" id="rp-descartar">Descartar</button>' : '') + '</div>';
   }
@@ -115,14 +120,15 @@ const Roles = (() => {
     cambios.set(rolClave, set);
     reflejar(rolClave, arrastrados);
   }
-  // Qué ve en un área: 0 nada, 1 lo suyo, 2 toda su sucursal.
+  // Qué ve en un área: 0 nada, 1 lo suyo, 2 toda su sucursal, 3 toda la empresa.
   function fijarNivel(rolClave, area, nivel) {
     const r = DATOS.roles.find(x => x.clave === rolClave);
     const set = new Set(permisosDe(r)), arrastrados = [];
     if (nivel >= 1) aplicar(set, area + '.ver', true, arrastrados); else aplicar(set, area + '.ver', false, arrastrados);
     if (nivel >= 2) aplicar(set, area + '.sucursal', true, arrastrados); else if (set.has(area + '.sucursal')) aplicar(set, area + '.sucursal', false, arrastrados);
+    if (nivel >= 3) aplicar(set, area + '.empresa', true, arrastrados); else if (set.has(area + '.empresa')) aplicar(set, area + '.empresa', false, arrastrados);
     cambios.set(rolClave, set);
-    reflejar(rolClave, arrastrados.filter(([, p]) => p !== area + '.ver' && p !== area + '.sucursal'));
+    reflejar(rolClave, arrastrados.filter(([, p]) => ![area + '.ver', area + '.sucursal', area + '.empresa'].includes(p)));
   }
 
   async function guardar() {
@@ -134,8 +140,9 @@ const Roles = (() => {
     for (const [clave, set] of lista) {
       const rol = DATOS.roles.find(x => x.clave === clave);
       const alcances = Object.fromEntries((DATOS.areas || []).map(a => [a.clave, nivelEn(set, a.clave)]));
+      const ediciones = Object.fromEntries((DATOS.areas || []).filter(a => a.editable).map(a => [a.clave, set.has(a.clave + '.editar')]));
       try {
-        const r = await api('/roles/' + encodeURIComponent(clave) + '/permisos', { method: 'PUT', body: JSON.stringify({ permisos: [...set].filter(c => !esVirtual(c)), alcances, antes: rol.permisos }) });
+        const r = await api('/roles/' + encodeURIComponent(clave) + '/permisos', { method: 'PUT', body: JSON.stringify({ permisos: [...set].filter(c => !esVirtual(c)), alcances, ediciones, antes: rol.permisos }) });
         const j = await r.json().catch(() => ({}));
         if (r.status === 409) chocaron.push(rol.nombre);
         else if (!r.ok) errores.push(rol.nombre + ': ' + (j.error || 'no se pudo guardar'));

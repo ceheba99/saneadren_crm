@@ -1438,7 +1438,9 @@ const Finanzas = (() => {
     const sec = $('seccion-ejecucion'), cont = $('ejecucion-orden');
     if (!lead || lead.estatus !== 'ganado') { sec.hidden = true; EJECUCION_ORDEN = null; return; }
     sec.hidden = false; EJECUCION_ORDEN = lead;
-    const botones = `<div class="btn-group"><button type="button" class="btn btn-verde" data-ejecucion="estatus">🔄 Actualizar estatus del servicio</button></div>`;
+    // Lo marca quien hizo la orden, el gerente o Dirección (2026-10-26); los demás solo ven en qué va.
+    const botones = lead.puede_editar === false ? '<p class="ayuda">Si se realizó lo marca quien hizo la orden, el gerente o Dirección.</p>'
+      : `<div class="btn-group"><button type="button" class="btn btn-verde" data-ejecucion="estatus">🔄 Actualizar estatus del servicio</button></div>`;
     // Si se marcó por error, Dirección lo regresa a «por realizar» (con motivo; queda en la bitácora).
     const deshacer = lead.ejecucion && Permisos.direccion() ? '<div class="btn-group"><button type="button" class="btn btn-outline" data-ejecucion="deshacer">↩ Regresar a «por realizar»</button></div>' : '';
     if (lead.ejecucion === 'realizado') {

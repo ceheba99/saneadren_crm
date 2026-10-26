@@ -50,7 +50,7 @@ const ServiciosTabla = (() => {
     const [clase, etiqueta] = estadoDe(s);
     const actual = st.tipo === 'lead' && s.id === LEAD_ACTUAL?.id;
     const fechaTxt = esOrden(s) ? (s.fecha_servicio ? 'Servicio: ' + fecha(s.fecha_servicio) : 'Servicio sin fecha') : 'Cotizada: ' + fecha(s.fecha_cotizacion || s.created_at);
-    const duplicar = esOrden(s) ? `<button type="button" class="btn btn-outline perm-ordenes-importes" data-accion="duplicar" data-id="${Number(s.id)}" title="Crea otra orden de servicio con los mismos datos (servicio recurrente)">Duplicar</button>` : '';
+    const duplicar = esOrden(s) ? `<button type="button" class="btn btn-outline perm-ordenes-editar perm-ordenes-importes" data-accion="duplicar" data-id="${Number(s.id)}" title="Crea otra orden de servicio con los mismos datos (servicio recurrente)">Duplicar</button>` : '';
     return `<tr class="fila-${clase}${actual ? ' st-actual' : ''}" data-abrir-fila="${Number(s.id)}">
       <td class="st-folio" data-label="Folio">${escapar(folioDe(s))}${actual ? '<small>Abierto ahora</small>' : ''}</td>
       <td data-label="Servicio">${escapar(s.servicio_nombre || 'Servicio')}</td>
@@ -58,7 +58,7 @@ const ServiciosTabla = (() => {
       <td data-label="Fecha" class="st-fecha">${escapar(fechaTxt)}</td>
       <td data-label="Importe" class="st-num servicio-importe perm-ordenes-importes">${importeTarjeta(s)}${s.valor != null && !s.iva_modo ? '<small>IVA por definir</small>' : ''}</td>
       <td data-label="Atendió">${escapar(s.responsable_nombre || 'Sin asignar')}</td>
-      <td class="st-acciones"><button type="button" class="btn btn-outline" data-accion="abrir" data-id="${Number(s.id)}">Abrir</button>${duplicar}<button type="button" class="btn-eliminar perm-ordenes-eliminar" data-accion="eliminar" data-id="${Number(s.id)}" aria-label="Eliminar ${escapar(folioDe(s))}">Eliminar</button></td>
+      <td class="st-acciones"><button type="button" class="btn btn-outline" data-accion="abrir" data-id="${Number(s.id)}">Abrir</button>${duplicar}<button type="button" class="btn-eliminar solo-general" data-accion="eliminar" data-id="${Number(s.id)}" aria-label="Eliminar ${escapar(folioDe(s))}">Eliminar</button></td>
     </tr>`;
   }
   function pintar(id) {

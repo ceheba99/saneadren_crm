@@ -7,7 +7,8 @@
 //    no le toca no debe aparecer en ninguna, y lo que sí, debe aparecer.
 //  · Luego, reglas: no cotizar a un cliente de otro vendedor (aviso sin detalles), no pasarse cotizaciones, técnico
 //    que pierde la orden al desasignarlo, Compras liga gastos a órdenes sin ver montos, cambios de nivel al momento,
-//    un rol «Cobranza» inventado, y «ver como».
+//    un rol «Cobranza» inventado, «ver como», quién edita (2026-10-26: quien la hizo, el gerente y Dirección; los
+//    demás solo ven), «toda la empresa» y borrar solo Dirección.
 // Uso: node tests/simulacion-alcance-roles.cjs
 const { spawn } = require('child_process'); const fs = require('fs'), os = require('os'), path = require('path');
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'crm-alcance-')), DB = path.join(dir, 'sim.db');
@@ -81,7 +82,7 @@ const RANGO = 'desde=2020-01-01&hasta=' + dia(60);
   revisa(s === 200 && j.cuenta && j.cobros.length === 2 && j.cuenta.cobrado === 1516.9, 'Laura (cobranza de sus órdenes) ve la cuenta completa con los dos cobros', j.cuenta);
   // Proveedores: quien pide compras sin ver cuentas por pagar recibe nombre, categoría y crédito; sin CLABE ni saldos.
   [s, j] = await pedir('POST', '/roles', A, { nombre: 'Solicitante' }); const SOL = j.clave;
-  [s, j] = await pedir('PUT', '/roles/' + SOL + '/permisos', A, { permisos: [], alcances: { ventas: 0, cxc: 0, cxp: 0, compras: 1 } });
+  [s, j] = await pedir('PUT', '/roles/' + SOL + '/permisos', A, { permisos: [], alcances: { solicitudes: 1, ordenes_compra: 1 }, ediciones: { solicitudes: true } });
   [s] = await pedir('POST', '/usuarios', A, { nombre: 'Sol Solicitante', password: CLAVE, rol: SOL, sucursales: [qro.id] });
   const TSOL = (await pedir('POST', '/login', null, { nombre: 'Sol Solicitante', password: CLAVE }))[1].token;
   [s, j] = await pedir('GET', '/finanzas/proveedores', TSOL);
@@ -99,23 +100,29 @@ const RANGO = 'desde=2020-01-01&hasta=' + dia(60);
     revisa(s === 200 && (j.por_cobrar !== undefined) === cobrar && (j.por_pagar !== undefined) === pagar,
       `${quien}: el resumen trae ${[cobrar && 'lo de cobrar', pagar && 'lo de pagar'].filter(Boolean).join(' y ')}${!cobrar ? ', sin cobranza' : ''}${!pagar ? ', sin proveedores' : ''}`, [s, Object.keys(j)]);
   }
-  // «Ver importes» (2026-10-21): el técnico trabaja su orden sin el dinero de la venta.
+  // El técnico ve el importe de su orden, pero no la modifica (2026-10-26; antes, 2026-10-21, no veía importes).
   [s, j] = await pedir('GET', '/leads/' + L2.id, R);
   const partR = JSON.parse(j.partidas_json || '[]');
-  revisa(s === 200 && j.valor === undefined && j.iva_cent === undefined && j.valor_ganado_total === undefined && partR.length && partR.every(p => p.servicio && p.precio === undefined && p.importe === undefined),
-    'Raúl abre su orden: servicio y descripción sí, precio, importe, IVA y totales no', { valor: j.valor, partidas: partR });
+  revisa(s === 200 && j.valor === 8231.57 && j.puede_editar === false && partR.length, 'Raúl abre su orden: ve el importe, en solo lectura', { valor: j.valor, puede_editar: j.puede_editar });
   [s, j] = await pedir('PUT', '/leads/' + L2.id, R, { version: j.version, partidas_json: JSON.stringify([{ servicio: partR[0].servicio, leyenda: 'x', importe: 1 }]), valor: 1, observaciones: 'Acceso por la puerta 2' });
   const tras = (await pedir('GET', '/leads/' + L2.id, L))[1];
-  revisa(s === 200 && tras.valor === 8231.57 && JSON.parse(tras.partidas_json)[0].leyenda !== 'x' && tras.observaciones === 'Acceso por la puerta 2', 'Raúl guarda sus datos de la orden; precios y partidas no cambian aunque los mande', { s, valor: tras.valor, obs: tras.observaciones });
-  [s] = await pedir('POST', '/leads', R, { cliente_id: cRubi, direccion: 'x', responsable_id: ID.Raul, partidas_json: JSON.stringify([{ servicio: partR[0].servicio, leyenda: 'x', importe: 100 }]) });
-  revisa(s === 403, 'Raúl no cotiza (necesita ver importes)', s);
+  revisa(s === 403 && tras.valor === 8231.57 && JSON.parse(tras.partidas_json)[0].leyenda !== 'x' && tras.observaciones !== 'Acceso por la puerta 2', 'Raúl no cambia nada de la orden (ni precios ni datos)', [s, j]);
+  [s] = await pedir('POST', '/leads', R, { cliente_id: cRubi.id, direccion: 'x', responsable_id: ID.Raul, partidas_json: JSON.stringify([{ servicio: partR[0].servicio, leyenda: 'x', importe: 100 }]) });
+  revisa(s === 403, 'Raúl no cotiza', s);
   for (const r of ['/generador?' + RANGO, '/analisis/comercial?' + RANGO]) { [s] = await pedir('GET', r, R); revisa(s === 403, 'Raúl no entra a ' + r.split('?')[0], s); }
   [s, j] = await pedir('GET', '/leads/' + L2.id, L); revisa(s === 200 && j.valor === 8231.57, 'Laura (con «Ver importes») sí ve el importe de su orden', j.valor);
   [s, j] = await pedir('GET', '/calendario?desde=' + dia(-40) + '&hasta=' + dia(60), R);
   revisa(s === 200 && !j.eventos.some(e => e.tipo === 'cobro') && j.eventos.some(e => e.tipo === 'orden' && e.lead_id === L2.id), 'en el calendario de Raúl está su orden pero ningún cobro', j.eventos?.map(e => e.tipo));
-  // Gastos: Raúl al marcar realizado; Laura uno en su orden; Isaac uno ligado a la orden de Beto (sin ver sus ventas).
-  [s, j] = await pedir('POST', '/leads/' + L2.id + '/ejecucion', R, { estado: 'realizado', fecha: dia(-1), gastos: [{ proveedor_id: prov.id, categoria: 'combustible', concepto: 'Diesel GastoAmatista', total: 813.37 }] });
-  revisa(s === 200, 'Raúl marca su orden como realizada con un gasto', j);
+  // Marcar realizado: quien hizo la orden, el gerente o Dirección (2026-10-26); el técnico todavía no.
+  [s, j] = await pedir('POST', '/leads/' + L2.id + '/ejecucion', R, { estado: 'realizado', fecha: dia(-1) });
+  revisa(s === 403, 'Raúl (técnico asignado) todavía no marca la orden como realizada', j);
+  [s, j] = await pedir('POST', '/leads/' + L3.id + '/ejecucion', N, { estado: 'realizado', fecha: dia(-1) });
+  revisa(s === 403, 'Ana (atención) tampoco marca la orden de Beto', j);
+  [s, j] = await pedir('POST', '/leads/' + L2.id + '/ejecucion', L, { estado: 'realizado', fecha: dia(-1) });
+  revisa(s === 200, 'Laura marca su orden como realizada', j);
+  // Gastos: Raúl, Laura e Isaac (este ligado a la orden de Beto, sin ver sus ventas).
+  [s, j] = await pedir('POST', '/finanzas/cxp', R, { proveedor_id: prov.id, categoria: 'combustible', concepto: 'Diesel GastoAmatista', total: 813.37, fecha_documento: HOY, lead_id: L2.id, dias_credito: 0 });
+  revisa(s === 201, 'Raúl registra el gasto de campo de su orden', j);
   [s, j] = await pedir('POST', '/finanzas/cxp', L, { proveedor_id: prov.id, categoria: 'otro', concepto: 'Casetas GastoCuarzo', total: 311.13, fecha_documento: HOY, lead_id: L2.id, dias_credito: 0 });
   revisa(s === 201, 'Laura registra un gasto en su orden', j);
   [s, j] = await pedir('GET', '/finanzas/ordenes-para-gasto', I);
@@ -161,7 +168,7 @@ const RANGO = 'desde=2020-01-01&hasta=' + dia(60);
   const ESPERADO = {
     Laura: ['Zafiro', 'Rubi', 'Cuarzo', 'SolPerla', '$venta-Zafiro', '$venta-Rubi', '$cobro-Ana-Rubi', '$cobro-Raul', '$gasto-Cuarzo', 'Amatista', '$gasto-Amatista'], // lo suyo, la cobranza y los gastos de sus órdenes (2026-10-22)
     Beto: ['Topacio', 'Onix', '$venta-Topacio', '$venta-Onix', '$cobro-Ana-Topacio', 'Jade', '$gasto-Jade'], // el gasto que Isaac ligó a su orden (2026-10-22)
-    Raul: ['Rubi', 'Amatista', 'SolCoral', 'Granate', '$cobro-Raul', '$gasto-Amatista'], // la orden asignada SIN importes, solo el cobro que él registró, su gasto, su solicitud
+    Raul: ['Rubi', '$venta-Rubi', 'Amatista', 'SolCoral', 'Granate', '$cobro-Raul', '$gasto-Amatista'], // la orden asignada con su importe (2026-10-26), solo el cobro que él registró, su gasto, su solicitud
     Ana: ['Zafiro', 'Rubi', 'Topacio', 'Onix', 'Granate', '$venta-Zafiro', '$venta-Rubi', '$venta-Topacio', '$venta-Onix', '$cobro-Ana-Rubi', '$cobro-Ana-Topacio', '$cobro-Raul'], // nada de proveedores
     Isaac: ['Rubi', 'Topacio', 'Amatista', 'Cuarzo', 'Jade', 'SolPerla', 'SolCoral', '$gasto-Amatista', '$gasto-Cuarzo', '$gasto-Jade'], // folio y cliente (sin montos de venta), todo CxP y compras
     Monica: Object.keys(MARCAS).filter(m => !/Jaspe/.test(m)),
@@ -223,24 +230,45 @@ const RANGO = 'desde=2020-01-01&hasta=' + dia(60);
 
   console.log('\nCambios de nivel al momento y roles inventados');
   const nivel = async (rol, alcances) => { const t = (await pedir('GET', '/permisos', A))[1].roles.find(r => r.clave === rol); return pedir('PUT', '/roles/' + rol + '/permisos', A, { permisos: t.permisos, alcances }); };
-  [s, j] = await nivel('ventas', { ventas: 2 }); revisa(s === 200, 'Dirección cambia a ventas: ve toda su sucursal');
+  const VENTAS = n => ({ contactos: n, cotizaciones: n, ordenes: n });
+  [s, j] = await nivel('ventas', VENTAS(2)); revisa(s === 200, 'Dirección cambia a ventas: ve toda su sucursal');
   [s, j] = await pedir('GET', '/leads', L); revisa(j.some(x => x.id === L3.id) && !j.some(x => x.id === L5.id), 'Laura ya ve las de Beto (y no las de CDMX)', j.map(x => x.id));
-  [s, j] = await nivel('ventas', { ventas: 1 }); revisa(s === 200, 'y la regresa a «lo suyo»');
-  [s, j] = await pedir('GET', '/leads', L); revisa(!j.some(x => x.id === L3.id), 'al instante deja de verlas');
+  [s, j] = await pedir('PUT', '/leads/' + L3.id, L, { version: (await pedir('GET', '/leads/' + L3.id, L))[1].version, observaciones: 'Intento' });
+  revisa(s === 403 && j.codigo === 'SOLO_LECTURA', 'pero la orden de Beto no la edita: es de Beto (2026-10-26)', j);
+  [s, j] = await nivel('ventas', VENTAS(3)); revisa(s === 200, 'Dirección le da «toda la empresa»');
+  [s, j] = await pedir('GET', '/leads', L); revisa(j.some(x => x.id === L5.id), 'Laura ya ve también las de CDMX', j.map(x => x.id));
+  [s, j] = await pedir('GET', '/leads', L, undefined, { 'X-Sucursal': String(qro.id) }); revisa(!j.some(x => x.id === L5.id), 'si elige Querétaro en el selector, solo las de Querétaro', j.map(x => x.id));
+  [s, j] = await nivel('ventas', VENTAS(1)); revisa(s === 200, 'y la regresa a «lo suyo»');
+  [s, j] = await pedir('GET', '/leads', L); revisa(!j.some(x => x.id === L3.id || x.id === L5.id), 'al instante deja de verlas');
   [s, j] = await nivel('ventas', { cxc: 0 }); revisa(s === 400 && /necesita/.test(j.error), 'no se le quita la cobranza a ventas mientras pueda confirmar cobros', j);
-  [s, j] = await nivel('costos', { compras: 1 }); revisa(s === 400, 'ni «lo suyo» en compras a quien gestiona compras (necesita toda su sucursal)', j);
+  [s, j] = await nivel('costos', { solicitudes: 1 }); revisa(s === 400, 'ni «lo suyo» en solicitudes a quien gestiona compras (necesita toda su sucursal)', j);
+  // Quién edita (2026-10-26): Ana ve toda la sucursal, pero solo edita lo que ella hace; el gerente, todo.
+  [s, j] = await pedir('PUT', '/leads/' + L3.id, N, { version: (await pedir('GET', '/leads/' + L3.id, N))[1].version, observaciones: 'Intento de Ana' });
+  revisa(s === 403, 'Ana (atención) no edita la orden de Beto, aunque la ve', j);
+  const cotAna = (await pedir('POST', '/leads', N, { cliente_id: cOnix.id, direccion: 'x', canal_id: canales[0].id, servicio_id: SERV.id, responsable_id: ID.Ana, partidas_json: partidas('De Ana', 100), iva_modo: 'sin_iva', valor: 100, forzar_duplicado: true }))[1];
+  [s, j] = await pedir('PUT', '/leads/' + cotAna.id, N, { version: cotAna.version, observaciones: 'La mía' }); revisa(s === 200, 'pero sí la cotización que ella hizo', j);
+  [s, j] = await pedir('GET', '/leads/' + cotAna.id, L); revisa(s === 404, 'y Laura (lo suyo) ni la ve');
+  [s, j] = await pedir('PUT', '/leads/' + L3.id, M, { version: (await pedir('GET', '/leads/' + L3.id, M))[1].version, observaciones: 'Revisada por Mónica' }); revisa(s === 200, 'Mónica (gerente) edita la orden de Beto', j);
+  [s, j] = await pedir('PUT', '/clientes/' + cTopacio.id, N, { notas_generales: 'Intento' }); revisa(s === 403, 'Ana no corrige el contacto de Beto', j);
+  [s, j] = await pedir('PUT', '/clientes/' + cTopacio.id, B, { notas_generales: 'Nota de Beto' }); revisa(s === 200, 'Beto sí corrige su contacto', j);
+  // Borrar: solo Dirección.
+  [s, j] = await pedir('DELETE', '/leads/' + cotAna.id, M, { motivo: 'Prueba de borrado' }); revisa(s === 403, 'Mónica (gerente) no borra cotizaciones', j);
+  [s, j] = await pedir('DELETE', '/leads/' + cotAna.id, N, { motivo: 'Prueba de borrado' }); revisa(s === 403, 'ni Ana la suya', j);
+  [s, j] = await pedir('DELETE', '/leads/' + cotAna.id, A, { motivo: 'Prueba de borrado' }); revisa(s === 200, 'Dirección sí', j);
   [s, j] = await pedir('POST', '/roles', A, { nombre: 'Cobranza' }); const COB = j.clave;
-  [s, j] = await pedir('PUT', '/roles/' + COB + '/permisos', A, { permisos: ['cobros.registrar', 'cobros.confirmar'], alcances: { ventas: 0, cxc: 2, cxp: 0, compras: 0 } }); revisa(s === 200, 'rol «Cobranza»: nada de ventas, toda la cobranza', j);
+  [s, j] = await pedir('PUT', '/roles/' + COB + '/permisos', A, { permisos: ['cobros.registrar', 'cobros.confirmar'], alcances: { cxc: 2 } }); revisa(s === 200, 'rol «Cobranza»: nada de ventas, toda la cobranza', j);
   [s] = await pedir('POST', '/usuarios', A, { nombre: 'Carla Cobranza', password: CLAVE, rol: COB, sucursales: [qro.id] });
   const C = (await pedir('POST', '/login', null, { nombre: 'Carla Cobranza', password: CLAVE }))[1].token;
   [s, j] = await pedir('GET', '/leads', C); revisa(j.some(x => x.id === L2.id) && j.some(x => x.id === L3.id) && !j.some(x => x.id === L1.id || x.id === L4.id), 'Carla ve las órdenes contratadas (para cobrarlas), no las cotizaciones', j.map(x => x.id));
   [s] = await pedir('POST', '/compras/solicitudes', C, { que: 'Algo', para_que: 'Prueba', centro_id: centros[0].id }); revisa(s === 403, 'sin compras no hace solicitudes');
   [s] = await pedir('POST', '/leads', C, { cliente_id: cRubi.id, direccion: 'x', canal_id: canales[0].id, servicio_id: SERV.id, responsable_id: (await pedir('GET', '/usuarios', A))[1].find(u => u.nombre === 'Carla Cobranza').id, partidas_json: partidas('x', 1), iva_modo: 'sin_iva', valor: 1, forzar_duplicado: true });
   revisa(s === 403, 'sin ventas no cotiza');
+  [s, j] = await pedir('GET', '/leads/' + L3.id, C); revisa(s === 200 && j.puede_editar === false, 'Carla abre la orden de Beto en solo lectura', j.puede_editar);
+  [s, j] = await pedir('PUT', '/leads/' + L3.id, C, { version: j.version, tecnico_id: ID.Raul, observaciones: 'Cambio de Carla' }); revisa(s === 403, 'y no le cambia ni el técnico ni nada (lo que no le gustaba a Dirección)', j);
   // Rol inventado con ventas de toda la sucursal pero cobranza «lo suyo» (auditoría 2026-10-21): la cobranza solo de
   // sus órdenes, aunque vea todas las ventas. Antes veía la de toda la sucursal.
   [s, j] = await pedir('POST', '/roles', A, { nombre: 'Vendedor senior' }); const SEN = j.clave;
-  [s, j] = await pedir('PUT', '/roles/' + SEN + '/permisos', A, { permisos: ['ordenes.importes', 'cobros.registrar', 'cobranza.factura'], alcances: { ventas: 2, cxc: 1, cxp: 0, compras: 0 } }); revisa(s === 200, 'rol «Vendedor senior»: ventas de toda la sucursal, cobranza lo suyo', j);
+  [s, j] = await pedir('PUT', '/roles/' + SEN + '/permisos', A, { permisos: ['ordenes.importes', 'cobros.registrar', 'cobranza.factura'], alcances: { ...VENTAS(2), cxc: 1 } }); revisa(s === 200, 'rol «Vendedor senior»: ventas de toda la sucursal, cobranza lo suyo', j);
   [s] = await pedir('POST', '/usuarios', A, { nombre: 'Sara Senior', password: CLAVE, rol: SEN, sucursales: [qro.id] });
   const SS = (await pedir('POST', '/login', null, { nombre: 'Sara Senior', password: CLAVE }))[1].token;
   [s, j] = await pedir('GET', '/leads/' + L2.id, SS); revisa(s === 200 && j.valor === 8231.57, 'Sara ve la orden de Laura (ventas de toda la sucursal)', s);
@@ -251,7 +279,7 @@ const RANGO = 'desde=2020-01-01&hasta=' + dia(60);
   [s, j] = await pedir('GET', '/finanzas/clientes/' + cRubi.id + '/estado-cuenta?completo=1', SS); revisa(s === 200 && !(j.ordenes || []).length && !(j.cobros || []).length && !j.saldo, 'ni en el estado de cuenta del cliente', { ordenes: j.ordenes?.length, cobros: j.cobros?.length, saldo: j.saldo });
   // «Ver como»: Dirección mira con los niveles de ventas (lo suyo de Dirección: nada).
   [s, j] = await pedir('GET', '/leads', A, undefined, { 'X-Ver-Como': 'ventas' }); revisa(s === 200 && !j.length, 'Dirección «viendo como ventas» no ve las cotizaciones de los vendedores', j.length);
-  [s, j] = await pedir('GET', '/permisos/mios', L); revisa(j.alcances?.ventas === 1 && j.permisos.includes('ventas.ver') && !j.permisos.includes('ventas.sucursal'), 'la pantalla de Laura sabe qué ve (para esconder menús)', j.alcances);
+  [s, j] = await pedir('GET', '/permisos/mios', L); revisa(j.alcances?.cotizaciones === 1 && j.permisos.includes('cotizaciones.ver') && j.permisos.includes('ventas.ver') && !j.permisos.includes('cotizaciones.sucursal'), 'la pantalla de Laura sabe qué ve (para esconder menús)', j.alcances);
   [s, j] = await pedir('GET', '/permisos/mios', I); revisa(!j.permisos.includes('ventas.ver') && !j.permisos.includes('cxc.ver'), 'la de Isaac sabe que no ve ventas ni cobranza');
 
   srv.kill();

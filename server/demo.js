@@ -21,10 +21,10 @@ const USUARIOS_DEMO = [
   ['supervisor', 'supervisor', 'Sergio Supervisor - Demo', 'Supervisor de campo QRO (sin datos sensibles)', 'QRO'],
   ['nomina', 'nomina', 'Carlos Nómina - Demo', 'Nómina QRO (solo consulta, con CLABE y salario)', 'QRO'],
 ];
-// Roles de ejemplo para Personal: [clave en USUARIOS_DEMO, nombre, descripción, permisos, qué ve en cada área (0 nada, 1 lo suyo, 2 su sucursal)].
+// Roles de ejemplo para Personal: [clave en USUARIOS_DEMO, nombre, descripción, permisos, qué ve en cada área (0 nada, 1 lo suyo, 2 su sucursal, 3 toda la empresa)].
 const ROLES_RH = [
   ['rh', 'Recursos humanos', 'Altas, bajas, vacaciones, expediente y datos de pago del personal', ['personal.ver', 'personal.editar', 'personal.sensibles'], {}],
-  ['supervisor', 'Supervisor de campo', 'Coordina cuadrillas: ve las órdenes de su sucursal y al personal, sin datos sensibles', ['personal.ver', 'personal.editar'], { ventas: 2 }],
+  ['supervisor', 'Supervisor de campo', 'Coordina cuadrillas: ve las órdenes de su sucursal y al personal, sin datos sensibles', ['personal.ver', 'personal.editar'], { ordenes: 2 }],
   ['nomina', 'Nómina', 'Consulta CLABE y salarios para pagar; no cambia fichas', ['personal.ver', 'personal.sensibles'], { cxp: 2 }],
 ];
 const nombreDemo = clave => (USUARIOS_DEMO.find(([c]) => c === clave) || [])[2] || '';
@@ -152,7 +152,7 @@ module.exports = function demo(app, db, { sesiones, PORT, SESSION_TTL_MS }) {
       if (etapa) await pedir('PUT', '/leads/' + c.id, quien, { version: (await pedir('GET', '/leads/' + c.id, quien)).version, etapa });
       if (!fServ) return c;
       await pedir('PUT', '/leads/' + c.id, quien, { version: (await pedir('GET', '/leads/' + c.id, quien)).version, estatus: 'ganado', fecha_servicio: fServ, ...(eq || tecnico ? { equipo_personal: eq || [{ personal_id: PER.raul, papel: 'responsable' }, { personal_id: PER_OPERADOR[operador] || PER.diego, papel: 'operador' }, ...(/fosa|aceitos|cárcamo/i.test(JSON.stringify(partidas)) ? [{ personal_id: PER.luis, papel: 'ayudante' }] : [])] } : {}), ...(proyecto ? { proyecto } : {}), ...(equipo ? { equipo } : {}), ...(operador ? { operador } : {}) });
-      if (realizado) await pedir('POST', '/leads/' + c.id + '/ejecucion', tec || T, { estado: 'realizado', fecha: realizado, realizado_por: sub ? 'subcontratado' : 'propio', gastos: sub || propio || [] });
+      if (realizado) await pedir('POST', '/leads/' + c.id + '/ejecucion', tec || quien, { estado: 'realizado', fecha: realizado, realizado_por: sub ? 'subcontratado' : 'propio', gastos: sub || propio || [] });
       if (factura) await pedir('PUT', '/leads/' + c.id + '/facturacion', A, { dias_credito: factura.dias, factura_folio: factura.folio, factura_fecha: factura.fecha, factura_metodo: factura.metodo || 'PUE' });
       for (const k of cobros) if (k.fecha <= HOY) await pedir('POST', '/leads/' + c.id + '/cobros', A, { monto: k.monto, metodo: k.metodo || 'transferencia', fecha: k.fecha, referencia: k.ref || null });
       return c;
@@ -241,7 +241,7 @@ module.exports = function demo(app, db, { sesiones, PORT, SESSION_TTL_MS }) {
     await pedir('PUT', '/leads/' + cotHotel.id, V, { version: (await pedir('GET', '/leads/' + cotHotel.id, V)).version, estatus: 'perdido', motivo_perdida: 'Precio alto: eligió a otro proveedor' });
     const plaza = await contacto('Administración Plaza Galerías', '442 410 2020', 'Plaza Galerías Querétaro', 'Av. 5 de Febrero 99', 'Llamada telefónica');
     const noReal = await orden({ cliente: plaza, serv: 'Limpieza de fosas y cárcamos', partidas: [{ leyenda: 'Limpieza de cárcamo de bombeo', importe: 12000 }], fCot: dia(-20), fServ: dia(-14), cobros: [{ monto: 5000, fecha: dia(-18), ref: 'Anticipo 40%' }] });
-    await pedir('POST', '/leads/' + noReal.id + '/ejecucion', T, { estado: 'no_realizado', motivo: 'El cliente canceló porque la plaza cerró por remodelación' });
+    await pedir('POST', '/leads/' + noReal.id + '/ejecucion', V, { estado: 'no_realizado', motivo: 'El cliente canceló porque la plaza cerró por remodelación' });
     const hospital = await contacto('Ing. Pablo Ruiz · Mantenimiento', '442 192 0000', 'Hospital San José Querétaro', 'Prol. Constituyentes 302', 'Correo electrónico', 'HSJ850101MT5');
     await orden({ cliente: hospital, serv: 'Mantenimiento a plantas de tratamiento', partidas: [{ leyenda: 'Mantenimiento mensual a planta de tratamiento', importe: 45000 }], fCot: dia(-35), fServ: dia(-30), realizado: dia(-30),
       factura: { dias: 30, folio: 'A-1200', fecha: dia(-30), metodo: 'PPD' }, cobros: [{ monto: 20000, fecha: dia(-15), ref: 'Parcialidad 1' }, { monto: 15000, fecha: dia(-2), ref: 'Parcialidad 2' }] });

@@ -1716,6 +1716,8 @@ async function abrirFichaCliente(id) {
   document.getElementById('fc-ed-origen').value = cliente.canal_origen_id ? String(cliente.canal_origen_id) : '';
 
   renderServiciosCliente(cliente.servicios || []);
+  SoloLectura.poner('#overlay-ficha-cliente [data-plegable="datos-contacto"]', cliente.puede_editar, { que: 'el contacto',
+    quien: 'sus datos los corrige quien lo dio de alta o lo atiende, el gerente o Dirección.' });
   abrirVentana('overlay-ficha-cliente');
   FlujoCRM.presentarContacto(cliente);
   FlujoCRM.marcarGuardado('overlay-ficha-cliente');
@@ -1861,6 +1863,7 @@ on('btn-guardar-cliente', 'click', async () => {
     toast('Datos del cliente actualizados');
     const cliente = await api('/clientes/' + CLIENTE_ACTUAL.id).then(r => r.json());
     CLIENTE_ACTUAL = cliente;
+    SoloLectura.bloquear('#overlay-ficha-cliente [data-plegable="datos-contacto"]');
     FlujoCRM.presentarContacto(cliente);
     if (LEAD_ACTUAL?.cliente_id === cliente.id) FlujoCRM.presentarRegistro(LEAD_ACTUAL, cliente);
     FlujoCRM.marcarGuardado('overlay-ficha-cliente');
@@ -1890,8 +1893,8 @@ async function abrirFicha(id) {
   document.getElementById('ed-canal').value = lead.canal_id || '';
   document.getElementById('ed-servicio').value = lead.servicio_id || '';
   document.getElementById('ed-responsable').value = lead.responsable_id || '';
-  // Con «lo suyo» en ventas, pasar la cotización a otro vendedor lo hace el gerente.
-  const soloSuyo = (Permisos.datos.alcances?.ventas ?? 2) < 2;
+  // Pasar la cotización a otro vendedor lo hace el gerente («Editar lo de otros») o Dirección.
+  const soloSuyo = !Permisos.puede('ventas.editar_otros');
   document.getElementById('ed-responsable').disabled = soloSuyo;
   document.getElementById('ed-responsable').title = soloSuyo ? 'Para pasarla a otro vendedor, pídeselo al gerente' : '';
   EquipoOrden.mostrar(lead);
@@ -1931,6 +1934,10 @@ async function abrirFicha(id) {
   Finanzas.pintarCobranzaOrden(lead);
   Finanzas.pintarCostosOrden(lead);
   prepararEditorCotizacion(lead,'existente');
+  // Se abre en solo lectura; quien la puede editar pulsa «Editar» (2026-10-26).
+  const esOrden = lead.estatus === 'ganado';
+  SoloLectura.poner('#overlay-ficha [data-plegable="datos-registro"]', lead.puede_editar, { que: esOrden ? 'esta orden' : 'esta cotización',
+    quien: (esOrden ? 'esta orden de servicio' : 'esta cotización') + ' la edita quien la hizo, el gerente o Dirección.' });
   FlujoCRM.marcarGuardado('overlay-ficha');
 }
 
@@ -2103,6 +2110,7 @@ on('btn-guardar-ficha', 'click', async () => {
     FlujoCRM.marcarGuardado('overlay-ficha');
     const lead = await api('/leads/' + LEAD_ACTUAL.id).then(r => r.json());
     LEAD_ACTUAL = lead;
+    SoloLectura.bloquear('#overlay-ficha [data-plegable="datos-registro"]');
     renderFichaMeta(lead);
     Finanzas.pintarCobranzaOrden(lead);
     await ServiciosTabla.refrescar();
@@ -2192,7 +2200,7 @@ function filaRecompra(r, vencido) {
       </div>
       <div class="util-46">
         <button class="btn btn-outline" onclick="abrirFichaCliente(${r.cliente_id})">Ver cliente</button>
-        <button class="btn btn-primario" onclick="duplicarRegistro(${r.ultimo_lead_id})">➕ Registrar servicio nuevo</button>
+        <button class="btn btn-primario perm-ordenes-editar perm-ordenes-importes" onclick="duplicarRegistro(${r.ultimo_lead_id})">➕ Registrar servicio nuevo</button>
       </div>
     </div>`;
 }
