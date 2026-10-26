@@ -138,6 +138,8 @@ function cambiarVista(v, opciones) {
   if ((v === 'cobrar' || (v === 'cuentas' && !['pagar', 'proveedores'].includes(opciones?.pestana))) && !Permisos.puede('cxc.ver')) v = 'inicio';
   if ((v === 'pagar' || (v === 'cuentas' && ['pagar', 'proveedores'].includes(opciones?.pestana))) && !Permisos.puede('cxp.ver')) v = 'inicio';
   if (v === 'pendientes') v = 'inicio'; // Pendientes ahora es parte de Inicio
+  // «Proveedores» (menú Finanzas) es la pestaña de Cuentas por pagar.
+  if (v === 'proveedores') { opciones = { ...opciones, pestana: 'proveedores' }; v = Permisos.puede('cxp.ver') ? 'pagar' : 'inicio'; }
   // Cuentas por cobrar y por pagar son dos secciones del menú Finanzas que usan la misma pantalla.
   if (v === 'cuentas') v = ['pagar', 'proveedores'].includes(opciones?.pestana) ? 'pagar' : 'cobrar';
   const seccionCuentas = ['cobrar', 'pagar'].includes(v) ? v : null;

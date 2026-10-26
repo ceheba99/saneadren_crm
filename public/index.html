@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Saneadren · Cotizaciones y Servicios</title>
-<link rel="stylesheet" href="styles.css?v=esp1">
+<link rel="stylesheet" href="styles.css?v=prv1">
 <link rel="stylesheet" href="servicios-tabla.css">
 <link rel="stylesheet" href="flujo.css?v=cel1">
 </head>
@@ -42,6 +42,7 @@
         <div class="menu-sub">
           <button type="button" class="menu-item solo-cobranza perm-cxc-ver" data-vista="cobrar" id="nav-cobrar"><span class="menu-icono" aria-hidden="true">📥</span>Cuentas por cobrar</button>
           <button type="button" class="menu-item solo-cobranza perm-cxp-ver" data-vista="pagar" id="nav-pagar"><span class="menu-icono" aria-hidden="true">📤</span>Cuentas por pagar</button>
+          <button type="button" class="menu-item solo-cobranza perm-cxp-ver" data-vista="proveedores" id="nav-proveedores"><span class="menu-icono" aria-hidden="true">🏭</span>Proveedores</button>
           <button type="button" class="menu-item perm-solicitudes-ver" data-vista="solicitudes"><span class="menu-icono" aria-hidden="true">📝</span>Solicitudes de compra</button>
           <button type="button" class="menu-item perm-ordenes_compra-ver" data-vista="compras"><span class="menu-icono" aria-hidden="true">🛒</span>Órdenes de compra</button>
           <button type="button" class="menu-item perm-reportes-analisis" data-vista="resultados"><span class="menu-icono" aria-hidden="true">📊</span>Resultados</button>
@@ -603,7 +604,18 @@
     </div>
 
     <div class="cuentas-panel" data-panel="proveedores" hidden>
-      <div class="panel-alta">
+      <div class="prov-cabecera">
+        <div><h2>Proveedores</h2><p class="ayuda">A quién se le compra y se le paga. Toca un proveedor para ver su ficha: cuánto se le debe, sus facturas, pagos y órdenes de compra.</p></div>
+        <button type="button" class="btn btn-primario perm-gastos-registrar" id="prov-nuevo">+ Agregar proveedor</button>
+      </div>
+      <div class="filtros prov-filtros">
+        <label class="sr-only" for="prov-buscar">Buscar proveedor</label>
+        <input type="search" id="prov-buscar" maxlength="80" placeholder="Buscar por nombre, RFC, contacto, teléfono o categoría" autocomplete="off">
+        <label class="sr-only" for="prov-filtro">Cuáles ver</label>
+        <select id="prov-filtro"><option value="activos">Activos</option><option value="saldo">Con saldo por pagar</option><option value="inactivos">Inactivos</option><option value="todos">Todos</option></select>
+      </div>
+      <p class="ayuda" id="prov-resumen" role="status"></p>
+      <div class="panel-alta" id="prov-form" hidden>
         <h2 id="prov-form-titulo">Agregar proveedor</h2>
         <div class="form-grid">
           <div class="campo"><label for="prov-nombre">Nombre (obligatorio)</label><input id="prov-nombre" maxlength="120" placeholder="Ej. Disposición del Bajío"></div>
@@ -614,8 +626,9 @@
           <div class="campo"><label for="prov-contacto">Contacto (opcional)</label><input id="prov-contacto" maxlength="120"></div>
           <div class="campo perm-dinero-mover"><label for="prov-clabe">CLABE para transferencias (opcional)</label><input id="prov-clabe" maxlength="22" inputmode="numeric" placeholder="18 dígitos"></div>
           <div class="campo perm-dinero-mover"><label for="prov-banco">Banco (opcional)</label><input id="prov-banco" maxlength="60" placeholder="Ej. Santander"></div>
+          <div class="campo full"><label for="prov-notas">Notas (opcional)</label><textarea id="prov-notas" rows="2" maxlength="1000" placeholder="Ej. Entrega en planta; pedir factura con orden de compra"></textarea></div>
         </div>
-        <div class="btn-group"><button type="button" class="btn btn-primario" id="prov-guardar">Guardar proveedor</button><button type="button" class="btn btn-outline" id="prov-cancelar" hidden>Cancelar edición</button></div>
+        <div class="btn-group"><button type="button" class="btn btn-primario" id="prov-guardar">Guardar proveedor</button><button type="button" class="btn btn-outline" id="prov-cancelar">Cancelar</button></div>
       </div>
       <div id="prov-lista" class="inicio-lista"></div>
     </div>
@@ -1279,7 +1292,7 @@
 <script src="servicios-tabla.js?v=pf1"></script>
 <script src="flujo.js?v=hr1"></script>
 <script src="cuentas.js?v=rev1"></script>
-<script src="finanzas.js?v=pf1"></script>
+<script src="finanzas.js?v=prv1"></script>
 <script src="calendario.js?v=esp1"></script>
 <script src="tablero.js?v=ay1"></script>
 <script src="bitacora.js?v=hc1"></script>
@@ -1287,7 +1300,7 @@
 <script src="solicitudes.js?v=rev1"></script>
 <script src="carga-generador.js?v=con1"></script>
 <script src="sucursales.js?v=perm2"></script>
-<script src="app.js?v=av1"></script>
+<script src="app.js?v=prv1"></script>
 <script src="personal.js?v=pf1"></script>
 <script src="buscador.js?v=suc1"></script>
 <script src="demo.js?v=demo1"></script>

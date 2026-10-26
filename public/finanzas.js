@@ -987,38 +987,57 @@ const Finanzas = (() => {
   });
 
   // ---------- Proveedores ----------
+  // Lista con búsqueda (nombre, RFC, contacto, teléfono, categoría) y filtro; el alta y la edición en un formulario que se
+  // abre con «+ Agregar proveedor» o «Editar». Editar y desactivar es de quien paga (el servidor pide «Mover dinero»).
   let PROV_EDITANDO = null;
   async function cargarProveedores() {
     const cont = $('prov-lista');
     try { await catalogosPagos(); } catch (err) { cont.innerHTML = `<div class="aviso-error-carga" role="alert"><p>No se pudo cargar: ${esc(err.message)}</p></div>`; return; }
-    const cat = Object.fromEntries(CATEGORIAS.map(c => [c.clave, c.nombre]));
-    cont.innerHTML = PROVEEDORES.length ? PROVEEDORES.map(p => `
+    cerrarFormProveedor();
+    pintarProveedores();
+  }
+  function pintarProveedores() {
+    const cont = $('prov-lista'), cat = Object.fromEntries(CATEGORIAS.map(c => [c.clave, c.nombre]));
+    const q = sinAcentos($('prov-buscar').value.trim()), filtro = $('prov-filtro').value;
+    const digitos = q.replace(/\D/g, '');
+    const lista = PROVEEDORES.filter(p => (filtro === 'todos' || (filtro === 'inactivos' ? !p.activo : p.activo && (filtro !== 'saldo' || p.saldo > 0)))
+      && (!q || sinAcentos([p.nombre, p.rfc, p.contacto, cat[p.categoria] || p.categoria, p.notas].join(' ')).includes(q) || (digitos.length >= 4 && String(p.telefono || '').replace(/\D/g, '').includes(digitos))));
+    const total = lista.reduce((t, p) => t + (p.saldo || 0), 0);
+    $('prov-resumen').textContent = PROVEEDORES.length ? `${lista.length} de ${PROVEEDORES.length} proveedores` + (total > 0 ? ` · ${formatoMoneda(total)} por pagar` : '') : '';
+    cont.innerHTML = lista.length ? lista.map(p => `
       <div class="fila-dinero${p.activo ? '' : ' inactivo'}"><div class="info"><button type="button" class="enlace enlace-fuerte" data-ficha-prov="${Number(p.id)}">${esc(p.nombre)}</button>${p.activo ? '' : ' · inactivo'}
-        <small>${esc(cat[p.categoria] || p.categoria)} · crédito ${Number(p.dias_credito)} días${p.telefono ? ' · ' + esc(p.telefono) : ''}${p.rfc ? ' · RFC ' + esc(p.rfc) : ''}</small></div>
+        <small>${esc(cat[p.categoria] || p.categoria)} · crédito ${Number(p.dias_credito)} días${p.contacto ? ' · ' + esc(p.contacto) : ''}${p.telefono ? ' · ' + esc(p.telefono) : ''}${p.rfc ? ' · RFC ' + esc(p.rfc) : ''}</small></div>
         <div class="montos"><b>${formatoMoneda(p.saldo)}</b><small>por pagar</small></div>
-        <div class="btn-group"><button type="button" class="btn btn-primario" data-ficha-prov="${Number(p.id)}">Ver ficha</button><button type="button" class="btn btn-outline" data-editar-prov="${Number(p.id)}">Editar</button>
-          <button type="button" class="btn btn-outline" data-activo-prov="${Number(p.id)}">${p.activo ? 'Desactivar' : 'Activar'}</button></div></div>`).join('')
-      : '<p class="util-45">Aún no hay proveedores. Agrega el primero arriba.</p>';
-    limpiarFormProveedor();
+        <div class="btn-group"><button type="button" class="btn btn-primario" data-ficha-prov="${Number(p.id)}">Ver ficha</button><button type="button" class="btn btn-outline perm-dinero-mover" data-editar-prov="${Number(p.id)}">Editar</button>
+          <button type="button" class="btn btn-outline perm-dinero-mover" data-activo-prov="${Number(p.id)}">${p.activo ? 'Desactivar' : 'Activar'}</button></div></div>`).join('')
+      : `<p class="util-45">${PROVEEDORES.length ? 'Ningún proveedor coincide con la búsqueda.' : 'Aún no hay proveedores. Agrega el primero con «+ Agregar proveedor».'}</p>`;
   }
-  function limpiarFormProveedor() {
+  function cerrarFormProveedor() {
     PROV_EDITANDO = null;
-    ['prov-nombre', 'prov-rfc', 'prov-telefono', 'prov-contacto', 'prov-clabe', 'prov-banco'].forEach(id => { $(id).value = ''; });
+    ['prov-nombre', 'prov-rfc', 'prov-telefono', 'prov-contacto', 'prov-clabe', 'prov-banco', 'prov-notas'].forEach(id => { $(id).value = ''; });
     $('prov-credito').value = 0; $('prov-categoria').value = 'otro';
-    $('prov-form-titulo').textContent = 'Agregar proveedor'; $('prov-cancelar').hidden = true;
+    $('prov-form-titulo').textContent = 'Agregar proveedor'; $('prov-form').hidden = true;
   }
-  $('prov-cancelar').addEventListener('click', limpiarFormProveedor);
+  function abrirFormProveedor(p = null) {
+    cerrarFormProveedor();
+    if (p) {
+      PROV_EDITANDO = p.id;
+      $('prov-nombre').value = p.nombre; $('prov-categoria').value = p.categoria; $('prov-credito').value = p.dias_credito;
+      $('prov-rfc').value = p.rfc || ''; $('prov-telefono').value = p.telefono || ''; $('prov-contacto').value = p.contacto || ''; $('prov-clabe').value = p.clabe || ''; $('prov-banco').value = p.banco || '';
+      $('prov-notas').value = p.notas || '';
+      $('prov-form-titulo').textContent = 'Editar proveedor';
+    }
+    $('prov-form').hidden = false; $('prov-form').scrollIntoView({ block: 'start', behavior: 'smooth' }); $('prov-nombre').focus();
+  }
+  $('prov-nuevo').addEventListener('click', () => abrirFormProveedor());
+  $('prov-cancelar').addEventListener('click', cerrarFormProveedor);
+  $('prov-buscar').addEventListener('input', pintarProveedores);
+  $('prov-filtro').addEventListener('change', pintarProveedores);
   $('prov-lista').addEventListener('click', async e => {
     const btn = e.target.closest('button'); if (!btn) return;
     if (btn.dataset.fichaProv) return abrirCuentaProveedor(Number(btn.dataset.fichaProv));
     const p = PROVEEDORES.find(x => x.id === Number(btn.dataset.editarProv || btn.dataset.activoProv)); if (!p) return;
-    if (btn.dataset.editarProv) {
-      PROV_EDITANDO = p.id;
-      $('prov-nombre').value = p.nombre; $('prov-categoria').value = p.categoria; $('prov-credito').value = p.dias_credito;
-      $('prov-rfc').value = p.rfc || ''; $('prov-telefono').value = p.telefono || ''; $('prov-contacto').value = p.contacto || ''; $('prov-clabe').value = p.clabe || ''; $('prov-banco').value = p.banco || '';
-      $('prov-form-titulo').textContent = 'Editar proveedor'; $('prov-cancelar').hidden = false; $('prov-nombre').focus();
-      return;
-    }
+    if (btn.dataset.editarProv) return abrirFormProveedor(p);
     conBoton(btn, async () => { await json(await api('/finanzas/proveedores/' + p.id, { method: 'PUT', body: JSON.stringify({ activo: !p.activo }) })); cargarProveedores(); });
   });
   // Crear o editar un proveedor. Si se parece a uno que ya existe, se pregunta «¿es otro?»; si es exactamente
@@ -1040,7 +1059,7 @@ const Finanzas = (() => {
   }
   $('prov-guardar').addEventListener('click', e => conBoton(e.currentTarget, async () => {
     const cuerpo = { nombre: $('prov-nombre').value, categoria: $('prov-categoria').value, dias_credito: $('prov-credito').value,
-      rfc: $('prov-rfc').value, telefono: $('prov-telefono').value, contacto: $('prov-contacto').value, clabe: $('prov-clabe').value, banco: $('prov-banco').value };
+      rfc: $('prov-rfc').value, telefono: $('prov-telefono').value, contacto: $('prov-contacto').value, clabe: $('prov-clabe').value, banco: $('prov-banco').value, notas: $('prov-notas').value };
     if (!await guardarProveedor(cuerpo, PROV_EDITANDO)) return;
     toast(PROV_EDITANDO ? 'Proveedor actualizado' : 'Proveedor agregado'); cargarProveedores();
   }));

@@ -159,7 +159,7 @@ module.exports = {
     contacto: { alta: 'in-', edicion: 'fc-ed-', equivalentes: {}, soloEdicion: {}, soloAlta: {} },
   },
   // Entradas del menú que llevan a una pantalla con otro nombre (pestañas de la misma pantalla).
-  aliasMenu: { cobrar: 'cuentas', pagar: 'cuentas' },
+  aliasMenu: { cobrar: 'cuentas', pagar: 'cuentas', proveedores: 'cuentas' },
   // Rutas que no pertenecen a un módulo: públicas y de cuenta propia.
   rutasGenerales: [/^\/api\/(salud|login|logout|registro|verificar-correo|olvide-password|restablecer-password|demo)(\/|$)/],
   // Recursos compartidos por todas las sucursales (verlos desde otra sucursal es correcto).
