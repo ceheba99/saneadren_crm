@@ -2354,6 +2354,8 @@ const NOMBRES_DE_FABRICA = { admin: 'Dirección', gerente: 'Gerente', ventas: 'V
 const nombreRol = clave => ROLES_DATOS.find(r => r.clave === clave)?.nombre || NOMBRES_DE_FABRICA[clave] || clave;
 const opcionesRol = actual => ROLES_DATOS.filter(r => (r.cabe && (Sucursales.datos.admin_general || !['admin', 'gerente'].includes(r.clave))) || r.clave === actual)
   .map(r => `<option value="${escaparHtml(r.clave)}" ${r.clave === actual ? 'selected' : ''}>${escaparHtml(r.nombre + (r.descripcion ? ' · ' + r.descripcion : ''))}</option>`).join('');
+// Listas que se editan renglón por renglón (usuarios, catálogos): cada renglón abre en vista con «✏️ Editar» (2026-10-26).
+const enVista = (selector, puede) => document.querySelectorAll(selector).forEach(z => SoloLectura.poner(z, puede, { compacto: true, barraEn: '.acciones-catalogo' }));
 async function cargarUsuarios() {
   const [usuarios, roles] = await Promise.all([api('/usuarios').then(r => r.json()), api('/roles').then(r => r.json())]);
   pintarDesactivados();
@@ -2371,11 +2373,12 @@ async function cargarUsuarios() {
       ${Sucursales.varias() ? `<div><label>Sucursales</label>${u.rol === 'admin' ? '<p class="ayuda">Todas</p>' : Sucursales.casillas('usr-' + id, u.sucursales || [])}</div>` : ''}
       <div class="acciones-catalogo">
         <button type="button" class="btn btn-secundario" data-accion="guardar">Guardar</button>
-        <button type="button" class="btn btn-outline" data-accion="password">Nueva contraseña</button>
-        <button type="button" class="btn btn-peligro" data-accion="desactivar" ${propio || (u.rol === 'admin' && admins === 1) ? 'disabled title="No disponible para esta cuenta"' : ''}>Desactivar</button>
+        <button type="button" class="btn btn-outline" data-accion="password" data-sl-libre>Nueva contraseña</button>
+        <button type="button" class="btn btn-peligro" data-accion="desactivar" data-sl-libre ${propio || (u.rol === 'admin' && admins === 1) ? 'disabled title="No disponible para esta cuenta"' : ''}>Desactivar</button>
       </div>
     </div>`;
   }).join('');
+  enVista('#lista-usuarios .fila-usuario', true);
 }
 // Desactivados: se pueden reactivar (vuelven con su rol y sus sucursales; deben cambiar su contraseña al entrar).
 async function pintarDesactivados() {
@@ -2408,7 +2411,7 @@ on('lista-usuarios', 'click', async e => {
       if (Sucursales.varias() && rolNuevo !== 'admin' && fila.querySelector('[data-sucursales]')) cuerpo.sucursales = Sucursales.elegidas('usr-' + id);
       const r = await api('/usuarios/' + id, { method: 'PUT', body: JSON.stringify(cuerpo) });
       if (!r.ok) { const j = await r.json().catch(() => ({})); throw new Error(j.error || 'No se pudo guardar'); }
-      toast('Usuario actualizado');
+      toast('Usuario actualizado'); SoloLectura.bloquear(fila);
       if (id === USUARIO_ACTUAL.id) { guardarSesion({ ...USUARIO_ACTUAL, nombre }); mostrarUsuarioEnHeader(); }
     } else if (btn.dataset.accion === 'password') {
       const password = await solicitarDialogo({ titulo: 'Nueva contraseña para ' + nombre, mensaje: 'Mínimo 10 caracteres, con letras y números. Compártela por un medio privado: deberá cambiarla al iniciar sesión.', aceptar: 'Asignar', campo: { tipo: 'password' } });
@@ -2450,6 +2453,7 @@ async function cargarCatalogoServicios() {
         ${admin ? '<button type="button" class="btn btn-peligro" data-eliminar>Eliminar</button>' : ''}
       </div>
     </div>`).join('');
+  enVista('#lista-servicios-catalogo .fila-catalogo', Permisos.puede('catalogos.editar'));
 }
 on('lista-servicios-catalogo', 'click', async e => {
   const fila = e.target.closest('[data-servicio]'); if (!fila) return;
@@ -2465,7 +2469,7 @@ on('lista-servicios-catalogo', 'click', async e => {
       const cuerpo = { descripcion: document.getElementById('desc-' + id).value };
       if (Permisos.direccion()) { const v = document.getElementById('rec-' + id).value; cuerpo.dias_recurrencia = v === '' ? null : Number(v); }
       await exigirOk(await api('/servicios/' + id, { method: 'PUT', body: JSON.stringify(cuerpo) }));
-      toast('Servicio guardado');
+      toast('Servicio guardado'); SoloLectura.bloquear(fila);
       cargarCatalogos();
     }
     if (btn.hasAttribute('data-eliminar')) {
@@ -2516,6 +2520,7 @@ async function cargarCanalesCatalogo() {
       <div class="info"><label for="canal-${Number(c.id)}">Nombre del canal</label><input id="canal-${Number(c.id)}" value="${escaparHtml(c.nombre)}" maxlength="80"></div>
       <div class="acciones-catalogo"><button type="button" class="btn btn-secundario" data-guardar>Guardar nombre</button></div>
     </div>`).join('');
+  enVista('#lista-canales-catalogo .fila-catalogo', Permisos.puede('catalogos.editar'));
 }
 on('lista-canales-catalogo', 'click', async e => {
   const fila = e.target.closest('[data-canal]'); const btn = e.target.closest('button');
@@ -2528,7 +2533,7 @@ on('lista-canales-catalogo', 'click', async e => {
     } else {
       const r = await api('/canales/' + id, { method: 'PUT', body: JSON.stringify({ nombre: document.getElementById('canal-' + id).value }) });
       await exigirOk(r);
-      toast('Canal actualizado; los contactos conservan su canal');
+      toast('Canal actualizado; los contactos conservan su canal'); SoloLectura.bloquear(btn.closest('.fila-catalogo'));
       cargarCatalogos();
     }
   } catch (err) { toast('No se pudo guardar: ' + err.message); }
@@ -2626,7 +2631,8 @@ async function cargarTiposCliente(){
   document.getElementById('btn-agregar-tipo').disabled=false;
   CATALOGOS.tipos=tipos;
   for(const id of ['in-giro','fc-ed-giro']){const el=document.getElementById(id),valor=el.value;el.innerHTML='<option value="">Sin especificar</option>'+tipos.map(t=>`<option value="${escaparHtml(t.clave)}">${escaparHtml(t.nombre)}</option>`).join('');el.value=valor;}
-  document.getElementById('lista-tipos-cliente').innerHTML=tipos.map(t=>`<div class="servicio-row"><label for="tipo-${escaparHtml(t.clave)}">Tipo de cliente</label><input id="tipo-${escaparHtml(t.clave)}" value="${escaparHtml(t.nombre)}" maxlength="80"><button type="button" class="btn btn-secundario" data-tipo-clave="${escaparHtml(t.clave)}">Guardar nombre</button></div>`).join('');
+  document.getElementById('lista-tipos-cliente').innerHTML=tipos.map(t=>`<div class="servicio-row"><label for="tipo-${escaparHtml(t.clave)}">Tipo de cliente</label><input id="tipo-${escaparHtml(t.clave)}" value="${escaparHtml(t.nombre)}" maxlength="80"><div class="acciones-catalogo"><button type="button" class="btn btn-secundario" data-tipo-clave="${escaparHtml(t.clave)}">Guardar nombre</button></div></div>`).join('');
+  enVista('#lista-tipos-cliente .servicio-row', Permisos.puede('catalogos.editar'));
 }
 on('lista-tipos-cliente','click',async e=>{const btn=e.target.closest('[data-tipo-clave]');if(!btn)return;btn.disabled=true;try{const clave=btn.dataset.tipoClave;const r=await api('/tipos-cliente/'+encodeURIComponent(clave),{method:'PUT',body:JSON.stringify({nombre:document.getElementById('tipo-'+clave).value})});if(!r.ok)throw Error((await r.json()).error);await cargarTiposCliente();toast('Tipo actualizado; los clientes conservan su clasificación.');}catch(err){toast(err.message);}finally{btn.disabled=false;}});
 on('btn-agregar-tipo','click',async e=>{const btn=e.currentTarget;btn.disabled=true;try{const r=await api('/tipos-cliente',{method:'POST',body:JSON.stringify({nombre:document.getElementById('nuevo-tipo-cliente').value})});if(!r.ok)throw Error((await r.json()).error);document.getElementById('nuevo-tipo-cliente').value='';await cargarTiposCliente();toast('Tipo de cliente agregado');}catch(err){toast(err.message);}finally{btn.disabled=false;}});

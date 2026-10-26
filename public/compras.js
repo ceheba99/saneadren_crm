@@ -85,10 +85,12 @@ const Compras = (() => {
     $('oc-totales').innerHTML = m ? Importes.filasTotales(Importes.calcular(items, m, 16), m, 16).map(([e, c], i, a) => '<tr class="' + (i === a.length - 1 ? 'gc-fila-total' : '') + '"><th>' + esc(e) + '</th><td>' + (i === a.length - 1 ? '<b>' + dinero(c / 100) + '</b>' : dinero(c / 100)) + '</td></tr>').join('')
       : '<tr><td colspan="2" class="util-45">Elige el IVA para ver los totales.</td></tr>';
   }
-  async function abrir(id, sol = null) {
+  let EDITANDO_OC = false; // un borrador abre en vista; «Editar» lo abre (2026-10-26)
+  async function abrir(id, sol = null, editar = false) {
     try { await catalogos(); ACTUAL = id ? await pedir('/compras/ordenes/' + Number(id)) : null; } catch (err) { toast(err.message); return; }
     DESDE_SOL = id ? null : sol;
-    const o = ACTUAL, editable = (!o || o.estado === 'borrador') && esCostos();
+    EDITANDO_OC = editar;
+    const o = ACTUAL, puedeEditar = (!o || o.estado === 'borrador') && esCostos(), editable = puedeEditar && (!o || EDITANDO_OC);
     $('oc-titulo').textContent = o ? o.folio + ' · ' + o.proveedor_nombre : 'Nueva orden de compra';
     $('oc-kicker').textContent = o ? 'ORDEN DE COMPRA · ' + ESTADOS[o.estado][0].toUpperCase() : 'ORDEN DE COMPRA · CM-F-03';
     pintarSelects(o);
@@ -135,7 +137,8 @@ const Compras = (() => {
     document.querySelectorAll('#oc-filas .oc-quitar').forEach(b => { b.hidden = !editable; });
     if (!editable) document.querySelectorAll('#oc-filas .oc-con-clave').forEach(b => { b.hidden = true; });
     const bt = (id, txt, cl, extra = '') => '<button type="button" class="btn ' + cl + '" id="' + id + '"' + extra + '>' + txt + '</button>';
-    $('oc-acciones').innerHTML = (editable ? bt('oc-guardar', 'Guardar borrador', 'btn-outline') + bt('oc-guardar-pdf', 'Guardar y descargar PDF', 'btn-primario') : bt('oc-pdf', 'Descargar PDF', 'btn-primario'))
+    $('oc-acciones').innerHTML = (puedeEditar && !editable ? bt('oc-editar', '✏️ Editar', 'btn-secundario') : '')
+      + (editable ? bt('oc-guardar', 'Guardar borrador', 'btn-outline') + bt('oc-guardar-pdf', 'Guardar y descargar PDF', 'btn-primario') : bt('oc-pdf', 'Descargar PDF', 'btn-primario'))
       + (o ? bt('oc-excel', 'Excel', 'btn-outline perm-clientes-exportar') : '')
       + (o && o.estado === 'borrador' && esAdmin() ? bt('oc-autorizar', '✔ Autorizar y pasar a Cuentas por pagar', 'btn-verde') : '')
       + (o && o.estado === 'borrador' && !esAdmin() ? '<span class="ayuda">La autoriza un administrador.</span>' : '')
@@ -723,6 +726,7 @@ const Compras = (() => {
     const b = e.target.closest('button'); if (!b || b.disabled) return;
     b.disabled = true;
     try {
+      if (b.id === 'oc-editar') await abrir(ACTUAL.id, null, true); // borrador: de la vista a editar
       if (b.id === 'oc-guardar') await guardar(false);
       if (b.id === 'oc-guardar-pdf') await guardar(true);
       if (b.id === 'oc-pdf') await pdf(ACTUAL);

@@ -129,6 +129,7 @@ const Finanzas = (() => {
     const c = r.cuenta;
     const fact = r.puede_editar_factura ? `
       <details class="cobranza-facturacion"><summary>Crédito y factura</summary>
+        <div class="fact-barra"></div>
         <div class="form-grid-2">
           <div class="campo-modal"><label for="fact-credito">Días de crédito</label><input id="fact-credito" type="number" min="0" max="180" step="1" value="${Number(c.dias_credito) || 0}"></div>
           <div class="campo-modal"><label for="fact-folio">Folio de factura (CFDI)</label><input id="fact-folio" maxlength="60" value="${esc(c.factura_folio || '')}"></div>
@@ -159,6 +160,8 @@ const Finanzas = (() => {
       ${c.ejecucion === 'no_realizado' ? '' : `<button type="button" class="btn btn-primario" data-cobranza="registrar" ${c.saldo <= 0 ? 'disabled' : ''}>💵 Registrar pago</button>`}
       ${fact}
       <div class="pagos-lista">${pagos}</div>`;
+    const factZona = cont.querySelector('.cobranza-facturacion'); // crédito y factura: en vista; «Editar» lo abre (2026-10-26)
+    if (factZona) SoloLectura.poner(factZona, true, { compacto: true, que: 'crédito y factura', barraEn: '.fact-barra' });
   }
   // Quien no ve las cuentas por cobrar (p. ej. el técnico): registra lo que cobró en campo y ve solo esos pagos, con su
   // estado. Sin total, cobrado, saldo ni vencimiento.

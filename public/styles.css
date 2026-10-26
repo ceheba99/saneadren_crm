@@ -1709,3 +1709,5 @@ body:not(.varias-sucursales) .solo-varias-sucursales{display:none!important;}
 .modal-proveedor{max-width:760px;}
 .modal-proveedor .modal-section{padding-bottom:4px;}
 .modal-proveedor .campo.full{grid-column:1/-1;}
+/* En listas (usuarios, catálogos): solo el botón «✏️ Editar», sin el aviso de solo lectura. */
+.solo-lectura-barra.compacta{background:none;border:0;padding:0;margin:0 0 6px;justify-content:flex-end;}

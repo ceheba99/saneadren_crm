@@ -60,9 +60,11 @@ const Personal = (() => {
     return d;
   }
   const pendiente = () => !!$('pe-nombre') && base !== JSON.stringify(datosFormulario());
+  let EDITANDO = false; // la ficha abre en vista; «Editar» la abre (2026-10-26)
   async function abrir(id) {
     try {
       if ($('overlay-personal').classList.contains('mostrar') && !await permitirSalida()) return;
+      EDITANDO = false;
       await catalogos();
       if (id) actual = await pedir('/' + Number(id));
       else { actual = null; actual = { nuevo: true, activo: 1, puede: { editar: true, sensibles: Permisos.puede('personal.sensibles') }, usuarios_sin_ficha: await pedir('/usuarios/sin-ficha').catch(() => []) }; }
@@ -71,7 +73,7 @@ const Personal = (() => {
     } catch (e) { toast(e.message); }
   }
   function pintarFicha() {
-    const p = actual, edita = !!p.puede?.editar, sens = !!p.puede?.sensibles, nuevo = !!p.nuevo, ro = edita ? '' : ' disabled';
+    const p = actual, puedeEditar = !!p.puede?.editar, sens = !!p.puede?.sensibles, nuevo = !!p.nuevo, edita = puedeEditar && (nuevo || EDITANDO), ro = edita ? '' : ' disabled';
     $('pe-titulo').textContent = nuevo ? 'Nueva persona' : p.nombre + (p.activo ? '' : ' (dada de baja)');
     const usuarios = [...(p.usuario_id ? [{ id: p.usuario_id, nombre: p.usuario_nombre }] : []), ...(p.usuarios_sin_ficha || [])].map(u => [u.id, u.nombre]);
     const sucursales = window.Sucursales?.varias?.() ? (Sucursales.datos.sucursales || []).filter(s => s.activo).map(s => [s.id, s.clave + ' · ' + s.nombre]) : null;
@@ -130,6 +132,8 @@ const Personal = (() => {
     }
     h += `<div class="modal-section pe-pie"><p id="pe-aviso" role="status"></p><div class="btn-group">
       ${edita ? `<button type="button" class="btn btn-primario" id="pe-guardar">${nuevo ? 'Dar de alta' : 'Guardar cambios'}</button>` : ''}
+      ${puedeEditar && !edita ? '<button type="button" class="btn btn-secundario" id="pe-editar">✏️ Editar ficha</button>' : ''}
+      ${edita && !nuevo ? '<button type="button" class="btn btn-outline" id="pe-cancelar-edicion">Cancelar edición</button>' : ''}
       ${edita && !nuevo ? (p.activo ? '<button type="button" class="btn btn-peligro" id="pe-baja">Dar de baja</button>' : '<button type="button" class="btn btn-outline" id="pe-reactivar">Reactivar (reingreso)</button>') : ''}
       </div></div>`;
     $('pe-cuerpo').innerHTML = h;
@@ -146,7 +150,7 @@ const Personal = (() => {
       const d = datosFormulario();
       if (actual.nuevo) { if (!d.sucursal_id) delete d.sucursal_id; const x = await pedir('', { method: 'POST', body: JSON.stringify(d) }); toast('Persona dada de alta'); actual = await pedir('/' + x.id); }
       else { await pedir('/' + actual.id, { method: 'PUT', body: JSON.stringify({ ...d, version: actual.version }) }); toast('Ficha guardada'); actual = await pedir('/' + actual.id); }
-      pintarFicha(); cargar();
+      EDITANDO = false; pintarFicha(); cargar(); // guardada: vuelve a la vista
     } catch (e) { toast(e.message); const a = $('pe-aviso'); if (a) a.textContent = e.message; }
     finally { ocupado = false; if (b && b.isConnected) b.disabled = false; }
   }
@@ -216,6 +220,8 @@ const Personal = (() => {
   $('pe-cuerpo').addEventListener('click', e => {
     const t = e.target.closest('button'); if (!t) return;
     if (t.id === 'pe-guardar') guardar();
+    else if (t.id === 'pe-editar') { EDITANDO = true; pintarFicha(); $('pe-nombre')?.focus(); }
+    else if (t.id === 'pe-cancelar-edicion') { permitirSalida().then(ok => { if (ok) { EDITANDO = false; pintarFicha(); } }); }
     else if (t.id === 'pe-baja') baja();
     else if (t.id === 'pe-reactivar') reactivar();
     else if (t.id === 'pe-inc-registrar') registrarIncidencia();

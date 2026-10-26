@@ -7,13 +7,15 @@
 //  · SoloLectura.poner(zona, puede, textos) al abrir la ficha; SoloLectura.bloquear(zona) después de guardar.
 const SoloLectura = (() => {
   const BARRA = 'solo-lectura-barra';
-  const respetar = el => el.matches('[data-plegable-cabecera], [data-plegable-cabecera] *, .plegable-boton, .' + BARRA + ' *');
+  const respetar = el => el.matches('[data-plegable-cabecera], [data-plegable-cabecera] *, .plegable-boton, [data-sl-libre], .' + BARRA + ' *');
 
-  function barraDe(zona) {
-    let b = zona.querySelector(':scope > .' + BARRA);
+  // La barra va después del título de la zona, o dentro de «textos.barraEn» (p. ej. junto a los botones de una tarjeta).
+  function barraDe(zona, textos = {}) {
+    let b = zona.querySelector('.' + BARRA);
     if (!b) {
       b = document.createElement('div'); b.className = BARRA; b.setAttribute('role', 'status');
-      const titulo = zona.querySelector(':scope > .seccion-tit'); if (titulo) titulo.after(b); else zona.prepend(b);
+      const dentro = textos.barraEn && zona.querySelector(textos.barraEn), titulo = zona.querySelector(':scope > .seccion-tit');
+      if (dentro) dentro.prepend(b); else if (titulo) titulo.after(b); else zona.prepend(b);
     }
     return b;
   }
@@ -39,22 +41,31 @@ const SoloLectura = (() => {
     if (!zona) return;
     zona._soloLectura = [puede, textos];
     fijar(zona, false); // lo que haya quedado de la ficha anterior
-    const b = barraDe(zona);
+    const b = barraDe(zona, textos);
+    b.classList.toggle('compacta', !!textos.compacto);
     if (puede) {
-      b.innerHTML = '<span>🔒 Solo lectura.</span> <button type="button" class="btn btn-outline btn-chico" data-sl-editar>✏️ Editar ' + escaparHtml(textos.que) + '</button>';
+      b.innerHTML = (textos.compacto ? '' : '<span>🔒 Solo lectura.</span> ') + '<button type="button" class="btn btn-outline btn-chico" data-sl-editar>✏️ Editar' + (textos.que ? ' ' + escaparHtml(textos.que) : '') + '</button>';
       b.querySelector('[data-sl-editar]').onclick = () => {
         fijar(zona, false);
-        b.innerHTML = '<span>✏️ Editando ' + escaparHtml(textos.que) + '. Al guardar vuelve a quedar en solo lectura.</span>';
+        b.innerHTML = '<span>✏️ Editando' + (textos.que ? ' ' + escaparHtml(textos.que) : '') + '. Al guardar vuelve a quedar en solo lectura.</span>';
+        textos.alEditar?.();
       };
     } else {
       b.innerHTML = '<span>🔒 Solo lectura: ' + escaparHtml(textos.quien) + '</span>';
     }
     fijar(zona, true);
   }
+  // Registro nuevo (se captura directo): sin candado ni aviso.
+  function quitar(zona) {
+    zona = typeof zona === 'string' ? document.querySelector(zona) : zona;
+    if (!zona) return;
+    fijar(zona, false); zona._slObs?.disconnect(); zona._soloLectura = null;
+    zona.querySelector('.' + BARRA)?.remove();
+  }
   // Después de guardar: vuelve a solo lectura (con su botón «Editar»).
   function bloquear(zona) {
     zona = typeof zona === 'string' ? document.querySelector(zona) : zona;
     if (zona?._soloLectura) poner(zona, ...zona._soloLectura);
   }
-  return { poner, bloquear };
+  return { poner, bloquear, quitar };
 })();
