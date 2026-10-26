@@ -262,6 +262,8 @@ const HOY = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Mexico_City' }
   revisa(JSON.stringify(await deCliente('por_concluir')) === JSON.stringify([ordC.id]), 'filtro «Por concluir»: solo la de fecha pasada sin marcar ni factura', await deCliente('por_concluir'));
   revisa(JSON.stringify(await deCliente('facturado_sin_marcar')) === JSON.stringify([ordB.id]), 'filtro «Facturado sin marcar»: solo la facturada que nadie marcó realizada', await deCliente('facturado_sin_marcar'));
   revisa(JSON.stringify(await deCliente('programadas')) === JSON.stringify([ordD.id]), 'filtro «Por realizar»: solo la de fecha futura', await deCliente('programadas'));
+  revisa(JSON.stringify(await deCliente('facturadas')) === JSON.stringify([ordB.id]), 'filtro «Facturadas» (2026-10-26): solo la que ya tiene factura', await deCliente('facturadas'));
+  revisa(JSON.stringify(await deCliente('sin_factura')) === JSON.stringify([ordA.id]), 'y «Sin factura» la que se debe sin factura (no la facturada ni las que aún no se deben)', await deCliente('sin_factura'));
   const cB = (await pedir('GET', '/finanzas/cartera?filtro=todas', A))[1].find(c => c.lead_id === ordB.id);
   revisa(cB && cB.sin_marcar === true && cB.por_concluir === false && cB.programada === false, 'la facturada sin marcar: se debe (no es «por concluir») y avisa que falta marcarla', cB && { sin_marcar: cB.sin_marcar, por_concluir: cB.por_concluir, programada: cB.programada });
   [s, j] = await pedir('GET', '/finanzas/clientes/' + C4 + '/estado-cuenta?completo=1', A);

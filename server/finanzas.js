@@ -413,6 +413,7 @@ module.exports = function finanzas(app, db, h, unicos) {
     else if (filtro === 'por_concluir') cuentas = cuentas.filter(c => c.saldo > 0 && c.por_concluir);
     else if (filtro === 'facturado_sin_marcar') cuentas = cuentas.filter(c => c.saldo > 0 && c.sin_marcar);
     else if (['1-15', '16-30', '31-60', '60+'].includes(filtro)) cuentas = cuentas.filter(c => c.tramo === filtro);
+    else if (filtro === 'facturadas') cuentas = cuentas.filter(c => c.saldo > 0 && c.factura_folio); // ya facturadas con saldo (2026-10-26)
     else if (filtro === 'sin_factura') cuentas = cuentas.filter(c => c.saldo > 0 && !c.factura_folio && !c.programada);
     else cuentas = cuentas.filter(c => c.saldo > 0 && !c.programada);
     if (q) cuentas = cuentas.filter(c => [c.cliente_nombre, c.empresa_contacto, c.telefono, c.servicio_nombre, c.factura_folio, String(c.lead_id)]
