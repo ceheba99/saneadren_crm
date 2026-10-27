@@ -10,7 +10,7 @@ const PASOS = [
   ...['simulacion', 'simulacion-dinero', 'simulacion-dinero-2', 'simulacion-conflictos', 'simulacion-tablero', 'simulacion-utilidad-iva', 'simulacion-crear-editar', 'simulacion-revision-pantallas', 'simulacion-compras', 'simulacion-admin', 'simulacion-clientes',
     'simulacion-generador', 'simulacion-tramposa', 'simulacion-principio-a-fin', 'simulacion-expediente', 'simulacion-solicitudes', 'simulacion-folios', 'simulacion-buscador',
     'simulacion-auditoria', 'simulacion-historial-cliente', 'simulacion-fechas', 'simulacion-integridad', 'simulacion-cxp-formato', 'simulacion-demo', 'simulacion-ficha-proveedor',
-    'simulacion-sucursales', 'simulacion-encuestas', 'simulacion-contactos', 'simulacion-sucursales-procesos', 'simulacion-servicio-realizado', 'simulacion-datos-raros', 'simulacion-sucursales-aleatoria', 'simulacion-migracion-sucursales', 'simulacion-permisos', 'simulacion-permisos-ataques', 'simulacion-alcance-roles', 'foto-roles', 'simulacion-procesos-ataques', 'simulacion-personal', 'simulacion-seguridad-personal', 'simulacion-caos', 'auditoria-total', 'simulacion-regreso-version']
+    'simulacion-sucursales', 'simulacion-encuestas', 'simulacion-contactos', 'simulacion-prospeccion', 'simulacion-sucursales-procesos', 'simulacion-servicio-realizado', 'simulacion-datos-raros', 'simulacion-sucursales-aleatoria', 'simulacion-migracion-sucursales', 'simulacion-permisos', 'simulacion-permisos-ataques', 'simulacion-alcance-roles', 'foto-roles', 'simulacion-procesos-ataques', 'simulacion-personal', 'simulacion-seguridad-personal', 'simulacion-caos', 'auditoria-total', 'simulacion-regreso-version']
     .map(n => [n, [T(n + '.cjs')], /(\d+)\/\1 (pruebas )?correctas|se omite/]),
 ];
 const resultados = [];

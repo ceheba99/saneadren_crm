@@ -73,7 +73,7 @@ module.exports = {
     prospeccion: {
       nombre: 'Prospección',
       vistas: ['prospeccion'],
-      tablas: ['establecimientos', 'sectores_prospeccion'],
+      tablas: ['establecimientos', 'sectores_prospeccion', 'seguimientos_prospeccion'],
       rutas: [/^\/api\/prospeccion(\/|$)/],
       pendientes: 'establecimientos a los que toca llamar hoy o ya pasó su fecha de seguimiento',
       inicio: ['inicio-prospeccion'],
@@ -132,6 +132,8 @@ module.exports = {
   // muestra y no está aquí ni se captura es un dato muerto (como «Realizó: propio/subcontratado», que se quitó).
   generados: {
     // Encuesta de satisfacción (2026-10-26): la contesta el cliente en public/encuesta.html (página pública, fuera de index.html).
+    estado_antes: 'lo anota el sistema al registrar un seguimiento de prospección: el estado que tenía antes',
+    estado_nuevo: 'lo anota el sistema al registrar un seguimiento de prospección, si el estado cambió',
     encuesta_calificacion: 'capturada a mano antes de la encuesta propia: ya no se captura, solo se muestra como historial',
     encuesta_comentario: 'capturado a mano antes de la encuesta propia: ya no se captura, solo se muestra como historial',
     promedio: 'lo calcula el sistema con las calificaciones de la encuesta del cliente (sin contar N/A)',

@@ -28,11 +28,21 @@ module.exports=function registrarProspeccion(app,db,h,unicos){
     CREATE INDEX IF NOT EXISTS idx_establecimientos_agenda ON establecimientos(responsable_id,proximo_contacto);
     CREATE UNIQUE INDEX IF NOT EXISTS idx_establecimiento_unico ON establecimientos(lower(trim(nombre)),lower(trim(zona)),lower(trim(direccion)));
     `);
+    // Historial de seguimiento (2026-10-26): cada llamada, mensaje o visita con su resultado; lo ve quien ve el establecimiento.
+    db.exec(`CREATE TABLE IF NOT EXISTS seguimientos_prospeccion(
+      id INTEGER PRIMARY KEY,establecimiento_id INTEGER NOT NULL REFERENCES establecimientos(id) ON DELETE CASCADE,
+      usuario_id INTEGER REFERENCES usuarios(id),medio TEXT NOT NULL CHECK(medio IN ('llamada','whatsapp','correo','visita','nota')),
+      texto TEXT NOT NULL DEFAULT '',estado_antes TEXT,estado_nuevo TEXT,proximo_contacto TEXT,
+      created_at TEXT NOT NULL DEFAULT(datetime('now','localtime')));
+    CREATE INDEX IF NOT EXISTS idx_seguimientos_prospeccion ON seguimientos_prospeccion(establecimiento_id,id);`);
     if(!db.prepare('PRAGMA table_info(leads)').all().some(c=>c.name==='establecimiento_id'))db.exec('ALTER TABLE leads ADD COLUMN establecimiento_id INTEGER REFERENCES establecimientos(id)');
     const ins=db.prepare('INSERT OR IGNORE INTO sectores_prospeccion(id,nombre) VALUES (?,?)');[[1,'Restaurantes'],[2,'Hoteles'],[3,'Hospitales']].forEach(x=>ins.run(...x));
   })();
   const estados=['investigar','pendiente','contactado','interesado','no_contactar'];
   const detalle=id=>db.prepare(`SELECT e.*,s.nombre sector,u.nombre responsable,c.nombre cliente_nombre FROM establecimientos e JOIN sectores_prospeccion s ON s.id=e.sector_id JOIN usuarios u ON u.id=e.responsable_id LEFT JOIN clientes c ON c.id=e.cliente_id WHERE e.id=?`).get(id);
+  const MEDIOS=['llamada','whatsapp','correo','visita','nota'];
+  const seguimientos=id=>db.prepare(`SELECT g.id,g.medio,g.texto,g.estado_antes,g.estado_nuevo,g.proximo_contacto,g.created_at,u.nombre usuario FROM seguimientos_prospeccion g LEFT JOIN usuarios u ON u.id=g.usuario_id WHERE g.establecimiento_id=? ORDER BY g.id DESC`).all(id);
+  const fechaValida=f=>{const d=new Date(f+'T00:00:00Z');return /^\d{4}-\d{2}-\d{2}$/.test(f)&&!isNaN(d)&&d.toISOString().slice(0,10)===f;};
   function validar(body){
     const x={};for(const k of ['nombre','zona','direccion','telefono','correo','persona','cargo','fuente','necesidades']){
       if(body[k]!==undefined&&typeof body[k]!=='string')throw Error('Revisa el campo '+k);
@@ -46,7 +56,7 @@ module.exports=function registrarProspeccion(app,db,h,unicos){
     if(x.correo&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(x.correo))throw Error('Revisa el correo electrónico');
     x.estado=body.estado||'investigar';if(!estados.includes(x.estado))throw Error('Estado inválido');
     x.proximo_contacto=body.proximo_contacto||null;
-    if(x.proximo_contacto){const d=new Date(x.proximo_contacto+'T00:00:00Z');if(!/^\d{4}-\d{2}-\d{2}$/.test(x.proximo_contacto)||isNaN(d)||d.toISOString().slice(0,10)!==x.proximo_contacto)throw Error('Fecha de seguimiento inválida');}
+    if(x.proximo_contacto&&!fechaValida(x.proximo_contacto))throw Error('Fecha de seguimiento inválida');
     if(x.estado==='no_contactar')x.proximo_contacto=null;
     return x;
   }
@@ -61,13 +71,56 @@ module.exports=function registrarProspeccion(app,db,h,unicos){
   }
   app.post('/api/prospeccion/sectores',h(guardarSector));app.put('/api/prospeccion/sectores/:id',h(guardarSector));
   app.get('/api/prospeccion',h((req,res)=>{
-    let sql=`SELECT e.*,s.nombre sector,u.nombre responsable,c.nombre cliente_nombre FROM establecimientos e JOIN sectores_prospeccion s ON s.id=e.sector_id JOIN usuarios u ON u.id=e.responsable_id LEFT JOIN clientes c ON c.id=e.cliente_id WHERE 1=1`;const args=[];
-    if(req.query.q){sql+=' AND (e.nombre LIKE ? OR e.zona LIKE ? OR e.persona LIKE ? OR e.telefono LIKE ?)';for(let i=0;i<4;i++)args.push('%'+req.query.q+'%');}
+    // Con su último seguimiento y cuántos lleva, para ver de un vistazo cómo va cada uno (2026-10-26).
+    let sql=`SELECT e.*,s.nombre sector,u.nombre responsable,c.nombre cliente_nombre,
+      (SELECT COUNT(*) FROM seguimientos_prospeccion g WHERE g.establecimiento_id=e.id) seguimientos,
+      (SELECT g.created_at FROM seguimientos_prospeccion g WHERE g.establecimiento_id=e.id ORDER BY g.id DESC LIMIT 1) ultimo_seguimiento,
+      (SELECT g.medio FROM seguimientos_prospeccion g WHERE g.establecimiento_id=e.id ORDER BY g.id DESC LIMIT 1) ultimo_medio,
+      (SELECT g.texto FROM seguimientos_prospeccion g WHERE g.establecimiento_id=e.id ORDER BY g.id DESC LIMIT 1) ultimo_texto
+      FROM establecimientos e JOIN sectores_prospeccion s ON s.id=e.sector_id JOIN usuarios u ON u.id=e.responsable_id LEFT JOIN clientes c ON c.id=e.cliente_id WHERE 1=1`;const args=[];
+    // Busca también por correo, domicilio, cargo y notas, sin importar acentos; el teléfono, por sus dígitos.
+    if(req.query.q){const q=String(req.query.q),dig=q.replace(/\D/g,'');
+      sql+=' AND ('+['e.nombre','e.zona','e.persona','e.cargo','e.direccion','e.correo','e.necesidades'].map(k=>'sin_acentos('+k+') LIKE sin_acentos(?)').join(' OR ')+(dig.length>=4?' OR solo_digitos(e.telefono) LIKE ?':'')+')';
+      for(let i=0;i<7;i++)args.push('%'+q+'%');if(dig.length>=4)args.push('%'+dig+'%');}
     for(const k of ['sector_id','estado','responsable_id'])if(req.query[k]){sql+=' AND e.'+k+'=?';args.push(req.query[k]);}
+    if(req.query.zona){sql+=' AND lower(trim(e.zona))=lower(trim(?))';args.push(String(req.query.zona));}
+    if(req.query.telefono==='sin')sql+=" AND trim(e.telefono)=''";
+    if(req.query.vinculado==='si')sql+=' AND e.cliente_id IS NOT NULL';else if(req.query.vinculado==='no')sql+=' AND e.cliente_id IS NULL';
+    if(req.query.agenda==='sin_fecha')sql+=" AND e.estado<>'no_contactar' AND e.proximo_contacto IS NULL";
+    else if(req.query.agenda==='atrasados')sql+=" AND e.estado<>'no_contactar' AND e.proximo_contacto<date('now','localtime')";
+    else if(req.query.agenda==='hoy')sql+=" AND e.estado<>'no_contactar' AND e.proximo_contacto=date('now','localtime')";
     if(req.query.pendientes==='1')sql+=" AND e.estado<>'no_contactar' AND e.proximo_contacto<=date('now','localtime')";
     sql+=' ORDER BY CASE WHEN e.proximo_contacto IS NULL THEN 1 ELSE 0 END,e.proximo_contacto,e.updated_at DESC LIMIT 2000';res.json(db.prepare(sql).all(...args));
   }));
-  app.get('/api/prospeccion/:id',h((req,res)=>{const e=detalle(req.params.id);if(!e)return res.status(404).json({error:'Establecimiento no encontrado'});res.json(e);}));
+  // Tarjetas de arriba: la agenda y cuántos hay en cada estado (solo de lo que ve quien pregunta).
+  app.get('/api/prospeccion/resumen',h((req,res)=>{
+    const r=db.prepare(`SELECT COUNT(*) total,
+      SUM(estado<>'no_contactar' AND proximo_contacto=date('now','localtime')) hoy,
+      SUM(estado<>'no_contactar' AND proximo_contacto<date('now','localtime')) atrasados,
+      SUM(estado<>'no_contactar' AND proximo_contacto IS NULL) sin_fecha,
+      SUM(trim(telefono)='') sin_telefono,SUM(cliente_id IS NOT NULL) vinculados,
+      ${estados.map(k=>`SUM(estado='${k}') ${k}`).join(',')} FROM establecimientos`).get();
+    const zonas=db.prepare("SELECT trim(zona) zona,COUNT(*) n FROM establecimientos GROUP BY lower(trim(zona)) ORDER BY zona").all();
+    res.json({...Object.fromEntries(Object.entries(r).map(([k,v])=>[k,v||0])),zonas});
+  }));
+  app.get('/api/prospeccion/:id',h((req,res)=>{const e=detalle(req.params.id);if(!e)return res.status(404).json({error:'Establecimiento no encontrado'});res.json({...e,seguimientos:seguimientos(e.id)});}));
+  // Anotar un seguimiento: qué pasó, por qué medio y, si cambia, el nuevo estado y la próxima fecha (actualizan la ficha).
+  app.post('/api/prospeccion/:id/seguimientos',h((req,res)=>{
+    const e=detalle(req.params.id);if(!e)return res.status(404).json({error:'Establecimiento no encontrado'});
+    if(req.body.version!==e.version)return res.status(409).json({error:'Otra persona actualizó esta ficha. Vuelve a abrirla antes de anotar.'});
+    const medio=String(req.body.medio||'');if(!MEDIOS.includes(medio))return res.status(400).json({error:'Elige cómo fue el contacto'});
+    const texto=typeof req.body.texto==='string'?req.body.texto.trim():'';
+    if(!texto)return res.status(400).json({error:'Escribe qué pasó (p. ej. «No contestó» o «Pidió cotización»)'});if(texto.length>2000)return res.status(400).json({error:'El texto es demasiado largo (máximo 2000 caracteres)'});
+    const estado=req.body.estado?String(req.body.estado):e.estado;if(!estados.includes(estado))return res.status(400).json({error:'Estado inválido'});
+    let prox=req.body.proximo_contacto===undefined?e.proximo_contacto:(req.body.proximo_contacto||null);
+    if(prox&&!fechaValida(prox))return res.status(400).json({error:'Fecha de seguimiento inválida'});
+    if(estado==='no_contactar')prox=null;
+    db.transaction(()=>{
+      db.prepare('INSERT INTO seguimientos_prospeccion(establecimiento_id,usuario_id,medio,texto,estado_antes,estado_nuevo,proximo_contacto) VALUES (?,?,?,?,?,?,?)').run(e.id,yo(req),medio,texto,e.estado,estado!==e.estado?estado:null,prox);
+      db.prepare("UPDATE main.establecimientos SET estado=?,proximo_contacto=?,version=version+1,updated_at=datetime('now','localtime') WHERE id=?").run(estado,prox,e.id);
+    })();
+    res.status(201).json({...detalle(e.id),seguimientos:seguimientos(e.id)});
+  }));
   app.post('/api/prospeccion',h((req,res)=>{
     let x;try{x=validar(req.body);}catch(e){return res.status(400).json({error:e.message});}
     const mal=responsableValido(req,x);if(mal)return res.status(403).json({error:mal});

@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Saneadren · Cotizaciones y Servicios</title>
-<link rel="stylesheet" href="styles.css?v=con1">
+<link rel="stylesheet" href="styles.css?v=pro1">
 <link rel="stylesheet" href="servicios-tabla.css">
 <link rel="stylesheet" href="flujo.css?v=cel1">
 </head>
@@ -460,9 +460,42 @@
 <div class="tabla-scroll"><table class="tabla-resumen pe-tabla"><thead><tr><th>Nombre</th><th>Puesto</th><th>Teléfono</th><th>Antigüedad</th><th>Vacaciones disponibles</th><th>Licencia</th><th>Órdenes del mes</th><th>Avisos</th></tr></thead><tbody id="pe-tabla"></tbody></table></div>
 </section>
 <section class="vista" id="vista-prospeccion">
-<h2>Prospección de establecimientos</h2><p class="ayuda">Investiga restaurantes, hoteles y hospitales sin crear cotizaciones vacías. Sector describe el negocio; el estado indica tu seguimiento comercial.</p>
-<div class="filtros"><input id="pr-buscar" aria-label="Buscar establecimiento" placeholder="Establecimiento, zona, persona o teléfono"><select id="pr-f-sector" aria-label="Sector"></select><select id="pr-f-estado" aria-label="Seguimiento"></select><select id="pr-f-responsable" aria-label="Responsable"></select><label><input type="checkbox" id="pr-vencidos"> Seguimiento para hoy o vencido</label><button class="btn btn-primario" id="pr-nuevo">Registrar establecimiento</button><button class="btn btn-outline perm-clientes-exportar" id="pr-exportar">Exportar selección</button></div>
-<p id="pr-resumen" role="status"></p><div class="tabla-scroll"><table class="tabla-resumen"><thead><tr><th>Establecimiento</th><th>Sector / zona</th><th>Persona / teléfono</th><th>Seguimiento</th><th>Responsable</th><th>Próximo contacto</th><th>Contacto CRM</th><th>Ficha</th></tr></thead><tbody id="pr-tabla"></tbody></table></div>
+<div class="vista-encabezado">
+  <div><h2>Prospección de establecimientos</h2><p class="ayuda">Investiga restaurantes, hoteles y hospitales sin crear cotizaciones vacías. Anota cada llamada o visita en su ficha y programa la siguiente: aquí ves a quién toca llamar hoy.</p></div>
+  <div class="btn-group"><button type="button" class="btn btn-outline perm-clientes-exportar" id="pr-exportar">📥 Exportar a Excel</button><button type="button" class="btn btn-primario perm-prospeccion-editar" id="pr-nuevo">➕ Registrar establecimiento</button></div>
+</div>
+<div class="rc-grid pr-tarjetas" id="pr-tarjetas">
+  <button type="button" class="rc-card pr-hoy" data-pr-agenda="hoy" aria-pressed="false" title="Ver los que toca contactar hoy"><span class="rc-num" id="pr-n-hoy">0</span><span class="rc-label">Contactar hoy</span></button>
+  <button type="button" class="rc-card pr-atrasado" data-pr-agenda="atrasados" aria-pressed="false" title="Ver los que ya pasó su fecha"><span class="rc-num" id="pr-n-atrasados">0</span><span class="rc-label">Atrasados · ya pasó la fecha</span></button>
+  <button type="button" class="rc-card prospecto" data-pr-agenda="sin_fecha" aria-pressed="false" title="Ver los que no tienen próxima fecha"><span class="rc-num" id="pr-n-sin_fecha">0</span><span class="rc-label">Sin próxima fecha</span></button>
+  <button type="button" class="rc-card cliente" data-pr-estado="interesado" aria-pressed="false" title="Ver los interesados"><span class="rc-num" id="pr-n-interesado">0</span><span class="rc-label">Interesados</span></button>
+  <button type="button" class="rc-card recurrente" data-pr-vinculado="si" aria-pressed="false" title="Ver los que ya son contactos del CRM"><span class="rc-num" id="pr-n-vinculados">0</span><span class="rc-label">Ya son contactos del CRM</span></button>
+</div>
+<div class="pr-embudo" id="pr-embudo" aria-label="Establecimientos por estado"></div>
+<div class="filtros">
+  <input type="text" id="pr-buscar" aria-label="Buscar establecimiento" placeholder="Establecimiento, zona, persona, teléfono, correo o notas">
+  <select id="pr-f-estado" aria-label="Seguimiento"></select>
+  <select id="pr-f-sector" aria-label="Sector"></select>
+  <select id="pr-f-zona" aria-label="Zona"><option value="">Todas las zonas</option></select>
+  <select id="pr-f-responsable" aria-label="Responsable"></select>
+  <select id="pr-f-agenda" aria-label="Agenda"><option value="">Cualquier fecha</option><option value="pendientes">Para hoy o atrasados</option><option value="hoy">Para hoy</option><option value="atrasados">Atrasados</option><option value="sin_fecha">Sin próxima fecha</option></select>
+  <select id="pr-f-datos" aria-label="Datos"><option value="">Con o sin teléfono, vinculados o no</option><option value="sin_telefono">Sin teléfono (falta investigar)</option><option value="no">Aún no son contactos del CRM</option><option value="si">Ya son contactos del CRM</option></select>
+  <button type="button" class="btn btn-outline" id="pr-limpiar" hidden>✕ Quitar filtros</button>
+</div>
+<div class="tabla-clientes-wrap">
+  <div class="tabla-header"><h3>Establecimientos</h3><span class="tabla-conteo" id="pr-resumen" role="status"></span></div>
+  <div class="tabla-scroll"><table class="tabla-clientes pr-tabla"><thead><tr>
+    <th><button type="button" class="th-orden" data-pr-orden="nombre">Establecimiento</button></th>
+    <th><button type="button" class="th-orden" data-pr-orden="persona">Persona / teléfono</button></th>
+    <th><button type="button" class="th-orden" data-pr-orden="estado">Seguimiento</button></th>
+    <th><button type="button" class="th-orden" data-pr-orden="ultimo">Último contacto</button></th>
+    <th><button type="button" class="th-orden" data-pr-orden="proximo">Próximo contacto</button></th>
+    <th><button type="button" class="th-orden" data-pr-orden="responsable">Responsable</button></th>
+    <th>Contacto CRM</th>
+    <th><span class="sr-only">Acciones</span></th>
+  </tr></thead><tbody id="pr-tabla"></tbody></table></div>
+  <div class="fc-mas" id="pr-mas" hidden><button type="button" class="btn btn-outline" id="btn-pr-mas">Mostrar más</button></div>
+</div>
 <details id="pr-admin" hidden><summary>Administrar sectores</summary><p class="ayuda">Renombrar conserva los establecimientos asociados.</p><div id="pr-sectores"></div><label for="pr-sector-nuevo">Nuevo sector</label><input id="pr-sector-nuevo" maxlength="80"><button class="btn btn-outline" id="pr-agregar-sector">Agregar sector</button></details>
 </section>
   <!-- ====== VISTA: USUARIOS (solo admin) ====== -->
@@ -1324,9 +1357,21 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/1.3.8/FileSaver.js" integrity="sha384-ph76mR0W+Z/3+JTfCgW7I+2WZrKUE1M2EabdJVneuKwpssRuQggPhzQJ3oDectWZ" crossorigin="anonymous"></script>
 
 <div class="overlay" id="overlay-personal"><div class="modal" style="max-width:940px"><div class="modal-header"><h2 id="pe-titulo">Persona</h2><button class="close-btn" id="pe-cerrar" aria-label="Cerrar ficha de la persona">✕</button></div><div class="modal-body" id="pe-cuerpo"></div></div></div>
-<div class="overlay" id="overlay-prospeccion"><div class="modal" style="max-width:920px"><div class="modal-header"><h2 id="pr-titulo">Establecimiento</h2><button class="close-btn" id="pr-cerrar" aria-label="Cerrar establecimiento">✕</button></div><div class="modal-body"><div class="modal-section"><p class="ayuda">Para investigar solo necesitas nombre, sector y ciudad o zona. Completa el teléfono cuando lo consigas. Guardar aquí no crea un cliente ni una cotización.</p><div class="form-grid-2">
+<div class="overlay" id="overlay-prospeccion"><div class="modal" style="max-width:920px"><div class="modal-header"><h2 id="pr-titulo">Establecimiento</h2><button class="close-btn" id="pr-cerrar" aria-label="Cerrar establecimiento">✕</button></div><div class="modal-body"><div class="modal-section pr-cabeza" id="pr-cabeza" hidden></div><div class="modal-section" id="pr-seguimiento" hidden><div class="seccion-tit">📒 Seguimiento</div>
+<p class="ayuda">Anota cada llamada, mensaje o visita: qué pasó y cuándo toca la siguiente. Queda con fecha y quién la hizo, y actualiza el estado y la próxima fecha de la ficha.</p>
+<div class="pr-anotar perm-prospeccion-editar"><div class="form-grid-2">
+<div class="campo-modal"><label for="pr-s-medio">¿Cómo fue? (obligatorio)</label><select id="pr-s-medio" data-sl-libre><option value="llamada">📞 Llamada</option><option value="whatsapp">💬 WhatsApp</option><option value="correo">✉️ Correo</option><option value="visita">🚶 Visita</option><option value="nota">📝 Nota</option></select></div>
+<div class="campo-modal"><label for="pr-s-estado">Estado después de este contacto (obligatorio)</label><select id="pr-s-estado" data-sl-libre></select></div>
+<div class="campo-modal full"><label for="pr-s-texto">¿Qué pasó? (obligatorio)</label><textarea id="pr-s-texto" rows="2" maxlength="2000" data-sl-libre placeholder="No contestó · Pidió cotización para enero · Hablar con el gerente de mantenimiento…"></textarea></div>
+<div class="campo-modal"><label for="pr-s-proximo">Próximo contacto (opcional)</label><input type="date" id="pr-s-proximo" data-sl-libre></div>
+<div class="campo-modal"><span class="etiqueta-campo">Atajos</span><div class="pr-atajos"><button type="button" class="btn btn-outline btn-chico" data-sl-libre data-pr-dias="1">Mañana</button><button type="button" class="btn btn-outline btn-chico" data-sl-libre data-pr-dias="7">En 1 semana</button><button type="button" class="btn btn-outline btn-chico" data-sl-libre data-pr-dias="30">En 1 mes</button><button type="button" class="btn btn-outline btn-chico" data-sl-libre data-pr-dias="0">Sin fecha</button></div></div>
+</div><div class="btn-group"><button type="button" class="btn btn-primario" id="pr-s-guardar" data-sl-libre>Anotar seguimiento</button></div></div>
+<div id="pr-s-lista" class="pr-historial"></div></div>
+<div class="modal-section" id="pr-datos"><div class="seccion-tit">🏢 Datos del establecimiento</div><p class="ayuda">Para investigar solo necesitas nombre, sector y ciudad o zona. Completa el teléfono cuando lo consigas. Guardar aquí no crea un cliente ni una cotización.</p><div class="form-grid-2">
 <div class="campo-modal"><label for="pr-nombre">Establecimiento o sucursal (obligatorio)</label><input id="pr-nombre" maxlength="500"></div><div class="campo-modal"><label for="pr-sector_id">Sector (obligatorio)</label><select id="pr-sector_id"></select></div><div class="campo-modal"><label for="pr-zona">Ciudad / zona (obligatorio)</label><input id="pr-zona" maxlength="500"></div><div class="campo-modal"><label for="pr-direccion">Domicilio (opcional)</label><input id="pr-direccion" maxlength="500"></div><div class="campo-modal"><label for="pr-telefono">Teléfono (opcional)</label><input id="pr-telefono" type="tel"></div><div class="campo-modal"><label for="pr-correo">Correo (opcional)</label><input id="pr-correo" type="email"></div><div class="campo-modal"><label for="pr-persona">Persona de contacto (opcional)</label><input id="pr-persona" maxlength="500"></div><div class="campo-modal"><label for="pr-cargo">Cargo / área (opcional)</label><input id="pr-cargo" maxlength="500"></div><div class="campo-modal"><label for="pr-fuente">Fuente de investigación / enlace (opcional)</label><input id="pr-fuente" maxlength="500"></div><div class="campo-modal"><label for="pr-estado">Estado del seguimiento (obligatorio)</label><select id="pr-estado"></select></div><div class="campo-modal"><label for="pr-responsable_id">Responsable (obligatorio)</label><select id="pr-responsable_id"></select></div><div class="campo-modal"><label for="pr-proximo_contacto">Próxima fecha de contacto (opcional)</label><input id="pr-proximo_contacto" type="date"></div>
-</div><div class="campo-modal"><label for="pr-necesidades">Necesidades y notas de investigación (opcional)</label><textarea id="pr-necesidades" rows="3" maxlength="5000"></textarea></div><p id="pr-aviso" role="status"></p><div class="btn-group"><button class="btn btn-primario" id="pr-guardar">Guardar establecimiento</button><button class="btn btn-outline" id="pr-vincular" data-sl-libre>Guardar y abrir contacto</button></div><p class="ayuda">Abrir contacto requiere teléfono. Si ya existe un contacto, podrás confirmar su vinculación. Desde su ficha usa Crear cotización o Crear orden de servicio; el domicilio del establecimiento se propone como ubicación.</p></div></div></div></div>
+</div><div class="campo-modal"><label for="pr-necesidades">Necesidades y notas de investigación (opcional)</label><textarea id="pr-necesidades" rows="3" maxlength="5000"></textarea></div><p id="pr-aviso" role="status"></p><div class="btn-group"><button class="btn btn-primario" id="pr-guardar">Guardar establecimiento</button><button class="btn btn-outline" id="pr-vincular" data-sl-libre>Guardar y abrir contacto</button></div><p class="ayuda">Abrir contacto requiere teléfono. Si ya existe un contacto, podrás confirmar su vinculación. Desde su ficha usa Crear cotización o Crear orden de servicio; el domicilio del establecimiento se propone como ubicación.</p></div>
+
+</div></div></div>
 
 
 <!-- ?v= obliga a los navegadores (sobre todo celulares) a tomar la versión nueva tras publicar. -->
@@ -1354,7 +1399,7 @@
 <script src="personal.js?v=ed1"></script>
 <script src="buscador.js?v=suc1"></script>
 <script src="demo.js?v=demo1"></script>
-<script src="prospeccion.js?v=ed1"></script>
+<script src="prospeccion.js?v=pro1"></script>
 <script src="inicio.js?v=ini3"></script>
 </body>
 </html>
