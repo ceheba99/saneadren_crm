@@ -78,7 +78,17 @@ const HOY = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Mexico_City' }
     const [, p2] = await pedir('POST', '/marketing/publicaciones/' + pub.id + '/estado', A, { accion: 'enviar', version: p1.version });
     await pedir('POST', '/marketing/publicaciones/' + pub.id + '/estado', A, { accion: 'pedir_cambios', version: p2.version, comentario: X('cambios pedidos') });
   }
-  console.log(JSON.stringify({ ...(MARCAS ? { marcas: MAPA } : {}), guardados: ok, rechazados, lead: l.id, cliente: cli.id, solicitud: so.id, oc: oc.id, persona: per.id, prospecto: pro.id, cxp: cx.id, proveedor: prov.id, publicacion: pub.id, proyecto: py.id }));
+  // Marketing fase 3: idea (con comentario, motivo y adjunto) y archivo de la biblioteca (nombre, carpeta y etiquetas).
+  const [, idea] = await pedir('POST', '/marketing/ideas', A, { titulo: XC('titulo idea'), descripcion: X('descripcion idea'), sucursal: 'empresa' });
+  if (idea.id) {
+    await pedir('POST', '/marketing/ideas/' + idea.id + '/comentarios', A, { texto: X('comentario idea') });
+    await subir('/marketing/biblioteca', A, PNG, { 'X-Nombre': XC('adjunto idea') + '.png', 'X-Carpeta': 'Ideas', 'X-Idea': idea.id });
+    const [, i2] = await pedir('GET', '/marketing/ideas/' + idea.id, A);
+    await pedir('POST', '/marketing/ideas/' + idea.id + '/estado', A, { accion: 'descartar', version: i2.version, motivo: X('motivo descarte') });
+  }
+  const PNG2 = Buffer.concat([PNG, Buffer.from('biblioteca')]);
+  await subir('/marketing/biblioteca', A, PNG2, { 'X-Nombre': XC('nombre biblioteca') + '.png', 'X-Carpeta': 'Trampa' + (MARCAS ? XC('carpeta') : ''), 'X-Etiquetas': XC('etiquetas biblioteca') });
+  console.log(JSON.stringify({ ...(MARCAS ? { marcas: MAPA } : {}), guardados: ok, rechazados, lead: l.id, cliente: cli.id, solicitud: so.id, oc: oc.id, persona: per.id, prospecto: pro.id, cxp: cx.id, proveedor: prov.id, publicacion: pub.id, proyecto: py.id, idea: idea.id }));
   // Un campo que el servidor rechaza no se siembra y su pantalla no se revisa: eso es una falla de la prueba, no un éxito.
   if (rechazados) { console.error(`${rechazados} envío(s) rechazados: esos campos no se revisaron (ver arriba)`); process.exitCode = 1; }
 })().catch(e => { console.error(e); process.exit(1); });

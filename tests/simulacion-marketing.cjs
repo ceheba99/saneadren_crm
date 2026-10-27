@@ -29,7 +29,7 @@ const png = color => { const ih = Buffer.alloc(13); ih.writeUInt32BE(1, 0); ih.w
 (async () => {
   for (let i = 0; i < 100 && !/corriendo/.test(salida); i++) await espera(150);
   const A = (await pedir('POST', '/login', null, { nombre: 'admin', password: ADMIN.password }))[1].token;
-  let s, j;
+  let s, j, k;
   const qro = (await pedir('GET', '/sucursales', A))[1].sucursales[0];
   const cdmx = (await pedir('POST', '/sucursales', A, { nombre: 'Ciudad de México', clave: 'CDMX' }))[1];
   const T = {}, ID = {};
@@ -149,6 +149,69 @@ const png = color => { const ih = Buffer.alloc(13); ih.writeUInt32BE(1, 0); ih.w
   // Pendientes: una tarea de Mara que vence mañana
   await tarea({ titulo: 'Revisar arte final', inicio: dias(-2), fin: dias(1) });
   [, j] = await pedir('GET', '/marketing/pendientes', T.Mara); revisa(j.some(p => p.motivo === 'tarea' && p.titulo === 'Revisar arte final'), 'a Marketing le sale en Inicio su tarea que vence pronto', j.map(p => [p.titulo, p.motivo]));
+
+  console.log('8. Banco de ideas (fase 3)');
+  for (const [cuerpo, que] of [[{ titulo: ' ' }, 'sin título'], [{ titulo: 'X', referencia: 'javascript:alert(1)' }, 'una referencia que no es https'], [{ titulo: 'X', redes: ['myspace'] }, 'una red inventada']]) {
+    [s] = await pedir('POST', '/marketing/ideas', T.Mara, cuerpo); revisa(s === 400, 'idea: rechaza ' + que, s);
+  }
+  [s, j] = await pedir('POST', '/marketing/ideas', T.Mara, { titulo: 'Reto antes y después', descripcion: 'Video corto con una trampa de grasa', redes: ['tiktok', 'instagram'], referencia: 'https://www.tiktok.com/' });
+  revisa(s === 201 && j.estado === 'nueva' && j.autor === 'Mara Marketing' && j.puede.editar && !j.puede.decidir, 'Marketing propone una idea (no la decide)', j);
+  let idea = j;
+  [s, j] = await pedir('POST', '/marketing/ideas/' + idea.id + '/voto', T.Gil, { voto: true }); [s, j] = await pedir('POST', '/marketing/ideas/' + idea.id + '/voto', T.Mara, { voto: true });
+  revisa(j.votos === 2 && j.mi_voto === true && j.votantes.length === 2, 'votan dos personas (cada una cuenta una vez)', [j.votos, j.votantes]);
+  [s, j] = await pedir('POST', '/marketing/ideas/' + idea.id + '/voto', T.Mara, { voto: true }); revisa(j.votos === 2, 'votar dos veces no suma dos', j.votos);
+  [s, j] = await pedir('POST', '/marketing/ideas/' + idea.id + '/voto', T.Mara, { voto: false }); revisa(j.votos === 1 && j.mi_voto === false, 'se puede quitar el voto', j.votos);
+  [s, j] = await pedir('POST', '/marketing/ideas/' + idea.id + '/comentarios', T.Gil, { texto: 'Me gusta, hagámoslo en noviembre' }); revisa(s === 201 && j.historial[0].texto === 'Me gusta, hagámoslo en noviembre', 'se comenta', j.historial?.[0]);
+  [s] = await pedir('POST', '/marketing/ideas/' + idea.id + '/estado', T.Mara, { accion: 'aprobar', version: j.version }); revisa(s === 403, 'Marketing no aprueba ideas', s);
+  [s, j] = await pedir('POST', '/marketing/ideas/' + idea.id + '/estado', T.Gil, { accion: 'evaluar', version: j.version }); revisa(s === 200 && j.estado === 'evaluacion', 'el Gerente de marketing la pasa a evaluación', j.estado);
+  [s] = await pedir('POST', '/marketing/ideas/' + idea.id + '/estado', T.Gil, { accion: 'descartar', version: j.version }); revisa(s === 400, 'descartar exige motivo', s);
+  [s, j] = await pedir('POST', '/marketing/ideas/' + idea.id + '/convertir', T.Mara, { a: 'publicacion', version: j.version }); revisa(s === 409, 'no se convierte sin estar aprobada', s);
+  [, j] = await pedir('GET', '/marketing/ideas/' + idea.id, T.Mara);
+  // Una imagen de referencia (va a la biblioteca, carpeta «Ideas») y luego se aprueba y se convierte en publicación.
+  [s, j] = await pedir('POST', '/marketing/biblioteca', T.Mara, png([200, 30, 30]), { 'X-Nombre': encodeURIComponent('referencia.png'), 'X-Carpeta': 'Ideas', 'X-Idea': String(idea.id) });
+  revisa(s === 201 && j.idea?.adjuntos?.length === 1, 'se adjunta una imagen de referencia a la idea', j);
+  [, j] = await pedir('GET', '/marketing/ideas/' + idea.id, T.Gil);
+  [s, j] = await pedir('POST', '/marketing/ideas/' + idea.id + '/estado', T.Gil, { accion: 'aprobar', version: j.version }); revisa(s === 200 && j.estado === 'aprobada' && j.decidido_por_nombre === 'Gil Mercadotecnia', 'el Gerente de marketing la aprueba', j.estado);
+  [s, j] = await pedir('POST', '/marketing/ideas/' + idea.id + '/convertir', T.Mara, { a: 'publicacion', version: j.version });
+  revisa(s === 200 && j.estado === 'realizada' && j.publicacion_id, 'se convierte en publicación y queda realizada', j);
+  const pubIdea = (await pedir('GET', '/marketing/publicaciones/' + j.publicacion_id, T.Mara))[1];
+  revisa(pubIdea.estado === 'borrador' && pubIdea.titulo === 'Reto antes y después' && pubIdea.copy === 'Video corto con una trampa de grasa' && pubIdea.redes.join() === 'tiktok,instagram' && pubIdea.lista_imagenes.length === 1, 'la publicación nace en borrador con su texto, sus redes y su imagen', pubIdea);
+  [s] = await pedir('POST', '/marketing/ideas/' + idea.id + '/convertir', T.Mara, { a: 'proyecto', version: j.version }); revisa(s === 409, 'una idea realizada no se convierte otra vez', s);
+  [s] = await pedir('PUT', '/marketing/ideas/' + idea.id, T.Mara, { version: j.version, titulo: 'x' }); revisa(s === 403, 'una idea realizada ya no se cambia', s);
+  let otraI = (await pedir('POST', '/marketing/ideas', T.Mara, { titulo: 'Podcast con clientes' }))[1];
+  otraI = (await pedir('POST', '/marketing/ideas/' + otraI.id + '/estado', A, { accion: 'aprobar', version: otraI.version }))[1];
+  [s, j] = await pedir('POST', '/marketing/ideas/' + otraI.id + '/convertir', T.Mara, { a: 'proyecto', version: otraI.version });
+  revisa(s === 200 && j.proyecto_id && (await pedir('GET', '/marketing/proyectos/' + j.proyecto_id, T.Mara))[1].nombre === 'Podcast con clientes', 'Dirección aprueba otra y se convierte en proyecto', j);
+  let tercera = (await pedir('POST', '/marketing/ideas', T.Mara, { titulo: 'Idea a descartar' }))[1];
+  [s, j] = await pedir('POST', '/marketing/ideas/' + tercera.id + '/estado', T.Gil, { accion: 'descartar', version: tercera.version, motivo: 'No va con la marca' });
+  revisa(s === 200 && j.estado === 'descartada' && j.motivo === 'No va con la marca', 'se descarta con motivo', j);
+  [s] = await pedir('GET', '/marketing/ideas', T.Vale); revisa(s === 403, 'Ventas no ve las ideas', s);
+  [s] = await pedir('POST', '/marketing/ideas/' + tercera.id + '/voto', T.Vale, { voto: true }); revisa(s === 403 || s === 404, 'ni vota', s);
+
+  console.log('9. Biblioteca (fase 3)');
+  [s, j] = await pedir('POST', '/marketing/biblioteca', T.Mara, png([10, 120, 60]), { 'X-Nombre': encodeURIComponent('logo-verde.png'), 'X-Carpeta': 'Logos', 'X-Etiquetas': encodeURIComponent('logo, fondo blanco') });
+  revisa(s === 201 && j.id, 'se sube un logo a la carpeta «Logos»', j); const logoId = j.id;
+  [s, j] = await pedir('POST', '/marketing/biblioteca', T.Gil, png([10, 120, 60]), { 'X-Nombre': 'otro.png', 'X-Carpeta': 'Fotos' }); revisa(s === 409 && /ya está en la biblioteca/.test(j.error), 'el mismo archivo dos veces, no (dice dónde está)', j);
+  [s] = await pedir('POST', '/marketing/biblioteca', T.Mara, Buffer.from('<svg onload=alert(1)></svg>'), { 'X-Nombre': 'x.svg' }); revisa(s === 400, 'un SVG o HTML disfrazado, no', s);
+  [s] = await pedir('POST', '/marketing/biblioteca', T.Mara, png([1, 2, 3]), { 'X-Nombre': 'x.png', 'X-Carpeta': encodeURIComponent('<img src=x>') }); revisa(s === 400, 'una carpeta con código, no', s);
+  [s, j] = await pedir('POST', '/marketing/biblioteca', T.Mara, Buffer.from('%PDF-1.4\n%%EOF'), { 'X-Nombre': 'manual-de-marca.pdf', 'X-Carpeta': 'Documentos' }); revisa(s === 201, 'se sube un PDF (manual de marca)', s); const pdfId = j.id;
+  [s, j] = await pedir('GET', '/marketing/biblioteca?q=fondo%20blanco', T.Gil);
+  revisa(s === 200 && j.archivos.length === 1 && j.archivos[0].id === logoId && j.carpetas.includes('Logos'), 'se busca por etiqueta', j.archivos);
+  [, j] = await pedir('GET', '/marketing/biblioteca', T.Gil);
+  revisa(['biblioteca', 'publicacion', 'avance'].every(o => j.archivos.some(f => f.origen === o)), 'muestra en un lugar lo subido, las imágenes de publicaciones y los archivos de avances', [...new Set(j.archivos.map(f => f.origen))]);
+  [s] = await pedir('PUT', '/marketing/biblioteca/' + logoId, T.Mara, { nombre: 'Logo verde horizontal', carpeta: 'Logos oficiales', etiquetas: 'logo' }); revisa(s === 200, 'se renombra y se mueve de carpeta', s);
+  [, j] = await pedir('GET', '/marketing/biblioteca?carpeta=' + encodeURIComponent('Logos oficiales'), T.Mara); revisa(j.archivos[0]?.nombre === 'Logo verde horizontal', 'aparece en su carpeta nueva', j.archivos);
+  // De la biblioteca a una publicación
+  const pubB = (await pedir('POST', '/marketing/publicaciones', T.Mara, { ...base, titulo: 'Con logo de la biblioteca' }))[1];
+  [s, j] = await pedir('POST', '/marketing/publicaciones/' + pubB.id + '/desde-biblioteca', T.Mara, { biblioteca_id: logoId }); revisa(s === 201 && j.lista_imagenes.length === 1, 'una imagen de la biblioteca se agrega a una publicación', j.lista_imagenes);
+  [s] = await pedir('POST', '/marketing/publicaciones/' + pubB.id + '/desde-biblioteca', T.Mara, { biblioteca_id: logoId }); revisa(s === 409, 'la misma imagen dos veces en una publicación, no', s);
+  [s] = await pedir('POST', '/marketing/publicaciones/' + pubB.id + '/desde-biblioteca', T.Mara, { biblioteca_id: pdfId }); revisa(s === 400, 'un PDF no va como imagen de publicación', s);
+  [s] = await pedir('POST', '/marketing/biblioteca/' + logoId + '/quitar', T.Mara, {}); revisa(s === 200, 'se quita de la biblioteca', s);
+  [, j] = await pedir('GET', '/marketing/publicaciones/' + pubB.id, T.Mara);
+  [s, k] = await pedir('GET', '/marketing/imagenes/' + j.lista_imagenes[0].id, T.Mara); revisa(s === 200 && k._tipo === 'image/png', 'la publicación conserva su copia aunque se quite de la biblioteca', [s, k]);
+  [s] = await pedir('GET', '/marketing/biblioteca/' + logoId, T.Mara); revisa(s === 404, 'lo quitado ya no se descarga', s);
+  [s] = await pedir('GET', '/marketing/biblioteca', T.Vale); revisa(s === 403, 'Ventas no ve la biblioteca', s);
+  [s] = await pedir('POST', '/marketing/biblioteca', T.Gema, png([5, 5, 5]), { 'X-Nombre': 'x.png' }); revisa(s === 403, 'el Gerente de sucursal no sube a la biblioteca', s);
 
   console.log('7. Catálogos que no le tocan (auditoría 2026-10-27)');
   [s] = await pedir('GET', '/compras/centros', T.Mara); revisa(s === 403, 'Marketing no descarga los centros de costo (con su responsable)', s);

@@ -107,11 +107,11 @@ module.exports = {
     marketing: {
       nombre: 'Marketing · calendario de publicaciones (2026-10-26)',
       vistas: ['marketing'],
-      tablas: ['publicaciones', 'publicacion_imagenes', 'publicacion_comentarios', 'publicacion_versiones', 'proyectos_marketing', 'tareas_marketing', 'avances_marketing', 'archivos_marketing'],
+      tablas: ['publicaciones', 'publicacion_imagenes', 'publicacion_comentarios', 'publicacion_versiones', 'proyectos_marketing', 'tareas_marketing', 'avances_marketing', 'archivos_marketing', 'ideas_marketing', 'idea_votos', 'idea_comentarios', 'biblioteca_marketing'],
       rutas: [/^\/api\/marketing(\/|$)/],
       pendientes: 'publicaciones por aprobar, con cambios pedidos, aprobadas cuya fecha ya llegó y borradores que salen en 3 días',
       inicio: ['inicio-marketing'],
-      demo: ['publicaciones', 'publicacion_imagenes', 'publicacion_comentarios', 'proyectos_marketing', 'tareas_marketing', 'avances_marketing', 'archivos_marketing'],
+      demo: ['publicaciones', 'publicacion_imagenes', 'publicacion_comentarios', 'proyectos_marketing', 'tareas_marketing', 'avances_marketing', 'archivos_marketing', 'ideas_marketing', 'idea_votos', 'idea_comentarios', 'biblioteca_marketing'],
       integridad: null, integridadRazon: 'no hay dinero ni folios que cuadrar; el historial de cada publicación queda en sus comentarios',
       buscador: null, buscadorRazon: 'se buscan dentro del calendario de publicaciones (filtro propio)',
       permisos: ['marketing.ver', 'marketing.sucursal', 'marketing.empresa', 'marketing.editar', 'marketing.aprobar'],
@@ -140,11 +140,13 @@ module.exports = {
     contadores_folio: 'contador interno de folios por sucursal; nadie lo consulta desde la pantalla',
     publicaciones: 'sin sucursal es de toda la empresa (decisión 2026-10-26): no se le asigna una sola; su vista filtrada está en VISTAS',
     proyectos_marketing: 'igual que las publicaciones: sin sucursal es de toda la empresa; su vista filtrada está en VISTAS',
+    ideas_marketing: 'igual que las publicaciones: sin sucursal es de toda la empresa; su vista filtrada está en VISTAS',
   },
   // Datos que la pantalla muestra y que NO salen de un formulario con su mismo nombre: los genera el sistema (razón) o
   // se capturan con otro nombre ({ como, razon }: la auditoría comprueba que la pantalla mande esa llave). Un dato que se
   // muestra y no está aquí ni se captura es un dato muerto (como «Realizó: propio/subcontratado», que se quitó).
   generados: {
+    publicacion_id: 'liga que pone el sistema: la imagen, comentario o versión de su publicación, o la publicación que salió de una idea',
     avance_antes: 'lo anota el sistema al registrar un avance que mueve el % de una tarea: el % que tenía',
     avance_nuevo: 'el % que se escribió en el avance (campo «Nuevo avance de la tarea»)',
     avance_id: 'liga que pone el sistema entre cada archivo y el avance al que se subió',
