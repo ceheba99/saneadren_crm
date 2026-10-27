@@ -34,6 +34,25 @@ const Marketing = (() => {
     let r; try { r = await api('/marketing/imagenes/' + Number(id)); } catch { return ''; }
     const u = URL.createObjectURL(await r.blob()); imagenes.set(id, u); return u;
   }
+  // Antes de subir una imagen (2026-10-27): si mide más de 2048 px por lado o pesa más de 700 KB, el navegador la ajusta a
+  // 2048 px y la comprime (JPG se queda JPG; PNG y WebP pasan a WebP, que conserva la transparencia). Una foto de celular de
+  // 6–8 MB queda en unos cientos de KB sin diferencia visible en redes. Los GIF (pueden ser animados) se suben tal cual, y si
+  // el resultado no pesa menos, se sube el original.
+  const LADO_MAX = 2048, PESO_OK = 700 * 1024;
+  async function reducir(f) {
+    if (!/^image\/(jpeg|png|webp)$/.test(f.type) || typeof createImageBitmap !== 'function') return f;
+    try {
+      const bmp = await createImageBitmap(f), k = Math.min(1, LADO_MAX / Math.max(bmp.width, bmp.height));
+      if (k === 1 && f.size <= PESO_OK) { bmp.close?.(); return f; }
+      const c = document.createElement('canvas'); c.width = Math.round(bmp.width * k); c.height = Math.round(bmp.height * k);
+      c.getContext('2d').drawImage(bmp, 0, 0, c.width, c.height); bmp.close?.();
+      const blob = await new Promise(r => c.toBlob(r, f.type === 'image/jpeg' ? 'image/jpeg' : 'image/webp', 0.85));
+      if (!blob || blob.size >= f.size) return f;
+      const ext = { 'image/jpeg': '.jpg', 'image/webp': '.webp', 'image/png': '.png' }[blob.type] || '';
+      return new File([blob], f.name.replace(/\.[^.]+$/, '') + ext, { type: blob.type });
+    } catch { return f; }
+  }
+  const pesoTxt = b => (b >= 1048576 ? (b / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(b / 1024)) + ' KB');
   // Pone las imágenes cuando llegan (cada <img data-mk-img="id">).
   function cargarImagenes(cont) { cont.querySelectorAll('img[data-mk-img]').forEach(async img => { const u = await urlImagen(Number(img.dataset.mkImg)); if (u) img.src = u; }); }
 
@@ -171,7 +190,7 @@ const Marketing = (() => {
     cargarImagenes($('mk-imagenes'));
     // Historial
     const tipo = { comentario: '💬', estado: '•', cambios: '↩️', aprobada: '✅' };
-    $('mk-historial').innerHTML = actual.historial.map(h => `<li class="mk-h-${esc(h.tipo)}"><div class="pr-seg-cab">${tipo[h.tipo] || ''} <b>${esc(h.usuario || '')}</b> · ${esc(fechaCorta(h.created_at))}</div><div>${esc(h.texto)}</div></li>`).join('');
+    $('mk-historial').innerHTML = actual.historial.map(h => `<li class="mk-h-${esc(h.tipo)}"><div class="pr-seg-cab">${tipo[h.tipo] || ''} <b>${esc(h.usuario || 'Sistema')}</b> · ${esc(fechaCorta(h.created_at))}</div><div>${esc(h.texto)}</div></li>`).join('');
     $('mk-versiones-det').hidden = !actual.versiones.length;
     $('mk-versiones').innerHTML = actual.versiones.map(v => `<div class="mk-version"><div class="pr-seg-cab">${esc(fechaCorta(v.created_at))} · ${esc(v.usuario || '')} · ${esc(v.titulo || '')}</div><pre>${esc(v.copy || '(sin copy)')}</pre>${v.hashtags ? `<small>${esc(v.hashtags)}</small>` : ''}</div>`).join('');
   }
@@ -211,7 +230,7 @@ const Marketing = (() => {
     if (pendiente()) { toast('Primero guarda o descarta los cambios del contenido'); return; }
     const cuerpo = { accion: a, version: actual.version };
     if (a === 'pedir_cambios' || a === 'cancelar') {
-      const t = await solicitarDialogo({ titulo: a === 'cancelar' ? 'Cancelar publicación' : 'Pedir cambios', mensaje: a === 'cancelar' ? 'Queda en el historial; se puede reabrir después.' : 'Le llega a quien la hizo, en Inicio.', aceptar: a === 'cancelar' ? 'Cancelar publicación' : 'Pedir cambios', campo: { etiqueta: a === 'cancelar' ? '¿Por qué se cancela?' : '¿Qué hay que cambiar?', requerido: 'Escríbelo para que quede claro' } });
+      const t = await solicitarDialogo({ titulo: a === 'cancelar' ? 'Cancelar publicación' : 'Pedir cambios', mensaje: a === 'cancelar' ? 'Queda en el historial; se puede reabrir después. Sus imágenes se borran a los 60 días de cancelada para liberar espacio.' : 'Le llega a quien la hizo, en Inicio.', aceptar: a === 'cancelar' ? 'Cancelar publicación' : 'Pedir cambios', campo: { etiqueta: a === 'cancelar' ? '¿Por qué se cancela?' : '¿Qué hay que cambiar?', requerido: 'Escríbelo para que quede claro' } });
       if (!t) return; cuerpo.comentario = t;
     }
     if (a === 'publicar') {
@@ -229,7 +248,9 @@ const Marketing = (() => {
   }
   async function subir(archivos) {
     if (!actual || !archivos.length) return;
-    for (const f of archivos) {
+    let antes = 0, despues = 0;
+    for (const original of archivos) {
+      const f = await reducir(original); antes += original.size; despues += f.size;
       if (f.size > 10 * 1024 * 1024) { toast(`«${f.name}» pasa de 10 MB`); continue; }
       try {
         const r = await api('/marketing/publicaciones/' + actual.id + '/imagenes', { method: 'POST', headers: { 'Content-Type': 'application/octet-stream', 'X-Nombre': encodeURIComponent(f.name) }, body: f });
@@ -238,6 +259,7 @@ const Marketing = (() => {
         actual = d;
       } catch (e) { toast(`«${f.name}»: ${e.message}`); }
     }
+    if (despues < antes) toast(`Imágenes optimizadas: ${pesoTxt(antes)} → ${pesoTxt(despues)}`);
     pintarFicha(); cargar();
   }
 
@@ -291,7 +313,7 @@ const Marketing = (() => {
   $('mk-desde-bib').onclick = () => actual && window.BibliotecaMk?.elegir(actual.id, d => { actual = d; pintarFicha(); cargar(); });
   $('mk-imagenes').addEventListener('click', async e => {
     const q = e.target.closest('[data-mk-quitar]');
-    if (q) { if (!await solicitarDialogo({ titulo: 'Quitar imagen', mensaje: 'La imagen deja de estar en la publicación (queda en el historial quién la quitó).' + (['aprobada', 'programada'].includes(actual.estado) ? ' Como ya está aprobada, regresará a borrador.' : ''), aceptar: 'Quitar' })) return;
+    if (q) { if (!await solicitarDialogo({ titulo: 'Quitar imagen', mensaje: 'La imagen deja de estar en la publicación (queda en el historial quién la quitó). El archivo se borra del servidor a los 60 días.' + (['aprobada', 'programada'].includes(actual.estado) ? ' Como ya está aprobada, regresará a borrador.' : ''), aceptar: 'Quitar' })) return;
       try { actual = await pedir('/imagenes/' + Number(q.dataset.mkQuitar) + '/quitar', {}, 'POST'); pintarFicha(); cargar(); } catch (err) { toast(err.message); } return; }
     const a = e.target.closest('[data-mk-ampliar]'); if (a) { e.preventDefault(); const u = await urlImagen(Number(a.dataset.mkAmpliar)); if (u) window.open(u, '_blank', 'noopener'); }
   });
@@ -316,6 +338,6 @@ const Marketing = (() => {
   }
   document.querySelectorAll('#vista-marketing > .mk-pestanas [data-mk-pestana]').forEach(b => b.addEventListener('click', () => pestana(b.dataset.mkPestana)));
   window.addEventListener('beforeunload', e => { if ($('overlay-publicacion').classList.contains('mostrar') && pendiente()) { e.preventDefault(); e.returnValue = ''; } });
-  return { redesHtml: redes => redesTxt(redes), logo, pestana, cargar: () => pestana(PESTANA), cargarCalendario: cargar, abrir, pintarInicio, catalogos: async () => { CAT = null; return catalogos(); } };
+  return { redesHtml: redes => redesTxt(redes), logo, reducir, pestana, cargar: () => pestana(PESTANA), cargarCalendario: cargar, abrir, pintarInicio, catalogos: async () => { CAT = null; return catalogos(); } };
 })();
 window.Marketing = Marketing;

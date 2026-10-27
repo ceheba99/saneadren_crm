@@ -178,7 +178,8 @@ const ProyectosMk = (() => {
     try {
       const r = await pedir('/proyectos/' + actual.id + '/avances', { texto, tarea_id: tarea, avance: tarea ? Number(pct) : undefined }, 'POST');
       actual = r;
-      for (const f of [...$('py-av-archivos').files]) {
+      for (const original of [...$('py-av-archivos').files]) {
+        const f = await Marketing.reducir(original); // fotos del avance optimizadas (los PDF pasan tal cual)
         if (f.size > 10 * 1024 * 1024) { toast(`«${f.name}» pasa de 10 MB`); continue; }
         try {
           const x = await api('/marketing/avances/' + r.avance_id + '/archivos', { method: 'POST', headers: { 'Content-Type': 'application/octet-stream', 'X-Nombre': encodeURIComponent(f.name) }, body: f });
