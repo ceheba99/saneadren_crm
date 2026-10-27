@@ -368,6 +368,14 @@ module.exports = function demo(app, db, { sesiones, PORT, SESSION_TTL_MS }) {
       const p1 = await pub(MK, { titulo: 'Tip: limpia tu trampa de grasa', redes: ['instagram', 'facebook'], formato: 'carrusel', fecha: dia(-6), hora: '10:00', campana: 'Tips de mantenimiento', copy: '¿Sabías que una trampa de grasa saturada puede tapar todo el drenaje de tu cocina? 🍳 Te contamos cada cuánto limpiarla.', hashtags: '#trampadegrasa #restaurantes #queretaro' });
       await conImagen(p1, [24, 60, 110], 'tip-trampa-1.png'); await conImagen(p1, [40, 120, 90], 'tip-trampa-2.png');
       await paso(MK, p1, 'enviar'); await paso(GM, p1, 'aprobar'); await paso(MK, p1, 'publicar', { url: 'https://www.instagram.com/' });
+      // Resultados capturados de lo ya publicado (2026-10-27), para la pestaña Resultados.
+      const resultados = (p, red, valores, enlace = '') => pedir('PUT', '/marketing/publicaciones/' + p.id + '/metricas', MK, { red, valores, enlace });
+      await resultados(p1, 'instagram', { alcance: 1840, impresiones: 2310, me_gusta: 126, comentarios: 14, compartidos: 22, guardados: 41, clics: 18, mensajes: 6 }, 'https://www.instagram.com/');
+      await resultados(p1, 'facebook', { alcance: 960, impresiones: 1205, me_gusta: 48, comentarios: 5, compartidos: 9, clics: 11, mensajes: 3 });
+      const p0 = await pub(MK, { titulo: 'Antes y después: drenaje de restaurante', redes: ['facebook', 'tiktok'], formato: 'reel', fecha: dia(-12), hora: '18:30', campana: 'Detrás de cámaras', copy: 'Así quedó la red de drenaje de un restaurante después del desazolve. 👀', copy_redes: { tiktok: 'Antes 😬 → después 🤩 #desazolve' }, enlace: 'https://drive.google.com/' });
+      await paso(MK, p0, 'enviar'); await paso(GM, p0, 'aprobar'); await paso(MK, p0, 'publicar');
+      await resultados(p0, 'tiktok', { alcance: 5320, reproducciones: 7410, me_gusta: 402, comentarios: 37, compartidos: 58, guardados: 63, mensajes: 9 });
+      await resultados(p0, 'facebook', { alcance: 1210, reproducciones: 1650, me_gusta: 61, comentarios: 8, compartidos: 12, mensajes: 4 });
       const p2 = await pub(MK, { titulo: 'Video: así desazolvamos', redes: ['tiktok', 'instagram'], formato: 'reel', fecha: dia(2), hora: '19:00', campana: 'Detrás de cámaras', copy: 'Un día con nuestra cuadrilla 🚛💪', hashtags: '#desazolve #detrasdecamaras', enlace: 'https://drive.google.com/' });
       await paso(MK, p2, 'enviar');
       const p3 = await pub(MK, { titulo: 'Promo noviembre: mantenimiento preventivo', redes: ['facebook', 'linkedin'], fecha: dia(4), hora: '09:00', campana: 'Promo noviembre', copy: 'Agenda tu mantenimiento preventivo en noviembre y evita urgencias en temporada alta.', sucursal: qroId });
@@ -376,7 +384,7 @@ module.exports = function demo(app, db, { sesiones, PORT, SESSION_TTL_MS }) {
       const p4 = await pub(MK, { titulo: 'Podcast: el agua que no vemos (ep. 3)', redes: ['spotify', 'linkedin'], formato: 'episodio', fecha: dia(7), copy: 'Hablamos de plantas de tratamiento en hospitales.', enlace: 'https://open.spotify.com/' });
       await paso(MK, p4, 'enviar'); await paso(GM, p4, 'aprobar'); await paso(MK, p4, 'programar');
       await pub(MK, { titulo: 'Caso de éxito: hotel en Juriquilla', redes: ['linkedin'], formato: 'articulo', fecha: dia(10), copy: 'Borrador del caso de éxito…' });
-      const p6 = await pub(MK, { titulo: 'Felicitación Día de Muertos', redes: ['instagram', 'facebook', 'tiktok'], fecha: dia(5), hora: '12:00', copy: '🕯️ Honramos a quienes nos dejaron huella.', hashtags: '#diademuertos' });
+      const p6 = await pub(MK, { titulo: 'Felicitación Día de Muertos', redes: ['instagram', 'facebook', 'tiktok'], fecha: dia(5), hora: '12:00', copy: '🕯️ Honramos a quienes nos dejaron huella.', copy_redes: { tiktok: '🕯️ Día de Muertos con la cuadrilla #diademuertos #saneadren' }, hashtags: '#diademuertos' });
       await conImagen(p6, [120, 40, 140], 'dia-de-muertos.png');
       await paso(MK, p6, 'enviar'); await paso(GM, p6, 'aprobar');
       await pedir('POST', '/marketing/publicaciones/' + p6.id + '/comentarios', A, { texto: 'Me gusta. Súbanla temprano, por favor.' });

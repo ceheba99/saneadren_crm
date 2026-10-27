@@ -29,7 +29,11 @@ const { tipoReal } = require('./expediente-oc');
 const REDES = { tiktok: 'TikTok', facebook: 'Facebook', instagram: 'Instagram', linkedin: 'LinkedIn', spotify: 'Spotify' };
 const FORMATOS = { post: 'Publicación (imagen)', carrusel: 'Carrusel', reel: 'Reel / video corto', historia: 'Historia', video: 'Video', episodio: 'Episodio / podcast', articulo: 'Artículo', otro: 'Otro' };
 const ESTADOS = { borrador: 'Borrador', revision: 'En revisión', cambios: 'Cambios pedidos', aprobada: 'Aprobada', programada: 'Programada', publicada: 'Publicada', cancelada: 'Cancelada' };
-const CONTENIDO = ['titulo', 'redes', 'formato', 'copy', 'hashtags', 'enlace'];
+const CONTENIDO = ['titulo', 'redes', 'formato', 'copy', 'copy_redes', 'hashtags', 'enlace'];
+// Resultados de una publicación ya publicada, por red (2026-10-27): se capturan a mano desde las estadísticas de cada red.
+const METRICAS = { alcance: 'Alcance', impresiones: 'Impresiones', reproducciones: 'Reproducciones', me_gusta: 'Me gusta', comentarios: 'Comentarios', compartidos: 'Compartidos', guardados: 'Guardados', clics: 'Clics al enlace', mensajes: 'Mensajes recibidos' };
+// Lo que cuenta como interacción (para comparar publicaciones): reacciones, comentarios, compartidos y guardados.
+const INTERACCIONES = ['me_gusta', 'comentarios', 'compartidos', 'guardados'];
 const ESTADOS_PROYECTO = { planeacion: 'En planeación', en_curso: 'En curso', pausa: 'En pausa', terminado: 'Terminado', cancelado: 'Cancelado' };
 const ESTADOS_IDEA = { nueva: 'Nueva', evaluacion: 'En evaluación', aprobada: 'Aprobada', descartada: 'Descartada', realizada: 'Realizada' };
 const CARPETAS = ['Logos', 'Fotos', 'Plantillas', 'Documentos', 'Otros'];
@@ -142,6 +146,16 @@ module.exports = function marketing(app, db, h) {
   `);
   // Cada publicación puede ser parte de un proyecto.
   if (!db.prepare('PRAGMA table_info(publicaciones)').all().some(c => c.name === 'proyecto_id')) db.exec('ALTER TABLE publicaciones ADD COLUMN proyecto_id INTEGER REFERENCES proyectos_marketing(id)');
+  // Texto distinto por red (2026-10-27): JSON {red: texto}; la red que no tiene el suyo usa el copy base.
+  if (!db.prepare('PRAGMA table_info(publicaciones)').all().some(c => c.name === 'copy_redes')) db.exec("ALTER TABLE publicaciones ADD COLUMN copy_redes TEXT NOT NULL DEFAULT '{}'");
+  if (!db.prepare('PRAGMA table_info(publicacion_versiones)').all().some(c => c.name === 'copy_redes')) db.exec('ALTER TABLE publicacion_versiones ADD COLUMN copy_redes TEXT');
+  db.exec(`CREATE TABLE IF NOT EXISTS publicacion_metricas (
+      id INTEGER PRIMARY KEY AUTOINCREMENT, publicacion_id INTEGER NOT NULL REFERENCES publicaciones(id), red TEXT NOT NULL,
+      ${Object.keys(METRICAS).map(k => k + ' INTEGER').join(', ')}, enlace TEXT NOT NULL DEFAULT '',
+      capturado_por INTEGER REFERENCES usuarios(id), updated_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+      UNIQUE(publicacion_id, red)
+    );
+    CREATE INDEX IF NOT EXISTS idx_publicacion_metricas ON publicacion_metricas(publicacion_id);`);
   const base = process.env.DB_PATH ? path.dirname(path.resolve(process.env.DB_PATH)) : path.join(__dirname, '..');
   const DIR = path.join(base, 'archivos', 'marketing');
   const P = () => app.locals.permisos, alc = () => require('./alcance');
@@ -162,7 +176,8 @@ module.exports = function marketing(app, db, h) {
       (SELECT COUNT(*) FROM publicacion_imagenes i WHERE i.publicacion_id = p.id AND i.eliminado = 0) imagenes,
       (SELECT COUNT(*) FROM publicacion_comentarios c WHERE c.publicacion_id = p.id AND c.tipo <> 'estado') comentarios
     FROM publicaciones p LEFT JOIN usuarios u ON u.id = p.responsable_id LEFT JOIN sucursales s ON s.id = p.sucursal_id WHERE ${where}`).all(...args).map(forma);
-  const forma = p => ({ ...p, redes: String(p.redes || '').split(',').filter(Boolean) });
+  const textosDe = t => { try { const o = JSON.parse(t || '{}'); return o && typeof o === 'object' && !Array.isArray(o) ? o : {}; } catch { return {}; } };
+  const forma = p => ({ ...p, redes: String(p.redes || '').split(',').filter(Boolean), copy_redes: textosDe(p.copy_redes) });
   function detalle(req, id) {
     const p = lista('p.id = ?', [Number(id)])[0]; if (!p) return null;
     const nombre = 'LEFT JOIN usuarios u ON u.id = x.usuario_id';
@@ -171,7 +186,8 @@ module.exports = function marketing(app, db, h) {
       aprobado_por_nombre: p.aprobado_por ? db.prepare('SELECT nombre FROM usuarios WHERE id = ?').get(p.aprobado_por)?.nombre : null,
       lista_imagenes: db.prepare('SELECT id, nombre, formato, bytes, orden, created_at FROM publicacion_imagenes WHERE publicacion_id = ? AND eliminado = 0 ORDER BY orden, id').all(p.id),
       historial: db.prepare(`SELECT x.id, x.tipo, x.texto, x.created_at, u.nombre usuario FROM publicacion_comentarios x ${nombre} WHERE x.publicacion_id = ? ORDER BY x.id DESC`).all(p.id),
-      versiones: db.prepare(`SELECT x.id, x.titulo, x.copy, x.hashtags, x.redes, x.created_at, u.nombre usuario FROM publicacion_versiones x ${nombre} WHERE x.publicacion_id = ? ORDER BY x.id DESC`).all(p.id),
+      versiones: db.prepare(`SELECT x.id, x.titulo, x.copy, x.copy_redes, x.hashtags, x.redes, x.created_at, u.nombre usuario FROM publicacion_versiones x ${nombre} WHERE x.publicacion_id = ? ORDER BY x.id DESC`).all(p.id).map(v => ({ ...v, copy_redes: textosDe(v.copy_redes) })),
+      metricas: db.prepare('SELECT m.*, u.nombre capturado_por_nombre FROM publicacion_metricas m LEFT JOIN usuarios u ON u.id = m.capturado_por WHERE m.publicacion_id = ? ORDER BY m.red').all(p.id),
       puede: { editar: puedeEditar(req) && p.estado !== 'publicada', aprobar: puedeAprobar(req), comentar: true },
     };
   }
@@ -191,6 +207,16 @@ module.exports = function marketing(app, db, h) {
     if (body.fecha !== undefined || !actual) { x.fecha = String(body.fecha || ''); if (!fechaValida(x.fecha)) throw Error('Elige la fecha de publicación'); }
     if (body.hora !== undefined) { x.hora = body.hora ? String(body.hora) : null; if (x.hora && !/^([01]\d|2[0-3]):[0-5]\d$/.test(x.hora)) throw Error('La hora no es válida'); }
     if (body.copy !== undefined) { if (typeof body.copy !== 'string' || body.copy.length > 5000) throw Error('El copy puede tener hasta 5000 caracteres'); x.copy = body.copy.replace(/\r\n/g, '\n'); }
+    if (body.copy_redes !== undefined) {
+      const o = body.copy_redes; if (!o || typeof o !== 'object' || Array.isArray(o)) throw Error('Los textos por red no son válidos');
+      const limpio = {};
+      for (const [k, v] of Object.entries(o)) {
+        if (!REDES[k]) throw Error('Red no válida');
+        if (typeof v !== 'string' || v.length > 5000) throw Error(`El texto de ${REDES[k]} puede tener hasta 5000 caracteres`);
+        if (v.trim()) limpio[k] = v.replace(/\r\n/g, '\n');
+      }
+      x.copy_redes = JSON.stringify(Object.fromEntries(Object.keys(REDES).filter(k => k in limpio).map(k => [k, limpio[k]])));
+    }
     if (body.hashtags !== undefined) x.hashtags = texto(body.hashtags, 500);
     if (body.campana !== undefined) x.campana = texto(body.campana, 120);
     if (body.enlace !== undefined) { x.enlace = texto(body.enlace, 500); if (x.enlace && !/^https?:\/\/[^\s]+$/i.test(x.enlace)) throw Error('El enlace debe empezar con https://'); }
@@ -229,7 +255,7 @@ module.exports = function marketing(app, db, h) {
     const responsables = db.prepare('SELECT id, nombre, rol FROM usuarios WHERE activo = 1 ORDER BY nombre').all().filter(u => P().tieneRol(u.rol, 'marketing.editar')).map(({ id, nombre }) => ({ id, nombre }));
     // Proyectos a los que se puede ligar una publicación (los que ve y siguen abiertos).
     const proyectos = db.prepare("SELECT id, nombre FROM proyectos_marketing WHERE estado IN ('planeacion','en_curso','pausa') ORDER BY nombre").all();
-    res.json({ redes: REDES, formatos: FORMATOS, estados: ESTADOS, estados_proyecto: ESTADOS_PROYECTO, estados_idea: ESTADOS_IDEA, carpetas: CARPETAS, sucursales, responsables, proyectos, puede: { editar: puedeEditar(req), aprobar: puedeAprobar(req) } });
+    res.json({ redes: REDES, formatos: FORMATOS, estados: ESTADOS, metricas: METRICAS, interacciones: INTERACCIONES, estados_proyecto: ESTADOS_PROYECTO, estados_idea: ESTADOS_IDEA, carpetas: CARPETAS, sucursales, responsables, proyectos, puede: { editar: puedeEditar(req), aprobar: puedeAprobar(req) } });
   }));
   app.get('/api/marketing/publicaciones', h((req, res) => {
     const desde = String(req.query.desde || ''), hasta = String(req.query.hasta || '');
@@ -237,7 +263,7 @@ module.exports = function marketing(app, db, h) {
     let where = 'p.fecha BETWEEN ? AND ?'; const args = [desde, hasta];
     if (req.query.red && REDES[req.query.red]) { where += " AND (',' || p.redes || ',') LIKE ?"; args.push('%,' + req.query.red + ',%'); }
     if (req.query.estado && ESTADOS[req.query.estado]) { where += ' AND p.estado = ?'; args.push(req.query.estado); }
-    if (req.query.q) { where += ' AND (sin_acentos(p.titulo) LIKE sin_acentos(?) OR sin_acentos(p.copy) LIKE sin_acentos(?) OR sin_acentos(p.campana) LIKE sin_acentos(?) OR p.hashtags LIKE ?)'; args.push(...Array(4).fill('%' + String(req.query.q) + '%')); }
+    if (req.query.q) { where += ' AND (sin_acentos(p.titulo) LIKE sin_acentos(?) OR sin_acentos(p.copy) LIKE sin_acentos(?) OR sin_acentos(p.campana) LIKE sin_acentos(?) OR p.hashtags LIKE ? OR sin_acentos(p.copy_redes) LIKE sin_acentos(?))'; args.push(...Array(5).fill('%' + String(req.query.q) + '%')); }
     res.json(lista(where + ' ORDER BY p.fecha, COALESCE(p.hora, \'99\'), p.id LIMIT 2000', args));
   }));
   // Pendientes para Inicio: por aprobar (quien aprueba), cambios pedidos, y lo aprobado cuya fecha ya llegó sin publicar.
@@ -281,19 +307,19 @@ module.exports = function marketing(app, db, h) {
     if (req.body?.version !== p.version) return res.status(409).json({ error: 'Otra persona cambió esta publicación. Vuelve a abrirla antes de guardar.' });
     if (p.estado === 'publicada') return res.status(409).json({ error: 'Ya está publicada: no se cambia (puedes comentarla)' });
     let x; try { x = validar(req, req.body || {}, p); } catch (e) { return res.status(400).json({ error: e.message }); }
-    const antes = { ...p, redes: p.redes.join(',') };
+    const antes = { ...p, redes: p.redes.join(','), copy_redes: JSON.stringify(p.copy_redes) };
     const cambiados = Object.keys(x).filter(k => String(x[k] ?? '') !== String(antes[k] ?? ''));
     if (!cambiados.length) return res.json(p);
     const contenido = cambiados.filter(k => CONTENIDO.includes(k));
     db.transaction(() => {
       // El texto anterior se guarda como versión.
-      if (cambiados.some(k => ['titulo', 'copy', 'hashtags', 'redes'].includes(k)))
-        db.prepare('INSERT INTO main.publicacion_versiones (publicacion_id, titulo, copy, hashtags, redes, usuario_id) VALUES (?, ?, ?, ?, ?, ?)').run(p.id, antes.titulo, antes.copy, antes.hashtags, antes.redes, yo(req));
+      if (cambiados.some(k => ['titulo', 'copy', 'copy_redes', 'hashtags', 'redes'].includes(k)))
+        db.prepare('INSERT INTO main.publicacion_versiones (publicacion_id, titulo, copy, copy_redes, hashtags, redes, usuario_id) VALUES (?, ?, ?, ?, ?, ?, ?)').run(p.id, antes.titulo, antes.copy, antes.copy_redes, antes.hashtags, antes.redes, yo(req));
       const pierde = contenido.length && ['aprobada', 'programada'].includes(p.estado);
       const sets = cambiados.map(k => k + ' = ?'), vals = cambiados.map(k => x[k]);
       if (pierde) { sets.push("estado = 'borrador'", 'aprobado_por = NULL', 'aprobado_at = NULL'); }
       db.prepare(`UPDATE main.publicaciones SET ${sets.join(', ')}, version = version + 1, updated_at = datetime('now','localtime') WHERE id = ?`).run(...vals, p.id);
-      const nombres = { titulo: 'título', redes: 'redes', formato: 'formato', fecha: 'fecha', hora: 'hora', copy: 'copy', hashtags: 'hashtags', enlace: 'enlace', campana: 'campaña', sucursal_id: 'sucursal', responsable_id: 'responsable', proyecto_id: 'proyecto' };
+      const nombres = { titulo: 'título', redes: 'redes', formato: 'formato', fecha: 'fecha', hora: 'hora', copy: 'copy', copy_redes: 'texto por red', hashtags: 'hashtags', enlace: 'enlace', campana: 'campaña', sucursal_id: 'sucursal', responsable_id: 'responsable', proyecto_id: 'proyecto' };
       nota(p.id, yo(req), 'estado', 'Cambió ' + cambiados.map(k => nombres[k] || k).join(', ') + (cambiados.includes('fecha') ? ` (${p.fecha} → ${x.fecha})` : '')
         + (pierde ? '. Como ya estaba aprobada y cambió el contenido, regresó a borrador: hay que enviarla a revisión otra vez.' : ''));
     })();
@@ -323,7 +349,7 @@ module.exports = function marketing(app, db, h) {
     if (conMotivo && comentario.length < 3) return res.status(400).json({ error: nuevo === 'cambios' ? 'Escribe qué cambios hacen falta' : 'Escribe por qué se cancela' });
     let url = null;
     if (nuevo === 'publicada') { url = texto(req.body.url, 500); if (url && !/^https?:\/\/[^\s]+$/i.test(url)) return res.status(400).json({ error: 'El enlace de la publicación debe empezar con https://' }); }
-    if (nuevo === 'revision' && !p.copy.trim() && !p.imagenes && !p.enlace) return res.status(400).json({ error: 'Antes de enviarla a revisión agrega el copy, una imagen o el enlace del video' });
+    if (nuevo === 'revision' && !p.copy.trim() && !Object.keys(p.copy_redes).length && !p.imagenes && !p.enlace) return res.status(400).json({ error: 'Antes de enviarla a revisión agrega el copy, una imagen o el enlace del video' });
     db.transaction(() => {
       const sets = ['estado = ?'], vals = [nuevo];
       if (nuevo === 'aprobada') sets.push('aprobado_por = ?', "aprobado_at = datetime('now','localtime')"), vals.push(yo(req));
@@ -331,6 +357,51 @@ module.exports = function marketing(app, db, h) {
       if (nuevo === 'publicada') sets.push('publicado_url = ?', "publicado_at = datetime('now','localtime')"), vals.push(url || null);
       db.prepare(`UPDATE main.publicaciones SET ${sets.join(', ')}, version = version + 1, updated_at = datetime('now','localtime') WHERE id = ?`).run(...vals, p.id);
       nota(p.id, yo(req), nuevo === 'cambios' ? 'cambios' : nuevo === 'aprobada' ? 'aprobada' : 'estado', frase + (comentario ? ': ' + comentario : '') + (url ? ' · ' + url : ''));
+    })();
+    res.json(detalle(req, p.id));
+  }));
+
+  // ---------- Orden de las imágenes (2026-10-27): la primera es la portada. En un carrusel el orden es contenido:
+  // si ya estaba aprobada, regresa a borrador como con cualquier otro cambio de contenido. ----------
+  app.put('/api/marketing/publicaciones/:id/imagenes/orden', h((req, res) => {
+    if (!puedeEditar(req)) return res.status(403).json({ error: 'Tu rol solo consulta Marketing' });
+    const p = detalle(req, req.params.id); if (!p) return res.status(404).json({ error: 'Publicación no encontrada' });
+    if (req.body?.version !== p.version) return res.status(409).json({ error: 'Otra persona cambió esta publicación. Vuelve a abrirla.' });
+    if (p.estado === 'publicada') return res.status(409).json({ error: 'Ya está publicada: no se cambian sus imágenes' });
+    const ids = Array.isArray(req.body.ids) ? req.body.ids.map(Number) : [], actuales = p.lista_imagenes.map(i => i.id);
+    if (ids.length !== actuales.length || new Set(ids).size !== ids.length || ids.some(i => !actuales.includes(i))) return res.status(400).json({ error: 'El orden no coincide con las imágenes de la publicación. Vuelve a abrirla.' });
+    if (ids.every((id, i) => id === actuales[i])) return res.json(p);
+    db.transaction(() => {
+      ids.forEach((id, i) => db.prepare('UPDATE main.publicacion_imagenes SET orden = ? WHERE id = ?').run(i + 1, id));
+      const pierde = ['aprobada', 'programada'].includes(p.estado);
+      db.prepare(`UPDATE main.publicaciones SET ${pierde ? "estado = 'borrador', aprobado_por = NULL, aprobado_at = NULL, " : ''}version = version + 1, updated_at = datetime('now','localtime') WHERE id = ?`).run(p.id);
+      const portada = p.lista_imagenes.find(i => i.id === ids[0]);
+      nota(p.id, yo(req), 'estado', `Cambió el orden de las imágenes${ids[0] !== actuales[0] ? ` (portada: «${portada.nombre}»)` : ''}` + (pierde ? '. Como ya estaba aprobada, regresó a borrador: hay que enviarla a revisión otra vez.' : ''));
+    })();
+    res.json(detalle(req, p.id));
+  }));
+
+  // ---------- Resultados de una publicación ya publicada, por red ----------
+  app.put('/api/marketing/publicaciones/:id/metricas', h((req, res) => {
+    if (!puedeEditar(req)) return res.status(403).json({ error: 'Tu rol solo consulta Marketing' });
+    const p = detalle(req, req.params.id); if (!p) return res.status(404).json({ error: 'Publicación no encontrada' });
+    if (p.estado !== 'publicada') return res.status(409).json({ error: 'Los resultados se capturan cuando ya está publicada' });
+    const red = String(req.body?.red || ''); if (!p.redes.includes(red)) return res.status(400).json({ error: 'Elige una de las redes de la publicación' });
+    const v = req.body.valores && typeof req.body.valores === 'object' ? req.body.valores : {}, x = {};
+    for (const [k, n] of Object.entries(v)) {
+      if (!METRICAS[k]) return res.status(400).json({ error: 'Dato no válido: ' + k });
+      if (n === null || n === '') { x[k] = null; continue; }
+      if (!Number.isInteger(Number(n)) || Number(n) < 0 || Number(n) > 1e9) return res.status(400).json({ error: `Revisa «${METRICAS[k]}»: un número entero, sin puntos ni comas` });
+      x[k] = Number(n);
+    }
+    const enlace = texto(req.body.enlace, 500); if (enlace && !/^https?:\/\/[^\s]+$/i.test(enlace)) return res.status(400).json({ error: 'El enlace debe empezar con https://' });
+    if (!Object.values(x).some(n => n !== null) && !enlace) return res.status(400).json({ error: 'Captura al menos un dato o el enlace' });
+    const ks = Object.keys(METRICAS), val = ks.map(k => (k in x ? x[k] : null));
+    db.transaction(() => {
+      db.prepare(`INSERT INTO main.publicacion_metricas (publicacion_id, red, ${ks.join(', ')}, enlace, capturado_por) VALUES (?, ?, ${ks.map(() => '?').join(', ')}, ?, ?)
+        ON CONFLICT(publicacion_id, red) DO UPDATE SET ${ks.map(k => k + ' = excluded.' + k).join(', ')}, enlace = excluded.enlace, capturado_por = excluded.capturado_por, updated_at = datetime('now','localtime')`)
+        .run(p.id, red, ...val, enlace, yo(req));
+      nota(p.id, yo(req), 'estado', 'Capturó los resultados de ' + REDES[red]);
     })();
     res.json(detalle(req, p.id));
   }));
@@ -828,5 +899,5 @@ module.exports = function marketing(app, db, h) {
   setTimeout(limpiar, 5000).unref();
   setInterval(limpiar, Number(process.env.MARKETING_LIMPIEZA_MS) || 6 * 60 * 60 * 1000).unref();
 
-  return { REDES, FORMATOS, ESTADOS };
+  return { REDES, FORMATOS, ESTADOS, METRICAS, INTERACCIONES };
 };

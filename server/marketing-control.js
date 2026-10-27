@@ -32,6 +32,11 @@ const INDICADORES = {
   gasto: { nombre: 'Tope de gasto del mes', dinero: true, tope: true },
 };
 const REDES = ['tiktok', 'facebook', 'instagram', 'linkedin', 'spotify'];
+// Resultados de las publicaciones (los mismos datos que METRICAS e INTERACCIONES de server/marketing.js).
+const METRICAS = ['alcance', 'impresiones', 'reproducciones', 'me_gusta', 'comentarios', 'compartidos', 'guardados', 'clics', 'mensajes'];
+const INTERACCIONES = ['me_gusta', 'comentarios', 'compartidos', 'guardados'];
+// Suma de interacciones y tasa sobre el alcance (null si no hay alcance).
+const conTasa = r => { const i = INTERACCIONES.reduce((a, k) => a + (r[k] || 0), 0); return { ...r, interacciones: i, tasa: r.alcance ? Math.round((i / r.alcance) * 1000) / 10 : null }; };
 const MAX_BYTES = 10 * 1024 * 1024;
 const MIME = { pdf: 'application/pdf', jpg: 'image/jpeg', png: 'image/png' };
 const centavos = v => Math.round(Number(v) * 100);
@@ -241,6 +246,16 @@ module.exports = function marketingControl(app, db, h) {
   }));
 
   // =================== RESULTADOS Y RETORNO ===================
+  // Publicaciones ya publicadas en el rango con lo que se capturó de cada una (sin dinero: lo ve todo Marketing).
+  function publicacionesEntre(desde, hasta) {
+    const suma = METRICAS.map(k => `SUM(m.${k}) ${k}`).join(', ');
+    const pubs = db.prepare(`SELECT p.id, p.titulo, p.fecha, p.formato, p.redes, COUNT(m.id) capturas, ${suma} FROM publicaciones p LEFT JOIN publicacion_metricas m ON m.publicacion_id = p.id
+      WHERE p.estado = 'publicada' AND p.fecha BETWEEN ? AND ? GROUP BY p.id`).all(desde, hasta).map(r => conTasa({ ...r, redes: String(r.redes || '').split(',').filter(Boolean) }));
+    pubs.sort((a, b) => b.interacciones - a.interacciones || (b.alcance || 0) - (a.alcance || 0) || b.fecha.localeCompare(a.fecha));
+    const porRed = db.prepare(`SELECT m.red, COUNT(*) publicaciones, ${suma} FROM publicacion_metricas m JOIN publicaciones p ON p.id = m.publicacion_id
+      WHERE p.estado = 'publicada' AND p.fecha BETWEEN ? AND ? GROUP BY m.red`).all(desde, hasta).map(conTasa).sort((a, b) => b.interacciones - a.interacciones);
+    return { publicaciones: pubs, publicaciones_por_red: porRed, sin_capturar: pubs.filter(p => !p.capturas).length };
+  }
   app.get('/api/marketing/resultados', h((req, res) => {
     const desde = String(req.query.desde || ''), hasta = String(req.query.hasta || '');
     if (!fechaValida(desde) || !fechaValida(hasta) || desde > hasta) return res.status(400).json({ error: 'Indica el rango de fechas' });
@@ -264,7 +279,7 @@ module.exports = function marketingControl(app, db, h) {
     res.json({ desde, hasta, dinero: conDinero, canales: canales.map(c => ({ ...c, marcado: marcados.has(c.id), por_proyecto: mk.has(c.id) && !marcados.has(c.id) })),
       totales: { contactos: t.contactos, cotizaciones: t.cotizaciones, ventas: t.ventas, conversion: t.contactos ? Math.round((t.ventas / t.contactos) * 1000) / 10 : null,
         ...(conDinero ? { gasto: pesos(gTot), vendido: pesos(t.vendido_cent), costo_contacto: t.contactos && gTot ? pesos(Math.round(gTot / t.contactos)) : null, retorno: retorno(t.vendido_cent, gTot) } : {}) },
-      proyectos, por_canal: porCanal, por_red: porRed, por_rubro: porRubro });
+      proyectos, por_canal: porCanal, por_red: porRed, por_rubro: porRubro, ...publicacionesEntre(desde, hasta) });
   }));
   // Qué canales cuentan como «de marketing» (además de los ligados a un proyecto).
   app.put('/api/marketing/canales', h((req, res) => {

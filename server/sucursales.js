@@ -46,6 +46,7 @@ const VISTAS = [
   ['publicacion_imagenes', 'publicacion_id IN (SELECT id FROM publicaciones)'],
   ['publicacion_comentarios', 'publicacion_id IN (SELECT id FROM publicaciones)'],
   ['publicacion_versiones', 'publicacion_id IN (SELECT id FROM publicaciones)'],
+  ['publicacion_metricas', 'publicacion_id IN (SELECT id FROM publicaciones)'],
   ['proyectos_marketing', "nivel_area('marketing') >= 1 AND (sucursal_id IS NULL OR en_area('marketing', sucursal_id)) AND (ve_registro('marketing', responsable_id) OR ve_registro('marketing', creado_por))"],
   ['tareas_marketing', 'proyecto_id IN (SELECT id FROM proyectos_marketing)'],
   ['avances_marketing', 'proyecto_id IN (SELECT id FROM proyectos_marketing)'],

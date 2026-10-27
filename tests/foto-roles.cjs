@@ -213,6 +213,7 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
     ['apruebaPresup', 'Aprobar el presupuesto de marketing'],
     ['registraGasto', 'Registrar un gasto de marketing'],
     ['mkEnCxp', 'El gasto de marketing aparece en Cuentas por pagar'],
+    ['capturaRes', 'Capturar los resultados (alcance, me gusta…) de una publicación ya publicada'],
   ];
   const ok = r => r[0] === 200 || r[0] === 201;
   for (const [rol] of ROLES) {
@@ -248,6 +249,10 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
     const nuevaPub = exigir(await pedir('POST', '/marketing/publicaciones', T.Mara, { titulo: 'Por aprobar ' + rol, redes: ['tiktok'], formato: 'video', fecha: dia(5), copy: 'Copy', sucursal: qro.id }), 'publicación por aprobar');
     const enRevision = exigir(await pedir('POST', '/marketing/publicaciones/' + nuevaPub.id + '/estado', T.Mara, { accion: 'enviar', version: nuevaPub.version }), 'enviar a revisión');
     VE[rol].apruebaPub = ok(await pedir('POST', '/marketing/publicaciones/' + nuevaPub.id + '/estado', t, { accion: 'aprobar', version: enRevision.version }));
+    // Resultados de una publicación ya publicada (2026-10-27): Mara la publica y cada rol intenta capturarlos.
+    { let p = exigir(await pedir('POST', '/marketing/publicaciones', T.Mara, { titulo: 'Publicada ' + rol, redes: ['instagram'], formato: 'post', fecha: dia(-1), copy: 'Copy', sucursal: qro.id }), 'publicación para resultados');
+      for (const [tk, accion] of [[T.Mara, 'enviar'], [A, 'aprobar'], [T.Mara, 'publicar']]) p = exigir(await pedir('POST', '/marketing/publicaciones/' + p.id + '/estado', tk, { accion, version: p.version }), accion);
+      VE[rol].capturaRes = ok(await pedir('PUT', '/marketing/publicaciones/' + p.id + '/metricas', t, { red: 'instagram', valores: { alcance: 100 } })); }
   }
 
   // ----- Pantallas, niveles y permisos de cada rol -----
@@ -301,6 +306,8 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
       admin: { apruebaPresup: 1 }, marketing_gerente: { proponePresup: 1, apruebaPresup: 0 }, ...Object.fromEntries(['marketing', 'gerente', 'ventas', 'atencion', 'tecnico', 'costos'].map(r => [r, { proponePresup: 0, apruebaPresup: 0 }])) }],
     ['2026-10-27', 'Gastos de Marketing: los registran Dirección y el Gerente de marketing, y son control interno del departamento: no aparecen en Cuentas por pagar.', {
       admin: { registraGasto: 1, mkEnCxp: 0 }, marketing_gerente: { registraGasto: 1 }, ...Object.fromEntries(['marketing', 'gerente', 'ventas', 'atencion', 'tecnico', 'costos'].map(r => [r, { registraGasto: 0, mkEnCxp: 0 }])) }],
+    ['2026-10-27', 'Resultados de cada publicación (alcance, me gusta, mensajes…): los capturan Marketing, el Gerente de marketing y Dirección, cuando ya está publicada; los demás roles no.', {
+      admin: { capturaRes: 1 }, marketing: { capturaRes: 1 }, marketing_gerente: { capturaRes: 1 }, ...Object.fromEntries(['gerente', 'ventas', 'atencion', 'tecnico', 'costos'].map(r => [r, { capturaRes: 0 }])) }],
     ['2026-10-27', 'Banco de ideas: las proponen, votan y comentan Marketing, Gerente de marketing y Dirección; las aprueban o descartan solo Dirección y el Gerente de marketing. Los demás roles no ven las ideas.', {
       admin: { agata: 1, votaIdea: 1, decideIdea: 1 }, marketing_gerente: { agata: 1, votaIdea: 1, decideIdea: 1 }, marketing: { agata: 1, votaIdea: 1, decideIdea: 0 },
       ...Object.fromEntries(['gerente', 'ventas', 'atencion', 'tecnico', 'costos'].map(r => [r, { agata: 0, votaIdea: 0, decideIdea: 0 }])) }],

@@ -70,13 +70,20 @@ const HOY = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Mexico_City' }
     const [, av] = await pedir('POST', '/marketing/proyectos/' + py.id + '/avances', A, { texto: X('texto avance'), tarea_id: py2.tareas?.[0]?.id, avance: 50 });
     if (av.avance_id) await subir('/marketing/avances/' + av.avance_id + '/archivos', A, PNG, { 'X-Nombre': XC('archivo avance') + '.png' });
   }
-  const [, pub] = await pedir('POST', '/marketing/publicaciones', A, { titulo: XC('titulo publicacion'), redes: ['instagram'], formato: 'post', fecha: HOY, copy: X('copy publicacion'), hashtags: X('hashtags'), campana: XC('campana'), sucursal: 'empresa', proyecto_id: py.id });
+  const [, pub] = await pedir('POST', '/marketing/publicaciones', A, { titulo: XC('titulo publicacion'), redes: ['instagram', 'linkedin'], formato: 'post', fecha: HOY, copy: X('copy publicacion'), copy_redes: { linkedin: X('copy linkedin') }, hashtags: X('hashtags'), campana: XC('campana'), sucursal: 'empresa', proyecto_id: py.id });
   if (pub.id) {
     await subir('/marketing/publicaciones/' + pub.id + '/imagenes', A, PNG, { 'X-Nombre': XC('imagen publicacion') + '.png' });
     await pedir('POST', '/marketing/publicaciones/' + pub.id + '/comentarios', A, { texto: X('comentario publicacion') });
     const [, p1] = await pedir('GET', '/marketing/publicaciones/' + pub.id, A);
     const [, p2] = await pedir('POST', '/marketing/publicaciones/' + pub.id + '/estado', A, { accion: 'enviar', version: p1.version });
     await pedir('POST', '/marketing/publicaciones/' + pub.id + '/estado', A, { accion: 'pedir_cambios', version: p2.version, comentario: X('cambios pedidos') });
+  }
+  // Publicada con texto por red y resultados (2026-10-27): el enlace de los resultados no admite espacios, así que la
+  // trampa va sin ellos (cierra el atributo e intenta abrir una etiqueta).
+  {
+    let pp = (await pedir('POST', '/marketing/publicaciones', A, { titulo: XC('titulo publicada'), redes: ['instagram', 'tiktok'], formato: 'post', fecha: HOY, copy: X('copy publicada'), copy_redes: { tiktok: X('copy tiktok') }, sucursal: 'empresa' }))[1];
+    for (const accion of ['enviar', 'aprobar', 'publicar']) pp = (await pedir('POST', '/marketing/publicaciones/' + pp.id + '/estado', A, { accion, version: pp.version }))[1];
+    await pedir('PUT', '/marketing/publicaciones/' + pp.id + '/metricas', A, { red: 'instagram', valores: { alcance: 10, me_gusta: 1 }, enlace: MARCAS ? 'https://x.com/' + XC('enlace resultados') : 'https://x.com/"><svg/onload=window.__xss=(window.__xss||0)+1>' });
   }
   // Marketing fase 3: idea (con comentario, motivo y adjunto) y archivo de la biblioteca (nombre, carpeta y etiquetas).
   const [, idea] = await pedir('POST', '/marketing/ideas', A, { titulo: XC('titulo idea'), descripcion: X('descripcion idea'), sucursal: 'empresa' });

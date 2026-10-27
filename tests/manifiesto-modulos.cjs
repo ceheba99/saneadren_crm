@@ -107,11 +107,11 @@ module.exports = {
     marketing: {
       nombre: 'Marketing · calendario de publicaciones (2026-10-26)',
       vistas: ['marketing'],
-      tablas: ['publicaciones', 'publicacion_imagenes', 'publicacion_comentarios', 'publicacion_versiones', 'proyectos_marketing', 'tareas_marketing', 'avances_marketing', 'archivos_marketing', 'ideas_marketing', 'idea_votos', 'idea_comentarios', 'biblioteca_marketing', 'mk_presupuestos', 'mk_presupuesto_lineas', 'mk_presupuesto_historial', 'mk_gastos', 'mk_canales', 'mk_objetivos', 'mk_metas'],
+      tablas: ['publicaciones', 'publicacion_imagenes', 'publicacion_comentarios', 'publicacion_versiones', 'publicacion_metricas', 'proyectos_marketing', 'tareas_marketing', 'avances_marketing', 'archivos_marketing', 'ideas_marketing', 'idea_votos', 'idea_comentarios', 'biblioteca_marketing', 'mk_presupuestos', 'mk_presupuesto_lineas', 'mk_presupuesto_historial', 'mk_gastos', 'mk_canales', 'mk_objetivos', 'mk_metas'],
       rutas: [/^\/api\/marketing(\/|$)/],
       pendientes: 'publicaciones por aprobar, con cambios pedidos, aprobadas cuya fecha ya llegó y borradores que salen en 3 días',
       inicio: ['inicio-marketing'],
-      demo: ['publicaciones', 'publicacion_imagenes', 'publicacion_comentarios', 'proyectos_marketing', 'tareas_marketing', 'avances_marketing', 'archivos_marketing', 'ideas_marketing', 'idea_votos', 'idea_comentarios', 'biblioteca_marketing', 'mk_presupuestos', 'mk_presupuesto_lineas', 'mk_gastos', 'mk_canales', 'mk_objetivos', 'mk_metas'],
+      demo: ['publicaciones', 'publicacion_imagenes', 'publicacion_comentarios', 'publicacion_metricas', 'proyectos_marketing', 'tareas_marketing', 'avances_marketing', 'archivos_marketing', 'ideas_marketing', 'idea_votos', 'idea_comentarios', 'biblioteca_marketing', 'mk_presupuestos', 'mk_presupuesto_lineas', 'mk_gastos', 'mk_canales', 'mk_objetivos', 'mk_metas'],
       integridad: null, integridadRazon: 'no hay dinero ni folios que cuadrar; el historial de cada publicación queda en sus comentarios',
       buscador: null, buscadorRazon: 'se buscan dentro del calendario de publicaciones (filtro propio)',
       permisos: ['marketing.ver', 'marketing.sucursal', 'marketing.empresa', 'marketing.editar', 'marketing.aprobar', 'marketing.dinero'],
@@ -169,6 +169,8 @@ module.exports = {
     solicitante_id: 'quien capturó la solicitud (su sesión)',
     motivo_cancelacion: { como: 'motivo', razon: 'se pide al cancelar un cobro, una cuenta, un pago, una orden de compra o una incidencia' },
     motivo_eliminado: { como: 'motivo', razon: 'se pide al quitar un documento' },
+    // Resultados de una publicación (2026-10-27): una casilla por dato del catálogo METRICAS; se mandan juntos en «valores».
+    ...Object.fromEntries(['alcance', 'impresiones', 'reproducciones', 'me_gusta', 'comentarios', 'compartidos', 'guardados', 'clics', 'mensajes'].map(k => [k, { como: 'valores', razon: 'se capturan en «📊 Resultados» de cada publicación publicada (una casilla por dato), dentro de «valores»' }])),
     motivo_no_realizado: { como: 'motivo', razon: 'se pide al marcar que un servicio no se realizó' },
     motivo_cierre: { como: 'motivo', razon: 'se pide al rechazar o cancelar una solicitud de compra' },
     recibio_nombre: { como: 'recibio', razon: 'quién recibió, al marcar recibida la orden de compra' },
