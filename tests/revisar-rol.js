@@ -7,6 +7,8 @@
 // Uso: insertar este archivo y recorrido-pantallas.js; llamar window.revisarRol({ lead, cliente, solicitud, oc, persona, prospecto })
 async function revisarRol(ids = {}) {
   const espera = ms => new Promise(r => setTimeout(r, ms));
+  const MES = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Mexico_City' }).format(new Date()).slice(0, 7), [AA, MM] = MES.split('-').map(Number);
+  const RANGO = `desde=${MES}-01&hasta=${MES}-${new Date(Date.UTC(AA, MM, 0)).getUTCDate()}`;
   const NOMBRE = /concat\('([^')]+)'\)/g;
   const vistos = new Set(), enCampos = new Set();
   window.__alRevisar = () => {
@@ -20,7 +22,8 @@ async function revisarRol(ids = {}) {
   const recibe = new Set();
   const RUTAS = [['/leads/' + ids.lead], ['/clientes/' + ids.cliente], ['/compras/solicitudes/' + ids.solicitud], ['/compras/ordenes/' + ids.oc], ['/personal/' + ids.persona],
     ['/prospeccion/' + ids.prospecto], ['/finanzas/cxp'], ['/finanzas/proveedores'], ['/compras/centros'], ['/tipos-cliente'], ['/compras/unidades'], ['/leads/' + ids.lead + '/cobros'],
-    ['/marketing/publicaciones/' + ids.publicacion], ['/marketing/proyectos/' + ids.proyecto], ['/marketing/ideas/' + ids.idea], ['/marketing/biblioteca']];
+    ['/marketing/publicaciones/' + ids.publicacion], ['/marketing/proyectos/' + ids.proyecto], ['/marketing/ideas/' + ids.idea], ['/marketing/biblioteca'],
+    ['/marketing/presupuestos/' + MES], ['/marketing/gastos?' + RANGO + '&cancelados=1'], ['/marketing/plan/' + AA], ['/marketing/resultados?' + RANGO], ['/marketing/tablero']];
   const puede = {};
   for (const [ruta] of RUTAS) {
     try { const x = await fetch('/api' + ruta, { headers: { Authorization: 'Bearer ' + USUARIO_ACTUAL.token, ...encabezadoSucursal() } }); puede[ruta] = x.status; if (x.ok) for (const m of (await x.text()).matchAll(NOMBRE)) recibe.add(m[1]); } catch { /* sin acceso */ }
@@ -36,6 +39,11 @@ async function revisarRol(ids = {}) {
     ['/marketing/biblioteca', async () => { cambiarVista('marketing'); await espera(600); Marketing.pestana('biblioteca'); await espera(2000); window.__alRevisar();
       for (const b of [...document.querySelectorAll('#bib-rejilla [data-bib-abrir^="biblioteca:"]')].slice(0, 6)) { b.click(); await espera(700); window.__alRevisar(); document.getElementById('overlay-biblio').classList.remove('mostrar'); }
       Marketing.pestana('ideas'); await espera(1500); }],
+    // Presupuesto y gastos (con los cancelados): cada gasto abierto en su ventana.
+    ['/marketing/presupuestos/' + MES, async () => { cambiarVista('marketing'); await espera(600); Marketing.pestana('dinero'); await espera(2000);
+      document.querySelectorAll('#vista-marketing details').forEach(d => { d.open = true; }); const c = document.getElementById('dn-f-cancelados'); if (c && !c.checked) { c.click(); await espera(1500); } window.__alRevisar();
+      for (const tr of [...document.querySelectorAll('#dn-gastos [data-dn-gasto]')].slice(0, 6)) { tr.click(); await espera(900); window.__alRevisar(); document.getElementById('overlay-gasto-mk').classList.remove('mostrar'); } }],
+    ['/marketing/plan/' + AA, async () => { cambiarVista('marketing'); await espera(600); for (const t of ['plan', 'resultados', 'tablero']) { Marketing.pestana(t); await espera(2000); window.__alRevisar(); } }],
     ['/marketing/proyectos/' + ids.proyecto, async () => { await ProyectosMk.abrir(ids.proyecto); for (const p of ['avances', 'publicaciones', 'datos', 'gantt']) { await espera(700); window.__alRevisar(); document.querySelector(`[data-py-pestana="${p}"]`)?.click(); } }]];
   for (const [ruta, abrir] of pasos) {
     if (puede[ruta] !== 200) continue;

@@ -96,6 +96,10 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
   const tareaOnix = exigir(await pedir('POST', '/marketing/proyectos/' + proyOnix.id + '/tareas', T.Mara, { titulo: 'Guion Ónix', inicio: dia(-5), fin: dia(2) }), 'tarea Ónix');
   exigir(await pedir('POST', '/marketing/proyectos/' + proyOnix.id + '/avances', T.Mara, { texto: 'Avance Ónix listo' }), 'avance Ónix');
   // Fase 3 (2026-10-27): una idea de Mara y un archivo de la biblioteca.
+  // Fase 4 (2026-10-27): presupuesto del mes propuesto por Gil (Gerente de marketing) y un gasto de marketing.
+  const MES = HOY.slice(0, 7);
+  exigir(await pedir('PUT', '/marketing/presupuestos/' + MES, T.Gil, { lineas: { pauta: 17345.67 } }), 'presupuesto de marketing');
+  exigir(await pedir('POST', '/marketing/gastos', T.Gil, { fecha: HOY, concepto: 'Pauta Turquesa', rubro: 'pauta', monto: 4183.56, proveedor: 'Meta' }), 'gasto de marketing');
   const ideaAgata = exigir(await pedir('POST', '/marketing/ideas', T.Mara, { titulo: 'Idea Ágata', descripcion: 'Reto en TikTok Ágata' }), 'idea Ágata');
   const PNG1 = Buffer.from('89504e470d0a1a0a0000000d4948445200000001000000010802000000907753de0000000c4944415408d763f8cfc0000003010100c9fe92ef0000000049454e44ae426082', 'hex');
   { const x = await fetch(URL + '/marketing/biblioteca', { method: 'POST', headers: { 'Content-Type': 'application/octet-stream', Authorization: 'Bearer ' + T.Mara, 'X-Nombre': encodeURIComponent('logo-Jaspe.png'), 'X-Carpeta': encodeURIComponent('Logos') }, body: PNG1 }); if (x.status !== 201) throw new Error('No se pudo subir a la biblioteca: ' + x.status); }
@@ -147,6 +151,8 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
       ['onix', 'Proyecto de marketing de Mara, con sus tareas y avances', ['Campaña Ónix', 'Guion Ónix', 'Avance Ónix']],
       ['agata', 'Idea de Mara en el banco de ideas', ['Idea Ágata']],
       ['jaspe', 'Archivo de la biblioteca de marketing', ['logo-Jaspe']],
+      ['presupMk', 'Presupuesto de marketing del mes (monto)', formas(17345.67)],
+      ['gastoMk', 'Gasto de marketing (concepto y monto)', ['Pauta Turquesa', ...formas(4183.56)]],
     ]],
     ['Personal', [
       ['obsidiana', 'Un empleado activo: nombre y puesto (para asignarlo a una orden)', ['Obsidiana']],
@@ -166,7 +172,7 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
   const EXTRA = ['/leads', '/leads?estatus=ganado', '/clientes', '/clientes?incluir_prospectos=1', '/clientes/catalogo', '/finanzas/cartera', '/finanzas/cartera?vista=clientes', '/finanzas/resumen',
     '/finanzas/periodo?' + RANGO, '/finanzas/cxp?vista=todas', '/finanzas/por-confirmar', '/tablero?' + RANGO, '/generador?' + RANGO, '/calendario?desde=' + dia(-40) + '&hasta=' + dia(50),
     '/calendario/atrasados', '/compras/solicitudes?estado=', '/compras/ordenes', '/kpis', '/pendientes', '/analisis/comercial?' + RANGO, '/contactos/sin-cotizacion', '/personal', '/personal/avisos',
-    '/prospeccion', '/prospeccion?pendientes=1', '/marketing/publicaciones?desde=' + dia(-40) + '&hasta=' + dia(50), '/marketing/pendientes', '/marketing/proyectos', '/marketing/ideas', '/marketing/biblioteca', ...['Ambar', 'Berilo', 'Diamante', 'Coral', 'Jade', 'Perla', 'Granate', 'Cuarzo', 'Obsidiana'].map(p => '/buscar?q=' + p)];
+    '/prospeccion', '/prospeccion?pendientes=1', '/marketing/publicaciones?desde=' + dia(-40) + '&hasta=' + dia(50), '/marketing/pendientes', '/marketing/proyectos', '/marketing/ideas', '/marketing/biblioteca', '/marketing/presupuestos/' + HOY.slice(0, 7), '/marketing/gastos?desde=' + dia(-40) + '&hasta=' + dia(50), '/marketing/tablero', '/marketing/resultados?desde=' + dia(-40) + '&hasta=' + dia(50), '/marketing/plan/' + HOY.slice(0, 4), ...['Ambar', 'Berilo', 'Diamante', 'Coral', 'Jade', 'Perla', 'Granate', 'Cuarzo', 'Obsidiana'].map(p => '/buscar?q=' + p)];
   async function rastrear(t) {
     let todo = '';
     const urls = new Set(EXTRA);
@@ -203,6 +209,10 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
     ['votaIdea', 'Votar y comentar la idea de Mara'],
     ['decideIdea', 'Aprobar o descartar una idea'],
     ['subeBiblio', 'Subir un archivo a la biblioteca de marketing'],
+    ['proponePresup', 'Proponer el presupuesto de marketing del mes'],
+    ['apruebaPresup', 'Aprobar el presupuesto de marketing'],
+    ['registraGasto', 'Registrar un gasto de marketing'],
+    ['mkEnCxp', 'El gasto de marketing aparece en Cuentas por pagar'],
   ];
   const ok = r => r[0] === 200 || r[0] === 201;
   for (const [rol] of ROLES) {
@@ -226,6 +236,15 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
     const otraIdea = exigir(await pedir('POST', '/marketing/ideas', T.Mara, { titulo: 'Por decidir ' + rol }), 'idea por decidir');
     VE[rol].decideIdea = ok(await pedir('POST', '/marketing/ideas/' + otraIdea.id + '/estado', t, { accion: 'aprobar', version: otraIdea.version }));
     { const x = await fetch(URL + '/marketing/biblioteca', { method: 'POST', headers: { 'Content-Type': 'application/octet-stream', Authorization: 'Bearer ' + t, 'X-Nombre': encodeURIComponent('prueba-' + rol + '.png'), 'X-Carpeta': encodeURIComponent('Fotos') }, body: Buffer.concat([PNG1, Buffer.from(rol)]) }); VE[rol].subeBiblio = x.status === 201; }
+    // Presupuesto: cada rol intenta proponer el de un mes futuro propio y aprobar el del mes (que Gil envía cada vuelta).
+    const mesRol = String(2030 + ROLES.findIndex(r => r[0] === rol)) + '-01';
+    VE[rol].proponePresup = ok(await pedir('PUT', '/marketing/presupuestos/' + mesRol, t, { lineas: { diseno: 1000 } })) && ok(await pedir('POST', '/marketing/presupuestos/' + mesRol + '/estado', t, { accion: 'enviar', version: (await pedir('GET', '/marketing/presupuestos/' + mesRol, A))[1].version }));
+    const mesAp = String(2040 + ROLES.findIndex(r => r[0] === rol)) + '-01';
+    exigir(await pedir('PUT', '/marketing/presupuestos/' + mesAp, T.Gil, { lineas: { pauta: 500 } }), 'presupuesto por aprobar');
+    exigir(await pedir('POST', '/marketing/presupuestos/' + mesAp + '/estado', T.Gil, { accion: 'enviar', version: (await pedir('GET', '/marketing/presupuestos/' + mesAp, A))[1].version }), 'enviar presupuesto');
+    VE[rol].apruebaPresup = ok(await pedir('POST', '/marketing/presupuestos/' + mesAp + '/estado', t, { accion: 'aprobar', version: (await pedir('GET', '/marketing/presupuestos/' + mesAp, A))[1].version }));
+    VE[rol].registraGasto = ok(await pedir('POST', '/marketing/gastos', t, { fecha: HOY, concepto: 'Gasto de prueba ' + rol, rubro: 'diseno', monto: 100 }));
+    VE[rol].mkEnCxp = /Pauta Turquesa/.test((await pedir('GET', '/finanzas/cxp?vista=todas', t))[2] || '');
     const nuevaPub = exigir(await pedir('POST', '/marketing/publicaciones', T.Mara, { titulo: 'Por aprobar ' + rol, redes: ['tiktok'], formato: 'video', fecha: dia(5), copy: 'Copy', sucursal: qro.id }), 'publicación por aprobar');
     const enRevision = exigir(await pedir('POST', '/marketing/publicaciones/' + nuevaPub.id + '/estado', T.Mara, { accion: 'enviar', version: nuevaPub.version }), 'enviar a revisión');
     VE[rol].apruebaPub = ok(await pedir('POST', '/marketing/publicaciones/' + nuevaPub.id + '/estado', t, { accion: 'aprobar', version: enRevision.version }));
@@ -276,6 +295,12 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
       rubi: 1, zafiro: 1, topacio: 1, editaPub: 1, comentaPub: 1, ambar: 0, berilo: 0, coral: 0, cobroAlicia: 0, cobroTomas: 0, saldo: 0, gastoTomas: 0, gastoCarlos: 0, clabeProv: 0, jade: 0, perla: 0, granate: 0, cuarzo: 0, obsidiana: 0, clabe: 0, editaO1: 0, borra: 0 }]))],
     ['2026-10-26', 'Los demás roles (Gerente, Ventas, Atención, Técnico, Compras) no ven Marketing; Dirección lo puede prender en Roles y permisos.', Object.fromEntries(['gerente', 'ventas', 'atencion', 'tecnico', 'costos'].map(r => [r, { rubi: 0, zafiro: 0, topacio: 0, editaPub: 0, comentaPub: 0 }]))],
     ['2026-10-26', 'Dirección ve y aprueba todo Marketing.', { admin: { rubi: 1, zafiro: 1, topacio: 1, editaPub: 1, comentaPub: 1 } }],
+    ['2026-10-27', 'Dinero de Marketing (presupuesto, gastos, costo por contacto y retorno): lo ven Dirección y el Gerente de marketing; el rol Marketing y los demás roles no.', {
+      admin: { presupMk: 1, gastoMk: 1 }, marketing_gerente: { presupMk: 1, gastoMk: 1 }, ...Object.fromEntries(['marketing', 'gerente', 'ventas', 'atencion', 'tecnico', 'costos'].map(r => [r, { presupMk: 0, gastoMk: 0 }])) }],
+    ['2026-10-27', 'Presupuesto de Marketing: lo propone el Gerente de marketing y lo aprueba solo Dirección.', {
+      admin: { apruebaPresup: 1 }, marketing_gerente: { proponePresup: 1, apruebaPresup: 0 }, ...Object.fromEntries(['marketing', 'gerente', 'ventas', 'atencion', 'tecnico', 'costos'].map(r => [r, { proponePresup: 0, apruebaPresup: 0 }])) }],
+    ['2026-10-27', 'Gastos de Marketing: los registran Dirección y el Gerente de marketing, y son control interno del departamento: no aparecen en Cuentas por pagar.', {
+      admin: { registraGasto: 1, mkEnCxp: 0 }, marketing_gerente: { registraGasto: 1 }, ...Object.fromEntries(['marketing', 'gerente', 'ventas', 'atencion', 'tecnico', 'costos'].map(r => [r, { registraGasto: 0, mkEnCxp: 0 }])) }],
     ['2026-10-27', 'Banco de ideas: las proponen, votan y comentan Marketing, Gerente de marketing y Dirección; las aprueban o descartan solo Dirección y el Gerente de marketing. Los demás roles no ven las ideas.', {
       admin: { agata: 1, votaIdea: 1, decideIdea: 1 }, marketing_gerente: { agata: 1, votaIdea: 1, decideIdea: 1 }, marketing: { agata: 1, votaIdea: 1, decideIdea: 0 },
       ...Object.fromEntries(['gerente', 'ventas', 'atencion', 'tecnico', 'costos'].map(r => [r, { agata: 0, votaIdea: 0, decideIdea: 0 }])) }],

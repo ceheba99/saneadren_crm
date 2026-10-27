@@ -213,11 +213,73 @@ const png = color => { const ih = Buffer.alloc(13); ih.writeUInt32BE(1, 0); ih.w
   [s] = await pedir('GET', '/marketing/biblioteca', T.Vale); revisa(s === 403, 'Ventas no ve la biblioteca', s);
   [s] = await pedir('POST', '/marketing/biblioteca', T.Gema, png([5, 5, 5]), { 'X-Nombre': 'x.png' }); revisa(s === 403, 'el Gerente de sucursal no sube a la biblioteca', s);
 
+  console.log('10. Presupuesto (fase 4): lo propone el Gerente de marketing, lo aprueba Dirección');
+  const MES = HOY.slice(0, 7);
+  [s] = await pedir('GET', '/marketing/presupuestos/' + MES, T.Mara); revisa(s === 403, 'Marketing no ve el presupuesto (sin montos)', s);
+  [s] = await pedir('PUT', '/marketing/presupuestos/' + MES, T.Gil, { lineas: { pauta: -5 } }); revisa(s === 400, 'un monto negativo, no', s);
+  [s] = await pedir('PUT', '/marketing/presupuestos/' + MES, T.Gil, { lineas: { inventado: 5 } }); revisa(s === 400, 'un rubro inventado, no', s);
+  [s, j] = await pedir('PUT', '/marketing/presupuestos/' + MES, T.Gil, { lineas: { pauta: 12000, diseno: 3500.5 } });
+  revisa(s === 200 && j.estado === 'borrador' && j.total === 15500.5, 'el Gerente de marketing captura el presupuesto (borrador)', [j.estado, j.total]);
+  [s] = await pedir('POST', '/marketing/presupuestos/' + MES + '/estado', T.Gil, { accion: 'aprobar', version: j.version }); revisa(s === 403, 'el Gerente de marketing no se lo aprueba solo', s);
+  [s, j] = await pedir('POST', '/marketing/presupuestos/' + MES + '/estado', T.Gil, { accion: 'enviar', version: j.version }); revisa(s === 200 && j.estado === 'enviado', 'lo envía a Dirección', j.estado);
+  [s] = await pedir('POST', '/marketing/presupuestos/' + MES + '/estado', A, { accion: 'rechazar', version: j.version }); revisa(s === 400, 'rechazar exige motivo', s);
+  [s, j] = await pedir('POST', '/marketing/presupuestos/' + MES + '/estado', A, { accion: 'rechazar', version: j.version, motivo: 'Baja la pauta' }); revisa(s === 200 && j.estado === 'rechazado' && j.motivo === 'Baja la pauta', 'Dirección lo rechaza con motivo', j.estado);
+  [s, j] = await pedir('PUT', '/marketing/presupuestos/' + MES, T.Gil, { lineas: { pauta: 9000 }, version: j.version }); [s, j] = await pedir('POST', '/marketing/presupuestos/' + MES + '/estado', T.Gil, { accion: 'enviar', version: j.version });
+  [s, j] = await pedir('POST', '/marketing/presupuestos/' + MES + '/estado', A, { accion: 'aprobar', version: j.version });
+  revisa(s === 200 && j.estado === 'aprobado' && j.total === 12500.5 && j.aprobado_por_nombre, 'lo corrige, lo reenvía y Dirección lo aprueba', [j.estado, j.total]);
+  [s, j] = await pedir('PUT', '/marketing/presupuestos/' + MES, T.Gil, { lineas: { video: 1000 }, version: j.version }); revisa(j.estado === 'borrador' && j.historial[0].texto.includes('regresó a borrador'), 'si se cambia ya aprobado, regresa a borrador', j.estado);
+
+  console.log('11. Gastos del departamento (control interno)');
+  for (const [cuerpo, que] of [[{ fecha: HOY, concepto: 'x', rubro: 'pauta', monto: 0 }, 'monto en cero'], [{ fecha: HOY, concepto: ' ', rubro: 'pauta', monto: 10 }, 'sin concepto'], [{ fecha: '2099-01-01', concepto: 'x', rubro: 'pauta', monto: 10 }, 'una fecha futura'], [{ fecha: HOY, concepto: 'x', rubro: 'nada', monto: 10 }, 'un rubro inventado'], [{ fecha: HOY, concepto: 'x', rubro: 'pauta', monto: 10.123 }, 'tres decimales']]) {
+    [s] = await pedir('POST', '/marketing/gastos', T.Gil, cuerpo); revisa(s === 400, 'gasto: rechaza ' + que, s);
+  }
+  [s] = await pedir('POST', '/marketing/gastos', T.Mara, { fecha: HOY, concepto: 'x', rubro: 'pauta', monto: 10 }); revisa(s === 403, 'Marketing no registra gastos', s);
+  [s, j] = await pedir('POST', '/marketing/gastos', T.Gil, { fecha: HOY, concepto: 'Pauta Instagram lluvias', rubro: 'pauta', monto: 2500.75, proveedor: 'Meta', red: 'instagram', proyecto_id: proy.id, factura: 'F-123' });
+  revisa(s === 201 && j.monto === 2500.75 && j.proyecto_nombre === proy.nombre, 'el Gerente de marketing registra un gasto ligado a un proyecto', j);
+  const gasto = j;
+  [s, j] = await pedir('POST', '/marketing/gastos/' + gasto.id + '/comprobante', T.Gil, Buffer.from('%PDF-1.4\n%%EOF'), { 'X-Nombre': 'factura.pdf' }); revisa(s === 201 && j.tiene_comprobante, 'se adjunta el comprobante', s);
+  [s, k] = await pedir('GET', '/marketing/gastos/' + gasto.id + '/comprobante', A); revisa(s === 200 && k._tipo === 'application/pdf', 'el comprobante se descarga', [s, k]);
+  [, j] = await pedir('GET', '/marketing/presupuestos/' + MES, A); revisa(j.rubros.find(r => r.rubro === 'pauta').gastado === 2500.75, 'el presupuesto muestra lo gastado por rubro', j.rubros.find(r => r.rubro === 'pauta'));
+  [, j] = await pedir('GET', '/finanzas/cxp?vista=todas', A); revisa(!JSON.stringify(j).includes('Pauta Instagram lluvias'), 'el gasto NO aparece en Cuentas por pagar (decisión: solo control interno)');
+  [s] = await pedir('POST', '/marketing/gastos/' + gasto.id + '/cancelar', T.Gil, {}); revisa(s === 400, 'cancelar exige motivo', s);
+  const g2 = (await pedir('POST', '/marketing/gastos', T.Gil, { fecha: HOY, concepto: 'Lona duplicada', rubro: 'impresion', monto: 800 }))[1];
+  [s, j] = await pedir('POST', '/marketing/gastos/' + g2.id + '/cancelar', T.Gil, { motivo: 'Se capturó dos veces' }); revisa(s === 200 && j.cancelado === 1, 'un gasto se cancela con motivo (no se borra)', j);
+  [, j] = await pedir('GET', '/marketing/gastos?desde=' + HOY + '&hasta=' + HOY, A); revisa(j.total === 2500.75 && !j.gastos.some(x => x.id === g2.id), 'lo cancelado no suma ni sale en la lista', j.total);
+
+  console.log('12. Resultados y retorno por campaña');
+  const [, canales] = await pedir('GET', '/canales', A);
+  [s] = await pedir('PUT', '/marketing/proyectos/' + proy.id + '/canal', T.Mara, { canal_id: canales[0].id }); revisa(s === 200, 'se liga la campaña a su canal de «¿Cómo se enteró?»', s);
+  await pedir('POST', '/contactos', A, { nombre: 'Cliente de campaña', telefono: '442 777 0101', direccion: 'Querétaro', canal_origen_id: canales[0].id });
+  [s, j] = await pedir('GET', '/marketing/resultados?desde=' + dias(-30) + '&hasta=' + dias(30), T.Gil);
+  const filaP = j.proyectos?.find(p => p.id === proy.id);
+  revisa(s === 200 && filaP && filaP.contactos >= 1 && filaP.gasto === 2500.75 && filaP.costo_contacto > 0 && 'retorno' in filaP, 'la campaña muestra contactos, gasto, costo por contacto y retorno', filaP);
+  [s, j] = await pedir('GET', '/marketing/resultados?desde=' + dias(-30) + '&hasta=' + dias(30), T.Mara);
+  const filaM = j.proyectos?.find(p => p.id === proy.id);
+  revisa(s === 200 && filaM && filaM.contactos >= 1 && !('gasto' in filaM) && !('vendido' in filaM) && !('gasto' in j.totales) && !j.dinero, 'a Marketing le llegan los resultados SIN montos', filaM);
+  [s] = await pedir('PUT', '/marketing/canales', T.Mara, { canales: [canales[1].id] }); revisa(s === 200, 'se marcan los canales que cuentan como de marketing', s);
+
+  console.log('13. Plan anual y metas');
+  const ANIO = Number(HOY.slice(0, 4)), MESN = Number(HOY.slice(5, 7));
+  [s] = await pedir('PUT', '/marketing/plan/' + ANIO + '/metas', T.Mara, { metas: { [MESN]: { gasto: 5000 } } }); revisa(s === 403, 'Marketing no fija metas de dinero', s);
+  [s] = await pedir('PUT', '/marketing/plan/' + ANIO + '/metas', T.Mara, { metas: { [MESN]: { publicaciones: 12, contactos: 30 } } }); revisa(s === 200, 'Marketing fija metas de publicaciones y contactos', s);
+  [s] = await pedir('PUT', '/marketing/plan/' + ANIO + '/metas', T.Gil, { metas: { [MESN]: { gasto: 15000, ventas: 80000 } } }); revisa(s === 200, 'el Gerente de marketing fija metas de dinero', s);
+  [s, j] = await pedir('POST', '/marketing/plan/' + ANIO + '/objetivos', T.Mara, { titulo: 'Duplicar seguidores en TikTok' }); revisa(s === 201 && j.estado === 'en_curso', 'se agrega un objetivo del año', j);
+  [s, j] = await pedir('PUT', '/marketing/objetivos/' + j.id, T.Mara, { version: j.version, estado: 'logrado' }); revisa(s === 200 && j.estado === 'logrado', 'se marca logrado', j.estado);
+  [, j] = await pedir('GET', '/marketing/plan/' + ANIO, T.Mara);
+  revisa(j.metas[MESN]?.publicaciones === 12 && !('gasto' in (j.metas[MESN] || {})) && j.real[MESN] && !('gasto' in j.real[MESN]) && !j.indicadores.gasto, 'Marketing ve sus metas y lo real, sin las de dinero', [j.metas[MESN], j.real[MESN]]);
+  [, j] = await pedir('GET', '/marketing/plan/' + ANIO, T.Gil); revisa(j.metas[MESN]?.gasto === 15000 && 'gasto' in j.real[MESN], 'el Gerente de marketing ve también las de dinero', j.metas[MESN]);
+
+  console.log('14. Tablero del departamento');
+  [s, j] = await pedir('GET', '/marketing/tablero', T.Gil);
+  revisa(s === 200 && j.dinero_mes && j.dinero_mes.gastado === 2500.75 && Array.isArray(j.carga) && j.publicaciones && Array.isArray(j.avisos), 'el tablero trae publicaciones, carga de trabajo, avisos y presupuesto contra gasto', [s, j.error || Object.keys(j)]);
+  [s, j] = await pedir('GET', '/marketing/tablero', T.Mara); revisa(s === 200 && j.dinero_mes === null && !('gasto' in j.real) && !JSON.stringify(j).includes('2500.75'), 'a Marketing el tablero le llega sin montos', j.dinero_mes);
+  [s] = await pedir('GET', '/marketing/tablero', T.Vale); revisa(s === 403, 'Ventas no entra al tablero de Marketing', s);
+
   console.log('7. Catálogos que no le tocan (auditoría 2026-10-27)');
   [s] = await pedir('GET', '/compras/centros', T.Mara); revisa(s === 403, 'Marketing no descarga los centros de costo (con su responsable)', s);
   [s] = await pedir('GET', '/compras/centros', T.Vale); revisa(s === 200, 'Ventas sí (pide solicitudes de compra)', s);
 
-  revisa(!/uncaughtException|Error no manejado|TypeError|SqliteError/.test(salida), 'el servidor no registró errores internos', salida.split('\n').filter(l => /Error/.test(l)).slice(0, 5));
+  revisa(!/uncaughtException|Error no manejado|TypeError|SqliteError|Error en (GET|POST|PUT|DELETE)/.test(salida), 'el servidor no registró errores internos', salida.split('\n').filter(l => /Error/.test(l)).slice(0, 5));
   srv.kill();
   console.log(`\n${n - malos.length}/${n} correctas`);
   if (malos.length) console.log('FALLAS:\n- ' + malos.join('\n- '));

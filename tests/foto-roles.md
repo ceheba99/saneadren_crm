@@ -108,6 +108,8 @@ Dirección la revisa y la aprueba. Si un cambio altera lo que ve un rol, la prue
 | Proyecto de marketing de Mara, con sus tareas y avances | ✔ | — | — | — | — | — | ✔ | ✔ |
 | Idea de Mara en el banco de ideas | ✔ | — | — | — | — | — | ✔ | ✔ |
 | Archivo de la biblioteca de marketing | ✔ | — | — | — | — | — | ✔ | ✔ |
+| Presupuesto de marketing del mes (monto) | ✔ | — | — | — | — | — | — | ✔ |
+| Gasto de marketing (concepto y monto) | ✔ | — | — | — | — | — | — | ✔ |
 
 ### Personal
 
@@ -141,6 +143,10 @@ Dirección la revisa y la aprueba. Si un cambio altera lo que ve un rol, la prue
 | Votar y comentar la idea de Mara | ✔ | — | — | — | — | — | ✔ | ✔ |
 | Aprobar o descartar una idea | ✔ | — | — | — | — | — | — | ✔ |
 | Subir un archivo a la biblioteca de marketing | ✔ | — | — | — | — | — | ✔ | ✔ |
+| Proponer el presupuesto de marketing del mes | ✔ | — | — | — | — | — | — | ✔ |
+| Aprobar el presupuesto de marketing | ✔ | — | — | — | — | — | — | — |
+| Registrar un gasto de marketing | ✔ | — | — | — | — | — | — | ✔ |
+| El gasto de marketing aparece en Cuentas por pagar | — | — | — | — | — | — | — | — |
 
 | Permiso | Dirección | Gerente | Ventas | Atención | Técnico | Costos y compras | Marketing | Gerente de marketing |
 |---|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|
@@ -169,6 +175,7 @@ Dirección la revisa y la aprueba. Si un cambio altera lo que ve un rol, la prue
 | Personal · Datos sensibles del personal | ✔ | ✔ | — | — | — | — | — | — |
 | Administración · Usuarios | ✔ | ✔ | — | — | — | — | — | — |
 | Marketing · Aprobar publicaciones | ✔ | — | — | — | — | — | — | ✔ |
+| Marketing · Dinero de Marketing | ✔ | — | — | — | — | — | — | ✔ |
 
 ## Reglas acordadas que se revisan una por una
 
@@ -198,6 +205,9 @@ Dirección la revisa y la aprueba. Si un cambio altera lo que ve un rol, la prue
 - **2026-10-26** · Marketing y Gerente de marketing: ven, editan y comentan las publicaciones de toda la empresa (de cualquier sucursal y las generales), y nada más del sistema: ni ventas, cobranza, gastos, compras, prospección ni personal.
 - **2026-10-26** · Los demás roles (Gerente, Ventas, Atención, Técnico, Compras) no ven Marketing; Dirección lo puede prender en Roles y permisos.
 - **2026-10-26** · Dirección ve y aprueba todo Marketing.
+- **2026-10-27** · Dinero de Marketing (presupuesto, gastos, costo por contacto y retorno): lo ven Dirección y el Gerente de marketing; el rol Marketing y los demás roles no.
+- **2026-10-27** · Presupuesto de Marketing: lo propone el Gerente de marketing y lo aprueba solo Dirección.
+- **2026-10-27** · Gastos de Marketing: los registran Dirección y el Gerente de marketing, y son control interno del departamento: no aparecen en Cuentas por pagar.
 - **2026-10-27** · Banco de ideas: las proponen, votan y comentan Marketing, Gerente de marketing y Dirección; las aprueban o descartan solo Dirección y el Gerente de marketing. Los demás roles no ven las ideas.
 - **2026-10-27** · Biblioteca de marketing (logos, fotos, plantillas): la ven y usan Marketing, Gerente de marketing y Dirección; los demás roles no.
 - **2026-10-26** · Proyectos de marketing (tareas, Gantt y avances): los ven y editan Marketing, Gerente de marketing y Dirección; los demás roles no.

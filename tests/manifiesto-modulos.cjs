@@ -107,14 +107,14 @@ module.exports = {
     marketing: {
       nombre: 'Marketing · calendario de publicaciones (2026-10-26)',
       vistas: ['marketing'],
-      tablas: ['publicaciones', 'publicacion_imagenes', 'publicacion_comentarios', 'publicacion_versiones', 'proyectos_marketing', 'tareas_marketing', 'avances_marketing', 'archivos_marketing', 'ideas_marketing', 'idea_votos', 'idea_comentarios', 'biblioteca_marketing'],
+      tablas: ['publicaciones', 'publicacion_imagenes', 'publicacion_comentarios', 'publicacion_versiones', 'proyectos_marketing', 'tareas_marketing', 'avances_marketing', 'archivos_marketing', 'ideas_marketing', 'idea_votos', 'idea_comentarios', 'biblioteca_marketing', 'mk_presupuestos', 'mk_presupuesto_lineas', 'mk_presupuesto_historial', 'mk_gastos', 'mk_canales', 'mk_objetivos', 'mk_metas'],
       rutas: [/^\/api\/marketing(\/|$)/],
       pendientes: 'publicaciones por aprobar, con cambios pedidos, aprobadas cuya fecha ya llegó y borradores que salen en 3 días',
       inicio: ['inicio-marketing'],
-      demo: ['publicaciones', 'publicacion_imagenes', 'publicacion_comentarios', 'proyectos_marketing', 'tareas_marketing', 'avances_marketing', 'archivos_marketing', 'ideas_marketing', 'idea_votos', 'idea_comentarios', 'biblioteca_marketing'],
+      demo: ['publicaciones', 'publicacion_imagenes', 'publicacion_comentarios', 'proyectos_marketing', 'tareas_marketing', 'avances_marketing', 'archivos_marketing', 'ideas_marketing', 'idea_votos', 'idea_comentarios', 'biblioteca_marketing', 'mk_presupuestos', 'mk_presupuesto_lineas', 'mk_gastos', 'mk_canales', 'mk_objetivos', 'mk_metas'],
       integridad: null, integridadRazon: 'no hay dinero ni folios que cuadrar; el historial de cada publicación queda en sus comentarios',
       buscador: null, buscadorRazon: 'se buscan dentro del calendario de publicaciones (filtro propio)',
-      permisos: ['marketing.ver', 'marketing.sucursal', 'marketing.empresa', 'marketing.editar', 'marketing.aprobar'],
+      permisos: ['marketing.ver', 'marketing.sucursal', 'marketing.empresa', 'marketing.editar', 'marketing.aprobar', 'marketing.dinero'],
     },
     administracion: {
       nombre: 'Usuarios, roles, sucursales, catálogos, bitácora y respaldos',

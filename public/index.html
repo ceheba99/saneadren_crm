@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Saneadren · Cotizaciones y Servicios</title>
-<link rel="stylesheet" href="styles.css?v=mk4">
+<link rel="stylesheet" href="styles.css?v=mk5">
 <link rel="stylesheet" href="servicios-tabla.css">
 <link rel="stylesheet" href="flujo.css?v=cel1">
 </head>
@@ -508,10 +508,59 @@
   <!-- ====== VISTA: MARKETING · CALENDARIO DE PUBLICACIONES (2026-10-26) ====== -->
   <section class="vista" id="vista-marketing">
     <div class="mk-pestanas" role="tablist" aria-label="Marketing">
-      <button type="button" role="tab" class="mk-pestana" id="mk-p-cal" data-mk-pestana="calendario" aria-selected="true">📅 Calendario de publicaciones</button>
+      <button type="button" role="tab" class="mk-pestana" id="mk-p-tab" data-mk-pestana="tablero" aria-selected="false">📊 Tablero</button>
+      <button type="button" role="tab" class="mk-pestana" id="mk-p-cal" data-mk-pestana="calendario" aria-selected="true">📅 Calendario</button>
       <button type="button" role="tab" class="mk-pestana" id="mk-p-proy" data-mk-pestana="proyectos" aria-selected="false">📁 Proyectos</button>
       <button type="button" role="tab" class="mk-pestana" id="mk-p-ideas" data-mk-pestana="ideas" aria-selected="false">💡 Ideas</button>
       <button type="button" role="tab" class="mk-pestana" id="mk-p-bib" data-mk-pestana="biblioteca" aria-selected="false">🗂️ Biblioteca</button>
+      <button type="button" role="tab" class="mk-pestana" id="mk-p-plan" data-mk-pestana="plan" aria-selected="false">🎯 Plan y metas</button>
+      <button type="button" role="tab" class="mk-pestana perm-marketing-dinero" id="mk-p-din" data-mk-pestana="dinero" aria-selected="false">💰 Presupuesto y gastos</button>
+      <button type="button" role="tab" class="mk-pestana" id="mk-p-res" data-mk-pestana="resultados" aria-selected="false">📈 Resultados</button>
+    </div>
+    <!-- Tablero del departamento (fase 4, 2026-10-27) -->
+    <div id="mk-tab-tablero" hidden>
+      <div class="vista-encabezado">
+        <div><h2>📊 Tablero de Marketing</h2><p class="ayuda">El mes de un vistazo: publicaciones y cumplimiento del calendario, lo atrasado, la carga de trabajo de cada persona, los proyectos, las metas y, para Dirección y el Gerente de marketing, el presupuesto contra lo gastado.</p></div>
+        <div class="mk-nav"><button type="button" class="btn btn-outline btn-chico" id="tb-ant" aria-label="Mes anterior">‹</button><h3 id="tb-mes" aria-live="polite"></h3><button type="button" class="btn btn-outline btn-chico" id="tb-sig" aria-label="Mes siguiente">›</button></div>
+      </div>
+      <div id="tb-cuerpo"></div>
+    </div>
+    <!-- Plan anual y metas -->
+    <div id="mk-tab-plan" hidden>
+      <div class="vista-encabezado">
+        <div><h2>🎯 Plan anual y metas</h2><p class="ayuda">Los objetivos del año y las metas de cada mes. Lo real se calcula solo: publicaciones publicadas, contactos y cotizaciones de los canales de marketing y, para quien ve el dinero, lo vendido y lo gastado.</p></div>
+        <div class="mk-nav"><button type="button" class="btn btn-outline btn-chico" id="pl-ant" aria-label="Año anterior">‹</button><h3 id="pl-anio" aria-live="polite"></h3><button type="button" class="btn btn-outline btn-chico" id="pl-sig" aria-label="Año siguiente">›</button></div>
+      </div>
+      <div class="modal-section pl-caja"><div class="pl-cab"><div class="seccion-tit">🏁 Objetivos del año</div><button type="button" class="btn btn-outline btn-chico perm-marketing-editar" id="pl-nuevo-obj">➕ Agregar objetivo</button></div><div id="pl-objetivos"></div></div>
+      <div class="modal-section pl-caja"><div class="pl-cab"><div class="seccion-tit">📅 Metas por mes</div><button type="button" class="btn btn-primario btn-chico perm-marketing-editar" id="pl-guardar" disabled>Guardar metas</button></div>
+        <p class="ayuda">Escribe la meta de cada mes; debajo aparece lo real y qué tanto se cumplió (en el tope de gasto, cumplir es no pasarse).</p>
+        <div class="tabla-scroll"><table class="pl-metas" id="pl-metas"></table></div></div>
+    </div>
+    <!-- Presupuesto y gastos -->
+    <div id="mk-tab-dinero" hidden>
+      <div class="vista-encabezado">
+        <div><h2>💰 Presupuesto y gastos</h2><p class="ayuda">El presupuesto de cada mes por rubro (lo propone el Gerente de marketing y lo aprueba Dirección) y los gastos del departamento contra él. Es control interno de Marketing: no pasa a Cuentas por pagar.</p></div>
+        <div class="mk-nav"><button type="button" class="btn btn-outline btn-chico" id="dn-ant" aria-label="Mes anterior">‹</button><h3 id="dn-mes" aria-live="polite"></h3><button type="button" class="btn btn-outline btn-chico" id="dn-sig" aria-label="Mes siguiente">›</button></div>
+      </div>
+      <div class="modal-section pl-caja"><div class="mk-estado-barra dn-barra" id="dn-barra"></div>
+        <div class="tabla-scroll"><table class="tabla-clientes dn-presup"><thead><tr><th>Rubro</th><th class="st-num">Presupuesto</th><th class="st-num">Gastado</th><th class="st-num">Disponible</th><th>Uso</th></tr></thead><tbody id="dn-rubros"></tbody><tfoot id="dn-total"></tfoot></table></div>
+        <div class="btn-group" id="dn-acciones"></div>
+        <details class="mk-versiones"><summary>Historial del presupuesto</summary><ol class="mk-historial" id="dn-historial"></ol></details>
+      </div>
+      <div class="modal-section pl-caja"><div class="pl-cab"><div class="seccion-tit">🧾 Gastos del mes</div><div class="btn-group"><button type="button" class="btn btn-outline btn-chico" id="dn-exportar">📥 Exportar a Excel</button><button type="button" class="btn btn-primario btn-chico" id="dn-nuevo">➕ Registrar gasto</button></div></div>
+        <div class="filtros"><input type="text" id="dn-buscar" aria-label="Buscar gasto" placeholder="Concepto, proveedor o factura"><select id="dn-f-rubro" aria-label="Rubro"></select><label class="dn-cancelados"><input type="checkbox" id="dn-f-cancelados"> Ver cancelados</label></div>
+        <div class="tabla-scroll"><table class="tabla-clientes"><thead><tr><th>Fecha</th><th>Concepto</th><th>Rubro</th><th>Red / proyecto</th><th class="st-num">Monto</th><th><span class="sr-only">Acciones</span></th></tr></thead><tbody id="dn-gastos"></tbody></table></div>
+        <p class="tabla-conteo" id="dn-gastos-total" role="status"></p>
+      </div>
+    </div>
+    <!-- Resultados y retorno -->
+    <div id="mk-tab-resultados" hidden>
+      <div class="vista-encabezado">
+        <div><h2>📈 Resultados y retorno</h2><p class="ayuda">Cada campaña (proyecto) se liga a un canal de «¿Cómo se enteró?»: en sus fechas (y 30 días después) se cuentan los contactos, cotizaciones y ventas de ese canal. Con lo gastado salen el costo por contacto y el retorno.</p></div>
+      </div>
+      <div class="filtros"><label class="filtro-fecha-label" for="rs-desde">Desde</label><input type="date" id="rs-desde"><label class="filtro-fecha-label" for="rs-hasta">Hasta</label><input type="date" id="rs-hasta">
+        <div class="btn-group"><button type="button" class="btn btn-outline btn-chico" data-rs-rango="mes">Este mes</button><button type="button" class="btn btn-outline btn-chico" data-rs-rango="trimestre">Últimos 3 meses</button><button type="button" class="btn btn-outline btn-chico" data-rs-rango="anio">Este año</button></div></div>
+      <div id="rs-cuerpo"></div>
     </div>
     <div id="mk-tab-calendario">
     <div class="vista-encabezado">
@@ -1604,6 +1653,30 @@
   </div>
 </div>
 
+<!-- ====== OVERLAY: GASTO DE MARKETING (fase 4) ====== -->
+<div class="overlay" id="overlay-gasto-mk">
+  <div class="modal modal-idea">
+    <div class="modal-header"><div><span class="flujo-kicker" id="gm-kicker">GASTO DE MARKETING</span><h2 id="gm-titulo">Registrar gasto</h2></div>
+      <button class="close-btn" type="button" id="gm-cerrar">✕</button></div>
+    <div class="modal-body"><div class="modal-section" id="gm-form">
+      <p class="cuentas-aviso" id="gm-cancelado" hidden></p>
+      <div class="form-grid-2">
+        <div class="campo-modal"><label for="gm-fecha">Fecha (obligatorio)</label><input type="date" id="gm-fecha"></div>
+        <div class="campo-modal"><label for="gm-monto">Monto pagado, con IVA (obligatorio)</label><input type="number" id="gm-monto" min="0.01" step="0.01" inputmode="decimal" placeholder="0.00"></div>
+        <div class="campo-modal full"><label for="gm-concepto">Concepto (obligatorio)</label><input id="gm-concepto" maxlength="160" placeholder="Pauta en Instagram · campaña de lluvias"></div>
+        <div class="campo-modal"><label for="gm-rubro">Rubro (obligatorio)</label><select id="gm-rubro"></select></div>
+        <div class="campo-modal"><label for="gm-proveedor">Proveedor (opcional)</label><input id="gm-proveedor" maxlength="120" placeholder="Meta, imprenta, diseñador…"></div>
+        <div class="campo-modal"><label for="gm-red">Red (opcional)</label><select id="gm-red"></select></div>
+        <div class="campo-modal"><label for="gm-proyecto">Proyecto o campaña (opcional)</label><select id="gm-proyecto"></select></div>
+        <div class="campo-modal"><label for="gm-factura">Folio de factura (opcional)</label><input id="gm-factura" maxlength="60"></div>
+        <div class="campo-modal"><label for="gm-comprobante">Comprobante (opcional · PDF, JPG o PNG)</label><input type="file" id="gm-comprobante" accept="application/pdf,image/jpeg,image/png"><small id="gm-comp-actual"></small></div>
+        <div class="campo-modal full"><label for="gm-notas">Notas (opcional)</label><textarea id="gm-notas" rows="2" maxlength="1000"></textarea></div>
+      </div>
+      <div class="btn-group"><button type="button" class="btn btn-primario" id="gm-guardar">Guardar gasto</button><button type="button" class="btn btn-outline mk-btn-cancelar" id="gm-cancelar" hidden>Cancelar gasto</button><span class="estado-guardado" id="gm-aviso" role="status"></span></div>
+    </div></div>
+  </div>
+</div>
+
 <!-- ?v= obliga a los navegadores (sobre todo celulares) a tomar la versión nueva tras publicar. -->
 <!-- Generador de QR para la encuesta de cada orden (MIT, Kazuhiko Arase) -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js" integrity="sha384-mZT2gIty7ZDdOGkxfP6joZcYdMW1Jvj9dRlfpTmaJAKKXTqzygtB22k7FLe+KZC1" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
@@ -1630,9 +1703,10 @@
 <script src="buscador.js?v=suc1"></script>
 <script src="demo.js?v=demo1"></script>
 <script src="prospeccion.js?v=pro1"></script>
-<script src="marketing.js?v=mk4"></script>
+<script src="marketing.js?v=mk5"></script>
 <script src="marketing-proyectos.js?v=mk4"></script>
-<script src="marketing-ideas.js?v=mk4"></script>
+<script src="marketing-ideas.js?v=mk5"></script>
+<script src="marketing-control.js?v=mk5"></script>
 <script src="inicio.js?v=ini3"></script>
 </body>
 </html>

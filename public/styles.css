@@ -1951,3 +1951,39 @@ table.tabla-clientes.py-tareas tbody td{white-space:normal;}
 .bib-pdf-grande{width:180px;font-size:40px;border-radius:8px;}
 @media(max-width:700px){.id-tablero{grid-template-columns:repeat(5,82vw);scroll-snap-type:x mandatory;}.id-col{scroll-snap-align:start;}.bib-rejilla{grid-template-columns:repeat(2,minmax(0,1fr));}}
 .id-col{align-self:start;}
+
+/* ---------- Marketing · control y finanzas (fase 4, 2026-10-27) ---------- */
+#mk-tab-tablero .mk-nav h3,#mk-tab-plan .mk-nav h3,#mk-tab-dinero .mk-nav h3{min-width:150px;text-align:center;margin:0;}
+.tb-avisos{display:flex;flex-direction:column;gap:6px;margin-bottom:12px;}
+.tb-aviso{margin:0;padding:8px 12px;border-radius:8px;font-size:13.5px;background:var(--gris-100);}
+.tb-aviso.tb-rojo{background:#fdecec;color:#8a1f1f;}.tb-aviso.tb-alerta{background:#fff6d6;color:#6b4800;}.tb-aviso.tb-ok{background:#e2f5e9;color:#1d6b3a;margin-bottom:12px;}
+.tb-tarjetas .rc-card.tb-bajo{border-top-color:var(--rojo);}
+.tb-dos{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:14px;margin-bottom:14px;}
+.pl-caja{background:var(--blanco,#fff);border:1px solid var(--gris-200);border-radius:10px;padding:14px 16px;margin-bottom:14px;}
+.tb-dos .pl-caja{margin-bottom:0;}
+.tb-meta{margin:8px 0;}.tb-meta-cab{display:flex;justify-content:space-between;gap:10px;font-size:13px;margin-bottom:3px;}.tb-meta-cab span{color:var(--texto-sec);white-space:nowrap;}
+.tb-meta .py-barra{display:block;width:100%;}.tb-rubro .tb-meta-cab{font-size:12.5px;}
+.py-barra.ok i{background:var(--verde);}.py-barra.mal i{background:var(--rojo);}
+.tb-proy{display:flex;justify-content:space-between;align-items:center;gap:10px;width:100%;font:inherit;text-align:left;background:transparent;border:0;border-bottom:1px solid var(--gris-200);padding:8px 0;cursor:pointer;}
+.tb-proy:hover b{text-decoration:underline;}.tb-proy small{display:block;color:var(--texto-sec);font-size:12px;}.tb-proy-av{display:flex;align-items:center;gap:6px;white-space:nowrap;font-size:12.5px;}.tb-proy-av .py-barra{width:90px;}
+.tb-lista{margin:0;padding-left:18px;}.tb-lista li{margin:5px 0;font-size:13px;}
+.tb-redes{display:flex;flex-wrap:wrap;gap:12px;}.tb-redes span{display:inline-flex;align-items:center;gap:5px;font-weight:700;}
+.pl-cab{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:6px;}
+.pl-objs{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:10px;}
+.pl-obj{display:flex;justify-content:space-between;gap:10px;align-items:flex-start;border:1px solid var(--gris-200);border-left:4px solid #4a90d9;border-radius:8px;padding:10px;}
+.pl-obj b{display:block;overflow-wrap:anywhere;}.pl-obj small{display:block;color:var(--texto-sec);font-size:12px;margin-top:2px;overflow-wrap:anywhere;}
+.pl-o-logrado{border-left-color:var(--verde);}.pl-o-no_logrado{border-left-color:var(--rojo);}.pl-o-cancelado{border-left-color:var(--gris-300);opacity:.7;}
+.pl-metas{border-collapse:collapse;font-size:12.5px;min-width:980px;width:100%;}
+.pl-metas th,.pl-metas td{border:1px solid var(--gris-200);padding:5px 6px;vertical-align:top;}
+.pl-metas thead th{background:var(--gris-100);font-size:11.5px;}.pl-metas th[scope="row"]{text-align:left;min-width:170px;}.pl-metas th[scope="row"] small{display:block;color:var(--texto-sec);font-weight:400;}
+.pl-metas .pl-hoy{background:#fff6d6;}
+.pl-celda input{width:100%;min-width:62px;box-sizing:border-box;font-size:12.5px;padding:4px 5px;text-align:right;}
+.pl-celda small{display:block;text-align:right;color:var(--texto-sec);font-size:11px;margin-top:2px;}.pl-celda small.ok{color:#1d6b3a;font-weight:700;}
+.dn-presup input{width:130px;text-align:right;}
+.dn-e-aprobado{background:#e2f5e9;color:#1d6b3a;}.dn-e-enviado{background:#fff6d6;color:#8a5a00;}.dn-e-rechazado{background:#fdecec;color:var(--rojo);}
+.dn-barra{margin:-14px -16px 12px;border-radius:10px 10px 0 0;}
+.dn-cancelado{opacity:.6;}.dn-cancelado b{text-decoration:line-through;}
+.dn-cancelados{display:inline-flex;align-items:center;gap:6px;font-size:13px;}
+.rs-canales{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0;}
+#mk-tab-resultados .ok,#mk-tab-tablero .ok{color:#1d6b3a;}
+@media(max-width:700px){.tb-dos{grid-template-columns:minmax(0,1fr);}.dn-presup input{width:100px;}}
