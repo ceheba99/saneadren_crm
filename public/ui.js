@@ -309,6 +309,16 @@ const MenuPrincipal = (() => {
     const actual = nav.querySelector('[data-vista].activa');
     document.getElementById('menu-actual').textContent = actual ? texto(actual) : '';
   }
-  return { marcar, enfocar };
+  // Un grupo sin nada que ver para el rol (p. ej. Finanzas para quien solo hace Marketing) no se muestra vacío.
+  // Lo llama permisos.js cada vez que pinta los permisos.
+  function ocultarVacios() {
+    nav.querySelectorAll('.menu-grupo').forEach(g => {
+      g.classList.remove('menu-vacio');
+      g.classList.toggle('menu-vacio', ![...g.querySelectorAll('.menu-sub .menu-item')].some(b => getComputedStyle(b).display !== 'none'));
+    });
+  }
+  // También cuando cambian las clases del body que esconden opciones (cobranza, solo Dirección…), que llegan después.
+  new MutationObserver(ocultarVacios).observe(document.body, { attributes: true, attributeFilter: ['class'] });
+  return { marcar, enfocar, ocultarVacios };
 })();
 window.MenuPrincipal = MenuPrincipal;

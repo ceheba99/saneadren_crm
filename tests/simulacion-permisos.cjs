@@ -113,7 +113,8 @@ const CAMBIOS_ESPERADOS = [
     T[rol] = await login(usuarioDe(rol), CLAVE);
   }
   let [s, j] = await pedir('GET', '/permisos', A);
-  revisa(s === 200 && j.roles.length === 6 && j.catalogo.length >= 18, `la tabla de permisos trae los 6 roles y ${j.catalogo?.length} permisos`);
+  // Desde el 2026-10-26 hay 8 roles de fábrica: los 6 de antes, Marketing y Gerente de marketing.
+  revisa(s === 200 && j.roles.length === 8 && j.catalogo.length >= 18, `la tabla de permisos trae los 8 roles y ${j.catalogo?.length} permisos`);
   const tabla = j, permisosDe = clave => tabla.roles.find(r => r.clave === clave).permisos;
   revisa(j.catalogo.every(p => permisosDe('admin').includes(p.clave)) && Object.values(j.roles.find(r => r.clave === 'admin').alcances).every(n => n === 3), 'Dirección tiene todos los permisos y lo ve todo');
   revisa(permisosDe('costos').includes('dinero.mover') && !permisosDe('ventas').includes('dinero.mover'), 'al inicio, costos mueve dinero y ventas no (como antes)');

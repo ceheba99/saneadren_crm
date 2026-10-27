@@ -41,6 +41,11 @@ const VISTAS = [
   ['incidencias_personal', 'personal_id IN (SELECT id FROM personal)'],
   ['orden_personal', 'lead_id IN (SELECT id FROM leads)'],
   ['encuestas', 'lead_id IN (SELECT id FROM leads)'], // la encuesta, con su orden
+  // Marketing (2026-10-26): las de toda la empresa (sin sucursal) o de una sucursal que ve; con «lo suyo», las que creó o tiene a su nombre.
+  ['publicaciones', "nivel_area('marketing') >= 1 AND (sucursal_id IS NULL OR en_area('marketing', sucursal_id)) AND (ve_registro('marketing', responsable_id) OR ve_registro('marketing', creado_por))"],
+  ['publicacion_imagenes', 'publicacion_id IN (SELECT id FROM publicaciones)'],
+  ['publicacion_comentarios', 'publicacion_id IN (SELECT id FROM publicaciones)'],
+  ['publicacion_versiones', 'publicacion_id IN (SELECT id FROM publicaciones)'],
 ];
 // Tablas con folio propio por sucursal y su tipo de contador.
 const FOLIO = { leads: 'leads', solicitudes_compra: 'solicitudes', ordenes_compra: 'ordenes_compra' };
@@ -53,6 +58,7 @@ const RUTAS_REGISTRO = [
   [/^\/compras\/documentos\/(\d+)(?:\/|$)/, 'documentos_oc'], [/^\/compras\/solicitudes\/documentos\/(\d+)(?:\/|$)/, 'documentos_solicitud'],
   [/^\/compras\/solicitudes\/(\d+)(?:\/|$)/, 'solicitudes_compra'], [/^\/prospeccion\/(\d+)(?:\/|$)/, 'establecimientos'],
   [/^\/personal\/(\d+)(?:\/|$)/, 'personal'],
+  [/^\/marketing\/publicaciones\/(\d+)(?:\/|$)/, 'publicaciones'], [/^\/marketing\/imagenes\/(\d+)(?:\/|$)/, 'publicacion_imagenes'],
 ];
 const RUTA_CLIENTE = /^\/(?:finanzas\/)?clientes\/(\d+)(?:\/|$)/;
 // Lo que solo hace el administrador GENERAL (Dirección): afecta a todas las sucursales o lo ve todo. Aplica a

@@ -104,6 +104,18 @@ module.exports = {
       buscador: null, buscadorRazon: 'se consulta en la ficha de su orden',
       permisos: [],
     },
+    marketing: {
+      nombre: 'Marketing · calendario de publicaciones (2026-10-26)',
+      vistas: ['marketing'],
+      tablas: ['publicaciones', 'publicacion_imagenes', 'publicacion_comentarios', 'publicacion_versiones'],
+      rutas: [/^\/api\/marketing(\/|$)/],
+      pendientes: 'publicaciones por aprobar, con cambios pedidos, aprobadas cuya fecha ya llegó y borradores que salen en 3 días',
+      inicio: ['inicio-marketing'],
+      demo: ['publicaciones', 'publicacion_imagenes', 'publicacion_comentarios'],
+      integridad: null, integridadRazon: 'no hay dinero ni folios que cuadrar; el historial de cada publicación queda en sus comentarios',
+      buscador: null, buscadorRazon: 'se buscan dentro del calendario de publicaciones (filtro propio)',
+      permisos: ['marketing.ver', 'marketing.sucursal', 'marketing.empresa', 'marketing.editar', 'marketing.aprobar'],
+    },
     administracion: {
       nombre: 'Usuarios, roles, sucursales, catálogos, bitácora y respaldos',
       vistas: ['usuarios', 'catalogos', 'bitacora'],
@@ -126,11 +138,13 @@ module.exports = {
   sucursalCompartida: {
     clientes: 'los clientes se comparten entre sucursales (decisión del 2026-10); los de otra sucursal se enmascaran',
     contadores_folio: 'contador interno de folios por sucursal; nadie lo consulta desde la pantalla',
+    publicaciones: 'sin sucursal es de toda la empresa (decisión 2026-10-26): no se le asigna una sola; su vista filtrada está en VISTAS',
   },
   // Datos que la pantalla muestra y que NO salen de un formulario con su mismo nombre: los genera el sistema (razón) o
   // se capturan con otro nombre ({ como, razon }: la auditoría comprueba que la pantalla mande esa llave). Un dato que se
   // muestra y no está aquí ni se captura es un dato muerto (como «Realizó: propio/subcontratado», que se quitó).
   generados: {
+    publicado_url: 'lo escribe quien marca la publicación como publicada (diálogo «Marcar publicada»)',
     // Encuesta de satisfacción (2026-10-26): la contesta el cliente en public/encuesta.html (página pública, fuera de index.html).
     estado_antes: 'lo anota el sistema al registrar un seguimiento de prospección: el estado que tenía antes',
     estado_nuevo: 'lo anota el sistema al registrar un seguimiento de prospección, si el estado cambió',

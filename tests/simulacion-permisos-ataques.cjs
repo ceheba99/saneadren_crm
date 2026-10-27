@@ -63,8 +63,8 @@ const azar = () => { semilla = (semilla * 1103515245 + 12345) % 2147483648; retu
     const ediciones = Object.fromEntries(EDITABLES.map(a => [a, lista.includes(a + '.editar')]));
     return { permisos: lista.filter(c => !VIRTUALES.includes(c)), alcances, ediciones, ...extra };
   };
-  // «Todo» como el gerente: toda su sucursal (no toda la empresa) y edita.
-  const TODO = [...CATALOGO, ...VIRTUALES.filter(c => !c.endsWith('.empresa'))];
+  // «Todo» como el gerente: toda su sucursal (no toda la empresa) y edita. Marketing no: el gerente no lo ve (2026-10-26).
+  const TODO = [...CATALOGO, ...VIRTUALES.filter(c => !c.endsWith('.empresa'))].filter(c => !c.startsWith('marketing.'));
   const crearRol = async (nombre, permisos) => { const [, r] = await pedir('POST', '/roles', A, { nombre }); await pedir('PUT', '/roles/' + r.clave + '/permisos', A, cuerpo(permisos)); return r.clave; };
   const ROL_TODO = await crearRol('Todo de prueba', TODO), ROL_NADA = await crearRol('Nada de prueba', []);
   const crearUsuario = async (nombre, rol, sucursales = [QRO]) => (await pedir('POST', '/usuarios', A, { nombre, password: CLAVE, rol, sucursales }));
@@ -97,7 +97,8 @@ const azar = () => { semilla = (semilla * 1103515245 + 12345) % 2147483648; retu
   // del dueño (2026-10-21), con motivo y registro en la bitácora.
   const DIRECCION_ESPERADO = /\/(admin\/|sucursales|auditoria$|roles|permisos$|clientes\/(duplicados|distintos)|clientes\/1\/fusionar|servicios|canales|tipos-cliente|finanzas\/categorias|prospeccion\/sectores|compras\/(formato|centros|unidades)|compras\/ordenes\/1\/deshacer-recepcion$|historial\/1\/reabrir$)/;
   // Y borrar (cotizaciones, órdenes, usuarios…): solo Dirección (2026-10-26).
-  const deDireccion = k => DIRECCION_ESPERADO.test(k) || /^DELETE /.test(k);
+  // Marketing tampoco: el rol «con todo» copia al gerente, que no ve Marketing (2026-10-26).
+  const deDireccion = k => DIRECCION_ESPERADO.test(k) || /^DELETE /.test(k) || /^\w+ \/marketing(\/|$)/.test(k);
   revisa(soloDireccion.every(deDireccion), `lo que el rol con todo NO puede y Dirección sí son solo cosas de todas las sucursales o borrar (${soloDireccion.length})`, soloDireccion.filter(k => !deDireccion(k)));
   revisa(fT['GET /permisos'] === 403 && fT['PUT /roles/1/permisos'] === 403 && fT['POST /roles'] === 403, 'ni con todos los permisos se editan roles (solo Dirección)');
 
