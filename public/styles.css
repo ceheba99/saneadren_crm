@@ -1717,3 +1717,28 @@ body:not(.varias-sucursales) .solo-varias-sucursales{display:none!important;}
 .enc-tabla td{font-size:.85rem;}
 .enc-tabla .enc-modulo th{text-align:left;background:#f6f7f9;font-size:.82rem;}
 .enc-detalle summary{cursor:pointer;font-weight:600;margin:6px 0;}
+
+/* ---------- Contactos (2026-10-26): tarjetas que filtran, columnas que se ordenan, acciones rápidas ---------- */
+button.rc-card{font:inherit;text-align:left;cursor:pointer;border-left:0;border-right:0;border-bottom:0;display:block;width:100%;}
+button.rc-card:hover{filter:brightness(1.25);}
+button.rc-card[aria-pressed="true"]{box-shadow:0 0 0 2px var(--amarillo);}
+.rc-card .rc-num,.rc-card .rc-label{display:block;}
+.th-orden{background:none;border:0;padding:0;font:inherit;color:inherit;text-transform:inherit;letter-spacing:inherit;cursor:pointer;text-align:inherit;}
+.th-orden:hover{text-decoration:underline;}
+th[aria-sort="ascending"] .th-orden::after{content:" ▲";font-size:9px;}
+th[aria-sort="descending"] .th-orden::after{content:" ▼";font-size:9px;}
+.tabla-clientes .celda-sub{display:block;color:var(--texto-sec);font-size:11px;}
+.tabla-clientes .fc-prox{display:block;font-weight:700;color:var(--verde);}
+.tabla-clientes .fc-dormido{display:inline-block;margin-top:2px;padding:1px 8px;border-radius:999px;background:#fff4d6;color:#8a5a00;font-size:11px;font-weight:700;}
+.tabla-clientes td.fc-acciones{display:flex;gap:6px;justify-content:flex-end;align-items:center;}
+.tabla-clientes td.fc-acciones a.btn{text-decoration:none;}
+.fc-mas{text-align:center;padding:12px;}
+.contacto-acciones{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0 4px;}
+.contacto-acciones a.btn{text-decoration:none;}
+#contacto-identidad{flex-wrap:wrap;}
+#contacto-identidad>.contacto-avatar+div{flex:1 1 300px;}
+#contacto-identidad>.contacto-acciones,#contacto-identidad>.contacto-historia{flex:1 1 100%;}
+.contacto-historia{margin:0;}
+.contacto-historia .celda-sub{display:block;color:var(--texto-sec);font-size:11px;font-weight:400;}
+#vista-clientes .filtros #fc-buscar{flex:1 1 100%;}
+#vista-clientes .filtros select{flex:1 1 170px;}

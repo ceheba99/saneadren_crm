@@ -34,10 +34,41 @@ const FlujoCRM = (() => {
     $('contacto-identidad').innerHTML=`<div class="contacto-avatar" aria-hidden="true">${escapar((c.nombre||'C').slice(0,1).toUpperCase())}</div><div><span class="etiqueta-contacto etiqueta-id">${folioCliente(c.id)}</span> <span class="etiqueta-contacto">${c.servicios_ganados>0?'CLIENTE · YA HA CONTRATADO':'PROSPECTO · AÚN NO HA CONTRATADO'}</span>${giroEtiqueta?` <span class="etiqueta-contacto">${escapar(giroEtiqueta)}</span>`:''}<h3>${escapar(c.nombre||'Sin nombre')}</h3><p>${escapar(c.empresa_contacto||'Contacto particular')} · ${escapar(c.telefono)}${c.correo?' · '+escapar(c.correo):''}</p><small>ID de cliente ${folioCliente(c.id)}: fijo, no cambia aunque se corrija el nombre. Sus registros comerciales están separados de estos datos.</small></div>`;
     $('fc-meta').innerHTML=metaClienteHTML(c);
     const origen=CATALOGOS.canales.find(x=>Number(x.id)===Number(c.canal_origen_id));
-    $('contacto-identidad').insertAdjacentHTML('beforeend',`<p>Cómo se enteró: <b>${escapar(origen?.nombre || 'Sin registrar')}</b></p>`);
+    const info=$('contacto-identidad').lastElementChild;
+    info.insertAdjacentHTML('beforeend',`<p>Cómo se enteró: <b>${escapar(origen?.nombre || 'Sin registrar')}</b></p>`);
     // Las notas generales (acceso al predio, preferencias…) se leen sin abrir el formulario de edición; también salen en sus órdenes.
-    if(c.notas_generales)$('contacto-identidad').insertAdjacentHTML('beforeend',`<p class="ayuda">📝 Notas del contacto: ${escapar(c.notas_generales)}</p>`);
+    if(c.notas_generales)info.insertAdjacentHTML('beforeend',`<p class="ayuda">📝 Notas del contacto: ${escapar(c.notas_generales)}</p>`);
+    $('contacto-identidad').insertAdjacentHTML('beforeend',accionesContacto(c)+resumenContacto(c));
   }
+  // Atajos para comunicarse sin copiar datos a mano (2026-10-26).
+  function accionesContacto(c){
+    const tel=String(c.telefono||'').replace(/[^\d+]/g,'');let wa=String(c.telefono||'').replace(/\D/g,'');if(wa.length===10)wa='52'+wa;
+    return '<div class="contacto-acciones">'
+      +(tel?`<a class="btn btn-outline btn-chico" href="tel:${escapar(tel)}">📞 Llamar</a>`:'')
+      +(wa.length>=12?`<a class="btn btn-outline btn-chico" href="https://wa.me/${wa}" target="_blank" rel="noopener noreferrer">💬 WhatsApp</a>`:'')
+      +(c.correo?`<a class="btn btn-outline btn-chico" href="mailto:${escapar(c.correo)}">✉️ Correo</a>`:'')
+      +'<button type="button" class="btn btn-outline btn-chico" data-sl-libre data-copiar-contacto>📋 Copiar datos</button></div>';
+  }
+  // Su historia de un vistazo: desde cuándo es cliente, último y próximo servicio, ticket promedio y la recompra sugerida.
+  function resumenContacto(c){
+    const hoy=hoyISO(),ganados=(c.servicios||[]).filter(s=>s.estatus==='ganado');
+    const fechas=ganados.map(s=>String(s.fecha_servicio||'').slice(0,10)).filter(Boolean).sort();
+    const ultimo=fechas.filter(f=>f<=hoy).pop(),proximo=fechas.find(f=>f>hoy);
+    const f=x=>x?new Date(x+'T12:00:00').toLocaleDateString('es-MX',{day:'2-digit',month:'short',year:'numeric'}):'—';
+    const caja=(t,v,sub)=>`<div><small>${t}</small><b>${v}</b>${sub?`<span class="celda-sub">${sub}</span>`:''}</div>`;
+    const conValor=ganados.filter(s=>Number(s.valor)>0);
+    const ticket=Permisos.puede('ordenes.importes')&&conValor.length?caja('Ticket promedio',formatoMoneda(conValor.reduce((t,s)=>t+Number(s.valor),0)/conValor.length),'sin IVA'):'';
+    const rec=c.proxima_recompra;
+    const recompra=rec?caja('Recompra sugerida',escapar(f(rec.fecha_sugerida)),escapar(rec.servicio_nombre)+(rec.dias_restantes<0?' · ya pasó':' · en '+rec.dias_restantes+' días')):'';
+    return '<div class="cobranza-resumen contacto-historia">'+caja('Contacto desde',escapar(f([c.cliente_desde,c.created_at,fechas[0]].map(x=>String(x||'').slice(0,10)).filter(Boolean).sort()[0])))
+      +caja('Último servicio',escapar(f(ultimo)))+caja('Próximo servicio',escapar(f(proximo)))+ticket+recompra+'</div>';
+  }
+  document.addEventListener('click',async e=>{
+    if(!e.target.closest('[data-copiar-contacto]')||!CLIENTE_ACTUAL)return;
+    const c=CLIENTE_ACTUAL;
+    const texto=[c.nombre,c.empresa_contacto,c.telefono&&'Tel. '+c.telefono,c.correo,c.rfc&&'RFC '+c.rfc,c.direccion].filter(Boolean).join('\n');
+    try{await navigator.clipboard.writeText(texto);toast('Datos del contacto copiados');}catch{toast('No se pudo copiar');}
+  });
   function presentarRegistro(lead,contacto){
     $('registro-motivo-perdida').hidden=lead.estatus!=='perdido';
     $('registro-motivo-perdida').textContent=lead.estatus==='perdido'?'❌ No aceptada. Motivo: '+(lead.motivo_perdida||'sin registrar'):'';

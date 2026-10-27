@@ -1619,19 +1619,150 @@ on('btn-exportar-leads', 'click', async () => {
   toast(leads.length + ' cotización(es) exportada(s)');
 });
 
+// ---------- Vista Clientes ----------
+// Directorio de contactos (mejorado 2026-10-26): las tarjetas de arriba filtran, se busca también por correo, RFC,
+// domicilio y cualquiera de sus teléfonos, se filtra por quién lo atiende, tipo de cliente y cómo se enteró, las
+// columnas se ordenan con un clic, cada fila trae llamar y WhatsApp, y se muestran de 100 en 100.
+let CLIENTE_ACTUAL = null;
+let FC_LISTA = [], FC_MOSTRAR = 100, FC_ORDEN = { k: 'actividad', dir: -1 };
+const FC_PASO = 100;
+const FC_FILTROS = ['fc-buscar', 'fc-desde', 'fc-hasta', 'fc-atiende', 'fc-giro', 'fc-canal'];
+const fcVal = id => document.getElementById(id).value;
+const fcFecha = f => f ? new Date(String(f).slice(0, 10) + 'T12:00:00').toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' }) : '';
+const fcDigitos = t => { let d = String(t || '').replace(/\D/g, ''); if (d.length === 10) d = '52' + d; return d.length >= 12 ? d : ''; };
+const fcTipo = c => c.servicios_ganados > 1 ? ['recurrente', 'Recurrente'] : c.servicios_ganados > 0 ? ['cliente', 'Cliente'] : ['prospecto', 'Prospecto'];
+// Por recuperar: ya contrató, nada en curso y su último servicio fue hace más de 6 meses (igual que el filtro del servidor).
+function fcDormido(c) {
+  if (!(c.servicios_ganados > 0) || c.solicitudes_abiertas > 0 || c.proximo_servicio) return false;
+  const lim = new Date(); lim.setMonth(lim.getMonth() - 6);
+  return !c.ultimo_servicio || c.ultimo_servicio < lim.toISOString().slice(0, 10);
+}
+
+function fcParams() {
+  const params = new URLSearchParams({ incluir_prospectos: '1', tipo: fcVal('fc-tipo') });
+  for (const [id, k] of [['fc-buscar', 'q'], ['fc-desde', 'desde'], ['fc-hasta', 'hasta'], ['fc-atiende', 'atiende'], ['fc-giro', 'giro'], ['fc-canal', 'canal']]) {
+    const v = fcVal(id).trim(); if (v) params.set(k, v);
+  }
+  return params;
+}
+
+// Las opciones de los filtros salen del catálogo (tipo de cliente y canal) y de quienes atienden a los contactos que ve.
+function fcOpciones(clientes) {
+  const poner = (id, primera, opciones) => {
+    const el = document.getElementById(id), v = el.value;
+    el.innerHTML = '<option value="">' + escaparHtml(primera) + '</option>' + opciones.map(([val, txt]) => '<option value="' + escaparHtml(String(val)) + '">' + escaparHtml(txt) + '</option>').join('');
+    el.value = [...el.options].some(o => o.value === v) ? v : '';
+  };
+  poner('fc-giro', 'Tipo de cliente: todos', [...(CATALOGOS.tipos || []).map(t => [t.clave, t.nombre]), ['sin', 'Sin tipo de cliente']]);
+  poner('fc-canal', 'Cómo se enteró: todos', [...(CATALOGOS.canales || []).map(c => [c.id, c.nombre]), ['sin', 'Sin registrar']]);
+  // Solo se rehace sin el filtro puesto: así no desaparecen los demás nombres al elegir uno.
+  if (!fcVal('fc-atiende')) {
+    const quien = new Map(); for (const c of clientes) if (c.atiende_id) quien.set(c.atiende_id, c.atiende_nombre || 'Usuario ' + c.atiende_id);
+    poner('fc-atiende', 'Lo atiende: todos', [...quien].sort((a, b) => a[1].localeCompare(b[1], 'es')));
+  }
+}
+
+async function cargarClientes() {
+  const pedirSaldos = Permisos.puede('cxc.ver');
+  const [clientes, kpis, saldos] = await Promise.all([
+    api('/clientes?' + fcParams().toString()).then(r => r.json()),
+    api('/kpis').then(r => r.json()),
+    pedirSaldos ? api('/finanzas/cartera?vista=cliente').then(r => r.ok ? r.json() : []).catch(() => []) : Promise.resolve([])
+  ]);
+  const saldo = new Map(saldos.map(g => [g.cliente_id, g]));
+  FC_LISTA = clientes.map(c => ({ ...c, saldo: saldo.get(c.id)?.saldo || 0, vencido: saldo.get(c.id)?.vencido || 0 }));
+  if (fcVal('fc-tipo') === 'con_saldo') FC_LISTA = FC_LISTA.filter(c => c.saldo > 0);
+  FC_MOSTRAR = FC_PASO;
+  fcOpciones(clientes);
+  renderResumenClientes(kpis.resumen_clientes || {});
+  renderTablaClientesReales();
+}
+on('fc-buscar', 'input', debounce(cargarClientes, 350));
+for (const id of ['fc-desde', 'fc-hasta', 'fc-atiende', 'fc-giro', 'fc-canal']) on(id, 'change', cargarClientes);
+// Las tarjetas de arriba son atajos del filtro «Tipo».
+document.querySelectorAll('#vista-clientes [data-fc-tipo]').forEach(b => b.addEventListener('click', () => {
+  document.getElementById('fc-tipo').value = b.dataset.fcTipo; cargarClientes();
+}));
+on('btn-fc-limpiar', 'click', () => {
+  for (const id of FC_FILTROS) document.getElementById(id).value = '';
+  document.getElementById('fc-tipo').value = 'todos'; cargarClientes();
+});
+on('btn-fc-mas', 'click', () => { FC_MOSTRAR += FC_PASO; renderTablaClientesReales(); });
+document.querySelectorAll('#vista-clientes [data-fc-orden]').forEach(b => b.addEventListener('click', () => {
+  const k = b.dataset.fcOrden;
+  // Textos de la A a la Z al primer clic; números y fechas de mayor a menor.
+  FC_ORDEN = FC_ORDEN.k === k ? { k, dir: -FC_ORDEN.dir } : { k, dir: ['nombre', 'atiende'].includes(k) ? 1 : -1 };
+  renderTablaClientesReales();
+}));
+
+const FC_CLAVE = {
+  nombre: c => (c.nombre || c.empresa_contacto || '').toLocaleLowerCase('es'),
+  atiende: c => (c.atiende_nombre || '￿').toLocaleLowerCase('es'),
+  abiertas: c => Number(c.solicitudes_abiertas) || 0,
+  ordenes: c => Number(c.servicios_ganados) || 0,
+  contratado: c => Number(c.valor_ganado_total) || 0,
+  saldo: c => Number(c.saldo) || 0,
+  servicio: c => c.proximo_servicio || c.ultimo_servicio || '',
+  actividad: c => c.ultima_actividad || ''
+};
+function fcOrdenada() {
+  const clave = FC_CLAVE[FC_ORDEN.k] || FC_CLAVE.actividad;
+  return [...FC_LISTA].sort((a, b) => { const x = clave(a), y = clave(b); return (x < y ? -1 : x > y ? 1 : 0) * FC_ORDEN.dir || b.id - a.id; });
+}
+
+function renderTablaClientesReales() {
+  const body = document.getElementById('tabla-clientes-reales-body');
+  const tipo = fcVal('fc-tipo');
+  document.querySelectorAll('#vista-clientes [data-fc-tipo]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.fcTipo === tipo)));
+  const conFiltro = tipo !== 'todos' || FC_FILTROS.some(id => fcVal(id).trim());
+  document.getElementById('btn-fc-limpiar').hidden = !conFiltro;
+  document.querySelectorAll('#vista-clientes [data-fc-orden]').forEach(b => {
+    const th = b.closest('th');
+    if (b.dataset.fcOrden === FC_ORDEN.k) th.setAttribute('aria-sort', FC_ORDEN.dir > 0 ? 'ascending' : 'descending'); else th.removeAttribute('aria-sort');
+  });
+  const lista = fcOrdenada(), total = lista.length;
+  document.getElementById('tabla-conteo-clientes').textContent = total + (total === 1 ? ' contacto' : ' contactos');
+  const mas = document.getElementById('fc-mas');
+  if (!total) {
+    body.innerHTML = '<tr><td class="util-37" colspan="10">' + (conFiltro ? 'Ningún contacto con estos filtros. Prueba con «✕ Quitar filtros».' : 'No hay contactos. Puedes crear uno con Nuevo contacto.') + '</td></tr>';
+    mas.hidden = true; return;
+  }
+  mas.hidden = total <= FC_MOSTRAR;
+  document.getElementById('btn-fc-mas').textContent = 'Mostrar más (faltan ' + (total - FC_MOSTRAR) + ' de ' + total + ')';
+  // Una fila por contacto: quién es, qué tipo es, quién lo atiende, cuánto ha contratado y debe, y sus servicios.
+  body.innerHTML = lista.slice(0, FC_MOSTRAR).map(c => {
+    const t = fcTipo(c), wa = fcDigitos(c.telefono), tel = String(c.telefono || '').replace(/[^\d+]/g, '');
+    const servicios = [c.proximo_servicio ? '<span class="fc-prox">Próximo: ' + escaparHtml(fcFecha(c.proximo_servicio)) + '</span>' : '',
+      c.ultimo_servicio ? '<small class="celda-sub">Último: ' + escaparHtml(fcFecha(c.ultimo_servicio)) + '</small>' : '',
+      fcDormido(c) ? '<small class="fc-dormido">Por recuperar</small>' : ''].filter(Boolean).join('') || '—';
+    const porCobrar = c.saldo ? '<span' + (c.vencido ? ' class="rojo"' : '') + '>' + formatoMoneda(c.saldo) + '</span>' + (c.vencido ? '<small class="celda-sub rojo">' + formatoMoneda(c.vencido) + ' vencido</small>' : '') : '—';
+    return `<tr data-fc-abrir="${Number(c.id)}">
+      <td data-label="Contacto"><b>${escaparHtml(c.nombre || 'Sin nombre')}</b><small class="contacto-relacion">${escaparHtml([folioCliente(c.id), c.empresa_contacto, c.telefono].filter(Boolean).join(' · '))}</small></td>
+      <td data-label="Tipo"><span class="tipo-contacto ${t[0]}">${t[1]}</span></td>
+      <td data-label="Lo atiende">${escaparHtml(c.atiende_nombre || '—')}</td>
+      <td data-label="Cotizaciones abiertas" class="st-num">${Number(c.solicitudes_abiertas) || '—'}</td>
+      <td data-label="Órdenes de servicio" class="st-num">${Number(c.servicios_ganados) || '—'}</td>
+      <td data-label="Contratado (sin IVA)" class="st-num perm-ordenes-importes">${c.valor_ganado_total ? formatoMoneda(c.valor_ganado_total) : '—'}</td>
+      <td data-label="Por cobrar" class="st-num perm-cxc-ver">${porCobrar}</td>
+      <td data-label="Servicios">${servicios}</td>
+      <td data-label="Última actividad">${fechaCorta(c.ultima_actividad)}</td>
+      <td class="fc-acciones">${tel ? `<a class="btn btn-outline btn-chico" href="tel:${escaparHtml(tel)}" title="Llamar al ${escaparHtml(c.telefono)}" aria-label="Llamar al ${escaparHtml(c.telefono)}">📞</a>` : ''}${wa ? `<a class="btn btn-outline btn-chico" href="https://wa.me/${wa}" target="_blank" rel="noopener noreferrer" title="Escribir por WhatsApp" aria-label="Escribir por WhatsApp">💬</a>` : ''}<button type="button" class="btn btn-outline btn-chico">Abrir</button></td>
+    </tr>`;
+  }).join('');
+}
+// Toda la fila abre la ficha, salvo llamar y WhatsApp.
+on('tabla-clientes-reales-body', 'click', e => {
+  if (e.target.closest('a')) return;
+  const tr = e.target.closest('[data-fc-abrir]'); if (tr) abrirFichaCliente(Number(tr.dataset.fcAbrir));
+});
+
+// Exporta lo que está en pantalla (mismos filtros y orden), con el detalle de servicios de cada contacto.
 on('btn-exportar-clientes', 'click', async () => {
-  const q = document.getElementById('fc-buscar').value;
-  const desde = document.getElementById('fc-desde').value;
-  const hasta = document.getElementById('fc-hasta').value;
-  const params = new URLSearchParams();
-  if (q) params.set('q', q);
-  if (desde) params.set('desde', desde);
-  if (hasta) params.set('hasta', hasta);
-  const clientes = await api('/clientes?incluir_prospectos=1&tipo=' + document.getElementById('fc-tipo').value + '&' + params.toString()).then(r => r.json());
-  if (!clientes.length) { toast('No hay clientes con estos filtros para exportar'); return; }
+  const clientes = fcOrdenada();
+  if (!clientes.length) { toast('No hay contactos con estos filtros para exportar'); return; }
   // El listado de /clientes solo trae conteos; para exportar el detalle de servicios
   // cotizados/contratados por cliente hay que pedir la ficha completa de cada uno.
-  toast('Preparando exportación de ' + clientes.length + ' cliente(s)…');
+  toast('Preparando exportación de ' + clientes.length + ' contacto(s)…');
   const detalles = await Promise.all(
     clientes.map(c => api('/clientes/' + c.id).then(r => r.json()).catch(() => null))
   );
@@ -1640,66 +1771,32 @@ on('btn-exportar-clientes', 'click', async () => {
     .filter(s => filtro(s.estatus))
     .map(s => s.servicio_nombre || 'Sin servicio')
     .join('; ');
+  const tipoCliente = c => (CATALOGOS.tipos || []).find(t => t.clave === c.giro)?.nombre || '';
+  const conImportes = Permisos.puede('ordenes.importes'), conSaldo = Permisos.puede('cxc.ver');
   descargarCSV('clientes_saneadren_' + hoyISO() + '.csv', [
-    { titulo: 'ID', valor: c => c.id },
+    { titulo: 'ID', valor: c => folioCliente(c.id) },
     { titulo: 'Teléfono', valor: c => c.telefono },
     { titulo: 'Nombre', valor: c => c.nombre || '' },
     { titulo: 'Empresa', valor: c => c.empresa_contacto || '' },
+    { titulo: 'Correo', valor: c => c.correo || '' },
+    { titulo: 'RFC', valor: c => c.rfc || '' },
     { titulo: 'Dirección', valor: c => c.direccion || '' },
+    { titulo: 'Tipo de contacto', valor: c => fcTipo(c)[1] },
+    { titulo: 'Tipo de cliente', valor: tipoCliente },
+    { titulo: 'Cómo se enteró', valor: c => c.canal_origen_nombre || '' },
+    { titulo: 'Lo atiende', valor: c => c.atiende_nombre || '' },
     { titulo: 'Servicios cotizados', valor: c => listaServicios(c.servicios, e => e === 'abierto') },
     { titulo: 'Servicios contratados', valor: c => listaServicios(c.servicios, e => e === 'ganado') },
     { titulo: 'Servicios ganados', valor: c => c.servicios_ganados },
     { titulo: 'Solicitudes abiertas', valor: c => c.solicitudes_abiertas },
-    { titulo: 'Valor ganado total (MXN)', valor: c => c.valor_ganado_total },
+    ...(conImportes ? [{ titulo: 'Valor ganado total (MXN)', valor: c => c.valor_ganado_total }] : []),
+    ...(conSaldo ? [{ titulo: 'Por cobrar (MXN)', valor: c => c.saldo || 0 }, { titulo: 'Vencido (MXN)', valor: c => c.vencido || 0 }] : []),
+    { titulo: 'Último servicio', valor: c => c.ultimo_servicio || '' },
+    { titulo: 'Próximo servicio', valor: c => c.proximo_servicio || '' },
     { titulo: 'Última actividad', valor: c => c.ultima_actividad }
   ], clientesConServicios);
-  toast(clientesConServicios.length + ' cliente(s) exportado(s)');
+  toast(clientesConServicios.length + ' contacto(s) exportado(s)');
 });
-
-// ---------- Vista Clientes ----------
-let CLIENTE_ACTUAL = null;
-
-async function cargarClientes() {
-  const q = document.getElementById('fc-buscar').value;
-  const desde = document.getElementById('fc-desde').value;
-  const hasta = document.getElementById('fc-hasta').value;
-  const params = new URLSearchParams();
-  if (q) params.set('q', q);
-  if (desde) params.set('desde', desde);
-  if (hasta) params.set('hasta', hasta);
-  const [clientes, kpis] = await Promise.all([
-    api('/clientes?incluir_prospectos=1&tipo=' + document.getElementById('fc-tipo').value + '&' + params.toString()).then(r => r.json()),
-    api('/kpis').then(r => r.json())
-  ]);
-  renderResumenClientes(kpis.resumen_clientes || {});
-  renderTablaClientesReales(clientes);
-}
-on('fc-buscar', 'input', debounce(cargarClientes, 350));
-on('fc-desde', 'change', cargarClientes);
-on('fc-hasta', 'change', cargarClientes);
-
-function renderTablaClientesReales(clientes) {
-  const body = document.getElementById('tabla-clientes-reales-body');
-  document.getElementById('tabla-conteo-clientes').textContent =
-    clientes.length + (clientes.length === 1 ? ' contacto' : ' contactos');
-  if (!clientes.length) {
-    body.innerHTML = '<tr><td class="util-37" colspan="7">No hay contactos con estos filtros. Puedes crear uno con Nuevo contacto.</td></tr>';
-    return;
-  }
-  // Una fila por contacto: quién es, qué tipo de contacto es y cuánto ha contratado.
-  const tipo = c => c.servicios_ganados > 1 ? ['recurrente', 'Recurrente'] : c.servicios_ganados > 0 ? ['cliente', 'Cliente'] : ['prospecto', 'Prospecto'];
-  body.innerHTML = clientes.map(c => `
-    <tr onclick="abrirFichaCliente(${Number(c.id)})">
-      <td data-label="Contacto"><b>${escaparHtml(c.nombre || 'Sin nombre')}</b><small class="contacto-relacion">${escaparHtml([folioCliente(c.id), c.empresa_contacto, c.telefono].filter(Boolean).join(' · '))}</small></td>
-      <td data-label="Tipo"><span class="tipo-contacto ${tipo(c)[0]}">${tipo(c)[1]}</span></td>
-      <td data-label="Cotizaciones abiertas" class="st-num">${Number(c.solicitudes_abiertas) || '—'}</td>
-      <td data-label="Órdenes de servicio" class="st-num">${Number(c.servicios_ganados) || '—'}</td>
-      <td data-label="Contratado (sin IVA)" class="st-num perm-ordenes-importes">${c.valor_ganado_total ? formatoMoneda(c.valor_ganado_total) : '—'}</td>
-      <td data-label="Última actividad">${fechaCorta(c.ultima_actividad)}</td>
-      <td><button type="button" class="btn btn-outline">Abrir</button></td>
-    </tr>
-  `).join('');
-}
 
 // ---------- Ficha de cliente ----------
 async function abrirFichaCliente(id) {
