@@ -1742,3 +1742,31 @@ th[aria-sort="descending"] .th-orden::after{content:" ▼";font-size:9px;}
 .contacto-historia .celda-sub{display:block;color:var(--texto-sec);font-size:11px;font-weight:400;}
 #vista-clientes .filtros #fc-buscar{flex:1 1 100%;}
 #vista-clientes .filtros select{flex:1 1 170px;}
+
+/* ---------- Prospección (2026-10-26): agenda, embudo por estado, seguimiento ---------- */
+.pr-tarjetas .rc-card.pr-hoy{border-top-color:var(--amarillo);}
+.pr-tarjetas .rc-card.pr-atrasado{border-top-color:var(--rojo);}
+.pr-embudo{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:-4px 0 14px;}
+.pr-paso{font:inherit;font-size:12.5px;border:1px solid var(--gris-300);background:var(--blanco,#fff);border-radius:999px;padding:5px 12px;cursor:pointer;color:var(--texto);}
+.pr-paso:hover{border-color:var(--azul-500);}
+.pr-paso[aria-pressed="true"]{box-shadow:0 0 0 2px var(--amarillo);}
+.pr-flecha{color:var(--gris-400);}
+.pr-estado{display:inline-block;padding:3px 10px;border-radius:999px;font-size:12px;font-weight:700;background:var(--gris-200);color:var(--texto-sec);white-space:nowrap;}
+.pr-e-pendiente{background:#fff4d6;color:#8a5a00;}
+.pr-e-contactado{background:#e3eefc;color:#1f4f99;}
+.pr-e-interesado{background:#e2f5e9;color:#1d6b3a;}
+.pr-e-no_contactar{background:#fdecec;color:var(--rojo);}
+.pr-paso.pr-e-investigar,.pr-paso.pr-e-pendiente,.pr-paso.pr-e-contactado,.pr-paso.pr-e-interesado,.pr-paso.pr-e-no_contactar{border-color:transparent;}
+.pr-tabla .pr-ultimo-txt{max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.pr-tabla .pr-hoy-txt{color:#8a5a00;}
+.pr-sin-fecha{color:var(--texto-sec);font-style:italic;}
+.pr-cabeza h3{margin:6px 0 2px;font-size:21px;}
+.pr-cabeza p{margin:2px 0;overflow-wrap:anywhere;}
+.pr-atajos{display:flex;flex-wrap:wrap;gap:6px;}
+.pr-lista-seg{list-style:none;margin:12px 0 0;padding:0;border-left:3px solid var(--gris-200);}
+.pr-lista-seg li{padding:8px 0 8px 12px;border-bottom:1px solid var(--gris-200);overflow-wrap:anywhere;}
+.pr-seg-cab{font-size:12px;color:var(--texto-sec);margin-bottom:2px;}
+.pr-historial .celda-sub{display:block;color:var(--texto-sec);font-size:11.5px;margin-top:2px;}
+#vista-prospeccion .filtros #pr-buscar{flex:1 1 100%;}
+#vista-prospeccion .filtros select{flex:1 1 170px;}
+.pr-cabeza .celda-sub{display:inline;margin-left:6px;color:var(--texto-sec);font-size:12px;}

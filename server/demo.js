@@ -325,13 +325,20 @@ module.exports = function demo(app, db, { sesiones, PORT, SESSION_TTL_MS }) {
 
     // ===== 8. Prospección: establecimientos por investigar, contactar y dar seguimiento =====
     const sectores = await pedir('GET', '/prospeccion/sectores', A), sector = n => (sectores.find(s => s.nombre === n) || sectores[0]).id;
-    for (const [nombre, sec, zona, dir, tel, persona, cargo, estado, prox, necesidades] of [
-      ['Restaurante El Mesón de Santa Rosa', 'Restaurantes', 'Centro', 'Pasteur Sur 17', '442 224 2623', 'Gerente de turno', 'Gerente', 'interesado', dia(0), 'Trampa de grasa se tapa cada mes; quieren contrato mensual'],
-      ['Hotel Misión Juriquilla', 'Hoteles', 'Juriquilla', 'Paseo de la República 1500', '442 234 0000', 'Ing. Felipe Cruz', 'Mantenimiento', 'contactado', dia(3), 'Cárcamo de aguas negras; pidió visita técnica'],
-      ['Hospital Ángeles Querétaro', 'Hospitales', 'Centro Sur', 'Bernardino del Razo 21', '442 192 3000', 'Lic. Rocío Aguilar', 'Compras', 'pendiente', dia(-1), 'Mantenimiento a planta de tratamiento; llamar para agendar'],
-      ['Taquería Los Compadres', 'Restaurantes', 'El Marqués', 'Av. Paseo Constitución 300', '', '', '', 'investigar', null, ''],
-      ['Hotel Plaza Boutique', 'Hoteles', 'Centro', 'Madero 50', '442 212 1111', 'Recepción', '', 'no_contactar', null, 'Ya tienen contrato con otra empresa hasta 2027']])
-      await pedir('POST', '/prospeccion', V, { nombre, sector_id: sector(sec), zona, direccion: dir, telefono: tel, persona, cargo, fuente: 'Recorrido de campo', necesidades, estado, responsable_id: idDe('ventas'), proximo_contacto: prox });
+    // Con su historial de seguimiento: cada llamada o visita, en orden, y la última deja el estado y la próxima fecha.
+    for (const [nombre, sec, zona, dir, tel, persona, cargo, estado, prox, necesidades, historial] of [
+      ['Restaurante El Mesón de Santa Rosa', 'Restaurantes', 'Centro', 'Pasteur Sur 17', '442 224 2623', 'Gerente de turno', 'Gerente', 'interesado', dia(0), 'Trampa de grasa se tapa cada mes; quieren contrato mensual',
+        [['visita', 'Pasé en el recorrido; el gerente pidió que le llamemos', 'pendiente', dia(-5)], ['llamada', 'Interesados en contrato mensual; mandar propuesta hoy', 'interesado', dia(0)]]],
+      ['Hotel Misión Juriquilla', 'Hoteles', 'Juriquilla', 'Paseo de la República 1500', '442 234 0000', 'Ing. Felipe Cruz', 'Mantenimiento', 'contactado', dia(3), 'Cárcamo de aguas negras; pidió visita técnica',
+        [['llamada', 'Habló el Ing. Cruz; pidió visita técnica para revisar el cárcamo', 'contactado', dia(3)]]],
+      ['Hospital Ángeles Querétaro', 'Hospitales', 'Centro Sur', 'Bernardino del Razo 21', '442 192 3000', 'Lic. Rocío Aguilar', 'Compras', 'pendiente', dia(-1), 'Mantenimiento a planta de tratamiento; llamar para agendar',
+        [['llamada', 'No contestó; dejé recado con recepción', 'pendiente', dia(-1)]]],
+      ['Taquería Los Compadres', 'Restaurantes', 'El Marqués', 'Av. Paseo Constitución 300', '', '', '', 'investigar', null, '', []],
+      ['Hotel Plaza Boutique', 'Hoteles', 'Centro', 'Madero 50', '442 212 1111', 'Recepción', '', 'no_contactar', null, 'Ya tienen contrato con otra empresa hasta 2027',
+        [['llamada', 'Tienen contrato con otra empresa hasta 2027; no volver a llamar', 'no_contactar', null]]]]) {
+      let e = await pedir('POST', '/prospeccion', V, { nombre, sector_id: sector(sec), zona, direccion: dir, telefono: tel, persona, cargo, fuente: 'Recorrido de campo', necesidades, estado: historial.length ? 'investigar' : estado, responsable_id: idDe('ventas'), proximo_contacto: historial.length ? null : prox });
+      for (const [medio, texto, est, sig] of historial) e = await pedir('POST', '/prospeccion/' + e.id + '/seguimientos', V, { version: e.version, medio, texto, estado: est, proximo_contacto: sig });
+    }
     // Seguimientos y recordatorios en cotizaciones abiertas; encuestas de satisfacción en servicios realizados.
     const abiertas = (await pedir('GET', '/leads', V)).filter(l => l.estatus === 'abierto').slice(0, 3);
     for (const [i, l] of abiertas.entries()) {
