@@ -210,6 +210,8 @@ module.exports = function sucursales(app, db, h, { audit }) {
     const a = req.alcanceSuc, ids = new Set(a.permitidas);
     const filas = db.prepare(`SELECT s.*, (SELECT COUNT(*) FROM usuario_sucursales x JOIN usuarios u ON u.id = x.usuario_id AND u.activo = 1 WHERE x.sucursal_id = s.id) AS usuarios
       FROM sucursales s ORDER BY s.id`).all().filter(s => ids.has(s.id) || esGeneral(req));
+    // El CP de expedición y las series de facturación son configuración de Dirección (pantalla «Facturación»): no salen para los demás.
+    if (!esGeneral(req)) for (const f of filas) delete f.cp_expedicion;
     res.json({ sucursales: filas, admin_general: esGeneral(req), rol_real: req.usuarioSesion.rol_real, vista: a.ids.size === a.permitidas.length ? 'todas' : [...a.ids][0], alta: a.alta });
   }));
   const datos = b => {

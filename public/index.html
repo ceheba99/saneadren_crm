@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Saneadren · Cotizaciones y Servicios</title>
-<link rel="stylesheet" href="styles.css?v=mk7">
+<link rel="stylesheet" href="styles.css?v=fx1">
 <link rel="stylesheet" href="servicios-tabla.css">
 <link rel="stylesheet" href="flujo.css?v=cel1">
 </head>
@@ -664,6 +664,16 @@
         <div class="campo"><button class="btn btn-primario" id="btn-crear-sucursal">Crear sucursal</button></div>
       </div>
       <div id="lista-sucursales"></div>
+    </div>
+    <div class="panel-alta solo-general" id="panel-facturacion">
+      <h2>🧾 Facturación (factura.com)</h2>
+      <p class="ayuda">Aquí se revisa la conexión con factura.com y se deja a cada sucursal su código postal de expedición y su serie de factura y de pago. Las llaves están en el servidor y nunca se muestran. Mientras diga «Pruebas (sandbox)», ninguna factura tiene validez fiscal.</p>
+      <div id="fx-estado"></div>
+      <div class="btn-group"><button type="button" class="btn btn-secundario" id="fx-probar">Probar conexión y cargar series</button><button type="button" class="btn btn-outline" id="fx-catalogos">Actualizar catálogos del SAT</button></div>
+      <div id="fx-resultado" role="status" aria-live="polite"></div>
+      <details class="fx-detalle"><summary>Catálogos del SAT guardados</summary><ul class="fx-lista" id="fx-catalogos-lista"></ul></details>
+      <h3 class="fx-sub">Por sucursal</h3>
+      <div id="fx-sucursales"></div>
     </div>
     <div class="panel-alta">
       <h2>Crear nuevo usuario</h2>
@@ -1712,6 +1722,7 @@
 <script src="solicitudes.js?v=rev1"></script>
 <script src="carga-generador.js?v=con1"></script>
 <script src="sucursales.js?v=perm2"></script>
+<script src="facturacion.js?v=fx2"></script>
 <script src="encuestas.js?v=enc1"></script>
 <script src="app.js?v=mk1"></script>
 <script src="personal.js?v=ed1"></script>

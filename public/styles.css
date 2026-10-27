@@ -2114,3 +2114,21 @@ table.tabla-clientes.py-tareas tbody td{white-space:normal;}
   .mk-chip-hora,.mk-chip-img{display:none;}
 }
 @media(max-width:600px){.mk-chip-redes{display:none;}.mk-chip{font-size:11px;padding:3px 4px !important;}}
+
+/* ====== Facturación · pantalla de configuración en Ajustes (2026-10-27) ====== */
+#panel-facturacion .fx-badge{display:inline-block;padding:4px 12px;border-radius:999px;font-size:13px;font-weight:800;}
+#panel-facturacion .fx-sandbox{background:#e3eefc;color:#1f4f99;}
+#panel-facturacion .fx-prod{background:#fdecec;color:#b42318;}
+#panel-facturacion .fx-demo{background:#fff6d6;border:1px solid #f0d27a;border-radius:8px;padding:8px 12px;}
+.fx-lista{list-style:none;margin:8px 0;padding:0;display:flex;flex-direction:column;gap:4px;font-size:14px;}
+.fx-ok{color:#1d6b3a;font-weight:800;}.fx-mal{color:#b42318;font-weight:800;}
+#fx-resultado{margin:10px 0;min-height:1.2em;}
+.fx-detalle{margin:6px 0 12px;}.fx-detalle summary{cursor:pointer;font-weight:600;}
+.fx-sub{margin:16px 0 8px;font-size:16px;}
+.fx-suc{border:1px solid var(--gris-200);border-radius:12px;padding:12px 14px;margin-bottom:10px;background:#fcfcfd;}
+.fx-suc.fx-inactiva{opacity:.65;}
+.fx-suc-tit{margin-bottom:8px;}.fx-suc-tit small{color:var(--texto-sec);}
+.fx-suc-campos{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px;}
+.fx-suc-campos label{display:flex;flex-direction:column;gap:4px;font-size:12.5px;color:var(--texto-sec);}
+.fx-suc-campos input,.fx-suc-campos select{width:100%;box-sizing:border-box;}
+.fx-suc-pie{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:8px;margin-top:10px;}

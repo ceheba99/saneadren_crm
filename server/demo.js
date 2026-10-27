@@ -468,6 +468,14 @@ module.exports = function demo(app, db, { sesiones, PORT, SESSION_TTL_MS }) {
       await redContacto('Escuela Montessori Sol', '442 600 1006', 'Facebook', 9800);
     }
 
+    // ===== 10. Facturación: configuración de ejemplo (el demo NUNCA se conecta con factura.com) =====
+    // CP de expedición y series de cada sucursal, para que la pantalla de Ajustes → Facturación muestre algo. Son datos de ejemplo.
+    for (const [clave, cp, serie, uid] of [['QRO', '76000', 'F', '900001'], ['CDMX', '06000', 'FM', '900002']]) {
+      const s = db.prepare('SELECT id FROM sucursales WHERE clave = ?').get(clave); if (!s) continue;
+      db.prepare('UPDATE sucursales SET cp_expedicion = ? WHERE id = ?').run(cp, s.id);
+      db.prepare("INSERT INTO series_factura (sucursal_id, tipo_documento, serie, serie_uid) VALUES (?, 'factura', ?, ?) ON CONFLICT(sucursal_id, tipo_documento) DO NOTHING").run(s.id, serie, uid);
+    }
+
     // Al final: la revisión de integridad debe salir limpia.
     const r = require('./alcance').global(() => require('./integridad').revisar(db, {}));
     console.log(`[demo] revisión de integridad: ${r.errores} errores, ${r.avisos} avisos`);
