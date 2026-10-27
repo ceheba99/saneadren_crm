@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Saneadren · Cotizaciones y Servicios</title>
-<link rel="stylesheet" href="styles.css?v=mk1">
+<link rel="stylesheet" href="styles.css?v=mk2">
 <link rel="stylesheet" href="servicios-tabla.css">
 <link rel="stylesheet" href="flujo.css?v=cel1">
 </head>
@@ -507,6 +507,11 @@
 </section>
   <!-- ====== VISTA: MARKETING · CALENDARIO DE PUBLICACIONES (2026-10-26) ====== -->
   <section class="vista" id="vista-marketing">
+    <div class="mk-pestanas" role="tablist" aria-label="Marketing">
+      <button type="button" role="tab" class="mk-pestana" id="mk-p-cal" data-mk-pestana="calendario" aria-selected="true">📅 Calendario de publicaciones</button>
+      <button type="button" role="tab" class="mk-pestana" id="mk-p-proy" data-mk-pestana="proyectos" aria-selected="false">📁 Proyectos</button>
+    </div>
+    <div id="mk-tab-calendario">
     <div class="vista-encabezado">
       <div><h2>🎨 Calendario de publicaciones</h2><p class="ayuda">Planea lo que se sube a TikTok, Facebook, Instagram, LinkedIn y Spotify: el copy, las imágenes y el enlace del video o episodio. Cada publicación pasa por revisión: la aprueban Dirección o el Gerente de marketing.</p></div>
       <div class="btn-group"><button type="button" class="btn btn-primario perm-marketing-editar" id="mk-nueva">➕ Nueva publicación</button></div>
@@ -532,6 +537,16 @@
     <div id="mk-mes"><div class="cal-semana" aria-hidden="true"><span>Lun</span><span>Mar</span><span>Mié</span><span>Jue</span><span>Vie</span><span>Sáb</span><span>Dom</span></div><div class="cal-grid mk-grid" id="mk-grid"></div></div>
     <div id="mk-semana" class="mk-semana" hidden></div>
     <div id="mk-lista" class="tabla-clientes-wrap" hidden><div class="tabla-scroll"><table class="tabla-clientes"><thead><tr><th>Fecha</th><th>Publicación</th><th>Redes</th><th>Estado</th><th>Responsable</th><th>Para</th></tr></thead><tbody id="mk-tabla"></tbody></table></div></div>
+    </div>
+    <!-- Proyectos (fase 2, 2026-10-26) -->
+    <div id="mk-tab-proyectos" hidden>
+      <div class="vista-encabezado">
+        <div><h2>📁 Proyectos de marketing</h2><p class="ayuda">Cada proyecto con sus tareas en un diagrama de Gantt, sus avances (con fotos y archivos) y las publicaciones que salen de él.</p></div>
+        <div class="btn-group"><button type="button" class="btn btn-primario perm-marketing-editar" id="py-nuevo">➕ Nuevo proyecto</button></div>
+      </div>
+      <div class="filtros"><input type="text" id="py-buscar" aria-label="Buscar proyecto" placeholder="Nombre u objetivo del proyecto"><select id="py-f-estado" aria-label="Estado del proyecto"><option value="">Todos los proyectos</option></select></div>
+      <div class="py-lista" id="py-lista"></div>
+    </div>
   </section>
 
   <!-- ====== VISTA: USUARIOS (solo admin) ====== -->
@@ -1427,6 +1442,7 @@
             <div class="campo-modal"><label for="mk-fecha">Fecha de publicación (obligatorio)</label><input type="date" id="mk-fecha"></div>
             <div class="campo-modal"><label for="mk-hora">Hora (opcional)</label><input type="time" id="mk-hora"></div>
             <div class="campo-modal"><label for="mk-responsable">Responsable (obligatorio)</label><select id="mk-responsable"></select></div>
+            <div class="campo-modal"><label for="mk-proyecto">Proyecto (opcional)</label><select id="mk-proyecto"><option value="">Sin proyecto</option></select></div>
             <div class="campo-modal"><label for="mk-campana">Campaña (opcional)</label><input id="mk-campana" maxlength="120" placeholder="Temporada de lluvias 2026"></div>
             <div class="campo-modal full"><label for="mk-copy">Copy (opcional)</label><textarea id="mk-copy" rows="6" maxlength="5000" placeholder="El texto que acompaña la publicación"></textarea><small class="mk-contador" id="mk-contador" aria-live="polite"></small></div>
             <div class="campo-modal full"><label for="mk-hashtags">Hashtags (opcional)</label><input id="mk-hashtags" maxlength="500" placeholder="#saneamiento #queretaro"></div>
@@ -1448,6 +1464,60 @@
           <ol class="mk-historial" id="mk-historial"></ol>
           <details class="mk-versiones" id="mk-versiones-det" hidden><summary>Versiones anteriores del texto</summary><div id="mk-versiones"></div></details>
         </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ====== OVERLAY: PROYECTO DE MARKETING (fase 2) ====== -->
+<div class="overlay" id="overlay-proyecto">
+  <div class="modal modal-proyecto">
+    <div class="modal-header"><div><span class="flujo-kicker" id="py-kicker">PROYECTO</span><h2 id="py-titulo">Nuevo proyecto</h2></div>
+      <button class="close-btn" type="button" id="py-cerrar">✕</button></div>
+    <div class="modal-body">
+      <div class="py-cabeza" id="py-cabeza" hidden></div>
+      <div class="mk-pestanas py-pestanas" role="tablist" aria-label="Proyecto" id="py-pestanas" hidden>
+        <button type="button" role="tab" class="mk-pestana" data-py-pestana="gantt" aria-selected="true">📊 Gantt y tareas</button>
+        <button type="button" role="tab" class="mk-pestana" data-py-pestana="avances" aria-selected="false">📝 Avances</button>
+        <button type="button" role="tab" class="mk-pestana" data-py-pestana="publicaciones" aria-selected="false">📣 Publicaciones</button>
+        <button type="button" role="tab" class="mk-pestana" data-py-pestana="datos" aria-selected="false">✏️ Datos del proyecto</button>
+      </div>
+      <div class="modal-section" id="py-sec-datos"><div class="seccion-tit">✏️ Datos del proyecto</div>
+        <div class="form-grid-2">
+          <div class="campo-modal full"><label for="py-nombre">Nombre (obligatorio)</label><input id="py-nombre" maxlength="120" placeholder="Campaña temporada de lluvias 2027"></div>
+          <div class="campo-modal full"><label for="py-objetivo">Objetivo (opcional)</label><textarea id="py-objetivo" rows="3" maxlength="3000" placeholder="Qué se quiere lograr y cómo se va a medir"></textarea></div>
+          <div class="campo-modal"><label for="py-inicio">Inicio (obligatorio)</label><input type="date" id="py-inicio"></div>
+          <div class="campo-modal"><label for="py-fin">Fin (obligatorio)</label><input type="date" id="py-fin"></div>
+          <div class="campo-modal"><label for="py-estado">Estado (obligatorio)</label><select id="py-estado"></select></div>
+          <div class="campo-modal"><label for="py-sucursal">Para (obligatorio)</label><select id="py-sucursal"></select></div>
+          <div class="campo-modal"><label for="py-responsable">Responsable (obligatorio)</label><select id="py-responsable"></select></div>
+        </div>
+        <div class="btn-group"><button type="button" class="btn btn-primario" id="py-guardar">Guardar proyecto</button><span class="estado-guardado" id="py-aviso" role="status"></span></div>
+      </div>
+      <div class="modal-section" id="py-sec-gantt" hidden>
+        <div class="py-gantt-cab"><div class="seccion-tit">📊 Diagrama de Gantt</div><span class="ayuda" id="py-gantt-leyenda"></span></div>
+        <div class="py-gantt-scroll"><div class="py-gantt" id="py-gantt"></div></div>
+        <div class="seccion-tit py-sub">📋 Tareas</div>
+        <p class="ayuda">Cada tarea con su responsable, fechas y % de avance. «Depende de» dibuja la flecha en el Gantt; en rojo si empieza antes de que termine aquella. Un hito es una fecha clave (un día).</p>
+        <div class="tabla-scroll"><table class="tabla-clientes py-tareas"><thead><tr><th>Tarea</th><th>Responsable</th><th>Inicio</th><th>Fin</th><th>Avance</th><th>Depende de</th><th>Hito</th><th><span class="sr-only">Acciones</span></th></tr></thead><tbody id="py-tareas"></tbody></table></div>
+      </div>
+      <div class="modal-section" id="py-sec-avances" hidden>
+        <div class="seccion-tit">📝 Avances</div>
+        <div class="py-nuevo-avance perm-marketing-editar">
+          <label for="py-av-texto">¿Qué se avanzó? (obligatorio)</label><textarea id="py-av-texto" rows="2" maxlength="3000" placeholder="Ya quedó el guion · Se grabaron 3 de 5 tomas · Llegó la propuesta de la imprenta…"></textarea>
+          <div class="form-grid-2">
+            <div class="campo-modal"><label for="py-av-tarea">¿Mueve el avance de una tarea? (opcional)</label><select id="py-av-tarea"><option value="">No</option></select></div>
+            <div class="campo-modal"><label for="py-av-pct">Nuevo avance de la tarea (%)</label><input type="number" id="py-av-pct" min="0" max="100" step="5" disabled></div>
+            <div class="campo-modal full"><label for="py-av-archivos">Fotos o PDF (opcional, hasta 10 MB cada uno)</label><input type="file" id="py-av-archivos" accept="image/jpeg,image/png,image/webp,image/gif,application/pdf" multiple></div>
+          </div>
+          <div class="btn-group"><button type="button" class="btn btn-primario" id="py-av-guardar">Anotar avance</button></div>
+        </div>
+        <ol class="py-avances" id="py-avances"></ol>
+      </div>
+      <div class="modal-section" id="py-sec-publicaciones" hidden>
+        <div class="seccion-tit">📣 Publicaciones del proyecto</div>
+        <div class="btn-group perm-marketing-editar"><button type="button" class="btn btn-outline btn-chico" id="py-nueva-pub">➕ Nueva publicación de este proyecto</button></div>
+        <div id="py-publicaciones"></div>
       </div>
     </div>
   </div>
@@ -1479,7 +1549,8 @@
 <script src="buscador.js?v=suc1"></script>
 <script src="demo.js?v=demo1"></script>
 <script src="prospeccion.js?v=pro1"></script>
-<script src="marketing.js?v=mk1"></script>
+<script src="marketing.js?v=mk2"></script>
+<script src="marketing-proyectos.js?v=mk2"></script>
 <script src="inicio.js?v=ini3"></script>
 </body>
 </html>

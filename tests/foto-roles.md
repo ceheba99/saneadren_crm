@@ -105,6 +105,7 @@ Dirección la revisa y la aprueba. Si un cambio altera lo que ve un rol, la prue
 | Publicación de Mara (Marketing) para Querétaro | ✔ | — | — | — | — | — | ✔ | ✔ |
 | Publicación para toda la empresa | ✔ | — | — | — | — | — | ✔ | ✔ |
 | Publicación de CDMX (otra sucursal) | ✔ | — | — | — | — | — | ✔ | ✔ |
+| Proyecto de marketing de Mara, con sus tareas y avances | ✔ | — | — | — | — | — | ✔ | ✔ |
 
 ### Personal
 
@@ -134,6 +135,7 @@ Dirección la revisa y la aprueba. Si un cambio altera lo que ve un rol, la prue
 | Editar la publicación de Mara (Marketing) | ✔ | — | — | — | — | — | ✔ | ✔ |
 | Comentar la publicación de Mara | ✔ | — | — | — | — | — | ✔ | ✔ |
 | Aprobar una publicación en revisión | ✔ | — | — | — | — | — | — | ✔ |
+| Editar el proyecto de marketing de Mara (datos, tareas y avances) | ✔ | — | — | — | — | — | ✔ | ✔ |
 
 | Permiso | Dirección | Gerente | Ventas | Atención | Técnico | Costos y compras | Marketing | Gerente de marketing |
 |---|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|
@@ -191,3 +193,4 @@ Dirección la revisa y la aprueba. Si un cambio altera lo que ve un rol, la prue
 - **2026-10-26** · Marketing y Gerente de marketing: ven, editan y comentan las publicaciones de toda la empresa (de cualquier sucursal y las generales), y nada más del sistema: ni ventas, cobranza, gastos, compras, prospección ni personal.
 - **2026-10-26** · Los demás roles (Gerente, Ventas, Atención, Técnico, Compras) no ven Marketing; Dirección lo puede prender en Roles y permisos.
 - **2026-10-26** · Dirección ve y aprueba todo Marketing.
+- **2026-10-26** · Proyectos de marketing (tareas, Gantt y avances): los ven y editan Marketing, Gerente de marketing y Dirección; los demás roles no.

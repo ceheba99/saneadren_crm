@@ -46,6 +46,10 @@ const VISTAS = [
   ['publicacion_imagenes', 'publicacion_id IN (SELECT id FROM publicaciones)'],
   ['publicacion_comentarios', 'publicacion_id IN (SELECT id FROM publicaciones)'],
   ['publicacion_versiones', 'publicacion_id IN (SELECT id FROM publicaciones)'],
+  ['proyectos_marketing', "nivel_area('marketing') >= 1 AND (sucursal_id IS NULL OR en_area('marketing', sucursal_id)) AND (ve_registro('marketing', responsable_id) OR ve_registro('marketing', creado_por))"],
+  ['tareas_marketing', 'proyecto_id IN (SELECT id FROM proyectos_marketing)'],
+  ['avances_marketing', 'proyecto_id IN (SELECT id FROM proyectos_marketing)'],
+  ['archivos_marketing', 'proyecto_id IN (SELECT id FROM proyectos_marketing)'],
 ];
 // Tablas con folio propio por sucursal y su tipo de contador.
 const FOLIO = { leads: 'leads', solicitudes_compra: 'solicitudes', ordenes_compra: 'ordenes_compra' };
@@ -59,6 +63,8 @@ const RUTAS_REGISTRO = [
   [/^\/compras\/solicitudes\/(\d+)(?:\/|$)/, 'solicitudes_compra'], [/^\/prospeccion\/(\d+)(?:\/|$)/, 'establecimientos'],
   [/^\/personal\/(\d+)(?:\/|$)/, 'personal'],
   [/^\/marketing\/publicaciones\/(\d+)(?:\/|$)/, 'publicaciones'], [/^\/marketing\/imagenes\/(\d+)(?:\/|$)/, 'publicacion_imagenes'],
+  [/^\/marketing\/proyectos\/(\d+)(?:\/|$)/, 'proyectos_marketing'], [/^\/marketing\/tareas\/(\d+)(?:\/|$)/, 'tareas_marketing'],
+  [/^\/marketing\/avances\/(\d+)(?:\/|$)/, 'avances_marketing'], [/^\/marketing\/archivos\/(\d+)(?:\/|$)/, 'archivos_marketing'],
 ];
 const RUTA_CLIENTE = /^\/(?:finanzas\/)?clientes\/(\d+)(?:\/|$)/;
 // Lo que solo hace el administrador GENERAL (Dirección): afecta a todas las sucursales o lo ve todo. Aplica a

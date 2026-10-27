@@ -380,6 +380,24 @@ module.exports = function demo(app, db, { sesiones, PORT, SESSION_TTL_MS }) {
       await conImagen(p6, [120, 40, 140], 'dia-de-muertos.png');
       await paso(MK, p6, 'enviar'); await paso(GM, p6, 'aprobar');
       await pedir('POST', '/marketing/publicaciones/' + p6.id + '/comentarios', A, { texto: 'Me gusta. Súbanla temprano, por favor.' });
+
+      // Proyectos (fase 2): uno en curso con su plan (dependencias, un hito, una tarea atrasada) y avances; otro en planeación.
+      let py = await pedir('POST', '/marketing/proyectos', MK, { nombre: 'Campaña temporada de lluvias', objetivo: 'Conseguir 40 contactos nuevos de desazolve antes de la temporada de lluvias (medido en «¿Cómo se enteró?»).', inicio: dia(-14), fin: dia(30), sucursal: 'empresa', responsable_id: undefined });
+      const tarea = async datos => { py = await pedir('POST', '/marketing/proyectos/' + py.id + '/tareas', MK, datos); return py.tareas.at(-1); };
+      const t1 = await tarea({ titulo: 'Definir mensajes y público', inicio: dia(-14), fin: dia(-10), avance: 100 });
+      const t2 = await tarea({ titulo: 'Sesión de fotos con la cuadrilla', inicio: dia(-9), fin: dia(-3), avance: 70, depende_de: t1.id });
+      const t3 = await tarea({ titulo: 'Diseño de piezas (carrusel y reels)', inicio: dia(-4), fin: dia(5), avance: 40, depende_de: t2.id });
+      const t4 = await tarea({ titulo: 'Arranque de la campaña', inicio: dia(7), fin: dia(7), hito: true, depende_de: t3.id });
+      await tarea({ titulo: 'Publicaciones semanales y respuesta a mensajes', inicio: dia(7), fin: dia(28), depende_de: t4.id });
+      await tarea({ titulo: 'Reporte de resultados', inicio: dia(29), fin: dia(30), hito: false });
+      py = await pedir('PUT', '/marketing/proyectos/' + py.id, MK, { version: py.version, estado: 'en_curso' });
+      py = await pedir('POST', '/marketing/proyectos/' + py.id + '/avances', MK, { texto: 'Quedaron definidos los 3 mensajes: prevención, urgencias 24 h y contratos.', tarea_id: t1.id, avance: 100 });
+      py = await pedir('POST', '/marketing/proyectos/' + py.id + '/avances', MK, { texto: 'Fotos en 2 servicios; falta la de la planta de tratamiento.', tarea_id: t2.id, avance: 70 });
+      await subir('/marketing/avances/' + py.avance_id + '/archivos', MK, imagen([30, 90, 150]), { 'X-Nombre': 'sesion-cuadrilla.png' });
+      for (const p of [p2, p3]) await pedir('PUT', '/marketing/publicaciones/' + p.id, MK, { version: (await pedir('GET', '/marketing/publicaciones/' + p.id, MK)).version, proyecto_id: py.id });
+      let py2 = await pedir('POST', '/marketing/proyectos', GM, { nombre: 'Podcast «El agua que no vemos» · temporada 2', inicio: dia(10), fin: dia(70), sucursal: 'empresa' });
+      py2 = await pedir('POST', '/marketing/proyectos/' + py2.id + '/tareas', GM, { titulo: 'Elegir invitados', inicio: dia(10), fin: dia(20) });
+      await pedir('POST', '/marketing/proyectos/' + py2.id + '/tareas', GM, { titulo: 'Grabar episodios 1 a 4', inicio: dia(21), fin: dia(50), depende_de: py2.tareas[0].id });
     }
 
     // Al final: la revisión de integridad debe salir limpia.
