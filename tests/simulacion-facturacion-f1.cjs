@@ -13,7 +13,7 @@ let salida = '';
 async function arrancar() {
   const puerto = String(9500 + Math.floor(Math.random() * 300));
   salida = '';
-  const srv = spawn(process.execPath, [path.join(__dirname, '..', 'server', 'index.js')], { env: { ...process.env, MODO_DEMO: '', PORT: puerto, DB_PATH: DB, ADMIN_USUARIO: 'admin', ADMIN_CORREO: ADMIN.correo, ADMIN_PASSWORD: ADMIN.password, SMTP_HOST: '', FACTURA_ENV: '', FACTURA_API_KEY: '', FACTURA_SECRET_KEY: '' } });
+  const srv = spawn(process.execPath, [path.join(__dirname, '..', 'server', 'index.js')], { env: { ...process.env, MODO_DEMO: '', PORT: puerto, DB_PATH: DB, ADMIN_USUARIO: 'admin', ADMIN_CORREO: ADMIN.correo, ADMIN_PASSWORD: ADMIN.password, SMTP_HOST: '', FACTURA_ENV: '', FACTURA_SANDBOX_API_KEY: '', FACTURA_SANDBOX_SECRET_KEY: '' } });
   srv.stdout.on('data', d => salida += d); srv.stderr.on('data', d => salida += d);
   for (let i = 0; i < 120 && !/corriendo/.test(salida); i++) await espera(150);
   revisa(/corriendo/.test(salida), 'el servidor arranca');
