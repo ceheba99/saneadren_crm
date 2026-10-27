@@ -788,5 +788,45 @@ module.exports = function marketing(app, db, h) {
     res.status(201).json(detalle(req, p.id));
   }));
 
+  // ---------- Limpieza automática de archivos que ya no sirven (2026-10-27) ----------
+  // «Quitar» solo oculta el archivo; después de LIMPIEZA_DIAS se borra del disco y el registro queda (con archivo vacío)
+  // para el historial. Las imágenes de una publicación cancelada hace más de LIMPIEZA_DIAS también se borran (queda la nota).
+  // Corre al arrancar y cada 6 horas; todo con «main.» porque no hay sesión (sin vistas por alcance).
+  const LIMPIEZA_DIAS = 60;
+  function borrarArchivo(rel) {
+    const ruta = path.join(DIR, rel);
+    if (!rel || !ruta.startsWith(DIR + path.sep)) return 0;
+    try { const b = fs.statSync(ruta).size; fs.unlinkSync(ruta); return b; } catch { return 0; }
+  }
+  function limpiar() {
+    const limite = `datetime('now','localtime','-${LIMPIEZA_DIAS} days')`;
+    let archivos = 0, bytes = 0;
+    try {
+      // Imágenes de publicaciones canceladas hace más de 60 días: se marcan como quitadas (por el sistema) con su nota.
+      const canceladas = db.prepare(`SELECT DISTINCT p.id FROM main.publicaciones p JOIN main.publicacion_imagenes i ON i.publicacion_id = p.id AND i.eliminado = 0
+        WHERE p.estado = 'cancelada' AND p.updated_at < ${limite}`).all();
+      for (const { id } of canceladas) db.transaction(() => {
+        const n = db.prepare("UPDATE main.publicacion_imagenes SET eliminado = 1, eliminado_at = datetime('now','localtime') WHERE publicacion_id = ? AND eliminado = 0").run(id).changes;
+        nota(id, null, 'estado', `Se borraron ${n} imagen(es) para liberar espacio: llevaba más de ${LIMPIEZA_DIAS} días cancelada`);
+      })();
+      // Archivos quitados hace más de 60 días (publicaciones, avances de proyecto y biblioteca).
+      for (const t of ['publicacion_imagenes', 'archivos_marketing', 'biblioteca_marketing']) {
+        for (const f of db.prepare(`SELECT id, archivo FROM main.${t} WHERE eliminado = 1 AND archivo <> '' AND eliminado_at < ${limite}`).all()) {
+          bytes += borrarArchivo(f.archivo); archivos++;
+          db.prepare(`UPDATE main.${t} SET archivo = '' WHERE id = ?`).run(f.id);
+        }
+      }
+      // Las canceladas recién marcadas tienen eliminado_at de hoy: sus archivos se borran ya (no esperan otros 60 días).
+      for (const { id } of canceladas) for (const f of db.prepare("SELECT id, archivo FROM main.publicacion_imagenes WHERE publicacion_id = ? AND eliminado = 1 AND archivo <> ''").all(id)) {
+        bytes += borrarArchivo(f.archivo); archivos++;
+        db.prepare("UPDATE main.publicacion_imagenes SET archivo = '' WHERE id = ?").run(f.id);
+      }
+      if (archivos) console.log(`Marketing: limpieza automática, ${archivos} archivo(s) borrados (${(bytes / 1048576).toFixed(1)} MB liberados)`);
+    } catch (e) { console.error('Marketing: no se pudo hacer la limpieza automática:', e.message); }
+    return { archivos, bytes };
+  }
+  setTimeout(limpiar, 5000).unref();
+  setInterval(limpiar, Number(process.env.MARKETING_LIMPIEZA_MS) || 6 * 60 * 60 * 1000).unref();
+
   return { REDES, FORMATOS, ESTADOS };
 };

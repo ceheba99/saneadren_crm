@@ -244,7 +244,8 @@ const IdeasMk = (() => {
   };
   $('id-subir').addEventListener('change', async e => {
     const archivos = [...e.target.files]; e.target.value = ''; if (!actual) return;
-    for (const f of archivos) {
+    for (const original of archivos) {
+      const f = await Marketing.reducir(original); // las imágenes de una idea se optimizan; la biblioteca guarda originales
       if (f.size > 10 * 1024 * 1024) { toast(`«${f.name}» pasa de 10 MB`); continue; }
       try {
         const r = await api('/marketing/biblioteca', { method: 'POST', headers: { 'Content-Type': 'application/octet-stream', 'X-Nombre': encodeURIComponent(f.name), 'X-Carpeta': encodeURIComponent('Ideas'), 'X-Idea': String(actual.id) }, body: f });
