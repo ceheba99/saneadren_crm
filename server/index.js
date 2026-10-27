@@ -1256,29 +1256,48 @@ app.post('/api/contactos', h((req,res)=>{
 }));
 
 app.get('/api/clientes', h((req, res) => {
-  const { q, desde, hasta, incluir_prospectos, tipo } = req.query;
+  const { q, desde, hasta, incluir_prospectos, tipo, giro, canal, atiende } = req.query;
+  const hoy = hoyMexico();
+  // Además de los conteos: su último y próximo servicio, quién lo atiende (el de su registro más reciente),
+  // su tipo de cliente y cómo se enteró — para filtrar y ordenar el directorio sin abrir cada ficha (2026-10-26).
   let sql = `
     SELECT c.*,
       COUNT(l.id) AS total_solicitudes,
       SUM(CASE WHEN l.estatus = 'ganado' THEN 1 ELSE 0 END) AS servicios_ganados,
       SUM(CASE WHEN l.estatus = 'abierto' THEN 1 ELSE 0 END) AS solicitudes_abiertas,
       COALESCE(SUM(CASE WHEN l.estatus = 'ganado' THEN l.valor ELSE 0 END), 0) AS valor_ganado_total,
-      MAX(COALESCE(l.updated_at,c.updated_at)) AS ultima_actividad
+      MAX(COALESCE(l.updated_at,c.updated_at)) AS ultima_actividad,
+      MAX(CASE WHEN l.estatus = 'ganado' AND l.fecha_servicio <= ? THEN l.fecha_servicio END) AS ultimo_servicio,
+      MIN(CASE WHEN l.estatus = 'ganado' AND l.fecha_servicio > ? AND COALESCE(l.ejecucion,'') <> 'no_realizado' THEN l.fecha_servicio END) AS proximo_servicio,
+      (SELECT la.responsable_id FROM leads la WHERE la.cliente_id = c.id AND la.responsable_id IS NOT NULL ORDER BY la.updated_at DESC, la.id DESC LIMIT 1) AS atiende_id,
+      (SELECT u.nombre FROM leads la JOIN usuarios u ON u.id = la.responsable_id WHERE la.cliente_id = c.id ORDER BY la.updated_at DESC, la.id DESC LIMIT 1) AS atiende_nombre,
+      (SELECT ca.nombre FROM canales ca WHERE ca.id = c.canal_origen_id) AS canal_origen_nombre
     FROM clientes c
     LEFT JOIN leads l ON l.cliente_id = c.id
     WHERE (cliente_en_alcance(c.sucursal_id, c.id, c.capturado_por) OR EXISTS (SELECT 1 FROM leads lv WHERE lv.cliente_id = c.id))
   `;
-  const params = [];
+  const params = [hoy, hoy];
   if (q) {
-    // También por su ID de cliente: «CLI-0039» o «cli 39».
+    // También por su ID de cliente («CLI-0039» o «cli 39»), correo, RFC, domicilio y cualquiera de sus teléfonos.
     const f = String(q).trim().match(/^cli[\s-]*0*(\d{1,7})$/i);
-    sql += ' AND (c.nombre LIKE ? OR c.empresa_contacto LIKE ? OR c.telefono LIKE ? OR CAST(c.id AS TEXT) = ?' + (f ? ' OR c.id = ?' : '') + ')';
-    params.push(`%${q}%`, `%${q}%`, `%${q}%`, q);
+    const dig = String(q).replace(/\D/g, '');
+    // Sin importar acentos: «Sofia» encuentra a «Sofía».
+    sql += ' AND (sin_acentos(c.nombre) LIKE sin_acentos(?) OR sin_acentos(c.empresa_contacto) LIKE sin_acentos(?) OR c.telefono LIKE ? OR c.correo LIKE ? OR c.rfc LIKE ? OR sin_acentos(c.direccion) LIKE sin_acentos(?) OR CAST(c.id AS TEXT) = ?'
+      + (dig.length >= 4 ? ' OR c.telefono_normalizado LIKE ? OR solo_digitos(c.telefono_alterno) LIKE ? OR EXISTS (SELECT 1 FROM telefonos_cliente t WHERE t.cliente_id = c.id AND t.telefono_normalizado LIKE ?)' : '')
+      + (f ? ' OR c.id = ?' : '') + ')';
+    params.push(...Array(6).fill(`%${q}%`), q);
+    if (dig.length >= 4) params.push(...Array(3).fill(`%${dig}%`));
     if (f) params.push(Number(f[1]));
   }
+  if (giro) { sql += giro === 'sin' ? " AND COALESCE(c.giro,'') = ''" : ' AND c.giro = ?'; if (giro !== 'sin') params.push(String(giro)); }
+  if (canal) { sql += canal === 'sin' ? ' AND c.canal_origen_id IS NULL' : ' AND c.canal_origen_id = ?'; if (canal !== 'sin') params.push(Number(canal)); }
   sql += ' GROUP BY c.id HAVING 1=1';
+  if (atiende) { sql += ' AND atiende_id = ?'; params.push(Number(atiende)); }
   if (incluir_prospectos !== '1' || tipo === 'clientes') sql += ' AND servicios_ganados > 0';
   if (incluir_prospectos === '1' && tipo === 'prospectos') sql += ' AND servicios_ganados = 0';
+  if (tipo === 'recurrentes') sql += ' AND servicios_ganados > 1';
+  // Clientes por recuperar: ya contrataron, su último servicio fue hace más de 6 meses y no tienen nada en curso.
+  if (tipo === 'dormidos') { sql += " AND servicios_ganados > 0 AND solicitudes_abiertas = 0 AND proximo_servicio IS NULL AND (ultimo_servicio IS NULL OR ultimo_servicio < date(?, '-6 months'))"; params.push(hoy); }
   // Filtro por tiempo: se aplica sobre la última actividad del cliente (última vez que se movió
   // alguna de sus solicitudes), para responder "¿qué clientes tuvieron actividad en este periodo?".
   if (desde) { sql += ' AND date(MAX(COALESCE(l.updated_at,c.updated_at))) >= date(?)'; params.push(desde); }

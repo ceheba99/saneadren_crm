@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Saneadren · Cotizaciones y Servicios</title>
-<link rel="stylesheet" href="styles.css?v=enc1">
+<link rel="stylesheet" href="styles.css?v=con1">
 <link rel="stylesheet" href="servicios-tabla.css">
 <link rel="stylesheet" href="flujo.css?v=cel1">
 </head>
@@ -246,22 +246,22 @@
     </div>
 
     <div class="rc-grid">
-      <div class="rc-card">
-        <div class="rc-num" id="rc-total">0</div>
-        <div class="rc-label">Contactos</div>
-      </div>
-      <div class="rc-card prospecto">
-        <div class="rc-num" id="rc-prospectos">0</div>
-        <div class="rc-label">Prospectos · aún no contratan</div>
-      </div>
-      <div class="rc-card cliente">
-        <div class="rc-num" id="rc-activos">0</div>
-        <div class="rc-label">Clientes · ya contrataron</div>
-      </div>
-      <div class="rc-card recurrente">
-        <div class="rc-num" id="rc-recurrentes">0</div>
-        <div class="rc-label">Recurrentes · 2 o más órdenes</div>
-      </div>
+      <button type="button" class="rc-card" data-fc-tipo="todos" aria-pressed="true" title="Ver todos los contactos">
+        <span class="rc-num" id="rc-total">0</span>
+        <span class="rc-label">Contactos</span>
+      </button>
+      <button type="button" class="rc-card prospecto" data-fc-tipo="prospectos" aria-pressed="false" title="Ver solo los prospectos">
+        <span class="rc-num" id="rc-prospectos">0</span>
+        <span class="rc-label">Prospectos · aún no contratan</span>
+      </button>
+      <button type="button" class="rc-card cliente" data-fc-tipo="clientes" aria-pressed="false" title="Ver solo los clientes">
+        <span class="rc-num" id="rc-activos">0</span>
+        <span class="rc-label">Clientes · ya contrataron</span>
+      </button>
+      <button type="button" class="rc-card recurrente" data-fc-tipo="recurrentes" aria-pressed="false" title="Ver solo los recurrentes">
+        <span class="rc-num" id="rc-recurrentes">0</span>
+        <span class="rc-label">Recurrentes · 2 o más órdenes</span>
+      </button>
       <div class="rc-card valor perm-ordenes-importes">
         <div class="rc-num" id="rc-valor">$0</div>
         <div class="rc-label">Contratado histórico (sin IVA)</div>
@@ -269,12 +269,16 @@
     </div>
 
     <div class="filtros">
-      <input type="text" id="fc-buscar" aria-label="Buscar contacto" placeholder="Nombre, empresa, teléfono o ID (CLI-0039)">
-      <select id="fc-tipo" aria-label="Tipo de contacto"><option value="todos">Todos los contactos</option><option value="prospectos">Prospectos · sin servicios contratados</option><option value="clientes">Clientes · con servicios contratados</option></select>
+      <input type="text" id="fc-buscar" aria-label="Buscar contacto" placeholder="Nombre, empresa, teléfono, correo, RFC o ID (CLI-0039)">
+      <select id="fc-tipo" aria-label="Tipo de contacto"><option value="todos">Todos los contactos</option><option value="prospectos">Prospectos · sin servicios contratados</option><option value="clientes">Clientes · con servicios contratados</option><option value="recurrentes">Recurrentes · 2 o más órdenes</option><option value="dormidos">Por recuperar · sin servicio en 6 meses</option><option value="con_saldo" class="perm-cxc-ver">Con saldo por cobrar</option></select>
+      <select id="fc-atiende" aria-label="Quién lo atiende"><option value="">Lo atiende: todos</option></select>
+      <select id="fc-giro" aria-label="Tipo de cliente"><option value="">Tipo de cliente: todos</option></select>
+      <select id="fc-canal" aria-label="Cómo se enteró"><option value="">Cómo se enteró: todos</option></select>
       <span class="filtro-fecha-label">Desde</span>
       <input type="date" id="fc-desde" aria-label="Desde (fecha)" title="Filtrar desde esta fecha">
       <span class="filtro-fecha-label">Hasta</span>
       <input type="date" id="fc-hasta" aria-label="Hasta (fecha)" title="Filtrar hasta esta fecha">
+      <button type="button" class="btn btn-outline" id="btn-fc-limpiar" hidden>✕ Quitar filtros</button>
       <button class="btn btn-secundario perm-clientes-exportar" id="btn-exportar-clientes">📥 Exportar a Excel</button>
     </div>
 
@@ -287,18 +291,22 @@
         <table class="tabla-clientes">
           <thead>
             <tr>
-              <th>Contacto</th>
+              <th><button type="button" class="th-orden" data-fc-orden="nombre">Contacto</button></th>
               <th>Tipo</th>
-              <th class="st-num">Cotizaciones abiertas</th>
-              <th class="st-num">Órdenes de servicio</th>
-              <th class="st-num perm-ordenes-importes">Contratado (sin IVA)</th>
-              <th>Última actividad</th>
-              <th><span class="sr-only">Abrir</span></th>
+              <th><button type="button" class="th-orden" data-fc-orden="atiende">Lo atiende</button></th>
+              <th class="st-num"><button type="button" class="th-orden" data-fc-orden="abiertas">Cotizaciones abiertas</button></th>
+              <th class="st-num"><button type="button" class="th-orden" data-fc-orden="ordenes">Órdenes de servicio</button></th>
+              <th class="st-num perm-ordenes-importes"><button type="button" class="th-orden" data-fc-orden="contratado">Contratado (sin IVA)</button></th>
+              <th class="st-num perm-cxc-ver"><button type="button" class="th-orden" data-fc-orden="saldo">Por cobrar</button></th>
+              <th><button type="button" class="th-orden" data-fc-orden="servicio">Servicios</button></th>
+              <th><button type="button" class="th-orden" data-fc-orden="actividad" data-fc-defecto>Última actividad</button></th>
+              <th><span class="sr-only">Acciones</span></th>
             </tr>
           </thead>
           <tbody id="tabla-clientes-reales-body"></tbody>
         </table>
       </div>
+      <div class="fc-mas" id="fc-mas" hidden><button type="button" class="btn btn-outline" id="btn-fc-mas">Mostrar más</button></div>
     </div>
   </section>
 
@@ -1331,7 +1339,7 @@
 <script src="roles.js?v=ed1"></script>
 <script src="importes.js?v=red1"></script>
 <script src="servicios-tabla.js?v=pf1"></script>
-<script src="flujo.js?v=hr1"></script>
+<script src="flujo.js?v=con1"></script>
 <script src="cuentas.js?v=rev1"></script>
 <script src="finanzas.js?v=ed1"></script>
 <script src="calendario.js?v=esp1"></script>
@@ -1342,7 +1350,7 @@
 <script src="carga-generador.js?v=con1"></script>
 <script src="sucursales.js?v=perm2"></script>
 <script src="encuestas.js?v=enc1"></script>
-<script src="app.js?v=enc1"></script>
+<script src="app.js?v=con1"></script>
 <script src="personal.js?v=ed1"></script>
 <script src="buscador.js?v=suc1"></script>
 <script src="demo.js?v=demo1"></script>
