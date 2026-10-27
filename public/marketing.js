@@ -5,7 +5,9 @@
    comentarios con historial y versiones anteriores del texto. Las imágenes se piden con la sesión y se muestran como blob. */
 const Marketing = (() => {
   const $ = id => document.getElementById(id), esc = t => escaparHtml(t == null ? '' : String(t));
-  const ICONO = { tiktok: '🎵', facebook: '📘', instagram: '📸', linkedin: '💼', spotify: '🎧' };
+  // Logotipos oficiales de cada red (public/img/redes, 2026-10-27; antes emojis).
+  const LOGO = { tiktok: 'img/redes/tiktok.png', facebook: 'img/redes/facebook.png', instagram: 'img/redes/instagram.jpg', linkedin: 'img/redes/linkedin.png', spotify: 'img/redes/spotify.png' };
+  const logo = (r, clase = 'mk-logo') => LOGO[r] ? `<img class="${clase}" src="${LOGO[r]}" alt="" aria-hidden="true">` : '';
   // Hasta cuántos caracteres admite el texto de cada red (para avisar antes de subirlo).
   const LIMITE = { tiktok: 2200, instagram: 2200, linkedin: 3000, facebook: 63206, spotify: 4000 };
   const DIAS = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'], MESES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
@@ -26,7 +28,7 @@ const Marketing = (() => {
   const estadoDe = p => estadoTag(p.estado); // etiqueta ya escapada
   const movible = p => (CAT.puede.editar && p.estado !== 'publicada' ? 'true' : 'false');
   const estadoTag = e => `<span class="mk-estado mk-e-${esc(e)}">${esc(CAT?.estados[e] || e)}</span>`;
-  const redesTxt = redes => redes.map(r => `<span class="mk-red mk-r-${esc(r)}" title="${esc(CAT?.redes[r] || r)}">${ICONO[r] || ''}</span>`).join('');
+  const redesTxt = redes => redes.map(r => `<span class="mk-red mk-r-${esc(r)}" title="${esc(CAT?.redes[r] || r)}" aria-label="${esc(CAT?.redes[r] || r)}">${logo(r)}</span>`).join('');
   async function urlImagen(id) {
     if (imagenes.has(id)) return imagenes.get(id);
     let r; try { r = await api('/marketing/imagenes/' + Number(id)); } catch { return ''; }
@@ -71,7 +73,7 @@ const Marketing = (() => {
       $('mk-f-estado').dataset.listo = '1';
       $('mk-leyenda').innerHTML = Object.entries(CAT.estados).map(([k]) => estadoTag(k)).join(' ');
     }
-    $('mk-redes-filtro').innerHTML = Object.entries(CAT.redes).map(([k, n]) => `<button type="button" class="mk-red-btn mk-r-${esc(k)}" data-mk-red="${esc(k)}" aria-pressed="${redesFiltro.has(k)}">${ICONO[k]} ${esc(n)}</button>`).join('');
+    $('mk-redes-filtro').innerHTML = Object.entries(CAT.redes).map(([k, n]) => `<button type="button" class="mk-red-btn mk-r-${esc(k)}" data-mk-red="${esc(k)}" aria-pressed="${redesFiltro.has(k)}">${logo(k)} ${esc(n)}</button>`).join('');
     document.querySelectorAll('#vista-marketing [data-mk-vista]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.mkVista === VISTA)));
     document.querySelectorAll('#vista-marketing [data-mk-estado]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.mkEstado === $('mk-f-estado').value)));
     $('mk-limpiar').hidden = !($('mk-f-estado').value || $('mk-buscar').value.trim() || redesFiltro.size);
@@ -121,7 +123,7 @@ const Marketing = (() => {
     $('mk-sucursal').innerHTML = '<option value="empresa">Toda la empresa</option>' + CAT.sucursales.map(s => `<option value="${Number(s.id)}">${esc(s.nombre)} (${esc(s.clave)})</option>`).join('');
     $('mk-responsable').innerHTML = CAT.responsables.map(u => `<option value="${Number(u.id)}">${esc(u.nombre)}</option>`).join('');
     $('mk-proyecto').innerHTML = '<option value="">Sin proyecto</option>' + CAT.proyectos.map(p => `<option value="${Number(p.id)}">${esc(p.nombre)}</option>`).join('');
-    $('mk-redes').innerHTML = Object.entries(CAT.redes).map(([k, n]) => `<label class="mk-red-op mk-r-${esc(k)}"><input type="checkbox" value="${esc(k)}"> ${ICONO[k]} ${esc(n)}</label>`).join('');
+    $('mk-redes').innerHTML = Object.entries(CAT.redes).map(([k, n]) => `<label class="mk-red-op mk-r-${esc(k)}"><input type="checkbox" value="${esc(k)}"> ${logo(k)} ${esc(n)}</label>`).join('');
   }
   async function abrir(id, fecha, opciones = {}) {
     try {
@@ -148,7 +150,7 @@ const Marketing = (() => {
   function pintarFicha() {
     $('mk-aviso').textContent = actual ? '' : 'Nueva · aún no guardada';
     $('mk-imagenes-sec').hidden = !actual; $('mk-historial-sec').hidden = !actual;
-    $('mk-subir-lbl').hidden = !actual?.puede.editar;
+    $('mk-subir-lbl').hidden = !actual?.puede.editar; $('mk-desde-bib').hidden = !actual?.puede.editar;
     contador(); previa();
     if (!actual) { $('mk-estado-barra').hidden = true; return; }
     // Estado y botones del flujo (según el estado y quién mira).
@@ -286,6 +288,7 @@ const Marketing = (() => {
   $('mk-redes').addEventListener('change', () => { contador(); previa(); });
   $('mk-estado-barra').addEventListener('click', e => { const b = e.target.closest('[data-mk-accion]'); if (b) accion(b.dataset.mkAccion); });
   $('mk-subir').addEventListener('change', e => { subir([...e.target.files]); e.target.value = ''; });
+  $('mk-desde-bib').onclick = () => actual && window.BibliotecaMk?.elegir(actual.id, d => { actual = d; pintarFicha(); cargar(); });
   $('mk-imagenes').addEventListener('click', async e => {
     const q = e.target.closest('[data-mk-quitar]');
     if (q) { if (!await solicitarDialogo({ titulo: 'Quitar imagen', mensaje: 'La imagen deja de estar en la publicación (queda en el historial quién la quitó).' + (['aprobada', 'programada'].includes(actual.estado) ? ' Como ya está aprobada, regresará a borrador.' : ''), aceptar: 'Quitar' })) return;
@@ -299,15 +302,15 @@ const Marketing = (() => {
   $('inicio-marketing')?.addEventListener('click', e => { const b = e.target.closest('[data-mk-inicio]'); if (b) abrir(Number(b.dataset.mkInicio)); const py = e.target.closest('[data-py-inicio]'); if (py) window.ProyectosMk?.abrir(Number(py.dataset.pyInicio)); });
   // Pestañas: Calendario y Proyectos (se recuerda la última).
   let PESTANA = 'calendario';
-  try { if (localStorage.getItem('marketing-pestana') === 'proyectos') PESTANA = 'proyectos'; } catch { /* */ }
+  try { const g = localStorage.getItem('marketing-pestana'); if (['proyectos', 'ideas', 'biblioteca'].includes(g)) PESTANA = g; } catch { /* */ }
   function pestana(p) {
     PESTANA = p; try { localStorage.setItem('marketing-pestana', p); } catch { /* */ }
     document.querySelectorAll('#vista-marketing > .mk-pestanas [data-mk-pestana]').forEach(b => b.setAttribute('aria-selected', String(b.dataset.mkPestana === p)));
-    $('mk-tab-calendario').hidden = p !== 'calendario'; $('mk-tab-proyectos').hidden = p !== 'proyectos';
-    if (p === 'proyectos') window.ProyectosMk?.cargar(); else cargar();
+    for (const t of ['calendario', 'proyectos', 'ideas', 'biblioteca']) $('mk-tab-' + t).hidden = p !== t;
+    if (p === 'proyectos') window.ProyectosMk?.cargar(); else if (p === 'ideas') window.IdeasMk?.cargar(); else if (p === 'biblioteca') window.BibliotecaMk?.cargar(); else cargar();
   }
   document.querySelectorAll('#vista-marketing > .mk-pestanas [data-mk-pestana]').forEach(b => b.addEventListener('click', () => pestana(b.dataset.mkPestana)));
   window.addEventListener('beforeunload', e => { if ($('overlay-publicacion').classList.contains('mostrar') && pendiente()) { e.preventDefault(); e.returnValue = ''; } });
-  return { cargar: () => pestana(PESTANA), cargarCalendario: cargar, abrir, pintarInicio, catalogos: async () => { CAT = null; return catalogos(); } };
+  return { redesHtml: redes => redesTxt(redes), logo, pestana, cargar: () => pestana(PESTANA), cargarCalendario: cargar, abrir, pintarInicio, catalogos: async () => { CAT = null; return catalogos(); } };
 })();
 window.Marketing = Marketing;

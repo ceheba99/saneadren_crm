@@ -398,6 +398,29 @@ module.exports = function demo(app, db, { sesiones, PORT, SESSION_TTL_MS }) {
       let py2 = await pedir('POST', '/marketing/proyectos', GM, { nombre: 'Podcast «El agua que no vemos» · temporada 2', inicio: dia(10), fin: dia(70), sucursal: 'empresa' });
       py2 = await pedir('POST', '/marketing/proyectos/' + py2.id + '/tareas', GM, { titulo: 'Elegir invitados', inicio: dia(10), fin: dia(20) });
       await pedir('POST', '/marketing/proyectos/' + py2.id + '/tareas', GM, { titulo: 'Grabar episodios 1 a 4', inicio: dia(21), fin: dia(50), depende_de: py2.tareas[0].id });
+
+      // Biblioteca (fase 3): los logotipos de las redes y un par de plantillas de ejemplo.
+      const fs = require('fs'), path = require('path'), dirRedes = path.join(__dirname, '..', 'public', 'img', 'redes');
+      for (const f of fs.readdirSync(dirRedes)) await subir('/marketing/biblioteca', MK, fs.readFileSync(path.join(dirRedes, f)), { 'X-Nombre': 'Logo ' + f.replace(/\.\w+$/, ''), 'X-Carpeta': 'Logos', 'X-Etiquetas': 'red social, logotipo' });
+      await subir('/marketing/biblioteca', MK, imagen([250, 190, 20]), { 'X-Nombre': 'Plantilla post amarillo', 'X-Carpeta': 'Plantillas', 'X-Etiquetas': 'post, cuadrado' });
+      await subir('/marketing/biblioteca', MK, imagen([20, 40, 60]), { 'X-Nombre': 'Plantilla historia oscura', 'X-Carpeta': 'Plantillas', 'X-Etiquetas': 'historia, vertical' });
+      // Ideas en cada paso, con votos y comentarios.
+      const idea = (t, datos) => pedir('POST', '/marketing/ideas', t, datos);
+      const decidir = async (t, i, accion, extra = {}) => pedir('POST', '/marketing/ideas/' + i.id + '/estado', t, { accion, version: (await pedir('GET', '/marketing/ideas/' + i.id, t)).version, ...extra });
+      const i1 = await idea(MK, { titulo: 'Reto «antes y después» de una trampa de grasa', descripcion: 'Video corto: así llega y así queda. Con música en tendencia.', redes: ['tiktok', 'instagram'], referencia: 'https://www.tiktok.com/' });
+      await subir('/marketing/biblioteca', MK, imagen([160, 60, 40]), { 'X-Nombre': 'boceto-antes-despues.png', 'X-Carpeta': 'Ideas', 'X-Idea': i1.id });
+      for (const t of [MK, GM, A]) await pedir('POST', '/marketing/ideas/' + i1.id + '/voto', t, { voto: true });
+      await pedir('POST', '/marketing/ideas/' + i1.id + '/comentarios', GM, { texto: 'Me encanta. Que lo grabe la cuadrilla de Querétaro.' });
+      await decidir(GM, i1, 'aprobar');
+      const i2 = await idea(MK, { titulo: 'Testimonios de clientes en LinkedIn', descripcion: 'Un gerente de mantenimiento cuenta cómo le ayudamos.', redes: ['linkedin'] });
+      for (const t of [MK, GM]) await pedir('POST', '/marketing/ideas/' + i2.id + '/voto', t, { voto: true });
+      await decidir(GM, i2, 'evaluar');
+      await idea(GM, { titulo: 'Infografía: cada cuándo limpiar tu fosa séptica', redes: ['facebook', 'instagram'] });
+      const i4 = await idea(MK, { titulo: 'Concurso de memes de drenajes', descripcion: 'Premio: un servicio gratis.' });
+      await decidir(GM, i4, 'descartar', { motivo: 'No va con el tono de la marca' });
+      const i5 = await idea(MK, { titulo: 'Episodio con un ingeniero ambiental', redes: ['spotify'] });
+      await decidir(A, i5, 'aprobar');
+      await pedir('POST', '/marketing/ideas/' + i5.id + '/convertir', MK, { a: 'proyecto', version: (await pedir('GET', '/marketing/ideas/' + i5.id, MK)).version });
     }
 
     // Al final: la revisión de integridad debe salir limpia.

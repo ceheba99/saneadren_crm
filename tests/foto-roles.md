@@ -106,6 +106,8 @@ Dirección la revisa y la aprueba. Si un cambio altera lo que ve un rol, la prue
 | Publicación para toda la empresa | ✔ | — | — | — | — | — | ✔ | ✔ |
 | Publicación de CDMX (otra sucursal) | ✔ | — | — | — | — | — | ✔ | ✔ |
 | Proyecto de marketing de Mara, con sus tareas y avances | ✔ | — | — | — | — | — | ✔ | ✔ |
+| Idea de Mara en el banco de ideas | ✔ | — | — | — | — | — | ✔ | ✔ |
+| Archivo de la biblioteca de marketing | ✔ | — | — | — | — | — | ✔ | ✔ |
 
 ### Personal
 
@@ -136,6 +138,9 @@ Dirección la revisa y la aprueba. Si un cambio altera lo que ve un rol, la prue
 | Comentar la publicación de Mara | ✔ | — | — | — | — | — | ✔ | ✔ |
 | Aprobar una publicación en revisión | ✔ | — | — | — | — | — | — | ✔ |
 | Editar el proyecto de marketing de Mara (datos, tareas y avances) | ✔ | — | — | — | — | — | ✔ | ✔ |
+| Votar y comentar la idea de Mara | ✔ | — | — | — | — | — | ✔ | ✔ |
+| Aprobar o descartar una idea | ✔ | — | — | — | — | — | — | ✔ |
+| Subir un archivo a la biblioteca de marketing | ✔ | — | — | — | — | — | ✔ | ✔ |
 
 | Permiso | Dirección | Gerente | Ventas | Atención | Técnico | Costos y compras | Marketing | Gerente de marketing |
 |---|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|
@@ -193,4 +198,6 @@ Dirección la revisa y la aprueba. Si un cambio altera lo que ve un rol, la prue
 - **2026-10-26** · Marketing y Gerente de marketing: ven, editan y comentan las publicaciones de toda la empresa (de cualquier sucursal y las generales), y nada más del sistema: ni ventas, cobranza, gastos, compras, prospección ni personal.
 - **2026-10-26** · Los demás roles (Gerente, Ventas, Atención, Técnico, Compras) no ven Marketing; Dirección lo puede prender en Roles y permisos.
 - **2026-10-26** · Dirección ve y aprueba todo Marketing.
+- **2026-10-27** · Banco de ideas: las proponen, votan y comentan Marketing, Gerente de marketing y Dirección; las aprueban o descartan solo Dirección y el Gerente de marketing. Los demás roles no ven las ideas.
+- **2026-10-27** · Biblioteca de marketing (logos, fotos, plantillas): la ven y usan Marketing, Gerente de marketing y Dirección; los demás roles no.
 - **2026-10-26** · Proyectos de marketing (tareas, Gantt y avances): los ven y editan Marketing, Gerente de marketing y Dirección; los demás roles no.

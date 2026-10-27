@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Saneadren · Cotizaciones y Servicios</title>
-<link rel="stylesheet" href="styles.css?v=mk3">
+<link rel="stylesheet" href="styles.css?v=mk4">
 <link rel="stylesheet" href="servicios-tabla.css">
 <link rel="stylesheet" href="flujo.css?v=cel1">
 </head>
@@ -510,6 +510,8 @@
     <div class="mk-pestanas" role="tablist" aria-label="Marketing">
       <button type="button" role="tab" class="mk-pestana" id="mk-p-cal" data-mk-pestana="calendario" aria-selected="true">📅 Calendario de publicaciones</button>
       <button type="button" role="tab" class="mk-pestana" id="mk-p-proy" data-mk-pestana="proyectos" aria-selected="false">📁 Proyectos</button>
+      <button type="button" role="tab" class="mk-pestana" id="mk-p-ideas" data-mk-pestana="ideas" aria-selected="false">💡 Ideas</button>
+      <button type="button" role="tab" class="mk-pestana" id="mk-p-bib" data-mk-pestana="biblioteca" aria-selected="false">🗂️ Biblioteca</button>
     </div>
     <div id="mk-tab-calendario">
     <div class="vista-encabezado">
@@ -546,6 +548,32 @@
       </div>
       <div class="filtros"><input type="text" id="py-buscar" aria-label="Buscar proyecto" placeholder="Nombre u objetivo del proyecto"><select id="py-f-estado" aria-label="Estado del proyecto"><option value="">Todos los proyectos</option></select></div>
       <div class="py-lista" id="py-lista"></div>
+    </div>
+    <!-- Ideas (fase 3, 2026-10-27) -->
+    <div id="mk-tab-ideas" hidden>
+      <div class="vista-encabezado">
+        <div><h2>💡 Banco de ideas</h2><p class="ayuda">Propón ideas creativas, vota 👍 las que te gusten y coméntalas. Dirección y el Gerente de marketing las aprueban o descartan; una idea aprobada se convierte en publicación o en proyecto con un clic.</p></div>
+        <div class="btn-group"><button type="button" class="btn btn-primario perm-marketing-editar" id="id-nueva">➕ Nueva idea</button></div>
+      </div>
+      <div class="filtros"><input type="text" id="id-buscar" aria-label="Buscar idea" placeholder="Buscar en las ideas"></div>
+      <div class="id-tablero" id="id-tablero"></div>
+    </div>
+    <!-- Biblioteca (fase 3) -->
+    <div id="mk-tab-biblioteca" hidden>
+      <div class="vista-encabezado">
+        <div><h2>🗂️ Biblioteca de marketing</h2><p class="ayuda">Logos, fotos, plantillas y documentos de la marca, por carpeta y etiquetas. También aparecen aquí las imágenes de las publicaciones y los archivos de los avances, para encontrar todo en un solo lugar.</p></div>
+        <div class="btn-group perm-marketing-editar">
+          <label class="btn btn-primario bib-subir">📤 Subir archivos<input type="file" id="bib-subir" accept="image/jpeg,image/png,image/webp,image/gif,application/pdf" multiple hidden></label>
+        </div>
+      </div>
+      <div class="filtros">
+        <input type="text" id="bib-buscar" aria-label="Buscar archivo" placeholder="Nombre, etiqueta, proyecto o publicación">
+        <select id="bib-f-carpeta" aria-label="Carpeta"><option value="">Todas las carpetas</option></select>
+        <select id="bib-f-origen" aria-label="De dónde viene"><option value="">Todo</option><option value="biblioteca">Subido a la biblioteca</option><option value="publicacion">Imágenes de publicaciones</option><option value="avance">Archivos de avances de proyectos</option></select>
+        <select id="bib-carpeta-subir" aria-label="Carpeta para lo que subas" class="perm-marketing-editar"></select>
+      </div>
+      <p class="tabla-conteo" id="bib-conteo" role="status"></p>
+      <div class="bib-rejilla" id="bib-rejilla"></div>
     </div>
   </section>
 
@@ -1454,6 +1482,7 @@
           <p class="ayuda">JPG, PNG, WebP o GIF, hasta 10 MB cada una y 10 por publicación; la primera es la portada. Los videos y episodios van como enlace.</p>
           <div class="mk-imagenes" id="mk-imagenes"></div>
           <label class="btn btn-outline btn-chico perm-marketing-editar mk-subir" id="mk-subir-lbl">📤 Subir imágenes<input type="file" id="mk-subir" accept="image/jpeg,image/png,image/webp,image/gif" multiple hidden></label>
+          <button type="button" class="btn btn-outline btn-chico perm-marketing-editar" id="mk-desde-bib">📚 Desde la biblioteca</button>
         </div>
       </div>
       <div class="mk-col-lado">
@@ -1523,6 +1552,58 @@
   </div>
 </div>
 
+<!-- ====== OVERLAY: IDEA (Marketing, fase 3) ====== -->
+<div class="overlay" id="overlay-idea">
+  <div class="modal modal-idea">
+    <div class="modal-header"><div><span class="flujo-kicker" id="id-kicker">IDEA</span><h2 id="id-titulo">Nueva idea</h2></div>
+      <button class="close-btn" type="button" id="id-cerrar">✕</button></div>
+    <div class="modal-body">
+      <div class="mk-estado-barra" id="id-barra" hidden></div>
+      <div class="modal-section" id="id-form"><div class="seccion-tit">💡 La idea</div>
+        <div class="form-grid-2">
+          <div class="campo-modal full"><label for="id-titulo-in">Idea en pocas palabras (obligatorio)</label><input id="id-titulo-in" maxlength="120" placeholder="Reto en TikTok: «antes y después» de una trampa de grasa"></div>
+          <div class="campo-modal full"><label for="id-desc">Descripción (opcional)</label><textarea id="id-desc" rows="4" maxlength="3000" placeholder="Cómo sería, a quién va dirigida, qué se necesita…"></textarea></div>
+          <div class="campo-modal full"><span class="etiqueta-campo">Redes (opcional)</span><div class="mk-redes" id="id-redes" role="group" aria-label="Redes"></div></div>
+          <div class="campo-modal"><label for="id-sucursal">Para (obligatorio)</label><select id="id-sucursal"></select></div>
+          <div class="campo-modal"><label for="id-referencia">Enlace de referencia (opcional)</label><input type="url" id="id-referencia" maxlength="500" placeholder="https://… (un video o publicación que inspire)"></div>
+        </div>
+        <div class="btn-group"><button type="button" class="btn btn-primario" id="id-guardar">Guardar idea</button><span class="estado-guardado" id="id-aviso" role="status"></span></div>
+      </div>
+      <div class="modal-section" id="id-extra" hidden>
+        <div class="seccion-tit">🖼️ Imágenes de referencia</div>
+        <div class="py-adjuntos" id="id-adjuntos"></div>
+        <label class="btn btn-outline btn-chico perm-marketing-editar">📤 Adjuntar imagen o PDF<input type="file" id="id-subir" accept="image/jpeg,image/png,image/webp,image/gif,application/pdf" multiple hidden></label>
+        <div class="seccion-tit py-sub">💬 Votos y comentarios</div>
+        <div class="id-votos" id="id-votos"></div>
+        <label for="id-comentario" class="sr-only">Comentario</label><textarea id="id-comentario" rows="2" maxlength="2000" placeholder="¿Qué opinas de esta idea?"></textarea>
+        <div class="btn-group perm-marketing-editar"><button type="button" class="btn btn-outline btn-chico" id="id-comentar">Comentar</button></div>
+        <ol class="mk-historial" id="id-historial"></ol>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ====== OVERLAY: ARCHIVO DE LA BIBLIOTECA ====== -->
+<div class="overlay" id="overlay-biblio">
+  <div class="modal modal-biblio">
+    <div class="modal-header"><div><span class="flujo-kicker" id="bib-kicker">BIBLIOTECA</span><h2 id="bib-titulo">Archivo</h2></div>
+      <button class="close-btn" type="button" onclick="document.getElementById('overlay-biblio').classList.remove('mostrar')">✕</button></div>
+    <div class="modal-body"><div class="modal-section bib-detalle" id="bib-detalle"></div></div>
+  </div>
+</div>
+
+<!-- ====== OVERLAY: ELEGIR DE LA BIBLIOTECA (para una publicación) ====== -->
+<div class="overlay" id="overlay-biblio-elegir">
+  <div class="modal modal-biblio">
+    <div class="modal-header"><div><span class="flujo-kicker">BIBLIOTECA</span><h2>Agregar imagen desde la biblioteca</h2></div>
+      <button class="close-btn" type="button" onclick="document.getElementById('overlay-biblio-elegir').classList.remove('mostrar')">✕</button></div>
+    <div class="modal-body"><div class="modal-section">
+      <div class="filtros"><input type="text" id="bib-e-buscar" aria-label="Buscar en la biblioteca" placeholder="Buscar por nombre, carpeta o etiqueta"></div>
+      <div class="bib-rejilla" id="bib-e-rejilla"></div>
+    </div></div>
+  </div>
+</div>
+
 <!-- ?v= obliga a los navegadores (sobre todo celulares) a tomar la versión nueva tras publicar. -->
 <!-- Generador de QR para la encuesta de cada orden (MIT, Kazuhiko Arase) -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js" integrity="sha384-mZT2gIty7ZDdOGkxfP6joZcYdMW1Jvj9dRlfpTmaJAKKXTqzygtB22k7FLe+KZC1" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
@@ -1549,8 +1630,9 @@
 <script src="buscador.js?v=suc1"></script>
 <script src="demo.js?v=demo1"></script>
 <script src="prospeccion.js?v=pro1"></script>
-<script src="marketing.js?v=mk2"></script>
-<script src="marketing-proyectos.js?v=mk3"></script>
+<script src="marketing.js?v=mk4"></script>
+<script src="marketing-proyectos.js?v=mk4"></script>
+<script src="marketing-ideas.js?v=mk4"></script>
 <script src="inicio.js?v=ini3"></script>
 </body>
 </html>

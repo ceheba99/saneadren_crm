@@ -14,6 +14,12 @@
 //    archivos, y si mueven el % de una tarea) y las publicaciones ligadas a él. El % del proyecto es el promedio de sus
 //    tareas pesado por su duración. Las mismas reglas de Marketing: lo ve quien ve Marketing, lo edita quien lo edita.
 //    Una tarea no se borra: se quita (queda quién y cuándo).
+//  · IDEAS (fase 3, 2026-10-27): banco de ideas creativas. Las proponen, votan (👍) y comentan quienes editan Marketing;
+//    Dirección y el Gerente de marketing las pasan a evaluación, las aprueban o las descartan (con motivo). Una idea
+//    aprobada se convierte con un clic en publicación (borrador) o en proyecto, y queda «realizada» con su liga.
+//  · BIBLIOTECA (fase 3): logos, fotos, plantillas y documentos de marca por carpeta y etiquetas. Muestra también las
+//    imágenes de las publicaciones y los archivos de los avances, para encontrar todo en un solo lugar. Una imagen de
+//    la biblioteca se agrega a una publicación sin volver a subirla. Quitar no borra el archivo (queda quién y cuándo).
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
@@ -25,6 +31,8 @@ const FORMATOS = { post: 'Publicación (imagen)', carrusel: 'Carrusel', reel: 'R
 const ESTADOS = { borrador: 'Borrador', revision: 'En revisión', cambios: 'Cambios pedidos', aprobada: 'Aprobada', programada: 'Programada', publicada: 'Publicada', cancelada: 'Cancelada' };
 const CONTENIDO = ['titulo', 'redes', 'formato', 'copy', 'hashtags', 'enlace'];
 const ESTADOS_PROYECTO = { planeacion: 'En planeación', en_curso: 'En curso', pausa: 'En pausa', terminado: 'Terminado', cancelado: 'Cancelado' };
+const ESTADOS_IDEA = { nueva: 'Nueva', evaluacion: 'En evaluación', aprobada: 'Aprobada', descartada: 'Descartada', realizada: 'Realizada' };
+const CARPETAS = ['Logos', 'Fotos', 'Plantillas', 'Documentos', 'Otros'];
 const MAX_BYTES = 10 * 1024 * 1024, MAX_IMAGENES = 10;
 const MIME = { jpg: 'image/jpeg', png: 'image/png', webp: 'image/webp', gif: 'image/gif', pdf: 'application/pdf' };
 const nombreSeguro = t => String(t || 'imagen').normalize('NFC').replace(/[\\/:*?"<>|\u0000-\u001f]+/g, '_').slice(0, 120) || 'imagen';
@@ -106,6 +114,31 @@ module.exports = function marketing(app, db, h) {
       created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
     );
     CREATE INDEX IF NOT EXISTS idx_archivos_marketing ON archivos_marketing(proyecto_id);
+    CREATE TABLE IF NOT EXISTS ideas_marketing (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      titulo TEXT NOT NULL CHECK(length(trim(titulo)) BETWEEN 1 AND 120), descripcion TEXT NOT NULL DEFAULT '',
+      redes TEXT NOT NULL DEFAULT '', referencia TEXT NOT NULL DEFAULT '',
+      estado TEXT NOT NULL DEFAULT 'nueva' CHECK(estado IN ('nueva','evaluacion','aprobada','descartada','realizada')),
+      sucursal_id INTEGER REFERENCES sucursales(id), -- NULL: de toda la empresa
+      creado_por INTEGER REFERENCES usuarios(id), decidido_por INTEGER REFERENCES usuarios(id), decidido_at TEXT, motivo TEXT,
+      publicacion_id INTEGER REFERENCES publicaciones(id), proyecto_id INTEGER REFERENCES proyectos_marketing(id),
+      version INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')), updated_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+    );
+    CREATE TABLE IF NOT EXISTS idea_votos (idea_id INTEGER NOT NULL REFERENCES ideas_marketing(id), usuario_id INTEGER NOT NULL REFERENCES usuarios(id), PRIMARY KEY (idea_id, usuario_id));
+    CREATE TABLE IF NOT EXISTS idea_comentarios (
+      id INTEGER PRIMARY KEY AUTOINCREMENT, idea_id INTEGER NOT NULL REFERENCES ideas_marketing(id), usuario_id INTEGER REFERENCES usuarios(id),
+      tipo TEXT NOT NULL DEFAULT 'comentario' CHECK(tipo IN ('comentario','estado')), texto TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_idea_comentarios ON idea_comentarios(idea_id);
+    CREATE TABLE IF NOT EXISTS biblioteca_marketing (
+      id INTEGER PRIMARY KEY AUTOINCREMENT, nombre TEXT NOT NULL, carpeta TEXT NOT NULL DEFAULT 'Otros', etiquetas TEXT NOT NULL DEFAULT '',
+      archivo TEXT NOT NULL, formato TEXT NOT NULL, bytes INTEGER NOT NULL, sha256 TEXT NOT NULL,
+      proyecto_id INTEGER REFERENCES proyectos_marketing(id), idea_id INTEGER REFERENCES ideas_marketing(id),
+      subido_por INTEGER REFERENCES usuarios(id), eliminado INTEGER NOT NULL DEFAULT 0, eliminado_por INTEGER REFERENCES usuarios(id), eliminado_at TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_biblioteca_marketing ON biblioteca_marketing(carpeta);
   `);
   // Cada publicación puede ser parte de un proyecto.
   if (!db.prepare('PRAGMA table_info(publicaciones)').all().some(c => c.name === 'proyecto_id')) db.exec('ALTER TABLE publicaciones ADD COLUMN proyecto_id INTEGER REFERENCES proyectos_marketing(id)');
@@ -196,7 +229,7 @@ module.exports = function marketing(app, db, h) {
     const responsables = db.prepare('SELECT id, nombre, rol FROM usuarios WHERE activo = 1 ORDER BY nombre').all().filter(u => P().tieneRol(u.rol, 'marketing.editar')).map(({ id, nombre }) => ({ id, nombre }));
     // Proyectos a los que se puede ligar una publicación (los que ve y siguen abiertos).
     const proyectos = db.prepare("SELECT id, nombre FROM proyectos_marketing WHERE estado IN ('planeacion','en_curso','pausa') ORDER BY nombre").all();
-    res.json({ redes: REDES, formatos: FORMATOS, estados: ESTADOS, estados_proyecto: ESTADOS_PROYECTO, sucursales, responsables, proyectos, puede: { editar: puedeEditar(req), aprobar: puedeAprobar(req) } });
+    res.json({ redes: REDES, formatos: FORMATOS, estados: ESTADOS, estados_proyecto: ESTADOS_PROYECTO, estados_idea: ESTADOS_IDEA, carpetas: CARPETAS, sucursales, responsables, proyectos, puede: { editar: puedeEditar(req), aprobar: puedeAprobar(req) } });
   }));
   app.get('/api/marketing/publicaciones', h((req, res) => {
     const desde = String(req.query.desde || ''), hasta = String(req.query.hasta || '');
@@ -537,6 +570,222 @@ module.exports = function marketing(app, db, h) {
     if (!d) return res.status(404).json({ error: 'Archivo no encontrado' });
     db.prepare("UPDATE main.archivos_marketing SET eliminado = 1, eliminado_por = ?, eliminado_at = datetime('now','localtime') WHERE id = ?").run(yo(req), d.id);
     res.json(detalleProyecto(req, d.proyecto_id));
+  }));
+
+  // =================== IDEAS ===================
+  const listaIdeas = (where, args, req) => db.prepare(`SELECT i.*, u.nombre autor, d.nombre decidido_por_nombre, s.nombre sucursal_nombre,
+      (SELECT COUNT(*) FROM idea_votos v WHERE v.idea_id = i.id) votos,
+      (SELECT COUNT(*) FROM idea_votos v WHERE v.idea_id = i.id AND v.usuario_id = ?) mi_voto,
+      (SELECT COUNT(*) FROM idea_comentarios c WHERE c.idea_id = i.id AND c.tipo = 'comentario') comentarios,
+      (SELECT b.id FROM biblioteca_marketing b WHERE b.idea_id = i.id AND b.eliminado = 0 AND b.formato <> 'pdf' ORDER BY b.id LIMIT 1) portada_id
+    FROM ideas_marketing i LEFT JOIN usuarios u ON u.id = i.creado_por LEFT JOIN usuarios d ON d.id = i.decidido_por LEFT JOIN sucursales s ON s.id = i.sucursal_id WHERE ${where}`)
+    .all(yo(req), ...args).map(i => ({ ...i, redes: String(i.redes || '').split(',').filter(Boolean), mi_voto: !!i.mi_voto }));
+  function detalleIdea(req, id) {
+    const i = listaIdeas('i.id = ?', [Number(id)], req)[0]; if (!i) return null;
+    return { ...i,
+      historial: db.prepare('SELECT c.id, c.tipo, c.texto, c.created_at, u.nombre usuario FROM idea_comentarios c LEFT JOIN usuarios u ON u.id = c.usuario_id WHERE c.idea_id = ? ORDER BY c.id DESC').all(i.id),
+      votantes: db.prepare('SELECT u.nombre FROM idea_votos v JOIN usuarios u ON u.id = v.usuario_id WHERE v.idea_id = ? ORDER BY u.nombre').all(i.id).map(x => x.nombre),
+      adjuntos: db.prepare('SELECT id, nombre, formato, bytes FROM biblioteca_marketing WHERE idea_id = ? AND eliminado = 0 ORDER BY id').all(i.id),
+      publicacion_titulo: i.publicacion_id ? db.prepare('SELECT titulo FROM publicaciones WHERE id = ?').get(i.publicacion_id)?.titulo || null : null,
+      proyecto_nombre: i.proyecto_id ? db.prepare('SELECT nombre FROM proyectos_marketing WHERE id = ?').get(i.proyecto_id)?.nombre || null : null,
+      // La edita quien la propuso (mientras no se decida) o quien aprueba.
+      puede: { editar: puedeEditar(req) && !['realizada'].includes(i.estado) && (i.creado_por === yo(req) || puedeAprobar(req)), decidir: puedeAprobar(req), votar: puedeEditar(req), convertir: puedeEditar(req) && i.estado === 'aprobada' } };
+  }
+  const notaIdea = (id, u, tipo, t) => db.prepare('INSERT INTO main.idea_comentarios (idea_id, usuario_id, tipo, texto) VALUES (?, ?, ?, ?)').run(id, u, tipo, t);
+  function validarIdea(req, body, actual) {
+    const x = {};
+    if (body.titulo !== undefined || !actual) { x.titulo = texto(body.titulo, 120); if (!x.titulo) throw Error('Escribe la idea en pocas palabras'); }
+    if (body.descripcion !== undefined) { if (typeof body.descripcion !== 'string' || body.descripcion.length > 3000) throw Error('La descripción puede tener hasta 3000 caracteres'); x.descripcion = body.descripcion.trim(); }
+    if (body.redes !== undefined) { const r = Array.isArray(body.redes) ? [...new Set(body.redes.map(String))] : []; if (r.some(k => !REDES[k])) throw Error('Red no válida'); x.redes = Object.keys(REDES).filter(k => r.includes(k)).join(','); }
+    if (body.referencia !== undefined) { x.referencia = texto(body.referencia, 500); if (x.referencia && !/^https?:\/\/[^\s]+$/i.test(x.referencia)) throw Error('La referencia debe ser un enlace que empiece con https://'); }
+    if (body.sucursal !== undefined || !actual) x.sucursal_id = sucursalDe(req, body.sucursal);
+    return x;
+  }
+  app.get('/api/marketing/ideas', h((req, res) => {
+    let where = '1 = 1'; const args = [];
+    if (req.query.q) { where += ' AND (sin_acentos(i.titulo) LIKE sin_acentos(?) OR sin_acentos(i.descripcion) LIKE sin_acentos(?))'; args.push('%' + req.query.q + '%', '%' + req.query.q + '%'); }
+    res.json(listaIdeas(where + ' ORDER BY votos DESC, i.id DESC LIMIT 1000', args, req));
+  }));
+  app.get('/api/marketing/ideas/:id', h((req, res) => { const i = detalleIdea(req, req.params.id); if (!i) return res.status(404).json({ error: 'Idea no encontrada' }); res.json(i); }));
+  app.post('/api/marketing/ideas', h((req, res) => {
+    if (!puedeEditar(req)) return res.status(403).json({ error: 'Tu rol solo consulta Marketing' });
+    let x; try { x = validarIdea(req, req.body || {}, null); } catch (e) { return res.status(400).json({ error: e.message }); }
+    x.creado_por = yo(req); const ks = Object.keys(x);
+    const id = db.transaction(() => { const r = db.prepare(`INSERT INTO main.ideas_marketing (${ks.join(',')}) VALUES (${ks.map(() => '?').join(',')})`).run(...Object.values(x)); notaIdea(r.lastInsertRowid, yo(req), 'estado', 'Propuso la idea'); return r.lastInsertRowid; })();
+    res.status(201).json(detalleIdea(req, id));
+  }));
+  app.put('/api/marketing/ideas/:id', h((req, res) => {
+    const i = detalleIdea(req, req.params.id); if (!i) return res.status(404).json({ error: 'Idea no encontrada' });
+    if (!i.puede.editar) return res.status(403).json({ error: i.estado === 'realizada' ? 'La idea ya se realizó: no se cambia' : 'La corrige quien la propuso, el Gerente de marketing o Dirección' });
+    if (req.body?.version !== i.version) return res.status(409).json({ error: 'Otra persona cambió esta idea. Vuelve a abrirla.' });
+    let x; try { x = validarIdea(req, req.body || {}, i); } catch (e) { return res.status(400).json({ error: e.message }); }
+    const ks = Object.keys(x); if (!ks.length) return res.json(i);
+    db.prepare(`UPDATE main.ideas_marketing SET ${ks.map(k => k + ' = ?').join(', ')}, version = version + 1, updated_at = datetime('now','localtime') WHERE id = ?`).run(...Object.values(x), i.id);
+    res.json(detalleIdea(req, i.id));
+  }));
+  app.post('/api/marketing/ideas/:id/voto', h((req, res) => {
+    if (!puedeEditar(req)) return res.status(403).json({ error: 'Tu rol solo consulta Marketing' });
+    const i = detalleIdea(req, req.params.id); if (!i) return res.status(404).json({ error: 'Idea no encontrada' });
+    if (req.body?.voto) db.prepare('INSERT OR IGNORE INTO main.idea_votos (idea_id, usuario_id) VALUES (?, ?)').run(i.id, yo(req));
+    else db.prepare('DELETE FROM main.idea_votos WHERE idea_id = ? AND usuario_id = ?').run(i.id, yo(req));
+    res.json(detalleIdea(req, i.id));
+  }));
+  app.post('/api/marketing/ideas/:id/comentarios', h((req, res) => {
+    if (!puedeEditar(req)) return res.status(403).json({ error: 'Tu rol solo consulta Marketing' });
+    const i = detalleIdea(req, req.params.id); if (!i) return res.status(404).json({ error: 'Idea no encontrada' });
+    const t = texto(req.body?.texto, 2000); if (!t) return res.status(400).json({ error: 'Escribe el comentario' });
+    notaIdea(i.id, yo(req), 'comentario', t); res.status(201).json(detalleIdea(req, i.id));
+  }));
+  // Decidir: a evaluación, aprobar o descartar (con motivo); reabrir una descartada. Solo quien aprueba.
+  const DECISIONES = { evaluar: [['nueva', 'descartada'], 'evaluacion', 'La pasó a evaluación'], aprobar: [['nueva', 'evaluacion'], 'aprobada', 'La aprobó'], descartar: [['nueva', 'evaluacion', 'aprobada'], 'descartada', 'La descartó'], reabrir: [['descartada'], 'nueva', 'La reabrió'] };
+  app.post('/api/marketing/ideas/:id/estado', h((req, res) => {
+    const i = detalleIdea(req, req.params.id); if (!i) return res.status(404).json({ error: 'Idea no encontrada' });
+    if (!puedeAprobar(req)) return res.status(403).json({ error: 'Deciden las ideas Dirección y el Gerente de marketing' });
+    const d = DECISIONES[String(req.body?.accion || '')]; if (!d) return res.status(400).json({ error: 'Acción no válida' });
+    if (req.body.version !== i.version) return res.status(409).json({ error: 'Otra persona cambió esta idea. Vuelve a abrirla.' });
+    if (!d[0].includes(i.estado)) return res.status(409).json({ error: `Está «${ESTADOS_IDEA[i.estado]}»: no se puede` });
+    const motivo = texto(req.body.motivo, 1000);
+    if (d[1] === 'descartada' && motivo.length < 3) return res.status(400).json({ error: 'Escribe por qué se descarta' });
+    db.transaction(() => {
+      db.prepare("UPDATE main.ideas_marketing SET estado = ?, decidido_por = ?, decidido_at = datetime('now','localtime'), motivo = ?, version = version + 1, updated_at = datetime('now','localtime') WHERE id = ?").run(d[1], yo(req), motivo || null, i.id);
+      notaIdea(i.id, yo(req), 'estado', d[2] + (motivo ? ': ' + motivo : ''));
+    })();
+    res.json(detalleIdea(req, i.id));
+  }));
+  // Convertir una idea aprobada en publicación (borrador) o en proyecto (en planeación, 30 días).
+  app.post('/api/marketing/ideas/:id/convertir', h((req, res) => {
+    const i = detalleIdea(req, req.params.id); if (!i) return res.status(404).json({ error: 'Idea no encontrada' });
+    if (!puedeEditar(req)) return res.status(403).json({ error: 'Tu rol solo consulta Marketing' });
+    if (i.estado !== 'aprobada') return res.status(409).json({ error: 'Solo se convierte una idea aprobada' });
+    if (req.body?.version !== i.version) return res.status(409).json({ error: 'Otra persona cambió esta idea. Vuelve a abrirla.' });
+    const a = req.body.a, hoy = require('./fechas').hoyMexico();
+    if (!['publicacion', 'proyecto'].includes(a)) return res.status(400).json({ error: 'Elige si se convierte en publicación o en proyecto' });
+    const r = db.transaction(() => {
+      let pubId = null, proyId = null;
+      if (a === 'publicacion') {
+        pubId = db.prepare('INSERT INTO main.publicaciones (titulo, redes, formato, fecha, copy, sucursal_id, responsable_id, creado_por, enlace) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+          .run(i.titulo, i.redes.length ? i.redes.join(',') : 'instagram', 'post', hoy, i.descripcion.slice(0, 5000), i.sucursal_id, yo(req), yo(req), /^https?:\/\//i.test(i.referencia) ? i.referencia : '').lastInsertRowid;
+        nota(pubId, yo(req), 'estado', `Creó la publicación desde la idea «${i.titulo}» (borrador)`);
+        // Las imágenes de la idea pasan a la publicación.
+        for (const b of db.prepare("SELECT * FROM biblioteca_marketing WHERE idea_id = ? AND eliminado = 0 AND formato <> 'pdf' ORDER BY id LIMIT ?").all(i.id, MAX_IMAGENES)) copiarABiblio(b, pubId, req);
+      } else {
+        proyId = db.prepare('INSERT INTO main.proyectos_marketing (nombre, objetivo, inicio, fin, sucursal_id, responsable_id, creado_por) VALUES (?, ?, ?, ?, ?, ?, ?)')
+          .run(i.titulo, i.descripcion.slice(0, 3000), hoy, sumarDias(hoy, 30), i.sucursal_id, yo(req), yo(req)).lastInsertRowid;
+        db.prepare('INSERT INTO main.avances_marketing (proyecto_id, usuario_id, texto) VALUES (?, ?, ?)').run(proyId, yo(req), `Proyecto creado desde la idea «${i.titulo}»`);
+        db.prepare('UPDATE main.biblioteca_marketing SET proyecto_id = ? WHERE idea_id = ? AND proyecto_id IS NULL').run(proyId, i.id);
+      }
+      db.prepare("UPDATE main.ideas_marketing SET estado = 'realizada', publicacion_id = COALESCE(?, publicacion_id), proyecto_id = COALESCE(?, proyecto_id), version = version + 1, updated_at = datetime('now','localtime') WHERE id = ?").run(pubId, proyId, i.id);
+      notaIdea(i.id, yo(req), 'estado', a === 'publicacion' ? 'Se convirtió en publicación' : 'Se convirtió en proyecto');
+      return { publicacion_id: pubId, proyecto_id: proyId };
+    })();
+    res.json({ ...detalleIdea(req, i.id), ...r });
+  }));
+  const sumarDias = (f, n) => { const d = new Date(f + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
+
+  // =================== BIBLIOTECA ===================
+  const DIR_BIB = path.join(DIR, 'biblioteca');
+  // Copia una imagen de la biblioteca a una publicación (archivo propio: si después se quita de la biblioteca, la publicación la conserva).
+  function copiarABiblio(b, pubId, req) {
+    const buf = fs.readFileSync(path.join(DIR, b.archivo));
+    const orden = db.prepare('SELECT COALESCE(MAX(orden), 0) + 1 n FROM publicacion_imagenes WHERE publicacion_id = ?').get(pubId).n;
+    const r = db.prepare('INSERT INTO main.publicacion_imagenes (publicacion_id, nombre, archivo, formato, bytes, sha256, orden, subido_por) VALUES (?, ?, ?, ?, ?, ?, ?, ?)').run(pubId, b.nombre, '', b.formato, b.bytes, b.sha256, orden, yo(req));
+    const archivo = path.join(String(pubId), `${r.lastInsertRowid}-${b.sha256.slice(0, 12)}.${b.formato}`);
+    fs.mkdirSync(path.join(DIR, String(pubId)), { recursive: true });
+    fs.writeFileSync(path.join(DIR, archivo), buf);
+    db.prepare('UPDATE main.publicacion_imagenes SET archivo = ? WHERE id = ?').run(archivo, r.lastInsertRowid);
+  }
+  // Todo en un lugar: lo subido a la biblioteca, las imágenes de las publicaciones y los archivos de los avances.
+  app.get('/api/marketing/biblioteca', h((req, res) => {
+    const q = String(req.query.q || '').trim(), carpeta = String(req.query.carpeta || ''), origen = String(req.query.origen || '');
+    const filas = [];
+    if (!origen || origen === 'biblioteca') filas.push(...db.prepare(`SELECT 'biblioteca' origen, b.id, b.nombre, b.carpeta, b.etiquetas, b.formato, b.bytes, b.created_at, u.nombre subido_por_nombre, b.subido_por,
+        b.proyecto_id, (SELECT nombre FROM proyectos_marketing WHERE id = b.proyecto_id) proyecto_nombre, b.idea_id, (SELECT titulo FROM ideas_marketing WHERE id = b.idea_id) idea_titulo, NULL publicacion_id, NULL publicacion_titulo
+      FROM biblioteca_marketing b LEFT JOIN usuarios u ON u.id = b.subido_por WHERE b.eliminado = 0`).all());
+    if ((!origen || origen === 'publicacion') && (!carpeta || carpeta === 'Publicaciones')) filas.push(...db.prepare(`SELECT 'publicacion' origen, i.id, i.nombre, 'Publicaciones' carpeta, '' etiquetas, i.formato, i.bytes, i.created_at, u.nombre subido_por_nombre, i.subido_por,
+        p.proyecto_id, NULL proyecto_nombre, NULL idea_id, NULL idea_titulo, p.id publicacion_id, p.titulo publicacion_titulo
+      FROM publicacion_imagenes i JOIN publicaciones p ON p.id = i.publicacion_id LEFT JOIN usuarios u ON u.id = i.subido_por WHERE i.eliminado = 0`).all());
+    if ((!origen || origen === 'avance') && (!carpeta || carpeta === 'Avances de proyectos')) filas.push(...db.prepare(`SELECT 'avance' origen, a.id, a.nombre, 'Avances de proyectos' carpeta, '' etiquetas, a.formato, a.bytes, a.created_at, u.nombre subido_por_nombre, a.subido_por,
+        a.proyecto_id, pm.nombre proyecto_nombre, NULL idea_id, NULL idea_titulo, NULL publicacion_id, NULL publicacion_titulo
+      FROM archivos_marketing a JOIN proyectos_marketing pm ON pm.id = a.proyecto_id LEFT JOIN usuarios u ON u.id = a.subido_por WHERE a.eliminado = 0`).all());
+    const sin = t => String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+    const palabras = sin(q).split(/\s+/).filter(Boolean);
+    const lista = filas.filter(f => (!carpeta || f.carpeta === carpeta) && palabras.every(p => sin([f.nombre, f.carpeta, f.etiquetas, f.proyecto_nombre, f.idea_titulo, f.publicacion_titulo].join(' ')).includes(p)))
+      .sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)) || b.id - a.id).slice(0, 1500);
+    const carpetas = [...new Set([...CARPETAS, ...db.prepare('SELECT DISTINCT carpeta FROM biblioteca_marketing WHERE eliminado = 0').all().map(x => x.carpeta)])];
+    res.json({ archivos: lista, carpetas, puede: { editar: puedeEditar(req) } });
+  }));
+  const carpetaDe = v => { const c = String(v || '').trim().replace(/\s+/g, ' ').slice(0, 40); if (!c) return 'Otros'; if (/[<>{}\\/]/.test(c)) throw Error('Nombre de carpeta no válido'); return c; };
+  app.post('/api/marketing/biblioteca', express.raw({ type: () => true, limit: MAX_BYTES + 1024 }), h((req, res) => {
+    if (!puedeEditar(req)) return res.status(403).json({ error: 'Tu rol solo consulta Marketing' });
+    const buf = Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0);
+    if (!buf.length) return res.status(400).json({ error: 'El archivo está vacío' });
+    if (buf.length > MAX_BYTES) return res.status(413).json({ error: 'El archivo pasa de 10 MB (los videos van como enlace)' });
+    const formato = formatoImagen(buf) || (tipoReal(buf) === 'pdf' ? 'pdf' : null);
+    if (!formato) return res.status(400).json({ error: 'Sube imágenes (JPG, PNG, WebP, GIF) o PDF' });
+    let carpeta; try { carpeta = carpetaDe(encabezado(req, 'x-carpeta')); } catch (e) { return res.status(400).json({ error: e.message }); }
+    const etiquetas = texto(encabezado(req, 'x-etiquetas'), 200);
+    const idea = Number(encabezado(req, 'x-idea')) || null, proyecto = Number(encabezado(req, 'x-proyecto')) || null;
+    if (idea && !db.prepare('SELECT id FROM ideas_marketing WHERE id = ?').get(idea)) return res.status(400).json({ error: 'Idea no encontrada' });
+    if (proyecto && !db.prepare('SELECT id FROM proyectos_marketing WHERE id = ?').get(proyecto)) return res.status(400).json({ error: 'Proyecto no encontrado' });
+    const sha = crypto.createHash('sha256').update(buf).digest('hex');
+    const ya = db.prepare('SELECT id, nombre, carpeta FROM biblioteca_marketing WHERE sha256 = ? AND eliminado = 0').get(sha);
+    if (ya && !idea) return res.status(409).json({ error: `Ese mismo archivo ya está en la biblioteca: «${ya.nombre}» (${ya.carpeta})` });
+    const nombre = nombreSeguro(encabezado(req, 'x-nombre'));
+    const id = db.transaction(() => {
+      const r = db.prepare('INSERT INTO main.biblioteca_marketing (nombre, carpeta, etiquetas, archivo, formato, bytes, sha256, proyecto_id, idea_id, subido_por) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').run(nombre, carpeta, etiquetas, '', formato, buf.length, sha, proyecto, idea, yo(req));
+      const archivo = path.join('biblioteca', `${r.lastInsertRowid}-${sha.slice(0, 12)}.${formato}`);
+      fs.mkdirSync(DIR_BIB, { recursive: true });
+      fs.writeFileSync(path.join(DIR, archivo), buf);
+      db.prepare('UPDATE main.biblioteca_marketing SET archivo = ? WHERE id = ?').run(archivo, r.lastInsertRowid);
+      if (idea) notaIdea(idea, yo(req), 'estado', `Adjuntó «${nombre}»`);
+      return r.lastInsertRowid;
+    })();
+    res.status(201).json({ id, ...(idea ? { idea: detalleIdea(req, idea) } : {}) });
+  }));
+  app.get('/api/marketing/biblioteca/:id', h((req, res) => {
+    const d = db.prepare('SELECT * FROM biblioteca_marketing WHERE id = ? AND eliminado = 0').get(Number(req.params.id));
+    if (!d) return res.status(404).json({ error: 'Archivo no encontrado' });
+    const ruta = path.join(DIR, d.archivo);
+    if (!ruta.startsWith(DIR + path.sep) || !fs.existsSync(ruta)) return res.status(404).json({ error: 'El archivo ya no está en el servidor' });
+    res.set({ 'Content-Type': MIME[d.formato] || 'application/octet-stream', 'X-Content-Type-Options': 'nosniff', 'Cache-Control': 'private, no-store',
+      'Content-Disposition': `${d.formato === 'pdf' ? 'attachment' : 'inline'}; filename="archivo.${d.formato}"; filename*=UTF-8''${encodeURIComponent(d.nombre)}` });
+    res.send(fs.readFileSync(ruta));
+  }));
+  // Cambiar nombre, carpeta o etiquetas.
+  app.put('/api/marketing/biblioteca/:id', h((req, res) => {
+    if (!puedeEditar(req)) return res.status(403).json({ error: 'Tu rol solo consulta Marketing' });
+    const d = db.prepare('SELECT * FROM biblioteca_marketing WHERE id = ? AND eliminado = 0').get(Number(req.params.id)); if (!d) return res.status(404).json({ error: 'Archivo no encontrado' });
+    const x = {};
+    try {
+      if (req.body?.nombre !== undefined) { x.nombre = nombreSeguro(texto(req.body.nombre, 120)); if (!texto(req.body.nombre, 120)) throw Error('Escribe el nombre'); }
+      if (req.body?.carpeta !== undefined) x.carpeta = carpetaDe(req.body.carpeta);
+      if (req.body?.etiquetas !== undefined) x.etiquetas = texto(req.body.etiquetas, 200);
+    } catch (e) { return res.status(400).json({ error: e.message }); }
+    const ks = Object.keys(x); if (ks.length) db.prepare(`UPDATE main.biblioteca_marketing SET ${ks.map(k => k + ' = ?').join(', ')} WHERE id = ?`).run(...Object.values(x), d.id);
+    res.json({ ok: true });
+  }));
+  app.post('/api/marketing/biblioteca/:id/quitar', h((req, res) => {
+    if (!puedeEditar(req)) return res.status(403).json({ error: 'Tu rol solo consulta Marketing' });
+    const d = db.prepare('SELECT * FROM biblioteca_marketing WHERE id = ? AND eliminado = 0').get(Number(req.params.id)); if (!d) return res.status(404).json({ error: 'Archivo no encontrado' });
+    db.prepare("UPDATE main.biblioteca_marketing SET eliminado = 1, eliminado_por = ?, eliminado_at = datetime('now','localtime') WHERE id = ?").run(yo(req), d.id);
+    res.json({ ok: true });
+  }));
+  // Agregar a una publicación una imagen de la biblioteca (sin volver a subirla).
+  app.post('/api/marketing/publicaciones/:id/desde-biblioteca', h((req, res) => {
+    if (!puedeEditar(req)) return res.status(403).json({ error: 'Tu rol solo consulta Marketing' });
+    const p = detalle(req, req.params.id); if (!p) return res.status(404).json({ error: 'Publicación no encontrada' });
+    if (p.estado === 'publicada') return res.status(409).json({ error: 'Ya está publicada: no se cambian sus imágenes' });
+    if (p.imagenes >= MAX_IMAGENES) return res.status(409).json({ error: `Máximo ${MAX_IMAGENES} imágenes por publicación` });
+    const b = db.prepare('SELECT * FROM biblioteca_marketing WHERE id = ? AND eliminado = 0').get(Number(req.body?.biblioteca_id)); if (!b) return res.status(404).json({ error: 'Archivo no encontrado en la biblioteca' });
+    if (b.formato === 'pdf') return res.status(400).json({ error: 'Un PDF no va como imagen de la publicación' });
+    if (db.prepare('SELECT 1 FROM publicacion_imagenes WHERE publicacion_id = ? AND sha256 = ? AND eliminado = 0').get(p.id, b.sha256)) return res.status(409).json({ error: 'Esa imagen ya está en la publicación' });
+    db.transaction(() => {
+      copiarABiblio(b, p.id, req);
+      const pierde = ['aprobada', 'programada'].includes(p.estado);
+      db.prepare(`UPDATE main.publicaciones SET ${pierde ? "estado = 'borrador', aprobado_por = NULL, aprobado_at = NULL, " : ''}version = version + 1, updated_at = datetime('now','localtime') WHERE id = ?`).run(p.id);
+      nota(p.id, yo(req), 'estado', `Agregó «${b.nombre}» desde la biblioteca` + (pierde ? '. Como ya estaba aprobada, regresó a borrador: hay que enviarla a revisión otra vez.' : ''));
+    })();
+    res.status(201).json(detalle(req, p.id));
   }));
 
   return { REDES, FORMATOS, ESTADOS };
