@@ -55,6 +55,9 @@ const VISTAS = [
   ['idea_votos', 'idea_id IN (SELECT id FROM ideas_marketing)'],
   ['idea_comentarios', 'idea_id IN (SELECT id FROM ideas_marketing)'],
   ['biblioteca_marketing', "nivel_area('marketing') >= 1"],
+  // Control y finanzas (fase 4): de toda la empresa; los montos además piden «marketing.dinero» en cada ruta.
+  ['mk_gastos', "nivel_area('marketing') >= 1"], ['mk_presupuestos', "nivel_area('marketing') >= 1"], ['mk_presupuesto_lineas', "nivel_area('marketing') >= 1"],
+  ['mk_objetivos', "nivel_area('marketing') >= 1"], ['mk_metas', "nivel_area('marketing') >= 1"],
 ];
 // Tablas con folio propio por sucursal y su tipo de contador.
 const FOLIO = { leads: 'leads', solicitudes_compra: 'solicitudes', ordenes_compra: 'ordenes_compra' };
@@ -70,7 +73,7 @@ const RUTAS_REGISTRO = [
   [/^\/marketing\/publicaciones\/(\d+)(?:\/|$)/, 'publicaciones'], [/^\/marketing\/imagenes\/(\d+)(?:\/|$)/, 'publicacion_imagenes'],
   [/^\/marketing\/proyectos\/(\d+)(?:\/|$)/, 'proyectos_marketing'], [/^\/marketing\/tareas\/(\d+)(?:\/|$)/, 'tareas_marketing'],
   [/^\/marketing\/avances\/(\d+)(?:\/|$)/, 'avances_marketing'], [/^\/marketing\/archivos\/(\d+)(?:\/|$)/, 'archivos_marketing'],
-  [/^\/marketing\/ideas\/(\d+)(?:\/|$)/, 'ideas_marketing'], [/^\/marketing\/biblioteca\/(\d+)(?:\/|$)/, 'biblioteca_marketing'],
+  [/^\/marketing\/ideas\/(\d+)(?:\/|$)/, 'ideas_marketing'], [/^\/marketing\/gastos\/(\d+)(?:\/|$)/, 'mk_gastos'], [/^\/marketing\/objetivos\/(\d+)(?:\/|$)/, 'mk_objetivos'], [/^\/marketing\/biblioteca\/(\d+)(?:\/|$)/, 'biblioteca_marketing'],
 ];
 const RUTA_CLIENTE = /^\/(?:finanzas\/)?clientes\/(\d+)(?:\/|$)/;
 // Lo que solo hace el administrador GENERAL (Dirección): afecta a todas las sucursales o lo ve todo. Aplica a

@@ -421,6 +421,43 @@ module.exports = function demo(app, db, { sesiones, PORT, SESSION_TTL_MS }) {
       const i5 = await idea(MK, { titulo: 'Episodio con un ingeniero ambiental', redes: ['spotify'] });
       await decidir(A, i5, 'aprobar');
       await pedir('POST', '/marketing/ideas/' + i5.id + '/convertir', MK, { a: 'proyecto', version: (await pedir('GET', '/marketing/ideas/' + i5.id, MK)).version });
+
+      // Fase 4: presupuestos (el del mes pasado y el de este, aprobados por Dirección), gastos, canales, metas y objetivos.
+      const mesDe = n => { const d = new Date(HOY + 'T12:00:00Z'); d.setUTCDate(1); d.setUTCMonth(d.getUTCMonth() + n); return d.toISOString().slice(0, 7); };
+      for (const [mes, lineas] of [[mesDe(-1), { pauta: 15000, diseno: 6000, impresion: 3000, video: 5000 }], [mesDe(0), { pauta: 18000, diseno: 6000, impresion: 2500, video: 8000, herramientas: 1500 }]]) {
+        let p = await pedir('PUT', '/marketing/presupuestos/' + mes, GM, { lineas });
+        p = await pedir('POST', '/marketing/presupuestos/' + mes + '/estado', GM, { accion: 'enviar', version: p.version });
+        await pedir('POST', '/marketing/presupuestos/' + mes + '/estado', A, { accion: 'aprobar', version: p.version });
+      }
+      const gasto = (datos, conPdf) => pedir('POST', '/marketing/gastos', GM, datos).then(async g => { if (conPdf) await subir('/marketing/gastos/' + g.id + '/comprobante', GM, pdf('factura ' + g.id), { 'X-Nombre': 'factura-' + g.id + '.pdf' }); return g; });
+      await gasto({ fecha: dia(-35), concepto: 'Pauta Facebook · mantenimiento preventivo', rubro: 'pauta', monto: 9800, proveedor: 'Meta', red: 'facebook', factura: 'META-5512' }, true);
+      await gasto({ fecha: dia(-30), concepto: 'Diseño de carruseles (6 piezas)', rubro: 'diseno', monto: 5800, proveedor: 'Estudio Grafo', red: 'instagram' }, true);
+      await gasto({ fecha: dia(-12), concepto: 'Sesión de fotos con la cuadrilla', rubro: 'video', monto: 4500, proveedor: 'Foto Querétaro', proyecto_id: py.id }, true);
+      await gasto({ fecha: dia(-6), concepto: 'Pauta Instagram · campaña de lluvias', rubro: 'pauta', monto: 7200, proveedor: 'Meta', red: 'instagram', proyecto_id: py.id, factura: 'META-5630' }, true);
+      await gasto({ fecha: dia(-3), concepto: 'Lonas para unidades', rubro: 'impresion', monto: 3100, proveedor: 'Imprenta del Centro', proyecto_id: py.id });
+      await gasto({ fecha: dia(-1), concepto: 'Suscripción herramienta de diseño', rubro: 'herramientas', monto: 449 });
+      // La campaña de lluvias se mide con el canal Instagram; Facebook y Recomendación cuentan como de marketing.
+      const canalId = n => (canales.find(c => c.nombre === n) || canales[0]).id;
+      await pedir('PUT', '/marketing/proyectos/' + py.id + '/canal', MK, { canal_id: canalId('Instagram') });
+      await pedir('PUT', '/marketing/canales', MK, { canales: [canalId('Facebook')] });
+      const anio = Number(HOY.slice(0, 4)), mesN = Number(HOY.slice(5, 7));
+      const metas = {}; for (const m of [mesN - 1, mesN, mesN + 1].filter(m => m >= 1 && m <= 12)) metas[m] = { publicaciones: 12, contactos: 20, cotizaciones: 12 };
+      await pedir('PUT', '/marketing/plan/' + anio + '/metas', MK, { metas });
+      const metasD = {}; for (const m of Object.keys(metas)) metasD[m] = { ventas: 120000, gasto: 40000 };
+      await pedir('PUT', '/marketing/plan/' + anio + '/metas', GM, { metas: metasD });
+      for (const t of ['Duplicar seguidores en Instagram y TikTok', 'Conseguir 200 contactos de redes en el año', 'Lanzar la temporada 2 del podcast']) await pedir('POST', '/marketing/plan/' + anio + '/objetivos', GM, { titulo: t });
+      // Contactos que llegaron por las redes (para que Resultados tenga qué medir): 4 de Instagram (uno compró) y 2 de Facebook.
+      const redContacto = async (nombre, tel, canal, compra) => {
+        const c = await pedir('POST', '/contactos', V, { nombre, telefono: tel, direccion: 'Querétaro', canal_origen_id: canalId(canal) });
+        await pedir('POST', '/leads', V, { cliente_id: c.id, direccion: 'Querétaro', canal_id: canalId(canal), servicio_id: servicios[0].id, responsable_id: idDe('ventas'), forzar_duplicado: true,
+          partidas_json: JSON.stringify([{ servicio: servicios[0].nombre, leyenda: 'Servicio por campaña en redes', importe: compra || 6500 }]), iva_modo: 'mas_iva', valor: compra || 6500, ...(compra ? { estatus: 'ganado', fecha_servicio: dia(2) } : {}) });
+      };
+      await redContacto('Restaurante La Terraza', '442 600 1001', 'Instagram', 18500);
+      await redContacto('Cafetería Raíz', '442 600 1002', 'Instagram');
+      await redContacto('Hostal Centro', '442 600 1003', 'Instagram');
+      await redContacto('Taller El Pistón', '442 600 1004', 'Instagram');
+      await redContacto('Gimnasio Fuerza', '442 600 1005', 'Facebook');
+      await redContacto('Escuela Montessori Sol', '442 600 1006', 'Facebook', 9800);
     }
 
     // Al final: la revisión de integridad debe salir limpia.

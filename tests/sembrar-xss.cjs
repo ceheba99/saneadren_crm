@@ -88,6 +88,16 @@ const HOY = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Mexico_City' }
   }
   const PNG2 = Buffer.concat([PNG, Buffer.from('biblioteca')]);
   await subir('/marketing/biblioteca', A, PNG2, { 'X-Nombre': XC('nombre biblioteca') + '.png', 'X-Carpeta': 'Trampa' + (MARCAS ? XC('carpeta') : ''), 'X-Etiquetas': XC('etiquetas biblioteca') });
+  // Fase 4: gasto (con comprobante), gasto cancelado, presupuesto rechazado y objetivo del plan.
+  const MES = HOY.slice(0, 7);
+  const [, gas] = await pedir('POST', '/marketing/gastos', A, { fecha: HOY, concepto: XC('concepto gasto'), rubro: 'pauta', monto: 123.45, proveedor: XC('proveedor gasto'), factura: MARCAS ? XC('factura gasto') : 'F<b>1', notas: X('notas gasto') });
+  if (gas.id) await subir('/marketing/gastos/' + gas.id + '/comprobante', A, PNG, { 'X-Nombre': XC('comprobante gasto') + '.png' });
+  const [, gc] = await pedir('POST', '/marketing/gastos', A, { fecha: HOY, concepto: XC('concepto gasto cancelado'), rubro: 'otros', monto: 10 });
+  if (gc.id) await pedir('POST', '/marketing/gastos/' + gc.id + '/cancelar', A, { motivo: X('motivo cancelacion gasto') });
+  const [, pr] = await pedir('PUT', '/marketing/presupuestos/' + MES, A, { lineas: { pauta: 1000 } });
+  const [, pr2] = await pedir('POST', '/marketing/presupuestos/' + MES + '/estado', A, { accion: 'enviar', version: pr.version });
+  await pedir('POST', '/marketing/presupuestos/' + MES + '/estado', A, { accion: 'rechazar', version: pr2.version, motivo: X('motivo rechazo presupuesto') });
+  await pedir('POST', '/marketing/plan/' + HOY.slice(0, 4) + '/objetivos', A, { titulo: XC('titulo objetivo'), descripcion: X('descripcion objetivo') });
   console.log(JSON.stringify({ ...(MARCAS ? { marcas: MAPA } : {}), guardados: ok, rechazados, lead: l.id, cliente: cli.id, solicitud: so.id, oc: oc.id, persona: per.id, prospecto: pro.id, cxp: cx.id, proveedor: prov.id, publicacion: pub.id, proyecto: py.id, idea: idea.id }));
   // Un campo que el servidor rechaza no se siembra y su pantalla no se revisa: eso es una falla de la prueba, no un éxito.
   if (rechazados) { console.error(`${rechazados} envío(s) rechazados: esos campos no se revisaron (ver arriba)`); process.exitCode = 1; }

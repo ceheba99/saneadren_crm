@@ -44,6 +44,9 @@ const CATALOGO = [
   ['usuarios.administrar', 'Administración', 'Usuarios', 'Crear usuarios, cambiar su rol, contraseña y sucursales', ['gerente']],
   // Marketing (2026-10-26): aprueban Dirección (siempre) y el Gerente de marketing.
   ['marketing.aprobar', 'Marketing', 'Aprobar publicaciones', 'Aprobar o pedir cambios a las publicaciones antes de subirlas a redes', ['marketing_gerente']],
+  // Dinero de Marketing (2026-10-27): ven y registran presupuesto y gastos, y el retorno de las campañas. Aprobar el
+  // presupuesto es solo de Dirección.
+  ['marketing.dinero', 'Marketing', 'Dinero de Marketing', 'Ver y registrar el presupuesto y los gastos del departamento, el costo por contacto y el retorno de las campañas (el presupuesto lo aprueba Dirección)', ['marketing_gerente']],
 ].map(([clave, seccion, nombre, ayuda, roles]) => ({ clave, seccion, nombre, ayuda, roles }));
 // Áreas y lo que ve cada rol en ellas: 0 nada, 1 lo suyo, 2 toda su sucursal, 3 toda la empresa (Dirección: todo).
 // Cada pantalla es su propia área (decidido con Dirección el 2026-10-26). En las que tienen «editable», además de qué ve
@@ -107,6 +110,7 @@ const DEPENDE = {
   'personal.editar': ['personal.ver'],
   'personal.sensibles': ['personal.ver'],
   'marketing.aprobar': ['marketing.ver'],
+  'marketing.dinero': ['marketing.ver'],
 };
 const nombreDe = c => {
   const p = CATALOGO.find(x => x.clave === c); if (p) return p.nombre;
