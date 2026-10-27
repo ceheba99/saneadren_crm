@@ -102,7 +102,7 @@ test('Datos fiscales: sin catálogos del SAT avisa que no pudo comprobar la comp
 // ---- Configuración ----
 test('Configuración: sin nada es sandbox y dice qué falta', () => {
   const c = leerConfig({}); assert.equal(c.entorno, 'sandbox'); assert.equal(c.host, HOSTS.sandbox); assert.equal(c.listo, false);
-  assert.deepEqual(c.faltantes, ['FACTURA_API_KEY', 'FACTURA_SECRET_KEY', 'EMISOR_REGIMEN', 'EMISOR_CP']);
+  assert.deepEqual(c.faltantes, ['FACTURA_SANDBOX_API_KEY', 'FACTURA_SANDBOX_SECRET_KEY', 'FACTURA_SANDBOX_EMISOR_REGIMEN', 'FACTURA_SANDBOX_EMISOR_CP']);
 });
 test('Configuración: producción SOLO si dice exactamente «prod»', () => {
   for (const v of ['', 'sandbox', 'produccion', 'PRODUCTION', 'true', '1']) assert.equal(leerConfig({ FACTURA_ENV: v }).entorno, 'sandbox', v);
@@ -111,11 +111,27 @@ test('Configuración: producción SOLO si dice exactamente «prod»', () => {
   assert.equal(leerConfig({ FACTURA_ENV: 'prod' }).host, HOSTS.prod);
 });
 test('Configuración: completa; y el estado que se muestra NUNCA trae las llaves', () => {
-  const env = { FACTURA_API_KEY: 'LLAVE-SECRETA-123', FACTURA_SECRET_KEY: 'OTRA-SECRETA-456', EMISOR_REGIMEN: '626', EMISOR_CP: '76087' };
+  const env = { FACTURA_SANDBOX_API_KEY: 'LLAVE-SECRETA-123', FACTURA_SANDBOX_SECRET_KEY: 'OTRA-SECRETA-456', FACTURA_SANDBOX_EMISOR_REGIMEN: '601', FACTURA_SANDBOX_EMISOR_CP: '26015' };
   assert.equal(leerConfig(env).listo, true);
   const e = estadoConfig(env); assert.equal(e.apiKey, 'puesta'); assert.equal(e.secretKey, 'puesta'); assert.equal(e.listo, true);
   const texto = JSON.stringify(e); assert.ok(!texto.includes('LLAVE-SECRETA') && !texto.includes('OTRA-SECRETA'), 'el estado no debe contener las llaves');
-  assert.ok(estadoConfig({ ...env, EMISOR_CP: '123' }).avisos.some(a => /5 números/.test(a))); assert.equal(estadoConfig({ ...env, EMISOR_CP: '123' }).listo, false);
-  assert.ok(estadoConfig({ ...env, EMISOR_REGIMEN: 'x' }).avisos.some(a => /3 números/.test(a)));
-  assert.equal(estadoConfig({ ...env, FACTURA_API_KEY: '   ' }).apiKey, 'falta', 'una llave solo con espacios cuenta como faltante');
+  assert.ok(estadoConfig({ ...env, FACTURA_SANDBOX_EMISOR_CP: '123' }).avisos.some(a => /5 números/.test(a))); assert.equal(estadoConfig({ ...env, FACTURA_SANDBOX_EMISOR_CP: '123' }).listo, false);
+  assert.ok(estadoConfig({ ...env, FACTURA_SANDBOX_EMISOR_REGIMEN: 'x' }).avisos.some(a => /3 números/.test(a)));
+  assert.equal(estadoConfig({ ...env, FACTURA_SANDBOX_API_KEY: '   ' }).apiKey, 'falta', 'una llave solo con espacios cuenta como faltante');
+});
+test('Configuración: cada entorno lee SOLO sus variables (las llaves no se mezclan)', () => {
+  const ambas = { FACTURA_SANDBOX_API_KEY: 'sb-1', FACTURA_SANDBOX_SECRET_KEY: 'sb-2', FACTURA_SANDBOX_EMISOR_REGIMEN: '601', FACTURA_SANDBOX_EMISOR_CP: '26015',
+    FACTURA_PROD_API_KEY: 'pr-1', FACTURA_PROD_SECRET_KEY: 'pr-2', FACTURA_PROD_EMISOR_REGIMEN: '626', FACTURA_PROD_EMISOR_CP: '76087' };
+  const sb = leerConfig({ ...ambas, FACTURA_ENV: 'sandbox' }), pr = leerConfig({ ...ambas, FACTURA_ENV: 'prod' });
+  assert.deepEqual([sb.llaves.apiKey, sb.emisor.regimen, sb.emisor.cp], ['sb-1', '601', '26015']);
+  assert.deepEqual([pr.llaves.apiKey, pr.emisor.regimen, pr.emisor.cp], ['pr-1', '626', '76087']);
+  const soloProd = leerConfig({ ...ambas, FACTURA_SANDBOX_API_KEY: '', FACTURA_ENV: '' });
+  assert.equal(soloProd.listo, false, 'en sandbox, tener las llaves de producción NO cuenta'); assert.equal(soloProd.llaves.apiKey, '');
+  assert.equal(leerConfig({ FACTURA_ENV: 'prod' }).faltantes[0], 'FACTURA_PROD_API_KEY');
+});
+test('Configuración: avisa de los nombres anteriores y no los lee', () => {
+  const c = leerConfig({ API_KEY: 'x', SECRET_KEY: 'y', FACTURA_API_KEY: 'z', EMISOR_CP: '76087' });
+  assert.equal(c.llaves.apiKey, ''); assert.equal(c.listo, false);
+  assert.ok(c.avisos.some(a => /ya no se leen: API_KEY, SECRET_KEY, FACTURA_API_KEY, EMISOR_CP/.test(a)), c.avisos.join(' | '));
+  assert.ok(!estadoConfig({ API_KEY: 'LLAVE-VIEJA' }).avisos.join(' ').includes('LLAVE-VIEJA'), 'el aviso dice el nombre, nunca el valor');
 });
