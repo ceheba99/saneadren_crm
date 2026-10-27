@@ -196,6 +196,20 @@ const ControlMk = (() => {
     if (tipo === 'trimestre') { const d = new Date(h + 'T12:00:00Z'); d.setUTCMonth(d.getUTCMonth() - 3); return [d.toISOString().slice(0, 10), h]; }
     return [a + '-01-01', h];
   }
+  // Qué publicaciones funcionaron (2026-10-27): lo capturado en cada publicación ya publicada, sin dinero.
+  const tasaTxt = v => (v == null ? '—' : v.toLocaleString('es-MX') + ' %');
+  function publicacionesHtml(r) {
+    const P = r.publicaciones || [], porRed = r.publicaciones_por_red || [];
+    const redes = porRed.length ? `<div class="rs-redes-pub">${porRed.map(x => `<div class="rs-red-pub">${Marketing.logo(x.red, 'mk-logo rs-logo')}<div><b>${num(x.publicaciones)}</b> publicación(es)<br>Alcance <b>${num(x.alcance)}</b> · Interacciones <b>${num(x.interacciones)}</b><br>Tasa <b>${tasaTxt(x.tasa)}</b>${x.mensajes ? ` · Mensajes <b>${num(x.mensajes)}</b>` : ''}</div></div>`).join('')}</div>` : '';
+    const filas = P.map((p, i) => `<tr><td data-label="#">${i + 1}</td><td data-label="Publicación"><button type="button" class="enlace" data-rs-pub="${Number(p.id)}">${esc(p.titulo)}</button><small class="celda-sub">${esc(fechaTxt(p.fecha))}</small></td>
+      <td data-label="Redes">${Marketing.redesHtml(p.redes)}</td><td data-label="Alcance" class="st-num">${p.capturas ? num(p.alcance) : '—'}</td><td data-label="Interacciones" class="st-num">${p.capturas ? num(p.interacciones) : '—'}</td>
+      <td data-label="Tasa" class="st-num">${tasaTxt(p.tasa)}</td><td data-label="Clics" class="st-num">${p.capturas ? num(p.clics) : '—'}</td><td data-label="Mensajes" class="st-num">${p.capturas ? num(p.mensajes) : '—'}</td>
+      <td data-label="Resultados">${p.capturas ? '' : '<span class="mk-estado mk-e-revision">Sin capturar</span>'}</td></tr>`).join('');
+    return `<section class="modal-section pl-caja"><div class="seccion-tit">🏆 Publicaciones: qué funcionó</div>
+      <p class="ayuda">Las publicadas en estas fechas, de más a menos interacciones (me gusta, comentarios, compartidos y guardados). La tasa es interacciones entre alcance. Los datos se capturan en cada publicación, en «📊 Resultados».${r.sin_capturar ? ` <b>${num(r.sin_capturar)} sin resultados capturados.</b>` : ''}</p>
+      ${redes}<div class="tabla-scroll"><table class="tabla-clientes rs-pubs"><thead><tr><th>#</th><th>Publicación</th><th>Redes</th><th class="st-num">Alcance</th><th class="st-num">Interacciones</th><th class="st-num">Tasa</th><th class="st-num">Clics</th><th class="st-num">Mensajes</th><th></th></tr></thead>
+      <tbody>${filas || '<tr><td colspan="9" class="util-37">No hay publicaciones publicadas en estas fechas.</td></tr>'}</tbody></table></div></section>`;
+  }
   async function resultados() {
     if (!$('rs-desde').value) [$('rs-desde').value, $('rs-hasta').value] = rango('trimestre');
     try {
@@ -222,7 +236,8 @@ const ControlMk = (() => {
         <section class="modal-section pl-caja"><div class="seccion-tit">⚙️ Canales que cuentan como de marketing</div><p class="ayuda">Además de los ligados a una campaña. Sirven para el resumen por canal y para las metas de contactos, cotizaciones y ventas.</p>
           <div class="rs-canales">${casillas}</div>
           ${ed ? '<div class="btn-group"><button type="button" class="btn btn-outline btn-chico" id="rs-guardar-canales">Guardar canales</button></div>' : ''}</section>`;
-    } catch (e) { $('rs-cuerpo').innerHTML = `<p class="aviso-error-carga" role="alert">${esc(e.message)}</p>`; }
+      $('rs-publicaciones').innerHTML = publicacionesHtml(r);
+    } catch (e) { $('rs-cuerpo').innerHTML = `<p class="aviso-error-carga" role="alert">${esc(e.message)}</p>`; $('rs-publicaciones').innerHTML = ''; }
   }
 
   // =================== Eventos ===================
@@ -264,6 +279,7 @@ const ControlMk = (() => {
     const s = e.target.closest('[data-rs-canal]'); if (!s) return;
     try { await pedir('/proyectos/' + Number(s.dataset.rsCanal) + '/canal', { canal_id: Number(s.value) || null }, 'PUT'); toast('Canal de la campaña guardado'); resultados(); } catch (err) { toast(err.message); }
   });
+  $('rs-publicaciones').addEventListener('click', e => { const b = e.target.closest('[data-rs-pub]'); if (b) Marketing.abrir(Number(b.dataset.rsPub)); });
   $('rs-cuerpo').addEventListener('click', async e => {
     const p = e.target.closest('[data-rs-proy]'); if (p) return ProyectosMk.abrir(Number(p.dataset.rsProy));
     if (e.target.id === 'rs-guardar-canales') {

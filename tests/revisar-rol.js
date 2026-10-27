@@ -44,6 +44,11 @@ async function revisarRol(ids = {}) {
       document.querySelectorAll('#vista-marketing details').forEach(d => { d.open = true; }); const c = document.getElementById('dn-f-cancelados'); if (c && !c.checked) { c.click(); await espera(1500); } window.__alRevisar();
       for (const tr of [...document.querySelectorAll('#dn-gastos [data-dn-gasto]')].slice(0, 6)) { tr.click(); await espera(900); window.__alRevisar(); document.getElementById('overlay-gasto-mk').classList.remove('mostrar'); } }],
     ['/marketing/plan/' + AA, async () => { cambiarVista('marketing'); await espera(600); for (const t of ['plan', 'resultados', 'tablero']) { Marketing.pestana(t); await espera(2000); window.__alRevisar(); } }],
+    // Por aprobar (si lo ve) y las publicadas, con sus resultados y su texto por red (2026-10-27).
+    ['/marketing/tablero', async () => { cambiarVista('marketing'); await espera(600); Marketing.pestana('calendario'); await espera(1500);
+      if (Permisos.puede('marketing.aprobar')) { await RevisionMk.abrir(); await espera(2000); window.__alRevisar(); document.getElementById('overlay-aprobar-mk').classList.remove('mostrar'); }
+      const pubs = await (await fetch('/api/marketing/publicaciones?' + RANGO + '&estado=publicada', { headers: { Authorization: 'Bearer ' + USUARIO_ACTUAL.token, ...encabezadoSucursal() } })).json();
+      for (const p of pubs.slice(0, 3)) { await Marketing.abrir(p.id); await espera(1500); for (const b of document.querySelectorAll('[data-mk-previa-red]')) { b.click(); await espera(300); window.__alRevisar(); } document.getElementById('overlay-publicacion').classList.remove('mostrar'); } }],
     ['/marketing/proyectos/' + ids.proyecto, async () => { await ProyectosMk.abrir(ids.proyecto); for (const p of ['avances', 'publicaciones', 'datos', 'gantt']) { await espera(700); window.__alRevisar(); document.querySelector(`[data-py-pestana="${p}"]`)?.click(); } }]];
   for (const [ruta, abrir] of pasos) {
     if (puede[ruta] !== 200) continue;

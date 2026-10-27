@@ -275,6 +275,58 @@ const png = color => { const ih = Buffer.alloc(13); ih.writeUInt32BE(1, 0); ih.w
   [s, j] = await pedir('GET', '/marketing/tablero', T.Mara); revisa(s === 200 && j.dinero_mes === null && !('gasto' in j.real) && !JSON.stringify(j).includes('2500.75'), 'a Marketing el tablero le llega sin montos', j.dinero_mes);
   [s] = await pedir('GET', '/marketing/tablero', T.Vale); revisa(s === 403, 'Ventas no entra al tablero de Marketing', s);
 
+  console.log('15. Texto por red, orden de imágenes, resultados por publicación (2026-10-27)');
+  {
+    const est = async (id, t, accion, extra = {}) => pedir('POST', '/marketing/publicaciones/' + id + '/estado', t, { accion, version: (await pedir('GET', '/marketing/publicaciones/' + id, A))[1].version, ...extra });
+    [s, j] = await pedir('POST', '/marketing/publicaciones', T.Mara, { ...base, titulo: 'Texto por red', redes: ['instagram', 'linkedin'], copy: 'Base', copy_redes: { linkedin: 'Versión formal\r\npara LinkedIn', instagram: '   ' } });
+    revisa(s === 201 && j.copy_redes.linkedin === 'Versión formal\npara LinkedIn' && !('instagram' in j.copy_redes), 'cada red puede llevar su texto; uno vacío usa el base', j.copy_redes);
+    let pr = j;
+    for (const [cuerpo, que] of [[{ copy_redes: { myspace: 'x' } }, 'una red inventada'], [{ copy_redes: ['x'] }, 'una lista en vez de textos'], [{ copy_redes: { linkedin: 'x'.repeat(5001) } }, 'un texto de más de 5000'], [{ copy_redes: { linkedin: 5 } }, 'un número']]) {
+      [s] = await pedir('PUT', '/marketing/publicaciones/' + pr.id, T.Mara, { version: pr.version, ...cuerpo }); revisa(s === 400, 'el texto por red rechaza ' + que, s);
+    }
+    [s, pr] = await pedir('PUT', '/marketing/publicaciones/' + pr.id, T.Mara, { version: pr.version, copy_redes: { linkedin: 'Versión formal 2' } });
+    revisa(s === 200 && pr.copy_redes.linkedin === 'Versión formal 2' && /texto por red/.test(pr.historial[0].texto), 'cambiar el texto de una red queda en el historial', pr.historial?.[0]);
+    [s, j] = await pedir('GET', '/marketing/publicaciones?' + new URLSearchParams({ desde: dias(-30), hasta: dias(60), q: 'version formal' }), T.Mara);
+    revisa(s === 200 && j.some(p => p.id === pr.id), 'el buscador encuentra el texto de una red (sin acentos)', j.map(p => p.titulo));
+    await pedir('POST', '/marketing/publicaciones/' + pr.id + '/imagenes', T.Mara, png([1, 99, 1]), { 'X-Nombre': 'uno.png' });
+    await pedir('POST', '/marketing/publicaciones/' + pr.id + '/imagenes', T.Mara, png([2, 99, 2]), { 'X-Nombre': 'dos.png' });
+    [s, pr] = await pedir('POST', '/marketing/publicaciones/' + pr.id + '/imagenes', T.Mara, png([3, 99, 3]), { 'X-Nombre': 'tres.png' });
+    const ids = pr.lista_imagenes.map(i => i.id);
+    [s] = await est(pr.id, T.Mara, 'enviar'); [s, pr] = await est(pr.id, T.Gil, 'aprobar'); revisa(pr.estado === 'aprobada', 'se aprueba (para probar el orden)', pr.estado);
+    for (const [cuerpo, que] of [[[ids[0], ids[1]], 'si faltan imágenes'], [[ids[0], ids[0], ids[1]], 'si repite una'], [[ids[0], ids[1], 99999], 'una que no es de la publicación']]) {
+      [s] = await pedir('PUT', '/marketing/publicaciones/' + pr.id + '/imagenes/orden', T.Mara, { ids: cuerpo, version: pr.version }); revisa(s === 400, 'el orden se rechaza ' + que, s);
+    }
+    [s] = await pedir('PUT', '/marketing/publicaciones/' + pr.id + '/imagenes/orden', T.Mara, { ids: [ids[2], ids[0], ids[1]], version: pr.version - 1 }); revisa(s === 409, 'con una versión vieja, no (otra persona la cambió)', s);
+    [s, j] = await pedir('PUT', '/marketing/publicaciones/' + pr.id + '/imagenes/orden', T.Mara, { ids: [ids[2], ids[0], ids[1]], version: pr.version });
+    revisa(s === 200 && j.lista_imagenes.map(i => i.nombre).join() === 'tres.png,uno.png,dos.png' && j.portada_id === ids[2], 'cambia el orden y la portada', j.lista_imagenes?.map(i => i.nombre));
+    revisa(j.estado === 'borrador' && /portada: «tres.png»/.test(j.historial[0].texto) && /regresó a borrador/.test(j.historial[0].texto), 'en un carrusel el orden es contenido: la aprobada regresa a borrador (queda en el historial)', [j.estado, j.historial[0].texto]);
+    [s] = await pedir('PUT', '/marketing/publicaciones/' + pr.id + '/imagenes/orden', T.Vale, { ids, version: j.version }); revisa([403, 404].includes(s), 'Ventas no ordena imágenes de Marketing (ni la ve)', s);
+    // Resultados: solo publicadas, solo sus redes, números enteros.
+    pr = j;
+    [s] = await pedir('PUT', '/marketing/publicaciones/' + pr.id + '/metricas', T.Mara, { red: 'instagram', valores: { alcance: 10 } }); revisa(s === 409, 'los resultados se capturan hasta que está publicada', s);
+    await est(pr.id, T.Mara, 'enviar'); await est(pr.id, T.Gil, 'aprobar'); [s, pr] = await est(pr.id, T.Mara, 'publicar');
+    for (const [cuerpo, que] of [[{ red: 'tiktok', valores: { alcance: 1 } }, 'una red que no es de la publicación'], [{ red: 'instagram', valores: { alcance: 1.5 } }, 'decimales'], [{ red: 'instagram', valores: { alcance: -3 } }, 'negativos'],
+      [{ red: 'instagram', valores: { likes: 3 } }, 'un dato inventado'], [{ red: 'instagram', valores: {} }, 'nada que guardar'], [{ red: 'instagram', valores: { alcance: 5 }, enlace: 'javascript:alert(1)' }, 'un enlace que no es https']]) {
+      [s] = await pedir('PUT', '/marketing/publicaciones/' + pr.id + '/metricas', T.Mara, cuerpo); revisa(s === 400, 'resultados: se rechaza ' + que, s);
+    }
+    [s] = await pedir('PUT', '/marketing/publicaciones/' + pr.id + '/metricas', T.Vale, { red: 'instagram', valores: { alcance: 5 } }); revisa([403, 404].includes(s), 'Ventas no captura resultados de Marketing (ni la ve)', s);
+    [s, j] = await pedir('PUT', '/marketing/publicaciones/' + pr.id + '/metricas', T.Mara, { red: 'instagram', valores: { alcance: 2000, me_gusta: 150, comentarios: 20, compartidos: 10, guardados: 20, mensajes: 4 }, enlace: 'https://www.instagram.com/p/x' });
+    revisa(s === 200 && j.metricas.length === 1 && j.metricas[0].alcance === 2000 && j.metricas[0].capturado_por_nombre === 'Mara Marketing', 'Marketing captura los resultados de Instagram (queda quién y cuándo)', j.metricas);
+    [s, j] = await pedir('PUT', '/marketing/publicaciones/' + pr.id + '/metricas', T.Gil, { red: 'instagram', valores: { alcance: 2500, me_gusta: 150, comentarios: 20, compartidos: 10, guardados: 20, mensajes: 4 } });
+    revisa(s === 200 && j.metricas.length === 1 && j.metricas[0].alcance === 2500 && j.metricas[0].enlace === '', 'volver a capturar la misma red la actualiza (no la duplica)', j.metricas);
+    [s, j] = await pedir('PUT', '/marketing/publicaciones/' + pr.id + '/metricas', T.Gil, { red: 'linkedin', valores: { alcance: 500, me_gusta: 20, comentarios: 5 } });
+    revisa(s === 200 && j.metricas.length === 2 && /Capturó los resultados de LinkedIn/.test(j.historial[0].texto), 'cada red guarda los suyos y queda en el historial', j.historial?.[0]);
+    [s, j] = await pedir('GET', '/marketing/resultados?' + new URLSearchParams({ desde: dias(-60), hasta: dias(60) }), T.Mara);
+    const fila = j.publicaciones?.find(p => p.id === pr.id), ig = j.publicaciones_por_red?.find(r => r.red === 'instagram');
+    revisa(s === 200 && fila && fila.alcance === 3000 && fila.interacciones === 225 && fila.tasa === 7.5 && fila.mensajes === 4, 'Resultados suma las redes de cada publicación y calcula la tasa (interacciones entre alcance)', fila);
+    revisa(ig && ig.interacciones === 200 && ig.tasa === 8, 'y el resumen por red', ig);
+    revisa(j.publicaciones[0].id === pr.id || j.publicaciones[0].interacciones >= fila.interacciones, 'ordenadas de más a menos interacciones', j.publicaciones.map(p => p.interacciones));
+    revisa(typeof j.sin_capturar === 'number' && !('gasto' in fila), 'cuenta las publicadas sin resultados y no trae dinero', [j.sin_capturar, fila]);
+    [s] = await pedir('GET', '/marketing/resultados?' + new URLSearchParams({ desde: dias(-60), hasta: dias(60) }), T.Gema); revisa(s === 403, 'el Gerente de sucursal no ve los resultados de Marketing', s);
+    [s, j] = await pedir('GET', '/marketing/publicaciones/' + pr.id, T.Mara);
+    revisa(j.versiones.some(v => v.copy_redes?.linkedin), 'las versiones anteriores guardan también los textos por red', j.versiones.map(v => v.copy_redes));
+  }
+
   console.log('7. Catálogos que no le tocan (auditoría 2026-10-27)');
   [s] = await pedir('GET', '/compras/centros', T.Mara); revisa(s === 403, 'Marketing no descarga los centros de costo (con su responsable)', s);
   [s] = await pedir('GET', '/compras/centros', T.Vale); revisa(s === 200, 'Ventas sí (pide solicitudes de compra)', s);

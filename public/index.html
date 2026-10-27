@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Saneadren · Cotizaciones y Servicios</title>
-<link rel="stylesheet" href="styles.css?v=mk5">
+<link rel="stylesheet" href="styles.css?v=mk7">
 <link rel="stylesheet" href="servicios-tabla.css">
 <link rel="stylesheet" href="flujo.css?v=cel1">
 </head>
@@ -561,11 +561,12 @@
       <div class="filtros"><label class="filtro-fecha-label" for="rs-desde">Desde</label><input type="date" id="rs-desde"><label class="filtro-fecha-label" for="rs-hasta">Hasta</label><input type="date" id="rs-hasta">
         <div class="btn-group"><button type="button" class="btn btn-outline btn-chico" data-rs-rango="mes">Este mes</button><button type="button" class="btn btn-outline btn-chico" data-rs-rango="trimestre">Últimos 3 meses</button><button type="button" class="btn btn-outline btn-chico" data-rs-rango="anio">Este año</button></div></div>
       <div id="rs-cuerpo"></div>
+      <div id="rs-publicaciones"></div>
     </div>
     <div id="mk-tab-calendario">
     <div class="vista-encabezado">
       <div><h2>🎨 Calendario de publicaciones</h2><p class="ayuda">Planea lo que se sube a TikTok, Facebook, Instagram, LinkedIn y Spotify: el copy, las imágenes y el enlace del video o episodio. Cada publicación pasa por revisión: la aprueban Dirección o el Gerente de marketing.</p></div>
-      <div class="btn-group"><button type="button" class="btn btn-primario perm-marketing-editar" id="mk-nueva">➕ Nueva publicación</button></div>
+      <div class="btn-group"><button type="button" class="btn btn-outline perm-marketing-aprobar mk-por-aprobar" id="mk-por-aprobar">✅ Por aprobar <span class="mk-cuenta" id="mk-por-aprobar-n">0</span></button><button type="button" class="btn btn-outline" id="mk-imprimir" title="Arma el calendario del mes con el detalle de cada publicación, listo para guardarlo en PDF o imprimirlo">🖨️ PDF del mes</button><button type="button" class="btn btn-primario perm-marketing-editar" id="mk-nueva">➕ Nueva publicación</button></div>
     </div>
     <div class="rc-grid mk-tarjetas" id="mk-tarjetas">
       <button type="button" class="rc-card mk-t-revision" data-mk-estado="revision" aria-pressed="false"><span class="rc-num" id="mk-n-revision">0</span><span class="rc-label">En revisión · por aprobar</span></button>
@@ -1522,6 +1523,7 @@
             <div class="campo-modal"><label for="mk-proyecto">Proyecto (opcional)</label><select id="mk-proyecto"><option value="">Sin proyecto</option></select></div>
             <div class="campo-modal"><label for="mk-campana">Campaña (opcional)</label><input id="mk-campana" maxlength="120" placeholder="Temporada de lluvias 2026"></div>
             <div class="campo-modal full"><label for="mk-copy">Copy (opcional)</label><textarea id="mk-copy" rows="6" maxlength="5000" placeholder="El texto que acompaña la publicación"></textarea><small class="mk-contador" id="mk-contador" aria-live="polite"></small></div>
+            <div class="campo-modal full"><span class="etiqueta-campo">Texto por red (opcional)</span><p class="ayuda">Cada red usa el copy de arriba; ajústalo para la red que necesite otro tono o largo (LinkedIn más formal, TikTok más corto…).</p><div class="mk-copy-redes" id="mk-copy-redes"></div></div>
             <div class="campo-modal full"><label for="mk-hashtags">Hashtags (opcional)</label><input id="mk-hashtags" maxlength="500" placeholder="#saneamiento #queretaro"></div>
             <div class="campo-modal full"><label for="mk-enlace">Enlace del video, episodio o publicación (opcional)</label><input type="url" id="mk-enlace" maxlength="500" placeholder="https://drive.google.com/… · https://open.spotify.com/episode/…"></div>
           </div>
@@ -1529,9 +1531,13 @@
         </div>
         <div class="modal-section" id="mk-imagenes-sec" hidden><div class="seccion-tit">🖼️ Imágenes</div>
           <p class="ayuda">JPG, PNG, WebP o GIF, hasta 10 MB cada una y 10 por publicación; la primera es la portada. Los videos y episodios van como enlace.</p>
-          <div class="mk-imagenes" id="mk-imagenes"></div>
+          <p class="ayuda" id="mk-imagenes-ayuda"></p><div class="mk-imagenes" id="mk-imagenes"></div>
           <label class="btn btn-outline btn-chico perm-marketing-editar mk-subir" id="mk-subir-lbl">📤 Subir imágenes<input type="file" id="mk-subir" accept="image/jpeg,image/png,image/webp,image/gif" multiple hidden></label>
           <button type="button" class="btn btn-outline btn-chico perm-marketing-editar" id="mk-desde-bib">📚 Desde la biblioteca</button>
+        </div>
+        <div class="modal-section" id="mk-metricas-sec" hidden><div class="seccion-tit">📊 Resultados</div>
+          <p class="ayuda">Cópialos de las estadísticas de cada red unos días después de publicarla. Con ellos, la pestaña «Resultados» muestra qué contenido funciona mejor.</p>
+          <div id="mk-metricas"></div>
         </div>
       </div>
       <div class="mk-col-lado">
@@ -1544,6 +1550,15 @@
         </div>
       </div>
     </div>
+  </div>
+</div>
+
+<!-- ====== OVERLAY: POR APROBAR (revisión rápida, 2026-10-27) ====== -->
+<div class="overlay" id="overlay-aprobar-mk">
+  <div class="modal modal-aprobar-mk">
+    <div class="modal-header"><div><span class="flujo-kicker">MARKETING</span><h2>✅ Publicaciones por aprobar</h2></div>
+      <button class="close-btn" type="button" id="ap-cerrar" aria-label="Cerrar">✕</button></div>
+    <div class="modal-body"><p class="ayuda" id="ap-resumen" role="status"></p><div class="ap-lista" id="ap-lista"></div></div>
   </div>
 </div>
 
@@ -1703,10 +1718,11 @@
 <script src="buscador.js?v=suc1"></script>
 <script src="demo.js?v=demo1"></script>
 <script src="prospeccion.js?v=pro1"></script>
-<script src="marketing.js?v=mk6"></script>
+<script src="marketing.js?v=mk7"></script>
 <script src="marketing-proyectos.js?v=mk6"></script>
 <script src="marketing-ideas.js?v=mk6"></script>
-<script src="marketing-control.js?v=mk5"></script>
+<script src="marketing-control.js?v=mk7"></script>
+<script src="marketing-revision.js?v=mk7"></script>
 <script src="inicio.js?v=ini3"></script>
 </body>
 </html>
