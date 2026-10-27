@@ -42,6 +42,8 @@ const CATALOGO = [
   ['personal.editar', 'Personal', 'Editar personal', 'Altas, cambios, bajas, vacaciones e incidencias', ['gerente']],
   ['personal.sensibles', 'Personal', 'Datos sensibles del personal', 'CLABE, RFC, CURP, NSS, salario, contrato y documentos del expediente', ['gerente']],
   ['usuarios.administrar', 'Administración', 'Usuarios', 'Crear usuarios, cambiar su rol, contraseña y sucursales', ['gerente']],
+  // Marketing (2026-10-26): aprueban Dirección (siempre) y el Gerente de marketing.
+  ['marketing.aprobar', 'Marketing', 'Aprobar publicaciones', 'Aprobar o pedir cambios a las publicaciones antes de subirlas a redes', ['marketing_gerente']],
 ].map(([clave, seccion, nombre, ayuda, roles]) => ({ clave, seccion, nombre, ayuda, roles }));
 // Áreas y lo que ve cada rol en ellas: 0 nada, 1 lo suyo, 2 toda su sucursal, 3 toda la empresa (Dirección: todo).
 // Cada pantalla es su propia área (decidido con Dirección el 2026-10-26). En las que tienen «editable», además de qué ve
@@ -57,16 +59,22 @@ const AREAS = [
   ['cxp', 'Cuentas por pagar', 'los gastos y facturas que él registró'],
   ['solicitudes', 'Solicitudes de compra', 'las que él pidió', '', true],
   ['ordenes_compra', 'Órdenes de compra', 'las que él hizo o salen de sus solicitudes'],
+  // Calendario de publicaciones (2026-10-26).
+  ['marketing', 'Marketing', 'las publicaciones que creó o tiene a su nombre', '', true],
 ].map(([clave, nombre, suyo, nada = '', editable = false]) => ({ clave, nombre, suyo, nada, editable }));
 const NIVELES = ['Nada', 'Lo suyo', 'Toda su sucursal', 'Toda la empresa'];
 const EDITABLES = AREAS.filter(a => a.editable).map(a => a.clave);
 // Con qué arranca cada rol de fábrica (aprobado por Dirección el 2026-10-26), en el orden de AREAS: nivel y «e» si edita.
+// Marketing (2026-10-26): solo los dos roles de Marketing (toda la empresa, editan); los demás no lo ven hasta que
+// Dirección lo prenda.
 const ALCANCE_INICIAL = {
-  gerente: ['2e', '2e', '2', '2e', '2e', '2', '2', '2e', '2'],
-  ventas: ['1e', '1e', '1', '1e', '1e', '1', '1', '1e', '1'],
-  atencion: ['2e', '2e', '2', '2e', '2e', '2', '1', '1e', '1'],
-  tecnico: ['0', '0', '0', '0', '1', '0', '1', '1e', '0'],
-  costos: ['0', '0', '0', '0', '0', '0', '2', '2e', '2'],
+  gerente: ['2e', '2e', '2', '2e', '2e', '2', '2', '2e', '2', '0'],
+  ventas: ['1e', '1e', '1', '1e', '1e', '1', '1', '1e', '1', '0'],
+  atencion: ['2e', '2e', '2', '2e', '2e', '2', '1', '1e', '1', '0'],
+  tecnico: ['0', '0', '0', '0', '1', '0', '1', '1e', '0', '0'],
+  costos: ['0', '0', '0', '0', '0', '0', '2', '2e', '2', '0'],
+  marketing: ['0', '0', '0', '0', '0', '0', '0', '0', '0', '3e'],
+  marketing_gerente: ['0', '0', '0', '0', '0', '0', '0', '0', '0', '3e'],
 };
 // Permisos virtuales de las áreas: «X.ver» (ve algo), «X.sucursal» (toda su sucursal), «X.empresa» (todas las
 // sucursales) y «X.editar». Además «ventas.ver» y «compras.ver»: ve alguna pantalla de ese grupo (menú e Inicio).
@@ -98,6 +106,7 @@ const DEPENDE = {
   'clientes.exportar': ['ordenes.importes', 'contactos.ver'], // el Excel lleva los importes
   'personal.editar': ['personal.ver'],
   'personal.sensibles': ['personal.ver'],
+  'marketing.aprobar': ['marketing.ver'],
 };
 const nombreDe = c => {
   const p = CATALOGO.find(x => x.clave === c); if (p) return p.nombre;
@@ -115,6 +124,7 @@ const ROLES_BASE = [
   ['admin', 'Dirección', 'Todo, en todas las sucursales'],
   ['gerente', 'Gerente', 'Administra su sucursal'],
   ['ventas', 'Ventas', ''], ['atencion', 'Atención a clientes', ''], ['tecnico', 'Técnico', ''], ['costos', 'Costos y compras', 'Encargado de centro de costos'],
+  ['marketing', 'Marketing', 'Calendario de publicaciones: las escribe, sube imágenes y comenta'], ['marketing_gerente', 'Gerente de marketing', 'Marketing, y aprueba las publicaciones'],
 ];
 
 module.exports = function crearPermisos(db, app, h) {

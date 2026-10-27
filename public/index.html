@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Saneadren · Cotizaciones y Servicios</title>
-<link rel="stylesheet" href="styles.css?v=pro1">
+<link rel="stylesheet" href="styles.css?v=mk1">
 <link rel="stylesheet" href="servicios-tabla.css">
 <link rel="stylesheet" href="flujo.css?v=cel1">
 </head>
@@ -27,6 +27,7 @@
     <div class="menu-items" id="menu-items">
       <button type="button" class="menu-item activa" data-vista="inicio"><span class="menu-icono" aria-hidden="true">🏠</span>Inicio <span id="badge-pendientes" style="display:none">0</span></button>
       <button type="button" class="menu-item perm-ventas-ver" data-vista="calendario"><span class="menu-icono" aria-hidden="true">📅</span>Calendario</button>
+      <button type="button" class="menu-item perm-marketing-ver" data-vista="marketing"><span class="menu-icono" aria-hidden="true">🎨</span>Marketing</button>
       <div class="menu-grupo perm-ventas-ver" data-grupo="ventas">
         <button type="button" class="menu-grupo-btn" aria-expanded="false"><span class="menu-icono" aria-hidden="true">💼</span>Ventas<span class="menu-flecha" aria-hidden="true">▾</span></button>
         <div class="menu-sub">
@@ -92,6 +93,12 @@
       <h3>🛒 Compras</h3>
       <p class="ayuda">Solicitudes por aprobar, por cotizar o por convertir en orden de compra; órdenes por autorizar y por recibir; y cómo van tus solicitudes.</p>
       <div id="inicio-compras" class="inicio-lista"></div>
+    </div>
+
+    <div class="inicio-bloque inicio-bloque-marketing perm-marketing-ver" data-titulo-corto="Marketing">
+      <h3>🎨 Marketing</h3>
+      <p class="ayuda">Publicaciones por aprobar, con cambios pedidos, aprobadas cuya fecha ya llegó (falta marcarlas publicadas) y borradores que se publican en los próximos 3 días.</p>
+      <div id="inicio-marketing" class="inicio-lista"></div>
     </div>
 
     <div class="inicio-bloque inicio-bloque-prospeccion perm-prospeccion-ver" data-titulo-corto="Prospección">
@@ -498,6 +505,35 @@
 </div>
 <details id="pr-admin" hidden><summary>Administrar sectores</summary><p class="ayuda">Renombrar conserva los establecimientos asociados.</p><div id="pr-sectores"></div><label for="pr-sector-nuevo">Nuevo sector</label><input id="pr-sector-nuevo" maxlength="80"><button class="btn btn-outline" id="pr-agregar-sector">Agregar sector</button></details>
 </section>
+  <!-- ====== VISTA: MARKETING · CALENDARIO DE PUBLICACIONES (2026-10-26) ====== -->
+  <section class="vista" id="vista-marketing">
+    <div class="vista-encabezado">
+      <div><h2>🎨 Calendario de publicaciones</h2><p class="ayuda">Planea lo que se sube a TikTok, Facebook, Instagram, LinkedIn y Spotify: el copy, las imágenes y el enlace del video o episodio. Cada publicación pasa por revisión: la aprueban Dirección o el Gerente de marketing.</p></div>
+      <div class="btn-group"><button type="button" class="btn btn-primario perm-marketing-editar" id="mk-nueva">➕ Nueva publicación</button></div>
+    </div>
+    <div class="rc-grid mk-tarjetas" id="mk-tarjetas">
+      <button type="button" class="rc-card mk-t-revision" data-mk-estado="revision" aria-pressed="false"><span class="rc-num" id="mk-n-revision">0</span><span class="rc-label">En revisión · por aprobar</span></button>
+      <button type="button" class="rc-card mk-t-cambios" data-mk-estado="cambios" aria-pressed="false"><span class="rc-num" id="mk-n-cambios">0</span><span class="rc-label">Cambios pedidos</span></button>
+      <button type="button" class="rc-card mk-t-aprobada" data-mk-estado="aprobada" aria-pressed="false"><span class="rc-num" id="mk-n-aprobada">0</span><span class="rc-label">Aprobadas · por subir</span></button>
+      <button type="button" class="rc-card mk-t-programada" data-mk-estado="programada" aria-pressed="false"><span class="rc-num" id="mk-n-programada">0</span><span class="rc-label">Programadas en la red</span></button>
+      <button type="button" class="rc-card mk-t-publicada" data-mk-estado="publicada" aria-pressed="false"><span class="rc-num" id="mk-n-publicada">0</span><span class="rc-label">Publicadas</span></button>
+    </div>
+    <div class="mk-barra">
+      <div class="mk-nav"><button type="button" class="btn btn-outline btn-chico" id="mk-ant" aria-label="Anterior">‹</button><button type="button" class="btn btn-outline btn-chico" id="mk-hoy">Hoy</button><button type="button" class="btn btn-outline btn-chico" id="mk-sig" aria-label="Siguiente">›</button><h3 id="mk-titulo" aria-live="polite"></h3></div>
+      <div class="mk-vistas" role="group" aria-label="Vista"><button type="button" class="btn btn-outline btn-chico" data-mk-vista="mes" aria-pressed="true">Mes</button><button type="button" class="btn btn-outline btn-chico" data-mk-vista="semana" aria-pressed="false">Semana</button><button type="button" class="btn btn-outline btn-chico" data-mk-vista="lista" aria-pressed="false">Lista</button></div>
+    </div>
+    <div class="filtros">
+      <input type="text" id="mk-buscar" aria-label="Buscar publicación" placeholder="Título, copy, campaña o hashtag">
+      <select id="mk-f-estado" aria-label="Estado"><option value="">Todos los estados</option></select>
+      <div class="mk-redes-filtro" id="mk-redes-filtro" role="group" aria-label="Redes"></div>
+      <button type="button" class="btn btn-outline" id="mk-limpiar" hidden>✕ Quitar filtros</button>
+    </div>
+    <p class="mk-leyenda" id="mk-leyenda"></p>
+    <div id="mk-mes"><div class="cal-semana" aria-hidden="true"><span>Lun</span><span>Mar</span><span>Mié</span><span>Jue</span><span>Vie</span><span>Sáb</span><span>Dom</span></div><div class="cal-grid mk-grid" id="mk-grid"></div></div>
+    <div id="mk-semana" class="mk-semana" hidden></div>
+    <div id="mk-lista" class="tabla-clientes-wrap" hidden><div class="tabla-scroll"><table class="tabla-clientes"><thead><tr><th>Fecha</th><th>Publicación</th><th>Redes</th><th>Estado</th><th>Responsable</th><th>Para</th></tr></thead><tbody id="mk-tabla"></tbody></table></div></div>
+  </section>
+
   <!-- ====== VISTA: USUARIOS (solo admin) ====== -->
   <section class="vista" id="vista-bitacora">
     <div class="vista-encabezado">
@@ -1374,13 +1410,56 @@
 </div></div></div>
 
 
+<!-- ====== OVERLAY: PUBLICACIÓN (Marketing) ====== -->
+<div class="overlay" id="overlay-publicacion">
+  <div class="modal modal-publicacion">
+    <div class="modal-header"><div><span class="flujo-kicker" id="mk-kicker">PUBLICACIÓN</span><h2 id="mk-p-titulo">Nueva publicación</h2></div>
+      <button class="close-btn" type="button" id="mk-cerrar">✕</button></div>
+    <div class="modal-body mk-cuerpo">
+      <div class="mk-col-form">
+        <div class="mk-estado-barra" id="mk-estado-barra" hidden></div>
+        <div class="modal-section" id="mk-form"><div class="seccion-tit">✏️ Contenido</div>
+          <div class="form-grid-2">
+            <div class="campo-modal full"><label for="mk-titulo-in">Título (obligatorio)</label><input id="mk-titulo-in" maxlength="120" placeholder="Para identificarla en el calendario: «Promo trampas de grasa noviembre»"></div>
+            <div class="campo-modal full"><span class="etiqueta-campo">Redes (obligatorio)</span><div class="mk-redes" id="mk-redes" role="group" aria-label="Redes"></div></div>
+            <div class="campo-modal"><label for="mk-formato">Formato (obligatorio)</label><select id="mk-formato"></select></div>
+            <div class="campo-modal"><label for="mk-sucursal">Para (obligatorio)</label><select id="mk-sucursal"></select></div>
+            <div class="campo-modal"><label for="mk-fecha">Fecha de publicación (obligatorio)</label><input type="date" id="mk-fecha"></div>
+            <div class="campo-modal"><label for="mk-hora">Hora (opcional)</label><input type="time" id="mk-hora"></div>
+            <div class="campo-modal"><label for="mk-responsable">Responsable (obligatorio)</label><select id="mk-responsable"></select></div>
+            <div class="campo-modal"><label for="mk-campana">Campaña (opcional)</label><input id="mk-campana" maxlength="120" placeholder="Temporada de lluvias 2026"></div>
+            <div class="campo-modal full"><label for="mk-copy">Copy (opcional)</label><textarea id="mk-copy" rows="6" maxlength="5000" placeholder="El texto que acompaña la publicación"></textarea><small class="mk-contador" id="mk-contador" aria-live="polite"></small></div>
+            <div class="campo-modal full"><label for="mk-hashtags">Hashtags (opcional)</label><input id="mk-hashtags" maxlength="500" placeholder="#saneamiento #queretaro"></div>
+            <div class="campo-modal full"><label for="mk-enlace">Enlace del video, episodio o publicación (opcional)</label><input type="url" id="mk-enlace" maxlength="500" placeholder="https://drive.google.com/… · https://open.spotify.com/episode/…"></div>
+          </div>
+          <div class="btn-group"><button type="button" class="btn btn-primario" id="mk-guardar">Guardar</button><span class="estado-guardado" id="mk-aviso" role="status"></span></div>
+        </div>
+        <div class="modal-section" id="mk-imagenes-sec" hidden><div class="seccion-tit">🖼️ Imágenes</div>
+          <p class="ayuda">JPG, PNG, WebP o GIF, hasta 10 MB cada una y 10 por publicación; la primera es la portada. Los videos y episodios van como enlace.</p>
+          <div class="mk-imagenes" id="mk-imagenes"></div>
+          <label class="btn btn-outline btn-chico perm-marketing-editar mk-subir" id="mk-subir-lbl">📤 Subir imágenes<input type="file" id="mk-subir" accept="image/jpeg,image/png,image/webp,image/gif" multiple hidden></label>
+        </div>
+      </div>
+      <div class="mk-col-lado">
+        <div class="modal-section"><div class="seccion-tit">📱 Vista previa</div><div class="mk-previa" id="mk-previa"></div></div>
+        <div class="modal-section" id="mk-historial-sec" hidden><div class="seccion-tit">💬 Comentarios e historial</div>
+          <label for="mk-comentario" class="sr-only">Comentario</label><textarea id="mk-comentario" rows="2" maxlength="2000" data-sl-libre placeholder="Escribe un comentario para el equipo…"></textarea>
+          <div class="btn-group"><button type="button" class="btn btn-outline btn-chico" id="mk-comentar" data-sl-libre>Comentar</button></div>
+          <ol class="mk-historial" id="mk-historial"></ol>
+          <details class="mk-versiones" id="mk-versiones-det" hidden><summary>Versiones anteriores del texto</summary><div id="mk-versiones"></div></details>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- ?v= obliga a los navegadores (sobre todo celulares) a tomar la versión nueva tras publicar. -->
 <!-- Generador de QR para la encuesta de cada orden (MIT, Kazuhiko Arase) -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js" integrity="sha384-mZT2gIty7ZDdOGkxfP6joZcYdMW1Jvj9dRlfpTmaJAKKXTqzygtB22k7FLe+KZC1" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
-<script src="ui.js?v=cer1"></script>
+<script src="ui.js?v=mk1"></script>
 <script src="ayuda.js?v=enc1"></script>
 <script src="solo-lectura.js?v=ed1"></script>
-<script src="permisos.js?v=pf1"></script>
+<script src="permisos.js?v=mk1"></script>
 <script src="roles.js?v=ed1"></script>
 <script src="importes.js?v=red1"></script>
 <script src="servicios-tabla.js?v=pf1"></script>
@@ -1395,11 +1474,12 @@
 <script src="carga-generador.js?v=con1"></script>
 <script src="sucursales.js?v=perm2"></script>
 <script src="encuestas.js?v=enc1"></script>
-<script src="app.js?v=con1"></script>
+<script src="app.js?v=mk1"></script>
 <script src="personal.js?v=ed1"></script>
 <script src="buscador.js?v=suc1"></script>
 <script src="demo.js?v=demo1"></script>
 <script src="prospeccion.js?v=pro1"></script>
+<script src="marketing.js?v=mk1"></script>
 <script src="inicio.js?v=ini3"></script>
 </body>
 </html>

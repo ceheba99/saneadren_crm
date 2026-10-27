@@ -135,6 +135,7 @@ function cambiarVista(v, opciones) {
   if (v === 'usuarios' && !Permisos.puede('usuarios.administrar')) v = 'inicio';
   if (v === 'personal' && !Permisos.puede('personal.ver')) v = 'inicio';
   if (v === 'prospeccion' && !Permisos.puede('prospeccion.ver')) v = 'inicio';
+  if (v === 'marketing' && !Permisos.puede('marketing.ver')) v = 'inicio';
   if ((v === 'cobrar' || (v === 'cuentas' && !['pagar', 'proveedores'].includes(opciones?.pestana))) && !Permisos.puede('cxc.ver')) v = 'inicio';
   if ((v === 'pagar' || (v === 'cuentas' && ['pagar', 'proveedores'].includes(opciones?.pestana))) && !Permisos.puede('cxp.ver')) v = 'inicio';
   if (v === 'pendientes') v = 'inicio'; // Pendientes ahora es parte de Inicio
@@ -150,6 +151,7 @@ function cambiarVista(v, opciones) {
   if (v === 'leads') cargarLeads();
   if (v === 'clientes') cargarClientes();
   if (v === 'prospeccion') Prospeccion.cargar();
+  if (v === 'marketing') Marketing.cargar();
   if (v === 'personal') Personal.cargar();
   if (v === 'resultados') abrirResultados();
   if (v === 'generador') cargarGenerador();
@@ -519,6 +521,7 @@ async function cargarInicio() {
   if (typeof Personal !== 'undefined') Personal.pintarInicio(); // bloque «Personal» (licencias, contratos, ausencias, órdenes sin responsable)
   if (typeof Compras !== 'undefined') Compras.pintarInicio(); // bloque «Compras» (aprobar, cotizar, autorizar, recibir)
   if (typeof Prospeccion !== 'undefined') Prospeccion.pintarInicio(); // bloque «Prospección» (a quién llamar hoy)
+  if (typeof Marketing !== 'undefined') Marketing.pintarInicio(); // bloque «Marketing» (por aprobar, cambios, por subir)
 }
 function filaEstancada(l) {
   const dias = diasSinMovimiento(l.updated_at);

@@ -6,148 +6,162 @@ Dirección la revisa y la aprueba. Si un cambio altera lo que ve un rol, la prue
 
 ## Pantallas del menú
 
-| Pantalla | Dirección | Gerente | Ventas | Atención | Técnico | Costos y compras |
-|---|:-:|:-:|:-:|:-:|:-:|:-:|
-| 🏠 Inicio | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
-| 📅 Calendario | ✔ | ✔ | ✔ | ✔ | ✔ | — |
-| ➕ Nuevo contacto | ✔ | ✔ | ✔ | ✔ | — | — |
-| 👥 Contactos | ✔ | ✔ | ✔ | ✔ | — | — |
-| 📒 Generador | ✔ | ✔ | ✔ | ✔ | — | — |
-| 📄 Cotizaciones | ✔ | ✔ | ✔ | ✔ | ✔ | — |
-| 🔎 Prospección | ✔ | ✔ | ✔ | ✔ | — | — |
-| 📥 Cuentas por cobrar | ✔ | ✔ | ✔ | ✔ | — | — |
-| 📤 Cuentas por pagar | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
-| 🏭 Proveedores | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
-| 📝 Solicitudes de compra | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
-| 🛒 Órdenes de compra | ✔ | ✔ | ✔ | ✔ | — | ✔ |
-| 📊 Resultados | ✔ | ✔ | ✔ | ✔ | — | — |
-| 👷 Personal | ✔ | ✔ | — | — | — | — |
-| 📚 Catálogos | ✔ | ✔ | — | — | — | ✔ |
-| 👤 Usuarios | ✔ | ✔ | — | — | — | — |
-| 🗂️ Bitácora | ✔ | — | — | — | — | — |
+| Pantalla | Dirección | Gerente | Ventas | Atención | Técnico | Costos y compras | Marketing | Gerente de marketing |
+|---|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|
+| 🏠 Inicio | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| 📅 Calendario | ✔ | ✔ | ✔ | ✔ | ✔ | — | — | — |
+| 🎨 Marketing | ✔ | — | — | — | — | — | ✔ | ✔ |
+| ➕ Nuevo contacto | ✔ | ✔ | ✔ | ✔ | — | — | — | — |
+| 👥 Contactos | ✔ | ✔ | ✔ | ✔ | — | — | — | — |
+| 📒 Generador | ✔ | ✔ | ✔ | ✔ | — | — | — | — |
+| 📄 Cotizaciones | ✔ | ✔ | ✔ | ✔ | ✔ | — | — | — |
+| 🔎 Prospección | ✔ | ✔ | ✔ | ✔ | — | — | — | — |
+| 📥 Cuentas por cobrar | ✔ | ✔ | ✔ | ✔ | — | — | — | — |
+| 📤 Cuentas por pagar | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | — | — |
+| 🏭 Proveedores | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | — | — |
+| 📝 Solicitudes de compra | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | — | — |
+| 🛒 Órdenes de compra | ✔ | ✔ | ✔ | ✔ | — | ✔ | — | — |
+| 📊 Resultados | ✔ | ✔ | ✔ | ✔ | — | — | — | — |
+| 👷 Personal | ✔ | ✔ | — | — | — | — | — | — |
+| 📚 Catálogos | ✔ | ✔ | — | — | — | ✔ | — | — |
+| 👤 Usuarios | ✔ | ✔ | — | — | — | — | — | — |
+| 🗂️ Bitácora | ✔ | — | — | — | — | — | — | — |
 
 ## Qué ve en cada área (Roles y permisos)
 
-| Área | Dirección | Gerente | Ventas | Atención | Técnico | Costos y compras |
-|---|:-:|:-:|:-:|:-:|:-:|:-:|
-| Contactos | Todo | Toda su sucursal ✎ | Lo suyo ✎ | Toda su sucursal ✎ | Nada | Nada |
-| Prospección | Todo | Toda su sucursal ✎ | Lo suyo ✎ | Toda su sucursal ✎ | Nada | Nada |
-| Generador | Todo | Toda su sucursal | Lo suyo | Toda su sucursal | Nada | Nada |
-| Cotizaciones | Todo | Toda su sucursal ✎ | Lo suyo ✎ | Toda su sucursal ✎ | Nada | Nada |
-| Órdenes de servicio | Todo | Toda su sucursal ✎ | Lo suyo ✎ | Toda su sucursal ✎ | Lo suyo | Nada |
-| Cuentas por cobrar | Todo | Toda su sucursal | Lo suyo | Toda su sucursal | Solo lo que él registra | Nada |
-| Cuentas por pagar | Todo | Toda su sucursal | Lo suyo | Lo suyo | Lo suyo | Toda su sucursal |
-| Solicitudes de compra | Todo | Toda su sucursal ✎ | Lo suyo ✎ | Lo suyo ✎ | Lo suyo ✎ | Toda su sucursal ✎ |
-| Órdenes de compra | Todo | Toda su sucursal | Lo suyo | Lo suyo | Nada | Toda su sucursal |
+| Área | Dirección | Gerente | Ventas | Atención | Técnico | Costos y compras | Marketing | Gerente de marketing |
+|---|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|
+| Contactos | Todo | Toda su sucursal ✎ | Lo suyo ✎ | Toda su sucursal ✎ | Nada | Nada | Nada | Nada |
+| Prospección | Todo | Toda su sucursal ✎ | Lo suyo ✎ | Toda su sucursal ✎ | Nada | Nada | Nada | Nada |
+| Generador | Todo | Toda su sucursal | Lo suyo | Toda su sucursal | Nada | Nada | Nada | Nada |
+| Cotizaciones | Todo | Toda su sucursal ✎ | Lo suyo ✎ | Toda su sucursal ✎ | Nada | Nada | Nada | Nada |
+| Órdenes de servicio | Todo | Toda su sucursal ✎ | Lo suyo ✎ | Toda su sucursal ✎ | Lo suyo | Nada | Nada | Nada |
+| Cuentas por cobrar | Todo | Toda su sucursal | Lo suyo | Toda su sucursal | Solo lo que él registra | Nada | Nada | Nada |
+| Cuentas por pagar | Todo | Toda su sucursal | Lo suyo | Lo suyo | Lo suyo | Toda su sucursal | Nada | Nada |
+| Solicitudes de compra | Todo | Toda su sucursal ✎ | Lo suyo ✎ | Lo suyo ✎ | Lo suyo ✎ | Toda su sucursal ✎ | Nada | Nada |
+| Órdenes de compra | Todo | Toda su sucursal | Lo suyo | Lo suyo | Nada | Toda su sucursal | Nada | Nada |
+| Marketing | Todo | Nada | Nada | Nada | Nada | Nada | Toda la empresa ✎ | Toda la empresa ✎ |
 
 ## Qué datos le llegan
 
 ### Ventas
 
-| Dato | Dirección | Gerente | Ventas | Atención | Técnico | Costos y compras |
-|---|:-:|:-:|:-:|:-:|:-:|:-:|
-| Orden de Valeria (vendedora), asignada a Tomás (técnico): cliente y servicio | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
-| … y su importe | ✔ | ✔ | ✔ | ✔ | ✔ | — |
-| Cotización de Bruno (otro vendedor de la sucursal): cliente | ✔ | ✔ | — | ✔ | — | — |
-| … y su importe | ✔ | ✔ | — | ✔ | — | — |
-| Orden de Bruno asignada a Tito (otro técnico): cliente | ✔ | ✔ | — | ✔ | — | ✔ |
-| Orden de Diego (otra sucursal): cliente | ✔ | — | — | — | — | — |
+| Dato | Dirección | Gerente | Ventas | Atención | Técnico | Costos y compras | Marketing | Gerente de marketing |
+|---|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|
+| Orden de Valeria (vendedora), asignada a Tomás (técnico): cliente y servicio | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | — | — |
+| … y su importe | ✔ | ✔ | ✔ | ✔ | ✔ | — | — | — |
+| Cotización de Bruno (otro vendedor de la sucursal): cliente | ✔ | ✔ | — | ✔ | — | — | — | — |
+| … y su importe | ✔ | ✔ | — | ✔ | — | — | — | — |
+| Orden de Bruno asignada a Tito (otro técnico): cliente | ✔ | ✔ | — | ✔ | — | ✔ | — | — |
+| Orden de Diego (otra sucursal): cliente | ✔ | — | — | — | — | — | — | — |
 
 ### Cuentas por cobrar
 
-| Dato | Dirección | Gerente | Ventas | Atención | Técnico | Costos y compras |
-|---|:-:|:-:|:-:|:-:|:-:|:-:|
-| Cobro que registró Tomás (técnico) en la orden de Valeria | ✔ | ✔ | ✔ | ✔ | ✔ | — |
-| Cobro que registró Alicia (atención) en la orden de Valeria | ✔ | ✔ | ✔ | ✔ | — | — |
-| Saldo de la orden de Valeria (lo que debe el cliente) | ✔ | ✔ | ✔ | ✔ | — | — |
+| Dato | Dirección | Gerente | Ventas | Atención | Técnico | Costos y compras | Marketing | Gerente de marketing |
+|---|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|
+| Cobro que registró Tomás (técnico) en la orden de Valeria | ✔ | ✔ | ✔ | ✔ | ✔ | — | — | — |
+| Cobro que registró Alicia (atención) en la orden de Valeria | ✔ | ✔ | ✔ | ✔ | — | — | — | — |
+| Saldo de la orden de Valeria (lo que debe el cliente) | ✔ | ✔ | ✔ | ✔ | — | — | — | — |
 
 ### Cuentas por pagar
 
-| Dato | Dirección | Gerente | Ventas | Atención | Técnico | Costos y compras |
-|---|:-:|:-:|:-:|:-:|:-:|:-:|
-| Gasto que registró Tomás (técnico) en la orden de Valeria | ✔ | ✔ | ✔ | — | ✔ | ✔ |
-| Gasto que registró Valeria (ventas) en su orden | ✔ | ✔ | ✔ | — | — | ✔ |
-| Gasto que registró Carlos (compras) en la orden de Bruno | ✔ | ✔ | — | — | — | ✔ |
-| Gasto que registró Alicia (atención) en la orden de Bruno | ✔ | ✔ | — | ✔ | — | ✔ |
+| Dato | Dirección | Gerente | Ventas | Atención | Técnico | Costos y compras | Marketing | Gerente de marketing |
+|---|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|
+| Gasto que registró Tomás (técnico) en la orden de Valeria | ✔ | ✔ | ✔ | — | ✔ | ✔ | — | — |
+| Gasto que registró Valeria (ventas) en su orden | ✔ | ✔ | ✔ | — | — | ✔ | — | — |
+| Gasto que registró Carlos (compras) en la orden de Bruno | ✔ | ✔ | — | — | — | ✔ | — | — |
+| Gasto que registró Alicia (atención) en la orden de Bruno | ✔ | ✔ | — | ✔ | — | ✔ | — | — |
 
 ### Proveedores
 
-| Dato | Dirección | Gerente | Ventas | Atención | Técnico | Costos y compras |
-|---|:-:|:-:|:-:|:-:|:-:|:-:|
-| Datos bancarios de un proveedor (CLABE) | ✔ | ✔ | — | — | — | ✔ |
+| Dato | Dirección | Gerente | Ventas | Atención | Técnico | Costos y compras | Marketing | Gerente de marketing |
+|---|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|
+| Datos bancarios de un proveedor (CLABE) | ✔ | ✔ | — | — | — | ✔ | — | — |
 
 ### Compras
 
-| Dato | Dirección | Gerente | Ventas | Atención | Técnico | Costos y compras |
-|---|:-:|:-:|:-:|:-:|:-:|:-:|
-| Solicitud de compra de Tomás | ✔ | ✔ | — | — | ✔ | ✔ |
-| Solicitud de compra de Valeria | ✔ | ✔ | ✔ | — | — | ✔ |
+| Dato | Dirección | Gerente | Ventas | Atención | Técnico | Costos y compras | Marketing | Gerente de marketing |
+|---|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|
+| Solicitud de compra de Tomás | ✔ | ✔ | — | — | ✔ | ✔ | — | — |
+| Solicitud de compra de Valeria | ✔ | ✔ | ✔ | — | — | ✔ | — | — |
 
 ### Encuesta
 
-| Dato | Dirección | Gerente | Ventas | Atención | Técnico | Costos y compras |
-|---|:-:|:-:|:-:|:-:|:-:|:-:|
-| Aviso «cliente insatisfecho» de la encuesta de la orden de Valeria | ✔ | ✔ | ✔ | — | — | — |
+| Dato | Dirección | Gerente | Ventas | Atención | Técnico | Costos y compras | Marketing | Gerente de marketing |
+|---|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|
+| Aviso «cliente insatisfecho» de la encuesta de la orden de Valeria | ✔ | ✔ | ✔ | — | — | — | — | — |
 
 ### Prospección
 
-| Dato | Dirección | Gerente | Ventas | Atención | Técnico | Costos y compras |
-|---|:-:|:-:|:-:|:-:|:-:|:-:|
-| Prospecto de Valeria | ✔ | ✔ | ✔ | ✔ | — | — |
-| Prospecto de Bruno | ✔ | ✔ | — | ✔ | — | — |
+| Dato | Dirección | Gerente | Ventas | Atención | Técnico | Costos y compras | Marketing | Gerente de marketing |
+|---|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|
+| Prospecto de Valeria | ✔ | ✔ | ✔ | ✔ | — | — | — | — |
+| Prospecto de Bruno | ✔ | ✔ | — | ✔ | — | — | — | — |
+
+### Marketing
+
+| Dato | Dirección | Gerente | Ventas | Atención | Técnico | Costos y compras | Marketing | Gerente de marketing |
+|---|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|
+| Publicación de Mara (Marketing) para Querétaro | ✔ | — | — | — | — | — | ✔ | ✔ |
+| Publicación para toda la empresa | ✔ | — | — | — | — | — | ✔ | ✔ |
+| Publicación de CDMX (otra sucursal) | ✔ | — | — | — | — | — | ✔ | ✔ |
 
 ### Personal
 
-| Dato | Dirección | Gerente | Ventas | Atención | Técnico | Costos y compras |
-|---|:-:|:-:|:-:|:-:|:-:|:-:|
-| Un empleado activo: nombre y puesto (para asignarlo a una orden) | ✔ | ✔ | ✔ | ✔ | ✔ | — |
-| Su ficha: teléfono, licencia, ingreso | ✔ | ✔ | — | — | — | — |
-| Sus datos sensibles: CLABE y salario | ✔ | ✔ | — | — | — | — |
+| Dato | Dirección | Gerente | Ventas | Atención | Técnico | Costos y compras | Marketing | Gerente de marketing |
+|---|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|
+| Un empleado activo: nombre y puesto (para asignarlo a una orden) | ✔ | ✔ | ✔ | ✔ | ✔ | — | — | — |
+| Su ficha: teléfono, licencia, ingreso | ✔ | ✔ | — | — | — | — | — | — |
+| Sus datos sensibles: CLABE y salario | ✔ | ✔ | — | — | — | — | — | — |
 
 ### Reportes
 
-| Reporte | Dirección | Gerente | Ventas | Atención | Técnico | Costos y compras |
-|---|:-:|:-:|:-:|:-:|:-:|:-:|
-| Generador | ✔ | ✔ | ✔ | ✔ | — | — |
-| Resultados · análisis comercial | ✔ | ✔ | ✔ | ✔ | — | — |
-| Resultados · panorama general | ✔ | ✔ | — | — | — | — |
+| Reporte | Dirección | Gerente | Ventas | Atención | Técnico | Costos y compras | Marketing | Gerente de marketing |
+|---|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|
+| Generador | ✔ | ✔ | ✔ | ✔ | — | — | — | — |
+| Resultados · análisis comercial | ✔ | ✔ | ✔ | ✔ | — | — | — | — |
+| Resultados · panorama general | ✔ | ✔ | — | — | — | — | — | — |
 
 ## Qué puede hacer
 
-| Acción (se intenta de verdad) | Dirección | Gerente | Ventas | Atención | Técnico | Costos y compras |
-|---|:-:|:-:|:-:|:-:|:-:|:-:|
-| Editar la orden de Valeria (cliente, servicio, técnico…) | ✔ | ✔ | ✔ | — | — | — |
-| Editar la orden de Bruno (otro vendedor) | ✔ | ✔ | — | — | — | — |
-| Editar el contacto de Valeria | ✔ | ✔ | ✔ | — | — | — |
-| Marcar realizada una orden de Valeria | ✔ | ✔ | ✔ | — | — | — |
-| Borrar una cotización de Valeria | ✔ | — | — | — | — | — |
+| Acción (se intenta de verdad) | Dirección | Gerente | Ventas | Atención | Técnico | Costos y compras | Marketing | Gerente de marketing |
+|---|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|
+| Editar la orden de Valeria (cliente, servicio, técnico…) | ✔ | ✔ | ✔ | — | — | — | — | — |
+| Editar la orden de Bruno (otro vendedor) | ✔ | ✔ | — | — | — | — | — | — |
+| Editar el contacto de Valeria | ✔ | ✔ | ✔ | — | — | — | — | — |
+| Marcar realizada una orden de Valeria | ✔ | ✔ | ✔ | — | — | — | — | — |
+| Borrar una cotización de Valeria | ✔ | — | — | — | — | — | — | — |
+| Editar la publicación de Mara (Marketing) | ✔ | — | — | — | — | — | ✔ | ✔ |
+| Comentar la publicación de Mara | ✔ | — | — | — | — | — | ✔ | ✔ |
+| Aprobar una publicación en revisión | ✔ | — | — | — | — | — | — | ✔ |
 
-| Permiso | Dirección | Gerente | Ventas | Atención | Técnico | Costos y compras |
-|---|:-:|:-:|:-:|:-:|:-:|:-:|
-| Contactos y clientes · Exportar a Excel | ✔ | ✔ | — | — | — | — |
-| Cotizaciones y órdenes · Ver importes | ✔ | ✔ | ✔ | ✔ | ✔ | — |
-| Cotizaciones y órdenes · Editar lo de otros | ✔ | ✔ | — | — | — | — |
-| Cotizaciones y órdenes · Cargar el generador | ✔ | ✔ | — | ✔ | — | — |
-| Cotizaciones y órdenes · Cambiar importe o IVA de una orden | ✔ | ✔ | — | ✔ | — | — |
-| Cuentas por cobrar · Registrar cobros | ✔ | ✔ | ✔ | ✔ | ✔ | — |
-| Cuentas por cobrar · Confirmar cobros | ✔ | ✔ | ✔ | ✔ | — | — |
-| Cuentas por cobrar · Sus cobros entran ya confirmados | ✔ | ✔ | — | ✔ | — | — |
-| Cuentas por cobrar · Crédito y datos de factura | ✔ | ✔ | ✔ | ✔ | — | — |
-| Cuentas por cobrar · Ajustes, descuentos y revisión inicial | ✔ | ✔ | — | — | — | — |
-| Cuentas por pagar · Registrar gastos de una orden | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
-| Cuentas por pagar · Ver los gastos de sus órdenes | ✔ | ✔ | ✔ | — | — | — |
-| Cuentas por pagar · Mover dinero | ✔ | ✔ | — | — | — | ✔ |
-| Compras · Ver montos de compras | ✔ | ✔ | ✔ | ✔ | — | ✔ |
-| Compras · Gestionar compras | ✔ | ✔ | — | — | — | ✔ |
-| Compras · Aprobar sus propias solicitudes | ✔ | ✔ | — | — | — | — |
-| Compras · Autorizar órdenes de compra | ✔ | ✔ | — | — | — | — |
-| Reportes · Análisis comercial | ✔ | ✔ | ✔ | ✔ | — | — |
-| Reportes · Panorama general | ✔ | ✔ | — | — | — | — |
-| Catálogos · Catálogos compartidos | ✔ | ✔ | — | — | — | ✔ |
-| Personal · Ver personal | ✔ | ✔ | — | — | — | — |
-| Personal · Editar personal | ✔ | ✔ | — | — | — | — |
-| Personal · Datos sensibles del personal | ✔ | ✔ | — | — | — | — |
-| Administración · Usuarios | ✔ | ✔ | — | — | — | — |
+| Permiso | Dirección | Gerente | Ventas | Atención | Técnico | Costos y compras | Marketing | Gerente de marketing |
+|---|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|
+| Contactos y clientes · Exportar a Excel | ✔ | ✔ | — | — | — | — | — | — |
+| Cotizaciones y órdenes · Ver importes | ✔ | ✔ | ✔ | ✔ | ✔ | — | — | — |
+| Cotizaciones y órdenes · Editar lo de otros | ✔ | ✔ | — | — | — | — | — | — |
+| Cotizaciones y órdenes · Cargar el generador | ✔ | ✔ | — | ✔ | — | — | — | — |
+| Cotizaciones y órdenes · Cambiar importe o IVA de una orden | ✔ | ✔ | — | ✔ | — | — | — | — |
+| Cuentas por cobrar · Registrar cobros | ✔ | ✔ | ✔ | ✔ | ✔ | — | — | — |
+| Cuentas por cobrar · Confirmar cobros | ✔ | ✔ | ✔ | ✔ | — | — | — | — |
+| Cuentas por cobrar · Sus cobros entran ya confirmados | ✔ | ✔ | — | ✔ | — | — | — | — |
+| Cuentas por cobrar · Crédito y datos de factura | ✔ | ✔ | ✔ | ✔ | — | — | — | — |
+| Cuentas por cobrar · Ajustes, descuentos y revisión inicial | ✔ | ✔ | — | — | — | — | — | — |
+| Cuentas por pagar · Registrar gastos de una orden | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | — | — |
+| Cuentas por pagar · Ver los gastos de sus órdenes | ✔ | ✔ | ✔ | — | — | — | — | — |
+| Cuentas por pagar · Mover dinero | ✔ | ✔ | — | — | — | ✔ | — | — |
+| Compras · Ver montos de compras | ✔ | ✔ | ✔ | ✔ | — | ✔ | — | — |
+| Compras · Gestionar compras | ✔ | ✔ | — | — | — | ✔ | — | — |
+| Compras · Aprobar sus propias solicitudes | ✔ | ✔ | — | — | — | — | — | — |
+| Compras · Autorizar órdenes de compra | ✔ | ✔ | — | — | — | — | — | — |
+| Reportes · Análisis comercial | ✔ | ✔ | ✔ | ✔ | — | — | — | — |
+| Reportes · Panorama general | ✔ | ✔ | — | — | — | — | — | — |
+| Catálogos · Catálogos compartidos | ✔ | ✔ | — | — | — | ✔ | — | — |
+| Personal · Ver personal | ✔ | ✔ | — | — | — | — | — | — |
+| Personal · Editar personal | ✔ | ✔ | — | — | — | — | — | — |
+| Personal · Datos sensibles del personal | ✔ | ✔ | — | — | — | — | — | — |
+| Administración · Usuarios | ✔ | ✔ | — | — | — | — | — | — |
+| Marketing · Aprobar publicaciones | ✔ | — | — | — | — | — | — | ✔ |
 
 ## Reglas acordadas que se revisan una por una
 
@@ -173,3 +187,7 @@ Dirección la revisa y la aprueba. Si un cambio altera lo que ve un rol, la prue
 - **2026-10-26** · Técnico: ve su solicitud de compra, no las de otros, y no ve montos de compras.
 - **2026-10-21** · Prospección: cada quien lo suyo (quien ve toda su sucursal en ventas, todos los de su sucursal); el técnico no prospecta.
 - **2026-10-19** · Personal: quien ve órdenes ve nombre y puesto del personal activo, para asignarlo a una orden; la ficha y los datos sensibles, solo Gerente y Dirección.
+- **2026-10-26** · Marketing: aprueban las publicaciones Dirección y el Gerente de marketing; nadie más (ni Marketing, aunque la haya escrito).
+- **2026-10-26** · Marketing y Gerente de marketing: ven, editan y comentan las publicaciones de toda la empresa (de cualquier sucursal y las generales), y nada más del sistema: ni ventas, cobranza, gastos, compras, prospección ni personal.
+- **2026-10-26** · Los demás roles (Gerente, Ventas, Atención, Técnico, Compras) no ven Marketing; Dirección lo puede prender en Roles y permisos.
+- **2026-10-26** · Dirección ve y aprueba todo Marketing.

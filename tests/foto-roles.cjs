@@ -29,7 +29,7 @@ const RANGO = 'desde=2020-01-01&hasta=' + dia(60);
 const exigir = (r, que) => { if (r[0] !== 200 && r[0] !== 201) throw new Error('No se pudo ' + que + ': ' + JSON.stringify(r[1])); return r[1]; };
 
 // Columnas de la foto: un integrante por rol (Dirección es el admin).
-const ROLES = [['admin', 'Dirección'], ['gerente', 'Gerente'], ['ventas', 'Ventas'], ['atencion', 'Atención'], ['tecnico', 'Técnico'], ['costos', 'Costos y compras']];
+const ROLES = [['admin', 'Dirección'], ['gerente', 'Gerente'], ['ventas', 'Ventas'], ['atencion', 'Atención'], ['tecnico', 'Técnico'], ['costos', 'Costos y compras'], ['marketing', 'Marketing'], ['marketing_gerente', 'Gerente de marketing']];
 // Un monto se busca escrito de las formas en que puede salir: 7123.41, 712341 (centavos) y 7,123.41.
 const formas = v => { const c = Math.round(v * 100); return [(c / 100).toFixed(2), String(c), (c / 100).toLocaleString('en-US', { minimumFractionDigits: 2 })]; };
 const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
@@ -44,11 +44,12 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
   // El equipo: quién observa por cada rol, y otros para que «lo suyo» se note.
   const T = { Direccion: A }, ID = {};
   for (const [nombre, rol, suc] of [['Valeria Ventas', 'ventas', qro.id], ['Bruno Ventas', 'ventas', qro.id], ['Tomas Tecnico', 'tecnico', qro.id], ['Tito Tecnico', 'tecnico', qro.id],
-    ['Alicia Atencion', 'atencion', qro.id], ['Carlos Compras', 'costos', qro.id], ['Gema Gerente', 'gerente', qro.id], ['Diego Ventas', 'ventas', cdmx.id]]) {
+    ['Alicia Atencion', 'atencion', qro.id], ['Carlos Compras', 'costos', qro.id], ['Gema Gerente', 'gerente', qro.id], ['Diego Ventas', 'ventas', cdmx.id],
+    ['Mara Marketing', 'marketing', qro.id], ['Gil Mercadotecnia', 'marketing_gerente', qro.id]]) {
     const u = exigir(await pedir('POST', '/usuarios', A, { nombre, password: CLAVE, rol, sucursales: [suc] }), 'crear a ' + nombre);
     const k = nombre.split(' ')[0]; ID[k] = u.id; T[k] = (await pedir('POST', '/login', null, { nombre, password: CLAVE }))[1].token;
   }
-  const OBSERVA = { admin: T.Direccion, gerente: T.Gema, ventas: T.Valeria, atencion: T.Alicia, tecnico: T.Tomas, costos: T.Carlos };
+  const OBSERVA = { admin: T.Direccion, gerente: T.Gema, ventas: T.Valeria, atencion: T.Alicia, tecnico: T.Tomas, costos: T.Carlos, marketing: T.Mara, marketing_gerente: T.Gil };
 
   // ----- Datos marcados -----
   const contacto = async (t, nombre, tel, empresa) => exigir(await pedir('POST', '/contactos', t, { nombre, telefono: tel, empresa_contacto: empresa, direccion: 'Querétaro centro', canal_origen_id: canales[0].id }), 'crear contacto ' + empresa);
@@ -87,6 +88,10 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
   const [, sectores] = await pedir('GET', '/prospeccion/sectores', T.Valeria);
   const prospecto = async (t, quien, nombre) => exigir(await pedir('POST', '/prospeccion', t, { nombre, sector_id: sectores[0].id, zona: 'Querétaro', direccion: '', telefono: '', correo: '', persona: '', cargo: '', fuente: '', necesidades: '', estado: 'investigar', responsable_id: ID[quien], proximo_contacto: '' }), 'prospecto ' + nombre);
   await prospecto(T.Valeria, 'Valeria', 'Taller Granate'); await prospecto(T.Bruno, 'Bruno', 'Taller Cuarzo');
+  // Marketing (2026-10-26): una publicación de Mara para Querétaro, una de toda la empresa y una de CDMX.
+  const publicacion = async (t, titulo, sucursal) => exigir(await pedir('POST', '/marketing/publicaciones', t, { titulo, redes: ['instagram', 'facebook'], formato: 'post', fecha: dia(3), copy: 'Copy ' + titulo, sucursal }), 'publicación ' + titulo);
+  const pubRubi = await publicacion(T.Mara, 'Promo Rubí', qro.id);
+  await publicacion(A, 'Campaña Zafiro', 'empresa'); await publicacion(A, 'Evento Topacio', cdmx.id);
   // Personal: un empleado con datos sensibles.
   const CLABE = '072180001234567898'.slice(0, 17); const conDigito = p17 => { const w = [3, 7, 1]; let s = 0; for (let i = 0; i < 17; i++) s += (Number(p17[i]) * w[i % 3]) % 10; return p17 + ((10 - (s % 10)) % 10); };
   const clabe = conDigito(CLABE), salario = 23456.78;
@@ -127,6 +132,11 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
       ['granate', 'Prospecto de Valeria', ['Granate']],
       ['cuarzo', 'Prospecto de Bruno', ['Cuarzo']],
     ]],
+    ['Marketing', [
+      ['rubi', 'Publicación de Mara (Marketing) para Querétaro', ['Rubí']],
+      ['zafiro', 'Publicación para toda la empresa', ['Zafiro']],
+      ['topacio', 'Publicación de CDMX (otra sucursal)', ['Topacio']],
+    ]],
     ['Personal', [
       ['obsidiana', 'Un empleado activo: nombre y puesto (para asignarlo a una orden)', ['Obsidiana']],
       ['fichaEmp', 'Su ficha: teléfono, licencia, ingreso', ['442 987 6543', '4429876543']],
@@ -139,13 +149,13 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
   for (const f of fs.readdirSync(path.join(__dirname, '..', 'server')).filter(f => f.endsWith('.js')))
     for (const m of fs.readFileSync(path.join(__dirname, '..', 'server', f), 'utf8').matchAll(/app\.get\(\s*'\/api(\/[^']+)'/g)) rutasGet.push(m[1]);
   const ids = new Set([O1, Q2, O3, O4].map(x => x.id).concat([cAmbar, cBerilo, cDiamante, cCoral].map(c => c.id)));
-  for (const r of ['/finanzas/cxp?vista=todas', '/compras/solicitudes?estado=', '/compras/ordenes', '/personal', '/prospeccion']) {
+  for (const r of ['/finanzas/cxp?vista=todas', '/compras/solicitudes?estado=', '/compras/ordenes', '/personal', '/prospeccion', '/marketing/publicaciones?desde=' + dia(-40) + '&hasta=' + dia(50)]) {
     const [, j] = await pedir('GET', r, A); for (const x of (Array.isArray(j) ? j : j.lista || j.items || [])) if (x && x.id) ids.add(x.id);
   }
   const EXTRA = ['/leads', '/leads?estatus=ganado', '/clientes', '/clientes?incluir_prospectos=1', '/clientes/catalogo', '/finanzas/cartera', '/finanzas/cartera?vista=clientes', '/finanzas/resumen',
     '/finanzas/periodo?' + RANGO, '/finanzas/cxp?vista=todas', '/finanzas/por-confirmar', '/tablero?' + RANGO, '/generador?' + RANGO, '/calendario?desde=' + dia(-40) + '&hasta=' + dia(50),
     '/calendario/atrasados', '/compras/solicitudes?estado=', '/compras/ordenes', '/kpis', '/pendientes', '/analisis/comercial?' + RANGO, '/contactos/sin-cotizacion', '/personal', '/personal/avisos',
-    '/prospeccion', '/prospeccion?pendientes=1', ...['Ambar', 'Berilo', 'Diamante', 'Coral', 'Jade', 'Perla', 'Granate', 'Cuarzo', 'Obsidiana'].map(p => '/buscar?q=' + p)];
+    '/prospeccion', '/prospeccion?pendientes=1', '/marketing/publicaciones?desde=' + dia(-40) + '&hasta=' + dia(50), '/marketing/pendientes', ...['Ambar', 'Berilo', 'Diamante', 'Coral', 'Jade', 'Perla', 'Granate', 'Cuarzo', 'Obsidiana'].map(p => '/buscar?q=' + p)];
   async function rastrear(t) {
     let todo = '';
     const urls = new Set(EXTRA);
@@ -175,6 +185,9 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
     ['editaAmbar', 'Editar el contacto de Valeria'],
     ['realizado', 'Marcar realizada una orden de Valeria'],
     ['borra', 'Borrar una cotización de Valeria'],
+    ['editaPub', 'Editar la publicación de Mara (Marketing)'],
+    ['comentaPub', 'Comentar la publicación de Mara'],
+    ['apruebaPub', 'Aprobar una publicación en revisión'],
   ];
   const ok = r => r[0] === 200 || r[0] === 201;
   for (const [rol] of ROLES) {
@@ -187,6 +200,12 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
     VE[rol].realizado = ok(await pedir('POST', '/leads/' + nueva.id + '/ejecucion', t, { estado: 'realizado', fecha: dia(-1) }));
     const cot = await cotizar(T.Valeria, 'Valeria', cAmbar, 'Borrar ' + rol, 1000);
     VE[rol].borra = ok(await pedir('DELETE', '/leads/' + cot.id, t, { motivo: 'Prueba de la foto de roles' }));
+    const pub = (await pedir('GET', '/marketing/publicaciones/' + pubRubi.id, A))[1];
+    VE[rol].editaPub = ok(await pedir('PUT', '/marketing/publicaciones/' + pubRubi.id, t, { version: pub.version, campana: 'Revisión ' + rol }));
+    VE[rol].comentaPub = ok(await pedir('POST', '/marketing/publicaciones/' + pubRubi.id + '/comentarios', t, { texto: 'Comentario de ' + rol }));
+    const nuevaPub = exigir(await pedir('POST', '/marketing/publicaciones', T.Mara, { titulo: 'Por aprobar ' + rol, redes: ['tiktok'], formato: 'video', fecha: dia(5), copy: 'Copy', sucursal: qro.id }), 'publicación por aprobar');
+    const enRevision = exigir(await pedir('POST', '/marketing/publicaciones/' + nuevaPub.id + '/estado', T.Mara, { accion: 'enviar', version: nuevaPub.version }), 'enviar a revisión');
+    VE[rol].apruebaPub = ok(await pedir('POST', '/marketing/publicaciones/' + nuevaPub.id + '/estado', t, { accion: 'aprobar', version: enRevision.version }));
   }
 
   // ----- Pantallas, niveles y permisos de cada rol -----
@@ -229,6 +248,11 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
     ['2026-10-26', 'Técnico: ve su solicitud de compra, no las de otros, y no ve montos de compras.', { tecnico: { jade: 1, perla: 0, 'perm:compras.importes': 0 } }],
     ['2026-10-21', 'Prospección: cada quien lo suyo (quien ve toda su sucursal en ventas, todos los de su sucursal); el técnico no prospecta.', { ventas: { granate: 1, cuarzo: 0 }, atencion: { granate: 1, cuarzo: 1 }, tecnico: { granate: 0, cuarzo: 0 } }],
     ['2026-10-19', 'Personal: quien ve órdenes ve nombre y puesto del personal activo, para asignarlo a una orden; la ficha y los datos sensibles, solo Gerente y Dirección.', { gerente: { obsidiana: 1, fichaEmp: 1, clabe: 1 }, ventas: { obsidiana: 1, fichaEmp: 0, clabe: 0 }, atencion: { obsidiana: 1, fichaEmp: 0, clabe: 0 }, tecnico: { obsidiana: 1, fichaEmp: 0, clabe: 0 }, costos: { obsidiana: 0, fichaEmp: 0, clabe: 0 } }],
+    ['2026-10-26', 'Marketing: aprueban las publicaciones Dirección y el Gerente de marketing; nadie más (ni Marketing, aunque la haya escrito).', { admin: { apruebaPub: 1 }, marketing_gerente: { apruebaPub: 1 }, marketing: { apruebaPub: 0 }, gerente: { apruebaPub: 0 }, ventas: { apruebaPub: 0 }, atencion: { apruebaPub: 0 }, tecnico: { apruebaPub: 0 }, costos: { apruebaPub: 0 } }],
+    ['2026-10-26', 'Marketing y Gerente de marketing: ven, editan y comentan las publicaciones de toda la empresa (de cualquier sucursal y las generales), y nada más del sistema: ni ventas, cobranza, gastos, compras, prospección ni personal.', Object.fromEntries(['marketing', 'marketing_gerente'].map(r => [r, {
+      rubi: 1, zafiro: 1, topacio: 1, editaPub: 1, comentaPub: 1, ambar: 0, berilo: 0, coral: 0, cobroAlicia: 0, cobroTomas: 0, saldo: 0, gastoTomas: 0, gastoCarlos: 0, clabeProv: 0, jade: 0, perla: 0, granate: 0, cuarzo: 0, obsidiana: 0, clabe: 0, editaO1: 0, borra: 0 }]))],
+    ['2026-10-26', 'Los demás roles (Gerente, Ventas, Atención, Técnico, Compras) no ven Marketing; Dirección lo puede prender en Roles y permisos.', Object.fromEntries(['gerente', 'ventas', 'atencion', 'tecnico', 'costos'].map(r => [r, { rubi: 0, zafiro: 0, topacio: 0, editaPub: 0, comentaPub: 0 }]))],
+    ['2026-10-26', 'Dirección ve y aprueba todo Marketing.', { admin: { rubi: 1, zafiro: 1, topacio: 1, editaPub: 1, comentaPub: 1 } }],
   ];
   const NOMBRE = Object.fromEntries(DATOS.flatMap(([, f]) => f.map(([k, t]) => [k, t])).concat(REPORTES.map(([k, t]) => ['rep:' + k, t]), ACCIONES, PERM.catalogo.map(p => ['perm:' + p.clave, 'puede: ' + p.nombre])));
   console.log('Reglas acordadas:');

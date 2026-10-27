@@ -175,6 +175,7 @@ require('./respaldos')(db, { hoyMexico }); // Copia diaria automática de la bas
 require('./integridad')(app, db, h); // Revisión de integridad de los datos guardados (solo administración)
 // Personal (RH): fichas, expediente, vacaciones e incidencias, y el equipo de cada orden de servicio.
 const personalMod = require('./personal')(app, db, h);
+require('./marketing')(app, db, h); // Marketing: calendario de publicaciones con aprobación (2026-10-26)
 // Versión DEMO con datos de ejemplo: solo con MODO_DEMO=1 y en una base vacía (nunca en el sistema real).
 const demo = require('./demo')(app, db, { sesiones, PORT, SESSION_TTL_MS });
 

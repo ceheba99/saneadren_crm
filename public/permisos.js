@@ -22,6 +22,7 @@ const Permisos = (() => {
     const reglas = TODAS.map(c => tiene.has(c) || DATOS.rol === 'admin' ? `.noperm-${clase(c)}{display:none!important}` : `.perm-${clase(c)}{display:none!important}`);
     st.textContent = reglas.join('\n');
     document.body.classList.add('permisos-listos');
+    window.MenuPrincipal?.ocultarVacios?.();
   }
   function pintarAviso() {
     let b = document.getElementById('aviso-ver-como');

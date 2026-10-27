@@ -20,6 +20,9 @@ const USUARIOS_DEMO = [
   ['rh', 'rh', 'Karla Recursos Humanos - Demo', 'Recursos humanos QRO (todo, con datos sensibles)', 'QRO'],
   ['supervisor', 'supervisor', 'Sergio Supervisor - Demo', 'Supervisor de campo QRO (sin datos sensibles)', 'QRO'],
   ['nomina', 'nomina', 'Carlos Nómina - Demo', 'Nómina QRO (solo consulta, con CLABE y salario)', 'QRO'],
+  // Marketing (2026-10-26): solo ven el calendario de publicaciones; el gerente de marketing además aprueba.
+  ['marketing', 'marketing', 'Mariana Marketing - Demo', 'Marketing (solo el calendario de publicaciones)', 'QRO'],
+  ['marketing_gerente', 'marketing_gerente', 'Gabriel Gerente de Marketing - Demo', 'Gerente de marketing (aprueba publicaciones)', 'QRO'],
 ];
 // Roles de ejemplo para Personal: [clave en USUARIOS_DEMO, nombre, descripción, permisos, qué ve en cada área (0 nada, 1 lo suyo, 2 su sucursal, 3 toda la empresa)].
 const ROLES_RH = [
@@ -347,6 +350,37 @@ module.exports = function demo(app, db, { sesiones, PORT, SESSION_TTL_MS }) {
     }
     const realizadas = (await pedir('GET', '/leads', A)).filter(l => l.ejecucion === 'realizado').slice(0, 4);
     for (const [i, l] of realizadas.entries()) await pedir('PUT', '/leads/' + l.id, A, { version: (await pedir('GET', '/leads/' + l.id, A)).version, encuesta_calificacion: [4, 4, 3, 2][i], encuesta_comentario: ['Muy puntuales y limpios', 'Excelente servicio', 'Bien, pero llegaron tarde', 'El operador no traía la manguera adecuada'][i] });
+
+    // ===== 9. Marketing: publicaciones del mes en cada paso del flujo (con imágenes de ejemplo) =====
+    {
+      const MK = tok('marketing'), GM = tok('marketing_gerente');
+      // Imagen PNG real (degradado de color), para que la vista previa se vea.
+      const zlib = require('zlib');
+      const crcT = Array.from({ length: 256 }, (_, n) => { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; return c >>> 0; });
+      const crc = b => { let c = 0xffffffff; for (const x of b) c = crcT[(c ^ x) & 0xff] ^ (c >>> 8); return (c ^ 0xffffffff) >>> 0; };
+      const trozo = (t, d) => { const l = Buffer.alloc(4); l.writeUInt32BE(d.length); const td = Buffer.concat([Buffer.from(t), d]); const c = Buffer.alloc(4); c.writeUInt32BE(crc(td)); return Buffer.concat([l, td, c]); };
+      const imagen = ([r, g, b]) => { const L = 240, ih = Buffer.alloc(13); ih.writeUInt32BE(L, 0); ih.writeUInt32BE(L, 4); ih[8] = 8; ih[9] = 2;
+        const filas = []; for (let y = 0; y < L; y++) { const f = Buffer.alloc(1 + L * 3); for (let x = 0; x < L; x++) { const k = (x + y) / (2 * L); f[1 + x * 3] = r * (1 - k) + 255 * k; f[2 + x * 3] = g * (1 - k) + 200 * k; f[3 + x * 3] = b * (1 - k) + 40 * k; } filas.push(f); }
+        return Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), trozo('IHDR', ih), trozo('IDAT', zlib.deflateSync(Buffer.concat(filas))), trozo('IEND', Buffer.alloc(0))]); };
+      const pub = (t, datos) => pedir('POST', '/marketing/publicaciones', t, { formato: 'post', sucursal: 'empresa', ...datos });
+      const paso = async (t, p, accion, extra = {}) => pedir('POST', '/marketing/publicaciones/' + p.id + '/estado', t, { accion, version: (await pedir('GET', '/marketing/publicaciones/' + p.id, t)).version, ...extra });
+      const conImagen = async (p, color, nombre) => subir('/marketing/publicaciones/' + p.id + '/imagenes', MK, imagen(color), { 'X-Nombre': nombre });
+      const p1 = await pub(MK, { titulo: 'Tip: limpia tu trampa de grasa', redes: ['instagram', 'facebook'], formato: 'carrusel', fecha: dia(-6), hora: '10:00', campana: 'Tips de mantenimiento', copy: '¿Sabías que una trampa de grasa saturada puede tapar todo el drenaje de tu cocina? 🍳 Te contamos cada cuánto limpiarla.', hashtags: '#trampadegrasa #restaurantes #queretaro' });
+      await conImagen(p1, [24, 60, 110], 'tip-trampa-1.png'); await conImagen(p1, [40, 120, 90], 'tip-trampa-2.png');
+      await paso(MK, p1, 'enviar'); await paso(GM, p1, 'aprobar'); await paso(MK, p1, 'publicar', { url: 'https://www.instagram.com/' });
+      const p2 = await pub(MK, { titulo: 'Video: así desazolvamos', redes: ['tiktok', 'instagram'], formato: 'reel', fecha: dia(2), hora: '19:00', campana: 'Detrás de cámaras', copy: 'Un día con nuestra cuadrilla 🚛💪', hashtags: '#desazolve #detrasdecamaras', enlace: 'https://drive.google.com/' });
+      await paso(MK, p2, 'enviar');
+      const p3 = await pub(MK, { titulo: 'Promo noviembre: mantenimiento preventivo', redes: ['facebook', 'linkedin'], fecha: dia(4), hora: '09:00', campana: 'Promo noviembre', copy: 'Agenda tu mantenimiento preventivo en noviembre y evita urgencias en temporada alta.', sucursal: qroId });
+      await conImagen(p3, [180, 70, 30], 'promo-noviembre.png');
+      await paso(MK, p3, 'enviar'); await paso(GM, p3, 'pedir_cambios', { comentario: 'Agrega el teléfono de contacto y cambia la imagen por una de la cuadrilla' });
+      const p4 = await pub(MK, { titulo: 'Podcast: el agua que no vemos (ep. 3)', redes: ['spotify', 'linkedin'], formato: 'episodio', fecha: dia(7), copy: 'Hablamos de plantas de tratamiento en hospitales.', enlace: 'https://open.spotify.com/' });
+      await paso(MK, p4, 'enviar'); await paso(GM, p4, 'aprobar'); await paso(MK, p4, 'programar');
+      await pub(MK, { titulo: 'Caso de éxito: hotel en Juriquilla', redes: ['linkedin'], formato: 'articulo', fecha: dia(10), copy: 'Borrador del caso de éxito…' });
+      const p6 = await pub(MK, { titulo: 'Felicitación Día de Muertos', redes: ['instagram', 'facebook', 'tiktok'], fecha: dia(5), hora: '12:00', copy: '🕯️ Honramos a quienes nos dejaron huella.', hashtags: '#diademuertos' });
+      await conImagen(p6, [120, 40, 140], 'dia-de-muertos.png');
+      await paso(MK, p6, 'enviar'); await paso(GM, p6, 'aprobar');
+      await pedir('POST', '/marketing/publicaciones/' + p6.id + '/comentarios', A, { texto: 'Me gusta. Súbanla temprano, por favor.' });
+    }
 
     // Al final: la revisión de integridad debe salir limpia.
     const r = require('./alcance').global(() => require('./integridad').revisar(db, {}));

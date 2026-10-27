@@ -5,6 +5,7 @@
 // Uso: await require('./ayuda-alcance.cjs').comoAntes(pedir, tokenDeDireccion)
 //   (pedir(método, ruta, token, cuerpo) → [estado, json])
 const AREAS = ['contactos', 'prospeccion', 'generador', 'cotizaciones', 'ordenes', 'cxc', 'cxp', 'solicitudes', 'ordenes_compra'];
+// Marketing (2026-10-26) no entra en «como antes»: es un área aparte que los roles de ventas no ven.
 const TODO = Object.fromEntries(AREAS.map(a => [a, 2]));
 const EDITA = { contactos: true, prospeccion: true, cotizaciones: true, ordenes: true, solicitudes: true };
 // Lo que cada rol podía hacer antes de los niveles (al sembrar niveles se quitan los permisos que ya no tienen sentido).

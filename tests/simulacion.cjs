@@ -8,7 +8,8 @@ const os = require('os');
 const path = require('path');
 
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'crm-sim-'));
-const PUERTO = String(3400 + Math.floor(Math.random() * 500));
+// 3659 está en la lista de puertos que fetch bloquea («bad port»): se brinca.
+const PUERTO = String((p => (p === 3659 ? 3660 : p))(3400 + Math.floor(Math.random() * 500)));
 const ADMIN = { usuario: 'admin', correo: 'marketing@saneadren.com.mx', password: 'Simulacion-Segura-41' };
 let salida = '';
 const srv = spawn(process.execPath, [path.join(__dirname, '..', 'server', 'index.js')], {
