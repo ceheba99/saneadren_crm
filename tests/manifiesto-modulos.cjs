@@ -116,6 +116,18 @@ module.exports = {
       buscador: null, buscadorRazon: 'se buscan dentro del calendario de publicaciones (filtro propio)',
       permisos: ['marketing.ver', 'marketing.sucursal', 'marketing.empresa', 'marketing.editar', 'marketing.aprobar', 'marketing.dinero'],
     },
+    facturacion: {
+      nombre: 'Facturación CFDI 4.0 con factura.com (F1: solo la base de datos y las validaciones; todavía sin pantallas ni rutas)',
+      vistas: [], vistasRazon: 'en construcción: la pantalla llega con la F3 (botón «Facturar» en la orden)',
+      tablas: ['clientes_fiscales', 'facturas', 'facturas_log', 'factura_ventas', 'factura_cobros', 'series_factura', 'sat_catalogos'],
+      rutas: [/^\/api\/facturacion(\/|$)/],
+      pendientes: null, pendientesRazon: 'todavía no hay facturas: los pendientes («por facturar», «borrador por corregir») se agregan con la F3',
+      inicio: [],
+      demo: [], // el demo de Render nunca timbra: en la F3 se simula sin llamar a factura.com
+      integridad: null, integridadRazon: 'sin datos todavía; la revisión de facturas (orden sin factura vigente, totales que no cuadran) llega con la F3',
+      buscador: null, buscadorRazon: 'todavía no hay pantalla; las facturas se buscarán por folio y UUID cuando exista la vista (F4)',
+      permisos: [],
+    },
     administracion: {
       nombre: 'Usuarios, roles, sucursales, catálogos, bitácora y respaldos',
       vistas: ['usuarios', 'catalogos', 'bitacora'],
@@ -141,6 +153,7 @@ module.exports = {
     publicaciones: 'sin sucursal es de toda la empresa (decisión 2026-10-26): no se le asigna una sola; su vista filtrada está en VISTAS',
     proyectos_marketing: 'igual que las publicaciones: sin sucursal es de toda la empresa; su vista filtrada está en VISTAS',
     ideas_marketing: 'igual que las publicaciones: sin sucursal es de toda la empresa; su vista filtrada está en VISTAS',
+    series_factura: 'configuración: la serie de cada sucursal la lee el servidor al timbrar; ninguna pantalla la consulta suelta (la edición, con su permiso, llega en la F2)',
   },
   // Datos que la pantalla muestra y que NO salen de un formulario con su mismo nombre: los genera el sistema (razón) o
   // se capturan con otro nombre ({ como, razon }: la auditoría comprueba que la pantalla mande esa llave). Un dato que se

@@ -20,7 +20,7 @@
 const alcance = require('./alcance');
 
 // Tablas con sucursal propia y tablas que la heredan de su registro (en orden: primero las de arriba).
-const CON_SUCURSAL = ['leads', 'cuentas_por_pagar', 'solicitudes_compra', 'ordenes_compra', 'establecimientos', 'historial_archivo', 'clientes', 'personal'];
+const CON_SUCURSAL = ['leads', 'cuentas_por_pagar', 'solicitudes_compra', 'ordenes_compra', 'establecimientos', 'historial_archivo', 'clientes', 'personal', 'facturas'];
 const VISTAS = [
   ['leads', 've_lead(sucursal_id, responsable_id, tecnico_id, estatus, capturado_por)'],
   // Gastos: los de su sucursal o los que él registró; con «Ver los gastos de sus órdenes», también los de sus órdenes.
@@ -59,6 +59,12 @@ const VISTAS = [
   // Control y finanzas (fase 4): de toda la empresa; los montos además piden «marketing.dinero» en cada ruta.
   ['mk_gastos', "nivel_area('marketing') >= 1"], ['mk_presupuestos', "nivel_area('marketing') >= 1"], ['mk_presupuesto_lineas', "nivel_area('marketing') >= 1"],
   ['mk_objetivos', "nivel_area('marketing') >= 1"], ['mk_metas', "nivel_area('marketing') >= 1"],
+  // Facturación (F1, 2026-10-27): las facturas por su sucursal; lo demás hereda. Las rutas (F2 y F3) además piden su permiso.
+  ['facturas', 'en_alcance(sucursal_id)'],
+  ['facturas_log', 'factura_id IN (SELECT id FROM facturas) OR lead_id IN (SELECT id FROM leads)'],
+  ['factura_ventas', 'factura_id IN (SELECT id FROM facturas)'],
+  ['factura_cobros', 'factura_id IN (SELECT id FROM facturas)'],
+  ['clientes_fiscales', 'cliente_id IN (SELECT id FROM clientes)'], // los clientes se comparten entre sucursales
 ];
 // Tablas con folio propio por sucursal y su tipo de contador.
 const FOLIO = { leads: 'leads', solicitudes_compra: 'solicitudes', ordenes_compra: 'ordenes_compra' };
