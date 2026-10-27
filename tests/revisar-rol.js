@@ -19,7 +19,8 @@ async function revisarRol(ids = {}) {
   // Lo que el servidor le entrega a este rol de cada registro sembrado.
   const recibe = new Set();
   const RUTAS = [['/leads/' + ids.lead], ['/clientes/' + ids.cliente], ['/compras/solicitudes/' + ids.solicitud], ['/compras/ordenes/' + ids.oc], ['/personal/' + ids.persona],
-    ['/prospeccion/' + ids.prospecto], ['/finanzas/cxp'], ['/finanzas/proveedores'], ['/compras/centros'], ['/tipos-cliente'], ['/compras/unidades'], ['/leads/' + ids.lead + '/cobros']];
+    ['/prospeccion/' + ids.prospecto], ['/finanzas/cxp'], ['/finanzas/proveedores'], ['/compras/centros'], ['/tipos-cliente'], ['/compras/unidades'], ['/leads/' + ids.lead + '/cobros'],
+    ['/marketing/publicaciones/' + ids.publicacion], ['/marketing/proyectos/' + ids.proyecto]];
   const puede = {};
   for (const [ruta] of RUTAS) {
     try { const x = await fetch('/api' + ruta, { headers: { Authorization: 'Bearer ' + USUARIO_ACTUAL.token, ...encabezadoSucursal() } }); puede[ruta] = x.status; if (x.ok) for (const m of (await x.text()).matchAll(NOMBRE)) recibe.add(m[1]); } catch { /* sin acceso */ }
@@ -27,7 +28,10 @@ async function revisarRol(ids = {}) {
   // Cada registro que el rol puede ver, abierto directamente (con sus secciones plegables abiertas).
   const pasos = [['/leads/' + ids.lead, () => abrirFicha(ids.lead)], ['/clientes/' + ids.cliente, () => abrirFichaCliente(ids.cliente)],
     ['/compras/solicitudes/' + ids.solicitud, () => Solicitudes.abrir(ids.solicitud)], ['/compras/ordenes/' + ids.oc, () => Compras.abrir(ids.oc)],
-    ['/personal/' + ids.persona, () => Personal.abrir(ids.persona)], ['/prospeccion/' + ids.prospecto, () => Prospeccion.abrir(ids.prospecto)]];
+    ['/personal/' + ids.persona, () => Personal.abrir(ids.persona)], ['/prospeccion/' + ids.prospecto, () => Prospeccion.abrir(ids.prospecto)],
+    ['/marketing/publicaciones/' + ids.publicacion, () => Marketing.abrir(ids.publicacion)],
+    // El proyecto: cada pestaña (Gantt, avances, publicaciones, datos) se abre y se revisa.
+    ['/marketing/proyectos/' + ids.proyecto, async () => { await ProyectosMk.abrir(ids.proyecto); for (const p of ['avances', 'publicaciones', 'datos', 'gantt']) { await espera(700); window.__alRevisar(); document.querySelector(`[data-py-pestana="${p}"]`)?.click(); } }]];
   for (const [ruta, abrir] of pasos) {
     if (puede[ruta] !== 200) continue;
     try { await abrir(); await espera(1500); abrirPlegables(); await espera(800); window.__alRevisar(); } catch (e) { r.errores.push(ruta + ': ' + e.message); }

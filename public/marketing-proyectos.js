@@ -104,7 +104,7 @@ const ProyectosMk = (() => {
     const filas = t.map((k, i) => {
       const izq = x(k.inicio), w = ancho(k.inicio, k.fin), clase = estado(k);
       const barraHtml = k.hito ? `<span class="py-hito py-g-${clase}" style="left:calc(${x(k.fin) + ancho(k.fin, k.fin) / 2}% - 8px)" title="${esc(k.titulo)} · ${esc(larga(k.fin))}"></span>`
-        : `<span class="py-g-barra py-g-${clase}" style="left:${izq}%;width:${w}%" title="${esc(k.titulo)} · ${esc(corta(k.inicio))} → ${esc(corta(k.fin))} · ${Number(k.avance)} %"><i style="width:${Number(k.avance)}%"></i><em>${Number(k.avance)} %</em></span>`;
+        : `<span class="py-g-barra py-g-${clase}" style="left:${izq}%;width:${w}%" title="${esc(k.titulo)} · ${esc(corta(k.inicio))} → ${esc(corta(k.fin))} · ${Number(k.avance)} %${k.notas ? ' · ' + esc(k.notas) : ''}"><i style="width:${Number(k.avance)}%"></i><em>${Number(k.avance)} %</em></span>`;
       return `<div class="py-g-fila" style="height:${FILA}px"><div class="py-g-nombre" title="${esc(k.titulo)}"><b>${k.hito ? '◆ ' : ''}${esc(k.titulo)}</b><small>${esc(k.responsable || 'Sin responsable')}</small></div><div class="py-g-pista">${barraHtml}</div></div>`;
     }).join('');
     // Flechas de dependencia (SVG encima de las pistas, en % del ancho).
@@ -129,7 +129,7 @@ const ProyectosMk = (() => {
     const fila = k => {
       const a = k && k.depende_de ? t.find(o => o.id === k.depende_de) : null, mal = a && choca(k, a);
       return `<tr data-py-tarea="${k ? Number(k.id) : 'nueva'}"${k && k.avance < 100 && k.fin < hoy ? ' class="py-t-atrasada"' : ''}>
-      <td data-label="Tarea"><input class="py-t-titulo" maxlength="160" value="${esc(k?.titulo || '')}" placeholder="${k ? '' : 'Nueva tarea…'}" aria-label="Tarea"${dis}>${mal ? `<small class="rojo">⚠ Empieza antes de que termine «${esc(a.titulo)}»</small>` : ''}</td>
+      <td data-label="Tarea"><input class="py-t-titulo" maxlength="160" value="${esc(k?.titulo || '')}" placeholder="${k ? '' : 'Nueva tarea…'}" aria-label="Tarea"${dis}><input class="py-t-notas" maxlength="1000" value="${esc(k?.notas || '')}" placeholder="Notas (opcional)" aria-label="Notas de la tarea"${dis}>${mal ? `<small class="rojo">⚠ Empieza antes de que termine «${esc(a.titulo)}»</small>` : ''}</td>
       <td data-label="Responsable"><select class="py-t-resp" aria-label="Responsable"${dis}>${opcionesResp(k ? k.responsable_id : USUARIO_ACTUAL.id)}</select></td>
       <td data-label="Inicio"><input type="date" class="py-t-inicio" value="${esc(k?.inicio || actual.inicio)}" aria-label="Inicio"${dis}></td>
       <td data-label="Fin"><input type="date" class="py-t-fin" value="${esc(k?.fin || sumar(k?.inicio || actual.inicio, 6))}" aria-label="Fin"${dis}></td>
@@ -142,7 +142,7 @@ const ProyectosMk = (() => {
     $('py-av-tarea').innerHTML = '<option value="">No</option>' + t.map(k => `<option value="${Number(k.id)}">${esc(k.titulo)} (${Number(k.avance)} %)</option>`).join('');
     $('py-av-pct').disabled = true; $('py-av-pct').value = '';
   }
-  const valoresFila = tr => ({ titulo: tr.querySelector('.py-t-titulo').value.trim(), responsable_id: Number(tr.querySelector('.py-t-resp').value) || null, inicio: tr.querySelector('.py-t-inicio').value, fin: tr.querySelector('.py-t-fin').value,
+  const valoresFila = tr => ({ titulo: tr.querySelector('.py-t-titulo').value.trim(), notas: tr.querySelector('.py-t-notas').value.trim(), responsable_id: Number(tr.querySelector('.py-t-resp').value) || null, inicio: tr.querySelector('.py-t-inicio').value, fin: tr.querySelector('.py-t-fin').value,
     avance: Number(tr.querySelector('.py-t-avance').value) || 0, depende_de: Number(tr.querySelector('.py-t-dep').value) || null, hito: tr.querySelector('.py-t-hito').checked });
   async function guardarTarea(tr) {
     if (ocupado) return; ocupado = true;

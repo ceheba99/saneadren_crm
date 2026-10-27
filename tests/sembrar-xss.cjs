@@ -59,8 +59,26 @@ const HOY = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Mexico_City' }
   }
   const [, sectores] = await pedir('GET', '/prospeccion/sectores', A);
   const [, pro] = await pedir('POST', '/prospeccion', A, { nombre: 'Establecimiento Trampa', sector_id: sectores[0].id, zona: X('zona'), direccion: X('direccion prospecto'), persona: X('persona'), cargo: X('cargo prospecto'), fuente: X('fuente'), necesidades: X('necesidades'), estado: 'pendiente', responsable_id: vend, proximo_contacto: HOY });
+  // Seguimiento de prospección (2026-10-26).
+  if (pro.id) await pedir('POST', '/prospeccion/' + pro.id + '/seguimientos', A, { version: pro.version, medio: 'llamada', texto: X('seguimiento prospeccion') });
   await pedir('POST', '/roles', A, { nombre: 'Rol Trampa', descripcion: X('descripcion rol') });
-  console.log(JSON.stringify({ ...(MARCAS ? { marcas: MAPA } : {}), guardados: ok, rechazados, lead: l.id, cliente: cli.id, solicitud: so.id, oc: oc.id, persona: per.id, prospecto: pro.id, cxp: cx.id, proveedor: prov.id }));
+  // Marketing (2026-10-26): publicación, comentario, cambios pedidos, imagen; proyecto, tarea, avance y archivo.
+  const PNG = Buffer.from('89504e470d0a1a0a0000000d4948445200000001000000010802000000907753de0000000c4944415408d763f8cfc0000003010100c9fe92ef0000000049454e44ae426082', 'hex');
+  const [, py] = await pedir('POST', '/marketing/proyectos', A, { nombre: XC('nombre proyecto'), objetivo: X('objetivo proyecto'), inicio: HOY, fin: HOY, sucursal: 'empresa' });
+  if (py.id) {
+    const [, py2] = await pedir('POST', '/marketing/proyectos/' + py.id + '/tareas', A, { titulo: XC('titulo tarea'), inicio: HOY, fin: HOY, notas: X('notas tarea') });
+    const [, av] = await pedir('POST', '/marketing/proyectos/' + py.id + '/avances', A, { texto: X('texto avance'), tarea_id: py2.tareas?.[0]?.id, avance: 50 });
+    if (av.avance_id) await subir('/marketing/avances/' + av.avance_id + '/archivos', A, PNG, { 'X-Nombre': XC('archivo avance') + '.png' });
+  }
+  const [, pub] = await pedir('POST', '/marketing/publicaciones', A, { titulo: XC('titulo publicacion'), redes: ['instagram'], formato: 'post', fecha: HOY, copy: X('copy publicacion'), hashtags: X('hashtags'), campana: XC('campana'), sucursal: 'empresa', proyecto_id: py.id });
+  if (pub.id) {
+    await subir('/marketing/publicaciones/' + pub.id + '/imagenes', A, PNG, { 'X-Nombre': XC('imagen publicacion') + '.png' });
+    await pedir('POST', '/marketing/publicaciones/' + pub.id + '/comentarios', A, { texto: X('comentario publicacion') });
+    const [, p1] = await pedir('GET', '/marketing/publicaciones/' + pub.id, A);
+    const [, p2] = await pedir('POST', '/marketing/publicaciones/' + pub.id + '/estado', A, { accion: 'enviar', version: p1.version });
+    await pedir('POST', '/marketing/publicaciones/' + pub.id + '/estado', A, { accion: 'pedir_cambios', version: p2.version, comentario: X('cambios pedidos') });
+  }
+  console.log(JSON.stringify({ ...(MARCAS ? { marcas: MAPA } : {}), guardados: ok, rechazados, lead: l.id, cliente: cli.id, solicitud: so.id, oc: oc.id, persona: per.id, prospecto: pro.id, cxp: cx.id, proveedor: prov.id, publicacion: pub.id, proyecto: py.id }));
   // Un campo que el servidor rechaza no se siembra y su pantalla no se revisa: eso es una falla de la prueba, no un éxito.
   if (rechazados) { console.error(`${rechazados} envío(s) rechazados: esos campos no se revisaron (ver arriba)`); process.exitCode = 1; }
 })().catch(e => { console.error(e); process.exit(1); });

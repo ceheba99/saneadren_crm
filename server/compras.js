@@ -184,7 +184,11 @@ module.exports = function compras(app, db, h, finanzas) {
   }
 
   // ----- Centros de costo -----
+  // Los centros (con su responsable) los ve quien los usa: solicitudes, órdenes de compra o catálogos (auditoría 2026-10-27:
+  // antes los descargaba cualquiera, p. ej. Marketing, Recursos humanos o Nómina).
   app.get('/api/compras/centros', h((req, res) => {
+    const P = app.locals.permisos;
+    if (!['solicitudes.ver', 'ordenes_compra.ver', 'catalogos.editar'].some(c => P.puede(req, c))) return res.status(403).json({ error: 'Tu rol no usa centros de costo' });
     res.json(db.prepare('SELECT * FROM centros_costo ORDER BY activo DESC, orden, nombre').all());
   }));
   // Cualquier usuario agrega, corrige o elimina centros de costo. Eliminar lo quita de la lista para órdenes

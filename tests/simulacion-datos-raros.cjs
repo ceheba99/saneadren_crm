@@ -14,13 +14,17 @@ const espera = ms => new Promise(r => setTimeout(r, ms));
 let n = 0; const malos = [];
 const revisa = (cond, texto, extra) => { n++; if (!cond) { malos.push(texto); console.log('  ✘ ' + texto + (extra !== undefined ? '  → ' + JSON.stringify(extra).slice(0, 900) : '')); } else console.log('  ✔ ' + texto); };
 const errores = [];
-async function pedir(m, r, t, cuerpo, crudo) {
+// Si Windows se queda sin puertos libres para abrir conexiones (EADDRINUSE: miles de peticiones seguidas), es la máquina de
+// pruebas, no el servidor: se espera un momento y se reintenta. Cualquier otra conexión caída sí cuenta como falla.
+async function pedir(m, r, t, cuerpo, crudo, intento = 0) {
   try {
     const x = await fetch(`http://localhost:${PUERTO}/api` + r, { method: m, headers: { 'Content-Type': crudo ? 'application/octet-stream' : 'application/json', ...(t ? { Authorization: 'Bearer ' + t } : {}) }, body: m === 'GET' ? undefined : crudo ?? (cuerpo === undefined ? undefined : typeof cuerpo === 'string' ? cuerpo : JSON.stringify(cuerpo)) });
     const texto = await x.text();
     if (x.status >= 500) errores.push(`${m} ${r} [${typeof cuerpo === 'string' ? cuerpo.slice(0, 40) : JSON.stringify(cuerpo)?.slice(0, 60)}] → ${x.status} ${texto.slice(0, 80)}`);
     return [x.status, texto];
-  } catch (e) { errores.push(`${m} ${r} → sin respuesta (${e.message})`); return [0, '']; }
+  } catch (e) {
+    if (e.cause?.code === 'EADDRINUSE' && intento < 5) { await espera(500 * (intento + 1)); return pedir(m, r, t, cuerpo, crudo, intento + 1); }
+    errores.push(`${m} ${r} [${typeof cuerpo === 'string' ? cuerpo.slice(0, 30) : JSON.stringify(cuerpo)?.slice(0, 40)}] → sin respuesta (${e.message}${e.cause ? ' · ' + (e.cause.code || e.cause.message) : ''})`); return [0, '']; }
 }
 
 (async () => {

@@ -150,6 +150,10 @@ const png = color => { const ih = Buffer.alloc(13); ih.writeUInt32BE(1, 0); ih.w
   await tarea({ titulo: 'Revisar arte final', inicio: dias(-2), fin: dias(1) });
   [, j] = await pedir('GET', '/marketing/pendientes', T.Mara); revisa(j.some(p => p.motivo === 'tarea' && p.titulo === 'Revisar arte final'), 'a Marketing le sale en Inicio su tarea que vence pronto', j.map(p => [p.titulo, p.motivo]));
 
+  console.log('7. Catálogos que no le tocan (auditoría 2026-10-27)');
+  [s] = await pedir('GET', '/compras/centros', T.Mara); revisa(s === 403, 'Marketing no descarga los centros de costo (con su responsable)', s);
+  [s] = await pedir('GET', '/compras/centros', T.Vale); revisa(s === 200, 'Ventas sí (pide solicitudes de compra)', s);
+
   revisa(!/uncaughtException|Error no manejado|TypeError|SqliteError/.test(salida), 'el servidor no registró errores internos', salida.split('\n').filter(l => /Error/.test(l)).slice(0, 5));
   srv.kill();
   console.log(`\n${n - malos.length}/${n} correctas`);

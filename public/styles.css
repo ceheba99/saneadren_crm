@@ -1909,3 +1909,4 @@ table.tabla-clientes.py-tareas tbody td{white-space:normal;}
 .py-adjuntos img{width:84px;height:84px;object-fit:cover;border-radius:6px;border:1px solid var(--gris-200);background:var(--gris-100);display:block;}
 .py-pubs{margin:8px 0 0;padding-left:18px;}.py-pubs li{margin:4px 0;}
 @media(max-width:700px){.py-g-cab,.py-g-fila,.py-g-capa{grid-template-columns:140px minmax(0,1fr);}.py-cabeza-avance{align-items:flex-start;}.py-pestanas{margin:0 10px;}}
+.py-tareas .py-t-notas{margin-top:4px;font-size:12px;}
