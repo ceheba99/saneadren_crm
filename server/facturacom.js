@@ -1,5 +1,5 @@
-/* Facturación CFDI 4.0 · F2 (2026-10-27): cliente HTTP de factura.com. SIN PROBAR contra la API real (aún no hay llaves de sandbox):
-   se probó con respuestas simuladas escritas a partir de la documentación oficial (apidocs). Reglas (CLAUDE.md):
+/* Facturación CFDI 4.0 · F2 (2026-10-27): cliente HTTP de factura.com. Probado contra SANDBOX el 2026-10-27 (series, catálogos, y crear / consultar /
+   actualizar / borrar un cliente) y con respuestas simuladas para los errores. Lo de timbrar, cancelar y descargar llega con la F3 y no está probado. Reglas (CLAUDE.md):
    · Llaves solo del .env del servidor. NUNCA se imprimen, se guardan ni salen en un error: de una respuesta de error solo se
      toma el «message»; el cuerpo completo se descarta (el ejemplo de errores de la doc trae campos «Data» y «Secret» con
      valores que parecen credenciales).

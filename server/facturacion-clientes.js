@@ -1,12 +1,12 @@
-/* Facturación CFDI 4.0 · F2 (2026-10-27): sincroniza los datos fiscales de un cliente (tabla clientes_fiscales) con factura.com. SIN PROBAR contra
-   la API real. Endpoints de apidocs/clientes.html:
+/* Facturación CFDI 4.0 · F2 (2026-10-27): sincroniza los datos fiscales de un cliente (tabla clientes_fiscales) con factura.com. Probado contra sandbox
+   el 2026-10-27 (crear, consultar, actualizar y borrar un cliente de prueba). Endpoints de apidocs/clientes.html:
      GET  /v1/clients/rfc/{RFC}        → todos los clientes con ese RFC (puede haber varios)
      GET  /v1/clients/{UID}            → un cliente
      POST /v1/clients/create           → { rfc, razons, codpos, email, regimen, pais, usocfdi, … }  → Data.UID
      POST /v1/clients/{UID}/update     → los mismos campos (todos los obligatorios otra vez)
    Reglas: (10) el UID guardado se usa SIEMPRE; el RFC solo sirve para AVISAR que ya existe, nunca para enlazar a ciegas (hay que
    elegir, con vincularCliente); (2) con datos incompletos o inválidos NO se llama a la API y se dice qué falta.
-   · «codpos» figura como numérico en la doc: se manda como TEXTO para no perder el cero de un CP como 09410 (por confirmar en sandbox).
+   · «codpos» figura como numérico en la doc: se manda como TEXTO para no perder el cero de un CP como 09410 (confirmado en sandbox: lo conserva).
    · La razón social se manda ya normalizada (MAYÚSCULAS, sin régimen societario). */
 const { validarDatosFiscales } = require('./facturacion-validaciones');
 const { leerCatalogos } = require('./facturacion-catalogos');
@@ -46,7 +46,7 @@ async function sincronizarCliente(cliente, db, fiscalId, { crearAunqueExista = f
     return { estado: 'actualizado', uid: f.uid_facturacom };
   }
   if (!crearAunqueExista) {
-    // La doc no dice qué contesta la API si no hay ningún cliente con ese RFC (¿lista vacía o error?): las dos formas cuentan como «no hay» (por confirmar en sandbox).
+    // Sin ningún cliente con ese RFC, sandbox contesta HTTP 200 con status «error» y el mensaje «El cliente no existe» (confirmado 2026-10-27). Se acepta también una lista vacía.
     let lista = [];
     try { const res = await cliente.get('/v1/clients/rfc/' + encodeURIComponent(v.normalizado.rfc)); lista = Array.isArray(res.datos) ? res.datos : []; }
     catch (e) { if (!(e instanceof ErrorFactura && e.codigo === 'api' && (e.httpStatus === 404 || /no se encontr|no existe|not found|sin resultados/i.test(e.message)))) throw e; }

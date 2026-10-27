@@ -1,10 +1,10 @@
-/* Facturación CFDI 4.0 · F2 (2026-10-27): copia local de los catálogos OFICIALES de factura.com (tabla sat_catalogos). SIN PROBAR contra
-   la API real. Para qué: validar el régimen y la compatibilidad régimen–uso al capturar datos fiscales (regla 3 de CLAUDE.md:
+/* Facturación CFDI 4.0 · F2 (2026-10-27): copia local de los catálogos OFICIALES de factura.com (tabla sat_catalogos). Probado contra sandbox el
+   2026-10-27: Régimen 23, UsoCfdi 24 (todos con sus regímenes), FormaPago 22, MetodoPago 2, ClaveUnidad 2,415. Para qué: validar el régimen y la compatibilidad régimen–uso al capturar datos fiscales (regla 3 de CLAUDE.md:
    nada de claves escritas a mano), y ofrecer las claves de unidad y las formas de pago.
    · Rutas y campos tomados de apidocs/catalogos.html: GET /v3/catalogo/{RegimenFiscal|FormaPago|MetodoPago|ClaveUnidad|ClaveProductServ}
      y GET /v4/catalogo/UsoCfdi (cada ítem: key, name; el uso trae además «use» y «regimenes»).
    · Una respuesta vacía o rara NUNCA borra el catálogo que ya se tenía.
-   · ClaveProductServ (decenas de miles de claves; la doc no dice si pagina) es opcional y se pide aparte. */
+   · ClaveProductServ trae 52,841 claves en UNA respuesta (sin paginar, ~2 s en sandbox): es opcional y se pide aparte (--claves-producto). */
 const CATALOGOS = {
   RegimenFiscal: '/v3/catalogo/RegimenFiscal',
   UsoCfdi: '/v4/catalogo/UsoCfdi',

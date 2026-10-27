@@ -1,6 +1,7 @@
 // Facturación CFDI 4.0 · F2 (2026-10-27): pruebas del cliente HTTP de factura.com, de los catálogos, de la sincronización de clientes y de las
-// series, con una API SIMULADA escrita a partir de la documentación oficial (apidocs). IMPORTANTE: esto NO prueba la API real: lo que la doc
-// no aclara (qué contesta una búsqueda sin resultados, el UID de una serie, el CP numérico…) se confirma con el primer uso en sandbox.
+// series, con una API SIMULADA escrita a partir de la documentación oficial (apidocs). IMPORTANTE: esto NO prueba la API real. Lo que la doc
+// no aclaraba (búsqueda sin resultados, UID de una serie, CP con cero inicial) se confirmó a mano contra sandbox el 2026-10-27 y los casos reales
+// quedaron aquí; lo de timbrar y cancelar llega con la F3.
 // Uso: node --test tests/facturacion-api.test.cjs   (también corre dentro de «npm test»)
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -163,7 +164,7 @@ test('Clientes: con datos incompletos o inválidos NO se llama a la API y se dic
   assert.equal(a.llamadas.length, 0);
 });
 test('Clientes: un cliente nuevo se crea y se guarda su UID (la búsqueda por RFC sin resultados, como lista vacía o como error)', async () => {
-  for (const sinResultados of [() => json({ status: 'success', Data: [] }), () => json({ status: 'error', message: 'No se encontraron clientes' }, { status: 404 }), () => json({ status: 'error', message: 'No se encontraron clientes' })]) {
+  for (const sinResultados of [() => json({ status: 'success', Data: [] }), () => json({ status: 'error', message: 'No se encontraron clientes' }, { status: 404 }), () => json({ status: 'error', message: 'El cliente no existe' })]) { // el último es lo que contesta sandbox de verdad (HTTP 200)
     const db = baseDeDatos(), id = fiscal(db, { razon_social: 'Acme, S.A. de C.V.' });
     const a = api((m, ruta) => (m === 'GET' ? sinResultados() : json(clienteOk())));
     const r = await sincronizarCliente(cliente(a.fetchImpl), db, id);

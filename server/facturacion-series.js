@@ -1,9 +1,10 @@
-/* Facturación CFDI 4.0 · F2 (2026-10-27): series de factura.com y su asignación a cada sucursal. SIN PROBAR contra la API real. De apidocs/series.html:
+/* Facturación CFDI 4.0 · F2 (2026-10-27): series de factura.com y su asignación a cada sucursal. Listar, consultar por ID y asignar se probaron contra sandbox
+   el 2026-10-27; CREAR una serie NO se ha probado (no se quiso ensuciar la cuenta). De apidocs/series.html:
      GET  /v4/series          → { status, data: [{ SerieID, SerieName, SerieType, SerieDescription, SerieStatus: «Activa» }] }
      POST /v4/series/create   → { letra, tipoDocumento, folio? }  → { response: «success», message } (NO devuelve el ID de la serie)
    · La serie debe corresponder al tipo de documento (factura, pago…): se comprueba antes de asignarla.
    · Como crear no devuelve el ID, después de crear se vuelve a listar para encontrarla.
-   · Por confirmar en sandbox: la doc usa «SerieID» como UID de la serie en las rutas /v4/series/{UID}, sin decirlo expresamente. */
+   · Confirmado en sandbox: el UID de las rutas /v4/series/{UID} es el «SerieID». */
 const { ErrorFactura } = require('./facturacom');
 const { TIPOS_DOCUMENTO } = require('./facturacion-db');
 

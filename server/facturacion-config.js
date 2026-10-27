@@ -5,7 +5,7 @@
    prueba, y las llaves de sandbox y de producción son distintas. Así, con FACTURA_ENV=sandbox NUNCA se leen las llaves de producción
    (ni al revés) y no se pueden mezclar por descuido. */
 
-// Hosts de la API (CLAUDE.md y apidocs/primeros-pasos; se confirman con la primera llamada de la F2).
+// Hosts de la API (apidocs/primeros-pasos). Confirmados con llamadas reales a sandbox el 2026-10-27; producción sin probar.
 const HOSTS = { sandbox: 'https://sandbox.factura.com/api', prod: 'https://api.factura.com' };
 // Valor fijo que pide la API en el encabezado F-PLUGIN (viene tal cual en la documentación oficial; no es un secreto).
 const F_PLUGIN = '9d4095c8f7ed5785cb14c0e3b033eeb8252416ed';
