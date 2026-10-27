@@ -9,6 +9,11 @@
 //  · Qué ve cada rol lo decide su nivel en el área «marketing» (vistas de sucursales.js): lo suyo, su sucursal (y lo
 //    de toda la empresa) o todo. Edita quien tiene «marketing.editar». No se publica en las redes desde aquí: se marca
 //    «Publicada» a mano con el enlace.
+//  · PROYECTOS (fase 2, 2026-10-26): cada proyecto (de toda la empresa o de una sucursal) con sus tareas (responsable,
+//    inicio, fin, % de avance, de cuál depende, hito) que se ven en un diagrama de Gantt, sus avances (texto, fotos y
+//    archivos, y si mueven el % de una tarea) y las publicaciones ligadas a él. El % del proyecto es el promedio de sus
+//    tareas pesado por su duración. Las mismas reglas de Marketing: lo ve quien ve Marketing, lo edita quien lo edita.
+//    Una tarea no se borra: se quita (queda quién y cuándo).
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
@@ -19,8 +24,9 @@ const REDES = { tiktok: 'TikTok', facebook: 'Facebook', instagram: 'Instagram', 
 const FORMATOS = { post: 'Publicación (imagen)', carrusel: 'Carrusel', reel: 'Reel / video corto', historia: 'Historia', video: 'Video', episodio: 'Episodio / podcast', articulo: 'Artículo', otro: 'Otro' };
 const ESTADOS = { borrador: 'Borrador', revision: 'En revisión', cambios: 'Cambios pedidos', aprobada: 'Aprobada', programada: 'Programada', publicada: 'Publicada', cancelada: 'Cancelada' };
 const CONTENIDO = ['titulo', 'redes', 'formato', 'copy', 'hashtags', 'enlace'];
+const ESTADOS_PROYECTO = { planeacion: 'En planeación', en_curso: 'En curso', pausa: 'En pausa', terminado: 'Terminado', cancelado: 'Cancelado' };
 const MAX_BYTES = 10 * 1024 * 1024, MAX_IMAGENES = 10;
-const MIME = { jpg: 'image/jpeg', png: 'image/png', webp: 'image/webp', gif: 'image/gif' };
+const MIME = { jpg: 'image/jpeg', png: 'image/png', webp: 'image/webp', gif: 'image/gif', pdf: 'application/pdf' };
 const nombreSeguro = t => String(t || 'imagen').normalize('NFC').replace(/[\\/:*?"<>|\u0000-\u001f]+/g, '_').slice(0, 120) || 'imagen';
 const encabezado = (req, k) => { try { return decodeURIComponent(String(req.get(k) || '')); } catch { return ''; } };
 // Imagen por su contenido (no por el nombre): JPG y PNG como en el resto del sistema, más WebP y GIF.
@@ -66,7 +72,43 @@ module.exports = function marketing(app, db, h) {
       created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
     );
     CREATE INDEX IF NOT EXISTS idx_publicacion_versiones ON publicacion_versiones(publicacion_id);
+    CREATE TABLE IF NOT EXISTS proyectos_marketing (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      nombre TEXT NOT NULL CHECK(length(trim(nombre)) BETWEEN 1 AND 120), objetivo TEXT NOT NULL DEFAULT '',
+      estado TEXT NOT NULL DEFAULT 'planeacion' CHECK(estado IN ('planeacion','en_curso','pausa','terminado','cancelado')),
+      inicio TEXT NOT NULL, fin TEXT NOT NULL,
+      sucursal_id INTEGER REFERENCES sucursales(id), -- NULL: de toda la empresa
+      responsable_id INTEGER REFERENCES usuarios(id), creado_por INTEGER REFERENCES usuarios(id),
+      version INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')), updated_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+    );
+    CREATE TABLE IF NOT EXISTS tareas_marketing (
+      id INTEGER PRIMARY KEY AUTOINCREMENT, proyecto_id INTEGER NOT NULL REFERENCES proyectos_marketing(id),
+      titulo TEXT NOT NULL CHECK(length(trim(titulo)) BETWEEN 1 AND 160), responsable_id INTEGER REFERENCES usuarios(id),
+      inicio TEXT NOT NULL, fin TEXT NOT NULL, avance INTEGER NOT NULL DEFAULT 0 CHECK(avance BETWEEN 0 AND 100),
+      depende_de INTEGER REFERENCES tareas_marketing(id), hito INTEGER NOT NULL DEFAULT 0 CHECK(hito IN (0, 1)),
+      orden INTEGER NOT NULL DEFAULT 0, notas TEXT NOT NULL DEFAULT '', version INTEGER NOT NULL DEFAULT 1,
+      eliminado INTEGER NOT NULL DEFAULT 0, eliminado_por INTEGER REFERENCES usuarios(id), eliminado_at TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')), updated_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_tareas_marketing ON tareas_marketing(proyecto_id);
+    CREATE TABLE IF NOT EXISTS avances_marketing (
+      id INTEGER PRIMARY KEY AUTOINCREMENT, proyecto_id INTEGER NOT NULL REFERENCES proyectos_marketing(id),
+      usuario_id INTEGER REFERENCES usuarios(id), texto TEXT NOT NULL,
+      tarea_id INTEGER REFERENCES tareas_marketing(id), avance_antes INTEGER, avance_nuevo INTEGER,
+      created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_avances_marketing ON avances_marketing(proyecto_id);
+    CREATE TABLE IF NOT EXISTS archivos_marketing (
+      id INTEGER PRIMARY KEY AUTOINCREMENT, proyecto_id INTEGER NOT NULL REFERENCES proyectos_marketing(id), avance_id INTEGER REFERENCES avances_marketing(id),
+      nombre TEXT NOT NULL, archivo TEXT NOT NULL, formato TEXT NOT NULL, bytes INTEGER NOT NULL, sha256 TEXT NOT NULL,
+      subido_por INTEGER REFERENCES usuarios(id), eliminado INTEGER NOT NULL DEFAULT 0, eliminado_por INTEGER REFERENCES usuarios(id), eliminado_at TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_archivos_marketing ON archivos_marketing(proyecto_id);
   `);
+  // Cada publicación puede ser parte de un proyecto.
+  if (!db.prepare('PRAGMA table_info(publicaciones)').all().some(c => c.name === 'proyecto_id')) db.exec('ALTER TABLE publicaciones ADD COLUMN proyecto_id INTEGER REFERENCES proyectos_marketing(id)');
   const base = process.env.DB_PATH ? path.dirname(path.resolve(process.env.DB_PATH)) : path.join(__dirname, '..');
   const DIR = path.join(base, 'archivos', 'marketing');
   const P = () => app.locals.permisos, alc = () => require('./alcance');
@@ -82,7 +124,7 @@ module.exports = function marketing(app, db, h) {
     next();
   });
 
-  const lista = (where, args) => db.prepare(`SELECT p.*, u.nombre responsable, s.clave sucursal_clave, s.nombre sucursal_nombre,
+  const lista = (where, args) => db.prepare(`SELECT p.*, u.nombre responsable, s.clave sucursal_clave, s.nombre sucursal_nombre, (SELECT pm.nombre FROM proyectos_marketing pm WHERE pm.id = p.proyecto_id) proyecto_nombre,
       (SELECT i.id FROM publicacion_imagenes i WHERE i.publicacion_id = p.id AND i.eliminado = 0 ORDER BY i.orden, i.id LIMIT 1) portada_id,
       (SELECT COUNT(*) FROM publicacion_imagenes i WHERE i.publicacion_id = p.id AND i.eliminado = 0) imagenes,
       (SELECT COUNT(*) FROM publicacion_comentarios c WHERE c.publicacion_id = p.id AND c.tipo <> 'estado') comentarios
@@ -119,26 +161,31 @@ module.exports = function marketing(app, db, h) {
     if (body.hashtags !== undefined) x.hashtags = texto(body.hashtags, 500);
     if (body.campana !== undefined) x.campana = texto(body.campana, 120);
     if (body.enlace !== undefined) { x.enlace = texto(body.enlace, 500); if (x.enlace && !/^https?:\/\/[^\s]+$/i.test(x.enlace)) throw Error('El enlace debe empezar con https://'); }
-    // De toda la empresa o de una sucursal que pueda ver (con «toda la empresa», cualquiera).
-    if (body.sucursal !== undefined || !actual) {
-      const v = body.sucursal ?? 'empresa';
-      if (v === 'empresa' || v === null || v === '') x.sucursal_id = null;
-      else {
-        const sid = Number(v), a = req.alcanceSuc;
-        const activa = db.prepare('SELECT id FROM sucursales WHERE id = ? AND activo = 1').get(sid);
-        if (!activa || !(a.general || a.permitidas.includes(sid) || alc().nivel('marketing') >= 3)) throw Error('Elige una sucursal válida, o «Toda la empresa»');
-        x.sucursal_id = sid;
-      }
-    }
-    if (body.responsable_id !== undefined || !actual) {
-      const r = Number(body.responsable_id || yo(req));
-      const u = db.prepare('SELECT id, rol FROM usuarios WHERE id = ? AND activo = 1').get(r);
-      if (!u) throw Error('Elige a un responsable activo');
-      if (r !== yo(req) && alc().nivel('marketing') < 2) throw Error('Solo puedes poner publicaciones a tu nombre');
-      if (!P().tieneRol(u.rol, 'marketing.editar')) throw Error('Esa persona no trabaja en Marketing: elige a otra');
-      x.responsable_id = r;
+    if (body.sucursal !== undefined || !actual) x.sucursal_id = sucursalDe(req, body.sucursal);
+    if (body.responsable_id !== undefined || !actual) x.responsable_id = responsableDe(req, body.responsable_id, 'publicaciones');
+    // Proyecto al que pertenece (uno que vea), o ninguno.
+    if (body.proyecto_id !== undefined) {
+      x.proyecto_id = body.proyecto_id ? Number(body.proyecto_id) : null;
+      if (x.proyecto_id && !db.prepare('SELECT id FROM proyectos_marketing WHERE id = ?').get(x.proyecto_id)) throw Error('Elige un proyecto válido');
     }
     return x;
+  }
+  // De toda la empresa o de una sucursal que pueda ver (con «toda la empresa», cualquiera).
+  function sucursalDe(req, v = 'empresa') {
+    if (v === 'empresa' || v === null || v === '' || v === undefined) return null;
+    const sid = Number(v), a = req.alcanceSuc;
+    const activa = db.prepare('SELECT id FROM sucursales WHERE id = ? AND activo = 1').get(sid);
+    if (!activa || !(a.general || a.permitidas.includes(sid) || alc().nivel('marketing') >= 3)) throw Error('Elige una sucursal válida, o «Toda la empresa»');
+    return sid;
+  }
+  // Responsable: alguien activo que trabaje en Marketing; con «lo suyo», solo uno mismo.
+  function responsableDe(req, v, que) {
+    const r = Number(v || yo(req));
+    const u = db.prepare('SELECT id, rol FROM usuarios WHERE id = ? AND activo = 1').get(r);
+    if (!u) throw Error('Elige a un responsable activo');
+    if (r !== yo(req) && alc().nivel('marketing') < 2) throw Error(`Solo puedes poner ${que} a tu nombre`);
+    if (!P().tieneRol(u.rol, 'marketing.editar')) throw Error('Esa persona no trabaja en Marketing: elige a otra');
+    return r;
   }
 
   // ---------- Calendario y lista ----------
@@ -147,7 +194,9 @@ module.exports = function marketing(app, db, h) {
     const a = req.alcanceSuc;
     const sucursales = db.prepare('SELECT id, nombre, clave FROM sucursales WHERE activo = 1 ORDER BY id').all().filter(s => a.general || a.permitidas.includes(s.id) || alc().nivel('marketing') >= 3);
     const responsables = db.prepare('SELECT id, nombre, rol FROM usuarios WHERE activo = 1 ORDER BY nombre').all().filter(u => P().tieneRol(u.rol, 'marketing.editar')).map(({ id, nombre }) => ({ id, nombre }));
-    res.json({ redes: REDES, formatos: FORMATOS, estados: ESTADOS, sucursales, responsables, puede: { editar: puedeEditar(req), aprobar: puedeAprobar(req) } });
+    // Proyectos a los que se puede ligar una publicación (los que ve y siguen abiertos).
+    const proyectos = db.prepare("SELECT id, nombre FROM proyectos_marketing WHERE estado IN ('planeacion','en_curso','pausa') ORDER BY nombre").all();
+    res.json({ redes: REDES, formatos: FORMATOS, estados: ESTADOS, estados_proyecto: ESTADOS_PROYECTO, sucursales, responsables, proyectos, puede: { editar: puedeEditar(req), aprobar: puedeAprobar(req) } });
   }));
   app.get('/api/marketing/publicaciones', h((req, res) => {
     const desde = String(req.query.desde || ''), hasta = String(req.query.hasta || '');
@@ -167,6 +216,11 @@ module.exports = function marketing(app, db, h) {
       r.push(...lista("p.estado = 'cambios' ORDER BY p.fecha", []).map(p => ({ ...p, motivo: 'cambios' })));
       r.push(...lista("p.estado IN ('aprobada','programada') AND p.fecha <= ? ORDER BY p.fecha", [hoy]).map(p => ({ ...p, motivo: 'publicar' })));
       r.push(...lista("p.estado = 'borrador' AND p.fecha <= date(?, '+3 days') ORDER BY p.fecha", [hoy]).map(p => ({ ...p, motivo: 'enviar' })));
+      // Tareas de proyectos a su nombre que ya vencieron o vencen en 2 días, sin terminar.
+      r.push(...db.prepare(`SELECT t.id tarea_id, t.titulo, t.fin fecha, t.avance, pm.id proyecto_id, pm.nombre proyecto_nombre, u.nombre responsable FROM tareas_marketing t
+        JOIN proyectos_marketing pm ON pm.id = t.proyecto_id LEFT JOIN usuarios u ON u.id = t.responsable_id
+        WHERE t.eliminado = 0 AND t.avance < 100 AND t.responsable_id = ? AND t.fin <= date(?, '+2 days') AND pm.estado IN ('planeacion','en_curso') ORDER BY t.fin`).all(yo(req), hoy)
+        .map(t => ({ ...t, redes: [], motivo: 'tarea' })));
     }
     res.json(r);
   }));
@@ -206,7 +260,7 @@ module.exports = function marketing(app, db, h) {
       const sets = cambiados.map(k => k + ' = ?'), vals = cambiados.map(k => x[k]);
       if (pierde) { sets.push("estado = 'borrador'", 'aprobado_por = NULL', 'aprobado_at = NULL'); }
       db.prepare(`UPDATE main.publicaciones SET ${sets.join(', ')}, version = version + 1, updated_at = datetime('now','localtime') WHERE id = ?`).run(...vals, p.id);
-      const nombres = { titulo: 'título', redes: 'redes', formato: 'formato', fecha: 'fecha', hora: 'hora', copy: 'copy', hashtags: 'hashtags', enlace: 'enlace', campana: 'campaña', sucursal_id: 'sucursal', responsable_id: 'responsable' };
+      const nombres = { titulo: 'título', redes: 'redes', formato: 'formato', fecha: 'fecha', hora: 'hora', copy: 'copy', hashtags: 'hashtags', enlace: 'enlace', campana: 'campaña', sucursal_id: 'sucursal', responsable_id: 'responsable', proyecto_id: 'proyecto' };
       nota(p.id, yo(req), 'estado', 'Cambió ' + cambiados.map(k => nombres[k] || k).join(', ') + (cambiados.includes('fecha') ? ` (${p.fecha} → ${x.fecha})` : '')
         + (pierde ? '. Como ya estaba aprobada y cambió el contenido, regresó a borrador: hay que enviarla a revisión otra vez.' : ''));
     })();
@@ -306,6 +360,183 @@ module.exports = function marketing(app, db, h) {
       nota(p.id, yo(req), 'estado', `Quitó la imagen «${d.nombre}»` + (pierde ? '. Como ya estaba aprobada, regresó a borrador.' : ''));
     })();
     res.json(detalle(req, p.id));
+  }));
+
+  // =================== PROYECTOS ===================
+  const dias = (a, b) => Math.round((new Date(b + 'T12:00:00Z') - new Date(a + 'T12:00:00Z')) / 864e5);
+  // % del proyecto: el de sus tareas, pesado por cuántos días dura cada una (un hito pesa un día).
+  const avanceDe = tareas => { const t = tareas.filter(x => !x.eliminado); const peso = x => Math.max(1, dias(x.inicio, x.fin) + 1);
+    const total = t.reduce((s, x) => s + peso(x), 0); return total ? Math.round(t.reduce((s, x) => s + peso(x) * x.avance, 0) / total) : 0; };
+  const tareasDe = id => db.prepare(`SELECT t.*, u.nombre responsable FROM tareas_marketing t LEFT JOIN usuarios u ON u.id = t.responsable_id
+    WHERE t.proyecto_id = ? AND t.eliminado = 0 ORDER BY t.orden, t.inicio, t.id`).all(id);
+  const listaProyectos = (where, args) => db.prepare(`SELECT pm.*, u.nombre responsable, s.nombre sucursal_nombre, s.clave sucursal_clave,
+      (SELECT COUNT(*) FROM publicaciones p WHERE p.proyecto_id = pm.id) publicaciones,
+      (SELECT MAX(a.created_at) FROM avances_marketing a WHERE a.proyecto_id = pm.id) ultimo_avance
+    FROM proyectos_marketing pm LEFT JOIN usuarios u ON u.id = pm.responsable_id LEFT JOIN sucursales s ON s.id = pm.sucursal_id WHERE ${where}`).all(...args)
+    .map(pm => { const t = tareasDe(pm.id), hoy = require('./fechas').hoyMexico();
+      return { ...pm, avance: avanceDe(t), tareas_total: t.length, tareas_hechas: t.filter(x => x.avance >= 100).length,
+        tareas_atrasadas: t.filter(x => x.avance < 100 && x.fin < hoy).length, proximo_hito: t.filter(x => x.hito && x.avance < 100).sort((a, b) => a.fin.localeCompare(b.fin))[0] || null }; });
+  function detalleProyecto(req, id) {
+    const pm = listaProyectos('pm.id = ?', [Number(id)])[0]; if (!pm) return null;
+    const avances = db.prepare(`SELECT a.*, u.nombre usuario, t.titulo tarea_titulo FROM avances_marketing a LEFT JOIN usuarios u ON u.id = a.usuario_id LEFT JOIN tareas_marketing t ON t.id = a.tarea_id
+      WHERE a.proyecto_id = ? ORDER BY a.id DESC`).all(pm.id);
+    const archivos = db.prepare('SELECT id, avance_id, nombre, formato, bytes, created_at FROM archivos_marketing WHERE proyecto_id = ? AND eliminado = 0 ORDER BY id').all(pm.id);
+    return { ...pm, tareas: tareasDe(pm.id), avances: avances.map(a => ({ ...a, archivos: archivos.filter(f => f.avance_id === a.id) })),
+      publicaciones_lista: lista('p.proyecto_id = ? ORDER BY p.fecha', [pm.id]).map(({ id, titulo, fecha, hora, estado, redes }) => ({ id, titulo, fecha, hora, estado, redes })),
+      puede: { editar: puedeEditar(req) } };
+  }
+  function validarProyecto(req, body, actual) {
+    const x = {};
+    if (body.nombre !== undefined || !actual) { x.nombre = texto(body.nombre, 120); if (!x.nombre) throw Error('Escribe el nombre del proyecto'); }
+    if (body.objetivo !== undefined) { if (typeof body.objetivo !== 'string' || body.objetivo.length > 3000) throw Error('El objetivo puede tener hasta 3000 caracteres'); x.objetivo = body.objetivo.trim(); }
+    if (body.estado !== undefined) { x.estado = String(body.estado); if (!ESTADOS_PROYECTO[x.estado]) throw Error('Estado no válido'); }
+    for (const k of ['inicio', 'fin']) if (body[k] !== undefined || !actual) { x[k] = String(body[k] || ''); if (!fechaValida(x[k])) throw Error(k === 'inicio' ? 'Elige la fecha de inicio' : 'Elige la fecha de fin'); }
+    const ini = x.inicio ?? actual?.inicio, fin = x.fin ?? actual?.fin;
+    if (fin < ini) throw Error('La fecha de fin no puede ser antes del inicio');
+    if (dias(ini, fin) > 3 * 366) throw Error('Un proyecto puede durar hasta 3 años');
+    if (body.sucursal !== undefined || !actual) x.sucursal_id = sucursalDe(req, body.sucursal);
+    if (body.responsable_id !== undefined || !actual) x.responsable_id = responsableDe(req, body.responsable_id, 'proyectos');
+    return x;
+  }
+  app.get('/api/marketing/proyectos', h((req, res) => {
+    let where = '1 = 1'; const args = [];
+    if (req.query.estado && ESTADOS_PROYECTO[req.query.estado]) { where += ' AND pm.estado = ?'; args.push(req.query.estado); }
+    if (req.query.q) { where += ' AND (sin_acentos(pm.nombre) LIKE sin_acentos(?) OR sin_acentos(pm.objetivo) LIKE sin_acentos(?))'; args.push('%' + req.query.q + '%', '%' + req.query.q + '%'); }
+    res.json({ estados: ESTADOS_PROYECTO, proyectos: listaProyectos(where + " ORDER BY CASE pm.estado WHEN 'en_curso' THEN 0 WHEN 'planeacion' THEN 1 WHEN 'pausa' THEN 2 ELSE 3 END, pm.fin, pm.id", args) });
+  }));
+  app.get('/api/marketing/proyectos/:id', h((req, res) => {
+    const pm = detalleProyecto(req, req.params.id); if (!pm) return res.status(404).json({ error: 'Proyecto no encontrado' }); res.json(pm);
+  }));
+  app.post('/api/marketing/proyectos', h((req, res) => {
+    if (!puedeEditar(req)) return res.status(403).json({ error: 'Tu rol solo consulta Marketing' });
+    let x; try { x = validarProyecto(req, req.body || {}, null); } catch (e) { return res.status(400).json({ error: e.message }); }
+    x.creado_por = yo(req); const ks = Object.keys(x);
+    const r = db.prepare(`INSERT INTO main.proyectos_marketing (${ks.join(',')}) VALUES (${ks.map(() => '?').join(',')})`).run(...Object.values(x));
+    res.status(201).json(detalleProyecto(req, r.lastInsertRowid));
+  }));
+  app.put('/api/marketing/proyectos/:id', h((req, res) => {
+    if (!puedeEditar(req)) return res.status(403).json({ error: 'Tu rol solo consulta Marketing' });
+    const pm = detalleProyecto(req, req.params.id); if (!pm) return res.status(404).json({ error: 'Proyecto no encontrado' });
+    if (req.body?.version !== pm.version) return res.status(409).json({ error: 'Otra persona cambió este proyecto. Vuelve a abrirlo antes de guardar.' });
+    let x; try { x = validarProyecto(req, req.body || {}, pm); } catch (e) { return res.status(400).json({ error: e.message }); }
+    const ks = Object.keys(x); if (!ks.length) return res.json(pm);
+    db.prepare(`UPDATE main.proyectos_marketing SET ${ks.map(k => k + ' = ?').join(', ')}, version = version + 1, updated_at = datetime('now','localtime') WHERE id = ?`).run(...Object.values(x), pm.id);
+    res.json(detalleProyecto(req, pm.id));
+  }));
+
+  // ----- Tareas -----
+  function validarTarea(req, body, actual, proyecto) {
+    const x = {};
+    if (body.titulo !== undefined || !actual) { x.titulo = texto(body.titulo, 160); if (!x.titulo) throw Error('Escribe qué hay que hacer'); }
+    for (const k of ['inicio', 'fin']) if (body[k] !== undefined || !actual) { x[k] = String(body[k] || ''); if (!fechaValida(x[k])) throw Error(k === 'inicio' ? 'Elige cuándo empieza la tarea' : 'Elige cuándo termina la tarea'); }
+    const ini = x.inicio ?? actual?.inicio, fin = x.fin ?? actual?.fin;
+    if (fin < ini) throw Error('La tarea no puede terminar antes de empezar');
+    if (dias(ini, fin) > 3 * 366) throw Error('Una tarea puede durar hasta 3 años');
+    if (body.avance !== undefined) { x.avance = Number(body.avance); if (!Number.isInteger(x.avance) || x.avance < 0 || x.avance > 100) throw Error('El avance va de 0 a 100 %'); }
+    if (body.hito !== undefined) x.hito = body.hito ? 1 : 0;
+    if (body.notas !== undefined) x.notas = texto(body.notas, 1000);
+    if (body.responsable_id !== undefined) x.responsable_id = body.responsable_id ? responsableDe(req, body.responsable_id, 'tareas') : null;
+    else if (!actual) x.responsable_id = yo(req);
+    if (body.orden !== undefined) x.orden = Math.max(0, Math.min(9999, Number(body.orden) || 0));
+    if (body.depende_de !== undefined) {
+      const d = body.depende_de ? Number(body.depende_de) : null;
+      if (d) {
+        const t = db.prepare('SELECT id, proyecto_id FROM tareas_marketing WHERE id = ? AND eliminado = 0').get(d);
+        if (!t || t.proyecto_id !== proyecto.id) throw Error('La tarea de la que depende debe ser de este mismo proyecto');
+        if (actual && d === actual.id) throw Error('Una tarea no puede depender de sí misma');
+        // Sin vueltas: siguiendo de qué depende cada una, nunca se regresa a esta tarea.
+        for (let k = d, n = 0; actual && k && n < 500; n++) { if (k === actual.id) throw Error('Eso haría una vuelta: esa tarea ya depende de esta'); k = db.prepare('SELECT depende_de FROM tareas_marketing WHERE id = ?').get(k)?.depende_de; }
+      }
+      x.depende_de = d;
+    }
+    return x;
+  }
+  app.post('/api/marketing/proyectos/:id/tareas', h((req, res) => {
+    if (!puedeEditar(req)) return res.status(403).json({ error: 'Tu rol solo consulta Marketing' });
+    const pm = detalleProyecto(req, req.params.id); if (!pm) return res.status(404).json({ error: 'Proyecto no encontrado' });
+    if (pm.tareas.length >= 200) return res.status(409).json({ error: 'Máximo 200 tareas por proyecto' });
+    let x; try { x = validarTarea(req, req.body || {}, null, pm); } catch (e) { return res.status(400).json({ error: e.message }); }
+    if (x.orden === undefined) x.orden = (pm.tareas.at(-1)?.orden ?? 0) + 1;
+    x.proyecto_id = pm.id; const ks = Object.keys(x);
+    db.prepare(`INSERT INTO main.tareas_marketing (${ks.join(',')}) VALUES (${ks.map(() => '?').join(',')})`).run(...Object.values(x));
+    res.status(201).json(detalleProyecto(req, pm.id));
+  }));
+  const tareaVisible = id => db.prepare('SELECT * FROM tareas_marketing WHERE id = ? AND eliminado = 0').get(Number(id));
+  app.put('/api/marketing/tareas/:id', h((req, res) => {
+    if (!puedeEditar(req)) return res.status(403).json({ error: 'Tu rol solo consulta Marketing' });
+    const t = tareaVisible(req.params.id); if (!t) return res.status(404).json({ error: 'Tarea no encontrada' });
+    if (req.body?.version !== t.version) return res.status(409).json({ error: 'Otra persona cambió esta tarea. Vuelve a abrir el proyecto.' });
+    const pm = detalleProyecto(req, t.proyecto_id);
+    let x; try { x = validarTarea(req, req.body || {}, t, pm); } catch (e) { return res.status(400).json({ error: e.message }); }
+    const ks = Object.keys(x); if (!ks.length) return res.json(pm);
+    db.prepare(`UPDATE main.tareas_marketing SET ${ks.map(k => k + ' = ?').join(', ')}, version = version + 1, updated_at = datetime('now','localtime') WHERE id = ?`).run(...Object.values(x), t.id);
+    res.json(detalleProyecto(req, t.proyecto_id));
+  }));
+  app.post('/api/marketing/tareas/:id/quitar', h((req, res) => {
+    if (!puedeEditar(req)) return res.status(403).json({ error: 'Tu rol solo consulta Marketing' });
+    const t = tareaVisible(req.params.id); if (!t) return res.status(404).json({ error: 'Tarea no encontrada' });
+    db.transaction(() => {
+      // Las que dependían de ella quedan sin dependencia.
+      db.prepare('UPDATE main.tareas_marketing SET depende_de = NULL, version = version + 1 WHERE depende_de = ?').run(t.id);
+      db.prepare("UPDATE main.tareas_marketing SET eliminado = 1, eliminado_por = ?, eliminado_at = datetime('now','localtime') WHERE id = ?").run(yo(req), t.id);
+      db.prepare('INSERT INTO main.avances_marketing (proyecto_id, usuario_id, texto) VALUES (?, ?, ?)').run(t.proyecto_id, yo(req), `Quitó la tarea «${t.titulo}»`);
+    })();
+    res.json(detalleProyecto(req, t.proyecto_id));
+  }));
+
+  // ----- Avances: texto y, si se elige, el nuevo % de una tarea; después se le pueden subir fotos o archivos -----
+  app.post('/api/marketing/proyectos/:id/avances', h((req, res) => {
+    if (!puedeEditar(req)) return res.status(403).json({ error: 'Tu rol solo consulta Marketing' });
+    const pm = detalleProyecto(req, req.params.id); if (!pm) return res.status(404).json({ error: 'Proyecto no encontrado' });
+    const t = texto(req.body?.texto, 3000); if (!t) return res.status(400).json({ error: 'Escribe el avance' });
+    let tarea = null, nuevo = null;
+    if (req.body.tarea_id) {
+      tarea = pm.tareas.find(x => x.id === Number(req.body.tarea_id)); if (!tarea) return res.status(400).json({ error: 'Elige una tarea de este proyecto' });
+      nuevo = Number(req.body.avance); if (!Number.isInteger(nuevo) || nuevo < 0 || nuevo > 100) return res.status(400).json({ error: 'El avance de la tarea va de 0 a 100 %' });
+    }
+    const id = db.transaction(() => {
+      const r = db.prepare('INSERT INTO main.avances_marketing (proyecto_id, usuario_id, texto, tarea_id, avance_antes, avance_nuevo) VALUES (?, ?, ?, ?, ?, ?)').run(pm.id, yo(req), t, tarea?.id ?? null, tarea?.avance ?? null, nuevo);
+      if (tarea) db.prepare("UPDATE main.tareas_marketing SET avance = ?, version = version + 1, updated_at = datetime('now','localtime') WHERE id = ?").run(nuevo, tarea.id);
+      return r.lastInsertRowid;
+    })();
+    res.status(201).json({ ...detalleProyecto(req, pm.id), avance_id: id });
+  }));
+  app.post('/api/marketing/avances/:id/archivos', express.raw({ type: () => true, limit: MAX_BYTES + 1024 }), h((req, res) => {
+    if (!puedeEditar(req)) return res.status(403).json({ error: 'Tu rol solo consulta Marketing' });
+    const a = db.prepare('SELECT * FROM avances_marketing WHERE id = ?').get(Number(req.params.id)); if (!a) return res.status(404).json({ error: 'Avance no encontrado' });
+    if (db.prepare('SELECT COUNT(*) n FROM archivos_marketing WHERE avance_id = ? AND eliminado = 0').get(a.id).n >= MAX_IMAGENES) return res.status(409).json({ error: `Máximo ${MAX_IMAGENES} archivos por avance` });
+    const buf = Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0);
+    if (!buf.length) return res.status(400).json({ error: 'El archivo está vacío' });
+    if (buf.length > MAX_BYTES) return res.status(413).json({ error: 'El archivo pasa de 10 MB' });
+    const formato = formatoImagen(buf) || (tipoReal(buf) === 'pdf' ? 'pdf' : null);
+    if (!formato) return res.status(400).json({ error: 'Sube fotos (JPG, PNG, WebP, GIF) o PDF' });
+    const sha = crypto.createHash('sha256').update(buf).digest('hex');
+    if (db.prepare('SELECT 1 FROM archivos_marketing WHERE avance_id = ? AND sha256 = ? AND eliminado = 0').get(a.id, sha)) return res.status(409).json({ error: 'Ese mismo archivo ya está en el avance' });
+    const nombre = nombreSeguro(encabezado(req, 'x-nombre'));
+    db.transaction(() => {
+      const r = db.prepare('INSERT INTO main.archivos_marketing (proyecto_id, avance_id, nombre, archivo, formato, bytes, sha256, subido_por) VALUES (?, ?, ?, ?, ?, ?, ?, ?)').run(a.proyecto_id, a.id, nombre, '', formato, buf.length, sha, yo(req));
+      const archivo = path.join('proyectos', String(a.proyecto_id), `${r.lastInsertRowid}-${sha.slice(0, 12)}.${formato}`);
+      fs.mkdirSync(path.join(DIR, 'proyectos', String(a.proyecto_id)), { recursive: true });
+      fs.writeFileSync(path.join(DIR, archivo), buf);
+      db.prepare('UPDATE main.archivos_marketing SET archivo = ? WHERE id = ?').run(archivo, r.lastInsertRowid);
+    })();
+    res.status(201).json(detalleProyecto(req, a.proyecto_id));
+  }));
+  app.get('/api/marketing/archivos/:id', h((req, res) => {
+    const d = db.prepare('SELECT * FROM archivos_marketing WHERE id = ? AND eliminado = 0').get(Number(req.params.id));
+    if (!d) return res.status(404).json({ error: 'Archivo no encontrado' });
+    const ruta = path.join(DIR, d.archivo);
+    if (!ruta.startsWith(DIR + path.sep) || !fs.existsSync(ruta)) return res.status(404).json({ error: 'El archivo ya no está en el servidor' });
+    res.set({ 'Content-Type': MIME[d.formato] || 'application/octet-stream', 'X-Content-Type-Options': 'nosniff', 'Cache-Control': 'private, no-store',
+      'Content-Disposition': `${d.formato === 'pdf' ? 'attachment' : 'inline'}; filename="archivo.${d.formato}"; filename*=UTF-8''${encodeURIComponent(d.nombre)}` });
+    res.send(fs.readFileSync(ruta));
+  }));
+  app.post('/api/marketing/archivos/:id/quitar', h((req, res) => {
+    if (!puedeEditar(req)) return res.status(403).json({ error: 'Tu rol solo consulta Marketing' });
+    const d = db.prepare('SELECT * FROM archivos_marketing WHERE id = ? AND eliminado = 0').get(Number(req.params.id));
+    if (!d) return res.status(404).json({ error: 'Archivo no encontrado' });
+    db.prepare("UPDATE main.archivos_marketing SET eliminado = 1, eliminado_por = ?, eliminado_at = datetime('now','localtime') WHERE id = ?").run(yo(req), d.id);
+    res.json(detalleProyecto(req, d.proyecto_id));
   }));
 
   return { REDES, FORMATOS, ESTADOS };

@@ -107,6 +107,49 @@ const png = color => { const ih = Buffer.alloc(13); ih.writeUInt32BE(1, 0); ih.w
   [, j] = await pedir('GET', '/marketing/pendientes', T.Mara);
   revisa(!j.some(p => p.motivo === 'aprobar'), 'a Marketing no le sale «por aprobar»', j.map(p => [p.titulo, p.motivo]));
 
+  console.log('6. Proyectos, tareas (Gantt) y avances (fase 2)');
+  // Dirección le regresa a Marketing «toda la empresa».
+  [s] = await pedir('PUT', '/roles/marketing/permisos', A, { permisos: rolMk.permisos.filter(p => !/^marketing\.|^ventas\.ver|^compras\.ver/.test(p) || p === 'marketing.aprobar'), alcances: { ...rolMk.alcances, marketing: 3 }, ediciones: { ...rolMk.ediciones, marketing: true } });
+  for (const [cuerpo, que] of [[{ nombre: '', inicio: dias(0), fin: dias(10) }, 'sin nombre'], [{ nombre: 'X', inicio: dias(10), fin: dias(0) }, 'fin antes del inicio'], [{ nombre: 'X', inicio: '2026-02-30', fin: dias(5) }, 'una fecha imposible']]) {
+    [s] = await pedir('POST', '/marketing/proyectos', T.Mara, cuerpo); revisa(s === 400, 'proyecto: rechaza ' + que, s);
+  }
+  [s, j] = await pedir('POST', '/marketing/proyectos', T.Mara, { nombre: 'Lanzamiento temporada de lluvias', objetivo: 'Más contactos de desazolve', inicio: dias(0), fin: dias(30), sucursal: 'empresa' });
+  revisa(s === 201 && j.estado === 'planeacion' && j.avance === 0 && j.responsable_id === ID.Mara, 'Marketing crea un proyecto (en planeación, 0 %)', j);
+  let proy = j;
+  const tarea = async (datos, t = T.Mara) => pedir('POST', '/marketing/proyectos/' + proy.id + '/tareas', t, datos);
+  [s, j] = await tarea({ titulo: 'Guion', inicio: dias(0), fin: dias(3) }); const t1 = j.tareas.at(-1);
+  [s, j] = await tarea({ titulo: 'Grabación', inicio: dias(4), fin: dias(10), depende_de: t1.id }); const t2 = j.tareas.at(-1);
+  [s, j] = await tarea({ titulo: 'Lanzamiento', inicio: dias(11), fin: dias(11), hito: true, depende_de: t2.id }); const t3 = j.tareas.at(-1);
+  revisa(s === 201 && j.tareas.length === 3 && t2.depende_de === t1.id && t3.hito === 1 && j.proximo_hito?.titulo === 'Lanzamiento', 'tareas con dependencias y un hito', j.tareas);
+  [s] = await tarea({ titulo: 'Mal', inicio: dias(5), fin: dias(1) }); revisa(s === 400, 'una tarea que termina antes de empezar, no', s);
+  [s] = await pedir('PUT', '/marketing/tareas/' + t1.id, T.Mara, { version: t1.version, depende_de: t3.id }); revisa(s === 400, 'sin vueltas: Guion no puede depender de Lanzamiento (que depende de él)', s);
+  [s] = await pedir('PUT', '/marketing/tareas/' + t1.id, T.Mara, { version: t1.version, depende_de: t1.id }); revisa(s === 400, 'una tarea no depende de sí misma', s);
+  const otro = (await pedir('POST', '/marketing/proyectos', T.Mara, { nombre: 'Otro', inicio: dias(0), fin: dias(5) }))[1];
+  const ajena = (await pedir('POST', '/marketing/proyectos/' + otro.id + '/tareas', T.Mara, { titulo: 'Ajena', inicio: dias(0), fin: dias(1) }))[1].tareas[0];
+  [s] = await pedir('PUT', '/marketing/tareas/' + t2.id, T.Mara, { version: t2.version, depende_de: ajena.id }); revisa(s === 400, 'no depende de una tarea de otro proyecto', s);
+  [s, j] = await pedir('PUT', '/marketing/tareas/' + t1.id, T.Mara, { version: t1.version, avance: 100 });
+  revisa(s === 200 && j.avance === Math.round(100 * 4 / (4 + 7 + 1)), 'el % del proyecto pesa cada tarea por sus días (Guion 4 de 12 días → 33 %)', j.avance);
+  [s] = await pedir('PUT', '/marketing/tareas/' + t1.id, T.Mara, { version: t1.version, avance: 50 }); revisa(s === 409, 'tarea con versión vieja: no se guarda', s);
+  [s, j] = await pedir('POST', '/marketing/proyectos/' + proy.id + '/avances', T.Mara, { texto: 'Ya grabamos la mitad', tarea_id: t2.id, avance: 50 });
+  revisa(s === 201 && j.tareas.find(x => x.id === t2.id).avance === 50 && j.avances[0].avance_antes === 0 && j.avances[0].avance_nuevo === 50, 'un avance puede mover el % de una tarea y queda el antes y el después', j.avances?.[0]);
+  const avId = j.avance_id;
+  [s, j] = await pedir('POST', '/marketing/avances/' + avId + '/archivos', T.Mara, png([0, 128, 255]), { 'X-Nombre': encodeURIComponent('set.png') });
+  revisa(s === 201 && j.avances[0].archivos.length === 1, 'al avance se le sube una foto', j.avances?.[0]);
+  [s] = await pedir('POST', '/marketing/avances/' + avId + '/archivos', T.Mara, Buffer.from('MZ ejecutable')); revisa(s === 400, 'un archivo que no es foto ni PDF, no', s);
+  [s, j] = await pedir('GET', '/marketing/archivos/' + j.avances[0].archivos[0].id, T.Gil); revisa(s === 200 && j._tipo === 'image/png', 'la foto se descarga como imagen', j);
+  // Publicación ligada al proyecto
+  [s, j] = await pedir('POST', '/marketing/publicaciones', T.Mara, { ...base, titulo: 'Teaser lluvias', proyecto_id: proy.id });
+  revisa(s === 201 && j.proyecto_nombre === 'Lanzamiento temporada de lluvias', 'una publicación se liga al proyecto', j.proyecto_nombre);
+  [, j] = await pedir('GET', '/marketing/proyectos/' + proy.id, T.Gil); revisa(j.publicaciones_lista?.some(p => p.titulo === 'Teaser lluvias'), 'el proyecto muestra sus publicaciones', j.publicaciones_lista);
+  // Quitar una tarea: las que dependían de ella se sueltan
+  [s, j] = await pedir('POST', '/marketing/tareas/' + t2.id + '/quitar', T.Mara, {});
+  revisa(s === 200 && !j.tareas.some(x => x.id === t2.id) && j.tareas.find(x => x.id === t3.id).depende_de === null && /Quitó la tarea «Grabación»/.test(j.avances[0].texto), 'quitar una tarea suelta a las que dependían de ella y queda en los avances', j.tareas);
+  [s] = await pedir('PUT', '/marketing/proyectos/' + proy.id, T.Vale, { version: 1, nombre: 'x' }); revisa(s === 403 || s === 404, 'Ventas no toca proyectos', s);
+  [s] = await pedir('GET', '/marketing/proyectos/' + proy.id, T.Gema); revisa(s === 403 || s === 404, 'el Gerente de sucursal no ve proyectos', s);
+  // Pendientes: una tarea de Mara que vence mañana
+  await tarea({ titulo: 'Revisar arte final', inicio: dias(-2), fin: dias(1) });
+  [, j] = await pedir('GET', '/marketing/pendientes', T.Mara); revisa(j.some(p => p.motivo === 'tarea' && p.titulo === 'Revisar arte final'), 'a Marketing le sale en Inicio su tarea que vence pronto', j.map(p => [p.titulo, p.motivo]));
+
   revisa(!/uncaughtException|Error no manejado|TypeError|SqliteError/.test(salida), 'el servidor no registró errores internos', salida.split('\n').filter(l => /Error/.test(l)).slice(0, 5));
   srv.kill();
   console.log(`\n${n - malos.length}/${n} correctas`);

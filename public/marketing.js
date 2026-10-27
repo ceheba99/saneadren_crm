@@ -105,14 +105,14 @@ const Marketing = (() => {
       $('mk-semana').innerHTML = html; cargarImagenes($('mk-semana'));
     } else {
       $('mk-tabla').innerHTML = PUBS.length ? PUBS.map(p => `<tr data-mk-pub="${Number(p.id)}"><td data-label="Fecha">${esc(fechaCortaTxt(p.fecha))}${p.hora ? `<small class="celda-sub">${esc(p.hora)}</small>` : ''}</td>
-        <td data-label="Publicación"><b>${esc(p.titulo)}</b><small class="contacto-relacion">${esc([CAT.formatos[p.formato], p.campana].filter(Boolean).join(' · '))}</small></td>
+        <td data-label="Publicación"><b>${esc(p.titulo)}</b><small class="contacto-relacion">${esc([CAT.formatos[p.formato], p.proyecto_nombre && '📁 ' + p.proyecto_nombre, p.campana].filter(Boolean).join(' · '))}</small></td>
         <td data-label="Redes">${redesTxt(p.redes)}</td><td data-label="Estado">${estadoDe(p)}</td><td data-label="Responsable">${esc(p.responsable || '')}</td>
         <td data-label="Para">${esc(p.sucursal_nombre || 'Toda la empresa')}</td></tr>`).join('') : '<tr><td colspan="6" class="util-37">No hay publicaciones este mes con estos filtros.</td></tr>';
     }
   }
 
   // ---------- Ventana de la publicación ----------
-  const CAMPOS = { titulo: 'mk-titulo-in', formato: 'mk-formato', fecha: 'mk-fecha', hora: 'mk-hora', sucursal: 'mk-sucursal', responsable_id: 'mk-responsable', campana: 'mk-campana', copy: 'mk-copy', hashtags: 'mk-hashtags', enlace: 'mk-enlace' };
+  const CAMPOS = { titulo: 'mk-titulo-in', formato: 'mk-formato', fecha: 'mk-fecha', hora: 'mk-hora', sucursal: 'mk-sucursal', responsable_id: 'mk-responsable', proyecto_id: 'mk-proyecto', campana: 'mk-campana', copy: 'mk-copy', hashtags: 'mk-hashtags', enlace: 'mk-enlace' };
   const redesElegidas = () => [...document.querySelectorAll('#mk-redes input:checked')].map(i => i.value);
   const datos = () => ({ ...Object.fromEntries(Object.entries(CAMPOS).map(([k, id]) => [k, $(id).value])), redes: redesElegidas() });
   const pendiente = () => base !== JSON.stringify(datos());
@@ -120,17 +120,21 @@ const Marketing = (() => {
     $('mk-formato').innerHTML = Object.entries(CAT.formatos).map(([k, n]) => `<option value="${esc(k)}">${esc(n)}</option>`).join('');
     $('mk-sucursal').innerHTML = '<option value="empresa">Toda la empresa</option>' + CAT.sucursales.map(s => `<option value="${Number(s.id)}">${esc(s.nombre)} (${esc(s.clave)})</option>`).join('');
     $('mk-responsable').innerHTML = CAT.responsables.map(u => `<option value="${Number(u.id)}">${esc(u.nombre)}</option>`).join('');
+    $('mk-proyecto').innerHTML = '<option value="">Sin proyecto</option>' + CAT.proyectos.map(p => `<option value="${Number(p.id)}">${esc(p.nombre)}</option>`).join('');
     $('mk-redes').innerHTML = Object.entries(CAT.redes).map(([k, n]) => `<label class="mk-red-op mk-r-${esc(k)}"><input type="checkbox" value="${esc(k)}"> ${ICONO[k]} ${esc(n)}</label>`).join('');
   }
-  async function abrir(id, fecha) {
+  async function abrir(id, fecha, opciones = {}) {
     try {
       if ($('overlay-publicacion').classList.contains('mostrar') && !await permitirSalida()) return;
-      await catalogos(); llenarSelects();
+      CAT = null; await catalogos(); llenarSelects();
       actual = id ? await pedir('/publicaciones/' + Number(id)) : null;
-      const p = actual || { titulo: '', redes: [], formato: 'post', fecha: fecha || FECHA || hoyTxt(), hora: '', sucursal_id: null, responsable_id: USUARIO_ACTUAL.id, campana: '', copy: '', hashtags: '', enlace: '' };
+      const p = actual || { titulo: '', redes: [], formato: 'post', fecha: fecha || FECHA || hoyTxt(), hora: '', sucursal_id: null, responsable_id: USUARIO_ACTUAL.id, proyecto_id: opciones.proyecto_id || null, campana: '', copy: '', hashtags: '', enlace: '' };
+      // Una publicación ligada a un proyecto cerrado (terminado o cancelado) lo conserva en la lista.
+      if (p.proyecto_id && !CAT.proyectos.some(x => x.id === p.proyecto_id)) $('mk-proyecto').insertAdjacentHTML('beforeend', `<option value="${Number(p.proyecto_id)}">${esc(p.proyecto_nombre || 'Proyecto #' + p.proyecto_id)}</option>`);
       // Si quien abre no está en la lista de responsables (p. ej. Dirección), se agrega para poder elegirse.
       if (!CAT.responsables.some(u => u.id === p.responsable_id) && p.responsable_id) $('mk-responsable').insertAdjacentHTML('beforeend', `<option value="${Number(p.responsable_id)}">${esc(p.responsable || USUARIO_ACTUAL.nombre || 'Yo')}</option>`);
       for (const [k, idc] of Object.entries(CAMPOS)) $(idc).value = k === 'sucursal' ? (p.sucursal_id ? String(p.sucursal_id) : 'empresa') : (p[k] ?? '');
+      if (!actual && opciones.sucursal_id !== undefined) $('mk-sucursal').value = opciones.sucursal_id ? String(opciones.sucursal_id) : 'empresa';
       document.querySelectorAll('#mk-redes input').forEach(i => { i.checked = p.redes.includes(i.value); });
       base = JSON.stringify(datos());
       $('mk-p-titulo').textContent = actual ? actual.titulo : 'Nueva publicación';
@@ -190,7 +194,7 @@ const Marketing = (() => {
     if (ocupado) return; ocupado = true; $('mk-guardar').disabled = true;
     try {
       const d = datos(); if (!$('mk-enlace').checkValidity()) throw Error('El enlace debe empezar con https://');
-      const cuerpo = { ...d, responsable_id: Number(d.responsable_id) || undefined, version: actual?.version };
+      const cuerpo = { ...d, responsable_id: Number(d.responsable_id) || undefined, proyecto_id: Number(d.proyecto_id) || null, version: actual?.version };
       const antes = actual?.estado;
       actual = actual ? await pedir('/publicaciones/' + actual.id, cuerpo, 'PUT') : await pedir('/publicaciones', cuerpo, 'POST');
       base = JSON.stringify(datos());
@@ -240,10 +244,16 @@ const Marketing = (() => {
     const cont = $('inicio-marketing'); if (!cont || !Permisos.puede('marketing.ver')) return;
     cont.innerHTML = '<p class="util-45" role="status">Cargando…</p>';
     let l; try { l = await pedir('/pendientes'); } catch (e) { cont.innerHTML = `<div class="aviso-error-carga" role="alert"><p>${esc(e.message)}</p></div>`; return; }
-    const hoy = hoyTxt(), MOT = { aprobar: ['alerta', '✅ Por aprobar'], cambios: ['rojo', '↩️ Te pidieron cambios'], publicar: ['rojo', '🚀 Ya toca subirla'], enviar: ['alerta', '📨 Falta enviarla a revisión'] };
-    cont.innerHTML = l.length ? l.map(p => { const [clase, motivo] = MOT[p.motivo]; return `<div class="fila-alerta ${p.motivo === 'publicar' && p.fecha < hoy ? 'vencido' : 'tipo-alerta'}"><div class="info"><span class="tipo-tag ${clase}">${motivo}</span>
-      <div><b>${esc(p.titulo)}</b> · ${redesTxt(p.redes)}</div><div class="fecha">${esc(fechaCortaTxt(p.fecha))}${p.hora ? ' · ' + esc(p.hora) : ''} · ${esc(p.responsable || '')}</div></div>
-      <div class="util-46"><button type="button" class="btn btn-outline" data-mk-inicio="${Number(p.id)}">Abrir</button></div></div>`; }).join('') : '<p class="util-45">Nada pendiente en Marketing. 🎉</p>';
+    const hoy = hoyTxt(), MOT = { aprobar: ['alerta', '✅ Por aprobar'], cambios: ['rojo', '↩️ Te pidieron cambios'], publicar: ['rojo', '🚀 Ya toca subirla'], enviar: ['alerta', '📨 Falta enviarla a revisión'], tarea: ['alerta', '📋 Tarea por terminar'] };
+    cont.innerHTML = l.length ? l.map(p => {
+      const [clase, motivo] = MOT[p.motivo], esTarea = p.motivo === 'tarea';
+      // Una tarea de proyecto dice de qué proyecto es y abre el proyecto; una publicación, sus redes y abre la publicación.
+      const detalle = esTarea ? '📁 ' + esc(p.proyecto_nombre) + ' · ' + Number(p.avance) + ' %' : redesTxt(p.redes);
+      const cuando = esTarea ? (p.fecha < hoy ? 'Venció el ' : 'Vence el ') : '';
+      const abrirAttr = esTarea ? `data-py-inicio="${Number(p.proyecto_id)}"` : `data-mk-inicio="${Number(p.id)}"`;
+      return `<div class="fila-alerta ${['publicar', 'tarea'].includes(p.motivo) && p.fecha < hoy ? 'vencido' : 'tipo-alerta'}"><div class="info"><span class="tipo-tag ${clase}">${motivo}</span>
+      <div><b>${esc(p.titulo)}</b> · ${detalle}</div><div class="fecha">${cuando}${esc(fechaCortaTxt(p.fecha))}${p.hora ? ' · ' + esc(p.hora) : ''} · ${esc(p.responsable || '')}</div></div>
+      <div class="util-46"><button type="button" class="btn btn-outline" ${abrirAttr}>Abrir</button></div></div>`; }).join('') : '<p class="util-45">Nada pendiente en Marketing. 🎉</p>';
   }
 
   // ---------- Eventos ----------
@@ -286,8 +296,18 @@ const Marketing = (() => {
     const t = $('mk-comentario').value.trim(); if (!t) { toast('Escribe el comentario'); return; }
     try { actual = await pedir('/publicaciones/' + actual.id + '/comentarios', { texto: t }, 'POST'); $('mk-comentario').value = ''; pintarFicha(); } catch (e) { toast(e.message); }
   };
-  $('inicio-marketing')?.addEventListener('click', e => { const b = e.target.closest('[data-mk-inicio]'); if (b) abrir(Number(b.dataset.mkInicio)); });
+  $('inicio-marketing')?.addEventListener('click', e => { const b = e.target.closest('[data-mk-inicio]'); if (b) abrir(Number(b.dataset.mkInicio)); const py = e.target.closest('[data-py-inicio]'); if (py) window.ProyectosMk?.abrir(Number(py.dataset.pyInicio)); });
+  // Pestañas: Calendario y Proyectos (se recuerda la última).
+  let PESTANA = 'calendario';
+  try { if (localStorage.getItem('marketing-pestana') === 'proyectos') PESTANA = 'proyectos'; } catch { /* */ }
+  function pestana(p) {
+    PESTANA = p; try { localStorage.setItem('marketing-pestana', p); } catch { /* */ }
+    document.querySelectorAll('#vista-marketing > .mk-pestanas [data-mk-pestana]').forEach(b => b.setAttribute('aria-selected', String(b.dataset.mkPestana === p)));
+    $('mk-tab-calendario').hidden = p !== 'calendario'; $('mk-tab-proyectos').hidden = p !== 'proyectos';
+    if (p === 'proyectos') window.ProyectosMk?.cargar(); else cargar();
+  }
+  document.querySelectorAll('#vista-marketing > .mk-pestanas [data-mk-pestana]').forEach(b => b.addEventListener('click', () => pestana(b.dataset.mkPestana)));
   window.addEventListener('beforeunload', e => { if ($('overlay-publicacion').classList.contains('mostrar') && pendiente()) { e.preventDefault(); e.returnValue = ''; } });
-  return { cargar, abrir, pintarInicio };
+  return { cargar: () => pestana(PESTANA), cargarCalendario: cargar, abrir, pintarInicio, catalogos: async () => { CAT = null; return catalogos(); } };
 })();
 window.Marketing = Marketing;
