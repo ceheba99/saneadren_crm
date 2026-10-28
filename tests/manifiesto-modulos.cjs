@@ -117,15 +117,15 @@ module.exports = {
       permisos: ['marketing.ver', 'marketing.sucursal', 'marketing.empresa', 'marketing.editar', 'marketing.aprobar', 'marketing.dinero'],
     },
     facturacion: {
-      nombre: 'Facturación CFDI 4.0 con factura.com: configuración en Ajustes, datos fiscales en la ficha del cliente y timbrado PUE en la ficha de la orden (F3)',
-      vistas: [], vistasRazon: 'la configuración vive en Ajustes (pantalla «usuarios»), panel «Facturación» solo para Dirección; el timbrado, en la sección «Factura electrónica» de la ficha de la orden (no es una pantalla del menú; la vista de facturas llega en la F4)',
+      nombre: 'Facturación CFDI 4.0 con factura.com: configuración en Ajustes, datos fiscales en la ficha del cliente, timbrado PUE en la ficha de la orden (F3) y pantalla «Facturas» con reenvío y avisos (F4)',
+      vistas: ['facturas'], // además, la configuración vive en Ajustes (pantalla «usuarios», panel «Facturación», solo Dirección) y el timbrado en la ficha de la orden
       tablas: ['clientes_fiscales', 'facturas', 'facturas_log', 'factura_ventas', 'factura_cobros', 'series_factura', 'sat_catalogos'],
       rutas: [/^\/api\/facturacion(\/|$)/],
-      pendientes: null, pendientesRazon: 'las facturas sin timbrar o en borrador se ven en la ficha de su orden; la lista de pendientes («por facturar», «borrador por corregir») llega con la vista de facturas (F4)',
-      inicio: [],
+      pendientes: 'facturas sin respuesta de factura.com, borradores por corregir, rechazadas y órdenes realizadas con IVA de los últimos 60 días sin factura',
+      inicio: ['inicio-facturacion'],
       demo: ['series_factura', 'sat_catalogos', 'clientes_fiscales', 'facturas', 'facturas_log'], // el demo de Render nunca se conecta con factura.com: configuración de ejemplo y una factura SIMULADA
-      integridad: null, integridadRazon: 'la revisión de facturas (orden con factura «sin respuesta», totales que no cuadran con la orden) llega con la vista de facturas (F4)',
-      buscador: null, buscadorRazon: 'todavía no hay pantalla; las facturas se buscarán por folio y UUID cuando exista la vista (F4)',
+      integridad: ['facturas'],
+      buscador: null, buscadorRazon: 'las facturas se buscan en su propia pantalla «Facturas» (folio, folio fiscal UUID, RFC, cliente u orden); el buscador general no las incluye para no mezclar datos fiscales con el resto',
       permisos: ['facturacion.fiscales', 'facturacion.timbrar'],
     },
     administracion: {

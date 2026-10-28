@@ -17,6 +17,7 @@ Dirección la revisa y la aprueba. Si un cambio altera lo que ve un rol, la prue
 | 📄 Cotizaciones | ✔ | ✔ | ✔ | ✔ | ✔ | — | — | — |
 | 🔎 Prospección | ✔ | ✔ | ✔ | ✔ | — | — | — | — |
 | 📥 Cuentas por cobrar | ✔ | ✔ | ✔ | ✔ | — | — | — | — |
+| 🧾 Facturas | ✔ | ✔ | — | — | — | — | — | — |
 | 📤 Cuentas por pagar | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | — | — |
 | 🏭 Proveedores | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | — | — |
 | 📝 Solicitudes de compra | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | — | — |
@@ -160,6 +161,9 @@ Dirección la revisa y la aprueba. Si un cambio altera lo que ve un rol, la prue
 | Cambiar la clave del SAT de un servicio | ✔ | — | — | — | — | — | — | — |
 | Capturar los datos fiscales de un cliente | ✔ | ✔ | — | — | — | — | — | — |
 | Timbrar la factura (CFDI) de una orden | ✔ | ✔ | — | — | — | — | — | — |
+| Reenviar una factura por correo | ✔ | ✔ | — | — | — | — | — | — |
+| Descartar un borrador de factura atorado | ✔ | — | — | — | — | — | — | — |
+| Cambiar a mano el folio o el total de una orden que ya tiene factura real timbrada | — | — | — | — | — | — | — | — |
 | Capturar los resultados (alcance, me gusta…) de una publicación ya publicada | ✔ | — | — | — | — | — | ✔ | ✔ |
 
 | Permiso | Dirección | Gerente | Ventas | Atención | Técnico | Costos y compras | Marketing | Gerente de marketing |
@@ -229,6 +233,9 @@ Dirección la revisa y la aprueba. Si un cambio altera lo que ve un rol, la prue
 - **2026-10-27** · Claves del SAT de los servicios (clave de producto y unidad para facturar): las cambia solo Dirección. Las ve además quien timbra (Gerente y quien factura), porque salen en cada renglón de la factura; los demás roles ven los servicios sin esos datos. (Ajustada el 2026-10-27 al llegar el timbrado: «ven, no cambian».)
 - **2026-10-27** · Datos fiscales de los clientes (RFC, razón social, código postal, régimen, uso de CFDI y correo para facturar): los ven y los capturan Dirección, el Gerente y quien tenga el permiso «Datos fiscales de clientes» (quien factura); los demás roles no los ven ni los cambian.
 - **2026-10-27** · Timbrar facturas (CFDI) y ver las facturas de una orden (folio fiscal, receptor, XML y PDF): Dirección, el Gerente y quien tenga el permiso «Timbrar facturas» (quien factura); los demás roles no.
+- **2026-10-28** · Ver la lista de facturas (pantalla «Facturas» y el aviso de Inicio), bajar su XML y PDF y reenviarlas por correo: Dirección, el Gerente y quien tenga «Timbrar facturas»; los demás roles no.
+- **2026-10-28** · Descartar un borrador de factura que quedó atorado: solo Dirección (ni el Gerente ni quien factura).
+- **2026-10-28** · Una orden con factura real ya timbrada: su folio, fecha, total y método de pago salen de la factura y nadie los cambia a mano (ni Dirección); los días de crédito sí.
 - **2026-10-27** · Banco de ideas: las proponen, votan y comentan Marketing, Gerente de marketing y Dirección; las aprueban o descartan solo Dirección y el Gerente de marketing. Los demás roles no ven las ideas.
 - **2026-10-27** · Biblioteca de marketing (logos, fotos, plantillas): la ven y usan Marketing, Gerente de marketing y Dirección; los demás roles no.
 - **2026-10-26** · Proyectos de marketing (tareas, Gantt y avances): los ven y editan Marketing, Gerente de marketing y Dirección; los demás roles no.

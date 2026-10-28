@@ -558,6 +558,11 @@ module.exports = function finanzas(app, db, h, unicos) {
     const fechaF = b.factura_fecha === undefined ? lead.factura_fecha : (b.factura_fecha || null);
     if (b.factura_metodo !== undefined && b.factura_metodo !== null && b.factura_metodo !== '' && !['PUE', 'PPD'].includes(b.factura_metodo)) return res.status(400).json({ error: 'El método de pago del CFDI es PUE o PPD' });
     const metodoF = b.factura_metodo === undefined ? lead.factura_metodo : (b.factura_metodo || null);
+    // Con una factura electrónica REAL (producción) ya timbrada, el folio, la fecha, el total y el método salen de ella: no se cambian a mano (F4, 2026-10-28).
+    if (db.prepare("SELECT 1 FROM main.facturas WHERE lead_id = ? AND entorno = 'prod' AND tipo_documento = 'factura' AND estatus IN ('timbrando', 'timbrada', 'cancelacion_solicitada')").get(lead.id)
+      && (folio !== lead.factura_folio || fechaF !== lead.factura_fecha || totalFactura !== lead.factura_total_cent || metodoF !== lead.factura_metodo)) {
+      return res.status(409).json({ error: 'Esta orden tiene una factura electrónica (CFDI): su folio, fecha, total y método de pago salen de ella y no se cambian a mano. Los días de crédito sí se pueden cambiar.' });
+    }
     // Una factura es de UNA orden: el mismo folio en otra orden es casi siempre un error de captura.
     const llaveFolio = t => String(t || '').toUpperCase().replace(/[\s-]+/g, '');
     if (folio && folio !== lead.factura_folio) {

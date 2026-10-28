@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Saneadren · Cotizaciones y Servicios</title>
-<link rel="stylesheet" href="styles.css?v=fx4">
+<link rel="stylesheet" href="styles.css?v=fx5">
 <link rel="stylesheet" href="servicios-tabla.css">
 <link rel="stylesheet" href="flujo.css?v=cel1">
 </head>
@@ -42,6 +42,7 @@
         <button type="button" class="menu-grupo-btn" aria-expanded="false"><span class="menu-icono" aria-hidden="true">💰</span>Finanzas<span class="menu-flecha" aria-hidden="true">▾</span></button>
         <div class="menu-sub">
           <button type="button" class="menu-item solo-cobranza perm-cxc-ver" data-vista="cobrar" id="nav-cobrar"><span class="menu-icono" aria-hidden="true">📥</span>Cuentas por cobrar</button>
+          <button type="button" class="menu-item perm-facturacion-timbrar" data-vista="facturas" id="nav-facturas"><span class="menu-icono" aria-hidden="true">🧾</span>Facturas</button>
           <button type="button" class="menu-item solo-cobranza perm-cxp-ver" data-vista="pagar" id="nav-pagar"><span class="menu-icono" aria-hidden="true">📤</span>Cuentas por pagar</button>
           <button type="button" class="menu-item solo-cobranza perm-cxp-ver" data-vista="proveedores" id="nav-proveedores"><span class="menu-icono" aria-hidden="true">🏭</span>Proveedores</button>
           <button type="button" class="menu-item perm-solicitudes-ver" data-vista="solicitudes"><span class="menu-icono" aria-hidden="true">📝</span>Solicitudes de compra</button>
@@ -93,6 +94,12 @@
       <h3>🛒 Compras</h3>
       <p class="ayuda">Solicitudes por aprobar, por cotizar o por convertir en orden de compra; órdenes por autorizar y por recibir; y cómo van tus solicitudes.</p>
       <div id="inicio-compras" class="inicio-lista"></div>
+    </div>
+
+    <div class="inicio-bloque inicio-bloque-facturacion perm-facturacion-timbrar" data-titulo-corto="Facturación">
+      <h3>🧾 Facturación</h3>
+      <p class="ayuda">Facturas que no se pudieron timbrar (sin respuesta, en borrador o rechazadas) y órdenes realizadas con IVA de los últimos 60 días que todavía no tienen factura.</p>
+      <div id="inicio-facturacion" class="inicio-lista"></div>
     </div>
 
     <div class="inicio-bloque inicio-bloque-marketing perm-marketing-ver" data-titulo-corto="Marketing">
@@ -459,6 +466,20 @@
     </div>
   </section>
 
+<section class="vista" id="vista-facturas">
+<div class="vista-encabezado"><div><h2>Facturas</h2><p class="ayuda">Las facturas electrónicas (CFDI) que se han timbrado desde el sistema. Las de <b>prueba</b> (sandbox) y las del demo no tienen validez fiscal. Una factura timbrada nunca se borra: solo se cancela.</p></div></div>
+<p id="fx-lista-entorno" class="ayuda" role="status"></p>
+<div class="filtros">
+  <input id="fx-l-q" type="search" aria-label="Buscar factura" placeholder="Folio, folio fiscal (UUID), RFC, cliente u orden" autocomplete="off">
+  <select id="fx-l-estatus" aria-label="Estado"><option value="">Todos los estados</option><option value="timbrada">Timbradas</option><option value="timbrando">Sin respuesta</option><option value="borrador_error">En borrador</option><option value="pendiente">Sin timbrar</option><option value="cancelacion_solicitada">Cancelación en proceso</option><option value="cancelada">Canceladas o descartadas</option></select>
+  <select id="fx-l-entorno" aria-label="Tipo"><option value="">Reales y de prueba</option><option value="prod">Solo reales</option><option value="prueba">Solo de prueba</option></select>
+  <select id="fx-l-sucursal" aria-label="Sucursal"></select>
+  <label class="fx-fecha">Desde <input id="fx-l-desde" type="date"></label>
+  <label class="fx-fecha">Hasta <input id="fx-l-hasta" type="date"></label>
+</div>
+<p id="fx-l-resumen" role="status"></p>
+<div id="fx-l-lista" class="fx-facturas"></div>
+</section>
 <section class="vista" id="vista-personal">
 <div class="pe-encabezado"><h2>Personal</h2><button type="button" class="btn btn-primario perm-personal-editar" id="pe-nuevo">+ Nueva persona</button></div>
 <p class="ayuda">Todas las personas de la empresa —técnicos, operadores, ayudantes y administrativos—, tengan o no cuenta en el sistema. De aquí se elige al técnico responsable y al equipo de cada orden de servicio.</p>
@@ -1737,9 +1758,9 @@
 <script src="solicitudes.js?v=rev1"></script>
 <script src="carga-generador.js?v=con1"></script>
 <script src="sucursales.js?v=perm2"></script>
-<script src="facturacion.js?v=fx6"></script>
+<script src="facturacion.js?v=fx7"></script>
 <script src="encuestas.js?v=enc1"></script>
-<script src="app.js?v=f3a"></script>
+<script src="app.js?v=f4a"></script>
 <script src="personal.js?v=ed1"></script>
 <script src="buscador.js?v=suc1"></script>
 <script src="demo.js?v=demo1"></script>

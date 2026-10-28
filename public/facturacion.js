@@ -248,18 +248,31 @@ const Facturacion = (() => {
     ORD = { id, opciones: { ...opciones }, ...r.j, extra: ORD?.id === id ? ORD.extra : null };
     pintarOrden();
   }
-  function tarjetaFactura(f) {
-    const [txt, clase] = ESTADOS[f.estatus] || [f.estatus, ''];
+  async function bajarArchivo(boton, fid, tipo) {
+    boton.disabled = true;
+    try {
+      const r = await api('/facturacion/facturas/' + Number(fid) + '/' + tipo);
+      if (!r.ok) throw Error((await r.json().catch(() => ({}))).error || 'No se pudo descargar');
+      const nombre = (/filename="([^"]+)"/.exec(r.headers.get('Content-Disposition') || '') || [])[1] || 'factura.' + tipo;
+      const url = URL.createObjectURL(await r.blob()), a = document.createElement('a'); a.href = url; a.download = nombre; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 2000);
+    } catch (err) { toast(err.message); } finally { boton.disabled = false; }
+  }
+  // lista = true: la tarjeta de la pantalla «Facturas» (con la orden y las acciones de reenviar y descartar).
+  function tarjetaFactura(f, lista = false) {
+    const [txt, clase] = f.descartada ? ['Borrador descartado', 'fx-inactivo'] : (ESTADOS[f.estatus] || [f.estatus, '']);
     const prueba = f.entorno !== 'prod' ? `<span class="fx-badge fx-sandbox">${f.entorno === 'demo' ? 'DEMO' : 'PRUEBA'}</span>` : '';
     return `<div class="fx-factura" data-fx-factura="${Number(f.id)}">
-      <div><b>${esc(f.serie || '')}${f.folio ? '-' + esc(f.folio) : ''}</b> ${prueba} <span class="${clase}">${esc(txt)}</span> · ${pesos(f.total)}
+      <div><b>${esc(f.serie || '')}${f.folio ? '-' + esc(f.folio) : (f.serie ? '' : 'Sin folio')}</b> ${prueba} <span class="${clase}">${esc(txt)}</span> · ${pesos(f.total)}
         <small>${esc(f.receptor_razon_social)} · ${esc(f.receptor_rfc)} · ${esc(f.forma_pago || '')} ${esc(f.metodo_pago || '')}${f.uuid ? ' · Folio fiscal ' + esc(f.uuid) : ''}${f.fecha_timbrado ? ' · ' + esc(String(f.fecha_timbrado).replace('T', ' ').slice(0, 16)) : ''}</small>
         ${f.error && f.estatus !== 'timbrada' ? `<small class="fx-mal">${esc(f.error)}</small>` : ''}
       </div>
       <div class="btn-group">
-        ${f.tiene_xml ? `<button type="button" class="btn btn-outline" data-fx-bajar="xml">XML</button>` : ''}
+        ${f.tiene_xml || (f.estatus === 'timbrada' && f.entorno !== 'demo') ? `<button type="button" class="btn btn-outline" data-fx-bajar="xml">XML</button>` : ''}
         ${f.estatus === 'timbrada' && (f.tiene_pdf || f.entorno !== 'demo') ? `<button type="button" class="btn btn-outline" data-fx-bajar="pdf">PDF</button>` : ''}
         ${f.estatus === 'timbrando' ? '<button type="button" class="btn btn-secundario" data-fx-verificar>Verificar</button>' : ''}
+        ${lista && f.puede_reenviar ? '<button type="button" class="btn btn-outline" data-fx-reenviar>✉️ Reenviar</button>' : ''}
+        ${lista && f.puede_descartar ? '<button type="button" class="btn btn-outline solo-general" data-fx-descartar>Descartar borrador</button>' : ''}
+        ${lista && f.lead_id ? `<button type="button" class="btn btn-outline" data-fx-orden="${Number(f.lead_id)}">Abrir ${esc(f.folio_orden || 'orden')}</button>` : ''}
       </div>
     </div>`;
   }
@@ -311,17 +324,7 @@ const Facturacion = (() => {
   $('cfdi-orden')?.addEventListener('click', async e => {
     if (!ORD) return;
     const bajar = e.target.closest('[data-fx-bajar]');
-    if (bajar) {
-      const fid = Number(bajar.closest('[data-fx-factura]').dataset.fxFactura), tipo = bajar.dataset.fxBajar;
-      bajar.disabled = true;
-      try {
-        const r = await api('/facturacion/facturas/' + fid + '/' + tipo);
-        if (!r.ok) throw Error((await r.json().catch(() => ({}))).error || 'No se pudo descargar');
-        const nombre = (/filename="([^"]+)"/.exec(r.headers.get('Content-Disposition') || '') || [])[1] || 'factura.' + tipo;
-        const url = URL.createObjectURL(await r.blob()), a = document.createElement('a'); a.href = url; a.download = nombre; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 2000);
-      } catch (err) { toast(err.message); } finally { bajar.disabled = false; }
-      return;
-    }
+    if (bajar) { await bajarArchivo(bajar, bajar.closest('[data-fx-factura]').dataset.fxFactura, bajar.dataset.fxBajar); return; }
     const ver = e.target.closest('[data-fx-verificar]');
     if (ver) {
       ver.disabled = true;
@@ -358,6 +361,60 @@ const Facturacion = (() => {
     } finally { timbrando = false; }
   });
 
-  return { cargar, cargarCliente, cargarOrden };
+  // ---------- Pantalla «Facturas» (F4, 2026-10-28) ----------
+  let tLista = null, LISTA_OK = false;
+  const filtrosLista = () => ({ q: $('fx-l-q').value.trim(), estatus: $('fx-l-estatus').value, entorno: $('fx-l-entorno').value, sucursal: $('fx-l-sucursal').value, desde: $('fx-l-desde').value, hasta: $('fx-l-hasta').value });
+  async function cargarLista() {
+    const cont = $('fx-l-lista'); if (!cont) return;
+    if (typeof Permisos !== 'undefined' && !Permisos.puede('facturacion.timbrar')) { cont.innerHTML = ''; return; }
+    const f = filtrosLista(), q = new URLSearchParams(Object.entries(f).filter(([, v]) => v)).toString();
+    const turno = ++TURNO_LISTA;
+    let r;
+    try { r = await pedir('/facturas' + (q ? '?' + q : '')); }
+    catch (e) { if (turno === TURNO_LISTA) cont.innerHTML = `<p class="aviso-error-carga" role="alert">${esc(e.message)}</p>`; return; }
+    if (turno !== TURNO_LISTA) return; // llegó una búsqueda más nueva
+    if (!LISTA_OK) { $('fx-l-sucursal').innerHTML = '<option value="">Todas las sucursales</option>' + r.sucursales.map(x => `<option value="${Number(x.id)}">${esc(x.nombre)}</option>`).join(''); LISTA_OK = true; }
+    $('fx-lista-entorno').textContent = r.entorno === 'prod' ? 'Conexión en PRODUCCIÓN: las facturas nuevas tienen validez fiscal.' : r.entorno === 'demo' ? 'Demo: las facturas se simulan.' : 'Conexión de PRUEBAS (sandbox): las facturas nuevas no tienen validez fiscal.';
+    $('fx-l-resumen').textContent = r.total ? `${r.total} factura(s)${r.truncado ? ' (se muestran las 200 más recientes: afina la búsqueda)' : ''}` : '';
+    cont.innerHTML = r.facturas.length ? r.facturas.map(x => tarjetaFactura(x, true)).join('') : '<p class="util-45">No hay facturas con esos filtros.</p>';
+  }
+  let TURNO_LISTA = 0;
+  for (const id of ['fx-l-estatus', 'fx-l-entorno', 'fx-l-sucursal', 'fx-l-desde', 'fx-l-hasta']) $(id)?.addEventListener('change', cargarLista);
+  $('fx-l-q')?.addEventListener('input', () => { clearTimeout(tLista); tLista = setTimeout(cargarLista, 300); });
+  $('fx-l-lista')?.addEventListener('click', async e => {
+    const tarjeta = e.target.closest('[data-fx-factura]'); if (!tarjeta) return;
+    const fid = Number(tarjeta.dataset.fxFactura);
+    const bajar = e.target.closest('[data-fx-bajar]'); if (bajar) return bajarArchivo(bajar, fid, bajar.dataset.fxBajar);
+    const orden = e.target.closest('[data-fx-orden]'); if (orden) return abrirFicha(Number(orden.dataset.fxOrden));
+    const ver = e.target.closest('[data-fx-verificar]');
+    if (ver) { ver.disabled = true; const r = await pedirCompleto('/facturas/' + fid + '/verificar', {}, 'POST'); toast(r.ok ? (r.j.mensaje || (r.j.estado === 'timbrada' ? 'Sí quedó timbrada' : 'Estado: ' + r.j.estado)) : (r.j.error || 'No se pudo verificar')); return cargarLista(); }
+    const reenviar = e.target.closest('[data-fx-reenviar]');
+    if (reenviar) {
+      if (!await solicitarDialogo({ titulo: 'Reenviar factura', aceptar: 'Sí, reenviar', mensaje: 'Se manda otra vez la factura (XML y PDF) al correo que tiene registrado el cliente en factura.com.' })) return;
+      reenviar.disabled = true; const r = await pedirCompleto('/facturas/' + fid + '/reenviar', {}, 'POST'); toast(r.ok ? r.j.mensaje : (r.j.error || 'No se pudo reenviar')); reenviar.disabled = false; return;
+    }
+    const descartar = e.target.closest('[data-fx-descartar]');
+    if (descartar) {
+      if (!await solicitarDialogo({ titulo: 'Descartar borrador', aceptar: 'Sí, descartar', mensaje: 'El borrador se borra en factura.com y la orden queda libre para empezar una factura nueva. Una factura ya timbrada nunca se descarta.' })) return;
+      descartar.disabled = true; const r = await pedirCompleto('/facturas/' + fid + '/descartar', {}, 'POST'); toast(r.ok ? 'Borrador descartado' : (r.j.error || 'No se pudo descartar')); return cargarLista();
+    }
+  });
+
+  // ---------- Bloque «Facturación» de Inicio ----------
+  const TAG_FX = { timbrando: '⏳ Sin respuesta', borrador_error: '📝 Borrador', pendiente: '⚠️ No se timbró', por_facturar: '🧾 Por facturar' };
+  async function pintarInicio() {
+    const cont = $('inicio-facturacion'); if (!cont || (typeof Permisos !== 'undefined' && !Permisos.puede('facturacion.timbrar'))) return;
+    let r;
+    try { r = await pedir('/avisos'); } catch (e) { cont.innerHTML = `<div class="aviso-error-carga" role="alert"><p>${esc(e.message)}</p></div>`; return; }
+    const clase = n => (n === 'rojo' ? 'vencido' : n === 'azul' ? 'tipo-alerta' : 'tipo-recompra'), tag = n => (n === 'rojo' ? 'rojo' : n === 'azul' ? 'alerta' : 'recompra');
+    cont.innerHTML = r.avisos.length ? r.avisos.map(a => `<div class="fila-alerta ${clase(a.nivel)}">
+        <div class="info"><span class="tipo-tag ${tag(a.nivel)}">${esc(TAG_FX[a.tipo] || a.tipo)}</span>
+          <div><b>${esc(a.folio || '')}</b> · ${esc(a.nombre || '')}</div><div class="txt">${esc(a.texto)}</div>${a.fecha ? `<div class="fecha">Realizada el ${esc(String(a.fecha).split('-').reverse().join('/'))}</div>` : ''}</div>
+        <div class="util-46"><button type="button" class="btn btn-outline" data-fx-inicio-orden="${Number(a.lead_id)}">Abrir orden</button></div></div>`).join('') + (r.por_facturar_total > 15 ? `<p class="ayuda">Y ${r.por_facturar_total - 15} orden(es) más por facturar.</p>` : '')
+      : '<p class="util-45">Nada pendiente de facturar. 🎉</p>';
+  }
+  $('inicio-facturacion')?.addEventListener('click', e => { const b = e.target.closest('[data-fx-inicio-orden]'); if (b) abrirFicha(Number(b.dataset.fxInicioOrden)); });
+
+  return { cargar, cargarCliente, cargarOrden, cargarLista, pintarInicio };
 })();
 window.Facturacion = Facturacion;

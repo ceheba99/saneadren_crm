@@ -13,6 +13,8 @@ const { leerCatalogos } = require('./facturacion-catalogos');
 const { preparar, timbrar, resolverSinRespuesta, descargarArchivos, vistaFactura } = require('./facturacion-timbrado');
 const { vincularCliente } = require('./facturacion-clientes');
 const fs = require('fs'), path = require('path');
+const { ESTATUS, ESTATUS_VIGENTES } = require('./facturacion-db');
+const VIGENTES = ESTATUS_VIGENTES.map(e => `'${e}'`).join(', ');
 
 const TIPOS = { serie_factura: 'factura', serie_pago: 'pago' };
 
@@ -378,6 +380,94 @@ module.exports = function rutasFacturacion(app, db, h, { direccion, puede = () =
       const ahora = db.prepare('SELECT pdf_path FROM facturas WHERE id = ?').get(f.id);
       if (!ahora?.pdf_path) return res.status(502).json({ error: 'factura.com no entregó el PDF; intenta más tarde' });
       enviar(path.join(dirArchivos, ahora.pdf_path));
+    });
+  }));
+
+  // ---------- Vista de facturas, reenvío y borradores atorados (F4, 2026-10-28) ----------
+  // La lista y los avisos los ve quien puede timbrar; la base ya filtra por sucursal (vista «facturas» de sucursales.js). Reenviar por correo solo
+  // existe en PRODUCCIÓN (en pruebas no se manda correo: regla 7). Descartar un borrador atorado es solo de Dirección.
+  const folioDeOrden = f => (f.lead_id ? require('./sucursales').folio('OS', 'leads', f.lead_id, f.created_at) : '');
+  const filaLista = f => ({ ...vistaFactura(f), folio_orden: folioDeOrden(f), sucursal_id: f.sucursal_id,
+    puede_reenviar: f.estatus === 'timbrada' && f.entorno === 'prod' && !!f.receptor_correo, puede_descartar: f.estatus === 'borrador_error' });
+  const textoFiltro = v => String(v ?? '').trim().toLocaleLowerCase('es-MX');
+  const FECHA = /^\d{4}-\d{2}-\d{2}$/;
+
+  app.get('/api/facturacion/facturas', h((req, res) => {
+    if (sinPermisoTimbrar(req, res)) return;
+    const q = req.query, donde = [], args = [];
+    if (q.estatus) { if (!ESTATUS.includes(String(q.estatus))) return res.status(400).json({ error: 'Ese estado de factura no existe' }); donde.push('estatus = ?'); args.push(String(q.estatus)); }
+    if (q.entorno === 'prod') donde.push("entorno = 'prod'"); else if (q.entorno === 'prueba') donde.push("entorno IN ('sandbox', 'demo')");
+    if (q.sucursal) { donde.push('sucursal_id = ?'); args.push(Number(q.sucursal) || 0); }
+    for (const [k, op] of [['desde', '>='], ['hasta', '<=']]) if (q[k]) {
+      if (!FECHA.test(String(q[k]))) return res.status(400).json({ error: 'La fecha no es válida' });
+      donde.push(`substr(COALESCE(fecha_timbrado, created_at), 1, 10) ${op} ?`); args.push(String(q[k]));
+    }
+    let filas = db.prepare(`SELECT * FROM facturas ${donde.length ? 'WHERE ' + donde.join(' AND ') : ''} ORDER BY id DESC LIMIT 1000`).all(...args).map(filaLista);
+    const t = textoFiltro(q.q);
+    if (t) filas = filas.filter(f => [f.serie && f.folio ? `${f.serie}-${f.folio}` : '', f.serie, f.folio, f.uuid, f.receptor_rfc, f.receptor_razon_social, f.folio_orden].some(x => textoFiltro(x).includes(t)));
+    const c = estadoConfig(env);
+    res.json({ entorno: esDemo() ? 'demo' : c.entorno, total: filas.length, truncado: filas.length > 200, facturas: filas.slice(0, 200),
+      sucursales: db.prepare('SELECT id, nombre FROM sucursales WHERE activo = 1 ORDER BY id').all() });
+  }));
+
+  // Lo que pide atención en Inicio: facturas sin respuesta, borradores por corregir, rechazadas, y órdenes realizadas con IVA que todavía no se facturan.
+  app.get('/api/facturacion/avisos', h((req, res) => {
+    if (sinPermisoTimbrar(req, res)) return;
+    const entorno = esDemo() ? 'demo' : estadoConfig(env).entorno, avisos = [];
+    const TEXTO = { timbrando: ['rojo', 'Sin respuesta de factura.com: abre la orden y pulsa «Verificar» (no la mandes otra vez sin revisar)'], borrador_error: ['rojo', 'Quedó en borrador: corrige lo que dice el motivo y vuelve a timbrar'], pendiente: ['amarillo', 'No se timbró: revisa el motivo y vuelve a intentar'] };
+    for (const f of db.prepare("SELECT * FROM facturas WHERE entorno = ? AND ((estatus IN ('timbrando', 'borrador_error')) OR (estatus = 'pendiente' AND error_json IS NOT NULL)) ORDER BY id DESC LIMIT 30").all(entorno)) {
+      const v = vistaFactura(f), [nivel, texto] = TEXTO[f.estatus];
+      avisos.push({ tipo: f.estatus, nivel, lead_id: f.lead_id, folio: folioDeOrden(f), nombre: f.receptor_razon_social, texto: v.error ? `${texto}. Motivo: ${v.error}` : texto });
+    }
+    // Realizadas en los últimos 60 días, con IVA, sin folio de factura capturado ni factura vigente en este entorno.
+    const porFacturar = db.prepare(`SELECT l.id, l.created_at, l.fecha_realizado, COALESCE(c.empresa_contacto, c.nombre) AS cliente FROM leads l LEFT JOIN clientes c ON c.id = l.cliente_id
+      WHERE l.estatus = 'ganado' AND l.ejecucion = 'realizado' AND l.iva_modo IN ('mas_iva', 'incluido') AND (l.factura_folio IS NULL OR l.factura_folio = '')
+        AND l.fecha_realizado >= date('now', 'localtime', '-60 days')
+        AND NOT EXISTS (SELECT 1 FROM facturas f WHERE f.lead_id = l.id AND f.entorno = ? AND f.tipo_documento = 'factura' AND f.estatus IN (${VIGENTES}))
+      ORDER BY l.fecha_realizado DESC, l.id DESC LIMIT 40`).all(entorno);
+    for (const o of porFacturar.slice(0, 15)) avisos.push({ tipo: 'por_facturar', nivel: 'azul', lead_id: o.id, folio: require('./sucursales').folio('OS', 'leads', o.id, o.created_at), nombre: o.cliente || '', fecha: o.fecha_realizado, texto: 'Realizada con IVA y todavía sin factura' });
+    res.json({ entorno, avisos, por_facturar_total: porFacturar.length });
+  }));
+
+  // Reenviar la factura al correo que tiene factura.com del cliente. Solo producción, solo timbradas.
+  app.post('/api/facturacion/facturas/:id/reenviar', h((req, res) => {
+    if (sinPermisoTimbrar(req, res)) return;
+    const f = facturaVisible(req, res); if (!f) return;
+    if (f.estatus !== 'timbrada' || !f.uuid) return res.status(409).json({ error: 'Solo se reenvía una factura ya timbrada' });
+    if (f.entorno !== 'prod') return res.status(409).json({ error: 'En pruebas (sandbox) y en el demo no se manda correo: solo las facturas reales se reenvían.' });
+    if (esDemo() || leerConfig(env).entorno !== 'prod') return res.status(409).json({ error: 'La conexión no está en producción: no se puede reenviar ahora.' });
+    if (!f.receptor_correo) return res.status(409).json({ error: 'Esta factura no tiene correo del receptor.' });
+    return una('reenviar-' + f.id, res, async () => {
+      try { await crearCliente().get(`/v4/cfdi40/${encodeURIComponent(f.uuid)}/email`); }
+      catch (e) { db.prepare('INSERT INTO main.facturas_log (factura_id, lead_id, accion, resultado, http_status, mensaje, usuario_id) VALUES (?, ?, ?, ?, ?, ?, ?)').run(f.id, f.lead_id, 'reenviar', 'error', e.httpStatus ?? null, String(e.message).slice(0, 500), req.usuarioSesion?.id ?? null); throw e; }
+      db.prepare('INSERT INTO main.facturas_log (factura_id, lead_id, accion, resultado, usuario_id) VALUES (?, ?, ?, ?, ?)').run(f.id, f.lead_id, 'reenviar', 'ok', req.usuarioSesion?.id ?? null);
+      auditar(req, 'orden_servicio', f.lead_id, 'factura', `Reenvió la factura ${f.serie || ''}-${f.folio || ''} al correo del cliente`);
+      res.json({ ok: true, mensaje: 'Factura enviada al correo del cliente.' });
+    });
+  }));
+
+  // Descartar un borrador que quedó atorado (se borró en el panel, venció, o ya no se quiere): libera el lugar de la orden para empezar una factura nueva
+  // con otro número de orden. Un CFDI timbrado NUNCA se descarta (solo se cancela, F5). Primero se intenta borrar el borrador en factura.com.
+  app.post('/api/facturacion/facturas/:id/descartar', h((req, res) => {
+    if (!direccion(req)) return res.status(403).json({ error: 'Descartar un borrador de factura es solo de Dirección' });
+    const f = facturaVisible(req, res); if (!f) return;
+    if (f.estatus !== 'borrador_error' || !f.cfdi_uid) return res.status(409).json({ error: 'Solo se descarta un borrador con error (una factura timbrada nunca se descarta)' });
+    if (f.entorno === 'demo' || esDemo()) return demoNo(res);
+    if (f.entorno !== leerConfig(env).entorno) return res.status(409).json({ error: `Este borrador es de ${f.entorno === 'prod' ? 'producción' : 'pruebas'} y la conexión está en otro entorno` });
+    return una('orden-' + f.lead_id, res, async () => {
+      let nota = 'Borrador descartado por Dirección';
+      try { await crearCliente().post(`/v4/drafts/${encodeURIComponent(f.cfdi_uid)}/drop`, {}); }
+      catch (e) {
+        // Un «no» claro de factura.com (p. ej. el borrador ya no existe) deja descartar; una falla de red o un 5xx no: no se sabe si lo borró.
+        if (!(e instanceof ErrorFactura && e.codigo === 'api' && e.rechazo)) throw e;
+        nota += ' (factura.com dijo: ' + String(e.message).slice(0, 150) + ')';
+      }
+      db.transaction(() => {
+        db.prepare("UPDATE main.facturas SET estatus = 'cancelada', error_json = ?, updated_at = datetime('now','localtime') WHERE id = ? AND estatus = 'borrador_error'").run(JSON.stringify({ codigo: 'descartado', mensaje: nota }), f.id);
+        db.prepare('INSERT INTO main.facturas_log (factura_id, lead_id, accion, resultado, mensaje, usuario_id) VALUES (?, ?, ?, ?, ?, ?)').run(f.id, f.lead_id, 'descartar', 'ok', nota.slice(0, 500), req.usuarioSesion?.id ?? null);
+      })();
+      auditar(req, 'orden_servicio', f.lead_id, 'factura', 'Descartó un borrador de factura');
+      res.json({ ok: true, factura: vistaFactura(db.prepare('SELECT * FROM facturas WHERE id = ?').get(f.id)) });
     });
   }));
 };

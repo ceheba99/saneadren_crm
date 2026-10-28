@@ -2148,8 +2148,8 @@ table.tabla-clientes.py-tareas tbody td{white-space:normal;}
 #fc-fiscales .fx-badge{display:inline-block;padding:2px 10px;border-radius:999px;font-size:12px;font-weight:800;}
 #fc-fiscales .fx-sandbox{background:#e3eefc;color:#1f4f99;}
 /* Factura electrónica de la orden (F3, 2026-10-27) */
-#cfdi-orden .fx-badge{display:inline-block;padding:2px 10px;border-radius:999px;font-size:12px;font-weight:800;}
-#cfdi-orden .fx-sandbox{background:#e3eefc;color:#1f4f99;}
+#cfdi-orden .fx-badge,#fx-l-lista .fx-badge{display:inline-block;padding:2px 10px;border-radius:999px;font-size:12px;font-weight:800;}
+#cfdi-orden .fx-sandbox,#fx-l-lista .fx-sandbox{background:#e3eefc;color:#1f4f99;}
 #cfdi-orden .fx-demo{background:#fff6d6;border:1px solid #f0d27a;border-radius:8px;padding:8px 12px;}
 .fx-facturas{display:flex;flex-direction:column;gap:8px;margin-bottom:12px;}
 .fx-factura{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:8px;border:1px solid var(--gris-200);border-radius:12px;padding:10px 14px;background:#fcfcfd;}
@@ -2166,3 +2166,8 @@ table.tabla-clientes.py-tareas tbody td{white-space:normal;}
 .fx-conceptos .num{text-align:right;white-space:nowrap;}
 .fx-conceptos td small{display:block;color:var(--texto-sec);}
 .fx-conceptos tfoot th{text-align:right;font-weight:600;}
+
+/* Pantalla Facturas (F4, 2026-10-28) */
+.fx-fecha{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--texto-sec);}
+#vista-facturas .filtros{display:flex;flex-wrap:wrap;gap:8px;margin:10px 0;}
+#fx-l-lista .fx-factura .btn-group{flex-wrap:wrap;}
