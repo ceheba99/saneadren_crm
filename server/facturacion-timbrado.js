@@ -453,7 +453,7 @@ function vistaFactura(f) {
   let error = null; try { error = f.error_json ? JSON.parse(f.error_json).mensaje : null; } catch { /* */ }
   return { id: f.id, lead_id: f.lead_id, entorno: f.entorno, estatus: f.estatus, serie: f.serie, folio: f.folio, uuid: f.uuid, fecha_timbrado: f.fecha_timbrado,
     receptor_rfc: f.receptor_rfc, receptor_razon_social: f.receptor_razon_social, uso_cfdi: f.uso_cfdi, metodo_pago: f.metodo_pago, forma_pago: f.forma_pago,
-    subtotal: f.subtotal_cent / 100, iva: f.iva_cent / 100, total: f.total_cent / 100, tiene_xml: !!f.xml, tiene_pdf: !!f.pdf_path, borrador: f.estatus === 'borrador_error' && !!f.cfdi_uid,
+    subtotal: f.subtotal_cent / 100, iva: f.iva_cent / 100, total: f.total_cent / 100, tiene_xml: !!f.xml, tiene_pdf: !!f.pdf_path, borrador: f.estatus === 'borrador_error' && !!f.cfdi_uid, descartada: f.estatus === 'cancelada' && !f.uuid,
     error, created_at: f.created_at, updated_at: f.updated_at };
 }
 

@@ -106,6 +106,22 @@ function revisar(db, { dirArchivos } = {}) {
   // Solo los costos vivos: uno cancelado puede quedar ligado a una orden que después se descartó (es lo correcto).
   chequeo('Cuentas por pagar', 'Costos ligados a una orden de servicio que ya no existe o no es orden', 'error', () => cxp.filter(x => x.lead_id && !x.cancelada && leadPorId.get(x.lead_id)?.estatus !== 'ganado').map(x => ({ ref: refCxp(x), detalle: 'orden #' + x.lead_id })));
 
+  // ---------- Facturación electrónica (F4, 2026-10-28) ----------
+  if (existe(db, 'facturas')) {
+    const fac = db.prepare("SELECT * FROM main.facturas WHERE estatus <> 'cancelada'").all();
+    const refF = f => (f.serie || f.folio ? `factura ${f.serie || ''}-${f.folio || ''}` : 'factura #' + f.id) + (f.entorno === 'prod' ? '' : ' (' + f.entorno + ')');
+    chequeo('Facturación', 'Factura sin respuesta de factura.com desde hace más de un día', 'aviso', () => fac.filter(f => f.estatus === 'timbrando' && String(f.updated_at).slice(0, 10) < db.prepare("SELECT date(?, '-1 day') d").get(hoy).d).map(f => ({ ref: refF(f), detalle: 'abre la orden y pulsa «Verificar»' })));
+    chequeo('Facturación', 'Borrador de factura pendiente de corregir', 'aviso', () => fac.filter(f => f.estatus === 'borrador_error').map(f => ({ ref: refF(f), detalle: 'corrígelo y vuelve a timbrar, o descártalo (Dirección)' })));
+    chequeo('Facturación', 'Factura real timbrada que no coincide con la cobranza de su orden (folio o total)', 'error', () => fac.filter(f => f.entorno === 'prod' && f.estatus === 'timbrada' && f.lead_id).map(f => {
+      const l = leadPorId.get(f.lead_id); if (!l) return { ref: refF(f), detalle: 'su orden #' + f.lead_id + ' no existe' };
+      if (l.factura_folio !== `${f.serie}-${f.folio}`) return { ref: refF(f), detalle: `la orden dice «${l.factura_folio || 'sin folio'}»` };
+      if (l.factura_total_cent !== f.total_cent) return { ref: refF(f), detalle: `CFDI ${pesos(f.total_cent)} · cobranza ${pesos(l.factura_total_cent ?? 0)}` };
+      return null;
+    }).filter(Boolean));
+    chequeo('Facturación', 'Factura timbrada sin su XML guardado', 'aviso', () => fac.filter(f => f.estatus === 'timbrada' && !f.xml).map(f => ({ ref: refF(f), detalle: 'se baja sola al pulsar «XML» en la orden' })));
+    chequeo('Facturación', 'Factura timbrada con totales que no cuadran (subtotal + IVA ≠ total)', 'error', () => fac.filter(f => f.estatus === 'timbrada' && f.subtotal_cent + f.iva_cent !== f.total_cent).map(f => ({ ref: refF(f), detalle: `${pesos(f.subtotal_cent)} + ${pesos(f.iva_cent)} ≠ ${pesos(f.total_cent)}` })));
+  }
+
   // ---------- Compras ----------
   const ocs = existe(db, 'ordenes_compra') ? db.prepare('SELECT * FROM ordenes_compra').all() : [];
   const cols = columnas(db, 'ordenes_compra');
