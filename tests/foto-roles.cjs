@@ -357,8 +357,8 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
       admin: { timbra: 1, cfdiFact: 1 }, gerente: { timbra: 1, cfdiFact: 1 }, ...Object.fromEntries(['ventas', 'atencion', 'tecnico', 'costos', 'marketing', 'marketing_gerente'].map(r => [r, { timbra: 0, cfdiFact: 0 }])) }],
     ['2026-10-28', 'Ver la lista de facturas (pantalla «Facturas» y el aviso de Inicio), bajar su XML y PDF y reenviarlas por correo: Dirección, el Gerente y quien tenga «Timbrar facturas»; los demás roles no.', {
       admin: { cfdiFact: 1, reenvia: 1 }, gerente: { cfdiFact: 1, reenvia: 1 }, ...Object.fromEntries(['ventas', 'atencion', 'tecnico', 'costos', 'marketing', 'marketing_gerente'].map(r => [r, { cfdiFact: 0, reenvia: 0 }])) }],
-    ['2026-10-28', 'Descartar un borrador de factura que quedó atorado: solo Dirección (ni el Gerente ni quien factura).', {
-      admin: { descarta: 1 }, ...Object.fromEntries(['gerente', 'ventas', 'atencion', 'tecnico', 'costos', 'marketing', 'marketing_gerente'].map(r => [r, { descarta: 0 }])) }],
+    ['2026-10-28', 'Descartar un borrador de factura que quedó atorado: Dirección, el Gerente y quien tenga «Timbrar facturas» (quien factura); los demás roles no.', {
+      admin: { descarta: 1 }, gerente: { descarta: 1 }, ...Object.fromEntries(['ventas', 'atencion', 'tecnico', 'costos', 'marketing', 'marketing_gerente'].map(r => [r, { descarta: 0 }])) }],
     ['2026-10-28', 'Una orden con factura real ya timbrada: su folio, fecha, total y método de pago salen de la factura y nadie los cambia a mano (ni Dirección); los días de crédito sí.', {
       ...Object.fromEntries(['admin', 'gerente', 'ventas', 'atencion', 'tecnico', 'costos', 'marketing', 'marketing_gerente'].map(r => [r, { editaFolioReal: 0 }])) }],
     ['2026-10-27', 'Banco de ideas: las proponen, votan y comentan Marketing, Gerente de marketing y Dirección; las aprueban o descartan solo Dirección y el Gerente de marketing. Los demás roles no ven las ideas.', {

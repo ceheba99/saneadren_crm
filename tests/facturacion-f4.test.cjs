@@ -112,13 +112,13 @@ conMontaje('Reenviar no existe en pruebas ni en el demo (regla 7: sin correos en
   assert.equal((await pedir('GET', '/facturas')).json.facturas[0].puede_reenviar, false);
 });
 
-conMontaje('Descartar borrador: solo Dirección; borra el borrador en factura.com y deja el lugar libre; una timbrada nunca se descarta', {}, async ({ pedir, orden, factura, estado, db }) => {
+conMontaje('Descartar borrador: Dirección, Gerente y quien factura (sin el permiso, nadie); borra el borrador en factura.com y deja el lugar libre; una timbrada nunca se descarta', {}, async ({ pedir, orden, factura, estado, db }) => {
   orden(1); orden(2);
   const b = factura({ lead: 1, estatus: 'borrador_error', uid: 'BORR-1', folio: '8' });
-  estado.direccion = false;
-  assert.equal((await pedir('POST', `/facturas/${b}/descartar`, {})).status, 403, 'ni quien tiene el permiso de timbrar descarta');
+  estado.timbra = false; estado.direccion = false;
+  assert.equal((await pedir('POST', `/facturas/${b}/descartar`, {})).status, 403, 'sin el permiso de timbrar nadie descarta');
   assert.deepEqual(estado.llamadas, []);
-  estado.direccion = true;
+  estado.timbra = true; // quien factura (no es Dirección) sí descarta
   const x = await pedir('POST', `/facturas/${b}/descartar`, {});
   assert.equal(x.status, 200); assert.equal(x.json.factura.descartada, true); assert.equal(x.json.factura.estatus, 'cancelada');
   assert.deepEqual(estado.llamadas, ['POST /v4/drafts/BORR-1/drop']);

@@ -271,7 +271,7 @@ const Facturacion = (() => {
         ${f.estatus === 'timbrada' && (f.tiene_pdf || f.entorno !== 'demo') ? `<button type="button" class="btn btn-outline" data-fx-bajar="pdf">PDF</button>` : ''}
         ${f.estatus === 'timbrando' ? '<button type="button" class="btn btn-secundario" data-fx-verificar>Verificar</button>' : ''}
         ${lista && f.puede_reenviar ? '<button type="button" class="btn btn-outline" data-fx-reenviar>✉️ Reenviar</button>' : ''}
-        ${lista && f.puede_descartar ? '<button type="button" class="btn btn-outline solo-general" data-fx-descartar>Descartar borrador</button>' : ''}
+        ${lista && f.puede_descartar ? '<button type="button" class="btn btn-outline" data-fx-descartar>Descartar borrador</button>' : ''}
         ${lista && f.lead_id ? `<button type="button" class="btn btn-outline" data-fx-orden="${Number(f.lead_id)}">Abrir ${esc(f.folio_orden || 'orden')}</button>` : ''}
       </div>
     </div>`;

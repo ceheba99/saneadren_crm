@@ -385,7 +385,7 @@ module.exports = function rutasFacturacion(app, db, h, { direccion, puede = () =
 
   // ---------- Vista de facturas, reenvío y borradores atorados (F4, 2026-10-28) ----------
   // La lista y los avisos los ve quien puede timbrar; la base ya filtra por sucursal (vista «facturas» de sucursales.js). Reenviar por correo solo
-  // existe en PRODUCCIÓN (en pruebas no se manda correo: regla 7). Descartar un borrador atorado es solo de Dirección.
+  // existe en PRODUCCIÓN (en pruebas no se manda correo: regla 7). Descartar un borrador atorado lo hace quien puede timbrar.
   const folioDeOrden = f => (f.lead_id ? require('./sucursales').folio('OS', 'leads', f.lead_id, f.created_at) : '');
   const filaLista = f => ({ ...vistaFactura(f), folio_orden: folioDeOrden(f), sucursal_id: f.sucursal_id,
     puede_reenviar: f.estatus === 'timbrada' && f.entorno === 'prod' && !!f.receptor_correo, puede_descartar: f.estatus === 'borrador_error' });
@@ -448,8 +448,9 @@ module.exports = function rutasFacturacion(app, db, h, { direccion, puede = () =
 
   // Descartar un borrador que quedó atorado (se borró en el panel, venció, o ya no se quiere): libera el lugar de la orden para empezar una factura nueva
   // con otro número de orden. Un CFDI timbrado NUNCA se descarta (solo se cancela, F5). Primero se intenta borrar el borrador en factura.com.
+  // Lo descartan Dirección, el Gerente y quien factura (decisión de Dirección, 2026-10-28).
   app.post('/api/facturacion/facturas/:id/descartar', h((req, res) => {
-    if (!direccion(req)) return res.status(403).json({ error: 'Descartar un borrador de factura es solo de Dirección' });
+    if (sinPermisoTimbrar(req, res)) return;
     const f = facturaVisible(req, res); if (!f) return;
     if (f.estatus !== 'borrador_error' || !f.cfdi_uid) return res.status(409).json({ error: 'Solo se descarta un borrador con error (una factura timbrada nunca se descarta)' });
     if (f.entorno === 'demo' || esDemo()) return demoNo(res);
