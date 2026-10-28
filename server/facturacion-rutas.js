@@ -8,10 +8,12 @@ const { estadoConfig, leerConfig } = require('./facturacion-config');
 const { crearClienteFactura, ErrorFactura } = require('./facturacom');
 const { CATALOGOS, TIPOS_CLAVE, sincronizarCatalogos, hayCatalogo, nombreDeClave, buscarClaves } = require('./facturacion-catalogos');
 const { listarSeries, asignarSerie } = require('./facturacion-series');
+const { validarRFC, normalizarRazonSocial, validarCorreo, validarDatosFiscales } = require('./facturacion-validaciones');
+const { leerCatalogos } = require('./facturacion-catalogos');
 
 const TIPOS = { serie_factura: 'factura', serie_pago: 'pago' };
 
-module.exports = function rutasFacturacion(app, db, h, { direccion, esDemo = () => process.env.MODO_DEMO === '1', crearCliente = () => crearClienteFactura(), env = process.env, auditar = () => {} } = {}) {
+module.exports = function rutasFacturacion(app, db, h, { direccion, puede = () => false, verCliente = () => true, esDemo = () => process.env.MODO_DEMO === '1', crearCliente = () => crearClienteFactura(), env = process.env, auditar = () => {} } = {}) {
   const soloDireccion = (req, res) => {
     if (direccion(req)) return false;
     res.status(403).json({ error: 'La configuración de facturación es solo de Dirección' });
@@ -137,6 +139,87 @@ module.exports = function rutasFacturacion(app, db, h, { direccion, esDemo = () 
     }
     if (cambiados) auditar(req, 'catalogo', null, 'facturacion', `Claves del SAT puestas a ${cambiados} servicio(s) que no tenían: ${resumenClaves(r.valores)}`);
     res.json({ actualizados: cambiados, servicios: servicios() });
+  }));
+
+  // ---------- Datos fiscales de los clientes (2026-10-27) ----------
+  // Los capturan Dirección, el Gerente y quien tenga el permiso «Datos fiscales de clientes» (quien factura). Un cliente puede tener varios (varias razones
+  // sociales). Se pueden guardar incompletos (solo el RFC es obligatorio): la pantalla dice qué falta y el timbrado no sale hasta que esté completo.
+  // Nunca se borran: se desactivan. Con facturas ya hechas, el RFC no se cambia (se crea otro dato fiscal).
+  const puedeFiscal = req => direccion(req) || puede(req, 'facturacion.fiscales');
+  const sinPermisoFiscal = (req, res) => { if (puedeFiscal(req)) return false; res.status(403).json({ error: 'No tienes permiso para los datos fiscales de clientes' }); return true; };
+  const fiscalDe = (f, cat) => { const v = validarDatosFiscales(f, cat); return { id: f.id, cliente_id: f.cliente_id, rfc: f.rfc, razon_social: f.razon_social, cp: f.cp, regimen: f.regimen, uso_cfdi: f.uso_cfdi, correo: f.correo,
+    predeterminado: !!f.predeterminado, activo: !!f.activo, sincronizado: !!f.uid_facturacom, listo: v.listo, faltantes: v.faltantes, errores: v.errores, avisos: v.avisos.filter(a => !/MAYÚSCULAS|Se quitó/.test(a)) }; };
+  /** Revisa lo que viene (solo los campos presentes) contra los catálogos del SAT si ya se bajaron; devuelve { valores, avisos } o { error }. Sin tocar nada. */
+  function revisarFiscal(b, actual, cat) {
+    const v = {}, avisos = [];
+    if ('rfc' in b || !actual) { const r = validarRFC(b.rfc); if (!r.ok) return { error: r.mensaje }; v.rfc = r.rfc; }
+    if ('razon_social' in b) { const n = normalizarRazonSocial(b.razon_social); if (n.texto.length > 254) return { error: 'La razón social es demasiado larga' }; v.razon_social = n.texto; avisos.push(...n.avisos); }
+    if ('cp' in b) { const t = String(b.cp ?? '').replace(/\s+/g, ''); if (t && !/^\d{5}$/.test(t)) return { error: 'El código postal fiscal debe tener 5 números' }; v.cp = t; }
+    if ('regimen' in b) { const t = String(b.regimen ?? '').trim(); if (t && !/^\d{3}$/.test(t)) return { error: 'El régimen fiscal es la clave de 3 números (por ejemplo 601)' }; if (t && cat.regimenes && !cat.regimenes.has(t)) return { error: `El régimen ${t} no está en el catálogo del SAT` }; v.regimen = t; }
+    if ('uso_cfdi' in b) { const t = String(b.uso_cfdi ?? '').trim().toUpperCase(); if (t && !/^[A-Z0-9]{2,4}$/.test(t)) return { error: 'El uso de CFDI no es válido (por ejemplo G03)' }; if (t && cat.usos && !cat.usos.has(t)) return { error: `El uso de CFDI ${t} no está en el catálogo del SAT` }; v.uso_cfdi = t; }
+    if ('correo' in b) { const t = String(b.correo ?? '').trim(); if (t) { const c = validarCorreo(t); if (!c.ok) return { error: c.mensaje }; } v.correo = t; }
+    const regimen = v.regimen ?? actual?.regimen ?? '', uso = v.uso_cfdi ?? actual?.uso_cfdi ?? '', u = cat.usos?.get(uso);
+    if (regimen && uso && u?.regimenes?.length && !u.regimenes.includes(regimen)) return { error: `El uso ${uso} no es compatible con el régimen ${regimen}: elige otro uso o revisa el régimen en la Constancia de Situación Fiscal` };
+    return { valores: v, avisos };
+  }
+  const clienteVisible = (req, res) => {
+    const c = db.prepare('SELECT id, nombre, empresa_contacto, rfc, correo FROM clientes WHERE id = ?').get(Number(req.params.id));
+    if (!c || !verCliente(c.id)) { res.status(404).json({ error: 'Cliente no encontrado' }); return null; }
+    return c;
+  };
+
+  app.get('/api/facturacion/clientes/:id', h((req, res) => {
+    if (sinPermisoFiscal(req, res)) return;
+    const c = clienteVisible(req, res); if (!c) return;
+    const cat = leerCatalogos(db);
+    res.json({
+      fiscales: db.prepare('SELECT * FROM clientes_fiscales WHERE cliente_id = ? ORDER BY activo DESC, predeterminado DESC, id').all(c.id).map(f => fiscalDe(f, cat)),
+      catalogo: { regimenes: cat.regimenes ? [...cat.regimenes].map(([clave, nombre]) => ({ clave, nombre })) : null, usos: cat.usos ? [...cat.usos].map(([clave, u]) => ({ clave, nombre: u.nombre, regimenes: u.regimenes })) : null },
+      // Lo que ya se sabe del cliente, para no teclearlo otra vez (se confirma al guardar: la razón social va como en la Constancia).
+      sugerencia: { rfc: c.rfc || '', razon_social: normalizarRazonSocial(c.empresa_contacto || c.nombre || '').texto, correo: c.correo || '' },
+    });
+  }));
+  app.post('/api/facturacion/clientes/:id', h((req, res) => {
+    if (sinPermisoFiscal(req, res)) return;
+    const c = clienteVisible(req, res); if (!c) return;
+    const cat = leerCatalogos(db), b = req.body || {}, r = revisarFiscal(b, null, cat); if (r.error) return res.status(400).json({ error: r.error });
+    const v = { razon_social: '', cp: '', regimen: '', uso_cfdi: '', correo: '', ...r.valores };
+    if (db.prepare('SELECT 1 FROM clientes_fiscales WHERE cliente_id = ? AND rfc = ?').get(c.id, v.rfc)) return res.status(409).json({ error: 'Este cliente ya tiene datos fiscales con ese RFC: edítalos o desactívalos' });
+    const primero = !db.prepare('SELECT 1 FROM clientes_fiscales WHERE cliente_id = ? AND activo = 1').get(c.id);
+    const id = Number(db.prepare('INSERT INTO main.clientes_fiscales (cliente_id, rfc, razon_social, cp, regimen, uso_cfdi, correo, predeterminado, creado_por) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+      .run(c.id, v.rfc, v.razon_social, v.cp, v.regimen, v.uso_cfdi, v.correo, primero || b.predeterminado ? 1 : 0, req.usuarioSesion?.id ?? null).lastInsertRowid);
+    if (!primero && b.predeterminado) db.prepare('UPDATE main.clientes_fiscales SET predeterminado = 0 WHERE cliente_id = ? AND id <> ?').run(c.id, id);
+    // La historia del cliente la ve quien ve al cliente: aquí solo se dice QUÉ pasó, nunca los valores (RFC, razón social…), que son solo de quien tiene el permiso.
+    auditar(req, 'cliente', c.id, 'datos_fiscales', 'Alta de datos fiscales');
+    res.status(201).json({ ...fiscalDe(db.prepare('SELECT * FROM clientes_fiscales WHERE id = ?').get(id), cat), avisos_guardado: r.avisos });
+  }));
+  app.put('/api/facturacion/fiscales/:id', h((req, res) => {
+    if (sinPermisoFiscal(req, res)) return;
+    const f = db.prepare('SELECT * FROM clientes_fiscales WHERE id = ?').get(Number(req.params.id));
+    if (!f || !verCliente(f.cliente_id)) return res.status(404).json({ error: 'Datos fiscales no encontrados' });
+    const cat = leerCatalogos(db), b = req.body || {};
+    const campos = ['rfc', 'razon_social', 'cp', 'regimen', 'uso_cfdi', 'correo', 'predeterminado', 'activo'];
+    if (!campos.some(k => k in b)) return res.status(400).json({ error: 'No hay nada que cambiar' });
+    const r = revisarFiscal(b, f, cat); if (r.error) return res.status(400).json({ error: r.error });
+    const v = r.valores;
+    if (v.rfc && v.rfc !== f.rfc) {
+      if (db.prepare('SELECT 1 FROM facturas WHERE cliente_fiscal_id = ?').get(f.id)) return res.status(409).json({ error: 'Ya se hicieron facturas con estos datos: el RFC no se cambia. Crea otros datos fiscales con el RFC nuevo.' });
+      if (db.prepare('SELECT 1 FROM clientes_fiscales WHERE cliente_id = ? AND rfc = ? AND id <> ?').get(f.cliente_id, v.rfc, f.id)) return res.status(409).json({ error: 'Este cliente ya tiene datos fiscales con ese RFC' });
+    }
+    const cambios = Object.fromEntries(Object.entries(v).filter(([k, x]) => x !== f[k]));
+    if ('activo' in b) cambios.activo = b.activo ? 1 : 0;
+    if ('predeterminado' in b) cambios.predeterminado = b.predeterminado ? 1 : 0;
+    for (const k of ['activo', 'predeterminado']) if (cambios[k] === f[k]) delete cambios[k];
+    if (cambios.activo === 0) cambios.predeterminado = 0;
+    if (!Object.keys(cambios).length) return res.json({ ...fiscalDe(f, cat), avisos_guardado: r.avisos });
+    // Si cambia el RFC ya no es el mismo cliente de factura.com: se suelta el vínculo (se vuelve a dar de alta al facturar).
+    if (cambios.rfc) cambios.uid_facturacom = null;
+    db.prepare(`UPDATE main.clientes_fiscales SET ${Object.keys(cambios).map(k => k + ' = ?').join(', ')}, updated_at = datetime('now','localtime') WHERE id = ?`).run(...Object.values(cambios), f.id);
+    if (cambios.predeterminado === 1) db.prepare('UPDATE main.clientes_fiscales SET predeterminado = 0 WHERE cliente_id = ? AND id <> ?').run(f.cliente_id, f.id);
+    if (cambios.predeterminado === 0 && cambios.activo === 0) { const otro = db.prepare('SELECT id FROM clientes_fiscales WHERE cliente_id = ? AND activo = 1 AND id <> ? ORDER BY id').get(f.cliente_id, f.id); if (otro) db.prepare('UPDATE main.clientes_fiscales SET predeterminado = 1 WHERE id = ?').run(otro.id); }
+    const nombres = { rfc: 'RFC', razon_social: 'razón social', cp: 'código postal', regimen: 'régimen', uso_cfdi: 'uso de CFDI', correo: 'correo', activo: 'activo', predeterminado: 'predeterminado' };
+    auditar(req, 'cliente', f.cliente_id, 'datos_fiscales', `Datos fiscales: cambió ${Object.keys(cambios).filter(k => k !== 'uid_facturacom').map(k => nombres[k] || k).join(', ')}${cambios.activo === 0 ? ' (desactivados)' : ''}`);
+    res.json({ ...fiscalDe(db.prepare('SELECT * FROM clientes_fiscales WHERE id = ?').get(f.id), cat), avisos_guardado: r.avisos });
   }));
 
   // CP de expedición y series (de factura y de pago) de una sucursal. Lo que no viene, no se toca; null o vacío lo quita.

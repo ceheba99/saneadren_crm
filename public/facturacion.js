@@ -145,6 +145,85 @@ const Facturacion = (() => {
     });
   });
 
-  return { cargar };
+  // ---------- Datos fiscales del cliente (dentro de su ficha) ----------
+  // Los capturan Dirección, el Gerente y quien tenga el permiso «Datos fiscales de clientes». Un cliente puede tener varios (varias razones sociales).
+  // Se guardan aunque estén incompletos: la tarjeta dice qué falta y el timbrado no sale hasta que esté completo.
+  let FIS = null, guardandoFiscal = false;
+  const CAMPOS_FIS = ['rfc', 'razon_social', 'cp', 'regimen', 'uso_cfdi', 'correo'];
+  async function cargarCliente(id) {
+    const cont = $('fc-fiscales'); if (!cont) return;
+    if (typeof Permisos !== 'undefined' && !Permisos.puede('facturacion.fiscales')) { cont.innerHTML = ''; FIS = null; return; }
+    cont.innerHTML = '<p class="util-45" role="status">Cargando…</p>';
+    try { FIS = { clienteId: Number(id), nuevo: false, ...(await pedir('/clientes/' + Number(id))) }; pintarFiscales(); }
+    catch (e) { FIS = null; cont.innerHTML = `<p class="aviso-error-carga" role="alert">${esc(e.message)}</p>`; }
+  }
+  function opcionesUso(regimen, actual) {
+    const usos = FIS.catalogo.usos.filter(u => !regimen || !u.regimenes.length || u.regimenes.includes(regimen));
+    return '<option value="">— elige —</option>' + (actual && !usos.some(u => u.clave === actual) ? `<option value="${esc(actual)}" selected>${esc(actual)} (no es compatible con este régimen)</option>` : '')
+      + usos.map(u => `<option value="${esc(u.clave)}"${u.clave === actual ? ' selected' : ''}>${esc(u.clave)} · ${esc(u.nombre)}</option>`).join('');
+  }
+  function tarjetaFiscal(f, nueva) {
+    const cat = FIS.catalogo, s = FIS.sugerencia, v = nueva ? { id: 0, rfc: s.rfc, razon_social: s.razon_social, cp: '', regimen: '', uso_cfdi: '', correo: s.correo, predeterminado: false, activo: true, listo: false, faltantes: [], errores: [] } : f;
+    const regimen = cat.regimenes
+      ? `<select data-fx-f="regimen" data-fx-regimen><option value="">— elige —</option>${cat.regimenes.map(r => `<option value="${esc(r.clave)}"${r.clave === v.regimen ? ' selected' : ''}>${esc(r.clave)} · ${esc(r.nombre)}</option>`).join('')}</select>`
+      : `<input data-fx-f="regimen" inputmode="numeric" maxlength="3" value="${esc(v.regimen)}" placeholder="601">`;
+    const uso = cat.usos ? `<select data-fx-f="uso_cfdi" data-fx-uso>${opcionesUso(v.regimen, v.uso_cfdi)}</select>` : `<input data-fx-f="uso_cfdi" maxlength="4" value="${esc(v.uso_cfdi)}" placeholder="G03">`;
+    const estado = nueva ? '<span class="fx-badge fx-sandbox">Nuevo</span>' : !v.activo ? '<span class="fx-badge fx-inactivo">Desactivado</span>' : v.listo ? '<span class="fx-ok">✔ Lista para facturar</span>' : `<span class="fx-mal">Falta: ${esc((v.faltantes.length ? v.faltantes : v.errores).join(', '))}</span>`;
+    return `<details class="fx-fiscal${v.activo ? '' : ' fx-inactiva'}" data-fx-fid="${Number(v.id)}"${nueva || !v.listo ? ' open' : ''}>
+      <summary><b>${esc(v.razon_social || 'Sin razón social')}</b> <small>${esc(v.rfc)}</small> ${v.predeterminado ? '<span class="fx-badge fx-sandbox">Predeterminado</span>' : ''} ${estado}</summary>
+      <div class="fx-suc-campos">
+        <label>RFC<input data-fx-f="rfc" maxlength="13" value="${esc(v.rfc)}" autocapitalize="characters" autocomplete="off"></label>
+        <label>Razón social (como en la Constancia, sin S.A. de C.V.)<input data-fx-f="razon_social" maxlength="254" value="${esc(v.razon_social)}" autocomplete="off"></label>
+        <label>Código postal fiscal<input data-fx-f="cp" inputmode="numeric" maxlength="5" value="${esc(v.cp)}" autocomplete="off"></label>
+        <label>Régimen fiscal${regimen}</label>
+        <label>Uso del CFDI${uso}</label>
+        <label>Correo para enviar la factura<input data-fx-f="correo" type="email" maxlength="254" value="${esc(v.correo)}" autocomplete="off"></label>
+      </div>
+      ${!nueva && v.errores.length && v.faltantes.length === 0 ? `<p class="aviso-error-carga">${esc(v.errores.join(' · '))}</p>` : ''}
+      <div class="fx-suc-pie"><span class="ayuda">${nueva ? '' : v.sincronizado ? 'Ya está dado de alta en factura.com.' : ''}</span>
+        <span class="btn-group"><button type="button" class="btn btn-secundario" data-fx-fiscal-guardar>Guardar</button>
+        ${nueva ? '<button type="button" class="btn btn-outline" data-fx-fiscal-cancelar>Cancelar</button>' : `${v.predeterminado || !v.activo ? '' : '<button type="button" class="btn btn-outline" data-fx-fiscal-pred>⭐ Predeterminado</button>'}<button type="button" class="btn btn-outline" data-fx-fiscal-activo>${v.activo ? 'Desactivar' : 'Reactivar'}</button>`}</span></div>
+    </details>`;
+  }
+  function pintarFiscales() {
+    if (!FIS) return;
+    const cat = FIS.catalogo, activos = FIS.fiscales.filter(f => f.activo), resumen = $('fc-fiscales-resumen');
+    if (resumen) resumen.textContent = !activos.length ? '· sin datos' : activos.some(f => f.listo) ? '· ✔ lista para facturar' : '· incompletos';
+    $('fc-fiscales').innerHTML = `${!cat.regimenes || !cat.usos ? '<p class="ayuda">⚠ Los catálogos del SAT todavía no están cargados: Dirección debe pulsar «Actualizar catálogos del SAT» en Ajustes → Facturación. Mientras, el régimen y el uso se escriben a mano y no se comprueba que sean compatibles.</p>' : ''}
+      ${FIS.fiscales.map(f => tarjetaFiscal(f, false)).join('') || '<p class="util-45">Este cliente todavía no tiene datos fiscales. Sin ellos no se le puede facturar.</p>'}
+      ${FIS.nuevo ? tarjetaFiscal(null, true) : '<div class="btn-group"><button type="button" class="btn btn-secundario" id="fx-fiscal-nuevo">➕ Agregar datos fiscales</button></div>'}`;
+  }
+  const camposDe = tarjeta => Object.fromEntries(CAMPOS_FIS.map(k => [k, tarjeta.querySelector(`[data-fx-f="${k}"]`).value.trim()]));
+  async function guardarFiscal(boton, tarjeta, accion) {
+    if (guardandoFiscal) return; guardandoFiscal = true; boton.disabled = true;
+    try {
+      const fid = Number(tarjeta.dataset.fxFid);
+      const r = fid ? await pedir('/fiscales/' + fid, accion, 'PUT') : await pedir('/clientes/' + FIS.clienteId, accion, 'POST');
+      toast(fid ? 'Datos fiscales guardados' : 'Datos fiscales agregados'); for (const a of r.avisos_guardado || []) toast(a);
+      FIS.nuevo = false; await cargarCliente(FIS.clienteId);
+    } catch (e) { toast(e.message); } finally { guardandoFiscal = false; boton.disabled = false; }
+  }
+  $('fc-fiscales')?.addEventListener('click', e => {
+    if (!FIS) return;
+    if (e.target.closest('#fx-fiscal-nuevo')) { FIS.nuevo = true; pintarFiscales(); $('fc-fiscales').querySelector('details:last-of-type [data-fx-f="rfc"]')?.focus(); return; }
+    if (e.target.closest('[data-fx-fiscal-cancelar]')) { FIS.nuevo = false; pintarFiscales(); return; }
+    const t = e.target.closest('details[data-fx-fid]'); if (!t) return;
+    const guardar = e.target.closest('[data-fx-fiscal-guardar]');
+    if (guardar) {
+      const id = Number(t.dataset.fxFid), campos = camposDe(t), actual = FIS.fiscales.find(x => x.id === id), cuerpo = {};
+      for (const k of CAMPOS_FIS) if (!id || campos[k] !== (actual?.[k] ?? '')) cuerpo[k] = campos[k];
+      if (id && !Object.keys(cuerpo).length) { toast('No hay cambios que guardar'); return; }
+      return guardarFiscal(guardar, t, id ? cuerpo : campos);
+    }
+    const pred = e.target.closest('[data-fx-fiscal-pred]'); if (pred) return guardarFiscal(pred, t, { predeterminado: true });
+    const act = e.target.closest('[data-fx-fiscal-activo]'); if (act) { const f = FIS.fiscales.find(x => x.id === Number(t.dataset.fxFid)); return guardarFiscal(act, t, { activo: !f.activo }); }
+  });
+  // Al elegir un régimen, el uso del CFDI solo ofrece los compatibles.
+  $('fc-fiscales')?.addEventListener('change', e => {
+    const r = e.target.closest('[data-fx-regimen]'); if (!r || !FIS?.catalogo.usos) return;
+    const uso = r.closest('details').querySelector('[data-fx-uso]'); uso.innerHTML = opcionesUso(r.value, uso.value);
+  });
+
+  return { cargar, cargarCliente };
 })();
 window.Facturacion = Facturacion;

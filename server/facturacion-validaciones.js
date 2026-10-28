@@ -38,8 +38,9 @@ function normalizarRazonSocial(valor) {
     const quitado = m[0].trim(), letras = quitado.replace(/[^A-ZÑ0-9&]/g, '').length;
     let n = 0, i = texto.length;
     while (i > 0 && n < letras) { i--; if (/[A-ZÑ0-9&]/.test(texto[i])) n++; }
+    const escrito = texto.slice(i).trim(); // tal como venía escrito («S.A. DE C.V.»), no la forma sin puntos con la que se detectó
     texto = texto.slice(0, i).replace(/[\s.,]+$/, '').trim();
-    avisos.push(`Se quitó «${quitado}» del final: la razón social va como en la Constancia, sin régimen societario`);
+    avisos.push(`Se quitó «${escrito || quitado}» del final: la razón social va como en la Constancia, sin régimen societario`);
   }
   return { texto, avisos };
 }

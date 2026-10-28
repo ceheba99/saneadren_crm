@@ -82,7 +82,7 @@ const RUTAS_REGISTRO = [
   [/^\/marketing\/avances\/(\d+)(?:\/|$)/, 'avances_marketing'], [/^\/marketing\/archivos\/(\d+)(?:\/|$)/, 'archivos_marketing'],
   [/^\/marketing\/ideas\/(\d+)(?:\/|$)/, 'ideas_marketing'], [/^\/marketing\/gastos\/(\d+)(?:\/|$)/, 'mk_gastos'], [/^\/marketing\/objetivos\/(\d+)(?:\/|$)/, 'mk_objetivos'], [/^\/marketing\/biblioteca\/(\d+)(?:\/|$)/, 'biblioteca_marketing'],
 ];
-const RUTA_CLIENTE = /^\/(?:finanzas\/)?clientes\/(\d+)(?:\/|$)/;
+const RUTA_CLIENTE = /^\/(?:finanzas\/|facturacion\/)?clientes\/(\d+)(?:\/|$)/;
 // Lo que solo hace el administrador GENERAL (Dirección): afecta a todas las sucursales o lo ve todo. Aplica a
 // cualquier otro rol, incluidos los que Dirección invente. (Los catálogos compartidos —canales, tipos de cliente,
 // centros, unidades, categorías y descripción de servicios— los decide el permiso «catalogos.editar».)

@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Saneadren · Cotizaciones y Servicios</title>
-<link rel="stylesheet" href="styles.css?v=fx2">
+<link rel="stylesheet" href="styles.css?v=fx3">
 <link rel="stylesheet" href="servicios-tabla.css">
 <link rel="stylesheet" href="flujo.css?v=cel1">
 </head>
@@ -1029,6 +1029,11 @@
         </div>
       </div>
 
+      <div class="modal-section perm-facturacion-fiscales" data-plegable="datos-fiscales" data-plegado-defecto="1">
+        <div class="seccion-tit" data-plegable-cabecera>🧾 Datos fiscales para facturar <span class="hc-cuenta" id="fc-fiscales-resumen"></span></div>
+        <p class="ayuda">Los que se usan al facturarle a este cliente. Un cliente puede tener varios (por ejemplo, otra razón social). Escríbelos como en su Constancia de Situación Fiscal. Se pueden guardar incompletos, pero no se le podrá facturar hasta completarlos.</p>
+        <div id="fc-fiscales"></div>
+      </div>
       <div class="modal-section" data-plegable="registros-contacto">
         <div class="relacion-registros"><div><div class="seccion-tit" data-plegable-cabecera>Cotizaciones y servicios de este contacto</div><p class="ayuda">Una cotización abierta es una propuesta. Al aceptarla, el mismo registro pasa a servicio contratado; conserva su número e importe.</p></div>
         <div class="btn-group"><button class="btn btn-primario perm-cotizaciones-editar perm-ordenes-importes" id="btn-contacto-cotizar">📄 Crear cotización</button><button class="btn btn-secundario perm-ordenes-editar perm-ordenes-importes" id="btn-recapturar-servicio" title="Para cuando el cliente ya confirmó: registra el servicio sin pasar por cotización">🧾 Crear orden de servicio</button></div></div>
@@ -1726,7 +1731,7 @@
 <script src="solicitudes.js?v=rev1"></script>
 <script src="carga-generador.js?v=con1"></script>
 <script src="sucursales.js?v=perm2"></script>
-<script src="facturacion.js?v=fx3"></script>
+<script src="facturacion.js?v=fx5"></script>
 <script src="encuestas.js?v=enc1"></script>
 <script src="app.js?v=mk1"></script>
 <script src="personal.js?v=ed1"></script>

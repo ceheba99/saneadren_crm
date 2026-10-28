@@ -2138,3 +2138,12 @@ table.tabla-clientes.py-tareas tbody td{white-space:normal;}
 .fx-serv{border:1px solid var(--gris-200);border-radius:12px;padding:10px 14px;margin-bottom:8px;background:#fcfcfd;}
 .fx-serv-nom{margin-bottom:6px;}
 .fx-serv .fx-suc-campos small{min-height:1.2em;}
+
+/* Datos fiscales del cliente (dentro de su ficha) */
+.fx-fiscal{border:1px solid var(--gris-200);border-radius:12px;padding:8px 14px;margin-bottom:8px;background:#fcfcfd;}
+.fx-fiscal > summary{cursor:pointer;display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:6px 0;}
+.fx-fiscal.fx-inactiva{opacity:.65;}
+.fx-fiscal .fx-suc-campos{margin-top:8px;}
+.fx-badge.fx-inactivo{background:#eceff3;color:#5b6571;}
+#fc-fiscales .fx-badge{display:inline-block;padding:2px 10px;border-radius:999px;font-size:12px;font-weight:800;}
+#fc-fiscales .fx-sandbox{background:#e3eefc;color:#1f4f99;}

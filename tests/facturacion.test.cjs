@@ -23,6 +23,7 @@ test('Razón social: MAYÚSCULAS y sin régimen societario', () => {
     ['JUAN PÉREZ GARCÍA', 'JUAN PÉREZ GARCÍA'], ['Ñandú Importaciones', 'ÑANDÚ IMPORTACIONES']];
   for (const [entra, sale] of casos) assert.equal(V.normalizarRazonSocial(entra).texto, sale, entra);
   assert.ok(V.normalizarRazonSocial('Acme SA de CV').avisos.some(a => /quitó/.test(a)), 'avisa lo que quitó');
+  assert.ok(V.normalizarRazonSocial('Acme, S.A. de C.V.').avisos.some(a => a.includes('«S.A. DE C.V.»')), 'muestra lo que quitó tal como venía escrito, con sus puntos');
   assert.ok(V.normalizarRazonSocial('acme').avisos.some(a => /MAYÚSCULAS/.test(a)), 'avisa que pasó a mayúsculas');
   assert.deepEqual(V.normalizarRazonSocial('ACME').avisos, [], 'si ya está bien, no avisa nada');
   assert.equal(V.normalizarRazonSocial('SA DE CV').texto, 'SA DE CV', 'si es lo único que hay, no lo deja vacío');

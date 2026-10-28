@@ -481,6 +481,15 @@ module.exports = function demo(app, db, { sesiones, PORT, SESSION_TTL_MS }) {
     for (const [cat, clave, nombre] of [['ClaveProductServ', '76121600', 'Disposición de desechos no peligrosos'], ['ClaveProductServ', '76121700', 'Tratamiento de desechos líquidos'], ['ClaveProductServ', '76121502', 'Recolección o transformación o eliminación de residuos líquidos'], ['ClaveUnidad', 'E48', 'Unidad de servicio'], ['ClaveUnidad', 'H87', 'Pieza']]) insSat.run(cat, clave, nombre);
     for (const s of db.prepare('SELECT id FROM catalogo_servicios WHERE activo = 1 ORDER BY orden, id').all().slice(0, -1)) db.prepare("UPDATE catalogo_servicios SET clave_prod_serv = '76121600', clave_unidad = 'E48', nombre_unidad = 'Unidad de servicio' WHERE id = ?").run(s.id);
 
+    // Régimen y uso de CFDI de ejemplo (nombres y compatibilidades tal como los da factura.com) y datos fiscales de dos clientes: uno completo y otro incompleto.
+    for (const [clave, nombre] of [['601', 'General de Ley Personas Morales'], ['603', 'Personas Morales con Fines no Lucrativos'], ['605', 'Sueldos y Salarios e Ingresos Asimilados a Salarios'], ['612', 'Personas Físicas con Actividades Empresariales y Profesionales'], ['621', 'Incorporación Fiscal'], ['626', 'Régimen Simplificado de Confianza']]) insSat.run('RegimenFiscal', clave, nombre);
+    const insUso = db.prepare("INSERT INTO sat_catalogos (catalogo, clave, nombre, extra) VALUES ('UsoCfdi', ?, ?, ?) ON CONFLICT(catalogo, clave) DO NOTHING");
+    const R_G = ['601', '603', '606', '612', '620', '621', '622', '623', '624', '625', '626'], R_TODOS = ['601', '603', '605', '606', '608', '610', '611', '612', '614', '616', '620', '621', '622', '623', '624', '607', '615', '625', '626'];
+    for (const [clave, nombre, regs] of [['G01', 'Adquisición de mercancías', R_G], ['G03', 'Gastos en general', R_G], ['S01', 'Sin efectos fiscales', R_TODOS], ['CP01', 'Pagos', R_TODOS]]) insUso.run(clave, nombre, JSON.stringify({ regimenes: regs }));
+    const dosClientes = db.prepare('SELECT id FROM clientes ORDER BY id LIMIT 2').all();
+    if (dosClientes[0]) db.prepare("INSERT INTO main.clientes_fiscales (cliente_id, rfc, razon_social, cp, regimen, uso_cfdi, correo, predeterminado) VALUES (?, 'EEJ010203AB1', 'EMPRESA DE EJEMPLO', '76000', '601', 'G03', 'facturas@ejemplo.mx', 1)").run(dosClientes[0].id);
+    if (dosClientes[1]) db.prepare("INSERT INTO main.clientes_fiscales (cliente_id, rfc, razon_social, predeterminado) VALUES (?, 'GOMC800101AB1', 'JUAN GOMEZ CRUZ', 1)").run(dosClientes[1].id);
+
     // Al final: la revisión de integridad debe salir limpia.
     const r = require('./alcance').global(() => require('./integridad').revisar(db, {}));
     console.log(`[demo] revisión de integridad: ${r.errores} errores, ${r.avisos} avisos`);
