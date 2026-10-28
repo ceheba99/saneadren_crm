@@ -5,6 +5,9 @@
      POST /v4/cfdi40/{UID}/timbrarborrador        → timbra el borrador
      GET  /v4/cfdi/order/{NumOrder}               → busca un CFDI por el número de orden (para no timbrar dos veces)
      GET  /v4/cfdi40/{UID o UUID}/xml | /pdf      → descarga
+   PROBADO contra sandbox el 2026-10-28 (RFC de prueba EKU9003173C9 con sus sellos de prueba): timbrado PUE con 229.90 y 1635.48 (XML con
+   Total 2163.84 e IVA por concepto 36.784 y 261.6768), descarga de XML y PDF, y búsqueda por NumOrder (existente y «No se encontró CFDI», HTTP 200).
+   Sin probar contra factura.com: borrador y timbrarborrador, «Ya existe un CFDI», y producción.
    Reglas de CLAUDE.md que se aplican aquí:
    · (1–3) No se manda nada con datos incompletos: RFC, razón social, CP, régimen, uso (compatible con el régimen) y correo, revisados antes.
    · (4) ClaveProdServ y ClaveUnidad salen del catálogo de servicios; ObjetoImp 02 con IVA trasladado. Nada se escribe a mano.
@@ -336,7 +339,8 @@ async function verificar(db, cliente, f, ctx = {}) {
   }
   const uid = String(d.UID ?? d.uid ?? '').trim(), uuid = String(d.UUID ?? '').trim(), folioTxt = String(d.Folio ?? '').trim();
   if (!UUID_SAT.test(uuid) && !/^[A-Za-z0-9-]{1,64}$/.test(uid)) throw new ErrorFactura('respuesta', 'factura.com encontró la factura pero sin identificador: no se volvió a mandar. Revisa en el panel de factura.com.');
-  const folio = f.serie && folioTxt.toUpperCase().startsWith(String(f.serie).toUpperCase()) ? folioTxt.slice(String(f.serie).length).replace(/^-/, '') : folioTxt;
+  // Sandbox da el folio como «F 1» (serie, espacio, número; visto el 2026-10-28): se quita la serie y lo que la separe.
+  const folio = f.serie && folioTxt.toUpperCase().startsWith(String(f.serie).toUpperCase()) ? folioTxt.slice(String(f.serie).length).replace(/^[\s-]+/, '') : folioTxt;
   log(db, f, 'verificar', 'ok', `Encontrada: ${folioTxt} ${uuid}`, ctx.usuario?.id);
   // Regla 13: «cancelada» solo con el estatus exacto; cualquier otro que hable de cancelación queda «en proceso» (cancelacion_solicitada).
   const status = String(d.Status ?? '').trim();
