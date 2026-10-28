@@ -123,7 +123,7 @@ module.exports = {
       rutas: [/^\/api\/facturacion(\/|$)/],
       pendientes: null, pendientesRazon: 'todavía no hay facturas: los pendientes («por facturar», «borrador por corregir») se agregan con la F3',
       inicio: [],
-      demo: ['series_factura'], // el demo de Render nunca se conecta con factura.com: solo trae la configuración de ejemplo (CP y series por sucursal)
+      demo: ['series_factura', 'sat_catalogos'], // el demo de Render nunca se conecta con factura.com: solo trae la configuración de ejemplo (CP, series y un catálogo del SAT chico)
       integridad: null, integridadRazon: 'sin datos todavía; la revisión de facturas (orden sin factura vigente, totales que no cuadran) llega con la F3',
       buscador: null, buscadorRazon: 'todavía no hay pantalla; las facturas se buscarán por folio y UUID cuando exista la vista (F4)',
       permisos: [],

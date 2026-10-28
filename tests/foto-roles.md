@@ -103,6 +103,7 @@ Dirección la revisa y la aprueba. Si un cambio altera lo que ve un rol, la prue
 | Dato | Dirección | Gerente | Ventas | Atención | Técnico | Costos y compras | Marketing | Gerente de marketing |
 |---|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|
 | Código postal de expedición de las facturas (pantalla Facturación) | ✔ | — | — | — | — | — | — | — |
+| Clave del SAT de un servicio (pantalla Facturación) | ✔ | — | — | — | — | — | — | — |
 
 ### Marketing
 
@@ -154,6 +155,7 @@ Dirección la revisa y la aprueba. Si un cambio altera lo que ve un rol, la prue
 | Registrar un gasto de marketing | ✔ | — | — | — | — | — | — | ✔ |
 | El gasto de marketing aparece en Cuentas por pagar | — | — | — | — | — | — | — | — |
 | Cambiar la configuración de facturación (CP de expedición de una sucursal) | ✔ | — | — | — | — | — | — | — |
+| Cambiar la clave del SAT de un servicio | ✔ | — | — | — | — | — | — | — |
 | Capturar los resultados (alcance, me gusta…) de una publicación ya publicada | ✔ | — | — | — | — | — | ✔ | ✔ |
 
 | Permiso | Dirección | Gerente | Ventas | Atención | Técnico | Costos y compras | Marketing | Gerente de marketing |
@@ -218,6 +220,7 @@ Dirección la revisa y la aprueba. Si un cambio altera lo que ve un rol, la prue
 - **2026-10-27** · Gastos de Marketing: los registran Dirección y el Gerente de marketing, y son control interno del departamento: no aparecen en Cuentas por pagar.
 - **2026-10-27** · Resultados de cada publicación (alcance, me gusta, mensajes…): los capturan Marketing, el Gerente de marketing y Dirección, cuando ya está publicada; los demás roles no.
 - **2026-10-27** · Facturación (conexión con factura.com, código postal de expedición y series de cada sucursal): la ve y la cambia solo Dirección; ningún otro rol, tampoco por la lista de sucursales.
+- **2026-10-27** · Claves del SAT de los servicios (clave de producto y unidad para facturar): las ve y las cambia solo Dirección; los demás roles ven los servicios sin esos datos.
 - **2026-10-27** · Banco de ideas: las proponen, votan y comentan Marketing, Gerente de marketing y Dirección; las aprueban o descartan solo Dirección y el Gerente de marketing. Los demás roles no ven las ideas.
 - **2026-10-27** · Biblioteca de marketing (logos, fotos, plantillas): la ven y usan Marketing, Gerente de marketing y Dirección; los demás roles no.
 - **2026-10-26** · Proyectos de marketing (tareas, Gantt y avances): los ven y editan Marketing, Gerente de marketing y Dirección; los demás roles no.

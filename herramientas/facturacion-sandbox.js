@@ -3,7 +3,7 @@
 // factura.com (crear-serie, cliente, vincular) se niegan a correr en PRODUCCIÓN salvo con --si-es-produccion.
 // Uso (desde la carpeta del proyecto):
 //   npm run facturacion -- probar
-//   npm run facturacion -- catalogos [--claves-producto]
+//   npm run facturacion -- catalogos
 //   npm run facturacion -- series
 //   npm run facturacion -- crear-serie <LETRA> <factura|pago> [folio-inicial]
 //   npm run facturacion -- asignar-serie <clave-de-sucursal> <factura|pago> <id-de-serie>
@@ -47,7 +47,7 @@ async function main() {
     }
     case 'catalogos': {
       const db = abrirBase();
-      const r = await sincronizarCatalogos(cliente(), db, { clavesProducto: banderas.has('--claves-producto') });
+      const r = await sincronizarCatalogos(cliente(), db);
       for (const x of r) (x.error ? mal : ok)(`${x.catalogo}: ${x.actualizado ? x.total + ' claves guardadas' : (x.motivo || 'sin cambios') + ` (hay ${x.total})`}`);
       const c = leerCatalogos(db);
       if (c.regimenes) ok(`Régimen 626 en el catálogo: ${c.regimenes.has('626') ? 'sí (' + c.regimenes.get('626') + ')' : 'NO aparece'}`);
@@ -94,7 +94,7 @@ async function main() {
       const db = abrirBase(); const r = await vincularCliente(cliente(), db, resto[0], resto[1]); ok(`Vinculado con el cliente ${r.uid} de factura.com.`); db.close(); break;
     }
     default:
-      console.log('Comandos: probar · catalogos [--claves-producto] · series · crear-serie · asignar-serie · sucursal-cp · cliente · vincular\nVe el encabezado de este archivo (herramientas/facturacion-sandbox.js) para el uso de cada uno.');
+      console.log('Comandos: probar · catalogos · series · crear-serie · asignar-serie · sucursal-cp · cliente · vincular\nVe el encabezado de este archivo (herramientas/facturacion-sandbox.js) para el uso de cada uno.');
   }
 }
 main().catch(e => { mal(e instanceof ErrorFactura ? e.message : 'Error inesperado: ' + e.message); if (e.detalles?.length) for (const d of e.detalles) console.error(`   · ${d.campo}: ${d.mensaje}`); });

@@ -476,6 +476,11 @@ module.exports = function demo(app, db, { sesiones, PORT, SESSION_TTL_MS }) {
       db.prepare("INSERT INTO series_factura (sucursal_id, tipo_documento, serie, serie_uid) VALUES (?, 'factura', ?, ?) ON CONFLICT(sucursal_id, tipo_documento) DO NOTHING").run(s.id, serie, uid);
     }
 
+    // Catálogo del SAT de ejemplo (en el sistema real lo baja factura.com) y claves de los servicios, menos el último para que se vea el aviso de «sin clave».
+    const insSat = db.prepare('INSERT INTO sat_catalogos (catalogo, clave, nombre) VALUES (?, ?, ?) ON CONFLICT(catalogo, clave) DO NOTHING');
+    for (const [cat, clave, nombre] of [['ClaveProductServ', '76121600', 'Disposición de desechos no peligrosos'], ['ClaveProductServ', '76121700', 'Tratamiento de desechos líquidos'], ['ClaveProductServ', '76121502', 'Recolección o transformación o eliminación de residuos líquidos'], ['ClaveUnidad', 'E48', 'Unidad de servicio'], ['ClaveUnidad', 'H87', 'Pieza']]) insSat.run(cat, clave, nombre);
+    for (const s of db.prepare('SELECT id FROM catalogo_servicios WHERE activo = 1 ORDER BY orden, id').all().slice(0, -1)) db.prepare("UPDATE catalogo_servicios SET clave_prod_serv = '76121600', clave_unidad = 'E48', nombre_unidad = 'Unidad de servicio' WHERE id = ?").run(s.id);
+
     // Al final: la revisión de integridad debe salir limpia.
     const r = require('./alcance').global(() => require('./integridad').revisar(db, {}));
     console.log(`[demo] revisión de integridad: ${r.errores} errores, ${r.avisos} avisos`);

@@ -2132,3 +2132,9 @@ table.tabla-clientes.py-tareas tbody td{white-space:normal;}
 .fx-suc-campos label{display:flex;flex-direction:column;gap:4px;font-size:12.5px;color:var(--texto-sec);}
 .fx-suc-campos input,.fx-suc-campos select{width:100%;box-sizing:border-box;}
 .fx-suc-pie{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:8px;margin-top:10px;}
+
+.fx-aplicar{border:1px dashed var(--gris-300);border-radius:12px;padding:12px 14px;margin:8px 0 14px;background:#fffdf3;}
+.fx-aplicar .btn{margin-top:10px;}
+.fx-serv{border:1px solid var(--gris-200);border-radius:12px;padding:10px 14px;margin-bottom:8px;background:#fcfcfd;}
+.fx-serv-nom{margin-bottom:6px;}
+.fx-serv .fx-suc-campos small{min-height:1.2em;}

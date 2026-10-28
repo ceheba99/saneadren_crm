@@ -6,7 +6,7 @@
    El cliente de factura.com, el demo y la bitácora llegan por parámetro: así se prueban las rutas sin red. */
 const { estadoConfig, leerConfig } = require('./facturacion-config');
 const { crearClienteFactura, ErrorFactura } = require('./facturacom');
-const { CATALOGOS, sincronizarCatalogos } = require('./facturacion-catalogos');
+const { CATALOGOS, TIPOS_CLAVE, sincronizarCatalogos, hayCatalogo, nombreDeClave, buscarClaves } = require('./facturacion-catalogos');
 const { listarSeries, asignarSerie } = require('./facturacion-series');
 
 const TIPOS = { serie_factura: 'factura', serie_pago: 'pago' };
@@ -73,6 +73,70 @@ module.exports = function rutasFacturacion(app, db, h, { direccion, esDemo = () 
       auditar(req, 'catalogo', null, 'facturacion', 'Actualizó los catálogos del SAT: ' + resultados.map(r => `${r.catalogo} ${r.total}`).join(', '));
       res.json({ resultados, catalogos: catalogos() });
     });
+  }));
+
+  // ---------- Claves del SAT de los servicios (2026-10-27) ----------
+  // Cada servicio lleva su clave de producto (8 dígitos) y su unidad (2 o 3 caracteres, como E48). Solo se aceptan claves que EXISTEN en el catálogo oficial
+  // que bajó factura.com: nada se escribe «a ojo». Sin el catálogo bajado no se guarda ninguna (se pide actualizarlo primero).
+  const servicios = () => db.prepare('SELECT id, nombre, clave_prod_serv, clave_unidad FROM catalogo_servicios WHERE activo = 1 ORDER BY orden, id').all().map(s => ({
+    id: s.id, nombre: s.nombre, clave_prod_serv: s.clave_prod_serv || '', clave_unidad: s.clave_unidad || '',
+    clave_prod_serv_nombre: nombreDeClave(db, TIPOS_CLAVE.producto, s.clave_prod_serv), clave_unidad_nombre: nombreDeClave(db, TIPOS_CLAVE.unidad, s.clave_unidad) }));
+  const FORMATO = { clave_prod_serv: [/^\d{8}$/, 'La clave de producto o servicio tiene 8 números (por ejemplo 76121600)', 'producto'], clave_unidad: [/^[A-Z0-9]{2,3}$/, 'La clave de unidad tiene 2 o 3 letras o números (por ejemplo E48)', 'unidad'] };
+  /** Revisa las claves que vienen; devuelve { valores: {campo: clave|null}, error } sin tocar nada. */
+  function revisarClaves(b) {
+    const valores = {};
+    for (const [campo, [formato, mensaje, tipo]] of Object.entries(FORMATO)) {
+      if (!(campo in b)) continue;
+      const v = b[campo] == null ? '' : String(b[campo]).trim().toUpperCase();
+      if (!v) { valores[campo] = null; continue; }
+      if (!formato.test(v)) return { error: mensaje, codigo: 400 };
+      if (!hayCatalogo(db, TIPOS_CLAVE[tipo])) return { error: 'Primero actualiza los catálogos del SAT (botón de arriba): así se comprueba que la clave exista.', codigo: 409 };
+      if (!nombreDeClave(db, TIPOS_CLAVE[tipo], v)) return { error: `La clave ${v} no aparece en el catálogo del SAT`, codigo: 400 };
+      valores[campo] = v;
+    }
+    return { valores };
+  }
+  const guardarClaves = (id, valores) => {
+    if ('clave_prod_serv' in valores) db.prepare('UPDATE catalogo_servicios SET clave_prod_serv = ? WHERE id = ?').run(valores.clave_prod_serv, id);
+    if ('clave_unidad' in valores) db.prepare('UPDATE catalogo_servicios SET clave_unidad = ?, nombre_unidad = ? WHERE id = ?').run(valores.clave_unidad, valores.clave_unidad ? nombreDeClave(db, TIPOS_CLAVE.unidad, valores.clave_unidad) : null, id);
+  };
+  const resumenClaves = v => ['clave_prod_serv' in v && `producto ${v.clave_prod_serv || '(vacía)'}`, 'clave_unidad' in v && `unidad ${v.clave_unidad || '(vacía)'}`].filter(Boolean).join(' · ');
+
+  app.get('/api/facturacion/servicios', h((req, res) => {
+    if (soloDireccion(req, res)) return;
+    res.json({ servicios: servicios(), catalogo: { productos: hayCatalogo(db, TIPOS_CLAVE.producto), unidades: hayCatalogo(db, TIPOS_CLAVE.unidad) } });
+  }));
+  // Para sugerir claves al escribir: por clave (empieza con…) o por palabras del nombre.
+  app.get('/api/facturacion/buscar-clave', h((req, res) => {
+    if (soloDireccion(req, res)) return;
+    const tipo = TIPOS_CLAVE[String(req.query.tipo || '')];
+    if (!tipo) return res.status(400).json({ error: 'El tipo de clave debe ser «producto» o «unidad»' });
+    res.json({ resultados: buscarClaves(db, tipo, req.query.q), catalogo_vacio: !hayCatalogo(db, tipo) });
+  }));
+  app.put('/api/facturacion/servicios/:id', h((req, res) => {
+    if (soloDireccion(req, res)) return;
+    const s = db.prepare('SELECT id, nombre FROM catalogo_servicios WHERE id = ? AND activo = 1').get(Number(req.params.id));
+    if (!s) return res.status(404).json({ error: 'Servicio no encontrado' });
+    const b = req.body || {};
+    if (!Object.keys(FORMATO).some(k => k in b)) return res.status(400).json({ error: 'No hay nada que cambiar' });
+    const r = revisarClaves(b); if (r.error) return res.status(r.codigo).json({ error: r.error });
+    guardarClaves(s.id, r.valores);
+    auditar(req, 'catalogo', s.id, 'facturacion', `Claves del SAT del servicio ${s.nombre}: ${resumenClaves(r.valores)}`);
+    res.json(servicios().find(x => x.id === s.id));
+  }));
+  // Pone la misma clave de producto y unidad a TODOS los servicios que todavía no la tengan (los que ya tienen no se tocan).
+  app.post('/api/facturacion/servicios/aplicar', h((req, res) => {
+    if (soloDireccion(req, res)) return;
+    const b = req.body || {};
+    if (!String(b.clave_prod_serv ?? '').trim() || !String(b.clave_unidad ?? '').trim()) return res.status(400).json({ error: 'Escribe la clave de producto y la unidad que quieres aplicar' });
+    const r = revisarClaves({ clave_prod_serv: b.clave_prod_serv, clave_unidad: b.clave_unidad }); if (r.error) return res.status(r.codigo).json({ error: r.error });
+    let cambiados = 0;
+    for (const s of db.prepare('SELECT id, clave_prod_serv, clave_unidad FROM catalogo_servicios WHERE activo = 1').all()) {
+      const v = {}; if (!s.clave_prod_serv) v.clave_prod_serv = r.valores.clave_prod_serv; if (!s.clave_unidad) v.clave_unidad = r.valores.clave_unidad;
+      if (Object.keys(v).length) { guardarClaves(s.id, v); cambiados++; }
+    }
+    if (cambiados) auditar(req, 'catalogo', null, 'facturacion', `Claves del SAT puestas a ${cambiados} servicio(s) que no tenían: ${resumenClaves(r.valores)}`);
+    res.json({ actualizados: cambiados, servicios: servicios() });
   }));
 
   // CP de expedición y series (de factura y de pago) de una sucursal. Lo que no viene, no se toca; null o vacío lo quita.

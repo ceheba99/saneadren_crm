@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Saneadren · Cotizaciones y Servicios</title>
-<link rel="stylesheet" href="styles.css?v=fx1">
+<link rel="stylesheet" href="styles.css?v=fx2">
 <link rel="stylesheet" href="servicios-tabla.css">
 <link rel="stylesheet" href="flujo.css?v=cel1">
 </head>
@@ -674,6 +674,10 @@
       <details class="fx-detalle"><summary>Catálogos del SAT guardados</summary><ul class="fx-lista" id="fx-catalogos-lista"></ul></details>
       <h3 class="fx-sub">Por sucursal</h3>
       <div id="fx-sucursales"></div>
+      <h3 class="fx-sub">Claves del SAT de los servicios</h3>
+      <p class="ayuda">Cada servicio necesita su clave de producto o servicio (8 números) y su unidad para poder facturarse. Si tu contador ya las definió, escríbelas: al teclear aparecen sugerencias del catálogo oficial y se muestra el nombre de cada clave. Solo se aceptan claves que existan en el catálogo del SAT.</p>
+      <div id="fx-servicios"></div>
+      <datalist id="fx-dl-prod"></datalist><datalist id="fx-dl-uni"></datalist>
     </div>
     <div class="panel-alta">
       <h2>Crear nuevo usuario</h2>
@@ -1722,7 +1726,7 @@
 <script src="solicitudes.js?v=rev1"></script>
 <script src="carga-generador.js?v=con1"></script>
 <script src="sucursales.js?v=perm2"></script>
-<script src="facturacion.js?v=fx2"></script>
+<script src="facturacion.js?v=fx3"></script>
 <script src="encuestas.js?v=enc1"></script>
 <script src="app.js?v=mk1"></script>
 <script src="personal.js?v=ed1"></script>

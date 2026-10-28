@@ -118,7 +118,8 @@ test('HTTP: el registro de eventos no lleva llaves ni cuerpos, y si falla no rom
 const REG = { response: 'success', data: [{ key: '601', name: 'General de Ley Personas Morales' }, { key: '612', name: 'Personas Físicas con Actividades Empresariales' }, { key: '626', name: 'Régimen Simplificado de Confianza' }] };
 const USO = { response: 'success', data: [{ key: 'G03', name: 'Gastos en general', use: 'ambos', regimenes: ['601', '612', '626'] }, { key: 'D01', name: 'Honorarios médicos', use: 'fisica', regimenes: ['612'] }] };
 const rutaCat = { '/v3/catalogo/RegimenFiscal': REG, '/v4/catalogo/UsoCfdi': USO, '/v3/catalogo/FormaPago': { response: 'success', data: [{ key: '01', name: 'Efectivo' }, { key: '03', name: 'Transferencia' }] },
-  '/v3/catalogo/MetodoPago': { response: 'success', data: [{ key: 'PUE', name: 'Pago en una sola exhibición' }, { key: 'PPD', name: 'Pago en parcialidades' }] }, '/v3/catalogo/ClaveUnidad': { response: 'success', data: [{ key: 'E48', name: 'Unidad de servicio' }] } };
+  '/v3/catalogo/MetodoPago': { response: 'success', data: [{ key: 'PUE', name: 'Pago en una sola exhibición' }, { key: 'PPD', name: 'Pago en parcialidades' }] }, '/v3/catalogo/ClaveUnidad': { response: 'success', data: [{ key: 'E48', name: 'Unidad de servicio' }] },
+  '/v3/catalogo/ClaveProductServ': { response: 'success', data: [{ key: '76121600', name: 'Disposición de desechos no peligrosos', complement: '' }, { key: '76121700', name: 'Tratamiento de desechos líquidos', complement: '' }] } };
 test('Catálogos: se entienden las formas de respuesta y se ignoran ítems sin clave o repetidos', () => {
   assert.deepEqual(itemsDe([{ key: 'A', name: 'a' }]).map(i => i.clave), ['A']); assert.deepEqual(itemsDe({ Data: [{ key: 'B', name: 'b' }] }).map(i => i.clave), ['B']);
   assert.deepEqual(itemsDe({ data: [{ key: 'A', name: 'x' }, { key: 'A', name: 'y' }, { name: 'sin clave' }, null, { key: ' ' }] }).map(i => i.clave), ['A']);
@@ -129,7 +130,7 @@ test('Catálogos: se guardan, se actualizan, se quitan los que ya no vienen y NU
   const db = baseDeDatos(); let estado = { ...rutaCat };
   const a = api((m, ruta) => (estado[ruta] ? json(estado[ruta]) : json({ status: 'error', message: 'no existe' }, { status: 404 })));
   let r = await sincronizarCatalogos(cliente(a.fetchImpl), db);
-  assert.deepEqual(r.map(x => [x.catalogo, x.total]), [['RegimenFiscal', 3], ['UsoCfdi', 2], ['FormaPago', 2], ['MetodoPago', 2], ['ClaveUnidad', 1]]);
+  assert.deepEqual(r.map(x => [x.catalogo, x.total]), [['RegimenFiscal', 3], ['UsoCfdi', 2], ['FormaPago', 2], ['MetodoPago', 2], ['ClaveUnidad', 1], ['ClaveProductServ', 2]]);
   estado = { ...rutaCat, '/v3/catalogo/RegimenFiscal': { response: 'success', data: [{ key: '601', name: 'General de Ley (nombre nuevo)' }, { key: '603', name: 'Fines no lucrativos' }] }, '/v4/catalogo/UsoCfdi': { response: 'success', data: [] }, '/v3/catalogo/FormaPago': undefined };
   r = await sincronizarCatalogos(cliente(a.fetchImpl), db);
   const claves = db.prepare("SELECT clave, nombre FROM sat_catalogos WHERE catalogo = 'RegimenFiscal' ORDER BY clave").all();
@@ -146,6 +147,16 @@ test('Catálogos: alimentan las validaciones del F1 (régimen y compatibilidad r
   assert.equal(validarDatosFiscales(base, cat).listo, true);
   assert.match(validarDatosFiscales({ ...base, uso_cfdi: 'D01' }, cat).errores[0], /no es compatible con el régimen 626/);
   assert.match(validarDatosFiscales({ ...base, regimen: '999' }, cat).errores[0], /no está en el catálogo/);
+});
+
+test('Catálogos: buscar claves por número o por palabras, con nombre exacto y sin comodines', async () => {
+  const { buscarClaves, nombreDeClave, hayCatalogo } = require('../server/facturacion-catalogos');
+  const db = baseDeDatos(); assert.equal(hayCatalogo(db, 'ClaveProductServ'), false); assert.deepEqual(buscarClaves(db, 'ClaveProductServ', '7612'), []);
+  await sincronizarCatalogos(cliente(api((m, ruta) => json(rutaCat[ruta])).fetchImpl), db);
+  assert.equal(hayCatalogo(db, 'ClaveProductServ'), true); assert.equal(nombreDeClave(db, 'ClaveProductServ', '76121600'), 'Disposición de desechos no peligrosos'); assert.equal(nombreDeClave(db, 'ClaveProductServ', '00000000'), null); assert.equal(nombreDeClave(db, 'ClaveProductServ', ''), null);
+  assert.deepEqual(buscarClaves(db, 'ClaveProductServ', '7612').map(x => x.clave), ['76121600', '76121700']); assert.deepEqual(buscarClaves(db, 'ClaveProductServ', 'LÍQUIDOS').map(x => x.clave), ['76121700']);
+  assert.deepEqual(buscarClaves(db, 'ClaveProductServ', '7'), [], 'con un solo carácter no busca'); assert.deepEqual(buscarClaves(db, 'ClaveProductServ', '%%'), [], 'un comodín escrito es texto, no patrón'); assert.deepEqual(buscarClaves(db, 'ClaveProductServ', '76_2'), []);
+  assert.deepEqual(buscarClaves(db, 'ClaveUnidad', 'e48').map(x => x.clave), ['E48'], 'sin distinguir mayúsculas'); assert.equal(buscarClaves(db, 'ClaveProductServ', 'a'.repeat(500)).length, 0);
 });
 
 // ---------- Clientes ----------
