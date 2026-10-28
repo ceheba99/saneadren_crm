@@ -13,6 +13,7 @@ const { leerCatalogos } = require('./facturacion-catalogos');
 const { ErrorFactura } = require('./facturacom');
 
 const uidDe = d => String(d?.UID ?? d?.uid ?? '').trim();
+const entornoDe = cliente => cliente?.config?.entorno || 'sandbox';
 
 /** Cuerpo para crear o actualizar, a partir de la fila de clientes_fiscales (ya validada y normalizada). */
 function payloadCliente(n) {
@@ -31,7 +32,9 @@ function filaFiscal(db, fiscalId) {
  * 'existe': ya hay clientes con ese RFC en factura.com y este todavía no tiene UID guardado → no se crea nada; hay que vincularlo a uno (vincularCliente) o crear otro a propósito (opciones.crearAunqueExista).
  */
 async function sincronizarCliente(cliente, db, fiscalId, { crearAunqueExista = false } = {}) {
-  const f = filaFiscal(db, fiscalId);
+  const f = filaFiscal(db, fiscalId), entorno = entornoDe(cliente);
+  // Un UID de otro entorno (p. ej. el de sandbox al pasar a producción) no existe en esta cuenta: se da de alta otra vez (F3).
+  if (f.uid_facturacom && f.uid_entorno && f.uid_entorno !== entorno) f.uid_facturacom = null;
   const v = validarDatosFiscales(f, leerCatalogos(db));
   if (!v.listo) {
     const partes = [];
@@ -42,7 +45,7 @@ async function sincronizarCliente(cliente, db, fiscalId, { crearAunqueExista = f
   const cuerpo = payloadCliente(v.normalizado);
   if (f.uid_facturacom) {
     await cliente.post(`/v1/clients/${encodeURIComponent(f.uid_facturacom)}/update`, cuerpo);
-    guardar(db, f.id, f.uid_facturacom, v.normalizado);
+    guardar(db, f.id, f.uid_facturacom, v.normalizado, entorno);
     return { estado: 'actualizado', uid: f.uid_facturacom };
   }
   if (!crearAunqueExista) {
@@ -56,7 +59,7 @@ async function sincronizarCliente(cliente, db, fiscalId, { crearAunqueExista = f
   const res = await cliente.post('/v1/clients/create', cuerpo);
   const uid = uidDe(res.datos);
   if (!uid) throw new ErrorFactura('respuesta', 'factura.com creó al cliente pero no devolvió su UID: búscalo por RFC y vincúlalo (no se guardó nada).');
-  guardar(db, f.id, uid, v.normalizado);
+  guardar(db, f.id, uid, v.normalizado, entorno);
   return { estado: 'creado', uid };
 }
 
@@ -68,14 +71,14 @@ async function vincularCliente(cliente, db, fiscalId, uid) {
   if (!rfc) throw new ErrorFactura('respuesta', 'factura.com no devolvió los datos de ese cliente.');
   if (rfc !== String(f.rfc).toUpperCase()) throw new ErrorFactura('config', `Ese cliente de factura.com tiene otro RFC (${rfc}): no se vinculó.`);
   if (db.prepare('SELECT id FROM clientes_fiscales WHERE uid_facturacom = ? AND id <> ?').get(uid, f.id)) throw new ErrorFactura('config', 'Ese cliente de factura.com ya está vinculado a otro dato fiscal.');
-  db.prepare("UPDATE clientes_fiscales SET uid_facturacom = ?, updated_at = datetime('now','localtime') WHERE id = ?").run(uid, f.id);
+  db.prepare("UPDATE main.clientes_fiscales SET uid_facturacom = ?, uid_entorno = ?, updated_at = datetime('now','localtime') WHERE id = ?").run(uid, entornoDe(cliente), f.id);
   return { estado: 'vinculado', uid };
 }
 
 // Guarda el UID y deja en la base los datos tal como se mandaron (razón social normalizada, uso en mayúsculas…).
-function guardar(db, id, uid, n) {
-  db.prepare("UPDATE clientes_fiscales SET uid_facturacom = ?, rfc = ?, razon_social = ?, cp = ?, regimen = ?, uso_cfdi = ?, correo = ?, updated_at = datetime('now','localtime') WHERE id = ?")
-    .run(uid, n.rfc, n.razon_social, n.cp, n.regimen, n.uso_cfdi, n.correo, id);
+function guardar(db, id, uid, n, entorno) {
+  db.prepare("UPDATE main.clientes_fiscales SET uid_facturacom = ?, uid_entorno = ?, rfc = ?, razon_social = ?, cp = ?, regimen = ?, uso_cfdi = ?, correo = ?, updated_at = datetime('now','localtime') WHERE id = ?")
+    .run(uid, entorno, n.rfc, n.razon_social, n.cp, n.regimen, n.uso_cfdi, n.correo, id);
 }
 
 module.exports = { sincronizarCliente, vincularCliente, payloadCliente };

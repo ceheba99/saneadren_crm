@@ -489,6 +489,18 @@ module.exports = function demo(app, db, { sesiones, PORT, SESSION_TTL_MS }) {
     const dosClientes = db.prepare('SELECT id FROM clientes ORDER BY id LIMIT 2').all();
     if (dosClientes[0]) db.prepare("INSERT INTO main.clientes_fiscales (cliente_id, rfc, razon_social, cp, regimen, uso_cfdi, correo, predeterminado) VALUES (?, 'EEJ010203AB1', 'EMPRESA DE EJEMPLO', '76000', '601', 'G03', 'facturas@ejemplo.mx', 1)").run(dosClientes[0].id);
     if (dosClientes[1]) db.prepare("INSERT INTO main.clientes_fiscales (cliente_id, rfc, razon_social, predeterminado) VALUES (?, 'GOMC800101AB1', 'JUAN GOMEZ CRUZ', 1)").run(dosClientes[1].id);
+    // Formas de pago (F3): las del catálogo oficial que más se usan, con sus nombres tal como los da el SAT.
+    for (const [clave, nombre] of [['01', 'Efectivo'], ['02', 'Cheque nominativo'], ['03', 'Transferencia electrónica de fondos'], ['04', 'Tarjeta de crédito'], ['28', 'Tarjeta de débito'], ['99', 'Por definir']]) insSat.run('FormaPago', clave, nombre);
+    // Una factura SIMULADA (el demo nunca llama a factura.com) en la primera orden con IVA del cliente con datos completos, para que se vea cómo queda.
+    if (dosClientes[0]) {
+      // Fuera de una sesión la base no deja ver ninguna orden (alcance): la siembra lo pide todo, como la revisión de integridad.
+      const { timbrar } = require('./facturacion-timbrado'), { leerConfig } = require('./facturacion-config'), { global: todo } = require('./alcance');
+      await todo(async () => {
+        for (const o of db.prepare("SELECT id FROM leads WHERE cliente_id = ? AND estatus = 'ganado' AND iva_modo IN ('mas_iva', 'incluido') ORDER BY id").all(dosClientes[0].id)) {
+          try { await timbrar(db, o.id, { forma_pago: '03', confirmar: true }, { config: leerConfig({}), demo: true, usuario: { id: null, nombre: 'Demo' } }); break; } catch (e) { console.log('[demo] no se pudo simular la factura de la orden ' + o.id + ': ' + e.message); }
+        }
+      });
+    }
 
     // Al final: la revisión de integridad debe salir limpia.
     const r = require('./alcance').global(() => require('./integridad').revisar(db, {}));

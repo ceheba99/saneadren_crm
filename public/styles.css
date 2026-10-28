@@ -2147,3 +2147,22 @@ table.tabla-clientes.py-tareas tbody td{white-space:normal;}
 .fx-badge.fx-inactivo{background:#eceff3;color:#5b6571;}
 #fc-fiscales .fx-badge{display:inline-block;padding:2px 10px;border-radius:999px;font-size:12px;font-weight:800;}
 #fc-fiscales .fx-sandbox{background:#e3eefc;color:#1f4f99;}
+/* Factura electrónica de la orden (F3, 2026-10-27) */
+#cfdi-orden .fx-badge{display:inline-block;padding:2px 10px;border-radius:999px;font-size:12px;font-weight:800;}
+#cfdi-orden .fx-sandbox{background:#e3eefc;color:#1f4f99;}
+#cfdi-orden .fx-demo{background:#fff6d6;border:1px solid #f0d27a;border-radius:8px;padding:8px 12px;}
+.fx-facturas{display:flex;flex-direction:column;gap:8px;margin-bottom:12px;}
+.fx-factura{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:8px;border:1px solid var(--gris-200);border-radius:12px;padding:10px 14px;background:#fcfcfd;}
+.fx-factura > div:first-child{min-width:0;flex:1 1 260px;}
+.fx-factura small{display:block;color:var(--texto-sec);overflow-wrap:anywhere;}
+.fx-preparar{border:1px dashed var(--gris-300);border-radius:12px;padding:12px 14px;background:#fffdf3;}
+.fx-preparar h4{margin:0 0 10px;font-size:15px;}
+.fx-preparar > .btn{margin-top:12px;}
+.fx-check{flex-direction:row !important;align-items:flex-start;gap:8px !important;font-size:13px;color:var(--texto) !important;}
+.fx-check input{width:auto !important;margin-top:2px;}
+.fx-confirmar{display:flex;margin-top:10px;background:#fff1f0;border:1px solid #f3c4bf;border-radius:8px;padding:8px 10px;}
+.fx-conceptos{width:100%;border-collapse:collapse;margin-top:10px;font-size:13px;}
+.fx-conceptos th,.fx-conceptos td{padding:6px 8px;border-bottom:1px solid var(--gris-200);text-align:left;vertical-align:top;}
+.fx-conceptos .num{text-align:right;white-space:nowrap;}
+.fx-conceptos td small{display:block;color:var(--texto-sec);}
+.fx-conceptos tfoot th{text-align:right;font-weight:600;}

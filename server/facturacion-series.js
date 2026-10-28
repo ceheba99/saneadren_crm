@@ -39,10 +39,11 @@ async function asignarSerie(cliente, db, sucursalId, tipoDocumento, serieId) {
   if (!serie) throw new ErrorFactura('config', `La serie ${serieId} no existe en factura.com.`);
   if (serie.tipo !== tipoDocumento) throw new ErrorFactura('config', `Esa serie es de tipo «${serie.tipo}», no de «${tipoDocumento}»: la serie debe corresponder al tipo de documento.`);
   if (!serie.activa) throw new ErrorFactura('config', `La serie «${serie.nombre}» está desactivada en factura.com.`);
-  const usada = db.prepare("SELECT s.nombre FROM series_factura x JOIN sucursales s ON s.id = x.sucursal_id WHERE x.serie_uid = ? AND x.tipo_documento = ? AND x.sucursal_id <> ? AND x.activo = 1").get(serie.id, tipoDocumento, suc.id);
+  const entorno = cliente.config?.entorno || 'sandbox'; // la serie es de la cuenta de ESE entorno (F3: no se manda una serie de sandbox a producción)
+  const usada = db.prepare("SELECT s.nombre FROM series_factura x JOIN sucursales s ON s.id = x.sucursal_id WHERE x.serie_uid = ? AND x.tipo_documento = ? AND x.sucursal_id <> ? AND x.activo = 1 AND x.entorno = ?").get(serie.id, tipoDocumento, suc.id, entorno);
   if (usada) throw new ErrorFactura('config', `Esa serie ya está asignada a la sucursal «${usada.nombre}»: cada sucursal lleva la suya.`);
-  db.prepare("INSERT INTO series_factura (sucursal_id, tipo_documento, serie, serie_uid, activo) VALUES (?, ?, ?, ?, 1) ON CONFLICT(sucursal_id, tipo_documento) DO UPDATE SET serie = excluded.serie, serie_uid = excluded.serie_uid, activo = 1")
-    .run(suc.id, tipoDocumento, serie.nombre, serie.id);
+  db.prepare("INSERT INTO series_factura (sucursal_id, tipo_documento, serie, serie_uid, activo, entorno) VALUES (?, ?, ?, ?, 1, ?) ON CONFLICT(sucursal_id, tipo_documento) DO UPDATE SET serie = excluded.serie, serie_uid = excluded.serie_uid, activo = 1, entorno = excluded.entorno")
+    .run(suc.id, tipoDocumento, serie.nombre, serie.id, entorno);
   return { sucursal: suc.nombre, tipoDocumento, serie: serie.nombre, serie_uid: serie.id };
 }
 

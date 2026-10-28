@@ -117,16 +117,16 @@ module.exports = {
       permisos: ['marketing.ver', 'marketing.sucursal', 'marketing.empresa', 'marketing.editar', 'marketing.aprobar', 'marketing.dinero'],
     },
     facturacion: {
-      nombre: 'Facturación CFDI 4.0 con factura.com (por ahora: base de datos, conexión y la configuración en Ajustes; el timbrado llega después)',
-      vistas: [], vistasRazon: 'la configuración vive en Ajustes (pantalla «usuarios»), panel «Facturación» solo para Dirección; el botón «Facturar» llegará con el timbrado',
+      nombre: 'Facturación CFDI 4.0 con factura.com: configuración en Ajustes, datos fiscales en la ficha del cliente y timbrado PUE en la ficha de la orden (F3)',
+      vistas: [], vistasRazon: 'la configuración vive en Ajustes (pantalla «usuarios»), panel «Facturación» solo para Dirección; el timbrado, en la sección «Factura electrónica» de la ficha de la orden (no es una pantalla del menú; la vista de facturas llega en la F4)',
       tablas: ['clientes_fiscales', 'facturas', 'facturas_log', 'factura_ventas', 'factura_cobros', 'series_factura', 'sat_catalogos'],
       rutas: [/^\/api\/facturacion(\/|$)/],
-      pendientes: null, pendientesRazon: 'todavía no hay facturas: los pendientes («por facturar», «borrador por corregir») se agregan con la F3',
+      pendientes: null, pendientesRazon: 'las facturas sin timbrar o en borrador se ven en la ficha de su orden; la lista de pendientes («por facturar», «borrador por corregir») llega con la vista de facturas (F4)',
       inicio: [],
-      demo: ['series_factura', 'sat_catalogos', 'clientes_fiscales'], // el demo de Render nunca se conecta con factura.com: solo trae la configuración de ejemplo (CP, series y un catálogo del SAT chico)
-      integridad: null, integridadRazon: 'sin datos todavía; la revisión de facturas (orden sin factura vigente, totales que no cuadran) llega con la F3',
+      demo: ['series_factura', 'sat_catalogos', 'clientes_fiscales', 'facturas', 'facturas_log'], // el demo de Render nunca se conecta con factura.com: configuración de ejemplo y una factura SIMULADA
+      integridad: null, integridadRazon: 'la revisión de facturas (orden con factura «sin respuesta», totales que no cuadran con la orden) llega con la vista de facturas (F4)',
       buscador: null, buscadorRazon: 'todavía no hay pantalla; las facturas se buscarán por folio y UUID cuando exista la vista (F4)',
-      permisos: ['facturacion.fiscales'],
+      permisos: ['facturacion.fiscales', 'facturacion.timbrar'],
     },
     administracion: {
       nombre: 'Usuarios, roles, sucursales, catálogos, bitácora y respaldos',
@@ -191,6 +191,11 @@ module.exports = {
     fecha_realizado: { como: 'fecha', razon: 'fecha en que se realizó, al marcar el servicio' },
     fecha_baja: { como: 'fecha', razon: 'fecha de la baja del personal' },
     ganadora_id: { como: 'cotizacion_id', razon: 'la cotización elegida de la solicitud' },
+    // Facturación F3 (2026-10-27): lo pone el servidor al timbrar.
+    entorno: 'lo pone el servidor según la conexión activa (FACTURA_ENV: sandbox o prod; demo en el demo): de la factura y de la serie asignada',
+    receptor_rfc: { como: 'cliente_fiscal_id', razon: 'foto del RFC de los datos fiscales elegidos («Receptor») al timbrar' },
+    receptor_razon_social: { como: 'cliente_fiscal_id', razon: 'foto de la razón social de los datos fiscales elegidos («Receptor») al timbrar' },
+    fecha_timbrado: 'la devuelve factura.com (o el SAT) al timbrar',
   },
   // Formularios con una ventana para CREAR y otra para EDITAR lo mismo: deben pedir los mismos datos (la auditoría compara
   // sus campos: input, select, textarea y los selectores que arma la pantalla, marcados con data-campo). Lo que solo está
