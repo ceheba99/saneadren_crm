@@ -198,7 +198,7 @@ test('Sin respuesta (30 s): queda «timbrando»; el siguiente intento BUSCA por 
   const db = base(); orden(db);
   let encontrada = false;
   const sim = simulado(respuestasBase({ 'POST /v4/cfdi40/create': () => ({ abortar: true }),
-    'GET /v4/cfdi/order/*': () => (encontrada ? { json: { status: 'success', data: { UID: 'CFDI-UID-7', UUID: UUID1, Folio: 'F7', Status: 'enviada', NumOrder: factura(db).num_order } } } : { json: { status: 'error', message: 'No se encontró CFDI: x' } }) }));
+    'GET /v4/cfdi/order/*': () => (encontrada ? { json: { status: 'success', data: { UID: 'CFDI-UID-7', UUID: UUID1, Folio: 'F 7', Status: 'enviada', NumOrder: factura(db).num_order } } } : { json: { status: 'error', message: 'No se encontró CFDI: x' } }) }));
   const ctx = contexto(db, sim);
   let r = await timbrar(db, 10, { forma_pago: '03', confirmar: true }, ctx);
   assert.equal(r.estado, 'sin_respuesta'); assert.equal(factura(db).estatus, 'timbrando');
