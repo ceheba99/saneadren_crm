@@ -117,13 +117,13 @@ module.exports = {
       permisos: ['marketing.ver', 'marketing.sucursal', 'marketing.empresa', 'marketing.editar', 'marketing.aprobar', 'marketing.dinero'],
     },
     facturacion: {
-      nombre: 'Facturación CFDI 4.0 con factura.com (F1: solo la base de datos y las validaciones; todavía sin pantallas ni rutas)',
-      vistas: [], vistasRazon: 'en construcción: la pantalla llega con la F3 (botón «Facturar» en la orden)',
+      nombre: 'Facturación CFDI 4.0 con factura.com (por ahora: base de datos, conexión y la configuración en Ajustes; el timbrado llega después)',
+      vistas: [], vistasRazon: 'la configuración vive en Ajustes (pantalla «usuarios»), panel «Facturación» solo para Dirección; el botón «Facturar» llegará con el timbrado',
       tablas: ['clientes_fiscales', 'facturas', 'facturas_log', 'factura_ventas', 'factura_cobros', 'series_factura', 'sat_catalogos'],
       rutas: [/^\/api\/facturacion(\/|$)/],
       pendientes: null, pendientesRazon: 'todavía no hay facturas: los pendientes («por facturar», «borrador por corregir») se agregan con la F3',
       inicio: [],
-      demo: [], // el demo de Render nunca timbra: en la F3 se simula sin llamar a factura.com
+      demo: ['series_factura'], // el demo de Render nunca se conecta con factura.com: solo trae la configuración de ejemplo (CP y series por sucursal)
       integridad: null, integridadRazon: 'sin datos todavía; la revisión de facturas (orden sin factura vigente, totales que no cuadran) llega con la F3',
       buscador: null, buscadorRazon: 'todavía no hay pantalla; las facturas se buscarán por folio y UUID cuando exista la vista (F4)',
       permisos: [],

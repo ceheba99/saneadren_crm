@@ -159,7 +159,7 @@ function cambiarVista(v, opciones) {
   if (v === 'compras') Compras.cargar();
   if (v === 'solicitudes') Solicitudes.cargar();
   if (v === 'bitacora') Bitacora.cargar();
-  if (v === 'usuarios') cargarUsuarios();
+  if (v === 'usuarios') { cargarUsuarios(); window.Facturacion?.cargar(); }
   if (seccionCuentas) Finanzas.cargar({ ...opciones, seccion: seccionCuentas });
   if (v === 'catalogos') { cargarTiposCliente(); cargarCatalogoServicios(); cargarCanalesCatalogo(); }
 }

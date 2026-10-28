@@ -96,6 +96,7 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
   const tareaOnix = exigir(await pedir('POST', '/marketing/proyectos/' + proyOnix.id + '/tareas', T.Mara, { titulo: 'Guion Ónix', inicio: dia(-5), fin: dia(2) }), 'tarea Ónix');
   exigir(await pedir('POST', '/marketing/proyectos/' + proyOnix.id + '/avances', T.Mara, { texto: 'Avance Ónix listo' }), 'avance Ónix');
   // Fase 3 (2026-10-27): una idea de Mara y un archivo de la biblioteca.
+  exigir(await pedir('PUT', '/facturacion/sucursales/' + qro.id, A, { cp_expedicion: '31416' }), 'CP de expedición de facturación');
   // Fase 4 (2026-10-27): presupuesto del mes propuesto por Gil (Gerente de marketing) y un gasto de marketing.
   const MES = HOY.slice(0, 7);
   exigir(await pedir('PUT', '/marketing/presupuestos/' + MES, T.Gil, { lineas: { pauta: 17345.67 } }), 'presupuesto de marketing');
@@ -143,6 +144,9 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
     ['Prospección', [
       ['granate', 'Prospecto de Valeria', ['Granate']],
       ['cuarzo', 'Prospecto de Bruno', ['Cuarzo']],
+    ]],
+    ['Facturación', [
+      ['cpFact', 'Código postal de expedición de las facturas (pantalla Facturación)', ['31416']],
     ]],
     ['Marketing', [
       ['rubi', 'Publicación de Mara (Marketing) para Querétaro', ['Rubí']],
@@ -213,6 +217,7 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
     ['apruebaPresup', 'Aprobar el presupuesto de marketing'],
     ['registraGasto', 'Registrar un gasto de marketing'],
     ['mkEnCxp', 'El gasto de marketing aparece en Cuentas por pagar'],
+    ['configuraFact', 'Cambiar la configuración de facturación (CP de expedición de una sucursal)'],
     ['capturaRes', 'Capturar los resultados (alcance, me gusta…) de una publicación ya publicada'],
   ];
   const ok = r => r[0] === 200 || r[0] === 201;
@@ -246,6 +251,7 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
     VE[rol].apruebaPresup = ok(await pedir('POST', '/marketing/presupuestos/' + mesAp + '/estado', t, { accion: 'aprobar', version: (await pedir('GET', '/marketing/presupuestos/' + mesAp, A))[1].version }));
     VE[rol].registraGasto = ok(await pedir('POST', '/marketing/gastos', t, { fecha: HOY, concepto: 'Gasto de prueba ' + rol, rubro: 'diseno', monto: 100 }));
     VE[rol].mkEnCxp = /Pauta Turquesa/.test((await pedir('GET', '/finanzas/cxp?vista=todas', t))[2] || '');
+    VE[rol].configuraFact = ok(await pedir('PUT', '/facturacion/sucursales/' + qro.id, t, { cp_expedicion: '31416' }));
     const nuevaPub = exigir(await pedir('POST', '/marketing/publicaciones', T.Mara, { titulo: 'Por aprobar ' + rol, redes: ['tiktok'], formato: 'video', fecha: dia(5), copy: 'Copy', sucursal: qro.id }), 'publicación por aprobar');
     const enRevision = exigir(await pedir('POST', '/marketing/publicaciones/' + nuevaPub.id + '/estado', T.Mara, { accion: 'enviar', version: nuevaPub.version }), 'enviar a revisión');
     VE[rol].apruebaPub = ok(await pedir('POST', '/marketing/publicaciones/' + nuevaPub.id + '/estado', t, { accion: 'aprobar', version: enRevision.version }));
@@ -308,6 +314,8 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
       admin: { registraGasto: 1, mkEnCxp: 0 }, marketing_gerente: { registraGasto: 1 }, ...Object.fromEntries(['marketing', 'gerente', 'ventas', 'atencion', 'tecnico', 'costos'].map(r => [r, { registraGasto: 0, mkEnCxp: 0 }])) }],
     ['2026-10-27', 'Resultados de cada publicación (alcance, me gusta, mensajes…): los capturan Marketing, el Gerente de marketing y Dirección, cuando ya está publicada; los demás roles no.', {
       admin: { capturaRes: 1 }, marketing: { capturaRes: 1 }, marketing_gerente: { capturaRes: 1 }, ...Object.fromEntries(['gerente', 'ventas', 'atencion', 'tecnico', 'costos'].map(r => [r, { capturaRes: 0 }])) }],
+    ['2026-10-27', 'Facturación (conexión con factura.com, código postal de expedición y series de cada sucursal): la ve y la cambia solo Dirección; ningún otro rol, tampoco por la lista de sucursales.', {
+      admin: { cpFact: 1, configuraFact: 1 }, ...Object.fromEntries(['gerente', 'ventas', 'atencion', 'tecnico', 'costos', 'marketing', 'marketing_gerente'].map(r => [r, { cpFact: 0, configuraFact: 0 }])) }],
     ['2026-10-27', 'Banco de ideas: las proponen, votan y comentan Marketing, Gerente de marketing y Dirección; las aprueban o descartan solo Dirección y el Gerente de marketing. Los demás roles no ven las ideas.', {
       admin: { agata: 1, votaIdea: 1, decideIdea: 1 }, marketing_gerente: { agata: 1, votaIdea: 1, decideIdea: 1 }, marketing: { agata: 1, votaIdea: 1, decideIdea: 0 },
       ...Object.fromEntries(['gerente', 'ventas', 'atencion', 'tecnico', 'costos'].map(r => [r, { agata: 0, votaIdea: 0, decideIdea: 0 }])) }],
