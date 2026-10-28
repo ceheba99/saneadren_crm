@@ -97,6 +97,11 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
   exigir(await pedir('POST', '/marketing/proyectos/' + proyOnix.id + '/avances', T.Mara, { texto: 'Avance Ónix listo' }), 'avance Ónix');
   // Fase 3 (2026-10-27): una idea de Mara y un archivo de la biblioteca.
   exigir(await pedir('PUT', '/facturacion/sucursales/' + qro.id, A, { cp_expedicion: '31416' }), 'CP de expedición de facturación');
+  // Catálogo del SAT de prueba (en la API real lo trae factura.com): se siembra en la base para poder validar las claves sin red.
+  { const { DatabaseSync } = require('node:sqlite'); const d = new DatabaseSync(DB);
+    d.prepare("INSERT INTO sat_catalogos (catalogo, clave, nombre) VALUES ('ClaveProductServ', '76121600', 'Disposición de desechos no peligrosos'), ('ClaveUnidad', 'E48', 'Unidad de servicio')").run(); d.close(); }
+  const servicioFact = (await pedir('GET', '/servicios', A))[1][0];
+  exigir(await pedir('PUT', '/facturacion/servicios/' + servicioFact.id, A, { clave_prod_serv: '76121600', clave_unidad: 'E48' }), 'clave del SAT de un servicio');
   // Fase 4 (2026-10-27): presupuesto del mes propuesto por Gil (Gerente de marketing) y un gasto de marketing.
   const MES = HOY.slice(0, 7);
   exigir(await pedir('PUT', '/marketing/presupuestos/' + MES, T.Gil, { lineas: { pauta: 17345.67 } }), 'presupuesto de marketing');
@@ -147,6 +152,7 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
     ]],
     ['Facturación', [
       ['cpFact', 'Código postal de expedición de las facturas (pantalla Facturación)', ['31416']],
+      ['claveFact', 'Clave del SAT de un servicio (pantalla Facturación)', ['76121600']],
     ]],
     ['Marketing', [
       ['rubi', 'Publicación de Mara (Marketing) para Querétaro', ['Rubí']],
@@ -218,6 +224,7 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
     ['registraGasto', 'Registrar un gasto de marketing'],
     ['mkEnCxp', 'El gasto de marketing aparece en Cuentas por pagar'],
     ['configuraFact', 'Cambiar la configuración de facturación (CP de expedición de una sucursal)'],
+    ['claveServicio', 'Cambiar la clave del SAT de un servicio'],
     ['capturaRes', 'Capturar los resultados (alcance, me gusta…) de una publicación ya publicada'],
   ];
   const ok = r => r[0] === 200 || r[0] === 201;
@@ -252,6 +259,7 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
     VE[rol].registraGasto = ok(await pedir('POST', '/marketing/gastos', t, { fecha: HOY, concepto: 'Gasto de prueba ' + rol, rubro: 'diseno', monto: 100 }));
     VE[rol].mkEnCxp = /Pauta Turquesa/.test((await pedir('GET', '/finanzas/cxp?vista=todas', t))[2] || '');
     VE[rol].configuraFact = ok(await pedir('PUT', '/facturacion/sucursales/' + qro.id, t, { cp_expedicion: '31416' }));
+    VE[rol].claveServicio = ok(await pedir('PUT', '/facturacion/servicios/' + servicioFact.id, t, { clave_prod_serv: '76121600', clave_unidad: 'E48' }));
     const nuevaPub = exigir(await pedir('POST', '/marketing/publicaciones', T.Mara, { titulo: 'Por aprobar ' + rol, redes: ['tiktok'], formato: 'video', fecha: dia(5), copy: 'Copy', sucursal: qro.id }), 'publicación por aprobar');
     const enRevision = exigir(await pedir('POST', '/marketing/publicaciones/' + nuevaPub.id + '/estado', T.Mara, { accion: 'enviar', version: nuevaPub.version }), 'enviar a revisión');
     VE[rol].apruebaPub = ok(await pedir('POST', '/marketing/publicaciones/' + nuevaPub.id + '/estado', t, { accion: 'aprobar', version: enRevision.version }));
@@ -316,6 +324,8 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
       admin: { capturaRes: 1 }, marketing: { capturaRes: 1 }, marketing_gerente: { capturaRes: 1 }, ...Object.fromEntries(['gerente', 'ventas', 'atencion', 'tecnico', 'costos'].map(r => [r, { capturaRes: 0 }])) }],
     ['2026-10-27', 'Facturación (conexión con factura.com, código postal de expedición y series de cada sucursal): la ve y la cambia solo Dirección; ningún otro rol, tampoco por la lista de sucursales.', {
       admin: { cpFact: 1, configuraFact: 1 }, ...Object.fromEntries(['gerente', 'ventas', 'atencion', 'tecnico', 'costos', 'marketing', 'marketing_gerente'].map(r => [r, { cpFact: 0, configuraFact: 0 }])) }],
+    ['2026-10-27', 'Claves del SAT de los servicios (clave de producto y unidad para facturar): las ve y las cambia solo Dirección; los demás roles ven los servicios sin esos datos.', {
+      admin: { claveFact: 1, claveServicio: 1 }, ...Object.fromEntries(['gerente', 'ventas', 'atencion', 'tecnico', 'costos', 'marketing', 'marketing_gerente'].map(r => [r, { claveFact: 0, claveServicio: 0 }])) }],
     ['2026-10-27', 'Banco de ideas: las proponen, votan y comentan Marketing, Gerente de marketing y Dirección; las aprueban o descartan solo Dirección y el Gerente de marketing. Los demás roles no ven las ideas.', {
       admin: { agata: 1, votaIdea: 1, decideIdea: 1 }, marketing_gerente: { agata: 1, votaIdea: 1, decideIdea: 1 }, marketing: { agata: 1, votaIdea: 1, decideIdea: 0 },
       ...Object.fromEntries(['gerente', 'ventas', 'atencion', 'tecnico', 'costos'].map(r => [r, { agata: 0, votaIdea: 0, decideIdea: 0 }])) }],

@@ -314,8 +314,10 @@ app.post('/api/usuarios', h((req, res) => {
   res.status(201).json({ id: info.lastInsertRowid, nombre: nombre.trim(), rol, correo });
 }));
 
+// Los datos de facturación de un servicio (claves del SAT, ObjetoImp, tasa) los ve y cambia solo Dirección en la pantalla «Facturación»: no salen aquí.
+const sinFacturacion = ({ clave_prod_serv, clave_unidad, nombre_unidad, objeto_imp, tasa_iva, ...resto }) => resto;
 app.get('/api/servicios', h((req, res) => {
-  res.json(db.prepare('SELECT * FROM catalogo_servicios WHERE activo = 1 ORDER BY orden').all());
+  res.json(db.prepare('SELECT * FROM catalogo_servicios WHERE activo = 1 ORDER BY orden').all().map(sinFacturacion));
 })); 
 // ---------- Administrar un usuario (solo admin): nombre, correo y rol ----------
 app.put('/api/usuarios/:id', h((req, res) => {
@@ -427,7 +429,7 @@ app.put('/api/servicios/:id', h((req, res) => {
   }
   if (req.body.descripcion !== undefined && (typeof req.body.descripcion !== 'string' || req.body.descripcion.length > 10000)) return res.status(400).json({ error: 'La descripción debe ser texto de hasta 10000 caracteres' });
   db.prepare('UPDATE catalogo_servicios SET dias_recurrencia = ?, descripcion = ? WHERE id = ?').run(dias_recurrencia === undefined ? servicio.dias_recurrencia : dias, req.body.descripcion === undefined ? servicio.descripcion : req.body.descripcion.trim(), req.params.id);
-  res.json(db.prepare('SELECT * FROM catalogo_servicios WHERE id = ?').get(req.params.id));
+  res.json(sinFacturacion(db.prepare('SELECT * FROM catalogo_servicios WHERE id = ?').get(req.params.id)));
 }));
 
 // Eliminar un servicio del catálogo (solo admin). Es una baja lógica: las cotizaciones y
@@ -457,10 +459,10 @@ app.post('/api/servicios', h((req, res) => {
   if (req.body.descripcion !== undefined && (typeof req.body.descripcion !== 'string' || req.body.descripcion.length > 10000)) return res.status(400).json({ error: 'La descripción debe ser texto de hasta 10000 caracteres' });
   if (existente) {
     db.prepare('UPDATE catalogo_servicios SET activo = 1, orden = ?, dias_recurrencia = ?, descripcion = ? WHERE id = ?').run(orden, dias, (req.body.descripcion || '').trim(), existente.id);
-    return res.status(201).json(db.prepare('SELECT * FROM catalogo_servicios WHERE id = ?').get(existente.id));
+    return res.status(201).json(sinFacturacion(db.prepare('SELECT * FROM catalogo_servicios WHERE id = ?').get(existente.id)));
   }
   const info = db.prepare('INSERT INTO catalogo_servicios (nombre, orden, dias_recurrencia, descripcion) VALUES (?, ?, ?, ?)').run(nombre.trim(), orden, dias, (req.body.descripcion || '').trim());
-  res.status(201).json(db.prepare('SELECT * FROM catalogo_servicios WHERE id = ?').get(info.lastInsertRowid));
+  res.status(201).json(sinFacturacion(db.prepare('SELECT * FROM catalogo_servicios WHERE id = ?').get(info.lastInsertRowid)));
 }));
 
 app.get('/api/tipos-cliente', h((req,res)=>res.json(db.prepare('SELECT * FROM tipos_cliente ORDER BY nombre').all())));

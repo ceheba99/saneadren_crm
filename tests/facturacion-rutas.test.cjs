@@ -19,8 +19,10 @@ const SERIES = [{ SerieID: 11, SerieName: 'F', SerieType: 'factura', SerieDescri
 async function montar(cfg = {}) {
   const db = new DatabaseSync(':memory:');
   db.exec(`CREATE TABLE usuarios (id INTEGER PRIMARY KEY); CREATE TABLE clientes (id INTEGER PRIMARY KEY); CREATE TABLE leads (id INTEGER PRIMARY KEY); CREATE TABLE cobros (id INTEGER PRIMARY KEY);
-    CREATE TABLE catalogo_servicios (id INTEGER PRIMARY KEY, nombre TEXT); CREATE TABLE sucursales (id INTEGER PRIMARY KEY AUTOINCREMENT, nombre TEXT, clave TEXT, activo INTEGER DEFAULT 1);
-    INSERT INTO sucursales (nombre, clave) VALUES ('Querétaro', 'QRO'), ('Ciudad de México', 'CDMX');`);
+    CREATE TABLE catalogo_servicios (id INTEGER PRIMARY KEY, nombre TEXT, activo INTEGER DEFAULT 1, orden INTEGER DEFAULT 0); CREATE TABLE sucursales (id INTEGER PRIMARY KEY AUTOINCREMENT, nombre TEXT, clave TEXT, activo INTEGER DEFAULT 1);
+    INSERT INTO sucursales (nombre, clave) VALUES ('Querétaro', 'QRO'), ('Ciudad de México', 'CDMX');
+    INSERT INTO catalogo_servicios (nombre, orden) VALUES ('Desazolve', 1), ('Trampa de grasa', 2), ('Servicio viejo', 3);
+    UPDATE catalogo_servicios SET activo = 0 WHERE nombre = 'Servicio viejo';`);
   crearTablas(db);
   const estado = { direccion: true, demo: false, llamadas: [], bitacora: [], proximo: null, ...cfg };
   const clienteSim = () => ({ config: { entorno: 'sandbox' }, get: async ruta => {
@@ -52,7 +54,7 @@ conMontaje('Configuración: estado sin llaves, sucursales y catálogos', {}, asy
   const texto = JSON.stringify(x.json); assert.ok(!texto.includes(LLAVE) && !texto.includes(SECRETA), 'las llaves nunca salen');
   assert.equal(x.json.entorno, 'sandbox'); assert.equal(x.json.apiKey, 'puesta'); assert.equal(x.json.secretKey, 'puesta'); assert.deepEqual(x.json.emisor, { regimen: '601', cp: '26015' }); assert.equal(x.json.demo, false); assert.equal(x.json.listo, true);
   assert.deepEqual(x.json.sucursales.map(s => [s.clave, s.cp_expedicion, s.serie_factura, s.serie_pago]), [['QRO', '', null, null], ['CDMX', '', null, null]]);
-  assert.deepEqual(x.json.catalogos.find(c => c.catalogo === 'RegimenFiscal').total, 2); assert.equal(x.json.catalogos.find(c => c.catalogo === 'UsoCfdi').total, 0); assert.equal(x.json.catalogos.length, 5);
+  assert.deepEqual(x.json.catalogos.find(c => c.catalogo === 'RegimenFiscal').total, 2); assert.equal(x.json.catalogos.find(c => c.catalogo === 'UsoCfdi').total, 0); assert.equal(x.json.catalogos.length, 6);
 });
 conMontaje('Probar conexión: devuelve las series; el demo nunca se conecta', {}, async ({ pedir, estado }) => {
   const x = await pedir('POST', '/probar', {}); assert.equal(x.status, 200); assert.equal(x.json.ok, true); assert.deepEqual(x.json.series.map(s => [s.id, s.nombre, s.tipo, s.activa]), [['11', 'F', 'factura', true], ['12', 'FM', 'factura', true], ['13', 'PA', 'pago', true], ['14', 'OLD', 'factura', false]]);
@@ -110,6 +112,52 @@ conMontaje('Sucursal: si la serie falla NO se cambia el CP (nada a medias) y un 
   estado.proximo = { error: new ErrorFactura('red', 'No se pudo conectar con factura.com') }; x = await pedir('PUT', '/sucursales/1', { cp_expedicion: '76087', serie_factura: '11' }); assert.equal(x.status, 502); assert.match(x.json.error, /No se pudo conectar/);
   assert.equal(db.prepare('SELECT cp_expedicion FROM sucursales WHERE id = 1').get().cp_expedicion, null); assert.equal(db.prepare('SELECT COUNT(*) n FROM series_factura').get().n, 0);
   estado.bitacora.length = 0; estado.proximo = null; await pedir('PUT', '/sucursales/1', { serie_factura: '999' }); assert.equal(estado.bitacora.length, 0, 'lo que falla no queda en la bitácora');
+});
+// ---------- Claves del SAT de los servicios ----------
+const catalogoSat = db => db.exec("INSERT INTO sat_catalogos (catalogo, clave, nombre) VALUES ('ClaveProductServ', '76121600', 'Disposición de desechos no peligrosos'), ('ClaveProductServ', '76121700', 'Tratamiento de desechos líquidos'), ('ClaveUnidad', 'E48', 'Unidad de servicio'), ('ClaveUnidad', 'H87', 'Pieza')");
+conMontaje('Servicios: solo Dirección ve y cambia las claves (y buscar claves)', { direccion: false }, async ({ pedir }) => {
+  for (const [m, r, c] of [['GET', '/servicios'], ['GET', '/buscar-clave?tipo=producto&q=7612'], ['PUT', '/servicios/1', { clave_prod_serv: '76121600' }], ['POST', '/servicios/aplicar', { clave_prod_serv: '76121600', clave_unidad: 'E48' }]]) {
+    const x = await pedir(m, r, c); assert.equal(x.status, 403, m + ' ' + r);
+  }
+});
+conMontaje('Servicios: la lista trae los activos con las claves y sus nombres oficiales', {}, async ({ pedir, db }) => {
+  let x = await pedir('GET', '/servicios'); assert.equal(x.status, 200); assert.deepEqual(x.json.servicios.map(s => s.nombre), ['Desazolve', 'Trampa de grasa'], 'sin los dados de baja');
+  assert.deepEqual(x.json.catalogo, { productos: false, unidades: false }); assert.deepEqual(x.json.servicios[0], { id: 1, nombre: 'Desazolve', clave_prod_serv: '', clave_unidad: '', clave_prod_serv_nombre: null, clave_unidad_nombre: null });
+  catalogoSat(db); db.exec("UPDATE catalogo_servicios SET clave_prod_serv = '76121600', clave_unidad = 'E48' WHERE id = 1");
+  x = await pedir('GET', '/servicios'); assert.equal(x.json.servicios[0].clave_prod_serv_nombre, 'Disposición de desechos no peligrosos'); assert.equal(x.json.servicios[0].clave_unidad_nombre, 'Unidad de servicio'); assert.deepEqual(x.json.catalogo, { productos: true, unidades: true });
+});
+conMontaje('Servicios: guardar claves exige formato y que EXISTAN en el catálogo del SAT', {}, async ({ pedir, db, estado }) => {
+  let x = await pedir('PUT', '/servicios/1', { clave_prod_serv: '76121600' }); assert.equal(x.status, 409); assert.match(x.json.error, /Primero actualiza los catálogos del SAT/);
+  catalogoSat(db);
+  for (const [cuerpo, texto] of [[{ clave_prod_serv: '7612' }, /8 números/], [{ clave_prod_serv: '7612160A' }, /8 números/], [{ clave_prod_serv: '99999999' }, /no aparece en el catálogo/], [{ clave_unidad: 'E4' + '8X' }, /2 o 3/], [{ clave_unidad: 'Z9' }, /no aparece en el catálogo/], [{ clave_unidad: 'E 8' }, /2 o 3/]]) {
+    x = await pedir('PUT', '/servicios/1', cuerpo); assert.equal(x.status, 400, JSON.stringify(cuerpo)); assert.match(x.json.error, texto);
+  }
+  assert.equal(db.prepare('SELECT clave_prod_serv FROM catalogo_servicios WHERE id = 1').get().clave_prod_serv, null, 'nada se guardó con claves malas');
+  x = await pedir('PUT', '/servicios/1', { clave_prod_serv: ' 76121600 ', clave_unidad: 'e48' }); assert.equal(x.status, 200);
+  assert.deepEqual([x.json.clave_prod_serv, x.json.clave_unidad, x.json.clave_unidad_nombre], ['76121600', 'E48', 'Unidad de servicio']);
+  assert.equal(db.prepare('SELECT nombre_unidad FROM catalogo_servicios WHERE id = 1').get().nombre_unidad, 'Unidad de servicio', 'guarda también el nombre de la unidad');
+  assert.match(estado.bitacora.at(-1).detalle, /Claves del SAT del servicio Desazolve: producto 76121600 · unidad E48/); assert.equal(estado.bitacora.at(-1).id, 1);
+  x = await pedir('PUT', '/servicios/1', { clave_unidad: '' }); assert.equal(x.status, 200); assert.equal(x.json.clave_unidad, ''); assert.equal(x.json.clave_prod_serv, '76121600', 'lo que no se menciona no se toca');
+  assert.equal(db.prepare('SELECT nombre_unidad FROM catalogo_servicios WHERE id = 1').get().nombre_unidad, null);
+  assert.equal((await pedir('PUT', '/servicios/99', { clave_unidad: 'E48' })).status, 404); assert.equal((await pedir('PUT', '/servicios/3', { clave_unidad: 'E48' })).status, 404, 'un servicio dado de baja no se edita'); assert.equal((await pedir('PUT', '/servicios/1', {})).status, 400);
+});
+conMontaje('Servicios: «aplicar a todos» llena solo lo que está vacío', {}, async ({ pedir, db, estado }) => {
+  catalogoSat(db); db.exec("UPDATE catalogo_servicios SET clave_prod_serv = '76121700', clave_unidad = 'H87' WHERE id = 1");
+  let x = await pedir('POST', '/servicios/aplicar', { clave_prod_serv: '76121600', clave_unidad: 'E48' }); assert.equal(x.status, 200); assert.equal(x.json.actualizados, 1, 'solo el que no tenía');
+  const por = Object.fromEntries(x.json.servicios.map(s => [s.nombre, [s.clave_prod_serv, s.clave_unidad]])); assert.deepEqual(por['Desazolve'], ['76121700', 'H87'], 'el que ya tenía no se toca'); assert.deepEqual(por['Trampa de grasa'], ['76121600', 'E48']);
+  assert.equal(db.prepare("SELECT clave_prod_serv FROM catalogo_servicios WHERE nombre = 'Servicio viejo'").get().clave_prod_serv, null, 'los dados de baja tampoco');
+  assert.match(estado.bitacora.at(-1).detalle, /puestas a 1 servicio/);
+  const n = estado.bitacora.length;
+  x = await pedir('POST', '/servicios/aplicar', { clave_prod_serv: '76121600', clave_unidad: 'E48' }); assert.equal(x.json.actualizados, 0); assert.equal(estado.bitacora.length, n, 'si no cambió nada, no hay bitácora');
+  for (const [cuerpo, texto] of [[{ clave_prod_serv: '76121600' }, /Escribe la clave de producto y la unidad/], [{ clave_prod_serv: '99999999', clave_unidad: 'E48' }, /no aparece/], [{ clave_prod_serv: '76121600', clave_unidad: 'ZZ9' }, /no aparece/], [{}, /Escribe/]]) { x = await pedir('POST', '/servicios/aplicar', cuerpo); assert.equal(x.status, 400); assert.match(x.json.error, texto); }
+});
+conMontaje('Servicios: buscar claves sugiere por número o por palabras y avisa si falta el catálogo', {}, async ({ pedir, db }) => {
+  let x = await pedir('GET', '/buscar-clave?tipo=producto&q=7612'); assert.equal(x.status, 200); assert.deepEqual(x.json, { resultados: [], catalogo_vacio: true });
+  catalogoSat(db);
+  x = await pedir('GET', '/buscar-clave?tipo=producto&q=7612'); assert.deepEqual(x.json.resultados.map(r => r.clave), ['76121600', '76121700']); assert.equal(x.json.catalogo_vacio, false);
+  x = await pedir('GET', '/buscar-clave?tipo=producto&q=desechos'); assert.deepEqual(x.json.resultados.map(r => r.clave), ['76121600', '76121700']);
+  x = await pedir('GET', '/buscar-clave?tipo=unidad&q=pie'); assert.deepEqual(x.json.resultados.map(r => r.clave), ['H87']);
+  assert.equal((await pedir('GET', '/buscar-clave?tipo=otra&q=76')).status, 400); assert.equal((await pedir('GET', '/buscar-clave?q=76')).status, 400); assert.deepEqual((await pedir('GET', '/buscar-clave?tipo=producto&q=%25%25')).json.resultados, []);
 });
 conMontaje('Demo: el CP sí se puede cambiar (no llama a nada); quitar una serie también', { demo: true }, async ({ pedir, estado, db }) => {
   db.prepare("INSERT INTO series_factura (sucursal_id, tipo_documento, serie, serie_uid) VALUES (1, 'factura', 'F', '900001')").run();

@@ -4,7 +4,7 @@
    «Probar conexión»): no se escriben a mano. Lo que viene de factura.com se escapa como todo lo demás. */
 const Facturacion = (() => {
   const $ = id => document.getElementById(id), esc = t => escaparHtml(t == null ? '' : String(t));
-  let CFG = null, SERIES = null, ocupado = false;
+  let CFG = null, SERIES = null, SERV = null, ocupado = false;
 
   async function pedir(ruta, cuerpo, metodo = 'GET') {
     const r = await api('/facturacion' + ruta, cuerpo !== undefined || metodo !== 'GET' ? { method: metodo, body: JSON.stringify(cuerpo ?? {}) } : undefined);
@@ -17,7 +17,7 @@ const Facturacion = (() => {
 
   async function cargar() {
     const panel = $('panel-facturacion'); if (!panel || !document.body.classList.contains('es-general')) return;
-    try { CFG = await pedir('/config'); pintar(); }
+    try { [CFG, SERV] = await Promise.all([pedir('/config'), pedir('/servicios')]); pintar(); pintarServicios(); }
     catch (e) { $('fx-estado').innerHTML = `<p class="aviso-error-carga" role="alert">${esc(e.message)}</p>`; }
   }
 
@@ -60,6 +60,42 @@ const Facturacion = (() => {
   }
 
   const botones = () => { for (const id of ['fx-probar', 'fx-catalogos']) { const b = $(id); if (b) b.disabled = !!CFG?.demo || ocupado; } };
+  // ---------- Claves del SAT de cada servicio ----------
+  function pintarServicios() {
+    if (!SERV) return;
+    const sinCatalogo = !SERV.catalogo.productos || !SERV.catalogo.unidades;
+    const nombre = (clave, nom) => (nom ? esc(nom) : clave ? '⚠ No aparece en el catálogo del SAT' : '');
+    $('fx-servicios').innerHTML = `${sinCatalogo ? '<p class="aviso-error-carga">Primero pulsa «Actualizar catálogos del SAT»: así se comprueba que cada clave exista.</p>' : ''}
+      <div class="fx-aplicar"><b>Ponerle la misma clave a todos los servicios que no la tengan</b>
+        <div class="fx-suc-campos">
+          <label>Clave de producto o servicio<input id="fx-ap-prod" list="fx-dl-prod" inputmode="numeric" maxlength="8" placeholder="8 números" autocomplete="off"><small class="ayuda"></small></label>
+          <label>Unidad<input id="fx-ap-uni" list="fx-dl-uni" maxlength="3" placeholder="por ejemplo E48" autocomplete="off"><small class="ayuda"></small></label>
+        </div>
+        <button type="button" class="btn btn-secundario" id="fx-aplicar">Aplicar a los que no tienen</button></div>
+      ${SERV.servicios.map(s => `<div class="fx-serv" data-fx-serv="${Number(s.id)}">
+        <div class="fx-serv-nom"><b>${esc(s.nombre)}</b> ${s.clave_prod_serv && s.clave_unidad ? '<span class="fx-ok">✔</span>' : '<small class="fx-mal">sin clave completa: no podrá facturarse</small>'}</div>
+        <div class="fx-suc-campos">
+          <label>Clave de producto o servicio<input data-fx-prod list="fx-dl-prod" inputmode="numeric" maxlength="8" value="${esc(s.clave_prod_serv)}" autocomplete="off"><small class="ayuda">${nombre(s.clave_prod_serv, s.clave_prod_serv_nombre)}</small></label>
+          <label>Unidad<input data-fx-uni list="fx-dl-uni" maxlength="3" value="${esc(s.clave_unidad)}" autocomplete="off"><small class="ayuda">${nombre(s.clave_unidad, s.clave_unidad_nombre)}</small></label>
+        </div>
+        <div class="fx-suc-pie"><span></span><button type="button" class="btn btn-secundario" data-fx-serv-guardar>Guardar</button></div></div>`).join('') || '<p class="util-45">No hay servicios.</p>'}`;
+  }
+  // Sugerencias al escribir (por clave o por palabras) y el nombre oficial de lo que ya está escrito. Los textos se ponen con el DOM, no como HTML.
+  async function sugerir(entrada) {
+    const tipo = entrada.id === 'fx-ap-uni' || entrada.hasAttribute('data-fx-uni') ? 'unidad' : 'producto', q = entrada.value.trim();
+    const nom = entrada.parentElement.querySelector('small'); if (!q) { nom.textContent = ''; return; }
+    try {
+      const r = await pedir('/buscar-clave?tipo=' + tipo + '&q=' + encodeURIComponent(q));
+      const lista = $(tipo === 'unidad' ? 'fx-dl-uni' : 'fx-dl-prod');
+      lista.replaceChildren(...r.resultados.map(x => { const o = document.createElement('option'); o.value = x.clave; o.textContent = x.nombre; return o; }));
+      const exacta = r.resultados.find(x => x.clave === q.toUpperCase());
+      nom.textContent = exacta ? exacta.nombre : r.catalogo_vacio ? '⚠ Primero actualiza los catálogos del SAT' : (q.length >= 2 ? '⚠ No aparece en el catálogo del SAT' : '');
+    } catch { /* las sugerencias no son indispensables */ }
+  }
+  // (Este archivo se carga antes que app.js: por eso no se usa su «debounce».)
+  let esperaSugerir = 0;
+  document.addEventListener('input', e => { const i = e.target.closest?.('#fx-servicios input'); if (i) { clearTimeout(esperaSugerir); esperaSugerir = setTimeout(() => sugerir(i), 300); } });
+
   async function operacion(boton, tarea) {
     if (ocupado) return; ocupado = true; botones(); boton.disabled = true; const texto = boton.textContent; boton.textContent = 'Trabajando…';
     const salida = $('fx-resultado'); salida.className = 'ayuda'; salida.textContent = '';
@@ -73,10 +109,10 @@ const Facturacion = (() => {
     pintar();
   }));
   $('fx-catalogos')?.addEventListener('click', e => operacion(e.currentTarget, async salida => {
-    const r = await pedir('/catalogos', {}, 'POST'); CFG.catalogos = r.catalogos;
+    const r = await pedir('/catalogos', {}, 'POST'); CFG.catalogos = r.catalogos; SERV = await pedir('/servicios');
     const malos = r.resultados.filter(x => x.error || !x.actualizado);
     salida.innerHTML = malos.length ? `⚠ ${malos.map(x => `${esc(x.catalogo)}: ${esc(x.motivo || 'sin cambios')}`).join(' · ')}` : '✔ Catálogos del SAT actualizados.';
-    pintar();
+    pintar(); pintarServicios();
   }));
   $('fx-sucursales')?.addEventListener('click', e => {
     const b = e.target.closest('[data-fx-guardar]'); if (!b) return;
@@ -88,6 +124,24 @@ const Facturacion = (() => {
     operacion(b, async () => {
       const nueva = await pedir('/sucursales/' + id, cuerpo, 'PUT');
       CFG.sucursales = CFG.sucursales.map(x => (x.id === id ? nueva : x)); pintar(); toast('Facturación de ' + nueva.nombre + ' guardada');
+    });
+  });
+
+  $('fx-servicios')?.addEventListener('click', e => {
+    const g = e.target.closest('[data-fx-serv-guardar]');
+    if (g) {
+      const fila = g.closest('[data-fx-serv]'), id = Number(fila.dataset.fxServ), s = SERV.servicios.find(x => x.id === id), cuerpo = {};
+      const prod = fila.querySelector('[data-fx-prod]').value.trim(), uni = fila.querySelector('[data-fx-uni]').value.trim().toUpperCase();
+      if (prod !== s.clave_prod_serv) cuerpo.clave_prod_serv = prod;
+      if (uni !== s.clave_unidad) cuerpo.clave_unidad = uni;
+      if (!Object.keys(cuerpo).length) { toast('No hay cambios que guardar'); return; }
+      return operacion(g, async () => { const nuevo = await pedir('/servicios/' + id, cuerpo, 'PUT'); SERV.servicios = SERV.servicios.map(x => (x.id === id ? nuevo : x)); pintarServicios(); toast('Claves de «' + nuevo.nombre + '» guardadas'); });
+    }
+    const a = e.target.closest('#fx-aplicar');
+    if (a) operacion(a, async salida => {
+      const r = await pedir('/servicios/aplicar', { clave_prod_serv: $('fx-ap-prod').value, clave_unidad: $('fx-ap-uni').value }, 'POST');
+      SERV.servicios = r.servicios; pintarServicios();
+      salida.textContent = r.actualizados ? '✔ Claves puestas a ' + r.actualizados + ' servicio(s) que no tenían.' : 'Todos los servicios ya tenían sus claves: no se cambió ninguno.';
     });
   });
 

@@ -4,15 +4,16 @@
    · Rutas y campos tomados de apidocs/catalogos.html: GET /v3/catalogo/{RegimenFiscal|FormaPago|MetodoPago|ClaveUnidad|ClaveProductServ}
      y GET /v4/catalogo/UsoCfdi (cada ítem: key, name; el uso trae además «use» y «regimenes»).
    · Una respuesta vacía o rara NUNCA borra el catálogo que ya se tenía.
-   · ClaveProductServ trae 52,841 claves en UNA respuesta (sin paginar, ~2 s en sandbox): es opcional y se pide aparte (--claves-producto). */
+   · ClaveProductServ trae 52,841 claves en UNA respuesta (sin paginar, ~2 s en sandbox): entra en la actualización normal, para poder comprobar que la clave
+     de producto que se capture en un servicio exista. */
 const CATALOGOS = {
   RegimenFiscal: '/v3/catalogo/RegimenFiscal',
   UsoCfdi: '/v4/catalogo/UsoCfdi',
   FormaPago: '/v3/catalogo/FormaPago',
   MetodoPago: '/v3/catalogo/MetodoPago',
   ClaveUnidad: '/v3/catalogo/ClaveUnidad',
+  ClaveProductServ: '/v3/catalogo/ClaveProductServ',
 };
-const CATALOGO_CLAVES_PRODUCTO = { ClaveProductServ: '/v3/catalogo/ClaveProductServ' };
 
 /** Los ítems de una respuesta de catálogo, venga como { data: [...] }, { Data: [...] } o un arreglo suelto. */
 function itemsDe(datos) {
@@ -45,10 +46,10 @@ async function sincronizarCatalogo(cliente, db, nombre, ruta) {
 }
 const contar = (db, nombre) => db.prepare('SELECT COUNT(*) n FROM sat_catalogos WHERE catalogo = ?').get(nombre).n;
 
-/** Sincroniza todos los catálogos chicos (y, si se pide, las claves de producto). Un catálogo que falla no impide los demás. */
-async function sincronizarCatalogos(cliente, db, { clavesProducto = false } = {}) {
-  const lista = { ...CATALOGOS, ...(clavesProducto ? CATALOGO_CLAVES_PRODUCTO : {}) }, resultados = [];
-  for (const [nombre, ruta] of Object.entries(lista)) {
+/** Sincroniza todos los catálogos. Un catálogo que falla no impide los demás. */
+async function sincronizarCatalogos(cliente, db) {
+  const resultados = [];
+  for (const [nombre, ruta] of Object.entries(CATALOGOS)) {
     try { resultados.push(await sincronizarCatalogo(cliente, db, nombre, ruta)); }
     catch (e) { resultados.push({ catalogo: nombre, actualizado: false, motivo: e.message, error: true, total: contar(db, nombre) }); }
   }
@@ -68,4 +69,17 @@ function leerCatalogos(db) {
   };
 }
 
-module.exports = { CATALOGOS, itemsDe, sincronizarCatalogo, sincronizarCatalogos, leerCatalogos };
+// ---------- Consultas sobre lo guardado (para capturar las claves de un servicio) ----------
+const TIPOS_CLAVE = { producto: 'ClaveProductServ', unidad: 'ClaveUnidad' };
+const hayCatalogo = (db, catalogo) => !!db.prepare('SELECT 1 FROM sat_catalogos WHERE catalogo = ? LIMIT 1').get(catalogo);
+/** El nombre oficial de una clave, o null si no está (o el catálogo aún no se bajó). */
+const nombreDeClave = (db, catalogo, clave) => (clave ? db.prepare('SELECT nombre FROM sat_catalogos WHERE catalogo = ? AND clave = ?').get(catalogo, String(clave))?.nombre ?? null : null);
+/** Busca por clave (que empiece así) o por palabras del nombre; hasta «limite» resultados. Los comodines de LIKE del texto buscado se escapan. */
+function buscarClaves(db, catalogo, texto, limite = 15) {
+  const q = String(texto ?? '').trim().slice(0, 60); if (q.length < 2) return [];
+  const esc = q.toLowerCase().replace(/[\\%_]/g, c => '\\' + c);
+  return db.prepare("SELECT clave, nombre FROM sat_catalogos WHERE catalogo = ? AND (lower(clave) LIKE ? ESCAPE '\\' OR lower(nombre) LIKE ? ESCAPE '\\') ORDER BY (lower(clave) LIKE ? ESCAPE '\\') DESC, clave LIMIT ?")
+    .all(catalogo, esc + '%', '%' + esc + '%', esc + '%', Math.min(Number(limite) || 15, 30));
+}
+
+module.exports = { CATALOGOS, TIPOS_CLAVE, itemsDe, sincronizarCatalogo, sincronizarCatalogos, leerCatalogos, hayCatalogo, nombreDeClave, buscarClaves };
