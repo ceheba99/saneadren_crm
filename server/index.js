@@ -1122,6 +1122,10 @@ app.delete('/api/leads/:id', h((req, res) => {
   if (db.prepare('SELECT 1 FROM main.cobros WHERE lead_id = ? LIMIT 1').get(lead.id)) {
     return res.status(409).json({ error: 'Esta orden tiene pagos registrados y no se puede eliminar, para conservar el rastro del dinero.' });
   }
+  // Una factura (aunque sea de prueba) nunca se borra (regla 14 de facturación): la orden que la tiene tampoco.
+  if (db.prepare('SELECT 1 FROM main.facturas WHERE lead_id = ? LIMIT 1').get(lead.id)) {
+    return res.status(409).json({ error: 'Esta orden tiene facturas electrónicas (CFDI) y no se puede eliminar: una factura nunca se borra.' });
+  }
   // Tampoco una con gastos en Cuentas por pagar (quedarían sueltos, sin su orden).
   if (db.prepare('SELECT 1 FROM main.cuentas_por_pagar WHERE lead_id = ? AND cancelada = 0 LIMIT 1').get(lead.id)) {
     return res.status(409).json({ error: 'Esta orden tiene gastos en Cuentas por pagar. Cancélalos primero si de verdad quieres eliminarla.' });

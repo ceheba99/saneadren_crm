@@ -15,6 +15,9 @@
 const ESTATUS = ['pendiente', 'timbrando', 'timbrada', 'borrador_error', 'cancelacion_solicitada', 'cancelada'];
 const ESTATUS_VIGENTES = ['pendiente', 'timbrando', 'timbrada', 'borrador_error', 'cancelacion_solicitada'];
 const TIPOS_DOCUMENTO = ['factura', 'pago']; // «TipoDocumento» de la API: ingreso y complemento de pago
+// Dónde se timbró (F3, 2026-10-27): sandbox (pruebas, sin validez fiscal), prod (real) o demo (simulada, sin llamar a nadie).
+// Solo una factura de «prod» toca la orden (folio de factura en cobranza); las demás viven aparte y no estorban a la real.
+const ENTORNOS = ['sandbox', 'prod', 'demo'];
 
 function crearTablasFacturacion(db) {
   const columnas = tabla => db.prepare(`PRAGMA table_info(${tabla})`).all().map(c => c.name);
@@ -78,9 +81,6 @@ function crearTablasFacturacion(db) {
       created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
       updated_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
     );
-    -- Una sola factura vigente por orden (las canceladas no cuentan: así se puede cancelar y sustituir).
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_facturas_vigente_por_orden ON facturas(lead_id)
-      WHERE lead_id IS NOT NULL AND tipo_documento = 'factura' AND estatus IN (${lista(ESTATUS_VIGENTES)});
     CREATE UNIQUE INDEX IF NOT EXISTS idx_facturas_cfdi_uid ON facturas(cfdi_uid) WHERE cfdi_uid IS NOT NULL;
     CREATE UNIQUE INDEX IF NOT EXISTS idx_facturas_uuid ON facturas(uuid) WHERE uuid IS NOT NULL;
     CREATE INDEX IF NOT EXISTS idx_facturas_num_order ON facturas(num_order);
@@ -157,6 +157,18 @@ function crearTablasFacturacion(db) {
   agregar('catalogo_servicios', 'objeto_imp', "TEXT NOT NULL DEFAULT '02' CHECK(objeto_imp IN ('01', '02', '03', '04'))");
   agregar('catalogo_servicios', 'tasa_iva', 'INTEGER NOT NULL DEFAULT 16 CHECK(tasa_iva BETWEEN 0 AND 100)');
   // Sucursales: el código postal de expedición (LugarExpedicion). Vacío: se usa EMISOR_CP del .env.
+  // F3 (2026-10-27): el entorno de cada factura, y el entorno del UID del cliente y de la serie (un UID o una serie de sandbox no existen en producción).
+  agregar('facturas', 'entorno', `TEXT NOT NULL DEFAULT 'sandbox' CHECK(entorno IN (${lista(ENTORNOS)}))`);
+  agregar('facturas', 'conceptos_json', 'TEXT'); // los renglones tal como se mandaron a timbrar (para revisar y para sustituir)
+  agregar('facturas', 'enviar_correo', 'INTEGER NOT NULL DEFAULT 0 CHECK(enviar_correo IN (0, 1))');
+  agregar('clientes_fiscales', 'uid_entorno', `TEXT CHECK(uid_entorno IS NULL OR uid_entorno IN (${lista(ENTORNOS)}))`);
+  db.exec("UPDATE clientes_fiscales SET uid_entorno = 'sandbox' WHERE uid_facturacom IS NOT NULL AND uid_entorno IS NULL"); // hasta hoy solo se ha conectado sandbox
+  agregar('series_factura', 'entorno', `TEXT NOT NULL DEFAULT 'sandbox' CHECK(entorno IN (${lista(ENTORNOS)}))`);
+  // Una sola factura vigente por orden EN CADA ENTORNO (las canceladas no cuentan: así se puede cancelar y sustituir). La de la F1 no distinguía el
+  // entorno: una de prueba habría bloqueado la real. Es un índice (no datos): se reemplaza sin tocar ninguna fila.
+  db.exec('DROP INDEX IF EXISTS idx_facturas_vigente_por_orden');
+  db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_facturas_vigente_por_orden_entorno ON facturas(lead_id, entorno)
+    WHERE lead_id IS NOT NULL AND tipo_documento = 'factura' AND estatus IN (${lista(ESTATUS_VIGENTES)})`);
   agregar('sucursales', 'cp_expedicion', "TEXT CHECK(cp_expedicion IS NULL OR (length(cp_expedicion) = 5 AND cp_expedicion NOT GLOB '*[^0-9]*'))");
 }
 
@@ -164,3 +176,4 @@ module.exports = crearTablasFacturacion;
 module.exports.ESTATUS = ESTATUS;
 module.exports.ESTATUS_VIGENTES = ESTATUS_VIGENTES;
 module.exports.TIPOS_DOCUMENTO = TIPOS_DOCUMENTO;
+module.exports.ENTORNOS = ENTORNOS;

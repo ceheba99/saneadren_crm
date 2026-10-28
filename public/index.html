@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Saneadren · Cotizaciones y Servicios</title>
-<link rel="stylesheet" href="styles.css?v=fx3">
+<link rel="stylesheet" href="styles.css?v=fx4">
 <link rel="stylesheet" href="servicios-tabla.css">
 <link rel="stylesheet" href="flujo.css?v=cel1">
 </head>
@@ -928,6 +928,12 @@
         <div id="cobranza-orden"></div>
       </div>
 
+      <!-- Factura electrónica (CFDI) de la orden, con factura.com (F3, 2026-10-27): solo quien puede facturar. -->
+      <div class="modal-section perm-facturacion-timbrar" id="seccion-cfdi" data-plegable="cfdi" hidden>
+        <div class="seccion-tit">🧾 Factura electrónica (CFDI)</div>
+        <div id="cfdi-orden"></div>
+      </div>
+
       <!-- Gastos que generó esta orden (diésel, casetas, renta de equipo, disposición…): van a Cuentas por pagar con su número de orden. -->
       <!-- Encuesta de satisfacción: el enlace (QR de la orden) y lo que contestó el cliente (2026-10-26). -->
       <div class="modal-section" id="seccion-encuesta" data-plegable="encuesta" hidden>
@@ -1731,9 +1737,9 @@
 <script src="solicitudes.js?v=rev1"></script>
 <script src="carga-generador.js?v=con1"></script>
 <script src="sucursales.js?v=perm2"></script>
-<script src="facturacion.js?v=fx5"></script>
+<script src="facturacion.js?v=fx6"></script>
 <script src="encuestas.js?v=enc1"></script>
-<script src="app.js?v=mk1"></script>
+<script src="app.js?v=f3a"></script>
 <script src="personal.js?v=ed1"></script>
 <script src="buscador.js?v=suc1"></script>
 <script src="demo.js?v=demo1"></script>

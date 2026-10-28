@@ -104,6 +104,10 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
   const servicioFact = (await pedir('GET', '/servicios', A))[1][0];
   exigir(await pedir('POST', '/facturacion/clientes/' + clienteFiscal.id, A, { rfc: 'COB010203AB1', razon_social: 'Cobalto Fiscal', cp: '76087', regimen: '601', uso_cfdi: 'G03', correo: 'fiscal@cobalto.mx' }), 'datos fiscales de un cliente');
   exigir(await pedir('PUT', '/facturacion/servicios/' + servicioFact.id, A, { clave_prod_serv: '76121600', clave_unidad: 'E48' }), 'clave del SAT de un servicio');
+  // Timbrado (F3, 2026-10-27): una orden del cliente con datos fiscales y su factura ya timbrada (se escribe en la base: la prueba no se conecta con factura.com).
+  const OF = await cotizar(T.Valeria, 'Valeria', clienteFiscal, 'Servicio Cobalto', 3519.27, true);
+  { const { DatabaseSync } = require('node:sqlite'); const d = new DatabaseSync(DB);
+    d.prepare("INSERT INTO facturas (lead_id, sucursal_id, estatus, num_order, entorno, receptor_rfc, receptor_razon_social, metodo_pago, forma_pago, subtotal_cent, iva_cent, total_cent, serie, folio, cfdi_uid, uuid) VALUES (?, ?, 'timbrada', 'FOTO-OF', 'sandbox', 'COB010203AB1', 'COBALTO FISCAL', 'PUE', '03', 351927, 56308, 408235, 'F', '1', 'foto-uid', '5A1D0C0B-F070-4C0B-8000-00000000F070')").run(OF.id, qro.id); d.close(); }
   // Fase 4 (2026-10-27): presupuesto del mes propuesto por Gil (Gerente de marketing) y un gasto de marketing.
   const MES = HOY.slice(0, 7);
   exigir(await pedir('PUT', '/marketing/presupuestos/' + MES, T.Gil, { lineas: { pauta: 17345.67 } }), 'presupuesto de marketing');
@@ -156,6 +160,7 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
       ['cpFact', 'Código postal de expedición de las facturas (pantalla Facturación)', ['31416']],
       ['claveFact', 'Clave del SAT de un servicio (pantalla Facturación)', ['76121600']],
       ['fiscalCli', 'Datos fiscales de un cliente (razón social para facturar)', ['COBALTO FISCAL']],
+      ['cfdiFact', 'Factura timbrada de una orden (folio fiscal / UUID)', ['5A1D0C0B-F070-4C0B-8000-00000000F070']],
     ]],
     ['Marketing', [
       ['rubi', 'Publicación de Mara (Marketing) para Querétaro', ['Rubí']],
@@ -178,7 +183,7 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
   const rutasGet = [];
   for (const f of fs.readdirSync(path.join(__dirname, '..', 'server')).filter(f => f.endsWith('.js')))
     for (const m of fs.readFileSync(path.join(__dirname, '..', 'server', f), 'utf8').matchAll(/app\.get\(\s*'\/api(\/[^']+)'/g)) rutasGet.push(m[1]);
-  const ids = new Set([O1, Q2, O3, O4].map(x => x.id).concat([cAmbar, cBerilo, cDiamante, cCoral, clienteFiscal].map(c => c.id)));
+  const ids = new Set([O1, Q2, O3, O4].map(x => x.id).concat([cAmbar, cBerilo, cDiamante, cCoral, clienteFiscal, OF].map(c => c.id)));
   for (const r of ['/finanzas/cxp?vista=todas', '/compras/solicitudes?estado=', '/compras/ordenes', '/personal', '/prospeccion', '/marketing/publicaciones?desde=' + dia(-40) + '&hasta=' + dia(50), '/marketing/proyectos', '/marketing/ideas']) {
     const [, j] = await pedir('GET', r, A); for (const x of (Array.isArray(j) ? j : j.lista || j.items || [])) if (x && x.id) ids.add(x.id);
   }
@@ -229,6 +234,7 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
     ['configuraFact', 'Cambiar la configuración de facturación (CP de expedición de una sucursal)'],
     ['claveServicio', 'Cambiar la clave del SAT de un servicio'],
     ['capturaFiscal', 'Capturar los datos fiscales de un cliente'],
+    ['timbra', 'Timbrar la factura (CFDI) de una orden'],
     ['capturaRes', 'Capturar los resultados (alcance, me gusta…) de una publicación ya publicada'],
   ];
   const ok = r => r[0] === 200 || r[0] === 201;
@@ -264,6 +270,7 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
     VE[rol].mkEnCxp = /Pauta Turquesa/.test((await pedir('GET', '/finanzas/cxp?vista=todas', t))[2] || '');
     VE[rol].configuraFact = ok(await pedir('PUT', '/facturacion/sucursales/' + qro.id, t, { cp_expedicion: '31416' }));
     VE[rol].capturaFiscal = ok(await pedir('POST', '/facturacion/clientes/' + clienteFiscal.id, t, { rfc: 'ABC010203AB' + String.fromCharCode(65 + ROLES.findIndex(r => r[0] === rol)), razon_social: 'Prueba de ' + rol }));
+    { const [st] = await pedir('POST', '/facturacion/ordenes/' + OF.id + '/timbrar', t, { forma_pago: '03' }); VE[rol].timbra = ![401, 403, 404].includes(st); } // ya está timbrada: quien puede recibe 409, quien no, 403/404
     VE[rol].claveServicio = ok(await pedir('PUT', '/facturacion/servicios/' + servicioFact.id, t, { clave_prod_serv: '76121600', clave_unidad: 'E48' }));
     const nuevaPub = exigir(await pedir('POST', '/marketing/publicaciones', T.Mara, { titulo: 'Por aprobar ' + rol, redes: ['tiktok'], formato: 'video', fecha: dia(5), copy: 'Copy', sucursal: qro.id }), 'publicación por aprobar');
     const enRevision = exigir(await pedir('POST', '/marketing/publicaciones/' + nuevaPub.id + '/estado', T.Mara, { accion: 'enviar', version: nuevaPub.version }), 'enviar a revisión');
@@ -327,12 +334,14 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
       admin: { registraGasto: 1, mkEnCxp: 0 }, marketing_gerente: { registraGasto: 1 }, ...Object.fromEntries(['marketing', 'gerente', 'ventas', 'atencion', 'tecnico', 'costos'].map(r => [r, { registraGasto: 0, mkEnCxp: 0 }])) }],
     ['2026-10-27', 'Resultados de cada publicación (alcance, me gusta, mensajes…): los capturan Marketing, el Gerente de marketing y Dirección, cuando ya está publicada; los demás roles no.', {
       admin: { capturaRes: 1 }, marketing: { capturaRes: 1 }, marketing_gerente: { capturaRes: 1 }, ...Object.fromEntries(['gerente', 'ventas', 'atencion', 'tecnico', 'costos'].map(r => [r, { capturaRes: 0 }])) }],
-    ['2026-10-27', 'Facturación (conexión con factura.com, código postal de expedición y series de cada sucursal): la ve y la cambia solo Dirección; ningún otro rol, tampoco por la lista de sucursales.', {
-      admin: { cpFact: 1, configuraFact: 1 }, ...Object.fromEntries(['gerente', 'ventas', 'atencion', 'tecnico', 'costos', 'marketing', 'marketing_gerente'].map(r => [r, { cpFact: 0, configuraFact: 0 }])) }],
-    ['2026-10-27', 'Claves del SAT de los servicios (clave de producto y unidad para facturar): las ve y las cambia solo Dirección; los demás roles ven los servicios sin esos datos.', {
-      admin: { claveFact: 1, claveServicio: 1 }, ...Object.fromEntries(['gerente', 'ventas', 'atencion', 'tecnico', 'costos', 'marketing', 'marketing_gerente'].map(r => [r, { claveFact: 0, claveServicio: 0 }])) }],
+    ['2026-10-27', 'Facturación (conexión con factura.com, código postal de expedición y series de cada sucursal): la cambia solo Dirección. El código postal de expedición lo ve además quien timbra (Gerente y quien factura), porque sale en cada factura; los demás roles no lo ven, tampoco por la lista de sucursales. (Ajustada el 2026-10-27 al llegar el timbrado: «ven, no cambian».)', {
+      admin: { cpFact: 1, configuraFact: 1 }, gerente: { cpFact: 1, configuraFact: 0 }, ...Object.fromEntries(['ventas', 'atencion', 'tecnico', 'costos', 'marketing', 'marketing_gerente'].map(r => [r, { cpFact: 0, configuraFact: 0 }])) }],
+    ['2026-10-27', 'Claves del SAT de los servicios (clave de producto y unidad para facturar): las cambia solo Dirección. Las ve además quien timbra (Gerente y quien factura), porque salen en cada renglón de la factura; los demás roles ven los servicios sin esos datos. (Ajustada el 2026-10-27 al llegar el timbrado: «ven, no cambian».)', {
+      admin: { claveFact: 1, claveServicio: 1 }, gerente: { claveFact: 1, claveServicio: 0 }, ...Object.fromEntries(['ventas', 'atencion', 'tecnico', 'costos', 'marketing', 'marketing_gerente'].map(r => [r, { claveFact: 0, claveServicio: 0 }])) }],
     ['2026-10-27', 'Datos fiscales de los clientes (RFC, razón social, código postal, régimen, uso de CFDI y correo para facturar): los ven y los capturan Dirección, el Gerente y quien tenga el permiso «Datos fiscales de clientes» (quien factura); los demás roles no los ven ni los cambian.', {
       admin: { fiscalCli: 1, capturaFiscal: 1 }, gerente: { fiscalCli: 1, capturaFiscal: 1 }, ...Object.fromEntries(['ventas', 'atencion', 'tecnico', 'costos', 'marketing', 'marketing_gerente'].map(r => [r, { fiscalCli: 0, capturaFiscal: 0 }])) }],
+    ['2026-10-27', 'Timbrar facturas (CFDI) y ver las facturas de una orden (folio fiscal, receptor, XML y PDF): Dirección, el Gerente y quien tenga el permiso «Timbrar facturas» (quien factura); los demás roles no.', {
+      admin: { timbra: 1, cfdiFact: 1 }, gerente: { timbra: 1, cfdiFact: 1 }, ...Object.fromEntries(['ventas', 'atencion', 'tecnico', 'costos', 'marketing', 'marketing_gerente'].map(r => [r, { timbra: 0, cfdiFact: 0 }])) }],
     ['2026-10-27', 'Banco de ideas: las proponen, votan y comentan Marketing, Gerente de marketing y Dirección; las aprueban o descartan solo Dirección y el Gerente de marketing. Los demás roles no ven las ideas.', {
       admin: { agata: 1, votaIdea: 1, decideIdea: 1 }, marketing_gerente: { agata: 1, votaIdea: 1, decideIdea: 1 }, marketing: { agata: 1, votaIdea: 1, decideIdea: 0 },
       ...Object.fromEntries(['gerente', 'ventas', 'atencion', 'tecnico', 'costos'].map(r => [r, { agata: 0, votaIdea: 0, decideIdea: 0 }])) }],

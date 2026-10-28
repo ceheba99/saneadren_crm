@@ -224,6 +224,140 @@ const Facturacion = (() => {
     const uso = r.closest('details').querySelector('[data-fx-uso]'); uso.innerHTML = opcionesUso(r.value, uso.value);
   });
 
-  return { cargar, cargarCliente };
+  // ---------- Factura electrónica de una orden (F3, 2026-10-27) ----------
+  // En la ficha de la orden de servicio, para quien puede facturar (Dirección, Gerente y el permiso «Timbrar facturas»). Muestra lo que se va a
+  // timbrar (receptor, conceptos con sus claves del SAT, IVA y total) y lo que falta; el botón solo se activa cuando todo está completo.
+  // En sandbox o en el demo se avisa en grande que es de PRUEBA. Nada de esto toca la cobranza salvo una factura de producción.
+  let ORD = null, timbrando = false, TURNO = 0;
+  const pesos = v => (typeof formatoMoneda === 'function' ? formatoMoneda(v) : '$' + Number(v).toFixed(2));
+  const ESTADOS = { pendiente: ['Sin timbrar', 'fx-sandbox'], timbrando: ['Sin respuesta: verifica', 'fx-mal'], timbrada: ['Timbrada', 'fx-ok'], borrador_error: ['Borrador: corregir', 'fx-mal'], cancelacion_solicitada: ['Cancelación en proceso', 'fx-sandbox'], cancelada: ['Cancelada', 'fx-inactivo'] };
+  async function pedirCompleto(ruta, cuerpo, metodo = 'GET') {
+    const r = await api('/facturacion' + ruta, metodo !== 'GET' ? { method: metodo, body: JSON.stringify(cuerpo ?? {}) } : undefined);
+    return { ok: r.ok, status: r.status, j: await r.json().catch(() => ({})) };
+  }
+  async function cargarOrden(lead, opciones = {}) {
+    const sec = $('seccion-cfdi'), cont = $('cfdi-orden'); if (!sec || !cont) return;
+    if (!lead || lead.estatus !== 'ganado' || (typeof Permisos !== 'undefined' && !Permisos.puede('facturacion.timbrar'))) { sec.hidden = true; ORD = null; return; }
+    sec.hidden = false;
+    const id = Number(lead.id), turno = ++TURNO; // si se abre otra ficha mientras carga, esta respuesta se descarta
+    if (!ORD || ORD.id !== id) cont.innerHTML = '<p class="util-45" role="status">Cargando…</p>';
+    const q = new URLSearchParams(Object.entries(opciones).filter(([, v]) => v !== undefined && v !== '' && v !== null)).toString();
+    const r = await pedirCompleto('/ordenes/' + id + (q ? '?' + q : ''));
+    if (turno !== TURNO) return;
+    if (!r.ok) { cont.innerHTML = `<p class="aviso-error-carga" role="alert">${esc(r.j.error || 'No se pudo cargar la factura')}</p>`; return; }
+    ORD = { id, opciones: { ...opciones }, ...r.j, extra: ORD?.id === id ? ORD.extra : null };
+    pintarOrden();
+  }
+  function tarjetaFactura(f) {
+    const [txt, clase] = ESTADOS[f.estatus] || [f.estatus, ''];
+    const prueba = f.entorno !== 'prod' ? `<span class="fx-badge fx-sandbox">${f.entorno === 'demo' ? 'DEMO' : 'PRUEBA'}</span>` : '';
+    return `<div class="fx-factura" data-fx-factura="${Number(f.id)}">
+      <div><b>${esc(f.serie || '')}${f.folio ? '-' + esc(f.folio) : ''}</b> ${prueba} <span class="${clase}">${esc(txt)}</span> · ${pesos(f.total)}
+        <small>${esc(f.receptor_razon_social)} · ${esc(f.receptor_rfc)} · ${esc(f.forma_pago || '')} ${esc(f.metodo_pago || '')}${f.uuid ? ' · Folio fiscal ' + esc(f.uuid) : ''}${f.fecha_timbrado ? ' · ' + esc(String(f.fecha_timbrado).replace('T', ' ').slice(0, 16)) : ''}</small>
+        ${f.error && f.estatus !== 'timbrada' ? `<small class="fx-mal">${esc(f.error)}</small>` : ''}
+      </div>
+      <div class="btn-group">
+        ${f.tiene_xml ? `<button type="button" class="btn btn-outline" data-fx-bajar="xml">XML</button>` : ''}
+        ${f.estatus === 'timbrada' && (f.tiene_pdf || f.entorno !== 'demo') ? `<button type="button" class="btn btn-outline" data-fx-bajar="pdf">PDF</button>` : ''}
+        ${f.estatus === 'timbrando' ? '<button type="button" class="btn btn-secundario" data-fx-verificar>Verificar</button>' : ''}
+      </div>
+    </div>`;
+  }
+  function pintarOrden() {
+    const o = ORD, p = o.preparacion, cont = $('cfdi-orden');
+    const timbrada = o.facturas.some(f => f.entorno === o.entorno && ['timbrada', 'cancelacion_solicitada'].includes(f.estatus));
+    const banda = o.prueba ? `<p class="fx-demo ayuda">🧪 ${o.entorno === 'demo' ? 'Demo: la factura se SIMULA (no se conecta con factura.com).' : 'Conexión de PRUEBAS (sandbox): la factura no tiene validez fiscal y no cambia la cobranza de la orden.'}</p>` : '';
+    const tarjetas = o.facturas.map(tarjetaFactura).join(''); // cada tarjeta escapa lo suyo
+    const lista = o.facturas.length ? `<div class="fx-facturas">${tarjetas}</div>` : '<p class="util-45">Esta orden todavía no tiene factura electrónica.</p>';
+    let form = '';
+    if (p && !timbrada) {
+      const r = p.resumen, op = o.opciones;
+      const fiscales = p.fiscales.length ? `<select data-fx-o="cliente_fiscal_id">${p.fiscales.map(f => `<option value="${Number(f.id)}"${r.receptor && r.receptor.id === f.id ? ' selected' : ''}>${esc(f.razon_social || 'Sin razón social')} · ${esc(f.rfc)}${f.listo ? '' : ' (incompletos)'}</option>`).join('')}</select>` : '<span class="fx-mal">Sin datos fiscales (captúralos en la ficha del cliente)</span>';
+      const usos = `<select data-fx-o="uso_cfdi"><option value="">— elige —</option>${p.usos.map(u => `<option value="${esc(u.clave)}"${u.clave === r.uso_cfdi ? ' selected' : ''}>${esc(u.clave)} · ${esc(u.nombre)}</option>`).join('')}</select>`;
+      const formas = `<select data-fx-o="forma_pago"><option value="">— elige cómo pagó o pagará —</option>${p.formas_pago.map(f => `<option value="${esc(f.clave)}"${f.clave === r.forma_pago ? ' selected' : ''}>${esc(f.clave)} · ${esc(f.nombre)}</option>`).join('')}</select>`;
+      const filas = r.conceptos.map(c => `<tr><td>${esc(c.descripcion)}<small>${esc(c.clave_prod_serv)} · ${esc(c.clave_unidad)} ${esc(c.unidad)}</small></td><td class="num">${esc(Number(c.cantidad).toString())}</td><td class="num">${pesos(Number(c.valor_unitario))}</td><td class="num">${pesos(Number(c.importe))}</td></tr>`).join('');
+      const totales = r.total_cent != null ? `<tr><th colspan="3">Subtotal</th><td class="num">${pesos(r.subtotal_cent / 100)}</td></tr><tr><th colspan="3">IVA ${Number(r.tasa)} % trasladado</th><td class="num">${pesos(r.iva_cent / 100)}</td></tr><tr><th colspan="3">Total</th><td class="num"><b>${pesos(r.total_cent / 100)}</b></td></tr>` : '';
+      const correo = r.receptor?.correo ? ' (' + esc(r.receptor.correo) + ')' : '';
+      const casillaCorreo = o.entorno === 'prod' ? `<label class="fx-check"><input type="checkbox" data-fx-o="enviar_correo"${op.enviar_correo === '0' ? '' : ' checked'}> Enviar la factura al correo del cliente${correo}</label>` : '';
+      form = `<div class="fx-preparar">
+        <h4>Nueva factura · PUE (pago en una sola exhibición)</h4>
+        <div class="fx-suc-campos">
+          <label>Receptor (datos fiscales del cliente)${fiscales}</label>
+          <label>Uso del CFDI${usos}</label>
+          <label>Forma de pago${formas}</label>
+          ${casillaCorreo}
+        </div>
+        <p class="ayuda">Serie ${esc(r.serie || '—')} · lugar de expedición ${esc(r.lugar_expedicion || '—')} · moneda MXN · orden ${esc(r.orden.folio)}</p>
+        ${r.conceptos.length ? `<div class="tabla-scroll"><table class="fx-conceptos"><thead><tr><th>Concepto</th><th class="num">Cant.</th><th class="num">Valor unitario</th><th class="num">Importe</th></tr></thead><tbody>${filas}</tbody><tfoot>${totales}</tfoot></table></div>` : ''}
+        ${p.errores.length ? `<div class="aviso-error-carga" role="alert"><b>Falta para poder timbrar:</b><ul>${p.errores.map(e => `<li>${esc(e)}</li>`).join('')}</ul></div>` : ''}
+        ${p.avisos.map(a => `<p class="ayuda">⚠ ${esc(a)}</p>`).join('')}
+        ${p.confirmar.length && !p.errores.length ? `<label class="fx-check fx-confirmar"><input type="checkbox" data-fx-confirmar> ${esc(p.confirmar.join(' '))}</label>` : ''}
+        ${o.extra || ''}
+        <button type="button" class="btn btn-primario" data-fx-timbrar ${p.errores.length ? 'disabled' : ''}>🧾 Timbrar factura${o.prueba ? ' de prueba' : ''}</button>
+      </div>`;
+    }
+    cont.innerHTML = banda + lista + form;
+  }
+  const opcionesForm = () => {
+    const cont = $('cfdi-orden'), v = k => cont.querySelector(`[data-fx-o="${k}"]`);
+    return { cliente_fiscal_id: v('cliente_fiscal_id')?.value, uso_cfdi: v('uso_cfdi')?.value, forma_pago: v('forma_pago')?.value, enviar_correo: v('enviar_correo') ? (v('enviar_correo').checked ? '1' : '0') : undefined };
+  };
+  $('cfdi-orden')?.addEventListener('change', e => {
+    if (!ORD || !e.target.closest('[data-fx-o]')) return;
+    const op = opcionesForm();
+    if (e.target.dataset.fxO === 'cliente_fiscal_id') op.uso_cfdi = ''; // otro receptor: su uso predeterminado
+    ORD.extra = null; cargarOrden({ id: ORD.id, estatus: 'ganado' }, op);
+  });
+  $('cfdi-orden')?.addEventListener('click', async e => {
+    if (!ORD) return;
+    const bajar = e.target.closest('[data-fx-bajar]');
+    if (bajar) {
+      const fid = Number(bajar.closest('[data-fx-factura]').dataset.fxFactura), tipo = bajar.dataset.fxBajar;
+      bajar.disabled = true;
+      try {
+        const r = await api('/facturacion/facturas/' + fid + '/' + tipo);
+        if (!r.ok) throw Error((await r.json().catch(() => ({}))).error || 'No se pudo descargar');
+        const nombre = (/filename="([^"]+)"/.exec(r.headers.get('Content-Disposition') || '') || [])[1] || 'factura.' + tipo;
+        const url = URL.createObjectURL(await r.blob()), a = document.createElement('a'); a.href = url; a.download = nombre; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 2000);
+      } catch (err) { toast(err.message); } finally { bajar.disabled = false; }
+      return;
+    }
+    const ver = e.target.closest('[data-fx-verificar]');
+    if (ver) {
+      ver.disabled = true;
+      const r = await pedirCompleto('/facturas/' + Number(ver.closest('[data-fx-factura]').dataset.fxFactura) + '/verificar', {}, 'POST');
+      toast(r.ok ? (r.j.mensaje || (r.j.estado === 'timbrada' ? 'Sí quedó timbrada' : 'Estado: ' + r.j.estado)) : (r.j.error || 'No se pudo verificar'));
+      return cargarOrden({ id: ORD.id, estatus: 'ganado' }, ORD.opciones);
+    }
+    const vincular = e.target.closest('[data-fx-vincular]');
+    if (vincular) {
+      vincular.disabled = true;
+      const r = await pedirCompleto('/fiscales/' + Number(vincular.dataset.fxFiscal) + '/vincular', { uid: vincular.dataset.fxVincular }, 'POST');
+      toast(r.ok ? 'Listo: ya puedes timbrar' : (r.j.error || 'No se pudo')); ORD.extra = null;
+      return cargarOrden({ id: ORD.id, estatus: 'ganado' }, ORD.opciones);
+    }
+    const btn = e.target.closest('[data-fx-timbrar]'); if (!btn || timbrando) return;
+    const r0 = ORD.preparacion.resumen, conf = $('cfdi-orden').querySelector('[data-fx-confirmar]');
+    if (conf && !conf.checked) { toast('Marca la casilla de la forma de pago (PUE) para continuar'); conf.focus(); return; }
+    const ok = await solicitarDialogo({ titulo: ORD.prueba ? 'Timbrar factura de PRUEBA' : 'Timbrar factura', aceptar: 'Sí, timbrar',
+      mensaje: `${ORD.prueba ? 'PRUEBA sin validez fiscal.\n\n' : 'Esta factura tiene validez fiscal ante el SAT y no se puede borrar (solo cancelar).\n\n'}Receptor: ${r0.receptor.razon_social} (${r0.receptor.rfc})\nTotal: ${pesos(r0.total_cent / 100)} · ${r0.forma_pago} · PUE · uso ${r0.uso_cfdi}` });
+    if (!ok) return;
+    timbrando = true; btn.disabled = true; btn.textContent = 'Timbrando… (puede tardar hasta un minuto)';
+    try {
+      const r = await pedirCompleto('/ordenes/' + ORD.id + '/timbrar', { ...opcionesForm(), confirmar: !!conf?.checked }, 'POST');
+      if (r.ok) {
+        ORD.extra = null;
+        toast(r.j.estado === 'timbrada' ? `Factura ${r.j.factura.serie || ''}-${r.j.factura.folio || ''} timbrada` : (r.j.mensaje || 'No se timbró')); // sin HTML
+        for (const a of r.j.avisos || []) toast(a);
+      } else if (r.j.codigo === 'CLIENTE_EXISTE') {
+        ORD.extra = `<div class="cuentas-aviso"><p>${esc(r.j.error)}</p>${r.j.candidatos.map(c => `<p>${esc(c.razon_social)} · CP ${esc(c.cp)} · régimen ${esc(c.regimen)} <button type="button" class="btn btn-outline" data-fx-vincular="${esc(c.uid)}" data-fx-fiscal="${Number(r.j.cliente_fiscal_id)}">Es este</button></p>`).join('')}</div>`;
+      } else if (r.status >= 500 || !r.j.error) toast('No se sabe si quedó timbrada (el servidor no contestó a tiempo). Espera un minuto y vuelve a abrir la orden: no la mandes otra vez sin revisar.'); // sin HTML
+      else toast(r.j.error);
+      await cargarOrden({ id: ORD.id, estatus: 'ganado' }, ORD.opciones);
+      if (r.ok && typeof Finanzas !== 'undefined' && r.j.factura?.entorno === 'prod') Finanzas.pintarCobranzaOrden({ id: ORD.id, estatus: 'ganado' });
+    } finally { timbrando = false; }
+  });
+
+  return { cargar, cargarCliente, cargarOrden };
 })();
 window.Facturacion = Facturacion;

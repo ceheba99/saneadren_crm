@@ -37,7 +37,7 @@ const NUEVAS = ['clientes_fiscales', 'facturas', 'facturas_log', 'factura_ventas
   const sv = db.prepare('SELECT * FROM catalogo_servicios LIMIT 1').get();
   revisa(sv && sv.objeto_imp === '02' && sv.tasa_iva === 16 && sv.clave_prod_serv === null && sv.clave_unidad === null, 'los servicios existentes quedan con ObjetoImp 02, IVA 16 % y SIN claves del SAT (no se inventan)', sv);
   const indices = db.prepare("SELECT name FROM sqlite_master WHERE type = 'index'").all().map(r => r.name);
-  revisa(['idx_facturas_vigente_por_orden', 'idx_facturas_cfdi_uid', 'idx_facturas_uuid', 'idx_clientes_fiscales_uid'].every(i => indices.includes(i)), 'existen los candados (índices únicos parciales)');
+  revisa(['idx_facturas_vigente_por_orden_entorno', 'idx_facturas_cfdi_uid', 'idx_facturas_uuid', 'idx_clientes_fiscales_uid'].every(i => indices.includes(i)), 'existen los candados (índices únicos parciales)');
 
   console.log('2. Candados y validaciones de la base');
   db.prepare("INSERT INTO clientes (telefono, telefono_normalizado, nombre) VALUES ('442 111 2233', '4421112233', 'Cliente de prueba')").run();
@@ -54,6 +54,10 @@ const NUEVAS = ['clientes_fiscales', 'facturas', 'facturas_log', 'factura_ventas
   db.prepare("UPDATE facturas SET estatus = 'cancelada' WHERE lead_id = ? AND estatus = 'timbrada'").run(L1);
   revisa(factura(L1, 'timbrada') === null, 'cancelada la anterior, se puede timbrar la sustituta de la misma orden');
   revisa(factura(L2, 'pendiente') === null, 'otra orden no se ve afectada');
+  // F3 (2026-10-27): el lugar es por entorno: una factura de PRUEBA (sandbox) no impide la real (prod), y dos reales no caben.
+  const deProd = (lead, estatus) => falla(db, "INSERT INTO facturas (lead_id, sucursal_id, estatus, num_order, entorno) VALUES (?, ?, ?, ?, 'prod')", [lead, suc, estatus, 'P-' + lead + '-' + Math.random().toString(36).slice(2, 6)]);
+  revisa(deProd(L2, 'pendiente') === null && /UNIQUE/.test(deProd(L2, 'timbrada') || ''), 'una factura de prueba no ocupa el lugar de la real; dos reales vigentes no caben');
+  revisa(/CHECK/.test(falla(db, "INSERT INTO facturas (lead_id, sucursal_id, estatus, num_order, entorno) VALUES (?, ?, 'cancelada', 'x', 'otro')", [L2, suc]) || ''), 'el entorno solo admite sandbox, prod o demo');
   revisa(/CHECK/.test(factura(L2, 'inventado') || ''), 'un estatus inventado se rechaza');
   revisa(/NOT NULL|UNIQUE|FOREIGN/.test(falla(db, "INSERT INTO facturas (lead_id, sucursal_id, estatus) VALUES (?, ?, 'cancelada')", [L2, suc]) || ''), 'toda factura lleva su NumOrder');
   revisa(/NOT NULL/.test(falla(db, "INSERT INTO facturas (lead_id, estatus, num_order) VALUES (?, 'cancelada', 'x')", [L2]) || ''), 'toda factura lleva su sucursal (de ahí salen la serie y el CP de expedición)');

@@ -10,10 +10,14 @@ const { CATALOGOS, TIPOS_CLAVE, sincronizarCatalogos, hayCatalogo, nombreDeClave
 const { listarSeries, asignarSerie } = require('./facturacion-series');
 const { validarRFC, normalizarRazonSocial, validarCorreo, validarDatosFiscales } = require('./facturacion-validaciones');
 const { leerCatalogos } = require('./facturacion-catalogos');
+const { preparar, timbrar, resolverSinRespuesta, descargarArchivos, vistaFactura } = require('./facturacion-timbrado');
+const { vincularCliente } = require('./facturacion-clientes');
+const fs = require('fs'), path = require('path');
 
 const TIPOS = { serie_factura: 'factura', serie_pago: 'pago' };
 
-module.exports = function rutasFacturacion(app, db, h, { direccion, puede = () => false, verCliente = () => true, esDemo = () => process.env.MODO_DEMO === '1', crearCliente = () => crearClienteFactura(), env = process.env, auditar = () => {} } = {}) {
+module.exports = function rutasFacturacion(app, db, h, { direccion, puede = () => false, verCliente = () => true, esDemo = () => process.env.MODO_DEMO === '1', crearCliente = () => crearClienteFactura(), env = process.env, auditar = () => {},
+  dirArchivos = path.join(env.DB_PATH ? path.dirname(path.resolve(env.DB_PATH)) : path.join(__dirname, '..'), 'archivos') } = {}) {
   const soloDireccion = (req, res) => {
     if (direccion(req)) return false;
     res.status(403).json({ error: 'La configuración de facturación es solo de Dirección' });
@@ -253,6 +257,127 @@ module.exports = function rutasFacturacion(app, db, h, { direccion, puede = () =
       if (cp !== undefined) { db.prepare('UPDATE sucursales SET cp_expedicion = ? WHERE id = ?').run(cp, s.id); partes.push(cp ? `CP de expedición ${cp}` : 'CP de expedición del .env'); }
       auditar(req, 'catalogo', s.id, 'facturacion', `Facturación de la sucursal ${s.nombre}: ${partes.join(' · ')}`);
       res.json(sucursales().find(x => x.id === s.id));
+    });
+  }));
+
+  // ---------- Timbrado de la factura de una orden (F3, 2026-10-27) ----------
+  // Timbran Dirección, el Gerente y quien tenga el permiso «Timbrar facturas» (quien factura). La orden tiene que estar a su alcance (si no, 404).
+  // Las facturas de una orden (folio fiscal, receptor, XML y PDF) las ve solo quien puede timbrar: la demás gente ve el folio en «Crédito y factura».
+  const puedeTimbrar = req => direccion(req) || puede(req, 'facturacion.timbrar');
+  const sinPermisoTimbrar = (req, res) => { if (puedeTimbrar(req)) return false; res.status(403).json({ error: 'No tienes permiso para facturar' }); return true; };
+  const ctxDe = req => ({ config: leerConfig(env), demo: esDemo(), crearCliente, dirArchivos, usuario: { id: req.usuarioSesion?.id ?? null, nombre: req.usuarioSesion?.nombre || '' } });
+  const ordenVisible = (req, res) => {
+    const l = db.prepare('SELECT id, estatus, cliente_id FROM leads WHERE id = ?').get(Number(req.params.id)); // «leads» respeta el alcance de quien pide
+    if (!l) { res.status(404).json({ error: 'Orden no encontrada' }); return null; }
+    return l;
+  };
+  const facturaVisible = (req, res) => {
+    const f = db.prepare('SELECT * FROM facturas WHERE id = ?').get(Number(req.params.id));
+    if (!f || (f.lead_id && !db.prepare('SELECT 1 FROM leads WHERE id = ?').get(f.lead_id))) { res.status(404).json({ error: 'Factura no encontrada' }); return null; }
+    return f;
+  };
+  const opcionesDe = q => ({ cliente_fiscal_id: q.cliente_fiscal_id ? Number(q.cliente_fiscal_id) : undefined, uso_cfdi: q.uso_cfdi || undefined, forma_pago: q.forma_pago || undefined,
+    enviar_correo: q.enviar_correo === undefined ? undefined : !(q.enviar_correo === false || q.enviar_correo === '0' || q.enviar_correo === 'false'), confirmar: q.confirmar === true || q.confirmar === '1' });
+  function preparacion(leadId, op) {
+    const p = preparar(db, leadId, op, { config: leerConfig(env), demo: esDemo() }); if (!p) return null;
+    const cat = leerCatalogos(db);
+    return { errores: p.errores, avisos: p.avisos, confirmar: p.confirmar, resumen: p.resumen, formas_pago: p.formas,
+      fiscales: p.fiscales.map(f => ({ id: f.id, rfc: f.rfc, razon_social: f.razon_social, regimen: f.regimen, uso_cfdi: f.uso_cfdi, listo: validarDatosFiscales(f, cat).listo, predeterminado: !!f.predeterminado })),
+      usos: p.fiscal && cat.usos ? [...cat.usos].filter(([, u]) => !u.regimenes?.length || u.regimenes.includes(p.fiscal.regimen)).map(([clave, u]) => ({ clave, nombre: u.nombre })) : [],
+      listo: !p.errores.length };
+  }
+  const facturasDe = leadId => db.prepare('SELECT * FROM facturas WHERE lead_id = ? ORDER BY id DESC').all(leadId).map(vistaFactura);
+
+  app.get('/api/facturacion/ordenes/:id', h((req, res) => {
+    if (sinPermisoTimbrar(req, res)) return;
+    const l = ordenVisible(req, res); if (!l) return;
+    const c = estadoConfig(env);
+    res.json({ entorno: esDemo() ? 'demo' : c.entorno, prueba: esDemo() || c.entorno !== 'prod', facturas: facturasDe(l.id),
+      preparacion: l.estatus === 'ganado' ? preparacion(l.id, opcionesDe(req.query)) : null });
+  }));
+
+  app.post('/api/facturacion/ordenes/:id/timbrar', h((req, res) => {
+    if (sinPermisoTimbrar(req, res)) return;
+    const l = ordenVisible(req, res); if (!l) return;
+    return una('orden-' + l.id, res, async () => {
+      try {
+        const r = await timbrar(db, l.id, opcionesDe(req.body || {}), ctxDe(req));
+        const f = r.factura;
+        if (r.estado === 'timbrada') auditar(req, 'orden_servicio', l.id, 'factura', `Timbró la factura ${f.serie || ''}-${f.folio || ''}${f.entorno === 'prod' ? '' : f.entorno === 'demo' ? ' (demostración)' : ' (de prueba, sandbox)'}`);
+        res.json({ estado: r.estado, factura: vistaFactura(f), avisos: r.avisos || [], mensaje: r.mensaje || null, detalles: r.detalles || [] });
+        // El XML y el PDF se bajan después de contestar (así la respuesta no pasa del minuto); si fallan, se bajan desde sus botones.
+        if (r.descargas) await r.descargas;
+      } catch (e) {
+        if (e instanceof ErrorFactura && e.confirmar) return res.status(409).json({ codigo: 'CONFIRMAR', error: e.message, confirmar: e.confirmar });
+        if (e instanceof ErrorFactura && e.candidatos) return res.status(409).json({ codigo: 'CLIENTE_EXISTE', error: e.message, candidatos: e.candidatos, cliente_fiscal_id: e.cliente_fiscal_id });
+        if (e instanceof ErrorFactura && e.faltan) return res.status(400).json({ error: e.message, faltan: e.faltan });
+        throw e;
+      }
+    });
+  }));
+
+  // Una factura que se quedó sin respuesta («timbrando»): se busca en factura.com por su número de orden. No manda nada nuevo.
+  app.post('/api/facturacion/facturas/:id/verificar', h((req, res) => {
+    if (sinPermisoTimbrar(req, res)) return;
+    const f = facturaVisible(req, res); if (!f) return;
+    if (f.estatus !== 'timbrando') return res.status(409).json({ error: 'Solo se verifica una factura que se quedó sin respuesta' });
+    if (f.entorno === 'demo' || esDemo()) return demoNo(res);
+    if (f.entorno !== leerConfig(env).entorno) return res.status(409).json({ error: `Esta factura es de ${f.entorno === 'prod' ? 'producción' : 'pruebas'} y la conexión está en otro entorno` });
+    return una('orden-' + f.lead_id, res, async () => {
+      // La misma puerta que usa el timbrado: busca por NumOrder y solo libera la factura si no existe Y ya pasó el minuto de espera.
+      const r = await resolverSinRespuesta(db, crearCliente(), f, ctxDe(req));
+      const ahora = db.prepare('SELECT * FROM facturas WHERE id = ?').get(f.id);
+      res.json({ encontrada: r.estado !== 'pendiente', estado: ahora.estatus, factura: vistaFactura(ahora), avisos: r.avisos || [], mensaje: r.mensaje || null });
+      if (r.descargas) await r.descargas;
+    });
+  }));
+
+  // El RFC ya existía en factura.com: quien factura elige cuál de esos clientes es (se comprueba que sea el mismo RFC) y vuelve a timbrar.
+  app.post('/api/facturacion/fiscales/:id/vincular', h((req, res) => {
+    if (sinPermisoTimbrar(req, res)) return;
+    const fi = db.prepare('SELECT id, cliente_id FROM clientes_fiscales WHERE id = ?').get(Number(req.params.id));
+    if (!fi || !verCliente(fi.cliente_id)) return res.status(404).json({ error: 'Datos fiscales no encontrados' });
+    const uid = String(req.body?.uid ?? '').trim();
+    if (!/^[A-Za-z0-9-]{1,64}$/.test(uid)) return res.status(400).json({ error: 'Elige un cliente de la lista' });
+    if (esDemo()) return demoNo(res);
+    return una('fiscal-' + fi.id, res, async () => {
+      await vincularCliente(crearCliente(), db, fi.id, uid);
+      auditar(req, 'cliente', fi.cliente_id, 'datos_fiscales', 'Datos fiscales: se enlazaron con su cliente de factura.com');
+      res.json({ ok: true });
+    });
+  }));
+
+  // Descargas: el XML sale de la base; el PDF del disco (si no se bajó al timbrar, se baja ahora de factura.com y se guarda).
+  const nombreArchivo = (f, ext) => `factura-${String(f.serie || '').replace(/[^A-Za-z0-9]/g, '')}${String(f.folio || f.id).replace(/[^A-Za-z0-9]/g, '')}${f.entorno === 'prod' ? '' : '-PRUEBA'}.${ext}`;
+  app.get('/api/facturacion/facturas/:id/xml', h((req, res) => {
+    if (sinPermisoTimbrar(req, res)) return;
+    const f = facturaVisible(req, res); if (!f) return;
+    const enviar = xml => res.set('Content-Type', 'application/xml; charset=utf-8').set('Content-Disposition', `attachment; filename="${nombreArchivo(f, 'xml')}"`).send(xml);
+    if (f.xml) return enviar(f.xml);
+    // Timbrada pero sin XML guardado (falló la descarga al timbrar): se baja ahora de factura.com y se guarda.
+    if (f.estatus !== 'timbrada' || !f.uuid || f.entorno === 'demo' || esDemo()) return res.status(404).json({ error: 'Esta factura no tiene XML guardado' });
+    if (f.entorno !== leerConfig(env).entorno) return res.status(409).json({ error: 'El XML no está guardado y la conexión está en otro entorno: no se puede bajar ahora' });
+    return una('xml-' + f.id, res, async () => {
+      await descargarArchivos(db, crearCliente(), f, { usuarioId: req.usuarioSesion?.id, soloXml: true });
+      const ahora = db.prepare('SELECT xml FROM facturas WHERE id = ?').get(f.id);
+      if (!ahora?.xml) return res.status(502).json({ error: 'factura.com no entregó el XML; intenta más tarde' });
+      enviar(ahora.xml);
+    });
+  }));
+  app.get('/api/facturacion/facturas/:id/pdf', h((req, res) => {
+    if (sinPermisoTimbrar(req, res)) return;
+    const f = facturaVisible(req, res); if (!f) return;
+    const enviar = ruta => res.set('Content-Type', 'application/pdf').set('Content-Disposition', `attachment; filename="${nombreArchivo(f, 'pdf')}"`).send(fs.readFileSync(ruta));
+    const dentro = r => path.resolve(r).startsWith(path.resolve(dirArchivos) + path.sep);
+    const ruta = f.pdf_path ? path.join(dirArchivos, f.pdf_path) : null;
+    if (ruta && dentro(ruta) && fs.existsSync(ruta)) return enviar(ruta);
+    if (f.estatus !== 'timbrada' || !f.uuid || f.entorno === 'demo' || esDemo()) return res.status(404).json({ error: 'Esta factura no tiene PDF' });
+    if (f.entorno !== leerConfig(env).entorno) return res.status(409).json({ error: 'El PDF no está guardado y la conexión está en otro entorno: no se puede bajar ahora' });
+    return una('pdf-' + f.id, res, async () => {
+      await descargarArchivos(db, crearCliente(), f, { dirArchivos, usuarioId: req.usuarioSesion?.id });
+      const ahora = db.prepare('SELECT pdf_path FROM facturas WHERE id = ?').get(f.id);
+      if (!ahora?.pdf_path) return res.status(502).json({ error: 'factura.com no entregó el PDF; intenta más tarde' });
+      enviar(path.join(dirArchivos, ahora.pdf_path));
     });
   }));
 };

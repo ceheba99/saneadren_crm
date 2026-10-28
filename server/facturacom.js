@@ -7,7 +7,9 @@
    · Timeout de 30 s. Reintentos SOLO en errores de red y SOLO en peticiones de lectura (GET); un POST (crear, timbrar,
      cancelar) NUNCA se reintenta aquí: antes de repetir un timbrado hay que consultar si ya existe (lo decide la F3).
    · La respuesta puede ser JSON o un archivo (PDF/XML): se detecta por el Content-Type y se devuelve como Buffer.
-   · Las formas de respuesta no son uniformes en la doc (status/response, Data/data, message texto u objeto): aquí se unifican. */
+   · Las formas de respuesta no son uniformes en la doc (status/response, Data/data, message texto u objeto): aquí se unifican.
+   · F3 (2026-10-27): de un error de timbrado se conservan SOLO identificadores (lista cerrada, ver idsDeError): el UID del borrador que crea
+     «BorradorSiFalla» y el uid/uuid del aviso «Ya existe un CFDI con folio y serie». Sin ellos no se podría recuperar el borrador ni evitar un duplicado. */
 const { leerConfig } = require('./facturacion-config');
 
 const TIMEOUT_MS = 30000;
@@ -20,18 +22,41 @@ class ErrorFactura extends Error {
     this.httpStatus = extra.httpStatus ?? null;
     this.detalles = extra.detalles || []; // [{ campo, mensaje }] cuando la API señala campos
     this.reintentable = !!extra.reintentable;
+    this.ids = extra.ids || {}; // solo identificadores (idsDeError): borrador, uid, uuid
+    this.rechazo = !!extra.rechazo; // factura.com contestó un «no» explícito (ver pedirUna): solo entonces es seguro decir que no se creó nada
   }
 }
 
+// Texto de un mensaje de factura.com tal como se muestra: sin etiquetas HTML (sandbox manda «<strong>…</strong>») y con los acentos bien. Algunos mensajes
+// llegan con la UTF-8 codificada dos veces («facturaciÃ³n», visto en sandbox el 2026-10-27): se repara solo si al hacerlo queda UTF-8 válido.
+function textoLegible(t) {
+  let s = String(t ?? '');
+  if (/[\u00C2\u00C3][\u0080-\u00BF]/.test(s)) { const r = Buffer.from(s, 'latin1').toString('utf8'); if (!r.includes('\uFFFD')) s = r; }
+  return s.replace(/<[^>]{0,200}>/g, '').replace(/\s+/g, ' ').trim();
+}
 // «message» puede ser texto, o un objeto { campo: ["mensaje", …] } (errores de validación de la doc de clientes).
 function textoDeMensaje(m) {
-  if (typeof m === 'string') return { texto: m.trim(), detalles: [] };
+  if (typeof m === 'string') return { texto: textoLegible(m), detalles: [] };
+  // Error de timbrado (crear-cfdi-40): { message, messageDetail, data, status }. «data» puede traer cualquier cosa: no se usa.
+  if (m && typeof m === 'object' && (typeof m.message === 'string' || typeof m.messageDetail === 'string')) {
+    const texto = [m.message, m.messageDetail].filter(t => typeof t === 'string' && t.trim()).map(textoLegible).join(' — ');
+    return { texto, detalles: [] };
+  }
   if (m && typeof m === 'object') {
     const detalles = [];
-    for (const [campo, v] of Object.entries(m)) for (const t of Array.isArray(v) ? v : [v]) if (t != null && typeof t !== 'object') detalles.push({ campo, mensaje: String(t) });
+    for (const [campo, v] of Object.entries(m)) for (const t of Array.isArray(v) ? v : [v]) if (t != null && typeof t !== 'object') detalles.push({ campo, mensaje: textoLegible(t) });
     return { texto: detalles.map(d => d.mensaje).join(' · '), detalles };
   }
   return { texto: '', detalles: [] };
+}
+const ID_SEGURO = /^[A-Za-z0-9-]{1,64}$/; // un uid, uuid, serie o folio: letras, números y guiones (nada más se acepta)
+const idSeguro = v => (v != null && typeof v !== 'object' && ID_SEGURO.test(String(v).trim()) ? String(v).trim() : null);
+/** Los identificadores que se pueden conservar de un error (lista cerrada; el resto del cuerpo se descarta). */
+function idsDeError(c) {
+  if (!c || typeof c !== 'object') return {};
+  const d = c.draft && typeof c.draft === 'object' ? c.draft : null;
+  const borrador = d && idSeguro(d.uid) ? { uid: idSeguro(d.uid), serie: idSeguro(d.INV?.Serie), folio: idSeguro(d.INV?.Folio) } : null;
+  return { borrador, uid: idSeguro(c.uid), uuid: idSeguro(c.uuid ?? c.UUID) };
 }
 const esExito = c => c && typeof c === 'object' && !Array.isArray(c) && (c.status === 'success' || c.response === 'success') && c.status !== 'error' && c.response !== 'error';
 const esFallo = c => c && typeof c === 'object' && !Array.isArray(c) && (c.status === 'error' || c.response === 'error');
@@ -73,7 +98,10 @@ function crearClienteFactura({ config = leerConfig(), fetchImpl = globalThis.fet
     if (http >= 400 || esFallo(cuerpoJson)) {
       const { texto, detalles } = textoDeMensaje(cuerpoJson?.message ?? cuerpoJson?.messsage);
       const base = texto || (http === 401 || http === 403 ? 'factura.com no aceptó las llaves (revisa que sean las del entorno activo)' : `factura.com respondió con un error (HTTP ${http})`);
-      throw new ErrorFactura('api', limpiar(base), { httpStatus: http, detalles: detalles.map(d => ({ campo: d.campo, mensaje: limpiar(d.mensaje) })), reintentable: false });
+      // «rechazo»: factura.com dijo con claridad que NO (JSON con status/response «error» y HTTP 2xx o 4xx, salvo 408/429). Un 5xx, una página HTML o
+      // un cuerpo ilegible NO es un rechazo: pudo haberse procesado (p. ej. un 504 del balanceador después de timbrar). La F3 lo trata como «sin respuesta».
+      const rechazo = esFallo(cuerpoJson) && http < 500 && http !== 408 && http !== 429;
+      throw new ErrorFactura('api', limpiar(base), { httpStatus: http, detalles: detalles.map(d => ({ campo: d.campo, mensaje: limpiar(d.mensaje) })), reintentable: false, ids: idsDeError(cuerpoJson), rechazo });
     }
     if (cuerpoJson === null) throw new ErrorFactura('respuesta', 'factura.com respondió algo que el sistema no pudo leer.', { httpStatus: http });
     // Sin «status»/«response» también se acepta (hay catálogos y listas sin envoltorio); lo que NO se acepta es un éxito dudoso con HTTP raro.
@@ -101,4 +129,4 @@ function crearClienteFactura({ config = leerConfig(), fetchImpl = globalThis.fet
   return { config, get: (ruta, query) => pedir('GET', ruta, { query }), post: (ruta, cuerpo) => pedir('POST', ruta, { cuerpo }) };
 }
 
-module.exports = { crearClienteFactura, ErrorFactura, textoDeMensaje, esExito, esFallo, datosDe, TIMEOUT_MS };
+module.exports = { crearClienteFactura, ErrorFactura, textoDeMensaje, textoLegible, esExito, esFallo, datosDe, idsDeError, TIMEOUT_MS };

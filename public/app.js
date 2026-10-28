@@ -2040,6 +2040,7 @@ async function abrirFicha(id) {
   FlujoCRM.presentarRegistro(lead, clienteServicios);
   Finanzas.pintarEjecucion(lead);
   Finanzas.pintarCobranzaOrden(lead);
+  window.Facturacion?.cargarOrden(lead); // factura electrónica (F3): solo quien puede facturar
   Finanzas.pintarCostosOrden(lead);
   Encuestas.pintarOrden(lead);
   prepararEditorCotizacion(lead,'existente');
@@ -2221,6 +2222,7 @@ on('btn-guardar-ficha', 'click', async () => {
     SoloLectura.bloquear('#overlay-ficha [data-plegable="datos-registro"]');
     renderFichaMeta(lead);
     Finanzas.pintarCobranzaOrden(lead);
+    window.Facturacion?.cargarOrden(lead);
     await ServiciosTabla.refrescar();
   } catch (err) {
     toast('No se pudo guardar: ' + err.message);
