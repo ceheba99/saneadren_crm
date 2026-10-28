@@ -28,6 +28,7 @@ const CATALOGO = [
   ['cobros.directo', 'Cuentas por cobrar', 'Sus cobros entran ya confirmados', 'Si no lo tiene, lo que registra queda «por confirmar» para que otra persona lo revise', ['gerente', 'atencion']],
   ['cobranza.factura', 'Cuentas por cobrar', 'Crédito y datos de factura', 'Cambiar días de crédito y datos de facturación', TODOS],
   ['cobros.ajustes', 'Cuentas por cobrar', 'Ajustes, descuentos y revisión inicial', '', ['gerente']],
+  ['facturacion.fiscales', 'Facturación', 'Datos fiscales de clientes', 'Ver y capturar el RFC, la razón social, el código postal, el régimen, el uso de CFDI y el correo de un cliente para facturarle. Marcarlo a quien factura', ['gerente']],
   ['gastos.registrar', 'Cuentas por pagar', 'Registrar gastos de una orden', 'Gastos de un servicio, proveedores y plantillas', TODOS],
   ['gastos.ver_orden', 'Cuentas por pagar', 'Ver los gastos de sus órdenes', 'Todos los gastos de las órdenes donde es responsable o técnico, aunque los anote otra persona (para saber cuánto le deja la orden)', ['gerente', 'ventas']],
   ['dinero.mover', 'Cuentas por pagar', 'Mover dinero', 'Pagar a proveedores, cancelar cobros, pagos y cuentas, importar cuentas por pagar y compras directas', ['gerente', 'costos']],
@@ -95,6 +96,7 @@ const DEPENDE = {
   'dinero.mover': ['cxp.ver', 'gastos.registrar'],
   'cobros.confirmar': ['cxc.ver'],
   'cobranza.factura': ['cxc.ver'], // crédito y datos de factura: solo quien ve la cobranza
+  'facturacion.fiscales': ['contactos.ver'], // los datos fiscales cuelgan de un cliente: hay que poder verlo
   'gastos.ver_orden': ['cxp.ver', 'ordenes.ver'],
   'cobros.directo': ['cobros.registrar'],
   'cobros.ajustes': ['cobros.registrar', 'cxc.ver'],

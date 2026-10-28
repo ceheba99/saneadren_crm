@@ -177,7 +177,7 @@ require('./integridad')(app, db, h); // Revisión de integridad de los datos gua
 const personalMod = require('./personal')(app, db, h);
 require('./marketing')(app, db, h); // Marketing: calendario de publicaciones con aprobación (2026-10-26)
 require('./facturacion-db')(db); // Facturación CFDI 4.0 con factura.com (2026-10-27): tablas y columnas aditivas
-require('./facturacion-rutas')(app, db, h, { direccion: permisos.direccion, auditar: (...a) => app.locals.auditoria?.registrar(...a) }); // Pantalla «Facturación» de Ajustes: solo Dirección
+require('./facturacion-rutas')(app, db, h, { direccion: permisos.direccion, puede: permisos.puede, verCliente: id => app.locals.sucursales.verCliente(id), auditar: (...a) => app.locals.auditoria?.registrar(...a) }); // Pantalla «Facturación» de Ajustes: solo Dirección
 require('./marketing-control')(app, db, h); // Marketing: presupuesto, gastos, resultados, plan y tablero (2026-10-27)
 // Versión DEMO con datos de ejemplo: solo con MODO_DEMO=1 y en una base vacía (nunca en el sistema real).
 const demo = require('./demo')(app, db, { sesiones, PORT, SESSION_TTL_MS });

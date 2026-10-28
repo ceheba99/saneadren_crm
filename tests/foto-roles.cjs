@@ -100,7 +100,9 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
   // Catálogo del SAT de prueba (en la API real lo trae factura.com): se siembra en la base para poder validar las claves sin red.
   { const { DatabaseSync } = require('node:sqlite'); const d = new DatabaseSync(DB);
     d.prepare("INSERT INTO sat_catalogos (catalogo, clave, nombre) VALUES ('ClaveProductServ', '76121600', 'Disposición de desechos no peligrosos'), ('ClaveUnidad', 'E48', 'Unidad de servicio')").run(); d.close(); }
+  const clienteFiscal = await contacto(T.Valeria, 'Cliente Fiscal', '442 555 0188', 'Ónix Servicios');
   const servicioFact = (await pedir('GET', '/servicios', A))[1][0];
+  exigir(await pedir('POST', '/facturacion/clientes/' + clienteFiscal.id, A, { rfc: 'COB010203AB1', razon_social: 'Cobalto Fiscal', cp: '76087', regimen: '601', uso_cfdi: 'G03', correo: 'fiscal@cobalto.mx' }), 'datos fiscales de un cliente');
   exigir(await pedir('PUT', '/facturacion/servicios/' + servicioFact.id, A, { clave_prod_serv: '76121600', clave_unidad: 'E48' }), 'clave del SAT de un servicio');
   // Fase 4 (2026-10-27): presupuesto del mes propuesto por Gil (Gerente de marketing) y un gasto de marketing.
   const MES = HOY.slice(0, 7);
@@ -153,6 +155,7 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
     ['Facturación', [
       ['cpFact', 'Código postal de expedición de las facturas (pantalla Facturación)', ['31416']],
       ['claveFact', 'Clave del SAT de un servicio (pantalla Facturación)', ['76121600']],
+      ['fiscalCli', 'Datos fiscales de un cliente (razón social para facturar)', ['COBALTO FISCAL']],
     ]],
     ['Marketing', [
       ['rubi', 'Publicación de Mara (Marketing) para Querétaro', ['Rubí']],
@@ -175,7 +178,7 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
   const rutasGet = [];
   for (const f of fs.readdirSync(path.join(__dirname, '..', 'server')).filter(f => f.endsWith('.js')))
     for (const m of fs.readFileSync(path.join(__dirname, '..', 'server', f), 'utf8').matchAll(/app\.get\(\s*'\/api(\/[^']+)'/g)) rutasGet.push(m[1]);
-  const ids = new Set([O1, Q2, O3, O4].map(x => x.id).concat([cAmbar, cBerilo, cDiamante, cCoral].map(c => c.id)));
+  const ids = new Set([O1, Q2, O3, O4].map(x => x.id).concat([cAmbar, cBerilo, cDiamante, cCoral, clienteFiscal].map(c => c.id)));
   for (const r of ['/finanzas/cxp?vista=todas', '/compras/solicitudes?estado=', '/compras/ordenes', '/personal', '/prospeccion', '/marketing/publicaciones?desde=' + dia(-40) + '&hasta=' + dia(50), '/marketing/proyectos', '/marketing/ideas']) {
     const [, j] = await pedir('GET', r, A); for (const x of (Array.isArray(j) ? j : j.lista || j.items || [])) if (x && x.id) ids.add(x.id);
   }
@@ -225,6 +228,7 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
     ['mkEnCxp', 'El gasto de marketing aparece en Cuentas por pagar'],
     ['configuraFact', 'Cambiar la configuración de facturación (CP de expedición de una sucursal)'],
     ['claveServicio', 'Cambiar la clave del SAT de un servicio'],
+    ['capturaFiscal', 'Capturar los datos fiscales de un cliente'],
     ['capturaRes', 'Capturar los resultados (alcance, me gusta…) de una publicación ya publicada'],
   ];
   const ok = r => r[0] === 200 || r[0] === 201;
@@ -259,6 +263,7 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
     VE[rol].registraGasto = ok(await pedir('POST', '/marketing/gastos', t, { fecha: HOY, concepto: 'Gasto de prueba ' + rol, rubro: 'diseno', monto: 100 }));
     VE[rol].mkEnCxp = /Pauta Turquesa/.test((await pedir('GET', '/finanzas/cxp?vista=todas', t))[2] || '');
     VE[rol].configuraFact = ok(await pedir('PUT', '/facturacion/sucursales/' + qro.id, t, { cp_expedicion: '31416' }));
+    VE[rol].capturaFiscal = ok(await pedir('POST', '/facturacion/clientes/' + clienteFiscal.id, t, { rfc: 'ABC010203AB' + String.fromCharCode(65 + ROLES.findIndex(r => r[0] === rol)), razon_social: 'Prueba de ' + rol }));
     VE[rol].claveServicio = ok(await pedir('PUT', '/facturacion/servicios/' + servicioFact.id, t, { clave_prod_serv: '76121600', clave_unidad: 'E48' }));
     const nuevaPub = exigir(await pedir('POST', '/marketing/publicaciones', T.Mara, { titulo: 'Por aprobar ' + rol, redes: ['tiktok'], formato: 'video', fecha: dia(5), copy: 'Copy', sucursal: qro.id }), 'publicación por aprobar');
     const enRevision = exigir(await pedir('POST', '/marketing/publicaciones/' + nuevaPub.id + '/estado', T.Mara, { accion: 'enviar', version: nuevaPub.version }), 'enviar a revisión');
@@ -326,6 +331,8 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
       admin: { cpFact: 1, configuraFact: 1 }, ...Object.fromEntries(['gerente', 'ventas', 'atencion', 'tecnico', 'costos', 'marketing', 'marketing_gerente'].map(r => [r, { cpFact: 0, configuraFact: 0 }])) }],
     ['2026-10-27', 'Claves del SAT de los servicios (clave de producto y unidad para facturar): las ve y las cambia solo Dirección; los demás roles ven los servicios sin esos datos.', {
       admin: { claveFact: 1, claveServicio: 1 }, ...Object.fromEntries(['gerente', 'ventas', 'atencion', 'tecnico', 'costos', 'marketing', 'marketing_gerente'].map(r => [r, { claveFact: 0, claveServicio: 0 }])) }],
+    ['2026-10-27', 'Datos fiscales de los clientes (RFC, razón social, código postal, régimen, uso de CFDI y correo para facturar): los ven y los capturan Dirección, el Gerente y quien tenga el permiso «Datos fiscales de clientes» (quien factura); los demás roles no los ven ni los cambian.', {
+      admin: { fiscalCli: 1, capturaFiscal: 1 }, gerente: { fiscalCli: 1, capturaFiscal: 1 }, ...Object.fromEntries(['ventas', 'atencion', 'tecnico', 'costos', 'marketing', 'marketing_gerente'].map(r => [r, { fiscalCli: 0, capturaFiscal: 0 }])) }],
     ['2026-10-27', 'Banco de ideas: las proponen, votan y comentan Marketing, Gerente de marketing y Dirección; las aprueban o descartan solo Dirección y el Gerente de marketing. Los demás roles no ven las ideas.', {
       admin: { agata: 1, votaIdea: 1, decideIdea: 1 }, marketing_gerente: { agata: 1, votaIdea: 1, decideIdea: 1 }, marketing: { agata: 1, votaIdea: 1, decideIdea: 0 },
       ...Object.fromEntries(['gerente', 'ventas', 'atencion', 'tecnico', 'costos'].map(r => [r, { agata: 0, votaIdea: 0, decideIdea: 0 }])) }],
