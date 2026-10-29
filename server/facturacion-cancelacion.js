@@ -23,6 +23,13 @@ const MOTIVOS = {
   '03': 'No se llevó a cabo la operación',
   '04': 'Operación nominativa relacionada en una factura global',
 };
+// Lo que el SAT pone en el acuse (EstatusUUID) cuando NO acepta la solicitud, en palabras. Visto en sandbox el 2026-10-29: 205 cuando se pidió cancelar
+// pocos minutos después de timbrar (y factura.com contestó «se canceló exitosamente»); diez minutos después la misma solicitud sí se aceptó.
+const CODIGOS_ACUSE = {
+  '203': 'El SAT dice que esta factura no corresponde al emisor (código 203)',
+  '204': 'El SAT dice que a esta factura no le aplica la cancelación (código 204)',
+  '205': 'El SAT todavía no tiene registrada esta factura (código 205). Pasa cuando se cancela muy poco después de timbrarla: espera unos minutos y vuelve a pedir la cancelación',
+};
 const folioDe = f => `${f.serie || ''}-${f.folio || ''}`;
 const fmt = cent => '$' + (cent / 100).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const esAcuse = t => typeof t === 'string' && /<(\w+:)?Acuse\b/.test(t);
@@ -163,7 +170,7 @@ async function cancelar(db, f, op, ctx) {
   // El acuse del SAT trae el resultado de la solicitud: 201 (recibida) o 202 (ya estaba cancelada) son buenos; cualquier otro código es un «no».
   const codigo = esAcuse(acuse) ? (/<(?:\w+:)?EstatusUUID>\s*(\d+)\s*</.exec(acuse) || [])[1] : null;
   if (anidada.response === 'error' || (codigo && !['201', '202'].includes(codigo))) {
-    const mensaje = codigo && !['201', '202'].includes(codigo) ? `El SAT no aceptó la solicitud de cancelación (código ${codigo})` : 'factura.com no pudo pedir la cancelación';
+    const mensaje = codigo && !['201', '202'].includes(codigo) ? (CODIGOS_ACUSE[codigo] || `El SAT no aceptó la solicitud de cancelación (código ${codigo})`) : 'factura.com no pudo pedir la cancelación';
     db.transaction(() => {
       actualizar(db, f.id, { estatus: 'timbrada', motivo_cancelacion: null, folio_sustituto: null, cancelacion_solicitada_at: null, error_json: errorTexto(new ErrorFactura('api', mensaje)) });
       log(db, f, 'cancelar', 'error', mensaje, ctx.usuario?.id);
