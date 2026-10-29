@@ -190,10 +190,11 @@ test('Una sustituta que se quedó sin respuesta bloquea cancelar la original y t
 
 test('El acuse con un código distinto de 201/202 es un «no»: la factura sigue vigente', async () => {
   const db = base();
-  const sim = simulado({ ...archivos, 'POST /v4/cfdi40/create': exito(U[0], 1), 'POST /v4/cfdi40/*/cancel': () => ({ json: { response: 'success', respuestaapi: { response: 'success', acuse: ACUSE.replace('<EstatusUUID>201<', '<EstatusUUID>205<') } } }) });
+  // Forma real de sandbox (2026-10-29): factura.com dice «se canceló exitosamente», pero el acuse del SAT trae 205.
+  const sim = simulado({ ...archivos, 'POST /v4/cfdi40/create': exito(U[0], 1), 'POST /v4/cfdi40/*/cancel': () => ({ json: { response: 'success', esCancelable: 'cancelable sin aceptacion', message: 'Estimado cliente tu CFDI F1 se canceló exitosamente', respuestaapi: { response: 'success', acuse: ACUSE.replace('<EstatusUUID>201<', '<EstatusUUID>205<') } } }) });
   const ctx = ctxDe(sim); const f = (await timbrar(db, {}, ctx)).factura;
   const r = await cancelar(db, fila(db, f.id), { motivo: '02' }, ctx);
-  assert.equal(r.estado, 'timbrada'); assert.match(r.mensaje, /código 205/); assert.equal(fila(db, f.id).motivo_cancelacion, null);
+  assert.equal(r.estado, 'timbrada'); assert.match(r.mensaje, /todavía no tiene registrada esta factura \(código 205\).*espera unos minutos/); assert.equal(fila(db, f.id).motivo_cancelacion, null);
 });
 
 test('«No cancelable» y el rechazo del cliente regresan a vigente y limpian la solicitud (el acuse viejo no se queda)', async () => {
