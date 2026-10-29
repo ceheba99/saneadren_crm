@@ -167,8 +167,16 @@ function crearTablasFacturacion(db) {
   // Una sola factura vigente por orden EN CADA ENTORNO (las canceladas no cuentan: así se puede cancelar y sustituir). La de la F1 no distinguía el
   // entorno: una de prueba habría bloqueado la real. Es un índice (no datos): se reemplaza sin tocar ninguna fila.
   db.exec('DROP INDEX IF EXISTS idx_facturas_vigente_por_orden');
-  db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_facturas_vigente_por_orden_entorno ON facturas(lead_id, entorno)
+  // F5 (2026-10-29): para sustituir una factura (cancelación con motivo 01) primero se timbra la NUEVA mientras la original sigue vigente. El lugar
+  // único es por orden, entorno y «a quién sustituye»: la orden tiene una sola factura vigente propia y, cada factura, una sola sustituta vigente.
+  // (Que no queden dos facturas «normales» vigentes de la misma orden después de una sustitución lo revisa además el timbrado.)
+  db.exec('DROP INDEX IF EXISTS idx_facturas_vigente_por_orden_entorno');
+  db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_facturas_vigente_por_orden_v3 ON facturas(lead_id, entorno, COALESCE(sustituye_a, 0))
     WHERE lead_id IS NOT NULL AND tipo_documento = 'factura' AND estatus IN (${lista(ESTATUS_VIGENTES)})`);
+  // Cancelación (F5): lo último que dijo el SAT al consultar el estatus («Vigente», «Cancelado sin aceptación»…) y cuándo se consultó.
+  agregar('facturas', 'cancelacion_estado', 'TEXT');
+  agregar('facturas', 'cancelacion_revisada_at', 'TEXT');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_facturas_sustituye ON facturas(sustituye_a) WHERE sustituye_a IS NOT NULL');
   agregar('sucursales', 'cp_expedicion', "TEXT CHECK(cp_expedicion IS NULL OR (length(cp_expedicion) = 5 AND cp_expedicion NOT GLOB '*[^0-9]*'))");
 }
 

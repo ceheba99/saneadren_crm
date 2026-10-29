@@ -491,6 +491,8 @@ module.exports = function demo(app, db, { sesiones, PORT, SESSION_TTL_MS }) {
     if (dosClientes[1]) db.prepare("INSERT INTO main.clientes_fiscales (cliente_id, rfc, razon_social, predeterminado) VALUES (?, 'GOMC800101AB1', 'JUAN GOMEZ CRUZ', 1)").run(dosClientes[1].id);
     // Formas de pago (F3): las del catálogo oficial que más se usan, con sus nombres tal como los da el SAT.
     for (const [clave, nombre] of [['01', 'Efectivo'], ['02', 'Cheque nominativo'], ['03', 'Transferencia electrónica de fondos'], ['04', 'Tarjeta de crédito'], ['28', 'Tarjeta de débito'], ['99', 'Por definir']]) insSat.run('FormaPago', clave, nombre);
+    // Tipos de relación (F5): para sustituir una factura (cancelación con motivo 01). Nombres tal como los da factura.com (sandbox, 2026-10-29).
+    for (const [clave, nombre] of [['01', 'Nota de crédito de los documentos relacionados'], ['02', 'Nota de débito de los documentos relacionados'], ['03', 'Devolución de mercancía sobre facturas o traslados previos'], ['04', 'Sustitución de los CFDI previos']]) insSat.run('Relacion', clave, nombre);
     // Una factura SIMULADA (el demo nunca llama a factura.com) en la primera orden con IVA del cliente con datos completos, para que se vea cómo queda.
     if (dosClientes[0]) {
       // Fuera de una sesión la base no deja ver ninguna orden (alcance): la siembra lo pide todo, como la revisión de integridad.

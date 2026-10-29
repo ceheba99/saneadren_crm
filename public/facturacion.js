@@ -53,6 +53,10 @@ const Facturacion = (() => {
           <label>Serie de factura<select data-fx-serie="serie_factura" ${enDemo ? 'disabled' : ''}>${opcionesSerie('factura', s.serie_factura)}</select></label>
           <label>Serie de pago (complemento)<select data-fx-serie="serie_pago" ${enDemo ? 'disabled' : ''}>${opcionesSerie('pago', s.serie_pago)}</select></label>
         </div>
+        ${enDemo ? '' : `<div class="fx-crear-serie"><span class="ayuda">¿Una serie propia para esta sucursal (por ejemplo ${esc(s.clave || 'QRO')})? Se crea en factura.com y queda asignada.</span>
+          <label>Nombre<input data-fx-nueva-letra maxlength="10" placeholder="${esc(s.clave || 'QRO')}" autocapitalize="characters" autocomplete="off"></label>
+          <label>Para<select data-fx-nueva-tipo><option value="factura">Facturas</option><option value="pago">Complementos de pago</option></select></label>
+          <button type="button" class="btn btn-outline" data-fx-crear-serie>Crear serie</button></div>`}
         <div class="fx-suc-pie"><span class="ayuda" data-fx-aviso>${sinSerie ? '⚠ Sin serie de factura: esta sucursal todavía no podrá facturar.' : ''}</span><button type="button" class="btn btn-secundario" data-fx-guardar>Guardar</button></div>
       </div>`;
     }).join('') || '<p class="util-45">No hay sucursales.</p>';
@@ -114,7 +118,19 @@ const Facturacion = (() => {
     salida.innerHTML = malos.length ? `⚠ ${malos.map(x => `${esc(x.catalogo)}: ${esc(x.motivo || 'sin cambios')}`).join(' · ')}` : '✔ Catálogos del SAT actualizados.';
     pintar(); pintarServicios();
   }));
-  $('fx-sucursales')?.addEventListener('click', e => {
+  $('fx-sucursales')?.addEventListener('click', async e => {
+    const nueva = e.target.closest('[data-fx-crear-serie]');
+    if (nueva) {
+      const fila = nueva.closest('[data-fx-suc]'), id = Number(fila.dataset.fxSuc), s = CFG.sucursales.find(x => x.id === id);
+      const letra = fila.querySelector('[data-fx-nueva-letra]').value.trim().toUpperCase(), tipo = fila.querySelector('[data-fx-nueva-tipo]').value;
+      if (!/^[A-Z0-9]{1,10}$/.test(letra)) { toast('Escribe la serie: de 1 a 10 letras o números, sin espacios ni acentos (por ejemplo QRO)'); return; }
+      if (!await solicitarDialogo({ titulo: 'Crear serie en factura.com', aceptar: 'Sí, crear',
+        mensaje: `Se crea la serie «${letra}» de ${tipo === 'pago' ? 'complementos de pago' : 'facturas'} en factura.com (${CFG.produccion ? 'PRODUCCIÓN' : 'pruebas'}) y queda asignada a ${s.nombre}.\n\nLas facturas ya hechas conservan su serie; las nuevas empiezan en el folio 1. Una serie creada no se borra desde aquí.` })) return;
+      return operacion(nueva, async () => {
+        const r = await pedir('/sucursales/' + id + '/crear-serie', { letra, tipo }, 'POST');
+        CFG.sucursales = CFG.sucursales.map(x => (x.id === id ? r : x)); SERIES = null; pintar(); toast(`Serie «${letra}» creada y asignada a ${r.nombre}`); // sin HTML
+      });
+    }
     const b = e.target.closest('[data-fx-guardar]'); if (!b) return;
     const fila = b.closest('[data-fx-suc]'), id = Number(fila.dataset.fxSuc), s = CFG.sucursales.find(x => x.id === id), cuerpo = {};
     const cp = fila.querySelector('[data-fx-cp]').value.trim();
@@ -257,6 +273,65 @@ const Facturacion = (() => {
       const url = URL.createObjectURL(await r.blob()), a = document.createElement('a'); a.href = url; a.download = nombre; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 2000);
     } catch (err) { toast(err.message); } finally { boton.disabled = false; }
   }
+  // ---------- Cancelación (F5, 2026-10-29) ----------
+  // 01 = con errores y se sustituye (primero se timbra la nueva, relacionada con esta); 02 = con errores, sin sustituir; 03 = el servicio no se realizó.
+  // 04 (factura global) llega en la F6. Nada se da por cancelado hasta que el SAT lo confirma.
+  function panelCancelar(tarjeta, f, enOrden) {
+    tarjeta.parentNode.querySelectorAll('.fx-cancelar-panel').forEach(p => p.remove());
+    const p = document.createElement('div'); p.className = 'fx-cancelar-panel'; p.dataset.fxPanel = String(f.id);
+    p.innerHTML = `<p><b>¿Por qué se cancela la ${esc(f.serie || '')}-${esc(f.folio || '')}?</b>${f.entorno === 'prod' ? ' Esta cancelación es ante el SAT y no se puede deshacer.' : ' (De prueba: sin validez fiscal.)'}</p>
+      <label class="fx-check"><input type="radio" name="fx-motivo-${Number(f.id)}" value="01"> <span><b>01 · Tiene errores y se sustituye por otra factura.</b> Primero se timbra la nueva (corregida) y después se cancela esta.</span></label>
+      <label class="fx-check"><input type="radio" name="fx-motivo-${Number(f.id)}" value="02"> <span><b>02 · Tiene errores y no se va a sustituir.</b></span></label>
+      <label class="fx-check"><input type="radio" name="fx-motivo-${Number(f.id)}" value="03"> <span><b>03 · El servicio no se llevó a cabo.</b></span></label>
+      <p class="ayuda">El 04 (venta incluida en una factura global) todavía no está disponible.</p>
+      <div class="btn-group"><button type="button" class="btn btn-primario" data-fx-cancelar-ok>Continuar</button><button type="button" class="btn btn-outline" data-fx-cancelar-no>No cancelar</button></div>`;
+    tarjeta.after(p);
+    p.addEventListener('click', async e => {
+      if (e.target.closest('[data-fx-cancelar-no]')) return p.remove();
+      const ok = e.target.closest('[data-fx-cancelar-ok]'); if (!ok) return;
+      const motivo = p.querySelector('input[type=radio]:checked')?.value;
+      if (!motivo) return toast('Elige el motivo de la cancelación');
+      if (motivo === '01') {
+        p.remove();
+        if (enOrden) { ORD.extra = null; return cargarOrden({ id: ORD.id, estatus: 'ganado' }, { sustituye_a: f.id }).then(() => $('cfdi-orden').querySelector('.fx-preparar')?.scrollIntoView({ block: 'start' })); }
+        return abrirFicha(Number(f.lead_id)).then(() => toast('Para sustituirla: en «Factura electrónica» pulsa «Cancelar», elige 01 y timbra la nueva factura')); // sin HTML
+      }
+      ok.disabled = true;
+      await pedirCancelacion(f, motivo, null, enOrden);
+    });
+  }
+  async function pedirCancelacion(f, motivo, sustituta, enOrden) {
+    const texto = { '01': `sustituida por la ${sustituta ? (sustituta.serie || '') + '-' + (sustituta.folio || '') : ''}`, '02': 'tiene errores y no se sustituye', '03': 'el servicio no se llevó a cabo' }[motivo];
+    if (!await solicitarDialogo({ titulo: f.entorno === 'prod' ? 'Cancelar factura ante el SAT' : 'Cancelar factura de PRUEBA', aceptar: 'Sí, cancelar',
+      mensaje: `Factura ${f.serie || ''}-${f.folio || ''} · motivo ${motivo}: ${texto}.\n\n${f.entorno === 'prod' ? 'No se puede deshacer. ' : ''}Se da por cancelada solo cuando el SAT lo confirma; si el cliente tiene que aceptarla, puede tardar.` })) return false;
+    const r = await pedirCompleto('/facturas/' + Number(f.id) + '/cancelar', { motivo, sustituta_id: sustituta?.id }, 'POST');
+    toast(r.ok ? (r.j.estado === 'cancelada' ? 'Factura cancelada ante el SAT' : r.j.mensaje || 'Cancelación en proceso') : (r.j.error || 'No se pudo cancelar')); // sin HTML
+    if (enOrden && ORD) { ORD.opciones = { ...ORD.opciones, sustituye_a: undefined }; await cargarOrden({ id: ORD.id, estatus: 'ganado' }, ORD.opciones); if (typeof Finanzas !== 'undefined' && f.entorno === 'prod') Finanzas.pintarCobranzaOrden({ id: ORD.id, estatus: 'ganado' }); }
+    else cargarLista();
+    return r.ok;
+  }
+  async function accionTarjeta(e, f, enOrden, recargar) {
+    const tarjeta = e.target.closest('[data-fx-factura]');
+    if (e.target.closest('[data-fx-cancelar]')) {
+      if (f.sustituta) return pedirCancelacion(f, '01', f.sustituta, enOrden);
+      return panelCancelar(tarjeta, f, enOrden);
+    }
+    if (e.target.closest('[data-fx-reintentar]')) {
+      if (!await solicitarDialogo({ titulo: 'Volver a pedir la cancelación', aceptar: 'Sí, volver a pedirla', mensaje: 'Se manda otra vez la misma solicitud (mismo motivo). Úsalo solo si después de una hora el SAT sigue sin reportarla: repetirla no duplica nada.' })) return null;
+      const r = await pedirCompleto('/facturas/' + Number(f.id) + '/cancelar', { reintentar: true }, 'POST');
+      toast(r.ok ? (r.j.estado === 'cancelada' ? 'Factura cancelada ante el SAT' : r.j.mensaje || 'Cancelación en proceso') : (r.j.error || 'No se pudo')); // sin HTML
+      return recargar();
+    }
+    const est = e.target.closest('[data-fx-estatus]');
+    if (est) {
+      est.disabled = true;
+      const r = await pedirCompleto('/facturas/' + Number(f.id) + '/estatus-cancelacion', {}, 'POST');
+      toast(r.ok ? (r.j.estado === 'cancelada' ? 'El SAT confirmó la cancelación' : r.j.mensaje || 'Sigue en proceso') : (r.j.error || 'No se pudo consultar')); // sin HTML
+      if (r.ok && enOrden && typeof Finanzas !== 'undefined' && f.entorno === 'prod') Finanzas.pintarCobranzaOrden({ id: ORD.id, estatus: 'ganado' });
+      return recargar();
+    }
+    return null;
+  }
   // lista = true: la tarjeta de la pantalla «Facturas» (con la orden y las acciones de reenviar y descartar).
   function tarjetaFactura(f, lista = false) {
     const [txt, clase] = f.descartada ? ['Borrador descartado', 'fx-inactivo'] : (ESTADOS[f.estatus] || [f.estatus, '']);
@@ -265,11 +340,17 @@ const Facturacion = (() => {
       <div><b>${esc(f.serie || '')}${f.folio ? '-' + esc(f.folio) : (f.serie ? '' : 'Sin folio')}</b> ${prueba} <span class="${clase}">${esc(txt)}</span> · ${pesos(f.total)}
         <small>${esc(f.receptor_razon_social)} · ${esc(f.receptor_rfc)} · ${esc(f.forma_pago || '')} ${esc(f.metodo_pago || '')}${f.uuid ? ' · Folio fiscal ' + esc(f.uuid) : ''}${f.fecha_timbrado ? ' · ' + esc(String(f.fecha_timbrado).replace('T', ' ').slice(0, 16)) : ''}</small>
         ${f.error && f.estatus !== 'timbrada' ? `<small class="fx-mal">${esc(f.error)}</small>` : ''}
+        ${f.motivo_cancelacion ? `<small>Motivo de cancelación ${esc(f.motivo_cancelacion)}${f.cancelacion_estado ? ' · SAT: ' + esc(f.cancelacion_estado) : ''}</small>` : ''}
+        ${f.sustituta ? `<small class="fx-mal">Ya se timbró la que la sustituye (${esc(f.sustituta.serie || '')}-${esc(f.sustituta.folio || '')}): falta cancelar esta con el motivo 01</small>` : ''}
+        ${f.sustituye_a ? '<small>Sustituye a otra factura de esta orden (motivo 01)</small>' : ''}
       </div>
       <div class="btn-group">
         ${f.tiene_xml || (f.estatus === 'timbrada' && f.entorno !== 'demo') ? `<button type="button" class="btn btn-outline" data-fx-bajar="xml">XML</button>` : ''}
         ${f.estatus === 'timbrada' && (f.tiene_pdf || f.entorno !== 'demo') ? `<button type="button" class="btn btn-outline" data-fx-bajar="pdf">PDF</button>` : ''}
         ${f.estatus === 'timbrando' ? '<button type="button" class="btn btn-secundario" data-fx-verificar>Verificar</button>' : ''}
+        ${f.estatus === 'timbrada' ? `<button type="button" class="btn btn-outline" data-fx-cancelar>${f.sustituta ? 'Cancelar (motivo 01)' : 'Cancelar'}</button>` : ''}
+        ${f.estatus === 'cancelacion_solicitada' && f.entorno !== 'demo' ? '<button type="button" class="btn btn-secundario" data-fx-estatus>Consultar estatus</button><button type="button" class="btn btn-outline" data-fx-reintentar>Volver a pedir la cancelación</button>' : ''}
+        ${f.tiene_acuse ? '<button type="button" class="btn btn-outline" data-fx-bajar="acuse">Acuse</button>' : ''}
         ${lista && f.puede_reenviar ? '<button type="button" class="btn btn-outline" data-fx-reenviar>✉️ Reenviar</button>' : ''}
         ${lista && f.puede_descartar ? '<button type="button" class="btn btn-outline solo-general" data-fx-descartar>Descartar borrador</button>' : ''}
         ${lista && f.lead_id ? `<button type="button" class="btn btn-outline" data-fx-orden="${Number(f.lead_id)}">Abrir ${esc(f.folio_orden || 'orden')}</button>` : ''}
@@ -279,11 +360,13 @@ const Facturacion = (() => {
   function pintarOrden() {
     const o = ORD, p = o.preparacion, cont = $('cfdi-orden');
     const timbrada = o.facturas.some(f => f.entorno === o.entorno && ['timbrada', 'cancelacion_solicitada'].includes(f.estatus));
+    const sust = Number(o.opciones.sustituye_a) || 0, original = sust ? o.facturas.find(f => f.id === sust) : null;
+    const mostrarForm = p && (sust ? !!original && original.estatus === 'timbrada' && !o.facturas.some(f => f.sustituye_a === sust && f.estatus === 'timbrada') : !timbrada);
     const banda = o.prueba ? `<p class="fx-demo ayuda">🧪 ${o.entorno === 'demo' ? 'Demo: la factura se SIMULA (no se conecta con factura.com).' : 'Conexión de PRUEBAS (sandbox): la factura no tiene validez fiscal y no cambia la cobranza de la orden.'}</p>` : '';
-    const tarjetas = o.facturas.map(tarjetaFactura).join(''); // cada tarjeta escapa lo suyo
+    const tarjetas = o.facturas.map(f => tarjetaFactura(f)).join(''); // cada tarjeta escapa lo suyo
     const lista = o.facturas.length ? `<div class="fx-facturas">${tarjetas}</div>` : '<p class="util-45">Esta orden todavía no tiene factura electrónica.</p>';
     let form = '';
-    if (p && !timbrada) {
+    if (mostrarForm) {
       const r = p.resumen, op = o.opciones;
       const fiscales = p.fiscales.length ? `<select data-fx-o="cliente_fiscal_id">${p.fiscales.map(f => `<option value="${Number(f.id)}"${r.receptor && r.receptor.id === f.id ? ' selected' : ''}>${esc(f.razon_social || 'Sin razón social')} · ${esc(f.rfc)}${f.listo ? '' : ' (incompletos)'}</option>`).join('')}</select>` : '<span class="fx-mal">Sin datos fiscales (captúralos en la ficha del cliente)</span>';
       const usos = `<select data-fx-o="uso_cfdi"><option value="">— elige —</option>${p.usos.map(u => `<option value="${esc(u.clave)}"${u.clave === r.uso_cfdi ? ' selected' : ''}>${esc(u.clave)} · ${esc(u.nombre)}</option>`).join('')}</select>`;
@@ -293,7 +376,8 @@ const Facturacion = (() => {
       const correo = r.receptor?.correo ? ' (' + esc(r.receptor.correo) + ')' : '';
       const casillaCorreo = o.entorno === 'prod' ? `<label class="fx-check"><input type="checkbox" data-fx-o="enviar_correo"${op.enviar_correo === '0' ? '' : ' checked'}> Enviar la factura al correo del cliente${correo}</label>` : '';
       form = `<div class="fx-preparar">
-        <h4>Nueva factura · PUE (pago en una sola exhibición)</h4>
+        <h4>${original ? `Factura que SUSTITUYE a la ${esc(original.serie || '')}-${esc(original.folio || '')} (motivo 01) · PUE` : 'Nueva factura · PUE (pago en una sola exhibición)'}</h4>
+        ${original ? '<p class="ayuda">Corrige lo que estaba mal (datos fiscales del cliente, partidas de la orden o forma de pago) y timbra. Después se cancela la original diciendo que esta la sustituye. <button type="button" class="btn btn-outline" data-fx-sin-sustituir>No sustituir</button></p>' : ''}
         <div class="fx-suc-campos">
           <label>Receptor (datos fiscales del cliente)${fiscales}</label>
           <label>Uso del CFDI${usos}</label>
@@ -313,7 +397,7 @@ const Facturacion = (() => {
   }
   const opcionesForm = () => {
     const cont = $('cfdi-orden'), v = k => cont.querySelector(`[data-fx-o="${k}"]`);
-    return { cliente_fiscal_id: v('cliente_fiscal_id')?.value, uso_cfdi: v('uso_cfdi')?.value, forma_pago: v('forma_pago')?.value, enviar_correo: v('enviar_correo') ? (v('enviar_correo').checked ? '1' : '0') : undefined };
+    return { sustituye_a: ORD?.opciones?.sustituye_a, cliente_fiscal_id: v('cliente_fiscal_id')?.value, uso_cfdi: v('uso_cfdi')?.value, forma_pago: v('forma_pago')?.value, enviar_correo: v('enviar_correo') ? (v('enviar_correo').checked ? '1' : '0') : undefined };
   };
   $('cfdi-orden')?.addEventListener('change', e => {
     if (!ORD || !e.target.closest('[data-fx-o]')) return;
@@ -325,6 +409,9 @@ const Facturacion = (() => {
     if (!ORD) return;
     const bajar = e.target.closest('[data-fx-bajar]');
     if (bajar) { await bajarArchivo(bajar, bajar.closest('[data-fx-factura]').dataset.fxFactura, bajar.dataset.fxBajar); return; }
+    if (e.target.closest('[data-fx-sin-sustituir]')) { ORD.opciones = { ...ORD.opciones, sustituye_a: undefined }; return cargarOrden({ id: ORD.id, estatus: 'ganado' }, ORD.opciones); }
+    const tarjetaOrden = e.target.closest('[data-fx-factura]');
+    if (tarjetaOrden && e.target.closest('[data-fx-cancelar],[data-fx-estatus],[data-fx-reintentar]')) { const f = ORD.facturas.find(x => x.id === Number(tarjetaOrden.dataset.fxFactura)); if (f) return accionTarjeta(e, f, true, () => cargarOrden({ id: ORD.id, estatus: 'ganado' }, ORD.opciones)); }
     const ver = e.target.closest('[data-fx-verificar]');
     if (ver) {
       ver.disabled = true;
@@ -348,6 +435,7 @@ const Facturacion = (() => {
     timbrando = true; btn.disabled = true; btn.textContent = 'Timbrando… (puede tardar hasta un minuto)';
     try {
       const r = await pedirCompleto('/ordenes/' + ORD.id + '/timbrar', { ...opcionesForm(), confirmar: !!conf?.checked }, 'POST');
+      const sustituida = Number(ORD.opciones.sustituye_a) || 0;
       if (r.ok) {
         ORD.extra = null;
         toast(r.j.estado === 'timbrada' ? `Factura ${r.j.factura.serie || ''}-${r.j.factura.folio || ''} timbrada` : (r.j.mensaje || 'No se timbró')); // sin HTML
@@ -358,11 +446,14 @@ const Facturacion = (() => {
       else toast(r.j.error);
       await cargarOrden({ id: ORD.id, estatus: 'ganado' }, ORD.opciones);
       if (r.ok && typeof Finanzas !== 'undefined' && r.j.factura?.entorno === 'prod') Finanzas.pintarCobranzaOrden({ id: ORD.id, estatus: 'ganado' });
+      // Sustitución: ya está la nueva; ahora se cancela la original con el motivo 01 (si se dice que no, queda el botón «Cancelar (motivo 01)» en su tarjeta).
+      const orig = sustituida && r.ok && r.j.estado === 'timbrada' ? ORD.facturas.find(x => x.id === sustituida) : null;
+      if (orig) await pedirCancelacion(orig, '01', r.j.factura, true);
     } finally { timbrando = false; }
   });
 
   // ---------- Pantalla «Facturas» (F4, 2026-10-28) ----------
-  let tLista = null, LISTA_OK = false;
+  let tLista = null, LISTA_OK = false, LISTA_F = [];
   const filtrosLista = () => ({ q: $('fx-l-q').value.trim(), estatus: $('fx-l-estatus').value, entorno: $('fx-l-entorno').value, sucursal: $('fx-l-sucursal').value, desde: $('fx-l-desde').value, hasta: $('fx-l-hasta').value });
   async function cargarLista() {
     const cont = $('fx-l-lista'); if (!cont) return;
@@ -376,6 +467,7 @@ const Facturacion = (() => {
     if (!LISTA_OK) { $('fx-l-sucursal').innerHTML = '<option value="">Todas las sucursales</option>' + r.sucursales.map(x => `<option value="${Number(x.id)}">${esc(x.nombre)}</option>`).join(''); LISTA_OK = true; }
     $('fx-lista-entorno').textContent = r.entorno === 'prod' ? 'Conexión en PRODUCCIÓN: las facturas nuevas tienen validez fiscal.' : r.entorno === 'demo' ? 'Demo: las facturas se simulan.' : 'Conexión de PRUEBAS (sandbox): las facturas nuevas no tienen validez fiscal.';
     $('fx-l-resumen').textContent = r.total ? `${r.total} factura(s)${r.truncado ? ' (se muestran las 200 más recientes: afina la búsqueda)' : ''}` : '';
+    LISTA_F = r.facturas;
     cont.innerHTML = r.facturas.length ? r.facturas.map(x => tarjetaFactura(x, true)).join('') : '<p class="util-45">No hay facturas con esos filtros.</p>';
   }
   let TURNO_LISTA = 0;
@@ -386,6 +478,8 @@ const Facturacion = (() => {
     const fid = Number(tarjeta.dataset.fxFactura);
     const bajar = e.target.closest('[data-fx-bajar]'); if (bajar) return bajarArchivo(bajar, fid, bajar.dataset.fxBajar);
     const orden = e.target.closest('[data-fx-orden]'); if (orden) return abrirFicha(Number(orden.dataset.fxOrden));
+    const fl = LISTA_F.find(x => x.id === fid);
+    if (fl && e.target.closest('[data-fx-cancelar],[data-fx-estatus],[data-fx-reintentar]')) return accionTarjeta(e, fl, false, cargarLista);
     const ver = e.target.closest('[data-fx-verificar]');
     if (ver) { ver.disabled = true; const r = await pedirCompleto('/facturas/' + fid + '/verificar', {}, 'POST'); toast(r.ok ? (r.j.mensaje || (r.j.estado === 'timbrada' ? 'Sí quedó timbrada' : 'Estado: ' + r.j.estado)) : (r.j.error || 'No se pudo verificar')); return cargarLista(); }
     const reenviar = e.target.closest('[data-fx-reenviar]');
@@ -401,7 +495,7 @@ const Facturacion = (() => {
   });
 
   // ---------- Bloque «Facturación» de Inicio ----------
-  const TAG_FX = { timbrando: '⏳ Sin respuesta', borrador_error: '📝 Borrador', pendiente: '⚠️ No se timbró', por_facturar: '🧾 Por facturar' };
+  const TAG_FX = { timbrando: '⏳ Sin respuesta', borrador_error: '📝 Borrador', pendiente: '⚠️ No se timbró', por_facturar: '🧾 Por facturar', sin_cancelar: '⚠️ Sin cancelar', cancelacion_solicitada: '⏳ Cancelación' };
   async function pintarInicio() {
     const cont = $('inicio-facturacion'); if (!cont || (typeof Permisos !== 'undefined' && !Permisos.puede('facturacion.timbrar'))) return;
     let r;

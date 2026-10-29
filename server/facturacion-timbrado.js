@@ -120,15 +120,30 @@ function preparar(db, leadId, op = {}, { config, demo = false } = {}) {
   const entorno = demo ? 'demo' : config.entorno;
   const lead = db.prepare('SELECT * FROM leads WHERE id = ?').get(Number(leadId));
   if (!lead) return null;
-  const vigente = db.prepare(`SELECT * FROM facturas WHERE lead_id = ? AND entorno = ? AND tipo_documento = 'factura' AND estatus IN (${VIGENTES_SQL}) ORDER BY id DESC LIMIT 1`).get(lead.id, entorno) || null;
+  // F5: op.sustituye_a = la factura timbrada que se va a sustituir (cancelación con motivo 01). La nueva se relaciona con ella y ocupa su propio lugar.
+  const vigentes = db.prepare(`SELECT * FROM facturas WHERE lead_id = ? AND entorno = ? AND tipo_documento = 'factura' AND estatus IN (${VIGENTES_SQL}) ORDER BY id DESC`).all(lead.id, entorno);
+  let original = null;
+  if (op.sustituye_a) {
+    original = vigentes.find(f => f.id === Number(op.sustituye_a)) || null;
+    if (!original || original.estatus !== 'timbrada' || !UUID_SAT.test(String(original.uuid || ''))) errores.push('La factura que se quiere sustituir no está timbrada en esta orden (o es de otro entorno)');
+  }
+  const timbradaPropia = vigentes.find(f => ['timbrada', 'cancelacion_solicitada'].includes(f.estatus) && (original ? f.sustituye_a === original.id : f.id !== original?.id));
+  const vigente = original ? (vigentes.find(f => f.sustituye_a === original.id) || null) : (timbradaPropia || vigentes.find(f => !f.sustituye_a) || null);
   if (lead.estatus !== 'ganado') errores.push('Solo se factura una orden de servicio (esta es una cotización)');
   if (lead.ejecucion === 'no_realizado') errores.push('El servicio está marcado como NO realizado: no se factura');
   if (lead.iva_modo === 'sin_iva') errores.push('La orden es «sin IVA», es decir, sin factura. Si el cliente pide factura, cambia la orden a «más IVA» o «IVA incluido»');
   else if (!lead.iva_modo) errores.push('La orden tiene el IVA «por definir»: primero indica si es más IVA o IVA incluido');
-  if (vigente?.estatus === 'timbrada') errores.push(`Esta orden ya tiene factura${vigente.serie || vigente.folio ? ` ${vigente.serie || ''}${vigente.folio ? '-' + vigente.folio : ''}` : ''}${entorno === 'prod' ? '' : ' (de prueba)'}: no se timbra otra`);
+  if (original && vigente?.estatus === 'timbrada') errores.push(`Ya se timbró la factura que sustituye a ${original.serie || ''}-${original.folio || ''} (${vigente.serie || ''}-${vigente.folio || ''}): solo falta cancelar la original con el motivo 01`);
+  else if (vigente?.estatus === 'timbrada') errores.push(`Esta orden ya tiene factura${vigente.serie || vigente.folio ? ` ${vigente.serie || ''}${vigente.folio ? '-' + vigente.folio : ''}` : ''}${entorno === 'prod' ? '' : ' (de prueba)'}: no se timbra otra. Si tiene errores, sustitúyela o cancélala`);
   if (vigente?.estatus === 'cancelacion_solicitada') errores.push('La factura de esta orden está en proceso de cancelación');
+  // Una factura que se quedó sin respuesta (aunque sea una sustituta) pudo haberse timbrado: hasta verificarla, la orden no recibe otra.
+  const sinRespuesta = vigentes.find(f => f.estatus === 'timbrando' && f.id !== vigente?.id);
+  if (sinRespuesta) errores.push(`Hay una factura de esta orden que se quedó sin respuesta de factura.com${sinRespuesta.sustituye_a ? ' (la que sustituye a otra)' : ''}: primero pulsa «Verificar»`);
+  // La clave oficial del tipo de relación «Sustitución de los CFDI previos» (catálogo Relacion de factura.com): no se escribe a mano.
+  const relacion = original ? db.prepare("SELECT clave FROM sat_catalogos WHERE catalogo = 'Relacion' AND nombre LIKE 'Sustituci%'").get()?.clave : null;
+  if (original && !relacion) errores.push('Falta el catálogo de tipos de relación del SAT: Dirección lo baja con «Actualizar catálogos del SAT» en Ajustes → Facturación');
   // Una factura capturada a mano (de antes del sistema) en una orden real: no se timbra otra encima.
-  if (lead.factura_folio && !vigente) {
+  if (lead.factura_folio && !vigente && !original) {
     if (entorno === 'prod') errores.push(`La orden ya tiene registrada la factura ${lead.factura_folio} (capturada a mano en Crédito y factura). Si esa factura es válida, no timbres otra`);
     else avisos.push(`La orden tiene registrada la factura ${lead.factura_folio}; como esta es de PRUEBA, no se toca`);
   }
@@ -212,9 +227,11 @@ function preparar(db, leadId, op = {}, { config, demo = false } = {}) {
     Conceptos: conc.conceptos.map((c, i) => conceptoApi(c, totales.conceptos[i].iva_micros, tasa)),
     UsoCFDI: uso, Serie: Number(serie?.serie_uid) || undefined, FormaPago: forma, MetodoPago: 'PUE', Moneda: 'MXN',
     LugarExpedicion: lugar || undefined, EnviarCorreo: enviarCorreo, BorradorSiFalla: '1',
-    Comentarios: `Orden de servicio ${resumen.orden.folio}`,
+    Comentarios: `Orden de servicio ${resumen.orden.folio}${original ? ` · Sustituye a la factura ${original.serie || ''}-${original.folio || ''}` : ''}`,
+    ...(original && relacion ? { CfdiRelacionados: { TipoRelacion: relacion, UUID: [String(original.uuid).toUpperCase()] } } : {}),
   } : null;
-  return { lead, errores: [...new Set(errores)], avisos, confirmar, fiscales, fiscal, uso, formas, resumen, cuerpo, vigente, entorno, totales, serie, conceptos: conc.conceptos };
+  if (original) resumen.sustituye = { id: original.id, serie: original.serie, folio: original.folio, uuid: original.uuid };
+  return { lead, errores: [...new Set(errores)], avisos, confirmar, fiscales, fiscal, uso, formas, resumen, cuerpo, vigente, original, entorno, totales, serie, conceptos: conc.conceptos };
 }
 
 // ---------------- Guardar en la base ----------------
@@ -229,16 +246,20 @@ const errorTexto = e => JSON.stringify({ codigo: e?.codigo || 'interno', mensaje
 /** Aparta la factura de la orden (o retoma la vigente sin timbrar) con la foto de lo que se va a mandar. Devuelve la fila. */
 function reservar(db, p, op, usuarioId) {
   return db.transaction(() => {
-    const ya = db.prepare(`SELECT * FROM main.facturas WHERE lead_id = ? AND entorno = ? AND tipo_documento = 'factura' AND estatus IN (${VIGENTES_SQL}) ORDER BY id DESC LIMIT 1`).get(p.lead.id, p.entorno);
-    if (ya && ['timbrada', 'cancelacion_solicitada'].includes(ya.estatus)) throw new ErrorFactura('config', 'Esta orden ya tiene factura');
+    const sust = p.original?.id ?? null;
+    const todas = db.prepare(`SELECT * FROM main.facturas WHERE lead_id = ? AND entorno = ? AND tipo_documento = 'factura' AND estatus IN (${VIGENTES_SQL}) ORDER BY id DESC`).all(p.lead.id, p.entorno);
+    // Sin sustitución: cualquier factura timbrada de la orden (aunque sea una sustituta) ocupa el lugar. Con sustitución: solo la sustituta de ESA factura.
+    if (!sust && todas.some(f => ['timbrada', 'cancelacion_solicitada'].includes(f.estatus) || (f.estatus === 'timbrando' && f.sustituye_a))) throw new ErrorFactura('config', 'Esta orden ya tiene factura (o una que se quedó sin respuesta)');
+    const ya = todas.find(f => (f.sustituye_a ?? null) === sust) || null;
+    if (ya && ['timbrada', 'cancelacion_solicitada'].includes(ya.estatus)) throw new ErrorFactura('config', 'Esa factura ya tiene su sustituta timbrada');
     if (ya?.estatus === 'timbrando') return ya; // primero se averigua qué pasó con el intento anterior
     const foto = { cliente_fiscal_id: p.fiscal.id, receptor_rfc: p.fiscal.rfc, receptor_razon_social: p.fiscal.razon_social, receptor_cp: p.fiscal.cp, receptor_regimen: p.fiscal.regimen,
       uso_cfdi: p.uso, receptor_correo: p.fiscal.correo, metodo_pago: 'PUE', forma_pago: p.resumen.forma_pago, moneda: 'MXN',
       subtotal_cent: p.totales.subtotal_cent, iva_cent: p.totales.iva_cent, total_cent: p.totales.total_cent, conceptos_json: JSON.stringify(p.cuerpo.Conceptos),
       enviar_correo: p.resumen.enviar_correo ? 1 : 0, serie: p.serie.serie };
     if (ya) { actualizar(db, ya.id, foto); return leer(db, ya.id); }
-    const id = Number(db.prepare("INSERT INTO main.facturas (lead_id, sucursal_id, tipo_documento, estatus, num_order, entorno, creado_por) VALUES (?, ?, 'factura', 'pendiente', ?, ?, ?)")
-      .run(p.lead.id, p.lead.sucursal_id, 'reservando-' + crypto.randomUUID(), p.entorno, usuarioId ?? null).lastInsertRowid);
+    const id = Number(db.prepare("INSERT INTO main.facturas (lead_id, sucursal_id, tipo_documento, estatus, num_order, entorno, creado_por, sustituye_a) VALUES (?, ?, 'factura', 'pendiente', ?, ?, ?, ?)")
+      .run(p.lead.id, p.lead.sucursal_id, 'reservando-' + crypto.randomUUID(), p.entorno, usuarioId ?? null, sust).lastInsertRowid);
     actualizar(db, id, { ...foto, num_order: `${p.resumen.orden.folio}-F${id}-${instancia(db)}` });
     return leer(db, id);
   })();
@@ -290,12 +311,14 @@ async function descargarArchivos(db, cliente, f, { dirArchivos, usuarioId, soloX
 function anotarEnOrden(db, f, usuario) {
   if (f.entorno !== 'prod' || !f.lead_id) return;
   const lead = db.prepare('SELECT id, factura_folio FROM main.leads WHERE id = ?').get(f.lead_id);
-  if (!lead || (lead.factura_folio && lead.factura_folio !== `${f.serie}-${f.folio}`)) return; // nunca se pisa una factura capturada a mano
+  const original = f.sustituye_a ? db.prepare('SELECT serie, folio FROM main.facturas WHERE id = ?').get(f.sustituye_a) : null;
+  const propios = [`${f.serie}-${f.folio}`, original ? `${original.serie}-${original.folio}` : null];
+  if (!lead || (lead.factura_folio && !propios.includes(lead.factura_folio))) return; // nunca se pisa una factura capturada a mano
   const fecha = String(f.fecha_timbrado || '').slice(0, 10) || null;
   db.prepare("UPDATE main.leads SET factura_folio = ?, factura_fecha = ?, factura_total_cent = ?, factura_metodo = 'PUE' WHERE id = ?").run(`${f.serie}-${f.folio}`, fecha, f.total_cent, lead.id);
   // La bitácora de la orden la ve quien ve su cobranza: solo el folio (que ya ve en «Crédito y factura»), nunca el UUID ni el receptor.
   db.prepare("INSERT INTO main.historial (lead_id, tipo, texto, usuario, origen, area, usuario_id) VALUES (?, 'observacion', ?, ?, 'sistema', 'cxc', ?)")
-    .run(lead.id, `Factura ${f.serie}-${f.folio} timbrada (CFDI, ${fmt(f.total_cent)}).`, usuario?.nombre || 'Sistema', usuario?.id ?? null);
+    .run(lead.id, `Factura ${f.serie}-${f.folio} timbrada (CFDI, ${fmt(f.total_cent)})${original ? `, sustituye a la ${original.serie}-${original.folio}` : ''}.`, usuario?.nombre || 'Sistema', usuario?.id ?? null);
 }
 
 /**
@@ -344,10 +367,10 @@ async function verificar(db, cliente, f, ctx = {}) {
   log(db, f, 'verificar', 'ok', `Encontrada: ${folioTxt} ${uuid}`, ctx.usuario?.id);
   // Regla 13: «cancelada» solo con el estatus exacto; cualquier otro que hable de cancelación queda «en proceso» (cancelacion_solicitada).
   const status = String(d.Status ?? '').trim();
+  // Regla 13: solo el estatus del SAT (cancel_status) confirma una cancelación. Aquí se deja «en proceso» para que se consulte.
   if (/cancel/i.test(status) && UUID_SAT.test(uuid)) {
-    const final = /^cancelad[ao]$/i.test(status);
-    actualizar(db, f.id, { estatus: final ? 'cancelada' : 'cancelacion_solicitada', cfdi_uid: uid || f.cfdi_uid, uuid: uuid.toUpperCase(), folio, ...(final ? { cancelada_at: horaMexico().replace('T', ' ') } : {}) });
-    return { estado: final ? 'cancelada' : 'cancelacion_solicitada', factura: leer(db, f.id) };
+    actualizar(db, f.id, { estatus: 'cancelacion_solicitada', cfdi_uid: uid || f.cfdi_uid, uuid: uuid.toUpperCase(), folio, cancelacion_estado: 'factura.com: ' + status.slice(0, 80) });
+    return { estado: 'cancelacion_solicitada', factura: leer(db, f.id), mensaje: 'factura.com la reporta en cancelación: consulta su estatus' };
   }
   if (UUID_SAT.test(uuid)) return quedoTimbrada(db, cliente, f, { uid, uuid, folio, fecha: d.FechaTimbrado || null }, ctx);
   return quedoBorrador(db, f, new ErrorFactura('api', 'La factura quedó como borrador en factura.com: corrige y vuelve a timbrar'), { uid, folio }, ctx);
@@ -454,7 +477,8 @@ function vistaFactura(f) {
   return { id: f.id, lead_id: f.lead_id, entorno: f.entorno, estatus: f.estatus, serie: f.serie, folio: f.folio, uuid: f.uuid, fecha_timbrado: f.fecha_timbrado,
     receptor_rfc: f.receptor_rfc, receptor_razon_social: f.receptor_razon_social, uso_cfdi: f.uso_cfdi, metodo_pago: f.metodo_pago, forma_pago: f.forma_pago,
     subtotal: f.subtotal_cent / 100, iva: f.iva_cent / 100, total: f.total_cent / 100, tiene_xml: !!f.xml, tiene_pdf: !!f.pdf_path, borrador: f.estatus === 'borrador_error' && !!f.cfdi_uid, descartada: f.estatus === 'cancelada' && !f.uuid,
+    sustituye_a: f.sustituye_a ?? null, motivo_cancelacion: f.motivo_cancelacion ?? null, cancelacion_estado: f.cancelacion_estado ?? null, tiene_acuse: !!f.acuse,
     error, created_at: f.created_at, updated_at: f.updated_at };
 }
 
-module.exports = { preparar, timbrar, verificar, resolverSinRespuesta, descargarArchivos, vistaFactura, conceptosDeOrden, totalesDelXml, instancia, UUID_SAT };
+module.exports = { horaMexico, log, actualizar, leer, errorTexto, preparar, timbrar, verificar, resolverSinRespuesta, descargarArchivos, vistaFactura, conceptosDeOrden, totalesDelXml, instancia, UUID_SAT };

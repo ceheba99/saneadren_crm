@@ -196,6 +196,8 @@ module.exports = {
     receptor_rfc: { como: 'cliente_fiscal_id', razon: 'foto del RFC de los datos fiscales elegidos («Receptor») al timbrar' },
     receptor_razon_social: { como: 'cliente_fiscal_id', razon: 'foto de la razón social de los datos fiscales elegidos («Receptor») al timbrar' },
     fecha_timbrado: 'la devuelve factura.com (o el SAT) al timbrar',
+    // Cancelación (F5, 2026-10-29)
+    cancelacion_estado: 'lo que contesta el SAT al consultar el estatus de una cancelación (Vigente, Cancelado, con o sin aceptación)',
   },
   // Formularios con una ventana para CREAR y otra para EDITAR lo mismo: deben pedir los mismos datos (la auditoría compara
   // sus campos: input, select, textarea y los selectores que arma la pantalla, marcados con data-campo). Lo que solo está
