@@ -30,9 +30,13 @@ async function montar(cfg = {}) {
   const clienteSim = () => ({ config: { entorno: 'sandbox' }, get: async ruta => {
     estado.llamadas.push('GET ' + ruta);
     if (estado.proximo) { const p = estado.proximo; if (p.espera) await new Promise(r => setTimeout(r, p.espera)); if (p.error) throw p.error; }
-    if (ruta === '/v4/series') return { datos: SERIES };
+    if (ruta === '/v4/series') return { datos: SERIES.concat(estado.seriesNuevas || []) };
     return { crudo: { response: 'success', data: [{ key: '601', name: 'General' }] }, datos: [{ key: '601', name: 'General' }] };
-  }, post: async () => { throw new Error('no debe llamarse'); } });
+  }, post: async (ruta, cuerpo) => {
+    estado.llamadas.push('POST ' + ruta + ' ' + JSON.stringify(cuerpo));
+    if (ruta === '/v4/series/create' && estado.puedeCrear) { (estado.seriesNuevas ||= []).push({ SerieID: 99, SerieName: cuerpo.letra, SerieType: cuerpo.tipoDocumento, SerieDescription: '', SerieStatus: 'Activa' }); return { crudo: { response: 'success' }, datos: {} }; }
+    throw new Error('no debe llamarse');
+  } });
   const app = express(); app.use(express.json());
   app.use((req, res, next) => { req.usuarioSesion = { id: 1, nombre: 'Dirección', rol: estado.direccion ? 'admin' : 'ventas' }; next(); });
   const h = fn => (req, res) => { try { fn(req, res); } catch (e) { res.status(500).json({ error: 'Error interno del servidor' }); } };
@@ -56,7 +60,7 @@ conMontaje('Configuración: estado sin llaves, sucursales y catálogos', {}, asy
   const texto = JSON.stringify(x.json); assert.ok(!texto.includes(LLAVE) && !texto.includes(SECRETA), 'las llaves nunca salen');
   assert.equal(x.json.entorno, 'sandbox'); assert.equal(x.json.apiKey, 'puesta'); assert.equal(x.json.secretKey, 'puesta'); assert.deepEqual(x.json.emisor, { regimen: '601', cp: '26015' }); assert.equal(x.json.demo, false); assert.equal(x.json.listo, true);
   assert.deepEqual(x.json.sucursales.map(s => [s.clave, s.cp_expedicion, s.serie_factura, s.serie_pago]), [['QRO', '', null, null], ['CDMX', '', null, null]]);
-  assert.deepEqual(x.json.catalogos.find(c => c.catalogo === 'RegimenFiscal').total, 2); assert.equal(x.json.catalogos.find(c => c.catalogo === 'UsoCfdi').total, 0); assert.equal(x.json.catalogos.length, 6);
+  assert.deepEqual(x.json.catalogos.find(c => c.catalogo === 'RegimenFiscal').total, 2); assert.equal(x.json.catalogos.find(c => c.catalogo === 'UsoCfdi').total, 0); assert.equal(x.json.catalogos.length, 7);
 });
 conMontaje('Probar conexión: devuelve las series; el demo nunca se conecta', {}, async ({ pedir, estado }) => {
   const x = await pedir('POST', '/probar', {}); assert.equal(x.status, 200); assert.equal(x.json.ok, true); assert.deepEqual(x.json.series.map(s => [s.id, s.nombre, s.tipo, s.activa]), [['11', 'F', 'factura', true], ['12', 'FM', 'factura', true], ['13', 'PA', 'pago', true], ['14', 'OLD', 'factura', false]]);
@@ -224,4 +228,21 @@ conMontaje('Demo: el CP sí se puede cambiar (no llama a nada); quitar una serie
   assert.equal((await pedir('PUT', '/sucursales/1', { cp_expedicion: '76000' })).status, 200);
   const x = await pedir('PUT', '/sucursales/1', { serie_factura: null }); assert.equal(x.status, 200); assert.equal(x.json.serie_factura, null);
   assert.deepEqual(estado.llamadas, []);
+});
+
+conMontaje('Crear la serie de una sucursal (2026-10-29): solo Dirección; valida el nombre; la crea en factura.com y la deja asignada; el demo no', {}, async ({ pedir, estado, db }) => {
+  estado.direccion = false;
+  assert.equal((await pedir('POST', '/sucursales/1/crear-serie', { tipo: 'factura', letra: 'QRO' })).status, 403);
+  estado.direccion = true;
+  for (const [cuerpo, error] of [[{ tipo: 'factura', letra: 'Q R O' }, /letras o números/], [{ tipo: 'factura', letra: 'QUERÉTARO' }, /letras o números/], [{ tipo: 'otro', letra: 'QRO' }, /factura» o «pago/]])
+    { const x = await pedir('POST', '/sucursales/1/crear-serie', cuerpo); assert.equal(x.status, 400); assert.match(x.json.error, error); }
+  assert.deepEqual(estado.llamadas, [], 'con datos malos no se llama a factura.com');
+  estado.puedeCrear = true;
+  const x = await pedir('POST', '/sucursales/1/crear-serie', { tipo: 'factura', letra: 'qro' });
+  assert.equal(x.status, 201); assert.deepEqual(x.json.serie_factura, { id: '99', nombre: 'QRO' });
+  assert.ok(estado.llamadas.includes('POST /v4/series/create {"letra":"QRO","tipoDocumento":"factura"}'));
+  assert.equal(db.prepare("SELECT serie FROM series_factura WHERE sucursal_id = 1 AND tipo_documento = 'factura'").get().serie, 'QRO');
+  assert.match(estado.bitacora.at(-1).detalle, /Creó la serie de factura «QRO»/);
+  const y = await pedir('POST', '/sucursales/1/crear-serie', { tipo: 'factura', letra: 'QRO' }); assert.equal(y.status, 400); assert.match(y.json.error, /Ya existe una serie «QRO»/);
+  estado.demo = true; assert.equal((await pedir('POST', '/sucursales/2/crear-serie', { tipo: 'factura', letra: 'CDMX' })).status, 409);
 });

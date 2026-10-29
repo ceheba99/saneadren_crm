@@ -13,6 +13,9 @@ const CATALOGOS = {
   MetodoPago: '/v3/catalogo/MetodoPago',
   ClaveUnidad: '/v3/catalogo/ClaveUnidad',
   ClaveProductServ: '/v3/catalogo/ClaveProductServ',
+  // F5 (2026-10-29): tipos de relación entre CFDI. La sustitución (cancelar con motivo 01) relaciona la factura nueva con la original usando la clave
+  // cuyo nombre oficial es «Sustitución de los CFDI previos» (confirmado en sandbox: 04). Se busca por su nombre, no se escribe a mano.
+  Relacion: '/v3/catalogo/Relacion',
 };
 
 /** Los ítems de una respuesta de catálogo, venga como { data: [...] }, { Data: [...] } o un arreglo suelto. */

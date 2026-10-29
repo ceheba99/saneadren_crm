@@ -2171,3 +2171,12 @@ table.tabla-clientes.py-tareas tbody td{white-space:normal;}
 .fx-fecha{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--texto-sec);}
 #vista-facturas .filtros{display:flex;flex-wrap:wrap;gap:8px;margin:10px 0;}
 #fx-l-lista .fx-factura .btn-group{flex-wrap:wrap;}
+/* Cancelación (F5, 2026-10-29) */
+.fx-cancelar-panel{border:1px solid #f3c4bf;background:#fff7f6;border-radius:12px;padding:10px 14px;margin:-4px 0 8px;display:flex;flex-direction:column;gap:8px;font-size:13.5px;}
+.fx-cancelar-panel .fx-check{display:flex;}
+.fx-cancelar-panel p{margin:0;}
+
+/* Crear serie de una sucursal (2026-10-29) */
+.fx-crear-serie{display:flex;flex-wrap:wrap;align-items:flex-end;gap:8px;margin-top:10px;padding-top:10px;border-top:1px dashed var(--gris-200);}
+.fx-crear-serie > .ayuda{flex:1 1 100%;}
+.fx-crear-serie label{display:flex;flex-direction:column;gap:4px;font-size:12.5px;color:var(--texto-sec);}

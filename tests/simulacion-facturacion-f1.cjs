@@ -37,7 +37,7 @@ const NUEVAS = ['clientes_fiscales', 'facturas', 'facturas_log', 'factura_ventas
   const sv = db.prepare('SELECT * FROM catalogo_servicios LIMIT 1').get();
   revisa(sv && sv.objeto_imp === '02' && sv.tasa_iva === 16 && sv.clave_prod_serv === null && sv.clave_unidad === null, 'los servicios existentes quedan con ObjetoImp 02, IVA 16 % y SIN claves del SAT (no se inventan)', sv);
   const indices = db.prepare("SELECT name FROM sqlite_master WHERE type = 'index'").all().map(r => r.name);
-  revisa(['idx_facturas_vigente_por_orden_entorno', 'idx_facturas_cfdi_uid', 'idx_facturas_uuid', 'idx_clientes_fiscales_uid'].every(i => indices.includes(i)), 'existen los candados (índices únicos parciales)');
+  revisa(['idx_facturas_vigente_por_orden_v3', 'idx_facturas_cfdi_uid', 'idx_facturas_uuid', 'idx_clientes_fiscales_uid'].every(i => indices.includes(i)), 'existen los candados (índices únicos parciales)');
 
   console.log('2. Candados y validaciones de la base');
   db.prepare("INSERT INTO clientes (telefono, telefono_normalizado, nombre) VALUES ('442 111 2233', '4421112233', 'Cliente de prueba')").run();
