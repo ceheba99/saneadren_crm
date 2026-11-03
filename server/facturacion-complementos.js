@@ -14,7 +14,12 @@
    · Los ajustes o descuentos no son pagos: no llevan complemento (lo que corresponda es una nota de crédito, fuera de la F6).
    · Los pagos de antes de la factura también llevan complemento (cada pago de una factura PPD lo necesita); al timbrar la PPD se avisa.
    Reglas (CLAUDE.md) que se aplican igual que en la factura: «timbrando» antes de mandar, verificar por NumOrder antes de reenviar, borrador si falla,
-   un complemento de prueba nunca toca la orden real, y nada se borra: un complemento con errores se cancela (motivo 02) y se timbra otro. */
+   un complemento de prueba nunca toca la orden real, y nada se borra.
+   Corregir un complemento (decisión del usuario, 2026-11-03; doc complementos-de-pago, nodo CfdiRelacionados):
+   · El pago SÍ ocurrió y el complemento salió con un dato mal → «Corregir»: se timbra uno nuevo relacionado con el anterior (TipoRelacion 04, Sustitución),
+     con la misma parcialidad y los mismos saldos, y después se cancela el anterior con el motivo 01. El pago nunca queda sin complemento.
+   · El pago NO debió registrarse (cheque rebotado, pago duplicado) → se cancela el complemento con el motivo 02, sin reemplazo, y luego el pago en Finanzas.
+   Mientras el nuevo no se timbra, factura_cobros sigue apuntando al anterior; al timbrarse, apunta al nuevo (enlazarSustituto, en el timbrado). */
 const crypto = require('crypto');
 const { ErrorFactura } = require('./facturacom');
 const { centavosAMicros, microsATexto, ivaMicros } = require('./facturacion-validaciones');
@@ -86,10 +91,26 @@ function pagosDe(db, factura) {
 }
 const amparado = k => AMPARA.includes(k.complemento_estatus);
 
+/** Los complementos ligados por sustitución con estos (hacia atrás y hacia adelante): el anterior y su corrección son del mismo pago. */
+function enCadena(db, ids) {
+  const vistos = new Set(ids.filter(Boolean).map(Number)), cola = [...vistos];
+  while (cola.length) {
+    const id = cola.pop();
+    const vecinos = [leer(db, id)?.sustituye_a, ...db.prepare("SELECT id FROM main.facturas WHERE sustituye_a = ? AND tipo_documento = 'pago'").all(id).map(r => r.id)];
+    for (const v of vecinos) if (v && !vistos.has(v)) { vistos.add(v); cola.push(v); }
+  }
+  return [...vistos];
+}
+/** Otro complemento de la misma cadena que todavía ampara el pago (p. ej. el anterior, si se canceló su corrección): entonces no se timbra uno nuevo. */
+const amparaPago = (db, c) => c && !AMPARA.includes(c.estatus) ? complementosEn(db, enCadena(db, [c.id]), `AND id <> ${Number(c.id)} AND estatus IN (${lista(AMPARA)}) ORDER BY id DESC`)[0] || null : null;
+const complementosEn = (db, ids, extra = '') => ids.length ? db.prepare(`SELECT * FROM main.facturas WHERE id IN (${ids.map(Number).join(', ')}) AND estatus IN (${lista(OCUPA)}) ${extra}`).all() : [];
+/** La corrección (sustituto) más reciente de un complemento, si se empezó y no se canceló. */
+const sustitutoDe = (db, id) => db.prepare(`SELECT * FROM main.facturas WHERE sustituye_a = ? AND tipo_documento = 'pago' AND estatus IN ('pendiente', ${lista(OCUPA)}) ORDER BY id DESC LIMIT 1`).get(id) || null;
+
 // ---------------- Preparar: revisa TODO sin llamar a nadie ----------------
 /**
- * El complemento de un cobro y lo que falta. op: { forma_pago?, confirmar? }. ctx: { config, demo }.
- * Devuelve null si el cobro no existe; si no { cobro, lead, factura, entorno, errores, avisos, confirmar, formas, sugerida, opciones, resumen, cuerpo, fiscal, serie, calculo, complemento }.
+ * El complemento de un cobro y lo que falta. op: { forma_pago?, confirmar?, sustituye_a? (el complemento timbrado que se corrige) }. ctx: { config, demo }.
+ * Devuelve null si el cobro no existe; si no { cobro, lead, factura, entorno, errores, avisos, confirmar, formas, sugerida, opciones, resumen, cuerpo, fiscal, serie, calculo, complemento, original }.
  */
 function prepararComplemento(db, cobroId, op = {}, { config, demo = false } = {}) {
   const errores = [], avisos = [], confirmar = [];
@@ -106,7 +127,18 @@ function prepararComplemento(db, cobroId, op = {}, { config, demo = false } = {}
   // El complemento de este pago (si ya se empezó) y los demás pagos de la factura.
   const fc = factura ? db.prepare('SELECT * FROM main.factura_cobros WHERE cobro_id = ? AND factura_id = ?').get(cobro.id, factura.id) : null;
   const complemento = fc?.complemento_id ? leer(db, fc.complemento_id) : null;
-  if (complemento && AMPARA.includes(complemento.estatus)) errores.push(`Este pago ya tiene su complemento ${folioDe(complemento)}${complemento.estatus === 'cancelacion_solicitada' ? ' (en proceso de cancelación)' : ''}`);
+  // Corrección (sustitución): el complemento que se corrige tiene que ser el vigente de este pago.
+  const sustId = Number(op.sustituye_a) || 0;
+  const original = sustId ? leer(db, sustId) : null;
+  const sustituto = original ? sustitutoDe(db, original.id) : null;
+  if (sustId) {
+    const previo = original?.sustituye_a ? leer(db, original.sustituye_a) : null;
+    if (sustituto && AMPARA.includes(sustituto.estatus)) errores.push(`Ya se timbró el complemento que corrige al ${folioDe(original)} (${folioDe(sustituto)}): solo falta cancelar el anterior con el motivo 01`);
+    else if (previo && AMPARA.includes(previo.estatus)) errores.push(`El ${folioDe(original)} corrige al ${folioDe(previo)}, que sigue vigente: primero termina de cancelar el ${folioDe(previo)} con el motivo 01`);
+    else if (!original || original.tipo_documento !== 'pago' || original.estatus !== 'timbrada' || original.entorno !== entorno || complemento?.id !== original.id || !UUID_SAT.test(String(original.uuid || '')))
+      errores.push('El complemento que se quiere corregir no es el vigente de este pago (o es de otro entorno)');
+  } else if (amparaPago(db, complemento)) errores.push(`Este pago ya tiene su complemento ${folioDe(amparaPago(db, complemento))} vigente`);
+  else if (complemento && AMPARA.includes(complemento.estatus)) errores.push(`Este pago ya tiene su complemento ${folioDe(complemento)}${complemento.estatus === 'cancelacion_solicitada' ? ' (en proceso de cancelación)' : ''}`);
   let calculo = null;
   if (factura) {
     const pagos = pagosDe(db, factura);
@@ -117,17 +149,19 @@ function prepararComplemento(db, cobroId, op = {}, { config, demo = false } = {}
     if (enCancelacion) errores.push(`El complemento ${enCancelacion.complemento_serie || ''}-${enCancelacion.complemento_folio || ''} de esta factura está en proceso de cancelación: espera a que el SAT la confirme`);
     // Las parcialidades van en orden: primero el pago más antiguo que todavía no tiene complemento.
     const anterior = pagos.find(k => k.id !== cobro.id && !amparado(k) && (k.fecha < cobro.fecha || (k.fecha === cobro.fecha && k.id < cobro.id)));
-    if (anterior && !cobro.cancelado && cobro.confirmado) errores.push(`Primero timbra el complemento del pago del ${anterior.fecha} (${fmt(anterior.monto_cent)}): las parcialidades van en orden`);
-    // Lo ya amparado por otros complementos vigentes de esta factura.
+    if (anterior && !cobro.cancelado && cobro.confirmado && !original) errores.push(`Primero timbra el complemento del pago del ${anterior.fecha} (${fmt(anterior.monto_cent)}): las parcialidades van en orden`);
+    // Lo ya amparado por otros complementos vigentes de esta factura. Una corrección conserva la parcialidad y los saldos del complemento que corrige.
     const previos = pagos.filter(k => k.id !== cobro.id && amparado(k));
     const pagadoAntes = previos.reduce((t, k) => t + k.importe_pagado_cent, 0);
-    const saldoAnt = factura.total_cent - pagadoAntes, pagado = cobro.monto_cent;
+    const pagado = cobro.monto_cent;
+    const saldoAnt = original && fc ? fc.saldo_anterior_cent : factura.total_cent - pagadoAntes;
+    if (original && fc && fc.importe_pagado_cent !== pagado) errores.push(`El monto del pago cambió desde que se timbró el complemento ${folioDe(original)}: corregirlo rompería los saldos. Cancélalo con el motivo 02 y timbra otro`);
     if (pagado > saldoAnt) errores.push(`El pago (${fmt(pagado)}) es mayor que lo que falta de la factura ${folioDe(factura)} (${fmt(saldoAnt)}): revisa los pagos de la orden`);
     // IVA del pago, en proporción: base = pagado × 100 / (100 + tasa) y su IVA, a 6 decimales (enteros, sin flotantes).
     const tasa = tasaDe(factura, lead);
     if (!tasa && factura.iva_cent) errores.push('No se pudo saber la tasa de IVA de la factura');
     const pagadoM = centavosAMicros(pagado), baseM = redondeo(pagadoM * 100n, BigInt(100 + tasa)), ivaM = ivaMicros(baseM, tasa);
-    calculo = { num_parcialidad: previos.length + 1, saldo_anterior_cent: saldoAnt, importe_pagado_cent: pagado, saldo_insoluto_cent: Math.max(saldoAnt - pagado, 0), tasa, base_micros: baseM, iva_micros: ivaM };
+    calculo = { num_parcialidad: original && fc ? fc.num_parcialidad : previos.length + 1, saldo_anterior_cent: saldoAnt, importe_pagado_cent: pagado, saldo_insoluto_cent: Math.max(saldoAnt - pagado, 0), tasa, base_micros: baseM, iva_micros: ivaM };
   }
   if (lead?.estatus !== 'ganado') errores.push('El pago no es de una orden de servicio');
 
@@ -168,6 +202,7 @@ function prepararComplemento(db, cobroId, op = {}, { config, demo = false } = {}
     cobro: { id: cobro.id, fecha: cobro.fecha, monto_cent: cobro.monto_cent, metodo: cobro.metodo, referencia: cobro.referencia || null },
     factura: factura ? { id: factura.id, serie: factura.serie, folio: factura.folio, uuid: factura.uuid, total_cent: factura.total_cent } : null,
     receptor: factura ? { rfc: factura.receptor_rfc, razon_social: factura.receptor_razon_social } : null,
+    sustituye: original ? { id: original.id, serie: original.serie, folio: original.folio, forma_pago: original.forma_pago } : null,
     forma_pago: forma || null, forma_sugerida: sugerida, opciones, serie: serie?.serie || null, lugar_expedicion: lugar || null, enviar_correo: enviarCorreo, fecha_limite: limite,
     ...(calculo ? { num_parcialidad: calculo.num_parcialidad, saldo_anterior_cent: calculo.saldo_anterior_cent, importe_pagado_cent: calculo.importe_pagado_cent,
       saldo_insoluto_cent: calculo.saldo_insoluto_cent, base: microsATexto(calculo.base_micros), iva: microsATexto(calculo.iva_micros), tasa: calculo.tasa } : {}),
@@ -176,6 +211,7 @@ function prepararComplemento(db, cobroId, op = {}, { config, demo = false } = {}
   const cuerpo = factura && calculo ? {
     TipoCfdi: 'pago', RegimenFiscal: Number(config?.emisor?.regimen) || undefined, EnviarCorreo: enviarCorreo, Serie: Number(serie?.serie_uid) || undefined,
     LugarExpedicion: lugar || undefined, UsoCFDI: 'CP01', Moneda: 'XXX', BorradorSiFalla: '1',
+    ...(original ? { CfdiRelacionados: { TipoRelacion: '04', UUID: [String(original.uuid).toUpperCase()] } } : {}),
     Conceptos: [CONCEPTO_PAGO],
     Pagos: [{
       FechaPago: fechaPago(cobro.fecha), FormaDePagoP: forma, MonedaP: 'MXN', TipoCambioP: '1', Monto: pesos(calculo.importe_pagado_cent),
@@ -188,7 +224,7 @@ function prepararComplemento(db, cobroId, op = {}, { config, demo = false } = {}
       }],
     }],
   } : null;
-  return { cobro, lead, factura, entorno, errores: [...new Set(errores)], avisos, confirmar, formas, sugerida, opciones, resumen, cuerpo, fiscal, serie, calculo, complemento, forma };
+  return { cobro, lead, factura, entorno, errores: [...new Set(errores)], avisos, confirmar, formas, sugerida, opciones, resumen, cuerpo, fiscal, serie, calculo, complemento, forma, original: sustId ? original : null };
 }
 
 // ---------------- Guardar en la base ----------------
@@ -196,8 +232,9 @@ function prepararComplemento(db, cobroId, op = {}, { config, demo = false } = {}
 function reservar(db, p, usuarioId) {
   return db.transaction(() => {
     const fc = db.prepare('SELECT * FROM main.factura_cobros WHERE cobro_id = ? AND factura_id = ?').get(p.cobro.id, p.factura.id);
-    const ya = fc?.complemento_id ? leer(db, fc.complemento_id) : null;
-    if (ya && AMPARA.includes(ya.estatus)) throw new ErrorFactura('config', 'Este pago ya tiene su complemento de pago');
+    // Una corrección es su propio CFDI (relacionado con el anterior); el pago sigue apuntando al anterior hasta que la corrección se timbre.
+    const ya = p.original ? sustitutoDe(db, p.original.id) : fc?.complemento_id ? leer(db, fc.complemento_id) : null;
+    if ((ya && AMPARA.includes(ya.estatus)) || (!p.original && amparaPago(db, ya))) throw new ErrorFactura('config', p.original ? 'Ese complemento ya tiene su corrección timbrada' : 'Este pago ya tiene su complemento de pago');
     if (ya?.estatus === 'timbrando') return ya; // primero se averigua qué pasó con el intento anterior
     const foto = { cliente_fiscal_id: p.fiscal.id, receptor_rfc: p.factura.receptor_rfc, receptor_razon_social: p.factura.receptor_razon_social, receptor_cp: p.factura.receptor_cp,
       receptor_regimen: p.factura.receptor_regimen, uso_cfdi: 'CP01', receptor_correo: p.factura.receptor_correo, metodo_pago: null, forma_pago: p.forma, moneda: 'XXX',
@@ -207,11 +244,12 @@ function reservar(db, p, usuarioId) {
     if (ya && ['pendiente', 'borrador_error'].includes(ya.estatus)) { id = ya.id; actualizar(db, id, foto); }
     else {
       // Nuevo (o el anterior se canceló): otro CFDI de pago con su propio número de orden.
-      id = Number(db.prepare("INSERT INTO main.facturas (lead_id, sucursal_id, tipo_documento, estatus, num_order, entorno, creado_por) VALUES (?, ?, 'pago', 'pendiente', ?, ?, ?)")
-        .run(p.lead.id, p.lead.sucursal_id, 'reservando-' + crypto.randomUUID(), p.entorno, usuarioId ?? null).lastInsertRowid);
+      id = Number(db.prepare("INSERT INTO main.facturas (lead_id, sucursal_id, tipo_documento, estatus, num_order, entorno, creado_por, sustituye_a) VALUES (?, ?, 'pago', 'pendiente', ?, ?, ?, ?)")
+        .run(p.lead.id, p.lead.sucursal_id, 'reservando-' + crypto.randomUUID(), p.entorno, usuarioId ?? null, p.original?.id ?? null).lastInsertRowid);
       const folioOS = require('./sucursales').folio('OS', 'leads', p.lead.id, p.lead.created_at);
       actualizar(db, id, { ...foto, num_order: `${folioOS}-P${id}-${instancia(db)}` });
     }
+    if (p.original) return leer(db, id);
     db.prepare(`INSERT INTO main.factura_cobros (factura_id, cobro_id, complemento_id, num_parcialidad, saldo_anterior_cent, importe_pagado_cent, saldo_insoluto_cent) VALUES (?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(cobro_id, factura_id) DO UPDATE SET complemento_id = excluded.complemento_id, num_parcialidad = excluded.num_parcialidad, saldo_anterior_cent = excluded.saldo_anterior_cent,
         importe_pagado_cent = excluded.importe_pagado_cent, saldo_insoluto_cent = excluded.saldo_insoluto_cent`).run(p.factura.id, p.cobro.id, id, ...saldos);
@@ -276,26 +314,40 @@ function complementosDeOrden(db, leadId, entorno) {
     factura: { id: inv.id, serie: inv.serie, folio: inv.folio, total_cent: inv.total_cent, saldo_insoluto_cent: inv.total_cent - amparadoCent },
     pagos: pagos.map(k => ({ cobro_id: k.id, fecha: k.fecha, monto_cent: k.monto_cent, metodo: k.metodo, fecha_limite: fechaLimite(k.fecha), vencido: !amparado(k) && hoyMexico() > fechaLimite(k.fecha),
       complemento: k.complemento_id ? { id: k.complemento_id, estatus: k.complemento_estatus, serie: k.complemento_serie, folio: k.complemento_folio, uuid: k.complemento_uuid, num_parcialidad: k.num_parcialidad } : null,
-      amparado: amparado(k) })),
+      amparado: amparado(k), ...correccion(db, k) })),
+  };
+}
+/** Para la tabla de pagos: la corrección en curso del complemento vigente, o el anterior que ya se corrigió y falta cancelar (motivo 01). */
+function correccion(db, k) {
+  if (!k.complemento_id) return {};
+  const s = sustitutoDe(db, k.complemento_id), c = leer(db, k.complemento_id);
+  const ant = c?.sustituye_a ? leer(db, c.sustituye_a) : null;
+  return {
+    correccion: s ? { id: s.id, estatus: s.estatus, serie: s.serie, folio: s.folio } : null,
+    corrige_a: ant && AMPARA.includes(ant.estatus) ? { id: ant.id, estatus: ant.estatus, serie: ant.serie, folio: ant.folio } : null,
   };
 }
 
 /** ¿El cobro tiene un complemento REAL que lo ampara (o en curso)? Entonces el cobro no se cancela hasta cancelar (o resolver) el complemento.
  *  Uno de pruebas (sandbox) no estorba al cobro real; en el demo sí cuenta, para que se vea igual que en producción. */
 function complementoQueBloquea(db, cobroId) {
-  return db.prepare(`SELECT c.* FROM main.factura_cobros fc JOIN main.facturas c ON c.id = fc.complemento_id WHERE fc.cobro_id = ? AND c.entorno IN ('prod', 'demo') AND c.estatus IN (${lista(OCUPA)}) ORDER BY c.id DESC LIMIT 1`).get(Number(cobroId)) || null;
+  const ids = enCadena(db, db.prepare('SELECT complemento_id FROM main.factura_cobros WHERE cobro_id = ?').all(Number(cobroId)).map(r => r.complemento_id));
+  return complementosEn(db, ids, "AND entorno IN ('prod', 'demo') ORDER BY id DESC LIMIT 1")[0] || null;
 }
 
-/** Complementos vigentes de la misma factura con una parcialidad POSTERIOR: mientras existan, este no se cancela (se rompería la cadena de saldos). */
+/** Complementos vigentes de la misma factura con una parcialidad POSTERIOR: mientras existan, este no se cancela con el motivo 02 (se rompería la cadena
+ *  de saldos). Una corrección (motivo 01) conserva los saldos, así que no los toca. */
 function complementosPosteriores(db, complementoId) {
-  const fc = db.prepare('SELECT factura_id, num_parcialidad FROM main.factura_cobros WHERE complemento_id = ?').get(Number(complementoId));
+  const ids = enCadena(db, [complementoId]);
+  const fc = db.prepare(`SELECT factura_id, num_parcialidad FROM main.factura_cobros WHERE complemento_id IN (${ids.map(Number).join(', ')})`).get();
   if (!fc) return [];
-  return db.prepare(`SELECT c.* FROM main.factura_cobros x JOIN main.facturas c ON c.id = x.complemento_id WHERE x.factura_id = ? AND x.num_parcialidad > ? AND c.estatus IN (${lista(OCUPA)}) ORDER BY x.num_parcialidad`).all(fc.factura_id, fc.num_parcialidad);
+  const otros = db.prepare('SELECT complemento_id FROM main.factura_cobros WHERE factura_id = ? AND num_parcialidad > ?').all(fc.factura_id, fc.num_parcialidad).map(r => r.complemento_id);
+  return complementosEn(db, enCadena(db, otros), 'ORDER BY id');
 }
 
-/** Complementos de una factura que todavía cuentan ante el SAT (o en curso): con ellos el SAT no deja cancelar la factura. */
+/** Complementos de una factura que todavía cuentan ante el SAT (o en curso), con sus correcciones y los que corrigen: con ellos el SAT no deja cancelarla. */
 function complementosVigentes(db, facturaId) {
-  return db.prepare(`SELECT c.* FROM main.factura_cobros fc JOIN main.facturas c ON c.id = fc.complemento_id WHERE fc.factura_id = ? AND c.estatus IN (${lista(OCUPA)}) ORDER BY c.id`).all(Number(facturaId));
+  return complementosEn(db, enCadena(db, db.prepare('SELECT complemento_id FROM main.factura_cobros WHERE factura_id = ?').all(Number(facturaId)).map(r => r.complemento_id)), 'ORDER BY id');
 }
 
 module.exports = { prepararComplemento, timbrarComplemento, pendientes, complementosDeOrden, complementoQueBloquea, complementosVigentes, complementosPosteriores, fechaLimite, fechaPago, FORMA_SUGERIDA, OPCIONES_DUDOSAS, CONCEPTO_PAGO };

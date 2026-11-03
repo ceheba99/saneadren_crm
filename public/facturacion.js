@@ -275,15 +275,16 @@ const Facturacion = (() => {
   }
   // ---------- Cancelación (F5, 2026-10-29) ----------
   // 01 = con errores y se sustituye (primero se timbra la nueva, relacionada con esta); 02 = con errores, sin sustituir; 03 = el servicio no se realizó.
-  // 04 (factura global) no se usa: no hay factura global. Un complemento de pago (F6) solo se cancela con 02 y después se timbra otro desde su pago.
+  // 04 (factura global) no se usa: no hay factura global. Un complemento de pago (F6): 01 si se corrige (primero se timbra la corrección desde su pago),
+  // 02 si el pago no debió registrarse.
   // Nada se da por cancelado hasta que el SAT lo confirma.
   function panelCancelar(tarjeta, f, enOrden) {
     tarjeta.parentNode.querySelectorAll('.fx-cancelar-panel').forEach(p => p.remove());
     const p = document.createElement('div'); p.className = 'fx-cancelar-panel'; p.dataset.fxPanel = String(f.id);
     const pago = f.tipo_documento === 'pago';
     p.innerHTML = `<p><b>¿Por qué se cancela ${pago ? 'el complemento de pago' : 'la'} ${esc(f.serie || '')}-${esc(f.folio || '')}?</b>${f.entorno === 'prod' ? ' Esta cancelación es ante el SAT y no se puede deshacer.' : ' (De prueba: sin validez fiscal.)'}</p>
-      ${pago ? '' : '<label class="fx-check"><input type="radio" name="fx-motivo-' + Number(f.id) + '" value="01"> <span><b>01 · Tiene errores y se sustituye por otra factura.</b> Primero se timbra la nueva (corregida) y después se cancela esta.</span></label>'}
-      <label class="fx-check"><input type="radio" name="fx-motivo-${Number(f.id)}" value="02"${pago ? ' checked' : ''}> <span><b>02 · Tiene errores y no se va a sustituir.</b>${pago ? ' Cuando el SAT confirme la cancelación, su pago vuelve a «complemento pendiente» para timbrar uno correcto.' : ''}</span></label>
+      <label class="fx-check"><input type="radio" name="fx-motivo-${Number(f.id)}" value="01"> <span><b>01 · Tiene errores y se sustituye por ${pago ? 'otro complemento' : 'otra factura'}.</b> ${pago ? 'El pago sí ocurrió: primero se timbra el complemento corregido y después se cancela este. El pago nunca queda sin complemento.' : 'Primero se timbra la nueva (corregida) y después se cancela esta.'}</span></label>
+      <label class="fx-check"><input type="radio" name="fx-motivo-${Number(f.id)}" value="02"> <span><b>02 · ${pago ? 'El pago no debió registrarse' : 'Tiene errores y no se va a sustituir'}.</b>${pago ? ' Por ejemplo, un cheque rebotado o un pago capturado dos veces. Cuando el SAT confirme la cancelación, cancela el pago en Finanzas (si no, vuelve a «complemento pendiente»).' : ''}</span></label>
       ${pago ? '' : '<label class="fx-check"><input type="radio" name="fx-motivo-' + Number(f.id) + '" value="03"> <span><b>03 · El servicio no se llevó a cabo.</b></span></label>'}
       <div class="btn-group"><button type="button" class="btn btn-primario" data-fx-cancelar-ok>Continuar</button><button type="button" class="btn btn-outline" data-fx-cancelar-no>No cancelar</button></div>`;
     tarjeta.after(p);
@@ -292,6 +293,12 @@ const Facturacion = (() => {
       const ok = e.target.closest('[data-fx-cancelar-ok]'); if (!ok) return;
       const motivo = p.querySelector('input[type=radio]:checked')?.value;
       if (!motivo) return toast('Elige el motivo de la cancelación');
+      if (motivo === '01' && pago) {
+        p.remove();
+        const k = enOrden && ORD?.complementos?.pagos.find(x => x.complemento?.id === f.id);
+        if (k) return abrirComplemento(k.cobro_id, null, f.id);
+        return abrirFicha(Number(f.lead_id)).then(() => toast('Para corregirlo: en la tabla de pagos de la orden pulsa «Corregir» junto a este complemento')); // sin HTML
+      }
       if (motivo === '01') {
         p.remove();
         if (enOrden) { ORD.extra = null; return cargarOrden({ id: ORD.id, estatus: 'ganado' }, { sustituye_a: f.id }).then(() => $('cfdi-orden').querySelector('.fx-preparar')?.scrollIntoView({ block: 'start' })); }
@@ -302,9 +309,10 @@ const Facturacion = (() => {
     });
   }
   async function pedirCancelacion(f, motivo, sustituta, enOrden) {
-    const texto = { '01': `sustituida por la ${sustituta ? (sustituta.serie || '') + '-' + (sustituta.folio || '') : ''}`, '02': 'tiene errores y no se sustituye', '03': 'el servicio no se llevó a cabo' }[motivo];
-    if (!await solicitarDialogo({ titulo: f.entorno === 'prod' ? 'Cancelar factura ante el SAT' : 'Cancelar factura de PRUEBA', aceptar: 'Sí, cancelar',
-      mensaje: `Factura ${f.serie || ''}-${f.folio || ''} · motivo ${motivo}: ${texto}.\n\n${f.entorno === 'prod' ? 'No se puede deshacer. ' : ''}Se da por cancelada solo cuando el SAT lo confirma; si el cliente tiene que aceptarla, puede tardar.` })) return false;
+    const pago = f.tipo_documento === 'pago', folioS = sustituta ? (sustituta.serie || '') + '-' + (sustituta.folio || '') : '';
+    const texto = { '01': pago ? `corregido por el ${folioS}` : `sustituida por la ${folioS}`, '02': pago ? 'el pago no debió registrarse' : 'tiene errores y no se sustituye', '03': 'el servicio no se llevó a cabo' }[motivo];
+    if (!await solicitarDialogo({ titulo: (f.entorno === 'prod' ? 'Cancelar ' : 'Cancelar ') + (pago ? 'complemento de pago' : 'factura') + (f.entorno === 'prod' ? ' ante el SAT' : ' de PRUEBA'), aceptar: 'Sí, cancelar',
+      mensaje: `${pago ? 'Complemento de pago' : 'Factura'} ${f.serie || ''}-${f.folio || ''} · motivo ${motivo}: ${texto}.\n\n${f.entorno === 'prod' ? 'No se puede deshacer. ' : ''}Se da por cancelada solo cuando el SAT lo confirma; si el cliente tiene que aceptarla, puede tardar.` })) return false;
     const r = await pedirCompleto('/facturas/' + Number(f.id) + '/cancelar', { motivo, sustituta_id: sustituta?.id }, 'POST');
     toast(r.ok ? (r.j.estado === 'cancelada' ? 'Factura cancelada ante el SAT' : r.j.mensaje || 'Cancelación en proceso') : (r.j.error || 'No se pudo cancelar')); // sin HTML
     if (enOrden && ORD) { ORD.opciones = { ...ORD.opciones, sustituye_a: undefined }; await cargarOrden({ id: ORD.id, estatus: 'ganado' }, ORD.opciones); if (typeof Finanzas !== 'undefined' && f.entorno === 'prod') Finanzas.pintarCobranzaOrden({ id: ORD.id, estatus: 'ganado' }); }
@@ -342,8 +350,8 @@ const Facturacion = (() => {
         <small>${esc(f.receptor_razon_social)} · ${esc(f.receptor_rfc)} · ${esc(f.forma_pago || '')} ${esc(f.metodo_pago || '')}${f.uuid ? ' · Folio fiscal ' + esc(f.uuid) : ''}${f.fecha_timbrado ? ' · ' + esc(String(f.fecha_timbrado).replace('T', ' ').slice(0, 16)) : ''}</small>
         ${f.error && f.estatus !== 'timbrada' ? `<small class="fx-mal">${esc(f.error)}</small>` : ''}
         ${f.motivo_cancelacion ? `<small>Motivo de cancelación ${esc(f.motivo_cancelacion)}${f.cancelacion_estado ? ' · SAT: ' + esc(f.cancelacion_estado) : ''}</small>` : ''}
-        ${f.sustituta ? `<small class="fx-mal">Ya se timbró la que la sustituye (${esc(f.sustituta.serie || '')}-${esc(f.sustituta.folio || '')}): falta cancelar esta con el motivo 01</small>` : ''}
-        ${f.sustituye_a ? '<small>Sustituye a otra factura de esta orden (motivo 01)</small>' : ''}
+        ${f.sustituta ? `<small class="fx-mal">Ya se timbró ${f.tipo_documento === 'pago' ? 'el complemento que lo corrige' : 'la que la sustituye'} (${esc(f.sustituta.serie || '')}-${esc(f.sustituta.folio || '')}): falta cancelar ${f.tipo_documento === 'pago' ? 'este' : 'esta'} con el motivo 01</small>` : ''}
+        ${f.sustituye_a ? `<small>${f.tipo_documento === 'pago' ? 'Corrige a otro complemento de este pago' : 'Sustituye a otra factura de esta orden'} (motivo 01)</small>` : ''}
       </div>
       <div class="btn-group">
         ${f.tiene_xml || (f.estatus === 'timbrada' && f.entorno !== 'demo') ? `<button type="button" class="btn btn-outline" data-fx-bajar="xml">XML</button>` : ''}
@@ -408,7 +416,7 @@ const Facturacion = (() => {
     const c = ORD.complementos; if (!c) return '';
     const totalF = pesos(c.factura.total_cent / 100), faltaF = pesos(c.factura.saldo_insoluto_cent / 100);
     const filas = c.pagos.map(k => `<tr><td>${esc(fechaDMA(k.fecha))}</td><td class="num">${pesos(k.monto_cent / 100)}</td><td>${esc(k.metodo)}</td><td>${k.amparado
-      ? `✅ Complemento ${esc(k.complemento.serie || '')}-${esc(k.complemento.folio || '')} · parcialidad ${Number(k.complemento.num_parcialidad)}${k.complemento.estatus === 'cancelacion_solicitada' ? ' (cancelación en proceso)' : ''}`
+      ? `✅ Complemento ${esc(k.complemento.serie || '')}-${esc(k.complemento.folio || '')} · parcialidad ${Number(k.complemento.num_parcialidad)}${k.complemento.estatus === 'cancelacion_solicitada' ? ' (cancelación en proceso)' : ''}${correccionPpd(k)}`
       : `<span class="${k.vencido ? 'fx-mal' : ''}">${esc(k.complemento ? COMP_ESTADO[k.complemento.estatus] || k.complemento.estatus : 'Sin complemento')} · límite ${esc(fechaDMA(k.fecha_limite))}${k.vencido ? ' (vencido)' : ''}</span>
          ${k.complemento?.estatus === 'timbrando' ? '' : `<button type="button" class="btn btn-secundario" data-fx-comp="${Number(k.cobro_id)}">Timbrar complemento</button>`}`}</td></tr>
       <tr hidden data-fx-comp-panel="${Number(k.cobro_id)}"><td colspan="4"></td></tr>`).join('');
@@ -416,14 +424,26 @@ const Facturacion = (() => {
       <p class="ayuda">Total de la factura ${totalF} · falta amparar con complementos ${faltaF}. Solo cuentan los pagos confirmados (un ajuste o descuento no lleva complemento).</p>
       ${c.pagos.length ? `<div class="tabla-scroll"><table class="fx-conceptos"><thead><tr><th>Fecha del pago</th><th class="num">Monto</th><th>Cómo pagó</th><th>Complemento</th></tr></thead><tbody>${filas}</tbody></table></div>` : '<p class="util-45">Todavía no hay pagos confirmados de esta factura.</p>'}</div>`;
   }
-  async function abrirComplemento(cobroId, forma) {
+  // Corregir (2026-11-03): el pago sí ocurrió y su complemento salió con un dato mal → se timbra otro relacionado (04) y el anterior se cancela con 01.
+  function correccionPpd(k) {
+    if (k.corrige_a) return `<br><small class="fx-mal">Corrige al ${esc(k.corrige_a.serie || '')}-${esc(k.corrige_a.folio || '')}${k.corrige_a.estatus === 'cancelacion_solicitada' ? ', cuya cancelación sigue en proceso: consulta su estatus en su tarjeta' : ', que sigue vigente: cancélalo con el motivo 01 desde su tarjeta'}</small>`;
+    const s = k.correccion;
+    if (s && ['timbrada', 'cancelacion_solicitada'].includes(s.estatus)) return '';
+    if (s && s.estatus === 'timbrando') return '<br><small class="fx-mal">Su corrección se quedó sin respuesta: pulsa «Verificar» en su tarjeta</small>';
+    if (k.complemento.estatus !== 'timbrada') return '';
+    return `${s ? `<br><small class="fx-mal">Su corrección ${s.estatus === 'borrador_error' ? 'quedó en borrador' : 'no se timbró'}: revisa el motivo y vuelve a intentar</small>` : ''}
+      <button type="button" class="btn btn-outline" data-fx-comp="${Number(k.cobro_id)}" data-fx-comp-sust="${Number(k.complemento.id)}" title="El pago sí ocurrió, pero el complemento salió con un dato mal">Corregir</button>`;
+  }
+  async function abrirComplemento(cobroId, forma, sustituye) {
     const fila = $('cfdi-orden').querySelector(`[data-fx-comp-panel="${Number(cobroId)}"]`); if (!fila) return;
     const celda = fila.firstElementChild; fila.hidden = false; celda.innerHTML = '<p class="util-45" role="status">Revisando…</p>';
-    const r = await pedirCompleto('/complementos/cobros/' + Number(cobroId) + (forma ? '?forma_pago=' + encodeURIComponent(forma) : ''));
+    const q = new URLSearchParams(Object.entries({ forma_pago: forma, sustituye_a: sustituye }).filter(([, v]) => v)).toString();
+    const r = await pedirCompleto('/complementos/cobros/' + Number(cobroId) + (q ? '?' + q : ''));
     if (!r.ok) { celda.innerHTML = `<p class="aviso-error-carga" role="alert">${esc(r.j.error || 'No se pudo revisar el pago')}</p>`; return; }
     const p = r.j, s = p.resumen;
     const opciones = p.formas_pago.map(f => `<option value="${esc(f.clave)}"${f.clave === s.forma_pago ? ' selected' : ''}>${esc(f.clave)} · ${esc(f.nombre)}${f.clave === s.forma_sugerida ? ' (sugerida)' : (s.opciones || []).includes(f.clave) ? ' (posible)' : ''}</option>`).join('');
     celda.innerHTML = `<div class="fx-cancelar-panel" data-fx-comp-form="${Number(cobroId)}">
+      ${s.sustituye ? `<p><b>Corrección del complemento ${esc(s.sustituye.serie || '')}-${esc(s.sustituye.folio || '')}</b> (su forma de pago era «${esc(s.sustituye.forma_pago || "—")}»). El nuevo se relaciona con el anterior (sustitución) y conserva su parcialidad y saldos; después se cancela el anterior con el motivo 01. Si lo que estaba mal es la fecha o la referencia del pago, corrígela primero en Finanzas.</p>` : ''}
       <p><b>Complemento de pago${s.prueba ? ' de PRUEBA' : ''}</b> · parcialidad ${Number(s.num_parcialidad) || '—'} · saldo anterior ${s.saldo_anterior_cent != null ? pesos(s.saldo_anterior_cent / 100) : '—'} · pagado ${pesos(s.cobro.monto_cent / 100)} · queda ${s.saldo_insoluto_cent != null ? pesos(s.saldo_insoluto_cent / 100) : '—'}</p>
       <p class="ayuda">IVA del pago: base ${esc(s.base || '—')} · IVA ${esc(s.iva || '—')} (${Number(s.tasa) || 0} %) · serie ${esc(s.serie || '—')} · fecha del pago ${esc(fechaDMA(s.cobro.fecha))}${s.cobro.referencia ? ' · referencia ' + esc(s.cobro.referencia) : ''}</p>
       <div class="fx-suc-campos"><label>Forma de pago (cómo pagó el cliente: «${esc(s.cobro.metodo)}»)<select data-fx-comp-forma><option value="">— elige —</option>${opciones}</select></label></div>
@@ -431,7 +451,7 @@ const Facturacion = (() => {
       ${p.avisos.map(a => `<p class="ayuda">⚠ ${esc(a)}</p>`).join('')}
       ${p.confirmar.length && !p.errores.length ? `<label class="fx-check fx-confirmar"><input type="checkbox" data-fx-comp-confirmar> ${esc(p.confirmar.join(' '))}</label>` : ''}
       <div class="btn-group"><button type="button" class="btn btn-primario" data-fx-comp-timbrar="${Number(cobroId)}" ${p.errores.length ? 'disabled' : ''}>🧾 Timbrar complemento${s.prueba ? ' de prueba' : ''}</button><button type="button" class="btn btn-outline" data-fx-comp-cerrar>Cerrar</button></div></div>`;
-    celda.querySelector('[data-fx-comp-forma]').addEventListener('change', e => abrirComplemento(cobroId, e.target.value));
+    celda.querySelector('[data-fx-comp-forma]').addEventListener('change', e => abrirComplemento(cobroId, e.target.value, sustituye));
     celda.querySelector('[data-fx-comp-cerrar]').addEventListener('click', () => { fila.hidden = true; celda.innerHTML = ''; });
     celda.querySelector('[data-fx-comp-timbrar]').addEventListener('click', async e => {
       if (timbrando) return;
@@ -439,14 +459,17 @@ const Facturacion = (() => {
       if (conf && !conf.checked) { toast('Marca la casilla para continuar'); conf.focus(); return; }
       const forma = celda.querySelector('[data-fx-comp-forma]').value;
       if (!await solicitarDialogo({ titulo: s.prueba ? 'Timbrar complemento de PRUEBA' : 'Timbrar complemento de pago', aceptar: 'Sí, timbrar',
-        mensaje: `${s.prueba ? 'PRUEBA sin validez fiscal.\n\n' : 'Este complemento tiene validez fiscal ante el SAT y no se puede borrar (solo cancelar).\n\n'}Factura ${s.factura.serie || ''}-${s.factura.folio || ''} · parcialidad ${s.num_parcialidad}\nPago de ${pesos(s.cobro.monto_cent / 100)} del ${fechaDMA(s.cobro.fecha)} · forma ${forma}\nQueda por pagar: ${pesos(s.saldo_insoluto_cent / 100)}` })) return;
+        mensaje: `${s.prueba ? 'PRUEBA sin validez fiscal.\n\n' : 'Este complemento tiene validez fiscal ante el SAT y no se puede borrar (solo cancelar).\n\n'}${s.sustituye ? `Corrige al complemento ${s.sustituye.serie || ''}-${s.sustituye.folio || ''} (después se cancela con el motivo 01).\n` : ''}Factura ${s.factura.serie || ''}-${s.factura.folio || ''} · parcialidad ${s.num_parcialidad}\nPago de ${pesos(s.cobro.monto_cent / 100)} del ${fechaDMA(s.cobro.fecha)} · forma ${forma}\nQueda por pagar: ${pesos(s.saldo_insoluto_cent / 100)}` })) return;
       timbrando = true; e.target.disabled = true; e.target.textContent = 'Timbrando… (puede tardar hasta un minuto)';
       try {
-        const t = await pedirCompleto('/complementos/cobros/' + Number(cobroId) + '/timbrar', { forma_pago: forma, confirmar: !!conf?.checked }, 'POST');
+        const t = await pedirCompleto('/complementos/cobros/' + Number(cobroId) + '/timbrar', { forma_pago: forma, confirmar: !!conf?.checked, sustituye_a: sustituye || undefined }, 'POST');
         if (t.ok) { toast(t.j.estado === 'timbrada' ? `Complemento ${t.j.factura.serie || ''}-${t.j.factura.folio || ''} timbrado` : (t.j.mensaje || 'No se timbró')); for (const a of t.j.avisos || []) toast(a); } // sin HTML
         else if (t.status >= 500 || !t.j.error) toast('No se sabe si quedó timbrado (el servidor no contestó a tiempo). Espera un minuto y vuelve a abrir la orden: no lo mandes otra vez sin revisar.'); // sin HTML
         else toast(t.j.error);
         await cargarOrden({ id: ORD.id, estatus: 'ganado' }, ORD.opciones);
+        // Corrección timbrada: ahora se cancela el anterior con el motivo 01 (si se dice que no, queda «Cancelar (motivo 01)» en su tarjeta).
+        const orig = sustituye && t.ok && t.j.estado === 'timbrada' ? ORD.facturas.find(x => x.id === Number(sustituye)) : null;
+        if (orig) await pedirCancelacion(orig, '01', t.j.factura, true);
       } finally { timbrando = false; }
     });
   }
@@ -465,7 +488,7 @@ const Facturacion = (() => {
     if (!ORD) return;
     const bajar = e.target.closest('[data-fx-bajar]');
     if (bajar) { await bajarArchivo(bajar, bajar.closest('[data-fx-factura]').dataset.fxFactura, bajar.dataset.fxBajar); return; }
-    const comp = e.target.closest('[data-fx-comp]'); if (comp) return abrirComplemento(comp.dataset.fxComp);
+    const comp = e.target.closest('[data-fx-comp]'); if (comp) return abrirComplemento(comp.dataset.fxComp, null, comp.dataset.fxCompSust);
     if (e.target.closest('[data-fx-sin-sustituir]')) { ORD.opciones = { ...ORD.opciones, sustituye_a: undefined }; return cargarOrden({ id: ORD.id, estatus: 'ganado' }, ORD.opciones); }
     const tarjetaOrden = e.target.closest('[data-fx-factura]');
     if (tarjetaOrden && e.target.closest('[data-fx-cancelar],[data-fx-estatus],[data-fx-reintentar]')) { const f = ORD.facturas.find(x => x.id === Number(tarjetaOrden.dataset.fxFactura)); if (f) return accionTarjeta(e, f, true, () => cargarOrden({ id: ORD.id, estatus: 'ganado' }, ORD.opciones)); }

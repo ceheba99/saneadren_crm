@@ -348,7 +348,7 @@ module.exports = function rutasFacturacion(app, db, h, { direccion, puede = () =
     if (!k || !db.prepare('SELECT 1 FROM leads WHERE id = ?').get(k.lead_id)) { res.status(404).json({ error: 'Pago no encontrado' }); return null; } // «leads» respeta el alcance
     return k;
   };
-  const opcionesComplemento = q => ({ forma_pago: q.forma_pago || undefined, confirmar: q.confirmar === true || q.confirmar === '1',
+  const opcionesComplemento = q => ({ forma_pago: q.forma_pago || undefined, sustituye_a: q.sustituye_a ? Number(q.sustituye_a) : undefined, confirmar: q.confirmar === true || q.confirmar === '1',
     enviar_correo: q.enviar_correo === undefined ? undefined : !(q.enviar_correo === false || q.enviar_correo === '0' || q.enviar_correo === 'false') });
   app.get('/api/facturacion/complementos/cobros/:id', h((req, res) => {
     if (sinPermisoTimbrar(req, res)) return;
@@ -364,7 +364,7 @@ module.exports = function rutasFacturacion(app, db, h, { direccion, puede = () =
       try {
         const r = await timbrarComplemento(db, k.id, opcionesComplemento(req.body || {}), ctxDe(req));
         const f = r.factura;
-        if (r.estado === 'timbrada') auditar(req, 'orden_servicio', k.lead_id, 'factura', `Timbró el complemento de pago ${f.serie || ''}-${f.folio || ''}${f.entorno === 'prod' ? '' : f.entorno === 'demo' ? ' (demostración)' : ' (de prueba, sandbox)'}`);
+        if (r.estado === 'timbrada') auditar(req, 'orden_servicio', k.lead_id, 'factura', `Timbró el complemento de pago ${f.serie || ''}-${f.folio || ''}${f.sustituye_a ? ' (corrige a otro)' : ''}${f.entorno === 'prod' ? '' : f.entorno === 'demo' ? ' (demostración)' : ' (de prueba, sandbox)'}`);
         res.json({ estado: r.estado, factura: vistaFactura(f), avisos: r.avisos || [], mensaje: r.mensaje || null, detalles: r.detalles || [] });
         if (r.descargas) await r.descargas;
       } catch (e) {
@@ -474,13 +474,13 @@ module.exports = function rutasFacturacion(app, db, h, { direccion, puede = () =
     if (sinPermisoTimbrar(req, res)) return;
     const entorno = esDemo() ? 'demo' : estadoConfig(env).entorno, avisos = [];
     const TEXTO = { cancelacion_solicitada: ['amarillo', 'Cancelación pedida y todavía sin confirmar por el SAT: consulta su estatus'], timbrando: ['rojo', 'Sin respuesta de factura.com: abre la orden y pulsa «Verificar» (no la mandes otra vez sin revisar)'], borrador_error: ['rojo', 'Quedó en borrador: corrige lo que dice el motivo y vuelve a timbrar'], pendiente: ['amarillo', 'No se timbró: revisa el motivo y vuelve a intentar'] };
-    for (const f of db.prepare("SELECT * FROM facturas WHERE entorno = ? AND ((estatus IN ('timbrando', 'borrador_error', 'cancelacion_solicitada')) OR (estatus = 'pendiente' AND error_json IS NOT NULL)) AND NOT (tipo_documento = 'pago' AND estatus IN ('pendiente', 'borrador_error')) ORDER BY id DESC LIMIT 30").all(entorno)) {
+    for (const f of db.prepare("SELECT * FROM facturas WHERE entorno = ? AND ((estatus IN ('timbrando', 'borrador_error', 'cancelacion_solicitada')) OR (estatus = 'pendiente' AND error_json IS NOT NULL)) AND NOT (tipo_documento = 'pago' AND sustituye_a IS NULL AND estatus IN ('pendiente', 'borrador_error')) ORDER BY id DESC LIMIT 30").all(entorno)) {
       const v = vistaFactura(f), [nivel, texto] = TEXTO[f.estatus];
       avisos.push({ tipo: f.estatus, nivel, lead_id: f.lead_id, folio: folioDeOrden(f), nombre: f.receptor_razon_social, texto: v.error ? `${texto}. Motivo: ${v.error}` : texto });
     }
     // Sustituta timbrada y original todavía vigente: hay DOS facturas vigentes ante el SAT para la misma venta.
     for (const o of db.prepare("SELECT o.* FROM facturas o JOIN facturas s ON s.sustituye_a = o.id AND s.estatus = 'timbrada' WHERE o.entorno = ? AND o.estatus = 'timbrada' ORDER BY o.id DESC LIMIT 20").all(entorno))
-      avisos.push({ tipo: 'sin_cancelar', nivel: 'rojo', lead_id: o.lead_id, folio: folioDeOrden(o), nombre: o.receptor_razon_social, texto: `La factura ${o.serie || ''}-${o.folio || ''} ya tiene su sustituta timbrada y sigue vigente: cancélala con el motivo 01` });
+      avisos.push({ tipo: 'sin_cancelar', nivel: 'rojo', lead_id: o.lead_id, folio: folioDeOrden(o), nombre: o.receptor_razon_social, texto: o.tipo_documento === 'pago' ? `El complemento de pago ${o.serie || ''}-${o.folio || ''} ya tiene su corrección timbrada y sigue vigente: cancélalo con el motivo 01` : `La factura ${o.serie || ''}-${o.folio || ''} ya tiene su sustituta timbrada y sigue vigente: cancélala con el motivo 01` });
     // Realizadas en los últimos 60 días, con IVA, sin folio de factura capturado ni factura vigente en este entorno.
     const porFacturar = db.prepare(`SELECT l.id, l.created_at, l.fecha_realizado, COALESCE(c.empresa_contacto, c.nombre) AS cliente FROM leads l LEFT JOIN clientes c ON c.id = l.cliente_id
       WHERE l.estatus = 'ganado' AND l.ejecucion = 'realizado' AND l.iva_modo IN ('mas_iva', 'incluido') AND (l.factura_folio IS NULL OR l.factura_folio = '')
