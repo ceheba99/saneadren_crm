@@ -626,6 +626,29 @@ const Facturacion = (() => {
   }
   let TURNO_LISTA = 0;
   for (const id of ['fx-l-estatus', 'fx-l-entorno', 'fx-l-sucursal', 'fx-l-desde', 'fx-l-hasta']) $(id)?.addEventListener('change', cargarLista);
+  // Descarga a Excel con los filtros de la pantalla. Los importes van como números (en pesos) para poder sumarlos; todo texto va como texto.
+  const ESTATUS_EXCEL = { pendiente: 'Pendiente', timbrando: 'Sin respuesta', timbrada: 'Timbrada', borrador_error: 'Borrador con error', cancelacion_solicitada: 'Cancelación en proceso', cancelada: 'Cancelada' };
+  $('fx-l-excel')?.addEventListener('click', async e => {
+    const b = e.currentTarget; if (b.disabled) return; b.disabled = true;
+    try {
+      const ExcelJS = await Finanzas.cargarExcelJS();
+      const q = new URLSearchParams(Object.entries(filtrosLista()).filter(([, v]) => v)).toString();
+      const d = await pedir('/facturas/exportar' + (q ? '?' + q : ''));
+      if (!d.filas.length) { toast('No hay facturas con esos filtros'); return; }
+      const wb = new ExcelJS.Workbook(); wb.creator = 'Saneadren CRM';
+      const ws = wb.addWorksheet('Facturas', { views: [{ state: 'frozen', ySplit: 1 }] });
+      const COLS = [['Tipo', 20, 'tipo'], ['Folio', 12, 'folio'], ['Fecha', 12, 'fecha'], ['Orden', 22, 'orden'], ['Cliente', 34, 'cliente'], ['RFC', 16, 'rfc'], ['Subtotal', 14, 'subtotal_cent', 1], ['IVA', 14, 'iva_cent', 1],
+        ['Total', 14, 'total_cent', 1], ['Método de pago', 12, 'metodo_pago'], ['Forma de pago', 12, 'forma_pago'], ['Estatus', 22, 'estatus', 2], ['Motivo de cancelación', 12, 'motivo_cancelacion'], ['Real o de prueba', 14, 'entorno'],
+        ['Sucursal', 16, 'sucursal'], ['Folio fiscal (UUID)', 38, 'uuid']];
+      ws.columns = COLS.map(([titulo, ancho]) => ({ header: titulo, width: ancho }));
+      ws.getRow(1).font = { bold: true };
+      for (const f of d.filas) ws.addRow(COLS.map(([, , k, t]) => (t === 1 ? Number(f[k]) / 100 : t === 2 ? ESTATUS_EXCEL[f[k]] || f[k] : String(f[k] ?? ''))));
+      COLS.forEach(([, , , t], i) => { if (t === 1) ws.getColumn(i + 1).numFmt = '#,##0.00'; });
+      const hoy = new Intl.DateTimeFormat('sv-SE', { timeZone: 'America/Mexico_City' }).format(new Date());
+      saveAs(new Blob([await wb.xlsx.writeBuffer()], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), `facturas_saneadren_${hoy}.xlsx`);
+      toast(d.truncado ? 'Excel descargado (solo las 1,000 más recientes: afina los filtros)' : `Excel descargado: ${d.total} fila(s)`);
+    } catch (err) { toast(err.message); } finally { b.disabled = false; }
+  });
   $('fx-l-q')?.addEventListener('input', () => { clearTimeout(tLista); tLista = setTimeout(cargarLista, 300); });
   $('fx-l-lista')?.addEventListener('click', async e => {
     const tarjeta = e.target.closest('[data-fx-factura]'); if (!tarjeta) return;

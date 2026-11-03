@@ -32,7 +32,10 @@ async function montar({ entorno = 'sandbox', direccion = true, timbra = true, de
     .run(c.lead ?? 1, c.sucursal ?? 1, c.estatus ?? 'timbrada', c.num ?? 'N-' + Math.random().toString(36).slice(2, 8), c.entorno ?? 'sandbox', c.correo === undefined ? 'cliente@ejemplo.mx' : c.correo, c.serie ?? 'F', c.folio ?? null,
       c.uuid ?? null, c.uid ?? null, c.error ?? null).lastInsertRowid);
   const estado = { llamadas: [], bitacora: [], error: null, direccion, timbra };
-  const clienteSim = () => ({ config: { entorno }, get: async ruta => { estado.llamadas.push('GET ' + ruta); if (estado.error) throw estado.error; return { datos: {}, crudo: { response: 'success', message: 'Hemos enviado tu Factura con exito al e-mail cliente@ejemplo.mx' } }; },
+  const clienteSim = () => ({ config: { entorno }, get: async ruta => { estado.llamadas.push('GET ' + ruta);
+    // Búsqueda por NumOrder (antes de descartar un borrador): por omisión «no existe»; estado.orden la cambia.
+    if (ruta.startsWith('/v4/cfdi/order/')) { if (estado.orden) return estado.orden(ruta); throw new ErrorFactura('api', 'No se encontró CFDI: x', { rechazo: true }); }
+    if (estado.error) throw estado.error; return { datos: {}, crudo: { response: 'success', message: 'Hemos enviado tu Factura con exito al e-mail cliente@ejemplo.mx' } }; },
     post: async (ruta, cuerpo) => { estado.llamadas.push('POST ' + ruta); if (estado.error) throw estado.error; return { datos: {}, crudo: { response: 'success' } }; } });
   const app = express(); app.use(express.json());
   app.use((req, res, next) => { req.usuarioSesion = { id: 1, nombre: 'Fer' }; next(); });
@@ -48,8 +51,28 @@ const conMontaje = (nombre, cfg, fn) => test(nombre, async () => { const m = awa
 
 conMontaje('Sin el permiso de timbrar: ninguna ruta nueva responde (403) ni llama a factura.com', { timbra: false, direccion: false }, async ({ pedir, estado, orden, factura }) => {
   orden(1); const f = factura({ uuid: UUID1, folio: '1' });
-  for (const [m, r] of [['GET', '/facturas'], ['GET', '/avisos'], ['POST', `/facturas/${f}/reenviar`], ['POST', `/facturas/${f}/descartar`], ['GET', '/complementos/cobros/1'], ['POST', '/complementos/cobros/1/timbrar'], ['POST', '/importar-clientes/vista-previa'], ['POST', '/importar-clientes/aplicar']]) assert.equal((await pedir(m, r, {})).status, 403, m + ' ' + r);
+  for (const [m, r] of [['GET', '/facturas'], ['GET', '/facturas/exportar'], ['GET', '/avisos'], ['POST', `/facturas/${f}/reenviar`], ['POST', `/facturas/${f}/descartar`], ['GET', '/complementos/cobros/1'], ['POST', '/complementos/cobros/1/timbrar'], ['POST', '/importar-clientes/vista-previa'], ['POST', '/importar-clientes/aplicar']]) assert.equal((await pedir(m, r, {})).status, 403, m + ' ' + r);
   assert.deepEqual(estado.llamadas, []);
+});
+
+conMontaje('Exportar a Excel: las mismas filas y filtros de la lista, sin el corte de 200 y sin llaves ni XML; valida lo que viene', {}, async ({ pedir, orden, factura, db }) => {
+  orden(1); orden(2);
+  factura({ lead: 1, estatus: 'timbrada', uuid: UUID1, folio: '1', serie: 'F' });
+  factura({ lead: 2, estatus: 'cancelada', uuid: UUID2, folio: '2', serie: 'FM', entorno: 'prod', sucursal: 2 });
+  db.exec("UPDATE facturas SET fecha_timbrado = '2026-09-10T10:00:00', motivo_cancelacion = '02', metodo_pago = 'PPD', forma_pago = '99' WHERE uuid = '" + UUID2 + "'");
+  const t = await pedir('GET', '/facturas/exportar');
+  assert.equal(t.status, 200); assert.equal(t.json.total, 2); assert.equal(t.json.truncado, false);
+  const f = t.json.filas.find(x => x.folio === 'FM-2');
+  assert.deepEqual([f.tipo, f.fecha, f.rfc, f.cliente, f.total_cent, f.metodo_pago, f.forma_pago, f.estatus, f.motivo_cancelacion, f.entorno, f.sucursal, f.uuid],
+    ['Factura', '2026-09-10', 'EKU9003173C9', 'ESCUELA KEMPER URGATE', 1160, 'PPD', '99', 'cancelada', '02', 'Real', 'CDMX', UUID2]);
+  assert.equal(t.json.filas.find(x => x.folio === 'F-1').entorno, 'Prueba');
+  assert.deepEqual(Object.keys(f).filter(k => /xml|llave|key|secret|error|correo/i.test(k)), [], 'solo columnas de la lista');
+  assert.deepEqual((await pedir('GET', '/facturas/exportar?entorno=prod')).json.filas.map(x => x.folio), ['FM-2']);
+  assert.deepEqual((await pedir('GET', '/facturas/exportar?q=kemper&estatus=timbrada')).json.filas.map(x => x.folio), ['F-1']);
+  assert.equal((await pedir('GET', '/facturas/exportar?desde=ayer')).status, 400); assert.equal((await pedir('GET', '/facturas/exportar?estatus=inventado')).status, 400);
+  for (let i = 0; i < 205; i++) factura({ lead: 1, estatus: 'cancelada', num: 'MAS-' + i });
+  assert.equal((await pedir('GET', '/facturas')).json.facturas.length, 200, 'la lista se corta a 200');
+  assert.equal((await pedir('GET', '/facturas/exportar')).json.filas.length, 207, 'el Excel no');
 });
 
 conMontaje('Lista: busca por folio, UUID, RFC o cliente; filtra por estado, tipo, sucursal y fecha; valida lo que viene', {}, async ({ pedir, orden, factura, db }) => {
@@ -138,12 +161,27 @@ conMontaje('Descartar borrador: solo Dirección; borra el borrador en factura.co
   estado.direccion = true;
   const x = await pedir('POST', `/facturas/${b}/descartar`, {});
   assert.equal(x.status, 200); assert.equal(x.json.factura.descartada, true); assert.equal(x.json.factura.estatus, 'cancelada');
-  assert.deepEqual(estado.llamadas, ['POST /v4/drafts/BORR-1/drop']);
+  assert.deepEqual(estado.llamadas.filter(l => l.startsWith('POST')), ['POST /v4/drafts/BORR-1/drop']);
+  assert.ok(estado.llamadas[0].startsWith('GET /v4/cfdi/order/'), 'antes de descartar se busca por NumOrder');
   // el lugar quedó libre: se puede empezar una factura nueva de la misma orden
   assert.doesNotThrow(() => factura({ lead: 1, estatus: 'pendiente' }));
   assert.equal(db.prepare("SELECT accion FROM facturas_log WHERE factura_id = ?").get(b).accion, 'descartar');
   const t = factura({ lead: 2, estatus: 'timbrada', uuid: UUID1, folio: '1', uid: 'CFDI-1' });
   assert.equal((await pedir('POST', `/facturas/${t}/descartar`, {})).status, 409); assert.equal(db.prepare('SELECT estatus FROM facturas WHERE id = ?').get(t).estatus, 'timbrada');
+});
+
+conMontaje('Auditoría: un borrador que ya se timbró en el panel de factura.com NO se descarta (queda timbrado); si la búsqueda falla, tampoco', {}, async ({ pedir, orden, factura, estado, db }) => {
+  orden(1); orden(2);
+  const a = factura({ lead: 1, estatus: 'borrador_error', uid: 'BORR-A', folio: '8' }), b = factura({ lead: 2, estatus: 'borrador_error', uid: 'BORR-B' });
+  const numA = db.prepare('SELECT num_order FROM facturas WHERE id = ?').get(a).num_order;
+  estado.orden = () => ({ datos: { UID: 'BORR-A', UUID: UUID1, Folio: 'F 8', Status: 'enviada', NumOrder: numA }, crudo: {} });
+  const x = await pedir('POST', `/facturas/${a}/descartar`, {});
+  assert.equal(x.status, 409); assert.match(x.json.error, /ya se timbró en factura.com/);
+  assert.deepEqual([db.prepare('SELECT estatus, uuid FROM facturas WHERE id = ?').get(a)].map(f => [f.estatus, f.uuid])[0], ['timbrada', UUID1]);
+  assert.ok(!estado.llamadas.some(l => /drop/.test(l)), 'no se pidió borrar nada');
+  estado.orden = () => { throw new ErrorFactura('tiempo', 'factura.com tardó más de 30 segundos'); };
+  assert.equal((await pedir('POST', `/facturas/${b}/descartar`, {})).status, 502);
+  assert.equal(db.prepare('SELECT estatus FROM facturas WHERE id = ?').get(b).estatus, 'borrador_error', 'sin poder buscar, no se descarta');
 });
 
 conMontaje('Descartar: si factura.com dice con claridad que no (ya no existe) se descarta igual; si no hay respuesta, NO', {}, async ({ pedir, orden, factura, estado, db }) => {

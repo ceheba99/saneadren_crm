@@ -343,6 +343,21 @@ test('Corregir un complemento: el nuevo va relacionado (04) con la misma parcial
   assert.equal(simD.llamadas.length, 0);
 });
 
+test('Aviso huérfano: una corrección que nunca se timbró (pendiente con error) se cierra sola al cancelarse el complemento que iba a sustituir', async () => {
+  const { cancelar } = require('../server/facturacion-cancelacion');
+  const db = base(); orden(db); const sim = simulado({});
+  const ctx = contexto(db, sim, { demo: true });
+  await timbrar(db, 10, { metodo_pago: 'PPD', confirmar: true }, ctx);
+  const k = cobro(db), a = (await complemento(db, k, {}, ctx)).factura;
+  // La corrección falló antes de llegar a factura.com: queda «pendiente» con su error.
+  const b = Number(db.prepare("INSERT INTO facturas (lead_id, sucursal_id, tipo_documento, estatus, num_order, entorno, sustituye_a, error_json) VALUES (10, 1, 'pago', 'pendiente', 'OS-10-P99-AAAAAA', 'demo', ?, '{\"mensaje\":\"x\"}')").run(a.id).lastInsertRowid);
+  const r = await cancelar(db, T.leer(db, a.id), { motivo: '02' }, ctx);
+  assert.equal(r.estado, 'cancelada');
+  assert.equal(T.leer(db, b).estatus, 'cancelada'); assert.match(T.leer(db, b).error_json, /descartado/);
+  assert.equal(db.prepare("SELECT COUNT(*) n FROM facturas WHERE estatus = 'pendiente' AND error_json IS NOT NULL").get().n, 0, 'ya no hay nada pendiente que avisar en Inicio');
+  assert.deepEqual(C.pendientes(db, 'demo').map(x => x.cobro_id), [k], 'el pago sí vuelve a «complemento pendiente»');
+});
+
 test('Fecha del pago: a mediodía, o la hora actual si el pago es de hoy y todavía no es mediodía (nunca en el futuro)', () => {
   assert.equal(C.fechaPago('2026-10-01'), '2026-10-01T12:00:00');
   const hoy = new Intl.DateTimeFormat('sv-SE', { timeZone: 'America/Mexico_City' }).format(new Date());

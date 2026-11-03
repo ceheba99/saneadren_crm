@@ -11,8 +11,8 @@ const { listarSeries, asignarSerie, crearSerie } = require('./facturacion-series
 const { validarRFC, normalizarRazonSocial, validarCorreo, validarDatosFiscales } = require('./facturacion-validaciones');
 const { leerCatalogos } = require('./facturacion-catalogos');
 const { revisarProduccion } = require('./facturacion-revision');
+const { preparar, timbrar, resolverSinRespuesta, verificar, descargarArchivos, vistaFactura } = require('./facturacion-timbrado');
 const { planear: planearClientes, aplicar: aplicarClientes } = require('./facturacion-importar-clientes');
-const { preparar, timbrar, resolverSinRespuesta, descargarArchivos, vistaFactura } = require('./facturacion-timbrado');
 const { vincularCliente } = require('./facturacion-clientes');
 const { cancelar, consultarEstatus, esAcuse, MOTIVOS } = require('./facturacion-cancelacion');
 const { prepararComplemento, timbrarComplemento, pendientes, complementosDeOrden } = require('./facturacion-complementos');
@@ -481,22 +481,41 @@ module.exports = function rutasFacturacion(app, db, h, { direccion, puede = () =
   const textoFiltro = v => String(v ?? '').trim().toLocaleLowerCase('es-MX');
   const FECHA = /^\d{4}-\d{2}-\d{2}$/;
 
-  app.get('/api/facturacion/facturas', h((req, res) => {
-    if (sinPermisoTimbrar(req, res)) return;
-    const q = req.query, donde = [], args = [];
-    if (q.estatus) { if (!ESTATUS.includes(String(q.estatus))) return res.status(400).json({ error: 'Ese estado de factura no existe' }); donde.push('estatus = ?'); args.push(String(q.estatus)); }
+  // Los filtros de la lista (y de la descarga a Excel): estado, entorno, sucursal, fechas y texto. Devuelve { error } o { filas } (hasta 1,000, de lo más nuevo a lo más viejo).
+  function consultarFacturas(q) {
+    const donde = [], args = [];
+    if (q.estatus) { if (!ESTATUS.includes(String(q.estatus))) return { error: 'Ese estado de factura no existe' }; donde.push('estatus = ?'); args.push(String(q.estatus)); }
     if (q.entorno === 'prod') donde.push("entorno = 'prod'"); else if (q.entorno === 'prueba') donde.push("entorno IN ('sandbox', 'demo')");
     if (q.sucursal) { donde.push('sucursal_id = ?'); args.push(Number(q.sucursal) || 0); }
     for (const [k, op] of [['desde', '>='], ['hasta', '<=']]) if (q[k]) {
-      if (!FECHA.test(String(q[k]))) return res.status(400).json({ error: 'La fecha no es válida' });
+      if (!FECHA.test(String(q[k]))) return { error: 'La fecha no es válida' };
       donde.push(`substr(COALESCE(fecha_timbrado, created_at), 1, 10) ${op} ?`); args.push(String(q[k]));
     }
-    let filas = db.prepare(`SELECT * FROM facturas ${donde.length ? 'WHERE ' + donde.join(' AND ') : ''} ORDER BY id DESC LIMIT 1000`).all(...args).map(filaLista);
+    let filas = db.prepare(`SELECT * FROM facturas ${donde.length ? 'WHERE ' + donde.join(' AND ') : ''} ORDER BY id DESC LIMIT 1000`).all(...args);
     const t = textoFiltro(q.q);
-    if (t) filas = filas.filter(f => [f.serie && f.folio ? `${f.serie}-${f.folio}` : '', f.serie, f.folio, f.uuid, f.receptor_rfc, f.receptor_razon_social, f.folio_orden].some(x => textoFiltro(x).includes(t)));
+    if (t) filas = filas.filter(f => [f.serie && f.folio ? `${f.serie}-${f.folio}` : '', f.serie, f.folio, f.uuid, f.receptor_rfc, f.receptor_razon_social, folioDeOrden(f)].some(x => textoFiltro(x).includes(t)));
+    return { filas };
+  }
+
+  app.get('/api/facturacion/facturas', h((req, res) => {
+    if (sinPermisoTimbrar(req, res)) return;
+    const r = consultarFacturas(req.query); if (r.error) return res.status(400).json({ error: r.error });
+    const filas = r.filas.map(filaLista);
     const c = estadoConfig(env);
     res.json({ entorno: esDemo() ? 'demo' : c.entorno, total: filas.length, truncado: filas.length > 200, facturas: filas.slice(0, 200),
       sucursales: db.prepare('SELECT id, nombre FROM sucursales WHERE activo = 1 ORDER BY id').all() });
+  }));
+
+  // Descarga a Excel (el archivo lo arma la pantalla): las mismas filas y filtros de la lista, sin el corte de 200. Solo lo que ya se ve en la lista (nada de llaves ni XML).
+  app.get('/api/facturacion/facturas/exportar', h((req, res) => {
+    if (sinPermisoTimbrar(req, res)) return;
+    const r = consultarFacturas(req.query); if (r.error) return res.status(400).json({ error: r.error });
+    const suc = Object.fromEntries(db.prepare('SELECT id, nombre FROM sucursales').all().map(x => [x.id, x.nombre]));
+    res.json({ entorno: esDemo() ? 'demo' : estadoConfig(env).entorno, total: r.filas.length, truncado: r.filas.length >= 1000, filas: r.filas.map(f => ({
+      tipo: f.tipo_documento === 'pago' ? 'Complemento de pago' : 'Factura', folio: f.serie && f.folio ? `${f.serie}-${f.folio}` : '', fecha: String(f.fecha_timbrado || f.created_at || '').slice(0, 10),
+      orden: folioDeOrden(f), cliente: f.receptor_razon_social || '', rfc: f.receptor_rfc || '', subtotal_cent: f.subtotal_cent ?? 0, iva_cent: f.iva_cent ?? 0, total_cent: f.total_cent ?? 0,
+      metodo_pago: f.metodo_pago || '', forma_pago: f.forma_pago || '', estatus: f.estatus, motivo_cancelacion: f.motivo_cancelacion || '', entorno: f.entorno === 'prod' ? 'Real' : f.entorno === 'demo' ? 'Demostración' : 'Prueba',
+      sucursal: suc[f.sucursal_id] || '', uuid: f.uuid || '' })) });
   }));
 
   // Lo que pide atención en Inicio: facturas sin respuesta, borradores por corregir, rechazadas, y órdenes realizadas con IVA que todavía no se facturan.
@@ -552,6 +571,13 @@ module.exports = function rutasFacturacion(app, db, h, { direccion, puede = () =
     if (f.entorno === 'demo' || esDemo()) return demoNo(res);
     if (f.entorno !== leerConfig(env).entorno) return res.status(409).json({ error: `Este borrador es de ${f.entorno === 'prod' ? 'producción' : 'pruebas'} y la conexión está en otro entorno` });
     return una('orden-' + f.lead_id, res, async () => {
+      // Antes de descartar se busca por NumOrder: el borrador pudo corregirse y timbrarse en el panel de factura.com. Si ya está timbrado, NO se descarta
+      // (se queda timbrado aquí también); si la búsqueda falla, tampoco (se lanza el error y nada cambia). Solo con «no existe» o «sigue en borrador» se descarta.
+      const v = await verificar(db, crearCliente(), f, ctxDe(req), { dejarBorrador: true }); // si sigue en borrador, la fila (y su uid) no se toca
+      if (v && v.estado !== 'borrador_error') {
+        auditar(req, 'orden_servicio', f.lead_id, 'factura', 'Al descartar un borrador se encontró que ya estaba timbrado en factura.com: no se descartó');
+        return res.status(409).json({ error: v.estado === 'timbrada' ? 'Ese borrador ya se timbró en factura.com: no se descartó y quedó como timbrado aquí también.' : 'factura.com lo reporta en cancelación: no se descartó; consulta su estatus.', factura: vistaFactura(db.prepare('SELECT * FROM facturas WHERE id = ?').get(f.id)) });
+      }
       let nota = 'Borrador descartado por Dirección';
       try { await crearCliente().post(`/v4/drafts/${encodeURIComponent(f.cfdi_uid)}/drop`, {}); }
       catch (e) {
