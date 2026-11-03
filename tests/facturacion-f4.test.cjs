@@ -21,7 +21,7 @@ async function montar({ entorno = 'sandbox', direccion = true, timbra = true, de
     CREATE TABLE catalogo_servicios (id INTEGER PRIMARY KEY, nombre TEXT, activo INTEGER DEFAULT 1, orden INTEGER DEFAULT 0);
     CREATE TABLE leads (id INTEGER PRIMARY KEY, estatus TEXT, ejecucion TEXT, fecha_realizado TEXT, iva_modo TEXT, iva_tasa INTEGER, iva_cent INTEGER, valor REAL, partidas_json TEXT, servicio_id INTEGER, cliente_id INTEGER,
       sucursal_id INTEGER, factura_folio TEXT, factura_fecha TEXT, factura_total_cent INTEGER, factura_metodo TEXT, created_at TEXT DEFAULT '2026-10-20 10:00:00');
-    CREATE TABLE cobros (id INTEGER PRIMARY KEY, lead_id INTEGER, monto_cent INTEGER, cancelado INTEGER DEFAULT 0, confirmado INTEGER DEFAULT 1);
+    CREATE TABLE cobros (id INTEGER PRIMARY KEY, lead_id INTEGER, fecha TEXT, monto_cent INTEGER, tipo TEXT DEFAULT 'pago', metodo TEXT DEFAULT 'transferencia', cancelado INTEGER DEFAULT 0, confirmado INTEGER DEFAULT 1);
     CREATE TABLE historial (id INTEGER PRIMARY KEY, lead_id INTEGER, tipo TEXT, texto TEXT, usuario TEXT, origen TEXT, area TEXT, usuario_id INTEGER);`);
   crearTablas(db);
   const hoy = db.prepare("SELECT date('now','localtime') d").get().d;
@@ -48,7 +48,7 @@ const conMontaje = (nombre, cfg, fn) => test(nombre, async () => { const m = awa
 
 conMontaje('Sin el permiso de timbrar: ninguna ruta nueva responde (403) ni llama a factura.com', { timbra: false, direccion: false }, async ({ pedir, estado, orden, factura }) => {
   orden(1); const f = factura({ uuid: UUID1, folio: '1' });
-  for (const [m, r] of [['GET', '/facturas'], ['GET', '/avisos'], ['POST', `/facturas/${f}/reenviar`], ['POST', `/facturas/${f}/descartar`]]) assert.equal((await pedir(m, r, {})).status, 403, m + ' ' + r);
+  for (const [m, r] of [['GET', '/facturas'], ['GET', '/avisos'], ['POST', `/facturas/${f}/reenviar`], ['POST', `/facturas/${f}/descartar`], ['GET', '/complementos/cobros/1'], ['POST', '/complementos/cobros/1/timbrar']]) assert.equal((await pedir(m, r, {})).status, 403, m + ' ' + r);
   assert.deepEqual(estado.llamadas, []);
 });
 
@@ -84,6 +84,23 @@ conMontaje('Avisos de Inicio: sin respuesta, borrador, rechazada y órdenes por 
   assert.deepEqual(tipos, { 1: 'timbrando', 2: 'borrador_error', 3: 'pendiente', 4: 'por_facturar' }, 'la 5 no se realizó, la 6 ya tiene folio, la 7 es vieja y la 8 ya tiene factura');
   assert.match(r.avisos.find(a => a.lead_id === 2).texto, /El descuento no es correcto/);
   assert.equal(r.avisos.find(a => a.lead_id === 4).fecha, hoy);
+});
+
+conMontaje('F6: un pago confirmado de una factura PPD aparece como «complemento pendiente» (rojo si ya venció); un ajuste o un pago de factura PUE, no', {}, async ({ pedir, orden, factura, db }) => {
+  orden(1); orden(2);
+  const ppd = factura({ lead: 1, estatus: 'timbrada', uuid: UUID1, folio: '1' }); db.prepare("UPDATE facturas SET metodo_pago = 'PPD' WHERE id = ?").run(ppd);
+  const pue = factura({ lead: 2, estatus: 'timbrada', uuid: UUID2, folio: '2' }); db.prepare("UPDATE facturas SET metodo_pago = 'PUE' WHERE id = ?").run(pue);
+  db.exec("INSERT INTO cobros (lead_id, fecha, monto_cent) VALUES (1, '2020-01-10', 500); INSERT INTO cobros (lead_id, fecha, monto_cent, tipo) VALUES (1, '2020-01-11', 100, 'ajuste'); INSERT INTO cobros (lead_id, fecha, monto_cent) VALUES (2, '2020-01-10', 500)");
+  const avisos = (await pedir('GET', '/avisos')).json.avisos.filter(a => a.tipo === 'complemento_pendiente');
+  assert.equal(avisos.length, 1); assert.equal(avisos[0].lead_id, 1); assert.equal(avisos[0].nivel, 'rojo');
+  assert.match(avisos[0].texto, /del 2020-01-10 sin complemento de pago \(factura F-1\)\. Ya venció: 2020-02-05/);
+  // La ficha de la orden trae sus pagos y el resumen del complemento (que aquí no se puede timbrar: falta la serie de pagos).
+  const o = (await pedir('GET', '/ordenes/1')).json.complementos;
+  assert.deepEqual(o.pagos.map(k => [k.fecha, k.amparado, k.vencido]), [['2020-01-10', false, true]]);
+  const k = (await pedir('GET', '/complementos/cobros/' + o.pagos[0].cobro_id)).json;
+  assert.match(k.errores.join(), /no tiene serie de pagos/); assert.equal(k.resumen.num_parcialidad, 1);
+  assert.equal((await pedir('POST', '/complementos/cobros/' + o.pagos[0].cobro_id + '/timbrar', {})).status, 400);
+  assert.equal((await pedir('GET', '/complementos/cobros/999')).status, 404);
 });
 
 conMontaje('Reenviar: solo facturas REALES timbradas; pide el correo a factura.com por el UUID; queda en bitácora sin el correo', { entorno: 'prod' }, async ({ pedir, orden, factura, estado, db }) => {

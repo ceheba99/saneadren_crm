@@ -117,11 +117,11 @@ module.exports = {
       permisos: ['marketing.ver', 'marketing.sucursal', 'marketing.empresa', 'marketing.editar', 'marketing.aprobar', 'marketing.dinero'],
     },
     facturacion: {
-      nombre: 'Facturación CFDI 4.0 con factura.com: configuración en Ajustes, datos fiscales en la ficha del cliente, timbrado PUE en la ficha de la orden (F3) y pantalla «Facturas» con reenvío y avisos (F4)',
+      nombre: 'Facturación CFDI 4.0 con factura.com: configuración en Ajustes, datos fiscales en la ficha del cliente, timbrado PUE o PPD en la ficha de la orden (F3, F6), complemento de pago de cada cobro de una factura PPD (F6) y pantalla «Facturas» con reenvío y avisos (F4)',
       vistas: ['facturas'], // además, la configuración vive en Ajustes (pantalla «usuarios», panel «Facturación», solo Dirección) y el timbrado en la ficha de la orden
       tablas: ['clientes_fiscales', 'facturas', 'facturas_log', 'factura_ventas', 'factura_cobros', 'series_factura', 'sat_catalogos'],
       rutas: [/^\/api\/facturacion(\/|$)/],
-      pendientes: 'facturas sin respuesta de factura.com, borradores por corregir, rechazadas y órdenes realizadas con IVA de los últimos 60 días sin factura',
+      pendientes: 'facturas sin respuesta de factura.com, borradores por corregir, rechazadas, órdenes realizadas con IVA de los últimos 60 días sin factura y pagos de facturas PPD sin complemento de pago (F6)',
       inicio: ['inicio-facturacion'],
       demo: ['series_factura', 'sat_catalogos', 'clientes_fiscales', 'facturas', 'facturas_log'], // el demo de Render nunca se conecta con factura.com: configuración de ejemplo y una factura SIMULADA
       integridad: ['facturas'],
@@ -159,6 +159,11 @@ module.exports = {
   // se capturan con otro nombre ({ como, razon }: la auditoría comprueba que la pantalla mande esa llave). Un dato que se
   // muestra y no está aquí ni se captura es un dato muerto (como «Realizó: propio/subcontratado», que se quitó).
   generados: {
+    tipo_documento: 'lo pone el sistema: «factura» al timbrar la de una orden, «pago» al timbrar un complemento de pago (F6); la serie, según el tipo que elige Dirección al asignarla',
+    cobro_id: 'liga que pone el sistema entre cada cobro y el complemento de pago que lo ampara (F6)',
+    num_parcialidad: 'la calcula el sistema al timbrar el complemento de pago: cuántos pagos de esa factura van amparados, más uno',
+    saldo_anterior_cent: 'lo calcula el sistema al timbrar el complemento de pago: total de la factura menos lo ya amparado por otros complementos',
+    saldo_insoluto_cent: 'lo calcula el sistema al timbrar el complemento de pago: saldo anterior menos el pago',
     publicacion_id: 'liga que pone el sistema: la imagen, comentario o versión de su publicación, o la publicación que salió de una idea',
     avance_antes: 'lo anota el sistema al registrar un avance que mueve el % de una tarea: el % que tenía',
     avance_nuevo: 'el % que se escribió en el avance (campo «Nuevo avance de la tarea»)',
