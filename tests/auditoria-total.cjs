@@ -40,7 +40,7 @@ const CATALOGO = [...SERVER['permisos.js'].matchAll(/^\s*\['([a-z_]+\.[a-z_]+)',
 // Áreas de «qué ve» (2026-10-26: cada pantalla la suya): ver, toda su sucursal, toda la empresa y, las editables, editar.
 const BLOQUE_AREAS = SERVER['permisos.js'].slice(SERVER['permisos.js'].indexOf('const AREAS = ['), SERVER['permisos.js'].indexOf('].map(([clave, nombre, suyo'));
 const AREAS = [...BLOQUE_AREAS.matchAll(/^\s*\['([a-z_]+)', '[^\n]*?(, true)?\],$/gm)].map(m => ({ clave: m[1], editable: !!m[2] }));
-const VIRTUALES = [...AREAS.flatMap(a => [a.clave + '.ver', a.clave + '.sucursal', a.clave + '.empresa', ...(a.editable ? [a.clave + '.editar'] : [])]), 'ventas.ver', 'compras.ver'];
+const VIRTUALES = [...AREAS.flatMap(a => [a.clave + '.ver', a.clave + '.sucursal', a.clave + '.empresa', ...(a.editable ? [a.clave + '.editar'] : [])]), 'ventas.ver', 'compras.ver', 'cotizaciones_ordenes.ver', 'calendario.ver'];
 const PERMISOS = new Set([...CATALOGO, ...VIRTUALES]);
 console.log(`Inventario: ${RUTAS.length} rutas, ${VISTAS_HTML.length} pantallas, ${PERMISOS.size} permisos, ${Object.keys(PUBLICO).length} archivos de pantalla, ${Object.keys(SERVER).length} del servidor`);
 

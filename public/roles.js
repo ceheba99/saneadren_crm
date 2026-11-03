@@ -17,7 +17,7 @@ const Roles = (() => {
     const r = DATOS.roles.find(x => x.clave === clave);
     return r && (set.size !== r.permisos.length || r.permisos.some(c => !set.has(c)));
   });
-  const esVirtual = c => c === 'ventas.ver' || c === 'compras.ver' || (DATOS.areas || []).some(a => ['ver', 'sucursal', 'empresa', 'editar'].some(t => c === a.clave + '.' + t));
+  const esVirtual = c => ['ventas.ver', 'compras.ver', 'cotizaciones_ordenes.ver', 'calendario.ver'].includes(c) || (DATOS.areas || []).some(a => ['ver', 'sucursal', 'empresa', 'editar'].some(t => c === a.clave + '.' + t));
   const nivelEn = (set, area) => set.has(area + '.empresa') ? 3 : set.has(area + '.sucursal') ? 2 : set.has(area + '.ver') ? 1 : 0;
   // Dependencias de la pantalla: las del servidor más «toda la empresa» → «toda su sucursal» → «al menos lo suyo», y
   // «edita» → «al menos lo suyo».

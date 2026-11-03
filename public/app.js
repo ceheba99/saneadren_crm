@@ -486,8 +486,9 @@ async function cargarInicio() {
     [alertas, recompras, abiertas, ordenes] = await Promise.all([
       api('/alertas').then(r => r.json()),
       api('/recompras').then(r => r.json()),
-      api('/leads?estatus=abierto').then(r => r.json()),
-      api('/leads?estatus=ganado').then(r => r.json())
+      // Solo lo que ve por cotizaciones u órdenes: lo que ve por la cobranza no es «por concluir» (2026-11-03).
+      api('/leads?estatus=abierto&solo_area=1').then(r => r.json()),
+      api('/leads?estatus=ganado&solo_area=1').then(r => r.json())
     ]);
   } catch (err) {
     if (err.status !== 401) estadoCarga(listas, 'No se pudo cargar: ' + err.message, cargarInicio);

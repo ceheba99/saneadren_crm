@@ -26,7 +26,7 @@
     </button>
     <div class="menu-items" id="menu-items">
       <button type="button" class="menu-item activa" data-vista="inicio"><span class="menu-icono" aria-hidden="true">🏠</span>Inicio <span id="badge-pendientes" style="display:none">0</span></button>
-      <button type="button" class="menu-item perm-ventas-ver" data-vista="calendario"><span class="menu-icono" aria-hidden="true">📅</span>Calendario</button>
+      <button type="button" class="menu-item perm-calendario-ver" data-vista="calendario"><span class="menu-icono" aria-hidden="true">📅</span>Calendario</button>
       <button type="button" class="menu-item perm-marketing-ver" data-vista="marketing"><span class="menu-icono" aria-hidden="true">🎨</span>Marketing</button>
       <div class="menu-grupo perm-ventas-ver" data-grupo="ventas">
         <button type="button" class="menu-grupo-btn" aria-expanded="false"><span class="menu-icono" aria-hidden="true">💼</span>Ventas<span class="menu-flecha" aria-hidden="true">▾</span></button>
@@ -34,7 +34,7 @@
           <button type="button" class="menu-item perm-contactos-editar" data-vista="alta"><span class="menu-icono" aria-hidden="true">➕</span>Nuevo contacto</button>
           <button type="button" class="menu-item perm-contactos-ver" data-vista="clientes"><span class="menu-icono" aria-hidden="true">👥</span>Contactos</button>
           <button type="button" class="menu-item perm-generador-ver perm-ordenes-importes" data-vista="generador"><span class="menu-icono" aria-hidden="true">📒</span>Generador</button>
-          <button type="button" class="menu-item perm-ventas-ver" data-vista="leads"><span class="menu-icono" aria-hidden="true">📄</span>Cotizaciones</button>
+          <button type="button" class="menu-item perm-cotizaciones_ordenes-ver" data-vista="leads"><span class="menu-icono" aria-hidden="true">📄</span>Cotizaciones</button>
           <button type="button" class="menu-item perm-prospeccion-ver" data-vista="prospeccion"><span class="menu-icono" aria-hidden="true">🔎</span>Prospección</button>
         </div>
       </div>
@@ -114,19 +114,19 @@
       <div id="inicio-prospeccion" class="inicio-lista"></div>
     </div>
 
-    <div class="inicio-bloque inicio-bloque-cotizacion perm-ventas-ver" data-titulo-corto="Avisos">
+    <div class="inicio-bloque inicio-bloque-cotizacion perm-cotizaciones_ordenes-ver" data-titulo-corto="Avisos">
       <h3>⏰ Avisos y seguimiento</h3>
       <p class="ayuda">Recordatorios de cotizaciones u órdenes que vencen hoy o ya vencieron, y cotizaciones abiertas sin movimiento hace más de 7 días.</p>
       <div id="inicio-cotizaciones" class="inicio-lista"></div>
     </div>
 
-    <div class="inicio-bloque inicio-bloque-concluir perm-ventas-ver" data-titulo-corto="Por concluir">
+    <div class="inicio-bloque inicio-bloque-concluir perm-ordenes-ver" data-titulo-corto="Por concluir">
       <h3>🧾 Servicios por concluir</h3>
       <p class="ayuda">Órdenes cuya fecha ya pasó y que todavía no se marcan como realizadas o no realizadas. No aparecen en el Generador hasta concluirlas.</p>
       <div id="inicio-concluir" class="inicio-lista"></div>
     </div>
 
-    <div class="inicio-bloque inicio-bloque-servicio perm-ventas-ver" data-titulo-corto="Recompras">
+    <div class="inicio-bloque inicio-bloque-servicio perm-ordenes-ver" data-titulo-corto="Recompras">
       <h3><span class="cadena-nodo activo">🧾 Recompras</span> listas para registrar como nuevo servicio</h3>
       <p class="ayuda">Clientes que ya contrataron antes y, según el ciclo del servicio, probablemente ya lo necesiten otra vez.</p>
       <div id="inicio-recompras" class="inicio-lista"></div>
