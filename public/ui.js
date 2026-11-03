@@ -263,6 +263,13 @@ const MenuPrincipal = (() => {
     });
   }
   ajustarGrupos();
+  // El submenú de un grupo pegado a la orilla derecha (Finanzas, Ajustes) se salía de la pantalla: la página quedaba más
+  // ancha que la franja negra. Si no cabe, se abre hacia la izquierda, alineado al lado derecho de su botón.
+  function alinearSub(grupo) {
+    const sub = grupo.querySelector('.menu-sub'); if (!sub || esMovil()) return;
+    grupo.classList.remove('sub-derecha');
+    if (sub.getBoundingClientRect().right > document.documentElement.clientWidth - 8) grupo.classList.add('sub-derecha');
+  }
   matchMedia('(max-width:900px)').addEventListener?.('change', () => { cerrarGrupos(); cerrarPanel(); ajustarGrupos(); });
   // El submenú se cierra cuando el foco sale de él (Tab).
   nav.querySelectorAll('.menu-grupo').forEach(g => g.addEventListener('focusout', e => { if (!g.contains(e.relatedTarget)) cerrarGrupos(); }));
@@ -279,6 +286,7 @@ const MenuPrincipal = (() => {
       cerrarGrupos(grupo);
       grupo.classList.toggle('abierto', abrir);
       btnGrupo.setAttribute('aria-expanded', String(abrir));
+      if (abrir) alinearSub(grupo);
       return;
     }
     const elegido = e.target.closest('[data-vista]');
