@@ -1,0 +1,281 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<meta name="robots" content="noindex, nofollow">
+<title>Reloj checador · Saneadren</title>
+<!-- KIOSCO DEL RELOJ CHECADOR (server/checador.js, F2 2026-11-03). Se abre en /kiosco en la tableta o computadora de la
+     entrada, que antes registró el gerente desde Personal (su token queda en este navegador). Sin sesión del CRM: solo
+     checa. La hora la pone el servidor; la que se ve aquí es solo de referencia.
+     Sin internet: la checada (con su foto) se guarda en este navegador (IndexedDB) y se sube al volver la conexión; el
+     servidor revisa el PIN al subirla y la deja «por revisar». El script va aquí mismo (la CSP permite scripts en línea). -->
+<style>
+  :root{--oscuro:#1a1d23;--amarillo:#f6b103;--texto:#1f2937;--sec:#6b7280;--linea:#e5e7eb;--fondo:#f4f5f7;--verde:#15803d;--rojo:#b91c1c;--azul:#1d4ed8;}
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  html,body{height:100%;}
+  body{margin:0;font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;background:var(--fondo);color:var(--texto);display:flex;flex-direction:column;user-select:none;}
+  header{background:var(--oscuro);color:#fff;padding:12px 16px;border-bottom:4px solid var(--amarillo);display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;}
+  header img{height:38px;display:block;}
+  #reloj{font-size:2.2rem;font-weight:700;font-variant-numeric:tabular-nums;letter-spacing:.02em;}
+  #fecha{color:#d1d5db;font-size:.95rem;text-align:right;}
+  #kiosco-nombre{color:#d1d5db;font-size:.9rem;}
+  #avisos{display:flex;flex-direction:column;gap:6px;padding:8px 16px 0;}
+  .aviso{border-radius:10px;padding:10px 14px;font-size:1rem;}
+  .aviso.rojo{background:#fde8e8;color:var(--rojo);border:1px solid #f5b5b5;}
+  .aviso.amarillo{background:#fff7d6;color:#7a5600;border:1px solid #e6c34a;}
+  main{flex:1;display:flex;align-items:center;justify-content:center;padding:16px;}
+  .pantalla{width:100%;max-width:560px;text-align:center;}
+  h1{font-size:1.8rem;margin:0 0 6px;}
+  .ayuda{color:var(--sec);font-size:1.05rem;margin:0 0 16px;}
+  .puntos{display:flex;justify-content:center;gap:16px;margin:10px 0 18px;}
+  .puntos span{width:26px;height:26px;border-radius:50%;border:3px solid var(--oscuro);}
+  .puntos span.lleno{background:var(--oscuro);}
+  .digitos{font-size:2.4rem;font-weight:700;letter-spacing:.4em;min-height:3rem;margin:6px 0 14px;font-variant-numeric:tabular-nums;}
+  .teclado{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;max-width:400px;margin:0 auto;}
+  .teclado button,.botones button,.btn{font:inherit;border:0;border-radius:14px;cursor:pointer;touch-action:manipulation;}
+  .teclado button{font-size:2rem;font-weight:600;padding:18px 0;background:#fff;border:2px solid var(--linea);color:var(--texto);}
+  .teclado button:active{background:#e5e7eb;}
+  .teclado .secundario{font-size:1.1rem;color:var(--sec);}
+  .botones{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:14px;}
+  .botones button{font-size:1.25rem;font-weight:700;padding:22px 10px;background:#fff;border:3px solid var(--linea);color:var(--texto);}
+  .botones button.sugerido{background:var(--amarillo);border-color:#c98f00;color:#1a1d23;}
+  .btn{font-size:1.1rem;padding:14px 22px;background:#fff;border:2px solid var(--linea);color:var(--texto);margin-top:16px;}
+  .camara{position:relative;width:220px;height:165px;margin:0 auto 6px;border-radius:12px;overflow:hidden;background:#111;}
+  .camara video{width:100%;height:100%;object-fit:cover;transform:scaleX(-1);}
+  .camara.sin video{display:none;}
+  .camara .sin-cam{display:none;color:#fff;font-size:.9rem;padding:20px;}
+  .camara.sin .sin-cam{display:block;}
+  .listo .icono{font-size:5rem;line-height:1;}
+  .listo.ok h1{color:var(--verde);}
+  .listo.guardada h1{color:#7a5600;}
+  .error h1{color:var(--rojo);}
+  #pendientes{position:fixed;left:12px;bottom:10px;font-size:.9rem;color:var(--sec);}
+  #pantalla-completa{position:fixed;right:12px;bottom:10px;font:inherit;font-size:.85rem;color:var(--sec);background:none;border:1px solid var(--linea);border-radius:8px;padding:6px 10px;}
+  [hidden]{display:none!important;}
+  @media (max-width:520px){#reloj{font-size:1.6rem;}.teclado button{padding:14px 0;font-size:1.7rem;}.botones button{font-size:1.05rem;padding:18px 6px;}}
+</style>
+</head>
+<body>
+<header>
+  <div><img src="/logo-saneadren.png" alt="Saneadren"><div id="kiosco-nombre"></div></div>
+  <div><div id="reloj" aria-live="off">--:--</div><div id="fecha"></div></div>
+</header>
+<div id="avisos" role="status"></div>
+<main><div class="pantalla" id="pantalla"></div></main>
+<div class="camara-oculta" hidden><video id="video" autoplay playsinline muted></video><canvas id="lienzo" width="480" height="360"></canvas></div>
+<div id="pendientes" role="status"></div>
+<button type="button" id="pantalla-completa">Pantalla completa</button>
+<script>
+(() => {
+  'use strict';
+  const LLAVE = 'saneadren_kiosco', ZONA = 'America/Mexico_City', ESPERA_MS = 30000;
+  const $ = id => document.getElementById(id);
+  const SESION = Math.random().toString(36).slice(2) + Date.now().toString(36); // para saber si la página se recargó
+  // Los botones (los manda el servidor; estos sirven si el kiosco arranca sin conexión).
+  let TIPOS = { entrada: 'Entrada', comida_sale: 'Salida a comer', comida_regresa: 'Regreso de comer', salida: 'Salida', extra_inicia: 'Inicio de tiempo extra', extra_termina: 'Fin de tiempo extra' };
+  let registro = null, desfase = 0, estado = {}, temporizador = null, sinConexion = false, camaraLista = false;
+  try { registro = JSON.parse(localStorage.getItem(LLAVE) || 'null'); } catch { registro = null; }
+
+  // ---------- Utilidades de pantalla (solo textContent: nada del servidor se interpreta como HTML) ----------
+  const el = (tag, props = {}, ...hijos) => { const e = document.createElement(tag); Object.assign(e, props); for (const h of hijos) e.append(h); return e; };
+  const pintar = (...nodos) => { const p = $('pantalla'); p.replaceChildren(...nodos); };
+  function avisos() {
+    const a = [];
+    if (sinConexion) a.push(['rojo', 'Sin conexión a internet: las checadas se guardan aquí y se suben al volver. Quedarán por revisar.']);
+    if (!camaraLista) a.push(['amarillo', 'La cámara no está disponible: las checadas quedarán por revisar. Permite la cámara en el navegador.']);
+    $('avisos').replaceChildren(...a.map(([c, t]) => el('div', { className: 'aviso ' + c, textContent: t })));
+  }
+  function reiniciarEspera(ms = ESPERA_MS) { clearTimeout(temporizador); temporizador = setTimeout(inicio, ms); }
+
+  // ---------- Reloj (referencia: la hora válida la pone el servidor) ----------
+  const fmtHora = new Intl.DateTimeFormat('es-MX', { timeZone: ZONA, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
+  const fmtFecha = new Intl.DateTimeFormat('es-MX', { timeZone: ZONA, weekday: 'long', day: 'numeric', month: 'long' });
+  function tic() { const d = new Date(Date.now() + desfase); $('reloj').textContent = fmtHora.format(d); $('fecha').textContent = fmtFecha.format(d); }
+  setInterval(tic, 1000); tic();
+
+  // ---------- Servidor ----------
+  async function api(ruta, cuerpo) {
+    const r = await fetch('/api/publico/kiosco/' + ruta, { method: cuerpo ? 'POST' : 'GET', headers: { 'Content-Type': 'application/json', 'X-Kiosco': registro?.token || '' }, body: cuerpo ? JSON.stringify(cuerpo) : undefined, cache: 'no-store' });
+    const j = await r.json().catch(() => ({}));
+    return { status: r.status, ok: r.ok, j };
+  }
+  async function conectar() {
+    try {
+      const r = await api('estado');
+      if (r.status === 401) { noRegistrado(); return false; }
+      if (!r.ok) throw new Error('servidor');
+      TIPOS = r.j.tipos || TIPOS; desfase = Date.parse(r.j.utc) - Date.now();
+      $('kiosco-nombre').textContent = r.j.nombre + (r.j.sucursal ? ' · ' + r.j.sucursal : '');
+      if (sinConexion) { sinConexion = false; avisos(); }
+      return true;
+    } catch { if (!sinConexion) { sinConexion = true; avisos(); } return true; }
+  }
+  function noRegistrado() {
+    clearTimeout(temporizador);
+    pintar(el('div', { className: 'error' }, el('h1', { textContent: 'Este dispositivo no es un kiosco' }),
+      el('p', { className: 'ayuda', textContent: 'Pide al gerente que lo registre: en el sistema, Ajustes → Personal → «Kioscos del reloj checador», desde este mismo dispositivo. Si lo dieron de baja, hay que registrarlo de nuevo.' })));
+  }
+
+  // ---------- Cámara ----------
+  async function iniciarCamara() {
+    try {
+      const s = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } }, audio: false });
+      $('video').srcObject = s; await $('video').play().catch(() => {}); camaraLista = true;
+    } catch { camaraLista = false; }
+    avisos();
+  }
+  function foto() {
+    const v = $('video');
+    if (!camaraLista || !v.videoWidth) return null;
+    const c = $('lienzo'), x = c.getContext('2d');
+    x.drawImage(v, 0, 0, c.width, c.height);
+    return c.toDataURL('image/jpeg', 0.7);
+  }
+  function vistaCamara() {
+    const caja = el('div', { className: 'camara' + (camaraLista ? '' : ' sin') }, el('div', { className: 'sin-cam', textContent: 'Sin cámara' }));
+    if (camaraLista) { const v = el('video', { autoplay: true, playsInline: true, muted: true }); v.srcObject = $('video').srcObject; v.play().catch(() => {}); caja.prepend(v); }
+    return caja;
+  }
+
+  // ---------- Teclado numérico (4 dígitos) ----------
+  function teclado(titulo, ayuda, oculto, alTerminar, atras) {
+    let valor = '';
+    const muestra = el('div', { className: oculto ? 'puntos' : 'digitos' });
+    const refrescar = () => {
+      if (oculto) muestra.replaceChildren(...[0, 1, 2, 3].map(i => el('span', { className: i < valor.length ? 'lleno' : '' })));
+      else muestra.textContent = valor.padEnd(4, '·');
+    };
+    const tecla = d => { reiniciarEspera(); if (valor.length < 4) { valor += d; refrescar(); if (valor.length === 4) setTimeout(() => alTerminar(valor), 120); } };
+    const borrar = () => { reiniciarEspera(); valor = valor.slice(0, -1); refrescar(); };
+    const teclas = ['1', '2', '3', '4', '5', '6', '7', '8', '9'].map(d => el('button', { type: 'button', textContent: d, onclick: () => tecla(d) }));
+    teclas.push(el('button', { type: 'button', className: 'secundario', textContent: atras ? 'Atrás' : 'Borrar todo', onclick: () => (atras ? atras() : (valor = '', refrescar())) }));
+    teclas.push(el('button', { type: 'button', textContent: '0', onclick: () => tecla('0') }));
+    teclas.push(el('button', { type: 'button', className: 'secundario', textContent: '⌫', ariaLabel: 'Borrar', onclick: borrar }));
+    refrescar();
+    pintar(el('h1', { textContent: titulo }), el('p', { className: 'ayuda', textContent: ayuda }), muestra, el('div', { className: 'teclado' }, ...teclas));
+    estado.teclado = { tecla, borrar };
+  }
+  document.addEventListener('keydown', e => {
+    if (!estado.teclado) return;
+    if (/^\d$/.test(e.key)) estado.teclado.tecla(e.key); else if (e.key === 'Backspace') estado.teclado.borrar();
+  });
+
+  // ---------- Flujo ----------
+  function inicio() {
+    estado = {};
+    if (!registro?.token) return noRegistrado();
+    teclado('Escribe tu código', 'Tu número de 4 dígitos para checar', false, codigo => pedirPin(codigo));
+  }
+  function pedirPin(codigo) {
+    reiniciarEspera();
+    teclado('Escribe tu PIN', 'Los 4 números de tu PIN', true, pin => identificar(codigo, pin), inicio);
+  }
+  async function identificar(codigo, pin) {
+    estado.teclado = null;
+    pintar(el('p', { className: 'ayuda', textContent: 'Revisando…' }));
+    let r;
+    try { r = await api('identificar', { codigo, pin }); }
+    catch { sinConexion = true; avisos(); return elegirTipo({ nombre: null, sugerido: null, sinConexion: { codigo, pin } }); }
+    if (r.status === 401 && r.j.codigo === 'KIOSCO_NO_REGISTRADO') return noRegistrado();
+    if (!r.ok) return error(r.j.error || 'No se pudo revisar tu código');
+    if (sinConexion) { sinConexion = false; avisos(); }
+    if (r.j.cambiar_pin) return nuevoPin(r.j);
+    elegirTipo(r.j);
+  }
+  function nuevoPin(datos) {
+    reiniciarEspera();
+    teclado('Hola, ' + datos.nombre + ': elige tu PIN', '4 números que solo tú sepas. No uses 1111, 1234 ni tu código.', true, nuevo => {
+      teclado('Repite tu PIN nuevo', 'Escríbelo otra vez para confirmar', true, async otra => {
+        if (otra !== nuevo) return error('Los dos PIN no coinciden. Vuelve a empezar.');
+        let r; try { r = await api('cambiar-pin', { ticket: datos.ticket, nuevo }); } catch { return error('Sin conexión: el PIN nuevo se elige con internet. Intenta más tarde.'); }
+        if (!r.ok) { if (r.j.ticket) { datos.ticket = r.j.ticket; return error(r.j.error, () => nuevoPin(datos)); } return error(r.j.error || 'No se pudo guardar tu PIN'); }
+        elegirTipo({ ...r.j, aviso: 'Listo: ya tienes tu PIN. Ahora registra tu checada.' });
+      }, () => nuevoPin(datos));
+    });
+  }
+  function elegirTipo(datos) {
+    estado.teclado = null;
+    reiniciarEspera();
+    const botones = Object.entries(TIPOS).map(([k, t]) => el('button', { type: 'button', className: k === datos.sugerido ? 'sugerido' : '', textContent: t, onclick: () => checar(datos, k) }));
+    pintar(
+      el('h1', { textContent: datos.nombre ? 'Hola, ' + datos.nombre : 'Sin conexión' }),
+      el('p', { className: 'ayuda', textContent: datos.aviso || (datos.ultima ? `Tu última checada de hoy: ${datos.ultima.tipo} a las ${datos.ultima.hora}` : datos.nombre ? '¿Qué vas a registrar? Mira a la cámara.' : 'Tu checada se guardará y se revisará tu PIN al volver internet. Mira a la cámara.') }),
+      vistaCamara(), el('div', { className: 'botones' }, ...botones),
+      el('button', { type: 'button', className: 'btn', textContent: 'Cancelar', onclick: inicio }));
+  }
+  async function checar(datos, tipo) {
+    clearTimeout(temporizador);
+    const imagen = foto();
+    pintar(el('p', { className: 'ayuda', textContent: 'Registrando…' }));
+    if (datos.sinConexion) return guardarSinConexion({ ...datos.sinConexion, tipo, foto: imagen });
+    let r;
+    try { r = await api('checar', { ticket: datos.ticket, tipo, foto: imagen }); }
+    catch { return error('Se perdió la conexión mientras checabas. Vuelve a intentarlo: se guardará en este kiosco.'); }
+    if (!r.ok) return error(r.j.error || 'No se pudo registrar');
+    listo('ok', `${r.j.tipo} · ${r.j.hora}`, r.j.repetida ? 'Ya estaba registrada hace un momento.' : r.j.sin_foto ? `Gracias, ${r.j.nombre}. Sin foto: tu gerente la revisará.` : `Gracias, ${r.j.nombre}.`);
+  }
+  function listo(clase, titulo, texto) {
+    pintar(el('div', { className: 'listo ' + clase }, el('div', { className: 'icono', textContent: clase === 'ok' ? '✅' : '💾' }), el('h1', { textContent: titulo }), el('p', { className: 'ayuda', textContent: texto })));
+    reiniciarEspera(4000);
+  }
+  function error(texto, despues) {
+    estado.teclado = null;
+    pintar(el('div', { className: 'error' }, el('div', { className: 'icono', textContent: '⚠️' }), el('h1', { textContent: 'No se pudo' }), el('p', { className: 'ayuda', textContent: texto }),
+      el('button', { type: 'button', className: 'btn', textContent: 'Entendido', onclick: () => (despues ? despues() : inicio()) })));
+    reiniciarEspera(despues ? ESPERA_MS : 8000);
+  }
+
+  // ---------- Sin conexión: cola en IndexedDB ----------
+  const abrirDb = () => new Promise((ok, mal) => { const r = indexedDB.open('saneadren-kiosco', 1); r.onupgradeneeded = () => r.result.createObjectStore('pendientes', { keyPath: 'uid' }); r.onsuccess = () => ok(r.result); r.onerror = () => mal(r.error); });
+  async function cola(modo, fn) { const db = await abrirDb(); return new Promise((ok, mal) => { const t = db.transaction('pendientes', modo), s = t.objectStore('pendientes'), r = fn(s); t.oncomplete = () => ok(r?.result); t.onerror = () => mal(t.error); }); }
+  const uid = () => { const a = new Uint8Array(18); crypto.getRandomValues(a); return btoa(String.fromCharCode(...a)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''); };
+  async function guardarSinConexion(x) {
+    try {
+      const n = await cola('readonly', s => s.count());
+      if (n >= 500) return error('Este kiosco ya tiene 500 checadas sin subir. Avisa al gerente: hay que revisar el internet.');
+      await cola('readwrite', s => s.put({ uid: uid(), codigo: x.codigo, pin: x.pin, tipo: x.tipo, foto: x.foto, t0: Date.now(), p0: performance.now(), sesion: SESION }));
+    } catch { return error('No se pudo guardar en este kiosco. Avisa al gerente.'); }
+    listo('guardada', (TIPOS[x.tipo] || 'Checada') + ' guardada', 'Sin conexión: se subirá sola al volver internet y tu gerente la revisará.');
+    contarPendientes();
+  }
+  let rechazadas = 0, subiendo = false;
+  async function contarPendientes() {
+    let n = 0; try { n = await cola('readonly', s => s.count()); } catch { /* sin IndexedDB */ }
+    $('pendientes').textContent = (n ? `${n} checada(s) por subir` : '') + (rechazadas ? `${n ? ' · ' : ''}${rechazadas} no se pudieron subir (PIN o código incorrecto): avisa al gerente` : '');
+  }
+  async function subirPendientes() {
+    if (subiendo || !registro?.token) return; subiendo = true;
+    try {
+      const items = await cola('readonly', s => s.getAll());
+      for (const x of items) {
+        const mismaSesion = x.sesion === SESION;
+        const edad = Math.max(0, Math.round(mismaSesion ? performance.now() - x.p0 : Date.now() - x.t0));
+        let r;
+        try { r = await api('sin-conexion', { uid: x.uid, codigo: x.codigo, pin: x.pin, tipo: x.tipo, foto: x.foto, edad_ms: edad, monotonica: mismaSesion, hora_dispositivo: new Date(x.t0).toISOString() }); }
+        catch { sinConexion = true; avisos(); break; }
+        if (r.status === 401 && r.j.codigo === 'KIOSCO_NO_REGISTRADO') break;
+        if (r.ok || r.j.descartar) { await cola('readwrite', s => s.delete(x.uid)); if (!r.ok) rechazadas++; continue; }
+        break; // 429 o error del servidor: se reintenta después
+      }
+    } catch { /* sin IndexedDB */ }
+    subiendo = false; contarPendientes();
+  }
+
+  // ---------- Arranque ----------
+  $('pantalla-completa').onclick = () => { (document.documentElement.requestFullscreen?.() || Promise.resolve()).catch(() => {}); };
+  const despierta = async () => { try { await navigator.wakeLock?.request('screen'); } catch { /* no disponible */ } };
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') despierta(); });
+  window.addEventListener('online', async () => { await conectar(); subirPendientes(); });
+  window.addEventListener('offline', () => { sinConexion = true; avisos(); });
+  (async () => {
+    if (!registro?.token) return noRegistrado();
+    avisos();
+    if (!await conectar()) return;
+    iniciarCamara(); despierta(); inicio(); contarPendientes(); subirPendientes();
+    setInterval(async () => { if (await conectar()) subirPendientes(); }, 60000);
+  })();
+})();
+</script>
+</body>
+</html>

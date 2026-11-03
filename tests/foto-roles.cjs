@@ -129,6 +129,13 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
   const EMP = exigir(await pedir('POST', '/personal', T.Gema, { nombre: 'Ernesto Obsidiana', puesto: 'Operador', telefono: '442 987 6543', fecha_ingreso: dia(-200), clabe, salario, salario_periodo: 'mensual' }), 'alta de personal');
   // Reloj checador (2026-11-03): una checada de ayer agregada a mano, con su motivo marcado.
   exigir(await pedir('POST', '/asistencia/checadas', A, { personal_id: EMP.id, tipo: 'entrada', fecha: dia(-1), hora: '08:31', motivo: 'Checada Turmalina' }), 'checada de Obsidiana');
+  // F2 (2026-11-03): una checada en el kiosco con su foto (JPEG de prueba con una marca).
+  let CHECADA_FOTO;
+  { const pin = exigir(await pedir('POST', '/asistencia/personal/' + EMP.id + '/pin', A), 'PIN de Obsidiana'), kio = exigir(await pedir('POST', '/asistencia/dispositivos', A, { nombre: 'Kiosco foto', sucursal_id: qro.id }), 'kiosco');
+    const k = async (r, b) => { const x = await fetch(URL + '/publico/kiosco/' + r, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Kiosco': kio.token }, body: JSON.stringify(b) }); return x.json(); };
+    const i = await k('identificar', { codigo: pin.codigo, pin: pin.pin }), c = await k('cambiar-pin', { ticket: i.ticket, nuevo: '5072' });
+    const jpg = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.from('FOTO-ZIRCON'), Buffer.alloc(2000, 7), Buffer.from([0xff, 0xd9])]).toString('base64');
+    CHECADA_FOTO = (await k('checar', { ticket: c.ticket, tipo: 'entrada', foto: jpg })).id; if (!CHECADA_FOTO) throw new Error('No se pudo checar con foto'); }
 
   // ----- Qué datos se buscan (fila de la foto → marcas que la delatan) -----
   const DATOS = [
@@ -186,6 +193,7 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
       ['fichaEmp', 'Su ficha: teléfono, licencia, ingreso', ['442 987 6543', '4429876543']],
       ['clabe', 'Sus datos sensibles: CLABE y salario', [clabe, ...formas(salario)]],
       ['turmalina', 'Sus checadas del reloj checador (entradas, salidas) y su motivo', ['Checada Turmalina']],
+      ['fotoChecada', 'La foto que se tomó al checar en el kiosco', ['FOTO-ZIRCON']],
     ]],
   ];
 
@@ -193,7 +201,7 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
   const rutasGet = [];
   for (const f of fs.readdirSync(path.join(__dirname, '..', 'server')).filter(f => f.endsWith('.js')))
     for (const m of fs.readFileSync(path.join(__dirname, '..', 'server', f), 'utf8').matchAll(/app\.get\(\s*'\/api(\/[^']+)'/g)) rutasGet.push(m[1]);
-  const ids = new Set([O1, Q2, O3, O4].map(x => x.id).concat([cAmbar, cBerilo, cDiamante, cCoral, clienteFiscal, OF, OB, OP].map(c => c.id)));
+  const ids = new Set([O1, Q2, O3, O4].map(x => x.id).concat([cAmbar, cBerilo, cDiamante, cCoral, clienteFiscal, OF, OB, OP].map(c => c.id), [CHECADA_FOTO]));
   for (const r of ['/finanzas/cxp?vista=todas', '/compras/solicitudes?estado=', '/compras/ordenes', '/personal', '/prospeccion', '/marketing/publicaciones?desde=' + dia(-40) + '&hasta=' + dia(50), '/marketing/proyectos', '/marketing/ideas']) {
     const [, j] = await pedir('GET', r, A); for (const x of (Array.isArray(j) ? j : j.lista || j.items || [])) if (x && x.id) ids.add(x.id);
   }
@@ -358,6 +366,8 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
     ['2026-11-03', 'Reloj checador: ver las checadas del personal, corregirlas con motivo, dar código y PIN y registrar kioscos lo hacen Dirección y el Gerente (de su sucursal); los demás roles no. Nadie ve un PIN ni borra una checada.', {
       admin: { turmalina: 1, daPin: 1, registraKiosco: 1, corrigeChecada: 1 }, gerente: { turmalina: 1, daPin: 1, registraKiosco: 1, corrigeChecada: 1 },
       ...Object.fromEntries(['ventas', 'atencion', 'tecnico', 'costos', 'marketing', 'marketing_gerente'].map(r => [r, { turmalina: 0, daPin: 0, registraKiosco: 0, corrigeChecada: 0 }])) }],
+    ['2026-11-03', 'Foto de cada checada del kiosco (para revisar quién checó): la ven Dirección y el Gerente (de su sucursal), y cada vez queda en la bitácora; los demás roles no. Se guarda cifrada.', {
+      admin: { fotoChecada: 1 }, gerente: { fotoChecada: 1 }, ...Object.fromEntries(['ventas', 'atencion', 'tecnico', 'costos', 'marketing', 'marketing_gerente'].map(r => [r, { fotoChecada: 0 }])) }],
     ['2026-10-26', 'Marketing: aprueban las publicaciones Dirección y el Gerente de marketing; nadie más (ni Marketing, aunque la haya escrito).', { admin: { apruebaPub: 1 }, marketing_gerente: { apruebaPub: 1 }, marketing: { apruebaPub: 0 }, gerente: { apruebaPub: 0 }, ventas: { apruebaPub: 0 }, atencion: { apruebaPub: 0 }, tecnico: { apruebaPub: 0 }, costos: { apruebaPub: 0 } }],
     ['2026-10-26', 'Marketing y Gerente de marketing: ven, editan y comentan las publicaciones de toda la empresa (de cualquier sucursal y las generales), y nada más del sistema: ni ventas, cobranza, gastos, compras, prospección ni personal.', Object.fromEntries(['marketing', 'marketing_gerente'].map(r => [r, {
       rubi: 1, zafiro: 1, topacio: 1, editaPub: 1, comentaPub: 1, ambar: 0, berilo: 0, coral: 0, cobroAlicia: 0, cobroTomas: 0, saldo: 0, gastoTomas: 0, gastoCarlos: 0, clabeProv: 0, jade: 0, perla: 0, granate: 0, cuarzo: 0, obsidiana: 0, clabe: 0, editaO1: 0, borra: 0 }]))],
