@@ -48,7 +48,7 @@ const conMontaje = (nombre, cfg, fn) => test(nombre, async () => { const m = awa
 
 conMontaje('Sin el permiso de timbrar: ninguna ruta nueva responde (403) ni llama a factura.com', { timbra: false, direccion: false }, async ({ pedir, estado, orden, factura }) => {
   orden(1); const f = factura({ uuid: UUID1, folio: '1' });
-  for (const [m, r] of [['GET', '/facturas'], ['GET', '/avisos'], ['POST', `/facturas/${f}/reenviar`], ['POST', `/facturas/${f}/descartar`], ['GET', '/complementos/cobros/1'], ['POST', '/complementos/cobros/1/timbrar']]) assert.equal((await pedir(m, r, {})).status, 403, m + ' ' + r);
+  for (const [m, r] of [['GET', '/facturas'], ['GET', '/avisos'], ['POST', `/facturas/${f}/reenviar`], ['POST', `/facturas/${f}/descartar`], ['GET', '/complementos/cobros/1'], ['POST', '/complementos/cobros/1/timbrar'], ['POST', '/importar-clientes/vista-previa'], ['POST', '/importar-clientes/aplicar']]) assert.equal((await pedir(m, r, {})).status, 403, m + ' ' + r);
   assert.deepEqual(estado.llamadas, []);
 });
 

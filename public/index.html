@@ -695,7 +695,15 @@
       <details class="fx-detalle" id="fx-revision-caja"><summary>Revisión para pasar a producción</summary>
         <p class="ayuda">Solo lee: no cambia nada ni llama a factura.com. Dice qué falta antes de poner <code>FACTURA_ENV=prod</code> (✘ bloquea; ⚠ lo confirmas tú). Nunca muestra una llave.</p>
         <button type="button" class="btn btn-secundario" id="fx-revisar">Revisar ahora</button><div id="fx-revision" role="status" aria-live="polite"></div></details>
-      <details class="fx-detalle"><summary>Catálogos del SAT guardados</summary><ul class="fx-lista" id="fx-catalogos-lista"></ul></details>
+      <details class="fx-detalle" id="fx-clientes-caja"><summary>Cargar clientes desde factura.com (CSV)</summary>
+        <p class="ayuda">Sube el CSV de clientes que descargas de factura.com. Primero se <b>revisa</b> (no guarda nada): el sistema liga cada uno con el cliente del CRM que ya existe, por RFC, teléfono o nombre. <b>Nunca crea clientes nuevos</b> ni borra lo que ya capturaste. Lo que no se puede dar por bueno (sin régimen, CP inválido, correo de relleno de Saneadren) se deja vacío para completarlo al facturar.</p>
+        <div class="fx-suc-campos">
+          <label>Archivo CSV<input type="file" id="fx-cli-archivo" accept=".csv,text/csv"></label>
+          <label>Ese archivo salió de la cuenta de<select id="fx-cli-entorno"><option value="prod">Producción (la real)</option><option value="sandbox">Pruebas (sandbox)</option></select></label>
+        </div>
+        <button type="button" class="btn btn-secundario" id="fx-cli-revisar">Revisar archivo</button>
+        <div id="fx-cli-resultado" role="status" aria-live="polite"></div></details>
+            <details class="fx-detalle"><summary>Catálogos del SAT guardados</summary><ul class="fx-lista" id="fx-catalogos-lista"></ul></details>
       <h3 class="fx-sub">Por sucursal</h3>
       <div id="fx-sucursales"></div>
       <h3 class="fx-sub">Claves del SAT de los servicios</h3>
@@ -1761,7 +1769,7 @@
 <script src="solicitudes.js?v=rev1"></script>
 <script src="carga-generador.js?v=con1"></script>
 <script src="sucursales.js?v=perm2"></script>
-<script src="facturacion.js?v=fx9"></script>
+<script src="facturacion.js?v=fx10"></script>
 <script src="encuestas.js?v=enc1"></script>
 <script src="app.js?v=dup1"></script>
 <script src="personal.js?v=ed1"></script>

@@ -11,6 +11,7 @@ const { listarSeries, asignarSerie, crearSerie } = require('./facturacion-series
 const { validarRFC, normalizarRazonSocial, validarCorreo, validarDatosFiscales } = require('./facturacion-validaciones');
 const { leerCatalogos } = require('./facturacion-catalogos');
 const { revisarProduccion } = require('./facturacion-revision');
+const { planear: planearClientes, aplicar: aplicarClientes } = require('./facturacion-importar-clientes');
 const { preparar, timbrar, resolverSinRespuesta, descargarArchivos, vistaFactura } = require('./facturacion-timbrado');
 const { vincularCliente } = require('./facturacion-clientes');
 const { cancelar, consultarEstatus, esAcuse, MOTIVOS } = require('./facturacion-cancelacion');
@@ -70,6 +71,28 @@ module.exports = function rutasFacturacion(app, db, h, { direccion, puede = () =
   app.get('/api/facturacion/revision-produccion', h((req, res) => {
     if (soloDireccion(req, res)) return;
     res.json(revisarProduccion(db, env, { demo: esDemo() }));
+  }));
+
+  // Carga de clientes desde el CSV de factura.com (solo Dirección). «vista-previa» solo lee; «aplicar» vuelve a planear con el mismo CSV y guarda en una transacción.
+  const csvDe = (req, res) => {
+    const csv = req.body?.csv;
+    if (typeof csv !== 'string' || !csv.trim()) { res.status(400).json({ error: 'Elige el archivo CSV de clientes de factura.com' }); return null; }
+    return csv;
+  };
+  app.post('/api/facturacion/importar-clientes/vista-previa', h((req, res) => {
+    if (soloDireccion(req, res)) return;
+    const csv = csvDe(req, res); if (csv === null) return;
+    const p = planearClientes(db, csv); if (p.error) return res.status(400).json({ error: p.error });
+    res.json({ resumen: p.resumen, invalidos: p.invalidos.slice(0, 200), unidades: p.unidades.map(u => ({ rfc: u.rfc, tipo: u.tipo, repetido: u.repetido, ya_cargado: u.ya_cargado, cliente: u.cliente, candidatos: u.candidatos,
+      filas: u.filas.map(f => ({ uid: f.uid, razon_social: f.razon_social, regimen: f.regimen, cp: f.cp, correo: f.correo, domicilio: f.domicilio, incompleto: f.incompleto })) })) });
+  }));
+  app.post('/api/facturacion/importar-clientes/aplicar', h((req, res) => {
+    if (soloDireccion(req, res)) return;
+    const csv = csvDe(req, res); if (csv === null) return;
+    const d = req.body.decisiones && typeof req.body.decisiones === 'object' ? req.body.decisiones : {};
+    const r = aplicarClientes(db, csv, d, req.usuarioSesion?.id ?? null); if (r.error) return res.status(400).json({ error: r.error });
+    auditar(req, 'catalogo', null, 'facturacion', `Cargó datos fiscales de clientes desde factura.com (${d.entorno === 'sandbox' ? 'cuenta de pruebas' : 'cuenta de producción'}): ${r.guardados} nuevos, ${r.completados} completados, ${r.ya_estaban} ya estaban, ${r.saltados.length} sin cargar`);
+    res.json(r);
   }));
 
   // Prueba la conexión leyendo las series de factura.com (no cambia nada allá) y las devuelve para elegirlas.
