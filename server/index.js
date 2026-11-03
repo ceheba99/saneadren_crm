@@ -940,6 +940,12 @@ app.put('/api/leads/:id', validarPartidas, validarRegistro, h((req, res) => {
     motivoPerdida = typeof req.body.motivo_perdida === 'string' ? req.body.motivo_perdida.trim().replace(/\s+/g, ' ').slice(0, 300) : '';
     if ((motivoPerdida.match(/[\p{L}\p{N}]/gu) || []).length < 5 || /[<>{}]/.test(motivoPerdida)) return res.status(400).json({ error: 'Escribe por qué no se aceptó la cotización (ej. precio alto, eligió a otro, ya no lo necesita)', codigo: 'FALTA_MOTIVO_PERDIDA' });
   }
+  // Una orden con factura (CFDI) real vigente no se reabre ni se descarta: la factura seguiría vigente ante el SAT sin nadie que la cobre o la cancele.
+  // Las de pruebas (sandbox) no estorban; las del demo sí, para que se vea igual que en producción.
+  if (actual.estatus === 'ganado' && req.body.estatus !== undefined && req.body.estatus !== 'ganado') {
+    const cfdi = db.prepare("SELECT serie, folio, estatus FROM main.facturas WHERE lead_id = ? AND tipo_documento = 'factura' AND entorno IN ('prod', 'demo') AND estatus IN ('timbrando', 'timbrada', 'cancelacion_solicitada', 'borrador_error') LIMIT 1").get(actual.id);
+    if (cfdi) return res.status(409).json({ error: cfdi.estatus === 'borrador_error' ? `Esta orden tiene un borrador de factura en factura.com (${cfdi.serie || ''}-${cfdi.folio || ''}): primero descártalo (pantalla «Facturas») para que nadie lo timbre después.` : `Esta orden tiene la factura ${cfdi.serie || ''}-${cfdi.folio || ''} vigente ante el SAT: no puede reabrirse ni descartarse. Primero cancela la factura (en la ficha de la orden, «Factura electrónica»).` });
+  }
   if (actual.estatus === 'ganado' && req.body.estatus !== undefined && req.body.estatus !== 'ganado' && finanzas.tieneCobros(actual.id)) {
     return res.status(409).json({ error: 'Esta orden tiene pagos registrados: no puede reabrirse ni descartarse. Si fue un error, un administrador debe cancelar primero esos pagos.' });
   }

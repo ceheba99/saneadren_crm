@@ -32,7 +32,10 @@ async function montar({ entorno = 'sandbox', direccion = true, timbra = true, de
     .run(c.lead ?? 1, c.sucursal ?? 1, c.estatus ?? 'timbrada', c.num ?? 'N-' + Math.random().toString(36).slice(2, 8), c.entorno ?? 'sandbox', c.correo === undefined ? 'cliente@ejemplo.mx' : c.correo, c.serie ?? 'F', c.folio ?? null,
       c.uuid ?? null, c.uid ?? null, c.error ?? null).lastInsertRowid);
   const estado = { llamadas: [], bitacora: [], error: null, direccion, timbra };
-  const clienteSim = () => ({ config: { entorno }, get: async ruta => { estado.llamadas.push('GET ' + ruta); if (estado.error) throw estado.error; return { datos: {}, crudo: { response: 'success', message: 'Hemos enviado tu Factura con exito al e-mail cliente@ejemplo.mx' } }; },
+  const clienteSim = () => ({ config: { entorno }, get: async ruta => { estado.llamadas.push('GET ' + ruta);
+    // Búsqueda por NumOrder (antes de descartar un borrador): por omisión «no existe»; estado.orden la cambia.
+    if (ruta.startsWith('/v4/cfdi/order/')) { if (estado.orden) return estado.orden(ruta); throw new ErrorFactura('api', 'No se encontró CFDI: x', { rechazo: true }); }
+    if (estado.error) throw estado.error; return { datos: {}, crudo: { response: 'success', message: 'Hemos enviado tu Factura con exito al e-mail cliente@ejemplo.mx' } }; },
     post: async (ruta, cuerpo) => { estado.llamadas.push('POST ' + ruta); if (estado.error) throw estado.error; return { datos: {}, crudo: { response: 'success' } }; } });
   const app = express(); app.use(express.json());
   app.use((req, res, next) => { req.usuarioSesion = { id: 1, nombre: 'Fer' }; next(); });
@@ -158,12 +161,27 @@ conMontaje('Descartar borrador: solo Dirección; borra el borrador en factura.co
   estado.direccion = true;
   const x = await pedir('POST', `/facturas/${b}/descartar`, {});
   assert.equal(x.status, 200); assert.equal(x.json.factura.descartada, true); assert.equal(x.json.factura.estatus, 'cancelada');
-  assert.deepEqual(estado.llamadas, ['POST /v4/drafts/BORR-1/drop']);
+  assert.deepEqual(estado.llamadas.filter(l => l.startsWith('POST')), ['POST /v4/drafts/BORR-1/drop']);
+  assert.ok(estado.llamadas[0].startsWith('GET /v4/cfdi/order/'), 'antes de descartar se busca por NumOrder');
   // el lugar quedó libre: se puede empezar una factura nueva de la misma orden
   assert.doesNotThrow(() => factura({ lead: 1, estatus: 'pendiente' }));
   assert.equal(db.prepare("SELECT accion FROM facturas_log WHERE factura_id = ?").get(b).accion, 'descartar');
   const t = factura({ lead: 2, estatus: 'timbrada', uuid: UUID1, folio: '1', uid: 'CFDI-1' });
   assert.equal((await pedir('POST', `/facturas/${t}/descartar`, {})).status, 409); assert.equal(db.prepare('SELECT estatus FROM facturas WHERE id = ?').get(t).estatus, 'timbrada');
+});
+
+conMontaje('Auditoría: un borrador que ya se timbró en el panel de factura.com NO se descarta (queda timbrado); si la búsqueda falla, tampoco', {}, async ({ pedir, orden, factura, estado, db }) => {
+  orden(1); orden(2);
+  const a = factura({ lead: 1, estatus: 'borrador_error', uid: 'BORR-A', folio: '8' }), b = factura({ lead: 2, estatus: 'borrador_error', uid: 'BORR-B' });
+  const numA = db.prepare('SELECT num_order FROM facturas WHERE id = ?').get(a).num_order;
+  estado.orden = () => ({ datos: { UID: 'BORR-A', UUID: UUID1, Folio: 'F 8', Status: 'enviada', NumOrder: numA }, crudo: {} });
+  const x = await pedir('POST', `/facturas/${a}/descartar`, {});
+  assert.equal(x.status, 409); assert.match(x.json.error, /ya se timbró en factura.com/);
+  assert.deepEqual([db.prepare('SELECT estatus, uuid FROM facturas WHERE id = ?').get(a)].map(f => [f.estatus, f.uuid])[0], ['timbrada', UUID1]);
+  assert.ok(!estado.llamadas.some(l => /drop/.test(l)), 'no se pidió borrar nada');
+  estado.orden = () => { throw new ErrorFactura('tiempo', 'factura.com tardó más de 30 segundos'); };
+  assert.equal((await pedir('POST', `/facturas/${b}/descartar`, {})).status, 502);
+  assert.equal(db.prepare('SELECT estatus FROM facturas WHERE id = ?').get(b).estatus, 'borrador_error', 'sin poder buscar, no se descarta');
 });
 
 conMontaje('Descartar: si factura.com dice con claridad que no (ya no existe) se descarta igual; si no hay respuesta, NO', {}, async ({ pedir, orden, factura, estado, db }) => {

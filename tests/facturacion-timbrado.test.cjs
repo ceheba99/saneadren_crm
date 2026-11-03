@@ -31,7 +31,7 @@ function base() {
     INSERT INTO catalogo_servicios (id, nombre) VALUES (1, 'Desazolve'), (2, 'Trampa de grasa'), (3, 'Sin clave');
     CREATE TABLE leads (id INTEGER PRIMARY KEY, estatus TEXT, ejecucion TEXT, iva_modo TEXT, iva_tasa INTEGER, iva_cent INTEGER, valor REAL, partidas_json TEXT, servicio_id INTEGER, cliente_id INTEGER,
       sucursal_id INTEGER, factura_folio TEXT, factura_fecha TEXT, factura_total_cent INTEGER, factura_metodo TEXT, created_at TEXT DEFAULT '2026-10-20 10:00:00');
-    CREATE TABLE cobros (id INTEGER PRIMARY KEY, lead_id INTEGER, monto_cent INTEGER, cancelado INTEGER DEFAULT 0, confirmado INTEGER DEFAULT 1);
+    CREATE TABLE cobros (id INTEGER PRIMARY KEY, lead_id INTEGER, monto_cent INTEGER, tipo TEXT DEFAULT 'pago', cancelado INTEGER DEFAULT 0, confirmado INTEGER DEFAULT 1);
     CREATE TABLE historial (id INTEGER PRIMARY KEY, lead_id INTEGER, tipo TEXT, texto TEXT, usuario TEXT, origen TEXT, area TEXT, usuario_id INTEGER);`);
   crearTablas(db);
   db.exec(`UPDATE catalogo_servicios SET clave_prod_serv = '76121600', clave_unidad = 'E48', nombre_unidad = 'Unidad de servicio' WHERE id IN (1, 2);
@@ -180,7 +180,7 @@ test('Si falla el timbrado queda BORRADOR (pendiente de corregir); al reintentar
   const errorConBorrador = () => ({ json: { response: 'error', message: { message: 'CFDI40111 - El valor del campo Descuento no es correcto', messageDetail: 'detalle', data: { Secret: 'NO-GUARDAR' }, status: 'error' },
     xmlerror: '<xml secreto="NO-GUARDAR"/>', draft: { response: 'success', uid: 'BORR-1', INV: { Serie: 'F', Folio: 8 } } } });
   const sim = simulado(respuestasBase({ 'POST /v4/cfdi40/create': errorConBorrador, 'POST /v4/cfdi40/create/BORR-1': () => ({ json: { response: 'success', message: 'Borrador creado satisfactoriamente', uid: 'BORR-1' } }),
-    'POST /v4/cfdi40/BORR-1/timbrarborrador': EXITO(8) }));
+    'POST /v4/cfdi40/BORR-1/timbrarborrador': EXITO(8), 'GET /v4/cfdi/order/*': () => ({ json: { status: 'error', message: 'No se encontró CFDI: x' } }), }));
   const ctx = contexto(db, sim);
   let r = await timbrar(db, 10, { metodo_pago: 'PUE', forma_pago: '03', confirmar: true }, ctx);
   assert.equal(r.estado, 'borrador_error'); assert.match(r.mensaje, /CFDI40111 - El valor del campo Descuento no es correcto — detalle/);
@@ -294,10 +294,50 @@ test('Un 504 en HTML DESPUÉS de mandar no es «rechazada»: queda «timbrando»
   assert.equal(posts(sim, /^\/v4\/cfdi40\/create$/).length, 1, 'el segundo intento encontró la que sí se timbró y no mandó otra');
 });
 
+test('Auditoría: un borrador que ya se timbró en el panel de factura.com no se vuelve a mandar; si la búsqueda falla, tampoco', async () => {
+  const db = base(); orden(db);
+  let enPanel = null;
+  const sim = simulado(respuestasBase({ 'POST /v4/cfdi40/create': () => ({ json: { response: 'error', message: 'Falla', draft: { uid: 'BORR-3', INV: { Serie: 'F', Folio: 11 } } } }),
+    'GET /v4/cfdi/order/*': () => (enPanel === 'red' ? { status: 503, tipo: 'text/html', texto: '<html>caído</html>' } : { json: { status: 'success', data: [{ UID: 'BORR-3', UUID: '', Folio: 'F 11', Status: 'borrador', NumOrder: factura(db).num_order }, ...(enPanel ? [{ UID: 'BORR-3', UUID: UUID1, Folio: 'F 11', Status: 'enviada', NumOrder: factura(db).num_order }] : [])] } }) }));
+  const ctx = contexto(db, sim);
+  await timbrar(db, 10, { metodo_pago: 'PUE', forma_pago: '03', confirmar: true }, ctx);
+  assert.equal(factura(db).estatus, 'borrador_error');
+  enPanel = 'red';
+  await assert.rejects(timbrar(db, 10, { metodo_pago: 'PUE', forma_pago: '03', confirmar: true }, ctx));
+  assert.equal(factura(db).estatus, 'borrador_error', 'sin poder buscar, no se manda nada'); assert.equal(posts(sim, /create\/BORR-3|timbrarborrador/).length, 0);
+  enPanel = true; // se timbró en el panel; la búsqueda trae el borrador y el timbrado: manda el timbrado
+  const r = await timbrar(db, 10, { metodo_pago: 'PPD', confirmar: true }, ctx); // el reintento viene con otros datos (PPD)
+  assert.equal(r.estado, 'timbrada'); assert.equal(factura(db).uuid, UUID1);
+  assert.deepEqual([factura(db).metodo_pago, factura(db).forma_pago], ['PUE', '03'], 'la fila conserva lo que se mandó (se buscó ANTES de ponerle los datos del reintento)'); assert.equal(posts(sim, /create\/BORR-3|timbrarborrador/).length, 0, 'no se volvió a mandar');
+});
+
+test('Auditoría: «ya existe un CFDI» y la búsqueda falla: se queda «timbrando» (no se libera para reenviar); dos timbrados con el mismo NumOrder no se resuelven solos', async () => {
+  const db = base(); orden(db);
+  let modo = 'red';
+  const sim = simulado(respuestasBase({ 'POST /v4/cfdi40/create': () => ({ json: { response: 'error', message: 'Ya existe un CFDI con folio y serie' } }),
+    'GET /v4/cfdi/order/*': () => (modo === 'red' ? { status: 503, tipo: 'text/html', texto: '<html>caído</html>' } : { json: { status: 'success', data: [1, 2].map(n => ({ UID: 'U' + n, UUID: n === 1 ? UUID1 : UUID1.replace('A1', 'B2'), Folio: 'F ' + n, Status: 'enviada', NumOrder: factura(db).num_order })) } }) }));
+  const ctx = contexto(db, sim);
+  const r = await timbrar(db, 10, { metodo_pago: 'PUE', forma_pago: '03', confirmar: true }, ctx);
+  assert.equal(r.estado, 'sin_respuesta'); assert.equal(factura(db).estatus, 'timbrando');
+  modo = 'dos';
+  await assert.rejects(T.verificar(db, ctx.crearCliente(), factura(db), ctx), /2 CFDI timbrados con el número de orden/);
+  assert.equal(factura(db).estatus, 'timbrando');
+});
+
+test('Auditoría: un «ajuste» cobrado y una partida sin servicio del catálogo se dicen y se confirman (no en silencio)', () => {
+  const db = base(); orden(db);
+  db.prepare("INSERT INTO cobros (lead_id, monto_cent, tipo) VALUES (10, 16000, 'ajuste')").run();
+  db.prepare("UPDATE leads SET partidas_json = ? WHERE id = 10").run(JSON.stringify([{ servicio: 'Desazolve', leyenda: 'Desazolve', importe: 229.90 }, { servicio: 'Algo que no está en el catálogo', leyenda: 'Renta de sanitario', importe: 1635.48 }]));
+  const p = T.preparar(db, 10, { metodo_pago: 'PUE', forma_pago: '03' }, { config: leerConfig(ENV.sandbox) });
+  assert.ok(p.confirmar.some(c => /\$160\.00 registrados como ajuste/.test(c)), p.confirmar.join(' | '));
+  assert.ok(p.confirmar.some(c => /«Renta de sanitario» no coincide con ningún servicio del catálogo/.test(c)), p.confirmar.join(' | '));
+  assert.ok(!p.confirmar.some(c => /«Desazolve» no coincide/.test(c)), 'la que sí coincide no se pregunta');
+});
+
 test('Un 5xx al timbrar un BORRADOR tampoco se toma como «sigue en borrador»: queda «timbrando» para verificar', async () => {
   const db = base(); orden(db);
   const sim = simulado(respuestasBase({ 'POST /v4/cfdi40/create': () => ({ json: { response: 'error', message: 'Falla', draft: { uid: 'BORR-2', INV: { Serie: 'F', Folio: 9 } } } }),
-    'POST /v4/cfdi40/create/BORR-2': () => ({ json: { response: 'success', uid: 'BORR-2' } }), 'POST /v4/cfdi40/BORR-2/timbrarborrador': () => ({ status: 502, tipo: 'text/html', texto: '<html>Bad gateway</html>' }) }));
+    'POST /v4/cfdi40/create/BORR-2': () => ({ json: { response: 'success', uid: 'BORR-2' } }), 'POST /v4/cfdi40/BORR-2/timbrarborrador': () => ({ status: 502, tipo: 'text/html', texto: '<html>Bad gateway</html>' }), 'GET /v4/cfdi/order/*': () => ({ json: { status: 'error', message: 'No se encontró CFDI: x' } }), }));
   const ctx = contexto(db, sim);
   await timbrar(db, 10, { metodo_pago: 'PUE', forma_pago: '03', confirmar: true }, ctx);
   const r = await timbrar(db, 10, { metodo_pago: 'PUE', forma_pago: '03', confirmar: true }, ctx);

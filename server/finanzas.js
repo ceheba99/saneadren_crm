@@ -1087,6 +1087,9 @@ module.exports = function finanzas(app, db, h, unicos) {
       return res.json({ ok: true, lead: db.prepare('SELECT * FROM leads WHERE id = ?').get(lead.id) });
     }
     if (b.estado === 'no_realizado') {
+      // Con una factura real vigente, primero se cancela con el motivo 03 («no se llevó a cabo la operación»); si no, queda vigente sin servicio.
+      const cfdi = db.prepare("SELECT serie, folio, estatus FROM main.facturas WHERE lead_id = ? AND tipo_documento = 'factura' AND entorno IN ('prod', 'demo') AND estatus IN ('timbrando', 'timbrada', 'cancelacion_solicitada', 'borrador_error') LIMIT 1").get(lead.id);
+      if (cfdi) return res.status(409).json({ error: cfdi.estatus === 'borrador_error' ? `Esta orden tiene un borrador de factura en factura.com (${cfdi.serie || ''}-${cfdi.folio || ''}): primero descártalo (pantalla «Facturas») y después márcala como no realizada.` : `Esta orden tiene la factura ${cfdi.serie || ''}-${cfdi.folio || ''} vigente ante el SAT: primero cancélala con el motivo 03 («No se llevó a cabo la operación») y después márcala como no realizada.` });
       const motivo = texto(b.motivo, 300);
       if (!motivo || !conSentido(motivo, 5)) return res.status(400).json({ error: 'Escribe por qué no se realizó (mínimo 5 caracteres)' });
       const fechaGasto = lead.fecha_servicio && lead.fecha_servicio <= hoy ? lead.fecha_servicio : hoy;
