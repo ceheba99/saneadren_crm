@@ -20,7 +20,7 @@
 const alcance = require('./alcance');
 
 // Tablas con sucursal propia y tablas que la heredan de su registro (en orden: primero las de arriba).
-const CON_SUCURSAL = ['leads', 'cuentas_por_pagar', 'solicitudes_compra', 'ordenes_compra', 'establecimientos', 'historial_archivo', 'clientes', 'personal', 'facturas'];
+const CON_SUCURSAL = ['leads', 'cuentas_por_pagar', 'solicitudes_compra', 'ordenes_compra', 'establecimientos', 'historial_archivo', 'clientes', 'personal', 'facturas', 'checadas', 'checador_dispositivos'];
 const VISTAS = [
   ['leads', 've_lead(sucursal_id, responsable_id, tecnico_id, estatus, capturado_por)'],
   // Gastos: los de su sucursal o los que él registró; con «Ver los gastos de sus órdenes», también los de sus órdenes.
@@ -39,6 +39,10 @@ const VISTAS = [
   ['personal', 'en_alcance(sucursal_id)'], // qué se ve de cada persona lo decide personal.js (permisos)
   ['documentos_personal', 'personal_id IN (SELECT id FROM personal)'],
   ['incidencias_personal', 'personal_id IN (SELECT id FROM personal)'],
+  // Reloj checador (2026-11-03): las checadas, con su persona; los kioscos, por su sucursal.
+  ['checadas', 'personal_id IN (SELECT id FROM personal)'],
+  ['checadas_correcciones', 'checada_id IN (SELECT id FROM checadas)'],
+  ['checador_dispositivos', 'en_alcance(sucursal_id)'],
   ['orden_personal', 'lead_id IN (SELECT id FROM leads)'],
   ['encuestas', 'lead_id IN (SELECT id FROM leads)'], // la encuesta, con su orden
   // Marketing (2026-10-26): las de toda la empresa (sin sucursal) o de una sucursal que ve; con «lo suyo», las que creó o tiene a su nombre.
@@ -76,7 +80,8 @@ const RUTAS_REGISTRO = [
   [/^\/finanzas\/pagos-proveedor\/(\d+)(?:\/|$)/, 'pagos_proveedor'], [/^\/compras\/ordenes\/(\d+)(?:\/|$)/, 'ordenes_compra'],
   [/^\/compras\/documentos\/(\d+)(?:\/|$)/, 'documentos_oc'], [/^\/compras\/solicitudes\/documentos\/(\d+)(?:\/|$)/, 'documentos_solicitud'],
   [/^\/compras\/solicitudes\/(\d+)(?:\/|$)/, 'solicitudes_compra'], [/^\/prospeccion\/(\d+)(?:\/|$)/, 'establecimientos'],
-  [/^\/personal\/(\d+)(?:\/|$)/, 'personal'],
+  [/^\/personal\/(\d+)(?:\/|$)/, 'personal'], [/^\/asistencia\/personal\/(\d+)(?:\/|$)/, 'personal'],
+  [/^\/asistencia\/checadas\/(\d+)(?:\/|$)/, 'checadas'], [/^\/asistencia\/dispositivos\/(\d+)(?:\/|$)/, 'checador_dispositivos'],
   [/^\/marketing\/publicaciones\/(\d+)(?:\/|$)/, 'publicaciones'], [/^\/marketing\/imagenes\/(\d+)(?:\/|$)/, 'publicacion_imagenes'],
   [/^\/marketing\/proyectos\/(\d+)(?:\/|$)/, 'proyectos_marketing'], [/^\/marketing\/tareas\/(\d+)(?:\/|$)/, 'tareas_marketing'],
   [/^\/marketing\/avances\/(\d+)(?:\/|$)/, 'avances_marketing'], [/^\/marketing\/archivos\/(\d+)(?:\/|$)/, 'archivos_marketing'],

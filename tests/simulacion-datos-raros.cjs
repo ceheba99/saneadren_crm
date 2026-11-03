@@ -85,7 +85,7 @@ async function pedir(m, r, t, cuerpo, crudo, intento = 0) {
   revisa(errores.length === antes3, 'archivos vacíos, falsos o de 30 MB: rechazados sin error interno', errores.slice(antes3));
   console.log('4. Sin sesión y con sesión falsa');
   const antes4 = errores.length; let no401 = [];
-  for (const [m, r] of rutas) { if (/^\/(salud|login|registro|verificar-correo|olvide-password|restablecer-password|demo\/estado|demo\/entrar)$/.test(r)) continue;
+  for (const [m, r] of rutas) { if (/^\/(salud|login|registro|verificar-correo|olvide-password|restablecer-password|demo\/estado|demo\/entrar)$/.test(r) || /^\/publico\/kiosco\//.test(r)) continue; // el kiosco no usa sesión: lo identifica su token (simulacion-checador.cjs)
     const [st] = await pedir(m, ponerId(r, 1), 'token-falso-' + 'z'.repeat(60), m === 'GET' ? undefined : {}); if (st !== 401) no401.push(m + ' ' + r + ' → ' + st); }
   revisa(!no401.length && errores.length === antes4, 'con una sesión falsa, todas las rutas responden «inicia sesión» (401)', no401.slice(0, 10));
   console.log('5. Después de todo');

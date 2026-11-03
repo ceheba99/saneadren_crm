@@ -43,6 +43,10 @@ const CATALOGO = [
   ['personal.ver', 'Personal', 'Ver personal', 'Lista y fichas del personal de su sucursal (sin datos de pago ni expediente)', ['gerente']],
   ['personal.editar', 'Personal', 'Editar personal', 'Altas, cambios, bajas, vacaciones e incidencias', ['gerente']],
   ['personal.sensibles', 'Personal', 'Datos sensibles del personal', 'CLABE, RFC, CURP, NSS, salario, contrato y documentos del expediente', ['gerente']],
+  // Reloj checador (2026-11-03): ver la asistencia, corregirla con motivo (nunca borrar) y registrar los kioscos.
+  ['asistencia.ver', 'Personal', 'Ver asistencia', 'Las checadas (entradas, comida, salidas y tiempo extra) del personal de su sucursal', ['gerente']],
+  ['asistencia.corregir', 'Personal', 'Corregir asistencia', 'Agregar una checada olvidada, anular una equivocada o aceptar una por revisar, siempre con motivo (las checadas nunca se borran)', ['gerente']],
+  ['asistencia.kioscos', 'Personal', 'Kioscos del checador', 'Registrar la tableta o computadora de la entrada como kiosco del reloj checador, y darla de baja', ['gerente']],
   ['usuarios.administrar', 'Administración', 'Usuarios', 'Crear usuarios, cambiar su rol, contraseña y sucursales', ['gerente']],
   // Marketing (2026-10-26): aprueban Dirección (siempre) y el Gerente de marketing.
   ['marketing.aprobar', 'Marketing', 'Aprobar publicaciones', 'Aprobar o pedir cambios a las publicaciones antes de subirlas a redes', ['marketing_gerente']],
@@ -116,6 +120,9 @@ const DEPENDE = {
   'clientes.exportar': ['ordenes.importes', 'contactos.ver'], // el Excel lleva los importes
   'personal.editar': ['personal.ver'],
   'personal.sensibles': ['personal.ver'],
+  'asistencia.ver': ['personal.ver'],
+  'asistencia.corregir': ['asistencia.ver'],
+  'asistencia.kioscos': ['asistencia.ver'],
   'marketing.aprobar': ['marketing.ver'],
   'marketing.dinero': ['marketing.ver'],
 };

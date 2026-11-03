@@ -128,6 +128,7 @@ Dirección la revisa y la aprueba. Si un cambio altera lo que ve un rol, la prue
 | Un empleado activo: nombre y puesto (para asignarlo a una orden) | ✔ | ✔ | ✔ | ✔ | ✔ | — | — | — |
 | Su ficha: teléfono, licencia, ingreso | ✔ | ✔ | — | — | — | — | — | — |
 | Sus datos sensibles: CLABE y salario | ✔ | ✔ | — | — | — | — | — | — |
+| Sus checadas del reloj checador (entradas, salidas) y su motivo | ✔ | ✔ | — | — | — | — | — | — |
 
 ### Reportes
 
@@ -171,6 +172,9 @@ Dirección la revisa y la aprueba. Si un cambio altera lo que ve un rol, la prue
 | Ver la revisión de «¿está lista la facturación para producción?» (llaves, series, claves del SAT, respaldo) | ✔ | — | — | — | — | — | — | — |
 | Cambiar a mano el folio o el total de una orden que ya tiene factura real timbrada | — | — | — | — | — | — | — | — |
 | Capturar los resultados (alcance, me gusta…) de una publicación ya publicada | ✔ | — | — | — | — | — | ✔ | ✔ |
+| Dar de alta a una persona en el reloj checador (código y PIN temporal) o desbloquear su PIN | ✔ | ✔ | — | — | — | — | — | — |
+| Registrar una tableta o computadora como kiosco del reloj checador | ✔ | ✔ | — | — | — | — | — | — |
+| Agregar a mano una checada olvidada (con motivo) | ✔ | ✔ | — | — | — | — | — | — |
 
 | Permiso | Dirección | Gerente | Ventas | Atención | Técnico | Costos y compras | Marketing | Gerente de marketing |
 |---|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|
@@ -199,6 +203,9 @@ Dirección la revisa y la aprueba. Si un cambio altera lo que ve un rol, la prue
 | Personal · Ver personal | ✔ | ✔ | — | — | — | — | — | — |
 | Personal · Editar personal | ✔ | ✔ | — | — | — | — | — | — |
 | Personal · Datos sensibles del personal | ✔ | ✔ | — | — | — | — | — | — |
+| Personal · Ver asistencia | ✔ | ✔ | — | — | — | — | — | — |
+| Personal · Corregir asistencia | ✔ | ✔ | — | — | — | — | — | — |
+| Personal · Kioscos del checador | ✔ | ✔ | — | — | — | — | — | — |
 | Administración · Usuarios | ✔ | ✔ | — | — | — | — | — | — |
 | Marketing · Aprobar publicaciones | ✔ | — | — | — | — | — | — | ✔ |
 | Marketing · Dinero de Marketing | ✔ | — | — | — | — | — | — | ✔ |
@@ -227,6 +234,7 @@ Dirección la revisa y la aprueba. Si un cambio altera lo que ve un rol, la prue
 - **2026-10-26** · Técnico: ve su solicitud de compra, no las de otros, y no ve montos de compras.
 - **2026-10-21** · Prospección: cada quien lo suyo (quien ve toda su sucursal en ventas, todos los de su sucursal); el técnico no prospecta.
 - **2026-10-19** · Personal: quien ve órdenes ve nombre y puesto del personal activo, para asignarlo a una orden; la ficha y los datos sensibles, solo Gerente y Dirección.
+- **2026-11-03** · Reloj checador: ver las checadas del personal, corregirlas con motivo, dar código y PIN y registrar kioscos lo hacen Dirección y el Gerente (de su sucursal); los demás roles no. Nadie ve un PIN ni borra una checada.
 - **2026-10-26** · Marketing: aprueban las publicaciones Dirección y el Gerente de marketing; nadie más (ni Marketing, aunque la haya escrito).
 - **2026-10-26** · Marketing y Gerente de marketing: ven, editan y comentan las publicaciones de toda la empresa (de cualquier sucursal y las generales), y nada más del sistema: ni ventas, cobranza, gastos, compras, prospección ni personal.
 - **2026-10-26** · Los demás roles (Gerente, Ventas, Atención, Técnico, Compras) no ven Marketing; Dirección lo puede prender en Roles y permisos.

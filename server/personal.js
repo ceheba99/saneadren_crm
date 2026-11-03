@@ -135,6 +135,8 @@ module.exports = function personal(app, db, h) {
   function presentar(req, p, hoy = hoyMexico(), { lista = false } = {}) {
     const x = { ...p };
     delete x._ilegibles;
+    // Del reloj checador solo sale el código; el hash del PIN y sus intentos, nunca (checador.js).
+    delete x.pin_hash; delete x.pin_fallos; delete x.pin_bloqueado_hasta;
     const conSens = sensible(req) && !lista;
     if (sensible(req) && p._ilegibles?.length) x.datos_ilegibles = p._ilegibles;
     if (!conSens) { for (const k of SENSIBLES) delete x[k]; delete x.salario_cent; x.clabe_mascara = mascaraClabe(p.clabe); x.tiene_clabe = !!p.clabe || !!p._ilegibles?.includes('clabe'); }

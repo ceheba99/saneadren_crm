@@ -487,6 +487,11 @@
 <div class="filtros"><input id="pe-buscar" aria-label="Buscar persona" placeholder="Nombre, puesto o teléfono"><select id="pe-f-puesto" aria-label="Puesto"></select><select id="pe-f-estado" aria-label="Estado"><option value="activos">Activos</option><option value="bajas">Dados de baja</option><option value="todos">Todos</option></select><label><input type="checkbox" id="pe-f-alertas"> Solo con avisos</label></div>
 <p id="pe-resumen" role="status"></p>
 <div class="tabla-scroll"><table class="tabla-resumen pe-tabla"><thead><tr><th>Nombre</th><th>Puesto</th><th>Teléfono</th><th>Antigüedad</th><th>Vacaciones disponibles</th><th>Licencia</th><th>Órdenes del mes</th><th>Avisos</th></tr></thead><tbody id="pe-tabla"></tbody></table></div>
+<div class="modal-section perm-asistencia-kioscos pe-kioscos"><h3 class="pe-sub">🕒 Kioscos del reloj checador</h3>
+<p class="ayuda">Para registrar la tableta o computadora de la entrada: entra al sistema <b>desde ese dispositivo</b>, escribe su nombre y pulsa «Registrar este dispositivo». Solo los dispositivos registrados pueden checar; si se pierde uno, dalo de baja aquí.</p>
+<div id="pe-kioscos-lista"></div>
+<div class="filtros"><input id="pe-kiosco-nombre" maxlength="60" aria-label="Nombre del kiosco" placeholder="Nombre (p. ej. Entrada Querétaro)"><select id="pe-kiosco-suc" aria-label="Sucursal del kiosco" hidden></select><button type="button" class="btn btn-secundario" id="pe-kiosco-registrar">Registrar este dispositivo como kiosco</button></div>
+</div>
 </section>
 <section class="vista" id="vista-prospeccion">
 <div class="vista-encabezado">
