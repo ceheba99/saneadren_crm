@@ -10,6 +10,7 @@ const { CATALOGOS, TIPOS_CLAVE, sincronizarCatalogos, hayCatalogo, nombreDeClave
 const { listarSeries, asignarSerie, crearSerie } = require('./facturacion-series');
 const { validarRFC, normalizarRazonSocial, validarCorreo, validarDatosFiscales } = require('./facturacion-validaciones');
 const { leerCatalogos } = require('./facturacion-catalogos');
+const { revisarProduccion } = require('./facturacion-revision');
 const { preparar, timbrar, resolverSinRespuesta, descargarArchivos, vistaFactura } = require('./facturacion-timbrado');
 const { vincularCliente } = require('./facturacion-clientes');
 const { cancelar, consultarEstatus, esAcuse, MOTIVOS } = require('./facturacion-cancelacion');
@@ -64,6 +65,12 @@ module.exports = function rutasFacturacion(app, db, h, { direccion, puede = () =
   };
   app.get('/api/facturacion', h(configuracion));
   app.get('/api/facturacion/config', h(configuracion));
+
+  // F7: «¿está lista la facturación para producción?». Solo lee; nunca devuelve una llave.
+  app.get('/api/facturacion/revision-produccion', h((req, res) => {
+    if (soloDireccion(req, res)) return;
+    res.json(revisarProduccion(db, env, { demo: esDemo() }));
+  }));
 
   // Prueba la conexión leyendo las series de factura.com (no cambia nada allá) y las devuelve para elegirlas.
   app.post('/api/facturacion/probar', h((req, res) => {

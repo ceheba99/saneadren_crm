@@ -247,6 +247,7 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
     ['descarta', 'Descartar un borrador de factura atorado'],
     ['cancela', 'Cancelar una factura timbrada (CFDI)'],
     ['complementa', 'Timbrar el complemento de pago de un cobro (factura PPD)'],
+    ['revisaProd', 'Ver la revisión de «¿está lista la facturación para producción?» (llaves, series, claves del SAT, respaldo)'],
     ['editaFolioReal', 'Cambiar a mano el folio o el total de una orden que ya tiene factura real timbrada'],
     ['capturaRes', 'Capturar los resultados (alcance, me gusta…) de una publicación ya publicada'],
   ];
@@ -289,6 +290,7 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
     { const [st] = await pedir('POST', '/facturacion/facturas/' + FACT_BORRADOR + '/descartar', t, {}); VE[rol].descarta = ![401, 403, 404].includes(st); } // sin llaves de factura.com no llega a borrarse: Dirección recibe 400
     { const [st] = await pedir('POST', '/facturacion/facturas/' + FACT_OF + '/cancelar', t, { motivo: '02' }); VE[rol].cancela = ![401, 403, 404].includes(st); } // sin llaves de factura.com no llega a cancelarse: quien puede recibe 400
     { const [st] = await pedir('POST', '/facturacion/complementos/cobros/' + COBRO_ALICIA.id + '/timbrar', t, { forma_pago: '03' }); VE[rol].complementa = ![401, 403, 404].includes(st); } // la orden no tiene factura PPD: quien puede recibe 400, quien no, 403
+    VE[rol].revisaProd = ok(await pedir('GET', '/facturacion/revision-produccion', t));
     VE[rol].editaFolioReal = ok(await pedir('PUT', '/leads/' + OP.id + '/facturacion', t, { factura_folio: 'X-' + rol + '-9', factura_total: '1.00' }));
     VE[rol].claveServicio = ok(await pedir('PUT', '/facturacion/servicios/' + servicioFact.id, t, { clave_prod_serv: '76121600', clave_unidad: 'E48' }));
     const nuevaPub = exigir(await pedir('POST', '/marketing/publicaciones', T.Mara, { titulo: 'Por aprobar ' + rol, redes: ['tiktok'], formato: 'video', fecha: dia(5), copy: 'Copy', sucursal: qro.id }), 'publicación por aprobar');
@@ -369,6 +371,8 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
       admin: { cancela: 1 }, gerente: { cancela: 1 }, ...Object.fromEntries(['ventas', 'atencion', 'tecnico', 'costos', 'marketing', 'marketing_gerente'].map(r => [r, { cancela: 0 }])) }],
     ['2026-11-03', 'Timbrar el complemento de pago de un cobro de una factura a crédito (PPD), y cancelarlo: Dirección, el Gerente y quien tenga «Timbrar facturas» (quien factura); los demás roles no. Nada se timbra solo: alguien con permiso lo revisa y lo pulsa.', {
       admin: { complementa: 1 }, gerente: { complementa: 1 }, ...Object.fromEntries(['ventas', 'atencion', 'tecnico', 'costos', 'marketing', 'marketing_gerente'].map(r => [r, { complementa: 0 }])) }],
+    ['2026-11-03', 'Ver la revisión «¿está lista la facturación para producción?» (qué falta en llaves, series, claves del SAT y respaldos, sin mostrar nunca una llave): solo Dirección, como el resto de la configuración de facturación.', {
+      admin: { revisaProd: 1 }, ...Object.fromEntries(['gerente', 'ventas', 'atencion', 'tecnico', 'costos', 'marketing', 'marketing_gerente'].map(r => [r, { revisaProd: 0 }])) }],
     ['2026-10-28', 'Una orden con factura real ya timbrada: su folio, fecha, total y método de pago salen de la factura y nadie los cambia a mano (ni Dirección); los días de crédito sí.', {
       ...Object.fromEntries(['admin', 'gerente', 'ventas', 'atencion', 'tecnico', 'costos', 'marketing', 'marketing_gerente'].map(r => [r, { editaFolioReal: 0 }])) }],
     ['2026-10-27', 'Banco de ideas: las proponen, votan y comentan Marketing, Gerente de marketing y Dirección; las aprueban o descartan solo Dirección y el Gerente de marketing. Los demás roles no ven las ideas.', {

@@ -692,6 +692,9 @@
       <div id="fx-estado"></div>
       <div class="btn-group"><button type="button" class="btn btn-secundario" id="fx-probar">Probar conexión y cargar series</button><button type="button" class="btn btn-outline" id="fx-catalogos">Actualizar catálogos del SAT</button></div>
       <div id="fx-resultado" role="status" aria-live="polite"></div>
+      <details class="fx-detalle" id="fx-revision-caja"><summary>Revisión para pasar a producción</summary>
+        <p class="ayuda">Solo lee: no cambia nada ni llama a factura.com. Dice qué falta antes de poner <code>FACTURA_ENV=prod</code> (✘ bloquea; ⚠ lo confirmas tú). Nunca muestra una llave.</p>
+        <button type="button" class="btn btn-secundario" id="fx-revisar">Revisar ahora</button><div id="fx-revision" role="status" aria-live="polite"></div></details>
       <details class="fx-detalle"><summary>Catálogos del SAT guardados</summary><ul class="fx-lista" id="fx-catalogos-lista"></ul></details>
       <h3 class="fx-sub">Por sucursal</h3>
       <div id="fx-sucursales"></div>
@@ -1758,7 +1761,7 @@
 <script src="solicitudes.js?v=rev1"></script>
 <script src="carga-generador.js?v=con1"></script>
 <script src="sucursales.js?v=perm2"></script>
-<script src="facturacion.js?v=fx8"></script>
+<script src="facturacion.js?v=fx9"></script>
 <script src="encuestas.js?v=enc1"></script>
 <script src="app.js?v=dup1"></script>
 <script src="personal.js?v=ed1"></script>
