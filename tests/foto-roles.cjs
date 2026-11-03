@@ -413,14 +413,15 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
   const veClases = (set, cl) => cl.every(c => { const p = c.match(/^perm-([a-z_]+)-([a-z_]+)$/); return !p || set.has(p[1] + '.' + p[2]); });
   const NIVEL_0 = Object.fromEntries(PERM.areas.map(a => [a.clave, 0]));
   const MANO = [['cobranza', 'Cobranza sin ventas (contactos y cuentas por cobrar)', { contactos: 2, cxc: 2 }], ['cotiza', 'Cotiza sin órdenes (contactos, cotizaciones y cobranza)', { contactos: 2, cotizaciones: 2, cxc: 2 }],
-    ['contactos', 'Solo contactos', { contactos: 2 }], ['atencion', 'Atención (de fábrica, para comparar)', null]];
+    ['contactos', 'Solo contactos', { contactos: 2 }], ['rh', 'Cobranza y RH (cuentas por cobrar y ver personal)', { cxc: 2 }, ['personal.ver']],
+    ['atencion', 'Atención (de fábrica, para comparar)', null], ['gerente', 'Gerente (de fábrica, para comparar)', null]];
   const VM = {};
-  for (const [k, nombre, niveles] of MANO) {
-    let t = T.Alicia;
+  for (const [k, nombre, niveles, permisos = []] of MANO) {
+    let t = { atencion: T.Alicia, gerente: T.Gema }[k];
     if (niveles) {
       const rol = exigir(await pedir('POST', '/roles', A, { nombre: 'Mano ' + k }), 'crear rol ' + k);
-      exigir(await pedir('PUT', '/roles/' + rol.clave + '/permisos', A, { permisos: [], alcances: { ...NIVEL_0, ...niveles } }), 'permisos del rol ' + k);
-      const quien = 'Mano ' + { cobranza: 'Cobra', cotiza: 'Cotiza', contactos: 'Contacta' }[k];
+      exigir(await pedir('PUT', '/roles/' + rol.clave + '/permisos', A, { permisos, alcances: { ...NIVEL_0, ...niveles } }), 'permisos del rol ' + k);
+      const quien = 'Mano ' + { cobranza: 'Cobra', cotiza: 'Cotiza', contactos: 'Contacta', rh: 'Recursos' }[k];
       exigir(await pedir('POST', '/usuarios', A, { nombre: quien, password: CLAVE, rol: rol.clave, sucursales: [qro.id] }), 'usuario ' + quien);
       t = (await pedir('POST', '/login', null, { nombre: quien, password: CLAVE }))[1].token;
     }
@@ -432,14 +433,16 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
       recompra: /Fábrica Recompra/.test(await texto('/recompras')),
       alertaOrden: /Aviso Orden Mano/.test(await texto('/alertas')), alertaCot: /Aviso Cotización Mano/.test(await texto('/alertas')),
       porConcluir: /Fábrica Recompra/.test(await texto('/leads?estatus=ganado&solo_area=1')),
-      calOrden: /"tipo":"orden"[^}]*Fábrica Recompra/.test(cal), cobranza: (await pedir('GET', '/leads/' + OM.id + '/cobros', t))[0] === 200 };
+      calOrden: /"tipo":"orden"[^}]*Fábrica Recompra/.test(cal), cobranza: (await pedir('GET', '/leads/' + OM.id + '/cobros', t))[0] === 200,
+      sinResponsable: /Fábrica Recompra/.test(await texto('/personal/avisos')) };
   }
-  const NOMBRE_MANO = { menuCot: 'Menú: Cotizaciones', menuCal: 'Menú: Calendario', 'inicio:Avisos': 'Inicio: Avisos y seguimiento', 'inicio:Por concluir': 'Inicio: Servicios por concluir', 'inicio:Recompras': 'Inicio: Recompras', 'inicio:Finanzas': 'Inicio: Finanzas',
-    recompra: 'Le llega la recompra de una orden', alertaOrden: 'Le llega el aviso de una orden', alertaCot: 'Le llega el aviso de una cotización', porConcluir: 'Le llega la orden por concluir', calOrden: 'Ve la orden en el calendario', cobranza: 'Ve la cobranza de la orden' };
+  const NOMBRE_MANO = { menuCot: 'Menú: Cotizaciones', menuCal: 'Menú: Calendario', 'inicio:Avisos': 'Inicio: Avisos y seguimiento', 'inicio:Por concluir': 'Inicio: Servicios por concluir', 'inicio:Recompras': 'Inicio: Recompras', 'inicio:Finanzas': 'Inicio: Finanzas', 'inicio:Personal': 'Inicio: Personal',
+    sinResponsable: 'Inicio · Personal: le llega la orden sin técnico responsable', recompra: 'Le llega la recompra de una orden', alertaOrden: 'Le llega el aviso de una orden', alertaCot: 'Le llega el aviso de una cotización', porConcluir: 'Le llega la orden por concluir', calOrden: 'Ve la orden en el calendario', cobranza: 'Ve la cobranza de la orden' };
   const REGLAS_MANO = [
     ['2026-11-03', 'Un rol sin cotizaciones ni órdenes no ve «Cotizaciones» en el menú ni sus avisos en Inicio, aunque vea contactos o la cobranza.', { cobranza: { menuCot: 0, 'inicio:Avisos': 0, alertaOrden: 0, alertaCot: 0 }, contactos: { menuCot: 0, 'inicio:Avisos': 0, alertaOrden: 0, alertaCot: 0 } }],
     ['2026-11-03', '«Servicios por concluir» y las órdenes del calendario: solo quien ve órdenes de servicio. Quien solo ve la cobranza sigue viendo la cobranza de esas órdenes, no la orden para concluirla.', { cobranza: { 'inicio:Por concluir': 0, porConcluir: 0, calOrden: 0, cobranza: 1 }, cotiza: { 'inicio:Por concluir': 0, porConcluir: 0, calOrden: 0, alertaOrden: 0, menuCot: 1, 'inicio:Avisos': 1, alertaCot: 1 }, contactos: { 'inicio:Por concluir': 0, porConcluir: 0, calOrden: 0 } }],
     ['2026-11-03', 'Recompras: salen de las órdenes de servicio, así que solo las ve quien ve órdenes (no quien solo ve contactos o la cobranza).', { cobranza: { 'inicio:Recompras': 0, recompra: 0 }, cotiza: { 'inicio:Recompras': 0, recompra: 0 }, contactos: { 'inicio:Recompras': 0, recompra: 0, menuCal: 0 } }],
+    ['2026-11-03', 'Aviso de Personal «orden sin técnico responsable»: solo a quien ve Personal y además ve órdenes de servicio. Quien ve Personal y la cobranza (puesto de cuentas por cobrar y RH) ve sus avisos de personal, no las órdenes.', { rh: { sinResponsable: 0, cobranza: 1, 'inicio:Personal': 1, 'inicio:Por concluir': 0 }, cobranza: { sinResponsable: 0 }, gerente: { sinResponsable: 1, 'inicio:Personal': 1 } }],
     ['2026-11-03', 'Atención (con órdenes de toda su sucursal) sigue viendo todo eso: avisos, servicios por concluir, recompras y calendario.', { atencion: { menuCot: 1, menuCal: 1, 'inicio:Avisos': 1, 'inicio:Por concluir': 1, 'inicio:Recompras': 1, recompra: 1, alertaOrden: 1, alertaCot: 1, porConcluir: 1, calOrden: 1 } }],
   ];
   console.log('Roles hechos a mano:');

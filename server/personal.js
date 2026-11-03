@@ -235,7 +235,8 @@ module.exports = function personal(app, db, h) {
   }));
   // Avisos para Inicio (bloque «Personal»): licencias y contratos vencidos o por vencer (30 días), quién falta de hoy a
   // 7 días (vacaciones, incapacidades, permisos) y órdenes por realizar sin técnico responsable. Todo de las sucursales
-  // de quien pide; los contratos solo con «Datos sensibles»; las órdenes, solo las que quien pide ve (vistas de la base).
+  // de quien pide; los contratos solo con «Datos sensibles»; las órdenes, solo a quien ve órdenes de servicio y solo las que
+  // ve por esa área, no por la cobranza (2026-11-03: un puesto de cuentas por cobrar y RH no tiene por qué verlas).
   app.get('/api/personal/avisos', h((req, res) => {
     if (!ve(req)) return negar(res);
     const hoy = hoyMexico(), en = n => { const x = new Date(hoy + 'T12:00:00Z'); x.setUTCDate(x.getUTCDate() + n); return x.toISOString().slice(0, 10); }, semana = en(7);
@@ -254,8 +255,9 @@ module.exports = function personal(app, db, h) {
       WHERE p.activo = 1 AND i.cancelada = 0 AND i.tipo IN ('vacaciones', 'incapacidad', 'permiso') AND i.fecha_fin >= ? AND i.fecha_inicio <= ? ORDER BY i.fecha_inicio`).all(hoy, semana))
       avisos.push({ tipo: 'ausencia', nivel: 'azul', persona_id: i.personal_id, nombre: i.nombre, fecha: i.fecha_inicio,
         texto: `${INCIDENCIAS[i.tipo]} ${i.fecha_inicio <= hoy ? (i.fecha_fin === hoy ? 'hoy' : 'hasta el ' + dma(i.fecha_fin)) : i.fecha_inicio === i.fecha_fin ? 'el ' + dma(i.fecha_inicio) : 'del ' + dma(i.fecha_inicio) + ' al ' + dma(i.fecha_fin)}` });
-    for (const l of db.prepare(`SELECT l.id, l.estatus, l.created_at, l.fecha_servicio, COALESCE(c.empresa_contacto, c.nombre, l.nombre) AS cliente FROM leads l LEFT JOIN clientes c ON c.id = l.cliente_id
+    for (const l of !P.puede(req, 'ordenes.ver') ? [] : db.prepare(`SELECT l.id, l.estatus, l.created_at, l.fecha_servicio, COALESCE(c.empresa_contacto, c.nombre, l.nombre) AS cliente FROM leads l LEFT JOIN clientes c ON c.id = l.cliente_id
       WHERE l.estatus = 'ganado' AND l.ejecucion IS NULL AND l.fecha_servicio BETWEEN ? AND ? AND l.tecnico_id IS NULL
+        AND ve_lead_area(l.sucursal_id, l.responsable_id, l.tecnico_id, l.estatus, l.capturado_por)
         AND NOT EXISTS (SELECT 1 FROM orden_personal op WHERE op.lead_id = l.id AND op.papel = 'responsable') ORDER BY l.fecha_servicio`).all(en(-30), semana))
       avisos.push({ tipo: 'sin_responsable', nivel: l.fecha_servicio < hoy ? 'rojo' : 'amarillo', lead_id: l.id, nombre: l.cliente, folio: require('./sucursales').folioLead(l), fecha: l.fecha_servicio,
         texto: l.fecha_servicio < hoy ? 'Orden ya pasada de fecha y sin técnico responsable' : 'Orden sin técnico responsable' });

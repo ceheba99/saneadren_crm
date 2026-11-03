@@ -253,22 +253,25 @@ Dirección la revisa y la aprueba. Si un cambio altera lo que ve un rol, la prue
 
 ## Roles hechos a mano (lo que Dirección apaga en «Roles y permisos»)
 
-| Qué se revisa | Cobranza sin ventas (contactos y cuentas por cobrar) | Cotiza sin órdenes (contactos, cotizaciones y cobranza) | Solo contactos | Atención (de fábrica, para comparar) |
-|---|:-:|:-:|:-:|:-:|
-| Menú: Cotizaciones | — | ✔ | — | ✔ |
-| Menú: Calendario | ✔ | ✔ | — | ✔ |
-| Inicio: Avisos y seguimiento | — | ✔ | — | ✔ |
-| Inicio: Servicios por concluir | — | — | — | ✔ |
-| Inicio: Recompras | — | — | — | ✔ |
-| Inicio: Finanzas | ✔ | ✔ | — | ✔ |
-| Le llega la recompra de una orden | — | — | — | ✔ |
-| Le llega el aviso de una orden | — | — | — | ✔ |
-| Le llega el aviso de una cotización | — | ✔ | — | ✔ |
-| Le llega la orden por concluir | — | — | — | ✔ |
-| Ve la orden en el calendario | — | — | — | ✔ |
-| Ve la cobranza de la orden | ✔ | ✔ | — | ✔ |
+| Qué se revisa | Cobranza sin ventas (contactos y cuentas por cobrar) | Cotiza sin órdenes (contactos, cotizaciones y cobranza) | Solo contactos | Cobranza y RH (cuentas por cobrar y ver personal) | Atención (de fábrica, para comparar) | Gerente (de fábrica, para comparar) |
+|---|:-:|:-:|:-:|:-:|:-:|:-:|
+| Menú: Cotizaciones | — | ✔ | — | — | ✔ | ✔ |
+| Menú: Calendario | ✔ | ✔ | — | ✔ | ✔ | ✔ |
+| Inicio: Avisos y seguimiento | — | ✔ | — | — | ✔ | ✔ |
+| Inicio: Servicios por concluir | — | — | — | — | ✔ | ✔ |
+| Inicio: Recompras | — | — | — | — | ✔ | ✔ |
+| Inicio: Finanzas | ✔ | ✔ | — | ✔ | ✔ | ✔ |
+| Inicio: Personal | — | — | — | ✔ | — | ✔ |
+| Inicio · Personal: le llega la orden sin técnico responsable | — | — | — | — | — | ✔ |
+| Le llega la recompra de una orden | — | — | — | — | ✔ | ✔ |
+| Le llega el aviso de una orden | — | — | — | — | ✔ | ✔ |
+| Le llega el aviso de una cotización | — | ✔ | — | — | ✔ | ✔ |
+| Le llega la orden por concluir | — | — | — | — | ✔ | ✔ |
+| Ve la orden en el calendario | — | — | — | — | ✔ | ✔ |
+| Ve la cobranza de la orden | ✔ | ✔ | — | ✔ | ✔ | ✔ |
 
 - **2026-11-03** · Un rol sin cotizaciones ni órdenes no ve «Cotizaciones» en el menú ni sus avisos en Inicio, aunque vea contactos o la cobranza.
 - **2026-11-03** · «Servicios por concluir» y las órdenes del calendario: solo quien ve órdenes de servicio. Quien solo ve la cobranza sigue viendo la cobranza de esas órdenes, no la orden para concluirla.
 - **2026-11-03** · Recompras: salen de las órdenes de servicio, así que solo las ve quien ve órdenes (no quien solo ve contactos o la cobranza).
+- **2026-11-03** · Aviso de Personal «orden sin técnico responsable»: solo a quien ve Personal y además ve órdenes de servicio. Quien ve Personal y la cobranza (puesto de cuentas por cobrar y RH) ve sus avisos de personal, no las órdenes.
 - **2026-11-03** · Atención (con órdenes de toda su sucursal) sigue viendo todo eso: avisos, servicios por concluir, recompras y calendario.
