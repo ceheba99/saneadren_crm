@@ -166,6 +166,7 @@ Dirección la revisa y la aprueba. Si un cambio altera lo que ve un rol, la prue
 | Descartar un borrador de factura atorado | ✔ | — | — | — | — | — | — | — |
 | Cancelar una factura timbrada (CFDI) | ✔ | ✔ | — | — | — | — | — | — |
 | Timbrar el complemento de pago de un cobro (factura PPD) | ✔ | ✔ | — | — | — | — | — | — |
+| Cargar de golpe los datos fiscales de los clientes desde el CSV de factura.com (revisar y aplicar) | ✔ | — | — | — | — | — | — | — |
 | Descargar en Excel la lista de facturas y complementos (folio, cliente, RFC, importes, estatus) | ✔ | ✔ | — | — | — | — | — | — |
 | Ver la revisión de «¿está lista la facturación para producción?» (llaves, series, claves del SAT, respaldo) | ✔ | — | — | — | — | — | — | — |
 | Cambiar a mano el folio o el total de una orden que ya tiene factura real timbrada | — | — | — | — | — | — | — | — |
@@ -242,6 +243,7 @@ Dirección la revisa y la aprueba. Si un cambio altera lo que ve un rol, la prue
 - **2026-10-28** · Descartar un borrador de factura que quedó atorado: solo Dirección (ni el Gerente ni quien factura).
 - **2026-10-29** · Cancelar una factura timbrada (motivos 01 a 03, y pedir su estatus y acuse): Dirección, el Gerente y quien tenga «Timbrar facturas» (quien factura); los demás roles no.
 - **2026-11-03** · Timbrar el complemento de pago de un cobro de una factura a crédito (PPD), y cancelarlo: Dirección, el Gerente y quien tenga «Timbrar facturas» (quien factura); los demás roles no. Nada se timbra solo: alguien con permiso lo revisa y lo pulsa.
+- **2026-11-03** · Cargar de golpe los datos fiscales de los clientes desde el CSV de factura.com (revisar qué cliente del CRM es cada uno y aplicar): solo Dirección. Nunca crea clientes del CRM ni sobrescribe datos fiscales ya capturados.
 - **2026-11-03** · Descargar en Excel la lista de facturas y complementos (con los filtros de la pantalla «Facturas»): Dirección, el Gerente y quien tenga «Timbrar facturas» (quien factura); los demás roles no. Es lo mismo que ya ven en la lista.
 - **2026-11-03** · Ver la revisión «¿está lista la facturación para producción?» (qué falta en llaves, series, claves del SAT y respaldos, sin mostrar nunca una llave): solo Dirección, como el resto de la configuración de facturación.
 - **2026-10-28** · Una orden con factura real ya timbrada: su folio, fecha, total y método de pago salen de la factura y nadie los cambia a mano (ni Dirección); los días de crédito sí.

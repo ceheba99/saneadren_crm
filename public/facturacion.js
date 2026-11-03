@@ -112,6 +112,69 @@ const Facturacion = (() => {
     salida.innerHTML = `✔ La conexión funciona: factura.com aceptó las llaves (${esc(r.entorno === 'prod' ? 'producción' : 'sandbox')}). Series en la cuenta: ${Number(r.series.length)}.`;
     pintar();
   }));
+  // ---------- Carga de clientes desde el CSV de factura.com (2026-11-03) ----------
+  // Dos pasos: «Revisar» (el servidor solo lee y propone) y «Cargar» (el servidor vuelve a calcular con el mismo CSV y las decisiones de aquí). Lo que viene del archivo se escapa.
+  let CLI = null; // { csv, plan }
+  const salidaCli = () => $('fx-cli-resultado');
+  const filaInfo = f => `${esc(f.razon_social || '(sin razón social)')} · régimen ${esc(f.regimen || '—')} · CP ${esc(f.cp || '—')}${f.correo ? '' : ' · sin correo'}${f.domicilio ? ' · ' + esc(f.domicilio) : ''}${f.incompleto.length ? ` <small class="fx-mal">(${esc(f.incompleto.join('; '))})</small>` : ''}`;
+  const nombreCli = c => `${esc(c.empresa || c.nombre || 'Cliente ' + c.id)}${c.empresa && c.nombre ? ' (' + esc(c.nombre) + ')' : ''}`;
+  function pintarClientes() {
+    const p = CLI.plan, r = p.resumen, nec = p.unidades.filter(u => u.tipo !== 'sin_cliente' && (u.repetido || u.tipo === 'dudoso'));
+    const bloqueNecesita = nec.map(u => `<div class="fx-serv" data-fx-cli-rfc="${esc(u.rfc)}">
+      <div class="fx-serv-nom"><b>${esc(u.rfc)}</b> ${u.tipo === 'auto' ? `<small>liga sola con ${nombreCli(u.cliente)} (por ${esc(u.cliente.por)})</small>` : '<small>¿Con cuál cliente del CRM?</small>'}</div>
+      ${u.tipo === 'dudoso' ? `<label>Cliente del CRM<select data-fx-cli-liga><option value="">— no ligar todavía —</option>${u.candidatos.map(c => `<option value="${Number(c.id)}">${nombreCli(c)} · ${esc(c.por)}</option>`).join('')}</select></label>` : ''}
+      ${u.repetido ? `<div><small>Este RFC viene ${u.filas.length} veces en factura.com. Elige cuál usar:</small>${u.filas.map(f => `<label class="fx-check"><input type="radio" name="fx-cli-${esc(u.rfc)}" value="${esc(f.uid)}" data-fx-cli-uid> <span>${filaInfo(f)}</span></label>`).join('')}</div>` : ''}</div>`).join('');
+    const lista = (titulo, items, f) => items.length ? `<details class="fx-detalle"><summary>${titulo} (${items.length})</summary><ul class="fx-lista">${items.slice(0, 300).map(f).join('')}</ul>${items.length > 300 ? '<p class="ayuda">Se muestran los primeros 300.</p>' : ''}</details>` : '';
+    salidaCli().innerHTML = `<p><b>${Number(r.filas)} clientes en el archivo (${Number(r.rfc_distintos)} RFC distintos).</b> Se ligan solos: ${Number(r.automaticos)} · necesitan tu decisión: ${nec.length} · sin cliente en el CRM: ${Number(r.sin_cliente)} · no se pueden usar: ${Number(r.invalidos)}.</p>
+      ${nec.length ? `<h4 class="fx-sub">Necesitan tu decisión</h4>${bloqueNecesita}` : ''}
+      ${lista('Se ligan solos', p.unidades.filter(u => u.tipo === 'auto' && !u.repetido), u => `<li>${esc(u.rfc)} → ${nombreCli(u.cliente)} <small>(por ${esc(u.cliente.por)}${u.ya_cargado ? '; ya tenía sus datos fiscales: solo se completan los vacíos' : ''})</small></li>`)}
+      ${lista('Sin cliente en el CRM (no se cargan)', p.unidades.filter(u => u.tipo === 'sin_cliente'), u => `<li>${esc(u.rfc)} · ${esc(u.filas[0].razon_social)}</li>`)}
+      ${lista('No se pueden usar', p.invalidos, x => `<li>Línea ${Number(x.linea)}: ${esc(x.rfc || '—')} · ${esc(x.motivo)}</li>`)}
+      <p class="ayuda">Lo incompleto (sin régimen, CP inválido, correo de relleno) se carga vacío: el sistema pedirá completarlo al facturar. El uso del CFDI no viene en el archivo y se elige al timbrar.</p>
+      <button type="button" class="btn btn-primario" id="fx-cli-aplicar">Cargar</button> <span class="ayuda" id="fx-cli-cuenta"></span>`;
+    contarClientes();
+  }
+  // Cuántos se cargarían con lo elegido hasta ahora (solo informativo: el servidor decide).
+  function contarClientes() {
+    if (!CLI) return; let n = 0;
+    for (const u of CLI.plan.unidades) {
+      if (u.tipo === 'sin_cliente') continue;
+      const caja = [...salidaCli().querySelectorAll('[data-fx-cli-rfc]')].find(x => x.dataset.fxCliRfc === u.rfc);
+      if (u.repetido && !caja?.querySelector('[data-fx-cli-uid]:checked')) continue;
+      if (u.tipo === 'dudoso' && !caja?.querySelector('[data-fx-cli-liga]')?.value) continue;
+      n++;
+    }
+    const c = $('fx-cli-cuenta'), b = $('fx-cli-aplicar'); if (c) c.textContent = `Se cargarían ${n} cliente(s) con lo elegido.`; if (b) b.disabled = !n;
+  }
+  $('fx-cli-revisar')?.addEventListener('click', async e => {
+    const b = e.currentTarget, arch = $('fx-cli-archivo').files?.[0]; if (!arch) { toast('Elige el archivo CSV'); return; }
+    if (arch.size > 900000) { toast('El archivo es muy grande (máximo 900 KB)'); return; }
+    b.disabled = true; salidaCli().textContent = 'Revisando…';
+    try {
+      const csv = await arch.text(), plan = await pedir('/importar-clientes/vista-previa', { csv }, 'POST');
+      CLI = { csv, plan }; pintarClientes();
+    } catch (err) { CLI = null; salidaCli().innerHTML = `<p class="aviso-error-carga" role="alert">${esc(err.message)}</p>`; }
+    finally { b.disabled = false; }
+  });
+  $('fx-cli-resultado')?.addEventListener('change', e => { if (e.target.closest('[data-fx-cli-liga], [data-fx-cli-uid]')) contarClientes(); });
+  $('fx-cli-resultado')?.addEventListener('click', async e => {
+    const b = e.target.closest('#fx-cli-aplicar'); if (!b || !CLI || b.disabled) return;
+    const entorno = $('fx-cli-entorno').value, ligas = {}, elegidos = {};
+    for (const caja of salidaCli().querySelectorAll('[data-fx-cli-rfc]')) {
+      const rfc = caja.dataset.fxCliRfc, liga = caja.querySelector('[data-fx-cli-liga]')?.value, uid = caja.querySelector('[data-fx-cli-uid]:checked')?.value;
+      if (liga) ligas[rfc] = Number(liga); if (uid) elegidos[rfc] = uid;
+    }
+    if (!await solicitarDialogo({ titulo: 'Cargar datos fiscales de los clientes', aceptar: 'Sí, cargar', mensaje: `Se guardan los datos fiscales de los clientes ligados (UID de la cuenta de ${entorno === 'prod' ? 'PRODUCCIÓN' : 'PRUEBAS'}). No se crea ningún cliente nuevo y lo que ya capturaste no se sobrescribe; solo se llenan campos vacíos.` })) return;
+    b.disabled = true;
+    try {
+      const r = await pedir('/importar-clientes/aplicar', { csv: CLI.csv, decisiones: { entorno, ligas, elegidos } }, 'POST');
+      const motivos = Object.entries(r.saltados.reduce((a, x) => (a[x.motivo] = (a[x.motivo] || 0) + 1, a), {}));
+      salidaCli().innerHTML = `<p><span class="fx-ok">✔</span> <b>Listo:</b> ${Number(r.guardados)} cliente(s) cargado(s), ${Number(r.completados)} completado(s), ${Number(r.ya_estaban)} ya estaban. Sin cargar: ${r.saltados.length}.</p>
+        ${motivos.length ? `<ul class="fx-lista">${motivos.map(([m, n]) => `<li>${Number(n)} · ${esc(m)}</li>`).join('')}</ul>` : ''}`;
+      CLI = null; toast('Clientes cargados');
+    } catch (err) { toast(err.message); b.disabled = false; }
+  });
+
   // F7: revisión previa a producción (solo lectura). Todo lo que viene del servidor se escapa.
   $('fx-revisar')?.addEventListener('click', async e => {
     const b = e.currentTarget, salida = $('fx-revision'); b.disabled = true; salida.textContent = 'Revisando…';

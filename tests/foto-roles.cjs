@@ -247,6 +247,7 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
     ['descarta', 'Descartar un borrador de factura atorado'],
     ['cancela', 'Cancelar una factura timbrada (CFDI)'],
     ['complementa', 'Timbrar el complemento de pago de un cobro (factura PPD)'],
+    ['importaClientesFact', 'Cargar de golpe los datos fiscales de los clientes desde el CSV de factura.com (revisar y aplicar)'],
     ['exportaFact', 'Descargar en Excel la lista de facturas y complementos (folio, cliente, RFC, importes, estatus)'],
     ['revisaProd', 'Ver la revisión de «¿está lista la facturación para producción?» (llaves, series, claves del SAT, respaldo)'],
     ['editaFolioReal', 'Cambiar a mano el folio o el total de una orden que ya tiene factura real timbrada'],
@@ -291,6 +292,7 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
     { const [st] = await pedir('POST', '/facturacion/facturas/' + FACT_BORRADOR + '/descartar', t, {}); VE[rol].descarta = ![401, 403, 404].includes(st); } // sin llaves de factura.com no llega a borrarse: Dirección recibe 400
     { const [st] = await pedir('POST', '/facturacion/facturas/' + FACT_OF + '/cancelar', t, { motivo: '02' }); VE[rol].cancela = ![401, 403, 404].includes(st); } // sin llaves de factura.com no llega a cancelarse: quien puede recibe 400
     { const [st] = await pedir('POST', '/facturacion/complementos/cobros/' + COBRO_ALICIA.id + '/timbrar', t, { forma_pago: '03' }); VE[rol].complementa = ![401, 403, 404].includes(st); } // la orden no tiene factura PPD: quien puede recibe 400, quien no, 403
+    { const [st] = await pedir('POST', '/facturacion/importar-clientes/vista-previa', t, { csv: 'UID,RFC,Razon_Social,Regimen,CP,Email\n' }); VE[rol].importaClientesFact = ![401, 403, 404].includes(st); } // quien puede recibe 200; quien no, 403
     VE[rol].exportaFact = ok(await pedir('GET', '/facturacion/facturas/exportar', t));
     VE[rol].revisaProd = ok(await pedir('GET', '/facturacion/revision-produccion', t));
     VE[rol].editaFolioReal = ok(await pedir('PUT', '/leads/' + OP.id + '/facturacion', t, { factura_folio: 'X-' + rol + '-9', factura_total: '1.00' }));
@@ -373,6 +375,8 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
       admin: { cancela: 1 }, gerente: { cancela: 1 }, ...Object.fromEntries(['ventas', 'atencion', 'tecnico', 'costos', 'marketing', 'marketing_gerente'].map(r => [r, { cancela: 0 }])) }],
     ['2026-11-03', 'Timbrar el complemento de pago de un cobro de una factura a crédito (PPD), y cancelarlo: Dirección, el Gerente y quien tenga «Timbrar facturas» (quien factura); los demás roles no. Nada se timbra solo: alguien con permiso lo revisa y lo pulsa.', {
       admin: { complementa: 1 }, gerente: { complementa: 1 }, ...Object.fromEntries(['ventas', 'atencion', 'tecnico', 'costos', 'marketing', 'marketing_gerente'].map(r => [r, { complementa: 0 }])) }],
+    ['2026-11-03', 'Cargar de golpe los datos fiscales de los clientes desde el CSV de factura.com (revisar qué cliente del CRM es cada uno y aplicar): solo Dirección. Nunca crea clientes del CRM ni sobrescribe datos fiscales ya capturados.', {
+      admin: { importaClientesFact: 1 }, ...Object.fromEntries(['gerente', 'ventas', 'atencion', 'tecnico', 'costos', 'marketing', 'marketing_gerente'].map(r => [r, { importaClientesFact: 0 }])) }],
     ['2026-11-03', 'Descargar en Excel la lista de facturas y complementos (con los filtros de la pantalla «Facturas»): Dirección, el Gerente y quien tenga «Timbrar facturas» (quien factura); los demás roles no. Es lo mismo que ya ven en la lista.', {
       admin: { exportaFact: 1 }, gerente: { exportaFact: 1 }, ...Object.fromEntries(['ventas', 'atencion', 'tecnico', 'costos', 'marketing', 'marketing_gerente'].map(r => [r, { exportaFact: 0 }])) }],
     ['2026-11-03', 'Ver la revisión «¿está lista la facturación para producción?» (qué falta en llaves, series, claves del SAT y respaldos, sin mostrar nunca una llave): solo Dirección, como el resto de la configuración de facturación.', {
