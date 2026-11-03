@@ -48,8 +48,28 @@ const conMontaje = (nombre, cfg, fn) => test(nombre, async () => { const m = awa
 
 conMontaje('Sin el permiso de timbrar: ninguna ruta nueva responde (403) ni llama a factura.com', { timbra: false, direccion: false }, async ({ pedir, estado, orden, factura }) => {
   orden(1); const f = factura({ uuid: UUID1, folio: '1' });
-  for (const [m, r] of [['GET', '/facturas'], ['GET', '/avisos'], ['POST', `/facturas/${f}/reenviar`], ['POST', `/facturas/${f}/descartar`], ['GET', '/complementos/cobros/1'], ['POST', '/complementos/cobros/1/timbrar']]) assert.equal((await pedir(m, r, {})).status, 403, m + ' ' + r);
+  for (const [m, r] of [['GET', '/facturas'], ['GET', '/facturas/exportar'], ['GET', '/avisos'], ['POST', `/facturas/${f}/reenviar`], ['POST', `/facturas/${f}/descartar`], ['GET', '/complementos/cobros/1'], ['POST', '/complementos/cobros/1/timbrar']]) assert.equal((await pedir(m, r, {})).status, 403, m + ' ' + r);
   assert.deepEqual(estado.llamadas, []);
+});
+
+conMontaje('Exportar a Excel: las mismas filas y filtros de la lista, sin el corte de 200 y sin llaves ni XML; valida lo que viene', {}, async ({ pedir, orden, factura, db }) => {
+  orden(1); orden(2);
+  factura({ lead: 1, estatus: 'timbrada', uuid: UUID1, folio: '1', serie: 'F' });
+  factura({ lead: 2, estatus: 'cancelada', uuid: UUID2, folio: '2', serie: 'FM', entorno: 'prod', sucursal: 2 });
+  db.exec("UPDATE facturas SET fecha_timbrado = '2026-09-10T10:00:00', motivo_cancelacion = '02', metodo_pago = 'PPD', forma_pago = '99' WHERE uuid = '" + UUID2 + "'");
+  const t = await pedir('GET', '/facturas/exportar');
+  assert.equal(t.status, 200); assert.equal(t.json.total, 2); assert.equal(t.json.truncado, false);
+  const f = t.json.filas.find(x => x.folio === 'FM-2');
+  assert.deepEqual([f.tipo, f.fecha, f.rfc, f.cliente, f.total_cent, f.metodo_pago, f.forma_pago, f.estatus, f.motivo_cancelacion, f.entorno, f.sucursal, f.uuid],
+    ['Factura', '2026-09-10', 'EKU9003173C9', 'ESCUELA KEMPER URGATE', 1160, 'PPD', '99', 'cancelada', '02', 'Real', 'CDMX', UUID2]);
+  assert.equal(t.json.filas.find(x => x.folio === 'F-1').entorno, 'Prueba');
+  assert.deepEqual(Object.keys(f).filter(k => /xml|llave|key|secret|error|correo/i.test(k)), [], 'solo columnas de la lista');
+  assert.deepEqual((await pedir('GET', '/facturas/exportar?entorno=prod')).json.filas.map(x => x.folio), ['FM-2']);
+  assert.deepEqual((await pedir('GET', '/facturas/exportar?q=kemper&estatus=timbrada')).json.filas.map(x => x.folio), ['F-1']);
+  assert.equal((await pedir('GET', '/facturas/exportar?desde=ayer')).status, 400); assert.equal((await pedir('GET', '/facturas/exportar?estatus=inventado')).status, 400);
+  for (let i = 0; i < 205; i++) factura({ lead: 1, estatus: 'cancelada', num: 'MAS-' + i });
+  assert.equal((await pedir('GET', '/facturas')).json.facturas.length, 200, 'la lista se corta a 200');
+  assert.equal((await pedir('GET', '/facturas/exportar')).json.filas.length, 207, 'el Excel no');
 });
 
 conMontaje('Lista: busca por folio, UUID, RFC o cliente; filtra por estado, tipo, sucursal y fecha; valida lo que viene', {}, async ({ pedir, orden, factura, db }) => {
