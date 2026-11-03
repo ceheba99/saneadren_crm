@@ -2,7 +2,8 @@
 // (server/facturacom.js) con un «fetch» simulado que hace de factura.com. Revisa: PUE o PPD (sugerido y elegido; PPD con 99), el cuerpo del complemento
 // como en la doc (complementos-de-pago), parcialidades y saldos en orden, IVA del pago a 6 decimales con enteros, forma de pago sugerida o preguntada,
 // lo que no lleva complemento (ajustes, por confirmar, cancelados, factura PUE), sin respuesta → se verifica por NumOrder y no se duplica, candados
-// (factura con complementos, complemento con motivo 01, cobro con complemento) y que un complemento cancelado deja el pago pendiente otra vez.
+// (factura con complementos, cobro con complemento) y que un complemento cancelado deja el pago pendiente otra vez. Corregir un complemento:
+// el nuevo va relacionado (04) con la misma parcialidad y saldos, toma el lugar del anterior y el anterior se cancela con el 01.
 // Uso: node --test tests/facturacion-complementos.test.cjs
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -236,7 +237,8 @@ test('Candados: factura con complementos no se cancela; complemento solo con 02;
   const r = await complemento(db, k, {}, contexto(db, sim));
   const ctx = cfg();
   assert.throws(() => revisar(db, T.leer(db, inv.id), { motivo: '02' }, ctx), /tiene un complemento de pago vigente \(PA-1\)/);
-  assert.throws(() => revisar(db, T.leer(db, r.factura.id), { motivo: '01' }, ctx), /se cancela con el motivo 02/);
+  assert.throws(() => revisar(db, T.leer(db, r.factura.id), { motivo: '01' }, ctx), /primero se timbra el complemento que lo corrige/);
+  assert.throws(() => revisar(db, T.leer(db, r.factura.id), { motivo: '03' }, ctx), /motivo 01 \(se corrige con otro\) o con el 02/);
   assert.doesNotThrow(() => revisar(db, T.leer(db, r.factura.id), { motivo: '02' }, ctx));
   assert.equal(C.complementoQueBloquea(db, k), null, 'un complemento de PRUEBA no estorba al cobro real');
   db.prepare("UPDATE facturas SET entorno = 'prod' WHERE id = ?").run(r.factura.id);
@@ -287,6 +289,58 @@ test('Revisión fiscal: se cancela del último complemento hacia atrás; con uno
   await conPpd(db2, sim2); k = cobro(db2);
   await assert.rejects(complemento(db2, k, {}, contexto(db2, sim2)), /se canceló mientras se preparaba/);
   assert.equal(creados(sim2).length, 1, 'solo la factura: el complemento no se mandó');
+});
+
+test('Corregir un complemento: el nuevo va relacionado (04) con la misma parcialidad y saldos, toma su lugar y el anterior se cancela con el 01', async () => {
+  const UUID_P3 = 'B1B2C3D4-E5F6-4A7B-8C9D-0E1F2A3B4C53';
+  const cfdis = [EXITO('F', 7, UUID_F), EXITO('PA', 1, UUID_P1), EXITO('PA', 2, UUID_P2), EXITO('PA', 3, UUID_P3)]; let n = 0;
+  const db = base(), sim = simulado(respuestas({ 'POST /v4/cfdi40/create': (...a) => cfdis[n++](...a),
+    ['GET /v4/cfdi40/' + UUID_P3 + '/xml']: () => ({ tipo: 'application/xml', texto: xmlDe('PA', '0', '0') }), ['GET /v4/cfdi40/' + UUID_P3 + '/pdf']: () => ({ tipo: 'application/pdf', buffer: PDF }) }));
+  const inv = await conPpd(db, sim);
+  const k1 = cobro(db, { fecha: '2026-11-01', monto: 100000 }), k2 = cobro(db, { fecha: '2026-11-02', monto: 50000 });
+  const r1 = await complemento(db, k1, {}, contexto(db, sim)), r2 = await complemento(db, k2, {}, contexto(db, sim));
+  // Sin decir qué complemento se corrige, el pago ya está amparado; corrigiendo el PA-1 (aunque ya exista el PA-2) sí se puede.
+  assert.match(C.prepararComplemento(db, k1, {}, cfg()).errores.join(), /ya tiene su complemento PA-1/);
+  assert.match(C.prepararComplemento(db, k1, { sustituye_a: r2.factura.id }, cfg()).errores.join(), /no es el vigente de este pago/);
+  const p = C.prepararComplemento(db, k1, { sustituye_a: r1.factura.id, forma_pago: '01' }, cfg());
+  assert.deepEqual(p.errores, []); assert.equal(p.resumen.sustituye.id, r1.factura.id); assert.equal(p.confirmar.length, 1, 'otra forma que la sugerida se confirma');
+  await assert.rejects(complemento(db, k1, { sustituye_a: r1.factura.id, forma_pago: '01' }, contexto(db, sim)), /¿Es correcto\?/);
+  const r3 = await complemento(db, k1, { sustituye_a: r1.factura.id, forma_pago: '01', confirmar: true }, contexto(db, sim));
+  assert.equal(r3.estado, 'timbrada'); assert.equal(r3.factura.sustituye_a, r1.factura.id); assert.notEqual(r3.factura.num_order, r1.factura.num_order);
+  const c = creados(sim)[3].cuerpo, dr = c.Pagos[0].DoctoRelacionado[0];
+  assert.deepEqual(c.CfdiRelacionados, { TipoRelacion: '04', UUID: [UUID_P1] });
+  assert.equal(c.Pagos[0].FormaDePagoP, '01');
+  assert.deepEqual([dr.NumParcialidad, dr.ImpSaldoAnt, dr.ImpPagado, dr.ImpSaldoInsoluto], ['1', '2163.84', '1000.00', '1163.84'], 'misma parcialidad y saldos que el PA-1');
+  // El pago ahora apunta a la corrección; el PA-1 sigue vigente hasta cancelarlo con el 01 (el PA-2 posterior no estorba: los saldos no cambian).
+  assert.equal(db.prepare('SELECT complemento_id FROM factura_cobros WHERE cobro_id = ?').get(k1).complemento_id, r3.factura.id);
+  assert.deepEqual(C.pendientes(db, 'sandbox'), []);
+  const o = C.complementosDeOrden(db, 10, 'sandbox');
+  assert.equal(o.pagos[0].corrige_a.id, r1.factura.id); assert.equal(o.factura.saldo_insoluto_cent, 216384 - 150000);
+  assert.match(C.prepararComplemento(db, k1, { sustituye_a: r1.factura.id }, cfg()).errores.join(), /Ya se timbró el complemento que corrige al PA-1 \(PA-3\)/);
+  assert.throws(() => revisar(db, T.leer(db, r1.factura.id), { motivo: '02' }, cfg()), /ya tiene una sustituta timbrada \(PA-3\)/);
+  assert.equal(revisar(db, T.leer(db, r1.factura.id), { motivo: '01' }, cfg()).sustituta.id, r3.factura.id);
+  // Revisión fiscal: la corrección no se cancela (ni se corrige) mientras el anterior siga vigente; si no, el pago quedaría con dos complementos.
+  assert.throws(() => revisar(db, T.leer(db, r3.factura.id), { motivo: '02' }, cfg()), /corrige al PA-1, que sigue vigente/);
+  assert.throws(() => revisar(db, T.leer(db, r3.factura.id), { motivo: '01' }, cfg()), /corrige al PA-1, que sigue vigente/);
+  assert.match(C.prepararComplemento(db, k1, { sustituye_a: r3.factura.id }, cfg()).errores.join(), /El PA-3 corrige al PA-1, que sigue vigente/);
+  // Aunque la corrección quedara cancelada a la mala, el anterior vigente sigue amparando el pago: no se timbra un tercero.
+  db.prepare("UPDATE facturas SET estatus = 'cancelada' WHERE id = ?").run(r3.factura.id);
+  assert.match(C.prepararComplemento(db, k1, {}, cfg()).errores.join(), /ya tiene su complemento PA-1 vigente/);
+  assert.equal(C.complementosVigentes(db, inv.id).map(x => x.serie + '-' + x.folio).join(), 'PA-1,PA-2');
+  db.prepare("UPDATE facturas SET estatus = 'timbrada' WHERE id = ?").run(r3.factura.id);
+  assert.throws(() => revisar(db, T.leer(db, inv.id), { motivo: '02' }, cfg()), /3 complementos de pago vigentes \(PA-1, PA-2, PA-3\)/, 'el anterior todavía cuenta ante el SAT');
+  db.prepare("UPDATE facturas SET entorno = 'prod' WHERE id = ?").run(r1.factura.id);
+  assert.equal(C.complementoQueBloquea(db, k1).id, r1.factura.id, 'el cobro no se cancela mientras el anterior siga vigente');
+  db.prepare("UPDATE facturas SET entorno = 'sandbox', estatus = 'cancelada', motivo_cancelacion = '01' WHERE id = ?").run(r1.factura.id);
+  assert.equal(C.complementosDeOrden(db, 10, 'sandbox').pagos[0].corrige_a, null);
+  assert.equal(C.complementosVigentes(db, inv.id).length, 2);
+  // Demo: la corrección simulada también toma el lugar del anterior.
+  const dbD = base(), simD = simulado({}); orden(dbD);
+  await timbrar(dbD, 10, { metodo_pago: 'PPD', confirmar: true }, contexto(dbD, simD, { demo: true }));
+  const kD = cobro(dbD), d1 = await complemento(dbD, kD, {}, contexto(dbD, simD, { demo: true }));
+  const d2 = await complemento(dbD, kD, { sustituye_a: d1.factura.id }, contexto(dbD, simD, { demo: true }));
+  assert.equal(d2.estado, 'timbrada'); assert.equal(dbD.prepare('SELECT complemento_id FROM factura_cobros WHERE cobro_id = ?').get(kD).complemento_id, d2.factura.id);
+  assert.equal(simD.llamadas.length, 0);
 });
 
 test('Fecha del pago: a mediodía, o la hora actual si el pago es de hoy y todavía no es mediodía (nunca en el futuro)', () => {

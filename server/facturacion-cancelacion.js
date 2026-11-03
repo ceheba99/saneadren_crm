@@ -11,13 +11,14 @@
      cancela la original diciendo cuál la sustituye. Motivos 02 (con errores, sin relación) y 03 (no se llevó a cabo la operación) no llevan sustituta.
      Motivo 04 (venta incluida en una factura global) no se usa: no hay factura global (decisión del usuario, 2026-11-03).
    · F6 (2026-11-03): una factura PPD con complementos de pago vigentes no se cancela (el SAT no lo deja): primero se cancelan sus complementos. Un
-     complemento de pago con errores se cancela con el motivo 02 y se timbra otro.
+     complemento de pago con errores se corrige: se timbra el que lo sustituye (relación 04) y este se cancela con el motivo 01. El motivo 02 queda
+     para cuando el pago no debió registrarse (cheque rebotado, pago duplicado): el pago vuelve a «complemento pendiente» hasta cancelarlo en Finanzas.
    · Como el timbrado: «cancelacion_solicitada» se guarda ANTES de mandar; si no hay respuesta clara, se queda así y «Consultar estatus» lo resuelve.
      Solo un «no» explícito de factura.com regresa la factura a «timbrada».
    · Solo una factura de PRODUCCIÓN toca la cobranza de la orden: cancelada con 02 o 03, la orden se queda sin folio de factura; con 01, la sustituta
      ya ocupó su lugar al timbrarse. */
 const { ErrorFactura } = require('./facturacom');
-const { horaMexico, log, actualizar, leer, errorTexto, UUID_SAT } = require('./facturacion-timbrado');
+const { horaMexico, log, actualizar, leer, errorTexto, UUID_SAT, enlazarSustituto } = require('./facturacion-timbrado');
 
 const MOTIVOS = {
   '01': 'Comprobante emitido con errores con relación (se sustituye por otra factura)',
@@ -50,8 +51,12 @@ function revisar(db, f, { motivo, sustituta_id, reintentar = false } = {}, { con
   if (!UUID_SAT.test(String(f.uuid || ''))) throw new ErrorFactura('config', 'Solo se cancela una factura timbrada');
   if (!MOTIVOS[motivo]) throw new ErrorFactura('config', 'Elige el motivo de la cancelación (01, 02 o 03)');
   if (motivo === '04') throw new ErrorFactura('config', 'El motivo 04 es para ventas incluidas en una factura global, que no se usa en este sistema');
-  if (f.tipo_documento === 'pago' && motivo !== '02') throw new ErrorFactura('config', 'Un complemento de pago con errores se cancela con el motivo 02; después se timbra otro desde el pago');
-  if (f.tipo_documento === 'pago' && !reintentar) {
+  if (f.tipo_documento === 'pago' && !['01', '02'].includes(motivo)) throw new ErrorFactura('config', 'Un complemento de pago se cancela con el motivo 01 (se corrige con otro) o con el 02 (el pago no debió registrarse)');
+  // Una corrección no se cancela mientras el complemento que corrige siga vigente: el pago quedaría con dos (o perdería el enlace con el anterior).
+  const corrige = f.tipo_documento === 'pago' && f.sustituye_a && !reintentar ? db.prepare("SELECT serie, folio FROM main.facturas WHERE id = ? AND estatus = 'timbrada'").get(f.sustituye_a) : null;
+  if (corrige) throw new ErrorFactura('config', `Este complemento corrige al ${folioDe(corrige)}, que sigue vigente: primero cancela el ${folioDe(corrige)} con el motivo 01`);
+  // (con una corrección ya timbrada, el aviso que importa es el de abajo: cancelarlo con el 01)
+  if (f.tipo_documento === 'pago' && motivo === '02' && !reintentar && !db.prepare("SELECT 1 FROM main.facturas WHERE sustituye_a = ? AND estatus = 'timbrada'").get(f.id)) {
     const despues = require('./facturacion-complementos').complementosPosteriores(db, f.id);
     if (despues.length) throw new ErrorFactura('config', `Después de este complemento ya hay ${despues.length === 1 ? 'otro' : despues.length} de la misma factura (${despues.map(folioDe).join(', ')}): se cancelan del último hacia atrás para no romper la cadena de saldos`);
   }
@@ -71,7 +76,7 @@ function revisar(db, f, { motivo, sustituta_id, reintentar = false } = {}, { con
   if (respalda && !reintentar) throw new ErrorFactura('config', `Esta factura sustituye a la ${folioDe(respalda)}, cuya cancelación sigue en proceso: espera a que el SAT la confirme`);
   if (reintentar) return { sustituta: f.motivo_cancelacion === '01' ? (sustituta || db.prepare('SELECT * FROM main.facturas WHERE uuid = ?').get(f.folio_sustituto)) : null };
   if (motivo === '01') {
-    if (!sustituta) throw new ErrorFactura('config', 'Con el motivo 01 primero se timbra la factura que la sustituye: pulsa «Sustituir» en la orden');
+    if (!sustituta) throw new ErrorFactura('config', f.tipo_documento === 'pago' ? 'Con el motivo 01 primero se timbra el complemento que lo corrige: pulsa «Corregir» en la tabla de pagos de la orden' : 'Con el motivo 01 primero se timbra la factura que la sustituye: pulsa «Sustituir» en la orden');
     if (sustituta_id && Number(sustituta_id) !== sustituta.id) throw new ErrorFactura('config', 'Esa no es la factura que sustituye a esta');
     if (!UUID_SAT.test(String(sustituta.uuid || ''))) throw new ErrorFactura('config', 'La factura que la sustituye no tiene folio fiscal');
   } else if (sustituta) throw new ErrorFactura('config', `Esta factura ya tiene una sustituta timbrada (${folioDe(sustituta)}): cancélala con el motivo 01`);
@@ -85,7 +90,9 @@ function anotarCancelacion(db, f, usuario) {
   if (!lead) return;
   if (f.tipo_documento === 'pago') {
     db.prepare("INSERT INTO main.historial (lead_id, tipo, texto, usuario, origen, area, usuario_id) VALUES (?, 'observacion', ?, ?, 'sistema', 'cxc', ?)")
-      .run(lead.id, `Complemento de pago ${folioDe(f)} CANCELADO ante el SAT (motivo 02). Su pago vuelve a «complemento pendiente».`, usuario?.nombre || 'Sistema', usuario?.id ?? null);
+      .run(lead.id, f.motivo_cancelacion === '01'
+        ? `Complemento de pago ${folioDe(f)} CANCELADO ante el SAT (motivo 01)${(s => s ? `, corregido por el ${folioDe(s)}` : '')(db.prepare("SELECT serie, folio FROM main.facturas WHERE sustituye_a = ? AND estatus = 'timbrada' ORDER BY id DESC LIMIT 1").get(f.id))}.`
+        : `Complemento de pago ${folioDe(f)} CANCELADO ante el SAT (motivo 02). Su pago vuelve a «complemento pendiente».`, usuario?.nombre || 'Sistema', usuario?.id ?? null);
     return; // un complemento nunca toca el folio de la factura de la orden
   }
   const sust = f.motivo_cancelacion === '01' ? db.prepare("SELECT serie, folio FROM main.facturas WHERE sustituye_a = ? AND estatus = 'timbrada' ORDER BY id DESC LIMIT 1").get(f.id) : null;
@@ -153,6 +160,7 @@ async function cancelar(db, f, op, ctx) {
   // Se guarda ANTES de mandar: si no hay respuesta, el siguiente paso es consultar el estatus (nunca volver a pedir a ciegas).
   db.transaction(() => {
     actualizar(db, f.id, { estatus: 'cancelacion_solicitada', motivo_cancelacion: motivo, folio_sustituto: sustituta?.uuid || null, cancelacion_solicitada_at: horaMexico().replace('T', ' '), error_json: null });
+    if (f.tipo_documento === 'pago' && sustituta) enlazarSustituto(db, sustituta); // por si la corrección quedó timbrada por otro camino (verificar, rechazo)
     log(db, f, 'cancelar', 'ok', `${op.reintentar ? 'Se vuelve a pedir la cancelación' : 'Solicitud de cancelación'} (motivo ${motivo}${sustituta ? ', sustituta ' + folioDe(sustituta) : ''})`, ctx.usuario?.id);
   })();
   if (ctx.demo) {

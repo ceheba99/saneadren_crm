@@ -328,12 +328,17 @@ async function descargarArchivos(db, cliente, f, { dirArchivos, usuarioId, soloX
 
 /** Solo en PRODUCCIÓN: la factura queda en la cobranza de la orden (folio, fecha, total del CFDI y método de pago) y en su bitácora. Un complemento de
  *  pago no toca la cobranza: solo deja su línea en la bitácora. */
+/** F6: la corrección de un complemento de pago, ya timbrada, toma el lugar del anterior en su pago (el anterior queda para cancelarse con el motivo 01). */
+function enlazarSustituto(db, f) {
+  if (f.tipo_documento === 'pago' && f.sustituye_a) db.prepare('UPDATE main.factura_cobros SET complemento_id = ? WHERE complemento_id = ?').run(f.id, f.sustituye_a);
+}
 function anotarEnOrden(db, f, usuario) {
   if (f.entorno !== 'prod' || !f.lead_id) return;
   if (f.tipo_documento === 'pago') {
     const pago = db.prepare('SELECT k.monto_cent, k.fecha FROM main.factura_cobros fc JOIN main.cobros k ON k.id = fc.cobro_id WHERE fc.complemento_id = ?').get(f.id);
+    const corrige = f.sustituye_a ? db.prepare('SELECT serie, folio FROM main.facturas WHERE id = ?').get(f.sustituye_a) : null;
     db.prepare("INSERT INTO main.historial (lead_id, tipo, texto, usuario, origen, area, usuario_id) VALUES (?, 'observacion', ?, ?, 'sistema', 'cxc', ?)")
-      .run(f.lead_id, `Complemento de pago ${f.serie}-${f.folio} timbrado${pago ? ` (pago de ${fmt(pago.monto_cent)} del ${pago.fecha})` : ''}.`, usuario?.nombre || 'Sistema', usuario?.id ?? null);
+      .run(f.lead_id, `Complemento de pago ${f.serie}-${f.folio} timbrado${pago ? ` (pago de ${fmt(pago.monto_cent)} del ${pago.fecha})` : ''}${corrige ? `, corrige al ${corrige.serie}-${corrige.folio} (falta cancelarlo con el motivo 01)` : ''}.`, usuario?.nombre || 'Sistema', usuario?.id ?? null);
     return;
   }
   const lead = db.prepare('SELECT id, factura_folio FROM main.leads WHERE id = ?').get(f.lead_id);
@@ -357,6 +362,7 @@ function quedoTimbrada(db, cliente, f, d, ctx) {
     actualizar(db, f.id, { estatus: 'timbrada', cfdi_uid: d.uid || f.cfdi_uid, uuid: d.uuid.toUpperCase(), serie: d.serie || f.serie, folio: d.folio || f.folio,
       fecha_timbrado: d.fecha || null, error_json: null });
     log(db, f, 'timbrar', 'ok', `${d.serie || f.serie || ''}-${d.folio || ''} ${d.uuid}`, ctx.usuario?.id);
+    enlazarSustituto(db, f);
     anotarEnOrden(db, leer(db, f.id), ctx.usuario);
   })();
   const descargas = cliente ? descargarArchivos(db, cliente, leer(db, f.id), { dirArchivos: ctx.dirArchivos, usuarioId: ctx.usuario?.id }).catch(e => ['No se pudieron bajar los archivos: ' + e.message]) : Promise.resolve([]);
@@ -422,8 +428,11 @@ function simular(db, f, ctx) {
   const uuid = crypto.randomUUID().toUpperCase();
   const folio = String(db.prepare("SELECT COUNT(*) n FROM main.facturas WHERE entorno = 'demo' AND serie IS ? AND estatus IN ('timbrada', 'cancelacion_solicitada', 'cancelada')").get(f.serie).n + 1);
   const xml = `<?xml version="1.0" encoding="UTF-8"?>\n<!-- DEMOSTRACIÓN: esto NO es un CFDI ni tiene validez fiscal. -->\n<demo Serie="${f.serie || ''}" Folio="${folio}" SubTotal="${(f.subtotal_cent / 100).toFixed(2)}" Total="${(f.total_cent / 100).toFixed(2)}" UUID="${uuid}"/>`;
-  actualizar(db, f.id, { estatus: 'timbrada', uuid, folio, fecha_timbrado: horaMexico(), xml, error_json: null, cfdi_uid: 'demo-' + uuid.slice(0, 8) });
-  log(db, f, 'timbrar', 'ok', 'Simulada (demo)', ctx.usuario?.id);
+  db.transaction(() => {
+    actualizar(db, f.id, { estatus: 'timbrada', uuid, folio, fecha_timbrado: horaMexico(), xml, error_json: null, cfdi_uid: 'demo-' + uuid.slice(0, 8) });
+    log(db, f, 'timbrar', 'ok', 'Simulada (demo)', ctx.usuario?.id);
+    enlazarSustituto(db, f);
+  })();
   return { estado: 'timbrada', factura: leer(db, f.id), avisos: ['Factura de DEMOSTRACIÓN: no se conectó con factura.com ni tiene validez fiscal'] };
 }
 
@@ -516,4 +525,4 @@ function vistaFactura(f) {
     error, created_at: f.created_at, updated_at: f.updated_at };
 }
 
-module.exports = { horaMexico, log, actualizar, leer, errorTexto, preparar, timbrar, enviarCfdi, simular, quedoTimbrada, verificar, resolverSinRespuesta, descargarArchivos, vistaFactura, conceptosDeOrden, totalesDelXml, instancia, UUID_SAT };
+module.exports = { horaMexico, log, actualizar, leer, errorTexto, preparar, timbrar, enviarCfdi, simular, quedoTimbrada, verificar, resolverSinRespuesta, descargarArchivos, vistaFactura, conceptosDeOrden, totalesDelXml, instancia, UUID_SAT, enlazarSustituto };
