@@ -108,6 +108,12 @@ async function quedoCancelada(db, cliente, f, estado, ctx) {
   db.transaction(() => {
     actualizar(db, f.id, { estatus: 'cancelada', cancelada_at: horaMexico().replace('T', ' '), cancelacion_estado: estado || 'Cancelado', cancelacion_revisada_at: horaMexico().replace('T', ' '), error_json: null });
     log(db, f, 'cancelar', 'ok', `Cancelada ante el SAT (motivo ${f.motivo_cancelacion})`, ctx.usuario?.id);
+    // Una corrección o sustituta que nunca llegó a factura.com («pendiente», con su error) ya no tiene a quién sustituir: se cierra para que no quede un aviso
+    // eterno en Inicio. Un borrador con error NO se toca aquí (ni se llega: «revisar» pide descartarlo antes de cancelar la original).
+    for (const o of db.prepare("SELECT * FROM main.facturas WHERE sustituye_a = ? AND estatus = 'pendiente'").all(f.id)) {
+      actualizar(db, o.id, { estatus: 'cancelada', error_json: JSON.stringify({ codigo: 'descartado', mensaje: `Se cerró sola: la ${folioDe(f)} que iba a sustituir se canceló` }) });
+      log(db, o, 'descartar', 'ok', `Se cerró sola: la ${folioDe(f)} que iba a sustituir se canceló`, ctx.usuario?.id);
+    }
     anotarCancelacion(db, leer(db, f.id), ctx.usuario);
   })();
   if (!leer(db, f.id).acuse && cliente) {
