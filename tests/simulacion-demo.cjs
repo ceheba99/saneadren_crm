@@ -115,6 +115,18 @@ const pedir = async (m, r, t, b) => { const x = await fetch(`http://localhost:${
   const dias = {}; for (const l of sym) { const d = new Date(l.fecha_servicio + 'T12:00:00Z').getUTCDay(); dias[d] = dias[d] || new Set(); dias[d].add(JSON.parse(l.partidas_json)[0].cantidad); }
   revisa(sym.length >= 40 && !dias[0] && [...(dias[1] || [])].join() === '5' && [...(dias[6] || [])].join() === '5' && [2, 3, 4, 5].every(d => [...(dias[d] || [])].join() === '3'), 'Symrise: lunes y sábado 5 viajes, martes a viernes 3, nunca domingo', [sym.length, Object.fromEntries(Object.entries(dias).map(([k, v]) => [k, [...v]]))]);
   [s, j] = await pedir('GET', '/compras/solicitudes', tok.admin); revisa(['recibida', 'con_orden', 'rechazada', 'cotizando', 'por_aprobar'].every(e => j.some(x => x.estado === e)), 'solicitudes de compra en cada etapa', j.map(x => x.estado));
+  // Auditoría (2026-11-03): una orden con factura vigente no se reabre, ni se descarta, ni se marca «no realizada» (primero se cancela la factura).
+  {
+    await pedir('PUT', '/facturacion/fiscales/2', tok.admin, { rfc: 'GOMC800101AB1', razon_social: 'JUAN GOMEZ CRUZ', cp: '68000', regimen: '612', uso_cfdi: 'G03', correo: 'juan@ejemplo.mx' });
+    const [st, t] = await pedir('POST', '/facturacion/ordenes/4/timbrar', tok.admin, { metodo_pago: 'PPD', confirmar: true });
+    revisa(st === 200 && t.estado === 'timbrada', 'el demo timbra (simula) una factura de la orden 4', [st, t.error]);
+    const ver = async () => (await pedir('GET', '/leads/4', tok.admin))[1];
+    [s, j] = await pedir('PUT', '/leads/4', tok.admin, { version: (await ver()).version, estatus: 'perdido', motivo_perdida: 'ya no lo necesita el cliente' });
+    revisa(s === 409 && /vigente ante el SAT/.test(j.error || ''), 'con factura vigente la orden no se marca perdida', [s, j.error]);
+    [s, j] = await pedir('POST', '/leads/4/ejecucion', tok.admin, { estado: 'no_realizado', motivo: 'el cliente canceló el servicio' });
+    revisa(s === 409 && /motivo 03/.test(j.error || ''), 'con factura vigente no se marca «no realizada»: primero se cancela con el motivo 03', [s, j.error]);
+    revisa((await ver()).estatus === 'ganado', 'la orden sigue como orden de servicio');
+  }
   [s, j] = await pedir('GET', '/finanzas/resumen', tok.admin); revisa(j.por_cobrar > 0 && j.vencido > 0 && j.por_pagar > 0 && j.a_favor > 0, 'hay cuentas por cobrar, vencidas, por pagar y saldo a favor para enseñar', j);
   revisa(!/uncaughtException|Error no manejado|TypeError|SqliteError|RangeError|ReferenceError/.test(salida), 'el servidor no registró errores internos', salida.split('\n').filter(l => /Error/.test(l)).slice(0, 6));
   await parar();

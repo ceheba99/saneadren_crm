@@ -59,7 +59,7 @@ function instancia(db) {
  * si no, va cantidad 1 por el importe (así Importe = Cantidad × ValorUnitario siempre cuadra, como lo pide el SAT).
  */
 function conceptosDeOrden(db, lead) {
-  const errores = [], avisos = [], conceptos = [];
+  const errores = [], avisos = [], conceptos = [], confirmar = [];
   const servicios = db.prepare('SELECT id, nombre, clave_prod_serv, clave_unidad, nombre_unidad, objeto_imp, tasa_iva FROM catalogo_servicios').all();
   const porNombre = new Map(servicios.map(s => [normal(s.nombre), s])), porId = new Map(servicios.map(s => [s.id, s]));
   let partidas = [];
@@ -74,8 +74,11 @@ function conceptosDeOrden(db, lead) {
   if (!partidas.length) errores.push('La orden no tiene partidas ni importe');
   partidas.forEach((p, i) => {
     const n = i + 1;
-    const s = (p?.servicio && porNombre.get(normal(p.servicio))) || porId.get(lead.servicio_id) || null;
+    const exacto = p?.servicio ? porNombre.get(normal(p.servicio)) : null;
+    const s = exacto || porId.get(lead.servicio_id) || null;
     const nombreRenglon = texto(p?.leyenda) || texto(p?.servicio) || `renglón ${n}`;
+    // Sin servicio del catálogo con ese nombre, el renglón toma la clave del SAT del servicio de la orden: se dice para que se confirme (no en silencio).
+    if (!exacto && s && !p?._subtotal && Number(p?.importe) > 0) confirmar.push(`«${nombreRenglon}» no coincide con ningún servicio del catálogo: va con la clave del SAT de «${s.nombre}» (${s.clave_prod_serv || 'sin clave'}). ¿Es correcto?`);
     let importeCent;
     try { importeCent = Math.round(Number(p?.importe) * 100); if (!Number.isFinite(importeCent) || importeCent < 0) throw 0; } catch { errores.push(`El importe de «${nombreRenglon}» no es válido`); return; }
     if (importeCent === 0) { avisos.push(`«${nombreRenglon}» tiene importe $0: no se incluye en la factura`); return; }
@@ -101,7 +104,7 @@ function conceptosDeOrden(db, lead) {
     conceptos.push({ servicio: s.nombre, descripcion, clave_prod_serv: s.clave_prod_serv, clave_unidad: s.clave_unidad, unidad: s.nombre_unidad,
       cantidad_micros: cantidad, unitario_micros: unitario, base_micros: importe });
   });
-  return { conceptos, errores, avisos };
+  return { conceptos, errores, avisos, confirmar };
 }
 
 /** El cuerpo de cada concepto para la API (6 decimales; IVA trasladado: Impuesto 002, TipoFactor Tasa, como en la doc de crear-cfdi-40). */
@@ -150,8 +153,8 @@ function preparar(db, leadId, op = {}, { config, demo = false } = {}) {
     else avisos.push(`La orden tiene registrada la factura ${lead.factura_folio}; como esta es de PRUEBA, no se toca`);
   }
 
-  const conc = lead.iva_modo && lead.iva_modo !== 'sin_iva' ? conceptosDeOrden(db, lead) : { conceptos: [], errores: [], avisos: [] };
-  errores.push(...conc.errores); avisos.push(...conc.avisos);
+  const conc = lead.iva_modo && lead.iva_modo !== 'sin_iva' ? conceptosDeOrden(db, lead) : { conceptos: [], errores: [], avisos: [], confirmar: [] };
+  errores.push(...conc.errores); avisos.push(...conc.avisos); confirmar.push(...conc.confirmar);
   const tasa = Number(lead.iva_tasa) || 0;
   let totales = null;
   if (conc.conceptos.length && !conc.errores.length) {
@@ -192,6 +195,9 @@ function preparar(db, leadId, op = {}, { config, demo = false } = {}) {
   const cob = db.prepare('SELECT COALESCE(SUM(CASE WHEN confirmado = 1 THEN monto_cent END), 0) confirmado, COALESCE(SUM(CASE WHEN confirmado = 0 THEN monto_cent END), 0) porConfirmar FROM main.cobros WHERE lead_id = ? AND cancelado = 0').get(lead.id);
   const cobrado = cob.confirmado;
   const debe = totales ? cobrado + 1 < totales.total_cent : false;
+  // Un «ajuste» cuenta como cobrado (puede ser un descuento o un saldo inicial ya cobrado), pero la factura sale por el total de la orden: se pide confirmar.
+  const ajustes = db.prepare("SELECT COALESCE(SUM(monto_cent), 0) t FROM main.cobros WHERE lead_id = ? AND cancelado = 0 AND confirmado = 1 AND tipo = 'ajuste'").get(lead.id).t;
+  if (ajustes && totales) confirmar.push(`La orden tiene ${fmt(ajustes)} registrados como ajuste (descuento o saldo inicial) que cuentan como cobrado. La factura sale por el total de la orden (${fmt(totales.total_cent)}): si fue un descuento, primero baja el importe de la orden; si fue un saldo ya cobrado, puedes continuar.`);
 
   // Método de pago (F6): lo elige quien timbra. Se sugiere PPD (a crédito) si el cliente todavía debe algo
   // (pagada completa: PUE aunque la orden tenga días de crédito; sin importes todavía, cuentan los días de crédito).
@@ -378,7 +384,7 @@ function quedoBorrador(db, f, e, borrador, ctx) {
  * Busca en factura.com la factura por su NumOrder. Devuelve null si no existe; si existe, la deja como quedó allá (timbrada o borrador).
  * Se usa antes de volver a mandar una factura cuyo intento anterior no tuvo respuesta.
  */
-async function verificar(db, cliente, f, ctx = {}) {
+async function verificar(db, cliente, f, ctx = {}, { dejarBorrador = false } = {}) {
   let r;
   try { r = await cliente.get('/v4/cfdi/order/' + encodeURIComponent(f.num_order)); }
   catch (e) {
@@ -387,7 +393,11 @@ async function verificar(db, cliente, f, ctx = {}) {
     if (e instanceof ErrorFactura && e.codigo === 'api' && e.rechazo && /no se encontr[oó] (el )?cfdi/i.test(e.message)) return null;
     throw e;
   }
-  const d = Array.isArray(r.datos) ? r.datos.find(x => String(x?.NumOrder ?? '') === f.num_order) : r.datos;
+  // Si vienen varias con el mismo NumOrder (un borrador y un intento timbrado), manda la timbrada; dos timbradas no se resuelven solas.
+  const iguales = Array.isArray(r.datos) ? r.datos.filter(x => String(x?.NumOrder ?? '') === f.num_order) : [];
+  const timbradas = iguales.filter(x => UUID_SAT.test(String(x?.UUID ?? '').trim()));
+  if (timbradas.length > 1) throw new ErrorFactura('respuesta', `factura.com tiene ${timbradas.length} CFDI timbrados con el número de orden ${f.num_order}: no se tocó nada. Revisa en el panel de factura.com cuál vale y cancela el otro.`);
+  const d = Array.isArray(r.datos) ? (timbradas[0] || iguales[0]) : r.datos;
   if (!d || typeof d !== 'object' || (d.NumOrder != null && String(d.NumOrder) !== f.num_order)) {
     if (Array.isArray(r.datos) && !r.datos.length) return null;
     throw new ErrorFactura('respuesta', 'factura.com contestó algo inesperado al buscar la factura por su número de orden: no se volvió a mandar. Revisa en el panel de factura.com.');
@@ -405,6 +415,7 @@ async function verificar(db, cliente, f, ctx = {}) {
     return { estado: 'cancelacion_solicitada', factura: leer(db, f.id), mensaje: 'factura.com la reporta en cancelación: consulta su estatus' };
   }
   if (UUID_SAT.test(uuid)) return quedoTimbrada(db, cliente, f, { uid, uuid, folio, fecha: d.FechaTimbrado || null }, ctx);
+  if (dejarBorrador) return { estado: 'borrador_error', factura: leer(db, f.id) }; // sigue en borrador: la fila no se toca (conserva su motivo y su uid)
   return quedoBorrador(db, f, new ErrorFactura('api', 'La factura quedó como borrador en factura.com: corrige y vuelve a timbrar'), { uid, folio }, ctx);
 }
 
@@ -446,9 +457,15 @@ async function timbrar(db, leadId, op, ctx) {
   if (!p) throw new ErrorFactura('config', 'Orden no encontrada');
   if (p.errores.length) throw Object.assign(new ErrorFactura('config', 'Todavía no se puede timbrar: ' + p.errores.join(' · '), { detalles: p.errores.map(m => ({ campo: '', mensaje: m })) }), { faltan: p.errores });
   if (p.confirmar.length && !op.confirmar) throw Object.assign(new ErrorFactura('config', p.confirmar.join(' ')), { confirmar: p.confirmar });
+  const cliente = ctx.demo ? null : ctx.crearCliente();
+  if (cliente) {
+    const borrador = db.prepare("SELECT * FROM main.facturas WHERE lead_id = ? AND entorno = ? AND tipo_documento = 'factura' AND estatus = 'borrador_error' AND cfdi_uid IS NOT NULL AND sustituye_a IS ? ORDER BY id DESC LIMIT 1")
+      .get(p.lead.id, p.entorno, op.sustituye_a ? Number(op.sustituye_a) : null);
+    const ya = await borradorYaTimbrado(db, cliente, borrador, ctx);
+    if (ya) return ya;
+  }
   let f = reservar(db, p, op, ctx.usuario?.id);
   if (ctx.demo) return simular(db, f, ctx);
-  const cliente = ctx.crearCliente();
   // 1) Un intento anterior sin respuesta: primero se averigua si sí se timbró (regla 15). Nunca se manda dos veces a ciegas.
   if (f.estatus === 'timbrando') {
     const r = await resolverSinRespuesta(db, cliente, f, ctx);
@@ -471,6 +488,17 @@ async function timbrar(db, leadId, op, ctx) {
  * Manda a factura.com un CFDI ya reservado (factura o complemento de pago) y deja la fila como quedó: timbrada, borrador_error, pendiente (rechazada) o
  * timbrando (sin respuesta clara). Si la fila ya tiene borrador, lo corrige y lo timbra (conserva su folio). Nunca reenvía a ciegas.
  */
+/**
+ * Un borrador se pudo corregir y timbrar directo en el panel de factura.com. ANTES de tocar la fila (reservar le pondría la foto de hoy) se busca por
+ * NumOrder: si ya está timbrado o en cancelación se queda como está allá y se devuelve ese resultado; si sigue en borrador o no aparece, null y la fila
+ * queda igual. Si la búsqueda falla, se lanza el error: no se manda nada.
+ */
+async function borradorYaTimbrado(db, cliente, f, ctx) {
+  if (!f?.cfdi_uid || f.estatus !== 'borrador_error') return null;
+  const v = await verificar(db, cliente, f, ctx, { dejarBorrador: true });
+  return v && v.estado !== 'borrador_error' ? v : null;
+}
+
 async function enviarCfdi(db, cliente, f, cuerpo, ctx) {
   // 3) Se marca «timbrando» ANTES de mandar: si el proceso se cae o no hay respuesta, el siguiente intento verifica primero. Solo si sigue como se
   //    leyó (pendiente o borrador): si otro proceso ya la tomó, no se manda dos veces.
@@ -499,7 +527,14 @@ async function enviarCfdi(db, cliente, f, cuerpo, ctx) {
       if (f.cfdi_uid) return quedoBorrador(db, f, e, { uid: f.cfdi_uid }, ctx); // falló al corregir o timbrar el borrador: sigue siendo borrador
       if (/ya existe un cfdi/i.test(e.message)) {
         // Puede ser esta misma factura (se mandó dos veces): se busca por NumOrder. Si no es nuestra, no se duplica nada.
-        const v = await verificar(db, cliente, f, ctx).catch(() => null);
+        let v;
+        try { v = await verificar(db, cliente, f, ctx); }
+        catch (e2) {
+          // No se pudo comprobar: NO se libera para reenviar. Se queda «timbrando» y «Verificar» lo resuelve.
+          actualizar(db, f.id, { error_json: errorTexto(e) });
+          log(db, f, 'timbrar', 'error', `${e.message} · al verificar: ${e2.message}`, ctx.usuario?.id, e.httpStatus);
+          return { estado: 'sin_respuesta', factura: leer(db, f.id), mensaje: 'factura.com dice que ya existe un CFDI con ese folio y no se pudo comprobar si es éste. Pulsa «Verificar» en un minuto (no se manda otra vez sin revisar).' };
+        }
         if (v) return v;
       }
       // Rechazada sin borrador: no se creó nada en factura.com. Queda «pendiente» con el motivo, para corregir y volver a mandar.
@@ -525,4 +560,4 @@ function vistaFactura(f) {
     error, created_at: f.created_at, updated_at: f.updated_at };
 }
 
-module.exports = { horaMexico, log, actualizar, leer, errorTexto, preparar, timbrar, enviarCfdi, simular, quedoTimbrada, verificar, resolverSinRespuesta, descargarArchivos, vistaFactura, conceptosDeOrden, totalesDelXml, instancia, UUID_SAT, enlazarSustituto };
+module.exports = { horaMexico, log, actualizar, leer, errorTexto, preparar, timbrar, enviarCfdi, simular, quedoTimbrada, verificar, resolverSinRespuesta, descargarArchivos, vistaFactura, conceptosDeOrden, totalesDelXml, instancia, UUID_SAT, enlazarSustituto, borradorYaTimbrado }

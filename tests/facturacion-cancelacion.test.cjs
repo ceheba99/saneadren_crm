@@ -26,7 +26,7 @@ function base(entorno = 'sandbox') {
     CREATE TABLE catalogo_servicios (id INTEGER PRIMARY KEY, nombre TEXT, activo INTEGER DEFAULT 1, orden INTEGER DEFAULT 0); INSERT INTO catalogo_servicios (id, nombre) VALUES (1, 'Desazolve');
     CREATE TABLE leads (id INTEGER PRIMARY KEY, estatus TEXT, ejecucion TEXT, iva_modo TEXT, iva_tasa INTEGER, iva_cent INTEGER, valor REAL, partidas_json TEXT, servicio_id INTEGER, cliente_id INTEGER,
       sucursal_id INTEGER, factura_folio TEXT, factura_fecha TEXT, factura_total_cent INTEGER, factura_metodo TEXT, created_at TEXT DEFAULT '2026-10-20 10:00:00');
-    CREATE TABLE cobros (id INTEGER PRIMARY KEY, lead_id INTEGER, monto_cent INTEGER, cancelado INTEGER DEFAULT 0, confirmado INTEGER DEFAULT 1);
+    CREATE TABLE cobros (id INTEGER PRIMARY KEY, lead_id INTEGER, monto_cent INTEGER, tipo TEXT DEFAULT 'pago', cancelado INTEGER DEFAULT 0, confirmado INTEGER DEFAULT 1);
     CREATE TABLE historial (id INTEGER PRIMARY KEY, lead_id INTEGER, tipo TEXT, texto TEXT, usuario TEXT, origen TEXT, area TEXT, usuario_id INTEGER);`);
   crearTablas(db);
   db.exec(`UPDATE catalogo_servicios SET clave_prod_serv = '76121600', clave_unidad = 'E48', nombre_unidad = 'Unidad de servicio';

@@ -25,7 +25,7 @@ const { ErrorFactura } = require('./facturacom');
 const { centavosAMicros, microsATexto, ivaMicros } = require('./facturacion-validaciones');
 const { leerCatalogos } = require('./facturacion-catalogos');
 const { sincronizarCliente } = require('./facturacion-clientes');
-const { log, actualizar, leer, errorTexto, enviarCfdi, simular, resolverSinRespuesta, instancia, UUID_SAT } = require('./facturacion-timbrado');
+const { log, actualizar, leer, errorTexto, enviarCfdi, simular, resolverSinRespuesta, instancia, UUID_SAT, borradorYaTimbrado } = require('./facturacion-timbrado');
 
 // Cómo pagó el cliente (cobros.metodo) → forma de pago del SAT. Solo los casos sin duda; los demás se preguntan con sus opciones.
 const FORMA_SUGERIDA = { transferencia: '03', efectivo: '01', cheque: '02' };
@@ -267,9 +267,14 @@ async function timbrarComplemento(db, cobroId, op, ctx) {
   if (!p) throw new ErrorFactura('config', 'Pago no encontrado');
   if (p.errores.length) throw Object.assign(new ErrorFactura('config', 'Todavía no se puede timbrar el complemento: ' + p.errores.join(' · '), { detalles: p.errores.map(m => ({ campo: '', mensaje: m })) }), { faltan: p.errores });
   if (p.confirmar.length && !op.confirmar) throw Object.assign(new ErrorFactura('config', p.confirmar.join(' ')), { confirmar: p.confirmar });
+  const cliente = ctx.demo ? null : ctx.crearCliente();
+  if (cliente) {
+    // Antes de tocar la fila: el borrador pudo timbrarse en el panel de factura.com (ver borradorYaTimbrado).
+    const ya = await borradorYaTimbrado(db, cliente, p.original ? sustitutoDe(db, p.original.id) : p.complemento, ctx);
+    if (ya) return ya;
+  }
   let f = reservar(db, p, ctx.usuario?.id);
   if (ctx.demo) return simular(db, f, ctx);
-  const cliente = ctx.crearCliente();
   if (f.estatus === 'timbrando') {
     const r = await resolverSinRespuesta(db, cliente, f, ctx);
     if (r.estado !== 'pendiente') return r;

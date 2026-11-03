@@ -11,7 +11,7 @@ const { listarSeries, asignarSerie, crearSerie } = require('./facturacion-series
 const { validarRFC, normalizarRazonSocial, validarCorreo, validarDatosFiscales } = require('./facturacion-validaciones');
 const { leerCatalogos } = require('./facturacion-catalogos');
 const { revisarProduccion } = require('./facturacion-revision');
-const { preparar, timbrar, resolverSinRespuesta, descargarArchivos, vistaFactura } = require('./facturacion-timbrado');
+const { preparar, timbrar, resolverSinRespuesta, verificar, descargarArchivos, vistaFactura } = require('./facturacion-timbrado');
 const { vincularCliente } = require('./facturacion-clientes');
 const { cancelar, consultarEstatus, esAcuse, MOTIVOS } = require('./facturacion-cancelacion');
 const { prepararComplemento, timbrarComplemento, pendientes, complementosDeOrden } = require('./facturacion-complementos');
@@ -548,6 +548,13 @@ module.exports = function rutasFacturacion(app, db, h, { direccion, puede = () =
     if (f.entorno === 'demo' || esDemo()) return demoNo(res);
     if (f.entorno !== leerConfig(env).entorno) return res.status(409).json({ error: `Este borrador es de ${f.entorno === 'prod' ? 'producción' : 'pruebas'} y la conexión está en otro entorno` });
     return una('orden-' + f.lead_id, res, async () => {
+      // Antes de descartar se busca por NumOrder: el borrador pudo corregirse y timbrarse en el panel de factura.com. Si ya está timbrado, NO se descarta
+      // (se queda timbrado aquí también); si la búsqueda falla, tampoco (se lanza el error y nada cambia). Solo con «no existe» o «sigue en borrador» se descarta.
+      const v = await verificar(db, crearCliente(), f, ctxDe(req), { dejarBorrador: true }); // si sigue en borrador, la fila (y su uid) no se toca
+      if (v && v.estado !== 'borrador_error') {
+        auditar(req, 'orden_servicio', f.lead_id, 'factura', 'Al descartar un borrador se encontró que ya estaba timbrado en factura.com: no se descartó');
+        return res.status(409).json({ error: v.estado === 'timbrada' ? 'Ese borrador ya se timbró en factura.com: no se descartó y quedó como timbrado aquí también.' : 'factura.com lo reporta en cancelación: no se descartó; consulta su estatus.', factura: vistaFactura(db.prepare('SELECT * FROM facturas WHERE id = ?').get(f.id)) });
+      }
       let nota = 'Borrador descartado por Dirección';
       try { await crearCliente().post(`/v4/drafts/${encodeURIComponent(f.cfdi_uid)}/drop`, {}); }
       catch (e) {
