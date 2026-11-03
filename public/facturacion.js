@@ -112,6 +112,17 @@ const Facturacion = (() => {
     salida.innerHTML = `✔ La conexión funciona: factura.com aceptó las llaves (${esc(r.entorno === 'prod' ? 'producción' : 'sandbox')}). Series en la cuenta: ${Number(r.series.length)}.`;
     pintar();
   }));
+  // F7: revisión previa a producción (solo lectura). Todo lo que viene del servidor se escapa.
+  $('fx-revisar')?.addEventListener('click', async e => {
+    const b = e.currentTarget, salida = $('fx-revision'); b.disabled = true; salida.textContent = 'Revisando…';
+    try {
+      const r = await pedir('/revision-produccion'), icono = { ok: '<span class="fx-ok">✔</span>', falta: '<span class="fx-mal">✘</span>', aviso: '⚠' };
+      const faltan = r.items.filter(i => i.nivel === 'falta').length;
+      salida.innerHTML = `<p><b>${faltan ? `Faltan ${faltan} cosa${faltan === 1 ? '' : 's'} para producción` : 'Lo que el sistema puede comprobar está listo'}</b>${r.entorno === 'prod' ? ' · el servidor YA está en producción' : ' · el servidor sigue en pruebas'}. Los ⚠ los confirmas tú.</p>
+        <ul class="fx-lista">${r.items.map(i => `<li>${icono[i.nivel] || ''} <b>${esc(i.titulo)}</b>${i.detalle ? '<br><small>' + esc(i.detalle) + '</small>' : ''}</li>`).join('')}</ul>`;
+    } catch (err) { salida.innerHTML = `<p class="aviso-error-carga" role="alert">${esc(err.message)}</p>`; }
+    finally { b.disabled = false; }
+  });
   $('fx-catalogos')?.addEventListener('click', e => operacion(e.currentTarget, async salida => {
     const r = await pedir('/catalogos', {}, 'POST'); CFG.catalogos = r.catalogos; SERV = await pedir('/servicios');
     const malos = r.resultados.filter(x => x.error || !x.actualizado);
