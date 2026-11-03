@@ -87,7 +87,7 @@ const posts = (sim, patron) => sim.llamadas.filter(l => l.metodo === 'POST' && p
 
 test('Importes: 229.90 y 1635.48 a 6 decimales por concepto; redondeo solo en las sumas; el cuerpo es el de la doc', () => {
   const db = base(); orden(db);
-  const p = preparar(db, 10, { forma_pago: '03' }, { config: leerConfig(ENV.sandbox) });
+  const p = preparar(db, 10, { metodo_pago: 'PUE', forma_pago: '03' }, { config: leerConfig(ENV.sandbox) });
   assert.deepEqual(p.errores, []);
   assert.deepEqual(p.resumen.conceptos.map(c => [c.importe, c.iva]), [['229.900000', '36.784000'], ['1635.480000', '261.676800']]);
   assert.deepEqual([p.resumen.subtotal_cent, p.resumen.iva_cent, p.resumen.total_cent], [186538, 29846, 216384]);
@@ -101,10 +101,10 @@ test('Importes: 229.90 y 1635.48 a 6 decimales por concepto; redondeo solo en la
 
 test('Cantidad × precio se respeta si cuadra; IVA incluido se desglosa sin perder centavos', () => {
   const db = base(); orden(db, { partidas: [['Desazolve', 'Tres viajes', 689.70, 3, 229.90]] });
-  let p = preparar(db, 10, { forma_pago: '03' }, { config: leerConfig(ENV.sandbox) });
+  let p = preparar(db, 10, { metodo_pago: 'PUE', forma_pago: '03' }, { config: leerConfig(ENV.sandbox) });
   assert.deepEqual([p.cuerpo.Conceptos[0].Cantidad, p.cuerpo.Conceptos[0].ValorUnitario, p.cuerpo.Conceptos[0].Importe], [3, 229.9, 689.7]);
   const db2 = base(); orden(db2, { modo: 'incluido', partidas: [['Desazolve', 'Con IVA', 1160], ['Trampa de grasa', 'Con IVA', 100]] });
-  p = preparar(db2, 10, { forma_pago: '03' }, { config: leerConfig(ENV.sandbox) });
+  p = preparar(db2, 10, { metodo_pago: 'PUE', forma_pago: '03' }, { config: leerConfig(ENV.sandbox) });
   assert.deepEqual(p.errores, []);
   assert.deepEqual(p.resumen.conceptos.map(c => [c.importe, c.iva]), [['1000.000000', '160.000000'], ['86.206897', '13.793104']]);
   assert.equal(p.resumen.total_cent, 126000, 'el total con IVA incluido es lo que se capturó');
@@ -122,18 +122,18 @@ test('Antes de mandar nada se dice qué falta (y no se llama a factura.com)', as
   ];
   for (const [armar, error] of casos) {
     const db = base(); armar(db); const sim = simulado(respuestasBase());
-    await assert.rejects(timbrar(db, 10, { forma_pago: '03', confirmar: true }, contexto(db, sim)), e => { assert.match(e.message, error); return true; });
+    await assert.rejects(timbrar(db, 10, { metodo_pago: 'PUE', forma_pago: '03', confirmar: true }, contexto(db, sim)), e => { assert.match(e.message, error); return true; });
     assert.deepEqual(sim.llamadas, [], 'no se llamó a factura.com: ' + error);
     assert.equal(db.prepare('SELECT COUNT(*) n FROM facturas').get().n, 0, 'no queda nada apartado');
   }
   const db = base(); orden(db);
-  assert.match(preparar(db, 10, { forma_pago: '99' }, { config: leerConfig(ENV.sandbox) }).errores.join(), /solo se usa en facturas a crédito/);
-  assert.match(preparar(db, 10, {}, { config: leerConfig(ENV.sandbox) }).errores.join(), /Elige la forma de pago/);
+  assert.match(preparar(db, 10, { metodo_pago: 'PUE', forma_pago: '99' }, { config: leerConfig(ENV.sandbox) }).errores.join(), /solo se usa en facturas a crédito/);
+  assert.match(preparar(db, 10, { metodo_pago: 'PUE' }, { config: leerConfig(ENV.sandbox) }).errores.join(), /Elige la forma de pago/);
 });
 
 test('Timbrado en SANDBOX: queda timbrada con XML y PDF, y la orden (cobranza) no se toca', async () => {
   const db = base(); orden(db); const sim = simulado(respuestasBase({ 'POST /v4/cfdi40/create': EXITO() })), ctx = contexto(db, sim);
-  const r = await timbrar(db, 10, { forma_pago: '03', confirmar: true }, ctx);
+  const r = await timbrar(db, 10, { metodo_pago: 'PUE', forma_pago: '03', confirmar: true }, ctx);
   assert.equal(r.estado, 'timbrada');
   const f = factura(db);
   assert.equal(f.estatus, 'timbrada'); assert.equal(f.uuid, UUID1); assert.equal(f.serie, 'F'); assert.equal(f.folio, '7'); assert.equal(f.entorno, 'sandbox');
@@ -144,14 +144,14 @@ test('Timbrado en SANDBOX: queda timbrada con XML y PDF, y la orden (cobranza) n
   const lead = db.prepare('SELECT * FROM leads WHERE id = 10').get();
   assert.equal(lead.factura_folio, null, 'una factura de prueba no toca la orden'); assert.equal(lead.factura_total_cent, null);
   assert.equal(db.prepare('SELECT COUNT(*) n FROM historial').get().n, 0);
-  await assert.rejects(timbrar(db, 10, { forma_pago: '03', confirmar: true }, ctx), /ya tiene factura/);
+  await assert.rejects(timbrar(db, 10, { metodo_pago: 'PUE', forma_pago: '03', confirmar: true }, ctx), /ya tiene factura/);
 });
 
 test('Timbrado en PRODUCCIÓN: la cobranza de la orden toma folio, fecha, total del XML y PUE; la bitácora no lleva el UUID', async () => {
   const db = base(); orden(db); db.exec("UPDATE series_factura SET entorno = 'prod'");
   const sim = simulado(respuestasBase({ 'POST /v4/cfdi40/create': EXITO(), 'GET /v1/clients/rfc/EKU9003173C9': () => ({ json: { status: 'error', message: 'El cliente no existe' } }),
     'POST /v1/clients/create': () => ({ json: { status: 'success', Data: { UID: 'CLI-PROD-9' } } }) }));
-  const r = await timbrar(db, 10, { forma_pago: '03', confirmar: true }, contexto(db, sim, { entorno: 'prod' }));
+  const r = await timbrar(db, 10, { metodo_pago: 'PUE', forma_pago: '03', confirmar: true }, contexto(db, sim, { entorno: 'prod' }));
   assert.equal(r.estado, 'timbrada');
   assert.equal(posts(sim, /clients\/create/).length, 1, 'el UID de sandbox no sirve en producción: se dio de alta otra vez');
   assert.equal(db.prepare('SELECT uid_facturacom, uid_entorno FROM clientes_fiscales WHERE id = 1').get().uid_entorno, 'prod');
@@ -165,13 +165,13 @@ test('Timbrado en PRODUCCIÓN: la cobranza de la orden toma folio, fecha, total 
 
 test('Una factura de prueba no estorba a la real (un lugar por entorno), y una capturada a mano bloquea timbrar otra en producción', async () => {
   const db = base(); orden(db);
-  await timbrar(db, 10, { forma_pago: '03', confirmar: true }, contexto(db, simulado(respuestasBase({ 'POST /v4/cfdi40/create': EXITO() }))));
+  await timbrar(db, 10, { metodo_pago: 'PUE', forma_pago: '03', confirmar: true }, contexto(db, simulado(respuestasBase({ 'POST /v4/cfdi40/create': EXITO() }))));
   db.exec("UPDATE series_factura SET entorno = 'prod'");
-  assert.deepEqual(preparar(db, 10, { forma_pago: '03' }, { config: leerConfig(ENV.prod) }).errores, []);
+  assert.deepEqual(preparar(db, 10, { metodo_pago: 'PUE', forma_pago: '03' }, { config: leerConfig(ENV.prod) }).errores, []);
   const db2 = base(); orden(db2, { folio: 'A-555' }); db2.exec("UPDATE series_factura SET entorno = 'prod'");
-  assert.match(preparar(db2, 10, { forma_pago: '03' }, { config: leerConfig(ENV.prod) }).errores.join(), /ya tiene registrada la factura A-555/);
+  assert.match(preparar(db2, 10, { metodo_pago: 'PUE', forma_pago: '03' }, { config: leerConfig(ENV.prod) }).errores.join(), /ya tiene registrada la factura A-555/);
   db2.exec("UPDATE series_factura SET entorno = 'sandbox'");
-  const p = preparar(db2, 10, { forma_pago: '03' }, { config: leerConfig(ENV.sandbox) });
+  const p = preparar(db2, 10, { metodo_pago: 'PUE', forma_pago: '03' }, { config: leerConfig(ENV.sandbox) });
   assert.deepEqual(p.errores, []); assert.match(p.avisos.join(), /PRUEBA, no se toca/);
 });
 
@@ -182,12 +182,12 @@ test('Si falla el timbrado queda BORRADOR (pendiente de corregir); al reintentar
   const sim = simulado(respuestasBase({ 'POST /v4/cfdi40/create': errorConBorrador, 'POST /v4/cfdi40/create/BORR-1': () => ({ json: { response: 'success', message: 'Borrador creado satisfactoriamente', uid: 'BORR-1' } }),
     'POST /v4/cfdi40/BORR-1/timbrarborrador': EXITO(8) }));
   const ctx = contexto(db, sim);
-  let r = await timbrar(db, 10, { forma_pago: '03', confirmar: true }, ctx);
+  let r = await timbrar(db, 10, { metodo_pago: 'PUE', forma_pago: '03', confirmar: true }, ctx);
   assert.equal(r.estado, 'borrador_error'); assert.match(r.mensaje, /CFDI40111 - El valor del campo Descuento no es correcto — detalle/);
   let f = factura(db); assert.equal(f.cfdi_uid, 'BORR-1'); assert.equal(f.folio, '8');
   const guardado = JSON.stringify(db.prepare('SELECT * FROM facturas').all()) + JSON.stringify(db.prepare('SELECT * FROM facturas_log').all());
   assert.ok(!guardado.includes('NO-GUARDAR'), 'del cuerpo del error solo se guarda el mensaje y el uid del borrador');
-  r = await timbrar(db, 10, { forma_pago: '03', confirmar: true }, ctx);
+  r = await timbrar(db, 10, { metodo_pago: 'PUE', forma_pago: '03', confirmar: true }, ctx);
   assert.equal(r.estado, 'timbrada'); f = factura(db); assert.equal(f.estatus, 'timbrada'); assert.equal(f.folio, '8');
   assert.equal(posts(sim, /^\/v4\/cfdi40\/create$/).length, 1, 'no se creó otro CFDI: se corrigió el borrador');
   assert.equal(posts(sim, /create\/BORR-1$/)[0].cuerpo.Draft, '1');
@@ -200,14 +200,14 @@ test('Sin respuesta (30 s): queda «timbrando»; el siguiente intento BUSCA por 
   const sim = simulado(respuestasBase({ 'POST /v4/cfdi40/create': () => ({ abortar: true }),
     'GET /v4/cfdi/order/*': () => (encontrada ? { json: { status: 'success', data: { UID: 'CFDI-UID-7', UUID: UUID1, Folio: 'F 7', Status: 'enviada', NumOrder: factura(db).num_order } } } : { json: { status: 'error', message: 'No se encontró CFDI: x' } }) }));
   const ctx = contexto(db, sim);
-  let r = await timbrar(db, 10, { forma_pago: '03', confirmar: true }, ctx);
+  let r = await timbrar(db, 10, { metodo_pago: 'PUE', forma_pago: '03', confirmar: true }, ctx);
   assert.equal(r.estado, 'sin_respuesta'); assert.equal(factura(db).estatus, 'timbrando');
   // Enseguida: no aparece todavía → no se manda otra vez (puede estar en camino).
-  await assert.rejects(timbrar(db, 10, { forma_pago: '03', confirmar: true }, ctx), /Espera un minuto/);
+  await assert.rejects(timbrar(db, 10, { metodo_pago: 'PUE', forma_pago: '03', confirmar: true }, ctx), /Espera un minuto/);
   assert.equal(posts(sim, /^\/v4\/cfdi40\/create$/).length, 1);
   // Ya apareció en factura.com: se toma la que existe, sin mandar nada.
   encontrada = true;
-  r = await timbrar(db, 10, { forma_pago: '03', confirmar: true }, ctx);
+  r = await timbrar(db, 10, { metodo_pago: 'PUE', forma_pago: '03', confirmar: true }, ctx);
   assert.equal(r.estado, 'timbrada'); const f = factura(db); assert.equal(f.uuid, UUID1); assert.equal(f.folio, '7');
   assert.equal(posts(sim, /^\/v4\/cfdi40\/create$/).length, 1, 'jamás se mandó dos veces');
 });
@@ -217,9 +217,9 @@ test('Sin respuesta y de verdad no llegó: pasado el minuto se vuelve a mandar c
   let veces = 0;
   const sim = simulado(respuestasBase({ 'POST /v4/cfdi40/create': (c, ll) => (++veces === 1 ? { abortar: true } : EXITO()()), 'GET /v4/cfdi/order/*': () => ({ json: { status: 'error', message: 'No se encontró CFDI: x' } }) }));
   const ctx = contexto(db, sim);
-  await timbrar(db, 10, { forma_pago: '03', confirmar: true }, ctx);
+  await timbrar(db, 10, { metodo_pago: 'PUE', forma_pago: '03', confirmar: true }, ctx);
   db.exec("UPDATE facturas SET updated_at = datetime('now','localtime','-5 minutes')");
-  const r = await timbrar(db, 10, { forma_pago: '03', confirmar: true }, ctx);
+  const r = await timbrar(db, 10, { metodo_pago: 'PUE', forma_pago: '03', confirmar: true }, ctx);
   assert.equal(r.estado, 'timbrada');
   const enviados = posts(sim, /^\/v4\/cfdi40\/create$/);
   assert.equal(enviados.length, 2); assert.equal(enviados[0].cuerpo.NumOrder, enviados[1].cuerpo.NumOrder);
@@ -231,7 +231,7 @@ test('Rechazada sin borrador: queda «pendiente» con el motivo; «Ya existe un 
   const db = base(); orden(db);
   const sim = simulado(respuestasBase({ 'POST /v4/cfdi40/create': () => ({ json: { response: 'error', message: 'Ya existe un CFDI con folio y serie [F-1]', uid: 'OTRA', uuid: 'OTRO' } }),
     'GET /v4/cfdi/order/*': () => ({ json: { status: 'error', message: 'No se encontró CFDI: x' } }) }));
-  const r = await timbrar(db, 10, { forma_pago: '03', confirmar: true }, contexto(db, sim));
+  const r = await timbrar(db, 10, { metodo_pago: 'PUE', forma_pago: '03', confirmar: true }, contexto(db, sim));
   assert.equal(r.estado, 'pendiente'); assert.match(r.mensaje, /Ya existe un CFDI/);
   assert.equal(factura(db).estatus, 'pendiente'); assert.equal(factura(db).uuid, null, 'no se adoptó el CFDI de otra orden');
   assert.equal(sim.llamadas.filter(l => l.ruta.startsWith('/v4/cfdi/order/')).length, 1, 'se revisó si era esta misma');
@@ -240,22 +240,22 @@ test('Rechazada sin borrador: queda «pendiente» con el motivo; «Ya existe un 
 test('El RFC ya existe en factura.com y este cliente no tiene UID: no se crea otro, se pide elegir', async () => {
   const db = base(); orden(db); db.exec('UPDATE clientes_fiscales SET uid_facturacom = NULL, uid_entorno = NULL');
   const sim = simulado(respuestasBase({ 'GET /v1/clients/rfc/EKU9003173C9': () => ({ json: { status: 'success', Data: [{ UID: 'YA-1', RazonSocial: 'ESCUELA KEMPER URGATE', CodigoPostal: '26015', RegimenId: '601' }] } }) }));
-  await assert.rejects(timbrar(db, 10, { forma_pago: '03', confirmar: true }, contexto(db, sim)), e => { assert.equal(e.candidatos[0].uid, 'YA-1'); assert.equal(e.cliente_fiscal_id, 1); return true; });
+  await assert.rejects(timbrar(db, 10, { metodo_pago: 'PUE', forma_pago: '03', confirmar: true }, contexto(db, sim)), e => { assert.equal(e.candidatos[0].uid, 'YA-1'); assert.equal(e.cliente_fiscal_id, 1); return true; });
   assert.equal(posts(sim, /clients\/create|cfdi40/).length, 0);
   assert.equal(factura(db).estatus, 'pendiente');
 });
 
 test('PUE con saldo pendiente: se pide confirmar; pagada completa, no', async () => {
   const db = base(); orden(db, { cobrado: 100000 }); const sim = simulado(respuestasBase({ 'POST /v4/cfdi40/create': EXITO() }));
-  await assert.rejects(timbrar(db, 10, { forma_pago: '03' }, contexto(db, sim)), e => { assert.match(e.confirmar[0], /día 17 del mes siguiente/); return true; });
+  await assert.rejects(timbrar(db, 10, { metodo_pago: 'PUE', forma_pago: '03' }, contexto(db, sim)), e => { assert.match(e.confirmar[0], /día 17 del mes siguiente/); return true; });
   assert.equal(sim.llamadas.length, 0);
   const db2 = base(); orden(db2, { cobrado: 216384 });
-  assert.deepEqual(preparar(db2, 10, { forma_pago: '03' }, { config: leerConfig(ENV.sandbox) }).confirmar, []);
+  assert.deepEqual(preparar(db2, 10, { metodo_pago: 'PUE', forma_pago: '03' }, { config: leerConfig(ENV.sandbox) }).confirmar, []);
 });
 
 test('Demo: la factura se simula, dice que no es CFDI y no se llama a factura.com', async () => {
   const db = base(); orden(db); const sim = simulado();
-  const r = await timbrar(db, 10, { forma_pago: '03', confirmar: true }, { ...contexto(db, sim), config: leerConfig({}), demo: true });
+  const r = await timbrar(db, 10, { metodo_pago: 'PUE', forma_pago: '03', confirmar: true }, { ...contexto(db, sim), config: leerConfig({}), demo: true });
   assert.equal(r.estado, 'timbrada'); const f = factura(db);
   assert.equal(f.entorno, 'demo'); assert.match(f.xml, /NO es un CFDI/); assert.equal(sim.llamadas.length, 0);
   assert.equal(db.prepare('SELECT factura_folio FROM leads WHERE id = 10').get().factura_folio, null);
@@ -264,7 +264,7 @@ test('Demo: la factura se simula, dice que no es CFDI y no se llama a factura.co
 test('Las llaves nunca quedan en la base', async () => {
   const db = base(); orden(db);
   const sim = simulado(respuestasBase({ 'POST /v4/cfdi40/create': () => ({ status: 401, json: { status: 'error', message: 'Llave ' + LLAVE + ' no válida', Data: SECRETA, Secret: SECRETA } }) }));
-  await timbrar(db, 10, { forma_pago: '03', confirmar: true }, contexto(db, sim));
+  await timbrar(db, 10, { metodo_pago: 'PUE', forma_pago: '03', confirmar: true }, contexto(db, sim));
   const todo = JSON.stringify(db.prepare('SELECT * FROM facturas').all()) + JSON.stringify(db.prepare('SELECT * FROM facturas_log').all());
   assert.ok(!todo.includes(LLAVE) && !todo.includes(SECRETA));
 });
@@ -287,9 +287,9 @@ test('Un 504 en HTML DESPUÉS de mandar no es «rechazada»: queda «timbrando»
   const sim = simulado(respuestasBase({ 'POST /v4/cfdi40/create': () => { timbrada = true; return { status: 504, tipo: 'text/html', texto: '<html><body>504 Gateway Time-out</body></html>' }; },
     'GET /v4/cfdi/order/*': () => (timbrada ? { json: { status: 'success', data: { UID: 'CFDI-UID-7', UUID: UUID1, Folio: 'F7', Status: 'enviada', NumOrder: factura(db).num_order } } } : { json: { status: 'error', message: 'No se encontró CFDI: x' } }) }));
   const ctx = contexto(db, sim);
-  let r = await timbrar(db, 10, { forma_pago: '03', confirmar: true }, ctx);
+  let r = await timbrar(db, 10, { metodo_pago: 'PUE', forma_pago: '03', confirmar: true }, ctx);
   assert.equal(r.estado, 'sin_respuesta'); assert.equal(factura(db).estatus, 'timbrando');
-  r = await timbrar(db, 10, { forma_pago: '03', confirmar: true }, ctx);
+  r = await timbrar(db, 10, { metodo_pago: 'PUE', forma_pago: '03', confirmar: true }, ctx);
   assert.equal(r.estado, 'timbrada'); assert.equal(factura(db).uuid, UUID1);
   assert.equal(posts(sim, /^\/v4\/cfdi40\/create$/).length, 1, 'el segundo intento encontró la que sí se timbró y no mandó otra');
 });
@@ -299,8 +299,8 @@ test('Un 5xx al timbrar un BORRADOR tampoco se toma como «sigue en borrador»: 
   const sim = simulado(respuestasBase({ 'POST /v4/cfdi40/create': () => ({ json: { response: 'error', message: 'Falla', draft: { uid: 'BORR-2', INV: { Serie: 'F', Folio: 9 } } } }),
     'POST /v4/cfdi40/create/BORR-2': () => ({ json: { response: 'success', uid: 'BORR-2' } }), 'POST /v4/cfdi40/BORR-2/timbrarborrador': () => ({ status: 502, tipo: 'text/html', texto: '<html>Bad gateway</html>' }) }));
   const ctx = contexto(db, sim);
-  await timbrar(db, 10, { forma_pago: '03', confirmar: true }, ctx);
-  const r = await timbrar(db, 10, { forma_pago: '03', confirmar: true }, ctx);
+  await timbrar(db, 10, { metodo_pago: 'PUE', forma_pago: '03', confirmar: true }, ctx);
+  const r = await timbrar(db, 10, { metodo_pago: 'PUE', forma_pago: '03', confirmar: true }, ctx);
   assert.equal(r.estado, 'sin_respuesta'); assert.equal(factura(db).estatus, 'timbrando');
 });
 
@@ -309,9 +309,9 @@ test('Al buscar por NumOrder, solo «No se encontró CFDI» en JSON prueba que n
     const db = base(); orden(db);
     const sim = simulado(respuestasBase({ 'POST /v4/cfdi40/create': () => ({ abortar: true }), 'GET /v4/cfdi/order/*': respuesta }));
     const ctx = contexto(db, sim);
-    await timbrar(db, 10, { forma_pago: '03', confirmar: true }, ctx);
+    await timbrar(db, 10, { metodo_pago: 'PUE', forma_pago: '03', confirmar: true }, ctx);
     db.exec("UPDATE facturas SET updated_at = datetime('now','localtime','-5 minutes')");
-    await assert.rejects(timbrar(db, 10, { forma_pago: '03', confirmar: true }, ctx));
+    await assert.rejects(timbrar(db, 10, { metodo_pago: 'PUE', forma_pago: '03', confirmar: true }, ctx));
     assert.equal(factura(db).estatus, 'timbrando'); assert.equal(posts(sim, /^\/v4\/cfdi40\/create$/).length, 1);
   }
 });
@@ -320,7 +320,7 @@ test('«Verificar» usa la misma puerta: si es reciente pide esperar; pasado el 
   const db = base(); orden(db);
   const sim = simulado(respuestasBase({ 'POST /v4/cfdi40/create': () => ({ abortar: true }), 'GET /v4/cfdi/order/*': () => ({ json: { status: 'error', message: 'No se encontró CFDI: x' } }) }));
   const ctx = contexto(db, sim);
-  await timbrar(db, 10, { forma_pago: '03', confirmar: true }, ctx);
+  await timbrar(db, 10, { metodo_pago: 'PUE', forma_pago: '03', confirmar: true }, ctx);
   await assert.rejects(T.resolverSinRespuesta(db, ctx.crearCliente(), factura(db), ctx), /Espera un minuto/);
   assert.equal(factura(db).estatus, 'timbrando');
   db.exec("UPDATE facturas SET updated_at = datetime('now','localtime','-2 minutes')");
@@ -333,19 +333,19 @@ test('Encontrada «en proceso de cancelación» queda como cancelación solicita
   const sim = simulado(respuestasBase({ 'POST /v4/cfdi40/create': () => ({ abortar: true }),
     'GET /v4/cfdi/order/*': () => ({ json: { status: 'success', data: { UID: 'U1', UUID: UUID1, Folio: 'F7', Status: 'En proceso de cancelación', NumOrder: factura(db).num_order } } }) }));
   const ctx = contexto(db, sim);
-  await timbrar(db, 10, { forma_pago: '03', confirmar: true }, ctx);
-  const r = await timbrar(db, 10, { forma_pago: '03', confirmar: true }, ctx).catch(e => e);
+  await timbrar(db, 10, { metodo_pago: 'PUE', forma_pago: '03', confirmar: true }, ctx);
+  const r = await timbrar(db, 10, { metodo_pago: 'PUE', forma_pago: '03', confirmar: true }, ctx).catch(e => e);
   assert.equal(factura(db).estatus, 'cancelacion_solicitada'); assert.equal(factura(db).cancelada_at, null);
 });
 
 test('La bitácora técnica no guarda el RFC; un cobro «por confirmar» no quita el aviso de PUE', async () => {
   const db = base(); orden(db);
   const sim = simulado(respuestasBase({ 'POST /v4/cfdi40/create': () => ({ json: { response: 'error', message: 'El RFC EKU9003173C9 del receptor no está en la lista' } }) }));
-  await timbrar(db, 10, { forma_pago: '03', confirmar: true }, contexto(db, sim));
+  await timbrar(db, 10, { metodo_pago: 'PUE', forma_pago: '03', confirmar: true }, contexto(db, sim));
   assert.ok(!JSON.stringify(db.prepare('SELECT mensaje FROM facturas_log').all()).includes('EKU9003173C9'));
   const db2 = base(); orden(db2); db2.prepare('INSERT INTO cobros (lead_id, monto_cent, confirmado) VALUES (10, 216384, 0)').run();
-  const p = preparar(db2, 10, { forma_pago: '03' }, { config: leerConfig(ENV.sandbox) });
+  const p = preparar(db2, 10, { metodo_pago: 'PUE', forma_pago: '03' }, { config: leerConfig(ENV.sandbox) });
   assert.match(p.confirmar.join(), /por confirmar/);
   db2.exec('UPDATE cobros SET confirmado = 1, monto_cent = 216383');
-  assert.deepEqual(preparar(db2, 10, { forma_pago: '03' }, { config: leerConfig(ENV.sandbox) }).confirmar, [], 'un centavo de diferencia no cuenta como saldo');
+  assert.deepEqual(preparar(db2, 10, { metodo_pago: 'PUE', forma_pago: '03' }, { config: leerConfig(ENV.sandbox) }).confirmar, [], 'un centavo de diferencia no cuenta como saldo');
 });

@@ -165,6 +165,7 @@ Dirección la revisa y la aprueba. Si un cambio altera lo que ve un rol, la prue
 | Reenviar una factura por correo | ✔ | ✔ | — | — | — | — | — | — |
 | Descartar un borrador de factura atorado | ✔ | — | — | — | — | — | — | — |
 | Cancelar una factura timbrada (CFDI) | ✔ | ✔ | — | — | — | — | — | — |
+| Timbrar el complemento de pago de un cobro (factura PPD) | ✔ | ✔ | — | — | — | — | — | — |
 | Cambiar a mano el folio o el total de una orden que ya tiene factura real timbrada | — | — | — | — | — | — | — | — |
 | Capturar los resultados (alcance, me gusta…) de una publicación ya publicada | ✔ | — | — | — | — | — | ✔ | ✔ |
 
@@ -238,6 +239,7 @@ Dirección la revisa y la aprueba. Si un cambio altera lo que ve un rol, la prue
 - **2026-10-28** · Ver la lista de facturas (pantalla «Facturas» y el aviso de Inicio), bajar su XML y PDF y reenviarlas por correo: Dirección, el Gerente y quien tenga «Timbrar facturas»; los demás roles no.
 - **2026-10-28** · Descartar un borrador de factura que quedó atorado: solo Dirección (ni el Gerente ni quien factura).
 - **2026-10-29** · Cancelar una factura timbrada (motivos 01 a 03, y pedir su estatus y acuse): Dirección, el Gerente y quien tenga «Timbrar facturas» (quien factura); los demás roles no.
+- **2026-11-03** · Timbrar el complemento de pago de un cobro de una factura a crédito (PPD), y cancelarlo: Dirección, el Gerente y quien tenga «Timbrar facturas» (quien factura); los demás roles no. Nada se timbra solo: alguien con permiso lo revisa y lo pulsa.
 - **2026-10-28** · Una orden con factura real ya timbrada: su folio, fecha, total y método de pago salen de la factura y nadie los cambia a mano (ni Dirección); los días de crédito sí.
 - **2026-10-27** · Banco de ideas: las proponen, votan y comentan Marketing, Gerente de marketing y Dirección; las aprueban o descartan solo Dirección y el Gerente de marketing. Los demás roles no ven las ideas.
 - **2026-10-27** · Biblioteca de marketing (logos, fotos, plantillas): la ven y usan Marketing, Gerente de marketing y Dirección; los demás roles no.

@@ -519,6 +519,11 @@ module.exports = function finanzas(app, db, h, unicos) {
     const c = db.prepare('SELECT * FROM cobros WHERE id = ?').get(req.params.id);
     if (!c) return res.status(404).json({ error: 'Pago no encontrado' });
     if (c.cancelado) return res.status(400).json({ error: 'Ese pago ya estaba cancelado' });
+    // F6 (2026-11-03): un pago amparado por un complemento de pago (CFDI) no se cancela aquí: primero se cancela (o se resuelve) el complemento.
+    const comp = require('./facturacion-complementos').complementoQueBloquea(db, c.id);
+    if (comp) return res.status(409).json({ error: comp.estatus === 'timbrando' ? 'El complemento de pago de este cobro se quedó sin respuesta de factura.com: primero se verifica en la orden'
+      : comp.estatus === 'borrador_error' ? `Este cobro tiene un borrador de complemento de pago: primero Dirección lo descarta en la orden`
+      : `Este cobro tiene su complemento de pago ${comp.serie || ''}-${comp.folio || ''}${comp.estatus === 'cancelacion_solicitada' ? ' (en proceso de cancelación)' : ''}: primero se cancela el complemento (motivo 02) y después el cobro` });
     db.transaction(() => {
       db.prepare("UPDATE main.cobros SET cancelado = 1, cancelado_por = ?, cancelado_at = datetime('now','localtime'), motivo_cancelacion = ? WHERE id = ?").run(req.usuarioSesion.id, motivo, c.id);
       bitacora(c.lead_id, `Pago de ${fmt(c.monto_cent)} (${c.fecha}) CANCELADO. Motivo: ${motivo}`, req, 'cxc');

@@ -20,7 +20,9 @@
    · (9) FechaFromAPI no se manda: factura.com pone la fecha y hora del timbrado (así no hay riesgo de mandar una hora «futura» desde un servidor en UTC).
    · (12) XML en la base y PDF en el disco (archivos/facturas/<entorno>/), detectando si llega como archivo.
    · Solo una factura de PRODUCCIÓN toca la orden (folio, fecha y total del CFDI en la cobranza). Las de sandbox y demo viven aparte.
-   · PUE solamente (la factura a crédito, PPD con complemento de pago, es la F6). Público en general y extranjeros (RFC genéricos) tampoco: F6. */
+   · F6 (2026-11-03): PUE o PPD lo elige quien timbra (se sugiere PPD si el cliente debe algo o la orden tiene días de crédito). PPD lleva la forma de
+     pago 99 «Por definir»; cada pago se ampara después con su complemento de pago (facturacion-complementos.js). Público en general y extranjeros (RFC
+     genéricos) no se facturan: las órdenes «sin factura» van sin IVA (decisión del usuario, 2026-11-03). */
 const crypto = require('crypto'), fs = require('fs'), path = require('path');
 const { ErrorFactura } = require('./facturacom');
 const { validarDatosFiscales, calcularTotales, pesosAMicros, centavosAMicros, microsATexto } = require('./facturacion-validaciones');
@@ -185,11 +187,25 @@ function preparar(db, leadId, op = {}, { config, demo = false } = {}) {
   }
   if (!cat.regimenes || !cat.usos || !cat.formasPago.length) errores.push('Faltan los catálogos del SAT: Dirección los actualiza en Ajustes → Facturación');
 
-  // Forma de pago (PUE: la forma real en que pagó o pagará; «99 Por definir» es solo para PPD)
-  const formas = cat.formasPago.filter(f => f.clave !== '99');
-  const forma = texto(op.forma_pago);
-  if (!forma) errores.push('Elige la forma de pago');
-  else if (forma === '99') errores.push('«Por definir» (99) solo se usa en facturas a crédito (PPD), que todavía no están disponibles: elige la forma real de pago');
+  // Lo cobrado. Solo cuentan los cobros CONFIRMADOS (uno «por confirmar», p. ej. el que anota el técnico en campo, todavía no está verificado). Un
+  // centavo de diferencia (redondeo del IVA por renglón) no cuenta como saldo.
+  const cob = db.prepare('SELECT COALESCE(SUM(CASE WHEN confirmado = 1 THEN monto_cent END), 0) confirmado, COALESCE(SUM(CASE WHEN confirmado = 0 THEN monto_cent END), 0) porConfirmar FROM main.cobros WHERE lead_id = ? AND cancelado = 0').get(lead.id);
+  const cobrado = cob.confirmado;
+  const debe = totales ? cobrado + 1 < totales.total_cent : false;
+
+  // Método de pago (F6): lo elige quien timbra. Se sugiere PPD (a crédito) si el cliente todavía debe algo
+  // (pagada completa: PUE aunque la orden tenga días de crédito; sin importes todavía, cuentan los días de crédito).
+  const sugerido = debe || (!totales && Number(lead.dias_credito) > 0) ? 'PPD' : 'PUE';
+  const metodo = op.metodo_pago ? texto(op.metodo_pago).toUpperCase() : sugerido;
+  if (!['PUE', 'PPD'].includes(metodo)) errores.push('El método de pago es PUE (una sola exhibición) o PPD (a crédito o en parcialidades)');
+  if (metodo === 'PPD' && totales && !debe) errores.push('El cliente ya pagó todo: la factura va PUE (pago en una sola exhibición), no PPD');
+
+  // Forma de pago. PUE: la forma real en que pagó o pagará. PPD: siempre «99 Por definir» (la forma real va en cada complemento de pago).
+  const formas = cat.formasPago.filter(f => (metodo === 'PPD' ? f.clave === '99' : f.clave !== '99'));
+  const forma = metodo === 'PPD' ? '99' : texto(op.forma_pago);
+  if (metodo === 'PPD') { if (cat.formasPago.length && !formas.length) errores.push('Falta la forma de pago 99 «Por definir» en el catálogo del SAT: Dirección lo actualiza en Ajustes → Facturación'); }
+  else if (!forma) errores.push('Elige la forma de pago');
+  else if (forma === '99') errores.push('«Por definir» (99) solo se usa en facturas a crédito (PPD): elige la forma real de pago, o cambia el método a PPD');
   else if (cat.formasPago.length && !cat.formasPago.some(f => f.clave === forma)) errores.push(`La forma de pago ${forma} no está en el catálogo del SAT`);
 
   // Emisor, serie y lugar de expedición
@@ -202,12 +218,15 @@ function preparar(db, leadId, op = {}, { config, demo = false } = {}) {
   if (!lugar && !demo) errores.push('Falta el código postal de expedición (de la sucursal o del emisor)');
 
   // PUE con saldo: el SAT espera el pago completo a más tardar el día 17 del mes siguiente; si no, se cancela y se sustituye por una PPD.
-  // Solo cuentan los cobros CONFIRMADOS (uno «por confirmar», p. ej. el que anota el técnico en campo, todavía no está verificado). Un centavo de
-  // diferencia (redondeo del IVA por renglón) no cuenta como saldo.
-  const cob = db.prepare('SELECT COALESCE(SUM(CASE WHEN confirmado = 1 THEN monto_cent END), 0) confirmado, COALESCE(SUM(CASE WHEN confirmado = 0 THEN monto_cent END), 0) porConfirmar FROM main.cobros WHERE lead_id = ? AND cancelado = 0').get(lead.id);
-  const cobrado = cob.confirmado;
-  if (totales && cobrado + 1 < totales.total_cent) {
-    confirmar.push(`El cliente todavía debe ${fmt(totales.total_cent - cobrado)}${cob.porConfirmar ? ` (sin contar ${fmt(cob.porConfirmar)} de pagos por confirmar)` : ''}. Esta factura es PUE (pago en una sola exhibición): úsala solo si el cliente paga el total a más tardar el día 17 del mes siguiente. Si pagará después o en partes, lo correcto es una factura a crédito (PPD), que todavía no está disponible.`);
+  if (metodo === 'PUE' && debe) {
+    confirmar.push(`El cliente todavía debe ${fmt(totales.total_cent - cobrado)}${cob.porConfirmar ? ` (sin contar ${fmt(cob.porConfirmar)} de pagos por confirmar)` : ''}. Esta factura es PUE (pago en una sola exhibición): úsala solo si el cliente paga el total a más tardar el día 17 del mes siguiente. Si pagará después o en partes, elige PPD (a crédito).`);
+  }
+  // PPD con pagos de antes de la factura: cada pago de una factura PPD (también esos) necesita su complemento de pago.
+  if (metodo === 'PPD' && debe && cobrado > 0) {
+    confirmar.push(`Ya hay ${fmt(cobrado)} cobrados antes de esta factura. Con PPD, cada pago (también esos) necesita su complemento de pago: quedarán en «Complementos pendientes». Si fue un anticipo, confírmalo antes con tu contador.`);
+  }
+  if (metodo === 'PPD' && !demo && !db.prepare("SELECT 1 FROM series_factura WHERE sucursal_id = ? AND tipo_documento = 'pago' AND activo = 1 AND serie_uid IS NOT NULL").get(lead.sucursal_id)) {
+    avisos.push(`La sucursal ${suc?.nombre || ''} no tiene serie de pagos: Dirección la asigna en Ajustes → Facturación antes del primer complemento de pago`.replace('  ', ' '));
   }
   const enviarCorreo = entorno === 'prod' ? op.enviar_correo !== false : false; // regla 7: en sandbox nunca se manda correo
 
@@ -215,7 +234,7 @@ function preparar(db, leadId, op = {}, { config, demo = false } = {}) {
     entorno, prueba: entorno !== 'prod',
     orden: { id: lead.id, folio: require('./sucursales').folio('OS', 'leads', lead.id, lead.created_at), sucursal: suc?.nombre || '' },
     receptor: fiscal ? { id: fiscal.id, rfc: fiscal.rfc, razon_social: fiscal.razon_social, cp: fiscal.cp, regimen: fiscal.regimen, correo: fiscal.correo } : null,
-    uso_cfdi: uso, forma_pago: forma, metodo_pago: 'PUE', moneda: 'MXN', serie: serie?.serie || null, lugar_expedicion: lugar || null,
+    uso_cfdi: uso, forma_pago: forma, metodo_pago: metodo, metodo_sugerido: sugerido, moneda: 'MXN', serie: serie?.serie || null, lugar_expedicion: lugar || null,
     enviar_correo: enviarCorreo, tasa,
     conceptos: conc.conceptos.map((c, i) => ({ descripcion: c.descripcion, servicio: c.servicio, clave_prod_serv: c.clave_prod_serv, clave_unidad: c.clave_unidad, unidad: c.unidad,
       cantidad: microsATexto(c.cantidad_micros), valor_unitario: microsATexto(c.unitario_micros), importe: microsATexto(c.base_micros), iva: totales ? microsATexto(totales.conceptos[i].iva_micros) : null })),
@@ -225,7 +244,7 @@ function preparar(db, leadId, op = {}, { config, demo = false } = {}) {
   const cuerpo = totales ? {
     TipoDocumento: 'factura', RegimenFiscal: Number(config.emisor.regimen) || undefined,
     Conceptos: conc.conceptos.map((c, i) => conceptoApi(c, totales.conceptos[i].iva_micros, tasa)),
-    UsoCFDI: uso, Serie: Number(serie?.serie_uid) || undefined, FormaPago: forma, MetodoPago: 'PUE', Moneda: 'MXN',
+    UsoCFDI: uso, Serie: Number(serie?.serie_uid) || undefined, FormaPago: forma, MetodoPago: metodo, Moneda: 'MXN',
     LugarExpedicion: lugar || undefined, EnviarCorreo: enviarCorreo, BorradorSiFalla: '1',
     Comentarios: `Orden de servicio ${resumen.orden.folio}${original ? ` · Sustituye a la factura ${original.serie || ''}-${original.folio || ''}` : ''}`,
     ...(original && relacion ? { CfdiRelacionados: { TipoRelacion: relacion, UUID: [String(original.uuid).toUpperCase()] } } : {}),
@@ -254,7 +273,7 @@ function reservar(db, p, op, usuarioId) {
     if (ya && ['timbrada', 'cancelacion_solicitada'].includes(ya.estatus)) throw new ErrorFactura('config', 'Esa factura ya tiene su sustituta timbrada');
     if (ya?.estatus === 'timbrando') return ya; // primero se averigua qué pasó con el intento anterior
     const foto = { cliente_fiscal_id: p.fiscal.id, receptor_rfc: p.fiscal.rfc, receptor_razon_social: p.fiscal.razon_social, receptor_cp: p.fiscal.cp, receptor_regimen: p.fiscal.regimen,
-      uso_cfdi: p.uso, receptor_correo: p.fiscal.correo, metodo_pago: 'PUE', forma_pago: p.resumen.forma_pago, moneda: 'MXN',
+      uso_cfdi: p.uso, receptor_correo: p.fiscal.correo, metodo_pago: p.resumen.metodo_pago, forma_pago: p.resumen.forma_pago, moneda: 'MXN',
       subtotal_cent: p.totales.subtotal_cent, iva_cent: p.totales.iva_cent, total_cent: p.totales.total_cent, conceptos_json: JSON.stringify(p.cuerpo.Conceptos),
       enviar_correo: p.resumen.enviar_correo ? 1 : 0, serie: p.serie.serie };
     if (ya) { actualizar(db, ya.id, foto); return leer(db, ya.id); }
@@ -291,7 +310,7 @@ async function descargarArchivos(db, cliente, f, { dirArchivos, usuarioId, soloX
     db.transaction(() => {
       actualizar(db, f.id, campos); log(db, f, 'descargar_xml', 'ok', null, usuarioId);
       // La cobranza (solo producción) lleva el total del XML, que es la verdad fiscal.
-      if (t && f.entorno === 'prod' && f.lead_id && f.estatus === 'timbrada') db.prepare('UPDATE main.leads SET factura_total_cent = ? WHERE id = ? AND factura_folio = ?').run(t.total_cent, f.lead_id, `${f.serie}-${f.folio}`);
+      if (t && f.entorno === 'prod' && f.lead_id && f.estatus === 'timbrada' && f.tipo_documento !== 'pago') db.prepare('UPDATE main.leads SET factura_total_cent = ? WHERE id = ? AND factura_folio = ?').run(t.total_cent, f.lead_id, `${f.serie}-${f.folio}`);
     })();
   } catch (e) { avisos.push('No se pudo bajar el XML: ' + e.message); log(db, f, 'descargar_xml', 'error', e.message, usuarioId, e.httpStatus); }
   if (dirArchivos && !soloXml && !f.pdf_path) {
@@ -307,15 +326,22 @@ async function descargarArchivos(db, cliente, f, { dirArchivos, usuarioId, soloX
   return avisos;
 }
 
-/** Solo en PRODUCCIÓN: la factura queda en la cobranza de la orden (folio, fecha, total del CFDI y PUE) y en su bitácora. */
+/** Solo en PRODUCCIÓN: la factura queda en la cobranza de la orden (folio, fecha, total del CFDI y método de pago) y en su bitácora. Un complemento de
+ *  pago no toca la cobranza: solo deja su línea en la bitácora. */
 function anotarEnOrden(db, f, usuario) {
   if (f.entorno !== 'prod' || !f.lead_id) return;
+  if (f.tipo_documento === 'pago') {
+    const pago = db.prepare('SELECT k.monto_cent, k.fecha FROM main.factura_cobros fc JOIN main.cobros k ON k.id = fc.cobro_id WHERE fc.complemento_id = ?').get(f.id);
+    db.prepare("INSERT INTO main.historial (lead_id, tipo, texto, usuario, origen, area, usuario_id) VALUES (?, 'observacion', ?, ?, 'sistema', 'cxc', ?)")
+      .run(f.lead_id, `Complemento de pago ${f.serie}-${f.folio} timbrado${pago ? ` (pago de ${fmt(pago.monto_cent)} del ${pago.fecha})` : ''}.`, usuario?.nombre || 'Sistema', usuario?.id ?? null);
+    return;
+  }
   const lead = db.prepare('SELECT id, factura_folio FROM main.leads WHERE id = ?').get(f.lead_id);
   const original = f.sustituye_a ? db.prepare('SELECT serie, folio FROM main.facturas WHERE id = ?').get(f.sustituye_a) : null;
   const propios = [`${f.serie}-${f.folio}`, original ? `${original.serie}-${original.folio}` : null];
   if (!lead || (lead.factura_folio && !propios.includes(lead.factura_folio))) return; // nunca se pisa una factura capturada a mano
   const fecha = String(f.fecha_timbrado || '').slice(0, 10) || null;
-  db.prepare("UPDATE main.leads SET factura_folio = ?, factura_fecha = ?, factura_total_cent = ?, factura_metodo = 'PUE' WHERE id = ?").run(`${f.serie}-${f.folio}`, fecha, f.total_cent, lead.id);
+  db.prepare('UPDATE main.leads SET factura_folio = ?, factura_fecha = ?, factura_total_cent = ?, factura_metodo = ? WHERE id = ?').run(`${f.serie}-${f.folio}`, fecha, f.total_cent, f.metodo_pago || 'PUE', lead.id);
   // La bitácora de la orden la ve quien ve su cobranza: solo el folio (que ya ve en «Crédito y factura»), nunca el UUID ni el receptor.
   db.prepare("INSERT INTO main.historial (lead_id, tipo, texto, usuario, origen, area, usuario_id) VALUES (?, 'observacion', ?, ?, 'sistema', 'cxc', ?)")
     .run(lead.id, `Factura ${f.serie}-${f.folio} timbrada (CFDI, ${fmt(f.total_cent)})${original ? `, sustituye a la ${original.serie}-${original.folio}` : ''}.`, usuario?.nombre || 'Sistema', usuario?.id ?? null);
@@ -429,9 +455,18 @@ async function timbrar(db, leadId, op, ctx) {
     actualizar(db, f.id, { error_json: errorTexto(e) });
     throw e;
   }
-  const cuerpo = { Receptor: { UID: sinc.uid }, ...p.cuerpo, NumOrder: f.num_order };
-  // 3) Se marca «timbrando» ANTES de mandar: si el proceso se cae o no hay respuesta, el siguiente intento verifica primero.
-  actualizar(db, f.id, { estatus: 'timbrando', error_json: null });
+  return enviarCfdi(db, cliente, f, { Receptor: { UID: sinc.uid }, ...p.cuerpo, NumOrder: f.num_order }, ctx);
+}
+
+/**
+ * Manda a factura.com un CFDI ya reservado (factura o complemento de pago) y deja la fila como quedó: timbrada, borrador_error, pendiente (rechazada) o
+ * timbrando (sin respuesta clara). Si la fila ya tiene borrador, lo corrige y lo timbra (conserva su folio). Nunca reenvía a ciegas.
+ */
+async function enviarCfdi(db, cliente, f, cuerpo, ctx) {
+  // 3) Se marca «timbrando» ANTES de mandar: si el proceso se cae o no hay respuesta, el siguiente intento verifica primero. Solo si sigue como se
+  //    leyó (pendiente o borrador): si otro proceso ya la tomó, no se manda dos veces.
+  const tomada = db.prepare("UPDATE main.facturas SET estatus = 'timbrando', error_json = NULL, updated_at = datetime('now','localtime') WHERE id = ? AND estatus IN ('pendiente', 'borrador_error')").run(f.id);
+  if (!tomada.changes) throw new ErrorFactura('config', 'Este CFDI ya se está mandando a factura.com: espera un minuto y vuelve a abrir la orden');
   log(db, f, 'timbrar', 'ok', 'Enviada a factura.com' + (f.cfdi_uid ? ' (borrador ' + f.cfdi_uid + ')' : ''), ctx.usuario?.id);
   try {
     let r;
@@ -474,11 +509,11 @@ async function timbrar(db, leadId, op, ctx) {
 /** Lo que ve la pantalla de una factura (sin el XML). */
 function vistaFactura(f) {
   let error = null; try { error = f.error_json ? JSON.parse(f.error_json).mensaje : null; } catch { /* */ }
-  return { id: f.id, lead_id: f.lead_id, entorno: f.entorno, estatus: f.estatus, serie: f.serie, folio: f.folio, uuid: f.uuid, fecha_timbrado: f.fecha_timbrado,
+  return { id: f.id, lead_id: f.lead_id, tipo_documento: f.tipo_documento || 'factura', entorno: f.entorno, estatus: f.estatus, serie: f.serie, folio: f.folio, uuid: f.uuid, fecha_timbrado: f.fecha_timbrado,
     receptor_rfc: f.receptor_rfc, receptor_razon_social: f.receptor_razon_social, uso_cfdi: f.uso_cfdi, metodo_pago: f.metodo_pago, forma_pago: f.forma_pago,
     subtotal: f.subtotal_cent / 100, iva: f.iva_cent / 100, total: f.total_cent / 100, tiene_xml: !!f.xml, tiene_pdf: !!f.pdf_path, borrador: f.estatus === 'borrador_error' && !!f.cfdi_uid, descartada: f.estatus === 'cancelada' && !f.uuid,
     sustituye_a: f.sustituye_a ?? null, motivo_cancelacion: f.motivo_cancelacion ?? null, cancelacion_estado: f.cancelacion_estado ?? null, tiene_acuse: !!f.acuse,
     error, created_at: f.created_at, updated_at: f.updated_at };
 }
 
-module.exports = { horaMexico, log, actualizar, leer, errorTexto, preparar, timbrar, verificar, resolverSinRespuesta, descargarArchivos, vistaFactura, conceptosDeOrden, totalesDelXml, instancia, UUID_SAT };
+module.exports = { horaMexico, log, actualizar, leer, errorTexto, preparar, timbrar, enviarCfdi, simular, quedoTimbrada, verificar, resolverSinRespuesta, descargarArchivos, vistaFactura, conceptosDeOrden, totalesDelXml, instancia, UUID_SAT };

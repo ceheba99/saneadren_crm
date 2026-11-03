@@ -470,10 +470,12 @@ module.exports = function demo(app, db, { sesiones, PORT, SESSION_TTL_MS }) {
 
     // ===== 10. Facturación: configuración de ejemplo (el demo NUNCA se conecta con factura.com) =====
     // CP de expedición y series de cada sucursal, para que la pantalla de Ajustes → Facturación muestre algo. Son datos de ejemplo.
-    for (const [clave, cp, serie, uid] of [['QRO', '76000', 'F', '900001'], ['CDMX', '06000', 'FM', '900002']]) {
+    // F6 (2026-11-03): también la serie de complementos de pago, para que en el demo se pueda simular el complemento de una factura PPD.
+    for (const [clave, cp, serie, uid, pago, uidPago] of [['QRO', '76000', 'F', '900001', 'P', '900011'], ['CDMX', '06000', 'FM', '900002', 'PM', '900012']]) {
       const s = db.prepare('SELECT id FROM sucursales WHERE clave = ?').get(clave); if (!s) continue;
       db.prepare('UPDATE sucursales SET cp_expedicion = ? WHERE id = ?').run(cp, s.id);
       db.prepare("INSERT INTO series_factura (sucursal_id, tipo_documento, serie, serie_uid) VALUES (?, 'factura', ?, ?) ON CONFLICT(sucursal_id, tipo_documento) DO NOTHING").run(s.id, serie, uid);
+      db.prepare("INSERT INTO series_factura (sucursal_id, tipo_documento, serie, serie_uid) VALUES (?, 'pago', ?, ?) ON CONFLICT(sucursal_id, tipo_documento) DO NOTHING").run(s.id, pago, uidPago);
     }
 
     // Catálogo del SAT de ejemplo (en el sistema real lo baja factura.com) y claves de los servicios, menos el último para que se vea el aviso de «sin clave».
