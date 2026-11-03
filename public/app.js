@@ -1469,7 +1469,8 @@ function prepararEditorCotizacion(lead,modo){
   // El aviso de "cambios sin guardar" va dentro de la barra, junto a los botones.
   const grupoFicha=document.getElementById('btn-guardar-ficha').closest('.btn-group');
   const estadoNuevo=document.getElementById('estado-guardado-nuevo'),estadoFicha=document.getElementById('estado-guardado-registro');
-  if(modo==='nuevo'){document.getElementById('btn-guardar-servicio-nuevo').before(barra);grupoFicha.prepend(estadoFicha);barra.prepend(estadoNuevo);}
+  // Si venían de una ficha en solo lectura (p. ej. Duplicar desde la orden), en la ventana nueva se capturan: se liberan.
+  if(modo==='nuevo'){document.getElementById('btn-guardar-servicio-nuevo').before(barra);grupoFicha.prepend(estadoFicha);barra.prepend(estadoNuevo);SoloLectura.liberar(editor);SoloLectura.liberar(barra);}
   else{grupoFicha.before(barra);document.getElementById('btn-guardar-servicio-nuevo').before(estadoNuevo);barra.prepend(estadoFicha);}
   document.getElementById('btn-barra-guardar').textContent=modo==='nuevo'?'Guardar':'Guardar cambios';
   ['sn-servicio','sn-valor','ed-servicio','ed-valor','ed-canal'].forEach(id=>document.getElementById(id).parentElement.hidden=true);

@@ -5,6 +5,8 @@
 //  · En la zona bloqueada los campos quedan deshabilitados y los botones de cambiar se esconden; lo que no es editar
 //    (abrir o cerrar secciones) sigue funcionando. El candado real está en el servidor.
 //  · SoloLectura.poner(zona, puede, textos) al abrir la ficha; SoloLectura.bloquear(zona) después de guardar.
+//  · SoloLectura.liberar(el) cuando una parte de la ficha se lleva a otra ventana (p. ej. el editor de partidas y la
+//    barra «Guardar» al duplicar una orden): ahí es un registro nuevo y debe poder capturarse.
 const SoloLectura = (() => {
   const BARRA = 'solo-lectura-barra';
   const respetar = el => el.matches('[data-plegable-cabecera], [data-plegable-cabecera] *, .plegable-boton, [data-sl-libre], .' + BARRA + ' *');
@@ -62,10 +64,20 @@ const SoloLectura = (() => {
     fijar(zona, false); zona._slObs?.disconnect(); zona._soloLectura = null;
     zona.querySelector('.' + BARRA)?.remove();
   }
+  // Lo que salió de la zona bloqueada vuelve a quedar como estaba antes del candado.
+  function liberar(el) {
+    el = typeof el === 'string' ? document.querySelector(el) : el;
+    if (!el) return;
+    for (const x of [el, ...el.querySelectorAll('input, select, textarea, button')]) {
+      if (x.dataset?.slAntes === undefined) continue;
+      if (x.tagName === 'BUTTON') x.hidden = x.dataset.slAntes === '1'; else x.disabled = x.dataset.slAntes === '1';
+      delete x.dataset.slAntes;
+    }
+  }
   // Después de guardar: vuelve a solo lectura (con su botón «Editar»).
   function bloquear(zona) {
     zona = typeof zona === 'string' ? document.querySelector(zona) : zona;
     if (zona?._soloLectura) poner(zona, ...zona._soloLectura);
   }
-  return { poner, bloquear, quitar };
+  return { poner, bloquear, quitar, liberar };
 })();
