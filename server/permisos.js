@@ -83,12 +83,15 @@ const ALCANCE_INICIAL = {
 };
 // Permisos virtuales de las áreas: «X.ver» (ve algo), «X.sucursal» (toda su sucursal), «X.empresa» (todas las
 // sucursales) y «X.editar». Además «ventas.ver» y «compras.ver»: ve alguna pantalla de ese grupo (menú e Inicio).
-const VIRTUALES = [...AREAS.flatMap(a => [a.clave + '.ver', a.clave + '.sucursal', a.clave + '.empresa', ...(a.editable ? [a.clave + '.editar'] : [])]), 'ventas.ver', 'compras.ver'];
+// «cotizaciones_ordenes.ver»: ve cotizaciones u órdenes (pantalla «Cotizaciones» y avisos de Inicio); «calendario.ver»:
+// además, o solo, la cobranza (2026-11-03: ver contactos ya no basta para esas pantallas).
+const VIRTUALES = [...AREAS.flatMap(a => [a.clave + '.ver', a.clave + '.sucursal', a.clave + '.empresa', ...(a.editable ? [a.clave + '.editar'] : [])]), 'ventas.ver', 'compras.ver', 'cotizaciones_ordenes.ver', 'calendario.ver'];
 const GRUPO_VENTAS = ['contactos', 'prospeccion', 'generador', 'cotizaciones', 'ordenes'], GRUPO_COMPRAS = ['solicitudes', 'ordenes_compra'];
 const virtualesDe = (niv, edita = {}) => [
   ...AREAS.flatMap(a => [...(niv[a.clave] >= 1 ? [a.clave + '.ver'] : []), ...(niv[a.clave] >= 2 ? [a.clave + '.sucursal'] : []), ...(niv[a.clave] >= 3 ? [a.clave + '.empresa'] : []),
     ...(a.editable && edita[a.clave] && niv[a.clave] >= 1 ? [a.clave + '.editar'] : [])]),
   ...(GRUPO_VENTAS.some(a => niv[a] >= 1) ? ['ventas.ver'] : []), ...(GRUPO_COMPRAS.some(a => niv[a] >= 1) ? ['compras.ver'] : []),
+  ...(['cotizaciones', 'ordenes'].some(a => niv[a] >= 1) ? ['cotizaciones_ordenes.ver'] : []), ...(['cotizaciones', 'ordenes', 'cxc'].some(a => niv[a] >= 1) ? ['calendario.ver'] : []),
 ];
 const CLAVES = new Set([...CATALOGO.map(p => p.clave), ...VIRTUALES]);
 const REALES = new Set(CATALOGO.map(p => p.clave));
@@ -121,6 +124,8 @@ const nombreDe = c => {
   const [area, tipo] = c.split('.'), a = AREAS.find(x => x.clave === area);
   if (c === 'ventas.ver') return 'ver alguna pantalla de ventas';
   if (c === 'compras.ver') return 'ver solicitudes u órdenes de compra';
+  if (c === 'cotizaciones_ordenes.ver') return 'ver cotizaciones u órdenes';
+  if (c === 'calendario.ver') return 'ver cotizaciones, órdenes o la cobranza';
   return a ? `${a.nombre}: ${{ sucursal: 'ver toda su sucursal', empresa: 'ver toda la empresa', editar: 'editar' }[tipo] || 'ver al menos lo suyo'}` : c;
 };
 // Combinaciones sin sentido en un conjunto de permisos: [[permiso, el que le falta], …]

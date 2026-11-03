@@ -547,7 +547,7 @@ app.get('/api/leads/buscar-telefono/:telefono', h((req, res) => {
 
 // ---------- Listado / tablero ----------
 app.get('/api/leads', h((req, res) => {
-  const { etapa, responsable_id, estatus, q, desde, hasta, urgente } = req.query;
+  const { etapa, responsable_id, estatus, q, desde, hasta, urgente, solo_area } = req.query;
   let sql = `
     SELECT l.*, s.nombre AS servicio_nombre, u.nombre AS responsable_nombre, ca.nombre AS canal_nombre,
       (SELECT COUNT(*) FROM historial h WHERE h.lead_id = l.id AND h.tipo='alerta' AND h.resuelta=0 AND h.fecha_alerta <= datetime('now','localtime')) AS alertas_pendientes,
@@ -575,6 +575,8 @@ app.get('/api/leads', h((req, res) => {
   if (desde) { sql += " AND date(l.created_at) >= date(?)"; params.push(desde); }
   if (hasta) { sql += " AND date(l.created_at) <= date(?)"; params.push(hasta); }
   if (urgente === '1') { sql += ' AND l.urgente = 1'; }
+  // «solo_area=1» (Inicio): solo lo que ve por cotizaciones u órdenes, no lo que ve por la cobranza (2026-11-03).
+  if (solo_area === '1') sql += ' AND ve_lead_area(l.sucursal_id, l.responsable_id, l.tecnico_id, l.estatus, l.capturado_por)';
   sql += ' ORDER BY l.urgente DESC, l.updated_at DESC';
   res.json(db.prepare(sql).all(...params));
 }));
@@ -1509,21 +1511,25 @@ app.get('/api/kpis', h((req, res) => {
 // venta única: se vuelve a necesitar cada N días. Este endpoint calcula, por cada combinación
 // cliente + servicio con al menos un "ganado" y con recurrencia definida en el catálogo,
 // cuándo debería volver a contactarse para agendar — ordenado de más urgente a menos.
+// Salen de las órdenes de servicio: solo quien ve órdenes por su área, no por la cobranza (2026-11-03).
 app.get('/api/recompras', h((req, res) => {
+  if (!permisos.puede(req, 'ordenes.ver')) return res.json([]);
   const filas = db.prepare(`
     SELECT c.id AS cliente_id, c.telefono, c.nombre, c.empresa_contacto, c.direccion,
       s.id AS servicio_id, s.nombre AS servicio_nombre, s.dias_recurrencia,
       MAX(COALESCE(l.fecha_servicio, date(l.created_at))) AS ultima_fecha,
       (SELECT COUNT(*) FROM leads l2 WHERE l2.cliente_id = c.id AND l2.servicio_id = s.id AND l2.estatus = 'abierto') AS ya_en_leads,
       (SELECT l3.valor FROM leads l3 WHERE l3.cliente_id = c.id AND l3.servicio_id = s.id AND l3.estatus = 'ganado'
+        AND ve_lead_area(l3.sucursal_id, l3.responsable_id, l3.tecnico_id, l3.estatus, l3.capturado_por)
         ORDER BY COALESCE(l3.fecha_servicio, date(l3.created_at)) DESC LIMIT 1) AS ultimo_valor,
       -- La última orden de ese servicio: el botón "Registrar servicio nuevo" la duplica.
       (SELECT l4.id FROM leads l4 WHERE l4.cliente_id = c.id AND l4.servicio_id = s.id AND l4.estatus = 'ganado'
+        AND ve_lead_area(l4.sucursal_id, l4.responsable_id, l4.tecnico_id, l4.estatus, l4.capturado_por)
         ORDER BY COALESCE(l4.fecha_servicio, date(l4.created_at)) DESC, l4.id DESC LIMIT 1) AS ultimo_lead_id
     FROM leads l
     JOIN clientes c ON c.id = l.cliente_id
     JOIN catalogo_servicios s ON s.id = l.servicio_id
-    WHERE l.estatus = 'ganado' AND s.dias_recurrencia IS NOT NULL
+    WHERE l.estatus = 'ganado' AND s.dias_recurrencia IS NOT NULL AND ve_lead_area(l.sucursal_id, l.responsable_id, l.tecnico_id, l.estatus, l.capturado_por)
     GROUP BY c.id, s.id
   `).all();
 
@@ -1550,6 +1556,7 @@ app.get('/api/recompras', h((req, res) => {
 }));
 
 // ---------- Recordatorios pendientes (dashboard de hoy) ----------
+// De cotizaciones u órdenes que ve por su área; quien solo ve la cobranza no los recibe (2026-11-03).
 app.get('/api/alertas', h((req, res) => {
   const rows = db.prepare(`
     SELECT h.*, l.nombre AS lead_nombre, l.telefono, l.id AS lead_id, u.nombre AS responsable_nombre
@@ -1557,6 +1564,7 @@ app.get('/api/alertas', h((req, res) => {
     JOIN leads l ON l.id = h.lead_id
     LEFT JOIN usuarios u ON u.id = l.responsable_id
     WHERE h.tipo = 'alerta' AND h.resuelta = 0 AND h.fecha_alerta <= datetime('now','localtime','+1 day','start of day')
+      AND ve_lead_area(l.sucursal_id, l.responsable_id, l.tecnico_id, l.estatus, l.capturado_por)
     ORDER BY h.fecha_alerta ASC
   `).all();
   res.json(rows);

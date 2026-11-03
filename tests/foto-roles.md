@@ -250,3 +250,25 @@ Dirección la revisa y la aprueba. Si un cambio altera lo que ve un rol, la prue
 - **2026-10-27** · Banco de ideas: las proponen, votan y comentan Marketing, Gerente de marketing y Dirección; las aprueban o descartan solo Dirección y el Gerente de marketing. Los demás roles no ven las ideas.
 - **2026-10-27** · Biblioteca de marketing (logos, fotos, plantillas): la ven y usan Marketing, Gerente de marketing y Dirección; los demás roles no.
 - **2026-10-26** · Proyectos de marketing (tareas, Gantt y avances): los ven y editan Marketing, Gerente de marketing y Dirección; los demás roles no.
+
+## Roles hechos a mano (lo que Dirección apaga en «Roles y permisos»)
+
+| Qué se revisa | Cobranza sin ventas (contactos y cuentas por cobrar) | Cotiza sin órdenes (contactos, cotizaciones y cobranza) | Solo contactos | Atención (de fábrica, para comparar) |
+|---|:-:|:-:|:-:|:-:|
+| Menú: Cotizaciones | — | ✔ | — | ✔ |
+| Menú: Calendario | ✔ | ✔ | — | ✔ |
+| Inicio: Avisos y seguimiento | — | ✔ | — | ✔ |
+| Inicio: Servicios por concluir | — | — | — | ✔ |
+| Inicio: Recompras | — | — | — | ✔ |
+| Inicio: Finanzas | ✔ | ✔ | — | ✔ |
+| Le llega la recompra de una orden | — | — | — | ✔ |
+| Le llega el aviso de una orden | — | — | — | ✔ |
+| Le llega el aviso de una cotización | — | ✔ | — | ✔ |
+| Le llega la orden por concluir | — | — | — | ✔ |
+| Ve la orden en el calendario | — | — | — | ✔ |
+| Ve la cobranza de la orden | ✔ | ✔ | — | ✔ |
+
+- **2026-11-03** · Un rol sin cotizaciones ni órdenes no ve «Cotizaciones» en el menú ni sus avisos en Inicio, aunque vea contactos o la cobranza.
+- **2026-11-03** · «Servicios por concluir» y las órdenes del calendario: solo quien ve órdenes de servicio. Quien solo ve la cobranza sigue viendo la cobranza de esas órdenes, no la orden para concluirla.
+- **2026-11-03** · Recompras: salen de las órdenes de servicio, así que solo las ve quien ve órdenes (no quien solo ve contactos o la cobranza).
+- **2026-11-03** · Atención (con órdenes de toda su sucursal) sigue viendo todo eso: avisos, servicios por concluir, recompras y calendario.

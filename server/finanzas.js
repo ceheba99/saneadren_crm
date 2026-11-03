@@ -948,24 +948,28 @@ module.exports = function finanzas(app, db, h, unicos) {
   app.get('/api/calendario', h((req, res) => {
     const { desde, hasta } = req.query;
     if (!fechaValida(desde) || !fechaValida(hasta) || desde > hasta || diasEntre(desde, hasta) > 100) return res.status(400).json({ error: 'Revisa el rango de fechas (máximo 100 días)' });
+    if (!P.puede(req, 'calendario.ver')) return res.status(403).json({ error: 'No tienes acceso al calendario' });
     const hoy = hoyMexico(), eventos = [];
     const cliente = 'COALESCE(c.empresa_contacto, c.nombre, l.empresa_contacto, l.nombre)';
+    // Órdenes, recordatorios y vencimientos de cotizaciones: solo los que ve por su área (cotizaciones u órdenes), no
+    // por la cobranza; los cobros van aparte, para quien ve la cobranza (2026-11-03).
+    const area = 've_lead_area(l.sucursal_id, l.responsable_id, l.tecnico_id, l.estatus, l.capturado_por)';
     for (const o of db.prepare(`SELECT l.id, l.created_at, l.fecha_servicio, l.hora_servicio, l.ejecucion, l.equipo, l.operador, ${cliente} AS cliente, s.nombre AS servicio
         FROM leads l LEFT JOIN clientes c ON c.id = l.cliente_id LEFT JOIN catalogo_servicios s ON s.id = l.servicio_id
-        WHERE l.estatus = 'ganado' AND l.fecha_servicio BETWEEN ? AND ? ORDER BY l.fecha_servicio, l.id`).all(desde, hasta)) {
+        WHERE l.estatus = 'ganado' AND l.fecha_servicio BETWEEN ? AND ? AND ${area} ORDER BY l.fecha_servicio, l.id`).all(desde, hasta)) {
       const estado = o.ejecucion === 'realizado' ? 'realizada' : o.ejecucion === 'no_realizado' ? 'no_realizada' : o.fecha_servicio <= hoy ? 'por_concluir' : 'programada';
       eventos.push({ tipo: 'orden', fecha: o.fecha_servicio, ...(o.hora_servicio ? { hora: o.hora_servicio } : {}), estado, lead_id: o.id, titulo: `${folioOS(o.id, o.created_at)} · ${o.cliente || 'Sin cliente'}`,
         detalle: [o.servicio, o.equipo ? 'Unidad ' + o.equipo : '', o.operador].filter(Boolean).join(' · ') });
     }
     for (const a of db.prepare(`SELECT h.id, h.lead_id, h.texto, h.fecha_alerta, h.resuelta, h.usuario, ${cliente} AS cliente
         FROM historial h JOIN leads l ON l.id = h.lead_id LEFT JOIN clientes c ON c.id = l.cliente_id
-        WHERE h.tipo = 'alerta' AND date(h.fecha_alerta) BETWEEN ? AND ? ORDER BY h.fecha_alerta`).all(desde, hasta)) {
+        WHERE h.tipo = 'alerta' AND date(h.fecha_alerta) BETWEEN ? AND ? AND ${area} ORDER BY h.fecha_alerta`).all(desde, hasta)) {
       eventos.push({ tipo: 'alerta', fecha: String(a.fecha_alerta).slice(0, 10), hora: String(a.fecha_alerta).slice(11, 16), estado: a.resuelta ? 'resuelta' : 'pendiente',
         lead_id: a.lead_id, historial_id: a.id, titulo: a.texto, detalle: [a.cliente, a.usuario ? 'lo puso ' + a.usuario : ''].filter(Boolean).join(' · ') });
     }
     for (const q of db.prepare(`SELECT l.id, l.created_at, l.vigencia_hasta, ${cliente} AS cliente, s.nombre AS servicio
         FROM leads l LEFT JOIN clientes c ON c.id = l.cliente_id LEFT JOIN catalogo_servicios s ON s.id = l.servicio_id
-        WHERE l.estatus = 'abierto' AND l.incluye_vigencia = 1 AND l.vigencia_hasta BETWEEN ? AND ?`).all(desde, hasta)) {
+        WHERE l.estatus = 'abierto' AND l.incluye_vigencia = 1 AND l.vigencia_hasta BETWEEN ? AND ? AND ${area}`).all(desde, hasta)) {
       eventos.push({ tipo: 'cotizacion', fecha: q.vigencia_hasta, lead_id: q.id,
         titulo: 'Vence ' + require('./sucursales').folio('COT', 'leads', q.id, q.created_at) + ' · ' + (q.cliente || ''), detalle: q.servicio || '' });
     }
@@ -1002,15 +1006,16 @@ module.exports = function finanzas(app, db, h, unicos) {
   // Lo atrasado (vista «Hoy» del calendario): lo que quedó pendiente de días anteriores. Órdenes con fecha pasada sin
   // concluir, avisos vencidos sin resolver, cobros y pagos vencidos. Cada lista con un tope; lo más viejo primero.
   app.get('/api/calendario/atrasados', h((req, res) => {
-    const hoy = hoyMexico(), eventos = [], TOPE = 60;
+    if (!P.puede(req, 'calendario.ver')) return res.status(403).json({ error: 'No tienes acceso al calendario' });
+    const hoy = hoyMexico(), eventos = [], TOPE = 60, area = 've_lead_area(l.sucursal_id, l.responsable_id, l.tecnico_id, l.estatus, l.capturado_por)'; // como en /api/calendario
     const cliente = 'COALESCE(c.empresa_contacto, c.nombre, l.empresa_contacto, l.nombre)';
     for (const o of db.prepare(`SELECT l.id, l.created_at, l.fecha_servicio, l.equipo, l.operador, ${cliente} AS cliente, s.nombre AS servicio
         FROM leads l LEFT JOIN clientes c ON c.id = l.cliente_id LEFT JOIN catalogo_servicios s ON s.id = l.servicio_id
-        WHERE l.estatus = 'ganado' AND l.ejecucion IS NULL AND l.fecha_servicio < ? ORDER BY l.fecha_servicio, l.id LIMIT ${TOPE}`).all(hoy))
+        WHERE l.estatus = 'ganado' AND l.ejecucion IS NULL AND l.fecha_servicio < ? AND ${area} ORDER BY l.fecha_servicio, l.id LIMIT ${TOPE}`).all(hoy))
       eventos.push({ tipo: 'orden', fecha: o.fecha_servicio, estado: 'por_concluir', lead_id: o.id, titulo: `${folioOS(o.id, o.created_at)} · ${o.cliente || 'Sin cliente'}`,
         detalle: [o.servicio, o.equipo ? 'Unidad ' + o.equipo : '', o.operador].filter(Boolean).join(' · ') });
     for (const a of db.prepare(`SELECT h.id, h.lead_id, h.texto, h.fecha_alerta, h.usuario, ${cliente} AS cliente FROM historial h JOIN leads l ON l.id = h.lead_id LEFT JOIN clientes c ON c.id = l.cliente_id
-        WHERE h.tipo = 'alerta' AND h.resuelta = 0 AND date(h.fecha_alerta) < ? ORDER BY h.fecha_alerta LIMIT ${TOPE}`).all(hoy))
+        WHERE h.tipo = 'alerta' AND h.resuelta = 0 AND date(h.fecha_alerta) < ? AND ${area} ORDER BY h.fecha_alerta LIMIT ${TOPE}`).all(hoy))
       eventos.push({ tipo: 'alerta', fecha: String(a.fecha_alerta).slice(0, 10), hora: String(a.fecha_alerta).slice(11, 16), estado: 'vencido', lead_id: a.lead_id, historial_id: a.id, titulo: a.texto, detalle: [a.cliente, a.usuario ? 'lo puso ' + a.usuario : ''].filter(Boolean).join(' · ') });
     const cobrosV = (veCobranza(req) ? cartera() : []).filter(c => c.saldo > 0 && c.vencida && !c.programada), pagosV = cuentasPorPagar().filter(x => x.saldo > 0 && x.vencida);
     for (const c of cobrosV.sort((x, y) => x.vence.localeCompare(y.vence)).slice(0, TOPE))

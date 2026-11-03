@@ -16,7 +16,7 @@ module.exports = {
       demo: ['clientes', 'leads', 'historial', 'orden_personal'],
       integridad: ['leads', 'clientes'],
       buscador: ['leads', 'clientes'],
-      permisos: ['ventas.ver', 'contactos.ver', 'contactos.sucursal', 'contactos.empresa', 'contactos.editar', 'cotizaciones.ver', 'cotizaciones.sucursal', 'cotizaciones.empresa', 'cotizaciones.editar',
+      permisos: ['ventas.ver', 'cotizaciones_ordenes.ver', 'calendario.ver', 'contactos.ver', 'contactos.sucursal', 'contactos.empresa', 'contactos.editar', 'cotizaciones.ver', 'cotizaciones.sucursal', 'cotizaciones.empresa', 'cotizaciones.editar',
         'ordenes.ver', 'ordenes.sucursal', 'ordenes.empresa', 'ordenes.editar', 'generador.ver', 'generador.sucursal', 'generador.empresa',
         'ordenes.importes', 'ventas.editar_otros', 'generador.cargar', 'ordenes.importe_ganada', 'clientes.exportar'],
     },

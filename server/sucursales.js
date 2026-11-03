@@ -324,13 +324,20 @@ module.exports = function sucursales(app, db, h, { audit }) {
     // Una cotización (área «cotizaciones») u orden («ordenes»): la ve quien ve esa área de su sucursal (o de toda la
     // empresa), quien la capturó, su responsable y, si es orden, su técnico asignado; y, ya contratada, quien ve la
     // cobranza (de toda la sucursal o de las suyas).
-    db.db.function('ve_lead', { deterministic: false }, (s, resp, tec, estatus, capt) => {
+    const veEnSuArea = (s, resp, tec, estatus, capt) => {
       const orden = estatus === 'ganado', area = orden ? 'ordenes' : 'cotizaciones', v = alcance.nivel(area);
       const yo = alcance.usuario(), mia = yo != null && (resp === yo || capt === yo || (orden && tec === yo));
-      if (alcance.veEnArea(area, s) && (v >= 2 || (v === 1 && mia))) return 1;
-      if (orden && alcance.veEnArea('cxc', s)) { const c = alcance.nivel('cxc'); if (c >= 2 || (c === 1 && mia)) return 1; }
+      return alcance.veEnArea(area, s) && (v >= 2 || (v === 1 && mia));
+    };
+    db.db.function('ve_lead', { deterministic: false }, (s, resp, tec, estatus, capt) => {
+      if (veEnSuArea(s, resp, tec, estatus, capt)) return 1;
+      const yo = alcance.usuario(), mia = yo != null && (resp === yo || capt === yo || tec === yo);
+      if (estatus === 'ganado' && alcance.veEnArea('cxc', s)) { const c = alcance.nivel('cxc'); if (c >= 2 || (c === 1 && mia)) return 1; }
       return 0;
     });
+    // Solo por su área (cotizaciones u órdenes), no por la cobranza (2026-11-03): avisos, servicios por concluir, recompras
+    // y órdenes del calendario son trabajo de ventas; quien solo ve la cobranza no los recibe.
+    db.db.function('ve_lead_area', { deterministic: false }, (s, resp, tec, estatus, capt) => (veEnSuArea(s, resp, tec, estatus, capt) ? 1 : 0));
     // Bitácora de una orden visible: lo de cobranza ('cxc') lo ve quien ve la cobranza de esa orden; lo de gastos
     // ('cxp'), quien ve esos gastos (toda la sucursal o lo que él registró).
     const delLead = db.db.prepare('SELECT responsable_id, tecnico_id FROM main.leads WHERE id = ?');

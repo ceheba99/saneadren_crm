@@ -399,6 +399,55 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
     revisa(!fallan.length, `${fecha} · ${regla}`, fallan);
   }
 
+  // ----- Roles hechos a mano en «Roles y permisos» (2026-11-03) -----
+  // Dirección apagó áreas de un rol y aún le salían Cotizaciones, «Servicios por concluir» y Recompras. Cada rol de prueba
+  // ve toda su sucursal en lo que tiene prendido; se revisa el menú, las fichas de Inicio y lo que le manda el servidor.
+  exigir(await pedir('PUT', '/servicios/' + SERV.id, A, { dias_recurrencia: 30 }), 'recompra del servicio');
+  const cMano = await contacto(T.Valeria, 'Sr. Ulises Recompra', '442 222 0099', 'Fábrica Recompra');
+  const OM = await cotizar(T.Valeria, 'Valeria', cMano, 'Orden Mano', 1500, true);
+  const cCot = await contacto(T.Valeria, 'Sra. Nidia Cotiza', '442 222 0098', 'Oficinas Cotiza');
+  const QM = await cotizar(T.Valeria, 'Valeria', cCot, 'Cotización Mano', 900);
+  exigir(await pedir('POST', '/leads/' + OM.id + '/historial', T.Valeria, { tipo: 'alerta', texto: 'Aviso Orden Mano', fecha_alerta: dia(-1) + ' 09:00:00' }), 'aviso de la orden');
+  exigir(await pedir('POST', '/leads/' + QM.id + '/historial', T.Valeria, { tipo: 'alerta', texto: 'Aviso Cotización Mano', fecha_alerta: dia(-1) + ' 09:00:00' }), 'aviso de la cotización');
+  const BLOQUES = [...html.matchAll(/class="inicio-bloque ([^"]*)" data-titulo-corto="([^"]+)"/g)].map(([, cl, t]) => ({ t, cl: cl.split(/\s+/) }));
+  const veClases = (set, cl) => cl.every(c => { const p = c.match(/^perm-([a-z_]+)-([a-z_]+)$/); return !p || set.has(p[1] + '.' + p[2]); });
+  const NIVEL_0 = Object.fromEntries(PERM.areas.map(a => [a.clave, 0]));
+  const MANO = [['cobranza', 'Cobranza sin ventas (contactos y cuentas por cobrar)', { contactos: 2, cxc: 2 }], ['cotiza', 'Cotiza sin órdenes (contactos, cotizaciones y cobranza)', { contactos: 2, cotizaciones: 2, cxc: 2 }],
+    ['contactos', 'Solo contactos', { contactos: 2 }], ['atencion', 'Atención (de fábrica, para comparar)', null]];
+  const VM = {};
+  for (const [k, nombre, niveles] of MANO) {
+    let t = T.Alicia;
+    if (niveles) {
+      const rol = exigir(await pedir('POST', '/roles', A, { nombre: 'Mano ' + k }), 'crear rol ' + k);
+      exigir(await pedir('PUT', '/roles/' + rol.clave + '/permisos', A, { permisos: [], alcances: { ...NIVEL_0, ...niveles } }), 'permisos del rol ' + k);
+      const quien = 'Mano ' + { cobranza: 'Cobra', cotiza: 'Cotiza', contactos: 'Contacta' }[k];
+      exigir(await pedir('POST', '/usuarios', A, { nombre: quien, password: CLAVE, rol: rol.clave, sucursales: [qro.id] }), 'usuario ' + quien);
+      t = (await pedir('POST', '/login', null, { nombre: quien, password: CLAVE }))[1].token;
+    }
+    const set = new Set((await pedir('GET', '/permisos/mios', t))[1].permisos), texto = async r => (await pedir('GET', r, t))[2] || '';
+    const cal = await texto('/calendario?desde=' + dia(-10) + '&hasta=' + dia(10));
+    VM[k] = { nombre,
+      menuCot: veClases(set, MENU.find(m => m.vista === 'leads').clases), menuCal: veClases(set, MENU.find(m => m.vista === 'calendario').clases),
+      ...Object.fromEntries(BLOQUES.map(b => ['inicio:' + b.t, veClases(set, b.cl)])),
+      recompra: /Fábrica Recompra/.test(await texto('/recompras')),
+      alertaOrden: /Aviso Orden Mano/.test(await texto('/alertas')), alertaCot: /Aviso Cotización Mano/.test(await texto('/alertas')),
+      porConcluir: /Fábrica Recompra/.test(await texto('/leads?estatus=ganado&solo_area=1')),
+      calOrden: /"tipo":"orden"[^}]*Fábrica Recompra/.test(cal), cobranza: (await pedir('GET', '/leads/' + OM.id + '/cobros', t))[0] === 200 };
+  }
+  const NOMBRE_MANO = { menuCot: 'Menú: Cotizaciones', menuCal: 'Menú: Calendario', 'inicio:Avisos': 'Inicio: Avisos y seguimiento', 'inicio:Por concluir': 'Inicio: Servicios por concluir', 'inicio:Recompras': 'Inicio: Recompras', 'inicio:Finanzas': 'Inicio: Finanzas',
+    recompra: 'Le llega la recompra de una orden', alertaOrden: 'Le llega el aviso de una orden', alertaCot: 'Le llega el aviso de una cotización', porConcluir: 'Le llega la orden por concluir', calOrden: 'Ve la orden en el calendario', cobranza: 'Ve la cobranza de la orden' };
+  const REGLAS_MANO = [
+    ['2026-11-03', 'Un rol sin cotizaciones ni órdenes no ve «Cotizaciones» en el menú ni sus avisos en Inicio, aunque vea contactos o la cobranza.', { cobranza: { menuCot: 0, 'inicio:Avisos': 0, alertaOrden: 0, alertaCot: 0 }, contactos: { menuCot: 0, 'inicio:Avisos': 0, alertaOrden: 0, alertaCot: 0 } }],
+    ['2026-11-03', '«Servicios por concluir» y las órdenes del calendario: solo quien ve órdenes de servicio. Quien solo ve la cobranza sigue viendo la cobranza de esas órdenes, no la orden para concluirla.', { cobranza: { 'inicio:Por concluir': 0, porConcluir: 0, calOrden: 0, cobranza: 1 }, cotiza: { 'inicio:Por concluir': 0, porConcluir: 0, calOrden: 0, alertaOrden: 0, menuCot: 1, 'inicio:Avisos': 1, alertaCot: 1 }, contactos: { 'inicio:Por concluir': 0, porConcluir: 0, calOrden: 0 } }],
+    ['2026-11-03', 'Recompras: salen de las órdenes de servicio, así que solo las ve quien ve órdenes (no quien solo ve contactos o la cobranza).', { cobranza: { 'inicio:Recompras': 0, recompra: 0 }, cotiza: { 'inicio:Recompras': 0, recompra: 0 }, contactos: { 'inicio:Recompras': 0, recompra: 0, menuCal: 0 } }],
+    ['2026-11-03', 'Atención (con órdenes de toda su sucursal) sigue viendo todo eso: avisos, servicios por concluir, recompras y calendario.', { atencion: { menuCot: 1, menuCal: 1, 'inicio:Avisos': 1, 'inicio:Por concluir': 1, 'inicio:Recompras': 1, recompra: 1, alertaOrden: 1, alertaCot: 1, porConcluir: 1, calOrden: 1 } }],
+  ];
+  console.log('Roles hechos a mano:');
+  for (const [fecha, regla, esperado] of REGLAS_MANO) {
+    const fallan = Object.entries(esperado).flatMap(([k, filas]) => Object.entries(filas).filter(([c, v]) => VM[k][c] !== !!v).map(([c, v]) => `${VM[k].nombre}: «${NOMBRE_MANO[c]}» ${v ? 'debería verse y no se ve' : 'NO debería verse y se ve'}`));
+    revisa(!fallan.length, `${fecha} · ${regla}`, fallan);
+  }
+
   // ----- La foto -----
   const si = v => (v ? '✔' : '—');
   const tabla = (titulo, filas) => [`| ${titulo} | ${ROLES.map(r => r[1]).join(' | ')} |`, `|---|${ROLES.map(() => ':-:').join('|')}|`, ...filas.map(([t, celdas]) => `| ${t} | ${celdas.join(' | ')} |`)].join('\n');
@@ -433,6 +482,13 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
     '## Reglas acordadas que se revisan una por una',
     '',
     ...REGLAS.map(([fecha, regla]) => `- **${fecha}** · ${regla}`),
+    '',
+    '## Roles hechos a mano (lo que Dirección apaga en «Roles y permisos»)',
+    '',
+    `| Qué se revisa | ${MANO.map(m => m[1]).join(' | ')} |`, `|---|${MANO.map(() => ':-:').join('|')}|`,
+    ...Object.entries(NOMBRE_MANO).map(([c, t]) => `| ${t} | ${MANO.map(([k]) => si(VM[k][c])).join(' | ')} |`),
+    '',
+    ...REGLAS_MANO.map(([fecha, regla]) => `- **${fecha}** · ${regla}`),
     '',
   ];
   const foto = partes.join('\n');
