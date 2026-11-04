@@ -122,6 +122,7 @@ Dirección la revisa y la aprueba. Si un cambio altera lo que ve un rol, la prue
 | Archivo de la biblioteca de marketing | ✔ | — | — | — | — | — | ✔ | ✔ |
 | Presupuesto de marketing del mes (monto) | ✔ | — | — | — | — | — | — | ✔ |
 | Gasto de marketing (concepto y monto) | ✔ | — | — | — | — | — | — | ✔ |
+| Reporte de llamadas de Google Ads (por campaña, lada y horario, y las llamadas sin registrar) | ✔ | — | — | — | — | — | — | ✔ |
 
 ### Personal
 
@@ -188,6 +189,7 @@ Dirección la revisa y la aprueba. Si un cambio altera lo que ve un rol, la prue
 | Ver la pestaña RH (resumen del personal: sin horario, sin checador, sin aviso firmado…) | ✔ | ✔ | — | — | — | — | — | — |
 | Cargar trabajadores en lote desde la plantilla de Excel (revisar y guardar) | ✔ | ✔ | — | — | — | — | — | — |
 | Ver la asistencia del día y de la semana (retardos, faltas, tiempo extra) | ✔ | ✔ | — | — | — | — | — | — |
+| Cargar el reporte de llamadas de Google Ads (CSV) y verlo cruzado con los contactos | ✔ | — | — | — | — | — | — | ✔ |
 
 | Permiso | Dirección | Gerente | Ventas | Atención | Técnico | Costos y compras | Marketing | Gerente de marketing |
 |---|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|
@@ -261,6 +263,7 @@ Dirección la revisa y la aprueba. Si un cambio altera lo que ve un rol, la prue
 - **2026-10-26** · Los demás roles (Gerente, Ventas, Atención, Técnico, Compras) no ven Marketing; Dirección lo puede prender en Roles y permisos.
 - **2026-10-26** · Dirección ve y aprueba todo Marketing.
 - **2026-10-27** · Dinero de Marketing (presupuesto, gastos, costo por contacto y retorno): lo ven Dirección y el Gerente de marketing; el rol Marketing y los demás roles no.
+- **2026-11-04** · Llamadas de Google Ads (subir el reporte «Detalles de las llamadas» y verlo cruzado con los contactos, ventas e importes): lo ven y lo cargan solo Dirección y el Gerente de marketing; el rol Marketing y los demás roles no.
 - **2026-10-27** · Presupuesto de Marketing: lo propone el Gerente de marketing y lo aprueba solo Dirección.
 - **2026-10-27** · Gastos de Marketing: los registran Dirección y el Gerente de marketing, y son control interno del departamento: no aparecen en Cuentas por pagar.
 - **2026-10-27** · Resultados de cada publicación (alcance, me gusta, mensajes…): los capturan Marketing, el Gerente de marketing y Dirección, cuando ya está publicada; los demás roles no.

@@ -119,6 +119,11 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
   const MES = HOY.slice(0, 7);
   exigir(await pedir('PUT', '/marketing/presupuestos/' + MES, T.Gil, { lineas: { pauta: 17345.67 } }), 'presupuesto de marketing');
   exigir(await pedir('POST', '/marketing/gastos', T.Gil, { fecha: HOY, concepto: 'Pauta Turquesa', rubro: 'pauta', monto: 4183.56, proveedor: 'Meta' }), 'gasto de marketing');
+  // Google Ads (2026-11-04): Dirección sube el reporte «Detalles de las llamadas» con una campaña marcada (número inventado, que no está en el CRM).
+  const fechaAds = new Date(dia(-2) + 'T12:00:00Z'), MES_ADS = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'][fechaAds.getUTCMonth()];
+  const CSV_ADS = 'Detalles de las llamadas\nRango\nHora de inicio,Duración (segundos),Código de país de la persona que llama,Prefijo de la persona que llama,Número de teléfono de la persona que llama,Grabación,Estado,Fuente de la llamada,Tipo de llamada,Campaña\n'
+    + `"${fechaAds.getUTCDate()} ${MES_ADS} ${fechaAds.getUTCFullYear()}, 11:00:00",95,52,55, +52 55 7777 0909,No disponible,Recibida,Anuncio,Clics de llamada de móviles,Campaña Peridoto\n`;
+  exigir(await pedir('POST', '/marketing/google-ads/cargar', A, { csv: CSV_ADS }), 'cargar el reporte de Google Ads');
   const ideaAgata = exigir(await pedir('POST', '/marketing/ideas', T.Mara, { titulo: 'Idea Ágata', descripcion: 'Reto en TikTok Ágata' }), 'idea Ágata');
   const PNG1 = Buffer.from('89504e470d0a1a0a0000000d4948445200000001000000010802000000907753de0000000c4944415408d763f8cfc0000003010100c9fe92ef0000000049454e44ae426082', 'hex');
   { const x = await fetch(URL + '/marketing/biblioteca', { method: 'POST', headers: { 'Content-Type': 'application/octet-stream', Authorization: 'Bearer ' + T.Mara, 'X-Nombre': encodeURIComponent('logo-Jaspe.png'), 'X-Carpeta': encodeURIComponent('Logos') }, body: PNG1 }); if (x.status !== 201) throw new Error('No se pudo subir a la biblioteca: ' + x.status); }
@@ -192,6 +197,7 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
       ['jaspe', 'Archivo de la biblioteca de marketing', ['logo-Jaspe']],
       ['presupMk', 'Presupuesto de marketing del mes (monto)', formas(17345.67)],
       ['gastoMk', 'Gasto de marketing (concepto y monto)', ['Pauta Turquesa', ...formas(4183.56)]],
+      ['gAds', 'Reporte de llamadas de Google Ads (por campaña, lada y horario, y las llamadas sin registrar)', ['Campaña Peridoto']],
     ]],
     ['Personal', [
       ['obsidiana', 'Un empleado activo: nombre y puesto (para asignarlo a una orden)', ['Obsidiana']],
@@ -281,6 +287,7 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
     ['veRH', 'Ver la pestaña RH (resumen del personal: sin horario, sin checador, sin aviso firmado…)'],
     ['importaPersonal', 'Cargar trabajadores en lote desde la plantilla de Excel (revisar y guardar)'],
     ['veAsistencia', 'Ver la asistencia del día y de la semana (retardos, faltas, tiempo extra)'],
+    ['cargaAds', 'Cargar el reporte de llamadas de Google Ads (CSV) y verlo cruzado con los contactos'],
   ];
   const ok = r => r[0] === 200 || r[0] === 201;
   for (const [rol] of ROLES) {
@@ -344,6 +351,7 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
     VE[rol].precioExtra = ok(await pedir('PUT', '/asistencia/precios', t, { sucursal_id: qro.id, puesto: 'Operador', valor: 50 + ROLES.findIndex(r => r[0] === rol) }));
     { const [st, sem] = await pedir('GET', '/asistencia/semana', t); VE[rol].dineroExtra = st === 200 && !!sem?.dinero; }
     VE[rol].veAsistencia = ok(await pedir('GET', '/asistencia/semana', t));
+    VE[rol].cargaAds = ok(await pedir('POST', '/marketing/google-ads/cargar', t, { csv: CSV_ADS })); // el mismo archivo: no duplica nada
     VE[rol].claveServicio = ok(await pedir('PUT', '/facturacion/servicios/' + servicioFact.id, t, { clave_prod_serv: '76121600', clave_unidad: 'E48' }));
     const nuevaPub = exigir(await pedir('POST', '/marketing/publicaciones', T.Mara, { titulo: 'Por aprobar ' + rol, redes: ['tiktok'], formato: 'video', fecha: dia(5), copy: 'Copy', sucursal: qro.id }), 'publicación por aprobar');
     const enRevision = exigir(await pedir('POST', '/marketing/publicaciones/' + nuevaPub.id + '/estado', T.Mara, { accion: 'enviar', version: nuevaPub.version }), 'enviar a revisión');
@@ -420,6 +428,8 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
     ['2026-10-26', 'Dirección ve y aprueba todo Marketing.', { admin: { rubi: 1, zafiro: 1, topacio: 1, editaPub: 1, comentaPub: 1 } }],
     ['2026-10-27', 'Dinero de Marketing (presupuesto, gastos, costo por contacto y retorno): lo ven Dirección y el Gerente de marketing; el rol Marketing y los demás roles no.', {
       admin: { presupMk: 1, gastoMk: 1 }, marketing_gerente: { presupMk: 1, gastoMk: 1 }, ...Object.fromEntries(['marketing', 'gerente', 'ventas', 'atencion', 'tecnico', 'costos'].map(r => [r, { presupMk: 0, gastoMk: 0 }])) }],
+    ['2026-11-04', 'Llamadas de Google Ads (subir el reporte «Detalles de las llamadas» y verlo cruzado con los contactos, ventas e importes): lo ven y lo cargan solo Dirección y el Gerente de marketing; el rol Marketing y los demás roles no.', {
+      admin: { gAds: 1, cargaAds: 1 }, marketing_gerente: { gAds: 1, cargaAds: 1 }, ...Object.fromEntries(['marketing', 'gerente', 'ventas', 'atencion', 'tecnico', 'costos'].map(r => [r, { gAds: 0, cargaAds: 0 }])) }],
     ['2026-10-27', 'Presupuesto de Marketing: lo propone el Gerente de marketing y lo aprueba solo Dirección.', {
       admin: { apruebaPresup: 1 }, marketing_gerente: { proponePresup: 1, apruebaPresup: 0 }, ...Object.fromEntries(['marketing', 'gerente', 'ventas', 'atencion', 'tecnico', 'costos'].map(r => [r, { proponePresup: 0, apruebaPresup: 0 }])) }],
     ['2026-10-27', 'Gastos de Marketing: los registran Dirección y el Gerente de marketing, y son control interno del departamento: no aparecen en Cuentas por pagar.', {
