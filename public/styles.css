@@ -2187,3 +2187,18 @@ table.tabla-clientes.py-tareas tbody td{white-space:normal;}
 .pe-kioscos{margin-top:18px;}
 .pe-foto{display:block;max-width:320px;width:100%;border-radius:8px;margin-top:8px;}
 .btn-link{background:none;border:0;padding:0;color:var(--azul,#1d4ed8);cursor:pointer;font:inherit;text-decoration:underline;}
+.as-pestanas{margin:10px 0;}
+.as-pestanas [aria-pressed="true"]{background:var(--oscuro,#1a1d23);color:#fff;}
+.as-tabla td small{display:block;}
+.as-rojo{color:#b42318;}
+.as-falta{background:#fff1f1;}
+.as-chip{display:inline-block;background:#f3f4f6;border-radius:10px;padding:1px 8px;font-size:12px;margin:1px 0;}
+.as-festivo{font-weight:600;}
+.as-detalle{background:#fafafa;border-radius:8px;padding:10px;text-align:left;}
+.as-tabla th,.as-tabla td,.as-form-horario td,.as-form-horario th{text-align:left !important;vertical-align:top;}
+.as-form{align-items:center;margin-top:8px;}
+.as-num{width:80px;}
+.as-horario p{margin:6px 0;}
+.as-form-horario{border:1px solid #e5e7eb;border-radius:8px;padding:10px;margin-top:10px;}
+.as-semana td{white-space:nowrap;font-size:13px;}
+.as-descanso{color:#6b7280;}

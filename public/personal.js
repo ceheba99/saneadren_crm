@@ -150,7 +150,12 @@ const Personal = (() => {
   async function pintarChecador(id, pinNuevo) {
     if (!$('pe-checador')) return;
     let e;
-    try { const r = await api('/asistencia/personal/' + Number(id)); e = await r.json().catch(() => ({})); if (!r.ok) throw new Error(e.error || 'No se pudo cargar el checador'); }
+    let hor = null;
+    try {
+      const [r, rh] = await Promise.all([api('/asistencia/personal/' + Number(id)), api('/asistencia/personal/' + Number(id) + '/horario')]);
+      e = await r.json().catch(() => ({})); if (!r.ok) throw new Error(e.error || 'No se pudo cargar el checador');
+      if (rh.ok) hor = await rh.json().catch(() => null);
+    }
     catch (err) { if ($('pe-checador')) $('pe-checador').innerHTML = `<h3 class="pe-sub">🕒 Reloj checador</h3><p class="aviso-error-carga" role="alert">${esc(err.message)}</p>`; return; }
     const cont = $('pe-checador');
     if (!cont || actual?.id !== Number(id)) return;
@@ -158,6 +163,10 @@ const Personal = (() => {
     if (pinNuevo) h += `<p class="pe-pin-nuevo" role="alert">Código <b>${esc(pinNuevo.codigo)}</b> · PIN temporal <b>${esc(pinNuevo.pin)}</b><br><small>Anótalo y dáselo a la persona: no se vuelve a mostrar. En su primera checada elegirá su propio PIN.</small></p>`;
     h += !e.codigo ? '<p class="ayuda">Todavía no está dado de alta en el reloj checador.</p>'
       : `<p>Código para checar: <b>${esc(e.codigo)}</b> · ${e.pin_temporal ? 'con PIN temporal (aún no elige el suyo)' : e.tiene_pin ? 'ya eligió su PIN' : 'sin PIN'}${e.checa ? '' : ' · no checa'}${e.bloqueado ? ` · <b class="pe-bloqueado">🔒 PIN bloqueado ${e.bloqueo_total ? 'hasta que lo desbloqueen' : 'unos minutos'} por intentos fallidos</b>` : ''}</p>`;
+    if (hor) {
+      h += `<p>Horario: <b>${esc(hor.actual?.nombre || 'sin horario')}</b>${hor.historial?.[0] ? ` <small>(desde ${esc(hor.historial[0].desde === '2020-01-01' ? 'el inicio' : fecha(hor.historial[0].desde))})</small>` : ''}</p>`;
+      if (hor.puede?.editar && actual.activo) h += `<div class="filtros"><select id="pe-horario" aria-label="Horario">${hor.horarios.map(x => `<option value="${Number(x.id)}"${x.id === hor.actual?.horario_id ? ' selected' : ''}>${esc(x.nombre)}</option>`).join('')}</select><label>desde <input type="date" id="pe-horario-desde" value="${esc(hoy())}"></label><button type="button" class="btn btn-secundario" data-pe-horario="${Number(id)}">Asignar horario</button></div>`;
+    }
     if (e.ultimas?.length) h += '<h4 class="pe-sub2">Últimas checadas</h4><ul class="pe-ordenes">' + e.ultimas.map(c => `<li>${esc(fecha(c.fecha))} ${esc(String(c.hora).slice(0, 5))} · ${esc(TIPOS_CHECADA[c.tipo] || c.tipo)}${esc(c.origen === 'manual' ? ' (a mano)' : '')}${esc(c.sin_conexion ? ' (sin conexión)' : '')}${esc(c.estado === 'anulada' ? ' (anulada)' : c.estado === 'por_revisar' ? ' (por revisar)' : '')}${c.tiene_foto && e.puede?.ver ? ` <button type="button" class="btn-link" data-pe-foto="${Number(c.id)}">📷 Ver foto</button>` : ''}</li>`).join('') + '</ul><div id="pe-foto-checada"></div>';
     if (e.puede?.editar && actual.activo) h += `<div class="btn-group"><button type="button" class="btn btn-secundario" data-pe-pin="${Number(id)}" data-pe-pin-hay="${e.codigo ? 1 : ''}">${e.codigo ? 'Dar un PIN temporal nuevo' : 'Dar de alta en el checador'}</button>${e.bloqueado ? `<button type="button" class="btn btn-outline" data-pe-desbloquear="${Number(id)}">Desbloquear PIN</button>` : ''}</div>`;
     cont.innerHTML = h;
@@ -171,6 +180,12 @@ const Personal = (() => {
       const url = URL.createObjectURL(await r.blob()), img = document.createElement('img');
       img.src = url; img.alt = 'Foto de la checada'; img.className = 'pe-foto'; img.onload = () => URL.revokeObjectURL(url);
       cont.replaceChildren(img);
+    } catch (err) { toast(err.message); }
+  }
+  async function asignarHorario(id) {
+    try {
+      const r = await api('/asistencia/personal/' + Number(id) + '/horario', { method: 'PUT', body: JSON.stringify({ horario_id: Number($('pe-horario').value), desde: $('pe-horario-desde').value }) });
+      const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.error || 'No se pudo asignar'); toast('Horario asignado'); pintarChecador(Number(id));
     } catch (err) { toast(err.message); }
   }
   async function darPin(id, yaTiene) {
@@ -312,6 +327,7 @@ const Personal = (() => {
     else if (t.dataset.pePin) darPin(t.dataset.pePin, !!t.dataset.pePinHay);
     else if (t.dataset.peDesbloquear) desbloquearPin(t.dataset.peDesbloquear);
     else if (t.dataset.peFoto) verFoto(t.dataset.peFoto);
+    else if (t.dataset.peHorario) asignarHorario(t.dataset.peHorario);
   });
   // Al cerrar la ficha (con la X, Esc o desde otra pantalla) se borra de la página: lo sensible no se queda ahí.
   new MutationObserver(() => { if (!$('overlay-personal').classList.contains('mostrar') && !ocupado) { $('pe-cuerpo').innerHTML = ''; actual = null; base = ''; } })

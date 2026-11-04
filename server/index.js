@@ -176,7 +176,9 @@ require('./respaldos')(db, { hoyMexico }); // Copia diaria automática de la bas
 require('./integridad')(app, db, h); // Revisión de integridad de los datos guardados (solo administración)
 // Personal (RH): fichas, expediente, vacaciones e incidencias, y el equipo de cada orden de servicio.
 const personalMod = require('./personal')(app, db, h);
-require('./checador')(app, db, h); // Reloj checador (RH, 2026-11-03): código y PIN, kioscos registrados y checadas que no se borran
+require('./checador')(app, db, h);
+require('./asistencia')(app, db, h); // Asistencia (RH F3): horarios por versión, festivos, retardos y tiempo extra autorizado
+// Reloj checador (RH, 2026-11-03): código y PIN, kioscos registrados y checadas que no se borran
 require('./marketing')(app, db, h); // Marketing: calendario de publicaciones con aprobación (2026-10-26)
 require('./facturacion-db')(db); // Facturación CFDI 4.0 con factura.com (2026-10-27): tablas y columnas aditivas
 require('./facturacion-rutas')(app, db, h, { direccion: permisos.direccion, puede: permisos.puede, verCliente: id => app.locals.sucursales.verCliente(id), auditar: (...a) => app.locals.auditoria?.registrar(...a) }); // Pantalla «Facturación» de Ajustes: solo Dirección

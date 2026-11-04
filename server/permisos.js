@@ -47,6 +47,8 @@ const CATALOGO = [
   ['asistencia.ver', 'Personal', 'Ver asistencia', 'Las checadas (entradas, comida, salidas y tiempo extra) del personal de su sucursal', ['gerente']],
   ['asistencia.corregir', 'Personal', 'Corregir asistencia', 'Agregar una checada olvidada, anular una equivocada o aceptar una por revisar, siempre con motivo (las checadas nunca se borran)', ['gerente']],
   ['asistencia.kioscos', 'Personal', 'Kioscos del checador', 'Registrar la tableta o computadora de la entrada como kiosco del reloj checador, y darla de baja', ['gerente']],
+  ['asistencia.horarios', 'Personal', 'Horarios y días festivos', 'Crear y cambiar horarios (entrada, salida, tolerancia y comida de cada día), asignarlos a cada persona y marcar días festivos', ['gerente']],
+  ['asistencia.extra', 'Personal', 'Autorizar tiempo extra', 'Autorizar el tiempo extra que se registró al checar (lo autorizado es lo que cuenta para la nómina)', ['gerente']],
   ['usuarios.administrar', 'Administración', 'Usuarios', 'Crear usuarios, cambiar su rol, contraseña y sucursales', ['gerente']],
   // Marketing (2026-10-26): aprueban Dirección (siempre) y el Gerente de marketing.
   ['marketing.aprobar', 'Marketing', 'Aprobar publicaciones', 'Aprobar o pedir cambios a las publicaciones antes de subirlas a redes', ['marketing_gerente']],
@@ -123,6 +125,8 @@ const DEPENDE = {
   'asistencia.ver': ['personal.ver'],
   'asistencia.corregir': ['asistencia.ver'],
   'asistencia.kioscos': ['asistencia.ver'],
+  'asistencia.horarios': ['asistencia.ver'],
+  'asistencia.extra': ['asistencia.ver'],
   'marketing.aprobar': ['marketing.ver'],
   'marketing.dinero': ['marketing.ver'],
 };

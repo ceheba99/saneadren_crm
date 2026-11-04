@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Saneadren · Cotizaciones y Servicios</title>
-<link rel="stylesheet" href="styles.css?v=rh2">
+<link rel="stylesheet" href="styles.css?v=rh3">
 <link rel="stylesheet" href="servicios-tabla.css">
 <link rel="stylesheet" href="flujo.css?v=cel1">
 </head>
@@ -54,6 +54,7 @@
         <button type="button" class="menu-grupo-btn" aria-expanded="false"><span class="menu-icono" aria-hidden="true">⚙️</span>Ajustes<span class="menu-flecha" aria-hidden="true">▾</span></button>
         <div class="menu-sub">
           <button type="button" class="menu-item perm-personal-ver" data-vista="personal" id="nav-personal"><span class="menu-icono" aria-hidden="true">👷</span>Personal</button>
+          <button type="button" class="menu-item perm-asistencia-ver" data-vista="asistencia" id="nav-asistencia"><span class="menu-icono" aria-hidden="true">🕒</span>Asistencia</button>
           <button type="button" class="menu-item perm-catalogos-editar" data-vista="catalogos" id="nav-catalogos"><span class="menu-icono" aria-hidden="true">📚</span>Catálogos</button>
           <button type="button" class="menu-item perm-usuarios-administrar" data-vista="usuarios" id="nav-usuarios"><span class="menu-icono" aria-hidden="true">👤</span>Usuarios</button>
           <button type="button" class="menu-item solo-general" data-vista="bitacora" id="nav-bitacora"><span class="menu-icono" aria-hidden="true">🗂️</span>Bitácora</button>
@@ -492,6 +493,12 @@
 <div id="pe-kioscos-lista"></div>
 <div class="filtros"><input id="pe-kiosco-nombre" maxlength="60" aria-label="Nombre del kiosco" placeholder="Nombre (p. ej. Entrada Querétaro)"><select id="pe-kiosco-suc" aria-label="Sucursal del kiosco" hidden></select><button type="button" class="btn btn-secundario" id="pe-kiosco-registrar">Registrar este dispositivo como kiosco</button></div>
 </div>
+</section>
+<section class="vista" id="vista-asistencia">
+<div class="pe-encabezado"><h2>Asistencia</h2></div>
+<p class="ayuda">Entradas, comida, salidas, retardos, faltas y tiempo extra del personal, según su horario. Las checadas no se borran: se corrigen con motivo.</p>
+<div class="btn-group as-pestanas" role="group" aria-label="Vista de asistencia"><button type="button" class="btn btn-outline" data-as-pestana="dia" aria-pressed="true">Día</button><button type="button" class="btn btn-outline" data-as-pestana="semana" aria-pressed="false">Semana</button><button type="button" class="btn btn-outline" data-as-pestana="horarios" aria-pressed="false">Horarios</button><button type="button" class="btn btn-outline" data-as-pestana="festivos" aria-pressed="false">Días festivos</button></div>
+<div id="as-cuerpo"></div>
 </section>
 <section class="vista" id="vista-prospeccion">
 <div class="vista-encabezado">
@@ -1777,8 +1784,9 @@
 <script src="sucursales.js?v=perm2"></script>
 <script src="facturacion.js?v=fx10"></script>
 <script src="encuestas.js?v=enc1"></script>
-<script src="app.js?v=dup1"></script>
-<script src="personal.js?v=rh2"></script>
+<script src="app.js?v=rh3"></script>
+<script src="personal.js?v=rh3"></script>
+<script src="asistencia.js?v=rh3"></script>
 <script src="buscador.js?v=suc1"></script>
 <script src="demo.js?v=demo1"></script>
 <script src="prospeccion.js?v=pro1"></script>

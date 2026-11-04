@@ -24,6 +24,7 @@ Dirección la revisa y la aprueba. Si un cambio altera lo que ve un rol, la prue
 | 🛒 Órdenes de compra | ✔ | ✔ | ✔ | ✔ | — | ✔ | — | — |
 | 📊 Resultados | ✔ | ✔ | ✔ | ✔ | — | — | — | — |
 | 👷 Personal | ✔ | ✔ | — | — | — | — | — | — |
+| 🕒 Asistencia | ✔ | ✔ | — | — | — | — | — | — |
 | 📚 Catálogos | ✔ | ✔ | — | — | — | ✔ | — | — |
 | 👤 Usuarios | ✔ | ✔ | — | — | — | — | — | — |
 | 🗂️ Bitácora | ✔ | — | — | — | — | — | — | — |
@@ -176,6 +177,9 @@ Dirección la revisa y la aprueba. Si un cambio altera lo que ve un rol, la prue
 | Dar de alta a una persona en el reloj checador (código y PIN temporal) o desbloquear su PIN | ✔ | ✔ | — | — | — | — | — | — |
 | Registrar una tableta o computadora como kiosco del reloj checador | ✔ | ✔ | — | — | — | — | — | — |
 | Agregar a mano una checada olvidada (con motivo) | ✔ | ✔ | — | — | — | — | — | — |
+| Cambiar un horario (entrada, salida, tolerancia o comida) o marcar días festivos | ✔ | ✔ | — | — | — | — | — | — |
+| Autorizar el tiempo extra de una persona | ✔ | ✔ | — | — | — | — | — | — |
+| Ver la asistencia del día y de la semana (retardos, faltas, tiempo extra) | ✔ | ✔ | — | — | — | — | — | — |
 
 | Permiso | Dirección | Gerente | Ventas | Atención | Técnico | Costos y compras | Marketing | Gerente de marketing |
 |---|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|
@@ -207,6 +211,8 @@ Dirección la revisa y la aprueba. Si un cambio altera lo que ve un rol, la prue
 | Personal · Ver asistencia | ✔ | ✔ | — | — | — | — | — | — |
 | Personal · Corregir asistencia | ✔ | ✔ | — | — | — | — | — | — |
 | Personal · Kioscos del checador | ✔ | ✔ | — | — | — | — | — | — |
+| Personal · Horarios y días festivos | ✔ | ✔ | — | — | — | — | — | — |
+| Personal · Autorizar tiempo extra | ✔ | ✔ | — | — | — | — | — | — |
 | Administración · Usuarios | ✔ | ✔ | — | — | — | — | — | — |
 | Marketing · Aprobar publicaciones | ✔ | — | — | — | — | — | — | ✔ |
 | Marketing · Dinero de Marketing | ✔ | — | — | — | — | — | — | ✔ |
@@ -237,6 +243,7 @@ Dirección la revisa y la aprueba. Si un cambio altera lo que ve un rol, la prue
 - **2026-10-19** · Personal: quien ve órdenes ve nombre y puesto del personal activo, para asignarlo a una orden; la ficha y los datos sensibles, solo Gerente y Dirección.
 - **2026-11-03** · Reloj checador: ver las checadas del personal, corregirlas con motivo, dar código y PIN y registrar kioscos lo hacen Dirección y el Gerente (de su sucursal); los demás roles no. Nadie ve un PIN ni borra una checada.
 - **2026-11-03** · Foto de cada checada del kiosco (para revisar quién checó): la ven Dirección y el Gerente (de su sucursal), y cada vez queda en la bitácora; los demás roles no. Se guarda cifrada.
+- **2026-11-03** · Asistencia (horarios, retardos, faltas y tiempo extra): la ven Dirección y el Gerente; cambian horarios y días festivos y autorizan el tiempo extra Dirección y el Gerente (Dirección se los da a RH en Roles y permisos); los demás roles no.
 - **2026-10-26** · Marketing: aprueban las publicaciones Dirección y el Gerente de marketing; nadie más (ni Marketing, aunque la haya escrito).
 - **2026-10-26** · Marketing y Gerente de marketing: ven, editan y comentan las publicaciones de toda la empresa (de cualquier sucursal y las generales), y nada más del sistema: ni ventas, cobranza, gastos, compras, prospección ni personal.
 - **2026-10-26** · Los demás roles (Gerente, Ventas, Atención, Técnico, Compras) no ven Marketing; Dirección lo puede prender en Roles y permisos.

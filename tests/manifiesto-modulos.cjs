@@ -60,16 +60,17 @@ module.exports = {
     },
     personal: {
       nombre: 'Personal (RH)',
-      vistas: ['personal'],
+      vistas: ['personal', 'asistencia'],
       // Reloj checador (2026-11-03): checadas, sus correcciones y los kioscos; el kiosco entra sin sesión, con su token.
-      tablas: ['personal', 'documentos_personal', 'incidencias_personal', 'checadas', 'checadas_correcciones', 'checador_dispositivos'],
+      tablas: ['personal', 'documentos_personal', 'incidencias_personal', 'checadas', 'checadas_correcciones', 'checador_dispositivos',
+        'horarios', 'horario_versiones', 'personal_horario', 'dias_festivos', 'extra_autorizaciones'],
       rutas: [/^\/api\/personal(\/|$)/, /^\/api\/(asistencia|publico\/kiosco)(\/|$)/],
       pendientes: 'licencias y contratos por vencer, quién falta esta semana y órdenes sin técnico responsable',
       inicio: ['inicio-personal'],
       demo: ['personal', 'documentos_personal', 'incidencias_personal'],
       integridad: ['personal', 'documentos_personal', 'incidencias_personal'],
       buscador: null, buscadorRazon: 'datos personales: no se exponen en el buscador general (se buscan dentro de Personal, con permiso)',
-      permisos: ['personal.ver', 'personal.editar', 'personal.sensibles', 'asistencia.ver', 'asistencia.corregir', 'asistencia.kioscos'],
+      permisos: ['personal.ver', 'personal.editar', 'personal.sensibles', 'asistencia.ver', 'asistencia.corregir', 'asistencia.kioscos', 'asistencia.horarios', 'asistencia.extra'],
     },
     prospeccion: {
       nombre: 'Prospección',

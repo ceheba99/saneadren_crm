@@ -372,7 +372,7 @@ module.exports = function checador(app, db, h) {
   }));
 
   // ---------- Checadas: consulta y correcciones ----------
-  const fechaOk = v => /^\d{4}-\d{2}-\d{2}$/.test(v) && new Date(v + 'T00:00:00Z').toISOString().slice(0, 10) === v;
+  const fechaOk = v => { if (!/^\d{4}-\d{2}-\d{2}$/.test(String(v))) return false; const d = new Date(v + 'T00:00:00Z'); return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === v; };
   app.get('/api/asistencia/checadas', h((req, res) => {
     if (!puede(req, 'asistencia.ver')) return negar(res, 'No tienes permiso para ver la asistencia');
     const fecha = req.query.fecha || ahoraMexico().fecha;
