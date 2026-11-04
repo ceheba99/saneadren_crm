@@ -219,6 +219,11 @@ module.exports = function asistencia(app, db, h) {
         trabajado_min: t('trabajado_min'), retardos: dias.filter(d => d.retardo_min).length, retardo_min: t('retardo_min'), faltas: dias.filter(d => d.falta).length,
         extra_min: t('extra_min'), extra_autorizado_min: autorizado, extra_dobles_min: Math.min(autorizado, 540), extra_triples_min: Math.max(0, autorizado - 540),
         domingos: dias.filter(d => d.notas.some(n => n.startsWith('Domingo'))).length, festivos_trabajados: dias.filter(d => d.notas.includes('Festivo trabajado')).length,
+        descansos_trabajados: dias.filter(d => d.notas.includes('Descanso trabajado')).length, dias_trabajados: dias.filter(d => d.entrada).length,
+        vacaciones: dias.filter(d => d.incidencia === 'vacaciones').length, incapacidad: dias.filter(d => d.incidencia === 'incapacidad').length, permisos: dias.filter(d => d.incidencia === 'permiso').length,
+        // Lo que hay que revisar antes de pagar: tiempo extra sin autorizar, días sin salida o sin horario, checadas por revisar.
+        extra_sin_autorizar_min: dias.reduce((s, d) => s + (d.extra_autorizado_min == null ? d.extra_min : 0), 0),
+        sin_salida: dias.filter(d => d.notas.includes('Sin salida')).length, sin_horario: dias.filter(d => d.notas.includes('Sin horario asignado') && (d.entrada || d.salida)).length,
         por_revisar: t('por_revisar') } };
     });
     res.json({ desde, hasta: fechas[6], fechas, festivos: fechas.map(festivoDe), filas, puede: { corregir: puede(req, 'asistencia.corregir'), extra: puede(req, 'asistencia.extra') } });

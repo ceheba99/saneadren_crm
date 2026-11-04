@@ -94,6 +94,7 @@ const VIE = sumar(sumar(HOY, -7), -((dow(sumar(HOY, -7)) - 5 + 7) % 7)), LUN = s
   revisa(sem.desde === VIE && sem.hasta === sumar(VIE, 6) && tj && tj.extra_min === 1090 && tj.extra_autorizado_min === 1060 && tj.extra_dobles_min === 540 && tj.extra_triples_min === 520 && tj.faltas === 1 && tj.retardos === 1 && tj.domingos === 1 && tj.festivos_trabajados === 1,
     'Semana de nómina viernes a jueves (cualquier día lleva a su viernes): extra 18:10, autorizado 17:40 (la última autorización cuenta) → 9 h dobles y 8:40 triples; 1 falta, 1 retardo, domingo y festivo', tj);
 
+  revisa(tj.dias_trabajados === 5 && tj.permisos === 1 && tj.descansos_trabajados === 1 && tj.extra_sin_autorizar_min === 0 && tj.sin_salida === 0, 'Totales para el Excel: 5 días trabajados, 1 permiso, 1 descanso trabajado, nada sin autorizar', tj);
   console.log('4. Versiones de horario');
   revisa((await pedir('PUT', '/asistencia/horarios/' + op.id, T.Valeria, { dias: { 1: { entrada: '08:00', salida: '17:00' } }, tolerancia_min: 5, comida_min: 60 }))[0] === 403, 'Ventas no cambia horarios');
   revisa((await pedir('PUT', '/asistencia/horarios/' + op.id, T.Gema, { dias: { 1: { entrada: '08:00', salida: '17:00' } }, tolerancia_min: 5, comida_min: 60, desde: sumar(HOY, -20) }))[0] === 400, 'Un horario no se cambia hacia atrás más de 7 días');
