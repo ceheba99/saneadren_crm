@@ -190,6 +190,8 @@ Dirección la revisa y la aprueba. Si un cambio altera lo que ve un rol, la prue
 | Cargar trabajadores en lote desde la plantilla de Excel (revisar y guardar) | ✔ | ✔ | — | — | — | — | — | — |
 | Ver la asistencia del día y de la semana (retardos, faltas, tiempo extra) | ✔ | ✔ | — | — | — | — | — | — |
 | Cargar el reporte de llamadas de Google Ads (CSV) y verlo cruzado con los contactos | ✔ | — | — | — | — | — | — | ✔ |
+| Subir el XML de la factura a un gasto que registró Tomás (el sistema llena el IVA) | ✔ | ✔ | — | — | ✔ | ✔ | — | — |
+| Corregir a mano el IVA de ese gasto (botón «IVA») | ✔ | ✔ | — | — | — | ✔ | — | — |
 
 | Permiso | Dirección | Gerente | Ventas | Atención | Técnico | Costos y compras | Marketing | Gerente de marketing |
 |---|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|
@@ -258,6 +260,7 @@ Dirección la revisa y la aprueba. Si un cambio altera lo que ve un rol, la prue
 - **2026-11-03** · Nadie corrige su PROPIA asistencia (agregar, anular o aceptar sus checadas, autorizarse tiempo extra, cambiarse el horario, registrarse vacaciones o permisos), ni el Gerente: lo hace otra persona con permiso. Dirección sí, porque no tiene a quién pedírselo.
 - **2026-11-03** · Checar desde el celular: mandar el enlace o quitar el celular lo hacen Dirección y el Gerente (quien edita el personal); la ubicación de cada checada la ven solo Dirección y el Gerente (se toma solo al checar). Los demás roles no.
 - **2026-11-03** · Pestaña RH (junta Personal, asistencia, horarios, kioscos, nómina y aviso de privacidad): la ve quien ve el personal (Gerente y Dirección); cargar trabajadores en lote desde la plantilla, solo quien edita el personal (Gerente y Dirección). Los demás roles no.
+- **2026-11-04** · Gastos con factura: subir el XML a un gasto ya registrado (el sistema llena solo el IVA) lo hacen quien registró el gasto y quien paga cuentas por pagar (Dirección, Gerente y Compras). Corregir el IVA a mano, solo quien paga (como antes). Los demás roles no.
 - **2026-10-26** · Marketing: aprueban las publicaciones Dirección y el Gerente de marketing; nadie más (ni Marketing, aunque la haya escrito).
 - **2026-10-26** · Marketing y Gerente de marketing: ven, editan y comentan las publicaciones de toda la empresa (de cualquier sucursal y las generales), y nada más del sistema: ni ventas, cobranza, gastos, compras, prospección ni personal.
 - **2026-10-26** · Los demás roles (Gerente, Ventas, Atención, Técnico, Compras) no ven Marketing; Dirección lo puede prender en Roles y permisos.

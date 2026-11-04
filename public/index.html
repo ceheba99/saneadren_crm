@@ -1370,12 +1370,13 @@
         <div class="gasto-orden-info" id="gasto-orden-info" role="status" hidden></div>
       </div>
       <div class="campo"><label for="gasto-concepto">Concepto del costo (obligatorio)</label><input id="gasto-concepto" maxlength="200" required placeholder="Concepto del gasto (ej. Renta de pipa 20 m³, diésel, disposición de lodos)"></div>
+      <div class="campo"><label for="gasto-xml">XML de la factura (opcional)</label><input id="gasto-xml" type="file" accept=".xml,application/xml,text/xml"><small class="ayuda" id="gasto-xml-info" role="status">Si lo subes, el sistema llena solo el total, el folio, la fecha y el IVA. El IEPS (gasolina) se queda como parte del gasto.</small></div>
       <div class="campo"><label for="gasto-total">Total a pagar con IVA (MXN, obligatorio)</label><input id="gasto-total" type="text" inputmode="decimal" autocomplete="off"></div>
       <div class="form-grid-2">
         <div class="campo"><label for="gasto-comprobante">Tipo de comprobante (obligatorio)</label><select id="gasto-comprobante"></select></div>
         <div class="campo" id="gasto-sat-wrap"><label for="gasto-sat">Método del SAT (opcional)</label><select id="gasto-sat"><option value="">Sin indicar</option><option value="PUE">PUE · una sola exhibición</option><option value="PPD">PPD · en parcialidades</option></select></div>
       </div>
-      <div class="campo" id="gasto-iva-wrap" hidden><label for="gasto-iva">IVA de la factura (MXN, opcional)</label><input id="gasto-iva" type="text" inputmode="decimal" autocomplete="off"><small class="ayuda">Se propone el 16 % incluido en el total; corrígelo con el que trae la factura (0 si es tasa 0 o exenta). Con él, Resultados calcula la utilidad sin IVA.</small></div>
+      <div class="campo" id="gasto-iva-wrap" hidden><label for="gasto-iva">IVA de la factura (MXN, opcional)</label><input id="gasto-iva" type="text" inputmode="decimal" autocomplete="off"><small class="ayuda" id="gasto-iva-ayuda">Se propone el 16 % incluido en el total; corrígelo con el que trae la factura (0 si es tasa 0 o exenta). Con él, Resultados calcula la utilidad sin IVA.</small></div>
       <div class="campo"><label for="gasto-beneficiario">¿A quién se le paga? (opcional, si no es el proveedor)</label><input id="gasto-beneficiario" maxlength="120" list="gasto-beneficiarios" placeholder="Vacío = al mismo proveedor (ej. reembolso a quien pagó con su tarjeta)"><datalist id="gasto-beneficiarios"></datalist></div>
       <div class="form-grid-2">
         <div class="campo"><label for="gasto-fecha">Fecha de la factura o gasto (obligatorio)</label><input id="gasto-fecha" type="date"></div>
@@ -1467,6 +1468,7 @@
       <div class="campo"><label for="pagoprov-fecha">Fecha del pago (obligatorio)</label><input id="pagoprov-fecha" type="date"></div>
       <div class="campo"><label for="pagoprov-referencia">Referencia (opcional)</label><input id="pagoprov-referencia" maxlength="120"></div>
       <div class="campo"><label for="pagoprov-cuenta">¿De qué cuenta salió? (opcional)</label><input id="pagoprov-cuenta" maxlength="80" list="pagoprov-cuentas" placeholder="Ej. Santander empresa, tarjeta de Luis Perea"><datalist id="pagoprov-cuentas"><option value="Santander empresa"></option><option value="Banamex"></option><option value="Banorte"></option><option value="Efectivo caja"></option></datalist></div>
+      <div id="pagoprov-xml"></div><input id="pagoprov-xml-archivo" type="file" accept=".xml,application/xml,text/xml" hidden>
       <div id="pagoprov-historial"></div>
       <button type="button" class="btn btn-primario btn-ancho" id="pagoprov-guardar">Guardar pago</button>
     </div>

@@ -699,13 +699,13 @@ const Finanzas = (() => {
       { k: 'orden', t: 'Orden', v: x => (x.lead_id ? '<button type="button" class="enlace" data-abrir-orden-cxp="' + Number(x.lead_id) + '">' + esc(x.orden_folio) + '</button>' : '—'), s: x => x.orden_folio || '' },
       { k: 'equipo', t: 'Unidad', v: x => esc(x.equipo || '—'), s: x => x.equipo || '' },
       { k: 'total', t: 'Total', n: true, v: x => formatoMoneda(x.total), s: x => x.total, sum: x => x.total },
-      { k: 'iva', t: 'IVA', n: true, v: x => (x.es_factura ? formatoMoneda(x.iva) + (x.iva_estimado ? '<small class="celda-sub">estimado 16 %</small>' : '') : '—'), s: x => x.iva, sum: x => x.iva },
+      { k: 'iva', t: 'IVA', n: true, v: x => (x.es_factura ? formatoMoneda(x.iva) + (x.iva_estimado ? '<small class="celda-sub">estimado 16 %</small>' : x.xml && x.iva_origen === 'xml' ? '<small class="celda-sub">del XML' + (x.xml.ieps ? ' · IEPS ' + formatoMoneda(x.xml.ieps) + ' en el gasto' : '') + '</small>' : '') : '—'), s: x => x.iva, sum: x => x.iva },
       { k: 'pagado', t: 'Pagado', n: true, v: x => formatoMoneda(x.pagado), s: x => x.pagado, sum: x => x.pagado },
       { k: 'saldo', t: 'Saldo', n: true, fija: true, v: x => '<b>' + formatoMoneda(x.saldo) + '</b>', s: x => x.saldo, sum: x => x.saldo },
       { k: 'ultimo_pago', t: 'Último pago', v: x => esc(ultimoPagoTxt(x.ultimo_pago)), s: x => x.ultimo_pago || '' },
       { k: 'notas', t: 'Notas', clase: 'celda-notas', v: x => esc(x.notas || ''), s: x => x.notas || '' },
       { k: 'acciones', t: '', fija: true, sinOrden: true, clase: 'celda-acciones', v: x => '<div class="acciones-fila">' + (x.saldo > 0 ? '<button type="button" class="btn btn-primario btn-chico perm-dinero-mover" data-pagar-cxp="' + Number(x.id) + '">Pagar</button>' : '')
-        + '<button type="button" class="btn btn-outline btn-chico" data-detalle-cxp="' + Number(x.id) + '">Pagos</button>'
+        + '<button type="button" class="btn btn-outline btn-chico" data-detalle-cxp="' + Number(x.id) + '" title="Pagos y XML de la factura">Pagos' + (x.xml ? ' · XML' : '') + '</button>'
         + (x.es_factura ? '<button type="button" class="btn btn-outline btn-chico perm-dinero-mover" data-iva-cxp="' + Number(x.id) + '" title="Capturar o corregir el IVA de la factura">IVA</button>' : '')
         + (x.pagado === 0 ? '<button type="button" class="btn btn-outline btn-chico perm-dinero-mover" data-cancelar-cxp="' + Number(x.id) + '">Cancelar</button>' : '') + '</div>' },
     ];
@@ -760,6 +760,7 @@ const Finanzas = (() => {
     $('pagoprov-guardar').disabled = x.saldo <= 0;
     [$('pagoprov-monto'), $('pagoprov-fecha'), $('pagoprov-referencia'), $('pagoprov-guardar')].forEach(el => { el.closest('.campo') ? (el.closest('.campo').hidden = !paraPagar) : (el.hidden = !paraPagar); });
     $('pagoprov-metodos').closest('.campo').hidden = !paraPagar;
+    pintarXmlGasto(x);
     $('pagoprov-historial').innerHTML = '<p class="util-45">Cargando pagos…</p>';
     abrirVentana('overlay-pago-prov');
     const pagos = await api('/finanzas/cxp/' + id + '/pagos').then(json).catch(() => []);
@@ -768,6 +769,48 @@ const Finanzas = (() => {
         <small>Registró ${esc(g.registrado_por_nombre || '—')}${g.referencia ? ' · Ref. ' + esc(g.referencia) : ''}</small>${g.cancelado ? `<small class="motivo">Cancelado: ${esc(g.motivo_cancelacion || '')}</small>` : ''}</div>
         ${!g.cancelado ? `<button type="button" class="btn btn-outline perm-dinero-mover" data-cancelar-pagoprov="${Number(g.id)}">Cancelar</button>` : ''}</div>`).join('') : '<p class="util-45">Sin pagos registrados.</p>';
   }
+  // XML de la factura del gasto: sus datos y descargarlo; si no tiene, lo sube quien registró el gasto o quien paga.
+  function pintarXmlGasto(x) {
+    const cont = $('pagoprov-xml');
+    if (!('xml' in x)) { cont.innerHTML = ''; return; }
+    const g = x.xml;
+    if (!g) {
+      const puede = Permisos.puede('dinero.mover') || (Permisos.puede('gastos.registrar') && x.registrado_por === USUARIO_ACTUAL?.id);
+      cont.innerHTML = puede ? '<div class="seccion-tit">Factura (XML)</div><p class="util-45">Sin XML.' + (x.iva_estimado ? ' El IVA está <b>estimado al 16 %</b>.' : '') + ' Súbelo y el sistema llena solo el IVA.</p><button type="button" class="btn btn-outline" data-subir-xml-cxp="' + Number(x.id) + '">Subir XML de la factura</button>' : '';
+      return;
+    }
+    const m = v => formatoMoneda(v);
+    cont.innerHTML = '<div class="seccion-tit">Factura (XML)</div><div class="pago-fila"><div>'
+      + '<b>' + esc([g.serie, g.folio].filter(Boolean).join('-') || 'Sin folio') + '</b> · ' + esc(g.emisor_nombre || g.emisor_rfc || '') + (g.tipo === 'E' ? ' · <b>nota de crédito</b>' : '')
+      + '<small>Folio fiscal ' + esc(g.uuid) + ' · ' + esc(fechaTxt(String(g.fecha || '').slice(0, 10))) + (g.moneda && g.moneda !== 'MXN' ? ' · ' + esc(g.moneda) : '') + '</small>'
+      + '<small>Subtotal ' + m(g.subtotal) + (g.descuento ? ' · descuento ' + m(g.descuento) : '') + ' · IVA ' + m(g.iva) + (g.ieps ? ' · IEPS ' + m(g.ieps) + ' (se queda en el gasto)' : '')
+      + (g.ret_isr ? ' · ret. ISR ' + m(g.ret_isr) : '') + (g.ret_iva ? ' · ret. IVA ' + m(g.ret_iva) : '') + ' · total ' + m(g.total) + '</small>'
+      + '<small>Subió ' + esc(g.subido_por_nombre || '—') + '</small>'
+      + (g.avisos || []).map(a => '<small class="motivo">⚠ ' + esc(a) + '</small>').join('')
+      + '</div><button type="button" class="btn btn-outline" data-bajar-xml-cxp="' + Number(x.id) + '">Descargar XML</button></div>';
+  }
+  $('pagoprov-xml').addEventListener('click', async e => {
+    const btn = e.target.closest('button'); if (!btn) return;
+    if (btn.dataset.subirXmlCxp) { $('pagoprov-xml-archivo').value = ''; $('pagoprov-xml-archivo').dataset.cxp = btn.dataset.subirXmlCxp; $('pagoprov-xml-archivo').click(); return; }
+    if (btn.dataset.bajarXmlCxp) conBoton(btn, async () => {
+      const r = await api('/finanzas/cxp/' + Number(btn.dataset.bajarXmlCxp) + '/xml');
+      if (!r.ok) { const j = await r.json().catch(() => ({})); toast(j.error || 'No se pudo descargar'); return; }
+      const g = PAGO_PROV?.xml, u = URL.createObjectURL(await r.blob()), a = document.createElement('a');
+      a.href = u; a.download = g?.nombre || 'factura.xml'; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(u), 2000);
+    });
+  });
+  $('pagoprov-xml-archivo').addEventListener('change', async () => {
+    const f = $('pagoprov-xml-archivo').files[0], id = Number($('pagoprov-xml-archivo').dataset.cxp); if (!f || !id) return;
+    try {
+      const r = await api('/finanzas/cxp/' + id + '/xml', { method: 'POST', headers: { 'Content-Type': 'application/octet-stream', 'X-Nombre': encodeURIComponent(f.name) }, body: f });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) { await solicitarDialogo({ titulo: 'No se guardó el XML', mensaje: j.error || 'No se pudo subir el XML', aceptar: 'Entendido', soloAviso: true }); return; }
+      $('overlay-pago-prov').classList.remove('mostrar');
+      toast(j.iva != null ? 'XML guardado · IVA ' + formatoMoneda(j.iva) + (j.ieps ? ' · IEPS ' + formatoMoneda(j.ieps) + ' queda en el gasto' : '') : 'XML guardado (el IVA no cambió)');
+      if (j.avisos?.length) await solicitarDialogo({ titulo: 'XML guardado, con avisos', mensaje: j.avisos.map(a => '• ' + a).join('\n'), aceptar: 'Entendido', soloAviso: true });
+      cargar({ pestana: 'pagar' }); refrescarFichaProv();
+    } catch (err) { toast(err.message); }
+  });
   $('pagoprov-historial').addEventListener('click', async e => {
     const btn = e.target.closest('[data-cancelar-pagoprov]'); if (!btn) return;
     const motivo = await pedirMotivo('Cancelar pago a proveedor'); if (!motivo) return;
@@ -850,6 +893,7 @@ const Finanzas = (() => {
     $('gasto-comprobante').innerHTML = '<option value="">Selecciona…</option>' + COMPROBANTES.map(([v, t]) => '<option value="' + v + '">' + esc(t) + '</option>').join('');
     $('gasto-sat').value = ''; $('gasto-sat-wrap').hidden = true; $('gasto-beneficiario').value = '';
     $('gasto-iva').value = ''; delete $('gasto-iva').dataset.editado; $('gasto-iva-wrap').hidden = true;
+    quitarXmlGasto();
     $('gasto-beneficiarios').innerHTML = PROVEEDORES.filter(p => p.activo).map(p => '<option value="' + esc(p.nombre) + '"></option>').join('');
     $('gasto-categoria').value = 'otro';
     $('gasto-folio').closest('details').open = !!prellenado['gasto-equipo'];
@@ -882,6 +926,43 @@ const Finanzas = (() => {
     const factura = $('gasto-comprobante').value === 'factura';
     $('gasto-sat-wrap').hidden = !factura; if (!factura) $('gasto-sat').value = '';
     $('gasto-iva-wrap').hidden = !factura; if (!factura) { $('gasto-iva').value = ''; delete $('gasto-iva').dataset.editado; } else proponerIva();
+  });
+  // XML de la factura en el alta: el servidor lo lee (sin guardar) y con eso se llenan total, folio, fecha, método del SAT e IVA.
+  let GASTO_XML = null;
+  const AYUDA_XML = $('gasto-xml-info').textContent, AYUDA_IVA = $('gasto-iva-ayuda').textContent;
+  function quitarXmlGasto() {
+    GASTO_XML = null; $('gasto-xml').value = ''; $('gasto-xml-info').textContent = AYUDA_XML; $('gasto-xml-info').classList.remove('rojo');
+    $('gasto-iva').readOnly = false; $('gasto-iva-ayuda').textContent = AYUDA_IVA; $('gasto-total').readOnly = false;
+  }
+  $('gasto-xml').addEventListener('change', async () => {
+    const f = $('gasto-xml').files[0];
+    if (!f) { quitarXmlGasto(); return; }
+    $('gasto-xml-info').textContent = 'Leyendo la factura…';
+    let d;
+    try {
+      const prov = Number($('gasto-proveedor').value) || '';
+      const r = await api('/finanzas/cxp/leer-xml' + (prov ? '?proveedor_id=' + prov : ''), { method: 'POST', headers: { 'Content-Type': 'application/octet-stream', 'X-Nombre': encodeURIComponent(f.name) }, body: f });
+      d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d.error || 'No se pudo leer el XML');
+    } catch (err) { quitarXmlGasto(); $('gasto-xml-info').textContent = err.message; $('gasto-xml-info').classList.add('rojo'); toast(err.message); return; }
+    GASTO_XML = { texto: await f.text(), nombre: f.name };
+    // Si no se eligió proveedor y hay uno con el RFC de la factura, se elige solo.
+    if (!$('gasto-proveedor').value && d.emisor_rfc) { const p = PROVEEDORES.find(x => x.activo && String(x.rfc || '').toUpperCase() === d.emisor_rfc); if (p) { $('gasto-proveedor').value = String(p.id); $('gasto-proveedor').dispatchEvent(new Event('change')); } }
+    $('gasto-comprobante').value = 'factura'; $('gasto-comprobante').dispatchEvent(new Event('change'));
+    if (['PUE', 'PPD'].includes(d.metodo_pago)) $('gasto-sat').value = d.metodo_pago;
+    if (d.fecha) { $('gasto-fecha').value = d.fecha; recalcularVence(); }
+    const folio = [d.serie, d.folio].filter(Boolean).join('-');
+    if (folio && !$('gasto-folio').value.trim()) $('gasto-folio').value = folio;
+    if (d.en_pesos) {
+      $('gasto-total').value = d.total.toFixed(2); $('gasto-total').readOnly = true;
+      $('gasto-iva').value = d.iva.toFixed(2); $('gasto-iva').dataset.editado = '1'; $('gasto-iva').readOnly = true;
+      $('gasto-iva-ayuda').textContent = 'Viene del XML (IVA trasladado). Para cambiarlo, quita el XML.';
+    }
+    const m = formatoMoneda;
+    $('gasto-xml-info').classList.toggle('rojo', d.avisos.length > 0);
+    $('gasto-xml-info').textContent = `Factura ${folio || d.uuid} de ${d.emisor_nombre || d.emisor_rfc} · total ${m(d.total)}${d.en_pesos ? '' : ' ' + d.moneda} · IVA ${m(d.iva)}`
+      + (d.ieps ? ` · IEPS ${m(d.ieps)} (se queda como gasto)` : '') + (d.ret_isr || d.ret_iva ? ` · retenciones ${m(d.ret_isr + d.ret_iva)}` : '')
+      + (d.avisos.length ? '. ⚠ ' + d.avisos.join(' ⚠ ') : '');
   });
   $('gasto-total').addEventListener('input', proponerIva);
   $('gasto-iva').addEventListener('input', () => { $('gasto-iva').dataset.editado = '1'; });
@@ -918,7 +999,8 @@ const Finanzas = (() => {
       proveedor_id: Number($('gasto-proveedor').value) || null, categoria: $('gasto-categoria').value, concepto: $('gasto-concepto').value,
       total: $('gasto-total').value.trim(), fecha_documento: $('gasto-fecha').value, dias_credito: Number(credito),
       tipo_comprobante: $('gasto-comprobante').value, metodo_sat: $('gasto-sat').value || null, beneficiario: $('gasto-beneficiario').value.trim() || null,
-      iva: $('gasto-comprobante').value === 'factura' ? ($('gasto-iva').value.trim() || null) : null,
+      iva: $('gasto-comprobante').value === 'factura' && !GASTO_XML ? ($('gasto-iva').value.trim() || null) : null,
+      xml: GASTO_XML?.texto || null, xml_nombre: GASTO_XML?.nombre || null,
       factura_folio: $('gasto-folio').value, lead_id: leadId, equipo: $('gasto-equipo').value,
       ya_pagado: $('gasto-pagado').checked, metodo: metodoElegido('gasto-metodos'),
       fecha_pago: $('gasto-pagado').checked ? $('gasto-fecha-pago').value : null, referencia: $('gasto-pagado').checked ? $('gasto-referencia').value : null });

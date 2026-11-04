@@ -34,6 +34,7 @@ const VISTAS = [
   ['cobros', 'lead_id IN (SELECT id FROM leads) AND ve_cobro(registrado_por, lead_id)'],
   ['historial', 'lead_id IN (SELECT id FROM leads) AND ve_bitacora(area, usuario_id, lead_id)'],
   ['pagos_proveedor', 'cxp_id IN (SELECT id FROM cuentas_por_pagar)'],
+  ['cfdi_gastos', 'cxp_id IN (SELECT id FROM cuentas_por_pagar)'], // XML de la factura de cada gasto, con su gasto
   ['documentos_solicitud', 'solicitud_id IN (SELECT id FROM solicitudes_compra)'],
   ['documentos_oc', 'oc_id IN (SELECT id FROM ordenes_compra)'],
   ['personal', 'en_alcance(sucursal_id)'], // qué se ve de cada persona lo decide personal.js (permisos)
