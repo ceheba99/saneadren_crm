@@ -24,6 +24,10 @@
 //    da de baja) y solo sirve para ella. Para checar: su PIN + selfie + ubicación GPS, con la hora del servidor, en
 //    /checar (única página con permiso de cámara y ubicación). Sin foto, sin ubicación o con ubicación poco precisa
 //    (más de 150 m) queda «por revisar». La ubicación se toma solo al checar (nunca se rastrea).
+//  · F6 (2026-11-03): las FOTOS se borran solas a los 90 días (FOTOS_CHECADAS_DIAS, mínimo 7): se borra el archivo y
+//    queda la checada con «foto borrada el …». Las que siguen «por revisar» se conservan hasta que alguien las revise.
+//    Aviso de privacidad para el personal en /aviso-privacidad-checador.html (borrador para su abogado); el firmado
+//    se sube al expediente («Aviso de privacidad firmado») y la ficha avisa si falta.
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
@@ -86,7 +90,7 @@ function migrar(db) {
   agregar('personal', 'pin_cambiado_at', 'TEXT');
   agregar('personal', 'checa', 'INTEGER NOT NULL DEFAULT 1');
   const existe = t => !!db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(t);
-  if (existe('checadas')) { agregar('checadas', 'uid_kiosco', 'TEXT'); agregar('checadas', 'precision_m', 'REAL'); }
+  if (existe('checadas')) { agregar('checadas', 'uid_kiosco', 'TEXT'); agregar('checadas', 'precision_m', 'REAL'); agregar('checadas', 'foto_borrada_at', 'TEXT'); }
   if (existe('checador_dispositivos')) { agregar('checador_dispositivos', 'tipo', "TEXT NOT NULL DEFAULT 'kiosco'"); agregar('checador_dispositivos', 'personal_id', 'INTEGER REFERENCES personal(id)'); }
   db.exec(`
     CREATE UNIQUE INDEX IF NOT EXISTS idx_personal_codigo_checador ON personal(codigo_checador) WHERE codigo_checador IS NOT NULL;
@@ -118,7 +122,7 @@ function migrar(db) {
       estado TEXT NOT NULL DEFAULT 'valida' CHECK(estado IN ('valida', 'por_revisar', 'anulada')),
       observaciones TEXT, registrado_por INTEGER, registrado_por_nombre TEXT,
       created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
-      uid_kiosco TEXT, precision_m REAL
+      uid_kiosco TEXT, precision_m REAL, foto_borrada_at TEXT
     );
     CREATE INDEX IF NOT EXISTS idx_checadas_persona ON checadas(personal_id, momento_utc);
     CREATE INDEX IF NOT EXISTS idx_checadas_fecha ON checadas(fecha);
@@ -163,6 +167,24 @@ module.exports = function checador(app, db, h) {
     C.escribirSeguro(path.join(DIR_FOTOS, archivo), C.cifrarArchivo(buf, contextoFoto(id)));
     db.prepare('UPDATE main.checadas SET foto_archivo = ? WHERE id = ?').run(archivo, id);
   }
+  // Borrado automático de fotos viejas (F6). Al arrancar y cada 6 horas; Dirección también lo puede correr a mano.
+  const DIAS_FOTOS = Math.max(7, Math.floor(Number(process.env.FOTOS_CHECADAS_DIAS)) || 90);
+  function borrarFotosViejas() {
+    const hoy = ahoraMexico().fecha, limite = new Date(Date.parse(hoy + 'T12:00:00Z') - DIAS_FOTOS * 86400000).toISOString().slice(0, 10);
+    const filas = db.prepare("SELECT id, foto_archivo FROM main.checadas WHERE foto_archivo IS NOT NULL AND fecha < ? AND estado <> 'por_revisar'").all(limite);
+    let borradas = 0;
+    for (const f of filas) {
+      const ruta = path.join(DIR_FOTOS, f.foto_archivo);
+      try { if (ruta.startsWith(DIR_FOTOS + path.sep)) fs.rmSync(ruta, { force: true }); }
+      catch (e) { console.error('[checador] no se pudo borrar la foto de la checada ' + f.id + ':', e.message); continue; }
+      db.prepare("UPDATE main.checadas SET foto_archivo = NULL, foto_borrada_at = datetime('now','localtime') WHERE id = ?").run(f.id);
+      borradas++;
+    }
+    if (borradas) console.log(`[checador] Se borraron ${borradas} foto(s) de checadas de más de ${DIAS_FOTOS} días.`);
+    return { borradas, dias: DIAS_FOTOS, antes_de: limite };
+  }
+  setTimeout(() => { try { borrarFotosViejas(); } catch (e) { console.error('[checador] borrado de fotos:', e.message); } }, 60 * 1000).unref();
+  setInterval(() => { try { borrarFotosViejas(); } catch (e) { console.error('[checador] borrado de fotos:', e.message); } }, 6 * 3600000).unref();
   // Guarda una checada del kiosco (con o sin conexión) y su foto, en una sola transacción.
   function guardarChecada({ p, d, tipo, a, foto, sinConexion = null, uid = null, origen = 'kiosco', ubicacion = null }) {
     const notas = [];
@@ -400,8 +422,9 @@ module.exports = function checador(app, db, h) {
     const p = persona(req.params.id);
     if (!p) return res.status(404).json({ error: 'Persona no encontrada' });
     const cel = db.prepare("SELECT id, created_at, ultimo_uso FROM main.checador_dispositivos WHERE tipo = 'celular' AND personal_id = ? AND activo = 1 ORDER BY id DESC LIMIT 1").get(p.id) || null;
-    const ultimas = puede(req, 'asistencia.ver') ? db.prepare('SELECT id, tipo, fecha, hora, origen, estado, observaciones, sin_conexion, foto_archivo IS NOT NULL AS tiene_foto, lat, lon, precision_m FROM checadas WHERE personal_id = ? ORDER BY momento_utc DESC, id DESC LIMIT 10').all(p.id) : [];
-    res.json({ ...estadoDe(p), celular: cel, ultimas, puede: { editar: puede(req, 'personal.editar'), corregir: puede(req, 'asistencia.corregir'), ver: puede(req, 'asistencia.ver') } });
+    const ultimas = puede(req, 'asistencia.ver') ? db.prepare('SELECT id, tipo, fecha, hora, origen, estado, observaciones, sin_conexion, foto_archivo IS NOT NULL AS tiene_foto, foto_borrada_at IS NOT NULL AS foto_borrada, lat, lon, precision_m FROM checadas WHERE personal_id = ? ORDER BY momento_utc DESC, id DESC LIMIT 10').all(p.id) : [];
+    const avisoFirmado = !!db.prepare("SELECT 1 FROM main.documentos_personal WHERE personal_id = ? AND tipo = 'privacidad' AND eliminado = 0").get(p.id);
+    res.json({ ...estadoDe(p), celular: cel, aviso_firmado: avisoFirmado, dias_fotos: DIAS_FOTOS, ultimas, puede: { editar: puede(req, 'personal.editar'), corregir: puede(req, 'asistencia.corregir'), ver: puede(req, 'asistencia.ver') } });
   }));
   // Genera (o vuelve a generar) su código y un PIN temporal. El PIN se muestra UNA vez; la base guarda solo su hash.
   app.post('/api/asistencia/personal/:id/pin', h((req, res) => {
@@ -496,7 +519,7 @@ module.exports = function checador(app, db, h) {
     const fecha = req.query.fecha || ahoraMexico().fecha;
     if (!fechaOk(fecha)) return res.status(400).json({ error: 'Revisa la fecha' });
     const pid = req.query.personal_id ? idDe(req.query.personal_id) : null;
-    res.json(db.prepare(`SELECT c.id, c.personal_id, p.nombre, c.tipo, c.fecha, c.hora, c.origen, c.estado, c.observaciones, c.sin_conexion, c.foto_archivo IS NOT NULL AS tiene_foto, c.lat, c.lon, c.precision_m, c.registrado_por_nombre, d.nombre AS kiosco
+    res.json(db.prepare(`SELECT c.id, c.personal_id, p.nombre, c.tipo, c.fecha, c.hora, c.origen, c.estado, c.observaciones, c.sin_conexion, c.foto_archivo IS NOT NULL AS tiene_foto, c.foto_borrada_at IS NOT NULL AS foto_borrada, c.lat, c.lon, c.precision_m, c.registrado_por_nombre, d.nombre AS kiosco
       FROM checadas c JOIN personal p ON p.id = c.personal_id LEFT JOIN main.checador_dispositivos d ON d.id = c.dispositivo_id
       WHERE c.fecha = ? ${pid ? 'AND c.personal_id = ?' : ''} ORDER BY c.momento_utc, c.id`).all(...[fecha, ...(pid ? [pid] : [])]));
   }));
@@ -519,6 +542,13 @@ module.exports = function checador(app, db, h) {
     audit(req, c.personal_id, 'consulta', `${c.nombre}: vio la foto de su checada (${TIPOS[c.tipo]} ${c.fecha} ${c.hora.slice(0, 5)})`);
     res.set({ 'Content-Type': 'image/jpeg', 'X-Content-Type-Options': 'nosniff', 'Cache-Control': 'private, no-store', 'Content-Disposition': 'inline; filename="checada.jpg"' });
     res.send(buf);
+  }));
+  // Borrar ya las fotos que pasaron el plazo (además del borrado automático): solo Dirección.
+  app.post('/api/asistencia/fotos/limpiar', h((req, res) => {
+    if (!P.direccion?.(req)) return negar(res, 'Solo Dirección puede hacer esto');
+    const r = borrarFotosViejas();
+    app.locals.auditoria?.registrar(req, 'checador', null, 'fotos borradas', `${r.borradas} foto(s) de checadas anteriores al ${r.antes_de} (plazo ${r.dias} días)`);
+    res.json(r);
   }));
   const motivoDe = req => { const m = texto(req.body?.motivo, 300); return m && m.length >= 4 ? m : null; };
   const corregir = db.prepare('INSERT INTO main.checadas_correcciones (checada_id, accion, antes, despues, motivo, usuario_id, usuario_nombre) VALUES (?, ?, ?, ?, ?, ?, ?)');

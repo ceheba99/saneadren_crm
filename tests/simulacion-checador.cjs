@@ -12,6 +12,8 @@
 //     solo se permite en /kiosco.
 //  6. F5 celular: enlace de un solo uso que caduca, un celular por persona y solo para ella, PIN + selfie + ubicación
 //     (sin ubicación o poco precisa → «por revisar»), tokens de kiosco y de celular no se cruzan, quitar el celular.
+//  7. F6 privacidad: las fotos de más de 90 días se borran (archivo y referencia; la checada queda), salvo las «por
+//     revisar»; solo Dirección lo corre a mano; aviso de privacidad publicado; aviso firmado en el expediente.
 // Uso: node tests/simulacion-checador.cjs
 const { spawn } = require('child_process');
 const fs = require('fs'), os = require('os'), path = require('path'), crypto = require('crypto');
@@ -63,7 +65,7 @@ const archivosDe = d => fs.readdirSync(d, { withFileTypes: true }).flatMap(e => 
   revisa((await pedir('POST', '/asistencia/personal/' + juan.id + '/pin', T.Valeria))[0] === 403, 'Ventas no puede dar PINes');
   revisa((await pedir('POST', '/asistencia/personal/' + mx.id + '/pin', T.Gema))[0] === 404, 'La gerente de Querétaro no da PIN a alguien de CDMX (no existe para ella)');
   const crudo = conBase(d => d.prepare('SELECT * FROM personal WHERE id = ?').get(juan.id));
-  revisa(crudo.pin_hash && !crudo.pin_hash.includes(altaJuan.pin) && crudo.pin_hash.startsWith('p1:'), 'En la base el PIN está como hash con pimienta, no en claro');
+  revisa(/^p1:[0-9a-f]{8}:[0-9a-f]{32}:[0-9a-f]{64}$/.test(crudo.pin_hash || '') && !Object.values(crudo).includes(altaJuan.pin), 'En la base el PIN está como hash con pimienta (sal + scrypt), no en claro', crudo.pin_hash);
   const [, ficha, fichaTxt] = await pedir('GET', '/personal/' + juan.id, A), [, lista] = await pedir('GET', '/personal', A, undefined);
   revisa(!('pin_hash' in ficha) && !fichaTxt.includes(crudo.pin_hash) && !JSON.stringify(lista).includes('p1:'), 'La ficha y la lista del personal nunca mandan el hash del PIN');
   const [, bita] = await pedir('GET', '/auditoria?entidad=personal&id=' + juan.id, A);
@@ -237,6 +239,23 @@ const archivosDe = d => fs.readdirSync(d, { withFileTypes: true }).flatMap(e => 
   revisa((await cel(lig2.token, 'POST', 'checar', { pin: '8261', tipo: 'entrada', foto: FOTO }))[0] === 401, 'Un celular quitado ya no checa');
   const hc = await fetch(URLB + '/checar');
   revisa(hc.status === 200 && /camera=\(self\)/.test(hc.headers.get('permissions-policy')) && /geolocation=\(self\)/.test(hc.headers.get('permissions-policy')), 'La página del celular es la única con cámara y ubicación', hc.headers.get('permissions-policy'));
+
+  console.log('7. Privacidad');
+  // Se «envejecen» dos checadas con foto: una válida/anulada (se borra) y una por revisar (se conserva).
+  const conFoto = conBase(d => d.prepare("SELECT id, foto_archivo FROM checadas WHERE id IN (?, ?)").all(ch.id, off.id));
+  conBase(d => { d.exec('DROP TRIGGER checadas_no_cambiar'); d.prepare("UPDATE checadas SET fecha = '2020-01-01' WHERE id IN (?, ?)").run(ch.id, off.id); });
+  revisa((await pedir('POST', '/asistencia/fotos/limpiar', T.Gema))[0] === 403, 'Solo Dirección corre a mano el borrado de fotos');
+  const [sb3, lim] = await pedir('POST', '/asistencia/fotos/limpiar', A);
+  const tras = conBase(d => d.prepare('SELECT id, foto_archivo, foto_borrada_at, estado FROM checadas WHERE id IN (?, ?)').all(ch.id, off.id));
+  const borrada = tras.find(x => x.id === ch.id), conservada = tras.find(x => x.id === off.id), archivo = conFoto.find(x => x.id === ch.id).foto_archivo;
+  revisa(sb3 === 200 && lim.dias === 90 && !borrada.foto_archivo && borrada.foto_borrada_at && !fs.existsSync(path.join(dir, 'archivos', 'checadas', archivo)), 'Una foto de más de 90 días se borra (archivo incluido) y la checada se queda', { lim, borrada });
+  revisa(conservada.foto_archivo && conservada.estado === 'por_revisar', 'Una foto de una checada «por revisar» se conserva hasta revisarla', conservada);
+  revisa((await pedir('GET', '/asistencia/checadas/' + ch.id + '/foto', T.Gema))[0] === 404, 'La foto borrada ya no se puede ver');
+  const av = await fetch(URLB + '/aviso-privacidad-checador.html');
+  revisa(av.status === 200 && /consentimiento expreso/i.test(await av.text()), 'El aviso de privacidad está publicado');
+  revisa((await pedir('GET', '/asistencia/personal/' + juan.id, T.Gema))[1].aviso_firmado === false, 'La ficha avisa que falta el aviso firmado');
+  { const x = await fetch(URLB + '/api/personal/' + juan.id + '/documentos', { method: 'POST', headers: { Authorization: 'Bearer ' + T.Gema, 'Content-Type': 'application/octet-stream', 'X-Tipo': 'privacidad', 'X-Nombre': encodeURIComponent('aviso-juan.pdf') }, body: Buffer.from('%PDF-1.4 aviso firmado ' + crypto.randomBytes(8).toString('hex')) }); revisa(x.status === 201, 'Se sube el aviso firmado al expediente'); }
+  revisa((await pedir('GET', '/asistencia/personal/' + juan.id, T.Gema))[1].aviso_firmado === true, 'Con el aviso firmado en el expediente, la alerta desaparece');
 
   console.log(`\n${n - malos.length}/${n} correctas`);
   srv.kill(); fs.rmSync(dir, { recursive: true, force: true });

@@ -100,7 +100,8 @@ const azar = () => { semilla = (semilla * 1103515245 + 12345) % 2147483648; retu
   // Y borrar (cotizaciones, órdenes, usuarios…): solo Dirección (2026-10-26).
   // Marketing tampoco: el rol «con todo» copia al gerente, que no ve Marketing (2026-10-26).
   // Facturación (2026-10-27): la conexión con factura.com y la serie y el CP de cada sucursal son solo de Dirección (como el respaldo).
-  const deDireccion = k => DIRECCION_ESPERADO.test(k) || /^DELETE /.test(k) || /^\w+ \/marketing(\/|$)/.test(k) || /^\w+ \/facturacion(\/|$)/.test(k);
+  // Reloj checador (2026-11-03): borrar ya las fotos viejas de las checadas de todas las sucursales (F6).
+  const deDireccion = k => DIRECCION_ESPERADO.test(k) || /^DELETE /.test(k) || /^\w+ \/marketing(\/|$)/.test(k) || /^\w+ \/facturacion(\/|$)/.test(k) || k === 'POST /asistencia/fotos/limpiar';
   revisa(soloDireccion.every(deDireccion), `lo que el rol con todo NO puede y Dirección sí son solo cosas de todas las sucursales o borrar (${soloDireccion.length})`, soloDireccion.filter(k => !deDireccion(k)));
   revisa(fT['GET /permisos'] === 403 && fT['PUT /roles/1/permisos'] === 403 && fT['POST /roles'] === 403, 'ni con todos los permisos se editan roles (solo Dirección)');
 

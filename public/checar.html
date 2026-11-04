@@ -126,7 +126,7 @@
     const lista = Object.entries(info.tipos).map(([k, t]) => el('button', { type: 'button', className: k === info.sugerido ? 'sugerido' : '', textContent: t, onclick: () => checar(k) }));
     pintar(el('h1', { textContent: 'Hola, ' + info.nombre }), el('p', { className: 'ayuda', textContent: aviso || (info.ultima ? `Tu última checada de hoy: ${info.ultima.tipo} a las ${info.ultima.hora}` : 'Mira a la cámara y elige qué vas a registrar.') }),
       caja, gps, el('div', { className: 'botones' }, ...lista), el('button', { type: 'button', className: 'btn', textContent: 'Cancelar', onclick: () => { apagarCamara(); inicio(); } }),
-      el('p', { className: 'aviso-privacidad', textContent: 'Tu foto y tu ubicación se toman solo al checar y las ve únicamente RH o tu gerente.' }));
+      el('p', { className: 'aviso-privacidad' }, 'Tu foto y tu ubicación se toman solo al checar y las ve únicamente RH o tu gerente. ', el('a', { href: '/aviso-privacidad-checador.html', target: '_blank', rel: 'noopener', textContent: 'Aviso de privacidad' })));
     encenderCamara(caja); posicion = null; pedirUbicacion(gps);
     flujo = setTimeout(() => { apagarCamara(); inicio(); }, 90000);
   }
