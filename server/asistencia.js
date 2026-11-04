@@ -234,6 +234,7 @@ module.exports = function asistencia(app, db, h) {
     if (!puede(req, 'asistencia.extra')) return negar(res, 'No tienes permiso para autorizar tiempo extra');
     const b = req.body || {}, p = db.prepare('SELECT id, nombre FROM personal WHERE id = ?').get(idDe(b.personal_id));
     if (!p) return res.status(404).json({ error: 'Persona no encontrada' });
+    if (app.locals.personal.esPropio(req, res, p.id, 'autorizar el tiempo extra')) return;
     if (!fechaOk(b.fecha) || b.fecha > ahoraMexico().fecha) return res.status(400).json({ error: 'Revisa la fecha (no puede ser futura)' });
     const minutos = Number(b.minutos), calc = calcularDia(p, b.fecha);
     if (!Number.isInteger(minutos) || minutos < 0) return res.status(400).json({ error: 'Los minutos autorizados deben ser un número entero' });
@@ -322,6 +323,7 @@ module.exports = function asistencia(app, db, h) {
     if (!puede(req, 'asistencia.horarios')) return negar(res, 'No tienes permiso para asignar horarios');
     const p = db.prepare('SELECT id, nombre, sucursal_id FROM personal WHERE id = ?').get(idDe(req.params.id));
     if (!p) return res.status(404).json({ error: 'Persona no encontrada' });
+    if (app.locals.personal.esPropio(req, res, p.id, 'cambiar el horario')) return;
     const hh = db.prepare('SELECT id, nombre FROM main.horarios WHERE id = ? AND activo = 1 AND sucursal_id = ?').get(idDe(req.body?.horario_id), p.sucursal_id);
     if (!hh) return res.status(400).json({ error: 'Elige un horario activo de su sucursal' });
     // La primera vez que se le asigna horario puede valer desde antes (aún no se calculaba nada con otro horario).

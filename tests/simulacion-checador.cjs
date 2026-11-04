@@ -102,6 +102,8 @@ const archivosDe = d => fs.readdirSync(d, { withFileTypes: true }).flatMap(e => 
   revisa(sb2 === 423 && /RH/.test(jb2.error), 'A los 10 fallos queda bloqueado hasta que RH lo desbloquee', jb2);
   const [, est] = await pedir('GET', '/asistencia/personal/' + juan.id, T.Gema);
   revisa(est.bloqueado && est.bloqueo_total && !('pin_hash' in est), 'RH ve que está bloqueado (sin ver el PIN)', est);
+  { const hasta = conBase(d => d.prepare('SELECT pin_bloqueado_hasta h FROM personal WHERE id = ?').get(juan.id).h), horas = (hasta - Date.now()) / 3600000;
+    revisa(horas > 23 && horas <= 24, 'El bloqueo largo dura 24 h, no para siempre: quien sepa el código de otro no lo deja sin checar', { horas }); }
   revisa((await pedir('POST', '/asistencia/personal/' + juan.id + '/desbloquear', T.Valeria))[0] === 403, 'Ventas no desbloquea');
   exigir(await pedir('POST', '/asistencia/personal/' + juan.id + '/desbloquear', T.Gema), 'desbloquear');
 
@@ -165,6 +167,16 @@ const archivosDe = d => fs.readdirSync(d, { withFileTypes: true }).flatMap(e => 
   revisa(intento(`UPDATE checadas SET estado = 'valida' WHERE id = ${ch.id}`), 'Una checada anulada no se «revive» a mano');
   revisa(intento('DELETE FROM checadas_correcciones') && intento("UPDATE checadas_correcciones SET motivo = 'otro motivo'"), 'La bitácora de correcciones no se borra ni se cambia');
   revisa(conBase(d => d.prepare('SELECT COUNT(*) n FROM checadas').get().n) === 3, 'Siguen todas las checadas (incluida la anulada)');
+  // Nadie se corrige a sí mismo (auditoría 2026-11-03): la gerente tiene su ficha ligada a su cuenta.
+  { const gemaId = exigir(await pedir('GET', '/permisos/mios', T.Gema), 'mis permisos').usuario_id;
+    const gema = exigir(await pedir('POST', '/personal', A, { nombre: 'Gema Gerente', puesto: 'Supervisor', sucursal_id: qro.id, usuario_id: gemaId }), 'ficha de Gema');
+    const propio = r => r[0] === 403 && r[1]?.codigo === 'PROPIO';
+    revisa(propio(await pedir('POST', '/asistencia/checadas', T.Gema, { personal_id: gema.id, tipo: 'entrada', fecha: ayer, hora: '08:30', motivo: 'Me la agrego yo' })), 'La gerente no se agrega checadas a sí misma');
+    revisa(propio(await pedir('POST', '/asistencia/extra', T.Gema, { personal_id: gema.id, fecha: ayer, minutos: 0 })), 'Ni se autoriza su propio tiempo extra');
+    revisa(propio(await pedir('POST', '/personal/' + gema.id + '/incidencias', T.Gema, { tipo: 'permiso', fecha_inicio: ayer })), 'Ni se registra sus propios permisos o vacaciones');
+    const suya = exigir(await pedir('POST', '/asistencia/checadas', A, { personal_id: gema.id, tipo: 'entrada', fecha: ayer, hora: '08:40', motivo: 'Dirección se la agrega' }), 'Dirección sí corrige a la gerente');
+    revisa(propio(await pedir('POST', '/asistencia/checadas/' + suya.id + '/anular', T.Gema, { motivo: 'No me gusta' })), 'Ni anula sus propias checadas');
+    revisa((await pedir('POST', '/asistencia/checadas', T.Gema, { personal_id: ana.id, tipo: 'entrada', fecha: ayer, hora: '08:30', motivo: 'Olvidó checar' }))[0] === 201, 'A los demás sí los corrige'); }
 
   console.log('5. Foto, sin conexión y cámara');
   revisa(!!fila.foto_archivo && !archivosDe(dir).some(f => fs.readFileSync(f).includes(MARCA_FOTO)), 'La foto se guarda cifrada: su contenido no aparece en ningún archivo del servidor', fila.foto_archivo);
@@ -203,14 +215,14 @@ const archivosDe = d => fs.readdirSync(d, { withFileTypes: true }).flatMap(e => 
   revisa((await pedir('POST', '/asistencia/personal/' + mx.id + '/celular', T.Gema))[0] === 404, 'La gerente no genera enlace para alguien de otra sucursal');
   revisa((await pedir('POST', '/asistencia/personal/' + mx.id + '/celular', T.Gus))[0] === 409, 'Sin alta en el checador no hay enlace');
   const [se1, en1] = await pedir('POST', '/asistencia/personal/' + juan.id + '/celular', T.Gema);
-  const tok1 = String(en1.url || '').split('#e=')[1];
-  revisa(se1 === 200 && /\/checar#e=[\w-]{40,}$/.test(en1.url) && !conBase(d => d.prepare('SELECT 1 FROM checador_enlaces WHERE token_hash = ?').get(tok1)), 'RH genera el enlace (va después de «#») y la base guarda solo su hash', en1);
-  const [, en2] = await pedir('POST', '/asistencia/personal/' + juan.id + '/celular', T.Gema), tok2 = en2.url.split('#e=')[1];
+  const tok1 = String(en1.ruta || '').split('#e=')[1];
+  revisa(se1 === 200 && /^\/checar#e=[\w-]{40,}$/.test(en1.ruta) && (en1.url === null || en1.url.endsWith(en1.ruta)) && !conBase(d => d.prepare('SELECT 1 FROM checador_enlaces WHERE token_hash = ?').get(tok1)), 'RH genera el enlace (va después de «#») y la base guarda solo su hash', en1);
+  const [, en2] = await pedir('POST', '/asistencia/personal/' + juan.id + '/celular', T.Gema), tok2 = en2.ruta.split('#e=')[1];
   revisa((await cel(null, 'POST', 'ligar', { enlace: tok1 }))[0] === 401, 'Al generar otro enlace, el anterior deja de servir');
   const [sl, lig] = await cel(null, 'POST', 'ligar', { enlace: tok2 });
   revisa(sl === 200 && lig.token && lig.nombre === 'Juan', 'Con el enlace, el celular queda ligado a Juan', lig);
   revisa((await cel(null, 'POST', 'ligar', { enlace: tok2 }))[0] === 401, 'El enlace sirve una sola vez');
-  const [, en3] = await pedir('POST', '/asistencia/personal/' + juan.id + '/celular', T.Gema), tok3 = en3.url.split('#e=')[1];
+  const [, en3] = await pedir('POST', '/asistencia/personal/' + juan.id + '/celular', T.Gema), tok3 = en3.ruta.split('#e=')[1];
   conBase(d => d.prepare('UPDATE checador_enlaces SET expira_ms = 1 WHERE usado_at IS NULL').run());
   revisa((await cel(null, 'POST', 'ligar', { enlace: tok3 }))[0] === 401, 'Un enlace de más de 24 horas ya no sirve');
   const C1 = lig.token;
@@ -232,7 +244,7 @@ const archivosDe = d => fs.readdirSync(d, { withFileTypes: true }).flatMap(e => 
   const [, lista2] = await pedir('GET', '/asistencia/checadas?fecha=' + HOY + '&personal_id=' + juan.id, T.Gema);
   revisa(lista2.some(c => c.id === cel1.id && c.lat === 20.588812), 'La gerente ve la ubicación de la checada');
   // Ligar otro celular: el primero deja de servir. Quitar celular: tampoco sirve.
-  const [, en4] = await pedir('POST', '/asistencia/personal/' + juan.id + '/celular', T.Gema), [, lig2] = await cel(null, 'POST', 'ligar', { enlace: en4.url.split('#e=')[1] });
+  const [, en4] = await pedir('POST', '/asistencia/personal/' + juan.id + '/celular', T.Gema), [, lig2] = await cel(null, 'POST', 'ligar', { enlace: en4.ruta.split('#e=')[1] });
   revisa((await cel(C1, 'GET', 'estado'))[0] === 401 && (await cel(lig2.token, 'GET', 'estado'))[0] === 200, 'Al ligar otro celular, el anterior ya no sirve');
   revisa((await pedir('POST', '/asistencia/personal/' + juan.id + '/celular/quitar', T.Valeria))[0] === 403, 'Ventas no quita celulares');
   exigir(await pedir('POST', '/asistencia/personal/' + juan.id + '/celular/quitar', T.Gema), 'quitar celular');

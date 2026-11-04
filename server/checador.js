@@ -5,7 +5,8 @@
 //    Si se cambia CLAVE_CIFRADO, los PINes dejan de servir y RH genera uno nuevo a cada quien.
 //  · RH no ve PINes: genera uno temporal (se muestra una sola vez) y la persona elige el suyo en su primera checada.
 //    No se aceptan PINes obvios (1111, 1234, 4321, 1212, su propio código).
-//  · Intentos: 5 fallos seguidos → bloqueado 15 min; 10 → bloqueado hasta que RH lo desbloquee. Por kiosco, 20 fallos
+//  · Intentos: 5 fallos seguidos → bloqueado 15 min; 10 → 24 h (y otras 24 h cada 5 más) o hasta que RH lo desbloquee
+//    (auditoría 2026-11-03: antes era para siempre y bastaba saber el código de otro para dejarlo sin checar). Por kiosco, 20 fallos
 //    en 10 min pausan el kiosco; por conexión, 30 tokens de kiosco inválidos en 15 min. El mensaje es siempre el mismo
 //    («código o PIN incorrecto»): no dice si el código existe.
 //  · Kiosco: una tableta que registra quien tiene «Kioscos del checador». Recibe un token aleatorio (la base guarda solo
@@ -39,7 +40,8 @@ const { ahoraMexico } = require('./fechas');
 const TIPOS = { entrada: 'Entrada', comida_sale: 'Salida a comer', comida_regresa: 'Regreso de comer', salida: 'Salida', extra_inicia: 'Inicio de tiempo extra', extra_termina: 'Fin de tiempo extra' };
 const SIGUIENTE = { '': 'entrada', entrada: 'comida_sale', comida_sale: 'comida_regresa', comida_regresa: 'salida', salida: 'extra_inicia', extra_inicia: 'extra_termina', extra_termina: 'extra_inicia' };
 const ORIGENES = ['kiosco', 'celular', 'whatsapp', 'manual'];
-const FALLOS_ESPERA = 5, FALLOS_TOTAL = 10, ESPERA_MS = 15 * 60 * 1000, BLOQUEO_TOTAL = 8.64e15;
+// BLOQUEO_TOTAL: el bloqueo «para siempre» de antes (los que ya estén así siguen hasta que RH los desbloquee).
+const FALLOS_ESPERA = 5, FALLOS_TOTAL = 10, ESPERA_MS = 15 * 60 * 1000, BLOQUEO_LARGO_MS = 24 * 3600000, BLOQUEO_TOTAL = 8.64e15;
 const FALLOS_KIOSCO = 20, VENTANA_KIOSCO_MS = 10 * 60 * 1000, FALLOS_IP = 30, VENTANA_IP_MS = 15 * 60 * 1000;
 const TICKET_MS = 90 * 1000, DUPLICADO_MS = 2 * 60 * 1000;
 const MAX_FOTO = 400 * 1024, MAX_SIN_CONEXION_MS = 7 * 86400000, ENLACE_MS = 24 * 3600000, PRECISION_MAX_M = 150;
@@ -265,14 +267,19 @@ module.exports = function checador(app, db, h) {
     const ahora = Date.now();
     if (p.pin_bloqueado_hasta > ahora) {
       contar(fallosKiosco, d.id, VENTANA_KIOSCO_MS);
-      return { status: 423, error: p.pin_bloqueado_hasta >= BLOQUEO_TOTAL ? 'Tu PIN está bloqueado por intentos fallidos. Pide a RH o a tu gerente que lo desbloquee.' : `Tu PIN está bloqueado por intentos fallidos. Intenta de nuevo en ${Math.ceil((p.pin_bloqueado_hasta - ahora) / 60000)} minuto(s).` };
+      const falta = p.pin_bloqueado_hasta - ahora;
+      return { status: 423, error: p.pin_bloqueado_hasta >= BLOQUEO_TOTAL ? 'Tu PIN está bloqueado por intentos fallidos. Pide a RH o a tu gerente que lo desbloquee.'
+        : falta > ESPERA_MS ? `Tu PIN está bloqueado por muchos intentos fallidos. Pide a RH o a tu gerente que lo desbloquee, o espera ${Math.ceil(falta / 3600000)} hora(s).`
+        : `Tu PIN está bloqueado por intentos fallidos. Intenta de nuevo en ${Math.ceil(falta / 60000)} minuto(s).` };
     }
     const r = revisarPin(p.id, pin, p.pin_hash);
     if (r.otraClave) return { status: 409, error: 'Tu PIN ya no sirve (cambió la clave de seguridad del sistema). Pide a RH un PIN nuevo.' };
     if (!r.ok) {
-      const fallos = p.pin_fallos + 1, hasta = fallos >= FALLOS_TOTAL ? BLOQUEO_TOTAL : fallos % FALLOS_ESPERA === 0 ? ahora + ESPERA_MS : 0;
+      // Cada 5 fallos se bloquea: 15 min las primeras veces; desde el fallo 10, 24 h (no para siempre: si no, cualquiera
+      // que sepa el código de otra persona la deja sin checar tecleando PINes al azar). RH lo desbloquea antes.
+      const fallos = p.pin_fallos + 1, hasta = fallos % FALLOS_ESPERA ? 0 : ahora + (fallos >= FALLOS_TOTAL ? BLOQUEO_LARGO_MS : ESPERA_MS);
       db.prepare('UPDATE main.personal SET pin_fallos = ?, pin_bloqueado_hasta = ? WHERE id = ?').run(fallos, hasta, p.id);
-      if (hasta) audit(null, p.id, 'checador bloqueado', `${p.nombre}: PIN bloqueado ${hasta >= BLOQUEO_TOTAL ? 'hasta que RH lo desbloquee' : '15 minutos'} por ${fallos} intentos fallidos (kiosco «${d.nombre}»)`);
+      if (hasta) audit(null, p.id, 'checador bloqueado', `${p.nombre}: PIN bloqueado ${fallos >= FALLOS_TOTAL ? '24 horas (o hasta que RH lo desbloquee)' : '15 minutos'} por ${fallos} intentos fallidos (kiosco «${d.nombre}»)`);
       return incorrecto();
     }
     if (!p.activo || !p.checa) return { status: 403, error: 'No estás dado de alta en el reloj checador. Avisa a RH.' };
@@ -413,7 +420,8 @@ module.exports = function checador(app, db, h) {
   const persona = id => db.prepare('SELECT * FROM personal WHERE id = ?').get(idDe(id));
   const estadoDe = p => ({
     codigo: p.codigo_checador, tiene_pin: !!p.pin_hash, pin_temporal: !!p.pin_temporal, checa: !!p.checa, pin_cambiado_at: p.pin_cambiado_at,
-    bloqueado: p.pin_bloqueado_hasta > Date.now(), bloqueo_total: p.pin_bloqueado_hasta >= BLOQUEO_TOTAL,
+    // bloqueo_total: el largo (24 h, o el «para siempre» de antes): la pantalla dice que RH lo puede desbloquear.
+    bloqueado: p.pin_bloqueado_hasta > Date.now(), bloqueo_total: p.pin_bloqueado_hasta - Date.now() > ESPERA_MS,
     bloqueado_hasta: p.pin_bloqueado_hasta > Date.now() && p.pin_bloqueado_hasta < BLOQUEO_TOTAL ? new Date(p.pin_bloqueado_hasta).toISOString() : null,
   });
   app.get('/api/asistencia/catalogos', h((req, res) => res.json({ tipos: TIPOS, origenes: ORIGENES })));
@@ -464,9 +472,10 @@ module.exports = function checador(app, db, h) {
       db.prepare('INSERT INTO main.checador_enlaces (personal_id, token_hash, expira_ms, creado_por, creado_por_nombre) VALUES (?, ?, ?, ?, ?)').run(p.id, hashToken(token), Date.now() + ENLACE_MS, req.usuarioSesion.id, req.usuarioSesion.nombre);
     })();
     audit(req, p.id, 'checador', `${p.nombre}: enlace para ligar su celular (24 h, un solo uso)`);
-    const base = process.env.APP_URL ? process.env.APP_URL.replace(/\/+$/, '') : (req.get('x-forwarded-proto') || req.protocol) + '://' + req.get('host');
-    // El token va después de «#»: el navegador no lo manda al servidor ni a otras páginas.
-    res.json({ url: base + '/checar#e=' + token, telefono: p.telefono || null, aviso: 'El enlace sirve una sola vez y dura 24 horas. Ábrelo en el celular de la persona.' });
+    // El token va después de «#»: el navegador no lo manda al servidor ni a otras páginas. La dirección sale de APP_URL;
+    // si no está, la pantalla la arma con la suya (nunca con el encabezado Host, que lo escribe quien hace la petición).
+    const ruta = '/checar#e=' + token;
+    res.json({ url: process.env.APP_URL ? process.env.APP_URL.replace(/\/+$/, '') + ruta : null, ruta, telefono: p.telefono || null, aviso: 'El enlace sirve una sola vez y dura 24 horas. Ábrelo en el celular de la persona.' });
   }));
   app.post('/api/asistencia/personal/:id/celular/quitar', h((req, res) => {
     if (!puede(req, 'personal.editar')) return negar(res, 'No tienes permiso para quitar celulares');
@@ -562,6 +571,7 @@ module.exports = function checador(app, db, h) {
     if (!puede(req, 'asistencia.corregir')) return negar(res, 'No tienes permiso para corregir la asistencia');
     const b = req.body || {}, p = persona(b.personal_id);
     if (!p) return res.status(404).json({ error: 'Persona no encontrada' });
+    if (app.locals.personal.esPropio(req, res, p.id, 'agregar checadas')) return;
     if (!TIPOS[b.tipo]) return res.status(400).json({ error: 'Elige qué se registra' });
     if (!fechaOk(b.fecha) || !/^([01]\d|2[0-3]):[0-5]\d$/.test(String(b.hora || ''))) return res.status(400).json({ error: 'Revisa la fecha y la hora' });
     const motivo = motivoDe(req);
@@ -585,6 +595,7 @@ module.exports = function checador(app, db, h) {
     const c = checadaDe(req.params.id);
     if (!c) return res.status(404).json({ error: 'Checada no encontrada' });
     if (c.estado === 'anulada') return res.status(409).json({ error: 'Ya está anulada' });
+    if (app.locals.personal.esPropio(req, res, c.personal_id, 'anular checadas')) return;
     const motivo = motivoDe(req);
     if (!motivo) return res.status(400).json({ error: 'Escribe el motivo de la anulación' });
     db.transaction(() => {
@@ -600,6 +611,7 @@ module.exports = function checador(app, db, h) {
     const c = checadaDe(req.params.id);
     if (!c) return res.status(404).json({ error: 'Checada no encontrada' });
     if (c.estado !== 'por_revisar') return res.status(409).json({ error: 'Esta checada no está por revisar' });
+    if (app.locals.personal.esPropio(req, res, c.personal_id, 'aceptar checadas')) return;
     const motivo = motivoDe(req);
     if (!motivo) return res.status(400).json({ error: 'Escribe por qué se acepta' });
     db.transaction(() => {

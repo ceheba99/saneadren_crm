@@ -137,7 +137,7 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
     const jpg = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.from('FOTO-ZIRCON'), Buffer.alloc(2000, 7), Buffer.from([0xff, 0xd9])]).toString('base64');
     CHECADA_FOTO = (await k('checar', { ticket: c.ticket, tipo: 'entrada', foto: jpg })).id; if (!CHECADA_FOTO) throw new Error('No se pudo checar con foto');
     // F5: su celular ligado y una checada con ubicación (marcada).
-    const enlace = exigir(await pedir('POST', '/asistencia/personal/' + EMP.id + '/celular', A), 'enlace del celular').url.split('#e=')[1];
+    const enlace = exigir(await pedir('POST', '/asistencia/personal/' + EMP.id + '/celular', A), 'enlace del celular').ruta.split('#e=')[1];
     const cel = async (r, b, tk) => { const x = await fetch(URL + '/publico/celular/' + r, { method: 'POST', headers: { 'Content-Type': 'application/json', ...(tk ? { 'X-Celular': tk } : {}) }, body: JSON.stringify(b) }); return x.json(); };
     const tk = (await cel('ligar', { enlace })).token;
     if (!(await cel('checar', { pin: '5072', tipo: 'salida', foto: jpg, lat: 20.612345, lon: -100.398765, precision: 12 }, tk)).id) throw new Error('No se pudo checar desde el celular'); }
@@ -274,6 +274,7 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
     ['corrigeChecada', 'Agregar a mano una checada olvidada (con motivo)'],
     ['cambiaHorario', 'Cambiar un horario (entrada, salida, tolerancia o comida) o marcar días festivos'],
     ['autorizaExtra', 'Autorizar el tiempo extra de una persona'],
+    ['corrigeSuyo', 'Corregir su PROPIA asistencia (agregarse una checada o autorizarse su tiempo extra)'],
     ['daCelular', 'Mandar a una persona el enlace para checar desde su celular, o quitarle el celular'],
     ['veRH', 'Ver la pestaña RH (resumen del personal: sin horario, sin checador, sin aviso firmado…)'],
     ['importaPersonal', 'Cargar trabajadores en lote desde la plantilla de Excel (revisar y guardar)'],
@@ -325,6 +326,13 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
     VE[rol].daPin = ok(await pedir('POST', '/asistencia/personal/' + EMP.id + '/desbloquear', t));
     VE[rol].registraKiosco = ok(await pedir('POST', '/asistencia/dispositivos', t, { nombre: 'Kiosco de ' + rol, sucursal_id: qro.id }));
     VE[rol].corrigeChecada = ok(await pedir('POST', '/asistencia/checadas', t, { personal_id: EMP.id, tipo: 'salida', fecha: dia(-2), hora: '18:30', motivo: 'Prueba de ' + rol }));
+    { // Su propia ficha (ligada a su cuenta): intenta agregarse una checada y autorizarse el tiempo extra.
+      const uid = (await pedir('GET', '/permisos/mios', t))[1].usuario_id;
+      const { DatabaseSync } = require('node:sqlite'); const d = new DatabaseSync(DB);
+      let pid = d.prepare('SELECT id FROM personal WHERE usuario_id = ?').get(uid)?.id; d.close();
+      if (!pid) pid = exigir(await pedir('POST', '/personal', A, { nombre: 'Ficha propia ' + rol, puesto: 'Otro', sucursal_id: qro.id, usuario_id: uid }), 'ficha propia de ' + rol).id;
+      VE[rol].corrigeSuyo = ok(await pedir('POST', '/asistencia/checadas', t, { personal_id: pid, tipo: 'salida', fecha: dia(-3), hora: '18:30', motivo: 'Me corrijo yo' }))
+        || ok(await pedir('POST', '/asistencia/extra', t, { personal_id: pid, fecha: dia(-3), minutos: 0 })); }
     { const hor = (await pedir('GET', '/asistencia/horarios', A))[1].horarios.find(x => x.sucursal_id === qro.id);
       VE[rol].cambiaHorario = ok(await pedir('PUT', '/asistencia/horarios/' + hor.id, t, { dias: hor.vigente.dias, tolerancia_min: hor.vigente.tolerancia_min, comida_min: hor.vigente.comida_min })); }
     VE[rol].veRH = ok(await pedir('GET', '/rh/resumen', t));
@@ -390,6 +398,8 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
     ['2026-11-03', 'Asistencia (horarios, retardos, faltas y tiempo extra): la ven Dirección y el Gerente; cambian horarios y días festivos y autorizan el tiempo extra Dirección y el Gerente (Dirección se los da a RH en Roles y permisos); los demás roles no.', {
       admin: { veAsistencia: 1, cambiaHorario: 1, autorizaExtra: 1 }, gerente: { veAsistencia: 1, cambiaHorario: 1, autorizaExtra: 1 },
       ...Object.fromEntries(['ventas', 'atencion', 'tecnico', 'costos', 'marketing', 'marketing_gerente'].map(r => [r, { veAsistencia: 0, cambiaHorario: 0, autorizaExtra: 0 }])) }],
+    ['2026-11-03', 'Nadie corrige su PROPIA asistencia (agregar, anular o aceptar sus checadas, autorizarse tiempo extra, cambiarse el horario, registrarse vacaciones o permisos), ni el Gerente: lo hace otra persona con permiso. Dirección sí, porque no tiene a quién pedírselo.', {
+      admin: { corrigeSuyo: 1 }, ...Object.fromEntries(['gerente', 'ventas', 'atencion', 'tecnico', 'costos', 'marketing', 'marketing_gerente'].map(r => [r, { corrigeSuyo: 0 }])) }],
     ['2026-11-03', 'Checar desde el celular: mandar el enlace o quitar el celular lo hacen Dirección y el Gerente (quien edita el personal); la ubicación de cada checada la ven solo Dirección y el Gerente (se toma solo al checar). Los demás roles no.', {
       admin: { daCelular: 1, ubicacion: 1 }, gerente: { daCelular: 1, ubicacion: 1 },
       ...Object.fromEntries(['ventas', 'atencion', 'tecnico', 'costos', 'marketing', 'marketing_gerente'].map(r => [r, { daCelular: 0, ubicacion: 0 }])) }],
