@@ -34,6 +34,7 @@ const VISTAS = [
   ['cobros', 'lead_id IN (SELECT id FROM leads) AND ve_cobro(registrado_por, lead_id)'],
   ['historial', 'lead_id IN (SELECT id FROM leads) AND ve_bitacora(area, usuario_id, lead_id)'],
   ['pagos_proveedor', 'cxp_id IN (SELECT id FROM cuentas_por_pagar)'],
+  ['cfdi_gastos', 'cxp_id IN (SELECT id FROM cuentas_por_pagar)'], // XML de la factura de cada gasto, con su gasto
   ['documentos_solicitud', 'solicitud_id IN (SELECT id FROM solicitudes_compra)'],
   ['documentos_oc', 'oc_id IN (SELECT id FROM ordenes_compra)'],
   ['personal', 'en_alcance(sucursal_id)'], // qué se ve de cada persona lo decide personal.js (permisos)
@@ -413,7 +414,7 @@ module.exports = function sucursales(app, db, h, { audit }) {
   const NO_EDITA = (req, id) => { if (!clienteEsSuyo(req, id)) return { error: !app.locals.permisos.puede(req, 'contactos.editar') ? 'Tu rol no modifica los datos de los clientes' : 'Este cliente lo atiende otra persona: sus datos los corrige ella o el gerente', codigo: 'CLIENTE_DE_OTRO' };
     const s = sucursalDeCliente(id); return { error: `Este cliente lo dio de alta ${s ? s.nombre + ' (' + s.clave + ')' : 'otra sucursal'}: sus datos (teléfonos, RFC, correo, dirección y crédito) los corrige esa sucursal o Dirección. Tú sí puedes cotizarle y venderle.`, codigo: 'CLIENTE_DE_OTRA_SUCURSAL' }; };
 
-  return { puedeEditarCliente, clienteDeSuSucursal, NO_EDITA, activarCandados, folio: folioDe, claveDe, asignar, de, siguienteFolio, lista, clienteVisible, verCliente, esGeneral, sucursalesParaUsuario, guardarSucursalesUsuario, puedeAdministrar, sucursalesDe };
+  return { refrescar, puedeEditarCliente, clienteDeSuSucursal, NO_EDITA, activarCandados, folio: folioDe, claveDe, asignar, de, siguienteFolio, lista, clienteVisible, verCliente, esGeneral, sucursalesParaUsuario, guardarSucursalesUsuario, puedeAdministrar, sucursalesDe };
 };
 module.exports.VISTAS = VISTAS;
 // «OS-CDMX-202610-0001»; los registros de antes de las sucursales conservan «OS-202610-0087».

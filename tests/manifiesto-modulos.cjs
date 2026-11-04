@@ -36,12 +36,12 @@ module.exports = {
       nombre: 'Cuentas por pagar y proveedores',
       vistas: [],
       vistasRazon: 'vive como pestaña dentro de «cuentas» (Finanzas)',
-      tablas: ['cuentas_por_pagar', 'pagos_proveedor', 'proveedores', 'categorias_gasto'],
+      tablas: ['cuentas_por_pagar', 'pagos_proveedor', 'proveedores', 'categorias_gasto', 'cfdi_gastos'],
       rutas: [/^\/api\/finanzas\/(cxp|pagos-proveedor|proveedores|categorias|comprobantes|ordenes-para-gasto|importar\/cxp)(\/|$)/, /^\/api\/calendario(\/atrasados)?$/],
       pendientes: 'lo que hay que pagar esta semana y lo vencido con proveedores',
       inicio: ['inicio-dinero'],
       demo: ['cuentas_por_pagar', 'pagos_proveedor', 'proveedores'],
-      integridad: ['cuentas_por_pagar', 'pagos_proveedor'],
+      integridad: ['cuentas_por_pagar', 'pagos_proveedor', 'cfdi_gastos'],
       buscador: ['proveedores'],
       permisos: ['cxp.ver', 'cxp.sucursal', 'cxp.empresa', 'gastos.registrar', 'gastos.ver_orden', 'dinero.mover'],
     },
@@ -161,6 +161,10 @@ module.exports = {
   // se capturan con otro nombre ({ como, razon }: la auditoría comprueba que la pantalla mande esa llave). Un dato que se
   // muestra y no está aquí ni se captura es un dato muerto (como «Realizó: propio/subcontratado», que se quitó).
   generados: {
+    // Gastos con XML (2026-11-04): salen del XML de la factura que se sube, no de un campo del formulario.
+    emisor_rfc: 'RFC de quien emite la factura de un gasto: lo lee el sistema del XML (CFDI) que se sube',
+    moneda: 'moneda de la factura: la lee el sistema del XML del CFDI (en facturas timbradas, la pone el timbrado)',
+    iva_origen: 'de dónde salió el IVA de un gasto: lo pone el sistema («xml» al subir el XML, «manual» al escribirlo)',
     // Reloj checador (2026-11-03)
     usuario_nombre: 'quien corrige una checada: lo pone el sistema con la sesión (bitácora de correcciones)',
     pin_temporal: 'lo pone el sistema: 1 al dar un PIN temporal, 0 cuando la persona elige el suyo en el kiosco',

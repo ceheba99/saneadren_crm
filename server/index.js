@@ -173,6 +173,8 @@ app.use('/api', require('./sin-montos-compras')(permisos));
 // Bitácora general de movimientos (clientes, proveedores, compras, usuarios, catálogos, eliminados).
 const audit = require('./auditoria')(app, db, h);
 app.locals.auditoria = audit;
+// Eliminar usuarios y sucursales (solo Dirección): se borran si nunca se usaron; si no, se archivan (2026-11-04).
+require('./eliminar')(app, db, h, { sesiones });
 // Clientes sin duplicados: ID CLI-0001, teléfonos adicionales, revisión de parecidos y fusión.
 const unicos = require('./clientes-unicos')(app, db, h);
 require('./plantillas-descripcion')(app, db, h, { permisos, suc, audit }); // Descripciones guardadas por cliente (2026-11-04)
@@ -214,7 +216,8 @@ app.get('/api/usuarios', h((req, res) => {
 // Usuarios desactivados: se pueden reactivar (antes no había vuelta atrás y su nombre o correo ya no se podía volver a usar).
 app.get('/api/usuarios/desactivados', h((req, res) => {
   if (!permisos.puede(req, 'usuarios.administrar')) return res.status(403).json({ error: 'No tienes permiso para administrar usuarios' });
-  res.json(db.prepare('SELECT id, nombre, rol, correo FROM usuarios WHERE activo = 0 ORDER BY nombre').all().filter(u => suc.puedeAdministrar(req, u)).map(u => ({ ...u, sucursales: suc.sucursalesDe(u.id) })));
+  // Los archivados (se eliminaron pero tenían registros: server/eliminar.js) no salen.
+  res.json(db.prepare('SELECT id, nombre, rol, correo FROM usuarios WHERE activo = 0 AND archivado_at IS NULL ORDER BY nombre').all().filter(u => suc.puedeAdministrar(req, u)).map(u => ({ ...u, sucursales: suc.sucursalesDe(u.id) })));
 }));
 app.post('/api/usuarios/:id/reactivar', h((req, res) => {
   if (!permisos.puede(req, 'usuarios.administrar')) return res.status(403).json({ error: 'No tienes permiso para administrar usuarios' });

@@ -172,7 +172,7 @@ function revisar(db, { dirArchivos } = {}) {
       .map(d => ({ ref: d.nombre, detalle: 'el archivo está en claro (se cifra solo al reiniciar el sistema)' })));
   }
   if (dirArchivos) {
-    for (const [tabla, sub, etiqueta] of [['documentos_oc', 'ordenes_compra', 'Expediente de órdenes de compra'], ['documentos_solicitud', 'solicitudes', 'Cotizaciones y fotos de solicitudes'], ['documentos_personal', 'personal', 'Expediente del personal']]) {
+    for (const [tabla, sub, etiqueta] of [['documentos_oc', 'ordenes_compra', 'Expediente de órdenes de compra'], ['documentos_solicitud', 'solicitudes', 'Cotizaciones y fotos de solicitudes'], ['documentos_personal', 'personal', 'Expediente del personal'], ['cfdi_gastos', 'cuentas_por_pagar', 'XML de facturas de gastos']]) {
       if (!existe(db, tabla)) continue;
       chequeo('Archivos', etiqueta + ': archivos que faltan en el servidor', 'error', () => db.prepare(`SELECT id, nombre, archivo FROM ${tabla} WHERE eliminado = 0`).all()
         .filter(d => !d.archivo || !fs.existsSync(path.join(dirArchivos, sub, d.archivo))).map(d => ({ ref: d.nombre, detalle: 'no se encuentra el archivo' })));

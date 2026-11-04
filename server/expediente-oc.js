@@ -32,17 +32,51 @@ function tipoReal(buf) {
   return null;
 }
 // Datos de una factura electrónica (CFDI 3.3 / 4.0) leídos del XML.
+// Impuestos (2026-11-04, gastos con XML): solo los del COMPROBANTE (el nodo Impuestos que cuelga de Comprobante), no los de
+// cada concepto, que repiten lo mismo. Se suman por impuesto: 001 ISR, 002 IVA, 003 IEPS (claves del catálogo c_Impuesto del SAT).
+// Los importes también se dan en centavos enteros, leídos del texto (sin flotantes) y redondeados a 2 decimales.
+const aCent = v => {
+  const m = String(v ?? '').trim().match(/^(-?)(\d+)(?:\.(\d+))?$/);
+  if (!m) return null;
+  const d = (m[3] || '').padEnd(3, '0');
+  const c = Number(m[2]) * 100 + Number(d.slice(0, 2)) + (Number(d[2]) >= 5 ? 1 : 0);
+  return m[1] ? -c : c;
+};
+const desescapar = t => (t == null ? t : t.replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&'));
+const atributo = (texto, nombre) => { const m = texto.match(new RegExp('\\s' + nombre + '\\s*=\\s*(?:"([^"]*)"|\'([^\']*)\')', 'i')); return m ? desescapar(m[1] ?? m[2]) : null; };
+function impuestosCfdi(xml) {
+  const sinConceptos = xml.replace(/<(?:\w+:)?Conceptos\b[\s\S]*?<\/(?:\w+:)?Conceptos\s*>/gi, '').replace(/<(?:\w+:)?Complemento\b[\s\S]*?<\/(?:\w+:)?Complemento\s*>/gi, '');
+  const m = sinConceptos.match(/<(?:\w+:)?Impuestos\b([^>]*?)(?:\/>|>([\s\S]*?)<\/(?:\w+:)?Impuestos\s*>)/i);
+  const cuerpo = m?.[2] || '';
+  const lista = etiqueta => [...cuerpo.matchAll(new RegExp('<(?:\\w+:)?' + etiqueta + '\\b([^>]*)>', 'gi'))].map(([, a]) => ({
+    impuesto: atributo(a, 'Impuesto'), tipo_factor: atributo(a, 'TipoFactor'), tasa: atributo(a, 'TasaOCuota'), base: atributo(a, 'Base'), importe: atributo(a, 'Importe'), importe_cent: aCent(atributo(a, 'Importe')) || 0 }));
+  const traslados = lista('Traslado'), retenciones = lista('Retencion');
+  const suma = (l, imp) => l.filter(x => x.impuesto === imp).reduce((t, x) => t + x.importe_cent, 0);
+  return { traslados, retenciones,
+    iva_cent: suma(traslados, '002'), ieps_cent: suma(traslados, '003'), ret_isr_cent: suma(retenciones, '001'), ret_iva_cent: suma(retenciones, '002'),
+    otros: [...traslados, ...retenciones].filter(x => !['001', '002', '003'].includes(x.impuesto)).map(x => x.impuesto),
+    total_trasladados: atributo(m?.[1] || '', 'TotalImpuestosTrasladados'), total_retenidos: atributo(m?.[1] || '', 'TotalImpuestosRetenidos'),
+    locales: /<(?:\w+:)?ImpuestosLocales\b/i.test(xml) };
+}
 function leerCfdi(xml) {
-  const attr = (etiqueta, nombre) => { const m = xml.match(new RegExp('<(?:\\w+:)?' + etiqueta + '\\b[^>]*\\s' + nombre + '="([^"]*)"', 'i')); return m ? m[1] : null; };
-  if (!/<(?:\w+:)?Comprobante\b/i.test(xml)) return null;
+  xml = String(xml || '').replace(/^\uFEFF/, '');
+  const nodo = etiqueta => (xml.match(new RegExp('<(?:\\w+:)?' + etiqueta + '\\b([^>]*)>', 'i')) || [])[1] || null;
+  const comp = nodo('Comprobante');
+  if (comp == null) return null;
+  const attr = (etiqueta, nombre) => { const n = etiqueta === 'Comprobante' ? comp : nodo(etiqueta); return n == null ? null : atributo(n, nombre); };
   const num = v => (v == null || v === '' ? null : Number(v));
+  const imp = impuestosCfdi(xml);
   return {
+    version: attr('Comprobante', 'Version'),
     uuid: (attr('TimbreFiscalDigital', 'UUID') || '').toUpperCase() || null,
     serie: attr('Comprobante', 'Serie'), folio: attr('Comprobante', 'Folio'), fecha: attr('Comprobante', 'Fecha'),
-    subtotal: num(attr('Comprobante', 'SubTotal')), total: num(attr('Comprobante', 'Total')), moneda: attr('Comprobante', 'Moneda'),
-    tipo: attr('Comprobante', 'TipoDeComprobante'), metodo_pago: attr('Comprobante', 'MetodoPago'),
+    subtotal: num(attr('Comprobante', 'SubTotal')), descuento: num(attr('Comprobante', 'Descuento')), total: num(attr('Comprobante', 'Total')), moneda: attr('Comprobante', 'Moneda'),
+    tipo_cambio: attr('Comprobante', 'TipoCambio'),
+    subtotal_cent: aCent(attr('Comprobante', 'SubTotal')), descuento_cent: aCent(attr('Comprobante', 'Descuento')) || 0, total_cent: aCent(attr('Comprobante', 'Total')),
+    tipo: attr('Comprobante', 'TipoDeComprobante'), metodo_pago: attr('Comprobante', 'MetodoPago'), forma_pago: attr('Comprobante', 'FormaPago'),
     emisor_rfc: (attr('Emisor', 'Rfc') || '').toUpperCase() || null, emisor_nombre: attr('Emisor', 'Nombre'),
     receptor_rfc: (attr('Receptor', 'Rfc') || '').toUpperCase() || null, receptor_nombre: attr('Receptor', 'Nombre'),
+    impuestos: imp,
   };
 }
 const nombreSeguro = t => String(t || 'documento').normalize('NFC').replace(/[\\/:*?"<>|\u0000-\u001f]+/g, '_').slice(0, 120) || 'documento';
@@ -196,3 +230,5 @@ module.exports = function expedienteOC(app, db, h, { leer, esAdmin, folioOC }) {
 };
 module.exports.leerCfdi = leerCfdi;
 module.exports.tipoReal = tipoReal;
+module.exports.MAX_BYTES = MAX_BYTES;
+module.exports.nombreSeguro = nombreSeguro;

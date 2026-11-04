@@ -57,7 +57,6 @@ Dirección la revisa y la aprueba. Si un cambio altera lo que ve un rol, la prue
 | … y su importe | ✔ | ✔ | — | ✔ | — | — | — | — |
 | Orden de Bruno asignada a Tito (otro técnico): cliente | ✔ | ✔ | — | ✔ | — | ✔ | — | — |
 | Orden de Diego (otra sucursal): cliente | ✔ | — | — | — | — | — | — | — |
-| Descripción guardada del cliente de Valeria (para llenar sus partidas) | ✔ | ✔ | ✔ | ✔ | — | — | — | — |
 
 ### Cuentas por cobrar
 
@@ -186,17 +185,19 @@ Dirección la revisa y la aprueba. Si un cambio altera lo que ve un rol, la prue
 | Corregir su PROPIA asistencia (agregarse una checada o autorizarse su tiempo extra) | ✔ | — | — | — | — | — | — | — |
 | Ponerle precio a la hora de cada puesto (para pagar el tiempo extra) | ✔ | ✔ | — | — | — | — | — | — |
 | Ver cuánto dinero sale por tiempo extra (en la semana y en el Excel de nómina) | ✔ | ✔ | — | — | — | — | — | — |
+| Eliminar un usuario (se borra si nunca se usó; si ya tiene registros, se archiva) | ✔ | — | — | — | — | — | — | — |
+| Eliminar una sucursal (se borra si nunca se usó; si ya tiene registros, se archiva) | ✔ | — | — | — | — | — | — | — |
 | Mandar a una persona el enlace para checar desde su celular, o quitarle el celular | ✔ | ✔ | — | — | — | — | — | — |
 | Ver la pestaña RH (resumen del personal: sin horario, sin checador, sin aviso firmado…) | ✔ | ✔ | — | — | — | — | — | — |
 | Cargar trabajadores en lote desde la plantilla de Excel (revisar y guardar) | ✔ | ✔ | — | — | — | — | — | — |
 | Ver la asistencia del día y de la semana (retardos, faltas, tiempo extra) | ✔ | ✔ | — | — | — | — | — | — |
 | Cargar el reporte de llamadas de Google Ads (CSV) y verlo cruzado con los contactos | ✔ | — | — | — | — | — | — | ✔ |
-| Crear, cambiar o quitar una descripción guardada del cliente de Valeria | ✔ | ✔ | — | — | — | — | — | — |
+| Subir el XML de la factura a un gasto que registró Tomás (el sistema llena el IVA) | ✔ | ✔ | — | — | ✔ | ✔ | — | — |
+| Corregir a mano el IVA de ese gasto (botón «IVA») | ✔ | ✔ | — | — | — | ✔ | — | — |
 
 | Permiso | Dirección | Gerente | Ventas | Atención | Técnico | Costos y compras | Marketing | Gerente de marketing |
 |---|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|
 | Contactos y clientes · Exportar a Excel | ✔ | ✔ | — | — | — | — | — | — |
-| Contactos y clientes · Descripciones guardadas | ✔ | ✔ | — | — | — | — | — | — |
 | Cotizaciones y órdenes · Ver importes | ✔ | ✔ | ✔ | ✔ | ✔ | — | — | — |
 | Cotizaciones y órdenes · Editar lo de otros | ✔ | ✔ | — | — | — | — | — | — |
 | Cotizaciones y órdenes · Cargar el generador | ✔ | ✔ | — | ✔ | — | — | — | — |
@@ -257,17 +258,18 @@ Dirección la revisa y la aprueba. Si un cambio altera lo que ve un rol, la prue
 - **2026-11-03** · Reloj checador: ver las checadas del personal, corregirlas con motivo, dar código y PIN y registrar kioscos lo hacen Dirección y el Gerente (de su sucursal); los demás roles no. Nadie ve un PIN ni borra una checada.
 - **2026-11-03** · Foto de cada checada del kiosco (para revisar quién checó): la ven Dirección y el Gerente (de su sucursal), y cada vez queda en la bitácora; los demás roles no. Se guarda cifrada.
 - **2026-11-03** · Asistencia (horarios, retardos, faltas y tiempo extra): la ven Dirección y el Gerente; cambian horarios y días festivos y autorizan el tiempo extra Dirección y el Gerente (Dirección se los da a RH en Roles y permisos); los demás roles no.
+- **2026-11-04** · Eliminar usuarios y sucursales: solo Dirección. Si nunca se usaron se borran; si ya tienen registros (cotizaciones, cobros, bitácora…) se archivan: desaparecen de las listas y su historial se conserva. La sucursal principal y la propia cuenta no se eliminan.
 - **2026-11-03** · Precio de la hora de cada puesto y el dinero del tiempo extra (dobles y triples, en la semana y en el Excel de nómina): lo ven y lo cambian quienes ven sueldos (Dirección y el Gerente, de su sucursal); los demás roles solo ven horas.
 - **2026-11-03** · Nadie corrige su PROPIA asistencia (agregar, anular o aceptar sus checadas, autorizarse tiempo extra, cambiarse el horario, registrarse vacaciones o permisos), ni el Gerente: lo hace otra persona con permiso. Dirección sí, porque no tiene a quién pedírselo.
 - **2026-11-03** · Checar desde el celular: mandar el enlace o quitar el celular lo hacen Dirección y el Gerente (quien edita el personal); la ubicación de cada checada la ven solo Dirección y el Gerente (se toma solo al checar). Los demás roles no.
 - **2026-11-03** · Pestaña RH (junta Personal, asistencia, horarios, kioscos, nómina y aviso de privacidad): la ve quien ve el personal (Gerente y Dirección); cargar trabajadores en lote desde la plantilla, solo quien edita el personal (Gerente y Dirección). Los demás roles no.
+- **2026-11-04** · Gastos con factura: subir el XML a un gasto ya registrado (el sistema llena solo el IVA) lo hacen quien registró el gasto y quien paga cuentas por pagar (Dirección, Gerente y Compras). Corregir el IVA a mano, solo quien paga (como antes). Los demás roles no.
 - **2026-10-26** · Marketing: aprueban las publicaciones Dirección y el Gerente de marketing; nadie más (ni Marketing, aunque la haya escrito).
 - **2026-10-26** · Marketing y Gerente de marketing: ven, editan y comentan las publicaciones de toda la empresa (de cualquier sucursal y las generales), y nada más del sistema: ni ventas, cobranza, gastos, compras, prospección ni personal.
 - **2026-10-26** · Los demás roles (Gerente, Ventas, Atención, Técnico, Compras) no ven Marketing; Dirección lo puede prender en Roles y permisos.
 - **2026-10-26** · Dirección ve y aprueba todo Marketing.
 - **2026-10-27** · Dinero de Marketing (presupuesto, gastos, costo por contacto y retorno): lo ven Dirección y el Gerente de marketing; el rol Marketing y los demás roles no.
 - **2026-11-04** · Llamadas de Google Ads (subir el reporte «Detalles de las llamadas» y verlo cruzado con los contactos, ventas e importes): lo ven y lo cargan solo Dirección y el Gerente de marketing; el rol Marketing y los demás roles no.
-- **2026-11-04** · Descripciones guardadas de un cliente (textos con huecos como {sucursal} para llenar las partidas de sus cotizaciones y órdenes): las crean, cambian o quitan solo Dirección y el Gerente de la sucursal del cliente (permiso «Descripciones guardadas»); las usan quienes cotizan a ese cliente (Ventas y Atención); Técnico, Compras y Marketing no las ven. Quitar no borra: queda en la bitácora.
 - **2026-10-27** · Presupuesto de Marketing: lo propone el Gerente de marketing y lo aprueba solo Dirección.
 - **2026-10-27** · Gastos de Marketing: los registran Dirección y el Gerente de marketing, y son control interno del departamento: no aparecen en Cuentas por pagar.
 - **2026-10-27** · Resultados de cada publicación (alcance, me gusta, mensajes…): los capturan Marketing, el Gerente de marketing y Dirección, cuando ya está publicada; los demás roles no.

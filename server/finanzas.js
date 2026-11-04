@@ -337,6 +337,8 @@ module.exports = function finanzas(app, db, h, unicos) {
     "INSERT INTO main.historial (lead_id, tipo, texto, usuario, origen, area, usuario_id) VALUES (?, 'observacion', ?, ?, 'sistema', ?, ?)"
   ).run(leadId, textoEvento, req.usuarioSesion.nombre, area, req.usuarioSesion.id);
   const fmt = cent => '$' + aPesos(cent).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  // XML de la factura de cada gasto (2026-11-04): lee el CFDI y llena solo el IVA (server/gastos-xml.js).
+  const XML = require('./gastos-xml')(app, db, h, { P, fmt, ivaDeGasto });
 
   // ¿Ve las cuentas por cobrar? (al menos la cobranza de sus órdenes). Sin esto solo ve los cobros que él registró.
   const veCobranza = req => P.puede(req, 'cxc.ver');
@@ -715,6 +717,7 @@ module.exports = function finanzas(app, db, h, unicos) {
   }
   function cuentasPorPagar() {
     const hoy = hoyMexico();
+    const xmls = XML.deGastos();
     return db.prepare(`SELECT x.*, p.nombre AS proveedor_nombre, (SELECT created_at FROM main.leads l WHERE l.id = x.lead_id) AS lead_created_at,
         (SELECT COALESCE(SUM(monto_cent), 0) FROM pagos_proveedor g WHERE g.cxp_id = x.id AND g.cancelado = 0) AS pagado_cent,
         (SELECT fecha || '|' || metodo || '|' || COALESCE(referencia, '') FROM pagos_proveedor g WHERE g.cxp_id = x.id AND g.cancelado = 0 ORDER BY fecha DESC, id DESC LIMIT 1) AS ultimo_pago
@@ -723,7 +726,7 @@ module.exports = function finanzas(app, db, h, unicos) {
         const saldo = x.total_cent - x.pagado_cent;
         const iva = ivaDeGasto(x);
         return { ...x, orden_folio: x.lead_id ? folioOS(x.lead_id, x.lead_created_at) : null, categoria_nombre: CATEGORIAS[x.categoria] || x.categoria, total: aPesos(x.total_cent), pagado: aPesos(x.pagado_cent),
-          iva: aPesos(iva.iva_cent), iva_estimado: iva.estimado, es_factura: esFactura(x),
+          iva: aPesos(iva.iva_cent), iva_estimado: iva.estimado, es_factura: esFactura(x), xml: xmls.get(x.id) || null,
           saldo: aPesos(Math.max(saldo, 0)), vencida: saldo > 0 && x.fecha_vencimiento < hoy, dias_para_vencer: diasEntre(hoy, x.fecha_vencimiento) };
       });
   }
@@ -1149,9 +1152,19 @@ module.exports = function finanzas(app, db, h, unicos) {
     if (!categoriaActiva(categoria)) return res.status(400).json({ error: CATEGORIAS[categoria] ? `La categoría «${CATEGORIAS[categoria]}» está dada de baja: elige otra` : 'Categoría inválida' });
     const concepto = texto(b.concepto, 200);
     if (!concepto || !conSentido(concepto, 3)) return res.status(400).json({ error: 'Escribe el concepto del gasto (qué se compró o qué servicio dio)' });
-    const total = aCentavos(b.total);
+    // XML de la factura (opcional): se revisa y de él salen el total (si no se escribió), el folio, la fecha y el IVA.
+    let xml = null;
+    if (b.xml) {
+      if (typeof b.xml !== 'string' || b.xml.length > 900 * 1024) return res.status(400).json({ error: 'El XML no es válido o es muy grande' });
+      if (b.tipo_comprobante && b.tipo_comprobante !== 'factura') return res.status(400).json({ error: 'Subiste el XML de una factura: elige «Factura (CFDI)» como tipo de comprobante' });
+      const capturado = b.total === undefined || b.total === null || String(b.total).trim() === '' ? null : aCentavos(b.total);
+      if (capturado === null && String(b.total ?? '').trim()) return res.status(400).json({ error: 'Escribe el total (mayor a 0, máximo 2 decimales)' });
+      xml = XML.revisar(b.xml, { totalCent: capturado, proveedorRfc: prov.rfc });
+      if (xml.error) return res.status(xml.status).json({ error: xml.error, codigo: xml.codigo });
+    }
+    const total = xml?.totalCent ?? aCentavos(b.total);
     if (!total) return res.status(400).json({ error: 'Escribe el total (mayor a 0, máximo 2 decimales)' });
-    const fecha = b.fecha_documento || hoyMexico();
+    const fecha = b.fecha_documento || (xml && /^\d{4}-\d{2}-\d{2}/.test(xml.datos.fecha || '') ? xml.datos.fecha.slice(0, 10) : hoyMexico());
     if (!fechaValida(fecha)) return res.status(400).json({ error: 'La fecha del documento no es válida' });
     if (fecha > sumarDias(hoyMexico(), 60)) return res.status(400).json({ error: 'La fecha del documento está a más de 60 días en el futuro: revisa el año' });
     // Días de crédito de ESTA cuenta: obligatorios (0 = de contado). Si ya se pagó, es de contado.
@@ -1171,34 +1184,36 @@ module.exports = function finanzas(app, db, h, unicos) {
     // Fecha en que se pagó (puede ser distinta de la del gasto); no puede ser futura.
     const fechaPagoGasto = b.ya_pagado && b.fecha_pago ? b.fecha_pago : null;
     if (fechaPagoGasto && (!fechaValida(fechaPagoGasto) || fechaPagoGasto > hoyMexico())) return res.status(400).json({ error: 'La fecha de pago no es válida o es futura' });
-    const folioFactura = texto(b.factura_folio, 60);
-    // Tipo de comprobante (si no se dice: factura si trae folio). El método del SAT solo aplica a facturas.
-    const tipoComp = b.tipo_comprobante ? String(b.tipo_comprobante) : (folioFactura ? 'factura' : null);
+    const folioFactura = texto(b.factura_folio, 60) || (xml ? [xml.datos.serie, xml.datos.folio].filter(Boolean).join('-').slice(0, 60) || xml.datos.uuid.slice(0, 8) : null);
+    // Tipo de comprobante (si no se dice: factura si trae folio o XML). El método del SAT solo aplica a facturas.
+    const tipoComp = xml ? 'factura' : b.tipo_comprobante ? String(b.tipo_comprobante) : (folioFactura ? 'factura' : null);
     if (tipoComp && !COMPROBANTES[tipoComp]) return res.status(400).json({ error: 'Elige el tipo de comprobante' });
-    const metodoSat = b.metodo_sat ? String(b.metodo_sat).toUpperCase() : null;
+    const metodoSat = b.metodo_sat ? String(b.metodo_sat).toUpperCase() : xml && ['PUE', 'PPD'].includes(xml.datos.metodo_pago) ? xml.datos.metodo_pago : null;
     if (metodoSat && (!['PUE', 'PPD'].includes(metodoSat) || tipoComp !== 'factura')) return res.status(400).json({ error: 'El método del SAT (PUE o PPD) solo aplica a facturas' });
     const beneficiario = texto(b.beneficiario, 120);
     if (beneficiario && !conSentido(beneficiario, 3)) return res.status(400).json({ error: 'Escribe a quién se le paga' });
     // IVA de la factura (opcional): vacío = no se capturó (Resultados lo estima al 16 %).
-    const iva = ivaCapturado(b.iva, total, { tipo_comprobante: tipoComp, factura_folio: folioFactura });
+    // Con XML en pesos, el IVA es el trasladado de la factura (el IEPS se queda en el gasto); en otra moneda se captura a mano.
+    const iva = xml?.ivaCent != null ? { cent: xml.ivaCent } : ivaCapturado(b.iva, total, { tipo_comprobante: tipoComp, factura_folio: folioFactura });
     if (iva.error) return res.status(400).json({ error: iva.error });
     if (folioFactura && !b.forzar && db.prepare("SELECT id FROM main.cuentas_por_pagar WHERE en_alcance(sucursal_id) AND proveedor_id = ? AND replace(upper(factura_folio), ' ', '') = replace(upper(?), ' ', '') AND cancelada = 0").get(prov.id, folioFactura)) {
       return res.status(409).json({ error: `Ya registraste la factura ${folioFactura} de ${prov.nombre}. ¿Es otra factura?`, codigo: 'POSIBLE_DUPLICADO' });
     }
     const id = db.transaction(() => {
-      const info = db.prepare(`INSERT INTO main.cuentas_por_pagar (proveedor_id, categoria, concepto, factura_folio, fecha_documento, fecha_vencimiento, total_cent, lead_id, equipo, notas, registrado_por, dias_credito, beneficiario, tipo_comprobante, metodo_sat, iva_cent)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(prov.id, categoria, concepto, texto(b.factura_folio, 60), fecha, vence, total, leadId, texto(b.equipo, 200), texto(b.notas, 1000), req.usuarioSesion.id, dias,
-        beneficiario && unicos.clave(beneficiario) !== unicos.clave(prov.nombre) ? beneficiario : null, tipoComp, metodoSat, iva.cent);
+      const info = db.prepare(`INSERT INTO main.cuentas_por_pagar (proveedor_id, categoria, concepto, factura_folio, fecha_documento, fecha_vencimiento, total_cent, lead_id, equipo, notas, registrado_por, dias_credito, beneficiario, tipo_comprobante, metodo_sat, iva_cent, iva_origen)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(prov.id, categoria, concepto, xml ? folioFactura : texto(b.factura_folio, 60), fecha, vence, total, leadId, texto(b.equipo, 200), texto(b.notas, 1000), req.usuarioSesion.id, dias,
+        beneficiario && unicos.clave(beneficiario) !== unicos.clave(prov.nombre) ? beneficiario : null, tipoComp, metodoSat, iva.cent, xml?.ivaCent != null ? 'xml' : iva.cent != null ? 'manual' : null);
+      if (xml) XML.guardar(req, Number(info.lastInsertRowid), Buffer.from(b.xml, 'utf8'), texto(b.xml_nombre, 120) || 'factura.xml', xml);
       app.locals.sucursales.asignar('cuentas_por_pagar', Number(info.lastInsertRowid), leadId ? app.locals.sucursales.de('leads', leadId) : undefined);
       if (b.ya_pagado) {
         db.prepare('INSERT INTO main.pagos_proveedor (cxp_id, fecha, monto_cent, metodo, referencia, registrado_por, cuenta_origen) VALUES (?, ?, ?, ?, ?, ?, ?)')
           .run(info.lastInsertRowid, fechaPagoGasto || (fecha > hoyMexico() ? hoyMexico() : fecha), total, b.metodo, texto(b.referencia, 120), req.usuarioSesion.id, texto(b.cuenta_origen, 80));
       }
       if (leadId) bitacora(leadId, `Costo con terceros registrado: «${concepto}» de ${prov.nombre} por ${fmt(total)}${b.ya_pagado ? ' (ya pagado)' : ' (pendiente de pago en Cuentas por pagar)'}.`, req, 'cxp');
-      app.locals.auditoria?.registrar(req, 'cuenta_por_pagar', Number(info.lastInsertRowid), 'creada', `${prov.nombre} · «${concepto}» · ${fmt(total)}${iva.cent != null ? ' (IVA ' + fmt(iva.cent) + ')' : ''}${folioFactura ? ' · factura ' + folioFactura : ''}${b.ya_pagado ? ' · pagada al registrar' : ''}`);
+      app.locals.auditoria?.registrar(req, 'cuenta_por_pagar', Number(info.lastInsertRowid), 'creada', `${prov.nombre} · «${concepto}» · ${fmt(total)}${iva.cent != null ? ' (IVA ' + fmt(iva.cent) + ')' : ''}${folioFactura ? ' · factura ' + folioFactura : ''}${b.ya_pagado ? ' · pagada al registrar' : ''}${xml ? ' · ' + XML.resumen(xml) : ''}`);
       return info.lastInsertRowid;
     })();
-    res.status(201).json({ id });
+    res.status(201).json({ id, ...(xml ? { avisos: xml.avisos, iva: xml.ivaCent != null ? aPesos(xml.ivaCent) : null } : {}) });
   }));
 
   // Capturar o corregir el IVA de un gasto ya registrado (los viejos no lo traen): cambia la utilidad de Resultados.
@@ -1210,8 +1225,8 @@ module.exports = function finanzas(app, db, h, unicos) {
     const iva = ivaCapturado(req.body.iva, x.total_cent, x);
     if (iva.error) return res.status(400).json({ error: iva.error });
     const antes = ivaDeGasto(x);
-    db.prepare("UPDATE main.cuentas_por_pagar SET iva_cent = ?, updated_at = datetime('now','localtime') WHERE id = ?").run(iva.cent, x.id);
-    app.locals.auditoria?.registrar(req, 'cuenta_por_pagar', x.id, 'IVA', `«${x.concepto}»: IVA ${fmt(antes.iva_cent)}${antes.estimado ? ' (estimado)' : ''} → ${fmt(iva.cent)}`);
+    db.prepare("UPDATE main.cuentas_por_pagar SET iva_cent = ?, iva_origen = 'manual', updated_at = datetime('now','localtime') WHERE id = ?").run(iva.cent, x.id);
+    app.locals.auditoria?.registrar(req, 'cuenta_por_pagar', x.id, 'IVA', `«${x.concepto}»: IVA ${fmt(antes.iva_cent)}${antes.estimado ? ' (estimado)' : x.iva_origen === 'xml' ? ' (del XML)' : ''} → ${fmt(iva.cent)} a mano`);
     res.json({ ok: true, iva: aPesos(iva.cent) });
   }));
 
