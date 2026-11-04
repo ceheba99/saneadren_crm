@@ -91,7 +91,7 @@ const Asistencia = (() => {
   // ---------- Semana ----------
   function pintarSemana() {
     const d = datos;
-    let h = `<div class="filtros"><label>Semana del <input type="date" id="as-semana" value="${esc(d.desde)}"></label><span class="ayuda">${esc(fechaLarga(d.desde))} al ${esc(fechaLarga(d.hasta))}. Tiempo extra autorizado: las primeras 9 horas de la semana son dobles y lo demás triples (LFT).</span></div>`;
+    let h = `<div class="filtros"><label>Semana del <input type="date" id="as-semana" value="${esc(d.desde)}"></label><span class="ayuda">${esc(fechaLarga(d.desde))} al ${esc(fechaLarga(d.hasta))}. Semana de nómina: de viernes a jueves. Tiempo extra autorizado: las primeras 9 horas de la semana son dobles y lo demás triples (LFT).</span></div>`;
     if (!d.filas.length) { $('as-cuerpo').innerHTML = h + '<p class="ayuda">No hay personas en el reloj checador.</p>'; return; }
     h += `<div class="tabla-scroll"><table class="tabla-resumen as-tabla as-semana"><thead><tr><th>Persona</th>${d.fechas.map((f, i) => `<th>${esc(fechaLarga(f))}${d.festivos[i] ? '<small class="pe-cuenta">🎉 festivo</small>' : ''}</th>`).join('')}
       <th>Trabajado</th><th>Retardos</th><th>Faltas</th><th>Extra registrado</th><th>Extra autorizado</th><th>Dobles</th><th>Triples</th></tr></thead><tbody>`;

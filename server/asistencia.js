@@ -16,6 +16,7 @@
 //    anticipada. Tiempo extra MINUTO A MINUTO (decidido con Dirección) = lo trabajado después de la hora de salida del
 //    horario, unido con los bloques «inicio / fin de tiempo extra» (sin contar dos veces). En descanso o festivo, todo lo
 //    trabajado es extra (y se marca). Falta = día laboral ya pasado sin entrada, sin vacaciones/incapacidad/permiso.
+//  · Semana de nómina: de VIERNES a JUEVES (decidido con Dirección el 2026-11-03: cierra el jueves y se paga el viernes).
 //  · Tiempo extra: lo AUTORIZAN RH y el Gerente (permiso «Autorizar tiempo extra»), hasta los minutos calculados. Cada
 //    autorización es un registro nuevo (la última cuenta); no se borran. Semana: las primeras 9 horas autorizadas son
 //    dobles y lo demás triples (arts. 67 y 68 LFT).
@@ -30,6 +31,9 @@ const texto = (v, max) => { const t = String(v ?? '').trim().replace(/\s+/g, ' '
 const min = h => { const [a, b] = String(h).split(':').map(Number); return a * 60 + b; };
 const sumar = (f, n) => { const d = new Date(f + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
 const diaSemana = f => { const d = new Date(f + 'T12:00:00Z').getUTCDay(); return d === 0 ? 7 : d; };
+const INICIO_SEMANA = 5; // viernes
+// Primer día (viernes) de la semana de nómina a la que pertenece una fecha.
+const inicioSemana = f => sumar(f, -((diaSemana(f) - INICIO_SEMANA + 7) % 7));
 // Días festivos obligatorios de la LFT (art. 74) de un año. Las jornadas electorales las agrega RH.
 function festivosLey(anio) {
   const lunes = (mes, n) => { const d = new Date(Date.UTC(anio, mes - 1, 1, 12)); while (d.getUTCDay() !== 1) d.setUTCDate(d.getUTCDate() + 1); d.setUTCDate(d.getUTCDate() + 7 * (n - 1)); return d.toISOString().slice(0, 10); };
@@ -201,12 +205,12 @@ module.exports = function asistencia(app, db, h) {
     if (!fechaOk(fecha)) return res.status(400).json({ error: 'Revisa la fecha' });
     res.json({ fecha, festivo: festivoDe(fecha), filas: gente(fecha).map(p => calcularDia(p, fecha)), puede: { corregir: puede(req, 'asistencia.corregir'), extra: puede(req, 'asistencia.extra') } });
   }));
-  // Semana (lunes a domingo): cada día y los totales para la nómina. Tiempo extra: dobles hasta 9 h autorizadas, luego triples.
+  // Semana de nómina (viernes a jueves): cada día y los totales. Tiempo extra: dobles hasta 9 h autorizadas, luego triples.
   app.get('/api/asistencia/semana', h((req, res) => {
     if (!puede(req, 'asistencia.ver')) return negar(res);
     let desde = req.query.desde || ahoraMexico().fecha;
     if (!fechaOk(desde)) return res.status(400).json({ error: 'Revisa la fecha' });
-    desde = sumar(desde, 1 - diaSemana(desde));
+    desde = inicioSemana(desde);
     const fechas = [0, 1, 2, 3, 4, 5, 6].map(i => sumar(desde, i)), pid = req.query.personal_id ? idDe(req.query.personal_id) : null;
     const filas = gente(fechas[6], pid).map(p => {
       const dias = fechas.map(f => calcularDia(p, f));
@@ -341,3 +345,4 @@ module.exports = function asistencia(app, db, h) {
 };
 module.exports.festivosLey = festivosLey;
 module.exports.unidos = unidos;
+module.exports.inicioSemana = inicioSemana;
