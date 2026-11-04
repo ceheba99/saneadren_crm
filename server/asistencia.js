@@ -124,7 +124,12 @@ function migrar(db) {
     CREATE INDEX IF NOT EXISTS idx_extra_autorizaciones ON extra_autorizaciones(personal_id, fecha);
     -- Historial: las versiones de horario, asignaciones y autorizaciones de tiempo extra no se borran ni se cambian.
     CREATE TRIGGER IF NOT EXISTS horario_versiones_fijas BEFORE UPDATE ON horario_versiones BEGIN SELECT RAISE(ABORT, 'Un horario se cambia con una versión nueva'); END;
-    CREATE TRIGGER IF NOT EXISTS horario_versiones_no_borrar BEFORE DELETE ON horario_versiones BEGIN SELECT RAISE(ABORT, 'El historial de horarios no se borra'); END;
+    -- Se rehace en cada arranque (2026-11-04): solo deja borrar la versión que el sistema creó al abrir una sucursal y que
+    -- nadie usó (para eliminar una sucursal creada por error, server/eliminar.js). Lo demás sigue sin borrarse.
+    DROP TRIGGER IF EXISTS horario_versiones_no_borrar;
+    CREATE TRIGGER horario_versiones_no_borrar BEFORE DELETE ON horario_versiones
+      WHEN COALESCE(OLD.creado_por_nombre, '') <> 'Sistema' OR EXISTS (SELECT 1 FROM personal_horario ph WHERE ph.horario_id = OLD.horario_id)
+      BEGIN SELECT RAISE(ABORT, 'El historial de horarios no se borra'); END;
     CREATE TRIGGER IF NOT EXISTS personal_horario_no_borrar BEFORE DELETE ON personal_horario BEGIN SELECT RAISE(ABORT, 'El historial de horarios no se borra'); END;
     CREATE TRIGGER IF NOT EXISTS extra_autorizaciones_fijas BEFORE UPDATE ON extra_autorizaciones BEGIN SELECT RAISE(ABORT, 'Una autorización de tiempo extra se corrige con otra nueva'); END;
     CREATE TRIGGER IF NOT EXISTS extra_autorizaciones_no_borrar BEFORE DELETE ON extra_autorizaciones BEGIN SELECT RAISE(ABORT, 'Las autorizaciones de tiempo extra no se borran'); END;
