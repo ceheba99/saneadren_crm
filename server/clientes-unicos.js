@@ -243,7 +243,7 @@ module.exports = function clientesUnicos(app, db, h) {
       if (db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'establecimientos'").get()) db.prepare('UPDATE main.establecimientos SET cliente_id = ? WHERE cliente_id = ?').run(q.id, r.id);
       // Teléfonos: el principal y los adicionales del retirado pasan como adicionales del que queda.
       db.prepare('UPDATE telefonos_cliente SET cliente_id = ? WHERE cliente_id = ?').run(q.id, r.id);
-      if (db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'plantillas_descripcion'").get()) db.prepare('UPDATE plantillas_descripcion SET cliente_id = ? WHERE cliente_id = ?').run(q.id, r.id);
+      for (const t of ['plantillas_descripcion', 'cliente_sucursales']) if (db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(t)) db.prepare(`UPDATE ${t} SET cliente_id = ? WHERE cliente_id = ?`).run(q.id, r.id);
       // Datos que le falten al que queda se completan con los del retirado (nunca se pisan).
       const completar = ['empresa_contacto', 'direccion', 'correo', 'giro', 'rfc', 'notas_generales', 'canal_origen_id'].filter(k => k in q && (q[k] == null || q[k] === '') && r[k] != null && r[k] !== '');
       if (completar.length) db.prepare(`UPDATE clientes SET ${completar.map(k => k + ' = ?').join(', ')} WHERE id = ?`).run(...completar.map(k => r[k]), q.id);

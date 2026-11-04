@@ -9,7 +9,7 @@ module.exports = {
     ventas: {
       nombre: 'Contactos, cotizaciones y órdenes de servicio',
       vistas: ['alta', 'leads', 'clientes', 'calendario', 'generador'],
-      tablas: ['clientes', 'clientes_alias', 'clientes_distintos', 'clientes_fusionados', 'telefonos_cliente', 'leads', 'historial', 'historial_archivo', 'canales', 'canales_alias', 'tipos_cliente', 'catalogo_servicios', 'servicios_alias', 'contadores_folio', 'orden_personal', 'plantillas_descripcion'],
+      tablas: ['clientes', 'clientes_alias', 'clientes_distintos', 'clientes_fusionados', 'telefonos_cliente', 'leads', 'historial', 'historial_archivo', 'canales', 'canales_alias', 'tipos_cliente', 'catalogo_servicios', 'servicios_alias', 'contadores_folio', 'orden_personal', 'plantillas_descripcion', 'cliente_sucursales'],
       rutas: [/^\/api\/(leads|contactos|clientes|servicios|canales|tipos-cliente|recompras|alertas|generador|historial)(\/|$)/],
       pendientes: 'recordatorios vencidos, cotizaciones sin movimiento, servicios por concluir y recompras',
       inicio: ['inicio-cotizaciones', 'inicio-concluir', 'inicio-recompras'],
@@ -18,7 +18,7 @@ module.exports = {
       buscador: ['leads', 'clientes'],
       permisos: ['ventas.ver', 'cotizaciones_ordenes.ver', 'calendario.ver', 'contactos.ver', 'contactos.sucursal', 'contactos.empresa', 'contactos.editar', 'cotizaciones.ver', 'cotizaciones.sucursal', 'cotizaciones.empresa', 'cotizaciones.editar',
         'ordenes.ver', 'ordenes.sucursal', 'ordenes.empresa', 'ordenes.editar', 'generador.ver', 'generador.sucursal', 'generador.empresa',
-        'ordenes.importes', 'ventas.editar_otros', 'generador.cargar', 'ordenes.importe_ganada', 'clientes.exportar', 'clientes.plantillas'],
+        'ordenes.importes', 'ventas.editar_otros', 'generador.cargar', 'ordenes.importe_ganada', 'clientes.exportar', 'clientes.sucursales'],
     },
     cobranza: {
       nombre: 'Cuentas por cobrar',

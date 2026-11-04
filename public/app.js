@@ -177,7 +177,9 @@ async function cargarCatalogos() {
     api('/servicios').then(r => r.json()),
     api('/canales').then(r => r.json())
   ]);
-  CATALOGOS = { usuarios: u, servicios: s, canales: c };
+  // Unidades de medida para las partidas (catálogo compartido con compras): m³, metro, servicio…
+  const unidades = await api('/compras/unidades').then(r => r.json()).catch(() => []);
+  CATALOGOS = { usuarios: u, servicios: s, canales: c, unidades: (Array.isArray(unidades) ? unidades : []).filter(x => x.activo) };
   await cargarTiposCliente();
   for (const [idSel, vacio] of [['in-origen', 'Selecciona una opción'], ['fc-ed-origen', 'Sin registrar']]) {
     const origen = document.getElementById(idSel), origenPrevio = origen.value;
@@ -939,7 +941,7 @@ function nombreArchivoCotizacion(datos, extension) {
 }
 
 // Columnas de cantidad y precio unitario de una partida (solo si el documento las usa).
-const colsCantidad = (datos, item) => datos.conCantidad ? [String(Importes.cantidadDe(item)), formatoMoneda(Importes.precioDe(item))] : [];
+const colsCantidad = (datos, item) => datos.conCantidad ? [String(Importes.cantidadDe(item)) + (item.unidad ? ' ' + item.unidad : ''), formatoMoneda(Importes.precioDe(item))] : [];
 const titulosCantidad = datos => datos.conCantidad ? ['Cant.', 'P. unitario'] : [];
 // Importes del documento con el IVA elegido en el editor (el que se acaba de guardar).
 function importesDocumento(items) {
@@ -950,7 +952,7 @@ function importesDocumento(items) {
     totales: Importes.filasTotales(r, modo, tasa), leyendaIva: Importes.leyenda(modo, tasa),
     encabezadoImporte: Importes.encabezadoImporte(modo) + ' (MXN)',
     // Si algún servicio lleva cantidad distinta de 1, los documentos muestran Cant. y P. unitario.
-    conCantidad: items.some(i => Importes.cantidadDe(i) !== 1)
+    conCantidad: items.some(i => Importes.cantidadDe(i) !== 1 || i.unidad)
   };
 }
 
@@ -1036,7 +1038,7 @@ async function generarPDFCotizacion(datos) {
     body:datos.items.map(item=>[item.servicio,item.leyenda||'—',...colsCantidad(datos,item),formatoMoneda(item.importe)]),
     // Con IVA: Subtotal / IVA / Total; solo el total va en negritas.
     foot:datos.totales.map(([etiqueta,cent])=>['',{content:etiqueta,colSpan:datos.conCantidad?3:1},formatoMoneda(cent/100)]),showFoot:'lastPage',rowPageBreak:'avoid',
-    columnStyles:datos.conCantidad?{0:{cellWidth:110},2:{cellWidth:40,halign:'right'},3:{cellWidth:75,halign:'right'},4:{cellWidth:85,halign:'right'}}:{0:{cellWidth:125},2:{cellWidth:95,halign:'right'}},
+    columnStyles:datos.conCantidad?{0:{cellWidth:110},2:{cellWidth:52,halign:'right'},3:{cellWidth:75,halign:'right'},4:{cellWidth:85,halign:'right'}}:{0:{cellWidth:125},2:{cellWidth:95,halign:'right'}},
     styles:{fontSize:10,cellPadding:6,overflow:'linebreak'},
     headStyles:{fillColor:[246,177,3],textColor:20},
     footStyles:{fillColor:[245,245,245],textColor:20,fontStyle:'bold'},
@@ -1304,7 +1306,7 @@ async function generarWordOrdenServicio(datos) {
       celda(p(run(item.leyenda||'—',{size:19})),{fondo:n%2?FON:undefined,bordes:lineaAbajo()}),
       ...colsCantidad(datos,item).map(t=>celda(p(run(t,{size:19}),{derecha:true}),{fondo:n%2?FON:undefined,bordes:lineaAbajo()})),
       celda(p(run(formatoMoneda(item.importe),{size:19}),{derecha:true}),{fondo:n%2?FON:undefined,bordes:lineaAbajo()})]))
-  ],datos.conCantidad?[2400,4120,800,1200,1800]:[2800,5720,1800]);
+  ],datos.conCantidad?[2400,3920,1000,1200,1800]:[2800,5720,1800]);
   // Con IVA, Subtotal e IVA van en renglones chicos encima del total, dentro del mismo recuadro.
   const desglose=datos.totales.slice(0,-1).map(([etiqueta,cent])=>p([run(etiqueta.toUpperCase()+'   ',{bold:true,size:14,color:GRI}),run(formatoMoneda(cent/100),{size:18})],{derecha:true,despues:20}));
   const total=tabla([fila([
@@ -1387,6 +1389,8 @@ function crearFilaServicioHTML(item) {
         </div>
           <div class="campo-modal gc-c-cantidad"><label for="gc-cantidad-${id}">Cantidad</label>
             <input type="number" class="gc-cantidad" id="gc-cantidad-${id}" data-fila="${id}" min="0.001" step="any" value="${Number(Importes.cantidadDe(item))}"></div>
+          <div class="campo-modal gc-c-unidad"><label for="gc-unidad-${id}">Unidad</label>
+            <select class="gc-unidad" id="gc-unidad-${id}" data-fila="${id}">${opcionesUnidad(item.unidad)}</select></div>
           <div class="campo-modal gc-c-precio perm-ordenes-importes"><label class="gc-etiqueta-importe" for="gc-precio-${id}">${etiquetaPrecio(modoIvaEditor())}</label>
             <input type="number" class="gc-precio" id="gc-precio-${id}" data-fila="${id}" min="0.01" step="0.01" placeholder="Precio" value="${item.importe === undefined && item.precio === undefined ? '' : Number(Importes.precioDe(item))}"></div>
           <div class="campo-modal gc-c-importe perm-ordenes-importes"><label for="gc-importe-${id}">Importe</label>
@@ -1400,11 +1404,17 @@ function crearFilaServicioHTML(item) {
   `;
 }
 
+// Unidad de medida de la partida (2026-11-04): del catálogo de unidades; la guardada se conserva aunque ya no esté activa.
+function opcionesUnidad(actual) {
+  const lista = CATALOGOS.unidades || [], falta = actual && !lista.some(u => u.clave === actual);
+  return '<option value="">—</option>' + (falta ? `<option value="${escaparHtml(actual)}" selected>${escaparHtml(actual)}</option>` : '')
+    + lista.map(u => `<option value="${escaparHtml(u.clave)}"${u.clave === actual ? ' selected' : ''}>${escaparHtml(u.clave)} · ${escaparHtml(u.nombre)}</option>`).join('');
+}
 // Rótulo del precio unitario según el IVA del documento.
 const etiquetaPrecio = modo => 'Precio unitario' + (modo === 'incluido' ? ' con IVA' : modo === 'mas_iva' ? ' sin IVA' : '');
 function agregarFilaCotizacion(item = {}) {
   document.getElementById('gc-items').insertAdjacentHTML('beforeend', crearFilaServicioHTML(item));
-  window.PlantillasDesc?.pintarBotones();
+  window.SucursalesCliente?.pintarBotones();
 }
 
 // ---------- IVA del documento (casilla "IVA incluido") ----------
@@ -1471,6 +1481,7 @@ function recolectarItemsCotizacion() {
       servicio: fila.querySelector('.gc-servicio').value,
       leyenda: fila.querySelector('.gc-leyenda').value.trim(),
       cantidad: Number(fila.querySelector('.gc-cantidad').value) || 1,
+      ...(fila.querySelector('.gc-unidad').value ? { unidad: fila.querySelector('.gc-unidad').value } : {}),
       precio: Number(fila.querySelector('.gc-precio').value) || 0,
       importe: Number(fila.querySelector('.gc-importe').value) || 0
     }))
@@ -1505,10 +1516,10 @@ function prepararEditorCotizacion(lead,modo){
   actualizarTotalCotizacion();sincronizarEditor();
   // Sin «Ver importes»: las partidas se leen (servicio, descripción y cantidad) pero no se cambian; el servidor tampoco las cambia.
   const soloLeer=!Permisos.puede('ordenes.importes');
-  document.querySelectorAll('#gc-items .gc-servicio').forEach(x=>{x.disabled=soloLeer;});
+  document.querySelectorAll('#gc-items .gc-servicio, #gc-items .gc-unidad').forEach(x=>{x.disabled=soloLeer;});
   document.querySelectorAll('#gc-items .gc-leyenda, #gc-items .gc-cantidad').forEach(x=>{if(soloLeer)x.readOnly=true;});
-  // Descripciones guardadas del cliente: botón en cada partida (2026-11-04).
-  window.PlantillasDesc?.prepararEditor(modo==='nuevo'?CLIENTE_DUP?.id:lead?.cliente_id,soloLeer);
+  // Huecos de la descripción del servicio ({sucursal}…): se llenan con las sucursales del cliente (2026-11-04).
+  window.SucursalesCliente?.prepararEditor(modo==='nuevo'?CLIENTE_DUP?.id:lead?.cliente_id,soloLeer);
 }
 function sincronizarEditor(){
   const items=recolectarItemsCotizacion(),prefijo=EDITOR_MODO==='nuevo'?'sn':'ed';
@@ -1520,6 +1531,9 @@ function validarEditorCotizacion(){
   if(!Permisos.puede('ordenes.importes'))return true; // sin importes las partidas no se cambian (el servidor las ignora)
   const filas=[...document.querySelectorAll('#gc-items .gc-fila')];
   if(!filas.length||filas.some(f=>!f.querySelector('.gc-servicio').value||f.querySelector('.gc-precio').value===''||!(Number(f.querySelector('.gc-precio').value)>0)||!(Number(f.querySelector('.gc-cantidad').value)>0))){toast('Selecciona un servicio y escribe cantidad y precio unitario (mayor a $0) en cada partida');return false;}
+  // Huecos sin llenar en la descripción (p. ej. {sucursal}): se piden antes de guardar (el servidor tampoco los acepta).
+  const conHueco=filas.find(f=>/\{[^{}\n]{1,40}\}/.test(f.querySelector('.gc-leyenda').value));
+  if(conHueco){toast('Falta llenar los huecos de la descripción, por ejemplo la sucursal');window.SucursalesCliente?.llenarHuecos(conHueco);return false;}
   // Un registro nuevo o una cotización abierta deben decir si sus importes llevan IVA.
   if(!modoIvaEditor()&&(EDITOR_MODO==='nuevo'||LEAD_ACTUAL?.estatus==='abierto')){
     toast('Indica el IVA: elige Más IVA, IVA incluido o Sin IVA');
@@ -1542,8 +1556,11 @@ on('gc-items', 'change', async e => {
     const leyendaEl = fila.querySelector('.gc-leyenda');
     const preset = descripcionServicio(e.target.value);
     const personalizada = leyendaEl.value.trim() && leyendaEl.value !== (leyendaEl.dataset.plantilla || '');
-    if (!personalizada || await solicitarDialogo({titulo:'Descripción editada',mensaje:'¿Reemplazar la descripción que editaste por la plantilla del servicio seleccionado?',aceptar:'Usar plantilla'})) leyendaEl.value = preset;
+    const usar = !personalizada || await solicitarDialogo({titulo:'Descripción editada',mensaje:'¿Reemplazar la descripción que editaste por la plantilla del servicio seleccionado?',aceptar:'Usar plantilla'});
+    if (usar) leyendaEl.value = preset;
     leyendaEl.dataset.plantilla = preset;
+    window.SucursalesCliente?.pintarBotones();
+    if (usar) window.SucursalesCliente?.llenarHuecos(fila); // si la descripción trae {sucursal}, la pide de una vez
   }
 });
 on('gc-items', 'input', e => {
@@ -1840,7 +1857,7 @@ async function abrirFichaCliente(id) {
   document.getElementById('fc-titulo').textContent = [folioCliente(cliente.id), cliente.empresa_contacto || cliente.nombre || 'Sin nombre', cliente.telefono].filter(Boolean).join(' · ');
   pintarTelefonosCliente(cliente.id);
   window.Facturacion?.cargarCliente(cliente.id); // datos fiscales para facturar (solo quien tiene el permiso)
-  window.PlantillasDesc?.cargarCliente(cliente.id); // descripciones guardadas del cliente (2026-11-04)
+  window.SucursalesCliente?.cargarCliente(cliente.id); // sucursales del cliente para llenar {sucursal} (2026-11-04)
   Bitacora.historialCliente(cliente.id);
   document.getElementById('fc-meta').innerHTML = metaClienteHTML(cliente);
   Finanzas.pintarCliente(cliente);
@@ -2602,7 +2619,7 @@ async function cargarCatalogoServicios() {
   cont.innerHTML = servicios.map((s, i) => `
     <div class="servicio-row fila-catalogo" data-servicio="${Number(s.id)}">
       <div class="orden-btns"><button type="button" class="btn btn-outline" data-mover="-1" ${i === 0 ? 'disabled' : ''} aria-label="Subir ${escaparHtml(s.nombre)}">↑</button><button type="button" class="btn btn-outline" data-mover="1" ${i === servicios.length - 1 ? 'disabled' : ''} aria-label="Bajar ${escaparHtml(s.nombre)}">↓</button></div>
-      <div class="info"><div class="tit">${escaparHtml(s.nombre)}</div><label for="desc-${s.id}">Descripción predeterminada para cotizaciones</label><textarea id="desc-${s.id}" rows="3" maxlength="10000" placeholder="Descripción que se precargará al elegir este servicio">${escaparHtml(s.descripcion || '')}</textarea></div>
+      <div class="info"><div class="tit">${escaparHtml(s.nombre)}</div><label for="desc-${s.id}">Descripción predeterminada para cotizaciones</label><textarea id="desc-${s.id}" rows="3" maxlength="10000" placeholder="Descripción que se precargará al elegir este servicio. Escribe {sucursal} donde va la sucursal del cliente">${escaparHtml(s.descripcion || '')}</textarea></div>
       <div class="acciones-catalogo">
         <span class="solo-general"><input class="util-48" type="number" min="1" step="1" placeholder="Sin recompra" value="${s.dias_recurrencia != null ? s.dias_recurrencia : ''}" id="rec-${s.id}" aria-label="Recompra cada (días)"> <span class="util-49">días</span></span>
         <button type="button" class="btn btn-secundario" data-guardar>Guardar</button>
