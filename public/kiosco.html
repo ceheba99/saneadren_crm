@@ -17,8 +17,11 @@
   body{margin:0;font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;background:var(--fondo);color:var(--texto);display:flex;flex-direction:column;user-select:none;}
   header{background:var(--oscuro);color:#fff;padding:12px 16px;border-bottom:4px solid var(--amarillo);display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;}
   header img{height:38px;display:block;}
-  #reloj{font-size:2.2rem;font-weight:700;font-variant-numeric:tabular-nums;letter-spacing:.02em;}
-  #fecha{color:#d1d5db;font-size:.95rem;text-align:right;}
+  /* Reloj grande al centro (pedido de Dirección, 2026-11-04): se ajusta al ancho y al alto para no tapar el teclado. */
+  .hora{text-align:center;padding:14px 16px 0;}
+  #reloj{font-size:clamp(3.5rem,min(16vw,12vh),9rem);font-weight:800;line-height:1;font-variant-numeric:tabular-nums;letter-spacing:.02em;color:var(--oscuro);}
+  #fecha{color:var(--sec);font-size:clamp(1.1rem,min(3.6vw,3vh),1.8rem);margin-top:6px;}
+  #fecha::first-letter{text-transform:uppercase;}
   #kiosco-nombre{color:#d1d5db;font-size:.9rem;}
   #avisos{display:flex;flex-direction:column;gap:6px;padding:8px 16px 0;}
   .aviso{border-radius:10px;padding:10px 14px;font-size:1rem;}
@@ -54,14 +57,14 @@
   #aviso-privacidad{position:fixed;right:150px;bottom:14px;font-size:.85rem;color:var(--sec);}
   #pantalla-completa{position:fixed;right:12px;bottom:10px;font:inherit;font-size:.85rem;color:var(--sec);background:none;border:1px solid var(--linea);border-radius:8px;padding:6px 10px;}
   [hidden]{display:none!important;}
-  @media (max-width:520px){#reloj{font-size:1.6rem;}.teclado button{padding:14px 0;font-size:1.7rem;}.botones button{font-size:1.05rem;padding:18px 6px;}}
+  @media (max-width:520px){.teclado button{padding:14px 0;font-size:1.7rem;}.botones button{font-size:1.05rem;padding:18px 6px;}}
 </style>
 </head>
 <body>
 <header>
   <div><img src="/logo-saneadren.png" alt="Saneadren"><div id="kiosco-nombre"></div></div>
-  <div><div id="reloj" aria-live="off">--:--</div><div id="fecha"></div></div>
 </header>
+<div class="hora"><div id="reloj" aria-live="off">--:--</div><div id="fecha"></div></div>
 <div id="avisos" role="status"></div>
 <main><div class="pantalla" id="pantalla"></div></main>
 <div class="camara-oculta" hidden><video id="video" autoplay playsinline muted></video><canvas id="lienzo" width="480" height="360"></canvas></div>
