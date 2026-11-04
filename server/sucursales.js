@@ -44,6 +44,7 @@ const VISTAS = [
   ['checadas_correcciones', 'checada_id IN (SELECT id FROM checadas)'],
   ['checador_dispositivos', 'en_alcance(sucursal_id)'],
   ['personal_horario', 'personal_id IN (SELECT id FROM personal)'],
+  ['checador_enlaces', 'personal_id IN (SELECT id FROM personal)'],
   ['horarios', 'en_alcance(sucursal_id)'], // cada sucursal sus horarios (RH F3)
   ['horario_versiones', 'horario_id IN (SELECT id FROM horarios)'],
   ['extra_autorizaciones', 'personal_id IN (SELECT id FROM personal)'],
