@@ -51,7 +51,7 @@ const Prospeccion=(()=>{
       const q=new URLSearchParams({q:$('pr-buscar').value,sector_id:$('pr-f-sector').value,estado:$('pr-f-estado').value,responsable_id:$('pr-f-responsable').value,zona:$('pr-f-zona').value,
         pendientes:agenda==='pendientes'?'1':'',agenda:agenda==='pendientes'?'':agenda,telefono:dat==='sin_telefono'?'sin':'',vinculado:['si','no'].includes(dat)?dat:''});
       const [respuesta,resumen]=await Promise.all([pedir('?'+q),pedir('/resumen')]);if(turno!==consulta)return;filas=respuesta;mostrar=PASO;pintarResumen(resumen);render();}
-    catch(e){$('pr-resumen').textContent='No se pudo cargar prospección: '+e.message;}}
+    catch(e){$('pr-resumen').textContent='No se pudo cargar prospección: '+e.message;$('pr-tabla').innerHTML='';}}
   const CLAVE={nombre:e=>e.nombre.toLocaleLowerCase('es'),persona:e=>(e.persona||'￿').toLocaleLowerCase('es'),estado:e=>Object.keys(estados).indexOf(e.estado),
     ultimo:e=>e.ultimo_seguimiento||'',proximo:e=>e.estado==='no_contactar'?'9999-99-98':e.proximo_contacto||'9999-99-97',responsable:e=>(e.responsable||'').toLocaleLowerCase('es')};
   function ordenadas(){const c=CLAVE[orden.k]||CLAVE.proximo;return [...filas].sort((a,b)=>{const x=c(a),y=c(b);return (x<y?-1:x>y?1:0)*orden.dir||b.id-a.id;});}

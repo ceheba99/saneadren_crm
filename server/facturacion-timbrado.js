@@ -260,8 +260,9 @@ function preparar(db, leadId, op = {}, { config, demo = false } = {}) {
 }
 
 // ---------------- Guardar en la base ----------------
-// facturas_log sin datos sensibles (CLAUDE.md): un mensaje del SAT puede traer el RFC del receptor; se tacha.
-const sinRfc = t => String(t).replace(/\b[A-ZÑ&]{3,4}\d{6}[A-Z0-9]{3}\b/g, '[RFC]');
+// facturas_log sin datos sensibles (CLAUDE.md): un mensaje del SAT puede traer el RFC o el correo del receptor; se tachan
+// (el correo, desde la auditoría 2026-11-04, H-010).
+const sinRfc = t => String(t).replace(/\b[A-ZÑ&]{3,4}\d{6}[A-Z0-9]{3}\b/g, '[RFC]').replace(/[^\s@<>"',;:()]+@[^\s@<>"',;:()]+\.[A-Za-z]{2,}/g, '[correo]');
 const log = (db, f, accion, resultado, mensaje, usuarioId, http = null) => db.prepare('INSERT INTO main.facturas_log (factura_id, lead_id, accion, resultado, http_status, mensaje, usuario_id) VALUES (?, ?, ?, ?, ?, ?, ?)')
   .run(f.id, f.lead_id, accion, resultado, http, mensaje == null ? null : sinRfc(mensaje).slice(0, 2000), usuarioId ?? null);
 const actualizar = (db, id, campos) => db.prepare(`UPDATE main.facturas SET ${Object.keys(campos).map(k => k + ' = ?').join(', ')}, updated_at = datetime('now','localtime') WHERE id = ?`).run(...Object.values(campos), id);

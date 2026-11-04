@@ -19,10 +19,13 @@ const TIPOS = {
   otro: { nombre: 'Otro documento', admite: ['pdf', 'jpg', 'png', 'xml'] },
 };
 const MIME = { pdf: 'application/pdf', jpg: 'image/jpeg', png: 'image/png', xml: 'application/xml' };
-// El tipo real se reconoce por el contenido (no por la extensión que diga el nombre).
+// El tipo real se reconoce por el contenido (no por la extensión que diga el nombre). Auditoría 2026-11-04 (H-018): no
+// basta el principio; un PDF debe cerrar con «%%EOF» y un JPG con FF D9 (al final, admitiendo unos bytes de relleno).
+// Así un HTML que empieza con «%PDF-» ya no pasa. El PNG solo por su firma (las imágenes del demo son sintéticas).
+const cola = buf => buf.slice(Math.max(0, buf.length - 1024));
 function tipoReal(buf) {
-  if (buf.length > 4 && buf.slice(0, 4).toString('latin1') === '%PDF') return 'pdf';
-  if (buf.length > 3 && buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) return 'jpg';
+  if (buf.length > 4 && buf.slice(0, 4).toString('latin1') === '%PDF') return cola(buf).toString('latin1').includes('%%EOF') ? 'pdf' : null;
+  if (buf.length > 3 && buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) return cola(buf).includes(Buffer.from([0xff, 0xd9])) ? 'jpg' : null;
   if (buf.length > 8 && buf.slice(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) return 'png';
   const ini = buf.slice(0, 200).toString('utf8').replace(/^﻿/, '').trimStart();
   if (/^<\?xml|^<cfdi:Comprobante/i.test(ini)) return 'xml';

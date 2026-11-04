@@ -146,6 +146,17 @@ app.use('/api', (req, res, next) => {
   if (RUTAS_PUBLICAS.has(req.path) || /^\/publico\/encuesta\/[\w-]+$/.test(req.path) || /^\/publico\/(kiosco|celular)\/[a-z-]+$/.test(req.path)) return next();
   requireAuth(req, res, next);
 });
+// Campos de texto que nunca pueden llegar como lista u objeto (auditoría 2026-11-04, H-013): antes un nombre {…} se guardaba
+// como «[object Object]». Aplica a todas las rutas; cada una sigue validando su contenido.
+const CAMPOS_TEXTO = ['nombre', 'empresa_contacto', 'direccion', 'correo', 'telefono', 'telefono_alterno', 'rfc', 'notas_generales', 'giro', 'observaciones', 'puesto', 'concepto', 'motivo', 'referencia', 'texto', 'leyenda'];
+app.use('/api', (req, res, next) => {
+  const b = req.body;
+  if (b && typeof b === 'object' && !Buffer.isBuffer(b)) {
+    const malo = CAMPOS_TEXTO.find(k => b[k] !== null && typeof b[k] === 'object');
+    if (malo) return res.status(400).json({ error: `El campo «${malo}» debe ser texto` });
+  }
+  next();
+});
 // Sucursales: alcance de cada petición (qué sucursales ve) y candados en la base. Va antes de las demás rutas.
 const suc = require('./sucursales')(app, db, h, { audit: { registrar: (...a) => app.locals.auditoria?.registrar(...a), diferencias: (...a) => app.locals.auditoria?.diferencias(...a) } });
 app.locals.sucursales = suc;
@@ -556,9 +567,12 @@ app.get('/api/leads', h((req, res) => {
   const { etapa, responsable_id, estatus, q, desde, hasta, urgente, solo_area } = req.query;
   let sql = `
     SELECT l.*, s.nombre AS servicio_nombre, u.nombre AS responsable_nombre, ca.nombre AS canal_nombre,
-      (SELECT COUNT(*) FROM historial h WHERE h.lead_id = l.id AND h.tipo='alerta' AND h.resuelta=0 AND h.fecha_alerta <= datetime('now','localtime')) AS alertas_pendientes,
-      (SELECT COUNT(*) FROM leads l2 WHERE l2.cliente_id = l.cliente_id) AS veces_contratado
+      COALESCE(ap.n, 0) AS alertas_pendientes, COALESCE(vc.n, 0) AS veces_contratado
     FROM leads l
+    -- Conteos agrupados una sola vez (auditoría 2026-11-04, H-025): antes eran subconsultas por cada orden y, como
+    -- «leads» e «historial» son vistas con el filtro de permisos, la lista crecía al cuadrado con los datos.
+    LEFT JOIN (SELECT cliente_id, COUNT(*) AS n FROM leads GROUP BY cliente_id) vc ON vc.cliente_id = l.cliente_id
+    LEFT JOIN (SELECT lead_id, COUNT(*) AS n FROM historial WHERE tipo = 'alerta' AND resuelta = 0 AND fecha_alerta <= datetime('now','localtime') GROUP BY lead_id) ap ON ap.lead_id = l.id
     LEFT JOIN catalogo_servicios s ON s.id = l.servicio_id
     LEFT JOIN usuarios u ON u.id = l.responsable_id
     LEFT JOIN canales ca ON ca.id = l.canal_id
@@ -583,6 +597,9 @@ app.get('/api/leads', h((req, res) => {
   if (urgente === '1') { sql += ' AND l.urgente = 1'; }
   // «solo_area=1» (Inicio): solo lo que ve por cotizaciones u órdenes, no lo que ve por la cobranza (2026-11-03).
   if (solo_area === '1') sql += ' AND ve_lead_area(l.sucursal_id, l.responsable_id, l.tecnico_id, l.estatus, l.capturado_por)';
+  // «por_concluir=1» (Inicio): solo órdenes con fecha de servicio ya pasada y sin marcar como realizadas o no. Antes Inicio
+  // pedía TODAS las órdenes ganadas de la historia para filtrarlas en el navegador (auditoría 2026-11-04, H-025).
+  if (req.query.por_concluir === '1') { sql += " AND l.estatus = 'ganado' AND COALESCE(l.ejecucion, '') = '' AND l.fecha_servicio IS NOT NULL AND l.fecha_servicio <> '' AND l.fecha_servicio <= ?"; params.push(hoyMexico()); }
   sql += ' ORDER BY l.urgente DESC, l.updated_at DESC';
   res.json(db.prepare(sql).all(...params));
 }));

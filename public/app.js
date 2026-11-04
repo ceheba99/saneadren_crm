@@ -482,6 +482,16 @@ function estadoCarga(ids, estado, reintentar) {
     }
   });
 }
+// Aviso arriba de una pantalla que ya tenía datos y no se pudo actualizar (auditoría 2026-11-04, H-011): sin él, se
+// seguían viendo los datos viejos como si estuvieran al día. Sin «err», quita el aviso (la carga salió bien).
+function avisoCarga(vista, err, reintentar) {
+  const sec = document.getElementById('vista-' + vista); if (!sec) return;
+  let caja = sec.querySelector(':scope > .aviso-carga-vista');
+  if (!err) { caja?.remove(); return; }
+  if (!caja) { caja = document.createElement('div'); caja.className = 'aviso-error-carga aviso-carga-vista'; caja.setAttribute('role', 'alert'); sec.prepend(caja); }
+  caja.innerHTML = `<p>${escaparHtml('No se pudo actualizar: ' + err.message + ' Lo que ves abajo puede no estar al día.')}</p><button type="button" class="btn btn-outline">Reintentar</button>`;
+  caja.querySelector('button').onclick = reintentar;
+}
 async function cargarInicio() {
   const listas = ['inicio-cotizaciones', 'inicio-concluir', 'inicio-recompras'];
   estadoCarga(listas, 'cargando');
@@ -492,7 +502,7 @@ async function cargarInicio() {
       api('/recompras').then(r => r.json()),
       // Solo lo que ve por cotizaciones u órdenes: lo que ve por la cobranza no es «por concluir» (2026-11-03).
       api('/leads?estatus=abierto&solo_area=1').then(r => r.json()),
-      api('/leads?estatus=ganado&solo_area=1').then(r => r.json())
+      api('/leads?estatus=ganado&solo_area=1&por_concluir=1').then(r => r.json())
     ]);
   } catch (err) {
     if (err.status !== 401) estadoCarga(listas, 'No se pudo cargar: ' + err.message, cargarInicio);
@@ -569,11 +579,15 @@ async function cargarLeads() {
   if (q) pc.set('q', q);
   if (desde) pc.set('desde', desde);
   if (hasta) pc.set('hasta', hasta);
-  const [leads, kpis, contactos] = await Promise.all([
-    api('/leads?' + params.toString()).then(r => r.json()),
-    api('/kpis' + (resp ? '?responsable_id=' + resp : '')).then(r => r.json()),
-    conContactos ? api('/contactos/sin-cotizacion?' + pc.toString()).then(r => r.json()) : []
-  ]);
+  let leads, kpis, contactos;
+  try {
+    [leads, kpis, contactos] = await Promise.all([
+      api('/leads?' + params.toString()).then(r => r.json()),
+      api('/kpis' + (resp ? '?responsable_id=' + resp : '')).then(r => r.json()),
+      conContactos ? api('/contactos/sin-cotizacion?' + pc.toString()).then(r => r.json()) : []
+    ]);
+  } catch (err) { if (err.status !== 401) avisoCarga('leads', err, cargarLeads); return; }
+  avisoCarga('leads');
 
   renderKpis(kpis, contactos.length);
   renderKanbanLeads(leads, contactos);
@@ -785,7 +799,7 @@ async function cargarGenerador() {
   resumen.textContent = 'Cargando…';
   const params = new URLSearchParams({ desde, hasta, q: document.getElementById('gen-buscar').value.trim() });
   let r;
-  try { r = await api('/generador?' + params).then(x => x.json()); } catch (err) { if (consulta === consultaGenerador) resumen.textContent = 'No se pudo cargar el generador: ' + err.message; return; }
+  try { r = await api('/generador?' + params).then(x => x.json()); } catch (err) { if (consulta === consultaGenerador) { resumen.textContent = 'No se pudo cargar el generador: ' + err.message; cuerpo.innerHTML = ''; } return; } // sin renglones viejos que parezcan al día
   if (consulta !== consultaGenerador) return;
   GENERADOR = r;
   const m = v => v == null ? '—' : formatoMoneda(v), t = r.totales;
@@ -1676,11 +1690,15 @@ function fcOpciones(clientes) {
 
 async function cargarClientes() {
   const pedirSaldos = Permisos.puede('cxc.ver');
-  const [clientes, kpis, saldos] = await Promise.all([
-    api('/clientes?' + fcParams().toString()).then(r => r.json()),
-    api('/kpis').then(r => r.json()),
-    pedirSaldos ? api('/finanzas/cartera?vista=cliente').then(r => r.ok ? r.json() : []).catch(() => []) : Promise.resolve([])
-  ]);
+  let clientes, kpis, saldos;
+  try {
+    [clientes, kpis, saldos] = await Promise.all([
+      api('/clientes?' + fcParams().toString()).then(r => r.json()),
+      api('/kpis').then(r => r.json()),
+      pedirSaldos ? api('/finanzas/cartera?vista=cliente').then(r => r.ok ? r.json() : []).catch(() => []) : Promise.resolve([])
+    ]);
+  } catch (err) { if (err.status !== 401) avisoCarga('clientes', err, cargarClientes); return; }
+  avisoCarga('clientes');
   const saldo = new Map(saldos.map(g => [g.cliente_id, g]));
   FC_LISTA = clientes.map(c => ({ ...c, saldo: saldo.get(c.id)?.saldo || 0, vencido: saldo.get(c.id)?.vencido || 0 }));
   if (fcVal('fc-tipo') === 'con_saldo') FC_LISTA = FC_LISTA.filter(c => c.saldo > 0);
@@ -2746,13 +2764,13 @@ async function cargarTiposCliente(){
   let tipos;
   try { tipos=await api('/tipos-cliente').then(r=>r.json()); }
   catch(error){
-    document.getElementById('lista-tipos-cliente').textContent='No se pudo cargar el catálogo. Si acabas de actualizar el CRM, reinicia el servidor y recarga la página.';
+    document.getElementById('lista-tipos-cliente').textContent='No se pudo cargar el catálogo: '+error.message;
     document.getElementById('btn-agregar-tipo').disabled=true;
     // Mantiene las opciones conocidas para que un fallo del catálogo no bloquee el inicio.
     tipos=CATALOGOS.tipos || [{clave:'residencial',nombre:'Residencial'},{clave:'comercial',nombre:'Comercial'},{clave:'industrial',nombre:'Industrial'}];
     for(const id of ['in-giro','fc-ed-giro']){const el=document.getElementById(id);if(!el.options.length || el.options.length===1){el.innerHTML='<option value="">Sin especificar</option>'+tipos.map(t=>`<option value="${escaparHtml(t.clave)}">${escaparHtml(t.nombre)}</option>`).join('');}}
     CATALOGOS.tipos=tipos;
-    toast('Catálogo de tipos no disponible. Reinicia el servidor si acabas de actualizar.');
+    toast('No se pudieron cargar los tipos de cliente: ' + error.message);
     return;
   }
   document.getElementById('btn-agregar-tipo').disabled=false;
