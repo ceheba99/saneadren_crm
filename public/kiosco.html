@@ -139,22 +139,31 @@
   }
 
   // ---------- Teclado numérico (4 dígitos) ----------
+  // Teclas que llegan mientras se cambia de pantalla (alguien teclea rápido en un teclado físico): pasan a la siguiente.
+  let adelantadas = '';
   function teclado(titulo, ayuda, oculto, alTerminar, atras) {
-    let valor = '';
+    let valor = '', terminado = false;
     const muestra = el('div', { className: oculto ? 'puntos' : 'digitos' });
     const refrescar = () => {
       if (oculto) muestra.replaceChildren(...[0, 1, 2, 3].map(i => el('span', { className: i < valor.length ? 'lleno' : '' })));
       else muestra.textContent = valor.padEnd(4, '·');
     };
-    const tecla = d => { reiniciarEspera(); if (valor.length < 4) { valor += d; refrescar(); if (valor.length === 4) setTimeout(() => alTerminar(valor), 120); } };
-    const borrar = () => { reiniciarEspera(); valor = valor.slice(0, -1); refrescar(); };
+    const tecla = d => {
+      reiniciarEspera();
+      if (terminado) { adelantadas = (adelantadas + d).slice(0, 4); return; }
+      valor += d; refrescar();
+      if (valor.length === 4) { terminado = true; setTimeout(() => alTerminar(valor), 120); }
+    };
+    const borrar = () => { reiniciarEspera(); if (terminado) return; valor = valor.slice(0, -1); refrescar(); };
     const teclas = ['1', '2', '3', '4', '5', '6', '7', '8', '9'].map(d => el('button', { type: 'button', textContent: d, onclick: () => tecla(d) }));
-    teclas.push(el('button', { type: 'button', className: 'secundario', textContent: atras ? 'Atrás' : 'Borrar todo', onclick: () => (atras ? atras() : (valor = '', refrescar())) }));
+    teclas.push(el('button', { type: 'button', className: 'secundario', textContent: atras ? 'Atrás' : 'Borrar todo', onclick: () => (atras ? atras() : terminado || (valor = '', refrescar())) }));
     teclas.push(el('button', { type: 'button', textContent: '0', onclick: () => tecla('0') }));
     teclas.push(el('button', { type: 'button', className: 'secundario', textContent: '⌫', ariaLabel: 'Borrar', onclick: borrar }));
     refrescar();
     pintar(el('h1', { textContent: titulo }), el('p', { className: 'ayuda', textContent: ayuda }), muestra, el('div', { className: 'teclado' }, ...teclas));
     estado.teclado = { tecla, borrar };
+    const previas = adelantadas; adelantadas = '';
+    for (const d of previas) tecla(d);
   }
   document.addEventListener('keydown', e => {
     if (!estado.teclado) return;
@@ -163,7 +172,7 @@
 
   // ---------- Flujo ----------
   function inicio() {
-    estado = {};
+    estado = {}; adelantadas = '';
     if (!registro?.token) return noRegistrado();
     teclado('Escribe tu código', 'Tu número de 4 dígitos para checar', false, codigo => pedirPin(codigo));
   }
@@ -172,7 +181,7 @@
     teclado('Escribe tu PIN', 'Los 4 números de tu PIN', true, pin => identificar(codigo, pin), inicio);
   }
   async function identificar(codigo, pin) {
-    estado.teclado = null;
+    estado.teclado = null; adelantadas = ''; // lo tecleado mientras se revisa el PIN no se usa
     pintar(el('p', { className: 'ayuda', textContent: 'Revisando…' }));
     let r;
     try { r = await api('identificar', { codigo, pin }); }
@@ -263,6 +272,8 @@
   }
 
   // ---------- Arranque ----------
+  // Para que abra aunque la tableta se reinicie sin internet (solo la página del kiosco; ver kiosco-sw.js).
+  try { navigator.serviceWorker?.register('/kiosco-sw.js', { scope: '/kiosco' }).catch(() => {}); } catch { /* no disponible */ }
   $('pantalla-completa').onclick = () => { (document.documentElement.requestFullscreen?.() || Promise.resolve()).catch(() => {}); };
   const despierta = async () => { try { await navigator.wakeLock?.request('screen'); } catch { /* no disponible */ } };
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') despierta(); });

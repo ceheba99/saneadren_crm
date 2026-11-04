@@ -165,6 +165,7 @@ module.exports = {
     pin_temporal: 'lo pone el sistema: 1 al dar un PIN temporal, 0 cuando la persona elige el suyo en el kiosco',
     checa: 'lo pone el sistema al dar de alta en el checador; se apaga con PUT /api/asistencia/personal/:id (su pantalla llega con los horarios, F3)',
     ultimo_uso: 'lo pone el sistema cada vez que el kiosco se usa',
+    sin_conexion: 'lo pone el sistema: 1 cuando el kiosco guardó la checada sin internet y la subió después (F2)',
     revocado_por: 'lo pone el sistema con la sesión al dar de baja un kiosco',
     tipo_documento: 'lo pone el sistema: «factura» al timbrar la de una orden, «pago» al timbrar un complemento de pago (F6); la serie, según el tipo que elige Dirección al asignarla',
     cobro_id: 'liga que pone el sistema entre cada cobro y el complemento de pago que lo ampara (F6)',
