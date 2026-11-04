@@ -1,6 +1,8 @@
 // ASISTENCIA (Ajustes → Asistencia, RH F3 2026-11-03): el día y la semana de cada persona (entrada, comida, salida,
 // retardos, faltas y tiempo extra), sus checadas con las correcciones (con motivo), la autorización del tiempo extra,
 // los horarios (por versión, con fecha «desde») y los días festivos. Todo lo calcula el servidor (server/asistencia.js).
+// F4 (2026-11-03): Excel de la semana de nómina (viernes a jueves) con resumen, detalle por día y pendientes.
+// Lleva horas, no dinero: el pago lo calculará el módulo de nómina.
 const Asistencia = (() => {
   const $ = id => document.getElementById(id);
   const esc = t => escaparHtml(t == null ? '' : String(t));
@@ -91,7 +93,7 @@ const Asistencia = (() => {
   // ---------- Semana ----------
   function pintarSemana() {
     const d = datos;
-    let h = `<div class="filtros"><label>Semana del <input type="date" id="as-semana" value="${esc(d.desde)}"></label><span class="ayuda">${esc(fechaLarga(d.desde))} al ${esc(fechaLarga(d.hasta))}. Semana de nómina: de viernes a jueves. Tiempo extra autorizado: las primeras 9 horas de la semana son dobles y lo demás triples (LFT).</span></div>`;
+    let h = `<div class="filtros"><label>Semana del <input type="date" id="as-semana" value="${esc(d.desde)}"></label>${d.filas.length ? '<button type="button" class="btn btn-secundario" id="as-excel">📥 Excel de nómina</button>' : ''}<span class="ayuda">${esc(fechaLarga(d.desde))} al ${esc(fechaLarga(d.hasta))}. Semana de nómina: de viernes a jueves. Tiempo extra autorizado: las primeras 9 horas de la semana son dobles y lo demás triples (LFT).</span></div>`;
     if (!d.filas.length) { $('as-cuerpo').innerHTML = h + '<p class="ayuda">No hay personas en el reloj checador.</p>'; return; }
     h += `<div class="tabla-scroll"><table class="tabla-resumen as-tabla as-semana"><thead><tr><th>Persona</th>${d.fechas.map((f, i) => `<th>${esc(fechaLarga(f))}${d.festivos[i] ? '<small class="pe-cuenta">🎉 festivo</small>' : ''}</th>`).join('')}
       <th>Trabajado</th><th>Retardos</th><th>Faltas</th><th>Extra registrado</th><th>Extra autorizado</th><th>Dobles</th><th>Triples</th></tr></thead><tbody>`;
@@ -102,6 +104,57 @@ const Asistencia = (() => {
         <td>${esc(hm(t.trabajado_min))}</td><td>${esc(t.retardos)}${t.retardo_min ? ` <small>(${esc(t.retardo_min)} min)</small>` : ''}</td><td>${esc(t.faltas)}</td><td>${esc(hm(t.extra_min))}</td><td>${esc(hm(t.extra_autorizado_min))}</td><td>${esc(hm(t.extra_dobles_min))}</td><td>${esc(hm(t.extra_triples_min))}</td></tr>`;
     }
     $('as-cuerpo').innerHTML = h + '</tbody></table></div>';
+  }
+
+  // ---------- Excel de nómina (F4) ----------
+  // Horas como fracción de día con formato [h]:mm: se ven como 9:35 y se pueden sumar en Excel.
+  const horas = m => (m == null ? null : m / 1440);
+  async function excelNomina(boton) {
+    const d = datos; if (!d?.filas?.length || boton.disabled) return;
+    const pend = d.filas.reduce((s, f) => s + f.totales.por_revisar + (f.totales.extra_sin_autorizar_min ? 1 : 0) + f.totales.sin_salida + f.totales.sin_horario, 0);
+    if (pend && !await solicitarDialogo({ titulo: 'Hay pendientes en la semana', mensaje: 'Algunas personas tienen checadas por revisar, tiempo extra sin autorizar o días sin salida u horario. El Excel los marca en la hoja «Pendientes». ¿Descargarlo así?', aceptar: 'Descargar' })) return;
+    boton.disabled = true;
+    try {
+      const ExcelJS = await Finanzas.cargarExcelJS(), wb = new ExcelJS.Workbook(); wb.creator = 'Saneadren CRM';
+      const titulo = `Semana del ${fechaLarga(d.desde)} al ${fechaLarga(d.hasta)}`;
+      const hoja = (nombre, cols) => {
+        const ws = wb.addWorksheet(nombre, { views: [{ state: 'frozen', ySplit: 2 }] });
+        ws.addRow([titulo]).font = { bold: true, size: 12 };
+        ws.addRow(cols.map(c => c[0])).font = { bold: true };
+        cols.forEach(([, ancho, tipo], i) => { const col = ws.getColumn(i + 1); col.width = ancho; if (tipo === 'h') col.numFmt = '[h]:mm'; });
+        return ws;
+      };
+      const R = hoja('Resumen', [['Persona', 30], ['Puesto', 16], ['Días trabajados', 10], ['Faltas', 8], ['Retardos', 9], ['Minutos de retardo', 10], ['Horas trabajadas', 11, 'h'],
+        ['Tiempo extra registrado', 12, 'h'], ['Tiempo extra autorizado', 12, 'h'], ['Extra dobles', 11, 'h'], ['Extra triples', 11, 'h'], ['Domingos trabajados', 10], ['Festivos trabajados', 10],
+        ['Descansos trabajados', 10], ['Vacaciones (días)', 10], ['Incapacidad (días)', 10], ['Permisos (días)', 10], ['Pendientes', 40]]);
+      const D = hoja('Detalle por día', [['Fecha', 12], ['Día', 11], ['Persona', 30], ['Horario', 18], ['Entrada programada', 10], ['Salida programada', 10], ['Entrada', 9], ['Salida', 9],
+        ['Comida (min)', 9], ['Horas trabajadas', 11, 'h'], ['Retardo (min)', 9], ['Extra registrado', 11, 'h'], ['Extra autorizado', 11, 'h'], ['Autorizó', 22], ['Falta', 7], ['Incidencia', 14], ['Avisos', 50]]);
+      const P = hoja('Pendientes', [['Persona', 30], ['Fecha', 12], ['Qué falta', 60]]);
+      for (const f of d.filas) {
+        const t = f.totales, pendientes = [];
+        if (t.por_revisar) pendientes.push(`${t.por_revisar} checada(s) por revisar`);
+        if (t.extra_sin_autorizar_min) pendientes.push(`${hm(t.extra_sin_autorizar_min)} de tiempo extra sin autorizar`);
+        if (t.sin_salida) pendientes.push(`${t.sin_salida} día(s) sin salida`);
+        if (t.sin_horario) pendientes.push('sin horario asignado');
+        R.addRow([f.nombre, f.puesto || '', t.dias_trabajados, t.faltas, t.retardos, t.retardo_min, horas(t.trabajado_min), horas(t.extra_min), horas(t.extra_autorizado_min), horas(t.extra_dobles_min), horas(t.extra_triples_min),
+          t.domingos, t.festivos_trabajados, t.descansos_trabajados, t.vacaciones, t.incapacidad, t.permisos, pendientes.join(' · ')]);
+        for (const x of f.dias) {
+          D.addRow([x.fecha, x.dia, f.nombre, x.horario || 'Sin horario', x.programado?.entrada || (x.festivo ? 'Festivo' : 'Descanso'), x.programado?.salida || '', x.entrada || '', x.salida || '',
+            x.comida_min || null, horas(x.trabajado_min), x.retardo_min || null, horas(x.extra_min || null), horas(x.extra_autorizado_min), x.extra_autorizado_por || '', x.falta ? 'Sí' : '',
+            x.incidencia ? INCIDENCIA[x.incidencia] || x.incidencia : '', [x.festivo ? 'Festivo: ' + x.festivo : '', ...x.notas, x.por_revisar ? `${x.por_revisar} por revisar` : ''].filter(Boolean).join(' · ')]);
+          const q = [];
+          if (x.por_revisar) q.push(`${x.por_revisar} checada(s) por revisar (Asistencia → Día)`);
+          if (x.extra_min && x.extra_autorizado_min == null) q.push(`${hm(x.extra_min)} de tiempo extra sin autorizar`);
+          if (x.notas.includes('Sin salida')) q.push('No registró salida');
+          if (x.notas.includes('Sin horario asignado') && (x.entrada || x.salida)) q.push('No tiene horario asignado');
+          if (x.notas.some(n => /cambió después/.test(n))) q.push('El tiempo extra cambió después de autorizarlo');
+          if (q.length) P.addRow([f.nombre, x.fecha, q.join(' · ')]);
+        }
+      }
+      if (P.rowCount === 2) P.addRow(['Sin pendientes: todo está revisado y autorizado.']);
+      saveAs(new Blob([await wb.xlsx.writeBuffer()], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), `nomina_semana_${d.desde}_al_${d.hasta}.xlsx`);
+      toast('Excel de nómina descargado');
+    } catch (err) { toast(err.message); } finally { boton.disabled = false; }
   }
 
   // ---------- Horarios ----------
@@ -175,6 +228,7 @@ const Asistencia = (() => {
     else if (d.asAnular) { const m = await pedirMotivo('Anular la checada', 'No se borra: queda tachada y deja de contar. Queda en la bitácora con tu nombre.'); if (m) accion(() => pedir('/checadas/' + Number(d.asAnular) + '/anular', { method: 'POST', body: JSON.stringify({ motivo: m }) }), 'Checada anulada'); }
     else if (b.id === 'as-n-guardar') accion(() => pedir('/checadas', { method: 'POST', body: JSON.stringify({ personal_id: abierto, tipo: $('as-n-tipo').value, fecha, hora: $('as-n-hora').value, motivo: $('as-n-motivo').value }) }), 'Checada agregada');
     else if (b.id === 'as-x-guardar') accion(() => pedir('/extra', { method: 'POST', body: JSON.stringify({ personal_id: abierto, fecha, minutos: Number($('as-x-min').value), motivo: $('as-x-motivo').value }) }), 'Tiempo extra autorizado');
+    else if (b.id === 'as-excel') excelNomina(b);
     else if (d.asHorarioNuevo) { editando = 'nuevo'; pintarHorarios(); }
     else if (d.asHorarioEditar) { editando = Number(d.asHorarioEditar); pintarHorarios(); }
     else if (d.asHorarioActivo) accion(() => pedir('/horarios/' + Number(d.asHorarioActivo), { method: 'PUT', body: JSON.stringify({ activo: !!d.activo }) }));
