@@ -7,7 +7,7 @@
 <title>Reloj checador · Saneadren</title>
 <!-- KIOSCO DEL RELOJ CHECADOR (server/checador.js, F2 2026-11-03). Se abre en /kiosco en la tableta o computadora de la
      entrada, que antes registró el gerente desde Personal (su token queda en este navegador). Sin sesión del CRM: solo
-     checa. La hora la pone el servidor; la que se ve aquí es solo de referencia.
+     checa, y al abrir cierra la sesión del CRM que haya en este navegador (y la de cualquier pestaña que entre después). La hora la pone el servidor; la que se ve aquí es solo de referencia.
      Sin internet: la checada (con su foto) se guarda en este navegador (IndexedDB) y se sube al volver la conexión; el
      servidor revisa el PIN al subirla y la deja «por revisar». El script va aquí mismo (la CSP permite scripts en línea). -->
 <style>
@@ -281,6 +281,17 @@
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') despierta(); });
   window.addEventListener('online', async () => { await conectar(); subirPendientes(); });
   window.addEventListener('offline', () => { sinConexion = true; avisos(); });
+  // Un kiosco no conserva la sesión del CRM: si el gerente la dejó abierta al registrarlo (o alguien entra en otra
+  // pestaña), se cierra aquí para que nadie use esta tableta para entrar al sistema. Misma llave que app.js.
+  function cerrarSesionCrm() {
+    let s = null;
+    try { s = JSON.parse(localStorage.getItem('usuario_actual') || 'null'); localStorage.removeItem('usuario_actual'); } catch { /* sin almacenamiento */ }
+    if (s?.token) fetch('/api/logout', { method: 'POST', headers: { Authorization: 'Bearer ' + s.token }, cache: 'no-store' }).catch(() => {});
+  }
+  if (registro?.token) {
+    cerrarSesionCrm();
+    window.addEventListener('storage', e => { if (e.key === 'usuario_actual' && e.newValue) cerrarSesionCrm(); });
+  }
   (async () => {
     if (!registro?.token) return noRegistrado();
     avisos();
