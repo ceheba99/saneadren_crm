@@ -561,6 +561,7 @@
       <button type="button" role="tab" class="mk-pestana" id="mk-p-plan" data-mk-pestana="plan" aria-selected="false">🎯 Plan y metas</button>
       <button type="button" role="tab" class="mk-pestana perm-marketing-dinero" id="mk-p-din" data-mk-pestana="dinero" aria-selected="false">💰 Presupuesto y gastos</button>
       <button type="button" role="tab" class="mk-pestana" id="mk-p-res" data-mk-pestana="resultados" aria-selected="false">📈 Resultados</button>
+      <button type="button" role="tab" class="mk-pestana perm-marketing-dinero" id="mk-p-gads" data-mk-pestana="google" aria-selected="false">📞 Google Ads</button>
     </div>
     <!-- Tablero del departamento (fase 4, 2026-10-27) -->
     <div id="mk-tab-tablero" hidden>
@@ -607,6 +608,18 @@
         <div class="btn-group"><button type="button" class="btn btn-outline btn-chico" data-rs-rango="mes">Este mes</button><button type="button" class="btn btn-outline btn-chico" data-rs-rango="trimestre">Últimos 3 meses</button><button type="button" class="btn btn-outline btn-chico" data-rs-rango="anio">Este año</button></div></div>
       <div id="rs-cuerpo"></div>
       <div id="rs-publicaciones"></div>
+    </div>
+    <!-- Llamadas de Google Ads (2026-11-04): solo Dirección y el Gerente de marketing -->
+    <div id="mk-tab-google" hidden>
+      <div class="vista-encabezado">
+        <div><h2>📞 Llamadas de Google Ads</h2><p class="ayuda">Sube el reporte «Detalles de las llamadas» de Google Ads (CSV) y el sistema lo cruza con los contactos por teléfono: <b>registrada</b> si el contacto o su cotización se dio de alta entre el día de la llamada y 7 días después, <b>cliente que ya existía</b> si ya estaba antes, <b>sin registrar</b> si no aparece y <b>sin número</b> si Google no lo da. Volver a subir el mismo periodo no duplica llamadas.</p></div>
+        <div class="btn-group"><label class="btn btn-primario" id="ga-subir-lbl">📤 Subir reporte (CSV)<input type="file" id="ga-archivo" accept=".csv,text/csv" hidden></label></div>
+      </div>
+      <div id="ga-previa"></div>
+      <div class="filtros"><label class="filtro-fecha-label" for="ga-desde">Desde</label><input type="date" id="ga-desde"><label class="filtro-fecha-label" for="ga-hasta">Hasta</label><input type="date" id="ga-hasta">
+        <select id="ga-campana" aria-label="Campaña"><option value="">Todas las campañas</option></select>
+        <button type="button" class="btn btn-outline btn-chico" id="ga-ver">Ver</button></div>
+      <div id="ga-cuerpo"></div>
     </div>
     <div id="mk-tab-calendario">
     <div class="vista-encabezado">
@@ -1804,11 +1817,12 @@
 <script src="buscador.js?v=suc1"></script>
 <script src="demo.js?v=demo1"></script>
 <script src="prospeccion.js?v=pro2"></script>
-<script src="marketing.js?v=mk7"></script>
+<script src="marketing.js?v=mk8"></script>
 <script src="marketing-proyectos.js?v=mk6"></script>
 <script src="marketing-ideas.js?v=mk6"></script>
 <script src="marketing-control.js?v=mk7"></script>
 <script src="marketing-revision.js?v=mk7"></script>
+<script src="marketing-google-ads.js?v=ga3"></script>
 <script src="inicio.js?v=ini3"></script>
 </body>
 </html>

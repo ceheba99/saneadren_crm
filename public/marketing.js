@@ -430,15 +430,16 @@ const Marketing = (() => {
   // Pestañas: Calendario y Proyectos (se recuerda la última).
   // Por defecto el Tablero; se recuerda la última pestaña (la de dinero solo si la puede ver).
   let PESTANA = 'tablero';
-  try { const g = localStorage.getItem('marketing-pestana'); if (['calendario', 'proyectos', 'ideas', 'biblioteca', 'plan', 'dinero', 'resultados'].includes(g)) PESTANA = g; } catch { /* */ }
+  try { const g = localStorage.getItem('marketing-pestana'); if (['calendario', 'proyectos', 'ideas', 'biblioteca', 'plan', 'dinero', 'resultados', 'google'].includes(g)) PESTANA = g; } catch { /* */ }
   function pestana(p) {
     PESTANA = p; try { localStorage.setItem('marketing-pestana', p); } catch { /* */ }
     document.querySelectorAll('#vista-marketing > .mk-pestanas [data-mk-pestana]').forEach(b => b.setAttribute('aria-selected', String(b.dataset.mkPestana === p)));
-    if (p === 'dinero' && !Permisos.puede('marketing.dinero')) p = 'tablero';
+    if (['dinero', 'google'].includes(p) && !Permisos.puede('marketing.dinero')) p = 'tablero';
     PESTANA = p;
     document.querySelectorAll('#vista-marketing > .mk-pestanas [data-mk-pestana]').forEach(b => b.setAttribute('aria-selected', String(b.dataset.mkPestana === p)));
-    for (const t of ['tablero', 'calendario', 'proyectos', 'ideas', 'biblioteca', 'plan', 'dinero', 'resultados']) $('mk-tab-' + t).hidden = p !== t;
-    if (p === 'proyectos') window.ProyectosMk?.cargar(); else if (p === 'ideas') window.IdeasMk?.cargar(); else if (p === 'biblioteca') window.BibliotecaMk?.cargar();
+    for (const t of ['tablero', 'calendario', 'proyectos', 'ideas', 'biblioteca', 'plan', 'dinero', 'resultados', 'google']) $('mk-tab-' + t).hidden = p !== t;
+    if (p === 'google') window.GoogleAdsMk?.cargar();
+    else if (p === 'proyectos') window.ProyectosMk?.cargar(); else if (p === 'ideas') window.IdeasMk?.cargar(); else if (p === 'biblioteca') window.BibliotecaMk?.cargar();
     else if (['tablero', 'plan', 'dinero', 'resultados'].includes(p)) window.ControlMk?.cargar(p); else cargar();
   }
   document.querySelectorAll('#vista-marketing > .mk-pestanas [data-mk-pestana]').forEach(b => b.addEventListener('click', () => pestana(b.dataset.mkPestana)));
