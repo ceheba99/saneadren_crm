@@ -177,7 +177,7 @@ app.locals.auditoria = audit;
 require('./eliminar')(app, db, h, { sesiones });
 // Clientes sin duplicados: ID CLI-0001, teléfonos adicionales, revisión de parecidos y fusión.
 const unicos = require('./clientes-unicos')(app, db, h);
-require('./plantillas-descripcion')(app, db, h, { permisos, suc, audit }); // Descripciones guardadas por cliente (2026-11-04)
+require('./cliente-sucursales')(app, db, h, { permisos, suc, audit }); // Sucursales de cada cliente para llenar {sucursal} (2026-11-04)
 require('./prospeccion')(app,db,h,unicos);
 // Cuentas por cobrar y por pagar. Devuelve ganchos que usan las rutas de órdenes de abajo.
 const finanzas = require('./finanzas')(app, db, h, unicos);
@@ -674,6 +674,16 @@ function validarPartidas(req,res,next){
     try{items=JSON.parse(req.body.partidas_json);}catch{return res.status(400).json({error:'Partidas inválidas'});}
     if(!Array.isArray(items)||!items.length||items.length>100||items.some(i=>!i||typeof i.servicio!=='string'||!i.servicio.trim()||typeof i.leyenda!=='string'||i.leyenda.length>10000||typeof i.importe!=='number'||!Number.isFinite(i.importe)||i.importe<0||i.importe>1e12))return res.status(400).json({error:'Revisa servicios, descripciones e importes'});
     if(items.some(i=>!db.prepare('SELECT id FROM catalogo_servicios WHERE nombre = ?').get(i.servicio)))return res.status(400).json({error:'Todas las partidas deben tener un servicio del catálogo'});
+    // Unidad de medida de la partida (2026-11-04): opcional, del catálogo compartido de unidades (m³, metro…).
+    for(const i of items){
+      if(i.unidad===undefined||i.unidad===null||i.unidad===''){delete i.unidad;continue;}
+      const u=typeof i.unidad==='string'?db.prepare('SELECT clave FROM unidades_medida WHERE clave = ? COLLATE NOCASE').get(i.unidad.trim()):null;
+      if(!u)return res.status(400).json({error:'La unidad de medida de una partida no está en el catálogo'});
+      i.unidad=u.clave;
+    }
+    // La descripción del servicio puede traer huecos ({sucursal}); se llenan antes de guardar.
+    const hueco=items.map(i=>[i,i.leyenda.match(/\{[^{}\n]{1,40}\}/)]).find(([,m])=>m);
+    if(hueco)return res.status(400).json({error:`Llena el hueco ${hueco[1][0]} de la descripción de «${hueco[0].servicio}»`});
     const primero=db.prepare('SELECT id FROM catalogo_servicios WHERE nombre = ?').get(items[0].servicio);
     if(!primero)return res.status(400).json({error:'Selecciona un servicio del catálogo'});
     // Cantidad × precio unitario (opcionales): el importe de la partida lo calcula el servidor.

@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Saneadren · Cotizaciones y Servicios</title>
-<link rel="stylesheet" href="styles.css?v=pd1">
+<link rel="stylesheet" href="styles.css?v=sc1">
 <link rel="stylesheet" href="servicios-tabla.css">
 <link rel="stylesheet" href="flujo.css?v=cel1">
 </head>
@@ -1067,15 +1067,14 @@
   </div>
 </div>
 
-<div class="overlay" id="overlay-plantilla-desc">
-  <div class="modal modal-plantilla-desc">
-    <div class="modal-header"><h2>📋 Usar descripción guardada</h2><button class="close-btn" type="button">✕</button></div>
+<div class="overlay" id="overlay-huecos">
+  <div class="modal modal-huecos">
+    <div class="modal-header"><h2>✏️ Completar la descripción</h2><button class="close-btn" type="button">✕</button></div>
     <div class="modal-body">
-      <div class="campo-modal" id="pd-uso-elegir"><label for="pd-uso-plantilla">Descripción</label><select id="pd-uso-plantilla"></select></div>
-      <div id="pd-uso-huecos"></div>
-      <p class="ayuda" id="pd-uso-mayus" hidden>Se escribe en mayúsculas, como el resto de la descripción.</p>
-      <div class="pd-vista"><small>Así quedará (la puedes seguir editando en la partida):</small><p id="pd-uso-vista"></p></div>
-      <div class="dialogo-acciones"><button type="button" class="btn btn-secundario" id="pd-uso-cancelar">Cancelar</button><button type="button" class="btn btn-primario" id="pd-uso-aceptar">Usar en la partida</button></div>
+      <div id="hx-campos"></div>
+      <p class="ayuda" id="hx-mayus" hidden>Se escribe en mayúsculas, como el resto de la descripción.</p>
+      <div class="hx-vista"><small>Así quedará (la puedes seguir editando en la partida):</small><p id="hx-vista"></p></div>
+      <div class="dialogo-acciones"><button type="button" class="btn btn-secundario" id="hx-cancelar">Cancelar</button><button type="button" class="btn btn-primario" id="hx-aceptar">Usar en la partida</button></div>
     </div>
   </div>
 </div>
@@ -1123,10 +1122,10 @@
         <p class="ayuda">Los que se usan al facturarle a este cliente. Un cliente puede tener varios (por ejemplo, otra razón social). Escríbelos como en su Constancia de Situación Fiscal. Se pueden guardar incompletos, pero no se le podrá facturar hasta completarlos.</p>
         <div id="fc-fiscales"></div>
       </div>
-      <div class="modal-section" id="fc-plantillas-seccion" data-plegable="plantillas-descripcion" data-plegado-defecto="1" hidden>
-        <div class="seccion-tit" data-plegable-cabecera>📋 Descripciones guardadas <span class="hc-cuenta" id="fc-plantillas-resumen"></span></div>
-        <p class="ayuda">Textos que se repiten en las cotizaciones y órdenes de este cliente. Al capturar una partida se elige con «📋 Usar descripción guardada»: el sistema pregunta lo que cambia (por ejemplo la sucursal) y llena la descripción.</p>
-        <div id="fc-plantillas"></div>
+      <div class="modal-section" id="fc-sucursales-cli-seccion" data-plegable="sucursales-cliente" data-plegado-defecto="1" hidden>
+        <div class="seccion-tit" data-plegable-cabecera>🏬 Sucursales del cliente <span class="hc-cuenta" id="fc-sucursales-cli-resumen"></span></div>
+        <p class="ayuda">Los lugares de este cliente donde se da servicio (por ejemplo, cada restaurante de una cadena). Al capturar una partida cuyo servicio tiene el hueco <b>{sucursal}</b> en su descripción, se elige de esta lista.</p>
+        <div id="fc-sucursales-cli"></div>
       </div>
       <div class="modal-section" data-plegable="registros-contacto">
         <div class="relacion-registros"><div><div class="seccion-tit" data-plegable-cabecera>Cotizaciones y servicios de este contacto</div><p class="ayuda">Una cotización abierta es una propuesta. Al aceptarla, el mismo registro pasa a servicio contratado; conserva su número e importe.</p></div>
@@ -1830,7 +1829,7 @@
 <script src="facturacion.js?v=fx10"></script>
 <script src="encuestas.js?v=enc1"></script>
 <script src="app.js?v=rh11"></script>
-<script src="plantillas-descripcion.js?v=pd1"></script>
+<script src="sucursales-cliente.js?v=sc1"></script>
 <script src="personal.js?v=rh8"></script>
 <script src="asistencia.js?v=rh7"></script>
 <script src="rh.js?v=rh7"></script>

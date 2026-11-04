@@ -630,7 +630,7 @@ header.app .logo-saneadren{display:block;width:250px;max-width:100%;height:auto;
 .gc-fila-cab{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;}
 .gc-fila-num::before{content:"Servicio " counter(gc-fila);font-size:12px;font-weight:700;color:var(--azul-600);text-transform:uppercase;letter-spacing:.4px;}
 #editor-cotizacion .gc-quitar{white-space:nowrap;padding:5px 10px;font-size:12.5px;}
-.gc-fila-grid{display:grid;grid-template-columns:minmax(0,1.7fr) minmax(76px,.5fr) minmax(0,1fr) minmax(0,1fr);gap:10px 12px;align-items:end;}
+.gc-fila-grid{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(70px,.45fr) minmax(130px,.9fr) minmax(0,1fr) minmax(0,1fr);gap:10px 12px;align-items:end;}
 .gc-fila-grid .campo-modal label{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .gc-fila-grid .gc-c-leyenda{grid-column:1/-1;}
 .gc-fila-grid .gc-c-leyenda textarea{min-height:60px;resize:vertical;}
@@ -2210,22 +2210,19 @@ table.tabla-clientes.py-tareas tbody td{white-space:normal;}
 .rh-icono{font-size:1.5rem;}
 .rh-pasos{margin:6px 0 10px;padding-left:20px;}
 
-/* Descripciones guardadas por cliente (2026-11-04, plantillas-descripcion.js) */
-.pd-tarjeta{border:1px solid var(--gris-200);border-radius:var(--radio);padding:10px 12px;margin:0 0 10px;background:#fff;}
-.pd-tarjeta.pd-quitada{opacity:.7;background:var(--gris-100);}
-.pd-cab{display:flex;flex-wrap:wrap;align-items:center;gap:6px;}
-.pd-acciones{margin-left:auto;display:flex;gap:6px;flex-wrap:wrap;}
-.pd-etiqueta{font-size:12px;padding:1px 8px;border-radius:999px;background:var(--gris-200);color:var(--texto-sec);}
-.pd-texto{margin:6px 0 0;white-space:pre-wrap;overflow-wrap:anywhere;font-size:14px;}
-.pd-hueco{background:#fff3c4;color:inherit;border-radius:4px;padding:0 2px;font-weight:600;}
-.pd-form{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;border:1px dashed var(--gris-400);border-radius:var(--radio);padding:12px;margin:0 0 10px;}
-.pd-form .pd-ancho,.pd-form .btn-group{grid-column:1/-1;}
-.pd-form textarea{width:100%;}
-.pd-quitadas{margin-top:8px;}
-.pd-quitadas summary{cursor:pointer;color:var(--texto-sec);margin-bottom:8px;}
-.gc-usar-plantilla{margin-top:4px;font-size:13px;}
-.modal-plantilla-desc{max-width:620px;}
-.modal-plantilla-desc .modal-body{padding:20px 24px;overflow:auto;}
-.pd-vista{margin:12px 0;padding:10px 12px;border-radius:var(--radio);background:var(--gris-100);}
-.pd-vista p{margin:4px 0 0;white-space:pre-wrap;overflow-wrap:anywhere;}
-#pd-uso-elegir[hidden]{display:none;}
+/* Sucursales del cliente y huecos de la descripción del servicio (2026-11-04, sucursales-cliente.js) */
+.sc-lista{display:flex;flex-direction:column;gap:6px;margin:0 0 10px;}
+.sc-fila{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;border:1px solid var(--gris-200);border-radius:var(--radio);padding:8px 12px;background:var(--blanco);}
+.sc-fila.sc-quitada{opacity:.7;background:var(--gris-100);}
+.sc-fila small{color:var(--texto-sec);}
+.sc-acciones{margin-left:auto;display:flex;gap:6px;flex-wrap:wrap;}
+.sc-form{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px;border:1px dashed var(--gris-400);border-radius:var(--radio);padding:12px;margin:0 0 10px;}
+.sc-form .btn-group{grid-column:1/-1;}
+.sc-quitadas{margin-top:8px;}
+.sc-quitadas summary{cursor:pointer;color:var(--texto-sec);margin-bottom:8px;}
+.hx-hueco{background:#fff3c4;color:inherit;border-radius:4px;padding:0 2px;font-weight:600;}
+.gc-llenar-huecos{margin-top:4px;font-size:13px;}
+.modal-huecos{max-width:620px;}
+.modal-huecos .modal-body{padding:20px 24px;overflow:auto;}
+.hx-vista{margin:12px 0;padding:10px 12px;border-radius:var(--radio);background:var(--gris-100);}
+.hx-vista p{margin:4px 0 0;white-space:pre-wrap;overflow-wrap:anywhere;}
