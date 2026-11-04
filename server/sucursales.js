@@ -103,6 +103,7 @@ const SOLO_GENERAL = [
   [/^POST$/, /^\/servicios$/], [/^DELETE$/, /^\/servicios\/\d+$/],
   [/^(POST|PUT|DELETE)$/, /^\/prospeccion\/sectores(\/|$)/],
   [/^(PUT)$/, /^\/compras\/formato$/],
+  [/^POST$/, /^\/asistencia\/fotos\/limpiar$/], // borrar ya las fotos viejas del checador de todas las sucursales (F6)
 ];
 const esSoloGeneral = req => (req.path === '/auditoria' && !(req.query.entidad && req.query.id)) || SOLO_GENERAL.some(([m, r]) => m.test(req.method) && r.test(req.path));
 
