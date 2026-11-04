@@ -1404,6 +1404,7 @@ function crearFilaServicioHTML(item) {
 const etiquetaPrecio = modo => 'Precio unitario' + (modo === 'incluido' ? ' con IVA' : modo === 'mas_iva' ? ' sin IVA' : '');
 function agregarFilaCotizacion(item = {}) {
   document.getElementById('gc-items').insertAdjacentHTML('beforeend', crearFilaServicioHTML(item));
+  window.PlantillasDesc?.pintarBotones();
 }
 
 // ---------- IVA del documento (casilla "IVA incluido") ----------
@@ -1506,6 +1507,8 @@ function prepararEditorCotizacion(lead,modo){
   const soloLeer=!Permisos.puede('ordenes.importes');
   document.querySelectorAll('#gc-items .gc-servicio').forEach(x=>{x.disabled=soloLeer;});
   document.querySelectorAll('#gc-items .gc-leyenda, #gc-items .gc-cantidad').forEach(x=>{if(soloLeer)x.readOnly=true;});
+  // Descripciones guardadas del cliente: botón en cada partida (2026-11-04).
+  window.PlantillasDesc?.prepararEditor(modo==='nuevo'?CLIENTE_DUP?.id:lead?.cliente_id,soloLeer);
 }
 function sincronizarEditor(){
   const items=recolectarItemsCotizacion(),prefijo=EDITOR_MODO==='nuevo'?'sn':'ed';
@@ -1837,6 +1840,7 @@ async function abrirFichaCliente(id) {
   document.getElementById('fc-titulo').textContent = [folioCliente(cliente.id), cliente.empresa_contacto || cliente.nombre || 'Sin nombre', cliente.telefono].filter(Boolean).join(' · ');
   pintarTelefonosCliente(cliente.id);
   window.Facturacion?.cargarCliente(cliente.id); // datos fiscales para facturar (solo quien tiene el permiso)
+  window.PlantillasDesc?.cargarCliente(cliente.id); // descripciones guardadas del cliente (2026-11-04)
   Bitacora.historialCliente(cliente.id);
   document.getElementById('fc-meta').innerHTML = metaClienteHTML(cliente);
   Finanzas.pintarCliente(cliente);

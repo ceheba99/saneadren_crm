@@ -2209,3 +2209,23 @@ table.tabla-clientes.py-tareas tbody td{white-space:normal;}
 .rh-acceso small{color:#6b7280;}
 .rh-icono{font-size:1.5rem;}
 .rh-pasos{margin:6px 0 10px;padding-left:20px;}
+
+/* Descripciones guardadas por cliente (2026-11-04, plantillas-descripcion.js) */
+.pd-tarjeta{border:1px solid var(--gris-200);border-radius:var(--radio);padding:10px 12px;margin:0 0 10px;background:#fff;}
+.pd-tarjeta.pd-quitada{opacity:.7;background:var(--gris-100);}
+.pd-cab{display:flex;flex-wrap:wrap;align-items:center;gap:6px;}
+.pd-acciones{margin-left:auto;display:flex;gap:6px;flex-wrap:wrap;}
+.pd-etiqueta{font-size:12px;padding:1px 8px;border-radius:999px;background:var(--gris-200);color:var(--texto-sec);}
+.pd-texto{margin:6px 0 0;white-space:pre-wrap;overflow-wrap:anywhere;font-size:14px;}
+.pd-hueco{background:#fff3c4;color:inherit;border-radius:4px;padding:0 2px;font-weight:600;}
+.pd-form{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;border:1px dashed var(--gris-400);border-radius:var(--radio);padding:12px;margin:0 0 10px;}
+.pd-form .pd-ancho,.pd-form .btn-group{grid-column:1/-1;}
+.pd-form textarea{width:100%;}
+.pd-quitadas{margin-top:8px;}
+.pd-quitadas summary{cursor:pointer;color:var(--texto-sec);margin-bottom:8px;}
+.gc-usar-plantilla{margin-top:4px;font-size:13px;}
+.modal-plantilla-desc{max-width:620px;}
+.modal-plantilla-desc .modal-body{padding:20px 24px;overflow:auto;}
+.pd-vista{margin:12px 0;padding:10px 12px;border-radius:var(--radio);background:var(--gris-100);}
+.pd-vista p{margin:4px 0 0;white-space:pre-wrap;overflow-wrap:anywhere;}
+#pd-uso-elegir[hidden]{display:none;}

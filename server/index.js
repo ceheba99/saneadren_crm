@@ -175,6 +175,7 @@ const audit = require('./auditoria')(app, db, h);
 app.locals.auditoria = audit;
 // Clientes sin duplicados: ID CLI-0001, teléfonos adicionales, revisión de parecidos y fusión.
 const unicos = require('./clientes-unicos')(app, db, h);
+require('./plantillas-descripcion')(app, db, h, { permisos, suc, audit }); // Descripciones guardadas por cliente (2026-11-04)
 require('./prospeccion')(app,db,h,unicos);
 // Cuentas por cobrar y por pagar. Devuelve ganchos que usan las rutas de órdenes de abajo.
 const finanzas = require('./finanzas')(app, db, h, unicos);
