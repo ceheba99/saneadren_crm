@@ -60,11 +60,11 @@ module.exports = {
     },
     personal: {
       nombre: 'Personal (RH)',
-      vistas: ['personal', 'asistencia'],
+      vistas: ['rh', 'personal', 'asistencia'],
       // Reloj checador (2026-11-03): checadas, sus correcciones y los kioscos; el kiosco entra sin sesión, con su token.
       tablas: ['personal', 'documentos_personal', 'incidencias_personal', 'checadas', 'checadas_correcciones', 'checador_dispositivos', 'checador_enlaces',
         'horarios', 'horario_versiones', 'personal_horario', 'dias_festivos', 'extra_autorizaciones'],
-      rutas: [/^\/api\/personal(\/|$)/, /^\/api\/(asistencia|publico\/(kiosco|celular))(\/|$)/],
+      rutas: [/^\/api\/personal(\/|$)/, /^\/api\/(asistencia|rh|publico\/(kiosco|celular))(\/|$)/],
       pendientes: 'licencias y contratos por vencer, quién falta esta semana y órdenes sin técnico responsable',
       inicio: ['inicio-personal'],
       demo: ['personal', 'documentos_personal', 'incidencias_personal'],
@@ -166,6 +166,7 @@ module.exports = {
     pin_temporal: 'lo pone el sistema: 1 al dar un PIN temporal, 0 cuando la persona elige el suyo en el kiosco',
     checa: 'lo pone el sistema al dar de alta en el checador; se apaga con PUT /api/asistencia/personal/:id (su pantalla llega con los horarios, F3)',
     ultimo_uso: 'lo pone el sistema cada vez que el kiosco se usa',
+    numero_empleado: 'lo pone el sistema al dar de alta: consecutivo (0001, 0002…), nunca se reusa ni se cambia (2026-11-03)',
     lat: 'lo pone el sistema: la ubicación GPS que manda el celular al checar (F5), nunca se captura a mano',
     lon: 'lo pone el sistema: la ubicación GPS que manda el celular al checar (F5), nunca se captura a mano',
     precision_m: 'lo pone el sistema: qué tan precisa fue la ubicación del celular al checar (F5)',

@@ -427,18 +427,22 @@ module.exports = function checador(app, db, h) {
     res.json({ ...estadoDe(p), celular: cel, aviso_firmado: avisoFirmado, dias_fotos: DIAS_FOTOS, ultimas, puede: { editar: puede(req, 'personal.editar'), corregir: puede(req, 'asistencia.corregir'), ver: puede(req, 'asistencia.ver') } });
   }));
   // Genera (o vuelve a generar) su código y un PIN temporal. El PIN se muestra UNA vez; la base guarda solo su hash.
-  app.post('/api/asistencia/personal/:id/pin', h((req, res) => {
-    if (!puede(req, 'personal.editar')) return negar(res, 'No tienes permiso para dar PINes del checador');
-    const p = persona(req.params.id);
-    if (!p) return res.status(404).json({ error: 'Persona no encontrada' });
-    if (!p.activo) return res.status(409).json({ error: 'Está dada de baja: no puede checar' });
+  // Código (si no tiene) y PIN temporal nuevo. Regresa { codigo, pin }: el PIN solo existe en esta respuesta.
+  function altaChecador(req, p) {
     let codigo = p.codigo_checador;
     while (!codigo) { const c = String(crypto.randomInt(1000, 10000)); if (!db.prepare('SELECT 1 FROM main.personal WHERE codigo_checador = ?').get(c)) codigo = c; }
     let pin; do pin = String(crypto.randomInt(0, 10000)).padStart(4, '0'); while (pinDebil(pin, codigo));
     db.prepare("UPDATE main.personal SET codigo_checador = ?, pin_hash = ?, pin_temporal = 1, pin_fallos = 0, pin_bloqueado_hasta = 0, pin_cambiado_at = NULL, checa = 1, updated_at = datetime('now','localtime'), version = version + 1 WHERE id = ?")
       .run(codigo, hashPin(p.id, pin), p.id);
     audit(req, p.id, 'checador', `${p.nombre}: ${p.pin_hash ? 'nuevo PIN temporal' : 'alta en el checador'} (código ${codigo}; el PIN no se guarda)`);
-    res.json({ codigo, pin, aviso: 'Anota el PIN y dáselo a la persona: no se vuelve a mostrar. En su primera checada elegirá el suyo.' });
+    return { codigo, pin };
+  }
+  app.post('/api/asistencia/personal/:id/pin', h((req, res) => {
+    if (!puede(req, 'personal.editar')) return negar(res, 'No tienes permiso para dar PINes del checador');
+    const p = persona(req.params.id);
+    if (!p) return res.status(404).json({ error: 'Persona no encontrada' });
+    if (!p.activo) return res.status(409).json({ error: 'Está dada de baja: no puede checar' });
+    res.json({ ...altaChecador(req, p), aviso: 'Anota el PIN y dáselo a la persona: no se vuelve a mostrar. En su primera checada elegirá el suyo.' });
   }));
   app.post('/api/asistencia/personal/:id/desbloquear', h((req, res) => {
     if (!puede(req, 'personal.editar')) return negar(res, 'No tienes permiso para desbloquear el checador');
@@ -606,7 +610,7 @@ module.exports = function checador(app, db, h) {
     res.json({ ok: true });
   }));
 
-  return { TIPOS };
+  return { TIPOS, altaChecador };
 };
 module.exports.pinDebil = pinDebil;
 module.exports.TIPOS = TIPOS;

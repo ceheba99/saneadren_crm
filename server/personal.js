@@ -15,6 +15,9 @@
 //    realizada. Si se liga o desliga su cuenta después, sus órdenes se actualizan.
 //  · Vacaciones según la Ley Federal del Trabajo (reforma 2023): 12 días al cumplir el primer año, 2 más por año
 //    hasta 20 en el quinto, y 2 más cada 5 años después. Se cuentan las del año de aniversario en curso.
+//  · Número de empleado (decidido con Dirección el 2026-11-03): consecutivo y visible (0001, 0002…), de toda la empresa,
+//    lo pone el sistema al dar de alta y nunca se reusa ni se cambia. Es distinto del código del reloj checador (que es
+//    al azar para que no se adivine el de un compañero).
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
@@ -118,7 +121,20 @@ function migrar(db) {
     );
     CREATE INDEX IF NOT EXISTS idx_orden_personal_persona ON orden_personal(personal_id);
   `);
+  // Número de empleado: columna aditiva; a quien ya existía se le da en orden de alta (id).
+  if (!db.prepare('PRAGMA table_info(personal)').all().some(c => c.name === 'numero_empleado')) db.exec('ALTER TABLE personal ADD COLUMN numero_empleado TEXT');
+  db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_personal_numero_empleado ON personal(numero_empleado) WHERE numero_empleado IS NOT NULL');
+  // Una vez puesto, el número de empleado no cambia (aunque alguien edite la base a mano).
+  db.exec("CREATE TRIGGER IF NOT EXISTS personal_numero_fijo BEFORE UPDATE OF numero_empleado ON personal WHEN OLD.numero_empleado IS NOT NULL BEGIN SELECT RAISE(ABORT, 'El número de empleado no se cambia'); END;");
+  numerar(db);
 }
+// A quien no tiene número de empleado se le da el siguiente, en orden de alta.
+function numerar(db) {
+  const sinNumero = db.prepare('SELECT id FROM main.personal WHERE numero_empleado IS NULL ORDER BY id').all();
+  if (sinNumero.length) db.transaction(() => { for (const { id } of sinNumero) db.prepare('UPDATE main.personal SET numero_empleado = ? WHERE id = ?').run(siguienteNumero(db), id); })();
+}
+// Siguiente número de empleado (nunca se reusa: las bajas conservan el suyo y no se borran fichas).
+const siguienteNumero = db => String(Number(db.prepare('SELECT MAX(CAST(numero_empleado AS INTEGER)) n FROM main.personal').get().n || 0) + 1).padStart(4, '0');
 
 module.exports = function personal(app, db, h) {
   migrar(db);
@@ -228,7 +244,7 @@ module.exports = function personal(app, db, h) {
     let filas = db.prepare('SELECT * FROM personal ORDER BY activo DESC, nombre').all().map(abrir);
     if (estado === 'activos') filas = filas.filter(p => p.activo); else if (estado === 'bajas') filas = filas.filter(p => !p.activo);
     if (req.query.puesto) filas = filas.filter(p => p.puesto === req.query.puesto);
-    if (q) filas = filas.filter(p => [p.nombre, p.puesto, p.telefono, p.correo].some(v => String(v || '').toLowerCase().includes(q)));
+    if (q) filas = filas.filter(p => [p.numero_empleado, p.nombre, p.puesto, p.telefono, p.correo].some(v => String(v || '').toLowerCase().includes(q)));
     const ordenes = new Map(db.prepare(`SELECT op.personal_id, COUNT(*) n FROM orden_personal op JOIN leads l ON l.id = op.lead_id
       WHERE COALESCE(l.fecha_realizado, l.fecha_servicio) LIKE ? GROUP BY op.personal_id`).all(mes + '%').map(r => [r.personal_id, r.n]));
     const lista = filas.map(p => ({ ...presentar(req, p, hoy, { lista: true }), ordenes_mes: ordenes.get(p.id) || 0 }));
@@ -287,23 +303,32 @@ module.exports = function personal(app, db, h) {
   }));
 
   // ---------- Alta, cambios, baja ----------
-  app.post('/api/personal', h((req, res) => {
-    if (!edita(req)) return negar(res, 'No tienes permiso para dar de alta personal');
-    const v = validar(req, req.body || {}, null);
-    if (v.error) return res.status(v.status || 400).json({ error: v.error });
-    const d = v.datos;
-    if (db.prepare('SELECT 1 FROM personal WHERE lower(nombre) = lower(?) AND activo = 1').get(d.nombre)) return res.status(409).json({ error: 'Ya hay una persona activa con ese nombre' });
+  // Revisa los datos de un alta sin guardar nada (la usa también la carga en lote de RH). { datos } o { error, status }.
+  function revisarAlta(req, b) {
+    const v = validar(req, b || {}, null);
+    if (v.error) return v;
+    if (db.prepare('SELECT 1 FROM personal WHERE lower(nombre) = lower(?) AND activo = 1').get(v.datos.nombre)) return { error: 'Ya hay una persona activa con ese nombre', status: 409 };
+    return v;
+  }
+  // Guarda un alta ya revisada (dentro de la transacción de quien llama, si hay) y regresa su id.
+  function guardarAlta(req, d) {
     // Primero la fila sin lo cifrado (el cifrado se amarra al número de la persona) y luego sus datos sensibles.
     const cols = Object.keys(d).filter(k => !CIFRADOS.includes(k)), sens = Object.keys(d).filter(k => CIFRADOS.includes(k) && d[k] !== null);
     const id = db.transaction(() => {
-      const info = db.prepare(`INSERT INTO main.personal (${cols.join(', ')}) VALUES (${cols.map(() => '?').join(', ')})`).run(...cols.map(k => d[k]));
+      const info = db.prepare(`INSERT INTO main.personal (${[...cols, 'numero_empleado'].join(', ')}) VALUES (${[...cols, 'n'].map(() => '?').join(', ')})`).run(...cols.map(k => d[k]), siguienteNumero(db));
       const nuevo = Number(info.lastInsertRowid);
       if (sens.length) { const c = sellar(nuevo, Object.fromEntries(sens.map(k => [k, d[k]]))); db.prepare(`UPDATE main.personal SET ${sens.map(k => k + ' = ?').join(', ')} WHERE id = ?`).run(...sens.map(k => c[k]), nuevo); }
       if (!d.sucursal_id) app.locals.sucursales.asignar('personal', nuevo);
       return nuevo;
     })();
     audit(req, id, 'alta', `${d.nombre} · ${d.puesto}${d.usuario_id ? ' · cuenta ' + descripcion('usuario_id', d.usuario_id) : ''}${d.clabe ? ' · CLABE ' + mascaraClabe(d.clabe) : ''}`);
-    res.status(201).json(presentar(req, leer(id)));
+    return id;
+  }
+  app.post('/api/personal', h((req, res) => {
+    if (!edita(req)) return negar(res, 'No tienes permiso para dar de alta personal');
+    const v = revisarAlta(req, req.body);
+    if (v.error) return res.status(v.status || 400).json({ error: v.error });
+    res.status(201).json(presentar(req, leer(guardarAlta(req, v.datos))));
   }));
   app.put('/api/personal/:id', h((req, res) => {
     if (!edita(req)) return negar(res, 'No tienes permiso para cambiar al personal');
@@ -499,6 +524,7 @@ module.exports = function personal(app, db, h) {
       db.prepare("INSERT OR IGNORE INTO orden_personal (lead_id, personal_id, papel) SELECT id, ?, 'responsable' FROM leads WHERE tecnico_id = ?").run(p.id, u);
     }
   })();
+  numerar(db); // las fichas que se acaban de crear aquí también llevan número
 
   // ---------- Cifrado de lo ya guardado ----------
   // Al arrancar: lo que esté en claro (versiones anteriores) se cifra, y lo cifrado con una clave anterior se vuelve
@@ -551,7 +577,7 @@ module.exports = function personal(app, db, h) {
   }
   asegurarCifrado();
 
-  return { validarEquipo, guardarEquipo, responsableDesdeUsuario, equipoDe, textoEquipo, PAPELES, vacacionesDe: p => vacacionesDe(p, usadas, hoyMexico()), clabeValida, diasLFT };
+  return { revisarAlta, guardarAlta, PUESTOS, validarEquipo, guardarEquipo, responsableDesdeUsuario, equipoDe, textoEquipo, PAPELES, vacacionesDe: p => vacacionesDe(p, usadas, hoyMexico()), clabeValida, diasLFT };
 };
 module.exports.diasLFT = diasLFT;
 module.exports.clabeValida = clabeValida;

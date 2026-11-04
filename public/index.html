@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Saneadren · Cotizaciones y Servicios</title>
-<link rel="stylesheet" href="styles.css?v=rh5">
+<link rel="stylesheet" href="styles.css?v=rh7">
 <link rel="stylesheet" href="servicios-tabla.css">
 <link rel="stylesheet" href="flujo.css?v=cel1">
 </head>
@@ -50,11 +50,17 @@
           <button type="button" class="menu-item perm-reportes-analisis" data-vista="resultados"><span class="menu-icono" aria-hidden="true">📊</span>Resultados</button>
         </div>
       </div>
+      <div class="menu-grupo perm-personal-ver" data-grupo="rh">
+        <button type="button" class="menu-grupo-btn" aria-expanded="false"><span class="menu-icono" aria-hidden="true">🧑‍💼</span>RH<span class="menu-flecha" aria-hidden="true">▾</span></button>
+        <div class="menu-sub">
+          <button type="button" class="menu-item perm-personal-ver" data-vista="rh" id="nav-rh"><span class="menu-icono" aria-hidden="true">🧑‍💼</span>Inicio de RH</button>
+          <button type="button" class="menu-item perm-personal-ver" data-vista="personal" id="nav-personal"><span class="menu-icono" aria-hidden="true">👷</span>Personal</button>
+          <button type="button" class="menu-item perm-asistencia-ver" data-vista="asistencia" id="nav-asistencia"><span class="menu-icono" aria-hidden="true">🕒</span>Asistencia</button>
+        </div>
+      </div>
       <div class="menu-grupo" data-grupo="ajustes">
         <button type="button" class="menu-grupo-btn" aria-expanded="false"><span class="menu-icono" aria-hidden="true">⚙️</span>Ajustes<span class="menu-flecha" aria-hidden="true">▾</span></button>
         <div class="menu-sub">
-          <button type="button" class="menu-item perm-personal-ver" data-vista="personal" id="nav-personal"><span class="menu-icono" aria-hidden="true">👷</span>Personal</button>
-          <button type="button" class="menu-item perm-asistencia-ver" data-vista="asistencia" id="nav-asistencia"><span class="menu-icono" aria-hidden="true">🕒</span>Asistencia</button>
           <button type="button" class="menu-item perm-catalogos-editar" data-vista="catalogos" id="nav-catalogos"><span class="menu-icono" aria-hidden="true">📚</span>Catálogos</button>
           <button type="button" class="menu-item perm-usuarios-administrar" data-vista="usuarios" id="nav-usuarios"><span class="menu-icono" aria-hidden="true">👤</span>Usuarios</button>
           <button type="button" class="menu-item solo-general" data-vista="bitacora" id="nav-bitacora"><span class="menu-icono" aria-hidden="true">🗂️</span>Bitácora</button>
@@ -485,14 +491,19 @@
 <section class="vista" id="vista-personal">
 <div class="pe-encabezado"><h2>Personal</h2><button type="button" class="btn btn-primario perm-personal-editar" id="pe-nuevo">+ Nueva persona</button></div>
 <p class="ayuda">Todas las personas de la empresa —técnicos, operadores, ayudantes y administrativos—, tengan o no cuenta en el sistema. De aquí se elige al técnico responsable y al equipo de cada orden de servicio.</p>
-<div class="filtros"><input id="pe-buscar" aria-label="Buscar persona" placeholder="Nombre, puesto o teléfono"><select id="pe-f-puesto" aria-label="Puesto"></select><select id="pe-f-estado" aria-label="Estado"><option value="activos">Activos</option><option value="bajas">Dados de baja</option><option value="todos">Todos</option></select><label><input type="checkbox" id="pe-f-alertas"> Solo con avisos</label></div>
+<div class="filtros"><input id="pe-buscar" aria-label="Buscar persona" placeholder="No. de empleado, nombre, puesto o teléfono"><select id="pe-f-puesto" aria-label="Puesto"></select><select id="pe-f-estado" aria-label="Estado"><option value="activos">Activos</option><option value="bajas">Dados de baja</option><option value="todos">Todos</option></select><label><input type="checkbox" id="pe-f-alertas"> Solo con avisos</label></div>
 <p id="pe-resumen" role="status"></p>
-<div class="tabla-scroll"><table class="tabla-resumen pe-tabla"><thead><tr><th>Nombre</th><th>Puesto</th><th>Teléfono</th><th>Antigüedad</th><th>Vacaciones disponibles</th><th>Licencia</th><th>Órdenes del mes</th><th>Avisos</th></tr></thead><tbody id="pe-tabla"></tbody></table></div>
+<div class="tabla-scroll"><table class="tabla-resumen pe-tabla"><thead><tr><th>No.</th><th>Nombre</th><th>Puesto</th><th>Teléfono</th><th>Antigüedad</th><th>Vacaciones disponibles</th><th>Licencia</th><th>Órdenes del mes</th><th>Avisos</th></tr></thead><tbody id="pe-tabla"></tbody></table></div>
 <div class="modal-section perm-asistencia-kioscos pe-kioscos"><h3 class="pe-sub">🕒 Kioscos del reloj checador</h3>
 <p class="ayuda">Para registrar la tableta o computadora de la entrada: entra al sistema <b>desde ese dispositivo</b>, escribe su nombre y pulsa «Registrar este dispositivo». Solo los dispositivos registrados pueden checar; si se pierde uno, dalo de baja aquí.</p>
 <div id="pe-kioscos-lista"></div>
 <div class="filtros"><input id="pe-kiosco-nombre" maxlength="60" aria-label="Nombre del kiosco" placeholder="Nombre (p. ej. Entrada Querétaro)"><select id="pe-kiosco-suc" aria-label="Sucursal del kiosco" hidden></select><button type="button" class="btn btn-secundario" id="pe-kiosco-registrar">Registrar este dispositivo como kiosco</button></div>
 </div>
+</section>
+<section class="vista" id="vista-rh">
+<div class="pe-encabezado"><h2>Recursos humanos</h2></div>
+<p class="ayuda">Todo lo del personal en un solo lugar: altas y expedientes, reloj checador, asistencia, horarios, tiempo extra, nómina y privacidad.</p>
+<div id="rh-cuerpo"></div>
 </section>
 <section class="vista" id="vista-asistencia">
 <div class="pe-encabezado"><h2>Asistencia</h2></div>
@@ -1784,9 +1795,10 @@
 <script src="sucursales.js?v=perm2"></script>
 <script src="facturacion.js?v=fx10"></script>
 <script src="encuestas.js?v=enc1"></script>
-<script src="app.js?v=rh3"></script>
-<script src="personal.js?v=rh6"></script>
+<script src="app.js?v=rh7"></script>
+<script src="personal.js?v=rh7"></script>
 <script src="asistencia.js?v=rh6"></script>
+<script src="rh.js?v=rh7"></script>
 <script src="buscador.js?v=suc1"></script>
 <script src="demo.js?v=demo1"></script>
 <script src="prospeccion.js?v=pro1"></script>
