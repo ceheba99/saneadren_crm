@@ -2520,6 +2520,7 @@ async function cargarUsuarios() {
         <button type="button" class="btn btn-secundario" data-accion="guardar">Guardar</button>
         <button type="button" class="btn btn-outline" data-accion="password" data-sl-libre>Nueva contraseña</button>
         <button type="button" class="btn btn-peligro" data-accion="desactivar" data-sl-libre ${propio || (u.rol === 'admin' && admins === 1) ? 'disabled title="No disponible para esta cuenta"' : ''}>Desactivar</button>
+        ${Permisos.direccion() ? `<button type="button" class="btn btn-peligro" data-accion="eliminar" data-sl-libre ${propio || (u.rol === 'admin' && admins === 1) ? 'disabled title="No disponible para esta cuenta"' : ''}>Eliminar</button>` : ''}
       </div>
     </div>`;
   }).join('');
@@ -2567,6 +2568,12 @@ on('lista-usuarios', 'click', async e => {
       if (!await solicitarDialogo({ titulo: 'Desactivar usuario', aceptar: 'Desactivar', mensaje: `¿Desactivar a "${nombre}"?\n\nSus registros históricos se conservan, pero ya no podrá iniciar sesión.` })) return;
       await exigirOk(await api('/usuarios/' + id, { method: 'DELETE' }), 'No se pudo desactivar');
       toast('Usuario desactivado');
+    } else if (btn.dataset.accion === 'eliminar') {
+      // Solo Dirección (2026-11-04): se borra si nunca se usó; si tiene registros, se archiva y sale de las listas.
+      if (!await solicitarDialogo({ titulo: 'Eliminar usuario', aceptar: 'Eliminar', mensaje: `¿Eliminar a "${nombre}"?\n\nSi nunca usó el sistema, se borra. Si ya tiene registros (cotizaciones, cobros, bitácora…), se archiva: ya no entra, desaparece de las listas y su historial se conserva.` })) return;
+      const r = await api('/usuarios/' + id + '/eliminar', { method: 'POST', body: '{}' });
+      const j = await exigirOk(r, 'No se pudo eliminar');
+      toast(j?.mensaje || 'Usuario eliminado');
     }
     await cargarUsuarios();
     cargarCatalogos();
