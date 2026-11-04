@@ -10,6 +10,8 @@
 //  5. F2: foto cifrada en disco (sin foto → «por revisar»), solo la ve quien ve la asistencia; checadas sin conexión
 //     (PIN revisado al subir, hora calculada con la «edad», una sola vez aunque se reintente, «por revisar»); la cámara
 //     solo se permite en /kiosco.
+//  6. F5 celular: enlace de un solo uso que caduca, un celular por persona y solo para ella, PIN + selfie + ubicación
+//     (sin ubicación o poco precisa → «por revisar»), tokens de kiosco y de celular no se cruzan, quitar el celular.
 // Uso: node tests/simulacion-checador.cjs
 const { spawn } = require('child_process');
 const fs = require('fs'), os = require('os'), path = require('path'), crypto = require('crypto');
@@ -191,6 +193,50 @@ const archivosDe = d => fs.readdirSync(d, { withFileTypes: true }).flatMap(e => 
   const hk = await fetch(URLB + '/kiosco'), hi = await fetch(URLB + '/');
   revisa(hk.status === 200 && /camera=\(self\)/.test(hk.headers.get('permissions-policy')) && /camera=\(\)/.test(hi.headers.get('permissions-policy')), 'La cámara solo se permite en la página del kiosco', [hk.headers.get('permissions-policy'), hi.headers.get('permissions-policy')]);
   revisa(!salida.includes(PIN + '"') && !salida.includes(altaJuan.pin + '"'), 'Los PINes no salen en el registro del servidor');
+
+
+  console.log('6. Celular');
+  const cel = (tk, m, r, b) => pedir(m, '/publico/celular/' + r, null, b, tk ? { 'X-Celular': tk } : {});
+  revisa((await pedir('POST', '/asistencia/personal/' + juan.id + '/celular', T.Valeria))[0] === 403, 'Ventas no genera enlaces para el celular');
+  revisa((await pedir('POST', '/asistencia/personal/' + mx.id + '/celular', T.Gema))[0] === 404, 'La gerente no genera enlace para alguien de otra sucursal');
+  revisa((await pedir('POST', '/asistencia/personal/' + mx.id + '/celular', T.Gus))[0] === 409, 'Sin alta en el checador no hay enlace');
+  const [se1, en1] = await pedir('POST', '/asistencia/personal/' + juan.id + '/celular', T.Gema);
+  const tok1 = String(en1.url || '').split('#e=')[1];
+  revisa(se1 === 200 && /\/checar#e=[\w-]{40,}$/.test(en1.url) && !conBase(d => d.prepare('SELECT 1 FROM checador_enlaces WHERE token_hash = ?').get(tok1)), 'RH genera el enlace (va después de «#») y la base guarda solo su hash', en1);
+  const [, en2] = await pedir('POST', '/asistencia/personal/' + juan.id + '/celular', T.Gema), tok2 = en2.url.split('#e=')[1];
+  revisa((await cel(null, 'POST', 'ligar', { enlace: tok1 }))[0] === 401, 'Al generar otro enlace, el anterior deja de servir');
+  const [sl, lig] = await cel(null, 'POST', 'ligar', { enlace: tok2 });
+  revisa(sl === 200 && lig.token && lig.nombre === 'Juan', 'Con el enlace, el celular queda ligado a Juan', lig);
+  revisa((await cel(null, 'POST', 'ligar', { enlace: tok2 }))[0] === 401, 'El enlace sirve una sola vez');
+  const [, en3] = await pedir('POST', '/asistencia/personal/' + juan.id + '/celular', T.Gema), tok3 = en3.url.split('#e=')[1];
+  conBase(d => d.prepare('UPDATE checador_enlaces SET expira_ms = 1 WHERE usado_at IS NULL').run());
+  revisa((await cel(null, 'POST', 'ligar', { enlace: tok3 }))[0] === 401, 'Un enlace de más de 24 horas ya no sirve');
+  const C1 = lig.token;
+  revisa((await kio(C1, 'GET', 'estado'))[0] === 401 && (await cel(KQ, 'GET', 'estado'))[0] === 401, 'El token del celular no sirve como kiosco, ni el del kiosco como celular');
+  const [, est1] = await cel(C1, 'GET', 'estado');
+  revisa(est1.nombre === 'Juan' && est1.pin_temporal === true, 'El celular saluda a Juan y sabe que tiene PIN temporal', est1);
+  revisa((await cel(C1, 'POST', 'checar', { pin: altaNueva.pin, tipo: 'entrada' }))[1].codigo === 'PIN_TEMPORAL', 'Con PIN temporal pide elegir su PIN antes de checar');
+  revisa((await cel(C1, 'POST', 'cambiar-pin', { pin: altaNueva.pin, nuevo: '1234' }))[0] === 400, 'Desde el celular tampoco acepta un PIN obvio');
+  exigir(await cel(C1, 'POST', 'cambiar-pin', { pin: altaNueva.pin, nuevo: '8261' }), 'elegir PIN desde el celular');
+  revisa((await cel(C1, 'POST', 'checar', { pin: '0000', tipo: 'entrada', foto: FOTO, lat: 20.5888, lon: -100.3899, precision: 15 }))[0] === 401, 'Con PIN equivocado no checa');
+  const [scel1, cel1] = await cel(C1, 'POST', 'checar', { pin: '8261', tipo: 'extra_inicia', foto: FOTO, lat: 20.5888123, lon: -100.3899456, precision: 15 });
+  const fc1 = conBase(d => d.prepare('SELECT * FROM checadas WHERE id = ?').get(cel1.id) || {});
+  revisa(scel1 === 201 && fc1.origen === 'celular' && fc1.estado === 'valida' && fc1.lat === 20.588812 && fc1.lon === -100.389946 && fc1.precision_m === 15 && !!fc1.foto_archivo && Math.abs(Date.parse(fc1.momento_utc) - Date.now()) < 60000,
+    'Con PIN, selfie y ubicación precisa queda válida, con hora del servidor y su ubicación', fc1);
+  const [, cel2] = await cel(C1, 'POST', 'checar', { pin: '8261', tipo: 'extra_termina', foto: FOTO });
+  revisa(/Sin ubicación/.test(conBase(d => d.prepare('SELECT observaciones FROM checadas WHERE id = ?').get(cel2.id).observaciones)) && cel2.por_revisar, 'Sin ubicación queda «por revisar»', cel2);
+  const [, cel3] = await cel(C1, 'POST', 'checar', { pin: '8261', tipo: 'salida', foto: FOTO, lat: 20.6, lon: -100.4, precision: 900 });
+  revisa(/poco precisa/.test(cel3.por_revisar || ''), 'Con ubicación poco precisa (900 m) queda «por revisar»', cel3);
+  const [, lista2] = await pedir('GET', '/asistencia/checadas?fecha=' + HOY + '&personal_id=' + juan.id, T.Gema);
+  revisa(lista2.some(c => c.id === cel1.id && c.lat === 20.588812), 'La gerente ve la ubicación de la checada');
+  // Ligar otro celular: el primero deja de servir. Quitar celular: tampoco sirve.
+  const [, en4] = await pedir('POST', '/asistencia/personal/' + juan.id + '/celular', T.Gema), [, lig2] = await cel(null, 'POST', 'ligar', { enlace: en4.url.split('#e=')[1] });
+  revisa((await cel(C1, 'GET', 'estado'))[0] === 401 && (await cel(lig2.token, 'GET', 'estado'))[0] === 200, 'Al ligar otro celular, el anterior ya no sirve');
+  revisa((await pedir('POST', '/asistencia/personal/' + juan.id + '/celular/quitar', T.Valeria))[0] === 403, 'Ventas no quita celulares');
+  exigir(await pedir('POST', '/asistencia/personal/' + juan.id + '/celular/quitar', T.Gema), 'quitar celular');
+  revisa((await cel(lig2.token, 'POST', 'checar', { pin: '8261', tipo: 'entrada', foto: FOTO }))[0] === 401, 'Un celular quitado ya no checa');
+  const hc = await fetch(URLB + '/checar');
+  revisa(hc.status === 200 && /camera=\(self\)/.test(hc.headers.get('permissions-policy')) && /geolocation=\(self\)/.test(hc.headers.get('permissions-policy')), 'La página del celular es la única con cámara y ubicación', hc.headers.get('permissions-policy'));
 
   console.log(`\n${n - malos.length}/${n} correctas`);
   srv.kill(); fs.rmSync(dir, { recursive: true, force: true });

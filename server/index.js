@@ -143,7 +143,7 @@ require('./cuentas')(app, db, h, { sesiones, urlBase: URL_BASE });
 app.use('/api', (req, res, next) => {
   // La encuesta que abre el cliente con el QR de su orden (server/encuestas.js) no pide sesión.
   // El kiosco del reloj checador (server/checador.js) tampoco: lo identifica el token del dispositivo, no una sesión.
-  if (RUTAS_PUBLICAS.has(req.path) || /^\/publico\/encuesta\/[\w-]+$/.test(req.path) || /^\/publico\/kiosco\/[a-z-]+$/.test(req.path)) return next();
+  if (RUTAS_PUBLICAS.has(req.path) || /^\/publico\/encuesta\/[\w-]+$/.test(req.path) || /^\/publico\/(kiosco|celular)\/[a-z-]+$/.test(req.path)) return next();
   requireAuth(req, res, next);
 });
 // Sucursales: alcance de cada petición (qué sucursales ve) y candados en la base. Va antes de las demás rutas.

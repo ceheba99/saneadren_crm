@@ -135,7 +135,12 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
     const k = async (r, b) => { const x = await fetch(URL + '/publico/kiosco/' + r, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Kiosco': kio.token }, body: JSON.stringify(b) }); return x.json(); };
     const i = await k('identificar', { codigo: pin.codigo, pin: pin.pin }), c = await k('cambiar-pin', { ticket: i.ticket, nuevo: '5072' });
     const jpg = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.from('FOTO-ZIRCON'), Buffer.alloc(2000, 7), Buffer.from([0xff, 0xd9])]).toString('base64');
-    CHECADA_FOTO = (await k('checar', { ticket: c.ticket, tipo: 'entrada', foto: jpg })).id; if (!CHECADA_FOTO) throw new Error('No se pudo checar con foto'); }
+    CHECADA_FOTO = (await k('checar', { ticket: c.ticket, tipo: 'entrada', foto: jpg })).id; if (!CHECADA_FOTO) throw new Error('No se pudo checar con foto');
+    // F5: su celular ligado y una checada con ubicación (marcada).
+    const enlace = exigir(await pedir('POST', '/asistencia/personal/' + EMP.id + '/celular', A), 'enlace del celular').url.split('#e=')[1];
+    const cel = async (r, b, tk) => { const x = await fetch(URL + '/publico/celular/' + r, { method: 'POST', headers: { 'Content-Type': 'application/json', ...(tk ? { 'X-Celular': tk } : {}) }, body: JSON.stringify(b) }); return x.json(); };
+    const tk = (await cel('ligar', { enlace })).token;
+    if (!(await cel('checar', { pin: '5072', tipo: 'salida', foto: jpg, lat: 20.612345, lon: -100.398765, precision: 12 }, tk)).id) throw new Error('No se pudo checar desde el celular'); }
 
   // ----- Qué datos se buscan (fila de la foto → marcas que la delatan) -----
   const DATOS = [
@@ -194,6 +199,7 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
       ['clabe', 'Sus datos sensibles: CLABE y salario', [clabe, ...formas(salario)]],
       ['turmalina', 'Sus checadas del reloj checador (entradas, salidas) y su motivo', ['Checada Turmalina']],
       ['fotoChecada', 'La foto que se tomó al checar en el kiosco', ['FOTO-ZIRCON']],
+      ['ubicacion', 'La ubicación GPS de una checada desde el celular', ['20.612345']],
     ]],
   ];
 
@@ -268,6 +274,7 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
     ['corrigeChecada', 'Agregar a mano una checada olvidada (con motivo)'],
     ['cambiaHorario', 'Cambiar un horario (entrada, salida, tolerancia o comida) o marcar días festivos'],
     ['autorizaExtra', 'Autorizar el tiempo extra de una persona'],
+    ['daCelular', 'Mandar a una persona el enlace para checar desde su celular, o quitarle el celular'],
     ['veAsistencia', 'Ver la asistencia del día y de la semana (retardos, faltas, tiempo extra)'],
   ];
   const ok = r => r[0] === 200 || r[0] === 201;
@@ -318,6 +325,7 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
     VE[rol].corrigeChecada = ok(await pedir('POST', '/asistencia/checadas', t, { personal_id: EMP.id, tipo: 'salida', fecha: dia(-2), hora: '18:30', motivo: 'Prueba de ' + rol }));
     { const hor = (await pedir('GET', '/asistencia/horarios', A))[1].horarios.find(x => x.sucursal_id === qro.id);
       VE[rol].cambiaHorario = ok(await pedir('PUT', '/asistencia/horarios/' + hor.id, t, { dias: hor.vigente.dias, tolerancia_min: hor.vigente.tolerancia_min, comida_min: hor.vigente.comida_min })); }
+    VE[rol].daCelular = ok(await pedir('POST', '/asistencia/personal/' + EMP.id + '/celular/quitar', t));
     VE[rol].autorizaExtra = ok(await pedir('POST', '/asistencia/extra', t, { personal_id: EMP.id, fecha: dia(-1), minutos: 0 }));
     VE[rol].veAsistencia = ok(await pedir('GET', '/asistencia/semana', t));
     VE[rol].claveServicio = ok(await pedir('PUT', '/facturacion/servicios/' + servicioFact.id, t, { clave_prod_serv: '76121600', clave_unidad: 'E48' }));
@@ -378,6 +386,9 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
     ['2026-11-03', 'Asistencia (horarios, retardos, faltas y tiempo extra): la ven Dirección y el Gerente; cambian horarios y días festivos y autorizan el tiempo extra Dirección y el Gerente (Dirección se los da a RH en Roles y permisos); los demás roles no.', {
       admin: { veAsistencia: 1, cambiaHorario: 1, autorizaExtra: 1 }, gerente: { veAsistencia: 1, cambiaHorario: 1, autorizaExtra: 1 },
       ...Object.fromEntries(['ventas', 'atencion', 'tecnico', 'costos', 'marketing', 'marketing_gerente'].map(r => [r, { veAsistencia: 0, cambiaHorario: 0, autorizaExtra: 0 }])) }],
+    ['2026-11-03', 'Checar desde el celular: mandar el enlace o quitar el celular lo hacen Dirección y el Gerente (quien edita el personal); la ubicación de cada checada la ven solo Dirección y el Gerente (se toma solo al checar). Los demás roles no.', {
+      admin: { daCelular: 1, ubicacion: 1 }, gerente: { daCelular: 1, ubicacion: 1 },
+      ...Object.fromEntries(['ventas', 'atencion', 'tecnico', 'costos', 'marketing', 'marketing_gerente'].map(r => [r, { daCelular: 0, ubicacion: 0 }])) }],
     ['2026-10-26', 'Marketing: aprueban las publicaciones Dirección y el Gerente de marketing; nadie más (ni Marketing, aunque la haya escrito).', { admin: { apruebaPub: 1 }, marketing_gerente: { apruebaPub: 1 }, marketing: { apruebaPub: 0 }, gerente: { apruebaPub: 0 }, ventas: { apruebaPub: 0 }, atencion: { apruebaPub: 0 }, tecnico: { apruebaPub: 0 }, costos: { apruebaPub: 0 } }],
     ['2026-10-26', 'Marketing y Gerente de marketing: ven, editan y comentan las publicaciones de toda la empresa (de cualquier sucursal y las generales), y nada más del sistema: ni ventas, cobranza, gastos, compras, prospección ni personal.', Object.fromEntries(['marketing', 'marketing_gerente'].map(r => [r, {
       rubi: 1, zafiro: 1, topacio: 1, editaPub: 1, comentaPub: 1, ambar: 0, berilo: 0, coral: 0, cobroAlicia: 0, cobroTomas: 0, saldo: 0, gastoTomas: 0, gastoCarlos: 0, clabeProv: 0, jade: 0, perla: 0, granate: 0, cuarzo: 0, obsidiana: 0, clabe: 0, editaO1: 0, borra: 0 }]))],

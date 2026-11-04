@@ -167,7 +167,11 @@ const Personal = (() => {
       h += `<p>Horario: <b>${esc(hor.actual?.nombre || 'sin horario')}</b>${hor.historial?.[0] ? ` <small>(desde ${esc(hor.historial[0].desde === '2020-01-01' ? 'el inicio' : fecha(hor.historial[0].desde))})</small>` : ''}</p>`;
       if (hor.puede?.editar && actual.activo) h += `<div class="filtros"><select id="pe-horario" aria-label="Horario">${hor.horarios.map(x => `<option value="${Number(x.id)}"${x.id === hor.actual?.horario_id ? ' selected' : ''}>${esc(x.nombre)}</option>`).join('')}</select><label>desde <input type="date" id="pe-horario-desde" value="${esc(hoy())}"></label><button type="button" class="btn btn-secundario" data-pe-horario="${Number(id)}">Asignar horario</button></div>`;
     }
-    if (e.ultimas?.length) h += '<h4 class="pe-sub2">Últimas checadas</h4><ul class="pe-ordenes">' + e.ultimas.map(c => `<li>${esc(fecha(c.fecha))} ${esc(String(c.hora).slice(0, 5))} · ${esc(TIPOS_CHECADA[c.tipo] || c.tipo)}${esc(c.origen === 'manual' ? ' (a mano)' : '')}${esc(c.sin_conexion ? ' (sin conexión)' : '')}${esc(c.estado === 'anulada' ? ' (anulada)' : c.estado === 'por_revisar' ? ' (por revisar)' : '')}${c.tiene_foto && e.puede?.ver ? ` <button type="button" class="btn-link" data-pe-foto="${Number(c.id)}">📷 Ver foto</button>` : ''}</li>`).join('') + '</ul><div id="pe-foto-checada"></div>';
+    if (e.codigo) {
+      h += `<p>📱 Checar desde su celular: <b>${esc(e.celular ? 'celular ligado' : 'sin celular')}</b>${e.celular?.ultimo_uso ? ` <small>(último uso ${esc(e.celular.ultimo_uso)})</small>` : ''}</p>`;
+      if (e.puede?.editar && actual.activo) h += `<div class="btn-group"><button type="button" class="btn btn-secundario" data-pe-celular="${Number(id)}">${esc(e.celular ? 'Ligar otro celular' : 'Enviar enlace a su celular')}</button>${e.celular ? `<button type="button" class="btn btn-outline" data-pe-celular-quitar="${Number(id)}">Quitar celular</button>` : ''}</div><div id="pe-enlace"></div>`;
+    }
+    if (e.ultimas?.length) h += '<h4 class="pe-sub2">Últimas checadas</h4><ul class="pe-ordenes">' + e.ultimas.map(c => `<li>${esc(fecha(c.fecha))} ${esc(String(c.hora).slice(0, 5))} · ${esc(TIPOS_CHECADA[c.tipo] || c.tipo)}${esc(c.origen === 'manual' ? ' (a mano)' : c.origen === 'celular' ? ' (celular)' : '')}${esc(c.sin_conexion ? ' (sin conexión)' : '')}${esc(c.estado === 'anulada' ? ' (anulada)' : c.estado === 'por_revisar' ? ' (por revisar)' : '')}${c.tiene_foto && e.puede?.ver ? ` <button type="button" class="btn-link" data-pe-foto="${Number(c.id)}">📷 Ver foto</button>` : ''}</li>`).join('') + '</ul><div id="pe-foto-checada"></div>';
     if (e.puede?.editar && actual.activo) h += `<div class="btn-group"><button type="button" class="btn btn-secundario" data-pe-pin="${Number(id)}" data-pe-pin-hay="${e.codigo ? 1 : ''}">${e.codigo ? 'Dar un PIN temporal nuevo' : 'Dar de alta en el checador'}</button>${e.bloqueado ? `<button type="button" class="btn btn-outline" data-pe-desbloquear="${Number(id)}">Desbloquear PIN</button>` : ''}</div>`;
     cont.innerHTML = h;
   }
@@ -187,6 +191,23 @@ const Personal = (() => {
       const r = await api('/asistencia/personal/' + Number(id) + '/horario', { method: 'PUT', body: JSON.stringify({ horario_id: Number($('pe-horario').value), desde: $('pe-horario-desde').value }) });
       const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.error || 'No se pudo asignar'); toast('Horario asignado'); pintarChecador(Number(id));
     } catch (err) { toast(err.message); }
+  }
+  // Enlace de un solo uso para ligar el celular (se ve aquí hasta cerrar la ficha). Se puede mandar por WhatsApp al
+  // teléfono de su ficha: abre WhatsApp en este equipo con el mensaje listo; quien lo manda lo revisa antes.
+  async function enlaceCelular(id) {
+    try {
+      const r = await api('/asistencia/personal/' + Number(id) + '/celular', { method: 'POST' }), j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j.error || 'No se pudo generar el enlace');
+      const tel = String(j.telefono || '').replace(/\D/g, '').slice(-10), texto = 'Saneadren: abre este enlace en TU celular para checar entrada y salida desde ahí (sirve una sola vez, 24 h): ' + j.url;
+      $('pe-enlace').innerHTML = `<p class="pe-pin-nuevo" role="alert"><small>${esc(j.aviso)}</small><br><input class="pe-enlace" value="${esc(j.url)}" readonly aria-label="Enlace para el celular"><br>
+        <button type="button" class="btn btn-outline" data-pe-copiar="${esc(j.url)}">Copiar enlace</button>
+        ${tel.length === 10 ? `<a class="btn btn-secundario" target="_blank" rel="noopener noreferrer" href="${esc('https://wa.me/52' + tel + '?text=' + encodeURIComponent(texto))}">Enviar por WhatsApp</a>` : '<small>Su ficha no tiene teléfono de 10 dígitos: copia el enlace y mándaselo.</small>'}</p>`;
+    } catch (err) { toast(err.message); }
+  }
+  async function quitarCelular(id) {
+    if (!await solicitarDialogo({ titulo: 'Quitar celular', mensaje: 'Ese celular ya no podrá checar. Para volver a checar desde un celular hay que mandarle un enlace nuevo.', aceptar: 'Quitar' })) return;
+    try { const r = await api('/asistencia/personal/' + Number(id) + '/celular/quitar', { method: 'POST' }); if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || 'No se pudo'); toast('Celular quitado'); pintarChecador(Number(id)); }
+    catch (err) { toast(err.message); }
   }
   async function darPin(id, yaTiene) {
     if (yaTiene && !await solicitarDialogo({ titulo: 'PIN temporal nuevo', mensaje: 'El PIN que usa ahora deja de servir. Se genera uno temporal y, en su próxima checada, elegirá otro.', aceptar: 'Dar PIN nuevo' })) return;
@@ -328,6 +349,9 @@ const Personal = (() => {
     else if (t.dataset.peDesbloquear) desbloquearPin(t.dataset.peDesbloquear);
     else if (t.dataset.peFoto) verFoto(t.dataset.peFoto);
     else if (t.dataset.peHorario) asignarHorario(t.dataset.peHorario);
+    else if (t.dataset.peCelular) enlaceCelular(t.dataset.peCelular);
+    else if (t.dataset.peCelularQuitar) quitarCelular(t.dataset.peCelularQuitar);
+    else if (t.dataset.peCopiar) navigator.clipboard?.writeText(t.dataset.peCopiar).then(() => toast('Enlace copiado'), () => toast('No se pudo copiar: selecciónalo y cópialo'));
   });
   // Al cerrar la ficha (con la X, Esc o desde otra pantalla) se borra de la página: lo sensible no se queda ahí.
   new MutationObserver(() => { if (!$('overlay-personal').classList.contains('mostrar') && !ocupado) { $('pe-cuerpo').innerHTML = ''; actual = null; base = ''; } })

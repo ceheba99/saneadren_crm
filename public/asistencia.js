@@ -62,6 +62,8 @@ const Asistencia = (() => {
     if (abierto) pintarDetalle(filas.find(x => x.personal_id === abierto));
   }
   const revisar = c => c.estado === 'por_revisar', vigente = c => c.estado !== 'anulada';
+  // Ubicación de una checada desde el celular: enlace al mapa (se abre solo si quien revisa lo pulsa).
+  const mapa = c => (c.lat == null ? '' : ` <a class="btn-link" target="_blank" rel="noopener noreferrer" href="${esc('https://www.google.com/maps?q=' + Number(c.lat) + ',' + Number(c.lon))}">📍 Mapa${c.precision_m ? ' ±' + Number(c.precision_m) + ' m' : ''}</a>`);
   const botonCorregir = (si, accion, id, texto) => (si ? ` <button type="button" class="btn-link" data-as-${accion}="${Number(id)}">${esc(texto)}</button>` : '');
   async function pintarDetalle(d) {
     if (!d || !$('as-detalle')) return;
@@ -70,9 +72,9 @@ const Asistencia = (() => {
     catch (e) { $('as-detalle').textContent = e.message; return; }
     const p = datos.puede || {};
     let h = `<h4 class="pe-sub2">Checadas de ${esc(d.nombre)} · ${esc(fechaLarga(fecha))}</h4>`;
-    h += ch.length ? '<ul class="pe-ordenes">' + ch.map(c => `<li class="${c.estado === 'anulada' ? 'pe-baja' : ''}"><b>${esc(String(c.hora).slice(0, 5))}</b> · ${esc(TIPOS[c.tipo] || c.tipo)} · ${esc(c.origen === 'manual' ? 'a mano por ' + (c.registrado_por_nombre || '') : c.kiosco || c.origen)}${esc(c.sin_conexion ? ' · sin conexión' : '')}
+    h += ch.length ? '<ul class="pe-ordenes">' + ch.map(c => `<li class="${c.estado === 'anulada' ? 'pe-baja' : ''}"><b>${esc(String(c.hora).slice(0, 5))}</b> · ${esc(TIPOS[c.tipo] || c.tipo)} · ${esc(c.origen === 'manual' ? 'a mano por ' + (c.registrado_por_nombre || '') : c.origen === 'celular' ? 'desde su celular' : c.kiosco || c.origen)}${esc(c.sin_conexion ? ' · sin conexión' : '')}
       ${esc(c.estado === 'anulada' ? ' · anulada' : c.estado === 'por_revisar' ? ' · por revisar' : '')}${c.observaciones ? ` <small>(${esc(c.observaciones)})</small>` : ''}
-      ${c.tiene_foto ? ` <button type="button" class="btn-link" data-as-foto="${Number(c.id)}">📷 Foto</button>` : ''}
+      ${c.tiene_foto ? ` <button type="button" class="btn-link" data-as-foto="${Number(c.id)}">📷 Foto</button>` : ''}${mapa(c)}
       ${botonCorregir(p.corregir && revisar(c), 'aceptar', c.id, 'Aceptar')}${botonCorregir(p.corregir && vigente(c), 'anular', c.id, 'Anular')}</li>`).join('') + '</ul><div id="as-foto"></div>'
       : '<p class="ayuda">No checó este día.</p>';
     if (p.corregir) h += `<div class="filtros as-form"><b>Agregar checada olvidada:</b><select id="as-n-tipo" aria-label="Qué se registra">${Object.entries(TIPOS).map(([k, t]) => `<option value="${esc(k)}">${esc(t)}</option>`).join('')}</select>
