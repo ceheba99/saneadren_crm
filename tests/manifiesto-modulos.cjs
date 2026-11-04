@@ -61,14 +61,15 @@ module.exports = {
     personal: {
       nombre: 'Personal (RH)',
       vistas: ['personal'],
-      tablas: ['personal', 'documentos_personal', 'incidencias_personal'],
-      rutas: [/^\/api\/personal(\/|$)/],
+      // Reloj checador (2026-11-03): checadas, sus correcciones y los kioscos; el kiosco entra sin sesión, con su token.
+      tablas: ['personal', 'documentos_personal', 'incidencias_personal', 'checadas', 'checadas_correcciones', 'checador_dispositivos'],
+      rutas: [/^\/api\/personal(\/|$)/, /^\/api\/(asistencia|publico\/kiosco)(\/|$)/],
       pendientes: 'licencias y contratos por vencer, quién falta esta semana y órdenes sin técnico responsable',
       inicio: ['inicio-personal'],
       demo: ['personal', 'documentos_personal', 'incidencias_personal'],
       integridad: ['personal', 'documentos_personal', 'incidencias_personal'],
       buscador: null, buscadorRazon: 'datos personales: no se exponen en el buscador general (se buscan dentro de Personal, con permiso)',
-      permisos: ['personal.ver', 'personal.editar', 'personal.sensibles'],
+      permisos: ['personal.ver', 'personal.editar', 'personal.sensibles', 'asistencia.ver', 'asistencia.corregir', 'asistencia.kioscos'],
     },
     prospeccion: {
       nombre: 'Prospección',
@@ -159,6 +160,12 @@ module.exports = {
   // se capturan con otro nombre ({ como, razon }: la auditoría comprueba que la pantalla mande esa llave). Un dato que se
   // muestra y no está aquí ni se captura es un dato muerto (como «Realizó: propio/subcontratado», que se quitó).
   generados: {
+    // Reloj checador (2026-11-03)
+    usuario_nombre: 'quien corrige una checada: lo pone el sistema con la sesión (bitácora de correcciones)',
+    pin_temporal: 'lo pone el sistema: 1 al dar un PIN temporal, 0 cuando la persona elige el suyo en el kiosco',
+    checa: 'lo pone el sistema al dar de alta en el checador; se apaga con PUT /api/asistencia/personal/:id (su pantalla llega con los horarios, F3)',
+    ultimo_uso: 'lo pone el sistema cada vez que el kiosco se usa',
+    revocado_por: 'lo pone el sistema con la sesión al dar de baja un kiosco',
     tipo_documento: 'lo pone el sistema: «factura» al timbrar la de una orden, «pago» al timbrar un complemento de pago (F6); la serie, según el tipo que elige Dirección al asignarla',
     cobro_id: 'liga que pone el sistema entre cada cobro y el complemento de pago que lo ampara (F6)',
     num_parcialidad: 'la calcula el sistema al timbrar el complemento de pago: cuántos pagos de esa factura van amparados, más uno',

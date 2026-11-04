@@ -142,7 +142,8 @@ const RUTAS_PUBLICAS = new Set(['/salud', '/login', '/registro', '/verificar-cor
 require('./cuentas')(app, db, h, { sesiones, urlBase: URL_BASE });
 app.use('/api', (req, res, next) => {
   // La encuesta que abre el cliente con el QR de su orden (server/encuestas.js) no pide sesión.
-  if (RUTAS_PUBLICAS.has(req.path) || /^\/publico\/encuesta\/[\w-]+$/.test(req.path)) return next();
+  // El kiosco del reloj checador (server/checador.js) tampoco: lo identifica el token del dispositivo, no una sesión.
+  if (RUTAS_PUBLICAS.has(req.path) || /^\/publico\/encuesta\/[\w-]+$/.test(req.path) || /^\/publico\/kiosco\/[a-z-]+$/.test(req.path)) return next();
   requireAuth(req, res, next);
 });
 // Sucursales: alcance de cada petición (qué sucursales ve) y candados en la base. Va antes de las demás rutas.
@@ -175,6 +176,7 @@ require('./respaldos')(db, { hoyMexico }); // Copia diaria automática de la bas
 require('./integridad')(app, db, h); // Revisión de integridad de los datos guardados (solo administración)
 // Personal (RH): fichas, expediente, vacaciones e incidencias, y el equipo de cada orden de servicio.
 const personalMod = require('./personal')(app, db, h);
+require('./checador')(app, db, h); // Reloj checador (RH, 2026-11-03): código y PIN, kioscos registrados y checadas que no se borran
 require('./marketing')(app, db, h); // Marketing: calendario de publicaciones con aprobación (2026-10-26)
 require('./facturacion-db')(db); // Facturación CFDI 4.0 con factura.com (2026-10-27): tablas y columnas aditivas
 require('./facturacion-rutas')(app, db, h, { direccion: permisos.direccion, puede: permisos.puede, verCliente: id => app.locals.sucursales.verCliente(id), auditar: (...a) => app.locals.auditoria?.registrar(...a) }); // Pantalla «Facturación» de Ajustes: solo Dirección

@@ -126,7 +126,9 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
   // Personal: un empleado con datos sensibles.
   const CLABE = '072180001234567898'.slice(0, 17); const conDigito = p17 => { const w = [3, 7, 1]; let s = 0; for (let i = 0; i < 17; i++) s += (Number(p17[i]) * w[i % 3]) % 10; return p17 + ((10 - (s % 10)) % 10); };
   const clabe = conDigito(CLABE), salario = 23456.78;
-  exigir(await pedir('POST', '/personal', T.Gema, { nombre: 'Ernesto Obsidiana', puesto: 'Operador', telefono: '442 987 6543', fecha_ingreso: dia(-200), clabe, salario, salario_periodo: 'mensual' }), 'alta de personal');
+  const EMP = exigir(await pedir('POST', '/personal', T.Gema, { nombre: 'Ernesto Obsidiana', puesto: 'Operador', telefono: '442 987 6543', fecha_ingreso: dia(-200), clabe, salario, salario_periodo: 'mensual' }), 'alta de personal');
+  // Reloj checador (2026-11-03): una checada de ayer agregada a mano, con su motivo marcado.
+  exigir(await pedir('POST', '/asistencia/checadas', A, { personal_id: EMP.id, tipo: 'entrada', fecha: dia(-1), hora: '08:31', motivo: 'Checada Turmalina' }), 'checada de Obsidiana');
 
   // ----- Qué datos se buscan (fila de la foto → marcas que la delatan) -----
   const DATOS = [
@@ -183,6 +185,7 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
       ['obsidiana', 'Un empleado activo: nombre y puesto (para asignarlo a una orden)', ['Obsidiana']],
       ['fichaEmp', 'Su ficha: teléfono, licencia, ingreso', ['442 987 6543', '4429876543']],
       ['clabe', 'Sus datos sensibles: CLABE y salario', [clabe, ...formas(salario)]],
+      ['turmalina', 'Sus checadas del reloj checador (entradas, salidas) y su motivo', ['Checada Turmalina']],
     ]],
   ];
 
@@ -196,7 +199,7 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
   }
   const EXTRA = ['/leads', '/leads?estatus=ganado', '/clientes', '/clientes?incluir_prospectos=1', '/clientes/catalogo', '/finanzas/cartera', '/finanzas/cartera?vista=clientes', '/finanzas/resumen',
     '/finanzas/periodo?' + RANGO, '/finanzas/cxp?vista=todas', '/finanzas/por-confirmar', '/tablero?' + RANGO, '/generador?' + RANGO, '/calendario?desde=' + dia(-40) + '&hasta=' + dia(50),
-    '/calendario/atrasados', '/compras/solicitudes?estado=', '/compras/ordenes', '/kpis', '/pendientes', '/analisis/comercial?' + RANGO, '/contactos/sin-cotizacion', '/personal', '/personal/avisos',
+    '/calendario/atrasados', '/compras/solicitudes?estado=', '/compras/ordenes', '/kpis', '/pendientes', '/analisis/comercial?' + RANGO, '/contactos/sin-cotizacion', '/personal', '/personal/avisos', '/asistencia/checadas?fecha=' + dia(-1),
     '/prospeccion', '/prospeccion?pendientes=1', '/marketing/publicaciones?desde=' + dia(-40) + '&hasta=' + dia(50), '/marketing/pendientes', '/marketing/proyectos', '/marketing/ideas', '/marketing/biblioteca', '/marketing/presupuestos/' + HOY.slice(0, 7), '/marketing/gastos?desde=' + dia(-40) + '&hasta=' + dia(50), '/marketing/tablero', '/marketing/resultados?desde=' + dia(-40) + '&hasta=' + dia(50), '/marketing/plan/' + HOY.slice(0, 4), ...['Ambar', 'Berilo', 'Diamante', 'Coral', 'Jade', 'Perla', 'Granate', 'Cuarzo', 'Obsidiana'].map(p => '/buscar?q=' + p)];
   async function rastrear(t) {
     let todo = '';
@@ -252,6 +255,9 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
     ['revisaProd', 'Ver la revisión de «¿está lista la facturación para producción?» (llaves, series, claves del SAT, respaldo)'],
     ['editaFolioReal', 'Cambiar a mano el folio o el total de una orden que ya tiene factura real timbrada'],
     ['capturaRes', 'Capturar los resultados (alcance, me gusta…) de una publicación ya publicada'],
+    ['daPin', 'Dar de alta a una persona en el reloj checador (código y PIN temporal) o desbloquear su PIN'],
+    ['registraKiosco', 'Registrar una tableta o computadora como kiosco del reloj checador'],
+    ['corrigeChecada', 'Agregar a mano una checada olvidada (con motivo)'],
   ];
   const ok = r => r[0] === 200 || r[0] === 201;
   for (const [rol] of ROLES) {
@@ -296,6 +302,9 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
     VE[rol].exportaFact = ok(await pedir('GET', '/facturacion/facturas/exportar', t));
     VE[rol].revisaProd = ok(await pedir('GET', '/facturacion/revision-produccion', t));
     VE[rol].editaFolioReal = ok(await pedir('PUT', '/leads/' + OP.id + '/facturacion', t, { factura_folio: 'X-' + rol + '-9', factura_total: '1.00' }));
+    VE[rol].daPin = ok(await pedir('POST', '/asistencia/personal/' + EMP.id + '/desbloquear', t));
+    VE[rol].registraKiosco = ok(await pedir('POST', '/asistencia/dispositivos', t, { nombre: 'Kiosco de ' + rol, sucursal_id: qro.id }));
+    VE[rol].corrigeChecada = ok(await pedir('POST', '/asistencia/checadas', t, { personal_id: EMP.id, tipo: 'salida', fecha: dia(-2), hora: '18:30', motivo: 'Prueba de ' + rol }));
     VE[rol].claveServicio = ok(await pedir('PUT', '/facturacion/servicios/' + servicioFact.id, t, { clave_prod_serv: '76121600', clave_unidad: 'E48' }));
     const nuevaPub = exigir(await pedir('POST', '/marketing/publicaciones', T.Mara, { titulo: 'Por aprobar ' + rol, redes: ['tiktok'], formato: 'video', fecha: dia(5), copy: 'Copy', sucursal: qro.id }), 'publicación por aprobar');
     const enRevision = exigir(await pedir('POST', '/marketing/publicaciones/' + nuevaPub.id + '/estado', T.Mara, { accion: 'enviar', version: nuevaPub.version }), 'enviar a revisión');
@@ -346,6 +355,9 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
     ['2026-10-26', 'Técnico: ve su solicitud de compra, no las de otros, y no ve montos de compras.', { tecnico: { jade: 1, perla: 0, 'perm:compras.importes': 0 } }],
     ['2026-10-21', 'Prospección: cada quien lo suyo (quien ve toda su sucursal en ventas, todos los de su sucursal); el técnico no prospecta.', { ventas: { granate: 1, cuarzo: 0 }, atencion: { granate: 1, cuarzo: 1 }, tecnico: { granate: 0, cuarzo: 0 } }],
     ['2026-10-19', 'Personal: quien ve órdenes ve nombre y puesto del personal activo, para asignarlo a una orden; la ficha y los datos sensibles, solo Gerente y Dirección.', { gerente: { obsidiana: 1, fichaEmp: 1, clabe: 1 }, ventas: { obsidiana: 1, fichaEmp: 0, clabe: 0 }, atencion: { obsidiana: 1, fichaEmp: 0, clabe: 0 }, tecnico: { obsidiana: 1, fichaEmp: 0, clabe: 0 }, costos: { obsidiana: 0, fichaEmp: 0, clabe: 0 } }],
+    ['2026-11-03', 'Reloj checador: ver las checadas del personal, corregirlas con motivo, dar código y PIN y registrar kioscos lo hacen Dirección y el Gerente (de su sucursal); los demás roles no. Nadie ve un PIN ni borra una checada.', {
+      admin: { turmalina: 1, daPin: 1, registraKiosco: 1, corrigeChecada: 1 }, gerente: { turmalina: 1, daPin: 1, registraKiosco: 1, corrigeChecada: 1 },
+      ...Object.fromEntries(['ventas', 'atencion', 'tecnico', 'costos', 'marketing', 'marketing_gerente'].map(r => [r, { turmalina: 0, daPin: 0, registraKiosco: 0, corrigeChecada: 0 }])) }],
     ['2026-10-26', 'Marketing: aprueban las publicaciones Dirección y el Gerente de marketing; nadie más (ni Marketing, aunque la haya escrito).', { admin: { apruebaPub: 1 }, marketing_gerente: { apruebaPub: 1 }, marketing: { apruebaPub: 0 }, gerente: { apruebaPub: 0 }, ventas: { apruebaPub: 0 }, atencion: { apruebaPub: 0 }, tecnico: { apruebaPub: 0 }, costos: { apruebaPub: 0 } }],
     ['2026-10-26', 'Marketing y Gerente de marketing: ven, editan y comentan las publicaciones de toda la empresa (de cualquier sucursal y las generales), y nada más del sistema: ni ventas, cobranza, gastos, compras, prospección ni personal.', Object.fromEntries(['marketing', 'marketing_gerente'].map(r => [r, {
       rubi: 1, zafiro: 1, topacio: 1, editaPub: 1, comentaPub: 1, ambar: 0, berilo: 0, coral: 0, cobroAlicia: 0, cobroTomas: 0, saldo: 0, gastoTomas: 0, gastoCarlos: 0, clabeProv: 0, jade: 0, perla: 0, granate: 0, cuarzo: 0, obsidiana: 0, clabe: 0, editaO1: 0, borra: 0 }]))],
