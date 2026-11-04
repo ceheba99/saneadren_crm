@@ -47,7 +47,7 @@ console.log(`Inventario: ${RUTAS.length} rutas, ${VISTAS_HTML.length} pantallas,
 // ================= B. Código =================
 console.log('B. Código');
 // B1. Toda ruta atrapa sus errores (envuelta en h(...)), salvo las que lo hacen a mano.
-const MANEJAN_SOLAS = ['/api/salud', '/api/demo/entrar', '/api/demo/estado', '/api/admin/backup'];
+const MANEJAN_SOLAS = ['/api/salud', '/api/demo/entrar', '/api/demo/estado', '/api/admin/backup', '/descargas/respaldo-completo'];
 const envuelta = r => { if (/\bh\(/.test(r.resto) || MANEJAN_SOLAS.includes(r.ruta)) return true; const fn = (r.resto.match(/^\s*([A-Za-z_]\w*)\(/) || [])[1]; return !!fn && new RegExp(`(const|let)\\s+${fn}\\s*=\\s*\\([^)]*\\)\\s*=>\\s*h\\(`).test(SERVER[r.archivo]); };
 for (const r of RUTAS) revisa(envuelta(r), 'rutas', `${r.metodo} ${r.ruta} (${r.archivo}) no está envuelta en h(): un error la tumbaría sin respuesta`);
 // B2. La pantalla solo llama rutas que existen (con el método correcto).

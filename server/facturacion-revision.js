@@ -73,7 +73,7 @@ function revisarProduccion(db, env = process.env, { demo = false } = {}) {
   if (!r.activo) punto('respaldo', demo ? 'aviso' : 'falta', 'Respaldo diario de la base', demo ? 'No aplica en el demo.' : 'No está activo (falta DB_PATH o RESPALDOS=0). Los XML timbrados viven en la base: sin respaldo, una falla del disco los pierde.');
   else if (!r.ultimo) punto('respaldo', 'falta', 'Respaldo diario de la base', 'Todavía no hay ninguna copia en la carpeta «respaldos/».');
   else punto('respaldo', diasDesde(r.ultimo) <= DIAS_RESPALDO ? 'ok' : 'falta', 'Respaldo diario de la base', `Última copia: ${r.ultimo} (${r.cuantos} guardadas).${diasDesde(r.ultimo) > DIAS_RESPALDO ? ' Tiene más de ' + DIAS_RESPALDO + ' días: revisa por qué no se está haciendo.' : ''}`);
-  punto('respaldo_fuera', 'aviso', 'Copia de la base fuera del servidor', 'Las copias diarias viven en el mismo disco y se borran a los 14 días; las facturas deben conservarse 5 años. Programa el respaldo de Plesk a otro lugar y descarga «Respaldar base» antes del primer timbre real.');
+  punto('respaldo_fuera', 'aviso', 'Copia de la base fuera del servidor', 'Las copias diarias viven en el mismo disco y se borran a los 14 días; las facturas deben conservarse 5 años. Las copias diarias tampoco incluyen los PDF de las facturas (carpeta «archivos/»). Programa el respaldo de Plesk a otro lugar y descarga el «respaldo completo (base + archivos)» en Ajustes → Usuarios antes del primer timbre real.');
 
   const reales = db.prepare("SELECT COUNT(*) n FROM facturas WHERE entorno = 'prod' AND estatus IN ('timbrada', 'cancelacion_solicitada', 'cancelada')").get().n;
   if (reales) punto('reales', 'ok', `Ya hay ${reales} CFDI real${reales === 1 ? '' : 'es'} en el sistema`);

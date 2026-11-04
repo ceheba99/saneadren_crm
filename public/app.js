@@ -2452,6 +2452,21 @@ on('btn-descargar-respaldo', 'click', async () => {
     toast('No se pudo descargar el respaldo: ' + err.message);
   }
 });
+// Respaldo completo: puede pesar GB, así que el navegador lo baja directo al disco con un boleto de un solo uso.
+on('btn-descargar-respaldo-completo', 'click', async () => {
+  try {
+    const r = await api('/admin/backup-completo', { method: 'POST' });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || !j.url) throw new Error(j.error || 'no se pudo preparar');
+    const a = document.createElement('a');
+    a.href = j.url;
+    a.download = '';
+    a.click();
+    toast('Se empezó a descargar el respaldo completo. Puede tardar varios minutos: no cierres el navegador hasta que termine.');
+  } catch (err) {
+    toast('No se pudo descargar el respaldo completo: ' + err.message);
+  }
+});
 
 function mostrarUsuarioEnHeader() {
   document.getElementById('sesion-nombre').textContent = USUARIO_ACTUAL.nombre;

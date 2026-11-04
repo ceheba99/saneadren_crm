@@ -1,7 +1,8 @@
 // Respaldos automáticos de la base: una copia al día en «respaldos/», junto a la base (fuera del sitio web),
 // y se conservan las de los últimos RESPALDOS_DIAS días (14 si no se indica). Protege contra borrados por
 // error o una base dañada. NO sustituye una copia fuera del servidor (si el disco falla, se pierden las dos):
-// para eso, el respaldo programado de Plesk a otro lugar o descargar «Respaldar base» de vez en cuando.
+// para eso, el respaldo programado de Plesk a otro lugar o descargar el «respaldo completo» de vez en cuando.
+// Ojo: esta copia es SOLO de la base; los archivos («archivos/») van en el respaldo completo (respaldo-completo.js).
 // Solo corre si la base vive en DB_PATH (servidor); RESPALDOS=0 lo apaga.
 const fs = require('fs');
 const path = require('path');
