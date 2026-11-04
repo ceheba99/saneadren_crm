@@ -31,19 +31,19 @@ const Personal = (() => {
       if (turno !== consulta) return;
       filas = lista; pintar();
       cargarKioscos();
-    } catch (e) { $('pe-tabla').innerHTML = `<tr><td colspan="8"><p class="aviso-error-carga" role="alert">${esc(e.message)}</p></td></tr>`; }
+    } catch (e) { $('pe-tabla').innerHTML = `<tr><td colspan="9"><p class="aviso-error-carga" role="alert">${esc(e.message)}</p></td></tr>`; }
   }
   function pintar() {
     const avisos = filas.filter(p => p.alertas.length).length;
     $('pe-resumen').textContent = `${filas.length} persona${filas.length === 1 ? '' : 's'}` + (avisos ? ` · ${avisos} con avisos (licencias o contratos por vencer)` : '');
     $('pe-tabla').innerHTML = filas.length ? filas.map(p => `<tr class="${p.activo ? '' : 'pe-baja'}">
-        <td><button type="button" class="pe-nombre" data-persona="${Number(p.id)}">${esc(p.nombre)}</button>${p.usuario_nombre ? '<small class="pe-cuenta">Cuenta: ' + esc(p.usuario_nombre) + '</small>' : ''}${p.activo ? '' : '<small class="pe-cuenta">Baja ' + esc(fecha(p.fecha_baja)) + '</small>'}</td>
+        <td>${esc(p.numero_empleado || '')}</td><td><button type="button" class="pe-nombre" data-persona="${Number(p.id)}">${esc(p.nombre)}</button>${p.usuario_nombre ? '<small class="pe-cuenta">Cuenta: ' + esc(p.usuario_nombre) + '</small>' : ''}${p.activo ? '' : '<small class="pe-cuenta">Baja ' + esc(fecha(p.fecha_baja)) + '</small>'}</td>
         <td>${esc(p.puesto)}</td><td>${esc(p.telefono || '—')}</td><td>${esc(antiguedad(p.fecha_ingreso))}</td>
         <td>${p.vacaciones ? (p.vacaciones.anios ? `${p.vacaciones.disponibles} de ${p.vacaciones.corresponden}` : 'Aún no cumple 1 año') : '—'}</td>
         <td>${p.licencia_vence ? esc((p.licencia_tipo || '') + ' · vence ' + fecha(p.licencia_vence)) : '—'}</td>
         <td>${Number(p.ordenes_mes) || 0}</td>
         <td>${p.alertas.map(a => `<span class="chip alert-chip">${esc(a)}</span>`).join(' ') || ''}</td></tr>`).join('')
-      : '<tr><td colspan="8"><p class="ayuda">No hay personas con esos filtros. ' + (Permisos.puede('personal.editar') ? 'Da de alta a la primera con «+ Nueva persona».' : '') + '</p></td></tr>';
+      : '<tr><td colspan="9"><p class="ayuda">No hay personas con esos filtros. ' + (Permisos.puede('personal.editar') ? 'Da de alta a la primera con «+ Nueva persona».' : '') + '</p></td></tr>';
   }
 
   // ---------- Ficha ----------
@@ -75,7 +75,7 @@ const Personal = (() => {
   }
   function pintarFicha() {
     const p = actual, puedeEditar = !!p.puede?.editar, sens = !!p.puede?.sensibles, nuevo = !!p.nuevo, edita = puedeEditar && (nuevo || EDITANDO), ro = edita ? '' : ' disabled';
-    $('pe-titulo').textContent = nuevo ? 'Nueva persona' : p.nombre + (p.activo ? '' : ' (dada de baja)');
+    $('pe-titulo').textContent = nuevo ? 'Nueva persona' : (p.numero_empleado ? 'No. ' + p.numero_empleado + ' · ' : '') + p.nombre + (p.activo ? '' : ' (dada de baja)');
     const usuarios = [...(p.usuario_id ? [{ id: p.usuario_id, nombre: p.usuario_nombre }] : []), ...(p.usuarios_sin_ficha || [])].map(u => [u.id, u.nombre]);
     const sucursales = window.Sucursales?.varias?.() ? (Sucursales.datos.sucursales || []).filter(s => s.activo).map(s => [s.id, s.clave + ' · ' + s.nombre]) : null;
     let h = `<div class="modal-section"><h3 class="pe-sub">Datos generales</h3><div class="form-grid-2">

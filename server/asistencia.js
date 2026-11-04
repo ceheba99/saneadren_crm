@@ -312,6 +312,12 @@ module.exports = function asistencia(app, db, h) {
     res.json({ actual: asignadoDe(p.id, hoy) || null, historial: db.prepare('SELECT ph.desde, h.nombre, ph.asignado_por_nombre, ph.created_at FROM main.personal_horario ph JOIN main.horarios h ON h.id = ph.horario_id WHERE ph.personal_id = ? ORDER BY ph.desde DESC, ph.id DESC').all(p.id),
       horarios: db.prepare('SELECT id, nombre FROM main.horarios WHERE activo = 1 AND sucursal_id = ? ORDER BY nombre').all(p.sucursal_id), puede: { editar: puede(req, 'asistencia.horarios') } });
   }));
+  const asignarHorario = (req, p, hh, desde) => {
+    db.prepare('INSERT INTO main.personal_horario (personal_id, horario_id, desde, asignado_por, asignado_por_nombre) VALUES (?, ?, ?, ?, ?)').run(p.id, hh.id, desde, req.usuarioSesion.id, req.usuarioSesion.nombre);
+    audit(req, p.id, 'horario', `${p.nombre}: horario «${hh.nombre}» desde ${desde}`);
+  };
+  // Horario activo de una sucursal por su nombre (para la carga en lote de RH).
+  const horarioPorNombre = (sucursalId, nombre) => { sembrarHorarios(db); return db.prepare('SELECT id, nombre FROM main.horarios WHERE sucursal_id = ? AND activo = 1 AND nombre = ? COLLATE NOCASE').get(sucursalId, String(nombre || '').trim()) || null; };
   app.put('/api/asistencia/personal/:id/horario', h((req, res) => {
     if (!puede(req, 'asistencia.horarios')) return negar(res, 'No tienes permiso para asignar horarios');
     const p = db.prepare('SELECT id, nombre, sucursal_id FROM personal WHERE id = ?').get(idDe(req.params.id));
@@ -322,8 +328,7 @@ module.exports = function asistencia(app, db, h) {
     const primera = !db.prepare('SELECT 1 FROM main.personal_horario WHERE personal_id = ?').get(p.id), pedida = req.body?.desde;
     const desde = primera && fechaOk(pedida) && pedida <= ahoraMexico().fecha ? pedida : desdeDe(req.body || {});
     if (!desde) return res.status(400).json({ error: 'El cambio puede valer desde hace 7 días como máximo' });
-    db.prepare('INSERT INTO main.personal_horario (personal_id, horario_id, desde, asignado_por, asignado_por_nombre) VALUES (?, ?, ?, ?, ?)').run(p.id, hh.id, desde, req.usuarioSesion.id, req.usuarioSesion.nombre);
-    audit(req, p.id, 'horario', `${p.nombre}: horario «${hh.nombre}» desde ${desde}`);
+    asignarHorario(req, p, hh, desde);
     res.json({ ok: true });
   }));
 
@@ -346,7 +351,7 @@ module.exports = function asistencia(app, db, h) {
     res.json(db.prepare('SELECT * FROM main.dias_festivos WHERE fecha = ?').get(fecha));
   }));
 
-  return { calcularDia, horarioDe };
+  return { calcularDia, horarioDe, asignarHorario, horarioPorNombre };
 };
 module.exports.festivosLey = festivosLey;
 module.exports.unidos = unidos;

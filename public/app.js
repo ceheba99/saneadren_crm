@@ -135,6 +135,7 @@ function cambiarVista(v, opciones) {
   if (v === 'usuarios' && !Permisos.puede('usuarios.administrar')) v = 'inicio';
   if (v === 'personal' && !Permisos.puede('personal.ver')) v = 'inicio';
   if (v === 'asistencia' && !Permisos.puede('asistencia.ver')) v = 'inicio';
+  if (v === 'rh' && !Permisos.puede('personal.ver')) v = 'inicio';
   if (v === 'prospeccion' && !Permisos.puede('prospeccion.ver')) v = 'inicio';
   if (v === 'marketing' && !Permisos.puede('marketing.ver')) v = 'inicio';
   if (v === 'facturas' && !Permisos.puede('facturacion.timbrar')) v = 'inicio';
@@ -157,6 +158,7 @@ function cambiarVista(v, opciones) {
   if (v === 'facturas') window.Facturacion?.cargarLista();
   if (v === 'personal') Personal.cargar();
   if (v === 'asistencia') Asistencia.cargar();
+  if (v === 'rh') RH.cargar();
   if (v === 'resultados') abrirResultados();
   if (v === 'generador') cargarGenerador();
   if (v === 'calendario') Calendario.cargar();

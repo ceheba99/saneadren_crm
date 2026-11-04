@@ -2203,3 +2203,9 @@ table.tabla-clientes.py-tareas tbody td{white-space:normal;}
 .as-semana td{white-space:nowrap;font-size:13px;}
 .as-descanso{color:#6b7280;}
 .pe-enlace{width:100%;font-size:13px;margin:6px 0;}
+.rh-accesos{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:10px;margin:14px 0;}
+.rh-acceso{display:flex;flex-direction:column;align-items:flex-start;gap:4px;text-align:left;background:#fff;border:1px solid #e5e7eb;border-radius:10px;padding:12px 14px;cursor:pointer;font:inherit;}
+.rh-acceso:hover{border-color:#f6b103;}
+.rh-acceso small{color:#6b7280;}
+.rh-icono{font-size:1.5rem;}
+.rh-pasos{margin:6px 0 10px;padding-left:20px;}
