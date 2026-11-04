@@ -2,10 +2,13 @@
 // retardos, faltas y tiempo extra), sus checadas con las correcciones (con motivo), la autorización del tiempo extra,
 // los horarios (por versión, con fecha «desde») y los días festivos. Todo lo calcula el servidor (server/asistencia.js).
 // F4 (2026-11-03): Excel de la semana de nómina (viernes a jueves) con resumen, detalle por día y pendientes.
-// Lleva horas, no dinero: el pago lo calculará el módulo de nómina.
+// Lleva horas; quien ve sueldos ve además el pago del tiempo extra (precio de la hora por puesto, en Horarios).
 const Asistencia = (() => {
   const $ = id => document.getElementById(id);
   const esc = t => escaparHtml(t == null ? '' : String(t));
+  const pesos = c => (c == null ? '—' : '$' + (c / 100).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+  // Texto del pago del tiempo extra de una fila de la semana (solo llega a quien ve sueldos).
+  const pagoExtra = x => (!x ? '' : x.valor_hora_cent == null ? 'sin precio' : pesos(x.total_cent));
   const hoy = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Mexico_City' }).format(new Date());
   const hm = m => (m == null ? '—' : `${Math.floor(m / 60)}:${String(m % 60).padStart(2, '0')}`);
   const fechaLarga = f => new Date(f + 'T12:00:00').toLocaleDateString('es-MX', { weekday: 'short', day: '2-digit', month: 'short' });
@@ -95,15 +98,15 @@ const Asistencia = (() => {
   // ---------- Semana ----------
   function pintarSemana() {
     const d = datos;
-    let h = `<div class="filtros"><label>Semana del <input type="date" id="as-semana" value="${esc(d.desde)}"></label>${d.filas.length ? '<button type="button" class="btn btn-secundario" id="as-excel">📥 Excel de nómina</button>' : ''}<span class="ayuda">${esc(fechaLarga(d.desde))} al ${esc(fechaLarga(d.hasta))}. Semana de nómina: de viernes a jueves. Tiempo extra autorizado: las primeras 9 horas de la semana son dobles y lo demás triples (LFT).</span></div>`;
+    let h = `<div class="filtros"><label>Semana del <input type="date" id="as-semana" value="${esc(d.desde)}"></label>${d.filas.length ? '<button type="button" class="btn btn-secundario" id="as-excel">📥 Excel de nómina</button>' : ''}<span class="ayuda">${esc(fechaLarga(d.desde))} al ${esc(fechaLarga(d.hasta))}. Semana de nómina: de viernes a jueves. Tiempo extra autorizado: las primeras 9 horas de la semana son dobles y lo demás triples (LFT).${d.dinero ? ' El pago usa el precio de la hora de cada puesto (Horarios → Precio de la hora).' : ''}</span></div>`;
     if (!d.filas.length) { $('as-cuerpo').innerHTML = h + '<p class="ayuda">No hay personas en el reloj checador.</p>'; return; }
     h += `<div class="tabla-scroll"><table class="tabla-resumen as-tabla as-semana"><thead><tr><th>Persona</th>${d.fechas.map((f, i) => `<th>${esc(fechaLarga(f))}${d.festivos[i] ? '<small class="pe-cuenta">🎉 festivo</small>' : ''}</th>`).join('')}
-      <th>Trabajado</th><th>Retardos</th><th>Faltas</th><th>Extra registrado</th><th>Extra autorizado</th><th>Dobles</th><th>Triples</th></tr></thead><tbody>`;
+      <th>Trabajado</th><th>Retardos</th><th>Faltas</th><th>Extra registrado</th><th>Extra autorizado</th><th>Dobles</th><th>Triples</th>${d.dinero ? '<th>Pago extra</th>' : ''}</tr></thead><tbody>`;
     for (const f of d.filas) {
       const t = f.totales;
       h += `<tr><td><b>${esc(f.nombre)}</b><small class="pe-cuenta">${esc(f.puesto || '')}</small></td>${f.dias.map(x => `<td class="${x.falta ? 'as-falta' : ''}">${x.entrada || x.salida ? esc(`${x.entrada || '?'}–${x.salida || '?'}`) : x.falta ? '❌' : esc(x.incidencia ? INCIDENCIA[x.incidencia] || x.incidencia : x.programado ? '—' : 'Descanso')}
         ${x.retardo_min ? `<small class="as-rojo">R ${esc(x.retardo_min)}′</small>` : ''}${x.extra_min ? `<small class="pe-cuenta">+${esc(hm(x.extra_min))}${x.extra_autorizado_min == null ? '' : ' ✔'}</small>` : ''}${x.por_revisar ? '<small class="as-rojo">⚠️ revisar</small>' : ''}</td>`).join('')}
-        <td>${esc(hm(t.trabajado_min))}</td><td>${esc(t.retardos)}${t.retardo_min ? ` <small>(${esc(t.retardo_min)} min)</small>` : ''}</td><td>${esc(t.faltas)}</td><td>${esc(hm(t.extra_min))}</td><td>${esc(hm(t.extra_autorizado_min))}</td><td>${esc(hm(t.extra_dobles_min))}</td><td>${esc(hm(t.extra_triples_min))}</td></tr>`;
+        <td>${esc(hm(t.trabajado_min))}</td><td>${esc(t.retardos)}${t.retardo_min ? ` <small>(${esc(t.retardo_min)} min)</small>` : ''}</td><td>${esc(t.faltas)}</td><td>${esc(hm(t.extra_min))}</td><td>${esc(hm(t.extra_autorizado_min))}</td><td>${esc(hm(t.extra_dobles_min))}</td><td>${esc(hm(t.extra_triples_min))}</td>${d.dinero ? `<td>${esc(pagoExtra(f.dinero))}${f.dinero?.valor_hora_cent != null ? `<small class="pe-cuenta">hora ${esc(pesos(f.dinero.valor_hora_cent))}</small>` : ''}</td>` : ''}</tr>`;
     }
     $('as-cuerpo').innerHTML = h + '</tbody></table></div>';
   }
@@ -123,12 +126,13 @@ const Asistencia = (() => {
         const ws = wb.addWorksheet(nombre, { views: [{ state: 'frozen', ySplit: 2 }] });
         ws.addRow([titulo]).font = { bold: true, size: 12 };
         ws.addRow(cols.map(c => c[0])).font = { bold: true };
-        cols.forEach(([, ancho, tipo], i) => { const col = ws.getColumn(i + 1); col.width = ancho; if (tipo === 'h') col.numFmt = '[h]:mm'; });
+        cols.forEach(([, ancho, tipo], i) => { const col = ws.getColumn(i + 1); col.width = ancho; if (tipo === 'h') col.numFmt = '[h]:mm'; if (tipo === '$') col.numFmt = '"$"#,##0.00'; });
         return ws;
       };
       const R = hoja('Resumen', [['Persona', 30], ['Puesto', 16], ['Días trabajados', 10], ['Faltas', 8], ['Retardos', 9], ['Minutos de retardo', 10], ['Horas trabajadas', 11, 'h'],
         ['Tiempo extra registrado', 12, 'h'], ['Tiempo extra autorizado', 12, 'h'], ['Extra dobles', 11, 'h'], ['Extra triples', 11, 'h'], ['Domingos trabajados', 10], ['Festivos trabajados', 10],
-        ['Descansos trabajados', 10], ['Vacaciones (días)', 10], ['Incapacidad (días)', 10], ['Permisos (días)', 10], ['Pendientes', 40]]);
+        ['Descansos trabajados', 10], ['Vacaciones (días)', 10], ['Incapacidad (días)', 10], ['Permisos (días)', 10], ['Pendientes', 40],
+        ...(d.dinero ? [['Precio hora normal', 12, '$'], ['Pago extra dobles', 12, '$'], ['Pago extra triples', 12, '$'], ['Pago tiempo extra', 13, '$']] : [])]);
       const D = hoja('Detalle por día', [['Fecha', 12], ['Día', 11], ['Persona', 30], ['Horario', 18], ['Entrada programada', 10], ['Salida programada', 10], ['Entrada', 9], ['Salida', 9],
         ['Comida (min)', 9], ['Horas trabajadas', 11, 'h'], ['Retardo (min)', 9], ['Extra registrado', 11, 'h'], ['Extra autorizado', 11, 'h'], ['Autorizó', 22], ['Falta', 7], ['Incidencia', 14], ['Avisos', 50]]);
       const P = hoja('Pendientes', [['Persona', 30], ['Fecha', 12], ['Qué falta', 60]]);
@@ -138,8 +142,10 @@ const Asistencia = (() => {
         if (t.extra_sin_autorizar_min) pendientes.push(`${hm(t.extra_sin_autorizar_min)} de tiempo extra sin autorizar`);
         if (t.sin_salida) pendientes.push(`${t.sin_salida} día(s) sin salida`);
         if (t.sin_horario) pendientes.push('sin horario asignado');
+        if (d.dinero && t.extra_autorizado_min && f.dinero?.valor_hora_cent == null) pendientes.push(`su puesto (${f.puesto || 'sin puesto'}) no tiene precio de la hora: el tiempo extra no se pudo calcular en pesos`);
         R.addRow([f.nombre, f.puesto || '', t.dias_trabajados, t.faltas, t.retardos, t.retardo_min, horas(t.trabajado_min), horas(t.extra_min), horas(t.extra_autorizado_min), horas(t.extra_dobles_min), horas(t.extra_triples_min),
-          t.domingos, t.festivos_trabajados, t.descansos_trabajados, t.vacaciones, t.incapacidad, t.permisos, pendientes.join(' · ')]);
+          t.domingos, t.festivos_trabajados, t.descansos_trabajados, t.vacaciones, t.incapacidad, t.permisos, pendientes.join(' · '),
+          ...(d.dinero ? (f.dinero?.valor_hora_cent == null ? ['sin precio', null, null, null] : [f.dinero.valor_hora_cent / 100, f.dinero.dobles_cent / 100, f.dinero.triples_cent / 100, f.dinero.total_cent / 100]) : [])]);
         for (const x of f.dias) {
           D.addRow([x.fecha, x.dia, f.nombre, x.horario || 'Sin horario', x.programado?.entrada || (x.festivo ? 'Festivo' : 'Descanso'), x.programado?.salida || '', x.entrada || '', x.salida || '',
             x.comida_min || null, horas(x.trabajado_min), x.retardo_min || null, horas(x.extra_min || null), horas(x.extra_autorizado_min), x.extra_autorizado_por || '', x.falta ? 'Sí' : '',
@@ -178,7 +184,32 @@ const Asistencia = (() => {
       if (editando === x.id) h += formularioHorario(x, dias);
       h += '</div>';
     }
+    if (puede.precios) h += '<div class="modal-section" id="as-precios"><p class="ayuda" role="status">Cargando precios…</p></div>';
     $('as-cuerpo').innerHTML = h;
+    if (puede.precios) cargarPrecios();
+  }
+
+  // ---------- Precio de la hora por puesto (solo quien ve sueldos) ----------
+  let precios = null, precioSuc = null;
+  async function cargarPrecios() {
+    try { precios = await pedir('/precios'); } catch (e) { if ($('as-precios')) $('as-precios').innerHTML = `<p class="aviso-error-carga" role="alert">${esc(e.message)}</p>`; return; }
+    if (!precios.sucursales.some(s => s.id === precioSuc)) precioSuc = precios.sucursales[0]?.id ?? null;
+    pintarPrecios();
+  }
+  function pintarPrecios() {
+    const cont = $('as-precios'), s = precios?.sucursales.find(x => x.id === precioSuc); if (!cont || !s) return;
+    let h = `<h3 class="pe-sub">💲 Precio de la hora por puesto</h3>
+      <p class="ayuda">Escribe cuánto vale la <b>hora normal</b> de cada puesto. El tiempo extra se paga solo: las primeras 9 horas de la semana al doble y lo demás al triple. Un cambio vale desde hoy; las semanas pasadas se quedan con el precio que tenían. Solo lo ven quienes ven sueldos.</p>`;
+    if (precios.sucursales.length > 1) h += `<div class="filtros"><label>Sucursal <select id="as-p-suc">${precios.sucursales.map(x => `<option value="${Number(x.id)}"${x.id === s.id ? ' selected' : ''}>${esc(x.nombre)}</option>`).join('')}</select></label></div>`;
+    h += '<div class="tabla-scroll"><table class="tabla-resumen"><thead><tr><th>Puesto</th><th>Hora normal</th><th>Hora doble</th><th>Hora triple</th><th></th></tr></thead><tbody>';
+    precios.puestos.forEach((pu, i) => {
+      const p = s.precios[pu], c = p ? Math.round(p.valor * 100) : null;
+      h += `<tr><td><b>${esc(pu)}</b>${p ? `<small class="pe-cuenta">desde ${esc(fechaLarga(p.desde))} · ${esc(p.por || '')}</small>` : ''}</td>
+        <td>${precios.editar ? `$ <input type="number" min="0" step="0.01" class="as-num" id="as-p-${Number(i)}" value="${p ? esc(Number(p.valor).toFixed(2)) : ''}" placeholder="0.00" aria-label="Precio de la hora normal de ${esc(pu)}">` : esc(pesos(c))}</td>
+        <td>${esc(c == null ? '—' : pesos(c * 2))}</td><td>${esc(c == null ? '—' : pesos(c * 3))}</td>
+        <td>${precios.editar ? `<button type="button" class="btn btn-secundario" data-as-precio="${Number(i)}">Guardar</button>` : ''}</td></tr>`;
+    });
+    cont.innerHTML = h + '</tbody></table></div>';
   }
   function formularioHorario(x, dias) {
     const v = x?.proxima || x?.vigente || { dias: { 1: { entrada: '08:30', salida: '18:00' }, 2: { entrada: '08:30', salida: '18:00' }, 3: { entrada: '08:30', salida: '18:00' }, 4: { entrada: '08:30', salida: '18:00' }, 5: { entrada: '08:30', salida: '18:00' } }, tolerancia_min: 10, comida_min: 60 };
@@ -218,6 +249,7 @@ const Asistencia = (() => {
     if (e.target.id === 'as-fecha' && e.target.value) { fecha = e.target.value; abierto = null; cargar(); }
     else if (e.target.id === 'as-semana' && e.target.value) { semana = e.target.value; cargar(); }
     else if (e.target.id === 'as-anio') { anio = e.target.value; cargar(); }
+    else if (e.target.id === 'as-p-suc') { precioSuc = Number(e.target.value); pintarPrecios(); }
   });
   $('as-cuerpo').addEventListener('click', async e => {
     const b = e.target.closest('button'); if (!b) return;
@@ -231,6 +263,13 @@ const Asistencia = (() => {
     else if (b.id === 'as-n-guardar') accion(() => pedir('/checadas', { method: 'POST', body: JSON.stringify({ personal_id: abierto, tipo: $('as-n-tipo').value, fecha, hora: $('as-n-hora').value, motivo: $('as-n-motivo').value }) }), 'Checada agregada');
     else if (b.id === 'as-x-guardar') accion(() => pedir('/extra', { method: 'POST', body: JSON.stringify({ personal_id: abierto, fecha, minutos: Number($('as-x-min').value), motivo: $('as-x-motivo').value }) }), 'Tiempo extra autorizado');
     else if (b.id === 'as-excel') excelNomina(b);
+    else if (d.asPrecio !== undefined) {
+      const i = Number(d.asPrecio), puesto = precios?.puestos[i], valor = $('as-p-' + i)?.value;
+      if (!puesto) return;
+      b.disabled = true;
+      try { const r = await pedir('/precios', { method: 'PUT', body: JSON.stringify({ sucursal_id: precioSuc, puesto, valor }) }); toast(r.cambios ? `Precio de la hora de ${puesto} guardado` : 'Sin cambios'); await cargarPrecios(); }
+      catch (err) { toast(err.message); b.disabled = false; }
+    }
     else if (d.asHorarioNuevo) { editando = 'nuevo'; pintarHorarios(); }
     else if (d.asHorarioEditar) { editando = Number(d.asHorarioEditar); pintarHorarios(); }
     else if (d.asHorarioActivo) accion(() => pedir('/horarios/' + Number(d.asHorarioActivo), { method: 'PUT', body: JSON.stringify({ activo: !!d.activo }) }));
