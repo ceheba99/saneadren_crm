@@ -275,6 +275,8 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
     ['cambiaHorario', 'Cambiar un horario (entrada, salida, tolerancia o comida) o marcar días festivos'],
     ['autorizaExtra', 'Autorizar el tiempo extra de una persona'],
     ['corrigeSuyo', 'Corregir su PROPIA asistencia (agregarse una checada o autorizarse su tiempo extra)'],
+    ['precioExtra', 'Ponerle precio a la hora de cada puesto (para pagar el tiempo extra)'],
+    ['dineroExtra', 'Ver cuánto dinero sale por tiempo extra (en la semana y en el Excel de nómina)'],
     ['daCelular', 'Mandar a una persona el enlace para checar desde su celular, o quitarle el celular'],
     ['veRH', 'Ver la pestaña RH (resumen del personal: sin horario, sin checador, sin aviso firmado…)'],
     ['importaPersonal', 'Cargar trabajadores en lote desde la plantilla de Excel (revisar y guardar)'],
@@ -339,6 +341,8 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
     VE[rol].importaPersonal = ok(await pedir('POST', '/rh/importar/revisar', t, { filas: [{ nombre: 'Prueba Carga ' + rol, puesto: 'Ayudante' }] }));
     VE[rol].daCelular = ok(await pedir('POST', '/asistencia/personal/' + EMP.id + '/celular/quitar', t));
     VE[rol].autorizaExtra = ok(await pedir('POST', '/asistencia/extra', t, { personal_id: EMP.id, fecha: dia(-1), minutos: 0 }));
+    VE[rol].precioExtra = ok(await pedir('PUT', '/asistencia/precios', t, { sucursal_id: qro.id, puesto: 'Operador', valor: 50 + ROLES.findIndex(r => r[0] === rol) }));
+    { const [st, sem] = await pedir('GET', '/asistencia/semana', t); VE[rol].dineroExtra = st === 200 && !!sem?.dinero; }
     VE[rol].veAsistencia = ok(await pedir('GET', '/asistencia/semana', t));
     VE[rol].claveServicio = ok(await pedir('PUT', '/facturacion/servicios/' + servicioFact.id, t, { clave_prod_serv: '76121600', clave_unidad: 'E48' }));
     const nuevaPub = exigir(await pedir('POST', '/marketing/publicaciones', T.Mara, { titulo: 'Por aprobar ' + rol, redes: ['tiktok'], formato: 'video', fecha: dia(5), copy: 'Copy', sucursal: qro.id }), 'publicación por aprobar');
@@ -398,6 +402,9 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
     ['2026-11-03', 'Asistencia (horarios, retardos, faltas y tiempo extra): la ven Dirección y el Gerente; cambian horarios y días festivos y autorizan el tiempo extra Dirección y el Gerente (Dirección se los da a RH en Roles y permisos); los demás roles no.', {
       admin: { veAsistencia: 1, cambiaHorario: 1, autorizaExtra: 1 }, gerente: { veAsistencia: 1, cambiaHorario: 1, autorizaExtra: 1 },
       ...Object.fromEntries(['ventas', 'atencion', 'tecnico', 'costos', 'marketing', 'marketing_gerente'].map(r => [r, { veAsistencia: 0, cambiaHorario: 0, autorizaExtra: 0 }])) }],
+    ['2026-11-03', 'Precio de la hora de cada puesto y el dinero del tiempo extra (dobles y triples, en la semana y en el Excel de nómina): lo ven y lo cambian quienes ven sueldos (Dirección y el Gerente, de su sucursal); los demás roles solo ven horas.', {
+      admin: { precioExtra: 1, dineroExtra: 1 }, gerente: { precioExtra: 1, dineroExtra: 1 },
+      ...Object.fromEntries(['ventas', 'atencion', 'tecnico', 'costos', 'marketing', 'marketing_gerente'].map(r => [r, { precioExtra: 0, dineroExtra: 0 }])) }],
     ['2026-11-03', 'Nadie corrige su PROPIA asistencia (agregar, anular o aceptar sus checadas, autorizarse tiempo extra, cambiarse el horario, registrarse vacaciones o permisos), ni el Gerente: lo hace otra persona con permiso. Dirección sí, porque no tiene a quién pedírselo.', {
       admin: { corrigeSuyo: 1 }, ...Object.fromEntries(['gerente', 'ventas', 'atencion', 'tecnico', 'costos', 'marketing', 'marketing_gerente'].map(r => [r, { corrigeSuyo: 0 }])) }],
     ['2026-11-03', 'Checar desde el celular: mandar el enlace o quitar el celular lo hacen Dirección y el Gerente (quien edita el personal); la ubicación de cada checada la ven solo Dirección y el Gerente (se toma solo al checar). Los demás roles no.', {

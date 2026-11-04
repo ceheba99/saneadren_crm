@@ -20,6 +20,10 @@
 //  · Tiempo extra: lo AUTORIZAN RH y el Gerente (permiso «Autorizar tiempo extra»), hasta los minutos calculados. Cada
 //    autorización es un registro nuevo (la última cuenta); no se borran. Semana: las primeras 9 horas autorizadas son
 //    dobles y lo demás triples (arts. 67 y 68 LFT).
+//  · Precio de la hora (decidido con Dirección el 2026-11-03: un precio POR PUESTO, en cada sucursal): es el valor de la
+//    hora normal; el tiempo extra se paga doble o triple sobre él. Cada cambio es un registro nuevo desde hoy (las
+//    semanas pasadas se calculan con el precio que tenían). Lo ven y lo cambian solo quienes ven sueldos
+//    («personal.sensibles» y editar personal: Dirección y el Gerente); los demás ven solo horas.
 const { ahoraMexico } = require('./fechas');
 
 const DIAS = { 1: 'Lunes', 2: 'Martes', 3: 'Miércoles', 4: 'Jueves', 5: 'Viernes', 6: 'Sábado', 7: 'Domingo' };
@@ -124,6 +128,18 @@ function migrar(db) {
     CREATE TRIGGER IF NOT EXISTS personal_horario_no_borrar BEFORE DELETE ON personal_horario BEGIN SELECT RAISE(ABORT, 'El historial de horarios no se borra'); END;
     CREATE TRIGGER IF NOT EXISTS extra_autorizaciones_fijas BEFORE UPDATE ON extra_autorizaciones BEGIN SELECT RAISE(ABORT, 'Una autorización de tiempo extra se corrige con otra nueva'); END;
     CREATE TRIGGER IF NOT EXISTS extra_autorizaciones_no_borrar BEFORE DELETE ON extra_autorizaciones BEGIN SELECT RAISE(ABORT, 'Las autorizaciones de tiempo extra no se borran'); END;
+    -- Precio de la hora normal por puesto y sucursal (centavos), con historial: el vigente es el último con desde <= fecha.
+    CREATE TABLE IF NOT EXISTS precios_hora_puesto (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      sucursal_id INTEGER NOT NULL REFERENCES sucursales(id),
+      puesto TEXT NOT NULL,
+      valor_cent INTEGER NOT NULL CHECK(valor_cent >= 0 AND valor_cent <= 10000000),
+      desde TEXT NOT NULL,
+      creado_por INTEGER, creado_por_nombre TEXT, created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_precios_hora_puesto ON precios_hora_puesto(sucursal_id, puesto, desde);
+    CREATE TRIGGER IF NOT EXISTS precios_hora_fijos BEFORE UPDATE ON precios_hora_puesto BEGIN SELECT RAISE(ABORT, 'Un precio se cambia con uno nuevo'); END;
+    CREATE TRIGGER IF NOT EXISTS precios_hora_no_borrar BEFORE DELETE ON precios_hora_puesto BEGIN SELECT RAISE(ABORT, 'El historial de precios no se borra'); END;
   `);
   sembrarHorarios(db);
       db.prepare("INSERT INTO horario_versiones (horario_id, desde, dias, tolerancia_min, comida_min, creado_por_nombre) VALUES (?, ?, ?, 10, 60, 'Sistema')")
@@ -137,6 +153,8 @@ module.exports = function asistencia(app, db, h) {
   const P = app.locals.permisos, puede = (req, k) => P.puede(req, k);
   const audit = (req, id, accion, detalle) => app.locals.auditoria?.registrar(req, 'personal', id, accion, detalle);
   const negar = (res, msg) => res.status(403).json({ error: msg || 'No tienes permiso para la asistencia' });
+  // Dinero del tiempo extra: quien ve sueldos lo ve; quien además edita el personal cambia el precio de la hora.
+  const verDinero = req => puede(req, 'personal.sensibles'), cambiaPrecio = req => verDinero(req) && puede(req, 'personal.editar');
 
   // ---------- Horario vigente ----------
   const versionDe = (horarioId, fecha) => db.prepare('SELECT * FROM main.horario_versiones WHERE horario_id = ? AND desde <= ? ORDER BY desde DESC, id DESC LIMIT 1').get(horarioId, fecha);
@@ -226,7 +244,46 @@ module.exports = function asistencia(app, db, h) {
         sin_salida: dias.filter(d => d.notas.includes('Sin salida')).length, sin_horario: dias.filter(d => d.notas.includes('Sin horario asignado') && (d.entrada || d.salida)).length,
         por_revisar: t('por_revisar') } };
     });
-    res.json({ desde, hasta: fechas[6], fechas, festivos: fechas.map(festivoDe), filas, puede: { corregir: puede(req, 'asistencia.corregir'), extra: puede(req, 'asistencia.extra') } });
+    // Dinero del tiempo extra: solo para quien ve sueldos, con el precio del puesto vigente al cierre de la semana.
+    const dinero = verDinero(req);
+    if (dinero) for (const f of filas) {
+      const p = gente(fechas[6], f.personal_id)[0], pr = p ? precioDe(p.sucursal_id, p.puesto, fechas[6]) : null, v = pr?.valor_cent ?? null;
+      f.dinero = v == null ? { valor_hora_cent: null } : { valor_hora_cent: v, dobles_cent: pago(f.totales.extra_dobles_min, v, 2), triples_cent: pago(f.totales.extra_triples_min, v, 3) };
+      if (v != null) f.dinero.total_cent = f.dinero.dobles_cent + f.dinero.triples_cent;
+    }
+    res.json({ desde, hasta: fechas[6], fechas, festivos: fechas.map(festivoDe), filas, ...(dinero ? { dinero: true } : {}), puede: { corregir: puede(req, 'asistencia.corregir'), extra: puede(req, 'asistencia.extra'), precios: cambiaPrecio(req) } });
+  }));
+
+  // ---------- Precio de la hora por puesto ----------
+  // Valor de la hora NORMAL (centavos) de un puesto en una sucursal, vigente en una fecha. Antes del primer precio que
+  // se capturó vale ese primero (si no, la semana que se paga el viernes en que se capturó quedaría sin precio).
+  // null si el puesto nunca ha tenido precio.
+  const precioDe = (sucursalId, puesto, fecha) => db.prepare('SELECT valor_cent, desde, creado_por_nombre FROM main.precios_hora_puesto WHERE sucursal_id = ? AND puesto = ? AND desde <= ? ORDER BY desde DESC, id DESC LIMIT 1').get(sucursalId, puesto, fecha)
+    || db.prepare('SELECT valor_cent, desde, creado_por_nombre FROM main.precios_hora_puesto WHERE sucursal_id = ? AND puesto = ? ORDER BY desde, id DESC LIMIT 1').get(sucursalId, puesto) || null;
+  // Pago de unos minutos a «factor» veces la hora normal, en centavos (enteros: nada de flotantes en el total).
+  const pago = (minutos, valorCent, factor) => Math.round((minutos || 0) * valorCent * factor / 60);
+  app.get('/api/asistencia/precios', h((req, res) => {
+    if (!verDinero(req)) return negar(res, 'El precio de la hora lo ve quien ve sueldos');
+    const hoy = ahoraMexico().fecha, puestos = app.locals.personal.PUESTOS;
+    const sucursales = db.prepare('SELECT id, nombre FROM main.sucursales WHERE activo = 1 ORDER BY id').all().filter(s => req.alcanceSuc?.permitidas?.includes(s.id));
+    res.json({ puestos, editar: cambiaPrecio(req), sucursales: sucursales.map(s => ({ ...s, precios: Object.fromEntries(puestos.map(pu => {
+      const pr = precioDe(s.id, pu, hoy);
+      return [pu, pr ? { valor: pr.valor_cent / 100, desde: pr.desde, por: pr.creado_por_nombre } : null];
+    })) })) });
+  }));
+  app.put('/api/asistencia/precios', h((req, res) => {
+    if (!cambiaPrecio(req)) return negar(res, 'El precio de la hora lo cambia quien ve sueldos y edita el personal');
+    const b = req.body || {}, s = idDe(b.sucursal_id), puesto = String(b.puesto || '');
+    if (!s || !req.alcanceSuc?.permitidas?.includes(s)) return res.status(400).json({ error: 'Elige una de tus sucursales' });
+    if (!app.locals.personal.PUESTOS.includes(puesto)) return res.status(400).json({ error: 'Elige un puesto de la lista' });
+    const v = Number(String(b.valor ?? '').replace(/[$,\s]/g, '')), cent = Math.round(v * 100);
+    if (b.valor === '' || b.valor == null || !Number.isFinite(v) || v < 0 || v > 100000 || Math.abs(v * 100 - cent) > 1e-6) return res.status(400).json({ error: 'Escribe el precio de la hora en pesos (p. ej. 62.50), de 0 a 100,000' });
+    const hoy = ahoraMexico().fecha, antes = precioDe(s, puesto, hoy);
+    if (antes && antes.valor_cent === cent) return res.json({ ok: true, cambios: 0 });
+    db.prepare('INSERT INTO main.precios_hora_puesto (sucursal_id, puesto, valor_cent, desde, creado_por, creado_por_nombre) VALUES (?, ?, ?, ?, ?, ?)').run(s, puesto, cent, hoy, req.usuarioSesion.id, req.usuarioSesion.nombre);
+    const suc = db.prepare('SELECT nombre FROM main.sucursales WHERE id = ?').get(s)?.nombre || s;
+    app.locals.auditoria?.registrar(req, 'precio_hora', s, 'cambio', `${suc} · ${puesto}: hora ${antes ? '$' + (antes.valor_cent / 100).toFixed(2) : 'sin precio'} → $${(cent / 100).toFixed(2)} desde ${hoy}`);
+    res.json({ ok: true, cambios: 1 });
   }));
 
   // ---------- Tiempo extra ----------
@@ -257,7 +314,7 @@ module.exports = function asistencia(app, db, h) {
     if (!puede(req, 'personal.ver')) return negar(res);
     const hoy = ahoraMexico().fecha;
     sembrarHorarios(db);
-    res.json({ dias: DIAS, horarios: db.prepare('SELECT h.*, s.nombre AS sucursal FROM horarios h LEFT JOIN main.sucursales s ON s.id = h.sucursal_id ORDER BY s.nombre, h.activo DESC, h.nombre').all().map(x => horarioCompleto(x, hoy)), puede: { editar: puede(req, 'asistencia.horarios') } });
+    res.json({ dias: DIAS, horarios: db.prepare('SELECT h.*, s.nombre AS sucursal FROM horarios h LEFT JOIN main.sucursales s ON s.id = h.sucursal_id ORDER BY s.nombre, h.activo DESC, h.nombre').all().map(x => horarioCompleto(x, hoy)), puede: { editar: puede(req, 'asistencia.horarios'), precios: verDinero(req) } });
   }));
   const datosVersion = b => {
     const v = validarDias(b.dias); if (v.error) return v;

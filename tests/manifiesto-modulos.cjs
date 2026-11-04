@@ -63,7 +63,7 @@ module.exports = {
       vistas: ['rh', 'personal', 'asistencia'],
       // Reloj checador (2026-11-03): checadas, sus correcciones y los kioscos; el kiosco entra sin sesión, con su token.
       tablas: ['personal', 'documentos_personal', 'incidencias_personal', 'checadas', 'checadas_correcciones', 'checador_dispositivos', 'checador_enlaces',
-        'horarios', 'horario_versiones', 'personal_horario', 'dias_festivos', 'extra_autorizaciones'],
+        'horarios', 'horario_versiones', 'personal_horario', 'dias_festivos', 'extra_autorizaciones', 'precios_hora_puesto'],
       rutas: [/^\/api\/personal(\/|$)/, /^\/api\/(asistencia|rh|publico\/(kiosco|celular))(\/|$)/],
       pendientes: 'licencias y contratos por vencer, quién falta esta semana y órdenes sin técnico responsable',
       inicio: ['inicio-personal'],

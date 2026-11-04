@@ -95,6 +95,18 @@ const VIE = sumar(sumar(HOY, -7), -((dow(sumar(HOY, -7)) - 5 + 7) % 7)), LUN = s
     'Semana de nómina viernes a jueves (cualquier día lleva a su viernes): extra 18:10, autorizado 17:40 (la última autorización cuenta) → 9 h dobles y 8:40 triples; 1 falta, 1 retardo, domingo y festivo', tj);
 
   revisa(tj.dias_trabajados === 5 && tj.permisos === 1 && tj.descansos_trabajados === 1 && tj.extra_sin_autorizar_min === 0 && tj.sin_salida === 0, 'Totales para el Excel: 5 días trabajados, 1 permiso, 1 descanso trabajado, nada sin autorizar', tj);
+  // Precio de la hora por puesto (2026-11-03): quien ve sueldos ve el pago; 9 h dobles y 8:40 triples a $62.35 la hora.
+  revisa(sem.dinero === true && sem.filas.find(x => x.personal_id === juan.id).dinero.valor_hora_cent === null, 'Sin precio del puesto, la semana dice «sin precio» (no inventa uno)');
+  revisa((await pedir('PUT', '/asistencia/precios', T.Gema, { sucursal_id: qro.id, puesto: 'Operador', valor: '62.355' }))[0] === 400, 'Precio con más de 2 decimales: no');
+  revisa((await pedir('PUT', '/asistencia/precios', T.Valeria, { sucursal_id: qro.id, puesto: 'Operador', valor: 62.35 }))[0] === 403, 'Ventas no pone precios');
+  exigir(await pedir('PUT', '/asistencia/precios', T.Gema, { sucursal_id: qro.id, puesto: 'Operador', valor: '$62.35' }), 'precio del operador');
+  { const [, s2] = await pedir('GET', '/asistencia/semana?desde=' + D(3), T.Gema), dj = s2.filas.find(x => x.personal_id === juan.id).dinero;
+    // 540 min × 6235 × 2 / 60 = 112230; 520 min × 6235 × 3 / 60 = 162110.
+    revisa(dj.valor_hora_cent === 6235 && dj.dobles_cent === 112230 && dj.triples_cent === 162110 && dj.total_cent === 274340, 'Pago: 9 h al doble $1,122.30 + 8:40 al triple $1,621.10 = $2,743.40 (el primer precio vale también para semanas anteriores)', dj); }
+  exigir(await pedir('PUT', '/asistencia/precios', T.Gema, { sucursal_id: qro.id, puesto: 'Operador', valor: 70 }), 'precio nuevo');
+  revisa((await pedir('GET', '/asistencia/semana?desde=' + D(3), T.Gema))[1].filas.find(x => x.personal_id === juan.id).dinero.valor_hora_cent === 7000, 'Si se corrige el mismo día, manda el último precio');
+  revisa(!('dinero' in (await pedir('GET', '/asistencia/semana?desde=' + D(3), T.Gus))[1]) || (await pedir('GET', '/asistencia/precios', T.Gus))[1].sucursales.every(s => s.id !== qro.id), 'El gerente de CDMX no ve ni cambia los precios de Querétaro');
+  revisa((await pedir('PUT', '/asistencia/precios', T.Gus, { sucursal_id: qro.id, puesto: 'Operador', valor: 1 }))[0] === 400, 'Ni puede ponerlos');
   console.log('4. Versiones de horario');
   revisa((await pedir('PUT', '/asistencia/horarios/' + op.id, T.Valeria, { dias: { 1: { entrada: '08:00', salida: '17:00' } }, tolerancia_min: 5, comida_min: 60 }))[0] === 403, 'Ventas no cambia horarios');
   revisa((await pedir('PUT', '/asistencia/horarios/' + op.id, T.Gema, { dias: { 1: { entrada: '08:00', salida: '17:00' } }, tolerancia_min: 5, comida_min: 60, desde: sumar(HOY, -20) }))[0] === 400, 'Un horario no se cambia hacia atrás más de 7 días');
