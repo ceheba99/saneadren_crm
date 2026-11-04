@@ -1777,6 +1777,8 @@ app.get('/api/admin/backup', async (req, res) => {
     res.status(500).json({ error: 'No se pudo generar el respaldo' });
   }
 });
+// Respaldo completo: la base + la carpeta «archivos/» (PDF de facturas, expedientes, fotos, comprobantes) en un .tar.
+require('./respaldo-completo')(app, db, h, { hoyMexico });
 
 // Red de seguridad final: cualquier error no capturado responde 500 en vez de tumbar el proceso.
 app.use((err, req, res, next) => {
