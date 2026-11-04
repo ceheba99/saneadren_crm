@@ -7,6 +7,9 @@
 //  3. Checadas: doble toque no duplica; otra sucursal queda «por revisar»; a mano solo con motivo y nunca en el futuro;
 //     anular con motivo; la base no deja borrar ni cambiar la hora (triggers).
 //  4. Permisos y sucursales: sin «Ver asistencia» no ve checadas; otra sucursal «no existe».
+//  5. F2: foto cifrada en disco (sin foto → «por revisar»), solo la ve quien ve la asistencia; checadas sin conexión
+//     (PIN revisado al subir, hora calculada con la «edad», una sola vez aunque se reintente, «por revisar»); la cámara
+//     solo se permite en /kiosco.
 // Uso: node tests/simulacion-checador.cjs
 const { spawn } = require('child_process');
 const fs = require('fs'), os = require('os'), path = require('path'), crypto = require('crypto');
@@ -31,6 +34,10 @@ const revisa = (cond, texto, extra) => { n++; if (!cond) { malos.push(texto); co
 const exigir = (r, que) => { if (r[0] !== 200 && r[0] !== 201) throw new Error('No se pudo ' + que + ': ' + JSON.stringify(r[1])); return r[1]; };
 const conBase = fn => { const d = new DatabaseSync(DB); try { d.exec('PRAGMA busy_timeout = 5000'); return fn(d); } finally { d.close(); } };
 const HOY = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Mexico_City' }).format(new Date());
+// Una «foto» JPEG de prueba con una marca para buscarla en el disco.
+const MARCA_FOTO = 'FOTO-SECRETA-' + crypto.randomBytes(6).toString('hex');
+const FOTO = 'data:image/jpeg;base64,' + Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.from(MARCA_FOTO), crypto.randomBytes(3000), Buffer.from([0xff, 0xd9])]).toString('base64');
+const archivosDe = d => fs.readdirSync(d, { withFileTypes: true }).flatMap(e => e.isDirectory() ? archivosDe(path.join(d, e.name)) : [path.join(d, e.name)]);
 
 (async () => {
   for (let i = 0; i < 160 && !/corriendo/.test(salida); i++) await espera(100);
@@ -100,7 +107,7 @@ const HOY = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Mexico_City' }
   const [se, estado] = await kio(KQ, 'GET', 'estado');
   revisa(se === 200 && estado.fecha === HOY && /^\d\d:\d\d$/.test(estado.hora), 'El kiosco muestra la fecha y hora del servidor en hora de México', estado);
   const [, i1] = await kio(KQ, 'POST', 'identificar', { codigo: altaJuan.codigo, pin: PIN });
-  const [sc, ch] = await kio(KQ, 'POST', 'checar', { ticket: i1.ticket, tipo: 'entrada' });
+  const [sc, ch] = await kio(KQ, 'POST', 'checar', { ticket: i1.ticket, tipo: 'entrada', foto: FOTO });
   revisa(sc === 201 && ch.nombre === 'Juan' && ch.tipo === 'Entrada' && Object.keys(ch).sort().join() === 'hora,id,nombre,tipo', 'Checa su entrada; el kiosco solo recibe nombre corto, tipo y hora', ch);
   const fila = conBase(d => d.prepare('SELECT * FROM checadas WHERE id = ?').get(ch.id));
   const ahoraMx = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Mexico_City', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date());
@@ -154,6 +161,35 @@ const HOY = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Mexico_City' }
   revisa(intento(`UPDATE checadas SET estado = 'valida' WHERE id = ${ch.id}`), 'Una checada anulada no se «revive» a mano');
   revisa(intento('DELETE FROM checadas_correcciones') && intento("UPDATE checadas_correcciones SET motivo = 'otro motivo'"), 'La bitácora de correcciones no se borra ni se cambia');
   revisa(conBase(d => d.prepare('SELECT COUNT(*) n FROM checadas').get().n) === 3, 'Siguen todas las checadas (incluida la anulada)');
+
+  console.log('5. Foto, sin conexión y cámara');
+  revisa(!!fila.foto_archivo && !archivosDe(dir).some(f => fs.readFileSync(f).includes(MARCA_FOTO)), 'La foto se guarda cifrada: su contenido no aparece en ningún archivo del servidor', fila.foto_archivo);
+  const [sf, , , fotoBuf] = await (async () => { const x = await fetch(URLB + '/api/asistencia/checadas/' + ch.id + '/foto', { headers: { Authorization: 'Bearer ' + T.Gema } }); return [x.status, null, null, Buffer.from(await x.arrayBuffer())]; })();
+  revisa(sf === 200 && fotoBuf.includes(MARCA_FOTO), 'La gerente ve la foto de la checada (descifrada)');
+  revisa((await pedir('GET', '/asistencia/checadas/' + ch.id + '/foto', T.Valeria))[0] === 403, 'Ventas no ve la foto');
+  revisa((await pedir('GET', '/asistencia/checadas/' + ch.id + '/foto', T.Gus))[0] === 404, 'El gerente de otra sucursal no ve la foto');
+  revisa((await pedir('GET', '/auditoria?entidad=personal&id=' + juan.id, A))[2].includes('vio la foto'), 'Ver la foto queda en la bitácora');
+  const [, i6] = await kio(KQ, 'POST', 'identificar', { codigo: altaJuan.codigo, pin: PIN });
+  const [, ch6] = await kio(KQ, 'POST', 'checar', { ticket: i6.ticket, tipo: 'comida_regresa', foto: 'data:image/jpeg;base64,bm8gZXMgdW5hIGZvdG8=' });
+  revisa(ch6.sin_foto && conBase(d => d.prepare('SELECT estado, observaciones FROM checadas WHERE id = ?').get(ch6.id)).estado === 'por_revisar', 'Sin foto (o con algo que no es foto) la checada queda «por revisar»', ch6);
+  // Sin conexión: hace 2 horas, con el reloj interno del kiosco.
+  const uid1 = crypto.randomBytes(15).toString('base64url'), hace = 2 * 3600000;
+  const [so, off] = await kio(KQ, 'POST', 'sin-conexion', { uid: uid1, codigo: altaJuan.codigo, pin: PIN, tipo: 'salida', foto: FOTO, edad_ms: hace, monotonica: true, hora_dispositivo: new Date(Date.now() - hace).toISOString() });
+  const fo = conBase(d => d.prepare('SELECT * FROM checadas WHERE id = ?').get(off.id) || {});
+  revisa(so === 201 && fo.sin_conexion === 1 && fo.estado === 'por_revisar' && Math.abs(Date.parse(fo.momento_utc) - (Date.now() - hace)) < 60000 && /reloj interno/.test(fo.observaciones), 'Checada sin conexión: se sube con la hora de cuando se hizo y queda «por revisar»', { off, fo });
+  const [, rep2] = await kio(KQ, 'POST', 'sin-conexion', { uid: uid1, codigo: altaJuan.codigo, pin: PIN, tipo: 'salida', foto: FOTO, edad_ms: hace + 30000, monotonica: true });
+  revisa(rep2.repetida && rep2.id === off.id && conBase(d => d.prepare('SELECT COUNT(*) n FROM checadas WHERE uid_kiosco = ?').get(uid1).n) === 1, 'Si el kiosco la reintenta, no se duplica', rep2);
+  const [sw, jw] = await kio(KQ, 'POST', 'sin-conexion', { uid: crypto.randomBytes(15).toString('base64url'), codigo: altaJuan.codigo, pin: '0000', tipo: 'entrada', edad_ms: 1000 });
+  revisa(sw === 401 && jw.descartar, 'Sin conexión con PIN equivocado: se rechaza al subir (y el kiosco la descarta)', jw);
+  const [sv, jv] = await kio(KQ, 'POST', 'sin-conexion', { uid: crypto.randomBytes(15).toString('base64url'), codigo: altaJuan.codigo, pin: PIN, tipo: 'entrada', edad_ms: 8 * 86400000 });
+  revisa(sv === 400 && jv.descartar, 'Una checada guardada de hace más de 7 días no se acepta (se registra a mano con motivo)', jv);
+  revisa((await kio(KQ, 'POST', 'sin-conexion', { uid: crypto.randomBytes(15).toString('base64url'), codigo: altaJuan.codigo, pin: PIN, tipo: 'entrada', edad_ms: -5000 }))[0] === 400, 'Una «edad» negativa (hora en el futuro) no se acepta');
+  const altaNueva = exigir(await pedir('POST', '/asistencia/personal/' + juan.id + '/pin', T.Gema), 'PIN temporal nuevo');
+  const [st2, jt2] = await kio(KQ, 'POST', 'sin-conexion', { uid: crypto.randomBytes(15).toString('base64url'), codigo: altaJuan.codigo, pin: altaNueva.pin, tipo: 'entrada', edad_ms: 1000 });
+  revisa(st2 === 409 && jt2.descartar, 'Con PIN temporal no se acepta sin conexión (el PIN se elige con internet)', jt2);
+  revisa(!conBase(d => d.prepare("SELECT 1 FROM checadas WHERE momento_utc > ?").get(new Date(Date.now() + 60000).toISOString())), 'Ninguna checada quedó en el futuro');
+  const hk = await fetch(URLB + '/kiosco'), hi = await fetch(URLB + '/');
+  revisa(hk.status === 200 && /camera=\(self\)/.test(hk.headers.get('permissions-policy')) && /camera=\(\)/.test(hi.headers.get('permissions-policy')), 'La cámara solo se permite en la página del kiosco', [hk.headers.get('permissions-policy'), hi.headers.get('permissions-policy')]);
   revisa(!salida.includes(PIN + '"') && !salida.includes(altaJuan.pin + '"'), 'Los PINes no salen en el registro del servidor');
 
   console.log(`\n${n - malos.length}/${n} correctas`);

@@ -158,9 +158,20 @@ const Personal = (() => {
     if (pinNuevo) h += `<p class="pe-pin-nuevo" role="alert">Código <b>${esc(pinNuevo.codigo)}</b> · PIN temporal <b>${esc(pinNuevo.pin)}</b><br><small>Anótalo y dáselo a la persona: no se vuelve a mostrar. En su primera checada elegirá su propio PIN.</small></p>`;
     h += !e.codigo ? '<p class="ayuda">Todavía no está dado de alta en el reloj checador.</p>'
       : `<p>Código para checar: <b>${esc(e.codigo)}</b> · ${e.pin_temporal ? 'con PIN temporal (aún no elige el suyo)' : e.tiene_pin ? 'ya eligió su PIN' : 'sin PIN'}${e.checa ? '' : ' · no checa'}${e.bloqueado ? ` · <b class="pe-bloqueado">🔒 PIN bloqueado ${e.bloqueo_total ? 'hasta que lo desbloqueen' : 'unos minutos'} por intentos fallidos</b>` : ''}</p>`;
-    if (e.ultimas?.length) h += '<h4 class="pe-sub2">Últimas checadas</h4><ul class="pe-ordenes">' + e.ultimas.map(c => `<li>${esc(fecha(c.fecha))} ${esc(String(c.hora).slice(0, 5))} · ${esc(TIPOS_CHECADA[c.tipo] || c.tipo)}${esc(c.origen === 'manual' ? ' (a mano)' : '')}${esc(c.estado === 'anulada' ? ' (anulada)' : c.estado === 'por_revisar' ? ' (por revisar)' : '')}</li>`).join('') + '</ul>';
+    if (e.ultimas?.length) h += '<h4 class="pe-sub2">Últimas checadas</h4><ul class="pe-ordenes">' + e.ultimas.map(c => `<li>${esc(fecha(c.fecha))} ${esc(String(c.hora).slice(0, 5))} · ${esc(TIPOS_CHECADA[c.tipo] || c.tipo)}${esc(c.origen === 'manual' ? ' (a mano)' : '')}${esc(c.sin_conexion ? ' (sin conexión)' : '')}${esc(c.estado === 'anulada' ? ' (anulada)' : c.estado === 'por_revisar' ? ' (por revisar)' : '')}${c.tiene_foto && e.puede?.ver ? ` <button type="button" class="btn-link" data-pe-foto="${Number(c.id)}">📷 Ver foto</button>` : ''}</li>`).join('') + '</ul><div id="pe-foto-checada"></div>';
     if (e.puede?.editar && actual.activo) h += `<div class="btn-group"><button type="button" class="btn btn-secundario" data-pe-pin="${Number(id)}" data-pe-pin-hay="${e.codigo ? 1 : ''}">${e.codigo ? 'Dar un PIN temporal nuevo' : 'Dar de alta en el checador'}</button>${e.bloqueado ? `<button type="button" class="btn btn-outline" data-pe-desbloquear="${Number(id)}">Desbloquear PIN</button>` : ''}</div>`;
     cont.innerHTML = h;
+  }
+  // La foto se pide con la sesión y se muestra aquí mismo (no queda en la memoria del navegador al cerrar la ficha).
+  async function verFoto(id) {
+    const cont = $('pe-foto-checada'); if (!cont) return;
+    try {
+      const r = await api('/asistencia/checadas/' + Number(id) + '/foto');
+      if (!r.ok) { const j = await r.json().catch(() => ({})); throw new Error(j.error || 'No se pudo abrir la foto'); }
+      const url = URL.createObjectURL(await r.blob()), img = document.createElement('img');
+      img.src = url; img.alt = 'Foto de la checada'; img.className = 'pe-foto'; img.onload = () => URL.revokeObjectURL(url);
+      cont.replaceChildren(img);
+    } catch (err) { toast(err.message); }
   }
   async function darPin(id, yaTiene) {
     if (yaTiene && !await solicitarDialogo({ titulo: 'PIN temporal nuevo', mensaje: 'El PIN que usa ahora deja de servir. Se genera uno temporal y, en su próxima checada, elegirá otro.', aceptar: 'Dar PIN nuevo' })) return;
@@ -185,7 +196,7 @@ const Personal = (() => {
       const r = await api('/asistencia/dispositivos'), lista = await r.json().catch(() => []);
       if (!r.ok) throw new Error(lista.error || 'No se pudieron cargar los kioscos');
       const aqui = kioscoAqui()?.id;
-      cont.innerHTML = lista.length ? '<ul class="pe-ordenes">' + lista.map(k => `<li><b>${esc(k.nombre)}</b> · ${esc(k.sucursal || '')}${k.id === aqui ? ' · <b>este dispositivo</b>' : ''} <small>${k.activo ? 'registrado por ' + esc(k.registrado_por_nombre || '') + (k.ultimo_uso ? ' · último uso ' + esc(k.ultimo_uso) : '') : 'dado de baja por ' + esc(k.revocado_por || '')}</small>${k.activo ? ` <button type="button" class="btn btn-outline" data-pe-kiosco-baja="${Number(k.id)}">Dar de baja</button>` : ''}</li>`).join('') + '</ul>'
+      cont.innerHTML = lista.length ? '<ul class="pe-ordenes">' + lista.map(k => `<li><b>${esc(k.nombre)}</b> · ${esc(k.sucursal || '')}${k.id === aqui && k.activo ? ' · <b>este dispositivo</b> · <a href="/kiosco">Abrir el kiosco</a>' : ''} <small>${k.activo ? 'registrado por ' + esc(k.registrado_por_nombre || '') + (k.ultimo_uso ? ' · último uso ' + esc(k.ultimo_uso) : '') : 'dado de baja por ' + esc(k.revocado_por || '')}</small>${k.activo ? ` <button type="button" class="btn btn-outline" data-pe-kiosco-baja="${Number(k.id)}">Dar de baja</button>` : ''}</li>`).join('') + '</ul>'
         : '<p class="ayuda">Todavía no hay kioscos registrados.</p>';
     } catch (err) { cont.innerHTML = `<p class="aviso-error-carga" role="alert">${esc(err.message)}</p>`; }
   }
@@ -198,7 +209,7 @@ const Personal = (() => {
       const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.error || 'No se pudo registrar');
       try { localStorage.setItem(LLAVE_KIOSCO, JSON.stringify({ id: j.id, nombre: j.nombre, token: j.token })); } catch { throw new Error('Este navegador no deja guardar datos (¿modo privado?): no se puede usar como kiosco'); }
       $('pe-kiosco-nombre').value = '';
-      toast('Este dispositivo quedó registrado como kiosco «' + j.nombre + '»');
+      toast('Este dispositivo quedó registrado como kiosco «' + j.nombre + '». Ábrelo con «Abrir el kiosco».');
       cargarKioscos();
     } catch (err) { toast(err.message); }
   }
@@ -300,6 +311,7 @@ const Personal = (() => {
     else if (t.dataset.peDocQuitar) quitarDocumento(t.dataset.peDocQuitar);
     else if (t.dataset.pePin) darPin(t.dataset.pePin, !!t.dataset.pePinHay);
     else if (t.dataset.peDesbloquear) desbloquearPin(t.dataset.peDesbloquear);
+    else if (t.dataset.peFoto) verFoto(t.dataset.peFoto);
   });
   // Al cerrar la ficha (con la X, Esc o desde otra pantalla) se borra de la página: lo sensible no se queda ahí.
   new MutationObserver(() => { if (!$('overlay-personal').classList.contains('mostrar') && !ocupado) { $('pe-cuerpo').innerHTML = ''; actual = null; base = ''; } })
