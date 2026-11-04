@@ -162,7 +162,7 @@ const Personal = (() => {
     let h = '<h3 class="pe-sub">🕒 Reloj checador</h3>';
     if (pinNuevo) h += `<p class="pe-pin-nuevo" role="alert">Código <b>${esc(pinNuevo.codigo)}</b> · PIN temporal <b>${esc(pinNuevo.pin)}</b><br><small>Anótalo y dáselo a la persona: no se vuelve a mostrar. En su primera checada elegirá su propio PIN.</small></p>`;
     h += !e.codigo ? '<p class="ayuda">Todavía no está dado de alta en el reloj checador.</p>'
-      : `<p>Código para checar: <b>${esc(e.codigo)}</b> · ${e.pin_temporal ? 'con PIN temporal (aún no elige el suyo)' : e.tiene_pin ? 'ya eligió su PIN' : 'sin PIN'}${e.checa ? '' : ' · no checa'}${e.bloqueado ? ` · <b class="pe-bloqueado">🔒 PIN bloqueado ${e.bloqueo_total ? 'hasta que lo desbloqueen' : 'unos minutos'} por intentos fallidos</b>` : ''}</p>`;
+      : `<p>Código para checar: <b>${esc(e.codigo)}</b> · ${e.pin_temporal ? 'con PIN temporal (aún no elige el suyo)' : e.tiene_pin ? 'ya eligió su PIN' : 'sin PIN'}${e.checa ? '' : ' · no checa'}${e.bloqueado ? ` · <b class="pe-bloqueado">🔒 PIN bloqueado ${e.bloqueo_total ? (e.bloqueado_hasta ? 'un día' : 'hasta que lo desbloqueen') + ' (puedes desbloquearlo ya)' : 'unos minutos'} por intentos fallidos</b>` : ''}</p>`;
     if (hor) {
       h += `<p>Horario: <b>${esc(hor.actual?.nombre || 'sin horario')}</b>${hor.historial?.[0] ? ` <small>(desde ${esc(hor.historial[0].desde === '2020-01-01' ? 'el inicio' : fecha(hor.historial[0].desde))})</small>` : ''}</p>`;
       if (hor.puede?.editar && actual.activo) h += `<div class="filtros"><select id="pe-horario" aria-label="Horario">${hor.horarios.map(x => `<option value="${Number(x.id)}"${x.id === hor.actual?.horario_id ? ' selected' : ''}>${esc(x.nombre)}</option>`).join('')}</select><label>desde <input type="date" id="pe-horario-desde" value="${esc(hoy())}"></label><button type="button" class="btn btn-secundario" data-pe-horario="${Number(id)}">Asignar horario</button></div>`;
@@ -199,6 +199,8 @@ const Personal = (() => {
     try {
       const r = await api('/asistencia/personal/' + Number(id) + '/celular', { method: 'POST' }), j = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(j.error || 'No se pudo generar el enlace');
+      // Sin APP_URL en el servidor, el enlace se arma con la dirección con la que RH abrió el CRM (no con lo que diga la petición).
+      if (!j.url) j.url = location.origin + j.ruta;
       const tel = String(j.telefono || '').replace(/\D/g, '').slice(-10), texto = 'Saneadren: abre este enlace en TU celular para checar entrada y salida desde ahí (sirve una sola vez, 24 h): ' + j.url;
       $('pe-enlace').innerHTML = `<p class="pe-pin-nuevo" role="alert"><small>${esc(j.aviso)}</small><br><input class="pe-enlace" value="${esc(j.url)}" readonly aria-label="Enlace para el celular"><br>
         <button type="button" class="btn btn-outline" data-pe-copiar="${esc(j.url)}">Copiar enlace</button>

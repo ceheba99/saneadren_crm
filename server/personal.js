@@ -145,6 +145,14 @@ module.exports = function personal(app, db, h) {
   const usadas = (id, desde) => db.prepare("SELECT COALESCE(SUM(dias), 0) d FROM incidencias_personal WHERE personal_id = ? AND tipo = 'vacaciones' AND cancelada = 0 AND fecha_inicio >= ?").get(id, desde).d;
   const ve = req => P.puede(req, 'personal.ver'), edita = req => P.puede(req, 'personal.editar'), sensible = req => P.puede(req, 'personal.sensibles');
   const negar = (res, msg) => res.status(403).json({ error: msg || 'No tienes permiso para ver el personal' });
+  // Auditoría 2026-11-03: nadie se corrige a sí mismo (checadas, tiempo extra, horario, vacaciones e incidencias):
+  // lo hace otra persona con permiso. Dirección es la excepción (no tiene a quién pedírselo).
+  // Responde 403 y regresa true si «personalId» es la ficha ligada a la cuenta de quien pide.
+  const esPropio = (req, res, personalId, que) => {
+    if (P.direccion(req) || !db.prepare('SELECT 1 FROM main.personal WHERE id = ? AND usuario_id = ?').get(personalId, req.usuarioSesion?.id ?? -1)) return false;
+    res.status(403).json({ error: `No puedes ${que} de ti mismo: pídeselo a otra persona con permiso (RH, tu gerente o Dirección).`, codigo: 'PROPIO' });
+    return true;
+  };
 
   // Lo que se manda de una persona: lo sensible solo con permiso (si no, la CLABE enmascarada y lo demás fuera).
   // En la lista (lista = true) nunca va lo sensible, ni con permiso: así no sale todo de golpe en una sola respuesta.
@@ -389,6 +397,7 @@ module.exports = function personal(app, db, h) {
     if (!edita(req)) return negar(res, 'No tienes permiso para registrar incidencias');
     const p = leer(req.params.id);
     if (!p) return res.status(404).json({ error: 'Persona no encontrada' });
+    if (esPropio(req, res, p.id, 'registrar vacaciones o incidencias')) return;
     const b = req.body || {};
     if (!INCIDENCIAS[b.tipo]) return res.status(400).json({ error: 'Elige el tipo' });
     const ini = b.fecha_inicio, fin = b.fecha_fin || b.fecha_inicio;
@@ -417,6 +426,7 @@ module.exports = function personal(app, db, h) {
     if (!edita(req)) return negar(res, 'No tienes permiso para cancelar incidencias');
     const i = db.prepare('SELECT * FROM incidencias_personal WHERE id = ? AND personal_id IN (SELECT id FROM personal)').get(idDe(req.params.id));
     if (!i || i.cancelada) return res.status(404).json({ error: 'Registro no encontrado' });
+    if (esPropio(req, res, i.personal_id, 'cancelar vacaciones o incidencias')) return;
     const motivo = texto(req.body?.motivo, 200);
     if (!motivo || motivo.length < 4) return res.status(400).json({ error: 'Escribe por qué se cancela' });
     db.prepare('UPDATE main.incidencias_personal SET cancelada = 1, cancelada_por = ?, motivo_cancelacion = ? WHERE id = ?').run(req.usuarioSesion.nombre, motivo, i.id);
@@ -577,7 +587,7 @@ module.exports = function personal(app, db, h) {
   }
   asegurarCifrado();
 
-  return { revisarAlta, guardarAlta, PUESTOS, validarEquipo, guardarEquipo, responsableDesdeUsuario, equipoDe, textoEquipo, PAPELES, vacacionesDe: p => vacacionesDe(p, usadas, hoyMexico()), clabeValida, diasLFT };
+  return { esPropio, revisarAlta, guardarAlta, PUESTOS, validarEquipo, guardarEquipo, responsableDesdeUsuario, equipoDe, textoEquipo, PAPELES, vacacionesDe: p => vacacionesDe(p, usadas, hoyMexico()), clabeValida, diasLFT };
 };
 module.exports.diasLFT = diasLFT;
 module.exports.clabeValida = clabeValida;
