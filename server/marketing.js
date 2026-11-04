@@ -389,7 +389,7 @@ module.exports = function marketing(app, db, h) {
     const red = String(req.body?.red || ''); if (!p.redes.includes(red)) return res.status(400).json({ error: 'Elige una de las redes de la publicación' });
     const v = req.body.valores && typeof req.body.valores === 'object' ? req.body.valores : {}, x = {};
     for (const [k, n] of Object.entries(v)) {
-      if (!METRICAS[k]) return res.status(400).json({ error: 'Dato no válido: ' + k });
+      if (!Object.hasOwn(METRICAS, k)) return res.status(400).json({ error: 'Dato no válido: ' + k }); // no «constructor», «toString»… (H-002)
       if (n === null || n === '') { x[k] = null; continue; }
       if (!Number.isInteger(Number(n)) || Number(n) < 0 || Number(n) > 1e9) return res.status(400).json({ error: `Revisa «${METRICAS[k]}»: un número entero, sin puntos ni comas` });
       x[k] = Number(n);

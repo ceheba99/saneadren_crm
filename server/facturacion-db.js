@@ -102,6 +102,14 @@ function crearTablasFacturacion(db) {
     );
     CREATE INDEX IF NOT EXISTS idx_facturas_log_factura ON facturas_log(factura_id);
     CREATE INDEX IF NOT EXISTS idx_facturas_log_lead ON facturas_log(lead_id);
+    -- Candados de la base (auditoría 2026-11-04, H-021; CLAUDE.md regla 14): una factura con folio fiscal (UUID) nunca se
+    -- borra, y su UUID, total, serie, folio y orden no cambian (sí su estatus: cancelación, acuse…). Volver a escribir el
+    -- mismo valor (p. ej. al verificar) se permite.
+    CREATE TRIGGER IF NOT EXISTS facturas_timbradas_no_borrar BEFORE DELETE ON facturas WHEN COALESCE(OLD.uuid, '') <> ''
+      BEGIN SELECT RAISE(ABORT, 'Una factura timbrada nunca se borra: se cancela'); END;
+    CREATE TRIGGER IF NOT EXISTS facturas_timbradas_fijas BEFORE UPDATE OF uuid, total_cent, serie, folio, lead_id ON facturas
+      WHEN COALESCE(OLD.uuid, '') <> '' AND (NEW.uuid IS NOT OLD.uuid OR NEW.total_cent IS NOT OLD.total_cent OR NEW.serie IS NOT OLD.serie OR NEW.folio IS NOT OLD.folio OR NEW.lead_id IS NOT OLD.lead_id)
+      BEGIN SELECT RAISE(ABORT, 'Los datos de una factura timbrada no se cambian'); END;
 
     -- Factura global (público en general): enlaza UNA factura con VARIAS órdenes. Se usa desde la F6.
     CREATE TABLE IF NOT EXISTS factura_ventas (

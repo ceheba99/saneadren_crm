@@ -266,7 +266,7 @@ const archivosDe = d => fs.readdirSync(d, { withFileTypes: true }).flatMap(e => 
   const av = await fetch(URLB + '/aviso-privacidad-checador.html');
   revisa(av.status === 200 && /consentimiento expreso/i.test(await av.text()), 'El aviso de privacidad está publicado');
   revisa((await pedir('GET', '/asistencia/personal/' + juan.id, T.Gema))[1].aviso_firmado === false, 'La ficha avisa que falta el aviso firmado');
-  { const x = await fetch(URLB + '/api/personal/' + juan.id + '/documentos', { method: 'POST', headers: { Authorization: 'Bearer ' + T.Gema, 'Content-Type': 'application/octet-stream', 'X-Tipo': 'privacidad', 'X-Nombre': encodeURIComponent('aviso-juan.pdf') }, body: Buffer.from('%PDF-1.4 aviso firmado ' + crypto.randomBytes(8).toString('hex')) }); revisa(x.status === 201, 'Se sube el aviso firmado al expediente'); }
+  { const x = await fetch(URLB + '/api/personal/' + juan.id + '/documentos', { method: 'POST', headers: { Authorization: 'Bearer ' + T.Gema, 'Content-Type': 'application/octet-stream', 'X-Tipo': 'privacidad', 'X-Nombre': encodeURIComponent('aviso-juan.pdf') }, body: Buffer.from('%PDF-1.4 aviso firmado ' + crypto.randomBytes(8).toString('hex') + '\n%%EOF') }); revisa(x.status === 201, 'Se sube el aviso firmado al expediente'); }
   revisa((await pedir('GET', '/asistencia/personal/' + juan.id, T.Gema))[1].aviso_firmado === true, 'Con el aviso firmado en el expediente, la alerta desaparece');
 
   console.log(`\n${n - malos.length}/${n} correctas`);
