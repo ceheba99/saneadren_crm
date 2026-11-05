@@ -150,6 +150,18 @@ const VIE = sumar(sumar(HOY, -7), -((dow(sumar(HOY, -7)) - 5 + 7) % 7)), LUN = s
   revisa((await dia(D(4))).extra_min === 31, 'Llegar 31 min antes (7:59) sí cuenta, todo desde que llegó');
   revisa(lun.notas.every(x => !/No marcó su comida/.test(x)), 'Quien sí marca su comida no tiene el aviso', lun.notas);
 
+  console.log('7. Tiempo extra sin fin');
+  await checar(D(4), 'extra_inicia', '19:00'); // se le olvidó el «Fin de tiempo extra»
+  const vie3 = await dia(D(4));
+  revisa(vie3.extra_min === 31 && vie3.notas.includes('Inició tiempo extra y no marcó el fin'), 'Sin el fin, ese bloque no cuenta (no se inventa la hora) y RH ve el aviso', vie3);
+  const [, sem3] = await pedir('GET', '/asistencia/semana?desde=' + D(3), T.Gema);
+  revisa(sem3.filas.find(x => x.personal_id === juan.id).totales.extra_sin_fin === 1, 'La semana lo cuenta en sus pendientes');
+  await checar(D(4), 'extra_termina', '20:30'); // RH agrega el fin real con motivo
+  const vie4 = await dia(D(4));
+  revisa(vie4.extra_min === 31 + 90 && !vie4.notas.includes('Inició tiempo extra y no marcó el fin'), 'Con el fin agregado, el bloque cuenta y el aviso se va', vie4);
+  await checar(HOY, 'extra_inicia', '06:00');
+  revisa(!(await dia(HOY)).notas.includes('Inició tiempo extra y no marcó el fin'), 'Hoy todavía no avisa (puede seguir trabajando)');
+
   console.log(`\n${n - malos.length}/${n} correctas`);
   srv.kill(); fs.rmSync(dir, { recursive: true, force: true });
   process.exit(malos.length ? 1 : 0);
