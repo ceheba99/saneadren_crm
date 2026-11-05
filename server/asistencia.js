@@ -14,7 +14,9 @@
 //    entrada = primera «entrada», salida = última «salida», comida = salida a comer → regreso. Trabajado = salida −
 //    entrada − comida. Retardo = minutos después de la hora de entrada, si pasa la tolerancia. Exceso de comida, salida
 //    anticipada. Tiempo extra MINUTO A MINUTO (decidido con Dirección) = lo trabajado después de la hora de salida del
-//    horario, unido con los bloques «inicio / fin de tiempo extra» (sin contar dos veces). En descanso o festivo, todo lo
+//    horario, unido con los bloques «inicio / fin de tiempo extra» (sin contar dos veces). Llegar ANTES de la entrada
+//    (2026-11-05, Dirección): hasta 30 min antes no es extra; si llega más temprano, cuenta todo desde que llegó
+//    (como la tolerancia del retardo). Al extra nunca se le descuenta comida: solo cuenta la comida que se marca. En descanso o festivo, todo lo
 //    trabajado es extra (y se marca). Falta = día laboral ya pasado sin entrada, sin vacaciones/incapacidad/permiso.
 //  · Semana de nómina: de VIERNES a JUEVES (decidido con Dirección el 2026-11-03: cierra el jueves y se paga el viernes).
 //  · Tiempo extra: lo AUTORIZAN RH y el Gerente (permiso «Autorizar tiempo extra»), hasta los minutos calculados. Cada
@@ -170,6 +172,8 @@ module.exports = function asistencia(app, db, h) {
   }
   const festivoDe = fecha => db.prepare('SELECT nombre FROM main.dias_festivos WHERE fecha = ? AND activo = 1').get(fecha)?.nombre || null;
 
+  const LLEGADA_ANTES_MIN = 30; // llegar hasta 30 min antes de la entrada no es tiempo extra (Dirección, 2026-11-05)
+  const horas = m => (m >= 60 ? Math.floor(m / 60) + ' h' + (m % 60 ? ' ' + (m % 60) + ' min' : '') : m + ' min');
   // ---------- Cálculo de un día ----------
   function calcularDia(p, fecha, hoy = ahoraMexico().fecha) {
     const hor = horarioDe(p.id, fecha), dia = hor?.dias[diaSemana(fecha)] || null, festivo = festivoDe(fecha);
@@ -198,7 +202,11 @@ module.exports = function asistencia(app, db, h) {
       // Los bloques marcados con los botones solo cuentan FUERA del horario (auditoría 2026-11-05: apretar «Inicio» y
       // «Fin de tiempo extra» a media jornada convertía horas normales en extra).
       const desdeH = min(dia.entrada), hastaH = min(dia.salida), fuera = bloques.flatMap(([a, b]) => [[a, Math.min(b, desdeH)], [Math.max(a, hastaH), b]]);
-      r.extra_min = unidos([...(salida !== null ? [[hastaH, salida]] : []), ...fuera]);
+      const antes = entrada !== null && entrada < desdeH - LLEGADA_ANTES_MIN ? [[entrada, desdeH]] : [];
+      if (antes.length) r.notas.push(`Llegó ${horas(desdeH - entrada)} antes de su entrada (cuenta como tiempo extra)`);
+      r.extra_min = unidos([...antes, ...(salida !== null ? [[hastaH, salida]] : []), ...fuera]);
+      // La comida siempre se marca: si trabajó 6 h o más sin marcarla, RH lo ve (no se descuenta sola).
+      if (hor.comida && trabajado >= 360 && !validas.some(c => c.tipo === 'comida_sale')) r.notas.push('No marcó su comida');
       if (entrada === null && fecha < hoy && !AUSENCIAS.includes(r.incidencia)) r.falta = true;
     } else if (trabajado !== null || bloques.length) {
       // Descanso o festivo trabajado: todo lo trabajado es tiempo extra (y se marca para pagarlo como tal).
