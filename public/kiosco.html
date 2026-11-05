@@ -57,6 +57,7 @@
     .checar .camara{width:100%;max-height:58vh;margin:0;}
     .checar .botones{margin-top:0;}
   }
+  .btn-chico{font-size:.95rem;padding:10px 16px;margin-top:12px;color:var(--sec);}
   .btn-credencial{font:inherit;width:100%;display:flex;flex-direction:column;align-items:center;gap:6px;padding:26px 16px;margin:0 0 12px;background:#fff;border:3px dashed var(--amarillo);border-radius:16px;color:var(--texto);cursor:pointer;touch-action:manipulation;}
   .btn-credencial .icono{font-size:3.2rem;line-height:1;}
   .btn-credencial b{font-size:1.35rem;}
@@ -185,22 +186,114 @@
     return caja;
   }
 
+  // ---------- Biométrico facial (server/biometria.js) ----------
+  // face-api (alojado en /vendor/face-api) calcula en la tableta un «descriptor» de 128 números de la cara; el servidor lo
+  // compara con la plantilla de la persona. Prueba de vida: parpadear (los ojos se cierran y se vuelven a abrir).
+  let faceApi = null;
+  function cargarFaceApi() {
+    if (faceApi) return faceApi;
+    faceApi = new Promise((ok, mal) => {
+      const sc = document.createElement('script'); sc.src = '/vendor/face-api/face-api.js'; sc.onerror = () => mal(new Error('No se pudo cargar el reconocimiento facial'));
+      sc.onload = async () => {
+        try {
+          const f = window.faceapi, url = '/vendor/face-api/model';
+          await Promise.all([f.nets.tinyFaceDetector.loadFromUri(url), f.nets.faceLandmark68Net.loadFromUri(url), f.nets.faceRecognitionNet.loadFromUri(url)]);
+          ok(f);
+        } catch (e) { mal(e); }
+      };
+      document.head.append(sc);
+    });
+    faceApi.catch(() => { faceApi = null; }); // si falló, se reintenta la próxima vez
+    return faceApi;
+  }
+  // Apertura del ojo (6 puntos del contorno): baja mucho al cerrarlo.
+  const apertura = pts => { const d = (a, b) => Math.hypot(a.x - b.x, a.y - b.y); return (d(pts[1], pts[5]) + d(pts[2], pts[4])) / (2 * d(pts[0], pts[3]) || 1); };
+  // Mira la cámara hasta tener «muestras» descriptores y un parpadeo, o hasta «ms». «aviso(texto)» actualiza la pantalla.
+  async function capturarCara({ muestras = 1, ms = 9000, aviso = () => {} } = {}) {
+    const f = await cargarFaceApi(), v = $('video'), opciones = new f.TinyFaceDetectorOptions({ inputSize: 320, scoreThreshold: 0.5 }), hasta = Date.now() + ms;
+    let maxAbierto = 0, cerro = false, vivo = false, ultima = 0; const descriptores = [];
+    while (Date.now() < hasta && (!vivo || descriptores.length < muestras)) {
+      if (!camaraLista || !v.videoWidth) { await new Promise(r => setTimeout(r, 200)); continue; }
+      const r = await f.detectSingleFace(v, opciones).withFaceLandmarks().withFaceDescriptor().catch(() => null);
+      if (!r) { aviso('No te vemos: acércate y mira de frente a la cámara'); await new Promise(z => setTimeout(z, 120)); continue; }
+      const p = r.landmarks.positions, ojo = (apertura(p.slice(36, 42)) + apertura(p.slice(42, 48))) / 2;
+      maxAbierto = Math.max(maxAbierto * 0.995, ojo);
+      if (!cerro && ojo < maxAbierto * 0.7) cerro = true;
+      else if (cerro && ojo > maxAbierto * 0.85) vivo = true;
+      // Muestras con los ojos abiertos, separadas un poco en el tiempo.
+      if (ojo > maxAbierto * 0.85 && Date.now() - ultima > 350 && descriptores.length < muestras) { descriptores.push(Array.from(r.descriptor, x => Math.round(x * 1e6) / 1e6)); ultima = Date.now(); }
+      aviso(vivo ? (descriptores.length < muestras ? 'Muy bien. No te muevas…' : 'Listo') : 'Ahora parpadea');
+    }
+    return { vivo, descriptores };
+  }
+  function pantallaCara(titulo, texto) {
+    const msg = el('p', { className: 'ayuda', textContent: texto });
+    pintar(el('h1', { textContent: titulo }), msg, el('div', { className: 'checar' }, vistaCamara()), el('button', { type: 'button', className: 'btn', textContent: 'Cancelar', onclick: inicio }));
+    $('pantalla').classList.add('ancha');
+    return t => { msg.textContent = t; };
+  }
+  // Después del PIN: hasta 3 intentos. Si no coincide, checa igual y la checada queda por revisar.
+  async function verificarCara(datos, intento = 1) {
+    estado.teclado = null;
+    const yo = Symbol('cara'); estado.cara = yo;
+    reiniciarEspera(30000);
+    const aviso = pantallaCara('Hola, ' + datos.nombre + ': mira a la cámara', 'Mira de frente y parpadea');
+    let cap;
+    try { cap = await capturarCara({ muestras: 1, ms: 9000, aviso }); }
+    catch { if (estado.cara === yo) elegirTipo({ ...datos, aviso: 'No se pudo usar el reconocimiento facial: tu checada quedará por revisar.' }); return; }
+    if (estado.cara !== yo) return; // canceló
+    const rostro = { descriptor: cap.descriptores[0] || null, vivo: cap.vivo };
+    let coincide = false;
+    if (rostro.descriptor && rostro.vivo) { try { const r = await api('rostro-verificar', { ticket: datos.ticket, rostro }); coincide = r.ok && r.j.coincide; } catch { coincide = false; } }
+    if (estado.cara !== yo) return;
+    if (coincide) return elegirTipo({ ...datos, rostro, aviso: '✔ Te reconocimos. ¿Qué vas a registrar?' });
+    if (intento < 3) {
+      aviso(!rostro.descriptor ? 'No vimos tu cara. Otra vez…' : !rostro.vivo ? 'No vimos que parpadearas. Otra vez…' : 'No te reconocimos. Acércate, con buena luz, y otra vez…');
+      await new Promise(r => setTimeout(r, 1500));
+      if (estado.cara === yo) verificarCara(datos, intento + 1);
+      return;
+    }
+    elegirTipo({ ...datos, rostro, aviso: 'No se reconoció tu cara: tu checada quedará por revisar.' });
+  }
+  // Registro de la cara con el código de 6 dígitos que da RH desde la ficha.
+  function registrarCara() {
+    estado = {}; adelantadas = '';
+    reiniciarEspera(60000);
+    teclado('Registrar mi cara', 'Escribe el código de 6 números que te dio RH', false, async codigo => {
+      estado.teclado = null;
+      const yo = Symbol('registro'); estado.cara = yo;
+      reiniciarEspera(45000);
+      pintar(el('p', { className: 'ayuda', textContent: 'Prendiendo la cámara…' }));
+      await camaraA(4000);
+      if (estado.cara !== yo) return;
+      if (!camaraLista) return error('No se pudo prender la cámara. Avisa a RH.');
+      const aviso = pantallaCara('Registrar mi cara', 'Mira de frente a la cámara, sin lentes oscuros ni gorra, y parpadea');
+      let cap;
+      try { cap = await capturarCara({ muestras: 3, ms: 15000, aviso }); } catch (e) { return error(e.message || 'No se pudo cargar el reconocimiento facial'); }
+      if (estado.cara !== yo) return;
+      if (!cap.vivo || cap.descriptores.length < 3) return error('No se pudo tomar tu cara (que se vea de frente, con buena luz, y parpadea). Vuelve a intentarlo con el mismo código.', registrarCara);
+      let r; try { r = await api('rostro-registrar', { codigo, descriptores: cap.descriptores, vivo: cap.vivo }); } catch { return error('Sin conexión: el registro de la cara se hace con internet.'); }
+      if (!r.ok) return error(r.j.error || 'No se pudo registrar tu cara');
+      listo('ok', 'Cara registrada', `Listo, ${r.j.nombre}. Desde ahora el reloj comprobará que eres tú.`);
+    }, inicio, null, null, 6);
+  }
+
   // ---------- Teclado numérico (4 dígitos) ----------
   // Teclas que llegan mientras se cambia de pantalla (alguien teclea rápido en un teclado físico): pasan a la siguiente.
   let adelantadas = '';
   // «lateral»: algo que va a un lado del teclado (la cámara para leer la credencial).
-  function teclado(titulo, ayuda, oculto, alTerminar, atras, lateral, debajo) {
+  function teclado(titulo, ayuda, oculto, alTerminar, atras, lateral, debajo, largo = 4) {
     let valor = '', terminado = false;
     const muestra = el('div', { className: oculto ? 'puntos' : 'digitos' });
     const refrescar = () => {
-      if (oculto) muestra.replaceChildren(...[0, 1, 2, 3].map(i => el('span', { className: i < valor.length ? 'lleno' : '' })));
-      else muestra.textContent = valor.padEnd(4, '·');
+      if (oculto) muestra.replaceChildren(...Array.from({ length: largo }, (_, i) => el('span', { className: i < valor.length ? 'lleno' : '' })));
+      else muestra.textContent = valor.padEnd(largo, '·');
     };
     const tecla = d => {
       reiniciarEspera();
       if (terminado) { adelantadas = (adelantadas + d).slice(0, 4); return; }
       valor += d; refrescar();
-      if (valor.length === 4) { terminado = true; setTimeout(() => alTerminar(valor), 120); }
+      if (valor.length === largo) { terminado = true; setTimeout(() => alTerminar(valor), 120); }
     };
     const borrar = () => { reiniciarEspera(); if (terminado) return; valor = valor.slice(0, -1); refrescar(); };
     const teclas = ['1', '2', '3', '4', '5', '6', '7', '8', '9'].map(d => el('button', { type: 'button', textContent: d, onclick: () => tecla(d) }));
@@ -260,7 +353,8 @@
     soltarCamara(); // en reposo, la cámara apagada
     // Con lector de QR: el botón grande va a un lado del teclado (en horizontal) o arriba (en vertical).
     teclado('Escribe tu código', 'Tu número de 4 dígitos para checar', false, codigo => pedirPin(codigo), null,
-      lectorQR ? el('button', { type: 'button', className: 'btn-credencial', onclick: leerCredencial }, el('span', { className: 'icono', textContent: '🪪' }), el('b', { textContent: 'Leer mi credencial' }), el('small', { textContent: 'Toca aquí y enseña el QR a la cámara' })) : null);
+      lectorQR ? el('button', { type: 'button', className: 'btn-credencial', onclick: leerCredencial }, el('span', { className: 'icono', textContent: '🪪' }), el('b', { textContent: 'Leer mi credencial' }), el('small', { textContent: 'Toca aquí y enseña el QR a la cámara' })) : null,
+      el('button', { type: 'button', className: 'btn btn-chico', textContent: '🙂 Registrar mi cara (con RH)', onclick: registrarCara }));
   }
   function pedirPin(codigo) {
     estado.esCodigo = false;
@@ -283,8 +377,10 @@
     if (sinConexion) { sinConexion = false; avisos(); }
     if (r.j.cambiar_pin) return nuevoPin(r.j);
     await camaraA(); // que la vista de la cámara ya esté prendida al elegir
-    elegirTipo(r.j);
+    continuar(r.j);
   }
+  // Con biométrico (la persona firmó y registró su cara), antes de elegir se comprueba su cara.
+  const continuar = datos => (datos.biometria ? verificarCara(datos) : elegirTipo(datos));
   function nuevoPin(datos) {
     reiniciarEspera();
     teclado('Hola, ' + datos.nombre + ': elige tu PIN', '4 números que solo tú sepas. No uses 1111, 1234 ni tu código.', true, nuevo => {
@@ -292,7 +388,7 @@
         if (otra !== nuevo) return error('Los dos PIN no coinciden. Vuelve a empezar.');
         let r; try { r = await api('cambiar-pin', { ticket: datos.ticket, nuevo }); } catch { return error('Sin conexión: el PIN nuevo se elige con internet. Intenta más tarde.'); }
         if (!r.ok) { if (r.j.ticket) { datos.ticket = r.j.ticket; return error(r.j.error, () => nuevoPin(datos)); } return error(r.j.error || 'No se pudo guardar tu PIN'); }
-        elegirTipo({ ...r.j, aviso: 'Listo: ya tienes tu PIN. Ahora registra tu checada.' });
+        await camaraA(); continuar({ ...r.j, aviso: 'Listo: ya tienes tu PIN. Ahora registra tu checada.' });
       }, () => nuevoPin(datos));
     });
   }
@@ -313,10 +409,10 @@
     pintar(el('p', { className: 'ayuda', textContent: 'Registrando…' }));
     if (datos.sinConexion) return guardarSinConexion({ ...datos.sinConexion, tipo, foto: imagen });
     let r;
-    try { r = await api('checar', { ticket: datos.ticket, tipo, foto: imagen }); }
+    try { r = await api('checar', { ticket: datos.ticket, tipo, foto: imagen, ...(datos.rostro ? { rostro: datos.rostro } : {}) }); }
     catch { return error('Se perdió la conexión mientras checabas. Vuelve a intentarlo: se guardará en este kiosco.'); }
     if (!r.ok) return error(r.j.error || 'No se pudo registrar');
-    listo('ok', `${r.j.tipo} · ${r.j.hora}`, r.j.repetida ? 'Ya estaba registrada hace un momento.' : r.j.sin_foto ? `Gracias, ${r.j.nombre}. Sin foto: tu gerente la revisará.` : `Gracias, ${r.j.nombre}.`);
+    listo('ok', `${r.j.tipo} · ${r.j.hora}`, r.j.repetida ? 'Ya estaba registrada hace un momento.' : r.j.por_revisar ? `Gracias, ${r.j.nombre}. No se reconoció tu cara: tu gerente la revisará.` : r.j.sin_foto ? `Gracias, ${r.j.nombre}. Sin foto: tu gerente la revisará.` : `Gracias, ${r.j.nombre}.`);
   }
   function listo(clase, titulo, texto) {
     pintar(el('div', { className: 'listo ' + clase }, el('div', { className: 'icono', textContent: clase === 'ok' ? '✅' : '💾' }), el('h1', { textContent: titulo }), el('p', { className: 'ayuda', textContent: texto })));
@@ -390,6 +486,7 @@
     if (!await conectar()) return;
     // Al abrir se pide la cámara una vez (para que el permiso quede dado) y se apaga hasta que alguien cheque.
     iniciarCamara().then(() => { if (estado.esCodigo) soltarCamara(); }); despierta(); inicio(); contarPendientes(); subirPendientes();
+    setTimeout(() => { cargarFaceApi().catch(() => {}); }, 5000); // el reconocimiento facial se deja listo en segundo plano
     setInterval(async () => { if (!deBaja && await conectar()) subirPendientes(); }, 60000);
   })();
 })();

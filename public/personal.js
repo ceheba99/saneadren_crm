@@ -196,6 +196,13 @@ const Personal = (() => {
     if (e.codigo) {
       h += `<p>📱 Checar desde su celular: <b>${esc(e.celular ? 'celular ligado' : 'sin celular')}</b>${e.celular?.ultimo_uso ? ` <small>(último uso ${esc(e.celular.ultimo_uso)})</small>` : ''}</p>`;
       if (e.puede?.editar && actual.activo) h += `<div class="btn-group"><button type="button" class="btn btn-secundario" data-pe-celular="${Number(id)}">${esc(e.celular ? 'Ligar otro celular' : 'Enviar enlace a su celular')}</button>${e.celular ? `<button type="button" class="btn btn-outline" data-pe-celular-quitar="${Number(id)}">Quitar celular</button>` : ''}</div><div id="pe-enlace"></div>`;
+      // Biométrico facial (server/biometria.js): solo con el consentimiento firmado en el expediente.
+      const bio = e.biometria;
+      if (bio) {
+        h += `<p>🙂 Biométrico (reconocimiento de su cara en el kiosco): <b>${esc(!bio.consentimiento ? 'sin consentimiento' : bio.registrado ? 'registrado' : 'falta registrar su cara')}</b>${bio.registrado_at ? ` <small>(desde ${esc(bio.registrado_at)})</small>` : ''}</p>`;
+        if (!bio.consentimiento) h += '<p class="ayuda">Para usarlo: imprime el aviso de privacidad, que firme el «Consentimiento para datos biométricos» y súbelo en «Documentos del expediente» como «Consentimiento biométrico firmado». Si no acepta, checa como siempre.</p>';
+        else if (e.puede?.editar && actual.activo) h += `<div class="btn-group"><button type="button" class="btn btn-secundario" data-pe-bio-codigo="${Number(id)}">${esc(bio.registrado ? 'Volver a registrar su cara' : 'Código para registrar su cara')}</button>${bio.registrado ? `<button type="button" class="btn btn-outline" data-pe-bio-borrar="${Number(id)}">Borrar su registro</button>` : ''}</div><div id="pe-bio-codigo"></div>`;
+      }
       // Checar por WhatsApp (foráneos, server/whatsapp.js): respaldo del celular; desde el número de su ficha, queda por revisar.
       h += `<p>💬 Checar por WhatsApp: <b>${esc(e.checa_whatsapp ? 'activado' : 'no')}</b>${e.checa_whatsapp ? ` <small>(desde el celular de su ficha: ${esc(actual.telefono || 'sin teléfono')}; cada checada queda por revisar)</small>` : ''}</p>`;
       if (e.puede?.editar && actual.activo) h += `<div class="btn-group"><button type="button" class="btn btn-outline" data-pe-whatsapp="${Number(id)}" data-activo="${e.checa_whatsapp ? '' : '1'}">${esc(e.checa_whatsapp ? 'Quitar WhatsApp' : 'Permitir checar por WhatsApp')}</button></div>`;
@@ -234,6 +241,17 @@ const Personal = (() => {
         <button type="button" class="btn btn-outline" data-pe-copiar="${esc(j.url)}">Copiar enlace</button>
         ${tel.length === 10 ? `<a class="btn btn-secundario" target="_blank" rel="noopener noreferrer" href="${esc('https://wa.me/52' + tel + '?text=' + encodeURIComponent(texto))}">Enviar por WhatsApp</a>` : '<small>Su ficha no tiene teléfono de 10 dígitos: copia el enlace y mándaselo.</small>'}</p>`;
     } catch (err) { toast(err.message); }
+  }
+  // Código de 6 dígitos (10 min, un solo uso) para que la persona registre su cara en el kiosco con RH a un lado.
+  async function codigoBiometria(id) {
+    try { const r = await api('/asistencia/personal/' + Number(id) + '/biometria/codigo', { method: 'POST' }); const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.error || 'No se pudo');
+      $('pe-bio-codigo').innerHTML = `<p class="pe-pin-nuevo" role="alert">Código: <b>${esc(j.codigo)}</b> · vale ${esc(j.minutos)} minutos y una sola vez.<br><small>En el kiosco: «🙂 Registrar mi cara (con RH)» → escribe este código → que mire a la cámara y parpadee. Quédate con la persona mientras lo hace.</small></p>`; }
+    catch (err) { toast(err.message); }
+  }
+  async function borrarBiometria(id) {
+    if (!await solicitarDialogo({ titulo: 'Borrar registro de su cara', mensaje: 'Se borra la plantilla de su cara (por ejemplo, si revocó su consentimiento). Seguirá checando con código o credencial, PIN y foto.', aceptar: 'Borrar' })) return;
+    try { const r = await api('/asistencia/personal/' + Number(id) + '/biometria/borrar', { method: 'POST' }); if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || 'No se pudo'); toast('Registro de su cara borrado'); pintarChecador(Number(id)); }
+    catch (err) { toast(err.message); }
   }
   async function cambiarWhatsapp(id, activo) {
     if (activo && !await solicitarDialogo({ titulo: 'Checar por WhatsApp', mensaje: `Podrá checar mandando un mensaje al WhatsApp de la empresa desde el celular de su ficha (${actual.telefono || 'sin teléfono'}). Sin foto ni ubicación: cada checada quedará «por revisar». Úsalo para foráneos que no puedan usar el enlace del celular.`, aceptar: 'Permitir' })) return;
@@ -395,6 +413,8 @@ const Personal = (() => {
     else if (t.dataset.peCelular) enlaceCelular(t.dataset.peCelular);
     else if (t.dataset.peCelularQuitar) quitarCelular(t.dataset.peCelularQuitar);
     else if (t.dataset.peWhatsapp) cambiarWhatsapp(t.dataset.peWhatsapp, !!t.dataset.activo);
+    else if (t.dataset.peBioCodigo) codigoBiometria(t.dataset.peBioCodigo);
+    else if (t.dataset.peBioBorrar) borrarBiometria(t.dataset.peBioBorrar);
     else if (t.dataset.peCopiar) navigator.clipboard?.writeText(t.dataset.peCopiar).then(() => toast('Enlace copiado'), () => toast('No se pudo copiar: selecciónalo y cópialo'));
   });
   // Al cerrar la ficha (con la X, Esc o desde otra pantalla) se borra de la página: lo sensible no se queda ahí.

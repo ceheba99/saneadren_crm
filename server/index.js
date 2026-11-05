@@ -210,6 +210,7 @@ const personalMod = require('./personal')(app, db, h);
 app.locals.personal = personalMod;
 app.locals.checador = require('./checador')(app, db, h);
 app.locals.asistencia = require('./asistencia')(app, db, h);
+app.locals.biometria = require('./biometria')(app, db, h); // biométrico facial del kiosco (2026-11-05)
 require('./whatsapp')(app, db, h); // Checar por WhatsApp para foráneos (F5b, 2026-11-05)
 require('./credenciales')(app, db, h); // Credenciales con foto, vigencia y verificación pública para clientes (2026-11-05)
 require('./rh')(app, db, h); // Pestaña RH: resumen y carga de trabajadores en lote (2026-11-03) // Asistencia (RH F3): horarios por versión, festivos, retardos y tiempo extra autorizado

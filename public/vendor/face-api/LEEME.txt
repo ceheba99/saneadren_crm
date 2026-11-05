@@ -1,0 +1,2 @@
+face-api 1.7.15 (https://github.com/vladmandic/face-api), MIT. Descargado de npm (@vladmandic/face-api@1.7.15, integridad sha512-WDMmK3CfNLo8jylWqMoQgf4nIst3M0fzx1dnac96wv/dvMTN4DxC/Pq1DGtduDk1lktCamQ3MIDXFnvrdHTXDw==) el 2026-11-05.
+Solo se usan: detector de caras pequeño, 68 puntos de la cara (parpadeo) y reconocimiento (descriptor de 128 números).

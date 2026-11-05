@@ -62,7 +62,7 @@ module.exports = {
       nombre: 'Personal (RH)',
       vistas: ['rh', 'personal', 'asistencia'],
       // Reloj checador (2026-11-03): checadas, sus correcciones y los kioscos; el kiosco entra sin sesión, con su token.
-      tablas: ['personal', 'documentos_personal', 'incidencias_personal', 'checadas', 'checadas_correcciones', 'checador_dispositivos', 'checador_intentos', 'checador_enlaces', 'credenciales', 'whatsapp_mensajes',
+      tablas: ['personal', 'documentos_personal', 'incidencias_personal', 'checadas', 'checadas_correcciones', 'checador_dispositivos', 'checador_intentos', 'checador_enlaces', 'credenciales', 'whatsapp_mensajes', 'rostros', 'rostro_codigos',
         'horarios', 'horario_versiones', 'personal_horario', 'dias_festivos', 'extra_autorizaciones', 'precios_hora_puesto'],
       rutas: [/^\/api\/personal(\/|$)/, /^\/api\/(asistencia|rh|publico\/(kiosco|celular|whatsapp))(\/|$)/],
       pendientes: 'licencias y contratos por vencer, quién falta esta semana y órdenes sin técnico responsable',
@@ -174,6 +174,7 @@ module.exports = {
     numero_empleado: 'lo pone el sistema al dar de alta: consecutivo (0001, 0002…), nunca se reusa ni se cambia (2026-11-03)',
     codigo_checador: 'lo pone el sistema al dar de alta en el checador (4 dígitos al azar, único); va en la credencial con QR (2026-11-05)',
     checa_whatsapp: 'lo cambia RH con el botón «Permitir checar por WhatsApp» de la ficha (PUT /asistencia/personal/:id/whatsapp, 2026-11-05)',
+    biometria: 'lo pone el sistema al checar: resultado de comparar la cara con su registro (coincide, no_coincide, no_vivo, sin_rostro), 2026-11-05',
     lat: 'lo pone el sistema: la ubicación GPS que manda el celular al checar (F5), nunca se captura a mano',
     lon: 'lo pone el sistema: la ubicación GPS que manda el celular al checar (F5), nunca se captura a mano',
     precision_m: 'lo pone el sistema: qué tan precisa fue la ubicación del celular al checar (F5)',
