@@ -288,6 +288,7 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
     ['precioExtra', 'Ponerle precio a la hora de cada puesto (para pagar el tiempo extra)'],
     ['dineroExtra', 'Ver cuánto dinero sale por tiempo extra (en la semana y en el Excel de nómina)'],
     ['eliminaUsuario', 'Eliminar un usuario (se borra si nunca se usó; si ya tiene registros, se archiva)'],
+    ['veLogs', 'Ver los logs del sistema (entradas y salidas, contraseñas equivocadas, bloqueos, errores del servidor y quién está conectado)'],
     ['eliminaSucursal', 'Eliminar una sucursal (se borra si nunca se usó; si ya tiene registros, se archiva)'],
     ['daCelular', 'Mandar a una persona el enlace para checar desde su celular, o quitarle el celular'],
     ['veIntentos', 'Ver los intentos fallidos en el kiosco (código o PIN malo, PIN bloqueado) con su foto y la red de cada checada'],
@@ -376,6 +377,7 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
       const s = exigir(await pedir('POST', '/sucursales', A, { nombre: 'Sucursal Desechable ' + String.fromCharCode(65 + k), clave: 'DS' + String.fromCharCode(65 + k) }), 'sucursal desechable');
       VE[rol].eliminaSucursal = ok(await pedir('POST', '/sucursales/' + s.id + '/eliminar', t, {})); }
     VE[rol].veAsistencia = ok(await pedir('GET', '/asistencia/semana', t));
+    VE[rol].veLogs = ok(await pedir('GET', '/registro-sistema', t));
     VE[rol].cargaAds = ok(await pedir('POST', '/marketing/google-ads/cargar', t, { csv: CSV_ADS })); // el mismo archivo: no duplica nada
     // XML de la factura de un gasto (2026-11-04): Tomás registra un gasto nuevo y cada rol intenta subirle su XML y corregirle el IVA.
     { const g = exigir(await pedir('POST', '/finanzas/cxp', T.Tomas, { proveedor_id: prov.id, categoria: 'combustible', concepto: 'Gasolina ' + rol, total: 1160, tipo_comprobante: 'factura', fecha_documento: HOY, lead_id: O1.id, dias_credito: 0 }), 'gasto para el XML');
@@ -455,6 +457,8 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
     ['2026-11-05', 'Checar por WhatsApp (foráneos, respaldo del celular): solo quien RH active en su ficha y desde el celular de su ficha; sin foto ni ubicación, cada checada queda «por revisar». Activarlo o quitarlo lo hacen quienes editan el personal (Dirección y el Gerente, de su sucursal), nunca para sí mismos (salvo Dirección).', {
       admin: { activaWhatsapp: 1 }, gerente: { activaWhatsapp: 1 },
       ...Object.fromEntries(['ventas', 'atencion', 'tecnico', 'costos', 'marketing', 'marketing_gerente'].map(r => [r, { activaWhatsapp: 0 }])) }],
+    ['2026-11-05', 'Logs del sistema (Configuración → Ajustes): quién entró y salió, desde qué IP y equipo, contraseñas equivocadas, bloqueos por intentos, contraseñas restablecidas, errores del servidor y quién está conectado ahora. Los ve solo Dirección; ningún otro rol, ni el Gerente. Nunca guardan contraseñas.', {
+      admin: { veLogs: 1 }, ...Object.fromEntries(['gerente', 'ventas', 'atencion', 'tecnico', 'costos', 'marketing', 'marketing_gerente'].map(r => [r, { veLogs: 0 }])) }],
     ['2026-11-04', 'Eliminar usuarios y sucursales: solo Dirección. Si nunca se usaron se borran; si ya tienen registros (cotizaciones, cobros, bitácora…) se archivan: desaparecen de las listas y su historial se conserva. La sucursal principal y la propia cuenta no se eliminan.', {
       admin: { eliminaUsuario: 1, eliminaSucursal: 1 }, ...Object.fromEntries(['gerente', 'ventas', 'atencion', 'tecnico', 'costos', 'marketing', 'marketing_gerente'].map(r => [r, { eliminaUsuario: 0, eliminaSucursal: 0 }])) }],
     ['2026-11-03', 'Precio de la hora de cada puesto y el dinero del tiempo extra (dobles y triples, en la semana y en el Excel de nómina): lo ven y lo cambian quienes ven sueldos (Dirección y el Gerente, de su sucursal); los demás roles solo ven horas.', {

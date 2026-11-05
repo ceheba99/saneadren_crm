@@ -87,13 +87,22 @@ const fallosPorCuenta = new Map(); // nombre -> { fallos, reinicia }
 const FALLOS_CUENTA_MAX = 30, FALLOS_CUENTA_VENTANA_MS = 60 * 60 * 1000;
 setInterval(() => { const ahora = Date.now(); for (const [k, v] of fallosPorCuenta) if (v.reinicia <= ahora) fallosPorCuenta.delete(k); }, FALLOS_CUENTA_VENTANA_MS).unref();
 const cuentaDe = req => String(req.body?.nombre || '').trim().toLowerCase().slice(0, 254);
+// Intentos mientras está bloqueado: al registro del sistema, como máximo uno por IP por minuto.
+const rechazosAnotados = new Map();
+setInterval(() => { const ahora = Date.now(); for (const [k, t] of rechazosAnotados) if (t <= ahora) rechazosAnotados.delete(k); }, 5 * 60000).unref();
+function anotarRechazo(req, motivo) {
+  if ((rechazosAnotados.get(req.ipCliente) || 0) > Date.now()) return;
+  rechazosAnotados.set(req.ipCliente, Date.now() + 60000);
+  app.locals.registro?.anotar(req, 'rechazado', { usuario: app.locals.registro.quien(req.body?.nombre), detalle: motivo });
+}
 function limitarLogin(req, res, next) {
   const c = fallosPorCuenta.get(cuentaDe(req));
-  if (c && c.reinicia > Date.now() && c.fallos >= FALLOS_CUENTA_MAX) return res.status(429).json({ error: 'Esta cuenta tuvo demasiados intentos fallidos. Espera una hora o usa «¿Olvidaste tu contraseña?».' });
+  if (c && c.reinicia > Date.now() && c.fallos >= FALLOS_CUENTA_MAX) return anotarRechazo(req, 'Cuenta bloqueada 1 hora'), res.status(429).json({ error: 'Esta cuenta tuvo demasiados intentos fallidos. Espera una hora o usa «¿Olvidaste tu contraseña?».' });
   const clave = req.ipCliente + '|' + String(req.body?.nombre || '').toLowerCase();
   const estado = intentosLogin.get(clave);
   if (estado?.bloqueadoHasta && estado.bloqueadoHasta > Date.now()) {
     const minutos = Math.ceil((estado.bloqueadoHasta - Date.now()) / 60000);
+    anotarRechazo(req, `Bloqueado ${minutos} min (usuario + conexión)`);
     return res.status(429).json({ error: `Demasiados intentos fallidos. Intenta de nuevo en ${minutos} minuto(s).` });
   }
   next();
@@ -123,6 +132,7 @@ function h(fn) {
       if (err.code && err.code.startsWith('SQLITE_CONSTRAINT')) {
         return res.status(400).json({ error: 'Datos inválidos (referencia inexistente o restricción de base de datos)' });
       }
+      app.locals.registro?.error(req, err); // queda en Ajustes → Logs
       res.status(500).json({ error: 'Error interno del servidor' });
     }
   };
@@ -174,6 +184,8 @@ app.use('/api', require('./sin-montos-compras')(permisos));
 // Bitácora general de movimientos (clientes, proveedores, compras, usuarios, catálogos, eliminados).
 const audit = require('./auditoria')(app, db, h);
 app.locals.auditoria = audit;
+// Logs (solo Dirección, Ajustes → Logs): accesos, bloqueos, errores del servidor y quién está conectado (2026-11-05).
+app.locals.registro = require('./registro-sistema')(app, db, h);
 // Eliminar usuarios y sucursales (solo Dirección): se borran si nunca se usaron; si no, se archivan (2026-11-04).
 require('./eliminar')(app, db, h, { sesiones });
 // Clientes sin duplicados: ID CLI-0001, teléfonos adicionales, revisión de parecidos y fusión.
@@ -246,6 +258,7 @@ setInterval(() => { const ahora = Date.now(); for (const [k, v] of fallosPorIp) 
 function limitarLoginPorIp(req, res, next) {
   const r = fallosPorIp.get(req.ipCliente);
   if (r && r.reinicia > Date.now() && r.fallos >= FALLOS_IP_MAX) {
+    anotarRechazo(req, 'Conexión bloqueada 15 min');
     return res.status(429).json({ error: 'Demasiados intentos fallidos desde esta conexión. Espera 15 minutos.' });
   }
   next();
@@ -267,17 +280,26 @@ app.post('/api/login', limitarLoginPorIp, limitarLogin, h((req, res) => {
     : db.prepare('SELECT * FROM usuarios WHERE nombre = ? AND activo = 1').get(nombre.trim());
   if (!verificarPassword(password, usuario?.password)) {
     registrarLoginFallido(req);
+    const reg = app.locals.registro, aQuien = usuario || reg?.quien(nombre);
+    reg?.anotar(req, aQuien ? 'fallo' : 'desconocido', { usuario: aQuien, detalle: aQuien && !usuario ? 'La cuenta está desactivada' : null });
+    // ¿Este intento lo dejó bloqueado?
+    const ip = fallosPorIp.get(req.ipCliente), cta = fallosPorCuenta.get(cuentaDe(req)), par = intentosLogin.get(req.ipCliente + '|' + String(nombre).toLowerCase());
+    const bloqueo = cta?.fallos === FALLOS_CUENTA_MAX ? 'Cuenta bloqueada 1 hora (' + FALLOS_CUENTA_MAX + ' intentos)'
+      : ip?.fallos === FALLOS_IP_MAX ? 'Conexión bloqueada 15 min (' + FALLOS_IP_MAX + ' intentos)'
+      : par?.bloqueadoHasta > Date.now() && par.fallos === 0 ? 'Bloqueado 5 min (' + LOGIN_MAX_INTENTOS + ' intentos seguidos)' : null;
+    if (bloqueo) reg?.anotar(req, 'bloqueado', { usuario: aQuien, detalle: bloqueo });
     return res.status(401).json({ error: 'Usuario o contraseña incorrectos' });
   }
   limpiarLoginFallidos(req);
   // La contraseña inicial de fábrica la conoce cualquiera: con ella NO se entrega sesión (si no,
   // quien la supiera podría entrar y fijar su propia contraseña con el cambio obligatorio).
   if (password === '1234') {
+    app.locals.registro?.anotar(req, 'fallo', { usuario, detalle: 'Usó la contraseña inicial (no se le dio entrada)' });
     return res.status(403).json({ error: usuario.correo && usuario.correo_verificado
       ? 'Esta cuenta tiene la contraseña inicial y quedó bloqueada. Usa "¿Olvidaste tu contraseña?" para crear una nueva.'
       : 'Esta cuenta tiene la contraseña inicial y quedó bloqueada. Pide al administrador que le asigne una contraseña nueva.' });
   }
-  if (usuario.correo && !usuario.correo_verificado) return res.status(403).json({ error: 'Confirma tu correo con el enlace que te enviamos antes de iniciar sesión.' });
+  if (usuario.correo && !usuario.correo_verificado) return app.locals.registro?.anotar(req, 'fallo', { usuario, detalle: 'Correo sin confirmar' }), res.status(403).json({ error: 'Confirma tu correo con el enlace que te enviamos antes de iniciar sesión.' });
   // Migración transparente: si la contraseña seguía en texto plano, se re-guarda cifrada.
   if (!usuario.password.includes(':')) {
     db.prepare('UPDATE usuarios SET password = ? WHERE id = ?').run(hashPassword(password), usuario.id);
@@ -285,12 +307,17 @@ app.post('/api/login', limitarLoginPorIp, limitarLogin, h((req, res) => {
   const debil = !!problemaPassword(password, { nombre: usuario.nombre, correo: usuario.correo || '' });
   if (debil && !usuario.debe_cambiar_password) db.prepare('UPDATE usuarios SET debe_cambiar_password = 1 WHERE id = ?').run(usuario.id);
   const token = crearSesion(usuario.id);
+  app.locals.registro?.anotar(req, 'entro', { usuario, detalle: debil || usuario.debe_cambiar_password ? 'Debe cambiar su contraseña' : null });
   res.json({ token, id: usuario.id, nombre: usuario.nombre, rol: usuario.rol === 'gerente' ? 'admin' : usuario.rol, rol_real: usuario.rol, cambiar_password: debil || !!usuario.debe_cambiar_password });
 }));
 app.post('/api/logout', h((req, res) => {
   const encabezado = req.headers.authorization || '';
   const token = encabezado.startsWith('Bearer ') ? encabezado.slice(7) : null;
-  if (token) sesiones.delete(token);
+  if (token) {
+    const s = sesiones.get(token), u = s && db.prepare('SELECT id, nombre FROM usuarios WHERE id = ?').get(s.usuarioId);
+    if (u) app.locals.registro?.anotar(req, 'salio', { usuario: u });
+    sesiones.delete(token);
+  }
   res.json({ ok: true });
 }));
 
@@ -1817,11 +1844,12 @@ app.use((err, req, res, next) => {
   if (err?.type === 'entity.too.large') return res.status(413).json({ error: 'El archivo o los datos son demasiado grandes. Divídelos en partes más pequeñas.' });
   if (err?.type === 'entity.parse.failed') return res.status(400).json({ error: 'Los datos enviados no tienen un formato válido.' });
   console.error('Error no manejado:', err);
+  app.locals.registro?.error(req, err);
   if (res.headersSent) return next(err);
   res.status(500).json({ error: 'Error interno del servidor' });
 });
-process.on('uncaughtException', err => console.error('uncaughtException (servidor sigue vivo):', err));
-process.on('unhandledRejection', err => console.error('unhandledRejection (servidor sigue vivo):', err));
+process.on('uncaughtException', err => { console.error('uncaughtException (servidor sigue vivo):', err); app.locals.registro?.error(null, err); });
+process.on('unhandledRejection', err => { console.error('unhandledRejection (servidor sigue vivo):', err); app.locals.registro?.error(null, err); });
 
 suc.activarCandados(); // al final: todas las tablas ya existen
 app.listen(PORT, () => { console.log(`Saneadren CRM corriendo en http://localhost:${PORT}`); demo.alEscuchar(); });

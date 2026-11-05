@@ -148,6 +148,7 @@ module.exports = function cuentas(app, db, h, { sesiones, urlBase }) {
   app.post('/api/olvide-password', porIp(10, 15), porCorreo(3, 15), h((req, res) => {
     const email = normalizarCorreo(req.body.correo);
     const usuario = correoPermitido(email) ? db.prepare('SELECT * FROM usuarios WHERE correo = ? AND activo = 1').get(email) : null;
+    if (usuario) app.locals.registro?.anotar(req, 'olvido', { usuario });
     if (usuario) enviarSinBloquear(email, 'Restablece tu contraseña · Saneadren CRM', {
       titulo: 'Restablecer contraseña', saludo: `Hola ${usuario.nombre}:`,
       mensaje: 'Recibimos una solicitud para cambiar la contraseña de tu cuenta del CRM. El enlace sirve una sola vez y vence en 30 minutos. Al cambiarla se cerrarán todas tus sesiones abiertas.',
@@ -170,6 +171,7 @@ module.exports = function cuentas(app, db, h, { sesiones, urlBase }) {
       sesiones.revocarUsuario(usuario.id);
     })();
     app.locals.auditoria?.registrar({ usuarioSesion: { id: usuario.id, nombre: usuario.nombre } }, 'usuario', usuario.id, 'contraseña', 'Restableció su contraseña con el enlace del correo');
+    app.locals.registro?.anotar(req, 'restablecio', { usuario });
     if (usuario.correo) enviarSinBloquear(usuario.correo, 'Tu contraseña cambió · Saneadren CRM', {
       titulo: 'Tu contraseña cambió', saludo: `Hola ${usuario.nombre}:`,
       mensaje: 'La contraseña de tu cuenta del CRM se cambió correctamente y se cerraron tus sesiones abiertas.',

@@ -131,10 +131,10 @@ module.exports = {
       permisos: ['facturacion.fiscales', 'facturacion.timbrar'],
     },
     administracion: {
-      nombre: 'Usuarios, roles, sucursales, catálogos, bitácora y respaldos',
+      nombre: 'Usuarios, roles, sucursales, catálogos, bitácora, logs del sistema y respaldos',
       vistas: ['usuarios', 'catalogos', 'bitacora'],
-      tablas: ['usuarios', 'usuario_sucursales', 'roles', 'rol_permisos', 'rol_alcances', 'permisos_sembrados', 'sucursales', 'auditoria'],
-      rutas: [/^\/api\/(usuarios|roles|permisos|sucursales|auditoria|admin|cambiar-password|buscar)(\/|$)/],
+      tablas: ['usuarios', 'usuario_sucursales', 'roles', 'rol_permisos', 'rol_alcances', 'permisos_sembrados', 'sucursales', 'auditoria', 'registro_sistema'],
+      rutas: [/^\/api\/(usuarios|roles|permisos|sucursales|auditoria|registro-sistema|admin|cambiar-password|buscar)(\/|$)/],
       pendientes: null, pendientesRazon: 'la revisión de integridad y la bitácora se consultan a propósito; no generan pendientes diarios',
       inicio: [],
       demo: ['usuarios', 'roles', 'sucursales', 'auditoria'],
@@ -161,6 +161,7 @@ module.exports = {
   // se capturan con otro nombre ({ como, razon }: la auditoría comprueba que la pantalla mande esa llave). Un dato que se
   // muestra y no está aquí ni se captura es un dato muerto (como «Realizó: propio/subcontratado», que se quitó).
   generados: {
+    ip: 'red (IP) desde la que se entró o se checó: la toma el sistema de la conexión (logs del sistema, checadas, intentos del kiosco)',
     // Gastos con XML (2026-11-04): salen del XML de la factura que se sube, no de un campo del formulario.
     emisor_rfc: 'RFC de quien emite la factura de un gasto: lo lee el sistema del XML (CFDI) que se sube',
     moneda: 'moneda de la factura: la lee el sistema del XML del CFDI (en facturas timbradas, la pone el timbrado)',
