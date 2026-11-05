@@ -147,7 +147,6 @@ function migrar(db) {
     CREATE TRIGGER IF NOT EXISTS precios_hora_no_borrar BEFORE DELETE ON precios_hora_puesto BEGIN SELECT RAISE(ABORT, 'El historial de precios no se borra'); END;
   `);
   sembrarHorarios(db);
-      db.prepare("INSERT INTO horario_versiones (horario_id, desde, dias, tolerancia_min, comida_min, creado_por_nombre) VALUES (?, ?, ?, 10, 60, 'Sistema')")
   // Festivos de la ley de este año y el siguiente (no revive uno que RH desactivó).
   const anio = Number(ahoraMexico().fecha.slice(0, 4)), ins = db.prepare("INSERT OR IGNORE INTO dias_festivos (fecha, nombre, origen) VALUES (?, ?, 'ley')");
   for (const a of [anio, anio + 1]) for (const [f, n] of festivosLey(a)) ins.run(f, n);
@@ -196,7 +195,10 @@ module.exports = function asistencia(app, db, h) {
       if (entrada !== null && entrada > min(dia.entrada) + hor.tolerancia) r.retardo_min = entrada - min(dia.entrada);
       if (salida !== null && salida < min(dia.salida)) r.salida_anticipada_min = min(dia.salida) - salida;
       if (hor.comida && comida > hor.comida) r.exceso_comida_min = comida - hor.comida;
-      r.extra_min = unidos([...(salida !== null ? [[min(dia.salida), salida]] : []), ...bloques]);
+      // Los bloques marcados con los botones solo cuentan FUERA del horario (auditoría 2026-11-05: apretar «Inicio» y
+      // «Fin de tiempo extra» a media jornada convertía horas normales en extra).
+      const desdeH = min(dia.entrada), hastaH = min(dia.salida), fuera = bloques.flatMap(([a, b]) => [[a, Math.min(b, desdeH)], [Math.max(a, hastaH), b]]);
+      r.extra_min = unidos([...(salida !== null ? [[hastaH, salida]] : []), ...fuera]);
       if (entrada === null && fecha < hoy && !AUSENCIAS.includes(r.incidencia)) r.falta = true;
     } else if (trabajado !== null || bloques.length) {
       // Descanso o festivo trabajado: todo lo trabajado es tiempo extra (y se marca para pagarlo como tal).
@@ -397,14 +399,19 @@ module.exports = function asistencia(app, db, h) {
   }));
 
   // ---------- Días festivos ----------
+  // Valen para TODA la empresa (no hay festivos por sucursal): los cambia quien tiene «Horarios y días festivos» y ve
+  // todas las sucursales (RH de la empresa, Dirección). Auditoría 2026-11-05: el gerente de una sola sucursal declaraba
+  // un festivo y en las demás todo lo trabajado ese día se volvía tiempo extra.
+  const editaFestivos = req => puede(req, 'asistencia.horarios') && db.prepare('SELECT id FROM main.sucursales WHERE activo = 1').all().every(s => req.alcanceSuc?.permitidas?.includes(s.id));
   app.get('/api/asistencia/festivos', h((req, res) => {
     if (!puede(req, 'personal.ver')) return negar(res);
     const anio = /^\d{4}$/.test(String(req.query.anio || '')) ? String(req.query.anio) : ahoraMexico().fecha.slice(0, 4);
     if (Number(anio) >= 2020 && Number(anio) <= 2100) { const ins = db.prepare("INSERT OR IGNORE INTO main.dias_festivos (fecha, nombre, origen) VALUES (?, ?, 'ley')"); for (const [f, n] of festivosLey(Number(anio))) ins.run(f, n); }
-    res.json({ anio, festivos: db.prepare('SELECT * FROM main.dias_festivos WHERE fecha LIKE ? ORDER BY fecha').all(anio + '-%'), puede: { editar: puede(req, 'asistencia.horarios') } });
+    res.json({ anio, festivos: db.prepare('SELECT * FROM main.dias_festivos WHERE fecha LIKE ? ORDER BY fecha').all(anio + '-%'), puede: { editar: editaFestivos(req) } });
   }));
   app.post('/api/asistencia/festivos', h((req, res) => {
     if (!puede(req, 'asistencia.horarios')) return negar(res, 'No tienes permiso para cambiar los días festivos');
+    if (!editaFestivos(req)) return negar(res, 'Los días festivos valen para todas las sucursales: los cambia RH de la empresa o Dirección');
     const fecha = String(req.body?.fecha || ''), nombre = texto(req.body?.nombre, 80);
     if (!fechaOk(fecha)) return res.status(400).json({ error: 'Revisa la fecha' });
     if (!nombre || nombre.length < 3 || /[<>{}]/.test(nombre)) return res.status(400).json({ error: 'Escribe qué día es (p. ej. «Jornada electoral»)' });

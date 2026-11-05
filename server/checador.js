@@ -220,11 +220,22 @@ module.exports = function checador(app, db, h) {
   const dispositivoDe = db.prepare(`SELECT d.id, d.nombre, d.sucursal_id, s.nombre AS sucursal FROM main.checador_dispositivos d
     LEFT JOIN main.sucursales s ON s.id = d.sucursal_id WHERE d.token_hash = ? AND d.activo = 1 AND d.tipo = 'kiosco'`);
   // Middleware de las rutas del kiosco: token válido o 401 (y cuenta el fallo por conexión).
+  // Auditoría 2026-11-05: el token válido se revisa ANTES del tope por conexión. Si no, una tableta dada de baja que se
+  // queda prendida en la oficina (pregunta cada minuto) o alguien en el mismo Wi-Fi dejaba sin checar al kiosco bueno,
+  // que comparte la conexión. Un token conocido pero dado de baja tampoco cuenta como ataque (no adivina nada).
+  const conocido = db.prepare('SELECT 1 FROM main.checador_dispositivos WHERE token_hash = ?');
+  function tokenInvalido(req, res, t, error, codigo) {
+    const forma = /^[A-Za-z0-9_-]{40,60}$/.test(t);
+    if (!(forma && conocido.get(hashToken(t)))) {
+      if (excedido(fallosIp, req.ipCliente, FALLOS_IP)) return res.status(429).json({ error: 'Demasiados intentos desde esta conexión. Espera 15 minutos.' });
+      contar(fallosIp, req.ipCliente, VENTANA_IP_MS);
+    }
+    return res.status(401).json({ error, codigo });
+  }
   function kiosco(req, res, next) {
-    if (excedido(fallosIp, req.ipCliente, FALLOS_IP)) return res.status(429).json({ error: 'Demasiados intentos desde esta conexión. Espera 15 minutos.' });
     const t = String(req.get('x-kiosco') || '');
     const d = /^[A-Za-z0-9_-]{40,60}$/.test(t) ? dispositivoDe.get(hashToken(t)) : null;
-    if (!d) { contar(fallosIp, req.ipCliente, VENTANA_IP_MS); return res.status(401).json({ error: 'Este dispositivo no está registrado como kiosco (o lo dieron de baja). Pide al gerente que lo registre.', codigo: 'KIOSCO_NO_REGISTRADO' }); }
+    if (!d) return tokenInvalido(req, res, t, 'Este dispositivo no está registrado como kiosco (o lo dieron de baja). Pide al gerente que lo registre.', 'KIOSCO_NO_REGISTRADO');
     req.kiosco = d;
     next();
   }
@@ -266,7 +277,8 @@ module.exports = function checador(app, db, h) {
     if (!p || !p.pin_hash) { scrypt('relleno', 'relleno'); return incorrecto(); }
     const ahora = Date.now();
     if (p.pin_bloqueado_hasta > ahora) {
-      contar(fallosKiosco, d.id, VENTANA_KIOSCO_MS);
+      // No cuenta para el tope del kiosco (auditoría 2026-11-05): aquí no se prueba ningún PIN, y si contara, alguien con
+      // su PIN bloqueado que sigue tecleando pausaba el kiosco para todos.
       const falta = p.pin_bloqueado_hasta - ahora;
       return { status: 423, error: p.pin_bloqueado_hasta >= BLOQUEO_TOTAL ? 'Tu PIN está bloqueado por intentos fallidos. Pide a RH o a tu gerente que lo desbloquee.'
         : falta > ESPERA_MS ? `Tu PIN está bloqueado por muchos intentos fallidos. Pide a RH o a tu gerente que lo desbloquee, o espera ${Math.ceil(falta / 3600000)} hora(s).`
@@ -346,11 +358,10 @@ module.exports = function checador(app, db, h) {
   const celularDe = db.prepare(`SELECT d.id, d.nombre, d.sucursal_id, d.personal_id, s.nombre AS sucursal FROM main.checador_dispositivos d
     LEFT JOIN main.sucursales s ON s.id = d.sucursal_id WHERE d.token_hash = ? AND d.activo = 1 AND d.tipo = 'celular'`);
   function celular(req, res, next) {
-    if (excedido(fallosIp, req.ipCliente, FALLOS_IP)) return res.status(429).json({ error: 'Demasiados intentos desde esta conexión. Espera 15 minutos.' });
     const t = String(req.get('x-celular') || '');
     const d = /^[A-Za-z0-9_-]{40,60}$/.test(t) ? celularDe.get(hashToken(t)) : null;
     const p = d ? db.prepare('SELECT * FROM main.personal WHERE id = ?').get(d.personal_id) : null;
-    if (!d || !p) { contar(fallosIp, req.ipCliente, VENTANA_IP_MS); return res.status(401).json({ error: 'Este celular no está ligado (o lo dieron de baja). Pide a RH un enlace nuevo.', codigo: 'CELULAR_NO_LIGADO' }); }
+    if (!d || !p) return tokenInvalido(req, res, t, 'Este celular no está ligado (o lo dieron de baja). Pide a RH un enlace nuevo.', 'CELULAR_NO_LIGADO');
     req.kiosco = d; req.persona = p;
     next();
   }
@@ -465,6 +476,7 @@ module.exports = function checador(app, db, h) {
     if (!puede(req, 'personal.editar')) return negar(res, 'No tienes permiso para ligar celulares');
     const p = persona(req.params.id);
     if (!p) return res.status(404).json({ error: 'Persona no encontrada' });
+    if (app.locals.personal.esPropio(req, res, p.id, 'mandar el enlace para checar desde el celular')) return;
     if (!p.activo || !p.codigo_checador) return res.status(409).json({ error: 'Primero dala de alta en el reloj checador (código y PIN)' });
     const token = nuevoToken();
     db.transaction(() => {
@@ -492,6 +504,7 @@ module.exports = function checador(app, db, h) {
     const p = persona(req.params.id);
     if (!p) return res.status(404).json({ error: 'Persona no encontrada' });
     if (typeof req.body?.checa !== 'boolean') return res.status(400).json({ error: 'Indica si checa o no' });
+    if (app.locals.personal.esPropio(req, res, p.id, 'cambiar si checa o no')) return; // «no checa» = sin faltas
     db.prepare("UPDATE main.personal SET checa = ?, updated_at = datetime('now','localtime'), version = version + 1 WHERE id = ?").run(req.body.checa ? 1 : 0, p.id);
     audit(req, p.id, 'checador', `${p.nombre}: ${req.body.checa ? 'checa' : 'ya no checa'}`);
     res.json(estadoDe(persona(p.id)));

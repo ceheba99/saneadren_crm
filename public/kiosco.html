@@ -129,7 +129,11 @@
       return true;
     } catch { if (!sinConexion) { sinConexion = true; avisos(); } return true; }
   }
+  // Dado de baja: deja de preguntar al servidor (auditoría 2026-11-05: una tableta vieja que pregunta cada minuto gasta
+  // los intentos de la conexión de la oficina).
+  let deBaja = false;
   function noRegistrado() {
+    deBaja = true;
     clearTimeout(temporizador);
     pintar(el('div', { className: 'error' }, el('h1', { textContent: 'Este dispositivo no es un kiosco' }),
       el('p', { className: 'ayuda', textContent: 'Pide al gerente que lo registre: en el sistema, RH → «Kioscos del checador», desde este mismo dispositivo. Si lo dieron de baja, hay que registrarlo de nuevo.' })));
@@ -310,7 +314,7 @@
   const despierta = async () => { try { await navigator.wakeLock?.request('screen'); } catch { /* no disponible */ } };
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { despierta(); iniciarCamara(); } else soltarCamara(); });
   setInterval(() => { if (!camaraLista && document.visibilityState === 'visible') iniciarCamara(); }, 60000);
-  window.addEventListener('online', async () => { await conectar(); subirPendientes(); });
+  window.addEventListener('online', async () => { if (!deBaja && await conectar()) subirPendientes(); });
   window.addEventListener('offline', () => { sinConexion = true; avisos(); });
   // Un kiosco no conserva la sesión del CRM: si el gerente la dejó abierta al registrarlo (o alguien entra en otra
   // pestaña), se cierra aquí para que nadie use esta tableta para entrar al sistema. Misma llave que app.js.
@@ -328,7 +332,7 @@
     avisos();
     if (!await conectar()) return;
     iniciarCamara(); despierta(); inicio(); contarPendientes(); subirPendientes();
-    setInterval(async () => { if (await conectar()) subirPendientes(); }, 60000);
+    setInterval(async () => { if (!deBaja && await conectar()) subirPendientes(); }, 60000);
   })();
 })();
 </script>
