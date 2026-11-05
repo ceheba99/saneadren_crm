@@ -29,6 +29,7 @@
   #kiosco-nombre{color:#d1d5db;font-size:.9rem;}
   #avisos{display:flex;flex-direction:column;gap:6px;padding:8px 16px 0;}
   .aviso{border-radius:10px;padding:10px 14px;font-size:1rem;}
+  button.aviso{font:inherit;text-align:left;width:100%;cursor:pointer;}
   .aviso.rojo{background:#fde8e8;color:var(--rojo);border:1px solid #f5b5b5;}
   .aviso.amarillo{background:#fff7d6;color:#7a5600;border:1px solid #e6c34a;}
   main{flex:1;display:flex;align-items:center;justify-content:center;padding:16px;}
@@ -84,7 +85,7 @@
   const SESION = Math.random().toString(36).slice(2) + Date.now().toString(36); // para saber si la página se recargó
   // Los botones (los manda el servidor; estos sirven si el kiosco arranca sin conexión).
   let TIPOS = { entrada: 'Entrada', comida_sale: 'Salida a comer', comida_regresa: 'Regreso de comer', salida: 'Salida', extra_inicia: 'Inicio de tiempo extra', extra_termina: 'Fin de tiempo extra' };
-  let registro = null, desfase = 0, estado = {}, temporizador = null, sinConexion = false, camaraLista = false;
+  let registro = null, desfase = 0, estado = {}, temporizador = null, sinConexion = false, camaraLista = false, camaraMotivo = '';
   try { registro = JSON.parse(localStorage.getItem(LLAVE) || 'null'); } catch { registro = null; }
 
   // ---------- Utilidades de pantalla (solo textContent: nada del servidor se interpreta como HTML) ----------
@@ -93,8 +94,8 @@
   function avisos() {
     const a = [];
     if (sinConexion) a.push(['rojo', 'Sin conexión a internet: las checadas se guardan aquí y se suben al volver. Quedarán por revisar.']);
-    if (!camaraLista) a.push(['amarillo', 'La cámara no está disponible: las checadas quedarán por revisar. Permite la cámara en el navegador.']);
-    $('avisos').replaceChildren(...a.map(([c, t]) => el('div', { className: 'aviso ' + c, textContent: t })));
+    if (!camaraLista) a.push(['amarillo', `La cámara no está disponible${camaraMotivo ? ' (' + camaraMotivo + ')' : ''}: las checadas quedarán por revisar. Toca aquí para intentar de nuevo.`, iniciarCamara]);
+    $('avisos').replaceChildren(...a.map(([c, t, accion]) => accion ? el('button', { type: 'button', className: 'aviso ' + c, textContent: t, onclick: accion }) : el('div', { className: 'aviso ' + c, textContent: t })));
   }
   function reiniciarEspera(ms = ESPERA_MS) { clearTimeout(temporizador); temporizador = setTimeout(inicio, ms); }
 
@@ -128,12 +129,25 @@
   }
 
   // ---------- Cámara ----------
+  // En Android solo una app a la vez usa la cámara: si el reloj está abierto en Chrome y también como app instalada, la
+  // segunda no la consigue. Por eso se suelta al ocultarse la pantalla, se pide de nuevo al volver y se dice el motivo.
+  const MOTIVOS = { NotAllowedError: 'el permiso de cámara está bloqueado', NotReadableError: 'otra app o pestaña la está usando', NotFoundError: 'no se encontró cámara', AbortError: 'otra app o pestaña la está usando', SecurityError: 'el permiso de cámara está bloqueado' };
+  let pidiendoCamara = false;
   async function iniciarCamara() {
+    if (pidiendoCamara || camaraLista) return;
+    pidiendoCamara = true;
     try {
+      if (!navigator.mediaDevices?.getUserMedia) throw Object.assign(new Error(), { name: 'NotFoundError' });
       const s = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } }, audio: false });
-      $('video').srcObject = s; await $('video').play().catch(() => {}); camaraLista = true;
-    } catch { camaraLista = false; }
+      $('video').srcObject = s; await $('video').play().catch(() => {}); camaraLista = true; camaraMotivo = '';
+    } catch (e) { camaraLista = false; camaraMotivo = MOTIVOS[e?.name] || ''; }
+    pidiendoCamara = false;
     avisos();
+  }
+  function soltarCamara() {
+    const s = $('video').srcObject;
+    if (s) s.getTracks().forEach(t => t.stop());
+    $('video').srcObject = null; camaraLista = false;
   }
   function foto() {
     const v = $('video');
@@ -286,7 +300,8 @@
   try { navigator.serviceWorker?.register('/kiosco-sw.js', { scope: '/kiosco' }).catch(() => {}); } catch { /* no disponible */ }
   $('pantalla-completa').onclick = () => { (document.documentElement.requestFullscreen?.() || Promise.resolve()).catch(() => {}); };
   const despierta = async () => { try { await navigator.wakeLock?.request('screen'); } catch { /* no disponible */ } };
-  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') despierta(); });
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { despierta(); iniciarCamara(); } else soltarCamara(); });
+  setInterval(() => { if (!camaraLista && document.visibilityState === 'visible') iniciarCamara(); }, 60000);
   window.addEventListener('online', async () => { await conectar(); subirPendientes(); });
   window.addEventListener('offline', () => { sinConexion = true; avisos(); });
   // Un kiosco no conserva la sesión del CRM: si el gerente la dejó abierta al registrarlo (o alguien entra en otra
