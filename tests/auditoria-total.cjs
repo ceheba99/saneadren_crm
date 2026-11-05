@@ -123,7 +123,7 @@ revisa(!imgsSinAlt.length, 'accesibilidad', 'imágenes sin texto alternativo', i
 // que se guardó (r.ok, exigirOk, o un ayudante del módulo que lanza el error). api() lanza los rechazos salvo el 409
 // (conflicto), que deja pasar: quien no revisa la respuesta dice «guardado» con un 409. Así pasaba al crear una orden o
 // cotización cuando el servidor respondía conflicto (p. ej. un teléfono que ya es de otro cliente).
-const SIN_RESPUESTA = { 'app.js': [/api\('\/logout'/] }; // cerrar sesión: se sale aunque falle
+const SIN_RESPUESTA = { 'app.js': [/api\('\/logout'/, /api\('\/registro-sistema\/pantalla'/] }; // cerrar sesión: se sale aunque falle; avisar un error de pantalla: si no llega, no pasa nada
 // Revisan la respuesta más abajo, después de preguntar «¿es otro?» ante un posible duplicado (se comprueba en 15 renglones).
 const REVISAN_DESPUES = { 'finanzas.js': [/let res = await api\(ruta, \{ method: metodo/, /const enviar = c => api\('\/finanzas\/proveedores'/], 'flujo.js': [/let r=await api\('\/contactos'/] };
 for (const [f, t] of Object.entries(PUBLICO)) {

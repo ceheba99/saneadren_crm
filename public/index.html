@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Saneadren · Cotizaciones y Servicios</title>
-<link rel="stylesheet" href="styles.css?v=lg2">
+<link rel="stylesheet" href="styles.css?v=lg3">
 <link rel="stylesheet" href="servicios-tabla.css">
 <link rel="stylesheet" href="flujo.css?v=cel1">
 </head>
@@ -794,13 +794,13 @@
 
     <div class="panel-alta solo-general" id="panel-logs">
       <h2>📜 Logs del sistema</h2>
-      <p class="ayuda">Quién entró y salió, contraseñas equivocadas, bloqueos por intentos, contraseñas restablecidas y errores del servidor. Solo Dirección. Se guardan 180 días. Los cambios a clientes, usuarios o permisos están en la <button type="button" class="enlace" id="logs-ir-bitacora">Bitácora</button>.</p>
+      <p class="ayuda">Quién entró y salió, contraseñas equivocadas, bloqueos por intentos, errores del servidor y de las pantallas, facturación con factura.com, correos que no salieron, respaldos automáticos, WhatsApp, reinicios del sistema y descargas de respaldos. Solo Dirección. Se guardan 180 días. Los cambios a clientes, usuarios o permisos están en la <button type="button" class="enlace" id="logs-ir-bitacora">Bitácora</button>.</p>
       <div class="logs-resumen" id="logs-resumen"></div>
       <h3 class="util-13">Conectados ahora</h3>
       <div id="logs-conectados"></div>
       <h3 class="util-13">Registro</h3>
       <div class="filtros">
-        <select id="logs-tipo" aria-label="Qué ver"><option value="">Todo</option><option value="fallas">Solo problemas (fallos, bloqueos y errores)</option><option value="acceso">Accesos</option><option value="error">Errores del servidor</option></select>
+        <select id="logs-tipo" aria-label="Qué ver"><option value="">Todo</option><option value="fallas">Solo problemas (fallos, bloqueos y errores)</option><option value="acceso">Accesos</option><option value="error">Errores (servidor y pantallas)</option><option value="facturacion">Facturación (factura.com)</option><option value="servicio">Correos, respaldos, WhatsApp y reinicios</option><option value="seguridad">Descargas de respaldos</option></select>
         <label>Desde <input type="date" id="logs-desde"></label>
         <label>Hasta <input type="date" id="logs-hasta"></label>
         <input type="search" id="logs-buscar" placeholder="Buscar (usuario, IP, equipo…)" aria-label="Buscar en los logs">
@@ -1822,14 +1822,14 @@
 <script src="calendario.js?v=esp1"></script>
 <script src="tablero.js?v=enc1"></script>
 <script src="bitacora.js?v=hc1"></script>
-<script src="logs.js?v=lg1"></script>
+<script src="logs.js?v=lg2"></script>
 <script src="compras.js?v=ed1"></script>
 <script src="solicitudes.js?v=rev1"></script>
 <script src="carga-generador.js?v=con1"></script>
 <script src="sucursales.js?v=perm4"></script>
 <script src="facturacion.js?v=fx10"></script>
 <script src="encuestas.js?v=enc1"></script>
-<script src="app.js?v=lg1"></script>
+<script src="app.js?v=lg2"></script>
 <script src="listas-servicio.js?v=ls1"></script>
 <script src="personal.js?v=wa1"></script>
 <script src="asistencia.js?v=wa1"></script>

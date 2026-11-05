@@ -5,7 +5,10 @@ const Logs = (() => {
   const EVENTO = {
     entro: ['🟢', 'Entró'], salio: ['⚪', 'Salió'], fallo: ['🟠', 'Contraseña equivocada'], desconocido: ['🟠', 'Usuario que no existe'],
     bloqueado: ['🔴', 'Bloqueado por intentos'], rechazado: ['🟠', 'Intentó entrar estando bloqueado'],
-    olvido: ['🔑', 'Pidió restablecer su contraseña'], restablecio: ['🔑', 'Restableció su contraseña'], error: ['⛔', 'Error del servidor']
+    olvido: ['🔑', 'Pidió restablecer su contraseña'], restablecio: ['🔑', 'Restableció su contraseña'], error: ['⛔', 'Error del servidor'],
+    pantalla: ['⚠️', 'Error en pantalla'], correo_fallo: ['📧', 'Correo que no salió'], respaldo_ok: ['💾', 'Respaldo automático hecho'],
+    respaldo_fallo: ['💾', 'Respaldo automático falló'], whatsapp_fallo: ['💬', 'WhatsApp no se envió'], inicio: ['🔄', 'Sistema iniciado (actualización o reinicio)'],
+    descarga: ['⬇️', 'Descargó un respaldo'], factura_ok: ['🧾', 'Facturación'], factura_error: ['🧾', 'Facturación: error']
   };
   const fechaHora = f => { const [d, h] = String(f || '').split(' '); return (d || '').split('-').reverse().join('/') + (h ? ' ' + h.slice(0, 5) : ''); };
   const hace = iso => {
@@ -43,8 +46,12 @@ const Logs = (() => {
     if (turno !== consulta) return;
     filas = mas ? filas.concat(j.filas) : j.filas;
     const s = j.resumen;
+    const resp = j.respaldo;
     $('logs-resumen').innerHTML = '<p class="ayuda">Últimas 24 horas</p><div class="logs-tarjetas">' + tarjeta(s.entradas, 'Entradas') + tarjeta(s.fallos, 'Contraseñas equivocadas', true)
-      + tarjeta(s.bloqueos, 'Bloqueos', true) + tarjeta(s.errores, 'Errores del servidor', true) + '</div>';
+      + tarjeta(s.bloqueos, 'Bloqueos', true) + tarjeta(s.errores, 'Errores (servidor y pantallas)', true)
+      + tarjeta(s.facturas_error, 'Errores de facturación', true) + tarjeta(s.servicios, 'Correos, respaldos o WhatsApp con falla', true) + '</div>'
+      + '<p class="ayuda logs-estado">' + (resp ? (resp.evento === 'respaldo_ok' ? '💾 Último respaldo automático: ' : '⚠️ El último respaldo automático FALLÓ: ') + esc(fechaHora(resp.fecha)) + (resp.evento === 'respaldo_fallo' ? ' · ' + esc(resp.detalle || '') : '') : '💾 Todavía no hay respaldo automático registrado (se hace uno al día).')
+      + (j.inicio ? ' · 🔄 El sistema arrancó por última vez: ' + esc(fechaHora(j.inicio)) : '') + '</p>';
     $('logs-conectados').innerHTML = j.conectados.length
       ? '<div class="tabla-scroll"><table class="tabla-resumen bit-tabla"><thead><tr><th>Usuario</th><th>Última actividad</th><th>Sesiones abiertas</th><th>Entró desde</th></tr></thead><tbody>'
         + j.conectados.map(c => '<tr><td><b>' + esc(c.nombre) + '</b></td><td>' + esc(hace(c.ultima_actividad)) + '</td><td>' + Number(c.sesiones) + '</td><td>'

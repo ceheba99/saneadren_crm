@@ -116,6 +116,7 @@ module.exports = function respaldoCompleto(app, db, h, { hoyMexico }) {
         'Content-Disposition': `attachment; filename="saneadren_respaldo_completo_${hoyMexico()}.tar"` });
       await pipeline(armarTar({ base: copia, dirArchivos }), res);
       app.locals.auditoria?.registrar(req, 'respaldo', null, 'descarga', 'Respaldo completo (base + archivos)');
+      app.locals.registro?.anotar(req, 'descarga', { detalle: 'Respaldo completo (base + archivos)' });
     } catch (err) {
       console.error('[respaldo completo]', err.message);
       if (!res.headersSent) res.status(500).type('text/plain; charset=utf-8').send('No se pudo generar el respaldo completo');

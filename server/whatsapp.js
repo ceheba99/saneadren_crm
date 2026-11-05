@@ -62,9 +62,11 @@ module.exports = function whatsapp(app, db, h) {
       if (!r.ok) {
         // Solo el código y el motivo de Meta (p. ej. 190 = token vencido, 131030 = número no autorizado), sin el número.
         const e = (await r.json().catch(() => ({})))?.error || {};
-        console.error(`[whatsapp] Meta rechazó el envío (HTTP ${r.status}, código ${e.code ?? '—'}): ${String(e.message || '').replace(/\+?\d{10,15}/g, '***').slice(0, 200)}`);
+        const motivo = `Meta rechazó el envío (HTTP ${r.status}, código ${e.code ?? '—'}): ${String(e.message || '').replace(/\+?\d{10,15}/g, '***').slice(0, 200)}`;
+        console.error('[whatsapp] ' + motivo);
+        app.locals.registro?.servicio('whatsapp_fallo', motivo);
       }
-    } catch (e) { console.error('[whatsapp] no se pudo enviar:', e.message); }
+    } catch (e) { console.error('[whatsapp] no se pudo enviar:', e.message); app.locals.registro?.servicio('whatsapp_fallo', 'No se pudo conectar con Meta: ' + String(e.message).slice(0, 200)); }
   }
   const texto = (para, t) => enviar(para, { type: 'text', text: { preview_url: false, body: t } });
   function menu(para, p) {
