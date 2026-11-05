@@ -1,13 +1,13 @@
 // BIOMÉTRICO FACIAL (2026-11-05): consentimiento, registro con código de RH, comparación 1:1 y trampas.
 // Las caras se simulan con descriptores de 128 números: «la misma persona» = el mismo vector con poco ruido;
 // «otra persona» = otro vector al azar (lejos).
-//  1. Código de registro: solo quien edita el personal, de su sucursal, nunca para sí mismo; exige el consentimiento
-//     firmado en el expediente; un solo uso; la base guarda solo su hash.
+//  1. Consentimiento: RH lo marca en la ficha (expedientes físicos), con quién y cuándo; nadie el suyo. Código de
+//     registro: solo quien edita el personal, de su sucursal, nunca para sí mismo; exige la marca; un solo uso; hash.
 //  2. Registro en el kiosco: código malo o usado, sin parpadeo, menos de 3 muestras o muestras de distintas personas →
 //     no; bien → plantilla CIFRADA (sin las fotos).
 //  3. Al checar: quien tiene biométrico debe mandar su cara; coincide → válida; otra cara, sin parpadeo o sin cara →
 //     checa igual pero queda por revisar; 3 intentos de comprobación por ticket; quien no tiene biométrico, como antes.
-//  4. Revocar: borrar el registro o quitar el consentimiento del expediente → deja de usarse; los triggers protegen el
+//  4. Revocar: borrar el registro o quitar la marca de consentimiento → se borra y deja de usarse; los triggers protegen el
 //     resultado guardado en la checada.
 // Uso: node tests/simulacion-biometria.cjs
 const { spawn } = require('child_process');
@@ -59,13 +59,17 @@ const PDF = Buffer.from('%PDF-1.4\n% consentimiento biometrico\n' + crypto.rando
   const subirConsentimiento = async p => { const r = await fetch(URLB + '/api/personal/' + p.id + '/documentos', { method: 'POST', headers: { Authorization: 'Bearer ' + A, 'X-Tipo': 'biometria', 'X-Nombre': 'consentimiento.pdf', 'Content-Type': 'application/pdf' }, body: PDF }); return [r.status, await r.json().catch(() => ({}))]; };
 
   console.log('1. Código de registro');
-  revisa((await pedir('POST', '/asistencia/personal/' + juan.id + '/biometria/codigo', T.Gema))[0] === 409, 'Sin consentimiento firmado en el expediente, no hay código');
-  const [sd, doc] = await subirConsentimiento(juan);
-  revisa(sd === 201, 'Se sube el consentimiento biométrico firmado al expediente', [sd, doc]);
+  revisa((await pedir('POST', '/asistencia/personal/' + juan.id + '/biometria/codigo', T.Gema))[0] === 409, 'Sin el consentimiento marcado en la ficha, no hay código');
+  revisa((await pedir('PUT', '/asistencia/personal/' + juan.id + '/biometria/consentimiento', T.Valeria, { firmado: true }))[0] === 403, 'Ventas no marca consentimientos');
+  revisa((await pedir('PUT', '/asistencia/personal/' + juan.id + '/biometria/consentimiento', T.Gus, { firmado: true }))[0] === 404, 'El gerente de CDMX no marca a alguien de Querétaro');
+  const [sm, jm] = await pedir('PUT', '/asistencia/personal/' + juan.id + '/biometria/consentimiento', T.Gema, { firmado: true });
+  revisa(sm === 200 && jm.consentimiento === true && jm.consentimiento_por === 'Gema Gerente' && jm.consentimiento_at, 'La gerente marca que firmó (expediente físico): queda quién y cuándo', jm);
+  revisa(conBase(d => d.prepare("SELECT COUNT(*) n FROM auditoria WHERE detalle LIKE '%firmó el consentimiento biométrico%'").get().n) === 1, 'La marca queda en la bitácora');
   revisa((await pedir('POST', '/asistencia/personal/' + juan.id + '/biometria/codigo', T.Valeria))[0] === 403, 'Ventas no da códigos');
   revisa((await pedir('POST', '/asistencia/personal/' + juan.id + '/biometria/codigo', T.Gus))[0] === 404, 'El gerente de CDMX no da códigos para Querétaro');
   const gemaFicha = exigir(await pedir('POST', '/personal', A, { nombre: 'Gema Gerente Ficha', puesto: 'Administración', usuario_id: U.Gema.id, sucursal_id: qro.id }), 'ficha de Gema');
   revisa((await pedir('POST', '/asistencia/personal/' + gemaFicha.id + '/biometria/codigo', T.Gema))[1].codigo === 'PROPIO', 'Gema no se da un código a sí misma');
+  revisa((await pedir('PUT', '/asistencia/personal/' + gemaFicha.id + '/biometria/consentimiento', T.Gema, { firmado: true }))[1].codigo === 'PROPIO', 'Ni marca su propio consentimiento');
   const c1 = exigir(await pedir('POST', '/asistencia/personal/' + juan.id + '/biometria/codigo', T.Gema), 'código').codigo;
   revisa(/^\d{6}$/.test(c1) && !conBase(d => JSON.stringify(d.prepare('SELECT * FROM rostro_codigos').all())).includes(c1), 'Código de 6 dígitos; la base solo guarda su hash');
 
@@ -116,8 +120,10 @@ const PDF = Buffer.from('%PDF-1.4\n% consentimiento biometrico\n' + crypto.rando
   revisa(!conBase(d => d.prepare('SELECT 1 FROM rostros WHERE personal_id = ?').get(juan.id)) && (await ident(juan)).biometria === false, 'Borrado: se elimina la plantilla y ya no se pide la cara');
   const c2 = exigir(await pedir('POST', '/asistencia/personal/' + juan.id + '/biometria/codigo', T.Gema), 'código 2').codigo;
   exigir(await kio(K, 'rostro-registrar', { codigo: c2, descriptores: tres(), vivo: true }), 'volver a registrar');
-  exigir(await pedir('POST', '/personal/documentos/' + doc.id + '/quitar', A), 'quitar consentimiento');
-  revisa((await ident(juan)).biometria === false, 'Si se quita el consentimiento del expediente, la plantilla deja de usarse de inmediato');
+  exigir(await pedir('PUT', '/asistencia/personal/' + juan.id + '/biometria/consentimiento', T.Gema, { firmado: false }), 'quitar consentimiento');
+  revisa((await ident(juan)).biometria === false && !conBase(d => d.prepare('SELECT 1 FROM rostros WHERE personal_id = ?').get(juan.id)), 'Si revocó (se quita la marca), se borra su plantilla y ya no se pide la cara');
+  const [sd, doc] = await subirConsentimiento(ana);
+  revisa(sd === 201 && (await pedir('POST', '/asistencia/personal/' + ana.id + '/biometria/codigo', T.Gema))[0] === 200, 'También vale el documento subido al expediente digital (opcional)', [sd, doc]);
 
   console.log(`\n${n - malos.length}/${n} correctas`);
   srv.kill(); fs.rmSync(dir, { recursive: true, force: true });
