@@ -57,6 +57,11 @@
     .checar .camara{width:100%;max-height:58vh;margin:0;}
     .checar .botones{margin-top:0;}
   }
+  .btn-credencial{font:inherit;width:100%;display:flex;flex-direction:column;align-items:center;gap:6px;padding:26px 16px;margin:0 0 12px;background:#fff;border:3px dashed var(--amarillo);border-radius:16px;color:var(--texto);cursor:pointer;touch-action:manipulation;}
+  .btn-credencial .icono{font-size:3.2rem;line-height:1;}
+  .btn-credencial b{font-size:1.35rem;}
+  .btn-credencial small{color:var(--sec);font-size:1rem;}
+  .btn-credencial:active{background:#fff7d6;}
   .camara video{width:100%;height:100%;object-fit:cover;transform:scaleX(-1);}
   .camara.sin video{display:none;}
   .camara .sin-cam{display:none;color:#fff;font-size:.9rem;padding:20px;}
@@ -92,7 +97,7 @@
   const SESION = Math.random().toString(36).slice(2) + Date.now().toString(36); // para saber si la página se recargó
   // Los botones (los manda el servidor; estos sirven si el kiosco arranca sin conexión).
   let TIPOS = { entrada: 'Entrada', comida_sale: 'Salida a comer', comida_regresa: 'Regreso de comer', salida: 'Salida', extra_inicia: 'Inicio de tiempo extra', extra_termina: 'Fin de tiempo extra' };
-  let registro = null, desfase = 0, estado = {}, temporizador = null, sinConexion = false, camaraLista = false, camaraMotivo = '';
+  let registro = null, desfase = 0, estado = {}, temporizador = null, sinConexion = false, camaraLista = false, camaraMotivo = '', camaraFallo = false;
   try { registro = JSON.parse(localStorage.getItem(LLAVE) || 'null'); } catch { registro = null; }
 
   // ---------- Utilidades de pantalla (solo textContent: nada del servidor se interpreta como HTML) ----------
@@ -101,7 +106,8 @@
   function avisos() {
     const a = [];
     if (sinConexion) a.push(['rojo', 'Sin conexión a internet: las checadas se guardan aquí y se suben al volver. Quedarán por revisar.']);
-    if (!camaraLista) a.push(['amarillo', `La cámara no está disponible${camaraMotivo ? ' (' + camaraMotivo + ')' : ''}: las checadas quedarán por revisar. Toca aquí para intentar de nuevo.`, iniciarCamara]);
+    // La cámara está apagada mientras nadie checa: el aviso solo sale si al pedirla falló.
+    if (camaraFallo) a.push(['amarillo', `La cámara no está disponible${camaraMotivo ? ' (' + camaraMotivo + ')' : ''}: las checadas quedarán por revisar. Toca aquí para intentar de nuevo.`, async () => { await iniciarCamara(); if (estado.esCodigo) soltarCamara(); }]);
     $('avisos').replaceChildren(...a.map(([c, t, accion]) => accion ? el('button', { type: 'button', className: 'aviso ' + c, textContent: t, onclick: accion }) : el('div', { className: 'aviso ' + c, textContent: t })));
   }
   function reiniciarEspera(ms = ESPERA_MS) { clearTimeout(temporizador); temporizador = setTimeout(inicio, ms); }
@@ -140,22 +146,27 @@
   }
 
   // ---------- Cámara ----------
-  // En Android solo una app a la vez usa la cámara: si el reloj está abierto en Chrome y también como app instalada, la
-  // segunda no la consigue. Por eso se suelta al ocultarse la pantalla, se pide de nuevo al volver y se dice el motivo.
+  // Solo se prende cuando hace falta (pedido de Dirección, 2026-11-05): al escribir el PIN (para la foto de la checada o
+  // del intento fallido) y al tocar «Leer mi credencial». En reposo, en la pantalla del código, está apagada.
+  // En Android solo una app a la vez usa la cámara: también se suelta al ocultarse la pantalla y se dice el motivo.
   const MOTIVOS = { NotAllowedError: 'el permiso de cámara está bloqueado', NotReadableError: 'otra app o pestaña la está usando', NotFoundError: 'no se encontró cámara', AbortError: 'otra app o pestaña la está usando', SecurityError: 'el permiso de cámara está bloqueado' };
-  let pidiendoCamara = false;
-  async function iniciarCamara() {
-    if (pidiendoCamara || camaraLista) return;
-    pidiendoCamara = true;
-    try {
-      if (!navigator.mediaDevices?.getUserMedia) throw Object.assign(new Error(), { name: 'NotFoundError' });
-      const s = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } }, audio: false });
-      $('video').srcObject = s; await $('video').play().catch(() => {}); camaraLista = true; camaraMotivo = '';
-      if (estado.esCodigo && !estado.tecleo && lectorQR) inicio(); // ya hay cámara: mostrarla para leer la credencial
-    } catch (e) { camaraLista = false; camaraMotivo = MOTIVOS[e?.name] || ''; }
-    pidiendoCamara = false;
-    avisos();
+  let pidiendo = null;
+  function iniciarCamara() {
+    if (camaraLista) return Promise.resolve();
+    if (pidiendo) return pidiendo;
+    pidiendo = (async () => {
+      try {
+        if (!navigator.mediaDevices?.getUserMedia) throw Object.assign(new Error(), { name: 'NotFoundError' });
+        const s = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } }, audio: false });
+        $('video').srcObject = s; await $('video').play().catch(() => {}); camaraLista = true; camaraMotivo = ''; camaraFallo = false;
+      } catch (e) { camaraLista = false; camaraMotivo = MOTIVOS[e?.name] || ''; camaraFallo = true; }
+      pidiendo = null;
+      avisos();
+    })();
+    return pidiendo;
   }
+  // Espera a la cámara como máximo unos segundos (para no detener la checada si tarda).
+  const camaraA = (ms = 2500) => Promise.race([iniciarCamara(), new Promise(ok => setTimeout(ok, ms))]);
   function soltarCamara() {
     const s = $('video').srcObject;
     if (s) s.getTracks().forEach(t => t.stop());
@@ -178,7 +189,7 @@
   // Teclas que llegan mientras se cambia de pantalla (alguien teclea rápido en un teclado físico): pasan a la siguiente.
   let adelantadas = '';
   // «lateral»: algo que va a un lado del teclado (la cámara para leer la credencial).
-  function teclado(titulo, ayuda, oculto, alTerminar, atras, lateral) {
+  function teclado(titulo, ayuda, oculto, alTerminar, atras, lateral, debajo) {
     let valor = '', terminado = false;
     const muestra = el('div', { className: oculto ? 'puntos' : 'digitos' });
     const refrescar = () => {
@@ -188,7 +199,7 @@
     const tecla = d => {
       reiniciarEspera();
       if (terminado) { adelantadas = (adelantadas + d).slice(0, 4); return; }
-      valor += d; refrescar(); estado.tecleo = true;
+      valor += d; refrescar();
       if (valor.length === 4) { terminado = true; setTimeout(() => alTerminar(valor), 120); }
     };
     const borrar = () => { reiniciarEspera(); if (terminado) return; valor = valor.slice(0, -1); refrescar(); };
@@ -197,7 +208,7 @@
     teclas.push(el('button', { type: 'button', textContent: '0', onclick: () => tecla('0') }));
     teclas.push(el('button', { type: 'button', className: 'secundario', textContent: '⌫', ariaLabel: 'Borrar', onclick: borrar }));
     refrescar();
-    const partes = [el('h1', { textContent: titulo }), el('p', { className: 'ayuda', textContent: ayuda }), muestra, el('div', { className: 'teclado' }, ...teclas)];
+    const partes = [el('h1', { textContent: titulo }), el('p', { className: 'ayuda', textContent: ayuda }), muestra, el('div', { className: 'teclado' }, ...teclas), ...(debajo ? [debajo] : [])];
     if (lateral) { pintar(el('div', { className: 'checar' }, lateral, el('div', {}, ...partes))); $('pantalla').classList.add('ancha'); }
     else pintar(...partes);
     estado.teclado = { tecla, borrar };
@@ -211,23 +222,34 @@
 
   // ---------- Flujo ----------
   // ---------- Credencial con QR (2026-11-05) ----------
-  // La credencial trae un QR «SANEADREN-CHECADOR:<código>». Si la tableta sabe leer QR (Chrome en Android sí), en la
-  // pantalla del código se ve la cámara: al enseñar la credencial, el código se pone solo y se pasa al PIN. Quien la
-  // olvidó teclea su código como siempre. El QR solo reemplaza al código: el PIN se sigue pidiendo.
+  // La credencial trae un QR «SANEADREN-CHECADOR:<código>». Si la tableta sabe leer QR (Chrome en Android sí), la
+  // pantalla del código tiene el botón «Leer mi credencial»: prende la cámara hasta 20 s, lee el QR, pone el código y
+  // pasa al PIN. Quien la olvidó teclea su código como siempre. El QR solo reemplaza al código: el PIN se sigue pidiendo.
   const QR_CREDENCIAL = /^SANEADREN-CHECADOR:(\d{4})$/;
   let lectorQR = null;
   try { if ('BarcodeDetector' in window) BarcodeDetector.getSupportedFormats().then(f => { if (f.includes('qr_code')) lectorQR = new BarcodeDetector({ formats: ['qr_code'] }); }).catch(() => {}); } catch { lectorQR = null; }
-  function leerCredencial(tecladoCodigo) {
+  const LECTURA_MS = 20000;
+  async function leerCredencial() {
+    estado = { leyendo: Symbol('lectura') }; adelantadas = '';
+    const yo = estado.leyendo, hasta = Date.now() + LECTURA_MS;
+    reiniciarEspera(LECTURA_MS + 2000);
+    pintar(el('p', { className: 'ayuda', textContent: 'Prendiendo la cámara…' }));
+    await camaraA(4000);
+    if (estado.leyendo !== yo) return;
+    if (!camaraLista) return error('No se pudo prender la cámara. Escribe tu código con el teclado.');
+    pintar(el('h1', { textContent: '🪪 Enseña tu credencial' }), el('p', { className: 'ayuda', textContent: 'Acerca el QR de la izquierda (reverso de tu credencial) a la cámara.' }),
+      vistaCamara(), el('button', { type: 'button', className: 'btn', textContent: 'Cancelar', onclick: inicio }));
     const vuelta = async () => {
-      if (estado.teclado !== tecladoCodigo || !lectorQR || !camaraLista) return; // ya no está en la pantalla del código
+      if (estado.leyendo !== yo) return; // ya salió de esta pantalla
+      if (Date.now() > hasta) return error('No se leyó el QR. Escribe tu código con el teclado.');
       try {
         const v = $('video');
-        if (v.videoWidth) for (const c of await lectorQR.detect(v)) {
+        if (camaraLista && v.videoWidth) for (const c of await lectorQR.detect(v)) {
           const m = QR_CREDENCIAL.exec(String(c.rawValue || '').trim());
-          if (m && estado.teclado === tecladoCodigo) { estado.teclado = null; return pedirPin(m[1]); }
+          if (m && estado.leyendo === yo) { estado.leyendo = null; return pedirPin(m[1]); }
         }
       } catch { /* sigue intentando */ }
-      setTimeout(vuelta, 350);
+      setTimeout(vuelta, 300);
     };
     vuelta();
   }
@@ -235,12 +257,14 @@
     estado = {}; adelantadas = '';
     if (!registro?.token) return noRegistrado();
     estado.esCodigo = true;
-    const credencial = lectorQR && camaraLista;
-    teclado('Escribe tu código', credencial ? 'Tu número de 4 dígitos, o enseña tu credencial a la cámara' : 'Tu número de 4 dígitos para checar', false, codigo => pedirPin(codigo), null,
-      credencial ? el('div', {}, vistaCamara(), el('p', { className: 'ayuda', textContent: '🪪 Acerca el QR de tu credencial' })) : null);
-    if (credencial) leerCredencial(estado.teclado);
+    soltarCamara(); // en reposo, la cámara apagada
+    // Con lector de QR: el botón grande va a un lado del teclado (en horizontal) o arriba (en vertical).
+    teclado('Escribe tu código', 'Tu número de 4 dígitos para checar', false, codigo => pedirPin(codigo), null,
+      lectorQR ? el('button', { type: 'button', className: 'btn-credencial', onclick: leerCredencial }, el('span', { className: 'icono', textContent: '🪪' }), el('b', { textContent: 'Leer mi credencial' }), el('small', { textContent: 'Toca aquí y enseña el QR a la cámara' })) : null);
   }
   function pedirPin(codigo) {
+    estado.esCodigo = false;
+    iniciarCamara(); // se prende mientras escribe el PIN: lista para la foto
     reiniciarEspera();
     teclado('Escribe tu PIN', 'Los 4 números de tu PIN', true, pin => identificar(codigo, pin), inicio);
   }
@@ -253,11 +277,12 @@
     if (r.status === 401 && r.j.codigo === 'KIOSCO_NO_REGISTRADO') return noRegistrado();
     if (!r.ok) {
       // Intento fallido: el servidor lo registra y pide su foto (para ver quién prueba el código de otro).
-      if (r.j.intento) { const imagen = foto(); if (imagen) api('intento-foto', { intento: r.j.intento, foto: imagen }).catch(() => {}); }
+      if (r.j.intento) { await camaraA(); const imagen = foto(); if (imagen) api('intento-foto', { intento: r.j.intento, foto: imagen }).catch(() => {}); }
       return error(r.j.error || 'No se pudo revisar tu código');
     }
     if (sinConexion) { sinConexion = false; avisos(); }
     if (r.j.cambiar_pin) return nuevoPin(r.j);
+    await camaraA(); // que la vista de la cámara ya esté prendida al elegir
     elegirTipo(r.j);
   }
   function nuevoPin(datos) {
@@ -345,8 +370,7 @@
   try { navigator.serviceWorker?.register('/kiosco-sw.js', { scope: '/kiosco' }).catch(() => {}); } catch { /* no disponible */ }
   $('pantalla-completa').onclick = () => { (document.documentElement.requestFullscreen?.() || Promise.resolve()).catch(() => {}); };
   const despierta = async () => { try { await navigator.wakeLock?.request('screen'); } catch { /* no disponible */ } };
-  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { despierta(); iniciarCamara(); } else soltarCamara(); });
-  setInterval(() => { if (!camaraLista && document.visibilityState === 'visible') iniciarCamara(); }, 60000);
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') despierta(); else soltarCamara(); });
   window.addEventListener('online', async () => { if (!deBaja && await conectar()) subirPendientes(); });
   window.addEventListener('offline', () => { sinConexion = true; avisos(); });
   // Un kiosco no conserva la sesión del CRM: si el gerente la dejó abierta al registrarlo (o alguien entra en otra
@@ -364,7 +388,8 @@
     if (!registro?.token) return noRegistrado();
     avisos();
     if (!await conectar()) return;
-    iniciarCamara(); despierta(); inicio(); contarPendientes(); subirPendientes();
+    // Al abrir se pide la cámara una vez (para que el permiso quede dado) y se apaga hasta que alguien cheque.
+    iniciarCamara().then(() => { if (estado.esCodigo) soltarCamara(); }); despierta(); inicio(); contarPendientes(); subirPendientes();
     setInterval(async () => { if (!deBaja && await conectar()) subirPendientes(); }, 60000);
   })();
 })();
