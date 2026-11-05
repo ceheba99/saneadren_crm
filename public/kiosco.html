@@ -214,7 +214,9 @@
     let maxAbierto = 0, cerro = false, vivo = false, ultima = 0; const descriptores = [];
     while (Date.now() < hasta && (!vivo || descriptores.length < muestras)) {
       if (!camaraLista || !v.videoWidth) { await new Promise(r => setTimeout(r, 200)); continue; }
-      const r = await f.detectSingleFace(v, opciones).withFaceLandmarks().withFaceDescriptor().catch(() => null);
+      // La tarea de face-api se puede esperar con await, pero NO es una promesa completa: no tiene .catch (falló en la tableta, 2026-11-05).
+      let r = null;
+      try { r = await f.detectSingleFace(v, opciones).withFaceLandmarks().withFaceDescriptor(); } catch { r = null; }
       if (!r) { aviso('No te vemos: acércate y mira de frente a la cámara'); await new Promise(z => setTimeout(z, 120)); continue; }
       const p = r.landmarks.positions, ojo = (apertura(p.slice(36, 42)) + apertura(p.slice(42, 48))) / 2;
       maxAbierto = Math.max(maxAbierto * 0.995, ojo);
