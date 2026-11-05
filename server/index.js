@@ -37,6 +37,7 @@ app.use('/api', (req, res, next) => { res.set({ 'Cache-Control': 'no-store', Pra
 app.use('/api/finanzas/importar', express.json({ limit: '5mb' }));
 app.use('/api/generador/importar', express.json({ limit: '5mb' }));
 app.use('/api/marketing/google-ads', express.json({ limit: '5mb' })); // reporte de llamadas de Google Ads (CSV)
+app.use('/api/publico/whatsapp', express.raw({ type: () => true, limit: '1mb' })); // la firma de Meta se revisa sobre el cuerpo tal cual
 app.use(express.json({ limit: '1mb' }));
 app.use('/api', limitarCampos);
 app.use(express.static(path.join(__dirname, '..', 'public')));
@@ -144,7 +145,7 @@ require('./cuentas')(app, db, h, { sesiones, urlBase: URL_BASE });
 app.use('/api', (req, res, next) => {
   // La encuesta que abre el cliente con el QR de su orden (server/encuestas.js) no pide sesión.
   // El kiosco del reloj checador (server/checador.js) tampoco: lo identifica el token del dispositivo, no una sesión.
-  if (RUTAS_PUBLICAS.has(req.path) || /^\/publico\/encuesta\/[\w-]+$/.test(req.path) || /^\/publico\/(kiosco|celular)\/[a-z-]+$/.test(req.path)) return next();
+  if (RUTAS_PUBLICAS.has(req.path) || /^\/publico\/encuesta\/[\w-]+$/.test(req.path) || /^\/publico\/(kiosco|celular)\/[a-z-]+$/.test(req.path) || req.path === '/publico/whatsapp') return next();
   requireAuth(req, res, next);
 });
 // Campos de texto que nunca pueden llegar como lista u objeto (auditoría 2026-11-04, H-013): antes un nombre {…} se guardaba
@@ -195,6 +196,7 @@ const personalMod = require('./personal')(app, db, h);
 app.locals.personal = personalMod;
 app.locals.checador = require('./checador')(app, db, h);
 app.locals.asistencia = require('./asistencia')(app, db, h);
+require('./whatsapp')(app, db, h); // Checar por WhatsApp para foráneos (F5b, 2026-11-05)
 require('./credenciales')(app, db, h); // Credenciales con foto, vigencia y verificación pública para clientes (2026-11-05)
 require('./rh')(app, db, h); // Pestaña RH: resumen y carga de trabajadores en lote (2026-11-03) // Asistencia (RH F3): horarios por versión, festivos, retardos y tiempo extra autorizado
 // Reloj checador (RH, 2026-11-03): código y PIN, kioscos registrados y checadas que no se borran

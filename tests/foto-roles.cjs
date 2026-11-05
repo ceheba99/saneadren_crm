@@ -294,6 +294,7 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
     ['ubicaSucursal', 'Capturar la ubicación de una sucursal (para revisar dónde checan con el celular)'],
     ['fotoCredencial', 'Subir o tomar la foto de una persona para su credencial'],
     ['emiteCredencial', 'Imprimir credenciales (con su QR de verificación para clientes y su vigencia)'],
+    ['activaWhatsapp', 'Activar o quitar a una persona el checar por WhatsApp (foráneos)'],
     ['veRH', 'Ver la pestaña RH (resumen del personal: sin horario, sin checador, sin aviso firmado…)'],
     ['importaPersonal', 'Cargar trabajadores en lote desde la plantilla de Excel (revisar y guardar)'],
     ['veAsistencia', 'Ver la asistencia del día y de la semana (retardos, faltas, tiempo extra)'],
@@ -362,6 +363,7 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
     VE[rol].ubicaSucursal = ok(await pedir('PUT', '/asistencia/sucursales/' + qro.id + '/ubicacion', t, { ubicacion: '20.5888, -100.3899', radio_m: 500 }));
     VE[rol].fotoCredencial = (await fetch(URL + '/personal/' + EMP.id + '/foto', { method: 'POST', headers: { 'Content-Type': 'image/jpeg', Authorization: 'Bearer ' + t }, body: FOTO_JPG })).ok;
     VE[rol].emiteCredencial = ok(await pedir('POST', '/rh/credenciales', t, { ids: [], vigencia: dia(365) })) || (await pedir('POST', '/rh/credenciales', t, { ids: [], vigencia: dia(365) }))[0] === 400;
+    VE[rol].activaWhatsapp = ok(await pedir('PUT', '/asistencia/personal/' + EMP.id + '/whatsapp', t, { activo: false }));
     VE[rol].veRH = ok(await pedir('GET', '/rh/resumen', t));
     VE[rol].importaPersonal = ok(await pedir('POST', '/rh/importar/revisar', t, { filas: [{ nombre: 'Prueba Carga ' + rol, puesto: 'Ayudante' }] }));
     VE[rol].daCelular = ok(await pedir('POST', '/asistencia/personal/' + EMP.id + '/celular/quitar', t));
@@ -450,6 +452,9 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
     ['2026-11-05', 'Credenciales de empleado (foto, nombre, puesto, número de empleado, vigencia, contacto de emergencia, QR del checador y QR de verificación para clientes): tomar la foto e imprimirlas lo hacen quienes editan el personal (Dirección y el Gerente, de su sucursal). Imprimir una nueva anula la anterior. La página de verificación es pública solo con el QR y muestra foto, nombre y puesto si la persona sigue trabajando y la credencial está vigente; si no, solo dice que no es válida.', {
       admin: { fotoCredencial: 1, emiteCredencial: 1 }, gerente: { fotoCredencial: 1, emiteCredencial: 1 },
       ...Object.fromEntries(['ventas', 'atencion', 'tecnico', 'costos', 'marketing', 'marketing_gerente'].map(r => [r, { fotoCredencial: 0, emiteCredencial: 0 }])) }],
+    ['2026-11-05', 'Checar por WhatsApp (foráneos, respaldo del celular): solo quien RH active en su ficha y desde el celular de su ficha; sin foto ni ubicación, cada checada queda «por revisar». Activarlo o quitarlo lo hacen quienes editan el personal (Dirección y el Gerente, de su sucursal), nunca para sí mismos (salvo Dirección).', {
+      admin: { activaWhatsapp: 1 }, gerente: { activaWhatsapp: 1 },
+      ...Object.fromEntries(['ventas', 'atencion', 'tecnico', 'costos', 'marketing', 'marketing_gerente'].map(r => [r, { activaWhatsapp: 0 }])) }],
     ['2026-11-04', 'Eliminar usuarios y sucursales: solo Dirección. Si nunca se usaron se borran; si ya tienen registros (cotizaciones, cobros, bitácora…) se archivan: desaparecen de las listas y su historial se conserva. La sucursal principal y la propia cuenta no se eliminan.', {
       admin: { eliminaUsuario: 1, eliminaSucursal: 1 }, ...Object.fromEntries(['gerente', 'ventas', 'atencion', 'tecnico', 'costos', 'marketing', 'marketing_gerente'].map(r => [r, { eliminaUsuario: 0, eliminaSucursal: 0 }])) }],
     ['2026-11-03', 'Precio de la hora de cada puesto y el dinero del tiempo extra (dobles y triples, en la semana y en el Excel de nómina): lo ven y lo cambian quienes ven sueldos (Dirección y el Gerente, de su sucursal); los demás roles solo ven horas.', {

@@ -87,7 +87,7 @@ const Asistencia = (() => {
     catch (e) { $('as-detalle').textContent = e.message; return; }
     const p = datos.puede || {};
     let h = `<h4 class="pe-sub2">Checadas de ${esc(d.nombre)} · ${esc(fechaLarga(fecha))}</h4>`;
-    h += ch.length ? '<ul class="pe-ordenes">' + ch.map(c => `<li class="${c.estado === 'anulada' ? 'pe-baja' : ''}"><b>${esc(String(c.hora).slice(0, 5))}</b> · ${esc(TIPOS[c.tipo] || c.tipo)} · ${esc(c.origen === 'manual' ? 'a mano por ' + (c.registrado_por_nombre || '') : c.origen === 'celular' ? 'desde su celular' : c.kiosco || c.origen)}${esc(c.sin_conexion ? ' · sin conexión' : '')}
+    h += ch.length ? '<ul class="pe-ordenes">' + ch.map(c => `<li class="${c.estado === 'anulada' ? 'pe-baja' : ''}"><b>${esc(String(c.hora).slice(0, 5))}</b> · ${esc(TIPOS[c.tipo] || c.tipo)} · ${esc(c.origen === 'manual' ? 'a mano por ' + (c.registrado_por_nombre || '') : c.origen === 'celular' ? 'desde su celular' : c.origen === 'whatsapp' ? 'por WhatsApp' : c.kiosco || c.origen)}${esc(c.sin_conexion ? ' · sin conexión' : '')}
       ${esc(c.estado === 'anulada' ? ' · anulada' : c.estado === 'por_revisar' ? ' · por revisar' : '')}${c.observaciones ? ` <small>(${esc(c.observaciones)})</small>` : ''}
       ${c.tiene_foto ? ` <button type="button" class="btn-link" data-as-foto="${Number(c.id)}">📷 Foto</button>` : ''}${mapa(c)}${esc(c.foto_borrada ? ' · foto borrada (plazo cumplido)' : '')}
       ${botonCorregir(p.corregir && revisar(c), 'aceptar', c.id, 'Aceptar')}${botonCorregir(p.corregir && vigente(c), 'anular', c.id, 'Anular')}</li>`).join('') + '</ul><div id="as-foto"></div>'

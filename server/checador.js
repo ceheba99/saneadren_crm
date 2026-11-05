@@ -511,7 +511,7 @@ module.exports = function checador(app, db, h) {
   // Las tablas sin «main.» son las vistas por sucursal (sucursales.js): una persona o kiosco de otra sucursal «no existe».
   const persona = id => db.prepare('SELECT * FROM personal WHERE id = ?').get(idDe(id));
   const estadoDe = p => ({
-    codigo: p.codigo_checador, tiene_pin: !!p.pin_hash, pin_temporal: !!p.pin_temporal, checa: !!p.checa, pin_cambiado_at: p.pin_cambiado_at,
+    codigo: p.codigo_checador, tiene_pin: !!p.pin_hash, pin_temporal: !!p.pin_temporal, checa: !!p.checa, pin_cambiado_at: p.pin_cambiado_at, checa_whatsapp: !!p.checa_whatsapp,
     // bloqueo_total: el largo (24 h, o el «para siempre» de antes): la pantalla dice que RH lo puede desbloquear.
     bloqueado: p.pin_bloqueado_hasta > Date.now(), bloqueo_total: p.pin_bloqueado_hasta - Date.now() > ESPERA_MS,
     bloqueado_hasta: p.pin_bloqueado_hasta > Date.now() && p.pin_bloqueado_hasta < BLOQUEO_TOTAL ? new Date(p.pin_bloqueado_hasta).toISOString() : null,
@@ -779,3 +779,4 @@ module.exports = function checador(app, db, h) {
 };
 module.exports.pinDebil = pinDebil;
 module.exports.TIPOS = TIPOS;
+module.exports.SIGUIENTE = SIGUIENTE;
