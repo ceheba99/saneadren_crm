@@ -2209,3 +2209,19 @@ table.tabla-clientes.py-tareas tbody td{white-space:normal;}
 .rh-acceso small{color:#6b7280;}
 .rh-icono{font-size:1.5rem;}
 .rh-pasos{margin:6px 0 10px;padding-left:20px;}
+
+/* Listas de la parte que cambia de cada servicio (2026-11-05, listas-servicio.js) */
+.gc-opciones{grid-column:1/-1;display:flex;flex-wrap:wrap;gap:10px 12px;}
+.gc-opciones .campo-modal{min-width:180px;flex:0 1 260px;}
+.ls-listas{margin-top:8px;display:flex;flex-direction:column;gap:8px;}
+.ls-lista{border:1px dashed var(--gris-400);border-radius:var(--radio);padding:8px 10px;}
+.ls-tit{font-size:13px;margin-bottom:6px;}
+.ls-tit small{color:var(--texto-sec);}
+.ls-chips{display:flex;flex-wrap:wrap;gap:6px;}
+.ls-chip{display:inline-flex;align-items:center;gap:4px;background:var(--gris-100);border:1px solid var(--gris-200);border-radius:999px;padding:2px 4px 2px 10px;font-size:13px;}
+.ls-chip-quitada{opacity:.7;margin:4px 6px 0 0;}
+.ls-quitar{border:0;background:transparent;cursor:pointer;padding:0 6px;font-size:12px;color:var(--texto-sec);}
+.ls-agregar{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;}
+.ls-agregar .ls-nuevo{flex:1 1 160px;min-width:0;}
+.ls-quitadas summary{cursor:pointer;color:var(--texto-sec);font-size:13px;margin-top:6px;}
+.ls-ayuda{margin:6px 0 0;}

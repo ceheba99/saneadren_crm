@@ -293,6 +293,7 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
     ['cargaAds', 'Cargar el reporte de llamadas de Google Ads (CSV) y verlo cruzado con los contactos'],
     ['subeXmlGasto', 'Subir el XML de la factura a un gasto que registró Tomás (el sistema llena el IVA)'],
     ['corrigeIvaGasto', 'Corregir a mano el IVA de ese gasto (botón «IVA»)'],
+    ['editaListaServ', 'Agregar o quitar opciones en la lista de un servicio (p. ej. 4M3, 8M3 para [VOLUMEN])'],
   ];
   const ok = r => r[0] === 200 || r[0] === 201;
   for (const [rol] of ROLES) {
@@ -367,6 +368,9 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
       const r = await fetch(URL + '/finanzas/cxp/' + g.id + '/xml', { method: 'POST', headers: { 'Content-Type': 'application/octet-stream', Authorization: 'Bearer ' + t, 'X-Nombre': 'factura.xml' }, body: cfdi({ total: '1160.00', traslados: [['002', '160.00']] }) });
       VE[rol].subeXmlGasto = r.status === 201;
       VE[rol].corrigeIvaGasto = ok(await pedir('POST', '/finanzas/cxp/' + g.id + '/iva', t, { iva: 160 })); }
+    { // Listas de los servicios (2026-11-05): agregar una opción, o quitar una que agrega Dirección en cada vuelta.
+      const base = '/servicios/' + SERV.id + '/listas', otra = exigir(await pedir('POST', base, A, { marca: 'VOLUMEN', valor: 'POR QUITAR ' + rol }), 'opción por quitar');
+      VE[rol].editaListaServ = ok(await pedir('POST', base, t, { marca: 'VOLUMEN', valor: 'NUEVA ' + rol })) || ok(await pedir('POST', base + '/' + otra.id + '/desactivar', t, {})); }
     VE[rol].claveServicio = ok(await pedir('PUT', '/facturacion/servicios/' + servicioFact.id, t, { clave_prod_serv: '76121600', clave_unidad: 'E48' }));
     const nuevaPub = exigir(await pedir('POST', '/marketing/publicaciones', T.Mara, { titulo: 'Por aprobar ' + rol, redes: ['tiktok'], formato: 'video', fecha: dia(5), copy: 'Copy', sucursal: qro.id }), 'publicación por aprobar');
     const enRevision = exigir(await pedir('POST', '/marketing/publicaciones/' + nuevaPub.id + '/estado', T.Mara, { accion: 'enviar', version: nuevaPub.version }), 'enviar a revisión');
@@ -450,6 +454,8 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
       admin: { presupMk: 1, gastoMk: 1 }, marketing_gerente: { presupMk: 1, gastoMk: 1 }, ...Object.fromEntries(['marketing', 'gerente', 'ventas', 'atencion', 'tecnico', 'costos'].map(r => [r, { presupMk: 0, gastoMk: 0 }])) }],
     ['2026-11-04', 'Llamadas de Google Ads (subir el reporte «Detalles de las llamadas» y verlo cruzado con los contactos, ventas e importes): lo ven y lo cargan solo Dirección y el Gerente de marketing; el rol Marketing y los demás roles no.', {
       admin: { gAds: 1, cargaAds: 1 }, marketing_gerente: { gAds: 1, cargaAds: 1 }, ...Object.fromEntries(['marketing', 'gerente', 'ventas', 'atencion', 'tecnico', 'costos'].map(r => [r, { gAds: 0, cargaAds: 0 }])) }],
+    ['2026-11-05', 'Listas de los servicios (las opciones que se eligen para la parte que cambia de la descripción, p. ej. [VOLUMEN]: 4M3, 8M3… o [SUCURSAL] de KFC): las agregan o quitan solo Dirección; ningún otro rol, ni el Gerente. Quienes cotizan solo eligen de la lista. Quitar no borra: queda en la bitácora.', {
+      admin: { editaListaServ: 1 }, ...Object.fromEntries(['gerente', 'ventas', 'atencion', 'tecnico', 'costos', 'marketing', 'marketing_gerente'].map(r => [r, { editaListaServ: 0 }])) }],
     ['2026-10-27', 'Presupuesto de Marketing: lo propone el Gerente de marketing y lo aprueba solo Dirección.', {
       admin: { apruebaPresup: 1 }, marketing_gerente: { proponePresup: 1, apruebaPresup: 0 }, ...Object.fromEntries(['marketing', 'gerente', 'ventas', 'atencion', 'tecnico', 'costos'].map(r => [r, { proponePresup: 0, apruebaPresup: 0 }])) }],
     ['2026-10-27', 'Gastos de Marketing: los registran Dirección y el Gerente de marketing, y son control interno del departamento: no aparecen en Cuentas por pagar.', {

@@ -178,6 +178,7 @@ async function cargarCatalogos() {
     api('/canales').then(r => r.json())
   ]);
   CATALOGOS = { usuarios: u, servicios: s, canales: c };
+  await window.ListasServicio?.cargar(); // listas de la parte que cambia de cada servicio ([VOLUMEN]…)
   await cargarTiposCliente();
   for (const [idSel, vacio] of [['in-origen', 'Selecciona una opción'], ['fc-ed-origen', 'Sin registrar']]) {
     const origen = document.getElementById(idSel), origenPrevio = origen.value;
@@ -1404,6 +1405,7 @@ function crearFilaServicioHTML(item) {
 const etiquetaPrecio = modo => 'Precio unitario' + (modo === 'incluido' ? ' con IVA' : modo === 'mas_iva' ? ' sin IVA' : '');
 function agregarFilaCotizacion(item = {}) {
   document.getElementById('gc-items').insertAdjacentHTML('beforeend', crearFilaServicioHTML(item));
+  window.ListasServicio?.pintarFila(document.getElementById('gc-items').lastElementChild, item.opciones || {});
 }
 
 // ---------- IVA del documento (casilla "IVA incluido") ----------
@@ -1469,6 +1471,7 @@ function recolectarItemsCotizacion() {
     .map(fila => ({
       servicio: fila.querySelector('.gc-servicio').value,
       leyenda: fila.querySelector('.gc-leyenda').value.trim(),
+      ...(Object.keys(window.ListasServicio?.elegidas(fila) || {}).length ? { opciones: window.ListasServicio.elegidas(fila) } : {}),
       cantidad: Number(fila.querySelector('.gc-cantidad').value) || 1,
       precio: Number(fila.querySelector('.gc-precio').value) || 0,
       importe: Number(fila.querySelector('.gc-importe').value) || 0
@@ -1504,7 +1507,7 @@ function prepararEditorCotizacion(lead,modo){
   actualizarTotalCotizacion();sincronizarEditor();
   // Sin «Ver importes»: las partidas se leen (servicio, descripción y cantidad) pero no se cambian; el servidor tampoco las cambia.
   const soloLeer=!Permisos.puede('ordenes.importes');
-  document.querySelectorAll('#gc-items .gc-servicio').forEach(x=>{x.disabled=soloLeer;});
+  document.querySelectorAll('#gc-items .gc-servicio, #gc-items .gc-opcion').forEach(x=>{x.disabled=soloLeer;});
   document.querySelectorAll('#gc-items .gc-leyenda, #gc-items .gc-cantidad').forEach(x=>{if(soloLeer)x.readOnly=true;});
 }
 function sincronizarEditor(){
@@ -1517,6 +1520,9 @@ function validarEditorCotizacion(){
   if(!Permisos.puede('ordenes.importes'))return true; // sin importes las partidas no se cambian (el servidor las ignora)
   const filas=[...document.querySelectorAll('#gc-items .gc-fila')];
   if(!filas.length||filas.some(f=>!f.querySelector('.gc-servicio').value||f.querySelector('.gc-precio').value===''||!(Number(f.querySelector('.gc-precio').value)>0)||!(Number(f.querySelector('.gc-cantidad').value)>0))){toast('Selecciona un servicio y escribe cantidad y precio unitario (mayor a $0) en cada partida');return false;}
+  // Partes de la descripción con lista ([VOLUMEN]…) sin elegir: el servidor tampoco las acepta.
+  const falta=window.ListasServicio?.faltante(filas);
+  if(falta){toast('Elige '+falta.marca.toLowerCase()+' de la lista en «'+falta.fila.querySelector('.gc-servicio').value+'»');falta.fila.querySelector('.gc-opcion[data-marca="'+CSS.escape(falta.marca)+'"]')?.focus();return false;}
   // Un registro nuevo o una cotización abierta deben decir si sus importes llevan IVA.
   if(!modoIvaEditor()&&(EDITOR_MODO==='nuevo'||LEAD_ACTUAL?.estatus==='abierto')){
     toast('Indica el IVA: elige Más IVA, IVA incluido o Sin IVA');
@@ -1541,7 +1547,10 @@ on('gc-items', 'change', async e => {
     const personalizada = leyendaEl.value.trim() && leyendaEl.value !== (leyendaEl.dataset.plantilla || '');
     if (!personalizada || await solicitarDialogo({titulo:'Descripción editada',mensaje:'¿Reemplazar la descripción que editaste por la plantilla del servicio seleccionado?',aceptar:'Usar plantilla'})) leyendaEl.value = preset;
     leyendaEl.dataset.plantilla = preset;
+    delete leyendaEl.dataset.generada;
+    window.ListasServicio?.pintarFila(fila); // listas de la parte que cambia ([VOLUMEN]…) del servicio elegido
   }
+  if (e.target.classList.contains('gc-opcion')) window.ListasServicio?.alElegir(e.target);
 });
 on('gc-items', 'input', e => {
   // Importe de la partida = cantidad × precio unitario.
@@ -2598,13 +2607,14 @@ async function cargarCatalogoServicios() {
   cont.innerHTML = servicios.map((s, i) => `
     <div class="servicio-row fila-catalogo" data-servicio="${Number(s.id)}">
       <div class="orden-btns"><button type="button" class="btn btn-outline" data-mover="-1" ${i === 0 ? 'disabled' : ''} aria-label="Subir ${escaparHtml(s.nombre)}">↑</button><button type="button" class="btn btn-outline" data-mover="1" ${i === servicios.length - 1 ? 'disabled' : ''} aria-label="Bajar ${escaparHtml(s.nombre)}">↓</button></div>
-      <div class="info"><div class="tit">${escaparHtml(s.nombre)}</div><label for="desc-${s.id}">Descripción predeterminada para cotizaciones</label><textarea id="desc-${s.id}" rows="3" maxlength="10000" placeholder="Descripción que se precargará al elegir este servicio">${escaparHtml(s.descripcion || '')}</textarea></div>
+      <div class="info"><div class="tit">${escaparHtml(s.nombre)}</div><label for="desc-${s.id}">Descripción predeterminada para cotizaciones</label><textarea id="desc-${s.id}" rows="3" maxlength="10000" placeholder="Descripción que se precargará al elegir este servicio. Lo que cambia va entre corchetes, p. ej. [VOLUMEN]">${escaparHtml(s.descripcion || '')}</textarea></div>
       <div class="acciones-catalogo">
         <span class="solo-general"><input class="util-48" type="number" min="1" step="1" placeholder="Sin recompra" value="${s.dias_recurrencia != null ? s.dias_recurrencia : ''}" id="rec-${s.id}" aria-label="Recompra cada (días)"> <span class="util-49">días</span></span>
         <button type="button" class="btn btn-secundario" data-guardar>Guardar</button>
         ${admin ? '<button type="button" class="btn btn-peligro" data-eliminar>Eliminar</button>' : ''}
       </div>
     </div>`).join('');
+  await window.ListasServicio?.cargar(); window.ListasServicio?.pintarCatalogo(); // listas de cada servicio (solo Dirección las cambia)
   enVista('#lista-servicios-catalogo .fila-catalogo', Permisos.puede('catalogos.editar'));
 }
 on('lista-servicios-catalogo', 'click', async e => {

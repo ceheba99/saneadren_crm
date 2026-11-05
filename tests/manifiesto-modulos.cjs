@@ -9,7 +9,7 @@ module.exports = {
     ventas: {
       nombre: 'Contactos, cotizaciones y órdenes de servicio',
       vistas: ['alta', 'leads', 'clientes', 'calendario', 'generador'],
-      tablas: ['clientes', 'clientes_alias', 'clientes_distintos', 'clientes_fusionados', 'telefonos_cliente', 'leads', 'historial', 'historial_archivo', 'canales', 'canales_alias', 'tipos_cliente', 'catalogo_servicios', 'servicios_alias', 'contadores_folio', 'orden_personal', 'plantillas_descripcion', 'cliente_sucursales'],
+      tablas: ['clientes', 'clientes_alias', 'clientes_distintos', 'clientes_fusionados', 'telefonos_cliente', 'leads', 'historial', 'historial_archivo', 'canales', 'canales_alias', 'tipos_cliente', 'catalogo_servicios', 'servicios_alias', 'contadores_folio', 'orden_personal', 'plantillas_descripcion', 'cliente_sucursales', 'servicio_listas'],
       rutas: [/^\/api\/(leads|contactos|clientes|servicios|canales|tipos-cliente|recompras|alertas|generador|historial)(\/|$)/],
       pendientes: 'recordatorios vencidos, cotizaciones sin movimiento, servicios por concluir y recompras',
       inicio: ['inicio-cotizaciones', 'inicio-concluir', 'inicio-recompras'],
