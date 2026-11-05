@@ -33,6 +33,8 @@ module.exports = function rh(app, db, h) {
       por_revisar: puede(req, 'asistencia.ver') ? uno("SELECT COUNT(*) n FROM checadas c WHERE c.estado = 'por_revisar'") : null,
       // Auditoría 2026-11-05: intentos fallidos de hoy en sus kioscos y checadas de la última semana desde otra red.
       intentos_hoy: puede(req, 'asistencia.ver') ? uno('SELECT COUNT(*) n FROM checador_intentos WHERE fecha = ?', hoy) : null,
+      // Biométrico (2026-11-05): checadas de la última semana en que no reconoció la cara y siguen por revisar.
+      biometria_fallos: puede(req, 'asistencia.ver') ? uno("SELECT COUNT(*) n FROM checadas c WHERE c.fecha >= date(?, '-7 days') AND c.estado = 'por_revisar' AND c.biometria IN ('no_coincide', 'no_vivo', 'sin_rostro')", hoy) : null,
       otra_red: puede(req, 'asistencia.ver') ? uno("SELECT COUNT(*) n FROM checadas c WHERE c.fecha >= date(?, '-7 days') AND c.estado <> 'anulada' AND c.observaciones LIKE '%Desde otra red%'", hoy) : null,
       sucursales_sin_ubicacion: puede(req, 'asistencia.ver') ? uno("SELECT COUNT(*) n FROM main.sucursales s WHERE s.activo = 1 AND s.lat IS NULL AND EXISTS (SELECT 1 FROM checador_dispositivos d WHERE d.sucursal_id = s.id AND d.tipo = 'celular' AND d.activo = 1)") : null,
       puede: { editar: puede(req, 'personal.editar'), asistencia: puede(req, 'asistencia.ver'), horarios: puede(req, 'asistencia.horarios'), kioscos: puede(req, 'asistencia.kioscos'), sensibles: puede(req, 'personal.sensibles') },

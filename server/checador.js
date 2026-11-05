@@ -358,18 +358,45 @@ module.exports = function checador(app, db, h) {
   }
   // Paso 1: código y PIN. Si son correctos regresa un ticket de 90 s para checar (o para elegir PIN si es temporal).
   // Intento fallido: se registra (uno por código y kiosco cada 30 s) y se regresa un permiso de 90 s para subir su foto.
-  function registrarIntento(req, codigo, v) {
+  // «motivo»: para los intentos con la cara (biométrico); esos no se limitan a uno cada 30 s (ya son máx. 3 por persona).
+  function registrarIntento(req, codigo, v, motivo = null) {
     if (![401, 423].includes(v.status)) return null;
     const cod = /^\d{4}$/.test(codigo) ? codigo : null, llave = req.kiosco.id + ':' + (cod || '-'), t = Date.now();
-    if (ultimoIntento.has(llave) && ultimoIntento.get(llave) + 30000 > t) return null;
-    ultimoIntento.set(llave, t);
+    if (!motivo && ultimoIntento.has(llave) && ultimoIntento.get(llave) + 30000 > t) return null;
+    if (!motivo) ultimoIntento.set(llave, t);
     const quien = cod ? db.prepare('SELECT id FROM main.personal WHERE codigo_checador = ?').get(cod) : null, a = ahoraMexico();
     const id = Number(db.prepare('INSERT INTO main.checador_intentos (dispositivo_id, personal_id, codigo, motivo, ip, momento_utc, fecha, hora) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
-      .run(req.kiosco.id, quien?.id ?? null, cod, v.status === 423 ? 'PIN bloqueado' : 'Código o PIN incorrecto', req.ipCliente || null, a.utc, a.fecha, a.hora).lastInsertRowid);
+      .run(req.kiosco.id, quien?.id ?? null, cod, motivo || (v.status === 423 ? 'PIN bloqueado' : 'Código o PIN incorrecto'), req.ipCliente || null, a.utc, a.fecha, a.hora).lastInsertRowid);
     const permiso = crypto.randomBytes(24).toString('base64url');
     fotosIntento.set(permiso, { id, dispositivoId: req.kiosco.id, fecha: a.fecha, expira: t + TICKET_MS });
     return permiso;
   }
+  // ---------- Entrar con la cara en vez del PIN (biométrico, decidido con Dirección el 2026-11-05) ----------
+  // Código (o credencial) → si la persona tiene biométrico, la tablet la escanea: si coincide y parpadeó, SE SALTA EL
+  // PIN. Tras 3 caras que no coinciden en 10 min, solo con PIN (y cada intento fallido queda con su foto en «Intentos
+  // fallidos» para RH). No aplica a quien tiene PIN temporal (primero elige su PIN).
+  const fallosCara = new Map(), INTENTOS_CARA = 3, VENTANA_CARA_MS = 10 * 60 * 1000;
+  setInterval(() => { const t = Date.now(); for (const [k, v] of fallosCara) if (v.reinicia <= t) fallosCara.delete(k); }, 60 * 1000).unref();
+  const caraAgotada = pid => { const f = fallosCara.get(pid); return !!f && f.reinicia > Date.now() && f.n >= INTENTOS_CARA; };
+  const conCara = codigo => {
+    if (!/^\d{4}$/.test(codigo)) return null;
+    const p = db.prepare('SELECT * FROM main.personal WHERE codigo_checador = ? AND activo = 1 AND checa = 1').get(codigo);
+    return p && !p.pin_temporal && app.locals.biometria?.activo(p.id) && !caraAgotada(p.id) ? p : null;
+  };
+  // ¿Esta persona entra con su cara? (si no, el kiosco pide el PIN)
+  app.post('/api/publico/kiosco/rostro-previo', kiosco, h((req, res) => res.json({ biometria: !!conCara(String(req.body?.codigo ?? '')) })));
+  app.post('/api/publico/kiosco/rostro-entrar', kiosco, h((req, res) => {
+    const codigo = String(req.body?.codigo ?? ''), p = conCara(codigo);
+    if (!p) return res.status(409).json({ error: 'Escribe tu PIN', pin: true });
+    const ev = app.locals.biometria.evaluar(p.id, req.body?.rostro);
+    if (ev?.resultado === 'coincide') { fallosCara.delete(p.id); return res.json({ ...paraChecar(req, p), con_cara: true }); }
+    const t = Date.now(); let f = fallosCara.get(p.id);
+    if (!f || f.reinicia <= t) { f = { n: 0, reinicia: t + VENTANA_CARA_MS }; fallosCara.set(p.id, f); }
+    f.n++;
+    const motivo = { no_coincide: 'La cara no coincide', no_vivo: 'Cara sin parpadeo (¿foto?)', sin_rostro: 'No se vio la cara' }[ev?.resultado] || 'Biométrico sin resultado';
+    const intento = registrarIntento(req, codigo, { status: 401 }, motivo);
+    res.status(401).json({ coincide: false, resultado: ev?.resultado || null, intentos: f.n, pin: f.n >= INTENTOS_CARA, ...(intento ? { intento } : {}) });
+  }));
   app.post('/api/publico/kiosco/identificar', kiosco, h((req, res) => {
     const codigo = String(req.body?.codigo ?? ''), v = verificar(req.kiosco, codigo, String(req.body?.pin ?? ''));
     if (!v.p) { const intento = registrarIntento(req, codigo, v); return res.status(v.status).json({ error: v.error, ...(intento ? { intento } : {}) }); }
