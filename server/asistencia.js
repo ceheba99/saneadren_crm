@@ -217,6 +217,8 @@ module.exports = function asistencia(app, db, h) {
     if (!hor) r.notas.push('Sin horario asignado');
     if (abierta !== null) r.notas.push('Salió a comer y no registró regreso');
     if (entrada !== null && salida === null && fecha < hoy) r.notas.push('Sin salida');
+    // «Inicio de tiempo extra» sin «Fin»: ese bloque no cuenta (no se inventa la hora); RH agrega el fin real con motivo.
+    if (ini !== null && fecha < hoy) r.notas.push('Inició tiempo extra y no marcó el fin');
     const aut = db.prepare('SELECT minutos_autorizados, minutos_calculados, autorizado_por_nombre, motivo FROM main.extra_autorizaciones WHERE personal_id = ? AND fecha = ? ORDER BY id DESC LIMIT 1').get(p.id, fecha);
     r.extra_autorizado_min = aut ? Math.min(aut.minutos_autorizados, r.extra_min) : null;
     r.extra_autorizado_por = aut?.autorizado_por_nombre || null;
@@ -254,9 +256,9 @@ module.exports = function asistencia(app, db, h) {
         domingos: dias.filter(d => d.notas.some(n => n.startsWith('Domingo'))).length, festivos_trabajados: dias.filter(d => d.notas.includes('Festivo trabajado')).length,
         descansos_trabajados: dias.filter(d => d.notas.includes('Descanso trabajado')).length, dias_trabajados: dias.filter(d => d.entrada).length,
         vacaciones: dias.filter(d => d.incidencia === 'vacaciones').length, incapacidad: dias.filter(d => d.incidencia === 'incapacidad').length, permisos: dias.filter(d => d.incidencia === 'permiso').length,
-        // Lo que hay que revisar antes de pagar: tiempo extra sin autorizar, días sin salida o sin horario, checadas por revisar.
+        // Lo que hay que revisar antes de pagar: tiempo extra sin autorizar o sin fin, días sin salida o sin horario, checadas por revisar.
         extra_sin_autorizar_min: dias.reduce((s, d) => s + (d.extra_autorizado_min == null ? d.extra_min : 0), 0),
-        sin_salida: dias.filter(d => d.notas.includes('Sin salida')).length, sin_horario: dias.filter(d => d.notas.includes('Sin horario asignado') && (d.entrada || d.salida)).length,
+        sin_salida: dias.filter(d => d.notas.includes('Sin salida')).length, extra_sin_fin: dias.filter(d => d.notas.includes('Inició tiempo extra y no marcó el fin')).length, sin_horario: dias.filter(d => d.notas.includes('Sin horario asignado') && (d.entrada || d.salida)).length,
         por_revisar: t('por_revisar') } };
     });
     // Dinero del tiempo extra: solo para quien ve sueldos, con el precio del puesto vigente al cierre de la semana.
