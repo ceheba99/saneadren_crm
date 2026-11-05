@@ -18,6 +18,9 @@ const { ahoraMexico } = require('./fechas');
 const { TIPOS, SIGUIENTE } = require('./checador');
 
 const ult10 = v => String(v || '').replace(/\D/g, '').slice(-10);
+// Números de México: WhatsApp los manda como 521 + 10 dígitos (el «1» de celulares de antes), pero hay que contestarles
+// a 52 + 10 dígitos; si no, Meta rechaza el envío (p. ej. «el número no está en la lista autorizada» del número de prueba).
+const destino = de => (/^521\d{10}$/.test(de) ? '52' + de.slice(3) : de);
 const MENSAJES_TOPE = 30, VENTANA_MS = 10 * 60 * 1000, DUPLICADO_MS = 2 * 60 * 1000, RETRASO_MAX_S = 15 * 60;
 const config = () => ({
   token: process.env.WHATSAPP_TOKEN || '', telefonoId: process.env.WHATSAPP_PHONE_ID || '',
@@ -55,8 +58,12 @@ module.exports = function whatsapp(app, db, h) {
     const c = config();
     try {
       const r = await fetch(`${c.api}/${encodeURIComponent(c.telefonoId)}/messages`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + c.token },
-        body: JSON.stringify({ messaging_product: 'whatsapp', recipient_type: 'individual', to: para, ...cuerpo }), signal: AbortSignal.timeout(15000) });
-      if (!r.ok) console.error('[whatsapp] Meta respondió ' + r.status + ' al enviar un mensaje'); // sin el cuerpo: puede traer datos
+        body: JSON.stringify({ messaging_product: 'whatsapp', recipient_type: 'individual', to: destino(para), ...cuerpo }), signal: AbortSignal.timeout(15000) });
+      if (!r.ok) {
+        // Solo el código y el motivo de Meta (p. ej. 190 = token vencido, 131030 = número no autorizado), sin el número.
+        const e = (await r.json().catch(() => ({})))?.error || {};
+        console.error(`[whatsapp] Meta rechazó el envío (HTTP ${r.status}, código ${e.code ?? '—'}): ${String(e.message || '').replace(/\+?\d{10,15}/g, '***').slice(0, 200)}`);
+      }
     } catch (e) { console.error('[whatsapp] no se pudo enviar:', e.message); }
   }
   const texto = (para, t) => enviar(para, { type: 'text', text: { preview_url: false, body: t } });
