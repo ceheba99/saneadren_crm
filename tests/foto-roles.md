@@ -57,7 +57,6 @@ Dirección la revisa y la aprueba. Si un cambio altera lo que ve un rol, la prue
 | … y su importe | ✔ | ✔ | — | ✔ | — | — | — | — |
 | Orden de Bruno asignada a Tito (otro técnico): cliente | ✔ | ✔ | — | ✔ | — | ✔ | — | — |
 | Orden de Diego (otra sucursal): cliente | ✔ | — | — | — | — | — | — | — |
-| Sucursales del cliente de Valeria (para llenar {sucursal} en sus partidas) | ✔ | ✔ | ✔ | ✔ | — | — | — | — |
 
 ### Cuentas por cobrar
 
@@ -193,14 +192,12 @@ Dirección la revisa y la aprueba. Si un cambio altera lo que ve un rol, la prue
 | Cargar trabajadores en lote desde la plantilla de Excel (revisar y guardar) | ✔ | ✔ | — | — | — | — | — | — |
 | Ver la asistencia del día y de la semana (retardos, faltas, tiempo extra) | ✔ | ✔ | — | — | — | — | — | — |
 | Cargar el reporte de llamadas de Google Ads (CSV) y verlo cruzado con los contactos | ✔ | — | — | — | — | — | — | ✔ |
-| Agregar, cambiar o quitar una sucursal del cliente de Valeria | ✔ | ✔ | — | — | — | — | — | — |
 | Subir el XML de la factura a un gasto que registró Tomás (el sistema llena el IVA) | ✔ | ✔ | — | — | ✔ | ✔ | — | — |
 | Corregir a mano el IVA de ese gasto (botón «IVA») | ✔ | ✔ | — | — | — | ✔ | — | — |
 
 | Permiso | Dirección | Gerente | Ventas | Atención | Técnico | Costos y compras | Marketing | Gerente de marketing |
 |---|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|
 | Contactos y clientes · Exportar a Excel | ✔ | ✔ | — | — | — | — | — | — |
-| Contactos y clientes · Sucursales de los clientes | ✔ | ✔ | — | — | — | — | — | — |
 | Cotizaciones y órdenes · Ver importes | ✔ | ✔ | ✔ | ✔ | ✔ | — | — | — |
 | Cotizaciones y órdenes · Editar lo de otros | ✔ | ✔ | — | — | — | — | — | — |
 | Cotizaciones y órdenes · Cargar el generador | ✔ | ✔ | — | ✔ | — | — | — | — |
@@ -273,7 +270,6 @@ Dirección la revisa y la aprueba. Si un cambio altera lo que ve un rol, la prue
 - **2026-10-26** · Dirección ve y aprueba todo Marketing.
 - **2026-10-27** · Dinero de Marketing (presupuesto, gastos, costo por contacto y retorno): lo ven Dirección y el Gerente de marketing; el rol Marketing y los demás roles no.
 - **2026-11-04** · Llamadas de Google Ads (subir el reporte «Detalles de las llamadas» y verlo cruzado con los contactos, ventas e importes): lo ven y lo cargan solo Dirección y el Gerente de marketing; el rol Marketing y los demás roles no.
-- **2026-11-04** · Sucursales de un cliente (la lista para llenar el hueco {sucursal} de la descripción del servicio al capturar una partida; reemplaza a las «descripciones guardadas por cliente» del mismo día): las agregan, cambian o quitan solo Dirección y el Gerente de la sucursal del cliente (permiso «Sucursales de los clientes»); las ven y eligen quienes cotizan a ese cliente (Ventas y Atención); Técnico, Compras y Marketing no las ven. Quitar no borra: queda en la bitácora.
 - **2026-10-27** · Presupuesto de Marketing: lo propone el Gerente de marketing y lo aprueba solo Dirección.
 - **2026-10-27** · Gastos de Marketing: los registran Dirección y el Gerente de marketing, y son control interno del departamento: no aparecen en Cuentas por pagar.
 - **2026-10-27** · Resultados de cada publicación (alcance, me gusta, mensajes…): los capturan Marketing, el Gerente de marketing y Dirección, cuando ya está publicada; los demás roles no.

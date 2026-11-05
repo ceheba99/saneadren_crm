@@ -19,8 +19,6 @@ const TODOS = ['gerente', 'ventas', 'atencion', 'tecnico', 'costos'];
 const CATALOGO = [
   // [clave, sección, nombre, explicación, roles que lo tienen al inicio (además de Dirección)]
   ['clientes.exportar', 'Contactos y clientes', 'Exportar a Excel', 'Descargar contactos, cotizaciones, cuentas y órdenes de compra en Excel', ['gerente']],
-  // Sucursales de los clientes (2026-11-04): la lista para llenar el hueco {sucursal} de la descripción del servicio.
-  ['clientes.sucursales', 'Contactos y clientes', 'Sucursales de los clientes', 'Agregar, cambiar o quitar las sucursales de los clientes de su sucursal (p. ej. KFC Puerta La Victoria), que se eligen al capturar una partida. Elegirlas no pide este permiso', ['gerente']],
   ['ordenes.importes', 'Cotizaciones y órdenes', 'Ver importes', 'Precios, totales e IVA de las cotizaciones y órdenes que ve. Sin esto ve sus órdenes para trabajar (cliente, dirección, fecha y servicio) sin dinero', ['gerente', 'ventas', 'atencion', 'tecnico']],
   ['ventas.editar_otros', 'Cotizaciones y órdenes', 'Editar lo de otros', 'Cambiar contactos, cotizaciones y órdenes de otras personas de su sucursal, pasarlas a otro responsable y marcar realizadas sus órdenes. Sin esto cada quien edita solo lo que capturó o tiene a su nombre', ['gerente']],
   ['generador.cargar', 'Cotizaciones y órdenes', 'Cargar el generador', 'Subir el Excel del generador de órdenes', ['gerente', 'atencion', 'ventas']],
@@ -122,7 +120,6 @@ const DEPENDE = {
   'reportes.analisis': ['ordenes.importes'],
   'reportes.panorama': ['reportes.analisis'],
   'clientes.exportar': ['ordenes.importes', 'contactos.ver'], // el Excel lleva los importes
-  'clientes.sucursales': ['contactos.ver'],
   'personal.editar': ['personal.ver'],
   'personal.sensibles': ['personal.ver'],
   'asistencia.ver': ['personal.ver'],

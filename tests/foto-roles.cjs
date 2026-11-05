@@ -120,8 +120,6 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
   const MES = HOY.slice(0, 7);
   exigir(await pedir('PUT', '/marketing/presupuestos/' + MES, T.Gil, { lineas: { pauta: 17345.67 } }), 'presupuesto de marketing');
   exigir(await pedir('POST', '/marketing/gastos', T.Gil, { fecha: HOY, concepto: 'Pauta Turquesa', rubro: 'pauta', monto: 4183.56, proveedor: 'Meta' }), 'gasto de marketing');
-  // Sucursales del cliente (2026-11-04): Dirección agrega una a Planta Ambar (su dirección va marcada; en la bitácora solo sale el nombre).
-  exigir(await pedir('POST', '/clientes/' + cAmbar.id + '/sucursales', A, { nombre: 'Planta Norte', direccion: 'Calle Esmeralda 7' }), 'agregar una sucursal del cliente');
   // Google Ads (2026-11-04): Dirección sube el reporte «Detalles de las llamadas» con una campaña marcada (número inventado, que no está en el CRM).
   const fechaAds = new Date(dia(-2) + 'T12:00:00Z'), MES_ADS = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'][fechaAds.getUTCMonth()];
   const CSV_ADS = 'Detalles de las llamadas\nRango\nHora de inicio,Duración (segundos),Código de país de la persona que llama,Prefijo de la persona que llama,Número de teléfono de la persona que llama,Grabación,Estado,Fuente de la llamada,Tipo de llamada,Campaña\n'
@@ -159,7 +157,6 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
       ['berilo$', '… y su importe', conIva(8231.57)],
       ['diamante', 'Orden de Bruno asignada a Tito (otro técnico): cliente', ['Diamante']],
       ['coral', 'Orden de Diego (otra sucursal): cliente', ['Coral']],
-      ['sucursalAmbar', 'Sucursales del cliente de Valeria (para llenar {sucursal} en sus partidas)', ['Calle Esmeralda']],
     ]],
     ['Cuentas por cobrar', [
       ['cobroTomas', 'Cobro que registró Tomás (técnico) en la orden de Valeria', formas(503.61)],
@@ -294,7 +291,6 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
     ['importaPersonal', 'Cargar trabajadores en lote desde la plantilla de Excel (revisar y guardar)'],
     ['veAsistencia', 'Ver la asistencia del día y de la semana (retardos, faltas, tiempo extra)'],
     ['cargaAds', 'Cargar el reporte de llamadas de Google Ads (CSV) y verlo cruzado con los contactos'],
-    ['editaSucCliente', 'Agregar, cambiar o quitar una sucursal del cliente de Valeria'],
     ['subeXmlGasto', 'Subir el XML de la factura a un gasto que registró Tomás (el sistema llena el IVA)'],
     ['corrigeIvaGasto', 'Corregir a mano el IVA de ese gasto (botón «IVA»)'],
   ];
@@ -366,10 +362,6 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
       VE[rol].eliminaSucursal = ok(await pedir('POST', '/sucursales/' + s.id + '/eliminar', t, {})); }
     VE[rol].veAsistencia = ok(await pedir('GET', '/asistencia/semana', t));
     VE[rol].cargaAds = ok(await pedir('POST', '/marketing/google-ads/cargar', t, { csv: CSV_ADS })); // el mismo archivo: no duplica nada
-    { // Sucursales del cliente (2026-11-04): agregar una, cambiar y quitar otra que agrega Dirección en cada vuelta.
-      const base = '/clientes/' + cAmbar.id + '/sucursales', otra = exigir(await pedir('POST', base, A, { nombre: 'Por cambiar ' + rol }), 'sucursal por cambiar');
-      VE[rol].editaSucCliente = ok(await pedir('POST', base, t, { nombre: 'Nueva de ' + rol })) || ok(await pedir('PUT', base + '/' + otra.id, t, { nombre: 'Cambiada por ' + rol }))
-        || ok(await pedir('POST', base + '/' + otra.id + '/desactivar', t, {})); }
     // XML de la factura de un gasto (2026-11-04): Tomás registra un gasto nuevo y cada rol intenta subirle su XML y corregirle el IVA.
     { const g = exigir(await pedir('POST', '/finanzas/cxp', T.Tomas, { proveedor_id: prov.id, categoria: 'combustible', concepto: 'Gasolina ' + rol, total: 1160, tipo_comprobante: 'factura', fecha_documento: HOY, lead_id: O1.id, dias_credito: 0 }), 'gasto para el XML');
       const r = await fetch(URL + '/finanzas/cxp/' + g.id + '/xml', { method: 'POST', headers: { 'Content-Type': 'application/octet-stream', Authorization: 'Bearer ' + t, 'X-Nombre': 'factura.xml' }, body: cfdi({ total: '1160.00', traslados: [['002', '160.00']] }) });
@@ -458,9 +450,6 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
       admin: { presupMk: 1, gastoMk: 1 }, marketing_gerente: { presupMk: 1, gastoMk: 1 }, ...Object.fromEntries(['marketing', 'gerente', 'ventas', 'atencion', 'tecnico', 'costos'].map(r => [r, { presupMk: 0, gastoMk: 0 }])) }],
     ['2026-11-04', 'Llamadas de Google Ads (subir el reporte «Detalles de las llamadas» y verlo cruzado con los contactos, ventas e importes): lo ven y lo cargan solo Dirección y el Gerente de marketing; el rol Marketing y los demás roles no.', {
       admin: { gAds: 1, cargaAds: 1 }, marketing_gerente: { gAds: 1, cargaAds: 1 }, ...Object.fromEntries(['marketing', 'gerente', 'ventas', 'atencion', 'tecnico', 'costos'].map(r => [r, { gAds: 0, cargaAds: 0 }])) }],
-    ['2026-11-04', 'Sucursales de un cliente (la lista para llenar el hueco {sucursal} de la descripción del servicio al capturar una partida; reemplaza a las «descripciones guardadas por cliente» del mismo día): las agregan, cambian o quitan solo Dirección y el Gerente de la sucursal del cliente (permiso «Sucursales de los clientes»); las ven y eligen quienes cotizan a ese cliente (Ventas y Atención); Técnico, Compras y Marketing no las ven. Quitar no borra: queda en la bitácora.', {
-      admin: { sucursalAmbar: 1, editaSucCliente: 1 }, gerente: { sucursalAmbar: 1, editaSucCliente: 1 }, ventas: { sucursalAmbar: 1, editaSucCliente: 0 }, atencion: { sucursalAmbar: 1, editaSucCliente: 0 },
-      ...Object.fromEntries(['tecnico', 'costos', 'marketing', 'marketing_gerente'].map(r => [r, { sucursalAmbar: 0, editaSucCliente: 0 }])) }],
     ['2026-10-27', 'Presupuesto de Marketing: lo propone el Gerente de marketing y lo aprueba solo Dirección.', {
       admin: { apruebaPresup: 1 }, marketing_gerente: { proponePresup: 1, apruebaPresup: 0 }, ...Object.fromEntries(['marketing', 'gerente', 'ventas', 'atencion', 'tecnico', 'costos'].map(r => [r, { proponePresup: 0, apruebaPresup: 0 }])) }],
     ['2026-10-27', 'Gastos de Marketing: los registran Dirección y el Gerente de marketing, y son control interno del departamento: no aparecen en Cuentas por pagar.', {
