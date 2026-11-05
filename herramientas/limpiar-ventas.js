@@ -3,18 +3,20 @@
 // Se CONSERVA: RH (personal, checadas, horarios, credenciales, WhatsApp), marketing, canales de origen, usuarios, roles,
 // permisos, sucursales y la bitácora de auditoría. Los catálogos de fábrica (servicios, unidades, etc.) vuelven al reiniciar.
 //
-// Uso (desde la carpeta de la app, con DB_PATH apuntando a la base):
-//   npm run limpieza-revisar   → solo cuenta lo que se borraría y lo que se queda; no cambia nada.
-//   npm run limpieza-borrar    → copia la base (antes-de-limpieza-<fecha>.db), mueve los archivos a
+// Uso (desde la carpeta de la app, con DB_PATH apuntando a la base; si la consola no la pasa, se escribe con --base=):
+//   npm run limpieza-revisar [-- --base=/ruta/saneadren.db]   → solo cuenta lo que se borraría y lo que se queda.
+//   npm run limpieza-borrar  [-- --base=/ruta/saneadren.db]   → copia la base (antes-de-limpieza-<fecha>.db), mueve los archivos a
 //                                archivos-antes-de-limpieza-<fecha>/ y borra todo en una sola transacción.
 // Si hay alguna factura timbrada en PRODUCCIÓN, no borra nada.
 const fs = require('fs'), path = require('path');
 const { DatabaseSync } = require('node:sqlite');
 
 const BORRAR = process.argv.includes('--borrar');
-const DB_PATH = process.env.DB_PATH ? path.resolve(process.env.DB_PATH) : '';
+// La consola de comandos de Plesk no pasa las variables de la app: ahí la ruta se escribe con --base=.
+const argBase = (process.argv.find(a => a.startsWith('--base=')) || '').slice('--base='.length);
+const DB_PATH = argBase || process.env.DB_PATH ? path.resolve(argBase || process.env.DB_PATH) : '';
 const alto = msg => { console.error('\n✘ ' + msg + '\n  No se cambió nada.'); process.exit(1); };
-if (!DB_PATH) alto('Falta la variable DB_PATH (la ruta de la base). Corre esto desde Plesk → Node.js de la app.');
+if (!DB_PATH) alto('Falta la ruta de la base. Agrégala al comando: run limpieza-revisar -- --base=/ruta/de/la/base.db (es el valor de DB_PATH en Environment).');
 if (!fs.existsSync(DB_PATH)) alto('No existe la base en ' + DB_PATH);
 
 // En orden: primero lo que cuelga de otra tabla.
@@ -63,7 +65,7 @@ for (const [grupo, ts] of Object.entries(CONSERVAR)) {
 const reales = existe('facturas') ? db.prepare("SELECT COUNT(*) n FROM facturas WHERE entorno = 'prod' AND COALESCE(uuid, '') <> ''").get().n : 0;
 if (reales) alto(`Hay ${reales} factura(s) timbrada(s) en PRODUCCIÓN. Esas tienen validez fiscal y no se borran.`);
 
-if (!BORRAR) { console.log('\nModo REVISAR: no se cambió nada. Para borrar: npm run limpieza-borrar'); process.exit(0); }
+if (!BORRAR) { console.log('\nModo REVISAR: no se cambió nada. Para borrar: el mismo comando con limpieza-borrar en vez de limpieza-revisar.'); process.exit(0); }
 
 const sello = new Intl.DateTimeFormat('sv-SE', { timeZone: 'America/Mexico_City', dateStyle: 'short', timeStyle: 'short' })
   .format(new Date()).replace(/[^0-9]/g, '').replace(/^(\d{8})/, '$1-');

@@ -62,7 +62,9 @@ const QUEDAN = ['personal', 'proyectos_marketing', 'canales', 'usuarios', 'sucur
   const candados = conBase(d => d.prepare("SELECT COUNT(*) n FROM sqlite_master WHERE type = 'trigger'").get().n);
 
   console.log('1. Revisar no cambia nada');
-  revisa(herramienta([], { ...ENV, DB_PATH: '' }).status === 1, 'Sin DB_PATH se detiene');
+  revisa(herramienta([], { ...ENV, DB_PATH: '' }).status === 1, 'Sin DB_PATH ni --base se detiene');
+  const conRuta = herramienta(['--base=' + DB], { ...ENV, DB_PATH: '' });
+  revisa(conRuta.status === 0 && conRuta.stdout.includes('Base: ' + DB), 'Con --base= (consola de Plesk, sin variables) sí encuentra la base', conRuta.stdout + conRuta.stderr);
   let r = herramienta([]);
   revisa(r.status === 0 && /Modo REVISAR/.test(r.stdout), 'Revisar termina bien', r.stdout + r.stderr);
   revisa(VENTAS.every(t => n(t) === antes[t]) && fs.existsSync(path.join(dir, 'archivos', 'facturas', 'f.pdf')), 'Todo sigue igual después de revisar');
