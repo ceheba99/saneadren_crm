@@ -29,6 +29,14 @@
 //    queda la checada con «foto borrada el …». Las que siguen «por revisar» se conservan hasta que alguien las revise.
 //    Aviso de privacidad para el personal en /aviso-privacidad-checador.html (borrador para su abogado); el firmado
 //    se sube al expediente («Aviso de privacidad firmado») y la ficha avisa si falta.
+//  · Auditoría tramposa (2026-11-05, decidido con Dirección):
+//    - Intento fallido en el kiosco (código o PIN malo, PIN bloqueado): queda registrado y el kiosco le toma FOTO (cifrada,
+//      como la de las checadas; se borra con el mismo plazo). Así se ve quién prueba el código de otro.
+//    - RED: cada checada guarda la IP desde la que llegó. El kiosco aprende su red al registrarse; si checa desde otra,
+//      la checada VALE pero lleva la nota «desde otra red» y sale en el resumen de RH (el internet de la oficina puede
+//      cambiar de IP: quien maneja los kioscos marca la nueva como la de siempre).
+//    - UBICACIÓN del celular: se compara con la de su sucursal (la captura Dirección). Más lejos que su radio (500 m por
+//      omisión) → «por revisar» con la distancia, y RH lo ve en el mapa (p. ej. si checó en casa de un cliente).
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
@@ -44,8 +52,15 @@ const ORIGENES = ['kiosco', 'celular', 'whatsapp', 'manual'];
 const FALLOS_ESPERA = 5, FALLOS_TOTAL = 10, ESPERA_MS = 15 * 60 * 1000, BLOQUEO_LARGO_MS = 24 * 3600000, BLOQUEO_TOTAL = 8.64e15;
 const FALLOS_KIOSCO = 20, VENTANA_KIOSCO_MS = 10 * 60 * 1000, FALLOS_IP = 30, VENTANA_IP_MS = 15 * 60 * 1000;
 const TICKET_MS = 90 * 1000, DUPLICADO_MS = 2 * 60 * 1000;
-const MAX_FOTO = 400 * 1024, MAX_SIN_CONEXION_MS = 7 * 86400000, ENLACE_MS = 24 * 3600000, PRECISION_MAX_M = 150;
-const contextoFoto = id => `checadas.foto:${id}`;
+const MAX_FOTO = 400 * 1024, MAX_SIN_CONEXION_MS = 7 * 86400000, ENLACE_MS = 24 * 3600000, PRECISION_MAX_M = 150, RADIO_SUCURSAL_M = 500;
+const contextoFoto = id => `checadas.foto:${id}`, contextoIntento = id => `checador_intentos.foto:${id}`;
+// Distancia en metros entre dos puntos (fórmula del haversine).
+function distanciaM(a, b) {
+  const r = x => x * Math.PI / 180, dLat = r(b.lat - a.lat), dLon = r(b.lon - a.lon);
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(r(a.lat)) * Math.cos(r(b.lat)) * Math.sin(dLon / 2) ** 2;
+  return Math.round(2 * 6371000 * Math.asin(Math.min(1, Math.sqrt(h))));
+}
+const distanciaTexto = m => (m >= 1000 ? (m / 1000).toFixed(1) + ' km' : m + ' m');
 // Foto del kiosco: JPEG en base64 (o data URL), de 1 KB a 400 KB. Si no es una foto válida se trata como «sin foto».
 function fotoDe(v) {
   if (typeof v !== 'string' || !v) return null;
@@ -92,8 +107,10 @@ function migrar(db) {
   agregar('personal', 'pin_cambiado_at', 'TEXT');
   agregar('personal', 'checa', 'INTEGER NOT NULL DEFAULT 1');
   const existe = t => !!db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(t);
-  if (existe('checadas')) { agregar('checadas', 'uid_kiosco', 'TEXT'); agregar('checadas', 'precision_m', 'REAL'); agregar('checadas', 'foto_borrada_at', 'TEXT'); }
-  if (existe('checador_dispositivos')) { agregar('checador_dispositivos', 'tipo', "TEXT NOT NULL DEFAULT 'kiosco'"); agregar('checador_dispositivos', 'personal_id', 'INTEGER REFERENCES personal(id)'); }
+  if (existe('checadas')) { agregar('checadas', 'uid_kiosco', 'TEXT'); agregar('checadas', 'precision_m', 'REAL'); agregar('checadas', 'foto_borrada_at', 'TEXT'); agregar('checadas', 'ip', 'TEXT'); agregar('checadas', 'distancia_m', 'REAL'); }
+  if (existe('checador_dispositivos')) { agregar('checador_dispositivos', 'tipo', "TEXT NOT NULL DEFAULT 'kiosco'"); agregar('checador_dispositivos', 'personal_id', 'INTEGER REFERENCES personal(id)'); agregar('checador_dispositivos', 'red_habitual', 'TEXT'); }
+  // Ubicación de cada sucursal para revisar las checadas del celular (la captura Dirección).
+  agregar('sucursales', 'lat', 'REAL'); agregar('sucursales', 'lon', 'REAL'); agregar('sucursales', 'radio_m', 'INTEGER');
   db.exec(`
     CREATE UNIQUE INDEX IF NOT EXISTS idx_personal_codigo_checador ON personal(codigo_checador) WHERE codigo_checador IS NOT NULL;
     CREATE TABLE IF NOT EXISTS checador_dispositivos (
@@ -104,7 +121,7 @@ function migrar(db) {
       activo INTEGER NOT NULL DEFAULT 1 CHECK(activo IN (0, 1)),
       registrado_por INTEGER, registrado_por_nombre TEXT, created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
       ultimo_uso TEXT, revocado_por TEXT, revocado_at TEXT,
-      tipo TEXT NOT NULL DEFAULT 'kiosco', personal_id INTEGER REFERENCES personal(id)
+      tipo TEXT NOT NULL DEFAULT 'kiosco', personal_id INTEGER REFERENCES personal(id), red_habitual TEXT
     );
     -- Enlaces de un solo uso para ligar el celular de una persona (F5). Solo se guarda el hash del enlace.
     CREATE TABLE IF NOT EXISTS checador_enlaces (
@@ -124,7 +141,7 @@ function migrar(db) {
       estado TEXT NOT NULL DEFAULT 'valida' CHECK(estado IN ('valida', 'por_revisar', 'anulada')),
       observaciones TEXT, registrado_por INTEGER, registrado_por_nombre TEXT,
       created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
-      uid_kiosco TEXT, precision_m REAL, foto_borrada_at TEXT
+      uid_kiosco TEXT, precision_m REAL, foto_borrada_at TEXT, ip TEXT, distancia_m REAL
     );
     CREATE INDEX IF NOT EXISTS idx_checadas_persona ON checadas(personal_id, momento_utc);
     CREATE INDEX IF NOT EXISTS idx_checadas_fecha ON checadas(fecha);
@@ -143,7 +160,7 @@ function migrar(db) {
       BEGIN SELECT RAISE(ABORT, 'Las checadas no se borran: se anulan con motivo'); END;
     -- Se rehace en cada arranque: así su lista de columnas protegidas se actualiza cuando se agrega una.
     DROP TRIGGER IF EXISTS checadas_no_cambiar;
-    CREATE TRIGGER checadas_no_cambiar BEFORE UPDATE OF personal_id, tipo, momento_utc, fecha, hora, origen, dispositivo_id, created_at, uid_kiosco ON checadas
+    CREATE TRIGGER checadas_no_cambiar BEFORE UPDATE OF personal_id, tipo, momento_utc, fecha, hora, origen, dispositivo_id, created_at, uid_kiosco, ip, distancia_m ON checadas
       BEGIN SELECT RAISE(ABORT, 'La hora de una checada no se cambia: se anula y se agrega otra con motivo'); END;
     CREATE TRIGGER IF NOT EXISTS checadas_anulada_final BEFORE UPDATE OF estado ON checadas WHEN OLD.estado = 'anulada'
       BEGIN SELECT RAISE(ABORT, 'Una checada anulada ya no cambia'); END;
@@ -151,6 +168,21 @@ function migrar(db) {
       BEGIN SELECT RAISE(ABORT, 'La bitácora de checadas no se borra'); END;
     CREATE TRIGGER IF NOT EXISTS checadas_correcciones_no_cambiar BEFORE UPDATE ON checadas_correcciones
       BEGIN SELECT RAISE(ABORT, 'La bitácora de checadas no se cambia'); END;
+    -- Intentos fallidos en el kiosco (2026-11-05): código tecleado, de quién es (si existe), motivo, red y foto.
+    CREATE TABLE IF NOT EXISTS checador_intentos (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      dispositivo_id INTEGER NOT NULL REFERENCES checador_dispositivos(id),
+      personal_id INTEGER REFERENCES personal(id),
+      codigo TEXT, motivo TEXT NOT NULL, ip TEXT,
+      momento_utc TEXT NOT NULL, fecha TEXT NOT NULL, hora TEXT NOT NULL,
+      foto_archivo TEXT, foto_borrada_at TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_checador_intentos_fecha ON checador_intentos(fecha);
+    CREATE TRIGGER IF NOT EXISTS checador_intentos_no_borrar BEFORE DELETE ON checador_intentos
+      BEGIN SELECT RAISE(ABORT, 'Los intentos del checador no se borran'); END;
+    CREATE TRIGGER IF NOT EXISTS checador_intentos_fijos BEFORE UPDATE OF dispositivo_id, personal_id, codigo, motivo, ip, momento_utc, fecha, hora, created_at ON checador_intentos
+      BEGIN SELECT RAISE(ABORT, 'Un intento del checador no se cambia'); END;
   `);
 }
 
@@ -182,25 +214,46 @@ module.exports = function checador(app, db, h) {
       db.prepare("UPDATE main.checadas SET foto_archivo = NULL, foto_borrada_at = datetime('now','localtime') WHERE id = ?").run(f.id);
       borradas++;
     }
+    for (const f of db.prepare('SELECT id, foto_archivo FROM main.checador_intentos WHERE foto_archivo IS NOT NULL AND fecha < ?').all(limite)) {
+      const ruta = path.join(DIR_FOTOS, f.foto_archivo);
+      try { if (ruta.startsWith(DIR_FOTOS + path.sep)) fs.rmSync(ruta, { force: true }); }
+      catch (e) { console.error('[checador] no se pudo borrar la foto del intento ' + f.id + ':', e.message); continue; }
+      db.prepare("UPDATE main.checador_intentos SET foto_archivo = NULL, foto_borrada_at = datetime('now','localtime') WHERE id = ?").run(f.id);
+      borradas++;
+    }
     if (borradas) console.log(`[checador] Se borraron ${borradas} foto(s) de checadas de más de ${DIAS_FOTOS} días.`);
     return { borradas, dias: DIAS_FOTOS, antes_de: limite };
   }
   setTimeout(() => { try { borrarFotosViejas(); } catch (e) { console.error('[checador] borrado de fotos:', e.message); } }, 60 * 1000).unref();
   setInterval(() => { try { borrarFotosViejas(); } catch (e) { console.error('[checador] borrado de fotos:', e.message); } }, 6 * 3600000).unref();
   // Guarda una checada del kiosco (con o sin conexión) y su foto, en una sola transacción.
-  function guardarChecada({ p, d, tipo, a, foto, sinConexion = null, uid = null, origen = 'kiosco', ubicacion = null }) {
-    const notas = [];
+  // «notas» la dejan «por revisar»; «avisos» solo se anotan (la checada vale).
+  function guardarChecada({ p, d, tipo, a, foto, ip = null, sinConexion = null, uid = null, origen = 'kiosco', ubicacion = null }) {
+    const notas = [], avisos = [];
+    let distancia = null;
     if (p.sucursal_id !== d.sucursal_id) notas.push('Checó en un kiosco de otra sucursal');
     if (!foto) notas.push('Sin foto');
     if (sinConexion) notas.push(sinConexion.nota);
     if (origen === 'celular') {
       if (!ubicacion) notas.push('Sin ubicación');
-      else if (ubicacion.precision > PRECISION_MAX_M) notas.push(`Ubicación poco precisa (±${Math.round(ubicacion.precision)} m)`);
+      else {
+        if (ubicacion.precision > PRECISION_MAX_M) notas.push(`Ubicación poco precisa (±${Math.round(ubicacion.precision)} m)`);
+        const s = db.prepare('SELECT nombre, lat, lon, radio_m FROM main.sucursales WHERE id = ?').get(p.sucursal_id);
+        if (s && s.lat != null && s.lon != null) {
+          distancia = distanciaM(s, ubicacion);
+          if (distancia > (s.radio_m || RADIO_SUCURSAL_M)) notas.push(`A ${distanciaTexto(distancia)} de la sucursal ${s.nombre}`);
+        }
+      }
+    } else if (ip) {
+      // Kiosco: la primera red que se ve es la suya; si checa desde otra, vale pero se avisa.
+      if (!d.red_habitual) db.prepare('UPDATE main.checador_dispositivos SET red_habitual = ? WHERE id = ? AND red_habitual IS NULL').run(ip, d.id);
+      else if (d.red_habitual !== ip) avisos.push('Desde otra red (no la de siempre del kiosco)');
     }
+    const obs = [...notas, ...avisos].join(' · ') || null;
     return db.transaction(() => {
-      const r = db.prepare(`INSERT INTO main.checadas (personal_id, tipo, momento_utc, fecha, hora, origen, dispositivo_id, sucursal_id, estado, observaciones, sin_conexion, hora_dispositivo, uid_kiosco, lat, lon, precision_m)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(p.id, tipo, a.utc, a.fecha, a.hora, origen, d.id, d.sucursal_id, notas.length ? 'por_revisar' : 'valida', notas.join(' · ') || null,
-        sinConexion ? 1 : 0, sinConexion?.horaDispositivo ?? null, uid, ubicacion?.lat ?? null, ubicacion?.lon ?? null, ubicacion?.precision ?? null);
+      const r = db.prepare(`INSERT INTO main.checadas (personal_id, tipo, momento_utc, fecha, hora, origen, dispositivo_id, sucursal_id, estado, observaciones, sin_conexion, hora_dispositivo, uid_kiosco, lat, lon, precision_m, ip, distancia_m)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(p.id, tipo, a.utc, a.fecha, a.hora, origen, d.id, d.sucursal_id, notas.length ? 'por_revisar' : 'valida', obs,
+        sinConexion ? 1 : 0, sinConexion?.horaDispositivo ?? null, uid, ubicacion?.lat ?? null, ubicacion?.lon ?? null, ubicacion?.precision ?? null, ip, distancia);
       const id = Number(r.lastInsertRowid);
       if (foto) guardarFoto(id, foto, a.fecha);
       db.prepare("UPDATE main.checador_dispositivos SET ultimo_uso = datetime('now','localtime') WHERE id = ?").run(d.id);
@@ -209,15 +262,17 @@ module.exports = function checador(app, db, h) {
   }
 
   // ---------- Kiosco (sin sesión: lo identifica su token) ----------
-  const fallosKiosco = new Map(), fallosIp = new Map(), tickets = new Map();
+  const fallosKiosco = new Map(), fallosIp = new Map(), tickets = new Map(), fotosIntento = new Map(), ultimoIntento = new Map();
   setInterval(() => {
     const t = Date.now();
     for (const m of [fallosKiosco, fallosIp]) for (const [k, v] of m) if (v.reinicia <= t) m.delete(k);
     for (const [k, v] of tickets) if (v.expira <= t) tickets.delete(k);
+    for (const [k, v] of fotosIntento) if (v.expira <= t) fotosIntento.delete(k);
+    for (const [k, v] of ultimoIntento) if (v + 30000 <= t) ultimoIntento.delete(k);
   }, 60 * 1000).unref();
   const contar = (mapa, k, ventana) => { const t = Date.now(); let r = mapa.get(k); if (!r || r.reinicia <= t) { r = { fallos: 0, reinicia: t + ventana }; mapa.set(k, r); } r.fallos++; };
   const excedido = (mapa, k, max) => { const r = mapa.get(k); return !!r && r.reinicia > Date.now() && r.fallos >= max; };
-  const dispositivoDe = db.prepare(`SELECT d.id, d.nombre, d.sucursal_id, s.nombre AS sucursal FROM main.checador_dispositivos d
+  const dispositivoDe = db.prepare(`SELECT d.id, d.nombre, d.sucursal_id, d.red_habitual, s.nombre AS sucursal FROM main.checador_dispositivos d
     LEFT JOIN main.sucursales s ON s.id = d.sucursal_id WHERE d.token_hash = ? AND d.activo = 1 AND d.tipo = 'kiosco'`);
   // Middleware de las rutas del kiosco: token válido o 401 (y cuenta el fallo por conexión).
   // Auditoría 2026-11-05: el token válido se revisa ANTES del tope por conexión. Si no, una tableta dada de baja que se
@@ -299,9 +354,22 @@ module.exports = function checador(app, db, h) {
     return { p };
   }
   // Paso 1: código y PIN. Si son correctos regresa un ticket de 90 s para checar (o para elegir PIN si es temporal).
+  // Intento fallido: se registra (uno por código y kiosco cada 30 s) y se regresa un permiso de 90 s para subir su foto.
+  function registrarIntento(req, codigo, v) {
+    if (![401, 423].includes(v.status)) return null;
+    const cod = /^\d{4}$/.test(codigo) ? codigo : null, llave = req.kiosco.id + ':' + (cod || '-'), t = Date.now();
+    if (ultimoIntento.has(llave) && ultimoIntento.get(llave) + 30000 > t) return null;
+    ultimoIntento.set(llave, t);
+    const quien = cod ? db.prepare('SELECT id FROM main.personal WHERE codigo_checador = ?').get(cod) : null, a = ahoraMexico();
+    const id = Number(db.prepare('INSERT INTO main.checador_intentos (dispositivo_id, personal_id, codigo, motivo, ip, momento_utc, fecha, hora) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+      .run(req.kiosco.id, quien?.id ?? null, cod, v.status === 423 ? 'PIN bloqueado' : 'Código o PIN incorrecto', req.ipCliente || null, a.utc, a.fecha, a.hora).lastInsertRowid);
+    const permiso = crypto.randomBytes(24).toString('base64url');
+    fotosIntento.set(permiso, { id, dispositivoId: req.kiosco.id, fecha: a.fecha, expira: t + TICKET_MS });
+    return permiso;
+  }
   app.post('/api/publico/kiosco/identificar', kiosco, h((req, res) => {
-    const v = verificar(req.kiosco, String(req.body?.codigo ?? ''), String(req.body?.pin ?? ''));
-    if (!v.p) return res.status(v.status).json({ error: v.error });
+    const codigo = String(req.body?.codigo ?? ''), v = verificar(req.kiosco, codigo, String(req.body?.pin ?? ''));
+    if (!v.p) { const intento = registrarIntento(req, codigo, v); return res.status(v.status).json({ error: v.error, ...(intento ? { intento } : {}) }); }
     if (v.p.pin_temporal) return res.json({ cambiar_pin: true, ticket: nuevoTicket('pin', v.p, req.kiosco.id), nombre: primerNombre(v.p.nombre) });
     res.json(paraChecar(req, v.p));
   }));
@@ -316,6 +384,19 @@ module.exports = function checador(app, db, h) {
     audit(null, p.id, 'checador', `${p.nombre}: eligió su PIN en el kiosco «${req.kiosco.nombre}»`);
     res.json(paraChecar(req, p));
   }));
+  // La foto de un intento fallido (una sola, del mismo kiosco, dentro de 90 s).
+  app.post('/api/publico/kiosco/intento-foto', kiosco, h((req, res) => {
+    const t = String(req.body?.intento || ''), x = fotosIntento.get(t);
+    if (!x || x.expira <= Date.now() || x.dispositivoId !== req.kiosco.id) return res.status(401).json({ error: 'Se acabó el tiempo' });
+    fotosIntento.delete(t);
+    const buf = fotoDe(req.body?.foto);
+    if (!buf) return res.status(400).json({ error: 'Foto inválida' });
+    const archivo = path.join(x.fecha.slice(0, 7), `intento-${x.id}-${crypto.randomBytes(8).toString('hex')}.jpg.cifrado`);
+    fs.mkdirSync(path.join(DIR_FOTOS, x.fecha.slice(0, 7)), { recursive: true, mode: 0o700 });
+    C.escribirSeguro(path.join(DIR_FOTOS, archivo), C.cifrarArchivo(buf, contextoIntento(x.id)));
+    db.prepare('UPDATE main.checador_intentos SET foto_archivo = ? WHERE id = ?').run(archivo, x.id);
+    res.json({ ok: true });
+  }));
   // Paso 2: registrar la checada con la hora del servidor.
   app.post('/api/publico/kiosco/checar', kiosco, h((req, res) => {
     const tipo = String(req.body?.tipo || '');
@@ -328,7 +409,7 @@ module.exports = function checador(app, db, h) {
       .get(p.id, tipo, new Date(Date.now() - DUPLICADO_MS).toISOString());
     if (previa) return res.json({ id: previa.id, nombre: primerNombre(p.nombre), tipo: TIPOS[tipo], hora: previa.hora.slice(0, 5), repetida: true });
     const foto = fotoDe(req.body?.foto);
-    const id = guardarChecada({ p, d, tipo, a, foto });
+    const id = guardarChecada({ p, d, tipo, a, foto, ip: req.ipCliente || null });
     res.status(201).json({ id, nombre: primerNombre(p.nombre), tipo: TIPOS[tipo], hora: a.hora.slice(0, 5), ...(foto ? {} : { sin_foto: true }) });
   }));
   // Checada que el kiosco guardó SIN CONEXIÓN y sube al volver internet (una por petición). El PIN se revisa aquí, con
@@ -349,7 +430,7 @@ module.exports = function checador(app, db, h) {
     if (p.pin_temporal) { audit(null, p.id, 'checada sin conexión rechazada', `${p.nombre}: tenía PIN temporal (debe elegir su PIN con internet)`); return res.status(409).json({ error: 'Debe elegir su PIN con internet', descartar: true }); }
     const a = ahoraMexico(new Date(Date.now() - edad)), monotonica = b.monotonica === true;
     const hd = typeof b.hora_dispositivo === 'string' && /^\d{4}-\d{2}-\d{2}T[\d:.]+Z$/.test(b.hora_dispositivo) ? b.hora_dispositivo : null;
-    const id = guardarChecada({ p, d, tipo, a, foto: fotoDe(b.foto), uid,
+    const id = guardarChecada({ p, d, tipo, a, foto: fotoDe(b.foto), uid, ip: req.ipCliente || null,
       sinConexion: { horaDispositivo: hd, nota: 'Sin conexión: hora ' + (monotonica ? 'calculada con el reloj interno del kiosco' : 'estimada con el reloj de la tableta (el kiosco se reinició)') } });
     res.status(201).json({ id, nombre: primerNombre(p.nombre), tipo: TIPOS[tipo], hora: a.hora.slice(0, 5) });
   }));
@@ -421,7 +502,7 @@ module.exports = function checador(app, db, h) {
       .get(p.id, tipo, new Date(Date.now() - DUPLICADO_MS).toISOString());
     if (previa) return res.json({ id: previa.id, nombre: primerNombre(p.nombre), tipo: TIPOS[tipo], hora: previa.hora.slice(0, 5), repetida: true });
     const foto = fotoDe(b.foto), ubicacion = ubicacionDe(b), a = ahoraMexico();
-    const id = guardarChecada({ p, d, tipo, a, foto, origen: 'celular', ubicacion });
+    const id = guardarChecada({ p, d, tipo, a, foto, origen: 'celular', ubicacion, ip: req.ipCliente || null });
     const est = db.prepare('SELECT estado, observaciones FROM main.checadas WHERE id = ?').get(id);
     res.status(201).json({ id, nombre: primerNombre(p.nombre), tipo: TIPOS[tipo], hora: a.hora.slice(0, 5), ...(est.estado === 'por_revisar' ? { por_revisar: est.observaciones } : {}) });
   }));
@@ -513,7 +594,9 @@ module.exports = function checador(app, db, h) {
   // Kioscos: el token se muestra una sola vez (lo guarda la tableta); la base solo guarda su hash.
   app.get('/api/asistencia/dispositivos', h((req, res) => {
     if (!puede(req, 'asistencia.kioscos')) return negar(res, 'No tienes permiso para los kioscos del checador');
-    res.json(db.prepare(`SELECT d.id, d.nombre, d.sucursal_id, s.nombre AS sucursal, d.activo, d.registrado_por_nombre, d.created_at, d.ultimo_uso, d.revocado_por, d.revocado_at
+    // red_cambiada: su última checada llegó desde otra red (p. ej. el internet de la oficina cambió de IP).
+    res.json(db.prepare(`SELECT d.id, d.nombre, d.sucursal_id, s.nombre AS sucursal, d.activo, d.registrado_por_nombre, d.created_at, d.ultimo_uso, d.revocado_por, d.revocado_at,
+      COALESCE((SELECT c.ip FROM main.checadas c WHERE c.dispositivo_id = d.id AND c.ip IS NOT NULL ORDER BY c.id DESC LIMIT 1) <> d.red_habitual, 0) AS red_cambiada
       FROM checador_dispositivos d LEFT JOIN main.sucursales s ON s.id = d.sucursal_id WHERE d.tipo = 'kiosco' ORDER BY d.activo DESC, d.nombre`).all());
   }));
   app.post('/api/asistencia/dispositivos', h((req, res) => {
@@ -523,10 +606,22 @@ module.exports = function checador(app, db, h) {
     const s = Number(req.body?.sucursal_id || (req.alcanceSuc?.permitidas?.length === 1 ? req.alcanceSuc.permitidas[0] : 0));
     if (!s || !req.alcanceSuc?.permitidas?.includes(s)) return res.status(400).json({ error: 'Elige una de tus sucursales' });
     const token = nuevoToken();
-    const info = db.prepare('INSERT INTO main.checador_dispositivos (nombre, sucursal_id, token_hash, registrado_por, registrado_por_nombre) VALUES (?, ?, ?, ?, ?)')
-      .run(nombre, s, hashToken(token), req.usuarioSesion.id, req.usuarioSesion.nombre);
+    // Se registra desde la misma tableta: su red de ahora es «la de siempre».
+    const info = db.prepare('INSERT INTO main.checador_dispositivos (nombre, sucursal_id, token_hash, registrado_por, registrado_por_nombre, red_habitual) VALUES (?, ?, ?, ?, ?, ?)')
+      .run(nombre, s, hashToken(token), req.usuarioSesion.id, req.usuarioSesion.nombre, req.ipCliente || null);
     app.locals.auditoria?.registrar(req, 'checador_dispositivo', Number(info.lastInsertRowid), 'alta', `Kiosco «${nombre}»`);
     res.status(201).json({ id: Number(info.lastInsertRowid), nombre, token });
+  }));
+  // La red de la oficina cambió: la de su última checada pasa a ser «la de siempre».
+  app.post('/api/asistencia/dispositivos/:id/red', h((req, res) => {
+    if (!puede(req, 'asistencia.kioscos')) return negar(res, 'No tienes permiso para los kioscos del checador');
+    const d = db.prepare("SELECT * FROM checador_dispositivos WHERE id = ? AND activo = 1 AND tipo = 'kiosco'").get(idDe(req.params.id));
+    if (!d) return res.status(404).json({ error: 'Kiosco no encontrado' });
+    const ip = db.prepare('SELECT ip FROM main.checadas WHERE dispositivo_id = ? AND ip IS NOT NULL ORDER BY id DESC LIMIT 1').get(d.id)?.ip;
+    if (!ip) return res.status(409).json({ error: 'Este kiosco todavía no tiene checadas' });
+    db.prepare('UPDATE main.checador_dispositivos SET red_habitual = ? WHERE id = ?').run(ip, d.id);
+    app.locals.auditoria?.registrar(req, 'checador_dispositivo', d.id, 'red', `Kiosco «${d.nombre}»: la red de su última checada es ahora la de siempre`);
+    res.json({ ok: true });
   }));
   app.post('/api/asistencia/dispositivos/:id/revocar', h((req, res) => {
     if (!puede(req, 'asistencia.kioscos')) return negar(res, 'No tienes permiso para dar de baja kioscos');
@@ -545,7 +640,7 @@ module.exports = function checador(app, db, h) {
     const fecha = req.query.fecha || ahoraMexico().fecha;
     if (!fechaOk(fecha)) return res.status(400).json({ error: 'Revisa la fecha' });
     const pid = req.query.personal_id ? idDe(req.query.personal_id) : null;
-    res.json(db.prepare(`SELECT c.id, c.personal_id, p.nombre, c.tipo, c.fecha, c.hora, c.origen, c.estado, c.observaciones, c.sin_conexion, c.foto_archivo IS NOT NULL AS tiene_foto, c.foto_borrada_at IS NOT NULL AS foto_borrada, c.lat, c.lon, c.precision_m, c.registrado_por_nombre, d.nombre AS kiosco
+    res.json(db.prepare(`SELECT c.id, c.personal_id, p.nombre, c.tipo, c.fecha, c.hora, c.origen, c.estado, c.observaciones, c.sin_conexion, c.foto_archivo IS NOT NULL AS tiene_foto, c.foto_borrada_at IS NOT NULL AS foto_borrada, c.lat, c.lon, c.precision_m, c.distancia_m, c.ip, c.registrado_por_nombre, d.nombre AS kiosco
       FROM checadas c JOIN personal p ON p.id = c.personal_id LEFT JOIN main.checador_dispositivos d ON d.id = c.dispositivo_id
       WHERE c.fecha = ? ${pid ? 'AND c.personal_id = ?' : ''} ORDER BY c.momento_utc, c.id`).all(...[fecha, ...(pid ? [pid] : [])]));
   }));
@@ -568,6 +663,51 @@ module.exports = function checador(app, db, h) {
     audit(req, c.personal_id, 'consulta', `${c.nombre}: vio la foto de su checada (${TIPOS[c.tipo]} ${c.fecha} ${c.hora.slice(0, 5)})`);
     res.set({ 'Content-Type': 'image/jpeg', 'X-Content-Type-Options': 'nosniff', 'Cache-Control': 'private, no-store', 'Content-Disposition': 'inline; filename="checada.jpg"' });
     res.send(buf);
+  }));
+  // Intentos fallidos en los kioscos de sus sucursales (vista checador_intentos), de un día.
+  const intentosDe = fecha => db.prepare(`SELECT i.id, i.fecha, substr(i.hora, 1, 5) AS hora, i.codigo, i.motivo, i.ip, i.foto_archivo IS NOT NULL AS tiene_foto, i.foto_borrada_at IS NOT NULL AS foto_borrada,
+      p.nombre AS persona, d.nombre AS kiosco FROM checador_intentos i LEFT JOIN personal p ON p.id = i.personal_id LEFT JOIN main.checador_dispositivos d ON d.id = i.dispositivo_id
+      WHERE i.fecha = ? ORDER BY i.momento_utc DESC, i.id DESC`).all(fecha);
+  app.get('/api/asistencia/intentos', h((req, res) => {
+    if (!puede(req, 'asistencia.ver')) return negar(res, 'No tienes permiso para ver la asistencia');
+    const fecha = req.query.fecha || ahoraMexico().fecha;
+    if (!fechaOk(fecha)) return res.status(400).json({ error: 'Revisa la fecha' });
+    res.json(intentosDe(fecha));
+  }));
+  app.get('/api/asistencia/intentos/:id/foto', h((req, res) => {
+    if (!puede(req, 'asistencia.ver')) return negar(res, 'No tienes permiso para ver la asistencia');
+    const i = db.prepare('SELECT i.*, p.nombre FROM checador_intentos i LEFT JOIN main.personal p ON p.id = i.personal_id WHERE i.id = ?').get(idDe(req.params.id));
+    if (!i || !i.foto_archivo) return res.status(404).json({ error: 'Este intento no tiene foto' });
+    const ruta = path.join(DIR_FOTOS, i.foto_archivo);
+    if (!ruta.startsWith(DIR_FOTOS + path.sep) || !fs.existsSync(ruta)) return res.status(404).json({ error: 'La foto ya no está en el servidor' });
+    let buf;
+    try { buf = C.descifrarArchivo(fs.readFileSync(ruta), contextoIntento(i.id)); }
+    catch { return res.status(409).json({ error: 'La foto está cifrada con otra clave o fue alterada: no se puede abrir' }); }
+    audit(req, i.personal_id, 'consulta', `Vio la foto de un intento fallido en el kiosco (${i.fecha} ${i.hora.slice(0, 5)}, código ${i.codigo || '—'}${i.nombre ? ' de ' + i.nombre : ''})`);
+    res.set({ 'Content-Type': 'image/jpeg', 'X-Content-Type-Options': 'nosniff', 'Cache-Control': 'private, no-store', 'Content-Disposition': 'inline; filename="intento.jpg"' });
+    res.send(buf);
+  }));
+  // Ubicación de cada sucursal (para el celular). La ven quienes ven la asistencia; la captura solo Dirección.
+  app.get('/api/asistencia/sucursales', h((req, res) => {
+    if (!puede(req, 'asistencia.ver')) return negar(res, 'No tienes permiso para ver la asistencia');
+    res.json({ radio_omision: RADIO_SUCURSAL_M, editar: !!P.direccion?.(req), sucursales: db.prepare('SELECT id, nombre, lat, lon, radio_m FROM main.sucursales WHERE activo = 1 ORDER BY id').all().filter(s => req.alcanceSuc?.permitidas?.includes(s.id)) });
+  }));
+  app.put('/api/asistencia/sucursales/:id/ubicacion', h((req, res) => {
+    if (!P.direccion?.(req)) return negar(res, 'La ubicación de una sucursal la captura Dirección');
+    const s = db.prepare('SELECT id, nombre FROM main.sucursales WHERE id = ? AND activo = 1').get(idDe(req.params.id));
+    if (!s) return res.status(404).json({ error: 'Sucursal no encontrada' });
+    const txt = String(req.body?.ubicacion ?? '').trim(), radio = req.body?.radio_m == null || req.body.radio_m === '' ? RADIO_SUCURSAL_M : Number(req.body.radio_m);
+    if (!Number.isInteger(radio) || radio < 100 || radio > 20000) return res.status(400).json({ error: 'El radio va de 100 a 20,000 metros' });
+    let lat = null, lon = null;
+    if (txt) {
+      const m = txt.match(/^(-?\d{1,2}(?:\.\d+)?)\s*,\s*(-?\d{1,3}(?:\.\d+)?)$/);
+      lat = m ? Number(m[1]) : NaN; lon = m ? Number(m[2]) : NaN;
+      if (!Number.isFinite(lat) || !Number.isFinite(lon) || Math.abs(lat) > 90 || Math.abs(lon) > 180) return res.status(400).json({ error: 'Pega la ubicación como la da Google Maps: «20.5888, -100.3899»' });
+      lat = Math.round(lat * 1e6) / 1e6; lon = Math.round(lon * 1e6) / 1e6;
+    }
+    db.prepare('UPDATE main.sucursales SET lat = ?, lon = ?, radio_m = ? WHERE id = ?').run(lat, lon, radio, s.id);
+    app.locals.auditoria?.registrar(req, 'sucursal', s.id, 'ubicación', `${s.nombre}: ${lat == null ? 'sin ubicación' : `${lat}, ${lon} · radio ${radio} m`}`);
+    res.json({ ok: true, lat, lon, radio_m: radio });
   }));
   // Borrar ya las fotos que pasaron el plazo (además del borrado automático): solo Dirección.
   app.post('/api/asistencia/fotos/limpiar', h((req, res) => {
@@ -635,7 +775,7 @@ module.exports = function checador(app, db, h) {
     res.json({ ok: true });
   }));
 
-  return { TIPOS, altaChecador };
+  return { TIPOS, altaChecador, intentosDe };
 };
 module.exports.pinDebil = pinDebil;
 module.exports.TIPOS = TIPOS;

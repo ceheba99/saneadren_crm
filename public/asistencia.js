@@ -32,7 +32,7 @@ const Asistencia = (() => {
       let r;
       if (pestana === 'dia') r = await pedir('/dia?fecha=' + encodeURIComponent(fecha));
       else if (pestana === 'semana') r = await pedir('/semana?desde=' + encodeURIComponent(semana));
-      else if (pestana === 'horarios') r = await pedir('/horarios');
+      else if (pestana === 'horarios') { r = await pedir('/horarios'); r.ubicaciones = await pedir('/sucursales').catch(() => null); }
       else r = await pedir('/festivos?anio=' + encodeURIComponent(anio));
       if (turno !== consulta) return;
       datos = r;
@@ -53,7 +53,7 @@ const Asistencia = (() => {
   function pintarDia() {
     const filas = datos.filas;
     let h = `<div class="filtros"><label>Día <input type="date" id="as-fecha" value="${esc(fecha)}" max="${esc(hoy())}"></label>${datos.festivo ? `<span class="as-festivo">🎉 ${esc(datos.festivo)}</span>` : ''}</div>`;
-    if (!filas.length) { $('as-cuerpo').innerHTML = h + '<p class="ayuda">No hay personas en el reloj checador. Dales de alta desde su ficha en Personal (bloque «Reloj checador»).</p>'; return; }
+    if (!filas.length) { $('as-cuerpo').innerHTML = h + '<p class="ayuda">No hay personas en el reloj checador. Dales de alta desde su ficha en Personal (bloque «Reloj checador»).</p>' + seccionIntentos(); return; }
     h += `<div class="tabla-scroll"><table class="tabla-resumen as-tabla"><thead><tr><th>Persona</th><th>Horario</th><th>Entrada</th><th>Comida</th><th>Salida</th><th>Trabajado</th><th>Retardo</th><th>Tiempo extra</th><th>Avisos</th></tr></thead><tbody>`;
     for (const d of filas) {
       const prog = d.programado ? `${d.programado.entrada}–${d.programado.salida}` : 'Descanso';
@@ -65,8 +65,16 @@ const Asistencia = (() => {
         <td>${estadoDia(d).map(t => `<span class="as-chip">${esc(t)}</span>`).join(' ')}</td></tr>`;
       if (abierto === d.personal_id) h += `<tr><td colspan="9"><div class="as-detalle" id="as-detalle">Cargando…</div></td></tr>`;
     }
-    $('as-cuerpo').innerHTML = h + '</tbody></table></div>';
+    $('as-cuerpo').innerHTML = h + '</tbody></table></div>' + seccionIntentos();
     if (abierto) pintarDetalle(filas.find(x => x.personal_id === abierto));
+  }
+  // Intentos fallidos del día en los kioscos (código o PIN malo, PIN bloqueado), con su foto.
+  function seccionIntentos() {
+    const l = datos.intentos || [];
+    if (!l.length) return '';
+    return `<div class="modal-section"><h3 class="pe-sub">⚠️ Intentos fallidos en el kiosco (${esc(l.length)})</h3><p class="ayuda">El kiosco toma foto cuando alguien se equivoca de código o PIN: sirve para ver si alguien prueba el código de otra persona.</p>
+      <ul class="pe-ordenes">${l.map(i => `<li><b>${esc(i.hora)}</b> · ${esc(i.motivo)} · código ${esc(i.codigo || '—')}${i.persona ? ` (de <b>${esc(i.persona)}</b>)` : ' (no es de nadie)'} · ${esc(i.kiosco || '')}
+        ${i.tiene_foto ? ` <button type="button" class="btn-link" data-as-intento-foto="${Number(i.id)}">📷 Foto</button>` : esc(i.foto_borrada ? ' · foto borrada (plazo cumplido)' : ' · sin foto')}</li>`).join('')}</ul><div id="as-intento-foto"></div></div>`;
   }
   const revisar = c => c.estado === 'por_revisar', vigente = c => c.estado !== 'anulada';
   // Ubicación de una checada desde el celular: enlace al mapa (se abre solo si quien revisa lo pulsa).
@@ -189,6 +197,7 @@ const Asistencia = (() => {
       h += '</div>';
     }
     if (puede.precios) h += '<div class="modal-section" id="as-precios"><p class="ayuda" role="status">Cargando precios…</p></div>';
+    h += seccionUbicaciones();
     $('as-cuerpo').innerHTML = h;
     if (puede.precios) cargarPrecios();
   }
@@ -249,6 +258,15 @@ const Asistencia = (() => {
 
   // ---------- Eventos ----------
   document.querySelectorAll('[data-as-pestana]').forEach(b => { b.onclick = () => { pestana = b.dataset.asPestana; abierto = null; editando = null; cargar(); }; });
+  // Ubicación de cada sucursal: el celular que checa más lejos que su radio queda «por revisar» (la captura Dirección).
+  function seccionUbicaciones() {
+    const u = datos.ubicaciones;
+    if (!u || !u.sucursales.length) return '';
+    return `<div class="modal-section"><h3 class="pe-sub">📍 Ubicación de cada sucursal (para checar con el celular)</h3>
+      <p class="ayuda">Si alguien checa con su celular a más del radio de su sucursal (${esc(u.radio_omision)} m si no se cambia), la checada queda «por revisar» y se ve en el mapa (p. ej. si checó en casa de un cliente).${u.editar ? ' Para sacar la ubicación: en Google Maps, mantén presionado el punto de la sucursal y copia los números que salen (p. ej. «20.5888, -100.3899»).' : ''}</p>
+      <ul class="pe-ordenes">${u.sucursales.map(s => `<li><b>${esc(s.nombre)}</b>: ${s.lat == null ? '<span class="as-rojo">sin ubicación</span>' : `${esc(s.lat)}, ${esc(s.lon)} · radio ${esc(s.radio_m || u.radio_omision)} m <a class="btn-link" target="_blank" rel="noopener noreferrer" href="${esc('https://www.google.com/maps?q=' + Number(s.lat) + ',' + Number(s.lon))}">📍 Mapa</a>`}
+        ${u.editar ? `<span class="filtros as-form"><input id="as-u-${Number(s.id)}" value="${esc(s.lat == null ? '' : s.lat + ', ' + s.lon)}" placeholder="20.5888, -100.3899" aria-label="Ubicación de ${esc(s.nombre)}"><input type="number" id="as-r-${Number(s.id)}" class="as-num" min="100" max="20000" value="${esc(s.radio_m || u.radio_omision)}" aria-label="Radio en metros"> m <button type="button" class="btn btn-secundario" data-as-ubicacion="${Number(s.id)}">Guardar</button></span>` : ''}</li>`).join('')}</ul></div>`;
+  }
   $('as-cuerpo').addEventListener('change', e => {
     if (e.target.id === 'as-fecha' && e.target.value) { fecha = e.target.value; abierto = null; cargar(); }
     else if (e.target.id === 'as-semana' && e.target.value) { semana = e.target.value; cargar(); }
@@ -259,6 +277,15 @@ const Asistencia = (() => {
     const b = e.target.closest('button'); if (!b) return;
     const d = b.dataset;
     if (d.asAbrir) { abierto = abierto === Number(d.asAbrir) ? null : Number(d.asAbrir); pintarDia(); }
+    else if (d.asIntentoFoto) {
+      try { const r = await api('/asistencia/intentos/' + Number(d.asIntentoFoto) + '/foto'); if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || 'No se pudo abrir la foto');
+        const url = URL.createObjectURL(await r.blob()), img = document.createElement('img'); img.src = url; img.alt = 'Foto del intento fallido'; img.className = 'pe-foto'; img.onload = () => URL.revokeObjectURL(url); $('as-intento-foto').replaceChildren(img); } catch (err) { toast(err.message); }
+    }
+    else if (d.asUbicacion) {
+      const id = Number(d.asUbicacion);
+      try { await pedir('/sucursales/' + id + '/ubicacion', { method: 'PUT', body: JSON.stringify({ ubicacion: $('as-u-' + id).value, radio_m: $('as-r-' + id).value === '' ? null : Number($('as-r-' + id).value) }) }); toast('Ubicación guardada'); await cargar(); }
+      catch (err) { toast(err.message); }
+    }
     else if (d.asFoto) {
       try { const r = await api('/asistencia/checadas/' + Number(d.asFoto) + '/foto'); if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || 'No se pudo abrir la foto');
         const url = URL.createObjectURL(await r.blob()), img = document.createElement('img'); img.src = url; img.alt = 'Foto de la checada'; img.className = 'pe-foto'; img.onload = () => URL.revokeObjectURL(url); $('as-foto').replaceChildren(img); } catch (err) { toast(err.message); }

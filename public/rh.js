@@ -26,7 +26,9 @@ const RH = (() => {
     const tarjeta = (num, texto, clase, accion) => `<button type="button" class="rc-card ${clase}" data-rh-ir="${esc(accion)}"><span class="rc-num">${esc(num)}</span><span class="rc-label">${esc(texto)}</span></button>`;
     let h = `<div class="rc-grid">${tarjeta(r.activos, 'Personas activas', 'cliente', 'personal')}${tarjeta(r.sin_checador, 'Sin alta en el checador', r.sin_checador ? 'pr-atrasado' : 'cliente', 'personal')}
       ${tarjeta(r.sin_horario, 'Checan pero sin horario', r.sin_horario ? 'pr-atrasado' : 'cliente', 'personal')}${tarjeta(r.sin_aviso, 'Sin aviso de privacidad firmado', r.sin_aviso ? 'pr-atrasado' : 'cliente', 'personal')}
-      ${r.pin_bloqueados ? tarjeta(r.pin_bloqueados, 'PIN bloqueados', 'pr-atrasado', 'personal') : ''}${r.por_revisar != null ? tarjeta(r.por_revisar, 'Checadas por revisar', r.por_revisar ? 'pr-atrasado' : 'cliente', 'dia') : ''}</div>`;
+      ${r.pin_bloqueados ? tarjeta(r.pin_bloqueados, 'PIN bloqueados', 'pr-atrasado', 'personal') : ''}${r.por_revisar != null ? tarjeta(r.por_revisar, 'Checadas por revisar', r.por_revisar ? 'pr-atrasado' : 'cliente', 'dia') : ''}
+      ${r.intentos_hoy ? tarjeta(r.intentos_hoy, 'Intentos fallidos hoy en el kiosco', 'pr-atrasado', 'dia') : ''}${r.otra_red ? tarjeta(r.otra_red, 'Checadas desde otra red (7 días)', 'pr-atrasado', 'kioscos') : ''}
+      ${r.sucursales_sin_ubicacion ? tarjeta(r.sucursales_sin_ubicacion, 'Sucursales sin ubicación para el celular', 'pr-atrasado', 'horarios') : ''}</div>`;
     const acceso = (icono, titulo, texto, accion, si = true) => (si ? `<button type="button" class="rh-acceso" data-rh-ir="${esc(accion)}"><span class="rh-icono" aria-hidden="true">${esc(icono)}</span><b>${esc(titulo)}</b><small>${esc(texto)}</small></button>` : '');
     h += `<div class="rh-accesos">
       ${acceso('👷', 'Personal y expedientes', 'Altas, bajas, datos, vacaciones, incidencias, documentos, código del checador y celular', 'personal')}

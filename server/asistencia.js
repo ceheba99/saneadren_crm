@@ -228,7 +228,7 @@ module.exports = function asistencia(app, db, h) {
     if (!puede(req, 'asistencia.ver')) return negar(res);
     const fecha = req.query.fecha || ahoraMexico().fecha;
     if (!fechaOk(fecha)) return res.status(400).json({ error: 'Revisa la fecha' });
-    res.json({ fecha, festivo: festivoDe(fecha), filas: gente(fecha).map(p => calcularDia(p, fecha)), puede: { corregir: puede(req, 'asistencia.corregir'), extra: puede(req, 'asistencia.extra') } });
+    res.json({ fecha, festivo: festivoDe(fecha), filas: gente(fecha).map(p => calcularDia(p, fecha)), intentos: app.locals.checador?.intentosDe(fecha) || [], puede: { corregir: puede(req, 'asistencia.corregir'), extra: puede(req, 'asistencia.extra') } });
   }));
   // Semana de nómina (viernes a jueves): cada día y los totales. Tiempo extra: dobles hasta 9 h autorizadas, luego triples.
   app.get('/api/asistencia/semana', h((req, res) => {

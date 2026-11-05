@@ -44,6 +44,7 @@ const VISTAS = [
   ['checadas', 'personal_id IN (SELECT id FROM personal)'],
   ['checadas_correcciones', 'checada_id IN (SELECT id FROM checadas)'],
   ['checador_dispositivos', 'en_alcance(sucursal_id)'],
+  ['checador_intentos', 'dispositivo_id IN (SELECT id FROM checador_dispositivos)'], // intentos fallidos: los de los kioscos de sus sucursales
   ['personal_horario', 'personal_id IN (SELECT id FROM personal)'],
   ['checador_enlaces', 'personal_id IN (SELECT id FROM personal)'],
   ['horarios', 'en_alcance(sucursal_id)'], // cada sucursal sus horarios (RH F3)
@@ -88,7 +89,7 @@ const RUTAS_REGISTRO = [
   [/^\/compras\/documentos\/(\d+)(?:\/|$)/, 'documentos_oc'], [/^\/compras\/solicitudes\/documentos\/(\d+)(?:\/|$)/, 'documentos_solicitud'],
   [/^\/compras\/solicitudes\/(\d+)(?:\/|$)/, 'solicitudes_compra'], [/^\/prospeccion\/(\d+)(?:\/|$)/, 'establecimientos'],
   [/^\/personal\/(\d+)(?:\/|$)/, 'personal'], [/^\/asistencia\/personal\/(\d+)(?:\/|$)/, 'personal'],
-  [/^\/asistencia\/checadas\/(\d+)(?:\/|$)/, 'checadas'], [/^\/asistencia\/dispositivos\/(\d+)(?:\/|$)/, 'checador_dispositivos'], [/^\/asistencia\/horarios\/(\d+)(?:\/|$)/, 'horarios'],
+  [/^\/asistencia\/checadas\/(\d+)(?:\/|$)/, 'checadas'], [/^\/asistencia\/dispositivos\/(\d+)(?:\/|$)/, 'checador_dispositivos'], [/^\/asistencia\/intentos\/(\d+)(?:\/|$)/, 'checador_intentos'], [/^\/asistencia\/horarios\/(\d+)(?:\/|$)/, 'horarios'],
   [/^\/marketing\/publicaciones\/(\d+)(?:\/|$)/, 'publicaciones'], [/^\/marketing\/imagenes\/(\d+)(?:\/|$)/, 'publicacion_imagenes'],
   [/^\/marketing\/proyectos\/(\d+)(?:\/|$)/, 'proyectos_marketing'], [/^\/marketing\/tareas\/(\d+)(?:\/|$)/, 'tareas_marketing'],
   [/^\/marketing\/avances\/(\d+)(?:\/|$)/, 'avances_marketing'], [/^\/marketing\/archivos\/(\d+)(?:\/|$)/, 'archivos_marketing'],
