@@ -5,6 +5,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
 <meta name="robots" content="noindex, nofollow">
 <title>Reloj checador · Saneadren</title>
+<!-- Se puede instalar como app en la tableta (Chrome → «Instalar app»): abre en pantalla completa y en horizontal. -->
+<link rel="manifest" href="/kiosco.webmanifest">
+<meta name="theme-color" content="#1a1d23">
+<link rel="icon" href="/kiosco-icono-192.png">
 <!-- KIOSCO DEL RELOJ CHECADOR (server/checador.js, F2 2026-11-03). Se abre en /kiosco en la tableta o computadora de la
      entrada, que antes registró el gerente desde Personal (su token queda en este navegador). Sin sesión del CRM: solo
      checa, y al abrir cierra la sesión del CRM que haya en este navegador (y la de cualquier pestaña que entre después). La hora la pone el servidor; la que se ve aquí es solo de referencia.
@@ -57,6 +61,7 @@
   #aviso-privacidad{position:fixed;right:150px;bottom:14px;font-size:.85rem;color:var(--sec);}
   #pantalla-completa{position:fixed;right:12px;bottom:10px;font:inherit;font-size:.85rem;color:var(--sec);background:none;border:1px solid var(--linea);border-radius:8px;padding:6px 10px;}
   [hidden]{display:none!important;}
+  @media (display-mode:fullscreen),(display-mode:standalone){#pantalla-completa{display:none;}#aviso-privacidad{right:12px;}}
   @media (max-width:520px){.teclado button{padding:14px 0;font-size:1.7rem;}.botones button{font-size:1.05rem;padding:18px 6px;}}
 </style>
 </head>
