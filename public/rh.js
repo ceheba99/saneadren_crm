@@ -3,9 +3,10 @@
 // TRABAJADORES EN LOTE con la plantilla de Excel (server/rh.js): descargar la plantilla, subirla, revisar fila por fila
 // y guardar todo junto. Al guardar se descarga la hoja con número de empleado, código del checador y PIN temporal
 // (los PIN solo existen en esa hoja: el sistema no los guarda).
-// CREDENCIALES (2026-11-05, decidido con Dirección): tarjetas tamaño credencial (85.6 × 54 mm, 8 por hoja carta) con
-// nombre, puesto, sucursal, número de empleado y un QR «SANEADREN-CHECADOR:<código>» que el kiosco lee con la cámara
-// (así no se teclea el código; el PIN se sigue pidiendo). Quien la olvide teclea su código como siempre.
+// CREDENCIALES (2026-11-05, decidido con Dirección): tamaño credencial (85.6 × 54 mm), 8 por hoja carta, a DOS CARAS.
+// Frente: foto, nombre, puesto, sucursal, número de empleado y vigencia. Reverso: QR «SANEADREN-CHECADOR:<código>» que
+// el kiosco lee (el PIN se sigue pidiendo; quien la olvide teclea su código), QR de verificación para clientes
+// (server/credenciales.js), contacto de emergencia y teléfono de la empresa. Imprimir una nueva anula la anterior.
 const RH = (() => {
   const $ = id => document.getElementById(id);
   const esc = t => escaparHtml(t == null ? '' : String(t));
@@ -42,7 +43,7 @@ const RH = (() => {
       ${acceso('🎉', 'Días festivos', 'Los de la ley y los de la empresa', 'festivos', p.asistencia)}
       ${acceso('📟', 'Kioscos del checador', 'Registrar o dar de baja la tableta de la entrada', 'kioscos', p.kioscos)}
       ${acceso('🔒', 'Aviso de privacidad', 'Imprimir el aviso para que lo firme cada trabajador', 'aviso')}
-      ${acceso('🪪', 'Credenciales', 'Imprimir credenciales con QR para checar sin teclear el código', 'credenciales', p.editar)}
+      ${acceso('🪪', 'Credenciales', 'Con foto y QR: para checar y para identificarse con los clientes', 'credenciales', p.editar)}
     </div><div id="rh-importar"></div><div id="rh-credenciales"></div>`;
     cont.innerHTML = h;
     if (revisadas || creados) pintarImportar();
@@ -137,65 +138,120 @@ const RH = (() => {
     saveAs(new Blob([await wb.xlsx.writeBuffer()], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), `codigos_checador_${hoy()}.xlsx`);
   }
 
-  // ---------- Credenciales con QR ----------
+  // ---------- Credenciales (frente y reverso) ----------
   let conCodigo = [];
+  const unAnio = () => { const d = new Date(hoy() + 'T12:00:00Z'); d.setUTCFullYear(d.getUTCFullYear() + 1); return d.toISOString().slice(0, 10); };
+  const telEmpresa = () => { try { return localStorage.getItem('saneadren_tel_empresa') || ''; } catch { return ''; } };
   async function pintarCredenciales() {
     const cont = $('rh-credenciales'); if (!cont) return;
     cont.innerHTML = '<p class="ayuda" role="status">Cargando…</p>';
-    try { const r = await api('/personal?estado=activos'), l = await r.json(); if (!r.ok) throw new Error(l.error || 'No se pudo cargar el personal'); conCodigo = (Array.isArray(l) ? l : l.personal || l.filas || []).filter(p => p.codigo_checador); }
+    try { const r = await api('/personal?estado=activos'), l = await r.json(); if (!r.ok) throw new Error(l.error || 'No se pudo cargar el personal'); conCodigo = (Array.isArray(l) ? l : []).filter(p => p.codigo_checador); }
     catch (e) { cont.innerHTML = `<p class="aviso-error-carga" role="alert">${esc(e.message)}</p>`; return; }
-    cont.innerHTML = `<div class="modal-section"><h3 class="pe-sub">🪪 Credenciales con QR</h3>
-      <p class="ayuda">Cada credencial trae un QR: en el kiosco, la persona lo enseña a la cámara y solo escribe su PIN. Si la olvida, teclea su código como siempre. Se imprimen 8 por hoja carta, tamaño credencial (85.6 × 54 mm): recórtalas y, si puedes, enmícalas. Si alguien pierde la suya, no pasa nada grave (sin su PIN no sirve), pero dale una nueva.</p>
-      ${conCodigo.length ? `<div class="btn-group"><button type="button" class="btn btn-outline" id="rh-cred-todos">Marcar todos</button><button type="button" class="btn btn-outline" id="rh-cred-ninguno">Quitar todos</button><button type="button" class="btn btn-primario" id="rh-cred-pdf">📄 Descargar credenciales (PDF)</button></div>
-      <ul class="pe-ordenes">${conCodigo.map((p, i) => `<li><label><input type="checkbox" class="rh-cred" data-i="${i}" checked> <b>${esc(p.numero_empleado || '')}</b> · ${esc(p.nombre)} · ${esc(p.puesto || '')}</label></li>`).join('')}</ul>`
+    const sinFoto = conCodigo.filter(p => !p.tiene_foto).length;
+    cont.innerHTML = `<div class="modal-section"><h3 class="pe-sub">🪪 Credenciales de empleado</h3>
+      <p class="ayuda">Sirven para checar y para identificarse con los clientes. <b>Frente:</b> foto, nombre, puesto, número de empleado y vigencia. <b>Reverso:</b> QR del checador, QR de verificación (el guardia lo escanea y ve si la persona sigue trabajando con ustedes), contacto de emergencia y teléfono de la empresa.
+      Se imprimen <b>a dos caras</b>, 8 por hoja carta: imprime con «dos caras / voltear por el lado largo», recórtalas y enmícalas. <b>Imprimir una credencial anula la anterior</b> de esa persona.</p>
+      ${conCodigo.length ? `<div class="filtros"><label>Vigente hasta <input type="date" id="rh-cred-vig" value="${esc(unAnio())}"></label><label>Teléfono de la empresa <input id="rh-cred-tel" maxlength="25" value="${esc(telEmpresa())}" placeholder="442 000 0000"></label></div>
+      ${sinFoto ? `<p class="as-rojo">⚠️ ${esc(sinFoto)} persona(s) sin foto: súbela desde su ficha (Personal → su nombre → «Foto para su credencial»). Sin foto, la credencial no sirve para identificarse.</p>` : ''}
+      <div class="btn-group"><button type="button" class="btn btn-outline" id="rh-cred-todos">Marcar todos</button><button type="button" class="btn btn-outline" id="rh-cred-ninguno">Quitar todos</button><button type="button" class="btn btn-primario" id="rh-cred-pdf">📄 Imprimir credenciales (PDF)</button></div>
+      <ul class="pe-ordenes">${conCodigo.map((p, i) => `<li><label><input type="checkbox" class="rh-cred" data-i="${i}" checked> <b>${esc(p.numero_empleado || '')}</b> · ${esc(p.nombre)} · ${esc(p.puesto || '')}${p.tiene_foto ? '' : ' <span class="as-rojo">(sin foto)</span>'}</label></li>`).join('')}</ul>`
         : '<p class="ayuda">Todavía nadie tiene código del checador: dalos de alta primero (ficha de la persona o «Cargar trabajadores»).</p>'}</div>`;
   }
-  // El logo, achicado a 400 px de ancho y sobre el fondo oscuro de la franja (en la credencial mide 31 mm): así el PDF pesa poco.
-  const imagenDe = url => new Promise((ok, mal) => {
+  // Imagen → JPEG achicado (el PDF pesa poco). «fondo»: color para lo transparente.
+  const jpegDe = (src, maxLado, fondo = '#ffffff') => new Promise((ok, mal) => {
     const img = new Image();
-    img.onload = () => { const c = document.createElement('canvas'), k = Math.min(1, 400 / img.naturalWidth); c.width = Math.round(img.naturalWidth * k); c.height = Math.round(img.naturalHeight * k); const x = c.getContext('2d'); x.fillStyle = '#1a1d23'; x.fillRect(0, 0, c.width, c.height); x.drawImage(img, 0, 0, c.width, c.height); ok(c.toDataURL('image/jpeg', 0.85)); };
-    img.onerror = mal; img.src = url;
+    img.onload = () => { const k = Math.min(1, maxLado / Math.max(img.naturalWidth, img.naturalHeight)), c = document.createElement('canvas'); c.width = Math.round(img.naturalWidth * k); c.height = Math.round(img.naturalHeight * k);
+      const x = c.getContext('2d'); x.fillStyle = fondo; x.fillRect(0, 0, c.width, c.height); x.drawImage(img, 0, 0, c.width, c.height); ok({ data: c.toDataURL('image/jpeg', 0.85), w: c.width, h: c.height }); };
+    img.onerror = mal; img.src = src;
   });
+  // Foto recortada al centro con la forma del recuadro de la credencial (22 × 28 mm).
+  const fotoDe = async id => {
+    const r = await api('/personal/' + Number(id) + '/foto'); if (!r.ok) return null;
+    const u = URL.createObjectURL(await r.blob());
+    try {
+      const img = await new Promise((ok, mal) => { const i = new Image(); i.onload = () => ok(i); i.onerror = mal; i.src = u; });
+      const prop = 22 / 28, w0 = img.naturalWidth, h0 = img.naturalHeight, sw = Math.min(w0, h0 * prop), sh = sw / prop, c = document.createElement('canvas');
+      c.width = 330; c.height = 420; c.getContext('2d').drawImage(img, (w0 - sw) / 2, (h0 - sh) / 2, sw, sh, 0, 0, c.width, c.height);
+      return { data: c.toDataURL('image/jpeg', 0.85) };
+    } finally { URL.revokeObjectURL(u); }
+  };
+  // QR dibujado cuadro por cuadro (nítido al imprimir), con fondo blanco.
+  const dibujarQR = (doc, texto, x, y, lado) => {
+    const q = qrcode(0, 'M'); q.addData(texto); q.make();
+    const n = q.getModuleCount(), celda = lado / n;
+    doc.setFillColor(255, 255, 255); doc.rect(x - 1, y - 1, lado + 2, lado + 2, 'F'); doc.setFillColor(0, 0, 0);
+    for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) if (q.isDark(r, c)) doc.rect(x + c * celda, y + r * celda, celda + 0.02, celda + 0.02, 'F');
+  };
+  const MESES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+  const fechaCorta = f => `${Number(f.slice(8, 10))} ${MESES[Number(f.slice(5, 7)) - 1]} ${f.slice(0, 4)}`;
   async function credencialesPdf(b) {
     const elegidos = [...document.querySelectorAll('.rh-cred:checked')].map(c => conCodigo[Number(c.dataset.i)]).filter(Boolean);
     if (!elegidos.length) { toast('Marca al menos a una persona'); return; }
     if (!window.jspdf || typeof qrcode !== 'function') { toast('No se cargaron las herramientas para el PDF: recarga la página'); return; }
+    const vigencia = $('rh-cred-vig').value, tel = $('rh-cred-tel').value.trim();
+    try { localStorage.setItem('saneadren_tel_empresa', tel); } catch { /* */ }
+    if (!await solicitarDialogo({ titulo: 'Imprimir credenciales', mensaje: `Se imprimirán ${elegidos.length} credencial(es) vigentes hasta el ${fechaCorta(vigencia)}. Las credenciales anteriores de esas personas dejarán de valer (su QR de verificación dirá «no válida»).`, aceptar: 'Imprimir' })) return;
     b.disabled = true;
     try {
-      const { jsPDF } = window.jspdf, doc = new jsPDF({ unit: 'mm', format: 'letter', compress: true }), logo = await imagenDe('/logo-saneadren.png').catch(() => null);
-      const sucursales = new Map((window.Sucursales?.datos?.sucursales || []).map(s => [s.id, s.nombre]));
+      const { credenciales } = await pedir('/credenciales', { method: 'POST', body: JSON.stringify({ ids: elegidos.map(p => p.id), vigencia }) });
+      const logo = await jpegDe('/logo-saneadren.png', 400, '#1a1d23').catch(() => null);
+      const fotos = new Map(await Promise.all(credenciales.filter(c => c.tiene_foto).map(async c => [c.personal_id, await fotoDe(c.personal_id).catch(() => null)])));
+      const { jsPDF } = window.jspdf, doc = new jsPDF({ unit: 'mm', format: 'letter', compress: true });
       const W = 85.6, H = 54, GX = 6, GY = 4, X0 = (215.9 - 2 * W - GX) / 2, Y0 = (279.4 - 4 * H - 3 * GY) / 2;
-      elegidos.forEach((p, i) => {
-        if (i && i % 8 === 0) doc.addPage();
-        const x = X0 + (i % 2) * (W + GX), y = Y0 + Math.floor((i % 8) / 2) * (H + GY);
-        // Contorno (guía de corte) y franja de arriba con el logo.
+      const pos = (i, reverso) => { const col = i % 2, fila = Math.floor((i % 8) / 2); return [X0 + (reverso ? 1 - col : col) * (W + GX), Y0 + fila * (H + GY)]; }; // el reverso va en espejo
+      const franja = (x, y, titulo) => {
         doc.setDrawColor(190); doc.setLineWidth(0.2); doc.roundedRect(x, y, W, H, 3, 3);
-        doc.setFillColor(26, 29, 35); doc.roundedRect(x, y, W, 13, 3, 3, 'F'); doc.rect(x, y + 6, W, 7, 'F');
-        doc.setFillColor(246, 177, 3); doc.rect(x, y + 13, W, 1.3, 'F');
-        if (logo) doc.addImage(logo, 'JPEG', x + 3.5, y + 2.2, 31, 8.7);
-        doc.setTextColor(255); doc.setFont('helvetica', 'bold'); doc.setFontSize(7.5); doc.text('RELOJ CHECADOR', x + W - 3.5, y + 8, { align: 'right' });
-        // Datos de la persona (izquierda).
-        doc.setTextColor(31, 41, 55); doc.setFontSize(10.5);
-        const nombre = doc.splitTextToSize(String(p.nombre || '').toUpperCase(), 47).slice(0, 2);
-        doc.text(nombre, x + 4, y + 20);
-        let yy = y + 20 + nombre.length * 4.3;
-        doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5); doc.setTextColor(75, 85, 99);
-        doc.text(String(p.puesto || ''), x + 4, yy); yy += 3.8;
-        const suc = sucursales.get(p.sucursal_id); if (suc) { doc.text(String(suc), x + 4, yy); yy += 3.8; }
-        doc.setFontSize(6.5); doc.text('No. de empleado', x + 4, y + 42);
-        doc.setFont('helvetica', 'bold'); doc.setFontSize(15); doc.setTextColor(26, 29, 35); doc.text(String(p.numero_empleado || ''), x + 4, y + 48.5);
-        // QR (derecha), dibujado módulo por módulo para que salga nítido.
-        const q = qrcode(0, 'M'); q.addData('SANEADREN-CHECADOR:' + p.codigo_checador); q.make();
-        const n = q.getModuleCount(), lado = 28, celda = lado / n, qx = x + W - lado - 4, qy = y + 16.5;
-        doc.setFillColor(0, 0, 0);
-        for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) if (q.isDark(r, c)) doc.rect(qx + c * celda, qy + r * celda, celda + 0.02, celda + 0.02, 'F');
-        doc.setFont('helvetica', 'normal'); doc.setFontSize(6.5); doc.setTextColor(75, 85, 99);
-        doc.text('Código ' + p.codigo_checador, qx + lado / 2, qy + lado + 3, { align: 'center' });
-        doc.setFontSize(5.6); doc.text('Enseña el QR a la cámara y escribe tu PIN. Es personal.', x + W / 2, y + H - 1.8, { align: 'center' });
-      });
+        doc.setFillColor(26, 29, 35); doc.roundedRect(x, y, W, 12, 3, 3, 'F'); doc.rect(x, y + 6, W, 6, 'F');
+        doc.setFillColor(246, 177, 3); doc.rect(x, y + 12, W, 1.2, 'F');
+        if (logo) doc.addImage(logo.data, 'JPEG', x + 3.5, y + 2, 29, 29 * logo.h / logo.w);
+        doc.setTextColor(255); doc.setFont('helvetica', 'bold'); doc.setFontSize(6.8); doc.text(titulo, x + W - 3.5, y + 7.5, { align: 'right' });
+      };
+      for (let ini = 0; ini < credenciales.length; ini += 8) {
+        const grupo = credenciales.slice(ini, ini + 8);
+        if (ini) doc.addPage();
+        // FRENTE
+        grupo.forEach((c, k) => {
+          const [x, y] = pos(k, false);
+          franja(x, y, 'CREDENCIAL DE EMPLEADO');
+          const f = fotos.get(c.personal_id), fx = x + 4, fy = y + 16, fw = 22, fh = 28;
+          doc.setDrawColor(200); doc.setLineWidth(0.3); doc.rect(fx, fy, fw, fh);
+          if (f) { doc.addImage(f.data, 'JPEG', fx, fy, fw, fh); doc.rect(fx, fy, fw, fh); }
+          else { doc.setFont('helvetica', 'normal'); doc.setFontSize(6); doc.setTextColor(150); doc.text('FOTO', fx + fw / 2, fy + fh / 2, { align: 'center' }); }
+          const tx = fx + fw + 4, ancho = W - (tx - x) - 3.5;
+          doc.setTextColor(31, 41, 55); doc.setFont('helvetica', 'bold'); doc.setFontSize(10);
+          const nombre = doc.splitTextToSize(String(c.nombre || '').toUpperCase(), ancho).slice(0, 3);
+          doc.text(nombre, tx, y + 19.5);
+          let yy = y + 19.5 + nombre.length * 4.1;
+          doc.setFont('helvetica', 'normal'); doc.setFontSize(8.3); doc.setTextColor(75, 85, 99);
+          doc.text(String(c.puesto || ''), tx, yy); yy += 3.7;
+          if (c.sucursal) doc.text(String(c.sucursal), tx, yy);
+          doc.setFontSize(6.2); doc.text('No. de empleado', tx, y + 41); doc.text('Vigente hasta', x + W - 3.5, y + 41, { align: 'right' });
+          doc.setFont('helvetica', 'bold'); doc.setTextColor(26, 29, 35); doc.setFontSize(13); doc.text(String(c.numero_empleado || ''), tx, y + 46.5);
+          doc.setFontSize(9); doc.text(fechaCorta(c.vigencia), x + W - 3.5, y + 46.5, { align: 'right' });
+          doc.setFont('helvetica', 'normal'); doc.setFontSize(5.4); doc.setTextColor(110); doc.text('Personal e intransferible. Propiedad de Saneadren.', x + W / 2, y + H - 2, { align: 'center' });
+        });
+        // REVERSO (página siguiente, en espejo para imprimir a dos caras)
+        doc.addPage();
+        grupo.forEach((c, k) => {
+          const [x, y] = pos(k, true);
+          franja(x, y, 'VERIFICACIÓN Y CHECADOR');
+          const lado = 22, q1x = x + 6, q2x = x + W - lado - 6, qy = y + 16;
+          if (c.codigo) dibujarQR(doc, 'SANEADREN-CHECADOR:' + c.codigo, q1x, qy, lado);
+          dibujarQR(doc, c.url || (location.origin + c.ruta), q2x, qy, lado);
+          doc.setFont('helvetica', 'bold'); doc.setFontSize(6.3); doc.setTextColor(31, 41, 55);
+          if (c.codigo) doc.text('Reloj checador · código ' + c.codigo, q1x + lado / 2, qy + lado + 2.8, { align: 'center' });
+          doc.text('Verificar credencial', q2x + lado / 2, qy + lado + 2.8, { align: 'center' });
+          doc.setFont('helvetica', 'normal'); doc.setFontSize(6.2); doc.setTextColor(55, 65, 81);
+          const emer = c.contacto_emergencia || c.tel_emergencia ? `Emergencia: ${[c.contacto_emergencia, c.tel_emergencia].filter(Boolean).join(' · ')}` : 'Emergencia: (sin contacto registrado)';
+          doc.text(doc.splitTextToSize(emer, W - 8).slice(0, 1), x + 4, y + H - 7.2);
+          doc.setFontSize(5.6); doc.setTextColor(110);
+          doc.text(`Si encuentra esta credencial, llame a Saneadren${tel ? ' al ' + tel : ''}.`, x + W / 2, y + H - 2.4, { align: 'center' });
+        });
+      }
       doc.save(`credenciales_${hoy()}.pdf`);
-      toast(`Se descargaron ${elegidos.length} credencial(es)`);
-    } catch (e) { toast('No se pudo hacer el PDF: ' + e.message); }
+      const sin = credenciales.filter(c => !fotos.get(c.personal_id)).length;
+      toast(`Se descargaron ${credenciales.length} credencial(es)${sin ? ` (${sin} sin foto)` : ''}. Imprime a dos caras, volteando por el lado largo.`);
+    } catch (e) { toast('No se pudieron hacer las credenciales: ' + e.message); }
     b.disabled = false;
   }
 

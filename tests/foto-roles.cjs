@@ -22,6 +22,8 @@ const pedir = async (m, r, t, b) => {
   const texto = await x.text(); let j = {}; try { j = JSON.parse(texto); } catch { /* */ } return [x.status, j, texto];
 };
 const espera = ms => new Promise(r => setTimeout(r, ms));
+// Foto de prueba para la credencial (JPEG mínimo válido por su firma).
+const FOTO_JPG = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), require('crypto').randomBytes(2000), Buffer.from([0xff, 0xd9])]);
 let n = 0; const malos = [];
 const revisa = (cond, texto, extra) => { n++; if (!cond) { malos.push(texto); console.log('  ✘ ' + texto + (extra !== undefined ? '  → ' + JSON.stringify(extra).slice(0, 900) : '')); } else console.log('  ✔ ' + texto); };
 const HOY = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Mexico_City' }).format(new Date());
@@ -290,6 +292,8 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
     ['daCelular', 'Mandar a una persona el enlace para checar desde su celular, o quitarle el celular'],
     ['veIntentos', 'Ver los intentos fallidos en el kiosco (código o PIN malo, PIN bloqueado) con su foto y la red de cada checada'],
     ['ubicaSucursal', 'Capturar la ubicación de una sucursal (para revisar dónde checan con el celular)'],
+    ['fotoCredencial', 'Subir o tomar la foto de una persona para su credencial'],
+    ['emiteCredencial', 'Imprimir credenciales (con su QR de verificación para clientes y su vigencia)'],
     ['veRH', 'Ver la pestaña RH (resumen del personal: sin horario, sin checador, sin aviso firmado…)'],
     ['importaPersonal', 'Cargar trabajadores en lote desde la plantilla de Excel (revisar y guardar)'],
     ['veAsistencia', 'Ver la asistencia del día y de la semana (retardos, faltas, tiempo extra)'],
@@ -356,6 +360,8 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
     VE[rol].marcaFestivo = ok(await pedir('POST', '/asistencia/festivos', t, { fecha: dia(60), nombre: 'Festivo de prueba ' + rol, activo: false }));
     VE[rol].veIntentos = ok(await pedir('GET', '/asistencia/intentos?fecha=' + HOY, t));
     VE[rol].ubicaSucursal = ok(await pedir('PUT', '/asistencia/sucursales/' + qro.id + '/ubicacion', t, { ubicacion: '20.5888, -100.3899', radio_m: 500 }));
+    VE[rol].fotoCredencial = (await fetch(URL + '/personal/' + EMP.id + '/foto', { method: 'POST', headers: { 'Content-Type': 'image/jpeg', Authorization: 'Bearer ' + t }, body: FOTO_JPG })).ok;
+    VE[rol].emiteCredencial = ok(await pedir('POST', '/rh/credenciales', t, { ids: [], vigencia: dia(365) })) || (await pedir('POST', '/rh/credenciales', t, { ids: [], vigencia: dia(365) }))[0] === 400;
     VE[rol].veRH = ok(await pedir('GET', '/rh/resumen', t));
     VE[rol].importaPersonal = ok(await pedir('POST', '/rh/importar/revisar', t, { filas: [{ nombre: 'Prueba Carga ' + rol, puesto: 'Ayudante' }] }));
     VE[rol].daCelular = ok(await pedir('POST', '/asistencia/personal/' + EMP.id + '/celular/quitar', t));
@@ -441,6 +447,9 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
       admin: { veIntentos: 1 }, gerente: { veIntentos: 1 }, ...Object.fromEntries(['ventas', 'atencion', 'tecnico', 'costos', 'marketing', 'marketing_gerente'].map(r => [r, { veIntentos: 0 }])) }],
     ['2026-11-05', 'Ubicación de cada sucursal (para el celular: a más de su radio, 500 m por omisión, la checada queda «por revisar» y se ve en el mapa): la captura solo Dirección.', {
       admin: { ubicaSucursal: 1 }, ...Object.fromEntries(['gerente', 'ventas', 'atencion', 'tecnico', 'costos', 'marketing', 'marketing_gerente'].map(r => [r, { ubicaSucursal: 0 }])) }],
+    ['2026-11-05', 'Credenciales de empleado (foto, nombre, puesto, número de empleado, vigencia, contacto de emergencia, QR del checador y QR de verificación para clientes): tomar la foto e imprimirlas lo hacen quienes editan el personal (Dirección y el Gerente, de su sucursal). Imprimir una nueva anula la anterior. La página de verificación es pública solo con el QR y muestra foto, nombre y puesto si la persona sigue trabajando y la credencial está vigente; si no, solo dice que no es válida.', {
+      admin: { fotoCredencial: 1, emiteCredencial: 1 }, gerente: { fotoCredencial: 1, emiteCredencial: 1 },
+      ...Object.fromEntries(['ventas', 'atencion', 'tecnico', 'costos', 'marketing', 'marketing_gerente'].map(r => [r, { fotoCredencial: 0, emiteCredencial: 0 }])) }],
     ['2026-11-04', 'Eliminar usuarios y sucursales: solo Dirección. Si nunca se usaron se borran; si ya tienen registros (cotizaciones, cobros, bitácora…) se archivan: desaparecen de las listas y su historial se conserva. La sucursal principal y la propia cuenta no se eliminan.', {
       admin: { eliminaUsuario: 1, eliminaSucursal: 1 }, ...Object.fromEntries(['gerente', 'ventas', 'atencion', 'tecnico', 'costos', 'marketing', 'marketing_gerente'].map(r => [r, { eliminaUsuario: 0, eliminaSucursal: 0 }])) }],
     ['2026-11-03', 'Precio de la hora de cada puesto y el dinero del tiempo extra (dobles y triples, en la semana y en el Excel de nómina): lo ven y lo cambian quienes ven sueldos (Dirección y el Gerente, de su sucursal); los demás roles solo ven horas.', {

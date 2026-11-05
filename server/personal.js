@@ -161,6 +161,8 @@ module.exports = function personal(app, db, h) {
     delete x._ilegibles;
     // Del reloj checador solo sale el código; el hash del PIN y sus intentos, nunca (checador.js).
     delete x.pin_hash; delete x.pin_fallos; delete x.pin_bloqueado_hasta;
+    // Foto de la credencial (credenciales.js): solo si tiene, nunca el nombre del archivo.
+    x.tiene_foto = !!p.foto_archivo; delete x.foto_archivo;
     const conSens = sensible(req) && !lista;
     if (sensible(req) && p._ilegibles?.length) x.datos_ilegibles = p._ilegibles;
     if (!conSens) { for (const k of SENSIBLES) delete x[k]; delete x.salario_cent; x.clabe_mascara = mascaraClabe(p.clabe); x.tiene_clabe = !!p.clabe || !!p._ilegibles?.includes('clabe'); }
