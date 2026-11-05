@@ -2226,7 +2226,8 @@ table.tabla-clientes.py-tareas tbody td{white-space:normal;}
 .ls-quitadas summary{cursor:pointer;color:var(--texto-sec);font-size:13px;margin-top:6px;}
 .ls-ayuda{margin:6px 0 0;}
 /* Logs del sistema (Ajustes, solo Dirección): resumen de 24 h y renglones según gravedad. */
-.logs-tarjetas{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:6px;}
+.logs-tarjetas{display:grid;grid-template-columns:repeat(6,1fr);gap:10px;margin-bottom:6px;}
+.logs-estado{margin:4px 0 0;}
 .logs-tarjeta{background:var(--gris-100);border-radius:10px;padding:10px 12px;display:flex;flex-direction:column;gap:2px;}
 .logs-tarjeta b{font-size:22px;line-height:1.1;}
 .logs-tarjeta span{font-size:12px;color:var(--texto-sec);}
@@ -2234,5 +2235,6 @@ table.tabla-clientes.py-tareas tbody td{white-space:normal;}
 .logs-tarjeta.logs-alerta b{color:var(--rojo);}
 tr.logs-grave td{background:#fdf1ef;}
 tr.logs-aviso td{background:#fffaf0;}
+@media (max-width:1100px){.logs-tarjetas{grid-template-columns:repeat(3,1fr);}}
 @media (max-width:700px){.logs-tarjetas{grid-template-columns:repeat(2,1fr);}}
 #panel-logs .tabla-resumen th,#panel-logs .tabla-resumen td{text-align:left;}

@@ -201,7 +201,9 @@ require('./tablero')(app, db, h, finanzas); // Resultados: panorama general
 require('./compras')(app, db, h, finanzas); // Órdenes de compra (formato CM-F-03)
 require('./carga-generador')(app, db, h, unicos); // Carga masiva del Generador (Excel por meses)
 require('./buscador')(app, db, h); // Buscador general (caja de arriba): folios, clientes, compras, proveedores
-require('./respaldos')(db, { hoyMexico }); // Copia diaria automática de la base (últimos 14 días) junto a la base
+require('./respaldos')(db, { hoyMexico, avisar: (evento, detalle) => app.locals.registro?.servicio(evento, detalle) }); // Copia diaria automática de la base (últimos 14 días) junto a la base
+// Correos que no salen (p. ej. falta la contraseña del correo): a los logs, con el destinatario a medias.
+require('./correo').alFallar((para, asunto, err) => app.locals.registro?.servicio('correo_fallo', `${app.locals.registro.tapar(para)} · «${String(asunto).slice(0, 80)}» · ${String(err?.message || err).slice(0, 200)}`));
 require('./integridad')(app, db, h); // Revisión de integridad de los datos guardados (solo administración)
 // Personal (RH): fichas, expediente, vacaciones e incidencias, y el equipo de cada orden de servicio.
 const personalMod = require('./personal')(app, db, h);
@@ -1830,6 +1832,7 @@ app.get('/api/admin/backup', async (req, res) => {
     const nombreArchivo = `saneadren_backup_${hoyMexico()}.db`;
     const destino = path.join(require('os').tmpdir(), `saneadren-${process.pid}-${Date.now()}-${require('crypto').randomBytes(4).toString('hex')}.db`);
     await db.backup(destino);
+    app.locals.registro?.anotar(req, 'descarga', { detalle: 'Respaldo de la base de datos (.db)' });
     res.download(destino, nombreArchivo, () => fs.unlink(destino, () => {}));
   } catch (err) {
     console.error('Error generando respaldo:', err);
@@ -1852,4 +1855,7 @@ process.on('uncaughtException', err => { console.error('uncaughtException (servi
 process.on('unhandledRejection', err => { console.error('unhandledRejection (servidor sigue vivo):', err); app.locals.registro?.error(null, err); });
 
 suc.activarCandados(); // al final: todas las tablas ya existen
-app.listen(PORT, () => { console.log(`Saneadren CRM corriendo en http://localhost:${PORT}`); demo.alEscuchar(); });
+app.listen(PORT, () => {
+  console.log(`Saneadren CRM corriendo en http://localhost:${PORT}`); demo.alEscuchar();
+  app.locals.registro?.servicio('inicio', `Versión ${require('../package.json').version} · Node ${process.versions.node}${process.env.FACTURA_ENV ? ' · facturación en ' + (process.env.FACTURA_ENV === 'prod' ? 'producción' : 'pruebas (sandbox)') : ''}`);
+});

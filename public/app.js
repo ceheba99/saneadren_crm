@@ -2819,3 +2819,18 @@ function renderGraficosComerciales(d){
   const puntos=serie.map((m,i)=>({x:70+(serie.length===1?420:i*840/(serie.length-1)),y:190-160*m.importe/max,...m}));
   cont.innerHTML=`<svg viewBox="0 0 ${w} ${h}" role="img" aria-label="Vendido por mes" style="display:block;width:100%;max-height:300px"><line x1="70" y1="190" x2="910" y2="190" stroke="#9aa4ad"/><text x="2" y="24" font-size="12">${formatoMoneda(max)}</text><text x="12" y="192" font-size="12">$0</text><polyline points="${puntos.map(p=>p.x+','+p.y).join(' ')}" fill="none" stroke="#bb8200" stroke-width="3"/>${puntos.map((p,i)=>`<circle cx="${p.x}" cy="${p.y}" r="4" fill="#f6b103"><title>${escaparHtml(p.mes)}: ${formatoMoneda(p.importe)} · ${Number(p.servicios)} servicios</title></circle>${i===0||i===puntos.length-1||i%Math.max(1,Math.ceil(puntos.length/8))===0?`<text x="${p.x}" y="215" text-anchor="middle" font-size="12">${escaparHtml(p.mes)}</text>`:''}`).join('')}</svg><details><summary>Ver cifras mensuales</summary><div class="tabla-scroll"><table class="tabla-resumen"><thead><tr><th>Mes</th><th>Servicios</th><th>Importe contratado</th></tr></thead><tbody>${serie.map(m=>`<tr><td>${escaparHtml(m.mes)}</td><td>${Number(m.servicios)}</td><td>${formatoMoneda(m.importe)}</td></tr>`).join('')}</tbody></table></div></details>`;
 }
+
+// Errores del navegador → logs del sistema (Ajustes, solo Dirección los ve). Solo con sesión; si el aviso falla, se ignora.
+(() => {
+  let enviando = 0;
+  const avisar = (mensaje, archivo) => {
+    if (!USUARIO_ACTUAL?.token || !mensaje || /^Script error\.?$/.test(mensaje) || enviando > 3) return;
+    enviando++;
+    const vista = document.querySelector('.vista.activa')?.id?.replace(/^vista-/, '') || '';
+    api('/registro-sistema/pantalla', { method: 'POST', body: JSON.stringify({ mensaje: String(mensaje).slice(0, 300), vista, archivo }) })
+      .catch(() => {}).finally(() => { enviando--; });
+  };
+  window.addEventListener('error', e => avisar(e.message, e.filename ? String(e.filename).split('/').pop().split('?')[0] + ':' + e.lineno : ''));
+  // Las respuestas del servidor con error (permiso, datos inválidos…) ya traen su mensaje y las graves se anotan allá: aquí solo fallas del código.
+  window.addEventListener('unhandledrejection', e => { const r = e.reason; if (r?.status || r?.name === 'AbortError') return; avisar(r?.message || String(r || ''), ''); });
+})();
