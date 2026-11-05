@@ -288,6 +288,8 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
     ['eliminaUsuario', 'Eliminar un usuario (se borra si nunca se usó; si ya tiene registros, se archiva)'],
     ['eliminaSucursal', 'Eliminar una sucursal (se borra si nunca se usó; si ya tiene registros, se archiva)'],
     ['daCelular', 'Mandar a una persona el enlace para checar desde su celular, o quitarle el celular'],
+    ['veIntentos', 'Ver los intentos fallidos en el kiosco (código o PIN malo, PIN bloqueado) con su foto y la red de cada checada'],
+    ['ubicaSucursal', 'Capturar la ubicación de una sucursal (para revisar dónde checan con el celular)'],
     ['veRH', 'Ver la pestaña RH (resumen del personal: sin horario, sin checador, sin aviso firmado…)'],
     ['importaPersonal', 'Cargar trabajadores en lote desde la plantilla de Excel (revisar y guardar)'],
     ['veAsistencia', 'Ver la asistencia del día y de la semana (retardos, faltas, tiempo extra)'],
@@ -352,6 +354,8 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
     { const hor = (await pedir('GET', '/asistencia/horarios', A))[1].horarios.find(x => x.sucursal_id === qro.id);
       VE[rol].cambiaHorario = ok(await pedir('PUT', '/asistencia/horarios/' + hor.id, t, { dias: hor.vigente.dias, tolerancia_min: hor.vigente.tolerancia_min, comida_min: hor.vigente.comida_min })); }
     VE[rol].marcaFestivo = ok(await pedir('POST', '/asistencia/festivos', t, { fecha: dia(60), nombre: 'Festivo de prueba ' + rol, activo: false }));
+    VE[rol].veIntentos = ok(await pedir('GET', '/asistencia/intentos?fecha=' + HOY, t));
+    VE[rol].ubicaSucursal = ok(await pedir('PUT', '/asistencia/sucursales/' + qro.id + '/ubicacion', t, { ubicacion: '20.5888, -100.3899', radio_m: 500 }));
     VE[rol].veRH = ok(await pedir('GET', '/rh/resumen', t));
     VE[rol].importaPersonal = ok(await pedir('POST', '/rh/importar/revisar', t, { filas: [{ nombre: 'Prueba Carga ' + rol, puesto: 'Ayudante' }] }));
     VE[rol].daCelular = ok(await pedir('POST', '/asistencia/personal/' + EMP.id + '/celular/quitar', t));
@@ -433,6 +437,10 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
       ...Object.fromEntries(['ventas', 'atencion', 'tecnico', 'costos', 'marketing', 'marketing_gerente'].map(r => [r, { veAsistencia: 0, cambiaHorario: 0, autorizaExtra: 0 }])) }],
     ['2026-11-05', 'Días festivos: valen para TODAS las sucursales, así que los marca o quita quien tiene «Horarios y días festivos» y ve todas las sucursales (Dirección, o RH de la empresa). El Gerente de una sola sucursal ya no (auditoría: su festivo convertía en tiempo extra lo trabajado en las demás).', {
       admin: { marcaFestivo: 1 }, ...Object.fromEntries(['gerente', 'ventas', 'atencion', 'tecnico', 'costos', 'marketing', 'marketing_gerente'].map(r => [r, { marcaFestivo: 0 }])) }],
+    ['2026-11-05', 'Intentos fallidos en el kiosco (código o PIN malo, PIN bloqueado): el kiosco les toma foto; los intentos, su foto y la red (IP) desde la que se checó los ven Dirección y el Gerente (de su sucursal), y cada foto que se abre queda en la bitácora. Los demás roles no.', {
+      admin: { veIntentos: 1 }, gerente: { veIntentos: 1 }, ...Object.fromEntries(['ventas', 'atencion', 'tecnico', 'costos', 'marketing', 'marketing_gerente'].map(r => [r, { veIntentos: 0 }])) }],
+    ['2026-11-05', 'Ubicación de cada sucursal (para el celular: a más de su radio, 500 m por omisión, la checada queda «por revisar» y se ve en el mapa): la captura solo Dirección.', {
+      admin: { ubicaSucursal: 1 }, ...Object.fromEntries(['gerente', 'ventas', 'atencion', 'tecnico', 'costos', 'marketing', 'marketing_gerente'].map(r => [r, { ubicaSucursal: 0 }])) }],
     ['2026-11-04', 'Eliminar usuarios y sucursales: solo Dirección. Si nunca se usaron se borran; si ya tienen registros (cotizaciones, cobros, bitácora…) se archivan: desaparecen de las listas y su historial se conserva. La sucursal principal y la propia cuenta no se eliminan.', {
       admin: { eliminaUsuario: 1, eliminaSucursal: 1 }, ...Object.fromEntries(['gerente', 'ventas', 'atencion', 'tecnico', 'costos', 'marketing', 'marketing_gerente'].map(r => [r, { eliminaUsuario: 0, eliminaSucursal: 0 }])) }],
     ['2026-11-03', 'Precio de la hora de cada puesto y el dinero del tiempo extra (dobles y triples, en la semana y en el Excel de nómina): lo ven y lo cambian quienes ven sueldos (Dirección y el Gerente, de su sucursal); los demás roles solo ven horas.', {

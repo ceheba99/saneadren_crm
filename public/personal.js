@@ -235,7 +235,7 @@ const Personal = (() => {
       const r = await api('/asistencia/dispositivos'), lista = await r.json().catch(() => []);
       if (!r.ok) throw new Error(lista.error || 'No se pudieron cargar los kioscos');
       const aqui = kioscoAqui()?.id;
-      cont.innerHTML = lista.length ? '<ul class="pe-ordenes">' + lista.map(k => `<li><b>${esc(k.nombre)}</b> · ${esc(k.sucursal || '')}${k.id === aqui && k.activo ? ' · <b>este dispositivo</b> · <a href="/kiosco">Abrir el kiosco</a>' : ''} <small>${k.activo ? 'registrado por ' + esc(k.registrado_por_nombre || '') + (k.ultimo_uso ? ' · último uso ' + esc(k.ultimo_uso) : '') : 'dado de baja por ' + esc(k.revocado_por || '')}</small>${k.activo ? ` <button type="button" class="btn btn-outline" data-pe-kiosco-baja="${Number(k.id)}">Dar de baja</button>` : ''}</li>`).join('') + '</ul>'
+      cont.innerHTML = lista.length ? '<ul class="pe-ordenes">' + lista.map(k => `<li><b>${esc(k.nombre)}</b> · ${esc(k.sucursal || '')}${k.id === aqui && k.activo ? ' · <b>este dispositivo</b> · <a href="/kiosco">Abrir el kiosco</a>' : ''} <small>${k.activo ? 'registrado por ' + esc(k.registrado_por_nombre || '') + (k.ultimo_uso ? ' · último uso ' + esc(k.ultimo_uso) : '') : 'dado de baja por ' + esc(k.revocado_por || '')}</small>${k.activo && k.red_cambiada ? ` <span class="as-rojo">⚠️ Su última checada llegó desde otra red.</span> <button type="button" class="btn btn-outline" data-pe-kiosco-red="${Number(k.id)}" title="Si cambió el internet de la oficina">Es la nueva red de la oficina</button>` : ''}${k.activo ? ` <button type="button" class="btn btn-outline" data-pe-kiosco-baja="${Number(k.id)}">Dar de baja</button>` : ''}</li>`).join('') + '</ul>'
         : '<p class="ayuda">Todavía no hay kioscos registrados.</p>';
     } catch (err) { cont.innerHTML = `<p class="aviso-error-carga" role="alert">${esc(err.message)}</p>`; }
   }
@@ -251,6 +251,12 @@ const Personal = (() => {
       toast('Este dispositivo quedó registrado como kiosco «' + j.nombre + '». Ábrelo con «Abrir el kiosco».');
       cargarKioscos();
     } catch (err) { toast(err.message); }
+  }
+  // El internet de la oficina cambió de IP: la red de su última checada pasa a ser «la de siempre».
+  async function redKiosco(id) {
+    if (!await solicitarDialogo({ titulo: 'Nueva red de la oficina', mensaje: 'Úsalo solo si cambió el internet de la oficina. Si no, alguien pudo checar con este kiosco desde otro lugar: revisa las checadas «desde otra red».', aceptar: 'Es la nueva red' })) return;
+    try { const r = await api('/asistencia/dispositivos/' + Number(id) + '/red', { method: 'POST' }); const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.error || 'No se pudo'); toast('Listo: esa es ahora la red de siempre del kiosco'); cargarKioscos(); }
+    catch (err) { toast(err.message); }
   }
   async function bajaKiosco(id) {
     if (!await solicitarDialogo({ titulo: 'Dar de baja el kiosco', mensaje: 'Ese dispositivo ya no podrá registrar checadas. Las checadas que ya hizo se conservan.', aceptar: 'Dar de baja' })) return;
@@ -332,7 +338,7 @@ const Personal = (() => {
   ['pe-f-puesto', 'pe-f-estado', 'pe-f-alertas'].forEach(id => { $(id).onchange = cargar; });
   $('pe-buscar').oninput = debounce(cargar, 350);
   $('pe-kiosco-registrar').onclick = registrarKiosco;
-  $('pe-kioscos-lista').onclick = e => { const b = e.target.closest('[data-pe-kiosco-baja]'); if (b) bajaKiosco(b.dataset.peKioscoBaja); };
+  $('pe-kioscos-lista').onclick = e => { const b = e.target.closest('[data-pe-kiosco-baja]'); if (b) bajaKiosco(b.dataset.peKioscoBaja); const r = e.target.closest('[data-pe-kiosco-red]'); if (r) redKiosco(r.dataset.peKioscoRed); };
   $('pe-cerrar').onclick = async () => { if (!ocupado && await permitirSalida()) $('overlay-personal').classList.remove('mostrar'); };
   $('pe-cuerpo').addEventListener('input', aviso);
   $('pe-cuerpo').addEventListener('change', aviso);

@@ -222,7 +222,11 @@
     try { r = await api('identificar', { codigo, pin }); }
     catch { sinConexion = true; avisos(); return elegirTipo({ nombre: null, sugerido: null, sinConexion: { codigo, pin } }); }
     if (r.status === 401 && r.j.codigo === 'KIOSCO_NO_REGISTRADO') return noRegistrado();
-    if (!r.ok) return error(r.j.error || 'No se pudo revisar tu código');
+    if (!r.ok) {
+      // Intento fallido: el servidor lo registra y pide su foto (para ver quién prueba el código de otro).
+      if (r.j.intento) { const imagen = foto(); if (imagen) api('intento-foto', { intento: r.j.intento, foto: imagen }).catch(() => {}); }
+      return error(r.j.error || 'No se pudo revisar tu código');
+    }
     if (sinConexion) { sinConexion = false; avisos(); }
     if (r.j.cambiar_pin) return nuevoPin(r.j);
     elegirTipo(r.j);
