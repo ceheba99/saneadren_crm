@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Saneadren · Cotizaciones y Servicios</title>
-<link rel="stylesheet" href="styles.css?v=sc1">
+<link rel="stylesheet" href="styles.css?v=qs1">
 <link rel="stylesheet" href="servicios-tabla.css">
 <link rel="stylesheet" href="flujo.css?v=cel1">
 </head>
@@ -1067,17 +1067,6 @@
   </div>
 </div>
 
-<div class="overlay" id="overlay-huecos">
-  <div class="modal modal-huecos">
-    <div class="modal-header"><h2>✏️ Completar la descripción</h2><button class="close-btn" type="button">✕</button></div>
-    <div class="modal-body">
-      <div id="hx-campos"></div>
-      <p class="ayuda" id="hx-mayus" hidden>Se escribe en mayúsculas, como el resto de la descripción.</p>
-      <div class="hx-vista"><small>Así quedará (la puedes seguir editando en la partida):</small><p id="hx-vista"></p></div>
-      <div class="dialogo-acciones"><button type="button" class="btn btn-secundario" id="hx-cancelar">Cancelar</button><button type="button" class="btn btn-primario" id="hx-aceptar">Usar en la partida</button></div>
-    </div>
-  </div>
-</div>
 <div class="overlay" id="overlay-ficha-cliente">
   <div class="modal">
     <div class="modal-header">
@@ -1121,11 +1110,6 @@
         <div class="seccion-tit" data-plegable-cabecera>🧾 Datos fiscales para facturar <span class="hc-cuenta" id="fc-fiscales-resumen"></span></div>
         <p class="ayuda">Los que se usan al facturarle a este cliente. Un cliente puede tener varios (por ejemplo, otra razón social). Escríbelos como en su Constancia de Situación Fiscal. Se pueden guardar incompletos, pero no se le podrá facturar hasta completarlos.</p>
         <div id="fc-fiscales"></div>
-      </div>
-      <div class="modal-section" id="fc-sucursales-cli-seccion" data-plegable="sucursales-cliente" data-plegado-defecto="1" hidden>
-        <div class="seccion-tit" data-plegable-cabecera>🏬 Sucursales del cliente <span class="hc-cuenta" id="fc-sucursales-cli-resumen"></span></div>
-        <p class="ayuda">Los lugares de este cliente donde se da servicio (por ejemplo, cada restaurante de una cadena). Al capturar una partida cuyo servicio tiene el hueco <b>{sucursal}</b> en su descripción, se elige de esta lista.</p>
-        <div id="fc-sucursales-cli"></div>
       </div>
       <div class="modal-section" data-plegable="registros-contacto">
         <div class="relacion-registros"><div><div class="seccion-tit" data-plegable-cabecera>Cotizaciones y servicios de este contacto</div><p class="ayuda">Una cotización abierta es una propuesta. Al aceptarla, el mismo registro pasa a servicio contratado; conserva su número e importe.</p></div>
@@ -1828,8 +1812,7 @@
 <script src="sucursales.js?v=perm4"></script>
 <script src="facturacion.js?v=fx10"></script>
 <script src="encuestas.js?v=enc1"></script>
-<script src="app.js?v=rh11"></script>
-<script src="sucursales-cliente.js?v=sc1"></script>
+<script src="app.js?v=qs1"></script>
 <script src="personal.js?v=rh8"></script>
 <script src="asistencia.js?v=rh7"></script>
 <script src="rh.js?v=rh7"></script>
