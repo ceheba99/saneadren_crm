@@ -33,7 +33,7 @@ const PUESTOS = ['Técnico', 'Operador', 'Ayudante', 'Supervisor', 'Ventas', 'At
 const PERIODOS = ['diario', 'semanal', 'quincenal', 'mensual'];
 const CONTRATOS = ['Indeterminado', 'Determinado', 'Periodo de prueba', 'Capacitación inicial', 'Honorarios', 'Otro'];
 const LICENCIAS = ['A', 'B', 'C', 'D', 'E', 'Federal A', 'Federal B', 'Federal C', 'Federal D', 'Federal E', 'Otra'];
-const DOCUMENTOS = { ine: 'INE', curp: 'CURP', domicilio: 'Comprobante de domicilio', acta: 'Acta de nacimiento', rfc: 'Constancia de situación fiscal', nss: 'Número de seguro social', licencia: 'Licencia de manejo', contrato: 'Contrato', banco: 'Estado de cuenta (CLABE)', privacidad: 'Aviso de privacidad firmado', otro: 'Otro' };
+const DOCUMENTOS = { ine: 'INE', curp: 'CURP', domicilio: 'Comprobante de domicilio', acta: 'Acta de nacimiento', rfc: 'Constancia de situación fiscal', nss: 'Número de seguro social', licencia: 'Licencia de manejo', contrato: 'Contrato', banco: 'Estado de cuenta (CLABE)', privacidad: 'Aviso de privacidad firmado', biometria: 'Consentimiento biométrico firmado', otro: 'Otro' };
 const INCIDENCIAS = { vacaciones: 'Vacaciones', falta: 'Falta', incapacidad: 'Incapacidad', permiso: 'Permiso', retardo: 'Retardo', otro: 'Otro' };
 const PAPELES = { responsable: 'Técnico responsable', operador: 'Operador', ayudante: 'Ayudante' };
 // Lo que solo se ve y cambia con «personal.sensibles».

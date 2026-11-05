@@ -296,6 +296,7 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
     ['fotoCredencial', 'Subir o tomar la foto de una persona para su credencial'],
     ['emiteCredencial', 'Imprimir credenciales (con su QR de verificación para clientes y su vigencia)'],
     ['activaWhatsapp', 'Activar o quitar a una persona el checar por WhatsApp (foráneos)'],
+    ['registraRostro', 'Dar el código para registrar la cara de una persona en el kiosco, o borrar su registro (biométrico)'],
     ['veRH', 'Ver la pestaña RH (resumen del personal: sin horario, sin checador, sin aviso firmado…)'],
     ['importaPersonal', 'Cargar trabajadores en lote desde la plantilla de Excel (revisar y guardar)'],
     ['veAsistencia', 'Ver la asistencia del día y de la semana (retardos, faltas, tiempo extra)'],
@@ -365,6 +366,7 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
     VE[rol].fotoCredencial = (await fetch(URL + '/personal/' + EMP.id + '/foto', { method: 'POST', headers: { 'Content-Type': 'image/jpeg', Authorization: 'Bearer ' + t }, body: FOTO_JPG })).ok;
     VE[rol].emiteCredencial = ok(await pedir('POST', '/rh/credenciales', t, { ids: [], vigencia: dia(365) })) || (await pedir('POST', '/rh/credenciales', t, { ids: [], vigencia: dia(365) }))[0] === 400;
     VE[rol].activaWhatsapp = ok(await pedir('PUT', '/asistencia/personal/' + EMP.id + '/whatsapp', t, { activo: false }));
+    { const [s] = await pedir('POST', '/asistencia/personal/' + EMP.id + '/biometria/borrar', t); VE[rol].registraRostro = s === 200; }
     VE[rol].veRH = ok(await pedir('GET', '/rh/resumen', t));
     VE[rol].importaPersonal = ok(await pedir('POST', '/rh/importar/revisar', t, { filas: [{ nombre: 'Prueba Carga ' + rol, puesto: 'Ayudante' }] }));
     VE[rol].daCelular = ok(await pedir('POST', '/asistencia/personal/' + EMP.id + '/celular/quitar', t));
@@ -459,6 +461,8 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
       ...Object.fromEntries(['ventas', 'atencion', 'tecnico', 'costos', 'marketing', 'marketing_gerente'].map(r => [r, { activaWhatsapp: 0 }])) }],
     ['2026-11-05', 'Logs del sistema (Configuración → Ajustes): quién entró y salió, desde qué IP y equipo, contraseñas equivocadas, bloqueos por intentos, contraseñas restablecidas, errores del servidor y quién está conectado ahora. Los ve solo Dirección; ningún otro rol, ni el Gerente. Nunca guardan contraseñas.', {
       admin: { veLogs: 1 }, ...Object.fromEntries(['gerente', 'ventas', 'atencion', 'tecnico', 'costos', 'marketing', 'marketing_gerente'].map(r => [r, { veLogs: 0 }])) }],
+    ['2026-11-05', 'Biométrico facial en el kiosco (solo de quien firmó su consentimiento, subido al expediente como «Consentimiento biométrico firmado»): dar el código de un solo uso para registrar su cara en el kiosco o borrar su registro lo hacen quienes editan el personal (Dirección y el Gerente, de su sucursal), nunca para sí mismos (salvo Dirección). Nadie ve ni descarga la plantilla de la cara: solo se compara al checar. Si no coincide, la checada queda por revisar.', {
+      admin: { registraRostro: 1 }, gerente: { registraRostro: 1 }, ...Object.fromEntries(['ventas', 'atencion', 'tecnico', 'costos', 'marketing', 'marketing_gerente'].map(r => [r, { registraRostro: 0 }])) }],
     ['2026-11-04', 'Eliminar usuarios y sucursales: solo Dirección. Si nunca se usaron se borran; si ya tienen registros (cotizaciones, cobros, bitácora…) se archivan: desaparecen de las listas y su historial se conserva. La sucursal principal y la propia cuenta no se eliminan.', {
       admin: { eliminaUsuario: 1, eliminaSucursal: 1 }, ...Object.fromEntries(['gerente', 'ventas', 'atencion', 'tecnico', 'costos', 'marketing', 'marketing_gerente'].map(r => [r, { eliminaUsuario: 0, eliminaSucursal: 0 }])) }],
     ['2026-11-03', 'Precio de la hora de cada puesto y el dinero del tiempo extra (dobles y triples, en la semana y en el Excel de nómina): lo ven y lo cambian quienes ven sueldos (Dirección y el Gerente, de su sucursal); los demás roles solo ven horas.', {

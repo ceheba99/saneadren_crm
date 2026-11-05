@@ -107,7 +107,7 @@ function migrar(db) {
   agregar('personal', 'pin_cambiado_at', 'TEXT');
   agregar('personal', 'checa', 'INTEGER NOT NULL DEFAULT 1');
   const existe = t => !!db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(t);
-  if (existe('checadas')) { agregar('checadas', 'uid_kiosco', 'TEXT'); agregar('checadas', 'precision_m', 'REAL'); agregar('checadas', 'foto_borrada_at', 'TEXT'); agregar('checadas', 'ip', 'TEXT'); agregar('checadas', 'distancia_m', 'REAL'); }
+  if (existe('checadas')) { agregar('checadas', 'uid_kiosco', 'TEXT'); agregar('checadas', 'precision_m', 'REAL'); agregar('checadas', 'foto_borrada_at', 'TEXT'); agregar('checadas', 'ip', 'TEXT'); agregar('checadas', 'distancia_m', 'REAL'); agregar('checadas', 'biometria', 'TEXT'); agregar('checadas', 'distancia_rostro', 'REAL'); }
   if (existe('checador_dispositivos')) { agregar('checador_dispositivos', 'tipo', "TEXT NOT NULL DEFAULT 'kiosco'"); agregar('checador_dispositivos', 'personal_id', 'INTEGER REFERENCES personal(id)'); agregar('checador_dispositivos', 'red_habitual', 'TEXT'); }
   // Ubicación de cada sucursal para revisar las checadas del celular (la captura Dirección).
   agregar('sucursales', 'lat', 'REAL'); agregar('sucursales', 'lon', 'REAL'); agregar('sucursales', 'radio_m', 'INTEGER');
@@ -141,7 +141,7 @@ function migrar(db) {
       estado TEXT NOT NULL DEFAULT 'valida' CHECK(estado IN ('valida', 'por_revisar', 'anulada')),
       observaciones TEXT, registrado_por INTEGER, registrado_por_nombre TEXT,
       created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
-      uid_kiosco TEXT, precision_m REAL, foto_borrada_at TEXT, ip TEXT, distancia_m REAL
+      uid_kiosco TEXT, precision_m REAL, foto_borrada_at TEXT, ip TEXT, distancia_m REAL, biometria TEXT, distancia_rostro REAL
     );
     CREATE INDEX IF NOT EXISTS idx_checadas_persona ON checadas(personal_id, momento_utc);
     CREATE INDEX IF NOT EXISTS idx_checadas_fecha ON checadas(fecha);
@@ -160,7 +160,7 @@ function migrar(db) {
       BEGIN SELECT RAISE(ABORT, 'Las checadas no se borran: se anulan con motivo'); END;
     -- Se rehace en cada arranque: así su lista de columnas protegidas se actualiza cuando se agrega una.
     DROP TRIGGER IF EXISTS checadas_no_cambiar;
-    CREATE TRIGGER checadas_no_cambiar BEFORE UPDATE OF personal_id, tipo, momento_utc, fecha, hora, origen, dispositivo_id, created_at, uid_kiosco, ip, distancia_m ON checadas
+    CREATE TRIGGER checadas_no_cambiar BEFORE UPDATE OF personal_id, tipo, momento_utc, fecha, hora, origen, dispositivo_id, created_at, uid_kiosco, ip, distancia_m, biometria, distancia_rostro ON checadas
       BEGIN SELECT RAISE(ABORT, 'La hora de una checada no se cambia: se anula y se agrega otra con motivo'); END;
     CREATE TRIGGER IF NOT EXISTS checadas_anulada_final BEFORE UPDATE OF estado ON checadas WHEN OLD.estado = 'anulada'
       BEGIN SELECT RAISE(ABORT, 'Una checada anulada ya no cambia'); END;
@@ -228,8 +228,10 @@ module.exports = function checador(app, db, h) {
   setInterval(() => { try { borrarFotosViejas(); } catch (e) { console.error('[checador] borrado de fotos:', e.message); } }, 6 * 3600000).unref();
   // Guarda una checada del kiosco (con o sin conexión) y su foto, en una sola transacción.
   // «notas» la dejan «por revisar»; «avisos» solo se anotan (la checada vale).
-  function guardarChecada({ p, d, tipo, a, foto, ip = null, sinConexion = null, uid = null, origen = 'kiosco', ubicacion = null }) {
+  // «bio»: resultado del biométrico facial (biometria.js); si trae nota, la checada queda por revisar.
+  function guardarChecada({ p, d, tipo, a, foto, ip = null, sinConexion = null, uid = null, origen = 'kiosco', ubicacion = null, bio = null }) {
     const notas = [], avisos = [];
+    if (bio?.nota) notas.push(bio.nota);
     let distancia = null;
     if (p.sucursal_id !== d.sucursal_id) notas.push('Checó en un kiosco de otra sucursal');
     if (!foto) notas.push('Sin foto');
@@ -251,9 +253,9 @@ module.exports = function checador(app, db, h) {
     }
     const obs = [...notas, ...avisos].join(' · ') || null;
     return db.transaction(() => {
-      const r = db.prepare(`INSERT INTO main.checadas (personal_id, tipo, momento_utc, fecha, hora, origen, dispositivo_id, sucursal_id, estado, observaciones, sin_conexion, hora_dispositivo, uid_kiosco, lat, lon, precision_m, ip, distancia_m)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(p.id, tipo, a.utc, a.fecha, a.hora, origen, d.id, d.sucursal_id, notas.length ? 'por_revisar' : 'valida', obs,
-        sinConexion ? 1 : 0, sinConexion?.horaDispositivo ?? null, uid, ubicacion?.lat ?? null, ubicacion?.lon ?? null, ubicacion?.precision ?? null, ip, distancia);
+      const r = db.prepare(`INSERT INTO main.checadas (personal_id, tipo, momento_utc, fecha, hora, origen, dispositivo_id, sucursal_id, estado, observaciones, sin_conexion, hora_dispositivo, uid_kiosco, lat, lon, precision_m, ip, distancia_m, biometria, distancia_rostro)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(p.id, tipo, a.utc, a.fecha, a.hora, origen, d.id, d.sucursal_id, notas.length ? 'por_revisar' : 'valida', obs,
+        sinConexion ? 1 : 0, sinConexion?.horaDispositivo ?? null, uid, ubicacion?.lat ?? null, ubicacion?.lon ?? null, ubicacion?.precision ?? null, ip, distancia, bio?.resultado ?? null, bio?.distancia ?? null);
       const id = Number(r.lastInsertRowid);
       if (foto) guardarFoto(id, foto, a.fecha);
       db.prepare("UPDATE main.checador_dispositivos SET ultimo_uso = datetime('now','localtime') WHERE id = ?").run(d.id);
@@ -310,7 +312,8 @@ module.exports = function checador(app, db, h) {
   }
   const paraChecar = (req, p) => {
     const { fecha } = ahoraMexico(), u = ultimaDe(p.id, fecha);
-    return { ticket: nuevoTicket('checar', p, req.kiosco.id), nombre: primerNombre(p.nombre), sugerido: SIGUIENTE[u?.tipo || ''], ultima: u ? { tipo: TIPOS[u.tipo], hora: u.hora.slice(0, 5) } : null, tipos: TIPOS };
+    // biometria: la tableta debe pedirle que parpadee y mandar su cara (biometria.js).
+    return { ticket: nuevoTicket('checar', p, req.kiosco.id), nombre: primerNombre(p.nombre), sugerido: SIGUIENTE[u?.tipo || ''], ultima: u ? { tipo: TIPOS[u.tipo], hora: u.hora.slice(0, 5) } : null, tipos: TIPOS, biometria: !!app.locals.biometria?.activo(p.id) };
   };
 
   // La pantalla del kiosco: la única página del sistema con permiso de cámara (seguridad.js la bloquea en las demás).
@@ -397,6 +400,23 @@ module.exports = function checador(app, db, h) {
     db.prepare('UPDATE main.checador_intentos SET foto_archivo = ? WHERE id = ?').run(archivo, x.id);
     res.json({ ok: true });
   }));
+  // Biométrico (biometria.js): comprobar la cara antes de checar, hasta 3 veces por ticket (sin gastarlo). Solo dice si
+  // coincide; la decisión que queda en la checada se toma otra vez al checar.
+  app.post('/api/publico/kiosco/rostro-verificar', kiosco, h((req, res) => {
+    const t = String(req.body?.ticket || ''), x = tickets.get(t);
+    if (!x || x.expira <= Date.now() || x.dispositivoId !== req.kiosco.id || x.tipo !== 'checar') return res.status(401).json({ error: 'Se acabó el tiempo. Vuelve a escribir tu código y PIN.' });
+    x.rostros = (x.rostros || 0) + 1;
+    if (x.rostros > 3) return res.status(429).json({ error: 'Ya se intentó 3 veces' });
+    const ev = app.locals.biometria?.evaluar(x.personaId, req.body?.rostro);
+    res.json({ coincide: !ev || ev.resultado === 'coincide', resultado: ev?.resultado || null, intentos: x.rostros });
+  }));
+  // Registrar la cara con el código que dio RH (biometria.js).
+  app.post('/api/publico/kiosco/rostro-registrar', kiosco, h((req, res) => {
+    const r = app.locals.biometria?.registrar(req.kiosco, req.body?.codigo, req.body?.descriptores, req.body?.vivo);
+    if (!r) return res.status(503).json({ error: 'El biométrico no está disponible' });
+    if (!r.ok) return res.status(r.status).json({ error: r.error });
+    res.status(201).json(r);
+  }));
   // Paso 2: registrar la checada con la hora del servidor.
   app.post('/api/publico/kiosco/checar', kiosco, h((req, res) => {
     const tipo = String(req.body?.tipo || '');
@@ -408,9 +428,9 @@ module.exports = function checador(app, db, h) {
     const previa = db.prepare("SELECT id, hora FROM main.checadas WHERE personal_id = ? AND tipo = ? AND estado <> 'anulada' AND momento_utc >= ? ORDER BY id DESC LIMIT 1")
       .get(p.id, tipo, new Date(Date.now() - DUPLICADO_MS).toISOString());
     if (previa) return res.json({ id: previa.id, nombre: primerNombre(p.nombre), tipo: TIPOS[tipo], hora: previa.hora.slice(0, 5), repetida: true });
-    const foto = fotoDe(req.body?.foto);
-    const id = guardarChecada({ p, d, tipo, a, foto, ip: req.ipCliente || null });
-    res.status(201).json({ id, nombre: primerNombre(p.nombre), tipo: TIPOS[tipo], hora: a.hora.slice(0, 5), ...(foto ? {} : { sin_foto: true }) });
+    const foto = fotoDe(req.body?.foto), bio = app.locals.biometria?.evaluar(p.id, req.body?.rostro) || null;
+    const id = guardarChecada({ p, d, tipo, a, foto, ip: req.ipCliente || null, bio });
+    res.status(201).json({ id, nombre: primerNombre(p.nombre), tipo: TIPOS[tipo], hora: a.hora.slice(0, 5), ...(foto ? {} : { sin_foto: true }), ...(bio?.nota ? { por_revisar: bio.nota } : {}) });
   }));
   // Checada que el kiosco guardó SIN CONEXIÓN y sube al volver internet (una por petición). El PIN se revisa aquí, con
   // los mismos topes. La hora = ahora del servidor − el tiempo que pasó según el kiosco («edad»): con su reloj interno
@@ -524,7 +544,7 @@ module.exports = function checador(app, db, h) {
     const cel = db.prepare("SELECT id, created_at, ultimo_uso FROM main.checador_dispositivos WHERE tipo = 'celular' AND personal_id = ? AND activo = 1 ORDER BY id DESC LIMIT 1").get(p.id) || null;
     const ultimas = puede(req, 'asistencia.ver') ? db.prepare('SELECT id, tipo, fecha, hora, origen, estado, observaciones, sin_conexion, foto_archivo IS NOT NULL AS tiene_foto, foto_borrada_at IS NOT NULL AS foto_borrada, lat, lon, precision_m FROM checadas WHERE personal_id = ? ORDER BY momento_utc DESC, id DESC LIMIT 10').all(p.id) : [];
     const avisoFirmado = !!db.prepare("SELECT 1 FROM main.documentos_personal WHERE personal_id = ? AND tipo = 'privacidad' AND eliminado = 0").get(p.id);
-    res.json({ ...estadoDe(p), celular: cel, aviso_firmado: avisoFirmado, dias_fotos: DIAS_FOTOS, ultimas, puede: { editar: puede(req, 'personal.editar'), corregir: puede(req, 'asistencia.corregir'), ver: puede(req, 'asistencia.ver') } });
+    res.json({ ...estadoDe(p), biometria: app.locals.biometria?.estado(p.id) || null, celular: cel, aviso_firmado: avisoFirmado, dias_fotos: DIAS_FOTOS, ultimas, puede: { editar: puede(req, 'personal.editar'), corregir: puede(req, 'asistencia.corregir'), ver: puede(req, 'asistencia.ver') } });
   }));
   // Genera (o vuelve a generar) su código y un PIN temporal. El PIN se muestra UNA vez; la base guarda solo su hash.
   // Código (si no tiene) y PIN temporal nuevo. Regresa { codigo, pin }: el PIN solo existe en esta respuesta.
@@ -640,7 +660,7 @@ module.exports = function checador(app, db, h) {
     const fecha = req.query.fecha || ahoraMexico().fecha;
     if (!fechaOk(fecha)) return res.status(400).json({ error: 'Revisa la fecha' });
     const pid = req.query.personal_id ? idDe(req.query.personal_id) : null;
-    res.json(db.prepare(`SELECT c.id, c.personal_id, p.nombre, c.tipo, c.fecha, c.hora, c.origen, c.estado, c.observaciones, c.sin_conexion, c.foto_archivo IS NOT NULL AS tiene_foto, c.foto_borrada_at IS NOT NULL AS foto_borrada, c.lat, c.lon, c.precision_m, c.distancia_m, c.ip, c.registrado_por_nombre, d.nombre AS kiosco
+    res.json(db.prepare(`SELECT c.id, c.personal_id, p.nombre, c.tipo, c.fecha, c.hora, c.origen, c.estado, c.observaciones, c.sin_conexion, c.foto_archivo IS NOT NULL AS tiene_foto, c.foto_borrada_at IS NOT NULL AS foto_borrada, c.lat, c.lon, c.precision_m, c.distancia_m, c.ip, c.biometria, c.distancia_rostro, c.registrado_por_nombre, d.nombre AS kiosco
       FROM checadas c JOIN personal p ON p.id = c.personal_id LEFT JOIN main.checador_dispositivos d ON d.id = c.dispositivo_id
       WHERE c.fecha = ? ${pid ? 'AND c.personal_id = ?' : ''} ORDER BY c.momento_utc, c.id`).all(...[fecha, ...(pid ? [pid] : [])]));
   }));
