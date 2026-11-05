@@ -65,7 +65,7 @@ const VIE = sumar(sumar(HOY, -7), -((dow(sumar(HOY, -7)) - 5 + 7) % 7)), LUN = s
   // Jueves: no checó (falta). Viernes: vacaciones.
   exigir(await pedir('POST', '/personal/' + juan.id + '/incidencias', T.Gema, { tipo: 'permiso', fecha_inicio: D(4), notas: 'Trámite' }), 'permiso del viernes');
   // Sábado: festivo (lo agrega RH) y lo trabaja; domingo también trabaja.
-  exigir(await pedir('POST', '/asistencia/festivos', T.Gema, { fecha: D(5), nombre: 'Jornada electoral' }), 'festivo');
+  exigir(await pedir('POST', '/asistencia/festivos', A, { fecha: D(5), nombre: 'Jornada electoral' }), 'festivo'); // valen para todas las sucursales
   await checar(D(5), 'entrada', '08:30'); await checar(D(5), 'salida', '18:30');
   await checar(D(6), 'entrada', '09:00'); await checar(D(6), 'salida', '13:00');
 
@@ -122,7 +122,7 @@ const VIE = sumar(sumar(HOY, -7), -((dow(sumar(HOY, -7)) - 5 + 7) % 7)), LUN = s
   console.log('5. Festivos, permisos, sucursales e historial');
   const [, fes] = await pedir('GET', '/asistencia/festivos?anio=' + HOY.slice(0, 4), T.Gema);
   revisa(['-01-01', '-05-01', '-09-16', '-12-25'].every(s => fes.festivos.some(f => f.fecha === HOY.slice(0, 4) + s && f.origen === 'ley')), 'Los festivos de la ley se agregan solos', fes.festivos.map(f => f.fecha));
-  exigir(await pedir('POST', '/asistencia/festivos', T.Gema, { fecha: HOY.slice(0, 4) + '-05-01', nombre: 'Día del Trabajo', activo: false }), 'quitar festivo');
+  exigir(await pedir('POST', '/asistencia/festivos', A, { fecha: HOY.slice(0, 4) + '-05-01', nombre: 'Día del Trabajo', activo: false }), 'quitar festivo');
   revisa(conBase(d => d.prepare('SELECT activo FROM dias_festivos WHERE fecha = ?').get(HOY.slice(0, 4) + '-05-01').activo) === 0, 'Quitar un festivo lo desactiva (no se borra)');
   revisa((await pedir('POST', '/asistencia/festivos', T.Valeria, { fecha: HOY, nombre: 'Día libre' }))[0] === 403, 'Ventas no agrega festivos');
   revisa((await pedir('GET', '/asistencia/dia', T.Valeria))[0] === 403 && (await pedir('GET', '/asistencia/semana', T.Valeria))[0] === 403, 'Ventas no ve la asistencia');
@@ -132,7 +132,7 @@ const VIE = sumar(sumar(HOY, -7), -((dow(sumar(HOY, -7)) - 5 + 7) % 7)), LUN = s
   const hMx = (await pedir('GET', '/asistencia/horarios', T.Gus))[1].horarios;
   revisa(hMx.length === 2 && hMx.every(x => x.sucursal_id === cdmx.id), 'CDMX tiene sus propios horarios de arranque (sucursal abierta después)', hMx.map(x => [x.nombre, x.sucursal_id]));
   revisa((await pedir('PUT', '/asistencia/personal/' + juan.id + '/horario', T.Gema, { horario_id: hMx[0].id }))[0] === 400, 'No se asigna un horario de otra sucursal');
-  revisa((await pedir('POST', '/asistencia/festivos', T.Gema, { fecha: '2026-13-45', nombre: 'Fecha imposible' }))[0] === 400, 'Una fecha imposible se rechaza (sin error interno)');
+  revisa((await pedir('POST', '/asistencia/festivos', A, { fecha: '2026-13-45', nombre: 'Fecha imposible' }))[0] === 400, 'Una fecha imposible se rechaza (sin error interno)');
   const intento = sql => { try { conBase(d => d.exec(sql)); return false; } catch { return true; } };
   revisa(intento('DELETE FROM extra_autorizaciones') && intento('UPDATE extra_autorizaciones SET minutos_autorizados = 0'), 'Las autorizaciones de tiempo extra no se borran ni se cambian');
   revisa(intento('DELETE FROM horario_versiones') && intento("UPDATE horario_versiones SET tolerancia_min = 60") && intento('DELETE FROM personal_horario'), 'El historial de horarios no se borra ni se cambia');

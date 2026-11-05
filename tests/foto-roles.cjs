@@ -279,7 +279,8 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
     ['daPin', 'Dar de alta a una persona en el reloj checador (código y PIN temporal) o desbloquear su PIN'],
     ['registraKiosco', 'Registrar una tableta o computadora como kiosco del reloj checador'],
     ['corrigeChecada', 'Agregar a mano una checada olvidada (con motivo)'],
-    ['cambiaHorario', 'Cambiar un horario (entrada, salida, tolerancia o comida) o marcar días festivos'],
+    ['cambiaHorario', 'Cambiar un horario (entrada, salida, tolerancia o comida)'],
+    ['marcaFestivo', 'Marcar o quitar días festivos (valen para todas las sucursales)'],
     ['autorizaExtra', 'Autorizar el tiempo extra de una persona'],
     ['corrigeSuyo', 'Corregir su PROPIA asistencia (agregarse una checada o autorizarse su tiempo extra)'],
     ['precioExtra', 'Ponerle precio a la hora de cada puesto (para pagar el tiempo extra)'],
@@ -350,6 +351,7 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
         || ok(await pedir('POST', '/asistencia/extra', t, { personal_id: pid, fecha: dia(-3), minutos: 0 })); }
     { const hor = (await pedir('GET', '/asistencia/horarios', A))[1].horarios.find(x => x.sucursal_id === qro.id);
       VE[rol].cambiaHorario = ok(await pedir('PUT', '/asistencia/horarios/' + hor.id, t, { dias: hor.vigente.dias, tolerancia_min: hor.vigente.tolerancia_min, comida_min: hor.vigente.comida_min })); }
+    VE[rol].marcaFestivo = ok(await pedir('POST', '/asistencia/festivos', t, { fecha: dia(60), nombre: 'Festivo de prueba ' + rol, activo: false }));
     VE[rol].veRH = ok(await pedir('GET', '/rh/resumen', t));
     VE[rol].importaPersonal = ok(await pedir('POST', '/rh/importar/revisar', t, { filas: [{ nombre: 'Prueba Carga ' + rol, puesto: 'Ayudante' }] }));
     VE[rol].daCelular = ok(await pedir('POST', '/asistencia/personal/' + EMP.id + '/celular/quitar', t));
@@ -429,6 +431,8 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
     ['2026-11-03', 'Asistencia (horarios, retardos, faltas y tiempo extra): la ven Dirección y el Gerente; cambian horarios y días festivos y autorizan el tiempo extra Dirección y el Gerente (Dirección se los da a RH en Roles y permisos); los demás roles no.', {
       admin: { veAsistencia: 1, cambiaHorario: 1, autorizaExtra: 1 }, gerente: { veAsistencia: 1, cambiaHorario: 1, autorizaExtra: 1 },
       ...Object.fromEntries(['ventas', 'atencion', 'tecnico', 'costos', 'marketing', 'marketing_gerente'].map(r => [r, { veAsistencia: 0, cambiaHorario: 0, autorizaExtra: 0 }])) }],
+    ['2026-11-05', 'Días festivos: valen para TODAS las sucursales, así que los marca o quita quien tiene «Horarios y días festivos» y ve todas las sucursales (Dirección, o RH de la empresa). El Gerente de una sola sucursal ya no (auditoría: su festivo convertía en tiempo extra lo trabajado en las demás).', {
+      admin: { marcaFestivo: 1 }, ...Object.fromEntries(['gerente', 'ventas', 'atencion', 'tecnico', 'costos', 'marketing', 'marketing_gerente'].map(r => [r, { marcaFestivo: 0 }])) }],
     ['2026-11-04', 'Eliminar usuarios y sucursales: solo Dirección. Si nunca se usaron se borran; si ya tienen registros (cotizaciones, cobros, bitácora…) se archivan: desaparecen de las listas y su historial se conserva. La sucursal principal y la propia cuenta no se eliminan.', {
       admin: { eliminaUsuario: 1, eliminaSucursal: 1 }, ...Object.fromEntries(['gerente', 'ventas', 'atencion', 'tecnico', 'costos', 'marketing', 'marketing_gerente'].map(r => [r, { eliminaUsuario: 0, eliminaSucursal: 0 }])) }],
     ['2026-11-03', 'Precio de la hora de cada puesto y el dinero del tiempo extra (dobles y triples, en la semana y en el Excel de nómina): lo ven y lo cambian quienes ven sueldos (Dirección y el Gerente, de su sucursal); los demás roles solo ven horas.', {
