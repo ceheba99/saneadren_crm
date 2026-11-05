@@ -88,7 +88,7 @@ const ultimo = () => enviados[enviados.length - 1];
   await webhook([texto(JUAN, 'entrada')]);
   const lista = ultimo()?.cuerpo;
   const filas = lista?.interactive?.action?.sections?.[0]?.rows || [];
-  revisa(enviados.length === antes + 1 && lista.to === JUAN && lista.type === 'interactive' && lista.interactive.type === 'list' && filas.length === 6 && filas.length <= 10, 'Cualquier mensaje → menú con las 6 opciones', lista);
+  revisa(enviados.length === antes + 1 && lista.to === '524421234567' && lista.type === 'interactive' && lista.interactive.type === 'list' && filas.length === 6 && filas.length <= 10, 'Cualquier mensaje → menú con las 6 opciones (contesta a 52 + 10 dígitos, sin el «1» que manda WhatsApp)', lista);
   revisa(filas.every(f => f.title.length <= 24) && lista.interactive.action.button.length <= 20 && filas[0].id === 'checar:entrada', 'Títulos de máx. 24 caracteres, botón de máx. 20, y «Entrada» primero (sugerida)');
   revisa(ultimo().auth === 'Bearer token-de-prueba' && /\/v27\.0\/106540352242922\/messages$/.test(ultimo().url), 'Envía al número de la empresa con su token', ultimo().url);
   const m1 = elige(JUAN, 'entrada');
