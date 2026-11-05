@@ -195,6 +195,7 @@ const personalMod = require('./personal')(app, db, h);
 app.locals.personal = personalMod;
 app.locals.checador = require('./checador')(app, db, h);
 app.locals.asistencia = require('./asistencia')(app, db, h);
+require('./credenciales')(app, db, h); // Credenciales con foto, vigencia y verificación pública para clientes (2026-11-05)
 require('./rh')(app, db, h); // Pestaña RH: resumen y carga de trabajadores en lote (2026-11-03) // Asistencia (RH F3): horarios por versión, festivos, retardos y tiempo extra autorizado
 // Reloj checador (RH, 2026-11-03): código y PIN, kioscos registrados y checadas que no se borran
 require('./marketing')(app, db, h); // Marketing: calendario de publicaciones con aprobación (2026-10-26)

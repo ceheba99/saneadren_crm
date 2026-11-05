@@ -132,6 +132,8 @@ const Personal = (() => {
         <div class="modal-section"><h3 class="pe-sub">Órdenes donde participó</h3>${(p.ordenes || []).length ? '<ul class="pe-ordenes">' + p.ordenes.map(o => `<li><b>${esc(folioOrdenServicio(o))}</b> · ${esc(o.cliente || '')} · ${esc(fecha(o.fecha_realizado || o.fecha_servicio))} · ${esc(CAT.papeles[o.papel] || o.papel)}${o.ejecucion === 'realizado' ? ' ✔' : ''}</li>`).join('') + '</ul>' : '<p class="ayuda">Todavía no está en ninguna orden.</p>'}</div>`;
     }
     if (!nuevo) h += '<div class="modal-section" id="pe-checador"><h3 class="pe-sub">🕒 Reloj checador</h3><p class="ayuda" role="status">Cargando…</p></div>';
+    if (!nuevo) h += `<div class="modal-section" id="pe-foto-cred"><h3 class="pe-sub">🪪 Foto para su credencial</h3><div class="pe-foto-cred">${p.tiene_foto ? '<p class="ayuda" role="status">Cargando…</p>' : '<p class="ayuda">Todavía no tiene foto. Que se ponga de frente, sin lentes oscuros ni gorra, con fondo claro.</p>'}</div>
+      ${puedeEditar && p.activo ? `<label class="btn btn-secundario">📷 ${p.tiene_foto ? 'Cambiar foto' : 'Subir o tomar foto'}<input type="file" id="pe-foto-archivo" accept="image/jpeg,image/png" capture="user" hidden></label>` : ''}</div>`;
     h += `<div class="modal-section pe-pie"><p id="pe-aviso" role="status"></p><div class="btn-group">
       ${edita ? `<button type="button" class="btn btn-primario" id="pe-guardar">${nuevo ? 'Dar de alta' : 'Guardar cambios'}</button>` : ''}
       ${puedeEditar && !edita ? '<button type="button" class="btn btn-secundario" id="pe-editar">✏️ Editar ficha</button>' : ''}
@@ -142,6 +144,29 @@ const Personal = (() => {
     base = JSON.stringify(datosFormulario());
     aviso();
     if (!nuevo) pintarChecador(p.id);
+    if (!nuevo && p.tiene_foto) mostrarFotoCred(p.id);
+  }
+  // Foto de la credencial (server/credenciales.js): se muestra aquí y se achica antes de subirla (máx. 600 px).
+  async function mostrarFotoCred(id) {
+    const cont = document.querySelector('#pe-foto-cred .pe-foto-cred'); if (!cont) return;
+    try {
+      const r = await api('/personal/' + Number(id) + '/foto'); if (!r.ok) throw new Error('No se pudo cargar la foto');
+      const url = URL.createObjectURL(await r.blob()), img = document.createElement('img');
+      img.src = url; img.alt = 'Foto para la credencial'; img.className = 'pe-foto'; img.onload = () => URL.revokeObjectURL(url);
+      if (actual?.id === Number(id)) cont.replaceChildren(img);
+    } catch (err) { cont.textContent = err.message; }
+  }
+  async function subirFotoCred(archivo) {
+    const id = actual?.id; if (!id || !archivo) return;
+    try {
+      const img = await new Promise((ok, mal) => { const u = URL.createObjectURL(archivo), i = new Image(); i.onload = () => { URL.revokeObjectURL(u); ok(i); }; i.onerror = () => mal(new Error('No se pudo leer la imagen (usa JPG o PNG)')); i.src = u; });
+      const k = Math.min(1, 600 / Math.max(img.naturalWidth, img.naturalHeight)), c = document.createElement('canvas');
+      c.width = Math.round(img.naturalWidth * k); c.height = Math.round(img.naturalHeight * k); c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+      const blob = await new Promise(ok => c.toBlob(ok, 'image/jpeg', 0.88));
+      const r = await api('/personal/' + Number(id) + '/foto', { method: 'POST', headers: { 'Content-Type': 'image/jpeg' }, body: blob });
+      const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.error || 'No se pudo subir la foto');
+      toast('Foto guardada'); actual.tiene_foto = true; pintarFicha();
+    } catch (err) { toast(err.message); }
   }
 
   // ---------- Reloj checador de la persona (server/checador.js) ----------
@@ -341,7 +366,7 @@ const Personal = (() => {
   $('pe-kioscos-lista').onclick = e => { const b = e.target.closest('[data-pe-kiosco-baja]'); if (b) bajaKiosco(b.dataset.peKioscoBaja); const r = e.target.closest('[data-pe-kiosco-red]'); if (r) redKiosco(r.dataset.peKioscoRed); };
   $('pe-cerrar').onclick = async () => { if (!ocupado && await permitirSalida()) $('overlay-personal').classList.remove('mostrar'); };
   $('pe-cuerpo').addEventListener('input', aviso);
-  $('pe-cuerpo').addEventListener('change', aviso);
+  $('pe-cuerpo').addEventListener('change', e => { if (e.target.id === 'pe-foto-archivo') { subirFotoCred(e.target.files[0]); e.target.value = ''; return; } aviso(e); });
   $('pe-cuerpo').addEventListener('click', e => {
     const t = e.target.closest('button'); if (!t) return;
     if (t.id === 'pe-guardar') guardar();
