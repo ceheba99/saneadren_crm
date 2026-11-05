@@ -193,6 +193,7 @@ Dirección la revisa y la aprueba. Si un cambio altera lo que ve un rol, la prue
 | Capturar la ubicación de una sucursal (para revisar dónde checan con el celular) | ✔ | — | — | — | — | — | — | — |
 | Subir o tomar la foto de una persona para su credencial | ✔ | ✔ | — | — | — | — | — | — |
 | Imprimir credenciales (con su QR de verificación para clientes y su vigencia) | ✔ | ✔ | — | — | — | — | — | — |
+| Activar o quitar a una persona el checar por WhatsApp (foráneos) | ✔ | ✔ | — | — | — | — | — | — |
 | Ver la pestaña RH (resumen del personal: sin horario, sin checador, sin aviso firmado…) | ✔ | ✔ | — | — | — | — | — | — |
 | Cargar trabajadores en lote desde la plantilla de Excel (revisar y guardar) | ✔ | ✔ | — | — | — | — | — | — |
 | Ver la asistencia del día y de la semana (retardos, faltas, tiempo extra) | ✔ | ✔ | — | — | — | — | — | — |
@@ -268,6 +269,7 @@ Dirección la revisa y la aprueba. Si un cambio altera lo que ve un rol, la prue
 - **2026-11-05** · Intentos fallidos en el kiosco (código o PIN malo, PIN bloqueado): el kiosco les toma foto; los intentos, su foto y la red (IP) desde la que se checó los ven Dirección y el Gerente (de su sucursal), y cada foto que se abre queda en la bitácora. Los demás roles no.
 - **2026-11-05** · Ubicación de cada sucursal (para el celular: a más de su radio, 500 m por omisión, la checada queda «por revisar» y se ve en el mapa): la captura solo Dirección.
 - **2026-11-05** · Credenciales de empleado (foto, nombre, puesto, número de empleado, vigencia, contacto de emergencia, QR del checador y QR de verificación para clientes): tomar la foto e imprimirlas lo hacen quienes editan el personal (Dirección y el Gerente, de su sucursal). Imprimir una nueva anula la anterior. La página de verificación es pública solo con el QR y muestra foto, nombre y puesto si la persona sigue trabajando y la credencial está vigente; si no, solo dice que no es válida.
+- **2026-11-05** · Checar por WhatsApp (foráneos, respaldo del celular): solo quien RH active en su ficha y desde el celular de su ficha; sin foto ni ubicación, cada checada queda «por revisar». Activarlo o quitarlo lo hacen quienes editan el personal (Dirección y el Gerente, de su sucursal), nunca para sí mismos (salvo Dirección).
 - **2026-11-04** · Eliminar usuarios y sucursales: solo Dirección. Si nunca se usaron se borran; si ya tienen registros (cotizaciones, cobros, bitácora…) se archivan: desaparecen de las listas y su historial se conserva. La sucursal principal y la propia cuenta no se eliminan.
 - **2026-11-03** · Precio de la hora de cada puesto y el dinero del tiempo extra (dobles y triples, en la semana y en el Excel de nómina): lo ven y lo cambian quienes ven sueldos (Dirección y el Gerente, de su sucursal); los demás roles solo ven horas.
 - **2026-11-03** · Nadie corrige su PROPIA asistencia (agregar, anular o aceptar sus checadas, autorizarse tiempo extra, cambiarse el horario, registrarse vacaciones o permisos), ni el Gerente: lo hace otra persona con permiso. Dirección sí, porque no tiene a quién pedírselo.
