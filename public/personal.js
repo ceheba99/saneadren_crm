@@ -200,8 +200,11 @@ const Personal = (() => {
       const bio = e.biometria;
       if (bio) {
         h += `<p>🙂 Biométrico (reconocimiento de su cara en el kiosco): <b>${esc(!bio.consentimiento ? 'sin consentimiento' : bio.registrado ? 'registrado' : 'falta registrar su cara')}</b>${bio.registrado_at ? ` <small>(desde ${esc(bio.registrado_at)})</small>` : ''}</p>`;
-        if (!bio.consentimiento) h += '<p class="ayuda">Para usarlo: imprime el aviso de privacidad, que firme el «Consentimiento para datos biométricos» y súbelo en «Documentos del expediente» como «Consentimiento biométrico firmado». Si no acepta, checa como siempre.</p>';
-        else if (e.puede?.editar && actual.activo) h += `<div class="btn-group"><button type="button" class="btn btn-secundario" data-pe-bio-codigo="${Number(id)}">${esc(bio.registrado ? 'Volver a registrar su cara' : 'Código para registrar su cara')}</button>${bio.registrado ? `<button type="button" class="btn btn-outline" data-pe-bio-borrar="${Number(id)}">Borrar su registro</button>` : ''}</div><div id="pe-bio-codigo"></div>`;
+        if (!bio.consentimiento) {
+          h += '<p class="ayuda">Para usarlo: imprime el aviso de privacidad, que firme el «Consentimiento para datos biométricos», guárdalo en su expediente físico y márcalo aquí. Si no acepta, checa como siempre.</p>';
+          if (e.puede?.editar && actual.activo) h += `<div class="btn-group"><button type="button" class="btn btn-secundario" data-pe-bio-consent="${Number(id)}" data-firmado="1">✍️ Firmó el consentimiento biométrico</button></div>`;
+        } else if (bio.consentimiento_at) h += `<p><small>✔ Consentimiento firmado (expediente físico) · marcado por ${esc(bio.consentimiento_por || '')} el ${esc(bio.consentimiento_at)}</small>${e.puede?.editar && actual.activo ? ` <button type="button" class="btn-link" data-pe-bio-consent="${Number(id)}" data-firmado="">Quitar (revocó)</button>` : ''}</p>`;
+        if (bio.consentimiento && e.puede?.editar && actual.activo) h += `<div class="btn-group"><button type="button" class="btn btn-secundario" data-pe-bio-codigo="${Number(id)}">${esc(bio.registrado ? 'Volver a registrar su cara' : 'Código para registrar su cara')}</button>${bio.registrado ? `<button type="button" class="btn btn-outline" data-pe-bio-borrar="${Number(id)}">Borrar su registro</button>` : ''}</div><div id="pe-bio-codigo"></div>`;
       }
       // Checar por WhatsApp (foráneos, server/whatsapp.js): respaldo del celular; desde el número de su ficha, queda por revisar.
       h += `<p>💬 Checar por WhatsApp: <b>${esc(e.checa_whatsapp ? 'activado' : 'no')}</b>${e.checa_whatsapp ? ` <small>(desde el celular de su ficha: ${esc(actual.telefono || 'sin teléfono')}; cada checada queda por revisar)</small>` : ''}</p>`;
@@ -246,6 +249,13 @@ const Personal = (() => {
   async function codigoBiometria(id) {
     try { const r = await api('/asistencia/personal/' + Number(id) + '/biometria/codigo', { method: 'POST' }); const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.error || 'No se pudo');
       $('pe-bio-codigo').innerHTML = `<p class="pe-pin-nuevo" role="alert">Código: <b>${esc(j.codigo)}</b> · vale ${esc(j.minutos)} minutos y una sola vez.<br><small>En el kiosco: «🙂 Registrar mi cara (con RH)» → escribe este código → que mire a la cámara y parpadee. Quédate con la persona mientras lo hace.</small></p>`; }
+    catch (err) { toast(err.message); }
+  }
+  async function consentimientoBiometria(id, firmado) {
+    if (!await solicitarDialogo(firmado ? { titulo: 'Consentimiento biométrico', mensaje: '¿Confirmas que la persona firmó el «Consentimiento para datos biométricos» y que está en su expediente físico? Queda registrado que tú lo marcaste.', aceptar: 'Sí, lo firmó' }
+      : { titulo: 'Quitar consentimiento', mensaje: 'Úsalo si la persona revocó su consentimiento. Se borra el registro de su cara y seguirá checando con código o credencial, PIN y foto.', aceptar: 'Quitar y borrar' })) return;
+    try { const r = await api('/asistencia/personal/' + Number(id) + '/biometria/consentimiento', { method: 'PUT', body: JSON.stringify({ firmado }) }); if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || 'No se pudo');
+      toast(firmado ? 'Consentimiento marcado' : 'Consentimiento quitado y registro borrado'); pintarChecador(Number(id)); }
     catch (err) { toast(err.message); }
   }
   async function borrarBiometria(id) {
@@ -415,6 +425,7 @@ const Personal = (() => {
     else if (t.dataset.peWhatsapp) cambiarWhatsapp(t.dataset.peWhatsapp, !!t.dataset.activo);
     else if (t.dataset.peBioCodigo) codigoBiometria(t.dataset.peBioCodigo);
     else if (t.dataset.peBioBorrar) borrarBiometria(t.dataset.peBioBorrar);
+    else if (t.dataset.peBioConsent) consentimientoBiometria(t.dataset.peBioConsent, !!t.dataset.firmado);
     else if (t.dataset.peCopiar) navigator.clipboard?.writeText(t.dataset.peCopiar).then(() => toast('Enlace copiado'), () => toast('No se pudo copiar: selecciónalo y cópialo'));
   });
   // Al cerrar la ficha (con la X, Esc o desde otra pantalla) se borra de la página: lo sensible no se queda ahí.
