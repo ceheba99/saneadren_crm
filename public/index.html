@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Saneadren · Cotizaciones y Servicios</title>
-<link rel="stylesheet" href="styles.css?v=ls1">
+<link rel="stylesheet" href="styles.css?v=lg2">
 <link rel="stylesheet" href="servicios-tabla.css">
 <link rel="stylesheet" href="flujo.css?v=cel1">
 </head>
@@ -59,10 +59,10 @@
         </div>
       </div>
       <div class="menu-grupo" data-grupo="ajustes">
-        <button type="button" class="menu-grupo-btn" aria-expanded="false"><span class="menu-icono" aria-hidden="true">⚙️</span>Ajustes<span class="menu-flecha" aria-hidden="true">▾</span></button>
+        <button type="button" class="menu-grupo-btn" aria-expanded="false"><span class="menu-icono" aria-hidden="true">⚙️</span>Configuración<span class="menu-flecha" aria-hidden="true">▾</span></button>
         <div class="menu-sub">
           <button type="button" class="menu-item perm-catalogos-editar" data-vista="catalogos" id="nav-catalogos"><span class="menu-icono" aria-hidden="true">📚</span>Catálogos</button>
-          <button type="button" class="menu-item perm-usuarios-administrar" data-vista="usuarios" id="nav-usuarios"><span class="menu-icono" aria-hidden="true">👤</span>Usuarios</button>
+          <button type="button" class="menu-item perm-usuarios-administrar" data-vista="usuarios" id="nav-usuarios"><span class="menu-icono" aria-hidden="true">🛠️</span>Ajustes</button>
           <button type="button" class="menu-item solo-general" data-vista="bitacora" id="nav-bitacora"><span class="menu-icono" aria-hidden="true">🗂️</span>Bitácora</button>
         </div>
       </div>
@@ -791,6 +791,22 @@
     <h3 class="util-13">Usuarios desactivados</h3>
     <p class="ayuda">No pueden entrar. Al reactivar a alguien vuelve con su rol y sus sucursales, y al entrar debe cambiar su contraseña.</p>
     <div id="lista-usuarios-desactivados"></div>
+
+    <div class="panel-alta solo-general" id="panel-logs">
+      <h2>📜 Logs del sistema</h2>
+      <p class="ayuda">Quién entró y salió, contraseñas equivocadas, bloqueos por intentos, contraseñas restablecidas y errores del servidor. Solo Dirección. Se guardan 180 días. Los cambios a clientes, usuarios o permisos están en la <button type="button" class="enlace" id="logs-ir-bitacora">Bitácora</button>.</p>
+      <div class="logs-resumen" id="logs-resumen"></div>
+      <h3 class="util-13">Conectados ahora</h3>
+      <div id="logs-conectados"></div>
+      <h3 class="util-13">Registro</h3>
+      <div class="filtros">
+        <select id="logs-tipo" aria-label="Qué ver"><option value="">Todo</option><option value="fallas">Solo problemas (fallos, bloqueos y errores)</option><option value="acceso">Accesos</option><option value="error">Errores del servidor</option></select>
+        <label>Desde <input type="date" id="logs-desde"></label>
+        <label>Hasta <input type="date" id="logs-hasta"></label>
+        <input type="search" id="logs-buscar" placeholder="Buscar (usuario, IP, equipo…)" aria-label="Buscar en los logs">
+      </div>
+      <div id="logs-lista"></div>
+    </div>
 
   </section>
 
@@ -1806,13 +1822,14 @@
 <script src="calendario.js?v=esp1"></script>
 <script src="tablero.js?v=enc1"></script>
 <script src="bitacora.js?v=hc1"></script>
+<script src="logs.js?v=lg1"></script>
 <script src="compras.js?v=ed1"></script>
 <script src="solicitudes.js?v=rev1"></script>
 <script src="carga-generador.js?v=con1"></script>
 <script src="sucursales.js?v=perm4"></script>
 <script src="facturacion.js?v=fx10"></script>
 <script src="encuestas.js?v=enc1"></script>
-<script src="app.js?v=ls1"></script>
+<script src="app.js?v=lg1"></script>
 <script src="listas-servicio.js?v=ls1"></script>
 <script src="personal.js?v=wa1"></script>
 <script src="asistencia.js?v=wa1"></script>
