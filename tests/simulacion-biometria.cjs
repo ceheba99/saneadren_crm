@@ -7,6 +7,8 @@
 //     no; bien → plantilla CIFRADA (sin las fotos).
 //  3. Al checar: quien tiene biométrico debe mandar su cara; coincide → válida; otra cara, sin parpadeo o sin cara →
 //     checa igual pero queda por revisar; 3 intentos de comprobación por ticket; quien no tiene biométrico, como antes.
+//  3b. Entrar con la cara SIN PIN (2026-11-05): código → cara que coincide con parpadeo → ticket sin PIN; cara de otra
+//     persona o sin parpadeo → intento fallido con permiso de foto; a los 3, solo con PIN; aviso en RH.
 //  4. Revocar: borrar el registro o quitar la marca de consentimiento → se borra y deja de usarse; los triggers protegen el
 //     resultado guardado en la checada.
 // Uso: node tests/simulacion-biometria.cjs
@@ -112,6 +114,27 @@ const PDF = Buffer.from('%PDF-1.4\n% consentimiento biometrico\n' + crypto.rando
   const ia = await ident(ana); const [, ca] = await kio(K, 'checar', { ticket: ia.ticket, tipo: 'entrada' });
   revisa(conBase(d => d.prepare('SELECT biometria FROM checadas WHERE id = ?').get(ca.id).biometria) === null, 'Ana checa como siempre, sin biométrico');
   revisa(conBase(d => { try { d.prepare("UPDATE checadas SET biometria = 'coincide' WHERE biometria = 'no_coincide'").run(); return false; } catch { return true; } }), 'Nadie puede cambiar en la base el resultado del biométrico de una checada');
+
+  console.log('3b. Entrar con la cara, sin PIN');
+  revisa((await kio(K, 'rostro-previo', { codigo: juan.codigo }))[1].biometria === true, 'Juan (con biométrico) entra con su cara');
+  revisa((await kio(K, 'rostro-previo', { codigo: ana.codigo }))[1].biometria === false && (await kio(K, 'rostro-previo', { codigo: '0000' }))[1].biometria === false, 'Ana (sin biométrico) y un código que no existe: PIN');
+  const [se1, e1] = await kio(K, 'rostro-entrar', { codigo: juan.codigo, rostro: { descriptor: parecida(JUAN), vivo: true } });
+  revisa(se1 === 200 && e1.ticket && e1.con_cara === true && e1.nombre === 'Juan', 'Su cara coincide y parpadeó: entra SIN PIN', [se1, e1]);
+  const [, chk] = await kio(K, 'checar', { ticket: e1.ticket, tipo: 'extra_inicia', rostro: { descriptor: parecida(JUAN), vivo: true } });
+  revisa(conBase(d => d.prepare('SELECT biometria FROM checadas WHERE id = ?').get(chk.id).biometria) === 'coincide', 'Y su checada queda «coincide»');
+  const [sf1, f1] = await kio(K, 'rostro-entrar', { codigo: juan.codigo, rostro: { descriptor: cara(), vivo: true } });
+  revisa(sf1 === 401 && !f1.ticket && f1.intentos === 1 && typeof f1.intento === 'string', 'Otra persona con el código de Juan: no entra, y el kiosco debe tomarle foto', [sf1, f1]);
+  revisa((await kio(K, 'intento-foto', { intento: f1.intento, foto: 'data:image/jpeg;base64,' + Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), crypto.randomBytes(2000), Buffer.from([0xff, 0xd9])]).toString('base64') }))[0] === 200, 'La foto del intento se guarda');
+  const [sf2, f2] = await kio(K, 'rostro-entrar', { codigo: juan.codigo, rostro: { descriptor: parecida(JUAN), vivo: false } });
+  revisa(sf2 === 401 && f2.resultado === 'no_vivo', 'Una foto de Juan (sin parpadeo): no entra', [sf2, f2]);
+  const [sf3, f3] = await kio(K, 'rostro-entrar', { codigo: juan.codigo, rostro: { descriptor: cara(), vivo: true } });
+  revisa(sf3 === 401 && f3.pin === true, 'Al tercer intento, el kiosco pide el PIN', f3);
+  revisa((await kio(K, 'rostro-previo', { codigo: juan.codigo }))[1].biometria === false && (await kio(K, 'rostro-entrar', { codigo: juan.codigo, rostro: { descriptor: parecida(JUAN), vivo: true } }))[0] === 409, 'Agotados los 3 intentos, ya no se puede entrar con la cara (ni con la correcta) por 10 min: solo PIN');
+  const intentosCara = conBase(d => d.prepare("SELECT motivo FROM checador_intentos WHERE personal_id = ? AND (motivo LIKE '%cara%' OR motivo LIKE '%parpadeo%')").all(juan.id));
+  revisa(intentosCara.length === 3, 'Los 3 intentos quedan en «Intentos fallidos» para RH', intentosCara);
+  const ip = await ident(juan); const [, cp] = await kio(K, 'checar', { ticket: ip.ticket, tipo: 'extra_termina', rostro: { descriptor: cara(), vivo: true } });
+  revisa(conBase(d => d.prepare('SELECT estado, biometria FROM checadas WHERE id = ?').get(cp.id)).biometria === 'no_coincide', 'Con su PIN checa, y la checada queda por revisar (la cara no coincidió)');
+  revisa((await pedir('GET', '/rh/resumen', T.Gema))[1].biometria_fallos >= 1, 'Inicio de RH avisa «Biométrico no los reconoció»');
 
   console.log('4. Revocar');
   revisa((await pedir('POST', '/asistencia/personal/' + juan.id + '/biometria/borrar', T.Gus))[0] === 404, 'El de CDMX no borra registros de Querétaro');
