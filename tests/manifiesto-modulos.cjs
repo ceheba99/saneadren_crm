@@ -171,6 +171,7 @@ module.exports = {
     checa: 'lo pone el sistema al dar de alta en el checador; se apaga con PUT /api/asistencia/personal/:id (su pantalla llega con los horarios, F3)',
     ultimo_uso: 'lo pone el sistema cada vez que el kiosco se usa',
     numero_empleado: 'lo pone el sistema al dar de alta: consecutivo (0001, 0002…), nunca se reusa ni se cambia (2026-11-03)',
+    codigo_checador: 'lo pone el sistema al dar de alta en el checador (4 dígitos al azar, único); va en la credencial con QR (2026-11-05)',
     lat: 'lo pone el sistema: la ubicación GPS que manda el celular al checar (F5), nunca se captura a mano',
     lon: 'lo pone el sistema: la ubicación GPS que manda el celular al checar (F5), nunca se captura a mano',
     precision_m: 'lo pone el sistema: qué tan precisa fue la ubicación del celular al checar (F5)',
