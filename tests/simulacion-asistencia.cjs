@@ -137,6 +137,19 @@ const VIE = sumar(sumar(HOY, -7), -((dow(sumar(HOY, -7)) - 5 + 7) % 7)), LUN = s
   revisa(intento('DELETE FROM extra_autorizaciones') && intento('UPDATE extra_autorizaciones SET minutos_autorizados = 0'), 'Las autorizaciones de tiempo extra no se borran ni se cambian');
   revisa(intento('DELETE FROM horario_versiones') && intento("UPDATE horario_versiones SET tolerancia_min = 60") && intento('DELETE FROM personal_horario'), 'El historial de horarios no se borra ni se cambia');
 
+  console.log('6. Llegar antes de la entrada (2026-11-05)');
+  // Jueves (era falta): llega 4:30, sale 18:30 sin marcar comida. Viernes: llega 8:00 (justo 30 min antes) y sale 18:30.
+  await checar(D(3), 'entrada', '04:30'); await checar(D(3), 'salida', '18:30');
+  await checar(D(4), 'entrada', '08:00'); await checar(D(4), 'salida', '18:30');
+  const jue2 = await dia(D(3)), vie2 = await dia(D(4));
+  revisa(jue2.extra_min === 240 && jue2.trabajado_min === 840 && jue2.comida_min === 0 && jue2.notas.some(x => /Llegó 4 h antes/.test(x)),
+    'Llega 4:30 y sale 18:30: las 4 h antes de su entrada son tiempo extra, sin descontarle comida', jue2);
+  revisa(jue2.notas.includes('No marcó su comida'), 'Si no marca su comida, RH lo ve (no se descuenta sola)', jue2.notas);
+  revisa(vie2.extra_min === 0 && !vie2.notas.some(x => /antes de su entrada/.test(x)), 'Llegar 30 min antes (8:00) no es tiempo extra', vie2);
+  await checar(D(4), 'entrada', '07:59'); // RH corrige: en realidad llegó 7:59
+  revisa((await dia(D(4))).extra_min === 31, 'Llegar 31 min antes (7:59) sí cuenta, todo desde que llegó');
+  revisa(lun.notas.every(x => !/No marcó su comida/.test(x)), 'Quien sí marca su comida no tiene el aviso', lun.notas);
+
   console.log(`\n${n - malos.length}/${n} correctas`);
   srv.kill(); fs.rmSync(dir, { recursive: true, force: true });
   process.exit(malos.length ? 1 : 0);
