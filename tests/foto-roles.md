@@ -194,6 +194,7 @@ Dirección la revisa y la aprueba. Si un cambio altera lo que ve un rol, la prue
 | Cargar el reporte de llamadas de Google Ads (CSV) y verlo cruzado con los contactos | ✔ | — | — | — | — | — | — | ✔ |
 | Subir el XML de la factura a un gasto que registró Tomás (el sistema llena el IVA) | ✔ | ✔ | — | — | ✔ | ✔ | — | — |
 | Corregir a mano el IVA de ese gasto (botón «IVA») | ✔ | ✔ | — | — | — | ✔ | — | — |
+| Agregar o quitar opciones en la lista de un servicio (p. ej. 4M3, 8M3 para [VOLUMEN]) | ✔ | — | — | — | — | — | — | — |
 
 | Permiso | Dirección | Gerente | Ventas | Atención | Técnico | Costos y compras | Marketing | Gerente de marketing |
 |---|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|
@@ -270,6 +271,7 @@ Dirección la revisa y la aprueba. Si un cambio altera lo que ve un rol, la prue
 - **2026-10-26** · Dirección ve y aprueba todo Marketing.
 - **2026-10-27** · Dinero de Marketing (presupuesto, gastos, costo por contacto y retorno): lo ven Dirección y el Gerente de marketing; el rol Marketing y los demás roles no.
 - **2026-11-04** · Llamadas de Google Ads (subir el reporte «Detalles de las llamadas» y verlo cruzado con los contactos, ventas e importes): lo ven y lo cargan solo Dirección y el Gerente de marketing; el rol Marketing y los demás roles no.
+- **2026-11-05** · Listas de los servicios (las opciones que se eligen para la parte que cambia de la descripción, p. ej. [VOLUMEN]: 4M3, 8M3… o [SUCURSAL] de KFC): las agregan o quitan solo Dirección; ningún otro rol, ni el Gerente. Quienes cotizan solo eligen de la lista. Quitar no borra: queda en la bitácora.
 - **2026-10-27** · Presupuesto de Marketing: lo propone el Gerente de marketing y lo aprueba solo Dirección.
 - **2026-10-27** · Gastos de Marketing: los registran Dirección y el Gerente de marketing, y son control interno del departamento: no aparecen en Cuentas por pagar.
 - **2026-10-27** · Resultados de cada publicación (alcance, me gusta, mensajes…): los capturan Marketing, el Gerente de marketing y Dirección, cuando ya está publicada; los demás roles no.

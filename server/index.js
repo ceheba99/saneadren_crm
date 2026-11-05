@@ -177,6 +177,7 @@ app.locals.auditoria = audit;
 require('./eliminar')(app, db, h, { sesiones });
 // Clientes sin duplicados: ID CLI-0001, teléfonos adicionales, revisión de parecidos y fusión.
 const unicos = require('./clientes-unicos')(app, db, h);
+const listasServicio = require('./listas-servicio')(app, db, h, { permisos, audit }); // Listas de la parte que cambia de cada servicio (2026-11-05)
 require('./tablas-retiradas')(db); // Sucursales del cliente y descripciones por cliente: retiradas el 2026-11-05, se conservan sus datos
 require('./prospeccion')(app,db,h,unicos);
 // Cuentas por cobrar y por pagar. Devuelve ganchos que usan las rutas de órdenes de abajo.
@@ -451,6 +452,8 @@ app.put('/api/servicios/:id', h((req, res) => {
     if (!Number.isInteger(dias) || dias < 1 || dias > 3650) return res.status(400).json({ error: 'Los días de recurrencia deben ser un número entero entre 1 y 3650 (o vacío para servicio de una sola vez)' });
   }
   if (req.body.descripcion !== undefined && (typeof req.body.descripcion !== 'string' || req.body.descripcion.length > 10000)) return res.status(400).json({ error: 'La descripción debe ser texto de hasta 10000 caracteres' });
+  const sinPermiso = req.body.descripcion !== undefined && listasServicio.revisarDescripcion(req, servicio.descripcion, req.body.descripcion);
+  if (sinPermiso) return res.status(403).json({ error: sinPermiso });
   db.prepare('UPDATE catalogo_servicios SET dias_recurrencia = ?, descripcion = ? WHERE id = ?').run(dias_recurrencia === undefined ? servicio.dias_recurrencia : dias, req.body.descripcion === undefined ? servicio.descripcion : req.body.descripcion.trim(), req.params.id);
   res.json(sinFacturacion(db.prepare('SELECT * FROM catalogo_servicios WHERE id = ?').get(req.params.id)));
 }));
@@ -674,6 +677,9 @@ function validarPartidas(req,res,next){
     try{items=JSON.parse(req.body.partidas_json);}catch{return res.status(400).json({error:'Partidas inválidas'});}
     if(!Array.isArray(items)||!items.length||items.length>100||items.some(i=>!i||typeof i.servicio!=='string'||!i.servicio.trim()||typeof i.leyenda!=='string'||i.leyenda.length>10000||typeof i.importe!=='number'||!Number.isFinite(i.importe)||i.importe<0||i.importe>1e12))return res.status(400).json({error:'Revisa servicios, descripciones e importes'});
     if(items.some(i=>!db.prepare('SELECT id FROM catalogo_servicios WHERE nombre = ?').get(i.servicio)))return res.status(400).json({error:'Todas las partidas deben tener un servicio del catálogo'});
+    // Las [PARTES] de la descripción con lista se eligen de su lista antes de guardar (listas-servicio.js).
+    const sinElegir=listasServicio.revisarPartidas(items);
+    if(sinElegir)return res.status(400).json({error:sinElegir});
     const primero=db.prepare('SELECT id FROM catalogo_servicios WHERE nombre = ?').get(items[0].servicio);
     if(!primero)return res.status(400).json({error:'Selecciona un servicio del catálogo'});
     // Cantidad × precio unitario (opcionales): el importe de la partida lo calcula el servidor.
