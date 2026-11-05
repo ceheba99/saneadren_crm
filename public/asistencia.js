@@ -27,11 +27,15 @@ const Asistencia = (() => {
     document.querySelectorAll('[data-as-pestana]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.asPestana === pestana)));
     const turno = ++consulta; cargando();
     try {
-      if (pestana === 'dia') datos = await pedir('/dia?fecha=' + encodeURIComponent(fecha));
-      else if (pestana === 'semana') datos = await pedir('/semana?desde=' + encodeURIComponent(semana));
-      else if (pestana === 'horarios') datos = await pedir('/horarios');
-      else datos = await pedir('/festivos?anio=' + encodeURIComponent(anio));
+      // La respuesta se guarda en «datos» solo si sigue siendo la consulta vigente: si llega tarde la de otra pestaña
+      // (p. ej. «Día» al entrar desde RH → Horarios), no debe pisar los datos de la que se ve.
+      let r;
+      if (pestana === 'dia') r = await pedir('/dia?fecha=' + encodeURIComponent(fecha));
+      else if (pestana === 'semana') r = await pedir('/semana?desde=' + encodeURIComponent(semana));
+      else if (pestana === 'horarios') r = await pedir('/horarios');
+      else r = await pedir('/festivos?anio=' + encodeURIComponent(anio));
       if (turno !== consulta) return;
+      datos = r;
       ({ dia: pintarDia, semana: pintarSemana, horarios: pintarHorarios, festivos: pintarFestivos })[pestana]();
     } catch (e) { if (turno === consulta) fallo(e); }
   }
