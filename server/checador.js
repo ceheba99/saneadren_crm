@@ -27,7 +27,7 @@
 //    (más de 150 m) queda «por revisar». La ubicación se toma solo al checar (nunca se rastrea).
 //  · F6 (2026-11-03): las FOTOS se borran solas a los 90 días (FOTOS_CHECADAS_DIAS, mínimo 7): se borra el archivo y
 //    queda la checada con «foto borrada el …». Las que siguen «por revisar» se conservan hasta que alguien las revise.
-//    Aviso de privacidad para el personal en /aviso-privacidad-checador.html (borrador para su abogado); el firmado
+//    Aviso de privacidad para el personal en /aviso-privacidad-checador.html (texto de Dirección, 2026-11-05); el firmado
 //    se sube al expediente («Aviso de privacidad firmado») y la ficha avisa si falta.
 //  · Auditoría tramposa (2026-11-05, decidido con Dirección):
 //    - Intento fallido en el kiosco (código o PIN malo, PIN bloqueado): queda registrado y el kiosco le toma FOTO (cifrada,
