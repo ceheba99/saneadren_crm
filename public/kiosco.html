@@ -55,6 +55,7 @@
   .ventana-cara video{flex:1;min-height:0;width:100%;object-fit:cover;transform:scaleX(-1);}
   .ventana-cara .vc-arriba,.ventana-cara .vc-abajo{position:absolute;left:0;right:0;padding:18px 20px;text-align:center;color:#fff;background:rgba(0,0,0,.55);}
   .ventana-cara .vc-arriba{top:0;}
+  .ventana-cara .vc-ojos{margin:0;font-size:1.05rem;color:#d1d5db;min-height:1.4em;}
   .ventana-cara .vc-abajo{bottom:0;display:flex;flex-direction:column;align-items:center;gap:10px;}
   .ventana-cara h1{margin:0;font-size:1.6rem;color:#fff;}
   .ventana-cara .vc-aviso{font-size:2rem;font-weight:800;color:var(--amarillo);margin:0;line-height:1.2;}
@@ -202,7 +203,7 @@
 
   // ---------- Biométrico facial (server/biometria.js) ----------
   // face-api (alojado en /vendor/face-api) calcula en la tableta un «descriptor» de 128 números de la cara; el servidor lo
-  // compara con la plantilla de la persona. Prueba de vida: parpadear (los ojos se cierran y se vuelven a abrir).
+  // compara con la plantilla de la persona. Prueba de vida al checar: cerrar y abrir los ojos, o voltear la cabeza y regresar.
   let faceApi = null;
   function cargarFaceApi() {
     if (faceApi) return faceApi;
@@ -222,15 +223,22 @@
   }
   // Apertura del ojo (6 puntos del contorno): baja mucho al cerrarlo.
   const apertura = pts => { const d = (a, b) => Math.hypot(a.x - b.x, a.y - b.y); return (d(pts[1], pts[5]) + d(pts[2], pts[4])) / (2 * d(pts[0], pts[3]) || 1); };
-  // Mira la cámara hasta tener «muestras» descriptores y un parpadeo, o hasta «ms». «aviso(texto)» actualiza la pantalla.
-  // En una tableta lenta cada cuadro con descriptor tarda casi un segundo y un parpadeo normal dura menos: no se veía
-  // (2026-11-05, no dejaba registrar). Ahora el descriptor (lo pesado) solo se calcula mientras faltan muestras; para
-  // ver el parpadeo basta la cara y los ojos (rápido), y se pide cerrar los ojos un momento, no un parpadeo rápido.
-  async function capturarCara({ muestras = 1, ms = 12000, aviso = () => {} } = {}) {
+  // Mira la cámara hasta tener «muestras» descriptores y (si «vida») la prueba de que es una persona, o hasta «ms».
+  // «aviso(texto)» pone la instrucción y «aviso.ojos(abiertos)» el indicador 👁/😌.
+  //  · En una tableta lenta el descriptor tarda casi un segundo: solo se calcula mientras faltan muestras; para los ojos
+  //    basta la cara y sus puntos (rápido). Se pide cerrar los ojos un momento, no un parpadeo rápido (2026-11-05).
+  //  · Referencia de «ojos abiertos» = la MEDIANA de los últimos cuadros (antes era el máximo: un cuadro mal medido lo
+  //    inflaba y se quedaba atorado en «abre los ojos» y sin muestras; 2026-11-06, «no detecta el parpadeo»).
+  //  · También vale como prueba de vida voltear un poco la cabeza y regresar (movimiento grande, se ve aunque la tableta
+  //    sea lenta; una foto no voltea).
+  const mediana = l => { const o = [...l].sort((a, b) => a - b); return o.length ? o[Math.floor(o.length / 2)] : 0; };
+  async function capturarCara({ muestras = 1, vida = true, ms = 12000, aviso = () => {} } = {}) {
     const f = await cargarFaceApi(), v = $('video'), opciones = new f.TinyFaceDetectorOptions({ inputSize: 224, scoreThreshold: 0.4 }), hasta = Date.now() + ms;
-    let maxAbierto = 0, cerro = false, vivo = false, ultima = 0, vistas = 0; const descriptores = [];
+    const abiertos = [], giros = [], descriptores = [];
+    let cerro = false, giro = false, vivo = !vida, ultima = 0, vistas = 0;
     while (Date.now() < hasta && (!vivo || descriptores.length < muestras)) {
       if (!camaraLista || !v.videoWidth) { await new Promise(r => setTimeout(r, 200)); continue; }
+      const base = mediana(abiertos);
       const conDescriptor = descriptores.length < muestras && Date.now() - ultima > 350;
       // La tarea de face-api se espera con await, pero NO es una promesa completa: no tiene .catch.
       let r = null;
@@ -238,13 +246,23 @@
       if (!r) { aviso('No te vemos: acércate y mira de frente a la cámara'); await new Promise(z => setTimeout(z, 120)); continue; }
       vistas++;
       const p = r.landmarks.positions, ojo = (apertura(p.slice(36, 42)) + apertura(p.slice(42, 48))) / 2;
-      maxAbierto = Math.max(maxAbierto * 0.995, ojo);
-      if (!cerro && vistas > 2 && ojo < maxAbierto * 0.78) cerro = true;
-      else if (cerro && ojo > maxAbierto * 0.85) vivo = true;
-      // Muestras con los ojos abiertos, separadas un poco en el tiempo.
-      if (r.descriptor && ojo > maxAbierto * 0.85) { descriptores.push(Array.from(r.descriptor, x => Math.round(x * 1e6) / 1e6)); ultima = Date.now(); }
+      // Giro de la cabeza: dónde cae la nariz sobre la línea entre los dos lados de la cara (0 = de frente). Se mide sobre
+      // esa línea para que inclinar una foto (girarla en el plano) no cuente como voltear la cabeza.
+      const lx = p[16].x - p[0].x, ly = p[16].y - p[0].y, giroAhora = (((p[30].x - p[0].x) * lx + (p[30].y - p[0].y) * ly) / ((lx * lx + ly * ly) || 1)) - 0.5;
+      const cerrados = abiertos.length >= 3 && ojo < base * 0.8;
+      if (!cerrados) { abiertos.push(ojo); if (abiertos.length > 9) abiertos.shift(); }
+      if (giros.length < 4) giros.push(giroAhora);
+      if (vida && !vivo && abiertos.length >= 3) {
+        if (!cerro && cerrados) cerro = true;
+        else if (cerro && ojo > base * 0.9) vivo = true;
+        const g0 = mediana(giros), dg = Math.abs(giroAhora - g0);
+        if (giros.length >= 4) { if (dg > 0.12) giro = true; else if (giro && dg < 0.05) vivo = true; }
+      }
+      aviso.ojos?.(!cerrados);
+      // Muestras con los ojos abiertos y de frente, separadas un poco en el tiempo.
+      if (r.descriptor && !cerrados && (giros.length < 4 || Math.abs(giroAhora - mediana(giros)) < 0.08)) { descriptores.push(Array.from(r.descriptor, x => Math.round(x * 1e6) / 1e6)); ultima = Date.now(); }
       aviso(descriptores.length < muestras ? (muestras > 1 ? `Mira de frente, sin moverte… (${descriptores.length} de ${muestras})` : 'Mira de frente, sin moverte…')
-        : vivo ? 'Listo' : cerro ? 'Ahora abre los ojos' : 'Ahora cierra los ojos un segundo y ábrelos');
+        : vivo ? 'Listo' : cerro ? 'Muy bien, ahora abre los ojos' : giro ? 'Muy bien, regresa la cabeza al frente' : 'Ahora cierra los ojos un segundo y ábrelos');
     }
     return { vivo, descriptores, vistas };
   }
@@ -252,15 +270,17 @@
   // instrucción en letras grandes. Se cierra sola cuando sigue el trámite (la siguiente pantalla) o con «Cancelar».
   function pantallaCara(titulo, texto) {
     pintar(el('p', { className: 'ayuda', textContent: texto }));
-    const msg = el('p', { className: 'vc-aviso', textContent: texto });
+    const msg = el('p', { className: 'vc-aviso', textContent: texto }), ojos = el('p', { className: 'vc-ojos', textContent: '' });
     let video;
     if (camaraLista) { video = el('video', { autoplay: true, playsInline: true, muted: true }); video.srcObject = $('video').srcObject; video.play().catch(() => {}); }
     document.body.append(el('div', { className: 'ventana-cara', role: 'dialog', ariaLabel: titulo },
       video || el('div', { className: 'vc-sin', textContent: 'Sin cámara' }),
       el('div', { className: 'vc-guia' }),
       el('div', { className: 'vc-arriba' }, el('h1', { textContent: titulo })),
-      el('div', { className: 'vc-abajo' }, msg, el('button', { type: 'button', className: 'btn', textContent: 'Cancelar', onclick: inicio }))));
-    return t => { msg.textContent = t; };
+      el('div', { className: 'vc-abajo' }, msg, ojos, el('button', { type: 'button', className: 'btn', textContent: 'Cancelar', onclick: inicio }))));
+    const aviso = t => { msg.textContent = t; };
+    aviso.ojos = abiertos => { ojos.textContent = abiertos ? '👁 Te vemos con los ojos abiertos' : '😌 Te vemos con los ojos cerrados'; };
+    return aviso;
   }
   // Después del PIN: hasta 3 intentos. Si no coincide, checa igual y la checada queda por revisar.
   async function verificarCara(datos, intento = 1) {
@@ -297,14 +317,14 @@
       await camaraA(4000);
       if (estado.cara !== yo) return;
       if (!camaraLista) return error('No se pudo prender la cámara. Avisa a RH.');
-      const aviso = pantallaCara('Registrar mi cara', 'Mira de frente a la cámara, sin lentes oscuros ni gorra. Luego cierra los ojos un segundo y ábrelos.');
+      // Sin prueba de vida al registrar: RH está presente (dio el código). Solo 3 muestras mirando de frente.
+      const aviso = pantallaCara('Registrar mi cara', 'Mira de frente a la cámara, sin lentes oscuros ni gorra, y no te muevas.');
       let cap;
-      try { cap = await capturarCara({ muestras: 3, ms: 25000, aviso }); } catch (e) { return error(e.message || 'No se pudo cargar el reconocimiento facial'); }
+      try { cap = await capturarCara({ muestras: 3, vida: false, ms: 25000, aviso }); } catch (e) { return error(e.message || 'No se pudo cargar el reconocimiento facial'); }
       if (estado.cara !== yo) return;
       // Decir qué faltó, para saber qué corregir (antes era un mensaje igual para todo).
       if (!cap.vistas) return error('La cámara no vio ninguna cara. Ponte frente a la tableta, a unos 40 cm, con luz de frente (no a contraluz). Vuelve a intentarlo con el mismo código.', registrarCara);
       if (cap.descriptores.length < 3) return error(`Solo se tomaron ${cap.descriptores.length} de 3 fotos de tu cara. Quédate quieto, de frente y con buena luz. Vuelve a intentarlo con el mismo código.`, registrarCara);
-      if (!cap.vivo) return error('No vimos que cerraras los ojos. Cuando diga «cierra los ojos», ciérralos un segundo y ábrelos. Vuelve a intentarlo con el mismo código.', registrarCara);
       let r; try { r = await api('rostro-registrar', { codigo, descriptores: cap.descriptores, vivo: cap.vivo }); } catch { return error('Sin conexión: el registro de la cara se hace con internet.'); }
       if (!r.ok) return error(r.j.error || 'No se pudo registrar tu cara');
       listo('ok', 'Cara registrada', `Listo, ${r.j.nombre}. Desde ahora el reloj comprobará que eres tú.`);
