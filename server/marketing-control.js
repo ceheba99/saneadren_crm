@@ -249,11 +249,13 @@ module.exports = function marketingControl(app, db, h) {
   // Publicaciones ya publicadas en el rango con lo que se capturó de cada una (sin dinero: lo ve todo Marketing).
   function publicacionesEntre(desde, hasta) {
     const suma = METRICAS.map(k => `SUM(m.${k}) ${k}`).join(', ');
-    const pubs = db.prepare(`SELECT p.id, p.titulo, p.fecha, p.formato, p.redes, COUNT(m.id) capturas, ${suma} FROM publicaciones p LEFT JOIN publicacion_metricas m ON m.publicacion_id = p.id
+    // Una red con solo el enlace (se pone al marcarla publicada) todavía no tiene resultados capturados.
+    const conDatos = '(' + METRICAS.map(k => `m.${k} IS NOT NULL`).join(' OR ') + ')';
+    const pubs = db.prepare(`SELECT p.id, p.titulo, p.fecha, p.formato, p.redes, SUM(CASE WHEN ${conDatos} THEN 1 ELSE 0 END) capturas, ${suma} FROM publicaciones p LEFT JOIN publicacion_metricas m ON m.publicacion_id = p.id
       WHERE p.estado = 'publicada' AND p.fecha BETWEEN ? AND ? GROUP BY p.id`).all(desde, hasta).map(r => conTasa({ ...r, redes: String(r.redes || '').split(',').filter(Boolean) }));
     pubs.sort((a, b) => b.interacciones - a.interacciones || (b.alcance || 0) - (a.alcance || 0) || b.fecha.localeCompare(a.fecha));
     const porRed = db.prepare(`SELECT m.red, COUNT(*) publicaciones, ${suma} FROM publicacion_metricas m JOIN publicaciones p ON p.id = m.publicacion_id
-      WHERE p.estado = 'publicada' AND p.fecha BETWEEN ? AND ? GROUP BY m.red`).all(desde, hasta).map(conTasa).sort((a, b) => b.interacciones - a.interacciones);
+      WHERE p.estado = 'publicada' AND p.fecha BETWEEN ? AND ? AND ${conDatos} GROUP BY m.red`).all(desde, hasta).map(conTasa).sort((a, b) => b.interacciones - a.interacciones);
     return { publicaciones: pubs, publicaciones_por_red: porRed, sin_capturar: pubs.filter(p => !p.capturas).length };
   }
   app.get('/api/marketing/resultados', h((req, res) => {

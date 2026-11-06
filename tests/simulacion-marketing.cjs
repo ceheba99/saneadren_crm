@@ -78,7 +78,14 @@ const png = color => { const ih = Buffer.alloc(13); ih.writeUInt32BE(1, 0); ih.w
   [s, j] = await estado(T.Mara, 'enviar'); [s, j] = await estado(A, 'aprobar'); revisa(s === 200 && j.estado === 'aprobada', 'Dirección también aprueba', j.estado);
   [s, j] = await estado(T.Mara, 'programar'); revisa(j.estado === 'programada', 'Marketing la marca programada en la red', j.estado);
   [s] = await estado(T.Mara, 'publicar', { url: 'ftp://x' }); revisa(s === 400, 'el enlace de la publicación debe ser https', s);
-  [s, j] = await estado(T.Mara, 'publicar', { url: 'https://instagram.com/p/abc' }); revisa(s === 200 && j.estado === 'publicada' && j.publicado_url === 'https://instagram.com/p/abc' && !j.puede.editar, 'la marca publicada con su enlace; ya no se edita', [j.estado, j.puede]);
+  // Un enlace por red (2026-11-05): solo de las redes de la publicación, cada uno https y todos opcionales.
+  [s] = await estado(T.Mara, 'publicar', { urls: { tiktok: 'https://tiktok.com/x' } }); revisa(s === 400, 'no acepta el enlace de una red que la publicación no tiene', s);
+  [s, j] = await estado(T.Mara, 'publicar', { urls: { instagram: 'https://instagram.com/p/abc', facebook: 'ftp://x' } }); revisa(s === 400 && /Facebook/.test(j.error), 'dice qué enlace está mal', j.error);
+  [s, j] = await estado(T.Mara, 'publicar', { urls: { instagram: 'https://instagram.com/p/abc', facebook: 'https://facebook.com/saneadren/posts/1' } });
+  revisa(s === 200 && j.estado === 'publicada' && j.publicado_url === 'https://facebook.com/saneadren/posts/1' && !j.puede.editar, 'la marca publicada con sus enlaces (el general es el de la primera red); ya no se edita', [j.estado, j.puede]);
+  revisa(j.metricas.find(m => m.red === 'instagram')?.enlace === 'https://instagram.com/p/abc' && j.metricas.find(m => m.red === 'facebook')?.enlace === 'https://facebook.com/saneadren/posts/1'
+    && j.metricas.every(m => m.alcance == null), 'cada red guarda su enlace (en Resultados), todavía sin resultados', j.metricas);
+  revisa(/Facebook: https:\/\/facebook\.com\/saneadren\/posts\/1 · Instagram: https:\/\/instagram\.com\/p\/abc/.test(j.historial.find(x => /publicada/.test(x.texto))?.texto || ''), 'el historial dice los enlaces de cada red', j.historial.map(x => x.texto));
   [s] = await pedir('PUT', '/marketing/publicaciones/' + pub.id, T.Mara, { version: j.version, copy: 'x' }); revisa(s === 409, 'publicada: no se cambia', s);
   [s, j] = await pedir('POST', '/marketing/publicaciones/' + pub.id + '/comentarios', T.Gil, { texto: '¡Buen alcance!' }); revisa(s === 201 && j.historial[0].texto === '¡Buen alcance!', 'publicada: sí se comenta', s);
   [s] = await estado(T.Mara, 'cancelar', { comentario: 'ya no' }); revisa(s === 409, 'publicada: no se cancela', s);
