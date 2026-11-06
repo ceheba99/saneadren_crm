@@ -347,16 +347,31 @@ module.exports = function marketing(app, db, h) {
     if (!desde.includes(p.estado)) return res.status(409).json({ error: `Está «${ESTADOS[p.estado]}»: no se puede ${frase.toLowerCase().replace(/^la /, '')}` });
     const comentario = texto(req.body.comentario, 2000);
     if (conMotivo && comentario.length < 3) return res.status(400).json({ error: nuevo === 'cambios' ? 'Escribe qué cambios hacen falta' : 'Escribe por qué se cancela' });
-    let url = null;
-    if (nuevo === 'publicada') { url = texto(req.body.url, 500); if (url && !/^https?:\/\/[^\s]+$/i.test(url)) return res.status(400).json({ error: 'El enlace de la publicación debe empezar con https://' }); }
+    // Al publicar: un enlace por cada red de la publicación (2026-11-05), todos opcionales. Se guardan como el enlace de
+    // esa red en «Resultados» (publicacion_metricas.enlace); el primero queda además como el enlace general.
+    const urls = {};
+    if (nuevo === 'publicada') {
+      const dados = req.body.urls && typeof req.body.urls === 'object' && !Array.isArray(req.body.urls) ? req.body.urls : {};
+      if (req.body.url && p.redes.length) dados[p.redes[0]] ??= req.body.url; // pantallas de antes: un solo enlace
+      for (const [red, v] of Object.entries(dados)) {
+        if (!p.redes.includes(red)) return res.status(400).json({ error: 'El enlace es de una red que no tiene esta publicación' });
+        const u = texto(v, 500); if (!u) continue;
+        if (!/^https?:\/\/[^\s]+$/i.test(u)) return res.status(400).json({ error: `El enlace de ${REDES[red]} debe empezar con https://` });
+        urls[red] = u;
+      }
+    }
+    const url = p.redes.map(r => urls[r]).find(Boolean) || null;
     if (nuevo === 'revision' && !p.copy.trim() && !Object.keys(p.copy_redes).length && !p.imagenes && !p.enlace) return res.status(400).json({ error: 'Antes de enviarla a revisión agrega el copy, una imagen o el enlace del video' });
     db.transaction(() => {
       const sets = ['estado = ?'], vals = [nuevo];
       if (nuevo === 'aprobada') sets.push('aprobado_por = ?', "aprobado_at = datetime('now','localtime')"), vals.push(yo(req));
       if (nuevo === 'cambios' || nuevo === 'borrador') sets.push('aprobado_por = NULL', 'aprobado_at = NULL');
-      if (nuevo === 'publicada') sets.push('publicado_url = ?', "publicado_at = datetime('now','localtime')"), vals.push(url || null);
+      if (nuevo === 'publicada') sets.push('publicado_url = ?', "publicado_at = datetime('now','localtime')"), vals.push(url);
       db.prepare(`UPDATE main.publicaciones SET ${sets.join(', ')}, version = version + 1, updated_at = datetime('now','localtime') WHERE id = ?`).run(...vals, p.id);
-      nota(p.id, yo(req), nuevo === 'cambios' ? 'cambios' : nuevo === 'aprobada' ? 'aprobada' : 'estado', frase + (comentario ? ': ' + comentario : '') + (url ? ' · ' + url : ''));
+      for (const [red, u] of Object.entries(urls)) db.prepare(`INSERT INTO main.publicacion_metricas (publicacion_id, red, enlace, capturado_por) VALUES (?, ?, ?, ?)
+        ON CONFLICT(publicacion_id, red) DO UPDATE SET enlace = excluded.enlace, updated_at = datetime('now','localtime')`).run(p.id, red, u, yo(req));
+      const enlaces = p.redes.filter(r => urls[r]).map(r => REDES[r] + ': ' + urls[r]).join(' · ');
+      nota(p.id, yo(req), nuevo === 'cambios' ? 'cambios' : nuevo === 'aprobada' ? 'aprobada' : 'estado', frase + (comentario ? ': ' + comentario : '') + (enlaces ? ' · ' + enlaces : ''));
     })();
     res.json(detalle(req, p.id));
   }));

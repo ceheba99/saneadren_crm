@@ -188,7 +188,7 @@ const Marketing = (() => {
     if (ed && e === 'cancelada') b.push(['reabrir', 'Reabrir como borrador', 'btn-outline']);
     const quien = { revision: 'Esperando que la apruebe Dirección o el Gerente de marketing.', cambios: 'Pidieron cambios: corrígela y vuelve a enviarla.', aprobada: `Aprobada por ${actual.aprobado_por_nombre || '—'}. Súbela a la red y márcala programada o publicada.`, programada: 'Programada en la red: márcala publicada cuando salga.', publicada: 'Ya salió en la red: solo se comenta.', borrador: 'Borrador: cuando esté lista, envíala a revisión.', cancelada: 'Cancelada.' }[e];
     $('mk-estado-barra').hidden = false;
-    $('mk-estado-barra').innerHTML = `<div>${estadoTag(e)} <span class="ayuda">${esc(quien)}</span>${actual.publicado_url ? ` <a href="${esc(actual.publicado_url)}" target="_blank" rel="noopener noreferrer">Ver publicación ↗</a>` : ''}</div>`
+    $('mk-estado-barra').innerHTML = `<div>${estadoTag(e)} <span class="ayuda">${esc(quien)}</span>${enlacesPublicados()}</div>`
       + (b.length ? `<div class="btn-group">${b.map(([a, t, c]) => `<button type="button" class="btn ${c} btn-chico" data-mk-accion="${a}">${esc(t)}</button>`).join('')}</div>` : '');
     // Imágenes
     const L = actual.lista_imagenes, varias = ed && L.length > 1;
@@ -251,17 +251,43 @@ const Marketing = (() => {
       if (!t) return; cuerpo.comentario = t;
     }
     if (a === 'publicar') {
-      // El enlace es opcional: aceptar con el campo vacío también vale (y cancelar no marca nada).
-      const promesa = solicitarDialogo({ titulo: 'Marcar publicada', mensaje: 'Si ya salió, pega el enlace de la publicación (opcional).', aceptar: 'Marcar publicada', campo: { tipo: 'url', etiqueta: 'Enlace (https://…)' } });
-      let acepto = false; const btn = document.getElementById('dialogo-aceptar'), marcar = () => { acepto = true; };
-      btn.addEventListener('click', marcar);
-      const u = await promesa; btn.removeEventListener('click', marcar);
-      if (!acepto) return;
-      cuerpo.url = u || '';
+      // Un enlace por cada red, todos opcionales; cancelar no marca nada. (Antes se usaba el diálogo general y se
+      // revisaba el clic en «Aceptar» después de que el diálogo ya había respondido: con un clic real no marcaba nada.)
+      const urls = await pedirEnlaces();
+      if (!urls) return;
+      cuerpo.urls = urls;
     }
     ocupado = true;
     try { actual = await pedir('/publicaciones/' + actual.id + '/estado', cuerpo, 'POST'); $('mk-kicker').textContent = 'PUBLICACIÓN #' + actual.id + ' · ' + (CAT.estados[actual.estado] || '').toUpperCase(); pintarFicha(); SoloLectura.poner('#mk-form', actual.puede.editar, { que: 'la publicación', quien: actual.estado === 'publicada' ? 'ya está publicada: solo se comenta.' : 'tu rol solo consulta Marketing.' }); toast({ enviar: 'Enviada a revisión', aprobar: 'Aprobada', pedir_cambios: 'Se pidieron cambios', programar: 'Marcada como programada', publicar: 'Marcada como publicada', cancelar: 'Cancelada', reabrir: 'Reabierta como borrador' }[a]); cargar(); pintarInicio(); }
     catch (e) { toast(e.message); } finally { ocupado = false; }
+  }
+  // Enlaces de la publicación ya publicada: uno por red (Resultados) o, en las de antes, el general.
+  function enlacesPublicados() {
+    const porRed = actual.redes.map(r => (actual.metricas || []).find(m => m.red === r && m.enlace)).filter(Boolean); // en el orden de las redes
+    if (porRed.length) return porRed.map(m => ` <a href="${esc(m.enlace)}" target="_blank" rel="noopener noreferrer">${logo(m.red)} Ver en ${esc(CAT.redes[m.red])} ↗</a>`).join('');
+    return actual.publicado_url ? ` <a href="${esc(actual.publicado_url)}" target="_blank" rel="noopener noreferrer">Ver publicación ↗</a>` : '';
+  }
+  // Ventana «Marcar publicada»: un campo por red. Responde { red: enlace } o null si se cancela.
+  function pedirEnlaces() {
+    const caja = $('mk-pub-enlaces'), capa = $('overlay-mk-publicar'), aviso = $('mk-pub-aviso');
+    caja.innerHTML = actual.redes.map(r => `<label class="mk-met-enlace"><span>${logo(r)} Enlace en ${esc(CAT.redes[r])}</span>
+      <input type="url" maxlength="500" placeholder="https://" data-mk-pub-red="${esc(r)}" value="${esc((actual.metricas || []).find(m => m.red === r)?.enlace || '')}"></label>`).join('');
+    aviso.hidden = true; capa.classList.add('mostrar');
+    setTimeout(() => caja.querySelector('input')?.focus(), 0);
+    return new Promise(listo => {
+      const cerrar = v => { capa.classList.remove('mostrar'); $('mk-pub-aceptar').onclick = $('mk-pub-cancelar').onclick = $('mk-pub-cerrar').onclick = null; listo(v); };
+      $('mk-pub-cancelar').onclick = $('mk-pub-cerrar').onclick = () => cerrar(null);
+      $('mk-pub-aceptar').onclick = () => {
+        const urls = {};
+        for (const i of caja.querySelectorAll('[data-mk-pub-red]')) {
+          const v = i.value.trim(); if (!v) continue;
+          if (!/^https?:\/\/\S+$/i.test(v)) { aviso.textContent = `El enlace de ${CAT.redes[i.dataset.mkPubRed]} debe empezar con https://`; aviso.hidden = false; i.focus(); return; }
+          urls[i.dataset.mkPubRed] = v;
+        }
+        cerrar(urls);
+      };
+      caja.onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); $('mk-pub-aceptar').click(); } };
+    });
   }
   // ---------- Texto propio por red ----------
   function pintarTextos() {
@@ -290,7 +316,8 @@ const Marketing = (() => {
     const ed = CAT.puede.editar, M = CAT.metricas, porRed = Object.fromEntries((actual.metricas || []).map(m => [m.red, m]));
     $('mk-metricas').innerHTML = actual.redes.map(r => {
       const m = porRed[r] || {}, inter = CAT.interacciones.reduce((a, k) => a + (m[k] || 0), 0), tasa = m.alcance ? Math.round((inter / m.alcance) * 1000) / 10 : null;
-      const resumen = m.id ? `<span class="mk-met-res"><b>${numTxt(inter)}</b> interacciones${tasa != null ? ` · <b>${tasa.toLocaleString('es-MX')} %</b> del alcance` : ''}</span>` : '<span class="ayuda">Sin capturar</span>';
+      // Con solo el enlace (puesto al marcarla publicada) todavía no hay resultados capturados.
+      const resumen = Object.keys(M).some(k => m[k] != null) ? `<span class="mk-met-res"><b>${numTxt(inter)}</b> interacciones${tasa != null ? ` · <b>${tasa.toLocaleString('es-MX')} %</b> del alcance` : ''}</span>` : '<span class="ayuda">Sin capturar</span>';
       const campos = Object.entries(M).map(([k, n]) => ed
         ? `<label class="mk-met-campo"><span>${esc(n)}</span><input type="number" min="0" step="1" inputmode="numeric" data-mk-met="${esc(k)}" value="${m[k] ?? ''}"></label>`
         : `<div class="mk-met-campo"><span>${esc(n)}</span><b>${numTxt(m[k])}</b></div>`).join('');

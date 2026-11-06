@@ -1618,6 +1618,18 @@
 
 
 <!-- ====== OVERLAY: PUBLICACIÓN (Marketing) ====== -->
+<!-- Marcar publicada (2026-11-05): un enlace por cada red de la publicación, todos opcionales. -->
+<div class="overlay" id="overlay-mk-publicar">
+  <div class="modal dialogo-confirmacion">
+    <div class="modal-header"><h2>🚀 Marcar publicada</h2><button class="close-btn" type="button" id="mk-pub-cerrar">✕</button></div>
+    <div class="modal-body">
+      <p class="ayuda">Pega el enlace de cada red donde ya salió. Son opcionales: los que falten se pueden poner después en «Resultados».</p>
+      <div id="mk-pub-enlaces" class="mk-pub-enlaces"></div>
+      <p class="aviso-error-carga" id="mk-pub-aviso" role="alert" hidden></p>
+      <div class="dialogo-acciones"><button type="button" class="btn btn-secundario" id="mk-pub-cancelar">Cancelar</button><button type="button" class="btn btn-primario" id="mk-pub-aceptar">Marcar publicada</button></div>
+    </div>
+  </div>
+</div>
 <div class="overlay" id="overlay-publicacion">
   <div class="modal modal-publicacion">
     <div class="modal-header"><div><span class="flujo-kicker" id="mk-kicker">PUBLICACIÓN</span><h2 id="mk-p-titulo">Nueva publicación</h2></div>
@@ -1837,7 +1849,7 @@
 <script src="buscador.js?v=suc1"></script>
 <script src="demo.js?v=demo1"></script>
 <script src="prospeccion.js?v=pro2"></script>
-<script src="marketing.js?v=mk8"></script>
+<script src="marketing.js?v=mk9"></script>
 <script src="marketing-proyectos.js?v=mk6"></script>
 <script src="marketing-ideas.js?v=mk6"></script>
 <script src="marketing-control.js?v=mk7"></script>
