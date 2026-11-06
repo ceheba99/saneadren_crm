@@ -49,6 +49,18 @@
   .botones button{font-size:1.25rem;font-weight:700;padding:22px 10px;background:#fff;border:3px solid var(--linea);color:var(--texto);}
   .botones button.sugerido{background:var(--amarillo);border-color:#c98f00;color:#1a1d23;}
   .btn{font-size:1.1rem;padding:14px 22px;background:#fff;border:2px solid var(--linea);color:var(--texto);margin-top:16px;}
+  /* Ventana grande de la cámara mientras se toma la cara (registrar o comprobar): ocupa toda la pantalla para verse
+     bien y se cierra sola al terminar (2026-11-05). */
+  .ventana-cara{position:fixed;inset:0;z-index:50;background:#000;display:flex;flex-direction:column;}
+  .ventana-cara video{flex:1;min-height:0;width:100%;object-fit:cover;transform:scaleX(-1);}
+  .ventana-cara .vc-arriba,.ventana-cara .vc-abajo{position:absolute;left:0;right:0;padding:18px 20px;text-align:center;color:#fff;background:rgba(0,0,0,.55);}
+  .ventana-cara .vc-arriba{top:0;}
+  .ventana-cara .vc-abajo{bottom:0;display:flex;flex-direction:column;align-items:center;gap:10px;}
+  .ventana-cara h1{margin:0;font-size:1.6rem;color:#fff;}
+  .ventana-cara .vc-aviso{font-size:2rem;font-weight:800;color:var(--amarillo);margin:0;line-height:1.2;}
+  .ventana-cara .vc-guia{position:absolute;top:50%;left:50%;width:min(62vw,62vh);aspect-ratio:3/4;transform:translate(-50%,-50%);border:4px dashed rgba(246,177,3,.9);border-radius:50%;pointer-events:none;}
+  .ventana-cara .btn{margin-top:0;background:rgba(255,255,255,.92);}
+  .ventana-cara .vc-sin{flex:1;display:flex;align-items:center;justify-content:center;color:#fff;font-size:1.3rem;}
   .camara{position:relative;width:min(100%,440px);aspect-ratio:4/3;max-height:42vh;margin:0 auto 6px;border-radius:12px;overflow:hidden;background:#111;}
   /* Pantalla de los botones: en tableta horizontal, la cámara grande a la izquierda y los botones a la derecha. */
   .pantalla.ancha{max-width:1100px;}
@@ -103,7 +115,9 @@
 
   // ---------- Utilidades de pantalla (solo textContent: nada del servidor se interpreta como HTML) ----------
   const el = (tag, props = {}, ...hijos) => { const e = document.createElement(tag); Object.assign(e, props); for (const h of hijos) e.append(h); return e; };
-  const pintar = (...nodos) => { const p = $('pantalla'); p.className = 'pantalla'; p.replaceChildren(...nodos); };
+  // Cualquier pantalla nueva cierra la ventana grande de la cámara (al terminar de tomar la cara se sigue con el trámite).
+  const cerrarVentanaCara = () => document.querySelectorAll('.ventana-cara').forEach(x => x.remove());
+  const pintar = (...nodos) => { cerrarVentanaCara(); const p = $('pantalla'); p.className = 'pantalla'; p.replaceChildren(...nodos); };
   function avisos() {
     const a = [];
     if (sinConexion) a.push(['rojo', 'Sin conexión a internet: las checadas se guardan aquí y se suben al volver. Quedarán por revisar.']);
@@ -234,10 +248,18 @@
     }
     return { vivo, descriptores, vistas };
   }
+  // Mientras se toma la cara: ventana a pantalla completa con la cámara en grande, un óvalo para acomodar la cara y la
+  // instrucción en letras grandes. Se cierra sola cuando sigue el trámite (la siguiente pantalla) o con «Cancelar».
   function pantallaCara(titulo, texto) {
-    const msg = el('p', { className: 'ayuda', textContent: texto });
-    pintar(el('h1', { textContent: titulo }), msg, el('div', { className: 'checar' }, vistaCamara()), el('button', { type: 'button', className: 'btn', textContent: 'Cancelar', onclick: inicio }));
-    $('pantalla').classList.add('ancha');
+    pintar(el('p', { className: 'ayuda', textContent: texto }));
+    const msg = el('p', { className: 'vc-aviso', textContent: texto });
+    let video;
+    if (camaraLista) { video = el('video', { autoplay: true, playsInline: true, muted: true }); video.srcObject = $('video').srcObject; video.play().catch(() => {}); }
+    document.body.append(el('div', { className: 'ventana-cara', role: 'dialog', ariaLabel: titulo },
+      video || el('div', { className: 'vc-sin', textContent: 'Sin cámara' }),
+      el('div', { className: 'vc-guia' }),
+      el('div', { className: 'vc-arriba' }, el('h1', { textContent: titulo })),
+      el('div', { className: 'vc-abajo' }, msg, el('button', { type: 'button', className: 'btn', textContent: 'Cancelar', onclick: inicio }))));
     return t => { msg.textContent = t; };
   }
   // Después del PIN: hasta 3 intentos. Si no coincide, checa igual y la checada queda por revisar.
