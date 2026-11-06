@@ -3,7 +3,7 @@
 //    «Firmó el consentimiento biométrico» (queda quién y cuándo). También vale el documento «Consentimiento biométrico
 //    firmado» si se sube al expediente digital. Sin consentimiento, la persona checa como siempre y su plantilla no se usa.
 //  · Registro EN LA TABLETA con RH: desde la ficha, RH da un código de 6 dígitos (un solo uso, 10 min); en el kiosco,
-//    «Registrar mi cara» → código → la persona parpadea y se toman 3 muestras. La tableta calcula los descriptores
+//    «Registrar mi cara» → código → se toman 3 muestras mirando de frente (sin prueba de vida: RH está presente). La tableta calcula los descriptores
 //    (face-api, alojado en /vendor/face-api) y el servidor guarda SOLO su promedio, CIFRADO. Las fotos no se guardan.
 //  · Al checar: comparación 1:1 contra SU plantilla (ya se sabe quién es por código y PIN), con prueba de vida
 //    (parpadeo). Si no coincide, la persona checa igual pero la checada queda «por revisar» (decidido con Dirección).
@@ -91,7 +91,7 @@ module.exports = function biometria(app, db, h) {
     if (!c || c.usado_at || c.expira_ms < Date.now()) return malo();
     const p = db.prepare('SELECT * FROM main.personal WHERE id = ? AND activo = 1').get(c.personal_id);
     if (!p || !consentimiento(p.id)) return { status: 409, error: 'Falta marcar en su ficha que firmó el consentimiento biométrico.' };
-    if (vivo !== true) return { status: 400, error: 'No se detectó el parpadeo. Vuelve a intentarlo mirando a la cámara.' };
+    // Sin prueba de vida al registrar (2026-11-06): RH está presente, por eso dio el código. Al checar sí se pide.
     const ds = Array.isArray(descriptores) ? descriptores.map(descriptorDe) : [];
     if (ds.length !== MUESTRAS || ds.some(d => !d)) return { status: 400, error: 'No se tomaron bien las 3 muestras de la cara. Vuelve a intentarlo.' };
     // Las 3 muestras deben ser de la misma persona (si no, alguien se cruzó frente a la cámara).

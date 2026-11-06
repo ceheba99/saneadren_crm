@@ -79,7 +79,7 @@ const PDF = Buffer.from('%PDF-1.4\n% consentimiento biometrico\n' + crypto.rando
   const JUAN = cara();
   const tres = () => [parecida(JUAN), parecida(JUAN), parecida(JUAN)];
   revisa((await kio(K, 'rostro-registrar', { codigo: '000000', descriptores: tres(), vivo: true }))[0] === 401, 'Un código inventado no sirve');
-  revisa((await kio(K, 'rostro-registrar', { codigo: c1, descriptores: tres(), vivo: false }))[0] === 400, 'Sin parpadeo no se registra');
+
   revisa((await kio(K, 'rostro-registrar', { codigo: c1, descriptores: tres().slice(0, 2), vivo: true }))[0] === 400, 'Con menos de 3 muestras no se registra');
   revisa((await kio(K, 'rostro-registrar', { codigo: c1, descriptores: [parecida(JUAN), parecida(JUAN), cara()], vivo: true }))[0] === 400, 'Si una muestra es de otra persona, no se registra');
   revisa((await kio(K, 'rostro-registrar', { codigo: c1, descriptores: [[...JUAN.slice(0, 127), 'x'], parecida(JUAN), parecida(JUAN)], vivo: true }))[0] === 400, 'Datos que no son números se rechazan');
