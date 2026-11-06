@@ -102,7 +102,8 @@ const PDF = Buffer.from('%PDF-1.4\n% prueba\n%%EOF');
   [s, j] = await pedir('GET', '/leads/' + orden.id, T.admin); revisa((j.historial || []).some(h => /Se regresó a «por realizar»/.test(h.texto || '')), 'queda en la bitácora de la orden', (j.historial || []).slice(0, 3).map(h => h.texto));
   [s] = await pedir('POST', '/leads/' + orden.id + '/ejecucion', T.admin, { estado: 'pendiente', motivo: 'Otra vez por error' }); revisa(s === 409, 'si ya está por realizar: no aplica', s);
   [s, j] = await pedir('POST', '/leads/' + orden.id + '/ejecucion', T.admin, { estado: 'realizado', fecha: HOY }); revisa(s === 200, 'se vuelve a marcar realizado sin problema', j);
-  // Orden de compra: recibir → deshacer → recibir de nuevo.
+  // Orden de compra: recibir → deshacer → recibir de nuevo (primero se autoriza: 2026-11-05).
+  [s, j] = await pedir('POST', '/compras/ordenes/' + oc.id + '/autorizar', T.admin, { dias_credito: 15 }); revisa(s === 200, 'Dirección autoriza la orden de compra (se autoriza antes de recibir)', j);
   [s] = await pedir('POST', '/compras/ordenes/' + oc.id + '/documentos', T.costos, PDF, { 'Content-Type': 'application/octet-stream', 'X-Tipo': 'evidencia', 'X-Nombre': 'foto.pdf' });
   revisa(s === 201, 'se sube la evidencia de lo que llegó', s);
   [s, j] = await pedir('POST', '/compras/ordenes/' + oc.id + '/recibir', T.costos, { recibio: 'Pedro Almacén', nota: '' }); revisa(s === 200 && j.recibida_at, 'compras la marca recibida', j);

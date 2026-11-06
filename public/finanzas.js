@@ -23,11 +23,15 @@ const Finanzas = (() => {
   // POST/PUT que puede responder 409 "posible duplicado": pregunta y reintenta con forzar.
   async function enviar(ruta, metodo, cuerpo) {
     let res = await api(ruta, { method: metodo, body: JSON.stringify(cuerpo) });
-    if (res.status === 409) {
-      const j = await res.clone().json().catch(() => ({}));
-      if (j.codigo === 'POSIBLE_DUPLICADO' && await solicitarDialogo({ titulo: 'Posible registro repetido', mensaje: j.error + '\n\nSi no es un duplicado, confirma para guardarlo.', aceptar: 'Sí, guardarlo' })) {
-        res = await api(ruta, { method: metodo, body: JSON.stringify({ ...cuerpo, forzar: true }) });
-      } else if (j.codigo === 'POSIBLE_DUPLICADO') return null;
+    const j = res.status === 409 ? await res.clone().json().catch(() => ({})) : {};
+    // El servidor pide un motivo (p. ej. pagar una orden de compra que aún no se recibe): se pregunta y se reintenta.
+    if (j.codigo === 'PIDE_MOTIVO') {
+      const motivo = await solicitarDialogo({ titulo: j.titulo || 'Falta el motivo', mensaje: j.error, aceptar: 'Guardar', campo: { tipo: 'text', etiqueta: 'Motivo', requerido: 'Escribe el motivo (mínimo 5 letras)' } });
+      return motivo ? enviar(ruta, metodo, { ...cuerpo, motivo }) : null;
+    }
+    if (j.codigo === 'POSIBLE_DUPLICADO') {
+      if (!await solicitarDialogo({ titulo: 'Posible registro repetido', mensaje: j.error + '\n\nSi no es un duplicado, confirma para guardarlo.', aceptar: 'Sí, guardarlo' })) return null;
+      res = await api(ruta, { method: metodo, body: JSON.stringify({ ...cuerpo, forzar: true }) });
     }
     return json(res);
   }

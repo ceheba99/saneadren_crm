@@ -26,7 +26,7 @@ const CATALOGO = [
   ['cobros.registrar', 'Cuentas por cobrar', 'Registrar cobros', 'Anotar pagos que hizo un cliente', TODOS.filter(r => r !== 'costos')],
   ['cobros.confirmar', 'Cuentas por cobrar', 'Confirmar cobros', 'Revisar y confirmar cobros que están «por confirmar»', TODOS.filter(r => r !== 'tecnico')],
   ['cobros.directo', 'Cuentas por cobrar', 'Sus cobros entran ya confirmados', 'Si no lo tiene, lo que registra queda «por confirmar» para que otra persona lo revise', ['gerente', 'atencion']],
-  ['cobranza.factura', 'Cuentas por cobrar', 'Crédito y datos de factura', 'Cambiar días de crédito y datos de facturación', TODOS],
+  ['cobranza.factura', 'Cuentas por cobrar', 'Crédito y datos de factura', 'Cambiar días de crédito y datos de facturación', ['gerente']], // 2026-11-05: era TODOS
   ['cobros.ajustes', 'Cuentas por cobrar', 'Ajustes, descuentos y revisión inicial', '', ['gerente']],
   ['facturacion.fiscales', 'Facturación', 'Datos fiscales de clientes', 'Ver y capturar el RFC, la razón social, el código postal, el régimen, el uso de CFDI y el correo de un cliente para facturarle. Marcarlo a quien factura', ['gerente']],
   ['facturacion.timbrar', 'Facturación', 'Timbrar facturas', 'Timbrar la factura electrónica (CFDI) de una orden de servicio con factura.com, y ver y descargar las facturas de las órdenes (XML y PDF). Marcarlo a quien factura', ['gerente']],
@@ -180,6 +180,12 @@ module.exports = function crearPermisos(db, app, h) {
     const inventados = [...roles].filter(r => r !== 'admin' && !ALCANCE_INICIAL[r]);
     const antes = Object.fromEntries(inventados.map(r => [r, { importes: tenia(r, 'ordenes.importes'), prospeccion: tenia(r, 'prospeccion.ver') }]));
     let sembroAlgo = false;
+    // Ajuste único (Dirección, 2026-11-05): el crédito al cliente es dinero; crédito y datos de factura solo Dirección y
+    // Gerente. Se quita una sola vez a los roles de fábrica que lo tenían; si Dirección se lo vuelve a dar, se respeta.
+    if (!ya.has('ajuste:credito-solo-gerente') && ya.has('cobranza.factura')) {
+      db.prepare("DELETE FROM rol_permisos WHERE permiso = 'cobranza.factura' AND rol IN ('ventas', 'atencion', 'tecnico', 'costos')").run();
+      marcar('ajuste:credito-solo-gerente'); sembroAlgo = true;
+    } else if (!ya.has('ajuste:credito-solo-gerente')) marcar('ajuste:credito-solo-gerente');
     for (const p of CATALOGO) {
       if (ya.has(p.clave)) continue;
       p.roles.filter(r => roles.has(r)).forEach(r => dar.run(r, p.clave));
