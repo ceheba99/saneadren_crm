@@ -345,6 +345,7 @@ const Compras = (() => {
   function recepcionHTML(o) {
     if (o.estado === 'cancelada') return '';
     if (o.recibida_at) return '<div class="oc-recepcion listo"><div class="seccion-sub">📦 Recepción</div>✔ Recibido el ' + esc(fechaTxt(String(o.recibida_at).slice(0, 10))) + ' · recibió <b>' + esc(o.recibio_nombre || '') + '</b> · lo marcó ' + esc(o.recibida_por_nombre || '') + (o.recepcion_nota ? '<br><small>' + esc(o.recepcion_nota) + '</small>' : '') + ' <small class="util-45">(la foto y la firma están en los documentos)</small>' + (Permisos.direccion() ? ' <button type="button" class="btn btn-outline btn-chico" id="oc-deshacer-recepcion">↩ Deshacer recepción</button>' : '') + '</div>';
+    if (o.estado !== 'autorizada') return '<div class="oc-recepcion"><div class="seccion-sub">📦 Recepción</div><span class="util-45">Primero hay que autorizar la orden; después se marca como recibida.</span></div>';
     if (!esCostos()) return '<div class="oc-recepcion"><div class="seccion-sub">📦 Recepción</div><span class="util-45">Pendiente: cuando llegue, lo marca el encargado de centro de costos con foto y/o firma.</span></div>';
     return '<div class="oc-recepcion"><div class="seccion-sub">📦 ¿Ya llegó? Márcalo como recibido</div>'
       + '<div class="oc-rec-campos"><label class="cat-campo"><span>Foto de lo que llegó</span><input type="file" id="oc-rec-foto" accept="image/*,application/pdf" capture="environment"></label>'

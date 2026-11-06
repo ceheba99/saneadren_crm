@@ -110,11 +110,12 @@ const masDias = (f, d) => { const x = new Date(f + 'T00:00:00Z'); x.setUTCDate(x
   prueba('Compras', 'La orden se hace por MÁS de lo cotizado ($12,000 vs $9,000) sin motivo', await pedir('POST', '/compras/ordenes', C, baseOC), { nota: 'debe pedir el motivo' });
   const oc = (await pedir('POST', '/compras/ordenes', C, { ...baseOC, motivo_diferencia: 'Se agregó el kit de instalación' }))[1];
   await subir('/compras/ordenes/' + oc.id + '/documentos', C, png(), { 'X-Tipo': 'firma_recepcion', 'X-Nombre': 'f.png' });
-  prueba('Compras', 'Marcar RECIBIDA una orden que aún no se autoriza', await pedir('POST', '/compras/ordenes/' + oc.id + '/recibir', C, { recibio: 'Almacén' }), { nota: 'se compró antes de autorizar' });
-  [s, j] = await pedir('GET', '/compras/ordenes/' + oc.id, C);
-  prueba('Compras', 'Editar la orden DESPUÉS de recibida (cambiar el precio)', await pedir('PUT', '/compras/ordenes/' + oc.id, C, { solicitud_id: sol.id, proveedor_id: prov.id, centro_id: centros[0].id, categoria: 'otro', iva_modo: 'incluido', version: j.version, partidas: [{ cantidad: 1, descripcion: 'Bomba sumergible 2 HP', precio: 15000 }] }));
+  prueba('Compras', 'Marcar RECIBIDA una orden que aún no se autoriza', await pedir('POST', '/compras/ordenes/' + oc.id + '/recibir', C, { recibio: 'Almacén' }), { nota: 'primero se autoriza (Dirección, 2026-11-05)' });
   [s, j] = await pedir('POST', '/compras/ordenes/' + oc.id + '/autorizar', A, { dias_credito: 15 });
   const cxpOC = j.cxp_id;
+  await pedir('POST', '/compras/ordenes/' + oc.id + '/recibir', C, { recibio: 'Almacén' });
+  [s, j] = await pedir('GET', '/compras/ordenes/' + oc.id, C);
+  prueba('Compras', 'Editar la orden DESPUÉS de recibida (cambiar el precio)', await pedir('PUT', '/compras/ordenes/' + oc.id, C, { solicitud_id: sol.id, proveedor_id: prov.id, centro_id: centros[0].id, categoria: 'otro', iva_modo: 'incluido', version: j.version, partidas: [{ cantidad: 1, descripcion: 'Bomba sumergible 2 HP', precio: 15000 }] }));
   const sol2 = (await pedir('POST', '/compras/solicitudes', V, { que: 'Manguera 4 pulgadas 20 m', para_que: 'Para la unidad E44', centro_id: centros[0].id }))[1];
   await pedir('POST', '/compras/solicitudes/' + sol2.id + '/aprobar', A);
   for (const p of [prov, prov2, prov3]) await subir('/compras/solicitudes/' + sol2.id + '/documentos', C, pdf(), { 'X-Tipo': 'cotizacion', 'X-Proveedor': p.id, 'X-Monto': '3000', 'X-Nombre': 'm.pdf' });
@@ -122,7 +123,7 @@ const masDias = (f, d) => { const x = new Date(f + 'T00:00:00Z'); x.setUTCDate(x
   await pedir('POST', '/compras/solicitudes/' + sol2.id + '/elegir', C, { cotizacion_id: cots2[0].id });
   const oc2 = (await pedir('POST', '/compras/ordenes', C, { solicitud_id: sol2.id, proveedor_id: cots2[0].proveedor_id, centro_id: centros[0].id, categoria: 'otro', iva_modo: 'incluido', partidas: [{ cantidad: 1, descripcion: 'Manguera 4 pulgadas 20 m', precio: 3000 }] }))[1];
   [s, j] = await pedir('POST', '/compras/ordenes/' + oc2.id + '/autorizar', A, { dias_credito: 0 });
-  prueba('Compras', 'Pagar al proveedor una orden que AÚN NO se recibe', await pedir('POST', '/finanzas/cxp/' + j.cxp_id + '/pagos', A, { monto: 3000, metodo: 'transferencia', fecha: HOY }), { nota: 'se paga algo que no ha llegado (válido si es de contado/anticipo)' });
+  prueba('Compras', 'Pagar al proveedor una orden que AÚN NO se recibe, sin decir por qué', await pedir('POST', '/finanzas/cxp/' + j.cxp_id + '/pagos', A, { monto: 3000, metodo: 'transferencia', fecha: HOY }), { nota: 'con motivo sí se permite (anticipo o contado, Dirección 2026-11-05)' });
   prueba('Compras', 'El encargado cancela una orden ya recibida', await pedir('POST', '/compras/ordenes/' + oc.id + '/cancelar', C, { motivo: 'Ya no la queremos' }), { nota: 'solo administración (p. ej. si se devolvió)' });
   prueba('Compras', 'Subir como cotización de otra solicitud un archivo ya usado', await subir('/compras/solicitudes/' + sol2.id + '/documentos', C, Buffer.from('%PDF-1.4\n% ya usado\n%%EOF'), { 'X-Tipo': 'cotizacion', 'X-Proveedor': prov.id, 'X-Monto': '1', 'X-Nombre': 'x.pdf' }));
 

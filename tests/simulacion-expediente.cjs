@@ -86,7 +86,7 @@ const CFDI = ({ total, rfc = 'RBA010101AB1', uuid = 'A1B2C3D4-0000-4000-8000-000
   const quitado = j.documentos.find(d => d.id === doc.id);
   revisa(quitado.eliminado && quitado.eliminado_por === 'admin' && /otro proveedor/.test(quitado.motivo_eliminado), 'el documento quitado sigue a la vista: quién, cuándo y por qué');
   revisa(j.historial.filter(h => /documento/.test(h.accion)).length >= 3, 'cada documento subido o quitado queda en el historial', j.historial.map(h => h.accion));
-  await pedir('POST', '/finanzas/cxp/' + j.cuenta_por_pagar.id + '/pagos', A, { monto: 3480, metodo: 'transferencia', fecha: HOY, referencia: 'SPEI 99' });
+  await pedir('POST', '/finanzas/cxp/' + j.cuenta_por_pagar.id + '/pagos', A, { monto: 3480, metodo: 'transferencia', fecha: HOY, referencia: 'SPEI 99', motivo: 'Pago de contado antes de recibir' });
   [s, j] = await subir(A, oc.id, 'comprobante_pago', 'spei.png', Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(40)]));
   [s, j] = await pedir('GET', '/compras/ordenes/' + oc.id + '/expediente', V);
   revisa(j.cuenta_por_pagar.saldo === 0 && j.cuenta_por_pagar.pagos.length === 1 && j.lista.find(x => x.clave === 'pago').listo && j.lista.find(x => x.clave === 'comprobante_pago').listo, 'pagada y con comprobante: la lista lo marca completo', j.lista);

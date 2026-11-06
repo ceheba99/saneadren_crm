@@ -287,6 +287,7 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
     ['corrigeSuyo', 'Corregir su PROPIA asistencia (agregarse una checada o autorizarse su tiempo extra)'],
     ['precioExtra', 'Ponerle precio a la hora de cada puesto (para pagar el tiempo extra)'],
     ['dineroExtra', 'Ver cuánto dinero sale por tiempo extra (en la semana y en el Excel de nómina)'],
+    ['cambiaCredito', 'Cambiar los días de crédito y los datos de factura de una orden'],
     ['eliminaUsuario', 'Eliminar un usuario (se borra si nunca se usó; si ya tiene registros, se archiva)'],
     ['veLogs', 'Ver los logs del sistema (entradas y salidas, contraseñas equivocadas, bloqueos, errores del servidor y quién está conectado)'],
     ['eliminaSucursal', 'Eliminar una sucursal (se borra si nunca se usó; si ya tiene registros, se archiva)'],
@@ -347,6 +348,7 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
     { const [st] = await pedir('POST', '/facturacion/importar-clientes/vista-previa', t, { csv: 'UID,RFC,Razon_Social,Regimen,CP,Email\n' }); VE[rol].importaClientesFact = ![401, 403, 404].includes(st); } // quien puede recibe 200; quien no, 403
     VE[rol].exportaFact = ok(await pedir('GET', '/facturacion/facturas/exportar', t));
     VE[rol].revisaProd = ok(await pedir('GET', '/facturacion/revision-produccion', t));
+    VE[rol].cambiaCredito = ok(await pedir('PUT', '/leads/' + O1.id + '/facturacion', t, { dias_credito: 15 }));
     VE[rol].editaFolioReal = ok(await pedir('PUT', '/leads/' + OP.id + '/facturacion', t, { factura_folio: 'X-' + rol + '-9', factura_total: '1.00' }));
     VE[rol].daPin = ok(await pedir('POST', '/asistencia/personal/' + EMP.id + '/desbloquear', t));
     VE[rol].registraKiosco = ok(await pedir('POST', '/asistencia/dispositivos', t, { nombre: 'Kiosco de ' + rol, sucursal_id: qro.id }));
@@ -459,6 +461,8 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
     ['2026-11-05', 'Checar por WhatsApp (foráneos, respaldo del celular): solo quien RH active en su ficha y desde el celular de su ficha; sin foto ni ubicación, cada checada queda «por revisar». Activarlo o quitarlo lo hacen quienes editan el personal (Dirección y el Gerente, de su sucursal), nunca para sí mismos (salvo Dirección).', {
       admin: { activaWhatsapp: 1 }, gerente: { activaWhatsapp: 1 },
       ...Object.fromEntries(['ventas', 'atencion', 'tecnico', 'costos', 'marketing', 'marketing_gerente'].map(r => [r, { activaWhatsapp: 0 }])) }],
+    ['2026-11-05', 'Crédito al cliente y datos de factura de una orden (días de crédito, folio, fecha y total): los cambian solo Dirección y el Gerente, porque el crédito es una decisión de dinero. Ventas, Atención y los demás roles lo ven pero no lo cambian. (Antes lo cambiaba cualquiera que viera la cobranza.)', {
+      admin: { cambiaCredito: 1 }, gerente: { cambiaCredito: 1 }, ...Object.fromEntries(['ventas', 'atencion', 'tecnico', 'costos', 'marketing', 'marketing_gerente'].map(r => [r, { cambiaCredito: 0 }])) }],
     ['2026-11-05', 'Logs del sistema (Configuración → Ajustes): quién entró y salió, desde qué IP y equipo, contraseñas equivocadas, bloqueos por intentos, contraseñas restablecidas, errores del servidor y quién está conectado ahora. Los ve solo Dirección; ningún otro rol, ni el Gerente. Nunca guardan contraseñas.', {
       admin: { veLogs: 1 }, ...Object.fromEntries(['gerente', 'ventas', 'atencion', 'tecnico', 'costos', 'marketing', 'marketing_gerente'].map(r => [r, { veLogs: 0 }])) }],
     ['2026-11-05', 'Biométrico facial en el kiosco (solo de quien firmó su consentimiento; los expedientes son físicos, así que RH marca en la ficha que lo firmó, con quién y cuándo): marcar el consentimiento, dar el código de un solo uso para registrar su cara en el kiosco o borrar su registro lo hacen quienes editan el personal (Dirección y el Gerente, de su sucursal), nunca para sí mismos (salvo Dirección). Nadie ve ni descarga la plantilla de la cara: solo se compara al checar. Si no coincide, la checada queda por revisar.', {

@@ -1240,6 +1240,10 @@ module.exports = function finanzas(app, db, h, unicos) {
     const hoy = hoyMexico(), fecha = req.body.fecha || hoy;
     if (!fechaValida(fecha) || fecha > hoy) return res.status(400).json({ error: 'La fecha del pago no es válida o es futura' });
     if (!METODOS_PROV.includes(req.body.metodo)) return res.status(400).json({ error: 'Elige cómo se pagó' });
+    // Pagar una orden de compra que todavía no llega (anticipo, contado): se permite con motivo (Dirección, 2026-11-05).
+    const ocSinRecibir = db.prepare("SELECT id FROM main.ordenes_compra WHERE cxp_id = ? AND estado = 'autorizada' AND recibida_at IS NULL").get(x.id);
+    const motivoAnticipo = texto(req.body.motivo, 300);
+    if (ocSinRecibir && (!motivoAnticipo || !conSentido(motivoAnticipo, 5))) return res.status(409).json({ error: 'Esta orden de compra todavía no se recibe. ¿Por qué se paga antes de que llegue? (por ejemplo: anticipo, compra de contado)', codigo: 'PIDE_MOTIVO', titulo: 'Pago antes de recibir' });
     if (!req.body.forzar && db.prepare(`SELECT id FROM pagos_proveedor WHERE cxp_id = ? AND monto_cent = ? AND fecha = ? AND cancelado = 0
       AND created_at >= datetime('now','localtime','-2 minutes')`).get(x.id, monto, fecha)) {
       return res.status(409).json({ error: 'Ese mismo pago se acaba de registrar. ¿Es un pago distinto?', codigo: 'POSIBLE_DUPLICADO' });
@@ -1247,7 +1251,8 @@ module.exports = function finanzas(app, db, h, unicos) {
     const info = db.prepare('INSERT INTO main.pagos_proveedor (cxp_id, fecha, monto_cent, metodo, referencia, registrado_por, cuenta_origen) VALUES (?, ?, ?, ?, ?, ?, ?)')
       .run(x.id, fecha, monto, req.body.metodo, texto(req.body.referencia, 120), req.usuarioSesion.id, texto(req.body.cuenta_origen, 80));
     if (x.lead_id) bitacora(x.lead_id, `Pago a tercero: ${fmt(monto)} a ${x.proveedor_nombre || 'proveedor'} por «${x.concepto}» (${req.body.metodo}, ${fecha}).`, req, 'cxp');
-    app.locals.auditoria?.registrar(req, 'cuenta_por_pagar', x.id, 'pago', `${fmt(monto)} por ${req.body.metodo} el ${fecha}${texto(req.body.referencia, 120) ? ' · ref. ' + texto(req.body.referencia, 120) : ''}`);
+    app.locals.auditoria?.registrar(req, 'cuenta_por_pagar', x.id, 'pago', `${fmt(monto)} por ${req.body.metodo} el ${fecha}${texto(req.body.referencia, 120) ? ' · ref. ' + texto(req.body.referencia, 120) : ''}${ocSinRecibir ? ' · antes de recibir: ' + motivoAnticipo : ''}`);
+    if (ocSinRecibir) app.locals.auditoria?.registrar(req, 'orden_compra', ocSinRecibir.id, 'pago antes de recibir', `${fmt(monto)} · ${motivoAnticipo}`);
     res.status(201).json({ id: info.lastInsertRowid });
   }));
 

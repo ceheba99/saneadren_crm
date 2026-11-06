@@ -265,9 +265,9 @@ module.exports = function demo(app, db, { sesiones, PORT, SESSION_TTL_MS }) {
     await pedir('POST', '/compras/solicitudes/' + s1.id + '/elegir', C, { cotizacion_id: c1.id });
     const oc1 = await pedir('POST', '/compras/ordenes', C, { solicitud_id: s1.id, proveedor_id: prov.bajio.id, centro_id: mantto.id, categoria: 'mantto_vehiculos', iva_modo: 'incluido', partidas: [{ cantidad: 4, descripcion: 'Llanta 11R22.5', unidad: 'PZA', precio: 3950 }] });
     const aut1 = await pedir('POST', '/compras/ordenes/' + oc1.id + '/autorizar', A, { dias_credito: 15 });
-    await pedir('POST', '/finanzas/cxp/' + aut1.cxp_id + '/pagos', C, { monto: 15800, metodo: 'transferencia', fecha: HOY, referencia: 'SPEI llantas C-22', cuenta_origen: 'Santander empresa' });
     await subir('/compras/ordenes/' + oc1.id + '/documentos', C, png(), { 'X-Tipo': 'firma_recepcion', 'X-Nombre': 'firma-almacen.png' });
     await pedir('POST', '/compras/ordenes/' + oc1.id + '/recibir', C, { recibio: 'Raúl Técnico', nota: 'Llegaron las 4 llantas' });
+    await pedir('POST', '/finanzas/cxp/' + aut1.cxp_id + '/pagos', C, { monto: 15800, metodo: 'transferencia', fecha: HOY, referencia: 'SPEI llantas C-22', cuenta_origen: 'Santander empresa' });
     // b) Urgente sin las 3 cotizaciones
     const s2 = await pedir('POST', '/compras/solicitudes', T, { que: 'Bomba sumergible 2 HP', para_que: 'Se quemó la bomba durante un servicio de emergencia en KFC Juriquilla', centro_id: opera.id, urgente: true });
     await pedir('POST', '/compras/solicitudes/' + s2.id + '/aprobar', A);

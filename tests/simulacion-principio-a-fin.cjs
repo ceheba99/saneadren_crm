@@ -66,7 +66,7 @@ const igual = (a, b) => Math.abs(Number(a) - Number(b)) < 0.005;
   const oc = j; revisa(s === 201 && oc.total === 1160, 'orden de compra de $1,160 (borrador, todavía no es deuda)', [s, oc.total, oc.error]);
   [s, j] = await pedir('POST', '/compras/ordenes/' + oc.id + '/autorizar', A, { dias_credito: 15 });
   revisa(s === 200 && j.cxp_id, 'el administrador la autoriza: se vuelve deuda');
-  [s] = await pedir('POST', '/finanzas/cxp/' + j.cxp_id + '/pagos', A, { monto: 1160, metodo: 'efectivo', fecha: HOY });
+  [s] = await pedir('POST', '/finanzas/cxp/' + j.cxp_id + '/pagos', A, { monto: 1160, metodo: 'efectivo', fecha: HOY, motivo: 'Compra de contado' });
   revisa(s === 201, 'se paga la orden de compra');
 
   seccion('5. Carga del generador (historial de otro cliente, ya cobrado)');

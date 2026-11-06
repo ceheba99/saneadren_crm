@@ -108,6 +108,11 @@ const revisa = (cond, texto, extra) => { n++; if (!cond) { malos.push(texto); co
 
   console.log('7. Recibido con foto y/o firma (encargado)');
   [s, j] = await pedir('POST', '/compras/ordenes/' + oc.id + '/recibir', V, { recibio: 'Laura' }); revisa(s === 403, 'ventas no marca recibido');
+  // Primero se autoriza y luego se recibe (Dirección, 2026-11-05).
+  [s, j] = await pedir('POST', '/compras/ordenes/' + oc.id + '/recibir', C, { recibio: 'Isaac Hernández' }); revisa(s === 409 && /autorizar/.test(j.error), 'una orden sin autorizar no se marca recibida', [s, j.error]);
+  [s, j] = await pedir('POST', '/compras/ordenes/' + oc.id + '/autorizar', A, { dias_credito: 15 }); revisa(s === 200, 'Dirección la autoriza', [s, j.error]);
+  [s, j] = await pedir('POST', '/finanzas/cxp/' + j.cxp_id + '/pagos', A, { monto: 100, metodo: 'transferencia' }); revisa(s === 409 && j.codigo === 'PIDE_MOTIVO', 'pagarla antes de que llegue pide el motivo', [s, j]);
+  [s, j] = await pedir('POST', '/finanzas/cxp/' + (await pedir('GET', '/compras/ordenes/' + oc.id, C))[1].cxp_id + '/pagos', A, { monto: 100, metodo: 'transferencia', motivo: 'Anticipo del 10 %' }); revisa(s === 201, 'con motivo (anticipo) sí se paga y queda en la bitácora', [s, j]);
   [s, j] = await pedir('POST', '/compras/ordenes/' + oc.id + '/recibir', C, { recibio: 'Isaac Hernández' }); revisa(s === 400 && /foto|firma/.test(j.error), 'sin foto ni firma no se marca recibido', [s, j.error]);
   [s, j] = await subir('/compras/ordenes/' + oc.id + '/documentos', C, png(), { 'X-Tipo': 'firma_recepcion', 'X-Nombre': 'firma.png', 'X-Nota': 'Recepción' }); revisa(s === 201, 'se sube la firma de quien recibe', [s, j.error]);
   [s, j] = await pedir('POST', '/compras/ordenes/' + oc.id + '/recibir', C, { recibio: '' }); revisa(s === 400, 'hay que decir quién recibió');
