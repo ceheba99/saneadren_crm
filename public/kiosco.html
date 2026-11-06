@@ -209,24 +209,30 @@
   // Apertura del ojo (6 puntos del contorno): baja mucho al cerrarlo.
   const apertura = pts => { const d = (a, b) => Math.hypot(a.x - b.x, a.y - b.y); return (d(pts[1], pts[5]) + d(pts[2], pts[4])) / (2 * d(pts[0], pts[3]) || 1); };
   // Mira la cámara hasta tener «muestras» descriptores y un parpadeo, o hasta «ms». «aviso(texto)» actualiza la pantalla.
-  async function capturarCara({ muestras = 1, ms = 9000, aviso = () => {} } = {}) {
-    const f = await cargarFaceApi(), v = $('video'), opciones = new f.TinyFaceDetectorOptions({ inputSize: 320, scoreThreshold: 0.5 }), hasta = Date.now() + ms;
-    let maxAbierto = 0, cerro = false, vivo = false, ultima = 0; const descriptores = [];
+  // En una tableta lenta cada cuadro con descriptor tarda casi un segundo y un parpadeo normal dura menos: no se veía
+  // (2026-11-05, no dejaba registrar). Ahora el descriptor (lo pesado) solo se calcula mientras faltan muestras; para
+  // ver el parpadeo basta la cara y los ojos (rápido), y se pide cerrar los ojos un momento, no un parpadeo rápido.
+  async function capturarCara({ muestras = 1, ms = 12000, aviso = () => {} } = {}) {
+    const f = await cargarFaceApi(), v = $('video'), opciones = new f.TinyFaceDetectorOptions({ inputSize: 224, scoreThreshold: 0.4 }), hasta = Date.now() + ms;
+    let maxAbierto = 0, cerro = false, vivo = false, ultima = 0, vistas = 0; const descriptores = [];
     while (Date.now() < hasta && (!vivo || descriptores.length < muestras)) {
       if (!camaraLista || !v.videoWidth) { await new Promise(r => setTimeout(r, 200)); continue; }
-      // La tarea de face-api se puede esperar con await, pero NO es una promesa completa: no tiene .catch (falló en la tableta, 2026-11-05).
+      const conDescriptor = descriptores.length < muestras && Date.now() - ultima > 350;
+      // La tarea de face-api se espera con await, pero NO es una promesa completa: no tiene .catch.
       let r = null;
-      try { r = await f.detectSingleFace(v, opciones).withFaceLandmarks().withFaceDescriptor(); } catch { r = null; }
+      try { const t = f.detectSingleFace(v, opciones).withFaceLandmarks(); r = await (conDescriptor ? t.withFaceDescriptor() : t); } catch { r = null; }
       if (!r) { aviso('No te vemos: acércate y mira de frente a la cámara'); await new Promise(z => setTimeout(z, 120)); continue; }
+      vistas++;
       const p = r.landmarks.positions, ojo = (apertura(p.slice(36, 42)) + apertura(p.slice(42, 48))) / 2;
       maxAbierto = Math.max(maxAbierto * 0.995, ojo);
-      if (!cerro && ojo < maxAbierto * 0.7) cerro = true;
+      if (!cerro && vistas > 2 && ojo < maxAbierto * 0.78) cerro = true;
       else if (cerro && ojo > maxAbierto * 0.85) vivo = true;
       // Muestras con los ojos abiertos, separadas un poco en el tiempo.
-      if (ojo > maxAbierto * 0.85 && Date.now() - ultima > 350 && descriptores.length < muestras) { descriptores.push(Array.from(r.descriptor, x => Math.round(x * 1e6) / 1e6)); ultima = Date.now(); }
-      aviso(vivo ? (descriptores.length < muestras ? 'Muy bien. No te muevas…' : 'Listo') : 'Ahora parpadea');
+      if (r.descriptor && ojo > maxAbierto * 0.85) { descriptores.push(Array.from(r.descriptor, x => Math.round(x * 1e6) / 1e6)); ultima = Date.now(); }
+      aviso(descriptores.length < muestras ? (muestras > 1 ? `Mira de frente, sin moverte… (${descriptores.length} de ${muestras})` : 'Mira de frente, sin moverte…')
+        : vivo ? 'Listo' : cerro ? 'Ahora abre los ojos' : 'Ahora cierra los ojos un segundo y ábrelos');
     }
-    return { vivo, descriptores };
+    return { vivo, descriptores, vistas };
   }
   function pantallaCara(titulo, texto) {
     const msg = el('p', { className: 'ayuda', textContent: texto });
@@ -239,9 +245,9 @@
     estado.teclado = null;
     const yo = Symbol('cara'); estado.cara = yo;
     reiniciarEspera(30000);
-    const aviso = pantallaCara('Hola, ' + datos.nombre + ': mira a la cámara', 'Mira de frente y parpadea');
+    const aviso = pantallaCara('Hola, ' + datos.nombre + ': mira a la cámara', 'Mira de frente; luego cierra los ojos un segundo y ábrelos');
     let cap;
-    try { cap = await capturarCara({ muestras: 1, ms: 9000, aviso }); }
+    try { cap = await capturarCara({ muestras: 1, ms: 12000, aviso }); }
     catch { if (estado.cara === yo) elegirTipo({ ...datos, aviso: 'No se pudo usar el reconocimiento facial: tu checada quedará por revisar.' }); return; }
     if (estado.cara !== yo) return; // canceló
     const rostro = { descriptor: cap.descriptores[0] || null, vivo: cap.vivo };
@@ -250,7 +256,7 @@
     if (estado.cara !== yo) return;
     if (coincide) return elegirTipo({ ...datos, rostro, aviso: '✔ Te reconocimos. ¿Qué vas a registrar?' });
     if (intento < 3) {
-      aviso(!rostro.descriptor ? 'No vimos tu cara. Otra vez…' : !rostro.vivo ? 'No vimos que parpadearas. Otra vez…' : 'No te reconocimos. Acércate, con buena luz, y otra vez…');
+      aviso(!rostro.descriptor ? 'No vimos tu cara. Otra vez…' : !rostro.vivo ? 'No vimos que cerraras los ojos. Ciérralos un segundo y ábrelos…' : 'No te reconocimos. Acércate, con buena luz, y otra vez…');
       await new Promise(r => setTimeout(r, 1500));
       if (estado.cara === yo) verificarCara(datos, intento + 1);
       return;
@@ -269,11 +275,14 @@
       await camaraA(4000);
       if (estado.cara !== yo) return;
       if (!camaraLista) return error('No se pudo prender la cámara. Avisa a RH.');
-      const aviso = pantallaCara('Registrar mi cara', 'Mira de frente a la cámara, sin lentes oscuros ni gorra, y parpadea');
+      const aviso = pantallaCara('Registrar mi cara', 'Mira de frente a la cámara, sin lentes oscuros ni gorra. Luego cierra los ojos un segundo y ábrelos.');
       let cap;
-      try { cap = await capturarCara({ muestras: 3, ms: 15000, aviso }); } catch (e) { return error(e.message || 'No se pudo cargar el reconocimiento facial'); }
+      try { cap = await capturarCara({ muestras: 3, ms: 25000, aviso }); } catch (e) { return error(e.message || 'No se pudo cargar el reconocimiento facial'); }
       if (estado.cara !== yo) return;
-      if (!cap.vivo || cap.descriptores.length < 3) return error('No se pudo tomar tu cara (que se vea de frente, con buena luz, y parpadea). Vuelve a intentarlo con el mismo código.', registrarCara);
+      // Decir qué faltó, para saber qué corregir (antes era un mensaje igual para todo).
+      if (!cap.vistas) return error('La cámara no vio ninguna cara. Ponte frente a la tableta, a unos 40 cm, con luz de frente (no a contraluz). Vuelve a intentarlo con el mismo código.', registrarCara);
+      if (cap.descriptores.length < 3) return error(`Solo se tomaron ${cap.descriptores.length} de 3 fotos de tu cara. Quédate quieto, de frente y con buena luz. Vuelve a intentarlo con el mismo código.`, registrarCara);
+      if (!cap.vivo) return error('No vimos que cerraras los ojos. Cuando diga «cierra los ojos», ciérralos un segundo y ábrelos. Vuelve a intentarlo con el mismo código.', registrarCara);
       let r; try { r = await api('rostro-registrar', { codigo, descriptores: cap.descriptores, vivo: cap.vivo }); } catch { return error('Sin conexión: el registro de la cara se hace con internet.'); }
       if (!r.ok) return error(r.j.error || 'No se pudo registrar tu cara');
       listo('ok', 'Cara registrada', `Listo, ${r.j.nombre}. Desde ahora el reloj comprobará que eres tú.`);
@@ -372,9 +381,9 @@
     await camaraA(4000);
     if (estado.cara !== yo) return;
     if (!camaraLista) return pedirPin(codigo, null, 'No se pudo usar la cámara: escribe tu PIN');
-    const aviso = pantallaCara('Mira a la cámara', intento === 1 ? 'Mira de frente y parpadea (así no necesitas tu PIN)' : `Intento ${intento} de 3: mira de frente y parpadea`);
+    const aviso = pantallaCara('Mira a la cámara', intento === 1 ? 'Mira de frente; luego cierra los ojos un segundo y ábrelos (así no necesitas tu PIN)' : `Intento ${intento} de 3: mira de frente; luego cierra los ojos un segundo y ábrelos`);
     let cap;
-    try { cap = await capturarCara({ muestras: 1, ms: 9000, aviso }); } catch { return estado.cara === yo ? pedirPin(codigo, null, 'Escribe tu PIN') : undefined; }
+    try { cap = await capturarCara({ muestras: 1, ms: 12000, aviso }); } catch { return estado.cara === yo ? pedirPin(codigo, null, 'Escribe tu PIN') : undefined; }
     if (estado.cara !== yo) return;
     const rostro = { descriptor: cap.descriptores[0] || null, vivo: cap.vivo };
     let r; try { r = await api('rostro-entrar', { codigo, rostro }); } catch { return pedirPin(codigo, rostro, 'Escribe tu PIN'); }
@@ -383,7 +392,7 @@
     // No coincidió: foto del intento para RH, y otra vez o el PIN.
     if (r.j.intento) { const imagen = foto(); if (imagen) api('intento-foto', { intento: r.j.intento, foto: imagen }).catch(() => {}); }
     if (r.j.pin || intento >= 3) return pedirPin(codigo, rostro, 'No te reconocimos: escribe tu PIN (RH revisará tu checada)');
-    aviso(r.j.resultado === 'no_vivo' ? 'No vimos que parpadearas. Otra vez…' : r.j.resultado === 'sin_rostro' ? 'No vimos tu cara. Acércate…' : 'No te reconocimos. Con buena luz, otra vez…');
+    aviso(r.j.resultado === 'no_vivo' ? 'No vimos que cerraras los ojos. Otra vez…' : r.j.resultado === 'sin_rostro' ? 'No vimos tu cara. Acércate…' : 'No te reconocimos. Con buena luz, otra vez…');
     await new Promise(z => setTimeout(z, 1500));
     if (estado.cara === yo) caraPrimero(codigo, intento + 1);
   }
