@@ -1,7 +1,7 @@
 // Service worker SOLO del kiosco del reloj checador (se registra con scope «/kiosco»: no toca el resto del CRM ni la
 // API). Guarda la página del kiosco y el logo para que, si la tableta se reinicia sin internet, la pantalla abra y
 // pueda guardar checadas sin conexión. Con internet siempre se usa la versión nueva del servidor.
-const CACHE = 'saneadren-kiosco-v1';
+const CACHE = 'saneadren-kiosco-v2';
 const ARCHIVOS = ['/kiosco', '/logo-saneadren.png'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(ARCHIVOS)).then(() => self.skipWaiting())); });
 self.addEventListener('activate', e => { e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k !== CACHE).map(k => caches.delete(k)))).then(() => self.clients.claim())); });
