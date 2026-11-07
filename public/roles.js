@@ -51,7 +51,7 @@ const Roles = (() => {
         + (!r.sistema ? '<button type="button" class="btn btn-outline btn-chico" data-rp-quitar="' + esc(r.clave) + '" aria-label="Quitar el rol ' + esc(r.nombre) + '">Quitar</button>' : '') + '</span>' : '<span class="rp-rol-gente">Siempre todo</span>')
       + '</th>').join('');
     // Qué ve: un selector por área y rol.
-    let filas = '<tr class="rp-seccion"><th scope="rowgroup" colspan="' + cols + '">Qué ve y qué edita (✎)</th></tr>';
+    let filas = '<tr class="rp-seccion"><th scope="rowgroup" colspan="' + cols + '"><span>Qué ve y qué edita (✎)</span></th></tr>';
     for (const a of DATOS.areas || []) {
       filas += '<tr><th scope="row" class="rp-permiso"><span>' + esc(a.nombre) + '</span><small>Lo suyo: ' + esc(a.suyo) + '</small>' + (a.nada ? '<small>Nada: ' + esc(a.nada) + '</small>' : '') + '</th>'
         + roles.map(r => {
@@ -66,7 +66,7 @@ const Roles = (() => {
     // Qué hace: casillas.
     let seccion = '';
     for (const p of DATOS.catalogo) {
-      if (p.seccion !== seccion) { seccion = p.seccion; filas += '<tr class="rp-seccion"><th scope="rowgroup" colspan="' + cols + '">' + esc(seccion) + '</th></tr>'; }
+      if (p.seccion !== seccion) { seccion = p.seccion; filas += '<tr class="rp-seccion"><th scope="rowgroup" colspan="' + cols + '"><span>' + esc(seccion) + '</span></th></tr>'; }
       filas += '<tr><th scope="row" class="rp-permiso"><span>' + esc(p.nombre) + '</span>' + (p.ayuda ? '<small>' + esc(p.ayuda) + '</small>' : '') + '</th>'
         + roles.map(r => {
           const id = 'rp-' + Permisos.clase(r.clave) + '-' + Permisos.clase(p.clave);
@@ -81,7 +81,8 @@ const Roles = (() => {
       + '<div class="campo"><label for="rp-nuevo-copia">Empieza con los permisos de</label><select id="rp-nuevo-copia"><option value="">Ninguno (sin permisos)</option>'
       + roles.filter(r => r.editable).map(r => '<option value="' + esc(r.clave) + '">' + esc(r.nombre) + '</option>').join('') + '</select></div>'
       + '<div class="campo"><button type="button" class="btn btn-secundario" id="rp-crear">Crear rol</button></div></div>'
-      + '<div class="tabla-scroll rp-tabla-caja"><table class="rp-tabla"><thead><tr><th scope="col" class="rp-permiso">Permiso</th>' + cab + '</tr></thead><tbody>' + filas + '</tbody></table></div>'
+      + '<p class="ayuda rp-guia" id="rp-guia">Desplaza la tabla hacia los lados para comparar más roles. La columna de permisos queda fija.</p>'
+      + '<div class="tabla-scroll rp-tabla-caja" tabindex="0" role="region" aria-label="Matriz de roles y permisos" aria-describedby="rp-guia"><table class="rp-tabla"><thead><tr><th scope="col" class="rp-permiso">Permiso</th>' + cab + '</tr></thead><tbody>' + filas + '</tbody></table></div>'
       + '<p class="ayuda">«Lo suyo» se aplica en todo el sistema (listas, Inicio, calendario, buscador, reportes y Excel). «Toda la empresa» ve todas las sucursales con el selector en «Todas». Sin ✎ Edita, esa área es solo de consulta; con ✎, en contactos, cotizaciones y órdenes cada quien edita solo lo que capturó o tiene a su nombre (lo de otros, con «Editar lo de otros»). Borrar solo lo hace Dirección. El gerente además nunca hace lo que afecta a todas las sucursales (sucursales, catálogos, bitácora completa, respaldo). Los cambios aplican de inmediato a cada persona con ese rol (la pantalla se actualiza al recargarla).</p>'
       + '<div class="btn-group"><button type="button" class="btn btn-primario" id="rp-guardar"' + (n ? '' : ' disabled') + '>' + (n ? 'Guardar cambios (' + n + (n === 1 ? ' rol' : ' roles') + ')' : 'Sin cambios') + '</button>'
       + (n ? '<button type="button" class="btn btn-outline" id="rp-descartar">Descartar</button>' : '') + '</div>';

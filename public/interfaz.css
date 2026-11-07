@@ -433,6 +433,22 @@
   .vista-finanzas .tabla-dinero thead th { font-size: 11px; color: #455c6b; }
   .vista-finanzas .tabla-dinero td { font-size: 14px; }
   .vista-finanzas .estado-cxc { padding: 4px 9px; line-height: 1.4; white-space: normal; }
+  #cobrar-lista .tabla-dinero td:has(> .estado-cxc) {
+    width: 1%;
+    white-space: normal;
+  }
+  :is(#cobrar-lista, #cc-cuerpo, #cp-cuerpo) .tabla-dinero td > .estado-cxc {
+    width: max-content;
+    max-width: 220px;
+    margin: 0;
+    border-radius: 7px;
+    text-wrap: pretty;
+    overflow-wrap: anywhere;
+  }
+  :is(#cobrar-lista, #cc-cuerpo, #cp-cuerpo) .tabla-dinero td > .estado-cxc + .estado-cxc {
+    display: block;
+    margin-top: 4px;
+  }
   .vista-finanzas :is(.tabla-barra, .grupo-pagos) { gap: 12px; flex-wrap: wrap; }
   .vista-finanzas .grupo-pagos { margin: 22px 0 12px; }
   .vista-finanzas .tabla-barra { margin: 18px 0 12px; }
@@ -464,5 +480,1311 @@
     .vista-finanzas .cuentas-tarjetas { grid-template-columns: minmax(0, 1fr); }
     .vista-finanzas .fila-dinero { grid-template-columns: minmax(0, 1fr); }
     .vista-finanzas .fila-dinero .montos { text-align: left; }
+  }
+}
+
+/* RH y Personal: solo presentación en pantalla; no altera estados ni permisos. */
+@media screen {
+  :is(#vista-rh, #vista-personal, #vista-asistencia) { padding-top: 8px; min-width: 0; }
+  :is(#vista-rh, #vista-personal, #vista-asistencia) .pe-encabezado { gap: 16px; margin-bottom: 8px; }
+  :is(#vista-rh, #vista-personal, #vista-asistencia) .pe-encabezado h2 { margin: 0; font-size: clamp(25px, 2.5vw, 32px); line-height: 1.2; letter-spacing: -.6px; }
+  :is(#vista-rh, #vista-personal, #vista-asistencia) > .ayuda { max-width: 920px; margin: 0 0 24px; font-size: 14px; line-height: 1.65; color: #5a6b77; }
+  :is(#vista-rh, #vista-personal, #vista-asistencia) .btn { min-height: 44px; border-radius: 9px; line-height: 1.35; }
+  :is(#vista-rh, #vista-personal, #vista-asistencia) :is(button, a, input, select):focus-visible { outline: 3px solid #2563eb; outline-offset: 3px; }
+
+  #rh-cuerpo > .rc-grid { grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin: 0 0 26px; }
+  #rh-cuerpo .rc-card { display: flex; flex-direction: column; align-items: flex-start; text-align: left; gap: 8px; padding: 20px; border: 1px solid #dbe1e7; border-left: 4px solid var(--amarillo); border-radius: 12px; background: #fff; color: #192b37; cursor: pointer; min-width: 0; min-height: 110px; }
+  #rh-cuerpo .rc-card .rc-num { font-size: 31px; line-height: 1; font-variant-numeric: tabular-nums; }
+  #rh-cuerpo .rc-card .rc-label { font-size: 13px; line-height: 1.45; color: #506472; margin: 0; overflow-wrap: anywhere; }
+  #rh-cuerpo .rc-card.pr-atrasado { border-left-color: #c44a34; background: #fffaf7; }
+  #rh-cuerpo .rc-card.pr-atrasado .rc-num { color: #a63726; }
+  #rh-cuerpo .rc-card:hover { border-color: #9baebc; }
+  #rh-cuerpo .rh-accesos { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; margin: 0 0 26px; }
+  #rh-cuerpo .rh-acceso { display: grid; grid-template-columns: 44px minmax(0, 1fr); grid-template-rows: auto 1fr; column-gap: 14px; row-gap: 6px; align-content: start; align-items: start; padding: 18px; min-height: 118px; border: 1px solid #dbe1e7; border-radius: 14px; box-shadow: 0 3px 10px rgb(25 43 55 / 3%); }
+  #rh-cuerpo .rh-icono { grid-row: 1 / 3; display: grid; place-items: center; width: 44px; height: 44px; font-size: 23px; line-height: 1; border-radius: 12px; background: #fff4cd; }
+  #rh-cuerpo .rh-acceso b { font-size: 15px; line-height: 1.45; color: #192b37; }
+  #rh-cuerpo .rh-acceso small { font-size: 12px; line-height: 1.65; color: #5a6b77; overflow-wrap: anywhere; }
+  #rh-cuerpo .rh-acceso:hover { background: #fffdf5; border-color: #d1ac42; }
+  #rh-cuerpo .rh-pasos { padding-left: 22px; line-height: 1.7; color: #506472; font-size: 14px; }
+  #rh-cuerpo .rh-pasos li + li { margin-top: 8px; }
+
+  #vista-personal > .filtros { display: grid; grid-template-columns: minmax(200px, 2fr) minmax(140px, 1fr) minmax(130px, 1fr) auto; gap: 16px; align-items: end; margin: 0 0 14px; padding: 18px; border: 1px solid #dbe1e7; border-radius: 12px; background: #fff; }
+  #vista-personal .pe-filtro { display: flex; flex-direction: column; align-items: stretch; gap: 7px; min-width: 0; font-size: 12px; font-weight: 600; color: #506472; }
+  #vista-personal .pe-filtro :is(input, select) { width: 100%; min-width: 0; height: 44px; margin: 0; border: 1px solid #ccd6dd; border-radius: 8px; padding: 9px 12px; font: inherit; font-size: 14px; font-weight: 400; background: #fff; color: #192b37; }
+  #vista-personal .pe-filtro-check { display: flex; align-items: center; gap: 9px; min-height: 44px; font-size: 13px; white-space: nowrap; padding: 0 4px; }
+  #vista-personal .pe-filtro-check input { width: 18px; height: 18px; margin: 0; }
+  #pe-resumen { font-size: 13px; font-weight: 600; color: #506472; margin: 16px 0 12px; }
+  :is(#vista-personal, #vista-asistencia, #rh-cuerpo) .tabla-scroll { border: 1px solid #dbe1e7; border-radius: 12px; background: #fff; max-width: 100%; overflow-x: auto; }
+  :is(#vista-personal, #vista-asistencia, #rh-cuerpo) .tabla-resumen { margin: 0; width: 100%; border: 0; }
+  :is(#vista-personal, #vista-asistencia, #rh-cuerpo) .tabla-resumen th { background: #f0f4f7; font-size: 11px; line-height: 1.45; color: #455d6d; padding: 13px 14px; border-bottom: 1px solid #dbe1e7; }
+  :is(#vista-personal, #vista-asistencia, #rh-cuerpo) .tabla-resumen td { font-size: 13px; line-height: 1.5; padding: 14px; border-bottom: 1px solid #e9edf0; }
+  :is(#vista-personal, #vista-asistencia) .tabla-resumen { min-width: 1050px; }
+  :is(#vista-personal, #vista-asistencia) .pe-nombre { line-height: 1.5; font-size: 14px; }
+  #vista-personal .pe-cuenta { margin-top: 4px; font-size: 11px; }
+  #vista-personal .alert-chip { display: inline-block; margin: 2px 0; padding: 4px 8px; line-height: 1.4; white-space: normal; max-width: 220px; }
+  :is(#vista-personal, #rh-cuerpo, #vista-asistencia) .modal-section { padding: 22px; background: #fff; border: 1px solid #dbe1e7; border-radius: 14px; margin-top: 24px; }
+  :is(#vista-personal, #rh-cuerpo, #vista-asistencia) .pe-sub { font-size: 17px; line-height: 1.4; margin-bottom: 12px; }
+  .pe-kioscos .ayuda { max-width: 900px; font-size: 13px; line-height: 1.65; }
+  .pe-kioscos .filtros { align-items: center; gap: 12px; margin-bottom: 0; }
+  .pe-kioscos .filtros :is(input, select) { min-height: 44px; flex: 1 1 220px; min-width: 0; }
+
+  #vista-asistencia .as-pestanas { display: flex; gap: 6px; flex-wrap: wrap; padding: 6px; background: #e9eef2; border-radius: 12px; margin: 0 0 22px; width: fit-content; max-width: 100%; }
+  #vista-asistencia .as-pestanas .btn { margin: 0; padding: 10px 20px; border: 1px solid transparent; background: transparent; color: #506472; }
+  #vista-asistencia .as-pestanas [aria-pressed="true"] { background: #fff; color: #192b37; border-color: #d4dde4; box-shadow: 0 2px 4px rgb(25 43 55 / 6%); font-weight: 700; }
+  #as-cuerpo > .filtros { background: #fff; border: 1px solid #dbe1e7; border-radius: 12px; padding: 16px 18px; align-items: end; }
+  #as-cuerpo > .filtros label { display: flex; flex-direction: column; gap: 7px; font-size: 12px; font-weight: 600; color: #506472; }
+  #as-cuerpo > .filtros :is(input, select) { min-height: 44px; border-radius: 8px; font-size: 14px; }
+  #vista-asistencia .as-detalle { padding: 18px; background: #f5f8fa; border: 1px solid #dbe1e7; border-radius: 10px; }
+  #vista-asistencia .as-chip { padding: 4px 8px; font-size: 11px; line-height: 1.5; }
+
+  #overlay-personal .modal-header { padding: 20px 24px; border-bottom: 1px solid #e0e6eb; }
+  #overlay-personal .modal-header h2 { font-size: 21px; line-height: 1.4; padding-right: 16px; }
+  #pe-cuerpo { padding: 0 24px 24px; }
+  #pe-cuerpo .modal-section { padding-top: 20px; margin-top: 20px; }
+  #pe-cuerpo .pe-sub { font-size: 16px; line-height: 1.4; }
+  #pe-cuerpo .pe-doc { padding: 12px; gap: 12px; border-radius: 10px; }
+  #pe-cuerpo .pe-doc small { line-height: 1.5; }
+  #pe-cuerpo .pe-pie { gap: 12px; padding-top: 12px; }
+
+  @media(max-width: 1000px) {
+    #rh-cuerpo > .rc-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    #rh-cuerpo .rh-accesos { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    #vista-personal > .filtros { grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); }
+    #vista-personal .pe-filtro-check { align-self: end; }
+  }
+  @media(max-width: 600px) {
+    :is(#vista-rh, #vista-personal, #vista-asistencia) > .ayuda { font-size: 13px; margin-bottom: 20px; }
+    #rh-cuerpo > .rc-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+    #rh-cuerpo .rc-card { padding: 15px; min-height: 115px; }
+    #rh-cuerpo .rc-card .rc-num { font-size: 27px; }
+    #rh-cuerpo .rc-card .rc-label { font-size: 12px; }
+    #rh-cuerpo .rh-accesos { grid-template-columns: minmax(0, 1fr); gap: 10px; }
+    #rh-cuerpo .rh-acceso { min-height: 104px; padding: 16px; }
+    #vista-personal > .filtros { padding: 14px; gap: 14px; }
+    #vista-personal .pe-filtro:first-child { grid-column: 1 / -1; }
+    #vista-personal .pe-filtro-check { grid-column: 1 / -1; }
+    #vista-personal .pe-filtro :is(input, select) { font-size: 16px; }
+    :is(#vista-personal, #rh-cuerpo, #vista-asistencia) .modal-section { padding: 16px; }
+    .pe-kioscos .filtros .btn { width: 100%; }
+    #vista-asistencia .as-pestanas { width: 100%; }
+    #vista-asistencia .as-pestanas .btn { flex: 1 1 calc(50% - 6px); padding: 10px; }
+    #pe-cuerpo { padding: 0 16px 20px; }
+    #overlay-personal .modal-header { padding: 16px; }
+    #overlay-personal .modal-header h2 { font-size: 18px; }
+  }
+}
+
+/* Compras y solicitudes */
+@media screen {
+  :is(#vista-compras, #vista-solicitudes) .vista-encabezado {
+    gap: 14px 24px;
+    margin-bottom: 22px;
+  }
+
+  :is(#vista-compras, #vista-solicitudes) .vista-encabezado > div:first-child {
+    flex: 1 1 560px;
+    min-width: 0;
+  }
+
+  :is(#vista-compras, #vista-solicitudes) .vista-encabezado h2 {
+    margin-bottom: 8px;
+    font-size: clamp(25px, 2.5vw, 32px);
+    line-height: 1.2;
+    letter-spacing: -.6px;
+  }
+
+  :is(#vista-compras, #vista-solicitudes) .vista-encabezado .ayuda {
+    max-width: 840px;
+    line-height: 1.6;
+  }
+
+  :is(#vista-compras, #vista-solicitudes) .vista-encabezado .btn-group {
+    margin: 0;
+    gap: 8px;
+  }
+
+  :is(#vista-compras, #vista-solicitudes) .vista-encabezado .btn {
+    min-height: 44px;
+    border-radius: 9px;
+  }
+
+  :is(#vista-compras, #vista-solicitudes) > .filtros {
+    display: grid;
+    grid-template-columns: minmax(185px, 250px) minmax(0, 1fr);
+    gap: 14px;
+    padding: 16px;
+    margin-bottom: 10px;
+    border: 1px solid #dbe1e7;
+    border-radius: 12px;
+    background: #fff;
+  }
+
+  :is(#vista-compras, #vista-solicitudes) .compra-filtro {
+    display: grid;
+    gap: 6px;
+    min-width: 0;
+    color: #506472;
+    font-size: 12px;
+    font-weight: 600;
+  }
+
+  :is(#vista-compras, #vista-solicitudes) .compra-filtro :is(input, select) {
+    width: 100%;
+    min-width: 0;
+    min-height: 44px;
+    border-color: #ccd6dd;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 400;
+    background: #fff;
+  }
+
+  :is(#oc-lista, #sol-lista) {
+    min-width: 0;
+    margin-top: 12px;
+  }
+
+  :is(#oc-lista, #sol-lista) .tabla-scroll {
+    max-width: 100%;
+    border: 1px solid #dbe1e7;
+    border-radius: 12px;
+    background: #fff;
+  }
+
+  :is(#oc-lista, #sol-lista) .tabla-resumen {
+    margin: 0;
+    border: 0;
+  }
+
+  :is(#oc-lista, #sol-lista) .tabla-resumen :is(th, td) {
+    padding: 12px 14px;
+    line-height: 1.45;
+  }
+
+  :is(#oc-lista, #sol-lista) .tabla-resumen thead th {
+    color: #455d6d;
+    background: #f0f4f7;
+    font-size: 11px;
+  }
+
+  #oc-lista .tabla-dinero tbody :is(td:nth-child(4), td:nth-child(5), td:nth-child(6), td:nth-child(9)),
+  #sol-lista .sol-tabla td:nth-child(4) {
+    white-space: normal;
+    overflow-wrap: anywhere;
+    min-width: 110px;
+  }
+
+  #oc-lista .tabla-dinero tbody td:nth-child(6) {
+    min-width: 155px;
+  }
+
+  #oc-lista .tabla-dinero td.celda-acciones {
+    min-width: 124px;
+    max-width: none;
+    width: 124px;
+  }
+
+  :is(#overlay-compra, #overlay-solicitud) .modal-header {
+    gap: 12px;
+    padding: 18px 22px;
+  }
+
+  :is(#overlay-compra, #overlay-solicitud) .modal-header h2 {
+    margin: 4px 0 0;
+    font-size: clamp(18px, 2vw, 23px);
+    line-height: 1.25;
+    overflow-wrap: anywhere;
+  }
+
+  :is(#oc-cuerpo, #sol-cuerpo) .campo > label {
+    white-space: normal;
+    line-height: 1.4;
+  }
+
+  #oc-cuerpo .oc-partidas-caja {
+    min-width: 0;
+    padding: 16px;
+    background: #f8fafc;
+    border-radius: 12px;
+  }
+
+  #oc-cuerpo .oc-tabla {
+    min-width: 790px;
+  }
+
+  #oc-cuerpo .oc-tabla :is(input, select) {
+    min-height: 40px;
+  }
+
+  #sol-cuerpo :is(.sol-detalle, .sol-bloque) {
+    padding: 16px;
+    border-color: #dbe1e7;
+    border-radius: 12px;
+  }
+
+  @media (max-width: 600px) {
+    :is(#vista-compras, #vista-solicitudes) .vista-encabezado {
+      margin-bottom: 16px;
+    }
+
+    :is(#vista-compras, #vista-solicitudes) .vista-encabezado .btn-group {
+      width: 100%;
+    }
+
+    :is(#vista-compras, #vista-solicitudes) .vista-encabezado .btn {
+      flex: 1 1 calc(50% - 8px);
+      white-space: normal;
+    }
+
+    :is(#vista-compras, #vista-solicitudes) > .filtros {
+      grid-template-columns: minmax(0, 1fr);
+      padding: 12px;
+      gap: 10px;
+    }
+
+    :is(#vista-compras, #vista-solicitudes) .compra-filtro :is(input, select) {
+      font-size: 16px;
+    }
+
+    :is(#oc-lista, #sol-lista) .tabla-resumen {
+      min-width: 900px;
+    }
+
+    #oc-lista .tabla-dinero td.celda-acciones {
+      position: static;
+    }
+
+    :is(#overlay-compra, #overlay-solicitud) .modal-header {
+      padding: 14px 16px;
+    }
+
+    :is(#oc-cuerpo, #sol-cuerpo) {
+      padding: 14px 12px 18px;
+    }
+
+    :is(#oc-cuerpo, #sol-cuerpo) .form-grid-2 {
+      grid-template-columns: minmax(0, 1fr);
+    }
+
+    #oc-cuerpo .oc-partidas-caja {
+      padding: 10px;
+    }
+
+    #oc-cuerpo .oc-totales {
+      min-width: 0;
+    }
+  }
+}
+
+/* Resultados: filtros, indicadores y comparativos en pantalla. */
+@media screen {
+  #vista-resultados .vista-encabezado {
+    margin-bottom: 20px;
+  }
+
+  #vista-resultados .vista-encabezado h2 {
+    margin-bottom: 6px;
+    font-size: clamp(25px, 2.5vw, 32px);
+    letter-spacing: -.6px;
+  }
+
+  #vista-resultados .res-pestanas {
+    width: fit-content;
+    max-width: 100%;
+    padding: 5px;
+    gap: 4px;
+    border: 1px solid #dbe1e7;
+    border-radius: 12px;
+    background: #e9edf1;
+    margin-bottom: 16px;
+  }
+
+  #vista-resultados .res-pestanas button {
+    min-height: 42px;
+    margin: 0;
+    padding: 8px 14px;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    font-size: 14px;
+    line-height: 1.4;
+  }
+
+  #vista-resultados .res-pestanas button.activo {
+    color: #192b37;
+    background: #fff;
+    border-color: #dbe1e7;
+    box-shadow: 0 1px 3px rgb(25 43 55 / 10%);
+  }
+
+  #vista-resultados :is(#res-panorama, #res-comercial) > .filtros {
+    align-items: flex-end;
+    gap: 12px;
+    padding: 16px;
+    border: 1px solid #dbe1e7;
+    border-radius: 12px;
+    background: #fff;
+  }
+
+  #vista-resultados .pg-presets {
+    flex: 1 0 100%;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    border: 0;
+    overflow: visible;
+  }
+
+  #vista-resultados .pg-presets button {
+    border: 1px solid #dbe1e7;
+    border-radius: 8px;
+    height: auto;
+    min-height: 38px;
+    padding: 7px 12px;
+  }
+
+  #vista-resultados .pg-presets button.activo {
+    border-color: #ead49d;
+    background: #fff3cf;
+    color: #60430d;
+    font-weight: 700;
+  }
+
+  #vista-resultados .filtros > label {
+    display: grid;
+    gap: 5px;
+    min-width: 0;
+    color: #506472;
+    font-size: 12px;
+    font-weight: 600;
+  }
+
+  #vista-resultados .filtros :is(input, .btn) {
+    min-height: 44px;
+    border-radius: 8px;
+  }
+
+  #vista-resultados .filtros input[type="date"] {
+    width: 100%;
+    min-width: 0;
+    border-color: #ccd6dd;
+    color: #192b37;
+    background: #fff;
+  }
+
+  #vista-resultados .pg-periodo {
+    padding: 10px 12px;
+    border-left: 3px solid #e6b948;
+    background: #fff9e9;
+    border-radius: 0 8px 8px 0;
+    line-height: 1.55;
+  }
+
+  #vista-resultados :is(.pg-tarjeta, .res-card, .pg-caja, .res-section) {
+    min-width: 0;
+    border-radius: 12px;
+    border-inline-color: #dbe1e7;
+    border-bottom-color: #dbe1e7;
+  }
+
+  #vista-resultados :is(.pg-tarjeta b, .res-card .res-num) {
+    line-height: 1.18;
+    font-variant-numeric: tabular-nums;
+    overflow-wrap: anywhere;
+  }
+
+  #vista-resultados :is(.pg-tarjeta small, .res-card .res-label, .pg-tarjeta-pie) {
+    line-height: 1.45;
+    overflow-wrap: anywhere;
+  }
+
+  #vista-resultados .res-two-col {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  #vista-resultados .tabla-scroll {
+    max-width: 100%;
+    border: 1px solid #e0e6eb;
+    border-radius: 9px;
+  }
+
+  #vista-resultados .tabla-scroll th {
+    background: #f0f4f7;
+    color: #455d6d;
+  }
+
+  #res-comercial .tabla-resumen {
+    min-width: 820px;
+  }
+
+  #vista-resultados .pg-sucursales {
+    min-width: 780px;
+  }
+
+  @media (min-width: 1180px) {
+    #pg-cuerpo > .pg-tarjetas .pg-tarjeta {
+      border-top-width: 4px;
+    }
+
+    #pg-cuerpo > .pg-tarjetas .pg-tarjeta > small {
+      min-height: 2.9em;
+    }
+  }
+
+  @media (max-width: 900px) {
+    #vista-resultados .res-two-col {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+
+  @media (max-width: 600px) {
+    #vista-resultados .res-pestanas {
+      width: 100%;
+    }
+
+    #vista-resultados .res-pestanas button {
+      flex: 1 1 135px;
+      padding-inline: 8px;
+    }
+
+    #vista-resultados :is(#res-panorama, #res-comercial) > .filtros {
+      padding: 12px;
+      gap: 10px;
+    }
+
+    #vista-resultados .filtros > label {
+      flex: 1 1 calc(50% - 10px);
+    }
+
+    #vista-resultados .filtros > .btn {
+      flex: 1 1 130px;
+      white-space: normal;
+    }
+
+    #vista-resultados .filtros input {
+      font-size: 16px;
+    }
+
+    #vista-resultados .res-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    #vista-resultados .res-card {
+      padding: 12px;
+    }
+
+    #vista-resultados .res-card .res-num {
+      font-size: clamp(17px, 5vw, 23px);
+    }
+
+    #vista-resultados :is(.pg-caja, .res-section) {
+      padding: 14px;
+    }
+
+    #vista-resultados .pg-g-eje {
+      font-size: 16px;
+    }
+
+    #vista-resultados .pg-tramo {
+      grid-template-columns: minmax(65px, auto) minmax(0, 1fr) minmax(70px, auto);
+    }
+  }
+}
+
+/* Facturas: presentación de la lista y sus filtros. */
+@media screen {
+  #vista-facturas .vista-encabezado h2 {
+    margin-bottom: 8px;
+    font-size: clamp(25px, 2.5vw, 32px);
+    letter-spacing: -.6px;
+  }
+
+  #vista-facturas .vista-encabezado .ayuda {
+    max-width: 940px;
+    line-height: 1.6;
+  }
+
+  #fx-lista-entorno:not(:empty) {
+    margin: 16px 0;
+    padding: 10px 14px;
+    border: 1px solid #dbe4eb;
+    border-left: 3px solid #607d91;
+    border-radius: 8px;
+    color: #354e5f;
+    background: #f1f6fa;
+  }
+
+  #vista-facturas > .filtros {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    align-items: end;
+    gap: 14px;
+    padding: 16px;
+    border: 1px solid #dbe1e7;
+    border-radius: 12px;
+    background: #fff;
+  }
+
+  #vista-facturas :is(.fx-filtro, .fx-fecha) {
+    display: grid;
+    gap: 6px;
+    min-width: 0;
+    color: #506472;
+    font-size: 12px;
+    font-weight: 600;
+  }
+
+  #vista-facturas .fx-filtro:first-child {
+    grid-column: span 2;
+  }
+
+  #vista-facturas .filtros :is(input, select, .btn) {
+    width: 100%;
+    min-width: 0;
+    min-height: 44px;
+    border-radius: 8px;
+  }
+
+  #vista-facturas .filtros :is(input, select) {
+    border-color: #ccd6dd;
+    color: #192b37;
+    background: #fff;
+    font-size: 14px;
+    font-weight: 400;
+  }
+
+  #vista-facturas .filtros > .btn {
+    justify-content: center;
+    height: auto;
+    padding: 8px 12px;
+    text-align: center;
+    white-space: normal;
+  }
+
+  #fx-l-resumen:not(:empty) {
+    margin: 16px 0 10px;
+    color: #506472;
+    font-size: 13px;
+    font-weight: 600;
+  }
+
+  #fx-l-lista {
+    gap: 10px;
+  }
+
+  #fx-l-lista .fx-factura {
+    align-items: center;
+    gap: 12px 20px;
+    padding: 14px 16px;
+    border-color: #dbe1e7;
+    background: #fff;
+  }
+
+  #fx-l-lista .fx-factura > div:first-child {
+    flex-basis: 440px;
+    line-height: 1.55;
+  }
+
+  #fx-l-lista .fx-factura > div:first-child > b {
+    font-size: 16px;
+    font-variant-numeric: tabular-nums;
+    overflow-wrap: anywhere;
+  }
+
+  #fx-l-lista .fx-factura small {
+    margin-top: 4px;
+    font-size: 12px;
+    line-height: 1.55;
+  }
+
+  #fx-l-lista .fx-factura .btn-group {
+    max-width: 100%;
+    gap: 6px;
+    margin: 0;
+  }
+
+  #fx-l-lista .fx-factura .btn {
+    min-height: 38px;
+    border-radius: 8px;
+    white-space: normal;
+  }
+
+  @media (max-width: 720px) {
+    #vista-facturas > .filtros {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+      padding: 12px;
+    }
+
+    #vista-facturas .fx-filtro:has(#fx-l-sucursal),
+    #vista-facturas .filtros > .btn {
+      grid-column: 1 / -1;
+    }
+
+    #vista-facturas .filtros :is(input, select) {
+      font-size: 16px;
+    }
+
+    #fx-l-lista .fx-factura > div:first-child {
+      flex-basis: 100%;
+    }
+
+    #fx-l-lista .fx-factura .btn-group {
+      width: 100%;
+    }
+
+    #fx-l-lista .fx-factura .btn {
+      flex: 1 1 auto;
+      min-height: 44px;
+    }
+  }
+
+  @media (max-width: 440px) {
+    #vista-facturas .fx-filtro {
+      grid-column: 1 / -1;
+    }
+  }
+}
+
+/* Formularios de acceso y enlaces de publicación. */
+@media screen {
+  :is(#overlay-login, #overlay-mk-publicar) > .modal {
+    --dialogo-margen: clamp(16px, 4vw, 24px);
+  }
+
+  :is(#overlay-login, #overlay-mk-publicar) .modal-header {
+    padding-inline: var(--dialogo-margen);
+  }
+
+  :is(#overlay-login, #overlay-mk-publicar) .modal-body {
+    padding: 18px var(--dialogo-margen) 22px;
+  }
+
+  #overlay-login #form-login {
+    padding: 0;
+  }
+
+  :is(#form-olvide, #form-nueva-password, #overlay-mk-publicar .modal-body) > .ayuda:first-child {
+    margin: 0 0 16px;
+  }
+
+  #mk-pub-enlaces {
+    display: grid;
+    gap: 12px;
+  }
+
+  #mk-pub-enlaces .mk-met-enlace {
+    gap: 6px;
+    margin: 0;
+    font-size: 13px;
+    font-weight: 600;
+  }
+
+  #mk-pub-enlaces input {
+    min-width: 0;
+    min-height: 44px;
+    padding: 8px 11px;
+    border: 1px solid var(--gris-300);
+    border-radius: 8px;
+    background: var(--blanco);
+    color: var(--texto);
+    font: inherit;
+    font-size: 16px;
+    font-weight: 400;
+  }
+
+  #overlay-mk-publicar .dialogo-acciones .btn {
+    min-height: 44px;
+  }
+
+  @media (max-width: 480px) {
+    #overlay-mk-publicar .dialogo-acciones .btn {
+      flex: 1 1 auto;
+    }
+  }
+}
+
+/* Márgenes y textos en catálogos y fichas de cuenta. */
+@media screen {
+  :is(#overlay-catalogo, #overlay-cuenta-cliente, #overlay-cuenta-proveedor) > .modal {
+    --dialogo-margen: clamp(16px, 4vw, 24px);
+  }
+
+  :is(#overlay-catalogo, #overlay-cuenta-cliente, #overlay-cuenta-proveedor) .modal-header {
+    padding-inline: var(--dialogo-margen);
+  }
+
+  :is(#overlay-catalogo .modal-body, #cc-cuerpo, #cp-cuerpo) {
+    padding: 16px var(--dialogo-margen) 22px;
+  }
+
+  #cat-ayuda {
+    margin-top: 0;
+  }
+
+  #overlay-catalogo .cat-campo {
+    min-width: 0;
+  }
+
+  #overlay-catalogo .check-linea {
+    min-height: 40px;
+    margin: 0;
+  }
+
+  #overlay-catalogo .check-linea input {
+    width: 16px;
+    height: 16px;
+    min-height: 0;
+    flex-shrink: 0;
+  }
+
+  #overlay-catalogo .cat-botones {
+    flex-wrap: wrap;
+  }
+
+  :is(#cat-lista .cat-texto, .modal-cuenta-cliente .cc-sub, .cc-tarjeta b, #cp-cuerpo .cp-datos b) {
+    overflow-wrap: anywhere;
+    word-break: normal;
+  }
+}
+
+/* Formularios, estados y vista previa de Marketing. */
+@media screen {
+  :is(#overlay-publicacion, #overlay-proyecto, #overlay-idea, #overlay-aprobar-mk) > .modal {
+    --marketing-margen: 24px;
+  }
+
+  :is(#mk-estado-barra, #id-barra, #py-cabeza) {
+    padding-inline: var(--marketing-margen);
+  }
+
+  #py-pestanas {
+    margin-inline: var(--marketing-margen);
+  }
+
+  #overlay-aprobar-mk .modal-body {
+    padding-inline: var(--marketing-margen);
+  }
+
+  :is(#mk-form, #py-sec-datos, #id-form) .form-grid-2 > .campo-modal > label {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  :is(#mk-form, #py-sec-datos, #id-form) .form-grid-2 > .campo-modal:not(.full) {
+    align-self: end;
+  }
+
+  :is(#mk-redes, #id-redes) .mk-red-op {
+    min-height: 36px;
+    text-transform: none;
+    letter-spacing: 0;
+    font-size: 13px;
+  }
+
+  :is(#mk-redes, #id-redes) .mk-red-op input {
+    width: 16px;
+    height: 16px;
+    min-height: 0;
+    margin: 0;
+    flex-shrink: 0;
+  }
+
+  :is(#mk-estado-barra, #id-barra) > div {
+    min-width: 0;
+    max-width: 100%;
+    overflow-wrap: anywhere;
+  }
+
+  :is(#mk-estado-barra, #id-barra) .btn-group {
+    margin-top: 0;
+  }
+
+  :is(#mk-estado-barra, #id-barra) .btn-group .btn {
+    min-height: 36px;
+  }
+
+  #overlay-publicacion .mk-col-lado {
+    min-width: 0;
+    background: var(--gris-100);
+    border-inline-start: 1px solid var(--gris-200);
+  }
+
+  #mk-previa .mk-tel-cab {
+    flex-wrap: wrap;
+    overflow-wrap: anywhere;
+  }
+
+  #mk-previa .mk-previa-redes button {
+    min-width: 40px;
+    min-height: 40px;
+  }
+
+  @media (max-width: 900px) {
+    #overlay-publicacion .mk-col-lado {
+      border-inline-start: 0;
+      border-top: 1px solid var(--gris-200);
+    }
+  }
+
+  @media (max-width: 600px) {
+    :is(#overlay-publicacion, #overlay-proyecto, #overlay-idea, #overlay-aprobar-mk) > .modal {
+      --marketing-margen: 16px;
+    }
+
+    :is(#mk-estado-barra, #id-barra) .btn-group .btn {
+      min-height: 44px;
+    }
+  }
+}
+
+/* Bitácora y logs del sistema. */
+@media screen {
+  .filtros.filtros-registro {
+    display: grid;
+    grid-template-columns: minmax(0, 1.4fr) repeat(2, minmax(0, 1fr)) minmax(0, 1.5fr);
+    align-items: end;
+    gap: 12px;
+    padding: 14px;
+    border-radius: 12px;
+    box-shadow: none;
+  }
+
+  .filtros-registro label {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    min-width: 0;
+    color: var(--texto-sec);
+    font-size: 12px;
+    font-weight: 600;
+  }
+
+  .filtros.filtros-registro label :is(select, input[type]) {
+    width: 100%;
+    min-width: 0;
+    height: 44px;
+    margin: 0;
+    font-size: 14px;
+    color: var(--texto);
+    background: var(--blanco);
+  }
+
+  :is(#bit-lista, #logs-lista, #logs-conectados) .tabla-scroll {
+    border: 1px solid var(--gris-200);
+    border-radius: 10px;
+    background: var(--blanco);
+  }
+
+  :is(#bit-lista, #logs-lista, #logs-conectados) .bit-tabla {
+    min-width: 600px;
+  }
+
+  :is(#bit-lista, #logs-lista, #logs-conectados) .bit-tabla :is(th, td) {
+    text-align: left;
+  }
+
+  :is(#bit-lista, #logs-lista, #logs-conectados) .bit-tabla td {
+    line-height: 1.5;
+    overflow-wrap: anywhere;
+  }
+
+  #bit-lista .bit-tabla th:is(:nth-child(2), :nth-child(3)) {
+    min-width: 126px;
+  }
+
+  :is(#bit-lista .bit-tabla th:nth-child(4), #logs-lista .bit-tabla th:nth-child(2)) {
+    min-width: 180px;
+  }
+
+  #bit-lista .bit-entidad + small {
+    display: block;
+  }
+
+  #logs-mas {
+    margin-top: 12px;
+  }
+
+  @media (max-width: 760px) {
+    .filtros.filtros-registro {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .filtros-registro label:is(:first-child, :last-child) {
+      grid-column: 1 / -1;
+    }
+  }
+
+  @media (max-width: 600px) {
+    .filtros.filtros-registro label :is(select, input[type]) {
+      font-size: 16px;
+    }
+  }
+
+  @media (max-width: 360px) {
+    .filtros.filtros-registro {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+}
+
+/* Administración: altas, fichas y matriz de permisos. */
+@media screen {
+  :is(#panel-sucursales, #panel-alta-usuario, #panel-roles) {
+    border-radius: 14px;
+  }
+
+  :is(#panel-sucursales, #panel-alta-usuario, #panel-roles) > .ayuda {
+    max-width: 78ch;
+  }
+
+  :is(#panel-sucursales, #panel-alta-usuario) > .form-grid,
+  #panel-roles .rp-nuevo {
+    margin-top: 16px;
+  }
+
+  :is(#panel-sucursales, #panel-alta-usuario, #panel-roles) .form-grid .btn,
+  :is(#vista-usuarios .fila-usuario, #lista-sucursales .fila-sucursal) .btn {
+    min-height: 44px;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  :is(#lista-usuarios, #lista-usuarios-desactivados) .fila-usuario {
+    padding: 14px;
+    border: 1px solid var(--gris-200);
+    border-radius: 10px;
+    background: var(--blanco);
+  }
+
+  :is(#lista-usuarios, #lista-usuarios-desactivados) .fila-usuario + .fila-usuario {
+    margin-top: 10px;
+  }
+
+  #lista-usuarios .fila-usuario {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 10px 14px;
+    align-items: start;
+  }
+
+  #lista-usuarios-desactivados .fila-usuario {
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    overflow-wrap: anywhere;
+  }
+
+  :is(#lista-usuarios .fila-usuario, #lista-sucursales .fila-sucursal) > div {
+    min-width: 0;
+  }
+
+  :is(#lista-usuarios .fila-usuario, #lista-sucursales .fila-sucursal) :is(input:not([type="checkbox"]), select) {
+    min-height: 44px;
+    min-width: 0;
+  }
+
+  #lista-usuarios .fila-usuario :is(input:not([type="checkbox"]), select) {
+    border: 1px solid var(--gris-300);
+    border-radius: 8px;
+    padding: 8px 10px;
+    background: var(--blanco);
+    color: var(--texto);
+    font-family: inherit;
+  }
+
+  #lista-usuarios .fila-usuario select:disabled {
+    background: var(--gris-100);
+    color: var(--texto-sec);
+  }
+
+  #lista-usuarios .fila-usuario > div > label {
+    margin-bottom: 4px;
+  }
+
+  #lista-usuarios .acciones-catalogo {
+    grid-column: 1 / -1;
+    justify-content: flex-end;
+  }
+
+  #lista-sucursales .fila-sucursal {
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 170px), 1fr));
+  }
+
+  :is(#panel-alta-usuario, #lista-usuarios) .check-linea {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    min-height: 32px;
+    margin: 0;
+    text-transform: none;
+    letter-spacing: normal;
+    font-size: 13px;
+  }
+
+  :is(#panel-alta-usuario, #lista-usuarios) .check-linea input {
+    width: 16px;
+    height: 16px;
+    min-height: 0;
+    margin: 0;
+    flex: none;
+    accent-color: var(--azul-600);
+  }
+
+  #panel-alta-usuario .campo:has(#nu-temporal) {
+    grid-column: span 2;
+    gap: 8px;
+  }
+
+  #panel-alta-usuario #btn-crear-usuario {
+    align-self: flex-start;
+  }
+
+  #panel-roles .rp-tabla-caja {
+    max-height: min(560px, 70dvh);
+    border: 1px solid var(--gris-200);
+    border-radius: 10px;
+  }
+
+  #panel-roles .rp-guia {
+    margin: 0 0 8px;
+  }
+
+  #panel-roles .rp-tabla th,
+  #panel-roles .rp-tabla td {
+    padding: 8px;
+  }
+
+  #panel-roles .rp-tabla .rp-permiso {
+    border-inline-end: 1px solid #ccd6dd;
+    overflow-wrap: anywhere;
+  }
+
+  #panel-roles .rp-tabla tbody .rp-permiso > span {
+    font-weight: 700;
+  }
+
+  #panel-roles .rp-rol-nombre {
+    overflow-wrap: anywhere;
+  }
+
+  #panel-roles .rp-tabla thead .rp-rol,
+  #panel-roles .rp-tabla thead .rp-permiso {
+    background: #edf1f4;
+    box-shadow: 0 1px #ccd6dd;
+  }
+
+  #panel-roles .rp-tabla .rp-seccion th {
+    position: static;
+    padding: 8px 0;
+    background: #e3edf5;
+    color: #28465c;
+  }
+
+  #panel-roles .rp-seccion th > span {
+    position: sticky;
+    inset-inline-start: 8px;
+    display: inline-block;
+    max-width: min(70vw, 420px);
+    margin-inline: 8px;
+  }
+
+  #panel-roles .rp-celda:has(> input:checked) {
+    background: #edf6ef;
+  }
+
+  #panel-roles .rp-nivel {
+    width: 100%;
+    min-width: 0;
+    min-height: 36px;
+    border: 1px solid var(--gris-300);
+    border-radius: 6px;
+  }
+
+  #panel-roles .rp-edita {
+    justify-content: center;
+  }
+
+  #panel-roles .rp-rol-acciones .btn {
+    min-height: 30px;
+    padding: 4px 8px;
+    font-size: 12px;
+    white-space: normal;
+  }
+
+  #panel-roles .rp-rol-acciones [data-rp-ver] {
+    background: var(--blanco);
+  }
+
+  @media (min-width: 901px) {
+    #lista-usuarios .fila-usuario:has(> .acciones-catalogo:nth-child(4)) {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+  }
+
+  @media (max-width: 900px) {
+    #lista-usuarios .fila-usuario {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+
+  @media (max-width: 600px) {
+    #panel-roles .rp-tabla .rp-permiso {
+      min-width: 104px;
+      max-width: 116px;
+    }
+
+    #panel-roles .rp-rol {
+      min-width: 140px;
+    }
+
+    #lista-usuarios .fila-usuario,
+    #lista-usuarios-desactivados .fila-usuario {
+      grid-template-columns: minmax(0, 1fr);
+    }
+
+    #panel-alta-usuario .campo:has(#nu-temporal) {
+      grid-column: 1 / -1;
+    }
+
+    :is(#lista-usuarios, #lista-sucursales) .acciones-catalogo {
+      justify-content: flex-start;
+    }
+
+    :is(#lista-usuarios, #lista-sucursales) .acciones-catalogo .btn {
+      flex: 1 1 124px;
+    }
+  }
+}
+
+/* Buscador global y pestañas principales de Marketing. */
+@media screen {
+  #overlay-buscar .modal-buscar {
+    --buscar-margen: 24px;
+  }
+
+  #overlay-buscar .modal-header {
+    padding-inline: var(--buscar-margen);
+  }
+
+  #overlay-buscar .buscar-barra {
+    min-width: 0;
+  }
+
+  #overlay-buscar .buscar-barra:focus-within {
+    box-shadow: 0 0 0 2px var(--amarillo);
+  }
+
+  #overlay-buscar .buscar-estado:empty,
+  #overlay-buscar .buscar-lado:empty {
+    display: none;
+  }
+
+  #overlay-buscar .buscar-resultados {
+    padding: 16px var(--buscar-margen) 22px;
+    gap: 18px;
+  }
+
+  #overlay-buscar .buscar-grupo {
+    flex-shrink: 0;
+  }
+
+  #overlay-buscar .buscar-grupo ul {
+    gap: 6px;
+  }
+
+  #overlay-buscar .buscar-item {
+    align-items: start;
+    min-height: 48px;
+    padding: 10px 12px;
+    line-height: 1.4;
+  }
+
+  #overlay-buscar .buscar-item.activo {
+    box-shadow: inset 3px 0 var(--amarillo);
+  }
+
+  #overlay-buscar .buscar-texto {
+    gap: 3px;
+  }
+
+  #overlay-buscar :is(.buscar-linea1, .buscar-texto small) {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  #overlay-buscar .buscar-exacta {
+    display: inline-block;
+  }
+
+  #overlay-buscar .buscar-lado {
+    max-width: 33%;
+    overflow-wrap: anywhere;
+    text-align: end;
+  }
+
+  #vista-marketing > .mk-pestanas {
+    gap: 5px;
+    padding: 5px;
+    border: 1px solid var(--gris-200);
+    border-radius: 12px;
+    background: #e9edf1;
+  }
+
+  #vista-marketing > .mk-pestanas .mk-pestana {
+    min-height: 42px;
+    margin: 0;
+    padding: 7px 11px;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    line-height: 1.35;
+  }
+
+  #vista-marketing > .mk-pestanas .mk-pestana[aria-selected="true"] {
+    color: var(--texto);
+    border-color: #d5dde3;
+    background: var(--blanco);
+    box-shadow: inset 0 -3px var(--amarillo);
+  }
+
+  @media (max-width: 700px) {
+    #overlay-buscar {
+      padding: 0;
+    }
+
+    #overlay-buscar .modal-buscar {
+      --buscar-margen: 16px;
+      max-height: 100dvh;
+    }
+
+    #overlay-buscar .buscar-barra {
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr);
+      gap: 0 8px;
+    }
+
+    #overlay-buscar .buscar-estado {
+      grid-column: 2;
+    }
+
+    #overlay-buscar .buscar-item {
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr);
+      gap: 4px 8px;
+    }
+
+    #overlay-buscar .buscar-lado {
+      grid-column: 2;
+      display: flex;
+      flex-flow: row wrap;
+      align-items: baseline;
+      gap: 3px 10px;
+      max-width: none;
+      text-align: start;
+    }
+
+    #vista-marketing > .mk-pestanas .mk-pestana {
+      min-height: 44px;
+      padding-inline: 9px;
+      font-size: 13px;
+    }
   }
 }

@@ -7,7 +7,7 @@
 <link rel="stylesheet" href="styles.css?v=lg3">
 <link rel="stylesheet" href="servicios-tabla.css">
 <link rel="stylesheet" href="flujo.css?v=cel1">
-<link rel="stylesheet" href="interfaz.css?v=visual6">
+<link rel="stylesheet" href="interfaz.css?v=visual18">
 </head>
 <body>
 
@@ -343,8 +343,8 @@
       <div class="btn-group"><button type="button" class="btn btn-primario" id="sol-nueva">+ Nueva solicitud</button></div>
     </div>
     <div class="filtros">
-      <select id="sol-filtro" aria-label="Mostrar"><option value="abiertas">Abiertas</option><option value="mias">Las que yo pedí</option><option value="por_aprobar">Por aprobar</option><option value="cotizando">Cotizando</option><option value="elegida">Cotización elegida</option><option value="con_orden">Con orden de compra</option><option value="recibida">Recibidas</option><option value="rechazada">Rechazadas</option><option value="cancelada">Canceladas</option><option value="">Todas</option></select>
-      <input type="search" id="sol-buscar" placeholder="Folio, qué se necesita, área o quién pidió" aria-label="Buscar solicitudes">
+      <label class="compra-filtro" for="sol-filtro"><span>Mostrar</span><select id="sol-filtro" aria-label="Mostrar"><option value="abiertas">Abiertas</option><option value="mias">Las que yo pedí</option><option value="por_aprobar">Por aprobar</option><option value="cotizando">Cotizando</option><option value="elegida">Cotización elegida</option><option value="con_orden">Con orden de compra</option><option value="recibida">Recibidas</option><option value="rechazada">Rechazadas</option><option value="cancelada">Canceladas</option><option value="">Todas</option></select></label>
+      <label class="compra-filtro" for="sol-buscar"><span>Buscar</span><input type="search" id="sol-buscar" placeholder="Folio, qué se necesita, área o quién pidió" aria-label="Buscar solicitudes"></label>
     </div>
     <button type="button" class="enlace cobrar-leyenda-btn" data-leyenda="sol-leyenda" aria-expanded="false" aria-controls="sol-leyenda">¿Qué significa cada estado?</button>
     <div class="cobrar-leyenda" id="sol-leyenda" hidden>
@@ -368,8 +368,8 @@
       <div class="btn-group"><button type="button" class="btn btn-primario perm-compras-gestionar" id="oc-nueva" title="Orden sin solicitud (solo encargado de centro de costos y administración)">+ Nueva orden de compra</button><button type="button" class="btn btn-outline" id="oc-ir-solicitudes">📝 Solicitudes de compra</button><button type="button" class="btn btn-outline perm-catalogos-editar" id="oc-unidades">Unidades de medida</button><button type="button" class="btn btn-outline perm-catalogos-editar" id="oc-centros">Centros de costo</button><button type="button" class="btn btn-outline perm-catalogos-editar" id="oc-categorias">Categorías de gasto</button><button type="button" class="btn btn-outline solo-general" id="oc-formato">Datos del formato</button></div>
     </div>
     <div class="filtros">
-      <select id="oc-filtro" aria-label="Mostrar"><option value="">Todas</option><option value="borrador">Borradores (por autorizar)</option><option value="pendiente_pago">Autorizadas por pagar</option><option value="autorizada">Autorizadas</option><option value="cancelada">Canceladas</option></select>
-      <input type="search" id="oc-buscar" placeholder="Folio OC o SOL, proveedor, centro de costos o concepto" aria-label="Buscar órdenes de compra">
+      <label class="compra-filtro" for="oc-filtro"><span>Mostrar</span><select id="oc-filtro" aria-label="Mostrar"><option value="">Todas</option><option value="borrador">Borradores (por autorizar)</option><option value="pendiente_pago">Autorizadas por pagar</option><option value="autorizada">Autorizadas</option><option value="cancelada">Canceladas</option></select></label>
+      <label class="compra-filtro" for="oc-buscar"><span>Buscar</span><input type="search" id="oc-buscar" placeholder="Folio OC o SOL, proveedor, centro de costos o concepto" aria-label="Buscar órdenes de compra"></label>
     </div>
     <button type="button" class="enlace cobrar-leyenda-btn" data-leyenda="oc-leyenda" aria-expanded="false" aria-controls="oc-leyenda">¿Qué significa cada estado?</button>
     <div class="cobrar-leyenda" id="oc-leyenda" hidden>
@@ -481,10 +481,10 @@
 <div class="vista-encabezado"><div><h2>Facturas</h2><p class="ayuda">Las facturas electrónicas (CFDI) que se han timbrado desde el sistema. Las de <b>prueba</b> (sandbox) y las del demo no tienen validez fiscal. Una factura timbrada nunca se borra: solo se cancela.</p></div></div>
 <p id="fx-lista-entorno" class="ayuda" role="status"></p>
 <div class="filtros">
-  <input id="fx-l-q" type="search" aria-label="Buscar factura" placeholder="Folio, folio fiscal (UUID), RFC, cliente u orden" autocomplete="off">
-  <select id="fx-l-estatus" aria-label="Estado"><option value="">Todos los estados</option><option value="timbrada">Timbradas</option><option value="timbrando">Sin respuesta</option><option value="borrador_error">En borrador</option><option value="pendiente">Sin timbrar</option><option value="cancelacion_solicitada">Cancelación en proceso</option><option value="cancelada">Canceladas o descartadas</option></select>
-  <select id="fx-l-entorno" aria-label="Tipo"><option value="">Reales y de prueba</option><option value="prod">Solo reales</option><option value="prueba">Solo de prueba</option></select>
-  <select id="fx-l-sucursal" aria-label="Sucursal"></select>
+  <label class="fx-filtro" for="fx-l-q"><span>Buscar factura</span><input id="fx-l-q" type="search" aria-label="Buscar factura" placeholder="Folio, folio fiscal (UUID), RFC, cliente u orden" autocomplete="off"></label>
+  <label class="fx-filtro" for="fx-l-estatus"><span>Estado</span><select id="fx-l-estatus" aria-label="Estado"><option value="">Todos los estados</option><option value="timbrada">Timbradas</option><option value="timbrando">Sin respuesta</option><option value="borrador_error">En borrador</option><option value="pendiente">Sin timbrar</option><option value="cancelacion_solicitada">Cancelación en proceso</option><option value="cancelada">Canceladas o descartadas</option></select></label>
+  <label class="fx-filtro" for="fx-l-entorno"><span>Tipo</span><select id="fx-l-entorno" aria-label="Tipo"><option value="">Reales y de prueba</option><option value="prod">Solo reales</option><option value="prueba">Solo de prueba</option></select></label>
+  <label class="fx-filtro" for="fx-l-sucursal"><span>Sucursal</span><select id="fx-l-sucursal" aria-label="Sucursal"></select></label>
   <label class="fx-fecha">Desde <input id="fx-l-desde" type="date"></label>
   <label class="fx-fecha">Hasta <input id="fx-l-hasta" type="date"></label>
   <button type="button" class="btn btn-outline" id="fx-l-excel" title="Descarga lo que se ve con los filtros de arriba (hasta 1,000 filas)">📗 Descargar Excel</button>
@@ -495,7 +495,12 @@
 <section class="vista" id="vista-personal">
 <div class="pe-encabezado"><h2>Personal</h2><button type="button" class="btn btn-primario perm-personal-editar" id="pe-nuevo">+ Nueva persona</button></div>
 <p class="ayuda">Todas las personas de la empresa —técnicos, operadores, ayudantes y administrativos—, tengan o no cuenta en el sistema. De aquí se elige al técnico responsable y al equipo de cada orden de servicio.</p>
-<div class="filtros"><input id="pe-buscar" aria-label="Buscar persona" placeholder="No. de empleado, nombre, puesto o teléfono"><select id="pe-f-puesto" aria-label="Puesto"></select><select id="pe-f-estado" aria-label="Estado"><option value="activos">Activos</option><option value="bajas">Dados de baja</option><option value="todos">Todos</option></select><label><input type="checkbox" id="pe-f-alertas"> Solo con avisos</label></div>
+<div class="filtros">
+  <label class="pe-filtro" for="pe-buscar"><span>Buscar persona</span><input id="pe-buscar" aria-label="Buscar persona" placeholder="No. de empleado, nombre, puesto o teléfono"></label>
+  <label class="pe-filtro" for="pe-f-puesto"><span>Puesto</span><select id="pe-f-puesto" aria-label="Puesto"></select></label>
+  <label class="pe-filtro" for="pe-f-estado"><span>Estado</span><select id="pe-f-estado" aria-label="Estado"><option value="activos">Activos</option><option value="bajas">Dados de baja</option><option value="todos">Todos</option></select></label>
+  <label class="pe-filtro-check"><input type="checkbox" id="pe-f-alertas"> Solo con avisos</label>
+</div>
 <p id="pe-resumen" role="status"></p>
 <div class="tabla-scroll"><table class="tabla-resumen pe-tabla"><thead><tr><th>No.</th><th>Nombre</th><th>Puesto</th><th>Teléfono</th><th>Antigüedad</th><th>Vacaciones disponibles</th><th>Licencia</th><th>Órdenes del mes</th><th>Avisos</th></tr></thead><tbody id="pe-tabla"></tbody></table></div>
 <div class="modal-section perm-asistencia-kioscos pe-kioscos"><h3 class="pe-sub">🕒 Kioscos del reloj checador</h3>
@@ -694,11 +699,11 @@
     <div class="vista-encabezado">
       <div><h2>Bitácora</h2><p class="ayuda">Todo lo que se mueve en el CRM fuera de cotizaciones y órdenes (esas tienen su propio historial en cada registro): clientes, proveedores, órdenes de compra y su expediente, cuentas por pagar, usuarios, catálogos y registros eliminados. Nada se borra de aquí.</p></div>
     </div>
-    <div class="filtros">
-      <select id="bit-entidad" aria-label="Qué"><option value="">Todo</option><option value="cliente">Clientes</option><option value="proveedor">Proveedores</option><option value="orden_compra">Órdenes de compra</option><option value="cuenta_por_pagar">Cuentas por pagar</option><option value="usuario">Usuarios</option><option value="catalogo">Catálogos</option><option value="orden_servicio">Cotizaciones / órdenes eliminadas</option></select>
+    <div class="filtros filtros-registro">
+      <label>Tipo de registro <select id="bit-entidad"><option value="">Todo</option><option value="cliente">Clientes</option><option value="proveedor">Proveedores</option><option value="orden_compra">Órdenes de compra</option><option value="cuenta_por_pagar">Cuentas por pagar</option><option value="usuario">Usuarios</option><option value="catalogo">Catálogos</option><option value="orden_servicio">Cotizaciones / órdenes eliminadas</option></select></label>
       <label>Desde <input type="date" id="bit-desde"></label>
       <label>Hasta <input type="date" id="bit-hasta"></label>
-      <input type="search" id="bit-buscar" placeholder="Buscar (nombre, folio, usuario…)" aria-label="Buscar en la bitácora">
+      <label>Buscar en la bitácora <input type="search" id="bit-buscar" placeholder="Nombre, folio o usuario"></label>
     </div>
     <div id="bit-lista"></div>
   </section>
@@ -717,7 +722,7 @@
       <button class="btn btn-secundario" id="btn-integridad">Revisar ahora</button>
       <div id="integridad-resultado" class="integridad-resultado"></div>
     </div>
-    <div class="panel-alta solo-general">
+    <div class="panel-alta solo-general" id="panel-sucursales">
       <h2>Sucursales</h2>
       <p class="ayuda">Cada sucursal ve solo lo suyo; el administrador general ve todas (elige arriba cuál ver). La clave va en los folios (OS-CDMX-202610-0001) y no se cambia después. Clientes, proveedores y catálogos son de todas.</p>
       <div class="form-grid">
@@ -754,7 +759,7 @@
       <div id="fx-servicios"></div>
       <datalist id="fx-dl-prod"></datalist><datalist id="fx-dl-uni"></datalist>
     </div>
-    <div class="panel-alta">
+    <div class="panel-alta" id="panel-alta-usuario">
       <h2>Crear nuevo usuario</h2>
       <p class="ayuda">Solo un administrador crea cuentas. La persona podrá iniciar sesión con su nombre o su correo; con su correo puede recuperar la contraseña si la olvida.</p>
       <div class="form-grid">
@@ -803,11 +808,11 @@
       <h3 class="util-13">Conectados ahora</h3>
       <div id="logs-conectados"></div>
       <h3 class="util-13">Registro</h3>
-      <div class="filtros">
-        <select id="logs-tipo" aria-label="Qué ver"><option value="">Todo</option><option value="fallas">Solo problemas (fallos, bloqueos y errores)</option><option value="acceso">Accesos</option><option value="error">Errores (servidor y pantallas)</option><option value="facturacion">Facturación (factura.com)</option><option value="servicio">Correos, respaldos, WhatsApp y reinicios</option><option value="seguridad">Descargas de respaldos</option></select>
+      <div class="filtros filtros-registro">
+        <label>Tipo de evento <select id="logs-tipo"><option value="">Todo</option><option value="fallas">Solo problemas (fallos, bloqueos y errores)</option><option value="acceso">Accesos</option><option value="error">Errores (servidor y pantallas)</option><option value="facturacion">Facturación (factura.com)</option><option value="servicio">Correos, respaldos, WhatsApp y reinicios</option><option value="seguridad">Descargas de respaldos</option></select></label>
         <label>Desde <input type="date" id="logs-desde"></label>
         <label>Hasta <input type="date" id="logs-hasta"></label>
-        <input type="search" id="logs-buscar" placeholder="Buscar (usuario, IP, equipo…)" aria-label="Buscar en los logs">
+        <label>Buscar en los logs <input type="search" id="logs-buscar" placeholder="Usuario, IP o equipo"></label>
       </div>
       <div id="logs-lista"></div>
     </div>
@@ -1159,8 +1164,8 @@
 <div class="overlay overlay-buscar" id="overlay-buscar">
   <div class="modal modal-buscar">
     <div class="modal-header"><h2 class="sr-solo" id="buscar-titulo">Buscar en todo el sistema</h2>
-      <div class="buscar-barra"><span aria-hidden="true">🔍</span><input type="search" id="buscar-caja" maxlength="80" autocomplete="off" spellcheck="false" placeholder="Folio, cliente, empresa, RFC, teléfono, proveedor o concepto" aria-label="Buscar en todo el sistema" aria-describedby="buscar-estado"><span class="buscar-estado" id="buscar-estado" role="status"></span></div>
-      <button class="close-btn" type="button" onclick="document.getElementById('overlay-buscar').classList.remove('mostrar')">✕</button></div>
+      <div class="buscar-barra"><span aria-hidden="true">🔍</span><input type="search" id="buscar-caja" maxlength="80" autocomplete="off" spellcheck="false" placeholder="Folio, cliente, teléfono…" aria-label="Buscar en todo el sistema" aria-describedby="buscar-estado"><span class="buscar-estado" id="buscar-estado" role="status"></span></div>
+      <button class="close-btn" type="button" aria-label="Cerrar búsqueda" onclick="document.getElementById('overlay-buscar').classList.remove('mostrar')">✕</button></div>
     <div class="modal-body buscar-resultados" id="buscar-resultados"></div>
   </div>
 </div>
