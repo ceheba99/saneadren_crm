@@ -7,6 +7,7 @@
 <link rel="stylesheet" href="styles.css?v=fx6">
 <link rel="stylesheet" href="servicios-tabla.css">
 <link rel="stylesheet" href="flujo.css?v=cel1">
+<link rel="stylesheet" href="interfaz.css?v=visual6">
 </head>
 <body>
 
@@ -61,9 +62,9 @@
       </div>
     </div>
   </nav>
-  <div class="util-2">
+  <div class="util-2 app-sesion">
     <button type="button" class="btn-buscar-general" id="btn-buscar-general" aria-label="Buscar en todo el sistema (Ctrl+K)" title="Buscar en todo el sistema (Ctrl+K)"><span aria-hidden="true">🔍</span><span class="btn-buscar-texto">Buscar folio, cliente, proveedor…</span><kbd class="btn-buscar-atajo">Ctrl K</kbd></button>
-    <span>👤 <b id="sesion-nombre"></b></span>
+    <span class="app-usuario"><span aria-hidden="true">👤</span> <b id="sesion-nombre"></b></span>
     <button id="btn-logout" class="btn btn-outline diseno-btn-logout">Salir</button>
   </div>
 </header>
@@ -73,8 +74,9 @@
   <!-- ====== VISTA: INICIO (pantalla principal, lo urgente del día) ====== -->
   <section class="vista activa" id="vista-inicio">
     <div class="inicio-saludo">
-      <h2>Lo que necesita atención hoy</h2>
-      <p class="ayuda">Tus pendientes en un solo lugar. Toca un número para ir a su ficha; cada ficha se pliega desde su título y recuerda cómo la dejaste.</p>
+      <p class="inicio-etiqueta">Resumen operativo</p>
+      <h2>Pendientes de hoy</h2>
+      <p class="ayuda">Revisa lo que necesita atención y abre cada sección para continuar.</p>
     </div>
     <div class="inicio-resumen" id="inicio-resumen" aria-label="Resumen de pendientes"></div>
 
@@ -127,7 +129,7 @@
     </div>
 
     <div class="inicio-bloque inicio-bloque-servicio perm-ventas-ver" data-titulo-corto="Recompras">
-      <h3><span class="cadena-nodo activo">🧾 Recompras</span> listas para registrar como nuevo servicio</h3>
+      <h3>🧾 Recompras</h3>
       <p class="ayuda">Clientes que ya contrataron antes y, según el ciclo del servicio, probablemente ya lo necesiten otra vez.</p>
       <div id="inicio-recompras" class="inicio-lista"></div>
     </div>
@@ -135,7 +137,7 @@
   </section>
 
   <!-- ====== VISTA: ALTA RÁPIDA ====== -->
-  <section class="vista" id="vista-alta">
+  <section class="vista vista-comercial" id="vista-alta">
     <div class="panel-alta">
       <h2>Crear un contacto</h2>
       <p class="ayuda">Primero busca por teléfono. Para un contacto nuevo, captura nombre y teléfono.</p>
@@ -160,21 +162,23 @@
   </section>
 
   <!-- ====== VISTA: COTIZACIONES (Pipeline Kanban) ====== -->
-  <section class="vista" id="vista-leads">
-    <p class="ayuda util-5">Pipeline de cotizaciones abiertas. Haz clic en una tarjeta para ver la ficha completa. Los KPIs filtran por etapa. Arrastra tarjetas entre columnas para avanzar de etapa.</p>
+  <section class="vista vista-comercial" id="vista-leads">
+    <div class="vista-encabezado"><div><h2>Cotizaciones</h2><p class="ayuda">Revisa cada etapa y abre una tarjeta para continuar el seguimiento. Los indicadores filtran por etapa.</p></div></div>
     <div class="util-6">
       <span class="tabla-conteo diseno-tabla-leads-conteo" id="tabla-leads-conteo">0 cotizaciones</span>
     </div>
-    <div class="filtros">
-      <input type="text" id="f-buscar" aria-label="Buscar cotizaciones y órdenes" placeholder="Nombre, empresa, teléfono o folio (COT-202610-0125, OS-…)">
-      <select id="f-responsable" aria-label="Filtrar por responsable"><option value="">Todos los responsables</option></select>
-      <span class="filtro-fecha-label">Desde</span>
-      <input type="date" id="f-desde" aria-label="Desde (fecha de creación)" title="Filtrar desde esta fecha de creación">
-      <span class="filtro-fecha-label">Hasta</span>
-      <input type="date" id="f-hasta" aria-label="Hasta (fecha de creación)" title="Filtrar hasta esta fecha de creación">
-      <label><input type="checkbox" id="f-urgente"> Solo urgentes</label>
-      <button class="btn btn-outline util-8" onclick="limpiarFiltros()">Limpiar filtros</button>
-      <button class="btn btn-secundario perm-clientes-exportar" id="btn-exportar-leads">📥 Exportar a Excel</button>
+    <div class="filtros filtros-cotizaciones">
+      <div class="cotizacion-filtros-campos">
+        <label for="f-buscar"><span>Buscar</span><input type="text" id="f-buscar" aria-label="Buscar cotizaciones y órdenes" placeholder="Nombre, empresa, teléfono o folio"></label>
+        <label for="f-responsable"><span>Responsable</span><select id="f-responsable" aria-label="Filtrar por responsable"><option value="">Todos los responsables</option></select></label>
+        <label for="f-desde"><span>Desde</span><input type="date" id="f-desde" aria-label="Desde (fecha de creación)" title="Filtrar desde esta fecha de creación"></label>
+        <label for="f-hasta"><span>Hasta</span><input type="date" id="f-hasta" aria-label="Hasta (fecha de creación)" title="Filtrar hasta esta fecha de creación"></label>
+      </div>
+      <div class="cotizacion-filtros-acciones">
+        <label class="cotizacion-solo-urgentes"><input type="checkbox" id="f-urgente"> Solo urgentes</label>
+        <button type="button" class="btn btn-outline" onclick="limpiarFiltros()">Limpiar filtros</button>
+        <button type="button" class="btn btn-secundario perm-clientes-exportar" id="btn-exportar-leads">📥 Exportar a Excel</button>
+      </div>
     </div>
 
     <div class="kpi-grid" id="kpi-leads">
@@ -253,7 +257,7 @@
   </section>
 
   <!-- ====== VISTA: CLIENTES (servicios ganados — separados del pipeline) ====== -->
-  <section class="vista" id="vista-clientes">
+  <section class="vista vista-comercial" id="vista-clientes">
     <div class="vista-encabezado">
       <div><h2>Contactos</h2><p class="ayuda">Personas y empresas. Abre un contacto para ver sus cotizaciones y órdenes, o para crear una nueva.</p></div>
       <div class="btn-group"><button type="button" class="btn btn-outline solo-general" id="btn-revisar-duplicados">Revisar duplicados</button><button type="button" class="btn btn-primario perm-contactos-editar" onclick="cambiarVista('alta')">➕ Nuevo contacto</button></div>
@@ -372,7 +376,7 @@
   </section>
 
   <!-- ====== VISTA: CALENDARIO ====== -->
-  <section class="vista" id="vista-calendario">
+  <section class="vista vista-agenda" id="vista-calendario">
     <div class="vista-encabezado">
       <div><h2>Calendario</h2><p class="ayuda">Órdenes de servicio, avisos, cobros y pagos. Hoy: lo atrasado y la agenda del día; Semana y Mes para planear. Toca un evento para abrirlo.</p></div>
       <div class="cal-controles">
@@ -408,7 +412,7 @@
   </section>
 
   <!-- ====== VISTA: GENERADOR (ventas por servicio de cada orden) ====== -->
-  <section class="vista" id="vista-generador">
+  <section class="vista vista-comercial" id="vista-generador">
     <div class="vista-encabezado">
       <div><h2>Generador</h2><p class="ayuda">Ventas de las órdenes de servicio <b>realizadas</b>, un renglón por cada servicio. Las columnas en gris son los gastos generados de cada orden (en Cuentas por pagar). Toca un renglón para abrir su orden.</p></div>
       <div class="btn-group"><button type="button" class="btn btn-outline" id="cg-plantilla">📄 Descargar plantilla</button><button type="button" class="btn btn-secundario" id="cg-subir">📤 Cargar generador (Excel)</button><button type="button" class="btn btn-outline perm-clientes-exportar" id="gen-exportar">📥 Exportar a Excel</button></div>
@@ -488,7 +492,7 @@
 <p id="pe-resumen" role="status"></p>
 <div class="tabla-scroll"><table class="tabla-resumen pe-tabla"><thead><tr><th>Nombre</th><th>Puesto</th><th>Teléfono</th><th>Antigüedad</th><th>Vacaciones disponibles</th><th>Licencia</th><th>Órdenes del mes</th><th>Avisos</th></tr></thead><tbody id="pe-tabla"></tbody></table></div>
 </section>
-<section class="vista" id="vista-prospeccion">
+<section class="vista vista-comercial" id="vista-prospeccion">
 <div class="vista-encabezado">
   <div><h2>Prospección de establecimientos</h2><p class="ayuda">Investiga restaurantes, hoteles y hospitales sin crear cotizaciones vacías. Anota cada llamada o visita en su ficha y programa la siguiente: aquí ves a quién toca llamar hoy.</p></div>
   <div class="btn-group"><button type="button" class="btn btn-outline perm-clientes-exportar" id="pr-exportar">📥 Exportar a Excel</button><button type="button" class="btn btn-primario perm-prospeccion-editar" id="pr-nuevo">➕ Registrar establecimiento</button></div>
@@ -757,7 +761,7 @@
   </section>
 
   <!-- ====== VISTA: CUENTAS POR COBRAR Y POR PAGAR (admin y atención; por pagar solo admin) ====== -->
-  <section class="vista solo-cobranza" id="vista-cuentas">
+  <section class="vista solo-cobranza vista-finanzas" id="vista-cuentas">
     <h2 class="util-13" id="cuentas-titulo">Cuentas por cobrar</h2>
     <div class="cuentas-tarjetas" id="cuentas-tarjetas" data-ayuda-zona></div>
     <!-- Cuentas por cobrar y por pagar son secciones separadas del menú Finanzas; las pestañas solo existen en Por pagar. -->
@@ -800,23 +804,29 @@
         </dl>
         <p><b>Filtros:</b> «Por cobrar» muestra todo lo que ya se debe; «Por vencer», lo que se debe y sigue en plazo; «1-15 días» a «Más de 60», lo vencido según los días que lleva vencido; «Facturadas», lo que se debe y ya tiene factura (folio CFDI); «Sin factura», lo que se debe y aún no tiene factura; «Todas», también lo ya cobrado.</p>
       </div>
-      <div class="filtros">
-        <input type="text" id="cobrar-buscar" placeholder="Cliente, empresa, teléfono, servicio o factura" aria-label="Buscar en cuentas por cobrar">
+      <div class="filtros finanzas-herramientas">
+        <label class="finanzas-campo" for="cobrar-buscar"><span>Buscar cuenta por cobrar</span><input type="text" id="cobrar-buscar" placeholder="Cliente, empresa, teléfono, servicio o factura" aria-label="Buscar en cuentas por cobrar"></label>
+        <div class="finanzas-acciones">
         <button type="button" class="btn btn-outline perm-clientes-exportar" id="cobrar-exportar">📥 Exportar a Excel</button>
         <button type="button" class="btn btn-outline" data-plantilla-descargar="cxc">📄 Descargar plantilla</button>
         <button type="button" class="btn btn-secundario" data-plantilla-subir="cxc">📤 Subir plantilla</button>
+        </div>
       </div>
       <div id="cobrar-lista" class="inicio-lista"></div>
     </div>
 
     <div class="cuentas-panel" data-panel="pagar" hidden>
-      <div class="filtros">
+      <div class="filtros finanzas-herramientas">
+        <div class="finanzas-captura">
         <button type="button" class="btn btn-primario" id="pagar-nuevo">+ Registrar gasto o factura</button>
-        <select id="pagar-vista" aria-label="Mostrar"><option value="pendientes">Por pagar</option><option value="todas">Todas (incluye pagadas)</option></select>
+        <label class="finanzas-campo" for="pagar-vista"><span>Mostrar cuentas</span><select id="pagar-vista" aria-label="Mostrar"><option value="pendientes">Por pagar</option><option value="todas">Todas (incluye pagadas)</option></select></label>
+        </div>
+        <div class="finanzas-acciones">
         <button type="button" class="btn btn-outline perm-clientes-exportar" id="pagar-exportar">📥 Exportar a Excel</button>
         <button type="button" class="btn btn-outline perm-clientes-exportar" id="pagar-formato-cxp" title="Mismas 19 columnas del Excel CXP, más el detalle de cada pago">📗 Descargar como «CXP»</button>
         <button type="button" class="btn btn-outline" data-plantilla-descargar="cxp">📄 Descargar plantilla</button>
         <button type="button" class="btn btn-secundario perm-dinero-mover" data-plantilla-subir="cxp">📤 Subir plantilla</button>
+        </div>
       </div>
       <div id="pagar-lista"></div>
     </div>
@@ -827,10 +837,8 @@
         <button type="button" class="btn btn-primario perm-gastos-registrar" id="prov-nuevo">+ Agregar proveedor</button>
       </div>
       <div class="filtros prov-filtros">
-        <label class="sr-only" for="prov-buscar">Buscar proveedor</label>
-        <input type="search" id="prov-buscar" maxlength="80" placeholder="Buscar por nombre, RFC, contacto, teléfono o categoría" autocomplete="off">
-        <label class="sr-only" for="prov-filtro">Cuáles ver</label>
-        <select id="prov-filtro"><option value="activos">Activos</option><option value="saldo">Con saldo por pagar</option><option value="inactivos">Inactivos</option><option value="todos">Todos</option></select>
+        <label class="finanzas-campo" for="prov-buscar"><span>Buscar proveedor</span><input type="search" id="prov-buscar" maxlength="80" placeholder="Nombre, RFC, contacto, teléfono o categoría" autocomplete="off"></label>
+        <label class="finanzas-campo" for="prov-filtro"><span>Mostrar proveedores</span><select id="prov-filtro"><option value="activos">Activos</option><option value="saldo">Con saldo por pagar</option><option value="inactivos">Inactivos</option><option value="todos">Todos</option></select></label>
       </div>
       <p class="ayuda" id="prov-resumen" role="status"></p>
       <div id="prov-lista" class="inicio-lista"></div>
@@ -1753,7 +1761,7 @@
 <!-- ?v= obliga a los navegadores (sobre todo celulares) a tomar la versión nueva tras publicar. -->
 <!-- Generador de QR para la encuesta de cada orden (MIT, Kazuhiko Arase) -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js" integrity="sha384-mZT2gIty7ZDdOGkxfP6joZcYdMW1Jvj9dRlfpTmaJAKKXTqzygtB22k7FLe+KZC1" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
-<script src="ui.js?v=mk1"></script>
+<script src="ui.js?v=menu2"></script>
 <script src="ayuda.js?v=enc1"></script>
 <script src="solo-lectura.js?v=dup1"></script>
 <script src="permisos.js?v=mk1"></script>
@@ -1772,7 +1780,7 @@
 <script src="sucursales.js?v=perm2"></script>
 <script src="facturacion.js?v=fx10"></script>
 <script src="encuestas.js?v=enc1"></script>
-<script src="app.js?v=dup1"></script>
+<script src="app.js?v=carta1"></script>
 <script src="personal.js?v=ed1"></script>
 <script src="buscador.js?v=suc1"></script>
 <script src="demo.js?v=demo1"></script>
@@ -1782,6 +1790,6 @@
 <script src="marketing-ideas.js?v=mk6"></script>
 <script src="marketing-control.js?v=mk7"></script>
 <script src="marketing-revision.js?v=mk7"></script>
-<script src="inicio.js?v=ini3"></script>
+<script src="inicio.js?v=visual1"></script>
 </body>
 </html>

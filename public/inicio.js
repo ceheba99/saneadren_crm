@@ -100,7 +100,7 @@ const Inicio = (() => {
       acomodar();
       const cont = document.getElementById('inicio-resumen'); if (!cont) return;
       const chips = bloques().filter(visible).map(b => ({ b, e: estado(b) })).filter(({ e }) => e.filas.length || e.resumen || e.error)
-        .map(({ b, e }) => `<button type="button" class="inicio-chip${e.urgente || e.error ? ' urgente' : ''}" data-inicio-ir="${esc(listaDe(b).id)}"><b>${esc(e.error ? '!' : e.resumen || String(e.filas.length))}</b> ${esc(b.dataset.tituloCorto || '')}</button>`);
+        .map(({ b, e }) => `<button type="button" class="inicio-chip${e.urgente || e.error ? ' urgente' : ''}" data-inicio-ir="${esc(listaDe(b).id)}"><span class="inicio-chip-etiqueta">${esc(b.dataset.tituloCorto || '')}</span><b>${esc(e.error ? '!' : e.resumen || String(e.filas.length))}</b><span class="inicio-chip-accion">${e.error ? 'Revisar carga' : 'Ver pendientes'} <span aria-hidden="true">↗</span></span></button>`);
       cont.innerHTML = chips.join('');
       cont.hidden = !chips.length;
     });

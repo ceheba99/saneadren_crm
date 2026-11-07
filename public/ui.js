@@ -237,7 +237,7 @@ window.Plegables = Plegables;
 
 /* ===================== Menú principal =====================
    Escritorio: barra con grupos desplegables (Ventas, Finanzas, Ajustes).
-   Celular: un botón "☰ Menú" que abre un panel con todas las secciones. */
+   Celular: un botón "☰ Menú" y categorías plegables con sus secciones. */
 const MenuPrincipal = (() => {
   const nav = document.getElementById('menu-principal');
   if (!nav) return { marcar() {} };
@@ -247,7 +247,7 @@ const MenuPrincipal = (() => {
     g.classList.remove('abierto');
     g.querySelector('.menu-grupo-btn').setAttribute('aria-expanded', 'false');
   });
-  const cerrarPanel = () => { nav.classList.remove('abierta'); movil.setAttribute('aria-expanded', 'false'); };
+  const cerrarPanel = () => { cerrarGrupos(); nav.classList.remove('abierta'); movil.setAttribute('aria-expanded', 'false'); };
   const esMovil = () => matchMedia('(max-width:900px)').matches;
   const visible = el => !!el && el.getClientRects().length > 0;
   // Elemento visible del menú que representa la sección actual (para devolverle el foco).
@@ -255,19 +255,24 @@ const MenuPrincipal = (() => {
     const destino = [movil, nav.querySelector('.menu-grupo.activa > .menu-grupo-btn'), nav.querySelector('[data-vista].activa')].find(visible);
     destino?.focus({ preventScroll: true });
   }
-  // En el panel del celular los grupos van siempre abiertos: sus títulos no son botones.
+  // Las categorías se pueden abrir con clic, toque o teclado en cualquier tamaño.
   function ajustarGrupos() {
     nav.querySelectorAll('.menu-grupo-btn').forEach(b => {
-      if (esMovil()) { b.tabIndex = -1; b.removeAttribute('aria-expanded'); b.setAttribute('aria-hidden', 'true'); }
-      else { b.removeAttribute('tabindex'); b.removeAttribute('aria-hidden'); b.setAttribute('aria-expanded', String(b.closest('.menu-grupo').classList.contains('abierto'))); }
+      const grupo = b.closest('.menu-grupo'), sub = grupo.querySelector('.menu-sub');
+      sub.id ||= 'menu-sub-' + grupo.dataset.grupo;
+      b.removeAttribute('tabindex');
+      b.removeAttribute('aria-hidden');
+      b.setAttribute('aria-controls', sub.id);
+      b.setAttribute('aria-expanded', String(grupo.classList.contains('abierto')));
     });
   }
   ajustarGrupos();
   matchMedia('(max-width:900px)').addEventListener?.('change', () => { cerrarGrupos(); cerrarPanel(); ajustarGrupos(); });
   // El submenú se cierra cuando el foco sale de él (Tab).
-  nav.querySelectorAll('.menu-grupo').forEach(g => g.addEventListener('focusout', e => { if (!g.contains(e.relatedTarget)) cerrarGrupos(); }));
+  nav.querySelectorAll('.menu-grupo').forEach(g => g.addEventListener('focusout', e => { if (!esMovil() && !g.contains(e.relatedTarget)) cerrarGrupos(); }));
   movil.addEventListener('click', () => {
     const abrir = !nav.classList.contains('abierta');
+    cerrarGrupos();
     nav.classList.toggle('abierta', abrir);
     movil.setAttribute('aria-expanded', String(abrir));
   });

@@ -962,7 +962,7 @@ function datosCotizacionDesdeLead(lead, items) {
 const membretesCache = {};
 function cargarMembrete(archivo) {
   if (!membretesCache[archivo]) {
-    membretesCache[archivo] = fetch('/' + archivo).then(async respuesta => {
+    membretesCache[archivo] = fetch('/' + archivo + '?v=carta1').then(async respuesta => {
       if (!respuesta.ok) throw new Error('No se pudo cargar el membrete');
       return new Uint8Array(await respuesta.arrayBuffer());
     }).catch(error => { delete membretesCache[archivo]; throw error; });
@@ -988,81 +988,104 @@ async function cargarQREncuesta(leadId) {
 async function generarPDFCotizacion(datos) {
   const membrete = await cargarMembreteCotizacion();
   const { jsPDF } = window.jspdf;
-  // Mantiene la proporción 2:3 del membrete original sin recortarlo.
-  const doc = new jsPDF({unit:'pt', format:[612,918]});
-  const margen=48, inicio=132, limite=710;
+  // Hoja carta: 8.5 × 11 pulgadas, con membrete diseñado para esta medida.
+  const doc = new jsPDF({unit:'pt', format:[612,792]});
+  const margen=48, inicio=132, limite=680;
   let y=inicio;
-  const fondo=()=>doc.addImage(membrete,'PNG',0,0,612,918,'membrete');
+  const fondo=()=>doc.addImage(membrete,'PNG',0,0,612,792,'membrete');
   const pagina=()=>{doc.addPage(); fondo(); y=inicio;};
   fondo();
-  const texto=(contenido,tamano=10,negrita=false)=>{
-    doc.setFont('helvetica',negrita?'bold':'normal'); doc.setFontSize(tamano); doc.setTextColor(30);
+  const texto=(contenido,tamano=10,negrita=false,color=30)=>{
+    doc.setFont('helvetica',negrita?'bold':'normal'); doc.setFontSize(tamano); doc.setTextColor(color);
     const lineas=doc.splitTextToSize(String(contenido),516);
     for(const linea of lineas){if(y+tamano>limite)pagina();doc.text(linea,margen,y);y+=tamano+5;}
   };
   texto('Folio: '+datos.folio,15,true);
-  texto('Fecha de cotización: '+datos.fechaCotizacion+(datos.vigenciaTexto?'   |   Vigencia hasta: '+datos.vigenciaTexto:''));
-  texto('Atendió: '+datos.atendioPor);
+  texto('Fecha de cotización: '+datos.fechaCotizacion+(datos.vigenciaTexto?'   |   Vigencia hasta: '+datos.vigenciaTexto:''),9);
+  texto('Atendió: '+datos.atendioPor,9,false,100);
   y+=10;
-  texto('CLIENTE',10,true);
-  texto(datos.cliente.nombre);
+  texto('CLIENTE',8,true,100);
+  texto(datos.cliente.nombre,12,true);
   if(datos.cliente.empresa)texto(datos.cliente.empresa);
   if(datos.cliente.telefono)texto('Tel: '+datos.cliente.telefono);
   if(datos.cliente.direccion)texto('Ubicación del servicio: '+datos.cliente.direccion);
   y+=12;
   if(y>limite-70)pagina();
+  doc.setFillColor(246,177,3);doc.rect(margen,y-9,3,11,'F');
+  doc.setFont('helvetica','bold');doc.setFontSize(9);doc.text('PROPUESTA DE SERVICIO',margen+10,y);
+  y+=14;
   doc.autoTable({
-    startY:y, margin:{left:margen,right:margen,top:inicio,bottom:208},
+    startY:y, margin:{left:margen,right:margen,top:inicio,bottom:112},theme:'plain',
     head:[['Servicio','Descripción / leyenda',...titulosCantidad(datos),datos.encabezadoImporte]],
     body:datos.items.map(item=>[item.servicio,item.leyenda||'—',...colsCantidad(datos,item),formatoMoneda(item.importe)]),
-    // Con IVA: Subtotal / IVA / Total; solo el total va en negritas.
-    foot:datos.totales.map(([etiqueta,cent])=>['',{content:etiqueta,colSpan:datos.conCantidad?3:1},formatoMoneda(cent/100)]),showFoot:'lastPage',rowPageBreak:'avoid',
+    rowPageBreak:'avoid',
     columnStyles:datos.conCantidad?{0:{cellWidth:110},2:{cellWidth:40,halign:'right'},3:{cellWidth:75,halign:'right'},4:{cellWidth:85,halign:'right'}}:{0:{cellWidth:125},2:{cellWidth:95,halign:'right'}},
-    styles:{fontSize:10,cellPadding:6,overflow:'linebreak'},
-    headStyles:{fillColor:[246,177,3],textColor:20},
-    footStyles:{fillColor:[245,245,245],textColor:20,fontStyle:'bold'},
+    styles:{fontSize:9.5,cellPadding:8,overflow:'linebreak',textColor:[26,29,35],lineColor:[225,228,232],lineWidth:{bottom:0.5}},
+    headStyles:{fillColor:[26,29,35],textColor:255,fontSize:8,fontStyle:'bold'},
+    alternateRowStyles:{fillColor:[248,249,250]},
     didParseCell:d=>{
       if(d.section==='head'&&d.column.index>=2)d.cell.styles.halign='right';
-      if(d.section==='foot'){d.cell.styles.halign=d.column.index===0?'left':'right';if(d.row.index<datos.totales.length-1)d.cell.styles.fontStyle='normal';}
     },
     willDrawPage:()=>{if(doc.internal.getCurrentPageInfo().pageNumber>1)fondo();}
   });
-  y=doc.lastAutoTable.finalY+24;
-  texto('Son: '+datos.totalLetras,9,true);
-  if(datos.leyendaIva)texto(datos.leyendaIva,9);
-  y+=4;
+  y=doc.lastAutoTable.finalY+18;
+  const desglose=datos.totales.slice(0,-1);
+  doc.setFont('helvetica','normal');doc.setFontSize(8);
+  const importeLetras=doc.splitTextToSize('Son: '+datos.totalLetras+(datos.leyendaIva?' '+datos.leyendaIva:''),280);
+  const altoResumen=Math.max(importeLetras.length*11+16,desglose.length*16+50);
+  if(y+altoResumen>limite)pagina();
+  doc.setTextColor(107,114,128);doc.text(importeLetras,margen,y+13);
+  desglose.forEach(([etiqueta,cent],i)=>{
+    doc.setFontSize(8.5);doc.text(etiqueta,360,y+12+i*16);
+    doc.text(formatoMoneda(cent/100),554,y+12+i*16,{align:'right'});
+  });
+  const totalY=y+desglose.length*16+6;
+  doc.setFillColor(246,247,249);doc.rect(350,totalY,214,36,'F');
+  doc.setFillColor(246,177,3);doc.rect(350,totalY,3,36,'F');
+  doc.setFont('helvetica','bold');doc.setFontSize(8);doc.setTextColor(26,29,35);doc.text('TOTAL',362,totalY+22);
+  doc.setFontSize(17);doc.text(formatoMoneda(datos.total),554,totalY+24,{align:'right'});
+  y+=altoResumen+18;
   if(datos.notas){y+=6;texto('NOTAS Y CONDICIONES',10,true);texto(datos.notas,9);y+=4;}
   if(datos.vigenciaTexto)texto('Esta cotización tiene vigencia hasta el '+datos.vigenciaTexto+'.',9);
   const paginas=doc.getNumberOfPages();
-  for(let i=1;i<=paginas;i++){doc.setPage(i);doc.setFontSize(8);doc.setTextColor(90);doc.text('Cotización '+datos.folio+' · Página '+i+' de '+paginas,564,722,{align:'right'});}
+  for(let i=1;i<=paginas;i++){doc.setPage(i);doc.setFontSize(8);doc.setTextColor(90);doc.text('Cotización '+datos.folio+' · Página '+i+' de '+paginas,564,694,{align:'right'});}
   doc.save(nombreArchivoCotizacion(datos,'pdf'));
 }
 
 async function generarWordCotizacion(datos) {
   const membrete=await cargarMembreteCotizacion();
-  const {Document,Packer,Paragraph,TextRun,Table,TableRow,TableCell,WidthType,Header,ImageRun}=docx;
-  const parrafo=(texto,bold=false)=>new Paragraph({spacing:{after:100},children:[new TextRun({text:String(texto),bold})]});
-  const celda=(texto,bold=false)=>new TableCell({children:[parrafo(texto,bold)],shading:bold?{fill:'F6B103'}:undefined});
-  const tabla=new Table({width:{size:100,type:WidthType.PERCENTAGE},rows:[
-    new TableRow({tableHeader:true,children:[celda('Servicio',true),celda('Descripción / leyenda',true),...titulosCantidad(datos).map(t=>celda(t,true)),celda(datos.encabezadoImporte,true)]}),
-    ...datos.items.map(item=>new TableRow({children:[celda(item.servicio),celda(item.leyenda||'—'),...colsCantidad(datos,item).map(t=>celda(t)),celda(formatoMoneda(item.importe))]})),
-    // Con IVA: Subtotal / IVA / Total; solo el total va resaltado.
-    ...datos.totales.map(([etiqueta,cent],i)=>{const total=i===datos.totales.length-1;return new TableRow({children:[celda(''),...(datos.conCantidad?[celda(''),celda('')]:[]),celda(etiqueta,total),celda(formatoMoneda(cent/100),total)]});})
-  ]});
-  const documento=new Document({styles:{default:{document:{run:{font:'Arial',size:20,color:'222222'},paragraph:{spacing:{after:100}}}}},sections:[{
-    properties:{page:{size:{width:12240,height:18360},margin:{top:2640,bottom:4160,left:960,right:960,header:0,footer:0}}},
-    headers:{default:new Header({children:[new Paragraph({children:[new ImageRun({data:membrete,type:'png',transformation:{width:816,height:1224},floating:{horizontalPosition:{relative:'page',offset:0},verticalPosition:{relative:'page',offset:0},behindDocument:true,allowOverlap:true,layoutInCell:false}})]})]})},
+  const {Document,Packer,Paragraph,TextRun,Table,TableRow,TableCell,WidthType,Header,ImageRun,BorderStyle,AlignmentType}=docx;
+  const OSC='1A1D23',GRI='6B7280',LIN='E1E4E8',FON='F6F7F9',AMA='F6B103';
+  const nada={style:BorderStyle.NONE,size:0,color:'FFFFFF'};
+  const sinBordes={top:nada,bottom:nada,left:nada,right:nada,insideHorizontal:nada,insideVertical:nada};
+  const run=(t,o={})=>new TextRun({text:String(t??''),bold:!!o.bold,size:o.size||20,color:o.color||OSC});
+  const p=(t,o={})=>new Paragraph({keepNext:!!o.unir,spacing:{before:o.antes||0,after:o.despues??100},alignment:o.derecha?AlignmentType.RIGHT:undefined,children:Array.isArray(t)?t:[run(t,o)]});
+  const celda=(hijos,o={})=>new TableCell({borders:o.bordes||sinBordes,shading:o.fondo?{fill:o.fondo}:undefined,margins:{top:100,bottom:100,left:o.mh??140,right:o.mh??140},children:[].concat(hijos)});
+  const tabla=(rows,widths)=>new Table({width:{size:100,type:WidthType.PERCENTAGE},columnWidths:widths,borders:sinBordes,rows});
+  const anchos=datos.conCantidad?[2200,3920,800,1500,1900]:[2500,5920,1900];
+  const trabajo=tabla([
+    new TableRow({tableHeader:true,children:['Servicio','Descripción / leyenda',...titulosCantidad(datos),datos.encabezadoImporte].map((t,i)=>celda(p(t,{bold:true,size:16,color:'FFFFFF',derecha:i>=2,despues:0}),{fondo:OSC}))}),
+    ...datos.items.map((item,n)=>new TableRow({cantSplit:true,children:[item.servicio,item.leyenda||'—',...colsCantidad(datos,item),formatoMoneda(item.importe)].map((t,i)=>celda(p(t,{bold:i===0,size:19,derecha:i>=2,despues:0}),{fondo:n%2?FON:undefined,bordes:{...sinBordes,bottom:{style:BorderStyle.SINGLE,size:4,color:LIN}}}))}))
+  ],anchos);
+  const resumen=tabla([new TableRow({cantSplit:true,children:[
+    celda([p('Son: '+datos.totalLetras,{size:16,color:GRI}),...(datos.leyendaIva?[p(datos.leyendaIva,{size:16,color:GRI})]:[])],{mh:0}),
+    celda([...datos.totales.slice(0,-1).map(([t,c])=>p(t+'   '+formatoMoneda(c/100),{derecha:true,size:18,color:GRI})),p([run('TOTAL   ',{bold:true,size:16}),run(formatoMoneda(datos.total),{bold:true,size:34})],{derecha:true,despues:0})],{fondo:FON,bordes:{...sinBordes,left:{style:BorderStyle.SINGLE,size:20,color:AMA}}})
+  ]})],[6040,4280]);
+  const documento=new Document({styles:{default:{document:{run:{font:'Arial',size:20,color:OSC},paragraph:{spacing:{after:100}}}}},sections:[{
+    properties:{page:{size:{width:12240,height:15840},margin:{top:2640,bottom:2240,left:960,right:960,header:0,footer:0}}},
+    headers:{default:new Header({children:[new Paragraph({children:[new ImageRun({data:membrete,type:'png',transformation:{width:816,height:1056},floating:{horizontalPosition:{relative:'page',offset:0},verticalPosition:{relative:'page',offset:0},behindDocument:true,allowOverlap:true,layoutInCell:false}})]})]})},
     children:[
-      new Paragraph({spacing:{after:160},children:[new TextRun({text:'Folio: '+datos.folio,bold:true,size:30})]}),
-      parrafo('Fecha de cotización: '+datos.fechaCotizacion+(datos.vigenciaTexto?'   |   Vigencia hasta: '+datos.vigenciaTexto:'')),
-      parrafo('Atendió: '+datos.atendioPor),
-      parrafo('CLIENTE',true),parrafo(datos.cliente.nombre),
-      ...(datos.cliente.empresa?[parrafo(datos.cliente.empresa)]:[]),
-      ...(datos.cliente.telefono?[parrafo('Tel: '+datos.cliente.telefono)]:[]),
-      ...(datos.cliente.direccion?[parrafo('Ubicación del servicio: '+datos.cliente.direccion)]:[]),
-      tabla,parrafo('Son: '+datos.totalLetras,true),...(datos.leyendaIva?[parrafo(datos.leyendaIva)]:[]),parrafo(''),
-      ...(datos.notas?[parrafo('NOTAS Y CONDICIONES',true),...datos.notas.split('\n').map(l=>parrafo(l))]:[]),
-      ...(datos.vigenciaTexto?[parrafo('Esta cotización tiene vigencia hasta el '+datos.vigenciaTexto+'.')]:[])
+      p('Folio: '+datos.folio,{bold:true,size:30,despues:160}),
+      p('Fecha de cotización: '+datos.fechaCotizacion+(datos.vigenciaTexto?'   |   Vigencia hasta: '+datos.vigenciaTexto:'')),
+      p('Atendió: '+datos.atendioPor,{color:GRI}),
+      p('CLIENTE',{bold:true,size:16,color:GRI,antes:140}),p(datos.cliente.nombre,{bold:true,size:24}),
+      ...(datos.cliente.empresa?[p(datos.cliente.empresa)]:[]),
+      ...(datos.cliente.telefono?[p('Tel: '+datos.cliente.telefono)]:[]),
+      ...(datos.cliente.direccion?[p('Ubicación del servicio: '+datos.cliente.direccion)]:[]),
+      p([run('▌ ',{color:AMA,bold:true}),run('PROPUESTA DE SERVICIO',{bold:true,size:18})],{antes:240,unir:true}),
+      trabajo,p('',{despues:80}),resumen,
+      ...(datos.notas?[p('NOTAS Y CONDICIONES',{bold:true,size:18,antes:280,unir:true}),...datos.notas.split('\n').map(l=>p(l,{size:18}))]:[]),
+      ...(datos.vigenciaTexto?[p('Esta cotización tiene vigencia hasta el '+datos.vigenciaTexto+'.',{size:18,color:GRI})]:[])
     ]
   }]});
   saveAs(await Packer.toBlob(documento),nombreArchivoCotizacion(datos,'docx'));
@@ -1124,7 +1147,7 @@ const etiquetaTotalOrden = modo => modo === 'mas_iva' ? 'TOTAL CON IVA' : modo =
 
 // Mismo orden de conceptos que el formato impreso "ORDENES DE SERVICIO" de Saneadren:
 // Empresa/Fecha, Ubicación, Equipo, Operador → Descripción → Importe → Observaciones →
-// Ejecutor / Vo.Bo. → Nombre y firma del operador / del cliente. Diseño ligero: etiquetas
+// Firma del operador asignado y visto bueno del cliente. Diseño ligero: etiquetas
 // pequeñas sobre cada dato y líneas finas (sin cuadrícula pesada), para que respire sobre el membrete.
 function camposOrden(datos) {
   return [
@@ -1143,10 +1166,10 @@ async function generarPDFOrdenServicio(datos) {
   const membrete = await cargarMembreteOrdenServicio();
   const qr = await cargarQREncuesta(datos.leadId).catch(() => null);
   const { jsPDF } = window.jspdf;
-  const doc = new jsPDF({unit:'pt', format:[612,918]});
-  const C = COLOR_ORDEN, margen = 48, derecha = 564, ancho = 516, inicio = 126, limite = 706;
+  const doc = new jsPDF({unit:'pt', format:[612,792]});
+  const C = COLOR_ORDEN, margen = 48, derecha = 564, ancho = 516, inicio = 116, limite = 680;
   let y = inicio;
-  const fondo = () => doc.addImage(membrete,'PNG',0,0,612,918,'membrete');
+  const fondo = () => doc.addImage(membrete,'PNG',0,0,612,792,'membrete');
   const pagina = () => { doc.addPage(); fondo(); y = inicio; };
   const asegurar = alto => { if (y + alto > limite) pagina(); };
   const fuente = (tam, negrita = false, color = C.oscuro) => { doc.setFont('helvetica', negrita ? 'bold' : 'normal'); doc.setFontSize(tam); doc.setTextColor(...color); };
@@ -1172,8 +1195,8 @@ async function generarPDFOrdenServicio(datos) {
   fuente(14, true); doc.text(datos.folio, margen, y + 16);
   fuente(7, true, C.gris); doc.text('FECHA DEL SERVICIO', derecha, y, { align: 'right' });
   fuente(14, true); doc.text(datos.fechaServicio, derecha, y + 16, { align: 'right' });
-  if (datos.folioCotizacion) { fuente(8, false, C.gris); doc.text('Cotización de referencia: ' + datos.folioCotizacion, margen + 160, y + 16); }
   y += 34;
+  if (datos.folioCotizacion) { fuente(8, false, C.gris); doc.text('Cotización de referencia: ' + datos.folioCotizacion, margen, y); y += 18; }
 
   seccion('DATOS DEL SERVICIO');
   const gap = 20, mitad = (ancho - gap) / 2;
@@ -1181,13 +1204,13 @@ async function generarPDFOrdenServicio(datos) {
     asegurar(34);
     const alto = Math.max(...fila.map(([e, v], i) => campo(e, v, margen + i * (mitad + gap), fila.length === 1 ? ancho : mitad)));
     fila.forEach((_, i) => linea(margen + i * (mitad + gap), y + alto + 5, margen + i * (mitad + gap) + (fila.length === 1 ? ancho : mitad)));
-    y += alto + 19;
+    y += alto + 14;
   }
   y += 4;
 
   seccion('DESCRIPCIÓN DEL TRABAJO');
   doc.autoTable({
-    startY: y - 4, margin: { left: margen, right: margen, top: inicio, bottom: 212 }, theme: 'plain',
+    startY: y - 4, margin: { left: margen, right: margen, top: inicio, bottom: 112 }, theme: 'plain',
     head: [['Servicio', 'Descripción', ...titulosCantidad(datos), Importes.encabezadoImporte(datos.modo)]],
     body: datos.items.map(item => [item.servicio, item.leyenda || '—', ...colsCantidad(datos, item), formatoMoneda(item.importe)]),
     rowPageBreak: 'avoid',
@@ -1219,38 +1242,40 @@ async function generarPDFOrdenServicio(datos) {
   fuente(14, true); doc.text(formatoMoneda(datos.total), derecha - 10, y + 20, { align: 'right' });
   fuente(8, false, C.gris);
   doc.text(doc.splitTextToSize('Son: ' + datos.totalLetras + (datos.leyendaIva ? ' ' + datos.leyendaIva : ''), ancho - anchoTotal - 20), margen, y + 13);
-  y += 50;
+  y += 44;
 
   seccion('OBSERVACIONES');
   asegurar(56);
-  doc.setFillColor(...C.fondo); doc.roundedRect(margen, y - 6, ancho, 48, 4, 4, 'F');
+  doc.setFillColor(...C.fondo); doc.roundedRect(margen, y - 6, ancho, 42, 4, 4, 'F');
   if (datos.observaciones) { fuente(9.5); doc.text(doc.splitTextToSize(datos.observaciones, ancho - 20).slice(0, 3), margen + 10, y + 9); }
   else { [y + 12, y + 28].forEach(yy => linea(margen + 10, yy, derecha - 10, [200, 204, 210], 0.4)); } // renglones para escribir a mano
-  y += 60;
+  y += 52;
 
-  // Firmas: cuatro líneas como en el formato en papel.
-  asegurar(110);
-  const firma = (etiqueta, x, yy, nombre) => {
-    if (nombre) { fuente(9.5); doc.text(nombre, x + mitad / 2, yy - 6, { align: 'center' }); }
-    linea(x, yy, x + mitad, C.oscuro, 0.8);
-    fuente(7, true, C.gris); doc.text(etiqueta, x + mitad / 2, yy + 11, { align: 'center' });
-  };
-  firma('EJECUTOR', margen, y + 20); firma('Vo.Bo.', margen + mitad + gap, y + 20);
-  firma('NOMBRE Y FIRMA DEL OPERADOR', margen, y + 70, datos.operador); firma('NOMBRE Y FIRMA DEL CLIENTE', margen + mitad + gap, y + 70);
-  y += 112;
-
-  fuente(7.5, false, C.gris);
-  doc.text(doc.splitTextToSize(CONDICIONES_ORDEN_SERVICIO, ancho - 80), margen, y);
-  // Encuesta con QR a la derecha, alineada con las condiciones.
-  if (qr) {
-    const tamanoQR = 54;
-    if (y + tamanoQR > limite + 4) pagina();
-    doc.addImage(qr, 'PNG', derecha - tamanoQR, y - 8, tamanoQR, tamanoQR, 'qr');
-    fuente(7, true); doc.text('CALIFICA EL SERVICIO', derecha - tamanoQR - 8, y + 14, { align: 'right' });
-    fuente(7, false, C.gris); doc.text('Escanea el código', derecha - tamanoQR - 8, y + 24, { align: 'right' });
+  // Cierre agrupado cerca del pie: dos firmas y una franja de condiciones y encuesta.
+  fuente(9.5);
+  const nombres=[datos.operador,datos.cliente.nombre].map(n=>doc.splitTextToSize(n||' ',mitad-8));
+  const altoNombres=Math.max(...nombres.map(n=>n.length))*12;
+  const altoCierre=150+altoNombres;
+  asegurar(altoCierre);
+  y=Math.max(y,limite-altoCierre);
+  seccion('RECEPCIÓN DEL SERVICIO');
+  ['OPERADOR ASIGNADO','CLIENTE · VISTO BUENO'].forEach((etiqueta,i)=>{
+    const x=margen+i*(mitad+gap);
+    fuente(7.5,true,C.gris);doc.text(etiqueta,x,y+6);
+    linea(x,y+49,x+mitad,C.oscuro,0.7);
+    fuente(9.5);doc.text(nombres[i],x,y+64);
+  });
+  y+=72+altoNombres;
+  doc.setFillColor(...C.fondo);doc.rect(margen,y,ancho,60,'F');
+  fuente(7.5,false,C.gris);
+  doc.text(doc.splitTextToSize(CONDICIONES_ORDEN_SERVICIO,qr?ancho-90:ancho-24),margen+12,y+13);
+  if(qr){
+    doc.addImage(qr,'PNG',derecha-54,y+7,46,46,'qr');
+    fuente(7.5,true);doc.text('CALIFICA EL SERVICIO',margen+12,y+47);
+    fuente(7.5,false,C.gris);doc.text('Escanea el código QR',margen+117,y+47);
   }
   const paginas = doc.getNumberOfPages();
-  for (let i = 1; i <= paginas; i++) { doc.setPage(i); fuente(7.5, false, C.gris); doc.text('Orden de servicio ' + datos.folio + ' · Página ' + i + ' de ' + paginas, derecha, 724, { align: 'right' }); }
+  for (let i = 1; i <= paginas; i++) { doc.setPage(i); fuente(7.5, false, C.gris); doc.text('Orden de servicio ' + datos.folio + ' · Página ' + i + ' de ' + paginas, derecha, 694, { align: 'right' }); }
   doc.save(nombreArchivoOrdenServicio(datos,'pdf'));
 }
 
@@ -1263,10 +1288,10 @@ async function generarWordOrdenServicio(datos) {
   const sinBordes={top:nada,bottom:nada,left:nada,right:nada,insideHorizontal:nada,insideVertical:nada};
   const lineaAbajo=(color=LIN,size=4)=>({top:nada,left:nada,right:nada,bottom:{style:BorderStyle.SINGLE,size,color}});
   const run=(t,o={})=>new TextRun({text:String(t??''),bold:!!o.bold,size:o.size||20,color:o.color||OSC});
-  const p=(hijos,o={})=>new Paragraph({spacing:{before:o.antes||0,after:o.despues??60},alignment:o.centro?AlignmentType.CENTER:o.derecha?AlignmentType.RIGHT:undefined,tabStops:o.tabs,children:[].concat(hijos)});
-  const celda=(hijos,o={})=>new TableCell({columnSpan:o.span,borders:o.bordes||sinBordes,shading:o.fondo?{fill:o.fondo}:undefined,verticalAlign:o.abajo?VerticalAlign.BOTTOM:undefined,
+  const p=(hijos,o={})=>new Paragraph({keepNext:!!o.unir,spacing:{before:o.antes||0,after:o.despues??60},alignment:o.centro?AlignmentType.CENTER:o.derecha?AlignmentType.RIGHT:undefined,tabStops:o.tabs,children:[].concat(hijos)});
+  const celda=(hijos,o={})=>new TableCell({columnSpan:o.span,width:o.ancho?{size:o.ancho,type:WidthType.DXA}:undefined,borders:o.bordes||sinBordes,shading:o.fondo?{fill:o.fondo}:undefined,verticalAlign:o.abajo?VerticalAlign.BOTTOM:undefined,
     margins:{top:o.mv??60,bottom:o.mv??60,left:o.mh??100,right:o.mh??100},children:[].concat(hijos)});
-  const tabla=(filas,anchos,o={})=>new Table({width:{size:100,type:WidthType.PERCENTAGE},columnWidths:anchos,borders:o.bordes||sinBordes,rows:filas});
+  const tabla=(filas,anchos,o={})=>new Table({width:{size:100,type:WidthType.PERCENTAGE},layout:o.layout,columnWidths:anchos,borders:o.bordes||sinBordes,rows:filas});
   const fila=(celdas,alto)=>new TableRow({height:alto?{value:alto,rule:HeightRule.ATLEAST}:undefined,children:celdas});
   const seccion=t=>p([run('▌ ',{color:AMA,bold:true,size:20}),run(t,{bold:true,size:18})],{antes:220,despues:80});
   const campo=(etiqueta,valor,span)=>celda([p(run(etiqueta.toUpperCase(),{bold:true,size:14,color:GRI}),{despues:20}),p(run(valor||' '))],{span,bordes:lineaAbajo(),mh:40});
@@ -1274,9 +1299,8 @@ async function generarWordOrdenServicio(datos) {
 
   const cabecera=tabla([fila([
     celda([p(run('FOLIO',{bold:true,size:14,color:GRI}),{despues:0}),p(run(datos.folio,{bold:true,size:28}))],{mh:0}),
-    celda(datos.folioCotizacion?p(run('Cotización de referencia: '+datos.folioCotizacion,{size:16,color:GRI})):p(run('')),{abajo:true}),
     celda([p(run('FECHA DEL SERVICIO',{bold:true,size:14,color:GRI}),{derecha:true,despues:0}),p(run(datos.fechaServicio,{bold:true,size:28}),{derecha:true})],{mh:0})
-  ])],[3300,3720,3300]);
+  ])],[5160,5160]);
   const datosServicio=tabla(camposOrden(datos).map(f=>fila(f.length===1?[campo(f[0][0],f[0][1],3)]:[campo(f[0][0],f[0][1]),sep(),campo(f[1][0],f[1][1])])),[5000,320,5000]);
   const trabajo=tabla([
     fila(['Servicio','Descripción',...titulosCantidad(datos),Importes.encabezadoImporte(datos.modo)].map((t,i)=>celda(p(run(t,{bold:true,size:17,color:'FFFFFF'}),{derecha:i>=2}),{fondo:OSC}))),
@@ -1292,27 +1316,28 @@ async function generarWordOrdenServicio(datos) {
     celda([p(run('Son: '+datos.totalLetras,{size:16,color:GRI}))].concat(datos.leyendaIva?[p(run(datos.leyendaIva,{size:16,color:GRI}))]:[]),{mh:0}),
     celda([...desglose,p([run(etiquetaTotalOrden(datos.modo)+'   ',{bold:true,size:15,color:GRI}),run(formatoMoneda(datos.total),{bold:true,size:28})],{derecha:true})],{fondo:FON,bordes:{top:nada,bottom:nada,right:nada,left:{style:BorderStyle.SINGLE,size:24,color:AMA}}})
   ])],[6120,4200]);
-  const observaciones=tabla([fila([celda(datos.observaciones?p(run(datos.observaciones)):p(run('')),{fondo:FON,mv:120})],900)],[10320]);
-  const firma=(etiqueta,nombre)=>celda([p(run(nombre||' '),{centro:true,despues:0})].concat(p(run(etiqueta,{bold:true,size:14,color:GRI}),{centro:true})),{bordes:{top:nada,left:nada,right:nada,bottom:nada},mh:0});
-  const lineaFirma=()=>celda(p(run('')),{bordes:lineaAbajo(OSC,8),mh:0});
+  const observaciones=tabla([fila([celda(datos.observaciones?p(run(datos.observaciones)):p(run('')),{fondo:FON,mv:120})],720)],[10320]);
+  const firma=etiqueta=>celda([p(run(etiqueta,{bold:true,size:15,color:GRI}),{unir:true}),p(run(''),{antes:480,unir:true,despues:0})],{bordes:lineaAbajo(OSC,6),mh:0});
   const firmas=tabla([
-    fila([lineaFirma(),sep(),lineaFirma()],650),
-    fila([firma('EJECUTOR'),sep(),firma('Vo.Bo.')]),
-    fila([celda(p(run(datos.operador||' '),{centro:true}),{bordes:lineaAbajo(OSC,8),abajo:true,mh:0}),sep(),lineaFirma()],750),
-    fila([firma('NOMBRE Y FIRMA DEL OPERADOR'),sep(),firma('NOMBRE Y FIRMA DEL CLIENTE')])
+    new TableRow({cantSplit:true,children:[firma('OPERADOR ASIGNADO'),sep(),firma('CLIENTE · VISTO BUENO')]}),
+    new TableRow({cantSplit:true,children:[celda(p(run(datos.operador||' '),{unir:true}),{mh:0}),sep(),celda(p(run(datos.cliente.nombre||' '),{unir:true}),{mh:0})]})
   ],[5000,320,5000]);
+  const cierre=tabla([new TableRow({cantSplit:true,children:[
+    celda([p(run(CONDICIONES_ORDEN_SERVICIO,{size:15,color:GRI})),...(qr?[p([run('CALIFICA EL SERVICIO   ',{bold:true,size:15}),run('Escanea el código QR',{size:15,color:GRI})],{antes:100})]:[])],{ancho:qr?8800:10320,fondo:FON,mv:140}),
+    ...(qr?[celda(p(new ImageRun({data:qr,type:'png',transformation:{width:62,height:62}}),{despues:0}),{ancho:1520,fondo:FON,mv:140})]:[])
+  ]})],qr?[8800,1520]:[10320],{layout:'fixed'});
 
   const documento=new Document({styles:{default:{document:{run:{font:'Arial',size:20,color:OSC},paragraph:{spacing:{after:60}}}}},sections:[{
-    properties:{page:{size:{width:12240,height:18360},margin:{top:2520,bottom:4240,left:960,right:960,header:0,footer:0}}},
-    headers:{default:new Header({children:[new Paragraph({children:[new ImageRun({data:membrete,type:'png',transformation:{width:816,height:1224},floating:{horizontalPosition:{relative:'page',offset:0},verticalPosition:{relative:'page',offset:0},behindDocument:true,allowOverlap:true,layoutInCell:false}})]})]})},
+    properties:{page:{size:{width:12240,height:15840},margin:{top:2320,bottom:2240,left:960,right:960,header:0,footer:0}}},
+    headers:{default:new Header({children:[new Paragraph({children:[new ImageRun({data:membrete,type:'png',transformation:{width:816,height:1056},floating:{horizontalPosition:{relative:'page',offset:0},verticalPosition:{relative:'page',offset:0},behindDocument:true,allowOverlap:true,layoutInCell:false}})]})]})},
     children:[
       cabecera,
+      ...(datos.folioCotizacion?[p(run('Cotización de referencia: '+datos.folioCotizacion,{size:16,color:GRI}))]:[]),
       seccion('DATOS DEL SERVICIO'),datosServicio,
       seccion('DESCRIPCIÓN DEL TRABAJO'),trabajo,p(run(''),{despues:80}),total,
       seccion('OBSERVACIONES'),observaciones,
-      p(run(''),{despues:200}),firmas,
-      p(run(CONDICIONES_ORDEN_SERVICIO,{size:15,color:GRI}),{antes:240}),
-      ...(qr?[p([new ImageRun({data:qr,type:'png',transformation:{width:72,height:72}}),run('   Califica el servicio: escanea el código',{size:16,color:GRI})],{antes:80})]:[])
+      p([run('▌ ',{color:AMA,bold:true}),run('RECEPCIÓN DEL SERVICIO',{bold:true,size:18})],{antes:200,despues:80,unir:true}),firmas,
+      p(run(''),{despues:100,unir:true}),cierre
     ]
   }]});
   saveAs(await Packer.toBlob(documento),nombreArchivoOrdenServicio(datos,'docx'));
