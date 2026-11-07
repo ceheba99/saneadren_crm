@@ -90,19 +90,91 @@
   [hidden]{display:none!important;}
   @media (display-mode:fullscreen),(display-mode:standalone){#pantalla-completa{display:none;}#aviso-privacidad{right:12px;}}
   @media (max-width:520px){.teclado button{padding:14px 0;font-size:1.7rem;}.botones button{font-size:1.05rem;padding:18px 6px;}}
+  /* Tableta: controles amplios, información del dispositivo y estados legibles. */
+  body{background:radial-gradient(ellipse at 50% 0,#fff8df 0,transparent 52%),#f3f5f7;min-height:100%;height:auto;}
+  header{background:#fff;color:var(--texto);border-bottom:1px solid var(--linea);padding:12px 28px;flex-shrink:0;}
+  .marca-checador{display:flex;align-items:center;gap:20px;}
+  header img{height:42px;max-width:210px;object-fit:contain;}
+  .marca-titulo{border-left:1px solid var(--linea);padding-left:20px;}
+  .marca-titulo strong{display:block;font-size:1rem;}
+  #kiosco-nombre{color:var(--sec);margin-top:3px;font-size:.8rem;}
+  .dispositivo-estados{display:flex;gap:8px;flex-wrap:wrap;align-items:center;}
+  .estado-dispositivo{display:inline-flex;align-items:center;gap:8px;padding:9px 12px;border:1px solid var(--linea);border-radius:10px;background:#f8fafc;font-size:.82rem;font-weight:600;min-height:38px;}
+  button.estado-dispositivo{font:inherit;font-size:.82rem;cursor:pointer;color:var(--texto);touch-action:manipulation;}
+  .conexion-punto{width:7px;height:7px;border-radius:50%;background:#94a3b8;}
+  #conexion[data-estado="en-linea"] .conexion-punto{background:var(--verde);}
+  #conexion[data-estado="sin-conexion"]{background:#fff5e6;border-color:#f6d29a;color:#8a4b00;}
+  #conexion[data-estado="sin-conexion"] .conexion-punto{background:#d97706;}
+  .bateria-icono{position:relative;width:24px;height:13px;border:1.5px solid currentColor;border-radius:3px;display:inline-block;}
+  .bateria-icono::after{content:"";position:absolute;right:-4px;top:3px;width:2px;height:5px;border-radius:0 1px 1px 0;background:currentColor;}
+  .bateria-nivel{position:absolute;inset:2px;right:auto;width:calc(var(--nivel,0) * 17px);background:currentColor;border-radius:1px;}
+  #bateria[data-estado="cargando"]{color:#166534;background:#f0fdf4;border-color:#c6e8cf;}
+  #bateria[data-estado="baja"]{color:#92400e;background:#fffbeb;border-color:#f2d58e;}
+  #bateria[data-estado="critica"]{color:#b91c1c;background:#fff1f2;border-color:#fecdd3;}
+  #bateria[data-estado="no-disponible"]{color:var(--sec);}
+  .hora{padding:18px 20px 8px;}
+  .hora-etiqueta{font-size:.68rem;letter-spacing:.18em;font-weight:700;color:var(--sec);margin-bottom:7px;}
+  #reloj{font-size:clamp(3.5rem,min(12vw,10vh),6rem);letter-spacing:-.035em;}
+  #fecha{font-size:1rem;margin-top:6px;}
+  #avisos{width:100%;max-width:1100px;margin:0 auto;padding:0 24px;}
+  #bateria-aviso{max-width:1052px;margin:8px auto 0;padding:10px 16px;border-radius:10px;background:#fffbeb;color:#92400e;border:1px solid #f2d58e;font-size:.9rem;}
+  #bateria-aviso.critica{background:#fff1f2;border-color:#fecdd3;color:#b91c1c;}
+  main{padding:16px 24px 20px;}
+  .pantalla{max-width:560px;background:#fff;border:1px solid #e1e5ea;border-radius:24px;padding:24px;box-shadow:0 8px 28px #1a1d2308;border-top:3px solid var(--amarillo);}
+  .pantalla.ancha{max-width:1052px;}
+  h1{font-size:1.5rem;line-height:1.25;}
+  .ayuda{font-size:.96rem;line-height:1.45;margin-bottom:14px;}
+  .teclado{gap:8px;max-width:360px;}
+  .teclado button{font-size:1.7rem;padding:12px 0;min-height:58px;border:1px solid #dce2e8;border-radius:12px;background:#f8fafc;box-shadow:0 2px 0 #e5e7eb;}
+  .teclado button:active{background:#fff3c7;border-color:#e6af1a;box-shadow:none;transform:translateY(1px);}
+  button:focus-visible,a:focus-visible{outline:3px solid var(--azul);outline-offset:3px;}
+  .digitos{margin:8px auto 12px;letter-spacing:.35em;font-size:2rem;min-height:2.7rem;}
+  .puntos{margin:12px 0 18px;gap:14px;}
+  .puntos span{width:20px;height:20px;border-width:2px;}
+  .btn-credencial{background:#fffbeb;border:1px solid #f1d77f;border-radius:18px;padding:36px 20px;margin:0;min-height:230px;justify-content:center;gap:12px;}
+  .btn-credencial .icono{display:grid;place-items:center;width:78px;height:78px;background:#f6b103;border-radius:22px;font-size:2.6rem;}
+  .btn-credencial small{max-width:220px;line-height:1.5;font-size:.9rem;}
+  .botones button{border-width:1px;font-size:1.12rem;padding:20px 12px;border-radius:14px;min-height:76px;text-align:left;}
+  .botones button.sugerido{border:2px solid #d59b00;box-shadow:0 4px 12px #f6b10330;}
+  .btn-chico{background:transparent;border:0;font-size:.82rem;margin-top:12px;padding:8px;}
+  .listo{padding:24px 12px;}
+  .listo .icono{margin-bottom:16px;}
+  .listo h1{font-size:2rem;}
+  .kiosco-pie{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 28px 16px;flex-wrap:wrap;}
+  #pendientes,#aviso-privacidad,#pantalla-completa{position:static;font-size:.8rem;}
+  #pendientes{flex:1;min-width:170px;}
+  #pendientes[data-pendientes="true"]{color:#92400e;font-weight:600;}
+  #pantalla-completa{background:#fff;padding:8px 12px;}
+  @media(min-width:800px) and (orientation:landscape){
+    .ingreso .checar{grid-template-columns:.9fr 1fr;gap:48px;}
+    .checar .camara{max-height:40vh;}
+  }
+  @media(max-height:820px) and (min-width:700px){
+    header{padding:8px 24px;}header img{height:34px;}.hora{padding:10px 16px 4px;}#reloj{font-size:3.8rem;}
+    main{padding-top:10px;padding-bottom:10px;}.pantalla{padding:18px 24px;}.teclado button{min-height:46px;padding:7px 0;}
+    .btn-credencial{min-height:210px;}.kiosco-pie{padding-top:4px;padding-bottom:8px;}
+  }
+  @media(max-width:799px){.marca-titulo{border:0;padding:0;}.marca-checador{gap:12px;}header{padding:12px 16px;}header img{height:32px;}main{padding:12px;}.pantalla{padding:20px;}.btn-credencial{min-height:0;padding:18px;margin-bottom:22px;}.btn-credencial .icono{width:48px;height:48px;font-size:1.8rem;border-radius:14px;}.kiosco-pie{padding:10px 16px;}#bateria-aviso{margin:8px 12px 0;}.dispositivo-estados{gap:6px;}}
+  @media(max-width:420px){.marca-titulo strong{font-size:.85rem;}.estado-dispositivo{font-size:.75rem;padding:8px;}.marca-titulo{max-width:170px;}header{gap:10px;}.dispositivo-estados{width:100%;justify-content:space-between;}.teclado button{min-height:52px;}.botones button{font-size:.95rem;}}
 </style>
 </head>
 <body>
 <header>
-  <div><img src="/logo-saneadren.png" alt="Saneadren"><div id="kiosco-nombre"></div></div>
+  <div class="marca-checador"><img src="/logo-saneadren.png" alt="Saneadren"><div class="marca-titulo"><strong>Reloj checador</strong><div id="kiosco-nombre"></div></div></div>
+  <div class="dispositivo-estados" aria-label="Estado del dispositivo">
+    <button type="button" id="sonido" class="estado-dispositivo" aria-pressed="true">♪ Sonido activado</button>
+    <div id="conexion" class="estado-dispositivo" data-estado="conectando" role="status"><span class="conexion-punto" aria-hidden="true"></span><span id="conexion-texto">Conectando…</span></div>
+    <div id="bateria" class="estado-dispositivo" data-estado="no-disponible" role="status"><span class="bateria-icono" aria-hidden="true"><span id="bateria-nivel" class="bateria-nivel"></span></span><span id="bateria-texto">Leyendo batería…</span></div>
+  </div>
 </header>
-<div class="hora"><div id="reloj" aria-live="off">--:--</div><div id="fecha"></div></div>
+<div class="hora"><div class="hora-etiqueta">REGISTRO DE ASISTENCIA</div><div id="reloj" aria-live="off">--:--</div><div id="fecha"></div></div>
 <div id="avisos" role="status"></div>
+<div id="bateria-aviso" role="status" hidden></div>
 <main><div class="pantalla" id="pantalla"></div></main>
 <div class="camara-oculta" hidden><video id="video" autoplay playsinline muted></video><canvas id="lienzo" width="480" height="360"></canvas></div>
-<div id="pendientes" role="status"></div>
+<footer class="kiosco-pie"><div id="pendientes" role="status"></div>
 <button type="button" id="pantalla-completa">Pantalla completa</button>
-<a id="aviso-privacidad" href="/aviso-privacidad-checador.html" target="_blank" rel="noopener">Aviso de privacidad</a>
+<a id="aviso-privacidad" href="/aviso-privacidad-checador.html" target="_blank" rel="noopener">Aviso de privacidad</a></footer>
 <script>
 (() => {
   'use strict';
@@ -111,7 +183,7 @@
   const SESION = Math.random().toString(36).slice(2) + Date.now().toString(36); // para saber si la página se recargó
   // Los botones (los manda el servidor; estos sirven si el kiosco arranca sin conexión).
   let TIPOS = { entrada: 'Entrada', comida_sale: 'Salida a comer', comida_regresa: 'Regreso de comer', salida: 'Salida', extra_inicia: 'Inicio de tiempo extra', extra_termina: 'Fin de tiempo extra' };
-  let registro = null, desfase = 0, estado = {}, temporizador = null, sinConexion = false, camaraLista = false, camaraMotivo = '', camaraFallo = false;
+  let registro = null, desfase = 0, estado = {}, temporizador = null, sinConexion = false, conexionConfirmada = false, camaraLista = false, camaraMotivo = '', camaraFallo = false;
   try { registro = JSON.parse(localStorage.getItem(LLAVE) || 'null'); } catch { registro = null; }
 
   // ---------- Utilidades de pantalla (solo textContent: nada del servidor se interpreta como HTML) ----------
@@ -120,6 +192,8 @@
   const cerrarVentanaCara = () => document.querySelectorAll('.ventana-cara').forEach(x => x.remove());
   const pintar = (...nodos) => { cerrarVentanaCara(); const p = $('pantalla'); p.className = 'pantalla'; p.replaceChildren(...nodos); };
   function avisos() {
+    $('conexion').dataset.estado = sinConexion ? 'sin-conexion' : conexionConfirmada ? 'en-linea' : 'conectando';
+    $('conexion-texto').textContent = sinConexion ? 'Sin conexión' : conexionConfirmada ? 'En línea' : 'Conectando…';
     const a = [];
     if (sinConexion) a.push(['rojo', 'Sin conexión a internet: las checadas se guardan aquí y se suben al volver. Quedarán por revisar.']);
     // La cámara está apagada mientras nadie checa: el aviso solo sale si al pedirla falló.
@@ -127,6 +201,97 @@
     $('avisos').replaceChildren(...a.map(([c, t, accion]) => accion ? el('button', { type: 'button', className: 'aviso ' + c, textContent: t, onclick: accion }) : el('div', { className: 'aviso ' + c, textContent: t })));
   }
   function reiniciarEspera(ms = ESPERA_MS) { clearTimeout(temporizador); temporizador = setTimeout(inicio, ms); }
+
+  // ---------- Batería del dispositivo (solo lectura local, independiente de las checadas) ----------
+  (() => {
+    const indicador = $('bateria'), texto = $('bateria-texto'), nivel = $('bateria-nivel'), aviso = $('bateria-aviso');
+    let bateria = null;
+    const noDisponible = () => {
+      indicador.dataset.estado = 'no-disponible';
+      texto.textContent = 'Batería no disponible';
+      indicador.title = 'Este navegador no permite leer la batería. Prueba la app instalada desde Chrome en la Samsung.';
+      nivel.style.setProperty('--nivel', '0');
+      aviso.hidden = true;
+    };
+    const actualizar = () => {
+      if (!bateria || typeof bateria.level !== 'number' || !Number.isFinite(bateria.level) || bateria.level < 0 || bateria.level > 1) return noDisponible();
+      const porcentaje = Math.round(bateria.level * 100), cargando = bateria.charging === true;
+      const baja = !cargando && bateria.level <= .20, critica = baja && bateria.level <= .10;
+      indicador.dataset.estado = cargando ? 'cargando' : critica ? 'critica' : baja ? 'baja' : 'normal';
+      texto.textContent = `${porcentaje} %${cargando ? porcentaje === 100 ? ' · Cargada' : ' · Cargando' : ''}`;
+      indicador.title = cargando ? 'El dispositivo está conectado a la corriente' : 'El dispositivo está usando su batería';
+      nivel.style.setProperty('--nivel', String(bateria.level));
+      aviso.hidden = !baja;
+      aviso.classList.toggle('critica', critica);
+      aviso.textContent = baja ? `${critica ? 'Batería muy baja' : 'Batería baja'} (${porcentaje} %). Conecta la tableta al cargador para mantener disponible el checador.` : '';
+    };
+    // Una sola lectura inicial; los eventos del sistema actualizan porcentaje y carga sin sondeos.
+    if (typeof navigator.getBattery !== 'function') { noDisponible(); return; }
+    try {
+      Promise.resolve(navigator.getBattery()).then(b => {
+        if (!b || typeof b.addEventListener !== 'function') { noDisponible(); return; }
+        bateria = b;
+        bateria.addEventListener('levelchange', actualizar);
+        bateria.addEventListener('chargingchange', actualizar);
+        document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') actualizar(); });
+        actualizar();
+      }).catch(noDisponible);
+    } catch { noDisponible(); }
+  })();
+
+  // ---------- Sonidos de confirmación (sin micrófono ni archivos externos) ----------
+  const Sonidos = (() => {
+    const boton = $('sonido');
+    let habilitado = true, audio = null;
+    try { habilitado = localStorage.getItem('saneadren_kiosco_sonido') !== 'no'; } catch { /* preferencia opcional */ }
+    const pintarSonido = () => {
+      boton.textContent = habilitado ? '♪ Sonido activado' : '♪ Sonido apagado';
+      boton.setAttribute('aria-pressed', String(habilitado));
+      boton.title = habilitado ? 'Silenciar las confirmaciones del checador' : 'Activar las confirmaciones del checador';
+    };
+    const preparar = () => {
+      if (!habilitado) return;
+      try {
+        const Audio = window.AudioContext || window.webkitAudioContext;
+        if (!Audio) { boton.textContent = 'Sonido no disponible'; boton.disabled = true; return; }
+        audio ||= new Audio();
+        if (audio.state === 'suspended') audio.resume().catch(() => {});
+      } catch { /* si el navegador bloquea audio, la checada continúa */ }
+    };
+    // Chrome/Android exige iniciar el audio a partir de una interacción de la persona.
+    document.addEventListener('pointerdown', preparar, { capture: true });
+    document.addEventListener('keydown', preparar, { capture: true });
+    boton.onclick = () => {
+      habilitado = !habilitado;
+      try { localStorage.setItem('saneadren_kiosco_sonido', habilitado ? 'si' : 'no'); } catch { /* sin almacenamiento */ }
+      pintarSonido();
+      if (habilitado) preparar();
+      else { try { audio?.suspend().catch(() => {}); } catch { /* no disponible */ } }
+    };
+    pintarSonido();
+    const melodias = {
+      ok: [[660, 0, .12], [880, .15, .20]],
+      guardada: [[520, 0, .14], [520, .23, .14]],
+      error: [[240, 0, .18], [180, .23, .24]]
+    };
+    return {
+      sonar(tipo) {
+        if (!habilitado || !audio || audio.state !== 'running') return;
+        try {
+          for (const [frecuencia, demora, duracion] of melodias[tipo] || []) {
+            const oscilador = audio.createOscillator(), volumen = audio.createGain(), inicio = audio.currentTime + demora;
+            oscilador.type = 'sine'; oscilador.frequency.value = frecuencia;
+            volumen.gain.setValueAtTime(0, inicio);
+            volumen.gain.linearRampToValueAtTime(.13, inicio + .015);
+            volumen.gain.linearRampToValueAtTime(0, inicio + duracion);
+            oscilador.connect(volumen); volumen.connect(audio.destination);
+            oscilador.onended = () => { oscilador.disconnect(); volumen.disconnect(); };
+            oscilador.start(inicio); oscilador.stop(inicio + duracion + .02);
+          }
+        } catch { /* un error de sonido nunca interrumpe el registro */ }
+      }
+    };
+  })();
 
   // ---------- Reloj (referencia: la hora válida la pone el servidor) ----------
   const fmtHora = new Intl.DateTimeFormat('es-MX', { timeZone: ZONA, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
@@ -145,9 +310,10 @@
       const r = await api('estado');
       if (r.status === 401) { noRegistrado(); return false; }
       if (!r.ok) throw new Error('servidor');
+      conexionConfirmada = true;
       TIPOS = r.j.tipos || TIPOS; desfase = Date.parse(r.j.utc) - Date.now();
       $('kiosco-nombre').textContent = r.j.nombre + (r.j.sucursal ? ' · ' + r.j.sucursal : '');
-      if (sinConexion) { sinConexion = false; avisos(); }
+      sinConexion = false; avisos();
       return true;
     } catch { if (!sinConexion) { sinConexion = true; avisos(); } return true; }
   }
@@ -156,6 +322,8 @@
   let deBaja = false;
   function noRegistrado() {
     deBaja = true;
+    $('conexion').dataset.estado = 'sin-registrar';
+    $('conexion-texto').textContent = 'Sin registrar';
     clearTimeout(temporizador);
     pintar(el('div', { className: 'error' }, el('h1', { textContent: 'Este dispositivo no es un kiosco' }),
       el('p', { className: 'ayuda', textContent: 'Pide al gerente que lo registre: en el sistema, RH → «Kioscos del checador», desde este mismo dispositivo. Si lo dieron de baja, hay que registrarlo de nuevo.' })));
@@ -357,6 +525,7 @@
     const partes = [el('h1', { textContent: titulo }), el('p', { className: 'ayuda', textContent: ayuda }), muestra, el('div', { className: 'teclado' }, ...teclas), ...(debajo ? [debajo] : [])];
     if (lateral) { pintar(el('div', { className: 'checar' }, lateral, el('div', {}, ...partes))); $('pantalla').classList.add('ancha'); }
     else pintar(...partes);
+    $('pantalla').classList.add('ingreso');
     estado.teclado = { tecla, borrar };
     const previas = adelantadas; adelantadas = '';
     for (const d of previas) tecla(d);
@@ -499,10 +668,12 @@
     listo('ok', `${r.j.tipo} · ${r.j.hora}`, r.j.repetida ? 'Ya estaba registrada hace un momento.' : r.j.por_revisar ? `Gracias, ${r.j.nombre}. No se reconoció tu cara: tu gerente la revisará.` : r.j.sin_foto ? `Gracias, ${r.j.nombre}. Sin foto: tu gerente la revisará.` : `Gracias, ${r.j.nombre}.`);
   }
   function listo(clase, titulo, texto) {
+    Sonidos.sonar(clase);
     pintar(el('div', { className: 'listo ' + clase }, el('div', { className: 'icono', textContent: clase === 'ok' ? '✅' : '💾' }), el('h1', { textContent: titulo }), el('p', { className: 'ayuda', textContent: texto })));
     reiniciarEspera(4000);
   }
   function error(texto, despues) {
+    Sonidos.sonar('error');
     estado.teclado = null;
     pintar(el('div', { className: 'error' }, el('div', { className: 'icono', textContent: '⚠️' }), el('h1', { textContent: 'No se pudo' }), el('p', { className: 'ayuda', textContent: texto }),
       el('button', { type: 'button', className: 'btn', textContent: 'Entendido', onclick: () => (despues ? despues() : inicio()) })));
@@ -525,7 +696,8 @@
   let rechazadas = 0, subiendo = false;
   async function contarPendientes() {
     let n = 0; try { n = await cola('readonly', s => s.count()); } catch { /* sin IndexedDB */ }
-    $('pendientes').textContent = (n ? `${n} checada(s) por subir` : '') + (rechazadas ? `${n ? ' · ' : ''}${rechazadas} no se pudieron subir (PIN o código incorrecto): avisa al gerente` : '');
+    $('pendientes').dataset.pendientes = String(!!(n || rechazadas));
+    $('pendientes').textContent = (n ? `${n} checada(s) por subir` : 'Sin checadas pendientes') + (rechazadas ? `${n ? ' · ' : ''}${rechazadas} no se pudieron subir (PIN o código incorrecto): avisa al gerente` : '');
   }
   async function subirPendientes() {
     if (subiendo || !registro?.token) return; subiendo = true;
