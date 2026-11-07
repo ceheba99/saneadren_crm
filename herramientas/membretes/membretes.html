@@ -12,13 +12,13 @@
 <body>
 <!--
   Dibuja los membretes de Cotización y Orden de servicio sobre la hoja que usan el PDF y el
-  Word del CRM: 612 × 918 pt (8.5 × 12.75 in). Se exportan a 2 px por punto (1224 × 1836 px).
+  Word del CRM: 612 × 792 pt (carta, 8.5 × 11 in). Se exportan a 2 px por punto (1224 × 1584 px).
 
   Zonas que respeta (las usa public/app.js):
     0 – 112 pt   encabezado del membrete
-    122 – 710 pt área de contenido (margen izq./der. 48 pt)
-    714 – 730 pt franja libre para "Página X de Y" (alineado a la derecha en x = 564)
-    740 – 918 pt pie del membrete
+    116 – 680 pt área de contenido (margen izq./der. 48 pt)
+    686 – 700 pt franja libre para "Página X de Y"
+    706 – 792 pt servicios y contacto, sin bloque oscuro
   Ejecuta:  node herramientas/membretes/servidor.js  y abre http://localhost:3301
 -->
 <p>Vista previa. "Guardar en public/" sobrescribe los PNG que usa el CRM.</p>
@@ -39,7 +39,7 @@ const DOCUMENTOS = [
               'Servicio los 365 días del año, las 24 hrs. del día, en toda la república.'] }
 ];
 const AMARILLO = '#F6B103', OSCURO = '#1A1D23', GRIS = '#4A505A', GRIS_CLARO = '#D9DCE1';
-const W = 612, H = 918, ESCALA = 2, FUENTE = '"Segoe UI", Arial, sans-serif', FUENTE_TIT = 'Bahnschrift, "Segoe UI", Arial, sans-serif';
+const W = 612, H = 792, ESCALA = 2, FUENTE = '"Segoe UI", Arial, sans-serif', FUENTE_TIT = 'Bahnschrift, "Segoe UI", Arial, sans-serif';
 
 const cargarImagen = src => new Promise((ok, mal) => { const i = new Image(); i.onload = () => ok(i); i.onerror = mal; i.src = src; });
 
@@ -53,7 +53,7 @@ function texto(ctx, t, x, y, { tam = 9, peso = 400, color = GRIS, alin = 'left',
   return ctx.measureText(t).width + espaciado * t.length;
 }
 
-// Marca de agua: tuberías tipo plano (arriba izq.) y aro amarillo (abajo der.), muy tenues
+// Marca de agua: tuberías tipo plano muy tenues
 // para no competir con las tablas del contenido.
 function marcaDeAgua(ctx) {
   ctx.save();
@@ -70,11 +70,6 @@ function marcaDeAgua(ctx) {
   tubo(0, 240, 55, 240); tubo(55, 240, 55, 430); tubo(0, 430, 140, 430);
   [[110, 170], [110, 330], [55, 240], [55, 430]].forEach(([x, y]) => { ctx.strokeRect(x - 11, y - 11, 22, 22); });
   ctx.beginPath(); ctx.arc(180, 330, 9, 0, 7); ctx.stroke();
-  // Aro de la marca: termina antes de 700 pt para no tocar la franja inferior.
-  ctx.globalAlpha = 0.07; ctx.strokeStyle = AMARILLO; ctx.lineWidth = 30;
-  ctx.beginPath(); ctx.arc(600, 560, 130, Math.PI * 0.5, Math.PI * 1.6); ctx.stroke();
-  ctx.globalAlpha = 0.05; ctx.strokeStyle = OSCURO; ctx.lineWidth = 9;
-  ctx.beginPath(); ctx.arc(600, 560, 94, Math.PI * 0.55, Math.PI * 1.55); ctx.stroke();
   ctx.restore();
 }
 
@@ -115,35 +110,43 @@ function dibujar(ctx, logo, d) {
   ctx.fillStyle = OSCURO; ctx.fillRect(48, 103, 380, 1.6);
   ctx.fillStyle = AMARILLO; ctx.fillRect(428, 102.2, 136, 3.2);
 
-  // ---- Franja inferior (740–790 pt): servicios o leyenda; 714–730 queda libre para el número de página.
-  ctx.fillStyle = GRIS_CLARO; ctx.fillRect(48, 742, 516, 0.8);
-  if (d.franja) {
-    ctx.font = `600 7.6px ${FUENTE}`;
-    const sep = 16, anchos = d.franja.map(t => ctx.measureText(t).width + t.length * 0.8);
-    let x = (W - (anchos.reduce((a, b) => a + b, 0) + sep * (d.franja.length - 1))) / 2;
-    d.franja.forEach((t, i) => {
-      texto(ctx, t, x, 768, { tam: 7.6, peso: 600, color: GRIS, espaciado: 0.8 });
-      x += anchos[i];
-      if (i < d.franja.length - 1) { ctx.fillStyle = AMARILLO; ctx.beginPath(); ctx.arc(x + sep / 2, 765.3, 1.8, 0, 7); ctx.fill(); x += sep; }
-    });
-  } else {
-    texto(ctx, d.leyenda[0], W / 2, 762, { tam: 8, peso: 600, color: OSCURO, alin: 'center' });
-    texto(ctx, d.leyenda[1], W / 2, 775, { tam: 8, color: GRIS, alin: 'center' });
-  }
+  // Dos bloques equilibrados: especialidades y contacto, con un trazo de tubería.
+  // Todo el dibujo queda debajo de la paginación y fuera del contenido variable.
+  ctx.fillStyle = '#F5F6F8';
+  ctx.beginPath(); ctx.moveTo(322, 708); ctx.lineTo(W, 708);
+  ctx.lineTo(W, 792); ctx.lineTo(294, 792); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = GRIS_CLARO; ctx.fillRect(48, 706, 516, 0.6);
+  ctx.fillStyle = AMARILLO; ctx.fillRect(48, 706, 42, 2);
 
-  // ---- Pie oscuro (800–918 pt) con pestaña amarilla
-  ctx.fillStyle = AMARILLO;
-  ctx.beginPath(); ctx.moveTo(0, 806); ctx.lineTo(450, 806); ctx.lineTo(468, 794); ctx.lineTo(W, 794); ctx.lineTo(W, 812); ctx.lineTo(0, 812); ctx.closePath(); ctx.fill();
-  ctx.fillStyle = OSCURO; ctx.fillRect(0, 810, W, H - 810);
-  const items = [['web', CONTACTO.web], ['correo', CONTACTO.correo], ['reloj', CONTACTO.atencion], ['ubicacion', CONTACTO.cobertura]];
-  const col = (W - 96) / items.length;
-  items.forEach(([ic, t], i) => {
-    const cx = 48 + col * i;
-    icono(ctx, ic, cx + 8, 858);
-    texto(ctx, t, cx + 20, 861, { tam: 7.8, color: '#E9EBEE' });
-    if (i) { ctx.fillStyle = 'rgba(246,177,3,.55)'; ctx.fillRect(cx - 8, 846, 0.9, 24); }
+  // Codo de tubería en el margen: un detalle técnico de la marca, sin invadir el texto.
+  ctx.save(); ctx.strokeStyle = '#E4E7EB'; ctx.lineWidth = 7;
+  ctx.beginPath(); ctx.moveTo(0, 740); ctx.lineTo(14, 740);
+  ctx.quadraticCurveTo(28, 740, 28, 754); ctx.lineTo(28, 792); ctx.stroke();
+  ctx.strokeStyle = AMARILLO; ctx.lineWidth = 1.6;
+  ctx.beginPath(); ctx.moveTo(0, 740); ctx.lineTo(14, 740);
+  ctx.quadraticCurveTo(28, 740, 28, 754); ctx.lineTo(28, 792); ctx.stroke();
+  ctx.fillStyle = '#FFFFFF'; ctx.strokeStyle = AMARILLO; ctx.lineWidth = 1;
+  ctx.fillRect(22, 770, 12, 5); ctx.strokeRect(22, 770, 12, 5);
+  ctx.restore();
+
+  texto(ctx, 'INGENIERÍA SANITARIA', 48, 728, { tam: 9, peso: 700, color: OSCURO, espaciado: 0.4 });
+  texto(ctx, 'Desazolve  ·  Videoinspección', 48, 743, { tam: 8.5 });
+  texto(ctx, 'Transporte de aguas  ·  Rehabilitación', 48, 757, { tam: 8.5 });
+  icono(ctx, 'reloj', 54, 775);
+  texto(ctx, CONTACTO.atencion, 69, 778, { tam: 8, peso: 600, color: OSCURO });
+
+  texto(ctx, 'CONTACTO', 343, 726, { tam: 7, peso: 700, color: GRIS, espaciado: 0.7 });
+  [['web', CONTACTO.web], ['correo', CONTACTO.correo], ['ubicacion', CONTACTO.cobertura]].forEach(([ic, t], i) => {
+    const y = 743 + i * 16;
+    icono(ctx, ic, 350, y - 3);
+    texto(ctx, t, 366, y, { tam: 8.2, color: GRIS });
   });
-  texto(ctx, 'SANEADREN · SANEAMIENTO DE DRENAJES', W / 2, 896, { tam: 6.8, peso: 600, color: '#8A9099', alin: 'center', espaciado: 1.4 });
+
+  // Remate angular fino, sin una banda sólida que reste espacio al documento.
+  ctx.strokeStyle = AMARILLO; ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.moveTo(0, 790); ctx.lineTo(266, 790);
+  ctx.lineTo(285, 782); ctx.lineTo(W, 782); ctx.stroke();
+
 }
 
 const lienzos = [];
