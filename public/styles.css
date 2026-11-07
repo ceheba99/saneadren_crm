@@ -753,6 +753,8 @@ header.app nav.menu-principal .menu-item.activa,header.app nav.menu-principal .m
   box-shadow:0 14px 40px rgba(11,31,43,.28);padding:6px;z-index:60;flex-direction:column;gap:2px;}
 .menu-sub::before{content:'';position:absolute;top:-6px;left:22px;width:12px;height:12px;background:#fff;transform:rotate(45deg);border-radius:2px;}
 .menu-grupo.abierto .menu-sub{display:flex;}
+.menu-grupo.sub-derecha .menu-sub{left:auto;right:0;}
+.menu-grupo.sub-derecha .menu-sub::before{left:auto;right:22px;}
 header.app nav.menu-principal .menu-sub .menu-item{width:100%;justify-content:flex-start;border:0;border-radius:10px;color:var(--texto);padding:11px 12px;font-size:14px;background:transparent;}
 header.app nav.menu-principal .menu-sub .menu-item:hover{background:var(--gris-100);}
 header.app nav.menu-principal .menu-sub .menu-item.activa{background:#fff3cd;color:var(--texto);font-weight:700;}
@@ -2180,3 +2182,59 @@ table.tabla-clientes.py-tareas tbody td{white-space:normal;}
 .fx-crear-serie{display:flex;flex-wrap:wrap;align-items:flex-end;gap:8px;margin-top:10px;padding-top:10px;border-top:1px dashed var(--gris-200);}
 .fx-crear-serie > .ayuda{flex:1 1 100%;}
 .fx-crear-serie label{display:flex;flex-direction:column;gap:4px;font-size:12.5px;color:var(--texto-sec);}
+.pe-pin-nuevo{background:#fff7d6;border:1px solid #e6c34a;border-radius:8px;padding:10px 12px;font-size:16px;}
+.pe-bloqueado{color:#b42318;}
+.pe-kioscos{margin-top:18px;}
+.pe-foto{display:block;max-width:320px;width:100%;border-radius:8px;margin-top:8px;}
+.btn-link{background:none;border:0;padding:0;color:var(--azul,#1d4ed8);cursor:pointer;font:inherit;text-decoration:underline;}
+.as-pestanas{margin:10px 0;}
+.as-pestanas [aria-pressed="true"]{background:var(--oscuro,#1a1d23);color:#fff;}
+.as-tabla td small{display:block;}
+.as-rojo{color:#b42318;}
+.as-falta{background:#fff1f1;}
+.as-chip{display:inline-block;background:#f3f4f6;border-radius:10px;padding:1px 8px;font-size:12px;margin:1px 0;}
+.as-festivo{font-weight:600;}
+.as-detalle{background:#fafafa;border-radius:8px;padding:10px;text-align:left;}
+.as-tabla th,.as-tabla td,.as-form-horario td,.as-form-horario th{text-align:left !important;vertical-align:top;}
+.as-form{align-items:center;margin-top:8px;}
+.as-num{width:80px;}
+.as-horario p{margin:6px 0;}
+.as-form-horario{border:1px solid #e5e7eb;border-radius:8px;padding:10px;margin-top:10px;}
+.as-semana td{white-space:nowrap;font-size:13px;}
+.as-descanso{color:#6b7280;}
+.pe-enlace{width:100%;font-size:13px;margin:6px 0;}
+.rh-accesos{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:10px;margin:14px 0;}
+.rh-acceso{display:flex;flex-direction:column;align-items:flex-start;gap:4px;text-align:left;background:#fff;border:1px solid #e5e7eb;border-radius:10px;padding:12px 14px;cursor:pointer;font:inherit;}
+.rh-acceso:hover{border-color:#f6b103;}
+.rh-acceso small{color:#6b7280;}
+.rh-icono{font-size:1.5rem;}
+.rh-pasos{margin:6px 0 10px;padding-left:20px;}
+
+/* Listas de la parte que cambia de cada servicio (2026-11-05, listas-servicio.js) */
+.gc-opciones{grid-column:1/-1;display:flex;flex-wrap:wrap;gap:10px 12px;}
+.gc-opciones .campo-modal{min-width:180px;flex:0 1 260px;}
+.ls-listas{margin-top:8px;display:flex;flex-direction:column;gap:8px;}
+.ls-lista{border:1px dashed var(--gris-400);border-radius:var(--radio);padding:8px 10px;}
+.ls-tit{font-size:13px;margin-bottom:6px;}
+.ls-tit small{color:var(--texto-sec);}
+.ls-chips{display:flex;flex-wrap:wrap;gap:6px;}
+.ls-chip{display:inline-flex;align-items:center;gap:4px;background:var(--gris-100);border:1px solid var(--gris-200);border-radius:999px;padding:2px 4px 2px 10px;font-size:13px;}
+.ls-chip-quitada{opacity:.7;margin:4px 6px 0 0;}
+.ls-quitar{border:0;background:transparent;cursor:pointer;padding:0 6px;font-size:12px;color:var(--texto-sec);}
+.ls-agregar{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;}
+.ls-agregar .ls-nuevo{flex:1 1 160px;min-width:0;}
+.ls-quitadas summary{cursor:pointer;color:var(--texto-sec);font-size:13px;margin-top:6px;}
+.ls-ayuda{margin:6px 0 0;}
+/* Logs del sistema (Ajustes, solo Dirección): resumen de 24 h y renglones según gravedad. */
+.logs-tarjetas{display:grid;grid-template-columns:repeat(6,1fr);gap:10px;margin-bottom:6px;}
+.logs-estado{margin:4px 0 0;}
+.logs-tarjeta{background:var(--gris-100);border-radius:10px;padding:10px 12px;display:flex;flex-direction:column;gap:2px;}
+.logs-tarjeta b{font-size:22px;line-height:1.1;}
+.logs-tarjeta span{font-size:12px;color:var(--texto-sec);}
+.logs-tarjeta.logs-alerta{background:#fbe9e7;}
+.logs-tarjeta.logs-alerta b{color:var(--rojo);}
+tr.logs-grave td{background:#fdf1ef;}
+tr.logs-aviso td{background:#fffaf0;}
+@media (max-width:1100px){.logs-tarjetas{grid-template-columns:repeat(3,1fr);}}
+@media (max-width:700px){.logs-tarjetas{grid-template-columns:repeat(2,1fr);}}
+#panel-logs .tabla-resumen th,#panel-logs .tabla-resumen td{text-align:left;}

@@ -23,9 +23,11 @@ Dirección la revisa y la aprueba. Si un cambio altera lo que ve un rol, la prue
 | 📝 Solicitudes de compra | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | — | — |
 | 🛒 Órdenes de compra | ✔ | ✔ | ✔ | ✔ | — | ✔ | — | — |
 | 📊 Resultados | ✔ | ✔ | ✔ | ✔ | — | — | — | — |
+| 🧑‍💼 Inicio de RH | ✔ | ✔ | — | — | — | — | — | — |
 | 👷 Personal | ✔ | ✔ | — | — | — | — | — | — |
+| 🕒 Asistencia | ✔ | ✔ | — | — | — | — | — | — |
 | 📚 Catálogos | ✔ | ✔ | — | — | — | ✔ | — | — |
-| 👤 Usuarios | ✔ | ✔ | — | — | — | — | — | — |
+| 🛠️ Ajustes | ✔ | ✔ | — | — | — | — | — | — |
 | 🗂️ Bitácora | ✔ | — | — | — | — | — | — | — |
 
 ## Qué ve en cada área (Roles y permisos)
@@ -120,6 +122,7 @@ Dirección la revisa y la aprueba. Si un cambio altera lo que ve un rol, la prue
 | Archivo de la biblioteca de marketing | ✔ | — | — | — | — | — | ✔ | ✔ |
 | Presupuesto de marketing del mes (monto) | ✔ | — | — | — | — | — | — | ✔ |
 | Gasto de marketing (concepto y monto) | ✔ | — | — | — | — | — | — | ✔ |
+| Reporte de llamadas de Google Ads (por campaña, lada y horario, y las llamadas sin registrar) | ✔ | — | — | — | — | — | — | ✔ |
 
 ### Personal
 
@@ -128,6 +131,9 @@ Dirección la revisa y la aprueba. Si un cambio altera lo que ve un rol, la prue
 | Un empleado activo: nombre y puesto (para asignarlo a una orden) | ✔ | ✔ | ✔ | ✔ | ✔ | — | — | — |
 | Su ficha: teléfono, licencia, ingreso | ✔ | ✔ | — | — | — | — | — | — |
 | Sus datos sensibles: CLABE y salario | ✔ | ✔ | — | — | — | — | — | — |
+| Sus checadas del reloj checador (entradas, salidas) y su motivo | ✔ | ✔ | — | — | — | — | — | — |
+| La foto que se tomó al checar en el kiosco | ✔ | ✔ | — | — | — | — | — | — |
+| La ubicación GPS de una checada desde el celular | ✔ | ✔ | — | — | — | — | — | — |
 
 ### Reportes
 
@@ -171,6 +177,33 @@ Dirección la revisa y la aprueba. Si un cambio altera lo que ve un rol, la prue
 | Ver la revisión de «¿está lista la facturación para producción?» (llaves, series, claves del SAT, respaldo) | ✔ | — | — | — | — | — | — | — |
 | Cambiar a mano el folio o el total de una orden que ya tiene factura real timbrada | — | — | — | — | — | — | — | — |
 | Capturar los resultados (alcance, me gusta…) de una publicación ya publicada | ✔ | — | — | — | — | — | ✔ | ✔ |
+| Dar de alta a una persona en el reloj checador (código y PIN temporal) o desbloquear su PIN | ✔ | ✔ | — | — | — | — | — | — |
+| Registrar una tableta o computadora como kiosco del reloj checador | ✔ | ✔ | — | — | — | — | — | — |
+| Agregar a mano una checada olvidada (con motivo) | ✔ | ✔ | — | — | — | — | — | — |
+| Cambiar un horario (entrada, salida, tolerancia o comida) | ✔ | ✔ | — | — | — | — | — | — |
+| Marcar o quitar días festivos (valen para todas las sucursales) | ✔ | — | — | — | — | — | — | — |
+| Autorizar el tiempo extra de una persona | ✔ | ✔ | — | — | — | — | — | — |
+| Corregir su PROPIA asistencia (agregarse una checada o autorizarse su tiempo extra) | ✔ | — | — | — | — | — | — | — |
+| Ponerle precio a la hora de cada puesto (para pagar el tiempo extra) | ✔ | ✔ | — | — | — | — | — | — |
+| Ver cuánto dinero sale por tiempo extra (en la semana y en el Excel de nómina) | ✔ | ✔ | — | — | — | — | — | — |
+| Cambiar los días de crédito y los datos de factura de una orden | ✔ | ✔ | — | — | — | — | — | — |
+| Eliminar un usuario (se borra si nunca se usó; si ya tiene registros, se archiva) | ✔ | — | — | — | — | — | — | — |
+| Ver los logs del sistema (entradas y salidas, contraseñas equivocadas, bloqueos, errores del servidor y quién está conectado) | ✔ | — | — | — | — | — | — | — |
+| Eliminar una sucursal (se borra si nunca se usó; si ya tiene registros, se archiva) | ✔ | — | — | — | — | — | — | — |
+| Mandar a una persona el enlace para checar desde su celular, o quitarle el celular | ✔ | ✔ | — | — | — | — | — | — |
+| Ver los intentos fallidos en el kiosco (código o PIN malo, PIN bloqueado) con su foto y la red de cada checada | ✔ | ✔ | — | — | — | — | — | — |
+| Capturar la ubicación de una sucursal (para revisar dónde checan con el celular) | ✔ | — | — | — | — | — | — | — |
+| Subir o tomar la foto de una persona para su credencial | ✔ | ✔ | — | — | — | — | — | — |
+| Imprimir credenciales (con su QR de verificación para clientes y su vigencia) | ✔ | ✔ | — | — | — | — | — | — |
+| Activar o quitar a una persona el checar por WhatsApp (foráneos) | ✔ | ✔ | — | — | — | — | — | — |
+| Dar el código para registrar la cara de una persona en el kiosco, o borrar su registro (biométrico) | ✔ | ✔ | — | — | — | — | — | — |
+| Ver la pestaña RH (resumen del personal: sin horario, sin checador, sin aviso firmado…) | ✔ | ✔ | — | — | — | — | — | — |
+| Cargar trabajadores en lote desde la plantilla de Excel (revisar y guardar) | ✔ | ✔ | — | — | — | — | — | — |
+| Ver la asistencia del día y de la semana (retardos, faltas, tiempo extra) | ✔ | ✔ | — | — | — | — | — | — |
+| Cargar el reporte de llamadas de Google Ads (CSV) y verlo cruzado con los contactos | ✔ | — | — | — | — | — | — | ✔ |
+| Subir el XML de la factura a un gasto que registró Tomás (el sistema llena el IVA) | ✔ | ✔ | — | — | ✔ | ✔ | — | — |
+| Corregir a mano el IVA de ese gasto (botón «IVA») | ✔ | ✔ | — | — | — | ✔ | — | — |
+| Agregar o quitar opciones en la lista de un servicio (p. ej. 4M3, 8M3 para [VOLUMEN]) | ✔ | — | — | — | — | — | — | — |
 
 | Permiso | Dirección | Gerente | Ventas | Atención | Técnico | Costos y compras | Marketing | Gerente de marketing |
 |---|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|
@@ -182,7 +215,7 @@ Dirección la revisa y la aprueba. Si un cambio altera lo que ve un rol, la prue
 | Cuentas por cobrar · Registrar cobros | ✔ | ✔ | ✔ | ✔ | ✔ | — | — | — |
 | Cuentas por cobrar · Confirmar cobros | ✔ | ✔ | ✔ | ✔ | — | — | — | — |
 | Cuentas por cobrar · Sus cobros entran ya confirmados | ✔ | ✔ | — | ✔ | — | — | — | — |
-| Cuentas por cobrar · Crédito y datos de factura | ✔ | ✔ | ✔ | ✔ | — | — | — | — |
+| Cuentas por cobrar · Crédito y datos de factura | ✔ | ✔ | — | — | — | — | — | — |
 | Cuentas por cobrar · Ajustes, descuentos y revisión inicial | ✔ | ✔ | — | — | — | — | — | — |
 | Facturación · Datos fiscales de clientes | ✔ | ✔ | — | — | — | — | — | — |
 | Facturación · Timbrar facturas | ✔ | ✔ | — | — | — | — | — | — |
@@ -199,6 +232,11 @@ Dirección la revisa y la aprueba. Si un cambio altera lo que ve un rol, la prue
 | Personal · Ver personal | ✔ | ✔ | — | — | — | — | — | — |
 | Personal · Editar personal | ✔ | ✔ | — | — | — | — | — | — |
 | Personal · Datos sensibles del personal | ✔ | ✔ | — | — | — | — | — | — |
+| Personal · Ver asistencia | ✔ | ✔ | — | — | — | — | — | — |
+| Personal · Corregir asistencia | ✔ | ✔ | — | — | — | — | — | — |
+| Personal · Kioscos del checador | ✔ | ✔ | — | — | — | — | — | — |
+| Personal · Horarios y días festivos | ✔ | ✔ | — | — | — | — | — | — |
+| Personal · Autorizar tiempo extra | ✔ | ✔ | — | — | — | — | — | — |
 | Administración · Usuarios | ✔ | ✔ | — | — | — | — | — | — |
 | Marketing · Aprobar publicaciones | ✔ | — | — | — | — | — | — | ✔ |
 | Marketing · Dinero de Marketing | ✔ | — | — | — | — | — | — | ✔ |
@@ -227,11 +265,30 @@ Dirección la revisa y la aprueba. Si un cambio altera lo que ve un rol, la prue
 - **2026-10-26** · Técnico: ve su solicitud de compra, no las de otros, y no ve montos de compras.
 - **2026-10-21** · Prospección: cada quien lo suyo (quien ve toda su sucursal en ventas, todos los de su sucursal); el técnico no prospecta.
 - **2026-10-19** · Personal: quien ve órdenes ve nombre y puesto del personal activo, para asignarlo a una orden; la ficha y los datos sensibles, solo Gerente y Dirección.
+- **2026-11-03** · Reloj checador: ver las checadas del personal, corregirlas con motivo, dar código y PIN y registrar kioscos lo hacen Dirección y el Gerente (de su sucursal); los demás roles no. Nadie ve un PIN ni borra una checada.
+- **2026-11-03** · Foto de cada checada del kiosco (para revisar quién checó): la ven Dirección y el Gerente (de su sucursal), y cada vez queda en la bitácora; los demás roles no. Se guarda cifrada.
+- **2026-11-03** · Asistencia (horarios, retardos, faltas y tiempo extra): la ven Dirección y el Gerente; cambian horarios y días festivos y autorizan el tiempo extra Dirección y el Gerente (Dirección se los da a RH en Roles y permisos); los demás roles no.
+- **2026-11-05** · Días festivos: valen para TODAS las sucursales, así que los marca o quita quien tiene «Horarios y días festivos» y ve todas las sucursales (Dirección, o RH de la empresa). El Gerente de una sola sucursal ya no (auditoría: su festivo convertía en tiempo extra lo trabajado en las demás).
+- **2026-11-05** · Intentos fallidos en el kiosco (código o PIN malo, PIN bloqueado): el kiosco les toma foto; los intentos, su foto y la red (IP) desde la que se checó los ven Dirección y el Gerente (de su sucursal), y cada foto que se abre queda en la bitácora. Los demás roles no.
+- **2026-11-05** · Ubicación de cada sucursal (para el celular: a más de su radio, 500 m por omisión, la checada queda «por revisar» y se ve en el mapa): la captura solo Dirección.
+- **2026-11-05** · Credenciales de empleado (foto, nombre, puesto, número de empleado, vigencia, contacto de emergencia, QR del checador y QR de verificación para clientes): tomar la foto e imprimirlas lo hacen quienes editan el personal (Dirección y el Gerente, de su sucursal). Imprimir una nueva anula la anterior. La página de verificación es pública solo con el QR y muestra foto, nombre y puesto si la persona sigue trabajando y la credencial está vigente; si no, solo dice que no es válida.
+- **2026-11-05** · Checar por WhatsApp (foráneos, respaldo del celular): solo quien RH active en su ficha y desde el celular de su ficha; sin foto ni ubicación, cada checada queda «por revisar». Activarlo o quitarlo lo hacen quienes editan el personal (Dirección y el Gerente, de su sucursal), nunca para sí mismos (salvo Dirección).
+- **2026-11-05** · Crédito al cliente y datos de factura de una orden (días de crédito, folio, fecha y total): los cambian solo Dirección y el Gerente, porque el crédito es una decisión de dinero. Ventas, Atención y los demás roles lo ven pero no lo cambian. (Antes lo cambiaba cualquiera que viera la cobranza.)
+- **2026-11-05** · Logs del sistema (Configuración → Ajustes): quién entró y salió, desde qué IP y equipo, contraseñas equivocadas, bloqueos por intentos, contraseñas restablecidas, errores del servidor y quién está conectado ahora. Los ve solo Dirección; ningún otro rol, ni el Gerente. Nunca guardan contraseñas.
+- **2026-11-05** · Biométrico facial en el kiosco (solo de quien firmó su consentimiento; los expedientes son físicos, así que RH marca en la ficha que lo firmó, con quién y cuándo): marcar el consentimiento, dar el código de un solo uso para registrar su cara en el kiosco o borrar su registro lo hacen quienes editan el personal (Dirección y el Gerente, de su sucursal), nunca para sí mismos (salvo Dirección). Nadie ve ni descarga la plantilla de la cara: solo se compara al checar. Si no coincide, la checada queda por revisar.
+- **2026-11-04** · Eliminar usuarios y sucursales: solo Dirección. Si nunca se usaron se borran; si ya tienen registros (cotizaciones, cobros, bitácora…) se archivan: desaparecen de las listas y su historial se conserva. La sucursal principal y la propia cuenta no se eliminan.
+- **2026-11-03** · Precio de la hora de cada puesto y el dinero del tiempo extra (dobles y triples, en la semana y en el Excel de nómina): lo ven y lo cambian quienes ven sueldos (Dirección y el Gerente, de su sucursal); los demás roles solo ven horas.
+- **2026-11-03** · Nadie corrige su PROPIA asistencia (agregar, anular o aceptar sus checadas, autorizarse tiempo extra, cambiarse el horario, registrarse vacaciones o permisos), ni el Gerente: lo hace otra persona con permiso. Dirección sí, porque no tiene a quién pedírselo.
+- **2026-11-03** · Checar desde el celular: mandar el enlace o quitar el celular lo hacen Dirección y el Gerente (quien edita el personal); la ubicación de cada checada la ven solo Dirección y el Gerente (se toma solo al checar). Los demás roles no.
+- **2026-11-03** · Pestaña RH (junta Personal, asistencia, horarios, kioscos, nómina y aviso de privacidad): la ve quien ve el personal (Gerente y Dirección); cargar trabajadores en lote desde la plantilla, solo quien edita el personal (Gerente y Dirección). Los demás roles no.
+- **2026-11-04** · Gastos con factura: subir el XML a un gasto ya registrado (el sistema llena solo el IVA) lo hacen quien registró el gasto y quien paga cuentas por pagar (Dirección, Gerente y Compras). Corregir el IVA a mano, solo quien paga (como antes). Los demás roles no.
 - **2026-10-26** · Marketing: aprueban las publicaciones Dirección y el Gerente de marketing; nadie más (ni Marketing, aunque la haya escrito).
 - **2026-10-26** · Marketing y Gerente de marketing: ven, editan y comentan las publicaciones de toda la empresa (de cualquier sucursal y las generales), y nada más del sistema: ni ventas, cobranza, gastos, compras, prospección ni personal.
 - **2026-10-26** · Los demás roles (Gerente, Ventas, Atención, Técnico, Compras) no ven Marketing; Dirección lo puede prender en Roles y permisos.
 - **2026-10-26** · Dirección ve y aprueba todo Marketing.
 - **2026-10-27** · Dinero de Marketing (presupuesto, gastos, costo por contacto y retorno): lo ven Dirección y el Gerente de marketing; el rol Marketing y los demás roles no.
+- **2026-11-04** · Llamadas de Google Ads (subir el reporte «Detalles de las llamadas» y verlo cruzado con los contactos, ventas e importes): lo ven y lo cargan solo Dirección y el Gerente de marketing; el rol Marketing y los demás roles no.
+- **2026-11-05** · Listas de los servicios (las opciones que se eligen para la parte que cambia de la descripción, p. ej. [VOLUMEN]: 4M3, 8M3… o [SUCURSAL] de KFC): las agregan o quitan solo Dirección; ningún otro rol, ni el Gerente. Quienes cotizan solo eligen de la lista. Quitar no borra: queda en la bitácora.
 - **2026-10-27** · Presupuesto de Marketing: lo propone el Gerente de marketing y lo aprueba solo Dirección.
 - **2026-10-27** · Gastos de Marketing: los registran Dirección y el Gerente de marketing, y son control interno del departamento: no aparecen en Cuentas por pagar.
 - **2026-10-27** · Resultados de cada publicación (alcance, me gusta, mensajes…): los capturan Marketing, el Gerente de marketing y Dirección, cuando ya está publicada; los demás roles no.
@@ -250,3 +307,25 @@ Dirección la revisa y la aprueba. Si un cambio altera lo que ve un rol, la prue
 - **2026-10-27** · Banco de ideas: las proponen, votan y comentan Marketing, Gerente de marketing y Dirección; las aprueban o descartan solo Dirección y el Gerente de marketing. Los demás roles no ven las ideas.
 - **2026-10-27** · Biblioteca de marketing (logos, fotos, plantillas): la ven y usan Marketing, Gerente de marketing y Dirección; los demás roles no.
 - **2026-10-26** · Proyectos de marketing (tareas, Gantt y avances): los ven y editan Marketing, Gerente de marketing y Dirección; los demás roles no.
+
+## Roles hechos a mano (lo que Dirección apaga en «Roles y permisos»)
+
+| Qué se revisa | Cobranza sin ventas (contactos y cuentas por cobrar) | Cotiza sin órdenes (contactos, cotizaciones y cobranza) | Solo contactos | Atención (de fábrica, para comparar) |
+|---|:-:|:-:|:-:|:-:|
+| Menú: Cotizaciones | — | ✔ | — | ✔ |
+| Menú: Calendario | ✔ | ✔ | — | ✔ |
+| Inicio: Avisos y seguimiento | — | ✔ | — | ✔ |
+| Inicio: Servicios por concluir | — | — | — | ✔ |
+| Inicio: Recompras | — | — | — | ✔ |
+| Inicio: Finanzas | ✔ | ✔ | — | ✔ |
+| Le llega la recompra de una orden | — | — | — | ✔ |
+| Le llega el aviso de una orden | — | — | — | ✔ |
+| Le llega el aviso de una cotización | — | ✔ | — | ✔ |
+| Le llega la orden por concluir | — | — | — | ✔ |
+| Ve la orden en el calendario | — | — | — | ✔ |
+| Ve la cobranza de la orden | ✔ | ✔ | — | ✔ |
+
+- **2026-11-03** · Un rol sin cotizaciones ni órdenes no ve «Cotizaciones» en el menú ni sus avisos en Inicio, aunque vea contactos o la cobranza.
+- **2026-11-03** · «Servicios por concluir» y las órdenes del calendario: solo quien ve órdenes de servicio. Quien solo ve la cobranza sigue viendo la cobranza de esas órdenes, no la orden para concluirla.
+- **2026-11-03** · Recompras: salen de las órdenes de servicio, así que solo las ve quien ve órdenes (no quien solo ve contactos o la cobranza).
+- **2026-11-03** · Atención (con órdenes de toda su sucursal) sigue viendo todo eso: avisos, servicios por concluir, recompras y calendario.

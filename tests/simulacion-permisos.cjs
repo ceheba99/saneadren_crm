@@ -128,7 +128,7 @@ const CAMBIOS_ESPERADOS = [
   [s, j] = await pedir('PUT', '/roles/ventas/permisos', A, { permisos: ventas, alcances: { cxc: 0 } });
   revisa(s === 400 && /necesita/.test(j.error), 'no se le quita «Ver cuentas por cobrar» dejando «Confirmar cobros» (lo necesita)', j);
   [s, j] = await pedir('PUT', '/roles/ventas/permisos', A, { permisos: ventas.filter(c => c !== 'cobros.confirmar' && c !== 'cobranza.factura'), alcances: { cxc: 0 } });
-  revisa(s === 200 && j.cambios === 3, 'Dirección le quita a ventas «Ver cuentas por cobrar» (y lo que la necesita: confirmar cobros, crédito y factura)', j);
+  revisa(s === 200 && j.cambios === 2, 'Dirección le quita a ventas «Ver cuentas por cobrar» (y lo que la necesita: confirmar cobros; crédito y factura ya no lo tenía desde 2026-11-05)', j);
   [s] = await pedir('GET', '/finanzas/cartera', T.ventas); revisa(s === 403, 'ventas ya no ve cuentas por cobrar (sin volver a entrar)');
   [s, j] = await pedir('GET', '/permisos/mios', T.ventas); revisa(!j.permisos.includes('cxc.ver') && j.todas.includes('cxc.ver'), 'la pantalla de ventas sabe que no lo tiene (para esconderlo)');
   [s] = await pedir('GET', '/finanzas/cartera', T.atencion); revisa(s === 200, 'atención sigue viéndolas (es otro rol)');

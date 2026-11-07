@@ -1,12 +1,13 @@
 // Respaldos automáticos de la base: una copia al día en «respaldos/», junto a la base (fuera del sitio web),
 // y se conservan las de los últimos RESPALDOS_DIAS días (14 si no se indica). Protege contra borrados por
 // error o una base dañada. NO sustituye una copia fuera del servidor (si el disco falla, se pierden las dos):
-// para eso, el respaldo programado de Plesk a otro lugar o descargar «Respaldar base» de vez en cuando.
+// para eso, el respaldo programado de Plesk a otro lugar o descargar el «respaldo completo» de vez en cuando.
+// Ojo: esta copia es SOLO de la base; los archivos («archivos/») van en el respaldo completo (respaldo-completo.js).
 // Solo corre si la base vive en DB_PATH (servidor); RESPALDOS=0 lo apaga.
 const fs = require('fs');
 const path = require('path');
 
-module.exports = function respaldos(db, { hoyMexico }) {
+module.exports = function respaldos(db, { hoyMexico, avisar }) {
   if (!process.env.DB_PATH || process.env.RESPALDOS === '0') return null;
   const dir = path.join(path.dirname(path.resolve(process.env.DB_PATH)), 'respaldos');
   const conservar = Math.max(1, Number(process.env.RESPALDOS_DIAS) || 14);
@@ -23,7 +24,8 @@ module.exports = function respaldos(db, { hoyMexico }) {
       fs.renameSync(tmp, path.join(dir, nombre)); // solo queda con su nombre final si se terminó completo
       for (const viejo of lista().slice(0, -conservar)) fs.unlinkSync(path.join(dir, viejo));
       console.log(`[respaldo] ${nombre} listo (se conservan ${conservar} días)`);
-    } catch (err) { console.error('[respaldo] no se pudo hacer:', err.message); }
+      avisar?.('respaldo_ok', `${nombre} · ${(fs.statSync(path.join(dir, nombre)).size / 1048576).toFixed(1)} MB · se conservan ${conservar} días`);
+    } catch (err) { console.error('[respaldo] no se pudo hacer:', err.message); avisar?.('respaldo_fallo', err.message); }
     finally { corriendo = false; }
   }
   // El primero a los 10 minutos de arrancar y luego cada 6 horas (solo hace uno por día).

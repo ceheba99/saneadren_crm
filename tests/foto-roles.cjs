@@ -9,6 +9,7 @@
 // Uso: node tests/foto-roles.cjs                (compara con la foto aprobada)
 //      node tests/foto-roles.cjs --actualizar   (reescribe la foto; la diferencia se revisa en el PR)
 const { spawn } = require('child_process'); const fs = require('fs'), os = require('os'), path = require('path');
+const { cfdi } = require('./cfdi-inventado.cjs');
 const FOTO = path.join(__dirname, 'foto-roles.md'), ACTUALIZAR = process.argv.includes('--actualizar');
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'crm-foto-')), DB = path.join(dir, 'foto.db');
 const ADMIN = { correo: 'marketing@saneadren.com.mx', password: 'Foto-' + Math.random().toString(36).slice(2) + '-9Q' };
@@ -21,6 +22,8 @@ const pedir = async (m, r, t, b) => {
   const texto = await x.text(); let j = {}; try { j = JSON.parse(texto); } catch { /* */ } return [x.status, j, texto];
 };
 const espera = ms => new Promise(r => setTimeout(r, ms));
+// Foto de prueba para la credencial (JPEG mínimo válido por su firma).
+const FOTO_JPG = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), require('crypto').randomBytes(2000), Buffer.from([0xff, 0xd9])]);
 let n = 0; const malos = [];
 const revisa = (cond, texto, extra) => { n++; if (!cond) { malos.push(texto); console.log('  ✘ ' + texto + (extra !== undefined ? '  → ' + JSON.stringify(extra).slice(0, 900) : '')); } else console.log('  ✔ ' + texto); };
 const HOY = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Mexico_City' }).format(new Date());
@@ -119,6 +122,11 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
   const MES = HOY.slice(0, 7);
   exigir(await pedir('PUT', '/marketing/presupuestos/' + MES, T.Gil, { lineas: { pauta: 17345.67 } }), 'presupuesto de marketing');
   exigir(await pedir('POST', '/marketing/gastos', T.Gil, { fecha: HOY, concepto: 'Pauta Turquesa', rubro: 'pauta', monto: 4183.56, proveedor: 'Meta' }), 'gasto de marketing');
+  // Google Ads (2026-11-04): Dirección sube el reporte «Detalles de las llamadas» con una campaña marcada (número inventado, que no está en el CRM).
+  const fechaAds = new Date(dia(-2) + 'T12:00:00Z'), MES_ADS = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'][fechaAds.getUTCMonth()];
+  const CSV_ADS = 'Detalles de las llamadas\nRango\nHora de inicio,Duración (segundos),Código de país de la persona que llama,Prefijo de la persona que llama,Número de teléfono de la persona que llama,Grabación,Estado,Fuente de la llamada,Tipo de llamada,Campaña\n'
+    + `"${fechaAds.getUTCDate()} ${MES_ADS} ${fechaAds.getUTCFullYear()}, 11:00:00",95,52,55, +52 55 7777 0909,No disponible,Recibida,Anuncio,Clics de llamada de móviles,Campaña Peridoto\n`;
+  exigir(await pedir('POST', '/marketing/google-ads/cargar', A, { csv: CSV_ADS }), 'cargar el reporte de Google Ads');
   const ideaAgata = exigir(await pedir('POST', '/marketing/ideas', T.Mara, { titulo: 'Idea Ágata', descripcion: 'Reto en TikTok Ágata' }), 'idea Ágata');
   const PNG1 = Buffer.from('89504e470d0a1a0a0000000d4948445200000001000000010802000000907753de0000000c4944415408d763f8cfc0000003010100c9fe92ef0000000049454e44ae426082', 'hex');
   { const x = await fetch(URL + '/marketing/biblioteca', { method: 'POST', headers: { 'Content-Type': 'application/octet-stream', Authorization: 'Bearer ' + T.Mara, 'X-Nombre': encodeURIComponent('logo-Jaspe.png'), 'X-Carpeta': encodeURIComponent('Logos') }, body: PNG1 }); if (x.status !== 201) throw new Error('No se pudo subir a la biblioteca: ' + x.status); }
@@ -126,7 +134,21 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
   // Personal: un empleado con datos sensibles.
   const CLABE = '072180001234567898'.slice(0, 17); const conDigito = p17 => { const w = [3, 7, 1]; let s = 0; for (let i = 0; i < 17; i++) s += (Number(p17[i]) * w[i % 3]) % 10; return p17 + ((10 - (s % 10)) % 10); };
   const clabe = conDigito(CLABE), salario = 23456.78;
-  exigir(await pedir('POST', '/personal', T.Gema, { nombre: 'Ernesto Obsidiana', puesto: 'Operador', telefono: '442 987 6543', fecha_ingreso: dia(-200), clabe, salario, salario_periodo: 'mensual' }), 'alta de personal');
+  const EMP = exigir(await pedir('POST', '/personal', T.Gema, { nombre: 'Ernesto Obsidiana', puesto: 'Operador', telefono: '442 987 6543', fecha_ingreso: dia(-200), clabe, salario, salario_periodo: 'mensual' }), 'alta de personal');
+  // Reloj checador (2026-11-03): una checada de ayer agregada a mano, con su motivo marcado.
+  exigir(await pedir('POST', '/asistencia/checadas', A, { personal_id: EMP.id, tipo: 'entrada', fecha: dia(-1), hora: '08:31', motivo: 'Checada Turmalina' }), 'checada de Obsidiana');
+  // F2 (2026-11-03): una checada en el kiosco con su foto (JPEG de prueba con una marca).
+  let CHECADA_FOTO;
+  { const pin = exigir(await pedir('POST', '/asistencia/personal/' + EMP.id + '/pin', A), 'PIN de Obsidiana'), kio = exigir(await pedir('POST', '/asistencia/dispositivos', A, { nombre: 'Kiosco foto', sucursal_id: qro.id }), 'kiosco');
+    const k = async (r, b) => { const x = await fetch(URL + '/publico/kiosco/' + r, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Kiosco': kio.token }, body: JSON.stringify(b) }); return x.json(); };
+    const i = await k('identificar', { codigo: pin.codigo, pin: pin.pin }), c = await k('cambiar-pin', { ticket: i.ticket, nuevo: '5072' });
+    const jpg = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.from('FOTO-ZIRCON'), Buffer.alloc(2000, 7), Buffer.from([0xff, 0xd9])]).toString('base64');
+    CHECADA_FOTO = (await k('checar', { ticket: c.ticket, tipo: 'entrada', foto: jpg })).id; if (!CHECADA_FOTO) throw new Error('No se pudo checar con foto');
+    // F5: su celular ligado y una checada con ubicación (marcada).
+    const enlace = exigir(await pedir('POST', '/asistencia/personal/' + EMP.id + '/celular', A), 'enlace del celular').ruta.split('#e=')[1];
+    const cel = async (r, b, tk) => { const x = await fetch(URL + '/publico/celular/' + r, { method: 'POST', headers: { 'Content-Type': 'application/json', ...(tk ? { 'X-Celular': tk } : {}) }, body: JSON.stringify(b) }); return x.json(); };
+    const tk = (await cel('ligar', { enlace })).token;
+    if (!(await cel('checar', { pin: '5072', tipo: 'salida', foto: jpg, lat: 20.612345, lon: -100.398765, precision: 12 }, tk)).id) throw new Error('No se pudo checar desde el celular'); }
 
   // ----- Qué datos se buscan (fila de la foto → marcas que la delatan) -----
   const DATOS = [
@@ -178,11 +200,15 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
       ['jaspe', 'Archivo de la biblioteca de marketing', ['logo-Jaspe']],
       ['presupMk', 'Presupuesto de marketing del mes (monto)', formas(17345.67)],
       ['gastoMk', 'Gasto de marketing (concepto y monto)', ['Pauta Turquesa', ...formas(4183.56)]],
+      ['gAds', 'Reporte de llamadas de Google Ads (por campaña, lada y horario, y las llamadas sin registrar)', ['Campaña Peridoto']],
     ]],
     ['Personal', [
       ['obsidiana', 'Un empleado activo: nombre y puesto (para asignarlo a una orden)', ['Obsidiana']],
       ['fichaEmp', 'Su ficha: teléfono, licencia, ingreso', ['442 987 6543', '4429876543']],
       ['clabe', 'Sus datos sensibles: CLABE y salario', [clabe, ...formas(salario)]],
+      ['turmalina', 'Sus checadas del reloj checador (entradas, salidas) y su motivo', ['Checada Turmalina']],
+      ['fotoChecada', 'La foto que se tomó al checar en el kiosco', ['FOTO-ZIRCON']],
+      ['ubicacion', 'La ubicación GPS de una checada desde el celular', ['20.612345']],
     ]],
   ];
 
@@ -190,13 +216,13 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
   const rutasGet = [];
   for (const f of fs.readdirSync(path.join(__dirname, '..', 'server')).filter(f => f.endsWith('.js')))
     for (const m of fs.readFileSync(path.join(__dirname, '..', 'server', f), 'utf8').matchAll(/app\.get\(\s*'\/api(\/[^']+)'/g)) rutasGet.push(m[1]);
-  const ids = new Set([O1, Q2, O3, O4].map(x => x.id).concat([cAmbar, cBerilo, cDiamante, cCoral, clienteFiscal, OF, OB, OP].map(c => c.id)));
+  const ids = new Set([O1, Q2, O3, O4].map(x => x.id).concat([cAmbar, cBerilo, cDiamante, cCoral, clienteFiscal, OF, OB, OP].map(c => c.id), [CHECADA_FOTO]));
   for (const r of ['/finanzas/cxp?vista=todas', '/compras/solicitudes?estado=', '/compras/ordenes', '/personal', '/prospeccion', '/marketing/publicaciones?desde=' + dia(-40) + '&hasta=' + dia(50), '/marketing/proyectos', '/marketing/ideas']) {
     const [, j] = await pedir('GET', r, A); for (const x of (Array.isArray(j) ? j : j.lista || j.items || [])) if (x && x.id) ids.add(x.id);
   }
   const EXTRA = ['/leads', '/leads?estatus=ganado', '/clientes', '/clientes?incluir_prospectos=1', '/clientes/catalogo', '/finanzas/cartera', '/finanzas/cartera?vista=clientes', '/finanzas/resumen',
     '/finanzas/periodo?' + RANGO, '/finanzas/cxp?vista=todas', '/finanzas/por-confirmar', '/tablero?' + RANGO, '/generador?' + RANGO, '/calendario?desde=' + dia(-40) + '&hasta=' + dia(50),
-    '/calendario/atrasados', '/compras/solicitudes?estado=', '/compras/ordenes', '/kpis', '/pendientes', '/analisis/comercial?' + RANGO, '/contactos/sin-cotizacion', '/personal', '/personal/avisos',
+    '/calendario/atrasados', '/compras/solicitudes?estado=', '/compras/ordenes', '/kpis', '/pendientes', '/analisis/comercial?' + RANGO, '/contactos/sin-cotizacion', '/personal', '/personal/avisos', '/asistencia/checadas?fecha=' + dia(-1),
     '/prospeccion', '/prospeccion?pendientes=1', '/marketing/publicaciones?desde=' + dia(-40) + '&hasta=' + dia(50), '/marketing/pendientes', '/marketing/proyectos', '/marketing/ideas', '/marketing/biblioteca', '/marketing/presupuestos/' + HOY.slice(0, 7), '/marketing/gastos?desde=' + dia(-40) + '&hasta=' + dia(50), '/marketing/tablero', '/marketing/resultados?desde=' + dia(-40) + '&hasta=' + dia(50), '/marketing/plan/' + HOY.slice(0, 4), ...['Ambar', 'Berilo', 'Diamante', 'Coral', 'Jade', 'Perla', 'Granate', 'Cuarzo', 'Obsidiana'].map(p => '/buscar?q=' + p)];
   async function rastrear(t) {
     let todo = '';
@@ -252,6 +278,33 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
     ['revisaProd', 'Ver la revisión de «¿está lista la facturación para producción?» (llaves, series, claves del SAT, respaldo)'],
     ['editaFolioReal', 'Cambiar a mano el folio o el total de una orden que ya tiene factura real timbrada'],
     ['capturaRes', 'Capturar los resultados (alcance, me gusta…) de una publicación ya publicada'],
+    ['daPin', 'Dar de alta a una persona en el reloj checador (código y PIN temporal) o desbloquear su PIN'],
+    ['registraKiosco', 'Registrar una tableta o computadora como kiosco del reloj checador'],
+    ['corrigeChecada', 'Agregar a mano una checada olvidada (con motivo)'],
+    ['cambiaHorario', 'Cambiar un horario (entrada, salida, tolerancia o comida)'],
+    ['marcaFestivo', 'Marcar o quitar días festivos (valen para todas las sucursales)'],
+    ['autorizaExtra', 'Autorizar el tiempo extra de una persona'],
+    ['corrigeSuyo', 'Corregir su PROPIA asistencia (agregarse una checada o autorizarse su tiempo extra)'],
+    ['precioExtra', 'Ponerle precio a la hora de cada puesto (para pagar el tiempo extra)'],
+    ['dineroExtra', 'Ver cuánto dinero sale por tiempo extra (en la semana y en el Excel de nómina)'],
+    ['cambiaCredito', 'Cambiar los días de crédito y los datos de factura de una orden'],
+    ['eliminaUsuario', 'Eliminar un usuario (se borra si nunca se usó; si ya tiene registros, se archiva)'],
+    ['veLogs', 'Ver los logs del sistema (entradas y salidas, contraseñas equivocadas, bloqueos, errores del servidor y quién está conectado)'],
+    ['eliminaSucursal', 'Eliminar una sucursal (se borra si nunca se usó; si ya tiene registros, se archiva)'],
+    ['daCelular', 'Mandar a una persona el enlace para checar desde su celular, o quitarle el celular'],
+    ['veIntentos', 'Ver los intentos fallidos en el kiosco (código o PIN malo, PIN bloqueado) con su foto y la red de cada checada'],
+    ['ubicaSucursal', 'Capturar la ubicación de una sucursal (para revisar dónde checan con el celular)'],
+    ['fotoCredencial', 'Subir o tomar la foto de una persona para su credencial'],
+    ['emiteCredencial', 'Imprimir credenciales (con su QR de verificación para clientes y su vigencia)'],
+    ['activaWhatsapp', 'Activar o quitar a una persona el checar por WhatsApp (foráneos)'],
+    ['registraRostro', 'Dar el código para registrar la cara de una persona en el kiosco, o borrar su registro (biométrico)'],
+    ['veRH', 'Ver la pestaña RH (resumen del personal: sin horario, sin checador, sin aviso firmado…)'],
+    ['importaPersonal', 'Cargar trabajadores en lote desde la plantilla de Excel (revisar y guardar)'],
+    ['veAsistencia', 'Ver la asistencia del día y de la semana (retardos, faltas, tiempo extra)'],
+    ['cargaAds', 'Cargar el reporte de llamadas de Google Ads (CSV) y verlo cruzado con los contactos'],
+    ['subeXmlGasto', 'Subir el XML de la factura a un gasto que registró Tomás (el sistema llena el IVA)'],
+    ['corrigeIvaGasto', 'Corregir a mano el IVA de ese gasto (botón «IVA»)'],
+    ['editaListaServ', 'Agregar o quitar opciones en la lista de un servicio (p. ej. 4M3, 8M3 para [VOLUMEN])'],
   ];
   const ok = r => r[0] === 200 || r[0] === 201;
   for (const [rol] of ROLES) {
@@ -295,7 +348,49 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
     { const [st] = await pedir('POST', '/facturacion/importar-clientes/vista-previa', t, { csv: 'UID,RFC,Razon_Social,Regimen,CP,Email\n' }); VE[rol].importaClientesFact = ![401, 403, 404].includes(st); } // quien puede recibe 200; quien no, 403
     VE[rol].exportaFact = ok(await pedir('GET', '/facturacion/facturas/exportar', t));
     VE[rol].revisaProd = ok(await pedir('GET', '/facturacion/revision-produccion', t));
+    VE[rol].cambiaCredito = ok(await pedir('PUT', '/leads/' + O1.id + '/facturacion', t, { dias_credito: 15 }));
     VE[rol].editaFolioReal = ok(await pedir('PUT', '/leads/' + OP.id + '/facturacion', t, { factura_folio: 'X-' + rol + '-9', factura_total: '1.00' }));
+    VE[rol].daPin = ok(await pedir('POST', '/asistencia/personal/' + EMP.id + '/desbloquear', t));
+    VE[rol].registraKiosco = ok(await pedir('POST', '/asistencia/dispositivos', t, { nombre: 'Kiosco de ' + rol, sucursal_id: qro.id }));
+    VE[rol].corrigeChecada = ok(await pedir('POST', '/asistencia/checadas', t, { personal_id: EMP.id, tipo: 'salida', fecha: dia(-2), hora: '18:30', motivo: 'Prueba de ' + rol }));
+    { // Su propia ficha (ligada a su cuenta): intenta agregarse una checada y autorizarse el tiempo extra.
+      const uid = (await pedir('GET', '/permisos/mios', t))[1].usuario_id;
+      const { DatabaseSync } = require('node:sqlite'); const d = new DatabaseSync(DB);
+      let pid = d.prepare('SELECT id FROM personal WHERE usuario_id = ?').get(uid)?.id; d.close();
+      if (!pid) pid = exigir(await pedir('POST', '/personal', A, { nombre: 'Ficha propia ' + rol, puesto: 'Otro', sucursal_id: qro.id, usuario_id: uid }), 'ficha propia de ' + rol).id;
+      VE[rol].corrigeSuyo = ok(await pedir('POST', '/asistencia/checadas', t, { personal_id: pid, tipo: 'salida', fecha: dia(-3), hora: '18:30', motivo: 'Me corrijo yo' }))
+        || ok(await pedir('POST', '/asistencia/extra', t, { personal_id: pid, fecha: dia(-3), minutos: 0 })); }
+    { const hor = (await pedir('GET', '/asistencia/horarios', A))[1].horarios.find(x => x.sucursal_id === qro.id);
+      VE[rol].cambiaHorario = ok(await pedir('PUT', '/asistencia/horarios/' + hor.id, t, { dias: hor.vigente.dias, tolerancia_min: hor.vigente.tolerancia_min, comida_min: hor.vigente.comida_min })); }
+    VE[rol].marcaFestivo = ok(await pedir('POST', '/asistencia/festivos', t, { fecha: dia(60), nombre: 'Festivo de prueba ' + rol, activo: false }));
+    VE[rol].veIntentos = ok(await pedir('GET', '/asistencia/intentos?fecha=' + HOY, t));
+    VE[rol].ubicaSucursal = ok(await pedir('PUT', '/asistencia/sucursales/' + qro.id + '/ubicacion', t, { ubicacion: '20.5888, -100.3899', radio_m: 500 }));
+    VE[rol].fotoCredencial = (await fetch(URL + '/personal/' + EMP.id + '/foto', { method: 'POST', headers: { 'Content-Type': 'image/jpeg', Authorization: 'Bearer ' + t }, body: FOTO_JPG })).ok;
+    VE[rol].emiteCredencial = ok(await pedir('POST', '/rh/credenciales', t, { ids: [], vigencia: dia(365) })) || (await pedir('POST', '/rh/credenciales', t, { ids: [], vigencia: dia(365) }))[0] === 400;
+    VE[rol].activaWhatsapp = ok(await pedir('PUT', '/asistencia/personal/' + EMP.id + '/whatsapp', t, { activo: false }));
+    { const [s] = await pedir('POST', '/asistencia/personal/' + EMP.id + '/biometria/borrar', t); VE[rol].registraRostro = s === 200; }
+    VE[rol].veRH = ok(await pedir('GET', '/rh/resumen', t));
+    VE[rol].importaPersonal = ok(await pedir('POST', '/rh/importar/revisar', t, { filas: [{ nombre: 'Prueba Carga ' + rol, puesto: 'Ayudante' }] }));
+    VE[rol].daCelular = ok(await pedir('POST', '/asistencia/personal/' + EMP.id + '/celular/quitar', t));
+    VE[rol].autorizaExtra = ok(await pedir('POST', '/asistencia/extra', t, { personal_id: EMP.id, fecha: dia(-1), minutos: 0 }));
+    VE[rol].precioExtra = ok(await pedir('PUT', '/asistencia/precios', t, { sucursal_id: qro.id, puesto: 'Operador', valor: 50 + ROLES.findIndex(r => r[0] === rol) }));
+    { const [st, sem] = await pedir('GET', '/asistencia/semana', t); VE[rol].dineroExtra = st === 200 && !!sem?.dinero; }
+    { // Eliminar (2026-11-04): Dirección crea un usuario y una sucursal desechables y cada rol intenta eliminarlos.
+      const k = ROLES.findIndex(r => r[0] === rol), u = exigir(await pedir('POST', '/usuarios', A, { nombre: 'Desechable ' + String.fromCharCode(65 + k), password: 'Desechable-' + k + '-2026xQ', rol: 'ventas', sucursales: [qro.id] }), 'usuario desechable');
+      VE[rol].eliminaUsuario = ok(await pedir('POST', '/usuarios/' + u.id + '/eliminar', t, {}));
+      const s = exigir(await pedir('POST', '/sucursales', A, { nombre: 'Sucursal Desechable ' + String.fromCharCode(65 + k), clave: 'DS' + String.fromCharCode(65 + k) }), 'sucursal desechable');
+      VE[rol].eliminaSucursal = ok(await pedir('POST', '/sucursales/' + s.id + '/eliminar', t, {})); }
+    VE[rol].veAsistencia = ok(await pedir('GET', '/asistencia/semana', t));
+    VE[rol].veLogs = ok(await pedir('GET', '/registro-sistema', t));
+    VE[rol].cargaAds = ok(await pedir('POST', '/marketing/google-ads/cargar', t, { csv: CSV_ADS })); // el mismo archivo: no duplica nada
+    // XML de la factura de un gasto (2026-11-04): Tomás registra un gasto nuevo y cada rol intenta subirle su XML y corregirle el IVA.
+    { const g = exigir(await pedir('POST', '/finanzas/cxp', T.Tomas, { proveedor_id: prov.id, categoria: 'combustible', concepto: 'Gasolina ' + rol, total: 1160, tipo_comprobante: 'factura', fecha_documento: HOY, lead_id: O1.id, dias_credito: 0 }), 'gasto para el XML');
+      const r = await fetch(URL + '/finanzas/cxp/' + g.id + '/xml', { method: 'POST', headers: { 'Content-Type': 'application/octet-stream', Authorization: 'Bearer ' + t, 'X-Nombre': 'factura.xml' }, body: cfdi({ total: '1160.00', traslados: [['002', '160.00']] }) });
+      VE[rol].subeXmlGasto = r.status === 201;
+      VE[rol].corrigeIvaGasto = ok(await pedir('POST', '/finanzas/cxp/' + g.id + '/iva', t, { iva: 160 })); }
+    { // Listas de los servicios (2026-11-05): agregar una opción, o quitar una que agrega Dirección en cada vuelta.
+      const base = '/servicios/' + SERV.id + '/listas', otra = exigir(await pedir('POST', base, A, { marca: 'VOLUMEN', valor: 'POR QUITAR ' + rol }), 'opción por quitar');
+      VE[rol].editaListaServ = ok(await pedir('POST', base, t, { marca: 'VOLUMEN', valor: 'NUEVA ' + rol })) || ok(await pedir('POST', base + '/' + otra.id + '/desactivar', t, {})); }
     VE[rol].claveServicio = ok(await pedir('PUT', '/facturacion/servicios/' + servicioFact.id, t, { clave_prod_serv: '76121600', clave_unidad: 'E48' }));
     const nuevaPub = exigir(await pedir('POST', '/marketing/publicaciones', T.Mara, { titulo: 'Por aprobar ' + rol, redes: ['tiktok'], formato: 'video', fecha: dia(5), copy: 'Copy', sucursal: qro.id }), 'publicación por aprobar');
     const enRevision = exigir(await pedir('POST', '/marketing/publicaciones/' + nuevaPub.id + '/estado', T.Mara, { accion: 'enviar', version: nuevaPub.version }), 'enviar a revisión');
@@ -346,6 +441,48 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
     ['2026-10-26', 'Técnico: ve su solicitud de compra, no las de otros, y no ve montos de compras.', { tecnico: { jade: 1, perla: 0, 'perm:compras.importes': 0 } }],
     ['2026-10-21', 'Prospección: cada quien lo suyo (quien ve toda su sucursal en ventas, todos los de su sucursal); el técnico no prospecta.', { ventas: { granate: 1, cuarzo: 0 }, atencion: { granate: 1, cuarzo: 1 }, tecnico: { granate: 0, cuarzo: 0 } }],
     ['2026-10-19', 'Personal: quien ve órdenes ve nombre y puesto del personal activo, para asignarlo a una orden; la ficha y los datos sensibles, solo Gerente y Dirección.', { gerente: { obsidiana: 1, fichaEmp: 1, clabe: 1 }, ventas: { obsidiana: 1, fichaEmp: 0, clabe: 0 }, atencion: { obsidiana: 1, fichaEmp: 0, clabe: 0 }, tecnico: { obsidiana: 1, fichaEmp: 0, clabe: 0 }, costos: { obsidiana: 0, fichaEmp: 0, clabe: 0 } }],
+    ['2026-11-03', 'Reloj checador: ver las checadas del personal, corregirlas con motivo, dar código y PIN y registrar kioscos lo hacen Dirección y el Gerente (de su sucursal); los demás roles no. Nadie ve un PIN ni borra una checada.', {
+      admin: { turmalina: 1, daPin: 1, registraKiosco: 1, corrigeChecada: 1 }, gerente: { turmalina: 1, daPin: 1, registraKiosco: 1, corrigeChecada: 1 },
+      ...Object.fromEntries(['ventas', 'atencion', 'tecnico', 'costos', 'marketing', 'marketing_gerente'].map(r => [r, { turmalina: 0, daPin: 0, registraKiosco: 0, corrigeChecada: 0 }])) }],
+    ['2026-11-03', 'Foto de cada checada del kiosco (para revisar quién checó): la ven Dirección y el Gerente (de su sucursal), y cada vez queda en la bitácora; los demás roles no. Se guarda cifrada.', {
+      admin: { fotoChecada: 1 }, gerente: { fotoChecada: 1 }, ...Object.fromEntries(['ventas', 'atencion', 'tecnico', 'costos', 'marketing', 'marketing_gerente'].map(r => [r, { fotoChecada: 0 }])) }],
+    ['2026-11-03', 'Asistencia (horarios, retardos, faltas y tiempo extra): la ven Dirección y el Gerente; cambian horarios y días festivos y autorizan el tiempo extra Dirección y el Gerente (Dirección se los da a RH en Roles y permisos); los demás roles no.', {
+      admin: { veAsistencia: 1, cambiaHorario: 1, autorizaExtra: 1 }, gerente: { veAsistencia: 1, cambiaHorario: 1, autorizaExtra: 1 },
+      ...Object.fromEntries(['ventas', 'atencion', 'tecnico', 'costos', 'marketing', 'marketing_gerente'].map(r => [r, { veAsistencia: 0, cambiaHorario: 0, autorizaExtra: 0 }])) }],
+    ['2026-11-05', 'Días festivos: valen para TODAS las sucursales, así que los marca o quita quien tiene «Horarios y días festivos» y ve todas las sucursales (Dirección, o RH de la empresa). El Gerente de una sola sucursal ya no (auditoría: su festivo convertía en tiempo extra lo trabajado en las demás).', {
+      admin: { marcaFestivo: 1 }, ...Object.fromEntries(['gerente', 'ventas', 'atencion', 'tecnico', 'costos', 'marketing', 'marketing_gerente'].map(r => [r, { marcaFestivo: 0 }])) }],
+    ['2026-11-05', 'Intentos fallidos en el kiosco (código o PIN malo, PIN bloqueado): el kiosco les toma foto; los intentos, su foto y la red (IP) desde la que se checó los ven Dirección y el Gerente (de su sucursal), y cada foto que se abre queda en la bitácora. Los demás roles no.', {
+      admin: { veIntentos: 1 }, gerente: { veIntentos: 1 }, ...Object.fromEntries(['ventas', 'atencion', 'tecnico', 'costos', 'marketing', 'marketing_gerente'].map(r => [r, { veIntentos: 0 }])) }],
+    ['2026-11-05', 'Ubicación de cada sucursal (para el celular: a más de su radio, 500 m por omisión, la checada queda «por revisar» y se ve en el mapa): la captura solo Dirección.', {
+      admin: { ubicaSucursal: 1 }, ...Object.fromEntries(['gerente', 'ventas', 'atencion', 'tecnico', 'costos', 'marketing', 'marketing_gerente'].map(r => [r, { ubicaSucursal: 0 }])) }],
+    ['2026-11-05', 'Credenciales de empleado (foto, nombre, puesto, número de empleado, vigencia, contacto de emergencia, QR del checador y QR de verificación para clientes): tomar la foto e imprimirlas lo hacen quienes editan el personal (Dirección y el Gerente, de su sucursal). Imprimir una nueva anula la anterior. La página de verificación es pública solo con el QR y muestra foto, nombre y puesto si la persona sigue trabajando y la credencial está vigente; si no, solo dice que no es válida.', {
+      admin: { fotoCredencial: 1, emiteCredencial: 1 }, gerente: { fotoCredencial: 1, emiteCredencial: 1 },
+      ...Object.fromEntries(['ventas', 'atencion', 'tecnico', 'costos', 'marketing', 'marketing_gerente'].map(r => [r, { fotoCredencial: 0, emiteCredencial: 0 }])) }],
+    ['2026-11-05', 'Checar por WhatsApp (foráneos, respaldo del celular): solo quien RH active en su ficha y desde el celular de su ficha; sin foto ni ubicación, cada checada queda «por revisar». Activarlo o quitarlo lo hacen quienes editan el personal (Dirección y el Gerente, de su sucursal), nunca para sí mismos (salvo Dirección).', {
+      admin: { activaWhatsapp: 1 }, gerente: { activaWhatsapp: 1 },
+      ...Object.fromEntries(['ventas', 'atencion', 'tecnico', 'costos', 'marketing', 'marketing_gerente'].map(r => [r, { activaWhatsapp: 0 }])) }],
+    ['2026-11-05', 'Crédito al cliente y datos de factura de una orden (días de crédito, folio, fecha y total): los cambian solo Dirección y el Gerente, porque el crédito es una decisión de dinero. Ventas, Atención y los demás roles lo ven pero no lo cambian. (Antes lo cambiaba cualquiera que viera la cobranza.)', {
+      admin: { cambiaCredito: 1 }, gerente: { cambiaCredito: 1 }, ...Object.fromEntries(['ventas', 'atencion', 'tecnico', 'costos', 'marketing', 'marketing_gerente'].map(r => [r, { cambiaCredito: 0 }])) }],
+    ['2026-11-05', 'Logs del sistema (Configuración → Ajustes): quién entró y salió, desde qué IP y equipo, contraseñas equivocadas, bloqueos por intentos, contraseñas restablecidas, errores del servidor y quién está conectado ahora. Los ve solo Dirección; ningún otro rol, ni el Gerente. Nunca guardan contraseñas.', {
+      admin: { veLogs: 1 }, ...Object.fromEntries(['gerente', 'ventas', 'atencion', 'tecnico', 'costos', 'marketing', 'marketing_gerente'].map(r => [r, { veLogs: 0 }])) }],
+    ['2026-11-05', 'Biométrico facial en el kiosco (solo de quien firmó su consentimiento; los expedientes son físicos, así que RH marca en la ficha que lo firmó, con quién y cuándo): marcar el consentimiento, dar el código de un solo uso para registrar su cara en el kiosco o borrar su registro lo hacen quienes editan el personal (Dirección y el Gerente, de su sucursal), nunca para sí mismos (salvo Dirección). Nadie ve ni descarga la plantilla de la cara: solo se compara al checar. Si no coincide, la checada queda por revisar.', {
+      admin: { registraRostro: 1 }, gerente: { registraRostro: 1 }, ...Object.fromEntries(['ventas', 'atencion', 'tecnico', 'costos', 'marketing', 'marketing_gerente'].map(r => [r, { registraRostro: 0 }])) }],
+    ['2026-11-04', 'Eliminar usuarios y sucursales: solo Dirección. Si nunca se usaron se borran; si ya tienen registros (cotizaciones, cobros, bitácora…) se archivan: desaparecen de las listas y su historial se conserva. La sucursal principal y la propia cuenta no se eliminan.', {
+      admin: { eliminaUsuario: 1, eliminaSucursal: 1 }, ...Object.fromEntries(['gerente', 'ventas', 'atencion', 'tecnico', 'costos', 'marketing', 'marketing_gerente'].map(r => [r, { eliminaUsuario: 0, eliminaSucursal: 0 }])) }],
+    ['2026-11-03', 'Precio de la hora de cada puesto y el dinero del tiempo extra (dobles y triples, en la semana y en el Excel de nómina): lo ven y lo cambian quienes ven sueldos (Dirección y el Gerente, de su sucursal); los demás roles solo ven horas.', {
+      admin: { precioExtra: 1, dineroExtra: 1 }, gerente: { precioExtra: 1, dineroExtra: 1 },
+      ...Object.fromEntries(['ventas', 'atencion', 'tecnico', 'costos', 'marketing', 'marketing_gerente'].map(r => [r, { precioExtra: 0, dineroExtra: 0 }])) }],
+    ['2026-11-03', 'Nadie corrige su PROPIA asistencia (agregar, anular o aceptar sus checadas, autorizarse tiempo extra, cambiarse el horario, registrarse vacaciones o permisos), ni el Gerente: lo hace otra persona con permiso. Dirección sí, porque no tiene a quién pedírselo.', {
+      admin: { corrigeSuyo: 1 }, ...Object.fromEntries(['gerente', 'ventas', 'atencion', 'tecnico', 'costos', 'marketing', 'marketing_gerente'].map(r => [r, { corrigeSuyo: 0 }])) }],
+    ['2026-11-03', 'Checar desde el celular: mandar el enlace o quitar el celular lo hacen Dirección y el Gerente (quien edita el personal); la ubicación de cada checada la ven solo Dirección y el Gerente (se toma solo al checar). Los demás roles no.', {
+      admin: { daCelular: 1, ubicacion: 1 }, gerente: { daCelular: 1, ubicacion: 1 },
+      ...Object.fromEntries(['ventas', 'atencion', 'tecnico', 'costos', 'marketing', 'marketing_gerente'].map(r => [r, { daCelular: 0, ubicacion: 0 }])) }],
+    ['2026-11-03', 'Pestaña RH (junta Personal, asistencia, horarios, kioscos, nómina y aviso de privacidad): la ve quien ve el personal (Gerente y Dirección); cargar trabajadores en lote desde la plantilla, solo quien edita el personal (Gerente y Dirección). Los demás roles no.', {
+      admin: { veRH: 1, importaPersonal: 1 }, gerente: { veRH: 1, importaPersonal: 1 },
+      ...Object.fromEntries(['ventas', 'atencion', 'tecnico', 'costos', 'marketing', 'marketing_gerente'].map(r => [r, { veRH: 0, importaPersonal: 0 }])) }],
+    ['2026-11-04', 'Gastos con factura: subir el XML a un gasto ya registrado (el sistema llena solo el IVA) lo hacen quien registró el gasto y quien paga cuentas por pagar (Dirección, Gerente y Compras). Corregir el IVA a mano, solo quien paga (como antes). Los demás roles no.', {
+      admin: { subeXmlGasto: 1, corrigeIvaGasto: 1 }, gerente: { subeXmlGasto: 1, corrigeIvaGasto: 1 }, costos: { subeXmlGasto: 1, corrigeIvaGasto: 1 }, tecnico: { subeXmlGasto: 1, corrigeIvaGasto: 0 },
+      ...Object.fromEntries(['ventas', 'atencion', 'marketing', 'marketing_gerente'].map(r => [r, { subeXmlGasto: 0, corrigeIvaGasto: 0 }])) }],
     ['2026-10-26', 'Marketing: aprueban las publicaciones Dirección y el Gerente de marketing; nadie más (ni Marketing, aunque la haya escrito).', { admin: { apruebaPub: 1 }, marketing_gerente: { apruebaPub: 1 }, marketing: { apruebaPub: 0 }, gerente: { apruebaPub: 0 }, ventas: { apruebaPub: 0 }, atencion: { apruebaPub: 0 }, tecnico: { apruebaPub: 0 }, costos: { apruebaPub: 0 } }],
     ['2026-10-26', 'Marketing y Gerente de marketing: ven, editan y comentan las publicaciones de toda la empresa (de cualquier sucursal y las generales), y nada más del sistema: ni ventas, cobranza, gastos, compras, prospección ni personal.', Object.fromEntries(['marketing', 'marketing_gerente'].map(r => [r, {
       rubi: 1, zafiro: 1, topacio: 1, editaPub: 1, comentaPub: 1, ambar: 0, berilo: 0, coral: 0, cobroAlicia: 0, cobroTomas: 0, saldo: 0, gastoTomas: 0, gastoCarlos: 0, clabeProv: 0, jade: 0, perla: 0, granate: 0, cuarzo: 0, obsidiana: 0, clabe: 0, editaO1: 0, borra: 0 }]))],
@@ -353,6 +490,10 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
     ['2026-10-26', 'Dirección ve y aprueba todo Marketing.', { admin: { rubi: 1, zafiro: 1, topacio: 1, editaPub: 1, comentaPub: 1 } }],
     ['2026-10-27', 'Dinero de Marketing (presupuesto, gastos, costo por contacto y retorno): lo ven Dirección y el Gerente de marketing; el rol Marketing y los demás roles no.', {
       admin: { presupMk: 1, gastoMk: 1 }, marketing_gerente: { presupMk: 1, gastoMk: 1 }, ...Object.fromEntries(['marketing', 'gerente', 'ventas', 'atencion', 'tecnico', 'costos'].map(r => [r, { presupMk: 0, gastoMk: 0 }])) }],
+    ['2026-11-04', 'Llamadas de Google Ads (subir el reporte «Detalles de las llamadas» y verlo cruzado con los contactos, ventas e importes): lo ven y lo cargan solo Dirección y el Gerente de marketing; el rol Marketing y los demás roles no.', {
+      admin: { gAds: 1, cargaAds: 1 }, marketing_gerente: { gAds: 1, cargaAds: 1 }, ...Object.fromEntries(['marketing', 'gerente', 'ventas', 'atencion', 'tecnico', 'costos'].map(r => [r, { gAds: 0, cargaAds: 0 }])) }],
+    ['2026-11-05', 'Listas de los servicios (las opciones que se eligen para la parte que cambia de la descripción, p. ej. [VOLUMEN]: 4M3, 8M3… o [SUCURSAL] de KFC): las agregan o quitan solo Dirección; ningún otro rol, ni el Gerente. Quienes cotizan solo eligen de la lista. Quitar no borra: queda en la bitácora.', {
+      admin: { editaListaServ: 1 }, ...Object.fromEntries(['gerente', 'ventas', 'atencion', 'tecnico', 'costos', 'marketing', 'marketing_gerente'].map(r => [r, { editaListaServ: 0 }])) }],
     ['2026-10-27', 'Presupuesto de Marketing: lo propone el Gerente de marketing y lo aprueba solo Dirección.', {
       admin: { apruebaPresup: 1 }, marketing_gerente: { proponePresup: 1, apruebaPresup: 0 }, ...Object.fromEntries(['marketing', 'gerente', 'ventas', 'atencion', 'tecnico', 'costos'].map(r => [r, { proponePresup: 0, apruebaPresup: 0 }])) }],
     ['2026-10-27', 'Gastos de Marketing: los registran Dirección y el Gerente de marketing, y son control interno del departamento: no aparecen en Cuentas por pagar.', {
@@ -399,6 +540,55 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
     revisa(!fallan.length, `${fecha} · ${regla}`, fallan);
   }
 
+  // ----- Roles hechos a mano en «Roles y permisos» (2026-11-03) -----
+  // Dirección apagó áreas de un rol y aún le salían Cotizaciones, «Servicios por concluir» y Recompras. Cada rol de prueba
+  // ve toda su sucursal en lo que tiene prendido; se revisa el menú, las fichas de Inicio y lo que le manda el servidor.
+  exigir(await pedir('PUT', '/servicios/' + SERV.id, A, { dias_recurrencia: 30 }), 'recompra del servicio');
+  const cMano = await contacto(T.Valeria, 'Sr. Ulises Recompra', '442 222 0099', 'Fábrica Recompra');
+  const OM = await cotizar(T.Valeria, 'Valeria', cMano, 'Orden Mano', 1500, true);
+  const cCot = await contacto(T.Valeria, 'Sra. Nidia Cotiza', '442 222 0098', 'Oficinas Cotiza');
+  const QM = await cotizar(T.Valeria, 'Valeria', cCot, 'Cotización Mano', 900);
+  exigir(await pedir('POST', '/leads/' + OM.id + '/historial', T.Valeria, { tipo: 'alerta', texto: 'Aviso Orden Mano', fecha_alerta: dia(-1) + ' 09:00:00' }), 'aviso de la orden');
+  exigir(await pedir('POST', '/leads/' + QM.id + '/historial', T.Valeria, { tipo: 'alerta', texto: 'Aviso Cotización Mano', fecha_alerta: dia(-1) + ' 09:00:00' }), 'aviso de la cotización');
+  const BLOQUES = [...html.matchAll(/class="inicio-bloque ([^"]*)" data-titulo-corto="([^"]+)"/g)].map(([, cl, t]) => ({ t, cl: cl.split(/\s+/) }));
+  const veClases = (set, cl) => cl.every(c => { const p = c.match(/^perm-([a-z_]+)-([a-z_]+)$/); return !p || set.has(p[1] + '.' + p[2]); });
+  const NIVEL_0 = Object.fromEntries(PERM.areas.map(a => [a.clave, 0]));
+  const MANO = [['cobranza', 'Cobranza sin ventas (contactos y cuentas por cobrar)', { contactos: 2, cxc: 2 }], ['cotiza', 'Cotiza sin órdenes (contactos, cotizaciones y cobranza)', { contactos: 2, cotizaciones: 2, cxc: 2 }],
+    ['contactos', 'Solo contactos', { contactos: 2 }], ['atencion', 'Atención (de fábrica, para comparar)', null]];
+  const VM = {};
+  for (const [k, nombre, niveles] of MANO) {
+    let t = T.Alicia;
+    if (niveles) {
+      const rol = exigir(await pedir('POST', '/roles', A, { nombre: 'Mano ' + k }), 'crear rol ' + k);
+      exigir(await pedir('PUT', '/roles/' + rol.clave + '/permisos', A, { permisos: [], alcances: { ...NIVEL_0, ...niveles } }), 'permisos del rol ' + k);
+      const quien = 'Mano ' + { cobranza: 'Cobra', cotiza: 'Cotiza', contactos: 'Contacta' }[k];
+      exigir(await pedir('POST', '/usuarios', A, { nombre: quien, password: CLAVE, rol: rol.clave, sucursales: [qro.id] }), 'usuario ' + quien);
+      t = (await pedir('POST', '/login', null, { nombre: quien, password: CLAVE }))[1].token;
+    }
+    const set = new Set((await pedir('GET', '/permisos/mios', t))[1].permisos), texto = async r => (await pedir('GET', r, t))[2] || '';
+    const cal = await texto('/calendario?desde=' + dia(-10) + '&hasta=' + dia(10));
+    VM[k] = { nombre,
+      menuCot: veClases(set, MENU.find(m => m.vista === 'leads').clases), menuCal: veClases(set, MENU.find(m => m.vista === 'calendario').clases),
+      ...Object.fromEntries(BLOQUES.map(b => ['inicio:' + b.t, veClases(set, b.cl)])),
+      recompra: /Fábrica Recompra/.test(await texto('/recompras')),
+      alertaOrden: /Aviso Orden Mano/.test(await texto('/alertas')), alertaCot: /Aviso Cotización Mano/.test(await texto('/alertas')),
+      porConcluir: /Fábrica Recompra/.test(await texto('/leads?estatus=ganado&solo_area=1')),
+      calOrden: /"tipo":"orden"[^}]*Fábrica Recompra/.test(cal), cobranza: (await pedir('GET', '/leads/' + OM.id + '/cobros', t))[0] === 200 };
+  }
+  const NOMBRE_MANO = { menuCot: 'Menú: Cotizaciones', menuCal: 'Menú: Calendario', 'inicio:Avisos': 'Inicio: Avisos y seguimiento', 'inicio:Por concluir': 'Inicio: Servicios por concluir', 'inicio:Recompras': 'Inicio: Recompras', 'inicio:Finanzas': 'Inicio: Finanzas',
+    recompra: 'Le llega la recompra de una orden', alertaOrden: 'Le llega el aviso de una orden', alertaCot: 'Le llega el aviso de una cotización', porConcluir: 'Le llega la orden por concluir', calOrden: 'Ve la orden en el calendario', cobranza: 'Ve la cobranza de la orden' };
+  const REGLAS_MANO = [
+    ['2026-11-03', 'Un rol sin cotizaciones ni órdenes no ve «Cotizaciones» en el menú ni sus avisos en Inicio, aunque vea contactos o la cobranza.', { cobranza: { menuCot: 0, 'inicio:Avisos': 0, alertaOrden: 0, alertaCot: 0 }, contactos: { menuCot: 0, 'inicio:Avisos': 0, alertaOrden: 0, alertaCot: 0 } }],
+    ['2026-11-03', '«Servicios por concluir» y las órdenes del calendario: solo quien ve órdenes de servicio. Quien solo ve la cobranza sigue viendo la cobranza de esas órdenes, no la orden para concluirla.', { cobranza: { 'inicio:Por concluir': 0, porConcluir: 0, calOrden: 0, cobranza: 1 }, cotiza: { 'inicio:Por concluir': 0, porConcluir: 0, calOrden: 0, alertaOrden: 0, menuCot: 1, 'inicio:Avisos': 1, alertaCot: 1 }, contactos: { 'inicio:Por concluir': 0, porConcluir: 0, calOrden: 0 } }],
+    ['2026-11-03', 'Recompras: salen de las órdenes de servicio, así que solo las ve quien ve órdenes (no quien solo ve contactos o la cobranza).', { cobranza: { 'inicio:Recompras': 0, recompra: 0 }, cotiza: { 'inicio:Recompras': 0, recompra: 0 }, contactos: { 'inicio:Recompras': 0, recompra: 0, menuCal: 0 } }],
+    ['2026-11-03', 'Atención (con órdenes de toda su sucursal) sigue viendo todo eso: avisos, servicios por concluir, recompras y calendario.', { atencion: { menuCot: 1, menuCal: 1, 'inicio:Avisos': 1, 'inicio:Por concluir': 1, 'inicio:Recompras': 1, recompra: 1, alertaOrden: 1, alertaCot: 1, porConcluir: 1, calOrden: 1 } }],
+  ];
+  console.log('Roles hechos a mano:');
+  for (const [fecha, regla, esperado] of REGLAS_MANO) {
+    const fallan = Object.entries(esperado).flatMap(([k, filas]) => Object.entries(filas).filter(([c, v]) => VM[k][c] !== !!v).map(([c, v]) => `${VM[k].nombre}: «${NOMBRE_MANO[c]}» ${v ? 'debería verse y no se ve' : 'NO debería verse y se ve'}`));
+    revisa(!fallan.length, `${fecha} · ${regla}`, fallan);
+  }
+
   // ----- La foto -----
   const si = v => (v ? '✔' : '—');
   const tabla = (titulo, filas) => [`| ${titulo} | ${ROLES.map(r => r[1]).join(' | ')} |`, `|---|${ROLES.map(() => ':-:').join('|')}|`, ...filas.map(([t, celdas]) => `| ${t} | ${celdas.join(' | ')} |`)].join('\n');
@@ -433,6 +623,13 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
     '## Reglas acordadas que se revisan una por una',
     '',
     ...REGLAS.map(([fecha, regla]) => `- **${fecha}** · ${regla}`),
+    '',
+    '## Roles hechos a mano (lo que Dirección apaga en «Roles y permisos»)',
+    '',
+    `| Qué se revisa | ${MANO.map(m => m[1]).join(' | ')} |`, `|---|${MANO.map(() => ':-:').join('|')}|`,
+    ...Object.entries(NOMBRE_MANO).map(([c, t]) => `| ${t} | ${MANO.map(([k]) => si(VM[k][c])).join(' | ')} |`),
+    '',
+    ...REGLAS_MANO.map(([fecha, regla]) => `- **${fecha}** · ${regla}`),
     '',
   ];
   const foto = partes.join('\n');

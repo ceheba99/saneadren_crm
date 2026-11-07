@@ -134,6 +134,8 @@ document.querySelectorAll('header nav [data-vista]').forEach(btn => {
 function cambiarVista(v, opciones) {
   if (v === 'usuarios' && !Permisos.puede('usuarios.administrar')) v = 'inicio';
   if (v === 'personal' && !Permisos.puede('personal.ver')) v = 'inicio';
+  if (v === 'asistencia' && !Permisos.puede('asistencia.ver')) v = 'inicio';
+  if (v === 'rh' && !Permisos.puede('personal.ver')) v = 'inicio';
   if (v === 'prospeccion' && !Permisos.puede('prospeccion.ver')) v = 'inicio';
   if (v === 'marketing' && !Permisos.puede('marketing.ver')) v = 'inicio';
   if (v === 'facturas' && !Permisos.puede('facturacion.timbrar')) v = 'inicio';
@@ -155,13 +157,15 @@ function cambiarVista(v, opciones) {
   if (v === 'marketing') Marketing.cargar();
   if (v === 'facturas') window.Facturacion?.cargarLista();
   if (v === 'personal') Personal.cargar();
+  if (v === 'asistencia') Asistencia.cargar();
+  if (v === 'rh') RH.cargar();
   if (v === 'resultados') abrirResultados();
   if (v === 'generador') cargarGenerador();
   if (v === 'calendario') Calendario.cargar();
   if (v === 'compras') Compras.cargar();
   if (v === 'solicitudes') Solicitudes.cargar();
   if (v === 'bitacora') Bitacora.cargar();
-  if (v === 'usuarios') { cargarUsuarios(); window.Facturacion?.cargar(); }
+  if (v === 'usuarios') { cargarUsuarios(); window.Facturacion?.cargar(); window.Logs?.cargar(); }
   if (seccionCuentas) Finanzas.cargar({ ...opciones, seccion: seccionCuentas });
   if (v === 'catalogos') { cargarTiposCliente(); cargarCatalogoServicios(); cargarCanalesCatalogo(); }
 }
@@ -174,6 +178,7 @@ async function cargarCatalogos() {
     api('/canales').then(r => r.json())
   ]);
   CATALOGOS = { usuarios: u, servicios: s, canales: c };
+  await window.ListasServicio?.cargar(); // listas de la parte que cambia de cada servicio ([VOLUMEN]…)
   await cargarTiposCliente();
   for (const [idSel, vacio] of [['in-origen', 'Selecciona una opción'], ['fc-ed-origen', 'Sin registrar']]) {
     const origen = document.getElementById(idSel), origenPrevio = origen.value;
@@ -478,6 +483,16 @@ function estadoCarga(ids, estado, reintentar) {
     }
   });
 }
+// Aviso arriba de una pantalla que ya tenía datos y no se pudo actualizar (auditoría 2026-11-04, H-011): sin él, se
+// seguían viendo los datos viejos como si estuvieran al día. Sin «err», quita el aviso (la carga salió bien).
+function avisoCarga(vista, err, reintentar) {
+  const sec = document.getElementById('vista-' + vista); if (!sec) return;
+  let caja = sec.querySelector(':scope > .aviso-carga-vista');
+  if (!err) { caja?.remove(); return; }
+  if (!caja) { caja = document.createElement('div'); caja.className = 'aviso-error-carga aviso-carga-vista'; caja.setAttribute('role', 'alert'); sec.prepend(caja); }
+  caja.innerHTML = `<p>${escaparHtml('No se pudo actualizar: ' + err.message + ' Lo que ves abajo puede no estar al día.')}</p><button type="button" class="btn btn-outline">Reintentar</button>`;
+  caja.querySelector('button').onclick = reintentar;
+}
 async function cargarInicio() {
   const listas = ['inicio-cotizaciones', 'inicio-concluir', 'inicio-recompras'];
   estadoCarga(listas, 'cargando');
@@ -486,8 +501,9 @@ async function cargarInicio() {
     [alertas, recompras, abiertas, ordenes] = await Promise.all([
       api('/alertas').then(r => r.json()),
       api('/recompras').then(r => r.json()),
-      api('/leads?estatus=abierto').then(r => r.json()),
-      api('/leads?estatus=ganado').then(r => r.json())
+      // Solo lo que ve por cotizaciones u órdenes: lo que ve por la cobranza no es «por concluir» (2026-11-03).
+      api('/leads?estatus=abierto&solo_area=1').then(r => r.json()),
+      api('/leads?estatus=ganado&solo_area=1&por_concluir=1').then(r => r.json())
     ]);
   } catch (err) {
     if (err.status !== 401) estadoCarga(listas, 'No se pudo cargar: ' + err.message, cargarInicio);
@@ -564,11 +580,15 @@ async function cargarLeads() {
   if (q) pc.set('q', q);
   if (desde) pc.set('desde', desde);
   if (hasta) pc.set('hasta', hasta);
-  const [leads, kpis, contactos] = await Promise.all([
-    api('/leads?' + params.toString()).then(r => r.json()),
-    api('/kpis' + (resp ? '?responsable_id=' + resp : '')).then(r => r.json()),
-    conContactos ? api('/contactos/sin-cotizacion?' + pc.toString()).then(r => r.json()) : []
-  ]);
+  let leads, kpis, contactos;
+  try {
+    [leads, kpis, contactos] = await Promise.all([
+      api('/leads?' + params.toString()).then(r => r.json()),
+      api('/kpis' + (resp ? '?responsable_id=' + resp : '')).then(r => r.json()),
+      conContactos ? api('/contactos/sin-cotizacion?' + pc.toString()).then(r => r.json()) : []
+    ]);
+  } catch (err) { if (err.status !== 401) avisoCarga('leads', err, cargarLeads); return; }
+  avisoCarga('leads');
 
   renderKpis(kpis, contactos.length);
   renderKanbanLeads(leads, contactos);
@@ -780,7 +800,7 @@ async function cargarGenerador() {
   resumen.textContent = 'Cargando…';
   const params = new URLSearchParams({ desde, hasta, q: document.getElementById('gen-buscar').value.trim() });
   let r;
-  try { r = await api('/generador?' + params).then(x => x.json()); } catch (err) { if (consulta === consultaGenerador) resumen.textContent = 'No se pudo cargar el generador: ' + err.message; return; }
+  try { r = await api('/generador?' + params).then(x => x.json()); } catch (err) { if (consulta === consultaGenerador) { resumen.textContent = 'No se pudo cargar el generador: ' + err.message; cuerpo.innerHTML = ''; } return; } // sin renglones viejos que parezcan al día
   if (consulta !== consultaGenerador) return;
   GENERADOR = r;
   const m = v => v == null ? '—' : formatoMoneda(v), t = r.totales;
@@ -1410,6 +1430,7 @@ function crearFilaServicioHTML(item) {
 const etiquetaPrecio = modo => 'Precio unitario' + (modo === 'incluido' ? ' con IVA' : modo === 'mas_iva' ? ' sin IVA' : '');
 function agregarFilaCotizacion(item = {}) {
   document.getElementById('gc-items').insertAdjacentHTML('beforeend', crearFilaServicioHTML(item));
+  window.ListasServicio?.pintarFila(document.getElementById('gc-items').lastElementChild, item.opciones || {});
 }
 
 // ---------- IVA del documento (casilla "IVA incluido") ----------
@@ -1475,6 +1496,7 @@ function recolectarItemsCotizacion() {
     .map(fila => ({
       servicio: fila.querySelector('.gc-servicio').value,
       leyenda: fila.querySelector('.gc-leyenda').value.trim(),
+      ...(Object.keys(window.ListasServicio?.elegidas(fila) || {}).length ? { opciones: window.ListasServicio.elegidas(fila) } : {}),
       cantidad: Number(fila.querySelector('.gc-cantidad').value) || 1,
       precio: Number(fila.querySelector('.gc-precio').value) || 0,
       importe: Number(fila.querySelector('.gc-importe').value) || 0
@@ -1510,7 +1532,7 @@ function prepararEditorCotizacion(lead,modo){
   actualizarTotalCotizacion();sincronizarEditor();
   // Sin «Ver importes»: las partidas se leen (servicio, descripción y cantidad) pero no se cambian; el servidor tampoco las cambia.
   const soloLeer=!Permisos.puede('ordenes.importes');
-  document.querySelectorAll('#gc-items .gc-servicio').forEach(x=>{x.disabled=soloLeer;});
+  document.querySelectorAll('#gc-items .gc-servicio, #gc-items .gc-opcion').forEach(x=>{x.disabled=soloLeer;});
   document.querySelectorAll('#gc-items .gc-leyenda, #gc-items .gc-cantidad').forEach(x=>{if(soloLeer)x.readOnly=true;});
 }
 function sincronizarEditor(){
@@ -1523,6 +1545,9 @@ function validarEditorCotizacion(){
   if(!Permisos.puede('ordenes.importes'))return true; // sin importes las partidas no se cambian (el servidor las ignora)
   const filas=[...document.querySelectorAll('#gc-items .gc-fila')];
   if(!filas.length||filas.some(f=>!f.querySelector('.gc-servicio').value||f.querySelector('.gc-precio').value===''||!(Number(f.querySelector('.gc-precio').value)>0)||!(Number(f.querySelector('.gc-cantidad').value)>0))){toast('Selecciona un servicio y escribe cantidad y precio unitario (mayor a $0) en cada partida');return false;}
+  // Partes de la descripción con lista ([VOLUMEN]…) sin elegir: el servidor tampoco las acepta.
+  const falta=window.ListasServicio?.faltante(filas);
+  if(falta){toast('Elige '+falta.marca.toLowerCase()+' de la lista en «'+falta.fila.querySelector('.gc-servicio').value+'»');falta.fila.querySelector('.gc-opcion[data-marca="'+CSS.escape(falta.marca)+'"]')?.focus();return false;}
   // Un registro nuevo o una cotización abierta deben decir si sus importes llevan IVA.
   if(!modoIvaEditor()&&(EDITOR_MODO==='nuevo'||LEAD_ACTUAL?.estatus==='abierto')){
     toast('Indica el IVA: elige Más IVA, IVA incluido o Sin IVA');
@@ -1547,7 +1572,10 @@ on('gc-items', 'change', async e => {
     const personalizada = leyendaEl.value.trim() && leyendaEl.value !== (leyendaEl.dataset.plantilla || '');
     if (!personalizada || await solicitarDialogo({titulo:'Descripción editada',mensaje:'¿Reemplazar la descripción que editaste por la plantilla del servicio seleccionado?',aceptar:'Usar plantilla'})) leyendaEl.value = preset;
     leyendaEl.dataset.plantilla = preset;
+    delete leyendaEl.dataset.generada;
+    window.ListasServicio?.pintarFila(fila); // listas de la parte que cambia ([VOLUMEN]…) del servicio elegido
   }
+  if (e.target.classList.contains('gc-opcion')) window.ListasServicio?.alElegir(e.target);
 });
 on('gc-items', 'input', e => {
   // Importe de la partida = cantidad × precio unitario.
@@ -1696,11 +1724,15 @@ function fcOpciones(clientes) {
 
 async function cargarClientes() {
   const pedirSaldos = Permisos.puede('cxc.ver');
-  const [clientes, kpis, saldos] = await Promise.all([
-    api('/clientes?' + fcParams().toString()).then(r => r.json()),
-    api('/kpis').then(r => r.json()),
-    pedirSaldos ? api('/finanzas/cartera?vista=cliente').then(r => r.ok ? r.json() : []).catch(() => []) : Promise.resolve([])
-  ]);
+  let clientes, kpis, saldos;
+  try {
+    [clientes, kpis, saldos] = await Promise.all([
+      api('/clientes?' + fcParams().toString()).then(r => r.json()),
+      api('/kpis').then(r => r.json()),
+      pedirSaldos ? api('/finanzas/cartera?vista=cliente').then(r => r.ok ? r.json() : []).catch(() => []) : Promise.resolve([])
+    ]);
+  } catch (err) { if (err.status !== 401) avisoCarga('clientes', err, cargarClientes); return; }
+  avisoCarga('clientes');
   const saldo = new Map(saldos.map(g => [g.cliente_id, g]));
   FC_LISTA = clientes.map(c => ({ ...c, saldo: saldo.get(c.id)?.saldo || 0, vencido: saldo.get(c.id)?.vencido || 0 }));
   if (fcVal('fc-tipo') === 'con_saldo') FC_LISTA = FC_LISTA.filter(c => c.saldo > 0);
@@ -2472,6 +2504,21 @@ on('btn-descargar-respaldo', 'click', async () => {
     toast('No se pudo descargar el respaldo: ' + err.message);
   }
 });
+// Respaldo completo: puede pesar GB, así que el navegador lo baja directo al disco con un boleto de un solo uso.
+on('btn-descargar-respaldo-completo', 'click', async () => {
+  try {
+    const r = await api('/admin/backup-completo', { method: 'POST' });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || !j.url) throw new Error(j.error || 'no se pudo preparar');
+    const a = document.createElement('a');
+    a.href = j.url;
+    a.download = '';
+    a.click();
+    toast('Se empezó a descargar el respaldo completo. Puede tardar varios minutos: no cierres el navegador hasta que termine.');
+  } catch (err) {
+    toast('No se pudo descargar el respaldo completo: ' + err.message);
+  }
+});
 
 function mostrarUsuarioEnHeader() {
   document.getElementById('sesion-nombre').textContent = USUARIO_ACTUAL.nombre;
@@ -2507,6 +2554,7 @@ async function cargarUsuarios() {
         <button type="button" class="btn btn-secundario" data-accion="guardar">Guardar</button>
         <button type="button" class="btn btn-outline" data-accion="password" data-sl-libre>Nueva contraseña</button>
         <button type="button" class="btn btn-peligro" data-accion="desactivar" data-sl-libre ${propio || (u.rol === 'admin' && admins === 1) ? 'disabled title="No disponible para esta cuenta"' : ''}>Desactivar</button>
+        ${Permisos.direccion() ? `<button type="button" class="btn btn-peligro" data-accion="eliminar" data-sl-libre ${propio || (u.rol === 'admin' && admins === 1) ? 'disabled title="No disponible para esta cuenta"' : ''}>Eliminar</button>` : ''}
       </div>
     </div>`;
   }).join('');
@@ -2554,6 +2602,12 @@ on('lista-usuarios', 'click', async e => {
       if (!await solicitarDialogo({ titulo: 'Desactivar usuario', aceptar: 'Desactivar', mensaje: `¿Desactivar a "${nombre}"?\n\nSus registros históricos se conservan, pero ya no podrá iniciar sesión.` })) return;
       await exigirOk(await api('/usuarios/' + id, { method: 'DELETE' }), 'No se pudo desactivar');
       toast('Usuario desactivado');
+    } else if (btn.dataset.accion === 'eliminar') {
+      // Solo Dirección (2026-11-04): se borra si nunca se usó; si tiene registros, se archiva y sale de las listas.
+      if (!await solicitarDialogo({ titulo: 'Eliminar usuario', aceptar: 'Eliminar', mensaje: `¿Eliminar a "${nombre}"?\n\nSi nunca usó el sistema, se borra. Si ya tiene registros (cotizaciones, cobros, bitácora…), se archiva: ya no entra, desaparece de las listas y su historial se conserva.` })) return;
+      const r = await api('/usuarios/' + id + '/eliminar', { method: 'POST', body: '{}' });
+      const j = await exigirOk(r, 'No se pudo eliminar');
+      toast(j?.mensaje || 'Usuario eliminado');
     }
     await cargarUsuarios();
     cargarCatalogos();
@@ -2578,13 +2632,14 @@ async function cargarCatalogoServicios() {
   cont.innerHTML = servicios.map((s, i) => `
     <div class="servicio-row fila-catalogo" data-servicio="${Number(s.id)}">
       <div class="orden-btns"><button type="button" class="btn btn-outline" data-mover="-1" ${i === 0 ? 'disabled' : ''} aria-label="Subir ${escaparHtml(s.nombre)}">↑</button><button type="button" class="btn btn-outline" data-mover="1" ${i === servicios.length - 1 ? 'disabled' : ''} aria-label="Bajar ${escaparHtml(s.nombre)}">↓</button></div>
-      <div class="info"><div class="tit">${escaparHtml(s.nombre)}</div><label for="desc-${s.id}">Descripción predeterminada para cotizaciones</label><textarea id="desc-${s.id}" rows="3" maxlength="10000" placeholder="Descripción que se precargará al elegir este servicio">${escaparHtml(s.descripcion || '')}</textarea></div>
+      <div class="info"><div class="tit">${escaparHtml(s.nombre)}</div><label for="desc-${s.id}">Descripción predeterminada para cotizaciones</label><textarea id="desc-${s.id}" rows="3" maxlength="10000" placeholder="Descripción que se precargará al elegir este servicio. Lo que cambia va entre corchetes, p. ej. [VOLUMEN]">${escaparHtml(s.descripcion || '')}</textarea></div>
       <div class="acciones-catalogo">
         <span class="solo-general"><input class="util-48" type="number" min="1" step="1" placeholder="Sin recompra" value="${s.dias_recurrencia != null ? s.dias_recurrencia : ''}" id="rec-${s.id}" aria-label="Recompra cada (días)"> <span class="util-49">días</span></span>
         <button type="button" class="btn btn-secundario" data-guardar>Guardar</button>
         ${admin ? '<button type="button" class="btn btn-peligro" data-eliminar>Eliminar</button>' : ''}
       </div>
     </div>`).join('');
+  await window.ListasServicio?.cargar(); window.ListasServicio?.pintarCatalogo(); // listas de cada servicio (solo Dirección las cambia)
   enVista('#lista-servicios-catalogo .fila-catalogo', Permisos.puede('catalogos.editar'));
 }
 on('lista-servicios-catalogo', 'click', async e => {
@@ -2751,13 +2806,13 @@ async function cargarTiposCliente(){
   let tipos;
   try { tipos=await api('/tipos-cliente').then(r=>r.json()); }
   catch(error){
-    document.getElementById('lista-tipos-cliente').textContent='No se pudo cargar el catálogo. Si acabas de actualizar el CRM, reinicia el servidor y recarga la página.';
+    document.getElementById('lista-tipos-cliente').textContent='No se pudo cargar el catálogo: '+error.message;
     document.getElementById('btn-agregar-tipo').disabled=true;
     // Mantiene las opciones conocidas para que un fallo del catálogo no bloquee el inicio.
     tipos=CATALOGOS.tipos || [{clave:'residencial',nombre:'Residencial'},{clave:'comercial',nombre:'Comercial'},{clave:'industrial',nombre:'Industrial'}];
     for(const id of ['in-giro','fc-ed-giro']){const el=document.getElementById(id);if(!el.options.length || el.options.length===1){el.innerHTML='<option value="">Sin especificar</option>'+tipos.map(t=>`<option value="${escaparHtml(t.clave)}">${escaparHtml(t.nombre)}</option>`).join('');}}
     CATALOGOS.tipos=tipos;
-    toast('Catálogo de tipos no disponible. Reinicia el servidor si acabas de actualizar.');
+    toast('No se pudieron cargar los tipos de cliente: ' + error.message);
     return;
   }
   document.getElementById('btn-agregar-tipo').disabled=false;
@@ -2789,3 +2844,18 @@ function renderGraficosComerciales(d){
   const puntos=serie.map((m,i)=>({x:70+(serie.length===1?420:i*840/(serie.length-1)),y:190-160*m.importe/max,...m}));
   cont.innerHTML=`<svg viewBox="0 0 ${w} ${h}" role="img" aria-label="Vendido por mes" style="display:block;width:100%;max-height:300px"><line x1="70" y1="190" x2="910" y2="190" stroke="#9aa4ad"/><text x="2" y="24" font-size="12">${formatoMoneda(max)}</text><text x="12" y="192" font-size="12">$0</text><polyline points="${puntos.map(p=>p.x+','+p.y).join(' ')}" fill="none" stroke="#bb8200" stroke-width="3"/>${puntos.map((p,i)=>`<circle cx="${p.x}" cy="${p.y}" r="4" fill="#f6b103"><title>${escaparHtml(p.mes)}: ${formatoMoneda(p.importe)} · ${Number(p.servicios)} servicios</title></circle>${i===0||i===puntos.length-1||i%Math.max(1,Math.ceil(puntos.length/8))===0?`<text x="${p.x}" y="215" text-anchor="middle" font-size="12">${escaparHtml(p.mes)}</text>`:''}`).join('')}</svg><details><summary>Ver cifras mensuales</summary><div class="tabla-scroll"><table class="tabla-resumen"><thead><tr><th>Mes</th><th>Servicios</th><th>Importe contratado</th></tr></thead><tbody>${serie.map(m=>`<tr><td>${escaparHtml(m.mes)}</td><td>${Number(m.servicios)}</td><td>${formatoMoneda(m.importe)}</td></tr>`).join('')}</tbody></table></div></details>`;
 }
+
+// Errores del navegador → logs del sistema (Ajustes, solo Dirección los ve). Solo con sesión; si el aviso falla, se ignora.
+(() => {
+  let enviando = 0;
+  const avisar = (mensaje, archivo) => {
+    if (!USUARIO_ACTUAL?.token || !mensaje || /^Script error\.?$/.test(mensaje) || enviando > 3) return;
+    enviando++;
+    const vista = document.querySelector('.vista.activa')?.id?.replace(/^vista-/, '') || '';
+    api('/registro-sistema/pantalla', { method: 'POST', body: JSON.stringify({ mensaje: String(mensaje).slice(0, 300), vista, archivo }) })
+      .catch(() => {}).finally(() => { enviando--; });
+  };
+  window.addEventListener('error', e => avisar(e.message, e.filename ? String(e.filename).split('/').pop().split('?')[0] + ':' + e.lineno : ''));
+  // Las respuestas del servidor con error (permiso, datos inválidos…) ya traen su mensaje y las graves se anotan allá: aquí solo fallas del código.
+  window.addEventListener('unhandledrejection', e => { const r = e.reason; if (r?.status || r?.name === 'AbortError') return; avisar(r?.message || String(r || ''), ''); });
+})();

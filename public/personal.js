@@ -30,19 +30,20 @@ const Personal = (() => {
       const lista = await pedir('?' + q);
       if (turno !== consulta) return;
       filas = lista; pintar();
-    } catch (e) { $('pe-tabla').innerHTML = `<tr><td colspan="8"><p class="aviso-error-carga" role="alert">${esc(e.message)}</p></td></tr>`; }
+      cargarKioscos();
+    } catch (e) { $('pe-tabla').innerHTML = `<tr><td colspan="9"><p class="aviso-error-carga" role="alert">${esc(e.message)}</p></td></tr>`; }
   }
   function pintar() {
     const avisos = filas.filter(p => p.alertas.length).length;
     $('pe-resumen').textContent = `${filas.length} persona${filas.length === 1 ? '' : 's'}` + (avisos ? ` · ${avisos} con avisos (licencias o contratos por vencer)` : '');
     $('pe-tabla').innerHTML = filas.length ? filas.map(p => `<tr class="${p.activo ? '' : 'pe-baja'}">
-        <td><button type="button" class="pe-nombre" data-persona="${Number(p.id)}">${esc(p.nombre)}</button>${p.usuario_nombre ? '<small class="pe-cuenta">Cuenta: ' + esc(p.usuario_nombre) + '</small>' : ''}${p.activo ? '' : '<small class="pe-cuenta">Baja ' + esc(fecha(p.fecha_baja)) + '</small>'}</td>
+        <td>${esc(p.numero_empleado || '')}</td><td><button type="button" class="pe-nombre" data-persona="${Number(p.id)}">${esc(p.nombre)}</button>${p.usuario_nombre ? '<small class="pe-cuenta">Cuenta: ' + esc(p.usuario_nombre) + '</small>' : ''}${p.activo ? '' : '<small class="pe-cuenta">Baja ' + esc(fecha(p.fecha_baja)) + '</small>'}</td>
         <td>${esc(p.puesto)}</td><td>${esc(p.telefono || '—')}</td><td>${esc(antiguedad(p.fecha_ingreso))}</td>
         <td>${p.vacaciones ? (p.vacaciones.anios ? `${p.vacaciones.disponibles} de ${p.vacaciones.corresponden}` : 'Aún no cumple 1 año') : '—'}</td>
         <td>${p.licencia_vence ? esc((p.licencia_tipo || '') + ' · vence ' + fecha(p.licencia_vence)) : '—'}</td>
         <td>${Number(p.ordenes_mes) || 0}</td>
         <td>${p.alertas.map(a => `<span class="chip alert-chip">${esc(a)}</span>`).join(' ') || ''}</td></tr>`).join('')
-      : '<tr><td colspan="8"><p class="ayuda">No hay personas con esos filtros. ' + (Permisos.puede('personal.editar') ? 'Da de alta a la primera con «+ Nueva persona».' : '') + '</p></td></tr>';
+      : '<tr><td colspan="9"><p class="ayuda">No hay personas con esos filtros. ' + (Permisos.puede('personal.editar') ? 'Da de alta a la primera con «+ Nueva persona».' : '') + '</p></td></tr>';
   }
 
   // ---------- Ficha ----------
@@ -74,7 +75,7 @@ const Personal = (() => {
   }
   function pintarFicha() {
     const p = actual, puedeEditar = !!p.puede?.editar, sens = !!p.puede?.sensibles, nuevo = !!p.nuevo, edita = puedeEditar && (nuevo || EDITANDO), ro = edita ? '' : ' disabled';
-    $('pe-titulo').textContent = nuevo ? 'Nueva persona' : p.nombre + (p.activo ? '' : ' (dada de baja)');
+    $('pe-titulo').textContent = nuevo ? 'Nueva persona' : (p.numero_empleado ? 'No. ' + p.numero_empleado + ' · ' : '') + p.nombre + (p.activo ? '' : ' (dada de baja)');
     const usuarios = [...(p.usuario_id ? [{ id: p.usuario_id, nombre: p.usuario_nombre }] : []), ...(p.usuarios_sin_ficha || [])].map(u => [u.id, u.nombre]);
     const sucursales = window.Sucursales?.varias?.() ? (Sucursales.datos.sucursales || []).filter(s => s.activo).map(s => [s.id, s.clave + ' · ' + s.nombre]) : null;
     let h = `<div class="modal-section"><h3 class="pe-sub">Datos generales</h3><div class="form-grid-2">
@@ -130,6 +131,9 @@ const Personal = (() => {
         </div>` : ''}</div>
         <div class="modal-section"><h3 class="pe-sub">Órdenes donde participó</h3>${(p.ordenes || []).length ? '<ul class="pe-ordenes">' + p.ordenes.map(o => `<li><b>${esc(folioOrdenServicio(o))}</b> · ${esc(o.cliente || '')} · ${esc(fecha(o.fecha_realizado || o.fecha_servicio))} · ${esc(CAT.papeles[o.papel] || o.papel)}${o.ejecucion === 'realizado' ? ' ✔' : ''}</li>`).join('') + '</ul>' : '<p class="ayuda">Todavía no está en ninguna orden.</p>'}</div>`;
     }
+    if (!nuevo) h += '<div class="modal-section" id="pe-checador"><h3 class="pe-sub">🕒 Reloj checador</h3><p class="ayuda" role="status">Cargando…</p></div>';
+    if (!nuevo) h += `<div class="modal-section" id="pe-foto-cred"><h3 class="pe-sub">🪪 Foto para su credencial</h3><div class="pe-foto-cred">${p.tiene_foto ? '<p class="ayuda" role="status">Cargando…</p>' : '<p class="ayuda">Todavía no tiene foto. Que se ponga de frente, sin lentes oscuros ni gorra, con fondo claro.</p>'}</div>
+      ${puedeEditar && p.activo ? `<label class="btn btn-secundario">📷 ${p.tiene_foto ? 'Cambiar foto' : 'Subir o tomar foto'}<input type="file" id="pe-foto-archivo" accept="image/jpeg,image/png" capture="user" hidden></label>` : ''}</div>`;
     h += `<div class="modal-section pe-pie"><p id="pe-aviso" role="status"></p><div class="btn-group">
       ${edita ? `<button type="button" class="btn btn-primario" id="pe-guardar">${nuevo ? 'Dar de alta' : 'Guardar cambios'}</button>` : ''}
       ${puedeEditar && !edita ? '<button type="button" class="btn btn-secundario" id="pe-editar">✏️ Editar ficha</button>' : ''}
@@ -139,6 +143,187 @@ const Personal = (() => {
     $('pe-cuerpo').innerHTML = h;
     base = JSON.stringify(datosFormulario());
     aviso();
+    if (!nuevo) pintarChecador(p.id);
+    if (!nuevo && p.tiene_foto) mostrarFotoCred(p.id);
+  }
+  // Foto de la credencial (server/credenciales.js): se muestra aquí y se achica antes de subirla (máx. 600 px).
+  async function mostrarFotoCred(id) {
+    const cont = document.querySelector('#pe-foto-cred .pe-foto-cred'); if (!cont) return;
+    try {
+      const r = await api('/personal/' + Number(id) + '/foto'); if (!r.ok) throw new Error('No se pudo cargar la foto');
+      const url = URL.createObjectURL(await r.blob()), img = document.createElement('img');
+      img.src = url; img.alt = 'Foto para la credencial'; img.className = 'pe-foto'; img.onload = () => URL.revokeObjectURL(url);
+      if (actual?.id === Number(id)) cont.replaceChildren(img);
+    } catch (err) { cont.textContent = err.message; }
+  }
+  async function subirFotoCred(archivo) {
+    const id = actual?.id; if (!id || !archivo) return;
+    try {
+      const img = await new Promise((ok, mal) => { const u = URL.createObjectURL(archivo), i = new Image(); i.onload = () => { URL.revokeObjectURL(u); ok(i); }; i.onerror = () => mal(new Error('No se pudo leer la imagen (usa JPG o PNG)')); i.src = u; });
+      const k = Math.min(1, 600 / Math.max(img.naturalWidth, img.naturalHeight)), c = document.createElement('canvas');
+      c.width = Math.round(img.naturalWidth * k); c.height = Math.round(img.naturalHeight * k); c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+      const blob = await new Promise(ok => c.toBlob(ok, 'image/jpeg', 0.88));
+      const r = await api('/personal/' + Number(id) + '/foto', { method: 'POST', headers: { 'Content-Type': 'image/jpeg' }, body: blob });
+      const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.error || 'No se pudo subir la foto');
+      toast('Foto guardada'); actual.tiene_foto = true; pintarFicha();
+    } catch (err) { toast(err.message); }
+  }
+
+  // ---------- Reloj checador de la persona (server/checador.js) ----------
+  // RH da el código y un PIN temporal (se ve una sola vez: aquí, hasta cerrar la ficha); nunca ve el PIN que elige la persona.
+  const TIPOS_CHECADA = { entrada: 'Entrada', comida_sale: 'Salida a comer', comida_regresa: 'Regreso de comer', salida: 'Salida', extra_inicia: 'Inicio de tiempo extra', extra_termina: 'Fin de tiempo extra' };
+  async function pintarChecador(id, pinNuevo) {
+    if (!$('pe-checador')) return;
+    let e;
+    let hor = null;
+    try {
+      const [r, rh] = await Promise.all([api('/asistencia/personal/' + Number(id)), api('/asistencia/personal/' + Number(id) + '/horario')]);
+      e = await r.json().catch(() => ({})); if (!r.ok) throw new Error(e.error || 'No se pudo cargar el checador');
+      if (rh.ok) hor = await rh.json().catch(() => null);
+    }
+    catch (err) { if ($('pe-checador')) $('pe-checador').innerHTML = `<h3 class="pe-sub">🕒 Reloj checador</h3><p class="aviso-error-carga" role="alert">${esc(err.message)}</p>`; return; }
+    const cont = $('pe-checador');
+    if (!cont || actual?.id !== Number(id)) return;
+    let h = '<h3 class="pe-sub">🕒 Reloj checador</h3>';
+    if (pinNuevo) h += `<p class="pe-pin-nuevo" role="alert">Código <b>${esc(pinNuevo.codigo)}</b> · PIN temporal <b>${esc(pinNuevo.pin)}</b><br><small>Anótalo y dáselo a la persona: no se vuelve a mostrar. En su primera checada elegirá su propio PIN.</small></p>`;
+    h += !e.codigo ? '<p class="ayuda">Todavía no está dado de alta en el reloj checador.</p>'
+      : `<p>Código para checar: <b>${esc(e.codigo)}</b> · ${e.pin_temporal ? 'con PIN temporal (aún no elige el suyo)' : e.tiene_pin ? 'ya eligió su PIN' : 'sin PIN'}${e.checa ? '' : ' · no checa'}${e.bloqueado ? ` · <b class="pe-bloqueado">🔒 PIN bloqueado ${e.bloqueo_total ? (e.bloqueado_hasta ? 'un día' : 'hasta que lo desbloqueen') + ' (puedes desbloquearlo ya)' : 'unos minutos'} por intentos fallidos</b>` : ''}</p>`;
+    if (hor) {
+      h += `<p>Horario: <b>${esc(hor.actual?.nombre || 'sin horario')}</b>${hor.historial?.[0] ? ` <small>(desde ${esc(hor.historial[0].desde === '2020-01-01' ? 'el inicio' : fecha(hor.historial[0].desde))})</small>` : ''}</p>`;
+      if (hor.puede?.editar && actual.activo) h += `<div class="filtros"><select id="pe-horario" aria-label="Horario">${hor.horarios.map(x => `<option value="${Number(x.id)}"${x.id === hor.actual?.horario_id ? ' selected' : ''}>${esc(x.nombre)}</option>`).join('')}</select><label>desde <input type="date" id="pe-horario-desde" value="${esc(hoy())}"></label><button type="button" class="btn btn-secundario" data-pe-horario="${Number(id)}">Asignar horario</button></div>`;
+    }
+    if (e.codigo && !e.aviso_firmado) h += `<p class="as-rojo">⚠️ Falta su aviso de privacidad firmado (por la foto y la ubicación). <a href="/aviso-privacidad-checador.html" target="_blank" rel="noopener">Imprimir el aviso</a> y, ya firmado, súbelo en «Documentos del expediente» como «Aviso de privacidad firmado».</p>`;
+    if (e.codigo) {
+      h += `<p>📱 Checar desde su celular: <b>${esc(e.celular ? 'celular ligado' : 'sin celular')}</b>${e.celular?.ultimo_uso ? ` <small>(último uso ${esc(e.celular.ultimo_uso)})</small>` : ''}</p>`;
+      if (e.puede?.editar && actual.activo) h += `<div class="btn-group"><button type="button" class="btn btn-secundario" data-pe-celular="${Number(id)}">${esc(e.celular ? 'Ligar otro celular' : 'Enviar enlace a su celular')}</button>${e.celular ? `<button type="button" class="btn btn-outline" data-pe-celular-quitar="${Number(id)}">Quitar celular</button>` : ''}</div><div id="pe-enlace"></div>`;
+      // Biométrico facial (server/biometria.js): solo con el consentimiento firmado en el expediente.
+      const bio = e.biometria;
+      if (bio) {
+        h += `<p>🙂 Biométrico (reconocimiento de su cara en el kiosco): <b>${esc(!bio.consentimiento ? 'sin consentimiento' : bio.registrado ? 'registrado' : 'falta registrar su cara')}</b>${bio.registrado_at ? ` <small>(desde ${esc(bio.registrado_at)})</small>` : ''}</p>`;
+        if (!bio.consentimiento) {
+          h += '<p class="ayuda">Para usarlo: imprime el aviso de privacidad, que firme el «Consentimiento para datos biométricos», guárdalo en su expediente físico y márcalo aquí. Si no acepta, checa como siempre.</p>';
+          if (e.puede?.editar && actual.activo) h += `<div class="btn-group"><button type="button" class="btn btn-secundario" data-pe-bio-consent="${Number(id)}" data-firmado="1">✍️ Firmó el consentimiento biométrico</button></div>`;
+        } else if (bio.consentimiento_at) h += `<p><small>✔ Consentimiento firmado (expediente físico) · marcado por ${esc(bio.consentimiento_por || '')} el ${esc(bio.consentimiento_at)}</small>${e.puede?.editar && actual.activo ? ` <button type="button" class="btn-link" data-pe-bio-consent="${Number(id)}" data-firmado="">Quitar (revocó)</button>` : ''}</p>`;
+        if (bio.consentimiento && e.puede?.editar && actual.activo) h += `<div class="btn-group"><button type="button" class="btn btn-secundario" data-pe-bio-codigo="${Number(id)}">${esc(bio.registrado ? 'Volver a registrar su cara' : 'Código para registrar su cara')}</button>${bio.registrado ? `<button type="button" class="btn btn-outline" data-pe-bio-borrar="${Number(id)}">Borrar su registro</button>` : ''}</div><div id="pe-bio-codigo"></div>`;
+      }
+      // Checar por WhatsApp (foráneos, server/whatsapp.js): respaldo del celular; desde el número de su ficha, queda por revisar.
+      h += `<p>💬 Checar por WhatsApp: <b>${esc(e.checa_whatsapp ? 'activado' : 'no')}</b>${e.checa_whatsapp ? ` <small>(desde el celular de su ficha: ${esc(actual.telefono || 'sin teléfono')}; cada checada queda por revisar)</small>` : ''}</p>`;
+      if (e.puede?.editar && actual.activo) h += `<div class="btn-group"><button type="button" class="btn btn-outline" data-pe-whatsapp="${Number(id)}" data-activo="${e.checa_whatsapp ? '' : '1'}">${esc(e.checa_whatsapp ? 'Quitar WhatsApp' : 'Permitir checar por WhatsApp')}</button></div>`;
+    }
+    if (e.ultimas?.length) h += '<h4 class="pe-sub2">Últimas checadas</h4><ul class="pe-ordenes">' + e.ultimas.map(c => `<li>${esc(fecha(c.fecha))} ${esc(String(c.hora).slice(0, 5))} · ${esc(TIPOS_CHECADA[c.tipo] || c.tipo)}${esc(c.origen === 'manual' ? ' (a mano)' : c.origen === 'celular' ? ' (celular)' : '')}${esc(c.sin_conexion ? ' (sin conexión)' : '')}${esc(c.estado === 'anulada' ? ' (anulada)' : c.estado === 'por_revisar' ? ' (por revisar)' : '')}${c.tiene_foto && e.puede?.ver ? ` <button type="button" class="btn-link" data-pe-foto="${Number(c.id)}">📷 Ver foto</button>` : ''}${esc(c.foto_borrada ? ' (foto borrada a los ' + e.dias_fotos + ' días)' : '')}</li>`).join('') + '</ul><div id="pe-foto-checada"></div>';
+    if (e.puede?.editar && actual.activo) h += `<div class="btn-group"><button type="button" class="btn btn-secundario" data-pe-pin="${Number(id)}" data-pe-pin-hay="${e.codigo ? 1 : ''}">${e.codigo ? 'Dar un PIN temporal nuevo' : 'Dar de alta en el checador'}</button>${e.bloqueado ? `<button type="button" class="btn btn-outline" data-pe-desbloquear="${Number(id)}">Desbloquear PIN</button>` : ''}</div>`;
+    cont.innerHTML = h;
+  }
+  // La foto se pide con la sesión y se muestra aquí mismo (no queda en la memoria del navegador al cerrar la ficha).
+  async function verFoto(id) {
+    const cont = $('pe-foto-checada'); if (!cont) return;
+    try {
+      const r = await api('/asistencia/checadas/' + Number(id) + '/foto');
+      if (!r.ok) { const j = await r.json().catch(() => ({})); throw new Error(j.error || 'No se pudo abrir la foto'); }
+      const url = URL.createObjectURL(await r.blob()), img = document.createElement('img');
+      img.src = url; img.alt = 'Foto de la checada'; img.className = 'pe-foto'; img.onload = () => URL.revokeObjectURL(url);
+      cont.replaceChildren(img);
+    } catch (err) { toast(err.message); }
+  }
+  async function asignarHorario(id) {
+    try {
+      const r = await api('/asistencia/personal/' + Number(id) + '/horario', { method: 'PUT', body: JSON.stringify({ horario_id: Number($('pe-horario').value), desde: $('pe-horario-desde').value }) });
+      const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.error || 'No se pudo asignar'); toast('Horario asignado'); pintarChecador(Number(id));
+    } catch (err) { toast(err.message); }
+  }
+  // Enlace de un solo uso para ligar el celular (se ve aquí hasta cerrar la ficha). Se puede mandar por WhatsApp al
+  // teléfono de su ficha: abre WhatsApp en este equipo con el mensaje listo; quien lo manda lo revisa antes.
+  async function enlaceCelular(id) {
+    try {
+      const r = await api('/asistencia/personal/' + Number(id) + '/celular', { method: 'POST' }), j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j.error || 'No se pudo generar el enlace');
+      // Sin APP_URL en el servidor, el enlace se arma con la dirección con la que RH abrió el CRM (no con lo que diga la petición).
+      if (!j.url) j.url = location.origin + j.ruta;
+      const tel = String(j.telefono || '').replace(/\D/g, '').slice(-10), texto = 'Saneadren: abre este enlace en TU celular para checar entrada y salida desde ahí (sirve una sola vez, 24 h): ' + j.url;
+      $('pe-enlace').innerHTML = `<p class="pe-pin-nuevo" role="alert"><small>${esc(j.aviso)}</small><br><input class="pe-enlace" value="${esc(j.url)}" readonly aria-label="Enlace para el celular"><br>
+        <button type="button" class="btn btn-outline" data-pe-copiar="${esc(j.url)}">Copiar enlace</button>
+        ${tel.length === 10 ? `<a class="btn btn-secundario" target="_blank" rel="noopener noreferrer" href="${esc('https://wa.me/52' + tel + '?text=' + encodeURIComponent(texto))}">Enviar por WhatsApp</a>` : '<small>Su ficha no tiene teléfono de 10 dígitos: copia el enlace y mándaselo.</small>'}</p>`;
+    } catch (err) { toast(err.message); }
+  }
+  // Código de 6 dígitos (10 min, un solo uso) para que la persona registre su cara en el kiosco con RH a un lado.
+  async function codigoBiometria(id) {
+    try { const r = await api('/asistencia/personal/' + Number(id) + '/biometria/codigo', { method: 'POST' }); const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.error || 'No se pudo');
+      $('pe-bio-codigo').innerHTML = `<p class="pe-pin-nuevo" role="alert">Código: <b>${esc(j.codigo)}</b> · vale ${esc(j.minutos)} minutos y una sola vez.<br><small>En el kiosco: «🙂 Registrar mi cara (con RH)» → escribe este código → que mire a la cámara y parpadee. Quédate con la persona mientras lo hace.</small></p>`; }
+    catch (err) { toast(err.message); }
+  }
+  async function consentimientoBiometria(id, firmado) {
+    if (!await solicitarDialogo(firmado ? { titulo: 'Consentimiento biométrico', mensaje: '¿Confirmas que la persona firmó el «Consentimiento para datos biométricos» y que está en su expediente físico? Queda registrado que tú lo marcaste.', aceptar: 'Sí, lo firmó' }
+      : { titulo: 'Quitar consentimiento', mensaje: 'Úsalo si la persona revocó su consentimiento. Se borra el registro de su cara y seguirá checando con código o credencial, PIN y foto.', aceptar: 'Quitar y borrar' })) return;
+    try { const r = await api('/asistencia/personal/' + Number(id) + '/biometria/consentimiento', { method: 'PUT', body: JSON.stringify({ firmado }) }); if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || 'No se pudo');
+      toast(firmado ? 'Consentimiento marcado' : 'Consentimiento quitado y registro borrado'); pintarChecador(Number(id)); }
+    catch (err) { toast(err.message); }
+  }
+  async function borrarBiometria(id) {
+    if (!await solicitarDialogo({ titulo: 'Borrar registro de su cara', mensaje: 'Se borra la plantilla de su cara (por ejemplo, si revocó su consentimiento). Seguirá checando con código o credencial, PIN y foto.', aceptar: 'Borrar' })) return;
+    try { const r = await api('/asistencia/personal/' + Number(id) + '/biometria/borrar', { method: 'POST' }); if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || 'No se pudo'); toast('Registro de su cara borrado'); pintarChecador(Number(id)); }
+    catch (err) { toast(err.message); }
+  }
+  async function cambiarWhatsapp(id, activo) {
+    if (activo && !await solicitarDialogo({ titulo: 'Checar por WhatsApp', mensaje: `Podrá checar mandando un mensaje al WhatsApp de la empresa desde el celular de su ficha (${actual.telefono || 'sin teléfono'}). Sin foto ni ubicación: cada checada quedará «por revisar». Úsalo para foráneos que no puedan usar el enlace del celular.`, aceptar: 'Permitir' })) return;
+    try { const r = await api('/asistencia/personal/' + Number(id) + '/whatsapp', { method: 'PUT', body: JSON.stringify({ activo }) }); const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.error || 'No se pudo');
+      toast(activo ? (j.configurado ? 'Listo: ya puede checar por WhatsApp' : 'Activado. Ojo: el WhatsApp de la empresa todavía no está conectado al sistema') : 'Ya no checa por WhatsApp'); pintarChecador(Number(id)); }
+    catch (err) { toast(err.message); }
+  }
+  async function quitarCelular(id) {
+    if (!await solicitarDialogo({ titulo: 'Quitar celular', mensaje: 'Ese celular ya no podrá checar. Para volver a checar desde un celular hay que mandarle un enlace nuevo.', aceptar: 'Quitar' })) return;
+    try { const r = await api('/asistencia/personal/' + Number(id) + '/celular/quitar', { method: 'POST' }); if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || 'No se pudo'); toast('Celular quitado'); pintarChecador(Number(id)); }
+    catch (err) { toast(err.message); }
+  }
+  async function darPin(id, yaTiene) {
+    if (yaTiene && !await solicitarDialogo({ titulo: 'PIN temporal nuevo', mensaje: 'El PIN que usa ahora deja de servir. Se genera uno temporal y, en su próxima checada, elegirá otro.', aceptar: 'Dar PIN nuevo' })) return;
+    try { const r = await api('/asistencia/personal/' + Number(id) + '/pin', { method: 'POST' }); const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.error || 'No se pudo'); pintarChecador(Number(id), j); }
+    catch (err) { toast(err.message); }
+  }
+  async function desbloquearPin(id) {
+    try { const r = await api('/asistencia/personal/' + Number(id) + '/desbloquear', { method: 'POST' }); const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.error || 'No se pudo'); toast('PIN desbloqueado'); pintarChecador(Number(id)); }
+    catch (err) { toast(err.message); }
+  }
+
+  // ---------- Kioscos del reloj checador (con «Kioscos del checador») ----------
+  // Se registra la tableta DESDE la tableta: el token se guarda en su navegador y nunca se muestra en pantalla.
+  const LLAVE_KIOSCO = 'saneadren_kiosco';
+  const kioscoAqui = () => { try { return JSON.parse(localStorage.getItem(LLAVE_KIOSCO) || 'null'); } catch { return null; } };
+  async function cargarKioscos() {
+    const cont = $('pe-kioscos-lista'); if (!cont || !Permisos.puede('asistencia.kioscos')) return;
+    const sucs = window.Sucursales?.varias?.() ? (Sucursales.datos.sucursales || []).filter(s => s.activo) : [];
+    $('pe-kiosco-suc').hidden = !sucs.length;
+    if (sucs.length && !$('pe-kiosco-suc').options.length) $('pe-kiosco-suc').innerHTML = sucs.map(s => `<option value="${Number(s.id)}">${esc(s.clave + ' · ' + s.nombre)}</option>`).join('');
+    try {
+      const r = await api('/asistencia/dispositivos'), lista = await r.json().catch(() => []);
+      if (!r.ok) throw new Error(lista.error || 'No se pudieron cargar los kioscos');
+      const aqui = kioscoAqui()?.id;
+      cont.innerHTML = lista.length ? '<ul class="pe-ordenes">' + lista.map(k => `<li><b>${esc(k.nombre)}</b> · ${esc(k.sucursal || '')}${k.id === aqui && k.activo ? ' · <b>este dispositivo</b> · <a href="/kiosco">Abrir el kiosco</a>' : ''} <small>${k.activo ? 'registrado por ' + esc(k.registrado_por_nombre || '') + (k.ultimo_uso ? ' · último uso ' + esc(k.ultimo_uso) : '') : 'dado de baja por ' + esc(k.revocado_por || '')}</small>${k.activo && k.red_cambiada ? ` <span class="as-rojo">⚠️ Su última checada llegó desde otra red.</span> <button type="button" class="btn btn-outline" data-pe-kiosco-red="${Number(k.id)}" title="Si cambió el internet de la oficina">Es la nueva red de la oficina</button>` : ''}${k.activo ? ` <button type="button" class="btn btn-outline" data-pe-kiosco-baja="${Number(k.id)}">Dar de baja</button>` : ''}</li>`).join('') + '</ul>'
+        : '<p class="ayuda">Todavía no hay kioscos registrados.</p>';
+    } catch (err) { cont.innerHTML = `<p class="aviso-error-carga" role="alert">${esc(err.message)}</p>`; }
+  }
+  async function registrarKiosco() {
+    const nombre = $('pe-kiosco-nombre').value.trim();
+    if (nombre.length < 3) { toast('Escribe un nombre para el kiosco (p. ej. «Entrada Querétaro»)'); return; }
+    if (kioscoAqui() && !await solicitarDialogo({ titulo: 'Este dispositivo ya es kiosco', mensaje: 'Se registrará de nuevo y el registro anterior de este dispositivo dejará de servir aquí (dalo de baja en la lista).', aceptar: 'Registrar de nuevo' })) return;
+    try {
+      const r = await api('/asistencia/dispositivos', { method: 'POST', body: JSON.stringify({ nombre, sucursal_id: $('pe-kiosco-suc').hidden ? undefined : Number($('pe-kiosco-suc').value) }) });
+      const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.error || 'No se pudo registrar');
+      try { localStorage.setItem(LLAVE_KIOSCO, JSON.stringify({ id: j.id, nombre: j.nombre, token: j.token })); } catch { throw new Error('Este navegador no deja guardar datos (¿modo privado?): no se puede usar como kiosco'); }
+      $('pe-kiosco-nombre').value = '';
+      toast('Este dispositivo quedó registrado como kiosco «' + j.nombre + '». Ábrelo con «Abrir el kiosco».');
+      cargarKioscos();
+    } catch (err) { toast(err.message); }
+  }
+  // El internet de la oficina cambió de IP: la red de su última checada pasa a ser «la de siempre».
+  async function redKiosco(id) {
+    if (!await solicitarDialogo({ titulo: 'Nueva red de la oficina', mensaje: 'Úsalo solo si cambió el internet de la oficina. Si no, alguien pudo checar con este kiosco desde otro lugar: revisa las checadas «desde otra red».', aceptar: 'Es la nueva red' })) return;
+    try { const r = await api('/asistencia/dispositivos/' + Number(id) + '/red', { method: 'POST' }); const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.error || 'No se pudo'); toast('Listo: esa es ahora la red de siempre del kiosco'); cargarKioscos(); }
+    catch (err) { toast(err.message); }
+  }
+  async function bajaKiosco(id) {
+    if (!await solicitarDialogo({ titulo: 'Dar de baja el kiosco', mensaje: 'Ese dispositivo ya no podrá registrar checadas. Las checadas que ya hizo se conservan.', aceptar: 'Dar de baja' })) return;
+    try { const r = await api('/asistencia/dispositivos/' + Number(id) + '/revocar', { method: 'POST' }); const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.error || 'No se pudo'); if (kioscoAqui()?.id === Number(id)) { try { localStorage.removeItem(LLAVE_KIOSCO); } catch { /* */ } } cargarKioscos(); }
+    catch (err) { toast(err.message); }
   }
   function aviso() { const a = $('pe-aviso'); if (a) a.textContent = actual?.nuevo ? 'Nueva · aún no guardada' : pendiente() ? 'Cambios sin guardar' : ''; }
   async function permitirSalida() { return !pendiente() || await solicitarDialogo({ titulo: 'Cambios sin guardar', mensaje: '¿Descartar los cambios de la ficha?', aceptar: 'Descartar' }); }
@@ -214,9 +399,11 @@ const Personal = (() => {
   $('pe-tabla').onclick = e => { const b = e.target.closest('[data-persona]'); if (b) abrir(b.dataset.persona); };
   ['pe-f-puesto', 'pe-f-estado', 'pe-f-alertas'].forEach(id => { $(id).onchange = cargar; });
   $('pe-buscar').oninput = debounce(cargar, 350);
+  $('pe-kiosco-registrar').onclick = registrarKiosco;
+  $('pe-kioscos-lista').onclick = e => { const b = e.target.closest('[data-pe-kiosco-baja]'); if (b) bajaKiosco(b.dataset.peKioscoBaja); const r = e.target.closest('[data-pe-kiosco-red]'); if (r) redKiosco(r.dataset.peKioscoRed); };
   $('pe-cerrar').onclick = async () => { if (!ocupado && await permitirSalida()) $('overlay-personal').classList.remove('mostrar'); };
   $('pe-cuerpo').addEventListener('input', aviso);
-  $('pe-cuerpo').addEventListener('change', aviso);
+  $('pe-cuerpo').addEventListener('change', e => { if (e.target.id === 'pe-foto-archivo') { subirFotoCred(e.target.files[0]); e.target.value = ''; return; } aviso(e); });
   $('pe-cuerpo').addEventListener('click', e => {
     const t = e.target.closest('button'); if (!t) return;
     if (t.id === 'pe-guardar') guardar();
@@ -229,6 +416,17 @@ const Personal = (() => {
     else if (t.dataset.peIncCancelar) cancelarIncidencia(t.dataset.peIncCancelar);
     else if (t.dataset.peDoc) descargar(t.dataset.peDoc);
     else if (t.dataset.peDocQuitar) quitarDocumento(t.dataset.peDocQuitar);
+    else if (t.dataset.pePin) darPin(t.dataset.pePin, !!t.dataset.pePinHay);
+    else if (t.dataset.peDesbloquear) desbloquearPin(t.dataset.peDesbloquear);
+    else if (t.dataset.peFoto) verFoto(t.dataset.peFoto);
+    else if (t.dataset.peHorario) asignarHorario(t.dataset.peHorario);
+    else if (t.dataset.peCelular) enlaceCelular(t.dataset.peCelular);
+    else if (t.dataset.peCelularQuitar) quitarCelular(t.dataset.peCelularQuitar);
+    else if (t.dataset.peWhatsapp) cambiarWhatsapp(t.dataset.peWhatsapp, !!t.dataset.activo);
+    else if (t.dataset.peBioCodigo) codigoBiometria(t.dataset.peBioCodigo);
+    else if (t.dataset.peBioBorrar) borrarBiometria(t.dataset.peBioBorrar);
+    else if (t.dataset.peBioConsent) consentimientoBiometria(t.dataset.peBioConsent, !!t.dataset.firmado);
+    else if (t.dataset.peCopiar) navigator.clipboard?.writeText(t.dataset.peCopiar).then(() => toast('Enlace copiado'), () => toast('No se pudo copiar: selecciónalo y cópialo'));
   });
   // Al cerrar la ficha (con la X, Esc o desde otra pantalla) se borra de la página: lo sensible no se queda ahí.
   new MutationObserver(() => { if (!$('overlay-personal').classList.contains('mostrar') && !ocupado) { $('pe-cuerpo').innerHTML = ''; actual = null; base = ''; } })

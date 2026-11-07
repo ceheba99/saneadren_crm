@@ -36,6 +36,8 @@ app.use('/api', (req, res, next) => { res.set({ 'Cache-Control': 'no-store', Pra
 // El parser global se salta las peticiones que ya se leyeron aquí.
 app.use('/api/finanzas/importar', express.json({ limit: '5mb' }));
 app.use('/api/generador/importar', express.json({ limit: '5mb' }));
+app.use('/api/marketing/google-ads', express.json({ limit: '5mb' })); // reporte de llamadas de Google Ads (CSV)
+app.use('/api/publico/whatsapp', express.raw({ type: () => true, limit: '1mb' })); // la firma de Meta se revisa sobre el cuerpo tal cual
 app.use(express.json({ limit: '1mb' }));
 app.use('/api', limitarCampos);
 app.use(express.static(path.join(__dirname, '..', 'public')));
@@ -85,13 +87,22 @@ const fallosPorCuenta = new Map(); // nombre -> { fallos, reinicia }
 const FALLOS_CUENTA_MAX = 30, FALLOS_CUENTA_VENTANA_MS = 60 * 60 * 1000;
 setInterval(() => { const ahora = Date.now(); for (const [k, v] of fallosPorCuenta) if (v.reinicia <= ahora) fallosPorCuenta.delete(k); }, FALLOS_CUENTA_VENTANA_MS).unref();
 const cuentaDe = req => String(req.body?.nombre || '').trim().toLowerCase().slice(0, 254);
+// Intentos mientras está bloqueado: al registro del sistema, como máximo uno por IP por minuto.
+const rechazosAnotados = new Map();
+setInterval(() => { const ahora = Date.now(); for (const [k, t] of rechazosAnotados) if (t <= ahora) rechazosAnotados.delete(k); }, 5 * 60000).unref();
+function anotarRechazo(req, motivo) {
+  if ((rechazosAnotados.get(req.ipCliente) || 0) > Date.now()) return;
+  rechazosAnotados.set(req.ipCliente, Date.now() + 60000);
+  app.locals.registro?.anotar(req, 'rechazado', { usuario: app.locals.registro.quien(req.body?.nombre), detalle: motivo });
+}
 function limitarLogin(req, res, next) {
   const c = fallosPorCuenta.get(cuentaDe(req));
-  if (c && c.reinicia > Date.now() && c.fallos >= FALLOS_CUENTA_MAX) return res.status(429).json({ error: 'Esta cuenta tuvo demasiados intentos fallidos. Espera una hora o usa «¿Olvidaste tu contraseña?».' });
+  if (c && c.reinicia > Date.now() && c.fallos >= FALLOS_CUENTA_MAX) return anotarRechazo(req, 'Cuenta bloqueada 1 hora'), res.status(429).json({ error: 'Esta cuenta tuvo demasiados intentos fallidos. Espera una hora o usa «¿Olvidaste tu contraseña?».' });
   const clave = req.ipCliente + '|' + String(req.body?.nombre || '').toLowerCase();
   const estado = intentosLogin.get(clave);
   if (estado?.bloqueadoHasta && estado.bloqueadoHasta > Date.now()) {
     const minutos = Math.ceil((estado.bloqueadoHasta - Date.now()) / 60000);
+    anotarRechazo(req, `Bloqueado ${minutos} min (usuario + conexión)`);
     return res.status(429).json({ error: `Demasiados intentos fallidos. Intenta de nuevo en ${minutos} minuto(s).` });
   }
   next();
@@ -121,6 +132,7 @@ function h(fn) {
       if (err.code && err.code.startsWith('SQLITE_CONSTRAINT')) {
         return res.status(400).json({ error: 'Datos inválidos (referencia inexistente o restricción de base de datos)' });
       }
+      app.locals.registro?.error(req, err); // queda en Ajustes → Logs
       res.status(500).json({ error: 'Error interno del servidor' });
     }
   };
@@ -142,8 +154,20 @@ const RUTAS_PUBLICAS = new Set(['/salud', '/login', '/registro', '/verificar-cor
 require('./cuentas')(app, db, h, { sesiones, urlBase: URL_BASE });
 app.use('/api', (req, res, next) => {
   // La encuesta que abre el cliente con el QR de su orden (server/encuestas.js) no pide sesión.
-  if (RUTAS_PUBLICAS.has(req.path) || /^\/publico\/encuesta\/[\w-]+$/.test(req.path)) return next();
+  // El kiosco del reloj checador (server/checador.js) tampoco: lo identifica el token del dispositivo, no una sesión.
+  if (RUTAS_PUBLICAS.has(req.path) || /^\/publico\/encuesta\/[\w-]+$/.test(req.path) || /^\/publico\/(kiosco|celular)\/[a-z-]+$/.test(req.path) || req.path === '/publico/whatsapp') return next();
   requireAuth(req, res, next);
+});
+// Campos de texto que nunca pueden llegar como lista u objeto (auditoría 2026-11-04, H-013): antes un nombre {…} se guardaba
+// como «[object Object]». Aplica a todas las rutas; cada una sigue validando su contenido.
+const CAMPOS_TEXTO = ['nombre', 'empresa_contacto', 'direccion', 'correo', 'telefono', 'telefono_alterno', 'rfc', 'notas_generales', 'giro', 'observaciones', 'puesto', 'concepto', 'motivo', 'referencia', 'texto', 'leyenda'];
+app.use('/api', (req, res, next) => {
+  const b = req.body;
+  if (b && typeof b === 'object' && !Buffer.isBuffer(b)) {
+    const malo = CAMPOS_TEXTO.find(k => b[k] !== null && typeof b[k] === 'object');
+    if (malo) return res.status(400).json({ error: `El campo «${malo}» debe ser texto` });
+  }
+  next();
 });
 // Sucursales: alcance de cada petición (qué sucursales ve) y candados en la base. Va antes de las demás rutas.
 const suc = require('./sucursales')(app, db, h, { audit: { registrar: (...a) => app.locals.auditoria?.registrar(...a), diferencias: (...a) => app.locals.auditoria?.diferencias(...a) } });
@@ -160,8 +184,14 @@ app.use('/api', require('./sin-montos-compras')(permisos));
 // Bitácora general de movimientos (clientes, proveedores, compras, usuarios, catálogos, eliminados).
 const audit = require('./auditoria')(app, db, h);
 app.locals.auditoria = audit;
+// Logs (solo Dirección, Ajustes → Logs): accesos, bloqueos, errores del servidor y quién está conectado (2026-11-05).
+app.locals.registro = require('./registro-sistema')(app, db, h);
+// Eliminar usuarios y sucursales (solo Dirección): se borran si nunca se usaron; si no, se archivan (2026-11-04).
+require('./eliminar')(app, db, h, { sesiones });
 // Clientes sin duplicados: ID CLI-0001, teléfonos adicionales, revisión de parecidos y fusión.
 const unicos = require('./clientes-unicos')(app, db, h);
+const listasServicio = require('./listas-servicio')(app, db, h, { permisos, audit }); // Listas de la parte que cambia de cada servicio (2026-11-05)
+require('./tablas-retiradas')(db); // Sucursales del cliente y descripciones por cliente: retiradas el 2026-11-05, se conservan sus datos
 require('./prospeccion')(app,db,h,unicos);
 // Cuentas por cobrar y por pagar. Devuelve ganchos que usan las rutas de órdenes de abajo.
 const finanzas = require('./finanzas')(app, db, h, unicos);
@@ -171,14 +201,25 @@ require('./tablero')(app, db, h, finanzas); // Resultados: panorama general
 require('./compras')(app, db, h, finanzas); // Órdenes de compra (formato CM-F-03)
 require('./carga-generador')(app, db, h, unicos); // Carga masiva del Generador (Excel por meses)
 require('./buscador')(app, db, h); // Buscador general (caja de arriba): folios, clientes, compras, proveedores
-require('./respaldos')(db, { hoyMexico }); // Copia diaria automática de la base (últimos 14 días) junto a la base
+require('./respaldos')(db, { hoyMexico, avisar: (evento, detalle) => app.locals.registro?.servicio(evento, detalle) }); // Copia diaria automática de la base (últimos 14 días) junto a la base
+// Correos que no salen (p. ej. falta la contraseña del correo): a los logs, con el destinatario a medias.
+require('./correo').alFallar((para, asunto, err) => app.locals.registro?.servicio('correo_fallo', `${app.locals.registro.tapar(para)} · «${String(asunto).slice(0, 80)}» · ${String(err?.message || err).slice(0, 200)}`));
 require('./integridad')(app, db, h); // Revisión de integridad de los datos guardados (solo administración)
 // Personal (RH): fichas, expediente, vacaciones e incidencias, y el equipo de cada orden de servicio.
 const personalMod = require('./personal')(app, db, h);
+app.locals.personal = personalMod;
+app.locals.checador = require('./checador')(app, db, h);
+app.locals.asistencia = require('./asistencia')(app, db, h);
+app.locals.biometria = require('./biometria')(app, db, h); // biométrico facial del kiosco (2026-11-05)
+require('./whatsapp')(app, db, h); // Checar por WhatsApp para foráneos (F5b, 2026-11-05)
+require('./credenciales')(app, db, h); // Credenciales con foto, vigencia y verificación pública para clientes (2026-11-05)
+require('./rh')(app, db, h); // Pestaña RH: resumen y carga de trabajadores en lote (2026-11-03) // Asistencia (RH F3): horarios por versión, festivos, retardos y tiempo extra autorizado
+// Reloj checador (RH, 2026-11-03): código y PIN, kioscos registrados y checadas que no se borran
 require('./marketing')(app, db, h); // Marketing: calendario de publicaciones con aprobación (2026-10-26)
 require('./facturacion-db')(db); // Facturación CFDI 4.0 con factura.com (2026-10-27): tablas y columnas aditivas
 require('./facturacion-rutas')(app, db, h, { direccion: permisos.direccion, puede: permisos.puede, verCliente: id => app.locals.sucursales.verCliente(id), auditar: (...a) => app.locals.auditoria?.registrar(...a) }); // Pantalla «Facturación» de Ajustes: solo Dirección
 require('./marketing-control')(app, db, h); // Marketing: presupuesto, gastos, resultados, plan y tablero (2026-10-27)
+require('./marketing-google-ads')(app, db, h); // Marketing: llamadas de Google Ads cruzadas con los contactos (2026-11-04)
 // Versión DEMO con datos de ejemplo: solo con MODO_DEMO=1 y en una base vacía (nunca en el sistema real).
 const demo = require('./demo')(app, db, { sesiones, PORT, SESSION_TTL_MS });
 
@@ -194,7 +235,8 @@ app.get('/api/usuarios', h((req, res) => {
 // Usuarios desactivados: se pueden reactivar (antes no había vuelta atrás y su nombre o correo ya no se podía volver a usar).
 app.get('/api/usuarios/desactivados', h((req, res) => {
   if (!permisos.puede(req, 'usuarios.administrar')) return res.status(403).json({ error: 'No tienes permiso para administrar usuarios' });
-  res.json(db.prepare('SELECT id, nombre, rol, correo FROM usuarios WHERE activo = 0 ORDER BY nombre').all().filter(u => suc.puedeAdministrar(req, u)).map(u => ({ ...u, sucursales: suc.sucursalesDe(u.id) })));
+  // Los archivados (se eliminaron pero tenían registros: server/eliminar.js) no salen.
+  res.json(db.prepare('SELECT id, nombre, rol, correo FROM usuarios WHERE activo = 0 AND archivado_at IS NULL ORDER BY nombre').all().filter(u => suc.puedeAdministrar(req, u)).map(u => ({ ...u, sucursales: suc.sucursalesDe(u.id) })));
 }));
 app.post('/api/usuarios/:id/reactivar', h((req, res) => {
   if (!permisos.puede(req, 'usuarios.administrar')) return res.status(403).json({ error: 'No tienes permiso para administrar usuarios' });
@@ -219,6 +261,7 @@ setInterval(() => { const ahora = Date.now(); for (const [k, v] of fallosPorIp) 
 function limitarLoginPorIp(req, res, next) {
   const r = fallosPorIp.get(req.ipCliente);
   if (r && r.reinicia > Date.now() && r.fallos >= FALLOS_IP_MAX) {
+    anotarRechazo(req, 'Conexión bloqueada 15 min');
     return res.status(429).json({ error: 'Demasiados intentos fallidos desde esta conexión. Espera 15 minutos.' });
   }
   next();
@@ -240,17 +283,26 @@ app.post('/api/login', limitarLoginPorIp, limitarLogin, h((req, res) => {
     : db.prepare('SELECT * FROM usuarios WHERE nombre = ? AND activo = 1').get(nombre.trim());
   if (!verificarPassword(password, usuario?.password)) {
     registrarLoginFallido(req);
+    const reg = app.locals.registro, aQuien = usuario || reg?.quien(nombre);
+    reg?.anotar(req, aQuien ? 'fallo' : 'desconocido', { usuario: aQuien, detalle: aQuien && !usuario ? 'La cuenta está desactivada' : null });
+    // ¿Este intento lo dejó bloqueado?
+    const ip = fallosPorIp.get(req.ipCliente), cta = fallosPorCuenta.get(cuentaDe(req)), par = intentosLogin.get(req.ipCliente + '|' + String(nombre).toLowerCase());
+    const bloqueo = cta?.fallos === FALLOS_CUENTA_MAX ? 'Cuenta bloqueada 1 hora (' + FALLOS_CUENTA_MAX + ' intentos)'
+      : ip?.fallos === FALLOS_IP_MAX ? 'Conexión bloqueada 15 min (' + FALLOS_IP_MAX + ' intentos)'
+      : par?.bloqueadoHasta > Date.now() && par.fallos === 0 ? 'Bloqueado 5 min (' + LOGIN_MAX_INTENTOS + ' intentos seguidos)' : null;
+    if (bloqueo) reg?.anotar(req, 'bloqueado', { usuario: aQuien, detalle: bloqueo });
     return res.status(401).json({ error: 'Usuario o contraseña incorrectos' });
   }
   limpiarLoginFallidos(req);
   // La contraseña inicial de fábrica la conoce cualquiera: con ella NO se entrega sesión (si no,
   // quien la supiera podría entrar y fijar su propia contraseña con el cambio obligatorio).
   if (password === '1234') {
+    app.locals.registro?.anotar(req, 'fallo', { usuario, detalle: 'Usó la contraseña inicial (no se le dio entrada)' });
     return res.status(403).json({ error: usuario.correo && usuario.correo_verificado
       ? 'Esta cuenta tiene la contraseña inicial y quedó bloqueada. Usa "¿Olvidaste tu contraseña?" para crear una nueva.'
       : 'Esta cuenta tiene la contraseña inicial y quedó bloqueada. Pide al administrador que le asigne una contraseña nueva.' });
   }
-  if (usuario.correo && !usuario.correo_verificado) return res.status(403).json({ error: 'Confirma tu correo con el enlace que te enviamos antes de iniciar sesión.' });
+  if (usuario.correo && !usuario.correo_verificado) return app.locals.registro?.anotar(req, 'fallo', { usuario, detalle: 'Correo sin confirmar' }), res.status(403).json({ error: 'Confirma tu correo con el enlace que te enviamos antes de iniciar sesión.' });
   // Migración transparente: si la contraseña seguía en texto plano, se re-guarda cifrada.
   if (!usuario.password.includes(':')) {
     db.prepare('UPDATE usuarios SET password = ? WHERE id = ?').run(hashPassword(password), usuario.id);
@@ -258,12 +310,17 @@ app.post('/api/login', limitarLoginPorIp, limitarLogin, h((req, res) => {
   const debil = !!problemaPassword(password, { nombre: usuario.nombre, correo: usuario.correo || '' });
   if (debil && !usuario.debe_cambiar_password) db.prepare('UPDATE usuarios SET debe_cambiar_password = 1 WHERE id = ?').run(usuario.id);
   const token = crearSesion(usuario.id);
+  app.locals.registro?.anotar(req, 'entro', { usuario, detalle: debil || usuario.debe_cambiar_password ? 'Debe cambiar su contraseña' : null });
   res.json({ token, id: usuario.id, nombre: usuario.nombre, rol: usuario.rol === 'gerente' ? 'admin' : usuario.rol, rol_real: usuario.rol, cambiar_password: debil || !!usuario.debe_cambiar_password });
 }));
 app.post('/api/logout', h((req, res) => {
   const encabezado = req.headers.authorization || '';
   const token = encabezado.startsWith('Bearer ') ? encabezado.slice(7) : null;
-  if (token) sesiones.delete(token);
+  if (token) {
+    const s = sesiones.get(token), u = s && db.prepare('SELECT id, nombre FROM usuarios WHERE id = ?').get(s.usuarioId);
+    if (u) app.locals.registro?.anotar(req, 'salio', { usuario: u });
+    sesiones.delete(token);
+  }
   res.json({ ok: true });
 }));
 
@@ -428,6 +485,8 @@ app.put('/api/servicios/:id', h((req, res) => {
     if (!Number.isInteger(dias) || dias < 1 || dias > 3650) return res.status(400).json({ error: 'Los días de recurrencia deben ser un número entero entre 1 y 3650 (o vacío para servicio de una sola vez)' });
   }
   if (req.body.descripcion !== undefined && (typeof req.body.descripcion !== 'string' || req.body.descripcion.length > 10000)) return res.status(400).json({ error: 'La descripción debe ser texto de hasta 10000 caracteres' });
+  const sinPermiso = req.body.descripcion !== undefined && listasServicio.revisarDescripcion(req, servicio.descripcion, req.body.descripcion);
+  if (sinPermiso) return res.status(403).json({ error: sinPermiso });
   db.prepare('UPDATE catalogo_servicios SET dias_recurrencia = ?, descripcion = ? WHERE id = ?').run(dias_recurrencia === undefined ? servicio.dias_recurrencia : dias, req.body.descripcion === undefined ? servicio.descripcion : req.body.descripcion.trim(), req.params.id);
   res.json(sinFacturacion(db.prepare('SELECT * FROM catalogo_servicios WHERE id = ?').get(req.params.id)));
 }));
@@ -547,12 +606,15 @@ app.get('/api/leads/buscar-telefono/:telefono', h((req, res) => {
 
 // ---------- Listado / tablero ----------
 app.get('/api/leads', h((req, res) => {
-  const { etapa, responsable_id, estatus, q, desde, hasta, urgente } = req.query;
+  const { etapa, responsable_id, estatus, q, desde, hasta, urgente, solo_area } = req.query;
   let sql = `
     SELECT l.*, s.nombre AS servicio_nombre, u.nombre AS responsable_nombre, ca.nombre AS canal_nombre,
-      (SELECT COUNT(*) FROM historial h WHERE h.lead_id = l.id AND h.tipo='alerta' AND h.resuelta=0 AND h.fecha_alerta <= datetime('now','localtime')) AS alertas_pendientes,
-      (SELECT COUNT(*) FROM leads l2 WHERE l2.cliente_id = l.cliente_id) AS veces_contratado
+      COALESCE(ap.n, 0) AS alertas_pendientes, COALESCE(vc.n, 0) AS veces_contratado
     FROM leads l
+    -- Conteos agrupados una sola vez (auditoría 2026-11-04, H-025): antes eran subconsultas por cada orden y, como
+    -- «leads» e «historial» son vistas con el filtro de permisos, la lista crecía al cuadrado con los datos.
+    LEFT JOIN (SELECT cliente_id, COUNT(*) AS n FROM leads GROUP BY cliente_id) vc ON vc.cliente_id = l.cliente_id
+    LEFT JOIN (SELECT lead_id, COUNT(*) AS n FROM historial WHERE tipo = 'alerta' AND resuelta = 0 AND fecha_alerta <= datetime('now','localtime') GROUP BY lead_id) ap ON ap.lead_id = l.id
     LEFT JOIN catalogo_servicios s ON s.id = l.servicio_id
     LEFT JOIN usuarios u ON u.id = l.responsable_id
     LEFT JOIN canales ca ON ca.id = l.canal_id
@@ -575,6 +637,11 @@ app.get('/api/leads', h((req, res) => {
   if (desde) { sql += " AND date(l.created_at) >= date(?)"; params.push(desde); }
   if (hasta) { sql += " AND date(l.created_at) <= date(?)"; params.push(hasta); }
   if (urgente === '1') { sql += ' AND l.urgente = 1'; }
+  // «solo_area=1» (Inicio): solo lo que ve por cotizaciones u órdenes, no lo que ve por la cobranza (2026-11-03).
+  if (solo_area === '1') sql += ' AND ve_lead_area(l.sucursal_id, l.responsable_id, l.tecnico_id, l.estatus, l.capturado_por)';
+  // «por_concluir=1» (Inicio): solo órdenes con fecha de servicio ya pasada y sin marcar como realizadas o no. Antes Inicio
+  // pedía TODAS las órdenes ganadas de la historia para filtrarlas en el navegador (auditoría 2026-11-04, H-025).
+  if (req.query.por_concluir === '1') { sql += " AND l.estatus = 'ganado' AND COALESCE(l.ejecucion, '') = '' AND l.fecha_servicio IS NOT NULL AND l.fecha_servicio <> '' AND l.fecha_servicio <= ?"; params.push(hoyMexico()); }
   sql += ' ORDER BY l.urgente DESC, l.updated_at DESC';
   res.json(db.prepare(sql).all(...params));
 }));
@@ -643,6 +710,9 @@ function validarPartidas(req,res,next){
     try{items=JSON.parse(req.body.partidas_json);}catch{return res.status(400).json({error:'Partidas inválidas'});}
     if(!Array.isArray(items)||!items.length||items.length>100||items.some(i=>!i||typeof i.servicio!=='string'||!i.servicio.trim()||typeof i.leyenda!=='string'||i.leyenda.length>10000||typeof i.importe!=='number'||!Number.isFinite(i.importe)||i.importe<0||i.importe>1e12))return res.status(400).json({error:'Revisa servicios, descripciones e importes'});
     if(items.some(i=>!db.prepare('SELECT id FROM catalogo_servicios WHERE nombre = ?').get(i.servicio)))return res.status(400).json({error:'Todas las partidas deben tener un servicio del catálogo'});
+    // Las [PARTES] de la descripción con lista se eligen de su lista antes de guardar (listas-servicio.js).
+    const sinElegir=listasServicio.revisarPartidas(items);
+    if(sinElegir)return res.status(400).json({error:sinElegir});
     const primero=db.prepare('SELECT id FROM catalogo_servicios WHERE nombre = ?').get(items[0].servicio);
     if(!primero)return res.status(400).json({error:'Selecciona un servicio del catálogo'});
     // Cantidad × precio unitario (opcionales): el importe de la partida lo calcula el servidor.
@@ -1509,21 +1579,25 @@ app.get('/api/kpis', h((req, res) => {
 // venta única: se vuelve a necesitar cada N días. Este endpoint calcula, por cada combinación
 // cliente + servicio con al menos un "ganado" y con recurrencia definida en el catálogo,
 // cuándo debería volver a contactarse para agendar — ordenado de más urgente a menos.
+// Salen de las órdenes de servicio: solo quien ve órdenes por su área, no por la cobranza (2026-11-03).
 app.get('/api/recompras', h((req, res) => {
+  if (!permisos.puede(req, 'ordenes.ver')) return res.json([]);
   const filas = db.prepare(`
     SELECT c.id AS cliente_id, c.telefono, c.nombre, c.empresa_contacto, c.direccion,
       s.id AS servicio_id, s.nombre AS servicio_nombre, s.dias_recurrencia,
       MAX(COALESCE(l.fecha_servicio, date(l.created_at))) AS ultima_fecha,
       (SELECT COUNT(*) FROM leads l2 WHERE l2.cliente_id = c.id AND l2.servicio_id = s.id AND l2.estatus = 'abierto') AS ya_en_leads,
       (SELECT l3.valor FROM leads l3 WHERE l3.cliente_id = c.id AND l3.servicio_id = s.id AND l3.estatus = 'ganado'
+        AND ve_lead_area(l3.sucursal_id, l3.responsable_id, l3.tecnico_id, l3.estatus, l3.capturado_por)
         ORDER BY COALESCE(l3.fecha_servicio, date(l3.created_at)) DESC LIMIT 1) AS ultimo_valor,
       -- La última orden de ese servicio: el botón "Registrar servicio nuevo" la duplica.
       (SELECT l4.id FROM leads l4 WHERE l4.cliente_id = c.id AND l4.servicio_id = s.id AND l4.estatus = 'ganado'
+        AND ve_lead_area(l4.sucursal_id, l4.responsable_id, l4.tecnico_id, l4.estatus, l4.capturado_por)
         ORDER BY COALESCE(l4.fecha_servicio, date(l4.created_at)) DESC, l4.id DESC LIMIT 1) AS ultimo_lead_id
     FROM leads l
     JOIN clientes c ON c.id = l.cliente_id
     JOIN catalogo_servicios s ON s.id = l.servicio_id
-    WHERE l.estatus = 'ganado' AND s.dias_recurrencia IS NOT NULL
+    WHERE l.estatus = 'ganado' AND s.dias_recurrencia IS NOT NULL AND ve_lead_area(l.sucursal_id, l.responsable_id, l.tecnico_id, l.estatus, l.capturado_por)
     GROUP BY c.id, s.id
   `).all();
 
@@ -1550,6 +1624,7 @@ app.get('/api/recompras', h((req, res) => {
 }));
 
 // ---------- Recordatorios pendientes (dashboard de hoy) ----------
+// De cotizaciones u órdenes que ve por su área; quien solo ve la cobranza no los recibe (2026-11-03).
 app.get('/api/alertas', h((req, res) => {
   const rows = db.prepare(`
     SELECT h.*, l.nombre AS lead_nombre, l.telefono, l.id AS lead_id, u.nombre AS responsable_nombre
@@ -1557,6 +1632,7 @@ app.get('/api/alertas', h((req, res) => {
     JOIN leads l ON l.id = h.lead_id
     LEFT JOIN usuarios u ON u.id = l.responsable_id
     WHERE h.tipo = 'alerta' AND h.resuelta = 0 AND h.fecha_alerta <= datetime('now','localtime','+1 day','start of day')
+      AND ve_lead_area(l.sucursal_id, l.responsable_id, l.tecnico_id, l.estatus, l.capturado_por)
     ORDER BY h.fecha_alerta ASC
   `).all();
   res.json(rows);
@@ -1757,23 +1833,30 @@ app.get('/api/admin/backup', async (req, res) => {
     const nombreArchivo = `saneadren_backup_${hoyMexico()}.db`;
     const destino = path.join(require('os').tmpdir(), `saneadren-${process.pid}-${Date.now()}-${require('crypto').randomBytes(4).toString('hex')}.db`);
     await db.backup(destino);
+    app.locals.registro?.anotar(req, 'descarga', { detalle: 'Respaldo de la base de datos (.db)' });
     res.download(destino, nombreArchivo, () => fs.unlink(destino, () => {}));
   } catch (err) {
     console.error('Error generando respaldo:', err);
     res.status(500).json({ error: 'No se pudo generar el respaldo' });
   }
 });
+// Respaldo completo: la base + la carpeta «archivos/» (PDF de facturas, expedientes, fotos, comprobantes) en un .tar.
+require('./respaldo-completo')(app, db, h, { hoyMexico });
 
 // Red de seguridad final: cualquier error no capturado responde 500 en vez de tumbar el proceso.
 app.use((err, req, res, next) => {
   if (err?.type === 'entity.too.large') return res.status(413).json({ error: 'El archivo o los datos son demasiado grandes. Divídelos en partes más pequeñas.' });
   if (err?.type === 'entity.parse.failed') return res.status(400).json({ error: 'Los datos enviados no tienen un formato válido.' });
   console.error('Error no manejado:', err);
+  app.locals.registro?.error(req, err);
   if (res.headersSent) return next(err);
   res.status(500).json({ error: 'Error interno del servidor' });
 });
-process.on('uncaughtException', err => console.error('uncaughtException (servidor sigue vivo):', err));
-process.on('unhandledRejection', err => console.error('unhandledRejection (servidor sigue vivo):', err));
+process.on('uncaughtException', err => { console.error('uncaughtException (servidor sigue vivo):', err); app.locals.registro?.error(null, err); });
+process.on('unhandledRejection', err => { console.error('unhandledRejection (servidor sigue vivo):', err); app.locals.registro?.error(null, err); });
 
 suc.activarCandados(); // al final: todas las tablas ya existen
-app.listen(PORT, () => { console.log(`Saneadren CRM corriendo en http://localhost:${PORT}`); demo.alEscuchar(); });
+app.listen(PORT, () => {
+  console.log(`Saneadren CRM corriendo en http://localhost:${PORT}`); demo.alEscuchar();
+  app.locals.registro?.servicio('inicio', `Versión ${require('../package.json').version} · Node ${process.versions.node}${process.env.FACTURA_ENV ? ' · facturación en ' + (process.env.FACTURA_ENV === 'prod' ? 'producción' : 'pruebas (sandbox)') : ''}`);
+});

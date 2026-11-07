@@ -1,0 +1,168 @@
+// ASISTENCIA (F3, 2026-11-03): horarios por versión, días festivos, cálculo del día y de la semana y tiempo extra.
+// Una semana completa ya pasada de un operador (lunes a sábado 8:30–18:30, tolerancia 10, comida 60) con casos a mano:
+// retardo, exceso de comida, tiempo extra después de la salida y con los botones (sin contar dos veces), falta,
+// vacaciones, festivo y domingo trabajados; autorización del tiempo extra (dobles hasta 9 h, luego triples); versión
+// nueva de horario que no cambia lo pasado; historial que no se borra; permisos y sucursales.
+// Uso: node tests/simulacion-asistencia.cjs
+const { spawn } = require('child_process');
+const fs = require('fs'), os = require('os'), path = require('path'), crypto = require('crypto');
+const { DatabaseSync } = require('node:sqlite');
+
+const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'crm-asistencia-')), DB = path.join(dir, 'asistencia.db');
+const ADMIN = { correo: 'marketing@saneadren.com.mx', password: 'Asistencia-' + crypto.randomBytes(6).toString('hex') + '-9Q' };
+const CLAVE = 'Clave-Asistencia-' + crypto.randomBytes(4).toString('hex') + '7';
+const PUERTO = String(9450 + Math.floor(Math.random() * 300)), URLB = 'http://localhost:' + PUERTO;
+const srv = spawn(process.execPath, [path.join(__dirname, '..', 'server', 'index.js')], { env: { ...process.env, MODO_DEMO: '', PORT: PUERTO, DB_PATH: DB, APP_URL: URLB, ADMIN_USUARIO: 'admin', ADMIN_CORREO: ADMIN.correo, ADMIN_PASSWORD: ADMIN.password, SMTP_HOST: '', CLAVE_CIFRADO: crypto.randomBytes(32).toString('hex') } });
+let salida = ''; srv.stdout.on('data', d => salida += d); srv.stderr.on('data', d => salida += d);
+const espera = ms => new Promise(r => setTimeout(r, ms));
+const pedir = async (m, r, t, b) => {
+  const x = await fetch(URLB + '/api' + r, { method: m, headers: { 'Content-Type': 'application/json', ...(t ? { Authorization: 'Bearer ' + t } : {}) }, body: b === undefined ? undefined : JSON.stringify(b) });
+  const texto = await x.text(); let j = {}; try { j = JSON.parse(texto); } catch { /* */ } return [x.status, j, texto];
+};
+let n = 0; const malos = [];
+const revisa = (cond, texto, extra) => { n++; if (!cond) { malos.push(texto); console.log('  ✘ ' + texto + (extra !== undefined ? '  → ' + JSON.stringify(extra).slice(0, 700) : '')); } else console.log('  ✔ ' + texto); };
+const exigir = (r, que) => { if (r[0] !== 200 && r[0] !== 201) throw new Error('No se pudo ' + que + ': ' + JSON.stringify(r[1])); return r[1]; };
+const conBase = fn => { const d = new DatabaseSync(DB); try { d.exec('PRAGMA busy_timeout = 5000'); return fn(d); } finally { d.close(); } };
+const HOY = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Mexico_City' }).format(new Date());
+const sumar = (f, k) => { const d = new Date(f + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() + k); return d.toISOString().slice(0, 10); };
+const dow = f => { const d = new Date(f + 'T12:00:00Z').getUTCDay(); return d === 0 ? 7 : d; };
+// Semana de nómina (viernes a jueves) que ya pasó completa. D(0..3) = lunes a jueves; D(4..6) = viernes, sábado y
+// domingo de esa misma semana (los días antes del lunes).
+const VIE = sumar(sumar(HOY, -7), -((dow(sumar(HOY, -7)) - 5 + 7) % 7)), LUN = sumar(VIE, 3), D = k => (k <= 3 ? sumar(LUN, k) : sumar(VIE, k - 4));
+
+(async () => {
+  for (let i = 0; i < 160 && !/corriendo/.test(salida); i++) await espera(100);
+  if (!/corriendo/.test(salida)) throw new Error('El servidor no arrancó: ' + salida.slice(-800));
+  const A = exigir(await pedir('POST', '/login', null, { nombre: 'admin', password: ADMIN.password }), 'entrar').token;
+  const qro = (await pedir('GET', '/sucursales', A))[1].sucursales[0];
+  const cdmx = exigir(await pedir('POST', '/sucursales', A, { nombre: 'Ciudad de México', clave: 'CDMX' }), 'crear CDMX');
+  const T = {};
+  for (const [nombre, rol, s] of [['Gema Gerente', 'gerente', qro.id], ['Valeria Ventas', 'ventas', qro.id], ['Gus GerenteMx', 'gerente', cdmx.id]]) {
+    exigir(await pedir('POST', '/usuarios', A, { nombre, password: CLAVE, rol, sucursales: [s] }), 'crear ' + nombre);
+    T[nombre.split(' ')[0]] = exigir(await pedir('POST', '/login', null, { nombre, password: CLAVE }), 'entrar ' + nombre).token;
+  }
+  const juan = exigir(await pedir('POST', '/personal', T.Gema, { nombre: 'Juan Pérez Operador', puesto: 'Operador', fecha_ingreso: sumar(HOY, -400) }), 'alta de Juan');
+  exigir(await pedir('POST', '/asistencia/personal/' + juan.id + '/pin', T.Gema), 'alta en el checador');
+
+  console.log('1. Horarios de arranque y asignación');
+  const [, hs] = await pedir('GET', '/asistencia/horarios', T.Gema);
+  const op = hs.horarios.find(x => x.nombre === 'Operaciones'), adm = hs.horarios.find(x => x.nombre === 'Administrativo');
+  revisa(hs.horarios.length === 2 && hs.horarios.every(x => x.sucursal_id === qro.id), 'La gerente de Querétaro ve solo los horarios de su sucursal', hs.horarios.map(x => [x.nombre, x.sucursal_id]));
+  revisa(op && adm && op.vigente.dias['6']?.salida === '18:30' && !adm.vigente.dias['6'] && adm.vigente.dias['1'].salida === '18:00' && op.vigente.tolerancia_min === 10 && op.vigente.comida_min === 60,
+    'Vienen «Administrativo» (L-V 8:30–18:00) y «Operaciones» (L-S 8:30–18:30), tolerancia 10 y comida 60', hs.horarios);
+  revisa((await pedir('PUT', '/asistencia/personal/' + juan.id + '/horario', T.Valeria, { horario_id: op.id, desde: LUN }))[0] === 403, 'Ventas no asigna horarios');
+  exigir(await pedir('PUT', '/asistencia/personal/' + juan.id + '/horario', T.Gema, { horario_id: op.id, desde: sumar(LUN, -30) }), 'asignar horario');
+  revisa((await pedir('PUT', '/asistencia/personal/' + juan.id + '/horario', T.Gema, { horario_id: adm.id, desde: sumar(HOY, -20) }))[0] === 400, 'Un cambio de horario no puede valer desde hace más de 7 días (la primera asignación sí)');
+
+  console.log('2. La semana de Juan');
+  const checar = async (fecha, tipo, hora) => exigir(await pedir('POST', '/asistencia/checadas', T.Gema, { personal_id: juan.id, tipo, fecha, hora, motivo: 'Semana de prueba' }), `checada ${fecha} ${tipo}`);
+  // Lunes: retardo (8:45), comida de 80 min, sale 19:40.
+  await checar(D(0), 'entrada', '08:45'); await checar(D(0), 'comida_sale', '13:00'); await checar(D(0), 'comida_regresa', '14:20'); await checar(D(0), 'salida', '19:40');
+  // Martes: 8:38 (dentro de la tolerancia), sale 18:30 y luego un bloque de tiempo extra 18:40–19:10.
+  await checar(D(1), 'entrada', '08:38'); await checar(D(1), 'salida', '18:30'); await checar(D(1), 'extra_inicia', '18:40'); await checar(D(1), 'extra_termina', '19:10');
+  // Miércoles: sale 20:00 y además marcó tiempo extra 19:00–21:00 (se empalma: no se cuenta dos veces).
+  await checar(D(2), 'entrada', '08:30'); await checar(D(2), 'extra_inicia', '19:00'); await checar(D(2), 'salida', '20:00'); await checar(D(2), 'extra_termina', '21:00');
+  // Jueves: no checó (falta). Viernes: vacaciones.
+  exigir(await pedir('POST', '/personal/' + juan.id + '/incidencias', T.Gema, { tipo: 'permiso', fecha_inicio: D(4), notas: 'Trámite' }), 'permiso del viernes');
+  // Sábado: festivo (lo agrega RH) y lo trabaja; domingo también trabaja.
+  exigir(await pedir('POST', '/asistencia/festivos', A, { fecha: D(5), nombre: 'Jornada electoral' }), 'festivo'); // valen para todas las sucursales
+  await checar(D(5), 'entrada', '08:30'); await checar(D(5), 'salida', '18:30');
+  await checar(D(6), 'entrada', '09:00'); await checar(D(6), 'salida', '13:00');
+
+  const dia = async f => (await pedir('GET', '/asistencia/dia?fecha=' + f, T.Gema))[1].filas.find(x => x.personal_id === juan.id);
+  const lun = await dia(D(0));
+  revisa(lun.retardo_min === 15 && lun.comida_min === 80 && lun.exceso_comida_min === 20 && lun.extra_min === 70 && lun.trabajado_min === 575, 'Lunes: retardo 15 min, comida 80 (20 de más), 70 min extra, 9:35 trabajadas', lun);
+  const mar = await dia(D(1));
+  revisa(mar.retardo_min === 0 && mar.extra_min === 30, 'Martes: 8:38 está dentro de la tolerancia; 30 min de tiempo extra con los botones', mar);
+  const mie = await dia(D(2));
+  revisa(mie.extra_min === 150, 'Miércoles: salida tarde y bloque de extra empalmados cuentan 2:30 (sin contar dos veces)', mie);
+  const jue = await dia(D(3)), vie = await dia(D(4));
+  revisa(jue.falta && !vie.falta && vie.incidencia === 'permiso', 'Jueves sin checar es falta; viernes con permiso no', [jue, vie]);
+  const sab = await dia(D(5)), dom = await dia(D(6));
+  revisa(sab.festivo === 'Jornada electoral' && sab.extra_min === 600 && sab.notas.includes('Festivo trabajado') && !sab.falta, 'Sábado festivo trabajado: todo es tiempo extra y se marca', sab);
+  revisa(dom.extra_min === 240 && dom.notas.some(x => /Descanso trabajado/.test(x)) && dom.notas.some(x => /Domingo/.test(x)), 'Domingo (descanso) trabajado: tiempo extra y prima dominical', dom);
+
+  console.log('3. Tiempo extra autorizado');
+  revisa((await pedir('POST', '/asistencia/extra', T.Valeria, { personal_id: juan.id, fecha: D(0), minutos: 70 }))[0] === 403, 'Ventas no autoriza tiempo extra');
+  revisa((await pedir('POST', '/asistencia/extra', T.Gema, { personal_id: juan.id, fecha: D(0), minutos: 90 }))[0] === 400, 'No se autoriza más de lo registrado');
+  revisa((await pedir('POST', '/asistencia/extra', T.Gema, { personal_id: juan.id, fecha: D(0), minutos: 40 }))[0] === 400, 'Autorizar menos de lo registrado pide motivo');
+  revisa((await pedir('POST', '/asistencia/extra', T.Gema, { personal_id: juan.id, fecha: sumar(HOY, 1), minutos: 0 }))[0] === 400, 'No se autoriza un día futuro');
+  for (const [k, m] of [[0, 70], [1, 30], [2, 150], [5, 600], [6, 240]]) exigir(await pedir('POST', '/asistencia/extra', T.Gema, { personal_id: juan.id, fecha: D(k), minutos: m }), 'autorizar ' + D(k));
+  exigir(await pedir('POST', '/asistencia/extra', T.Gema, { personal_id: juan.id, fecha: D(2), minutos: 120, motivo: 'Media hora fue por su cuenta' }), 'corregir autorización');
+  const [, sem] = await pedir('GET', '/asistencia/semana?desde=' + D(3), T.Gema);
+  const tj = sem.filas.find(x => x.personal_id === juan.id)?.totales;
+  revisa(sem.desde === VIE && sem.hasta === sumar(VIE, 6) && tj && tj.extra_min === 1090 && tj.extra_autorizado_min === 1060 && tj.extra_dobles_min === 540 && tj.extra_triples_min === 520 && tj.faltas === 1 && tj.retardos === 1 && tj.domingos === 1 && tj.festivos_trabajados === 1,
+    'Semana de nómina viernes a jueves (cualquier día lleva a su viernes): extra 18:10, autorizado 17:40 (la última autorización cuenta) → 9 h dobles y 8:40 triples; 1 falta, 1 retardo, domingo y festivo', tj);
+
+  revisa(tj.dias_trabajados === 5 && tj.permisos === 1 && tj.descansos_trabajados === 1 && tj.extra_sin_autorizar_min === 0 && tj.sin_salida === 0, 'Totales para el Excel: 5 días trabajados, 1 permiso, 1 descanso trabajado, nada sin autorizar', tj);
+  // Precio de la hora por puesto (2026-11-03): quien ve sueldos ve el pago; 9 h dobles y 8:40 triples a $62.35 la hora.
+  revisa(sem.dinero === true && sem.filas.find(x => x.personal_id === juan.id).dinero.valor_hora_cent === null, 'Sin precio del puesto, la semana dice «sin precio» (no inventa uno)');
+  revisa((await pedir('PUT', '/asistencia/precios', T.Gema, { sucursal_id: qro.id, puesto: 'Operador', valor: '62.355' }))[0] === 400, 'Precio con más de 2 decimales: no');
+  revisa((await pedir('PUT', '/asistencia/precios', T.Valeria, { sucursal_id: qro.id, puesto: 'Operador', valor: 62.35 }))[0] === 403, 'Ventas no pone precios');
+  exigir(await pedir('PUT', '/asistencia/precios', T.Gema, { sucursal_id: qro.id, puesto: 'Operador', valor: '$62.35' }), 'precio del operador');
+  { const [, s2] = await pedir('GET', '/asistencia/semana?desde=' + D(3), T.Gema), dj = s2.filas.find(x => x.personal_id === juan.id).dinero;
+    // 540 min × 6235 × 2 / 60 = 112230; 520 min × 6235 × 3 / 60 = 162110.
+    revisa(dj.valor_hora_cent === 6235 && dj.dobles_cent === 112230 && dj.triples_cent === 162110 && dj.total_cent === 274340, 'Pago: 9 h al doble $1,122.30 + 8:40 al triple $1,621.10 = $2,743.40 (el primer precio vale también para semanas anteriores)', dj); }
+  exigir(await pedir('PUT', '/asistencia/precios', T.Gema, { sucursal_id: qro.id, puesto: 'Operador', valor: 70 }), 'precio nuevo');
+  revisa((await pedir('GET', '/asistencia/semana?desde=' + D(3), T.Gema))[1].filas.find(x => x.personal_id === juan.id).dinero.valor_hora_cent === 7000, 'Si se corrige el mismo día, manda el último precio');
+  revisa(!('dinero' in (await pedir('GET', '/asistencia/semana?desde=' + D(3), T.Gus))[1]) || (await pedir('GET', '/asistencia/precios', T.Gus))[1].sucursales.every(s => s.id !== qro.id), 'El gerente de CDMX no ve ni cambia los precios de Querétaro');
+  revisa((await pedir('PUT', '/asistencia/precios', T.Gus, { sucursal_id: qro.id, puesto: 'Operador', valor: 1 }))[0] === 400, 'Ni puede ponerlos');
+  console.log('4. Versiones de horario');
+  revisa((await pedir('PUT', '/asistencia/horarios/' + op.id, T.Valeria, { dias: { 1: { entrada: '08:00', salida: '17:00' } }, tolerancia_min: 5, comida_min: 60 }))[0] === 403, 'Ventas no cambia horarios');
+  revisa((await pedir('PUT', '/asistencia/horarios/' + op.id, T.Gema, { dias: { 1: { entrada: '08:00', salida: '17:00' } }, tolerancia_min: 5, comida_min: 60, desde: sumar(HOY, -20) }))[0] === 400, 'Un horario no se cambia hacia atrás más de 7 días');
+  revisa((await pedir('PUT', '/asistencia/horarios/' + op.id, T.Gema, { dias: { 1: { entrada: '09:00', salida: '08:00' } }, tolerancia_min: 5, comida_min: 60 }))[0] === 400, 'La salida debe ser después de la entrada');
+  exigir(await pedir('PUT', '/asistencia/horarios/' + op.id, T.Gema, { dias: { 1: { entrada: '08:00', salida: '17:00' }, 6: { entrada: '08:30', salida: '14:00' } }, tolerancia_min: 5, comida_min: 30 }), 'cambiar Operaciones desde hoy');
+  const lun2 = await dia(D(0));
+  revisa(lun2.retardo_min === 15 && lun2.extra_min === 70, 'El cambio de horario no cambia la semana pasada', lun2);
+  const [, hs2] = await pedir('GET', '/asistencia/horarios', T.Gema), op2 = hs2.horarios.find(x => x.id === op.id);
+  revisa(op2.versiones.length === 2 && op2.vigente.dias['6'].salida === '14:00' && op2.vigente.tolerancia_min === 5, 'Queda la versión nueva (sábado corto, tolerancia 5) y se conserva la anterior', op2.versiones);
+  exigir(await pedir('POST', '/asistencia/horarios', T.Gema, { nombre: 'Medio turno', dias: { 1: { entrada: '08:30', salida: '13:30' } }, tolerancia_min: 0, comida_min: 0 }), 'horario nuevo');
+  revisa((await pedir('POST', '/asistencia/horarios', T.Gema, { nombre: 'medio turno', dias: { 1: { entrada: '08:30', salida: '13:30' } }, tolerancia_min: 0, comida_min: 0 }))[0] === 409, 'No se repite el nombre de un horario');
+
+  console.log('5. Festivos, permisos, sucursales e historial');
+  const [, fes] = await pedir('GET', '/asistencia/festivos?anio=' + HOY.slice(0, 4), T.Gema);
+  revisa(['-01-01', '-05-01', '-09-16', '-12-25'].every(s => fes.festivos.some(f => f.fecha === HOY.slice(0, 4) + s && f.origen === 'ley')), 'Los festivos de la ley se agregan solos', fes.festivos.map(f => f.fecha));
+  exigir(await pedir('POST', '/asistencia/festivos', A, { fecha: HOY.slice(0, 4) + '-05-01', nombre: 'Día del Trabajo', activo: false }), 'quitar festivo');
+  revisa(conBase(d => d.prepare('SELECT activo FROM dias_festivos WHERE fecha = ?').get(HOY.slice(0, 4) + '-05-01').activo) === 0, 'Quitar un festivo lo desactiva (no se borra)');
+  revisa((await pedir('POST', '/asistencia/festivos', T.Valeria, { fecha: HOY, nombre: 'Día libre' }))[0] === 403, 'Ventas no agrega festivos');
+  revisa((await pedir('GET', '/asistencia/dia', T.Valeria))[0] === 403 && (await pedir('GET', '/asistencia/semana', T.Valeria))[0] === 403, 'Ventas no ve la asistencia');
+  revisa(!(await pedir('GET', '/asistencia/semana?desde=' + VIE, T.Gus))[1].filas.some(x => x.personal_id === juan.id), 'El gerente de CDMX no ve la asistencia de Querétaro');
+  revisa((await pedir('GET', '/asistencia/personal/' + juan.id + '/horario', T.Gus))[0] === 404, 'Ni el horario de una persona de otra sucursal');
+  revisa((await pedir('PUT', '/asistencia/horarios/' + op.id, T.Gus, { dias: { 1: { entrada: '07:00', salida: '15:00' } }, tolerancia_min: 0, comida_min: 0 }))[0] === 404, 'El gerente de CDMX no cambia los horarios de Querétaro');
+  const hMx = (await pedir('GET', '/asistencia/horarios', T.Gus))[1].horarios;
+  revisa(hMx.length === 2 && hMx.every(x => x.sucursal_id === cdmx.id), 'CDMX tiene sus propios horarios de arranque (sucursal abierta después)', hMx.map(x => [x.nombre, x.sucursal_id]));
+  revisa((await pedir('PUT', '/asistencia/personal/' + juan.id + '/horario', T.Gema, { horario_id: hMx[0].id }))[0] === 400, 'No se asigna un horario de otra sucursal');
+  revisa((await pedir('POST', '/asistencia/festivos', A, { fecha: '2026-13-45', nombre: 'Fecha imposible' }))[0] === 400, 'Una fecha imposible se rechaza (sin error interno)');
+  const intento = sql => { try { conBase(d => d.exec(sql)); return false; } catch { return true; } };
+  revisa(intento('DELETE FROM extra_autorizaciones') && intento('UPDATE extra_autorizaciones SET minutos_autorizados = 0'), 'Las autorizaciones de tiempo extra no se borran ni se cambian');
+  revisa(intento('DELETE FROM horario_versiones') && intento("UPDATE horario_versiones SET tolerancia_min = 60") && intento('DELETE FROM personal_horario'), 'El historial de horarios no se borra ni se cambia');
+
+  console.log('6. Llegar antes de la entrada (2026-11-05)');
+  // Jueves (era falta): llega 4:30, sale 18:30 sin marcar comida. Viernes: llega 8:00 (justo 30 min antes) y sale 18:30.
+  await checar(D(3), 'entrada', '04:30'); await checar(D(3), 'salida', '18:30');
+  await checar(D(4), 'entrada', '08:00'); await checar(D(4), 'salida', '18:30');
+  const jue2 = await dia(D(3)), vie2 = await dia(D(4));
+  revisa(jue2.extra_min === 240 && jue2.trabajado_min === 840 && jue2.comida_min === 0 && jue2.notas.some(x => /Llegó 4 h antes/.test(x)),
+    'Llega 4:30 y sale 18:30: las 4 h antes de su entrada son tiempo extra, sin descontarle comida', jue2);
+  revisa(jue2.notas.includes('No marcó su comida'), 'Si no marca su comida, RH lo ve (no se descuenta sola)', jue2.notas);
+  revisa(vie2.extra_min === 0 && !vie2.notas.some(x => /antes de su entrada/.test(x)), 'Llegar 30 min antes (8:00) no es tiempo extra', vie2);
+  await checar(D(4), 'entrada', '07:59'); // RH corrige: en realidad llegó 7:59
+  revisa((await dia(D(4))).extra_min === 31, 'Llegar 31 min antes (7:59) sí cuenta, todo desde que llegó');
+  revisa(lun.notas.every(x => !/No marcó su comida/.test(x)), 'Quien sí marca su comida no tiene el aviso', lun.notas);
+
+  console.log('7. Tiempo extra sin fin');
+  await checar(D(4), 'extra_inicia', '19:00'); // se le olvidó el «Fin de tiempo extra»
+  const vie3 = await dia(D(4));
+  revisa(vie3.extra_min === 31 && vie3.notas.includes('Inició tiempo extra y no marcó el fin'), 'Sin el fin, ese bloque no cuenta (no se inventa la hora) y RH ve el aviso', vie3);
+  const [, sem3] = await pedir('GET', '/asistencia/semana?desde=' + D(3), T.Gema);
+  revisa(sem3.filas.find(x => x.personal_id === juan.id).totales.extra_sin_fin === 1, 'La semana lo cuenta en sus pendientes');
+  await checar(D(4), 'extra_termina', '20:30'); // RH agrega el fin real con motivo
+  const vie4 = await dia(D(4));
+  revisa(vie4.extra_min === 31 + 90 && !vie4.notas.includes('Inició tiempo extra y no marcó el fin'), 'Con el fin agregado, el bloque cuenta y el aviso se va', vie4);
+  await checar(HOY, 'extra_inicia', '06:00');
+  revisa(!(await dia(HOY)).notas.includes('Inició tiempo extra y no marcó el fin'), 'Hoy todavía no avisa (puede seguir trabajando)');
+
+  console.log(`\n${n - malos.length}/${n} correctas`);
+  srv.kill(); fs.rmSync(dir, { recursive: true, force: true });
+  process.exit(malos.length ? 1 : 0);
+})().catch(e => { console.error(e); console.log('\n' + salida.slice(-1500)); srv.kill(); process.exit(1); });

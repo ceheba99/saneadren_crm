@@ -89,7 +89,7 @@ const SEMANA_40 = [['REPARACION FLECHA CARDAN JOSE LUIS ACOSTA', 2000], ['PAGO R
   [s, j] = await pedir('PUT', '/compras/ordenes/' + oc.id, A, { ...base }); revisa(s === 409, 'una orden autorizada ya no se edita');
   [s, j] = await pedir('POST', '/compras/ordenes/' + oc.id + '/autorizar', A, { dias_credito: 7 }); revisa(s === 409, 'no se autoriza dos veces');
   // Pago parcial y cancelar
-  await pedir('POST', '/finanzas/cxp/' + cxp.id + '/pagos', A, { monto: 100000, metodo: 'transferencia' });
+  await pedir('POST', '/finanzas/cxp/' + cxp.id + '/pagos', A, { monto: 100000, metodo: 'transferencia', motivo: 'Anticipo antes de recibir' });
   [s, j] = await pedir('GET', '/compras/ordenes/' + oc.id, V);
   revisa(j.pagado === 100000 && j.saldo === 367127.77, 'la orden muestra lo pagado y el saldo', [j.pagado, j.saldo]);
   [s, j] = await pedir('POST', '/compras/ordenes/' + oc.id + '/cancelar', A, { motivo: 'Se capturó mal' });

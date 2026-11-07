@@ -20,7 +20,7 @@
 const alcance = require('./alcance');
 
 // Tablas con sucursal propia y tablas que la heredan de su registro (en orden: primero las de arriba).
-const CON_SUCURSAL = ['leads', 'cuentas_por_pagar', 'solicitudes_compra', 'ordenes_compra', 'establecimientos', 'historial_archivo', 'clientes', 'personal', 'facturas'];
+const CON_SUCURSAL = ['leads', 'cuentas_por_pagar', 'solicitudes_compra', 'ordenes_compra', 'establecimientos', 'historial_archivo', 'clientes', 'personal', 'facturas', 'checadas', 'checador_dispositivos', 'horarios', 'precios_hora_puesto'];
 const VISTAS = [
   ['leads', 've_lead(sucursal_id, responsable_id, tecnico_id, estatus, capturado_por)'],
   // Gastos: los de su sucursal o los que él registró; con «Ver los gastos de sus órdenes», también los de sus órdenes.
@@ -34,11 +34,23 @@ const VISTAS = [
   ['cobros', 'lead_id IN (SELECT id FROM leads) AND ve_cobro(registrado_por, lead_id)'],
   ['historial', 'lead_id IN (SELECT id FROM leads) AND ve_bitacora(area, usuario_id, lead_id)'],
   ['pagos_proveedor', 'cxp_id IN (SELECT id FROM cuentas_por_pagar)'],
+  ['cfdi_gastos', 'cxp_id IN (SELECT id FROM cuentas_por_pagar)'], // XML de la factura de cada gasto, con su gasto
   ['documentos_solicitud', 'solicitud_id IN (SELECT id FROM solicitudes_compra)'],
   ['documentos_oc', 'oc_id IN (SELECT id FROM ordenes_compra)'],
   ['personal', 'en_alcance(sucursal_id)'], // qué se ve de cada persona lo decide personal.js (permisos)
   ['documentos_personal', 'personal_id IN (SELECT id FROM personal)'],
   ['incidencias_personal', 'personal_id IN (SELECT id FROM personal)'],
+  // Reloj checador (2026-11-03): las checadas, con su persona; los kioscos, por su sucursal.
+  ['checadas', 'personal_id IN (SELECT id FROM personal)'],
+  ['checadas_correcciones', 'checada_id IN (SELECT id FROM checadas)'],
+  ['checador_dispositivos', 'en_alcance(sucursal_id)'],
+  ['checador_intentos', 'dispositivo_id IN (SELECT id FROM checador_dispositivos)'], // intentos fallidos: los de los kioscos de sus sucursales
+  ['personal_horario', 'personal_id IN (SELECT id FROM personal)'],
+  ['checador_enlaces', 'personal_id IN (SELECT id FROM personal)'],
+  ['horarios', 'en_alcance(sucursal_id)'], // cada sucursal sus horarios (RH F3)
+  ['horario_versiones', 'horario_id IN (SELECT id FROM horarios)'],
+  ['extra_autorizaciones', 'personal_id IN (SELECT id FROM personal)'],
+  ['precios_hora_puesto', 'en_alcance(sucursal_id)'], // precio de la hora por puesto: cada sucursal el suyo
   ['orden_personal', 'lead_id IN (SELECT id FROM leads)'],
   ['encuestas', 'lead_id IN (SELECT id FROM leads)'], // la encuesta, con su orden
   // Marketing (2026-10-26): las de toda la empresa (sin sucursal) o de una sucursal que ve; con «lo suyo», las que creó o tiene a su nombre.
@@ -76,7 +88,8 @@ const RUTAS_REGISTRO = [
   [/^\/finanzas\/pagos-proveedor\/(\d+)(?:\/|$)/, 'pagos_proveedor'], [/^\/compras\/ordenes\/(\d+)(?:\/|$)/, 'ordenes_compra'],
   [/^\/compras\/documentos\/(\d+)(?:\/|$)/, 'documentos_oc'], [/^\/compras\/solicitudes\/documentos\/(\d+)(?:\/|$)/, 'documentos_solicitud'],
   [/^\/compras\/solicitudes\/(\d+)(?:\/|$)/, 'solicitudes_compra'], [/^\/prospeccion\/(\d+)(?:\/|$)/, 'establecimientos'],
-  [/^\/personal\/(\d+)(?:\/|$)/, 'personal'],
+  [/^\/personal\/(\d+)(?:\/|$)/, 'personal'], [/^\/asistencia\/personal\/(\d+)(?:\/|$)/, 'personal'],
+  [/^\/asistencia\/checadas\/(\d+)(?:\/|$)/, 'checadas'], [/^\/asistencia\/dispositivos\/(\d+)(?:\/|$)/, 'checador_dispositivos'], [/^\/asistencia\/intentos\/(\d+)(?:\/|$)/, 'checador_intentos'], [/^\/asistencia\/horarios\/(\d+)(?:\/|$)/, 'horarios'],
   [/^\/marketing\/publicaciones\/(\d+)(?:\/|$)/, 'publicaciones'], [/^\/marketing\/imagenes\/(\d+)(?:\/|$)/, 'publicacion_imagenes'],
   [/^\/marketing\/proyectos\/(\d+)(?:\/|$)/, 'proyectos_marketing'], [/^\/marketing\/tareas\/(\d+)(?:\/|$)/, 'tareas_marketing'],
   [/^\/marketing\/avances\/(\d+)(?:\/|$)/, 'avances_marketing'], [/^\/marketing\/archivos\/(\d+)(?:\/|$)/, 'archivos_marketing'],
@@ -93,6 +106,7 @@ const SOLO_GENERAL = [
   [/^POST$/, /^\/servicios$/], [/^DELETE$/, /^\/servicios\/\d+$/],
   [/^(POST|PUT|DELETE)$/, /^\/prospeccion\/sectores(\/|$)/],
   [/^(PUT)$/, /^\/compras\/formato$/],
+  [/^POST$/, /^\/asistencia\/fotos\/limpiar$/], // borrar ya las fotos viejas del checador de todas las sucursales (F6)
 ];
 const esSoloGeneral = req => (req.path === '/auditoria' && !(req.query.entidad && req.query.id)) || SOLO_GENERAL.some(([m, r]) => m.test(req.method) && r.test(req.path));
 
@@ -324,13 +338,20 @@ module.exports = function sucursales(app, db, h, { audit }) {
     // Una cotización (área «cotizaciones») u orden («ordenes»): la ve quien ve esa área de su sucursal (o de toda la
     // empresa), quien la capturó, su responsable y, si es orden, su técnico asignado; y, ya contratada, quien ve la
     // cobranza (de toda la sucursal o de las suyas).
-    db.db.function('ve_lead', { deterministic: false }, (s, resp, tec, estatus, capt) => {
+    const veEnSuArea = (s, resp, tec, estatus, capt) => {
       const orden = estatus === 'ganado', area = orden ? 'ordenes' : 'cotizaciones', v = alcance.nivel(area);
       const yo = alcance.usuario(), mia = yo != null && (resp === yo || capt === yo || (orden && tec === yo));
-      if (alcance.veEnArea(area, s) && (v >= 2 || (v === 1 && mia))) return 1;
-      if (orden && alcance.veEnArea('cxc', s)) { const c = alcance.nivel('cxc'); if (c >= 2 || (c === 1 && mia)) return 1; }
+      return alcance.veEnArea(area, s) && (v >= 2 || (v === 1 && mia));
+    };
+    db.db.function('ve_lead', { deterministic: false }, (s, resp, tec, estatus, capt) => {
+      if (veEnSuArea(s, resp, tec, estatus, capt)) return 1;
+      const yo = alcance.usuario(), mia = yo != null && (resp === yo || capt === yo || tec === yo);
+      if (estatus === 'ganado' && alcance.veEnArea('cxc', s)) { const c = alcance.nivel('cxc'); if (c >= 2 || (c === 1 && mia)) return 1; }
       return 0;
     });
+    // Solo por su área (cotizaciones u órdenes), no por la cobranza (2026-11-03): avisos, servicios por concluir, recompras
+    // y órdenes del calendario son trabajo de ventas; quien solo ve la cobranza no los recibe.
+    db.db.function('ve_lead_area', { deterministic: false }, (s, resp, tec, estatus, capt) => (veEnSuArea(s, resp, tec, estatus, capt) ? 1 : 0));
     // Bitácora de una orden visible: lo de cobranza ('cxc') lo ve quien ve la cobranza de esa orden; lo de gastos
     // ('cxp'), quien ve esos gastos (toda la sucursal o lo que él registró).
     const delLead = db.db.prepare('SELECT responsable_id, tecnico_id FROM main.leads WHERE id = ?');
@@ -394,7 +415,7 @@ module.exports = function sucursales(app, db, h, { audit }) {
   const NO_EDITA = (req, id) => { if (!clienteEsSuyo(req, id)) return { error: !app.locals.permisos.puede(req, 'contactos.editar') ? 'Tu rol no modifica los datos de los clientes' : 'Este cliente lo atiende otra persona: sus datos los corrige ella o el gerente', codigo: 'CLIENTE_DE_OTRO' };
     const s = sucursalDeCliente(id); return { error: `Este cliente lo dio de alta ${s ? s.nombre + ' (' + s.clave + ')' : 'otra sucursal'}: sus datos (teléfonos, RFC, correo, dirección y crédito) los corrige esa sucursal o Dirección. Tú sí puedes cotizarle y venderle.`, codigo: 'CLIENTE_DE_OTRA_SUCURSAL' }; };
 
-  return { puedeEditarCliente, clienteDeSuSucursal, NO_EDITA, activarCandados, folio: folioDe, claveDe, asignar, de, siguienteFolio, lista, clienteVisible, verCliente, esGeneral, sucursalesParaUsuario, guardarSucursalesUsuario, puedeAdministrar, sucursalesDe };
+  return { refrescar, puedeEditarCliente, clienteDeSuSucursal, NO_EDITA, activarCandados, folio: folioDe, claveDe, asignar, de, siguienteFolio, lista, clienteVisible, verCliente, esGeneral, sucursalesParaUsuario, guardarSucursalesUsuario, puedeAdministrar, sucursalesDe };
 };
 module.exports.VISTAS = VISTAS;
 // «OS-CDMX-202610-0001»; los registros de antes de las sucursales conservan «OS-202610-0087».

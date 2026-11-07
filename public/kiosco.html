@@ -1,0 +1,579 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<meta name="robots" content="noindex, nofollow">
+<title>Reloj checador · Saneadren</title>
+<!-- Se puede instalar como app en la tableta (Chrome → «Instalar app»): abre en pantalla completa y en horizontal. -->
+<link rel="manifest" href="/kiosco.webmanifest">
+<meta name="theme-color" content="#1a1d23">
+<link rel="icon" href="/kiosco-icono-192.png">
+<!-- KIOSCO DEL RELOJ CHECADOR (server/checador.js, F2 2026-11-03). Se abre en /kiosco en la tableta o computadora de la
+     entrada, que antes registró el gerente desde Personal (su token queda en este navegador). Sin sesión del CRM: solo
+     checa, y al abrir cierra la sesión del CRM que haya en este navegador (y la de cualquier pestaña que entre después). La hora la pone el servidor; la que se ve aquí es solo de referencia.
+     Sin internet: la checada (con su foto) se guarda en este navegador (IndexedDB) y se sube al volver la conexión; el
+     servidor revisa el PIN al subirla y la deja «por revisar». El script va aquí mismo (la CSP permite scripts en línea). -->
+<style>
+  :root{--oscuro:#1a1d23;--amarillo:#f6b103;--texto:#1f2937;--sec:#6b7280;--linea:#e5e7eb;--fondo:#f4f5f7;--verde:#15803d;--rojo:#b91c1c;--azul:#1d4ed8;}
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  html,body{height:100%;}
+  body{margin:0;font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;background:var(--fondo);color:var(--texto);display:flex;flex-direction:column;user-select:none;}
+  header{background:var(--oscuro);color:#fff;padding:12px 16px;border-bottom:4px solid var(--amarillo);display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;}
+  header img{height:38px;display:block;}
+  /* Reloj grande al centro (pedido de Dirección, 2026-11-04): se ajusta al ancho y al alto para no tapar el teclado. */
+  .hora{text-align:center;padding:14px 16px 0;}
+  #reloj{font-size:clamp(3.5rem,min(16vw,12vh),9rem);font-weight:800;line-height:1;font-variant-numeric:tabular-nums;letter-spacing:.02em;color:var(--oscuro);}
+  #fecha{color:var(--sec);font-size:clamp(1.1rem,min(3.6vw,3vh),1.8rem);margin-top:6px;}
+  #fecha::first-letter{text-transform:uppercase;}
+  #kiosco-nombre{color:#d1d5db;font-size:.9rem;}
+  #avisos{display:flex;flex-direction:column;gap:6px;padding:8px 16px 0;}
+  .aviso{border-radius:10px;padding:10px 14px;font-size:1rem;}
+  button.aviso{font:inherit;text-align:left;width:100%;cursor:pointer;}
+  .aviso.rojo{background:#fde8e8;color:var(--rojo);border:1px solid #f5b5b5;}
+  .aviso.amarillo{background:#fff7d6;color:#7a5600;border:1px solid #e6c34a;}
+  main{flex:1;display:flex;align-items:center;justify-content:center;padding:16px;}
+  .pantalla{width:100%;max-width:560px;text-align:center;}
+  h1{font-size:1.8rem;margin:0 0 6px;}
+  .ayuda{color:var(--sec);font-size:1.05rem;margin:0 0 16px;}
+  .puntos{display:flex;justify-content:center;gap:16px;margin:10px 0 18px;}
+  .puntos span{width:26px;height:26px;border-radius:50%;border:3px solid var(--oscuro);}
+  .puntos span.lleno{background:var(--oscuro);}
+  .digitos{font-size:2.4rem;font-weight:700;letter-spacing:.4em;min-height:3rem;margin:6px 0 14px;font-variant-numeric:tabular-nums;}
+  .teclado{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;max-width:400px;margin:0 auto;}
+  .teclado button,.botones button,.btn{font:inherit;border:0;border-radius:14px;cursor:pointer;touch-action:manipulation;}
+  .teclado button{font-size:2rem;font-weight:600;padding:18px 0;background:#fff;border:2px solid var(--linea);color:var(--texto);}
+  .teclado button:active{background:#e5e7eb;}
+  .teclado .secundario{font-size:1.1rem;color:var(--sec);}
+  .botones{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:14px;}
+  .botones button{font-size:1.25rem;font-weight:700;padding:22px 10px;background:#fff;border:3px solid var(--linea);color:var(--texto);}
+  .botones button.sugerido{background:var(--amarillo);border-color:#c98f00;color:#1a1d23;}
+  .btn{font-size:1.1rem;padding:14px 22px;background:#fff;border:2px solid var(--linea);color:var(--texto);margin-top:16px;}
+  /* Ventana grande de la cámara mientras se toma la cara (registrar o comprobar): ocupa toda la pantalla para verse
+     bien y se cierra sola al terminar (2026-11-05). */
+  .ventana-cara{position:fixed;inset:0;z-index:50;background:#000;display:flex;flex-direction:column;}
+  .ventana-cara video{flex:1;min-height:0;width:100%;object-fit:cover;transform:scaleX(-1);}
+  .ventana-cara .vc-arriba,.ventana-cara .vc-abajo{position:absolute;left:0;right:0;padding:18px 20px;text-align:center;color:#fff;background:rgba(0,0,0,.55);}
+  .ventana-cara .vc-arriba{top:0;}
+  .ventana-cara .vc-ojos{margin:0;font-size:1.05rem;color:#d1d5db;min-height:1.4em;}
+  .ventana-cara .vc-abajo{bottom:0;display:flex;flex-direction:column;align-items:center;gap:10px;}
+  .ventana-cara h1{margin:0;font-size:1.6rem;color:#fff;}
+  .ventana-cara .vc-aviso{font-size:2rem;font-weight:800;color:var(--amarillo);margin:0;line-height:1.2;}
+  .ventana-cara .vc-guia{position:absolute;top:50%;left:50%;width:min(62vw,62vh);aspect-ratio:3/4;transform:translate(-50%,-50%);border:4px dashed rgba(246,177,3,.9);border-radius:50%;pointer-events:none;}
+  .ventana-cara .btn{margin-top:0;background:rgba(255,255,255,.92);}
+  .ventana-cara .vc-sin{flex:1;display:flex;align-items:center;justify-content:center;color:#fff;font-size:1.3rem;}
+  .camara{position:relative;width:min(100%,440px);aspect-ratio:4/3;max-height:42vh;margin:0 auto 6px;border-radius:12px;overflow:hidden;background:#111;}
+  /* Pantalla de los botones: en tableta horizontal, la cámara grande a la izquierda y los botones a la derecha. */
+  .pantalla.ancha{max-width:1100px;}
+  @media (min-width:800px) and (orientation:landscape){
+    .checar{display:grid;grid-template-columns:1.15fr 1fr;gap:24px;align-items:center;}
+    .checar .camara{width:100%;max-height:58vh;margin:0;}
+    .checar .botones{margin-top:0;}
+  }
+  .btn-chico{font-size:.95rem;padding:10px 16px;margin-top:12px;color:var(--sec);}
+  .btn-credencial{font:inherit;width:100%;display:flex;flex-direction:column;align-items:center;gap:6px;padding:26px 16px;margin:0 0 12px;background:#fff;border:3px dashed var(--amarillo);border-radius:16px;color:var(--texto);cursor:pointer;touch-action:manipulation;}
+  .btn-credencial .icono{font-size:3.2rem;line-height:1;}
+  .btn-credencial b{font-size:1.35rem;}
+  .btn-credencial small{color:var(--sec);font-size:1rem;}
+  .btn-credencial:active{background:#fff7d6;}
+  .camara video{width:100%;height:100%;object-fit:cover;transform:scaleX(-1);}
+  .camara.sin video{display:none;}
+  .camara .sin-cam{display:none;color:#fff;font-size:.9rem;padding:20px;}
+  .camara.sin .sin-cam{display:block;}
+  .listo .icono{font-size:5rem;line-height:1;}
+  .listo.ok h1{color:var(--verde);}
+  .listo.guardada h1{color:#7a5600;}
+  .error h1{color:var(--rojo);}
+  #pendientes{position:fixed;left:12px;bottom:10px;font-size:.9rem;color:var(--sec);}
+  #aviso-privacidad{position:fixed;right:150px;bottom:14px;font-size:.85rem;color:var(--sec);}
+  #pantalla-completa{position:fixed;right:12px;bottom:10px;font:inherit;font-size:.85rem;color:var(--sec);background:none;border:1px solid var(--linea);border-radius:8px;padding:6px 10px;}
+  [hidden]{display:none!important;}
+  @media (display-mode:fullscreen),(display-mode:standalone){#pantalla-completa{display:none;}#aviso-privacidad{right:12px;}}
+  @media (max-width:520px){.teclado button{padding:14px 0;font-size:1.7rem;}.botones button{font-size:1.05rem;padding:18px 6px;}}
+</style>
+</head>
+<body>
+<header>
+  <div><img src="/logo-saneadren.png" alt="Saneadren"><div id="kiosco-nombre"></div></div>
+</header>
+<div class="hora"><div id="reloj" aria-live="off">--:--</div><div id="fecha"></div></div>
+<div id="avisos" role="status"></div>
+<main><div class="pantalla" id="pantalla"></div></main>
+<div class="camara-oculta" hidden><video id="video" autoplay playsinline muted></video><canvas id="lienzo" width="480" height="360"></canvas></div>
+<div id="pendientes" role="status"></div>
+<button type="button" id="pantalla-completa">Pantalla completa</button>
+<a id="aviso-privacidad" href="/aviso-privacidad-checador.html" target="_blank" rel="noopener">Aviso de privacidad</a>
+<script>
+(() => {
+  'use strict';
+  const LLAVE = 'saneadren_kiosco', ZONA = 'America/Mexico_City', ESPERA_MS = 30000;
+  const $ = id => document.getElementById(id);
+  const SESION = Math.random().toString(36).slice(2) + Date.now().toString(36); // para saber si la página se recargó
+  // Los botones (los manda el servidor; estos sirven si el kiosco arranca sin conexión).
+  let TIPOS = { entrada: 'Entrada', comida_sale: 'Salida a comer', comida_regresa: 'Regreso de comer', salida: 'Salida', extra_inicia: 'Inicio de tiempo extra', extra_termina: 'Fin de tiempo extra' };
+  let registro = null, desfase = 0, estado = {}, temporizador = null, sinConexion = false, camaraLista = false, camaraMotivo = '', camaraFallo = false;
+  try { registro = JSON.parse(localStorage.getItem(LLAVE) || 'null'); } catch { registro = null; }
+
+  // ---------- Utilidades de pantalla (solo textContent: nada del servidor se interpreta como HTML) ----------
+  const el = (tag, props = {}, ...hijos) => { const e = document.createElement(tag); Object.assign(e, props); for (const h of hijos) e.append(h); return e; };
+  // Cualquier pantalla nueva cierra la ventana grande de la cámara (al terminar de tomar la cara se sigue con el trámite).
+  const cerrarVentanaCara = () => document.querySelectorAll('.ventana-cara').forEach(x => x.remove());
+  const pintar = (...nodos) => { cerrarVentanaCara(); const p = $('pantalla'); p.className = 'pantalla'; p.replaceChildren(...nodos); };
+  function avisos() {
+    const a = [];
+    if (sinConexion) a.push(['rojo', 'Sin conexión a internet: las checadas se guardan aquí y se suben al volver. Quedarán por revisar.']);
+    // La cámara está apagada mientras nadie checa: el aviso solo sale si al pedirla falló.
+    if (camaraFallo) a.push(['amarillo', `La cámara no está disponible${camaraMotivo ? ' (' + camaraMotivo + ')' : ''}: las checadas quedarán por revisar. Toca aquí para intentar de nuevo.`, async () => { await iniciarCamara(); if (estado.esCodigo) soltarCamara(); }]);
+    $('avisos').replaceChildren(...a.map(([c, t, accion]) => accion ? el('button', { type: 'button', className: 'aviso ' + c, textContent: t, onclick: accion }) : el('div', { className: 'aviso ' + c, textContent: t })));
+  }
+  function reiniciarEspera(ms = ESPERA_MS) { clearTimeout(temporizador); temporizador = setTimeout(inicio, ms); }
+
+  // ---------- Reloj (referencia: la hora válida la pone el servidor) ----------
+  const fmtHora = new Intl.DateTimeFormat('es-MX', { timeZone: ZONA, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
+  const fmtFecha = new Intl.DateTimeFormat('es-MX', { timeZone: ZONA, weekday: 'long', day: 'numeric', month: 'long' });
+  function tic() { const d = new Date(Date.now() + desfase); $('reloj').textContent = fmtHora.format(d); $('fecha').textContent = fmtFecha.format(d); }
+  setInterval(tic, 1000); tic();
+
+  // ---------- Servidor ----------
+  async function api(ruta, cuerpo) {
+    const r = await fetch('/api/publico/kiosco/' + ruta, { method: cuerpo ? 'POST' : 'GET', headers: { 'Content-Type': 'application/json', 'X-Kiosco': registro?.token || '' }, body: cuerpo ? JSON.stringify(cuerpo) : undefined, cache: 'no-store' });
+    const j = await r.json().catch(() => ({}));
+    return { status: r.status, ok: r.ok, j };
+  }
+  async function conectar() {
+    try {
+      const r = await api('estado');
+      if (r.status === 401) { noRegistrado(); return false; }
+      if (!r.ok) throw new Error('servidor');
+      TIPOS = r.j.tipos || TIPOS; desfase = Date.parse(r.j.utc) - Date.now();
+      $('kiosco-nombre').textContent = r.j.nombre + (r.j.sucursal ? ' · ' + r.j.sucursal : '');
+      if (sinConexion) { sinConexion = false; avisos(); }
+      return true;
+    } catch { if (!sinConexion) { sinConexion = true; avisos(); } return true; }
+  }
+  // Dado de baja: deja de preguntar al servidor (auditoría 2026-11-05: una tableta vieja que pregunta cada minuto gasta
+  // los intentos de la conexión de la oficina).
+  let deBaja = false;
+  function noRegistrado() {
+    deBaja = true;
+    clearTimeout(temporizador);
+    pintar(el('div', { className: 'error' }, el('h1', { textContent: 'Este dispositivo no es un kiosco' }),
+      el('p', { className: 'ayuda', textContent: 'Pide al gerente que lo registre: en el sistema, RH → «Kioscos del checador», desde este mismo dispositivo. Si lo dieron de baja, hay que registrarlo de nuevo.' })));
+  }
+
+  // ---------- Cámara ----------
+  // Solo se prende cuando hace falta (pedido de Dirección, 2026-11-05): al escribir el PIN (para la foto de la checada o
+  // del intento fallido) y al tocar «Leer mi credencial». En reposo, en la pantalla del código, está apagada.
+  // En Android solo una app a la vez usa la cámara: también se suelta al ocultarse la pantalla y se dice el motivo.
+  const MOTIVOS = { NotAllowedError: 'el permiso de cámara está bloqueado', NotReadableError: 'otra app o pestaña la está usando', NotFoundError: 'no se encontró cámara', AbortError: 'otra app o pestaña la está usando', SecurityError: 'el permiso de cámara está bloqueado' };
+  let pidiendo = null;
+  function iniciarCamara() {
+    if (camaraLista) return Promise.resolve();
+    if (pidiendo) return pidiendo;
+    pidiendo = (async () => {
+      try {
+        if (!navigator.mediaDevices?.getUserMedia) throw Object.assign(new Error(), { name: 'NotFoundError' });
+        const s = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } }, audio: false });
+        $('video').srcObject = s; await $('video').play().catch(() => {}); camaraLista = true; camaraMotivo = ''; camaraFallo = false;
+      } catch (e) { camaraLista = false; camaraMotivo = MOTIVOS[e?.name] || ''; camaraFallo = true; }
+      pidiendo = null;
+      avisos();
+    })();
+    return pidiendo;
+  }
+  // Espera a la cámara como máximo unos segundos (para no detener la checada si tarda).
+  const camaraA = (ms = 2500) => Promise.race([iniciarCamara(), new Promise(ok => setTimeout(ok, ms))]);
+  function soltarCamara() {
+    const s = $('video').srcObject;
+    if (s) s.getTracks().forEach(t => t.stop());
+    $('video').srcObject = null; camaraLista = false;
+  }
+  function foto() {
+    const v = $('video');
+    if (!camaraLista || !v.videoWidth) return null;
+    const c = $('lienzo'), x = c.getContext('2d');
+    x.drawImage(v, 0, 0, c.width, c.height);
+    return c.toDataURL('image/jpeg', 0.7);
+  }
+  function vistaCamara() {
+    const caja = el('div', { className: 'camara' + (camaraLista ? '' : ' sin') }, el('div', { className: 'sin-cam', textContent: 'Sin cámara' }));
+    if (camaraLista) { const v = el('video', { autoplay: true, playsInline: true, muted: true }); v.srcObject = $('video').srcObject; v.play().catch(() => {}); caja.prepend(v); }
+    return caja;
+  }
+
+  // ---------- Biométrico facial (server/biometria.js) ----------
+  // face-api (alojado en /vendor/face-api) calcula en la tableta un «descriptor» de 128 números de la cara; el servidor lo
+  // compara con la plantilla de la persona. Prueba de vida al checar: cerrar y abrir los ojos, o voltear la cabeza y regresar.
+  let faceApi = null;
+  function cargarFaceApi() {
+    if (faceApi) return faceApi;
+    faceApi = new Promise((ok, mal) => {
+      const sc = document.createElement('script'); sc.src = '/vendor/face-api/face-api.js'; sc.onerror = () => mal(new Error('No se pudo cargar el reconocimiento facial'));
+      sc.onload = async () => {
+        try {
+          const f = window.faceapi, url = '/vendor/face-api/model';
+          await Promise.all([f.nets.tinyFaceDetector.loadFromUri(url), f.nets.faceLandmark68Net.loadFromUri(url), f.nets.faceRecognitionNet.loadFromUri(url)]);
+          ok(f);
+        } catch (e) { mal(e); }
+      };
+      document.head.append(sc);
+    });
+    faceApi.catch(() => { faceApi = null; }); // si falló, se reintenta la próxima vez
+    return faceApi;
+  }
+  // Apertura del ojo (6 puntos del contorno): baja mucho al cerrarlo.
+  const apertura = pts => { const d = (a, b) => Math.hypot(a.x - b.x, a.y - b.y); return (d(pts[1], pts[5]) + d(pts[2], pts[4])) / (2 * d(pts[0], pts[3]) || 1); };
+  // Mira la cámara hasta tener «muestras» descriptores y (si «vida») la prueba de que es una persona, o hasta «ms».
+  // «aviso(texto)» pone la instrucción y «aviso.ojos(abiertos)» el indicador 👁/😌.
+  //  · En una tableta lenta el descriptor tarda casi un segundo: solo se calcula mientras faltan muestras; para los ojos
+  //    basta la cara y sus puntos (rápido). Se pide cerrar los ojos un momento, no un parpadeo rápido (2026-11-05).
+  //  · Referencia de «ojos abiertos» = la MEDIANA de los últimos cuadros (antes era el máximo: un cuadro mal medido lo
+  //    inflaba y se quedaba atorado en «abre los ojos» y sin muestras; 2026-11-06, «no detecta el parpadeo»).
+  //  · También vale como prueba de vida voltear un poco la cabeza y regresar (movimiento grande, se ve aunque la tableta
+  //    sea lenta; una foto no voltea).
+  const mediana = l => { const o = [...l].sort((a, b) => a - b); return o.length ? o[Math.floor(o.length / 2)] : 0; };
+  async function capturarCara({ muestras = 1, vida = true, ms = 12000, aviso = () => {} } = {}) {
+    const f = await cargarFaceApi(), v = $('video'), opciones = new f.TinyFaceDetectorOptions({ inputSize: 224, scoreThreshold: 0.4 }), hasta = Date.now() + ms;
+    const abiertos = [], giros = [], descriptores = [];
+    let cerro = false, giro = false, vivo = !vida, ultima = 0, vistas = 0;
+    while (Date.now() < hasta && (!vivo || descriptores.length < muestras)) {
+      if (!camaraLista || !v.videoWidth) { await new Promise(r => setTimeout(r, 200)); continue; }
+      const base = mediana(abiertos);
+      const conDescriptor = descriptores.length < muestras && Date.now() - ultima > 350;
+      // La tarea de face-api se espera con await, pero NO es una promesa completa: no tiene .catch.
+      let r = null;
+      try { const t = f.detectSingleFace(v, opciones).withFaceLandmarks(); r = await (conDescriptor ? t.withFaceDescriptor() : t); } catch { r = null; }
+      if (!r) { aviso('No te vemos: acércate y mira de frente a la cámara'); await new Promise(z => setTimeout(z, 120)); continue; }
+      vistas++;
+      const p = r.landmarks.positions, ojo = (apertura(p.slice(36, 42)) + apertura(p.slice(42, 48))) / 2;
+      // Giro de la cabeza: dónde cae la nariz sobre la línea entre los dos lados de la cara (0 = de frente). Se mide sobre
+      // esa línea para que inclinar una foto (girarla en el plano) no cuente como voltear la cabeza.
+      const lx = p[16].x - p[0].x, ly = p[16].y - p[0].y, giroAhora = (((p[30].x - p[0].x) * lx + (p[30].y - p[0].y) * ly) / ((lx * lx + ly * ly) || 1)) - 0.5;
+      const cerrados = abiertos.length >= 3 && ojo < base * 0.8;
+      if (!cerrados) { abiertos.push(ojo); if (abiertos.length > 9) abiertos.shift(); }
+      if (giros.length < 4) giros.push(giroAhora);
+      if (vida && !vivo && abiertos.length >= 3) {
+        if (!cerro && cerrados) cerro = true;
+        else if (cerro && ojo > base * 0.9) vivo = true;
+        const g0 = mediana(giros), dg = Math.abs(giroAhora - g0);
+        if (giros.length >= 4) { if (dg > 0.12) giro = true; else if (giro && dg < 0.05) vivo = true; }
+      }
+      aviso.ojos?.(!cerrados);
+      // Muestras con los ojos abiertos y de frente, separadas un poco en el tiempo.
+      if (r.descriptor && !cerrados && (giros.length < 4 || Math.abs(giroAhora - mediana(giros)) < 0.08)) { descriptores.push(Array.from(r.descriptor, x => Math.round(x * 1e6) / 1e6)); ultima = Date.now(); }
+      aviso(descriptores.length < muestras ? (muestras > 1 ? `Mira de frente, sin moverte… (${descriptores.length} de ${muestras})` : 'Mira de frente, sin moverte…')
+        : vivo ? 'Listo' : cerro ? 'Muy bien, ahora abre los ojos' : giro ? 'Muy bien, regresa la cabeza al frente' : 'Ahora cierra los ojos un segundo y ábrelos');
+    }
+    return { vivo, descriptores, vistas };
+  }
+  // Mientras se toma la cara: ventana a pantalla completa con la cámara en grande, un óvalo para acomodar la cara y la
+  // instrucción en letras grandes. Se cierra sola cuando sigue el trámite (la siguiente pantalla) o con «Cancelar».
+  function pantallaCara(titulo, texto) {
+    pintar(el('p', { className: 'ayuda', textContent: texto }));
+    const msg = el('p', { className: 'vc-aviso', textContent: texto }), ojos = el('p', { className: 'vc-ojos', textContent: '' });
+    let video;
+    if (camaraLista) { video = el('video', { autoplay: true, playsInline: true, muted: true }); video.srcObject = $('video').srcObject; video.play().catch(() => {}); }
+    document.body.append(el('div', { className: 'ventana-cara', role: 'dialog', ariaLabel: titulo },
+      video || el('div', { className: 'vc-sin', textContent: 'Sin cámara' }),
+      el('div', { className: 'vc-guia' }),
+      el('div', { className: 'vc-arriba' }, el('h1', { textContent: titulo })),
+      el('div', { className: 'vc-abajo' }, msg, ojos, el('button', { type: 'button', className: 'btn', textContent: 'Cancelar', onclick: inicio }))));
+    const aviso = t => { msg.textContent = t; };
+    aviso.ojos = abiertos => { ojos.textContent = abiertos ? '👁 Te vemos con los ojos abiertos' : '😌 Te vemos con los ojos cerrados'; };
+    return aviso;
+  }
+  // Después del PIN: hasta 3 intentos. Si no coincide, checa igual y la checada queda por revisar.
+  async function verificarCara(datos, intento = 1) {
+    estado.teclado = null;
+    const yo = Symbol('cara'); estado.cara = yo;
+    reiniciarEspera(30000);
+    const aviso = pantallaCara('Hola, ' + datos.nombre + ': mira a la cámara', 'Mira de frente; luego cierra los ojos un segundo y ábrelos');
+    let cap;
+    try { cap = await capturarCara({ muestras: 1, ms: 12000, aviso }); }
+    catch { if (estado.cara === yo) elegirTipo({ ...datos, aviso: 'No se pudo usar el reconocimiento facial: tu checada quedará por revisar.' }); return; }
+    if (estado.cara !== yo) return; // canceló
+    const rostro = { descriptor: cap.descriptores[0] || null, vivo: cap.vivo };
+    let coincide = false;
+    if (rostro.descriptor && rostro.vivo) { try { const r = await api('rostro-verificar', { ticket: datos.ticket, rostro }); coincide = r.ok && r.j.coincide; } catch { coincide = false; } }
+    if (estado.cara !== yo) return;
+    if (coincide) return elegirTipo({ ...datos, rostro, aviso: '✔ Te reconocimos. ¿Qué vas a registrar?' });
+    if (intento < 3) {
+      aviso(!rostro.descriptor ? 'No vimos tu cara. Otra vez…' : !rostro.vivo ? 'No vimos que cerraras los ojos. Ciérralos un segundo y ábrelos…' : 'No te reconocimos. Acércate, con buena luz, y otra vez…');
+      await new Promise(r => setTimeout(r, 1500));
+      if (estado.cara === yo) verificarCara(datos, intento + 1);
+      return;
+    }
+    elegirTipo({ ...datos, rostro, aviso: 'No se reconoció tu cara: tu checada quedará por revisar.' });
+  }
+  // Registro de la cara con el código de 6 dígitos que da RH desde la ficha.
+  function registrarCara() {
+    estado = {}; adelantadas = '';
+    reiniciarEspera(60000);
+    teclado('Registrar mi cara', 'Escribe el código de 6 números que te dio RH', false, async codigo => {
+      estado.teclado = null;
+      const yo = Symbol('registro'); estado.cara = yo;
+      reiniciarEspera(45000);
+      pintar(el('p', { className: 'ayuda', textContent: 'Prendiendo la cámara…' }));
+      await camaraA(4000);
+      if (estado.cara !== yo) return;
+      if (!camaraLista) return error('No se pudo prender la cámara. Avisa a RH.');
+      // Sin prueba de vida al registrar: RH está presente (dio el código). Solo 3 muestras mirando de frente.
+      const aviso = pantallaCara('Registrar mi cara', 'Mira de frente a la cámara, sin lentes oscuros ni gorra, y no te muevas.');
+      let cap;
+      try { cap = await capturarCara({ muestras: 3, vida: false, ms: 25000, aviso }); } catch (e) { return error(e.message || 'No se pudo cargar el reconocimiento facial'); }
+      if (estado.cara !== yo) return;
+      // Decir qué faltó, para saber qué corregir (antes era un mensaje igual para todo).
+      if (!cap.vistas) return error('La cámara no vio ninguna cara. Ponte frente a la tableta, a unos 40 cm, con luz de frente (no a contraluz). Vuelve a intentarlo con el mismo código.', registrarCara);
+      if (cap.descriptores.length < 3) return error(`Solo se tomaron ${cap.descriptores.length} de 3 fotos de tu cara. Quédate quieto, de frente y con buena luz. Vuelve a intentarlo con el mismo código.`, registrarCara);
+      let r; try { r = await api('rostro-registrar', { codigo, descriptores: cap.descriptores, vivo: cap.vivo }); } catch { return error('Sin conexión: el registro de la cara se hace con internet.'); }
+      if (!r.ok) return error(r.j.error || 'No se pudo registrar tu cara');
+      listo('ok', 'Cara registrada', `Listo, ${r.j.nombre}. Desde ahora el reloj comprobará que eres tú.`);
+    }, inicio, null, null, 6);
+  }
+
+  // ---------- Teclado numérico (4 dígitos) ----------
+  // Teclas que llegan mientras se cambia de pantalla (alguien teclea rápido en un teclado físico): pasan a la siguiente.
+  let adelantadas = '';
+  // «lateral»: algo que va a un lado del teclado (la cámara para leer la credencial).
+  function teclado(titulo, ayuda, oculto, alTerminar, atras, lateral, debajo, largo = 4) {
+    let valor = '', terminado = false;
+    const muestra = el('div', { className: oculto ? 'puntos' : 'digitos' });
+    const refrescar = () => {
+      if (oculto) muestra.replaceChildren(...Array.from({ length: largo }, (_, i) => el('span', { className: i < valor.length ? 'lleno' : '' })));
+      else muestra.textContent = valor.padEnd(largo, '·');
+    };
+    const tecla = d => {
+      reiniciarEspera();
+      if (terminado) { adelantadas = (adelantadas + d).slice(0, 4); return; }
+      valor += d; refrescar();
+      if (valor.length === largo) { terminado = true; setTimeout(() => alTerminar(valor), 120); }
+    };
+    const borrar = () => { reiniciarEspera(); if (terminado) return; valor = valor.slice(0, -1); refrescar(); };
+    const teclas = ['1', '2', '3', '4', '5', '6', '7', '8', '9'].map(d => el('button', { type: 'button', textContent: d, onclick: () => tecla(d) }));
+    teclas.push(el('button', { type: 'button', className: 'secundario', textContent: atras ? 'Atrás' : 'Borrar todo', onclick: () => (atras ? atras() : terminado || (valor = '', refrescar())) }));
+    teclas.push(el('button', { type: 'button', textContent: '0', onclick: () => tecla('0') }));
+    teclas.push(el('button', { type: 'button', className: 'secundario', textContent: '⌫', ariaLabel: 'Borrar', onclick: borrar }));
+    refrescar();
+    const partes = [el('h1', { textContent: titulo }), el('p', { className: 'ayuda', textContent: ayuda }), muestra, el('div', { className: 'teclado' }, ...teclas), ...(debajo ? [debajo] : [])];
+    if (lateral) { pintar(el('div', { className: 'checar' }, lateral, el('div', {}, ...partes))); $('pantalla').classList.add('ancha'); }
+    else pintar(...partes);
+    estado.teclado = { tecla, borrar };
+    const previas = adelantadas; adelantadas = '';
+    for (const d of previas) tecla(d);
+  }
+  document.addEventListener('keydown', e => {
+    if (!estado.teclado) return;
+    if (/^\d$/.test(e.key)) estado.teclado.tecla(e.key); else if (e.key === 'Backspace') estado.teclado.borrar();
+  });
+
+  // ---------- Flujo ----------
+  // ---------- Credencial con QR (2026-11-05) ----------
+  // La credencial trae un QR «SANEADREN-CHECADOR:<código>». Si la tableta sabe leer QR (Chrome en Android sí), la
+  // pantalla del código tiene el botón «Leer mi credencial»: prende la cámara hasta 20 s, lee el QR, pone el código y
+  // pasa al PIN. Quien la olvidó teclea su código como siempre. El QR solo reemplaza al código: el PIN se sigue pidiendo.
+  const QR_CREDENCIAL = /^SANEADREN-CHECADOR:(\d{4})$/;
+  let lectorQR = null;
+  try { if ('BarcodeDetector' in window) BarcodeDetector.getSupportedFormats().then(f => { if (f.includes('qr_code')) lectorQR = new BarcodeDetector({ formats: ['qr_code'] }); }).catch(() => {}); } catch { lectorQR = null; }
+  const LECTURA_MS = 20000;
+  async function leerCredencial() {
+    estado = { leyendo: Symbol('lectura') }; adelantadas = '';
+    const yo = estado.leyendo, hasta = Date.now() + LECTURA_MS;
+    reiniciarEspera(LECTURA_MS + 2000);
+    pintar(el('p', { className: 'ayuda', textContent: 'Prendiendo la cámara…' }));
+    await camaraA(4000);
+    if (estado.leyendo !== yo) return;
+    if (!camaraLista) return error('No se pudo prender la cámara. Escribe tu código con el teclado.');
+    pintar(el('h1', { textContent: '🪪 Enseña tu credencial' }), el('p', { className: 'ayuda', textContent: 'Acerca el QR de la izquierda (reverso de tu credencial) a la cámara.' }),
+      vistaCamara(), el('button', { type: 'button', className: 'btn', textContent: 'Cancelar', onclick: inicio }));
+    const vuelta = async () => {
+      if (estado.leyendo !== yo) return; // ya salió de esta pantalla
+      if (Date.now() > hasta) return error('No se leyó el QR. Escribe tu código con el teclado.');
+      try {
+        const v = $('video');
+        if (camaraLista && v.videoWidth) for (const c of await lectorQR.detect(v)) {
+          const m = QR_CREDENCIAL.exec(String(c.rawValue || '').trim());
+          if (m && estado.leyendo === yo) { estado.leyendo = null; return trasCodigo(m[1]); }
+        }
+      } catch { /* sigue intentando */ }
+      setTimeout(vuelta, 300);
+    };
+    vuelta();
+  }
+  function inicio() {
+    estado = {}; adelantadas = '';
+    if (!registro?.token) return noRegistrado();
+    estado.esCodigo = true;
+    soltarCamara(); // en reposo, la cámara apagada
+    // Con lector de QR: el botón grande va a un lado del teclado (en horizontal) o arriba (en vertical).
+    teclado('Escribe tu código', 'Tu número de 4 dígitos para checar', false, codigo => trasCodigo(codigo), null,
+      lectorQR ? el('button', { type: 'button', className: 'btn-credencial', onclick: leerCredencial }, el('span', { className: 'icono', textContent: '🪪' }), el('b', { textContent: 'Leer mi credencial' }), el('small', { textContent: 'Toca aquí y enseña el QR a la cámara' })) : null,
+      el('button', { type: 'button', className: 'btn btn-chico', textContent: '🙂 Registrar mi cara (con RH)', onclick: registrarCara }));
+  }
+  // Después del código: con biométrico, primero la cara (si coincide, se salta el PIN); si no, el PIN.
+  async function trasCodigo(codigo) {
+    estado.esCodigo = false; estado.teclado = null;
+    iniciarCamara(); // se prende ya: lista para la cara o para la foto
+    let bio = false;
+    try { const r = await Promise.race([api('rostro-previo', { codigo }), new Promise((_, mal) => setTimeout(() => mal(new Error('lento')), 4000))]); bio = r.ok && r.j.biometria; } catch { bio = false; }
+    return bio ? caraPrimero(codigo) : pedirPin(codigo);
+  }
+  async function caraPrimero(codigo, intento = 1) {
+    const yo = Symbol('cara'); estado.cara = yo;
+    reiniciarEspera(30000);
+    await camaraA(4000);
+    if (estado.cara !== yo) return;
+    if (!camaraLista) return pedirPin(codigo, null, 'No se pudo usar la cámara: escribe tu PIN');
+    const aviso = pantallaCara('Mira a la cámara', intento === 1 ? 'Mira de frente; luego cierra los ojos un segundo y ábrelos (así no necesitas tu PIN)' : `Intento ${intento} de 3: mira de frente; luego cierra los ojos un segundo y ábrelos`);
+    let cap;
+    try { cap = await capturarCara({ muestras: 1, ms: 12000, aviso }); } catch { return estado.cara === yo ? pedirPin(codigo, null, 'Escribe tu PIN') : undefined; }
+    if (estado.cara !== yo) return;
+    const rostro = { descriptor: cap.descriptores[0] || null, vivo: cap.vivo };
+    let r; try { r = await api('rostro-entrar', { codigo, rostro }); } catch { return pedirPin(codigo, rostro, 'Escribe tu PIN'); }
+    if (estado.cara !== yo) return;
+    if (r.ok) { if (sinConexion) { sinConexion = false; avisos(); } return elegirTipo({ ...r.j, rostro, aviso: '✔ Te reconocimos. ¿Qué vas a registrar?' }); }
+    // No coincidió: foto del intento para RH, y otra vez o el PIN.
+    if (r.j.intento) { const imagen = foto(); if (imagen) api('intento-foto', { intento: r.j.intento, foto: imagen }).catch(() => {}); }
+    if (r.j.pin || intento >= 3) return pedirPin(codigo, rostro, 'No te reconocimos: escribe tu PIN (RH revisará tu checada)');
+    aviso(r.j.resultado === 'no_vivo' ? 'No vimos que cerraras los ojos. Otra vez…' : r.j.resultado === 'sin_rostro' ? 'No vimos tu cara. Acércate…' : 'No te reconocimos. Con buena luz, otra vez…');
+    await new Promise(z => setTimeout(z, 1500));
+    if (estado.cara === yo) caraPrimero(codigo, intento + 1);
+  }
+  // «rostro»: la última cara que se tomó (si falló, la checada queda por revisar). «ayuda»: mensaje arriba del teclado.
+  function pedirPin(codigo, rostro = null, ayuda = null) {
+    estado.esCodigo = false; estado.cara = null;
+    iniciarCamara(); // se prende mientras escribe el PIN: lista para la foto
+    reiniciarEspera();
+    teclado('Escribe tu PIN', ayuda || 'Los 4 números de tu PIN', true, pin => identificar(codigo, pin, rostro), inicio);
+  }
+  async function identificar(codigo, pin, rostro = null) {
+    estado.teclado = null; adelantadas = ''; // lo tecleado mientras se revisa el PIN no se usa
+    pintar(el('p', { className: 'ayuda', textContent: 'Revisando…' }));
+    let r;
+    try { r = await api('identificar', { codigo, pin }); }
+    catch { sinConexion = true; avisos(); return elegirTipo({ nombre: null, sugerido: null, sinConexion: { codigo, pin } }); }
+    if (r.status === 401 && r.j.codigo === 'KIOSCO_NO_REGISTRADO') return noRegistrado();
+    if (!r.ok) {
+      // Intento fallido: el servidor lo registra y pide su foto (para ver quién prueba el código de otro).
+      if (r.j.intento) { await camaraA(); const imagen = foto(); if (imagen) api('intento-foto', { intento: r.j.intento, foto: imagen }).catch(() => {}); }
+      return error(r.j.error || 'No se pudo revisar tu código');
+    }
+    if (sinConexion) { sinConexion = false; avisos(); }
+    if (r.j.cambiar_pin) return nuevoPin(r.j);
+    await camaraA(); // que la vista de la cámara ya esté prendida al elegir
+    if (rostro) return elegirTipo({ ...r.j, rostro }); // ya se intentó con la cara y no coincidió: por revisar
+    continuar(r.j);
+  }
+  // Con biométrico pero sin haber pasado por la cara (p. ej. no se pudo preguntar), se comprueba antes de elegir.
+  const continuar = datos => (datos.biometria ? verificarCara(datos) : elegirTipo(datos));
+  function nuevoPin(datos) {
+    reiniciarEspera();
+    teclado('Hola, ' + datos.nombre + ': elige tu PIN', '4 números que solo tú sepas. No uses 1111, 1234 ni tu código.', true, nuevo => {
+      teclado('Repite tu PIN nuevo', 'Escríbelo otra vez para confirmar', true, async otra => {
+        if (otra !== nuevo) return error('Los dos PIN no coinciden. Vuelve a empezar.');
+        let r; try { r = await api('cambiar-pin', { ticket: datos.ticket, nuevo }); } catch { return error('Sin conexión: el PIN nuevo se elige con internet. Intenta más tarde.'); }
+        if (!r.ok) { if (r.j.ticket) { datos.ticket = r.j.ticket; return error(r.j.error, () => nuevoPin(datos)); } return error(r.j.error || 'No se pudo guardar tu PIN'); }
+        await camaraA(); continuar({ ...r.j, aviso: 'Listo: ya tienes tu PIN. Ahora registra tu checada.' });
+      }, () => nuevoPin(datos));
+    });
+  }
+  function elegirTipo(datos) {
+    estado.teclado = null;
+    reiniciarEspera();
+    const botones = Object.entries(TIPOS).map(([k, t]) => el('button', { type: 'button', className: k === datos.sugerido ? 'sugerido' : '', textContent: t, onclick: () => checar(datos, k) }));
+    pintar(
+      el('h1', { textContent: datos.nombre ? 'Hola, ' + datos.nombre : 'Sin conexión' }),
+      el('p', { className: 'ayuda', textContent: datos.aviso || (datos.ultima ? `Tu última checada de hoy: ${datos.ultima.tipo} a las ${datos.ultima.hora}` : datos.nombre ? '¿Qué vas a registrar? Mira a la cámara.' : 'Tu checada se guardará y se revisará tu PIN al volver internet. Mira a la cámara.') }),
+      el('div', { className: 'checar' }, vistaCamara(), el('div', {}, el('div', { className: 'botones' }, ...botones),
+        el('button', { type: 'button', className: 'btn', textContent: 'Cancelar', onclick: inicio }))));
+    $('pantalla').classList.add('ancha');
+  }
+  async function checar(datos, tipo) {
+    clearTimeout(temporizador);
+    const imagen = foto();
+    pintar(el('p', { className: 'ayuda', textContent: 'Registrando…' }));
+    if (datos.sinConexion) return guardarSinConexion({ ...datos.sinConexion, tipo, foto: imagen });
+    let r;
+    try { r = await api('checar', { ticket: datos.ticket, tipo, foto: imagen, ...(datos.rostro ? { rostro: datos.rostro } : {}) }); }
+    catch { return error('Se perdió la conexión mientras checabas. Vuelve a intentarlo: se guardará en este kiosco.'); }
+    if (!r.ok) return error(r.j.error || 'No se pudo registrar');
+    listo('ok', `${r.j.tipo} · ${r.j.hora}`, r.j.repetida ? 'Ya estaba registrada hace un momento.' : r.j.por_revisar ? `Gracias, ${r.j.nombre}. No se reconoció tu cara: tu gerente la revisará.` : r.j.sin_foto ? `Gracias, ${r.j.nombre}. Sin foto: tu gerente la revisará.` : `Gracias, ${r.j.nombre}.`);
+  }
+  function listo(clase, titulo, texto) {
+    pintar(el('div', { className: 'listo ' + clase }, el('div', { className: 'icono', textContent: clase === 'ok' ? '✅' : '💾' }), el('h1', { textContent: titulo }), el('p', { className: 'ayuda', textContent: texto })));
+    reiniciarEspera(4000);
+  }
+  function error(texto, despues) {
+    estado.teclado = null;
+    pintar(el('div', { className: 'error' }, el('div', { className: 'icono', textContent: '⚠️' }), el('h1', { textContent: 'No se pudo' }), el('p', { className: 'ayuda', textContent: texto }),
+      el('button', { type: 'button', className: 'btn', textContent: 'Entendido', onclick: () => (despues ? despues() : inicio()) })));
+    reiniciarEspera(despues ? ESPERA_MS : 8000);
+  }
+
+  // ---------- Sin conexión: cola en IndexedDB ----------
+  const abrirDb = () => new Promise((ok, mal) => { const r = indexedDB.open('saneadren-kiosco', 1); r.onupgradeneeded = () => r.result.createObjectStore('pendientes', { keyPath: 'uid' }); r.onsuccess = () => ok(r.result); r.onerror = () => mal(r.error); });
+  async function cola(modo, fn) { const db = await abrirDb(); return new Promise((ok, mal) => { const t = db.transaction('pendientes', modo), s = t.objectStore('pendientes'), r = fn(s); t.oncomplete = () => ok(r?.result); t.onerror = () => mal(t.error); }); }
+  const uid = () => { const a = new Uint8Array(18); crypto.getRandomValues(a); return btoa(String.fromCharCode(...a)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''); };
+  async function guardarSinConexion(x) {
+    try {
+      const n = await cola('readonly', s => s.count());
+      if (n >= 500) return error('Este kiosco ya tiene 500 checadas sin subir. Avisa al gerente: hay que revisar el internet.');
+      await cola('readwrite', s => s.put({ uid: uid(), codigo: x.codigo, pin: x.pin, tipo: x.tipo, foto: x.foto, t0: Date.now(), p0: performance.now(), sesion: SESION }));
+    } catch { return error('No se pudo guardar en este kiosco. Avisa al gerente.'); }
+    listo('guardada', (TIPOS[x.tipo] || 'Checada') + ' guardada', 'Sin conexión: se subirá sola al volver internet y tu gerente la revisará.');
+    contarPendientes();
+  }
+  let rechazadas = 0, subiendo = false;
+  async function contarPendientes() {
+    let n = 0; try { n = await cola('readonly', s => s.count()); } catch { /* sin IndexedDB */ }
+    $('pendientes').textContent = (n ? `${n} checada(s) por subir` : '') + (rechazadas ? `${n ? ' · ' : ''}${rechazadas} no se pudieron subir (PIN o código incorrecto): avisa al gerente` : '');
+  }
+  async function subirPendientes() {
+    if (subiendo || !registro?.token) return; subiendo = true;
+    try {
+      const items = await cola('readonly', s => s.getAll());
+      for (const x of items) {
+        const mismaSesion = x.sesion === SESION;
+        const edad = Math.max(0, Math.round(mismaSesion ? performance.now() - x.p0 : Date.now() - x.t0));
+        let r;
+        try { r = await api('sin-conexion', { uid: x.uid, codigo: x.codigo, pin: x.pin, tipo: x.tipo, foto: x.foto, edad_ms: edad, monotonica: mismaSesion, hora_dispositivo: new Date(x.t0).toISOString() }); }
+        catch { sinConexion = true; avisos(); break; }
+        if (r.status === 401 && r.j.codigo === 'KIOSCO_NO_REGISTRADO') break;
+        if (r.ok || r.j.descartar) { await cola('readwrite', s => s.delete(x.uid)); if (!r.ok) rechazadas++; continue; }
+        break; // 429 o error del servidor: se reintenta después
+      }
+    } catch { /* sin IndexedDB */ }
+    subiendo = false; contarPendientes();
+  }
+
+  // ---------- Arranque ----------
+  // Para que abra aunque la tableta se reinicie sin internet (solo la página del kiosco; ver kiosco-sw.js).
+  try { navigator.serviceWorker?.register('/kiosco-sw.js', { scope: '/kiosco' }).catch(() => {}); } catch { /* no disponible */ }
+  $('pantalla-completa').onclick = () => { (document.documentElement.requestFullscreen?.() || Promise.resolve()).catch(() => {}); };
+  const despierta = async () => { try { await navigator.wakeLock?.request('screen'); } catch { /* no disponible */ } };
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') despierta(); else soltarCamara(); });
+  window.addEventListener('online', async () => { if (!deBaja && await conectar()) subirPendientes(); });
+  window.addEventListener('offline', () => { sinConexion = true; avisos(); });
+  // Un kiosco no conserva la sesión del CRM: si el gerente la dejó abierta al registrarlo (o alguien entra en otra
+  // pestaña), se cierra aquí para que nadie use esta tableta para entrar al sistema. Misma llave que app.js.
+  function cerrarSesionCrm() {
+    let s = null;
+    try { s = JSON.parse(localStorage.getItem('usuario_actual') || 'null'); localStorage.removeItem('usuario_actual'); } catch { /* sin almacenamiento */ }
+    if (s?.token) fetch('/api/logout', { method: 'POST', headers: { Authorization: 'Bearer ' + s.token }, cache: 'no-store' }).catch(() => {});
+  }
+  if (registro?.token) {
+    cerrarSesionCrm();
+    window.addEventListener('storage', e => { if (e.key === 'usuario_actual' && e.newValue) cerrarSesionCrm(); });
+  }
+  (async () => {
+    if (!registro?.token) return noRegistrado();
+    avisos();
+    if (!await conectar()) return;
+    // Al abrir se pide la cámara una vez (para que el permiso quede dado) y se apaga hasta que alguien cheque.
+    iniciarCamara().then(() => { if (estado.esCodigo) soltarCamara(); }); despierta(); inicio(); contarPendientes(); subirPendientes();
+    setTimeout(() => { cargarFaceApi().catch(() => {}); }, 5000); // el reconocimiento facial se deja listo en segundo plano
+    setInterval(async () => { if (!deBaja && await conectar()) subirPendientes(); }, 60000);
+  })();
+})();
+</script>
+</body>
+</html>

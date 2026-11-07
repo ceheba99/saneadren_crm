@@ -265,9 +265,9 @@ module.exports = function demo(app, db, { sesiones, PORT, SESSION_TTL_MS }) {
     await pedir('POST', '/compras/solicitudes/' + s1.id + '/elegir', C, { cotizacion_id: c1.id });
     const oc1 = await pedir('POST', '/compras/ordenes', C, { solicitud_id: s1.id, proveedor_id: prov.bajio.id, centro_id: mantto.id, categoria: 'mantto_vehiculos', iva_modo: 'incluido', partidas: [{ cantidad: 4, descripcion: 'Llanta 11R22.5', unidad: 'PZA', precio: 3950 }] });
     const aut1 = await pedir('POST', '/compras/ordenes/' + oc1.id + '/autorizar', A, { dias_credito: 15 });
-    await pedir('POST', '/finanzas/cxp/' + aut1.cxp_id + '/pagos', C, { monto: 15800, metodo: 'transferencia', fecha: HOY, referencia: 'SPEI llantas C-22', cuenta_origen: 'Santander empresa' });
     await subir('/compras/ordenes/' + oc1.id + '/documentos', C, png(), { 'X-Tipo': 'firma_recepcion', 'X-Nombre': 'firma-almacen.png' });
     await pedir('POST', '/compras/ordenes/' + oc1.id + '/recibir', C, { recibio: 'Raúl Técnico', nota: 'Llegaron las 4 llantas' });
+    await pedir('POST', '/finanzas/cxp/' + aut1.cxp_id + '/pagos', C, { monto: 15800, metodo: 'transferencia', fecha: HOY, referencia: 'SPEI llantas C-22', cuenta_origen: 'Santander empresa' });
     // b) Urgente sin las 3 cotizaciones
     const s2 = await pedir('POST', '/compras/solicitudes', T, { que: 'Bomba sumergible 2 HP', para_que: 'Se quemó la bomba durante un servicio de emergencia en KFC Juriquilla', centro_id: opera.id, urgente: true });
     await pedir('POST', '/compras/solicitudes/' + s2.id + '/aprobar', A);
@@ -466,6 +466,29 @@ module.exports = function demo(app, db, { sesiones, PORT, SESSION_TTL_MS }) {
       await redContacto('Taller El Pistón', '442 600 1004', 'Instagram');
       await redContacto('Gimnasio Fuerza', '442 600 1005', 'Facebook');
       await redContacto('Escuela Montessori Sol', '442 600 1006', 'Facebook', 9800);
+      // Google Ads (2026-11-04): un reporte «Detalles de las llamadas» de ejemplo (números inventados). Dos llamadas se registraron
+      // (una terminó en orden), una es de un cliente que ya existía y las demás no se registraron (casi todas lada 55/56) o vienen sin número.
+      const deGoogle = async (nombre, tel, altaHace, compra) => {
+        const c = await pedir('POST', '/contactos', V, { nombre, telefono: tel, direccion: 'Querétaro', canal_origen_id: canalId('Llamada telefónica') });
+        const l = await pedir('POST', '/leads', V, { cliente_id: c.id, direccion: 'Querétaro', canal_id: canalId('Llamada telefónica'), servicio_id: servicios[0].id, responsable_id: idDe('ventas'), forzar_duplicado: true,
+          partidas_json: JSON.stringify([{ servicio: servicios[0].nombre, leyenda: 'Servicio pedido por llamada de Google', importe: compra || 5800 }]), iva_modo: 'mas_iva', valor: compra || 5800, ...(compra ? { estatus: 'ganado', fecha_servicio: dia(3) } : {}) });
+        const alta = dia(-altaHace) + ' 11:30:00'; // el alta, en la fecha que le toca (es la base del demo)
+        db.prepare('UPDATE main.clientes SET created_at = ? WHERE id = ?').run(alta, c.id); db.prepare('UPDATE main.leads SET created_at = ? WHERE id = ?').run(alta, l.id);
+      };
+      await deGoogle('Restaurante El Mezquite', '442 600 2101', 8, 14500);
+      await deGoogle('Clínica Dental Sonrisa', '442 600 2102', 6);
+      await deGoogle('Fraccionamiento Las Lomas', '442 600 2001', 60);
+      const MES_L = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+      const largo = f => { const [a, m, d] = f.split('-').map(Number); return `${d} de ${MES_L[m - 1]} de ${a}`; };
+      const corto = (f, h) => { const [a, m, d] = f.split('-').map(Number); return `"${d} ${MES_L[m - 1].slice(0, 3)} ${a}, ${h}:00:00"`; };
+      const CSV_GADS = ['Detalles de las llamadas', `${largo(dia(-10))} - ${largo(HOY)}`,
+        'Hora de inicio,Duración (segundos),Código de país de la persona que llama,Prefijo de la persona que llama,Número de teléfono de la persona que llama,Grabación,Estado,Fuente de la llamada,Tipo de llamada,Campaña',
+        ...[[-9, 10, 185, '442', '+52 442 600 2101', 'Recibida', 'Desazolve Querétaro'], [-6, 12, 96, '442', '+52 442 600 2102', 'Recibida', 'Desazolve Querétaro'], [-5, 9, 240, '442', '+52 442 600 2001', 'Recibida', 'Desazolve Querétaro'],
+          [-8, 15, 44, '442', '+52 442 600 2103', 'Recibida', 'Desazolve Querétaro'], [-6, 9, 30, '512', '+1 512-555-0147', 'Recibida', 'Desazolve Querétaro'],
+          [-7, 16, 75, '55', '+52 55 4100 0001', 'Recibida', 'Desazolve CDMX'], [-7, 16, 0, '55', '+52 55 4100 0001', 'Perdida', 'Desazolve CDMX'], [-4, 11, 130, '56', '+52 56 4100 0002', 'Recibida', 'Desazolve CDMX'],
+          [-3, 13, 0, '55', '+52 55 4100 0003', 'Perdida', 'Desazolve CDMX'], [-2, 18, 62, '55', '+52 55 4100 0004', 'Recibida', 'Desazolve CDMX'], [-2, 19, 0, '--', '--', 'Perdida', 'Desazolve CDMX'], [-1, 10, 0, '--', '--', 'Perdida', 'Desazolve Querétaro']]
+          .map(([d, h, dur, pre, tel, est, camp]) => `${corto(dia(d), h)},${dur},${tel.startsWith('+1') ? 1 : 52}, ${pre}, ${tel},No disponible,${est},Anuncio,Clics de llamada de móviles,${camp}`)].join('\n');
+      await pedir('POST', '/marketing/google-ads/cargar', GM, { csv: CSV_GADS, archivo: 'Detalles de las llamadas (ejemplo).csv' });
     }
 
     // ===== 10. Facturación: configuración de ejemplo (el demo NUNCA se conecta con factura.com) =====

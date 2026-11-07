@@ -313,7 +313,13 @@ module.exports = function solicitudes(app, db, h, { texto, fechaOk, hoyMexico, c
     const d = db.prepare('SELECT * FROM documentos_solicitud WHERE id = ?').get(s.ganadora_id);
     const ruta = d && path.join(DIR, d.archivo);
     if (ruta && ruta.startsWith(DIR) && fs.existsSync(ruta)) {
-      try { agregarDocumentoOC(req, oc, 'cotizacion', d.nombre, fs.readFileSync(ruta), `Cotización elegida en ${s.folio}`); } catch { /* si ya estaba, no pasa nada */ }
+      // Si ya estaba, agregarDocumentoOC no hace nada. Cualquier otro error (disco, formato) ya no se calla (H-003):
+      // la orden se crea igual, pero queda escrito en su bitácora que hay que subir la cotización a mano.
+      try { agregarDocumentoOC(req, oc, 'cotizacion', d.nombre, fs.readFileSync(ruta), `Cotización elegida en ${s.folio}`); }
+      catch (e) {
+        console.error(`[solicitudes] no se copió la cotización de ${s.folio} a ${oc.folio}:`, e.message);
+        audit(req, s.id, 'documento', `No se pudo copiar la cotización elegida al expediente de ${oc.folio} (${e.message}): súbela a mano`);
+      }
     }
   }
   // Orden cancelada: la solicitud regresa a «cotización elegida» para poder hacer otra orden.

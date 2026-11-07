@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Saneadren · Cotizaciones y Servicios</title>
-<link rel="stylesheet" href="styles.css?v=fx6">
+<link rel="stylesheet" href="styles.css?v=lg3">
 <link rel="stylesheet" href="servicios-tabla.css">
 <link rel="stylesheet" href="flujo.css?v=cel1">
 <link rel="stylesheet" href="interfaz.css?v=visual6">
@@ -27,7 +27,7 @@
     </button>
     <div class="menu-items" id="menu-items">
       <button type="button" class="menu-item activa" data-vista="inicio"><span class="menu-icono" aria-hidden="true">🏠</span>Inicio <span id="badge-pendientes" style="display:none">0</span></button>
-      <button type="button" class="menu-item perm-ventas-ver" data-vista="calendario"><span class="menu-icono" aria-hidden="true">📅</span>Calendario</button>
+      <button type="button" class="menu-item perm-calendario-ver" data-vista="calendario"><span class="menu-icono" aria-hidden="true">📅</span>Calendario</button>
       <button type="button" class="menu-item perm-marketing-ver" data-vista="marketing"><span class="menu-icono" aria-hidden="true">🎨</span>Marketing</button>
       <div class="menu-grupo perm-ventas-ver" data-grupo="ventas">
         <button type="button" class="menu-grupo-btn" aria-expanded="false"><span class="menu-icono" aria-hidden="true">💼</span>Ventas<span class="menu-flecha" aria-hidden="true">▾</span></button>
@@ -35,7 +35,7 @@
           <button type="button" class="menu-item perm-contactos-editar" data-vista="alta"><span class="menu-icono" aria-hidden="true">➕</span>Nuevo contacto</button>
           <button type="button" class="menu-item perm-contactos-ver" data-vista="clientes"><span class="menu-icono" aria-hidden="true">👥</span>Contactos</button>
           <button type="button" class="menu-item perm-generador-ver perm-ordenes-importes" data-vista="generador"><span class="menu-icono" aria-hidden="true">📒</span>Generador</button>
-          <button type="button" class="menu-item perm-ventas-ver" data-vista="leads"><span class="menu-icono" aria-hidden="true">📄</span>Cotizaciones</button>
+          <button type="button" class="menu-item perm-cotizaciones_ordenes-ver" data-vista="leads"><span class="menu-icono" aria-hidden="true">📄</span>Cotizaciones</button>
           <button type="button" class="menu-item perm-prospeccion-ver" data-vista="prospeccion"><span class="menu-icono" aria-hidden="true">🔎</span>Prospección</button>
         </div>
       </div>
@@ -51,12 +51,19 @@
           <button type="button" class="menu-item perm-reportes-analisis" data-vista="resultados"><span class="menu-icono" aria-hidden="true">📊</span>Resultados</button>
         </div>
       </div>
-      <div class="menu-grupo" data-grupo="ajustes">
-        <button type="button" class="menu-grupo-btn" aria-expanded="false"><span class="menu-icono" aria-hidden="true">⚙️</span>Ajustes<span class="menu-flecha" aria-hidden="true">▾</span></button>
+      <div class="menu-grupo perm-personal-ver" data-grupo="rh">
+        <button type="button" class="menu-grupo-btn" aria-expanded="false"><span class="menu-icono" aria-hidden="true">🧑‍💼</span>RH<span class="menu-flecha" aria-hidden="true">▾</span></button>
         <div class="menu-sub">
+          <button type="button" class="menu-item perm-personal-ver" data-vista="rh" id="nav-rh"><span class="menu-icono" aria-hidden="true">🧑‍💼</span>Inicio de RH</button>
           <button type="button" class="menu-item perm-personal-ver" data-vista="personal" id="nav-personal"><span class="menu-icono" aria-hidden="true">👷</span>Personal</button>
+          <button type="button" class="menu-item perm-asistencia-ver" data-vista="asistencia" id="nav-asistencia"><span class="menu-icono" aria-hidden="true">🕒</span>Asistencia</button>
+        </div>
+      </div>
+      <div class="menu-grupo" data-grupo="ajustes">
+        <button type="button" class="menu-grupo-btn" aria-expanded="false"><span class="menu-icono" aria-hidden="true">⚙️</span>Configuración<span class="menu-flecha" aria-hidden="true">▾</span></button>
+        <div class="menu-sub">
           <button type="button" class="menu-item perm-catalogos-editar" data-vista="catalogos" id="nav-catalogos"><span class="menu-icono" aria-hidden="true">📚</span>Catálogos</button>
-          <button type="button" class="menu-item perm-usuarios-administrar" data-vista="usuarios" id="nav-usuarios"><span class="menu-icono" aria-hidden="true">👤</span>Usuarios</button>
+          <button type="button" class="menu-item perm-usuarios-administrar" data-vista="usuarios" id="nav-usuarios"><span class="menu-icono" aria-hidden="true">🛠️</span>Ajustes</button>
           <button type="button" class="menu-item solo-general" data-vista="bitacora" id="nav-bitacora"><span class="menu-icono" aria-hidden="true">🗂️</span>Bitácora</button>
         </div>
       </div>
@@ -116,19 +123,19 @@
       <div id="inicio-prospeccion" class="inicio-lista"></div>
     </div>
 
-    <div class="inicio-bloque inicio-bloque-cotizacion perm-ventas-ver" data-titulo-corto="Avisos">
+    <div class="inicio-bloque inicio-bloque-cotizacion perm-cotizaciones_ordenes-ver" data-titulo-corto="Avisos">
       <h3>⏰ Avisos y seguimiento</h3>
       <p class="ayuda">Recordatorios de cotizaciones u órdenes que vencen hoy o ya vencieron, y cotizaciones abiertas sin movimiento hace más de 7 días.</p>
       <div id="inicio-cotizaciones" class="inicio-lista"></div>
     </div>
 
-    <div class="inicio-bloque inicio-bloque-concluir perm-ventas-ver" data-titulo-corto="Por concluir">
+    <div class="inicio-bloque inicio-bloque-concluir perm-ordenes-ver" data-titulo-corto="Por concluir">
       <h3>🧾 Servicios por concluir</h3>
       <p class="ayuda">Órdenes cuya fecha ya pasó y que todavía no se marcan como realizadas o no realizadas. No aparecen en el Generador hasta concluirlas.</p>
       <div id="inicio-concluir" class="inicio-lista"></div>
     </div>
 
-    <div class="inicio-bloque inicio-bloque-servicio perm-ventas-ver" data-titulo-corto="Recompras">
+    <div class="inicio-bloque inicio-bloque-servicio perm-ordenes-ver" data-titulo-corto="Recompras">
       <h3>🧾 Recompras</h3>
       <p class="ayuda">Clientes que ya contrataron antes y, según el ciclo del servicio, probablemente ya lo necesiten otra vez.</p>
       <div id="inicio-recompras" class="inicio-lista"></div>
@@ -488,9 +495,25 @@
 <section class="vista" id="vista-personal">
 <div class="pe-encabezado"><h2>Personal</h2><button type="button" class="btn btn-primario perm-personal-editar" id="pe-nuevo">+ Nueva persona</button></div>
 <p class="ayuda">Todas las personas de la empresa —técnicos, operadores, ayudantes y administrativos—, tengan o no cuenta en el sistema. De aquí se elige al técnico responsable y al equipo de cada orden de servicio.</p>
-<div class="filtros"><input id="pe-buscar" aria-label="Buscar persona" placeholder="Nombre, puesto o teléfono"><select id="pe-f-puesto" aria-label="Puesto"></select><select id="pe-f-estado" aria-label="Estado"><option value="activos">Activos</option><option value="bajas">Dados de baja</option><option value="todos">Todos</option></select><label><input type="checkbox" id="pe-f-alertas"> Solo con avisos</label></div>
+<div class="filtros"><input id="pe-buscar" aria-label="Buscar persona" placeholder="No. de empleado, nombre, puesto o teléfono"><select id="pe-f-puesto" aria-label="Puesto"></select><select id="pe-f-estado" aria-label="Estado"><option value="activos">Activos</option><option value="bajas">Dados de baja</option><option value="todos">Todos</option></select><label><input type="checkbox" id="pe-f-alertas"> Solo con avisos</label></div>
 <p id="pe-resumen" role="status"></p>
-<div class="tabla-scroll"><table class="tabla-resumen pe-tabla"><thead><tr><th>Nombre</th><th>Puesto</th><th>Teléfono</th><th>Antigüedad</th><th>Vacaciones disponibles</th><th>Licencia</th><th>Órdenes del mes</th><th>Avisos</th></tr></thead><tbody id="pe-tabla"></tbody></table></div>
+<div class="tabla-scroll"><table class="tabla-resumen pe-tabla"><thead><tr><th>No.</th><th>Nombre</th><th>Puesto</th><th>Teléfono</th><th>Antigüedad</th><th>Vacaciones disponibles</th><th>Licencia</th><th>Órdenes del mes</th><th>Avisos</th></tr></thead><tbody id="pe-tabla"></tbody></table></div>
+<div class="modal-section perm-asistencia-kioscos pe-kioscos"><h3 class="pe-sub">🕒 Kioscos del reloj checador</h3>
+<p class="ayuda">Para registrar la tableta o computadora de la entrada: entra al sistema <b>desde ese dispositivo</b>, escribe su nombre y pulsa «Registrar este dispositivo». Solo los dispositivos registrados pueden checar; si se pierde uno, dalo de baja aquí.</p>
+<div id="pe-kioscos-lista"></div>
+<div class="filtros"><input id="pe-kiosco-nombre" maxlength="60" aria-label="Nombre del kiosco" placeholder="Nombre (p. ej. Entrada Querétaro)"><select id="pe-kiosco-suc" aria-label="Sucursal del kiosco" hidden></select><button type="button" class="btn btn-secundario" id="pe-kiosco-registrar">Registrar este dispositivo como kiosco</button></div>
+</div>
+</section>
+<section class="vista" id="vista-rh">
+<div class="pe-encabezado"><h2>Recursos humanos</h2></div>
+<p class="ayuda">Todo lo del personal en un solo lugar: altas y expedientes, reloj checador, asistencia, horarios, tiempo extra, nómina y privacidad.</p>
+<div id="rh-cuerpo"></div>
+</section>
+<section class="vista" id="vista-asistencia">
+<div class="pe-encabezado"><h2>Asistencia</h2></div>
+<p class="ayuda">Entradas, comida, salidas, retardos, faltas y tiempo extra del personal, según su horario. Las checadas no se borran: se corrigen con motivo.</p>
+<div class="btn-group as-pestanas" role="group" aria-label="Vista de asistencia"><button type="button" class="btn btn-outline" data-as-pestana="dia" aria-pressed="true">Día</button><button type="button" class="btn btn-outline" data-as-pestana="semana" aria-pressed="false">Semana</button><button type="button" class="btn btn-outline" data-as-pestana="horarios" aria-pressed="false">Horarios</button><button type="button" class="btn btn-outline" data-as-pestana="festivos" aria-pressed="false">Días festivos</button></div>
+<div id="as-cuerpo"></div>
 </section>
 <section class="vista vista-comercial" id="vista-prospeccion">
 <div class="vista-encabezado">
@@ -542,6 +565,7 @@
       <button type="button" role="tab" class="mk-pestana" id="mk-p-plan" data-mk-pestana="plan" aria-selected="false">🎯 Plan y metas</button>
       <button type="button" role="tab" class="mk-pestana perm-marketing-dinero" id="mk-p-din" data-mk-pestana="dinero" aria-selected="false">💰 Presupuesto y gastos</button>
       <button type="button" role="tab" class="mk-pestana" id="mk-p-res" data-mk-pestana="resultados" aria-selected="false">📈 Resultados</button>
+      <button type="button" role="tab" class="mk-pestana perm-marketing-dinero" id="mk-p-gads" data-mk-pestana="google" aria-selected="false">📞 Google Ads</button>
     </div>
     <!-- Tablero del departamento (fase 4, 2026-10-27) -->
     <div id="mk-tab-tablero" hidden>
@@ -588,6 +612,18 @@
         <div class="btn-group"><button type="button" class="btn btn-outline btn-chico" data-rs-rango="mes">Este mes</button><button type="button" class="btn btn-outline btn-chico" data-rs-rango="trimestre">Últimos 3 meses</button><button type="button" class="btn btn-outline btn-chico" data-rs-rango="anio">Este año</button></div></div>
       <div id="rs-cuerpo"></div>
       <div id="rs-publicaciones"></div>
+    </div>
+    <!-- Llamadas de Google Ads (2026-11-04): solo Dirección y el Gerente de marketing -->
+    <div id="mk-tab-google" hidden>
+      <div class="vista-encabezado">
+        <div><h2>📞 Llamadas de Google Ads</h2><p class="ayuda">Sube el reporte «Detalles de las llamadas» de Google Ads (CSV) y el sistema lo cruza con los contactos por teléfono: <b>registrada</b> si el contacto o su cotización se dio de alta entre el día de la llamada y 7 días después, <b>cliente que ya existía</b> si ya estaba antes, <b>sin registrar</b> si no aparece y <b>sin número</b> si Google no lo da. Volver a subir el mismo periodo no duplica llamadas.</p></div>
+        <div class="btn-group"><label class="btn btn-primario" id="ga-subir-lbl">📤 Subir reporte (CSV)<input type="file" id="ga-archivo" accept=".csv,text/csv" hidden></label></div>
+      </div>
+      <div id="ga-previa"></div>
+      <div class="filtros"><label class="filtro-fecha-label" for="ga-desde">Desde</label><input type="date" id="ga-desde"><label class="filtro-fecha-label" for="ga-hasta">Hasta</label><input type="date" id="ga-hasta">
+        <select id="ga-campana" aria-label="Campaña"><option value="">Todas las campañas</option></select>
+        <button type="button" class="btn btn-outline btn-chico" id="ga-ver">Ver</button></div>
+      <div id="ga-cuerpo"></div>
     </div>
     <div id="mk-tab-calendario">
     <div class="vista-encabezado">
@@ -672,6 +708,8 @@
       <h2>Respaldo de la base de datos</h2>
       <p class="ayuda">Descarga una copia del archivo de la base de datos con todo el historial (contactos, cotizaciones y servicios). Guárdala en un lugar seguro; hazlo con regularidad, sobre todo antes de cualquier cambio importante.</p>
       <button class="btn btn-secundario" id="btn-descargar-respaldo">⬇ Descargar respaldo de la base de datos</button>
+      <p class="ayuda">La base <b>no incluye los archivos</b>: PDF de las facturas, documentos del expediente, fotos de las checadas y comprobantes. El <b>respaldo completo</b> trae la base y todos esos archivos en uno solo (.tar; puede tardar y pesar varios GB). Los documentos van cifrados: guarda aparte la clave de cifrado del servidor, que no viene en el respaldo.</p>
+      <button class="btn btn-secundario" id="btn-descargar-respaldo-completo">⬇ Descargar respaldo completo (base + archivos)</button>
     </div>
     <div class="panel-alta solo-general">
       <h2>🩺 Revisión de integridad de los datos</h2>
@@ -757,6 +795,22 @@
     <h3 class="util-13">Usuarios desactivados</h3>
     <p class="ayuda">No pueden entrar. Al reactivar a alguien vuelve con su rol y sus sucursales, y al entrar debe cambiar su contraseña.</p>
     <div id="lista-usuarios-desactivados"></div>
+
+    <div class="panel-alta solo-general" id="panel-logs">
+      <h2>📜 Logs del sistema</h2>
+      <p class="ayuda">Quién entró y salió, contraseñas equivocadas, bloqueos por intentos, errores del servidor y de las pantallas, facturación con factura.com, correos que no salieron, respaldos automáticos, WhatsApp, reinicios del sistema y descargas de respaldos. Solo Dirección. Se guardan 180 días. Los cambios a clientes, usuarios o permisos están en la <button type="button" class="enlace" id="logs-ir-bitacora">Bitácora</button>.</p>
+      <div class="logs-resumen" id="logs-resumen"></div>
+      <h3 class="util-13">Conectados ahora</h3>
+      <div id="logs-conectados"></div>
+      <h3 class="util-13">Registro</h3>
+      <div class="filtros">
+        <select id="logs-tipo" aria-label="Qué ver"><option value="">Todo</option><option value="fallas">Solo problemas (fallos, bloqueos y errores)</option><option value="acceso">Accesos</option><option value="error">Errores (servidor y pantallas)</option><option value="facturacion">Facturación (factura.com)</option><option value="servicio">Correos, respaldos, WhatsApp y reinicios</option><option value="seguridad">Descargas de respaldos</option></select>
+        <label>Desde <input type="date" id="logs-desde"></label>
+        <label>Hasta <input type="date" id="logs-hasta"></label>
+        <input type="search" id="logs-buscar" placeholder="Buscar (usuario, IP, equipo…)" aria-label="Buscar en los logs">
+      </div>
+      <div id="logs-lista"></div>
+    </div>
 
   </section>
 
@@ -1340,12 +1394,13 @@
         <div class="gasto-orden-info" id="gasto-orden-info" role="status" hidden></div>
       </div>
       <div class="campo"><label for="gasto-concepto">Concepto del costo (obligatorio)</label><input id="gasto-concepto" maxlength="200" required placeholder="Concepto del gasto (ej. Renta de pipa 20 m³, diésel, disposición de lodos)"></div>
+      <div class="campo"><label for="gasto-xml">XML de la factura (opcional)</label><input id="gasto-xml" type="file" accept=".xml,application/xml,text/xml"><small class="ayuda" id="gasto-xml-info" role="status">Si lo subes, el sistema llena solo el total, el folio, la fecha y el IVA. El IEPS (gasolina) se queda como parte del gasto.</small></div>
       <div class="campo"><label for="gasto-total">Total a pagar con IVA (MXN, obligatorio)</label><input id="gasto-total" type="text" inputmode="decimal" autocomplete="off"></div>
       <div class="form-grid-2">
         <div class="campo"><label for="gasto-comprobante">Tipo de comprobante (obligatorio)</label><select id="gasto-comprobante"></select></div>
         <div class="campo" id="gasto-sat-wrap"><label for="gasto-sat">Método del SAT (opcional)</label><select id="gasto-sat"><option value="">Sin indicar</option><option value="PUE">PUE · una sola exhibición</option><option value="PPD">PPD · en parcialidades</option></select></div>
       </div>
-      <div class="campo" id="gasto-iva-wrap" hidden><label for="gasto-iva">IVA de la factura (MXN, opcional)</label><input id="gasto-iva" type="text" inputmode="decimal" autocomplete="off"><small class="ayuda">Se propone el 16 % incluido en el total; corrígelo con el que trae la factura (0 si es tasa 0 o exenta). Con él, Resultados calcula la utilidad sin IVA.</small></div>
+      <div class="campo" id="gasto-iva-wrap" hidden><label for="gasto-iva">IVA de la factura (MXN, opcional)</label><input id="gasto-iva" type="text" inputmode="decimal" autocomplete="off"><small class="ayuda" id="gasto-iva-ayuda">Se propone el 16 % incluido en el total; corrígelo con el que trae la factura (0 si es tasa 0 o exenta). Con él, Resultados calcula la utilidad sin IVA.</small></div>
       <div class="campo"><label for="gasto-beneficiario">¿A quién se le paga? (opcional, si no es el proveedor)</label><input id="gasto-beneficiario" maxlength="120" list="gasto-beneficiarios" placeholder="Vacío = al mismo proveedor (ej. reembolso a quien pagó con su tarjeta)"><datalist id="gasto-beneficiarios"></datalist></div>
       <div class="form-grid-2">
         <div class="campo"><label for="gasto-fecha">Fecha de la factura o gasto (obligatorio)</label><input id="gasto-fecha" type="date"></div>
@@ -1437,6 +1492,7 @@
       <div class="campo"><label for="pagoprov-fecha">Fecha del pago (obligatorio)</label><input id="pagoprov-fecha" type="date"></div>
       <div class="campo"><label for="pagoprov-referencia">Referencia (opcional)</label><input id="pagoprov-referencia" maxlength="120"></div>
       <div class="campo"><label for="pagoprov-cuenta">¿De qué cuenta salió? (opcional)</label><input id="pagoprov-cuenta" maxlength="80" list="pagoprov-cuentas" placeholder="Ej. Santander empresa, tarjeta de Luis Perea"><datalist id="pagoprov-cuentas"><option value="Santander empresa"></option><option value="Banamex"></option><option value="Banorte"></option><option value="Efectivo caja"></option></datalist></div>
+      <div id="pagoprov-xml"></div><input id="pagoprov-xml-archivo" type="file" accept=".xml,application/xml,text/xml" hidden>
       <div id="pagoprov-historial"></div>
       <button type="button" class="btn btn-primario btn-ancho" id="pagoprov-guardar">Guardar pago</button>
     </div>
@@ -1570,6 +1626,18 @@
 
 
 <!-- ====== OVERLAY: PUBLICACIÓN (Marketing) ====== -->
+<!-- Marcar publicada (2026-11-05): un enlace por cada red de la publicación, todos opcionales. -->
+<div class="overlay" id="overlay-mk-publicar">
+  <div class="modal dialogo-confirmacion">
+    <div class="modal-header"><h2>🚀 Marcar publicada</h2><button class="close-btn" type="button" id="mk-pub-cerrar">✕</button></div>
+    <div class="modal-body">
+      <p class="ayuda">Pega el enlace de cada red donde ya salió. Son opcionales: los que falten se pueden poner después en «Resultados».</p>
+      <div id="mk-pub-enlaces" class="mk-pub-enlaces"></div>
+      <p class="aviso-error-carga" id="mk-pub-aviso" role="alert" hidden></p>
+      <div class="dialogo-acciones"><button type="button" class="btn btn-secundario" id="mk-pub-cancelar">Cancelar</button><button type="button" class="btn btn-primario" id="mk-pub-aceptar">Marcar publicada</button></div>
+    </div>
+  </div>
+</div>
 <div class="overlay" id="overlay-publicacion">
   <div class="modal modal-publicacion">
     <div class="modal-header"><div><span class="flujo-kicker" id="mk-kicker">PUBLICACIÓN</span><h2 id="mk-p-titulo">Nueva publicación</h2></div>
@@ -1774,22 +1842,27 @@
 <script src="calendario.js?v=esp1"></script>
 <script src="tablero.js?v=enc1"></script>
 <script src="bitacora.js?v=hc1"></script>
+<script src="logs.js?v=lg2"></script>
 <script src="compras.js?v=ed1"></script>
 <script src="solicitudes.js?v=rev1"></script>
 <script src="carga-generador.js?v=con1"></script>
-<script src="sucursales.js?v=perm2"></script>
+<script src="sucursales.js?v=perm4"></script>
 <script src="facturacion.js?v=fx10"></script>
 <script src="encuestas.js?v=enc1"></script>
-<script src="app.js?v=carta1"></script>
-<script src="personal.js?v=ed1"></script>
+<script src="app.js?v=carta2"></script>
+<script src="listas-servicio.js?v=ls1"></script>
+<script src="personal.js?v=bio2"></script>
+<script src="asistencia.js?v=sf1"></script>
+<script src="rh.js?v=bio3"></script>
 <script src="buscador.js?v=suc1"></script>
 <script src="demo.js?v=demo1"></script>
-<script src="prospeccion.js?v=pro1"></script>
-<script src="marketing.js?v=mk7"></script>
+<script src="prospeccion.js?v=pro2"></script>
+<script src="marketing.js?v=mk9"></script>
 <script src="marketing-proyectos.js?v=mk6"></script>
 <script src="marketing-ideas.js?v=mk6"></script>
 <script src="marketing-control.js?v=mk7"></script>
 <script src="marketing-revision.js?v=mk7"></script>
-<script src="inicio.js?v=visual1"></script>
+<script src="marketing-google-ads.js?v=ga3"></script>
+<script src="inicio.js?v=visual2"></script>
 </body>
 </html>

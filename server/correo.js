@@ -36,13 +36,16 @@ function plantilla({ titulo, saludo, mensaje, boton, enlace, pie }) {
   return { html, texto };
 }
 
+// Quien quiera enterarse de un correo que no salió (los logs del sistema, server/registro-sistema.js).
+let avisarFallo = null;
 async function enviar(para, asunto, contenido) {
   const { html, texto } = plantilla(contenido);
   if (!transporte) {
     console.log(`\n[correo · modo desarrollo, NO enviado] Para: ${para}\nAsunto: ${asunto}\n${texto}\n`);
     return;
   }
-  await transporte.sendMail({ from: REMITENTE, to: para, subject: asunto, html, text: texto });
+  try { await transporte.sendMail({ from: REMITENTE, to: para, subject: asunto, html, text: texto }); }
+  catch (err) { try { avisarFallo?.(para, asunto, err); } catch { /* el aviso nunca tapa el error */ } throw err; }
 }
 
 // Comprueba conexión y credenciales con el servidor SMTP (lanza error si fallan).
@@ -51,4 +54,4 @@ async function verificarConexion() {
   await transporte.verify();
 }
 
-module.exports = { enviar, configurado, verificarConexion };
+module.exports = { enviar, configurado, verificarConexion, alFallar: fn => { avisarFallo = fn; } };

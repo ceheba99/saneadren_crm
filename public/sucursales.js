@@ -47,20 +47,30 @@ const Sucursales = (() => {
   // ---------- Ajustes › Sucursales (administrador general) ----------
   function pintarAjustes() {
     const cont = $('lista-sucursales'); if (!cont) return;
-    cont.innerHTML = DATOS.sucursales.map((s, i) => '<div class="servicio-row fila-sucursal" data-sucursal="' + Number(s.id) + '">'
+    // Las archivadas (se eliminaron pero tenían registros: server/eliminar.js) ya no salen aquí.
+    cont.innerHTML = DATOS.sucursales.filter(s => !s.archivado_at).map((s, i) => '<div class="servicio-row fila-sucursal" data-sucursal="' + Number(s.id) + '">'
       + '<div><label>Nombre</label><input value="' + esc(s.nombre) + '" data-campo="nombre" maxlength="60"></div>'
       + '<div><label>Clave (en folios)</label><input value="' + esc(s.clave) + '" disabled title="La clave no se cambia: ya aparece en los folios"></div>'
       + '<div><label>Dirección</label><input value="' + esc(s.direccion || '') + '" data-campo="direccion" maxlength="200"></div>'
       + '<div><label>Teléfono</label><input value="' + esc(s.telefono || '') + '" data-campo="telefono" maxlength="25"></div>'
       + '<div class="acciones-catalogo"><span class="ayuda">' + Number(s.usuarios || 0) + ' usuario(s)' + (i === 0 ? ' · principal' : '') + (s.activo ? '' : ' · desactivada') + '</span>'
       + '<button type="button" class="btn btn-secundario" data-suc-guardar>Guardar</button>'
-      + (i === 0 ? '' : '<button type="button" class="btn btn-outline" data-suc-activo>' + (s.activo ? 'Desactivar' : 'Activar') + '</button>') + '</div></div>').join('');
+      + (i === 0 ? '' : '<button type="button" class="btn btn-outline" data-suc-activo>' + (s.activo ? 'Desactivar' : 'Activar') + '</button>'
+        + '<button type="button" class="btn btn-peligro" data-suc-eliminar>Eliminar</button>') + '</div></div>').join('');
   }
   document.addEventListener('click', async e => {
-    const b = e.target.closest('[data-suc-guardar],[data-suc-activo],#btn-crear-sucursal'); if (!b) return;
+    const b = e.target.closest('[data-suc-guardar],[data-suc-activo],[data-suc-eliminar],#btn-crear-sucursal'); if (!b) return;
     b.disabled = true;
     try {
-      if (b.id === 'btn-crear-sucursal') {
+      if (b.dataset.sucEliminar !== undefined) {
+        // Eliminar (2026-11-04): el servidor la borra si nunca se usó o la archiva si ya tiene registros.
+        const s = DATOS.sucursales.find(x => x.id === Number(b.closest('[data-sucursal]').dataset.sucursal));
+        if (!await solicitarDialogo({ titulo: 'Eliminar ' + s.nombre, aceptar: 'Eliminar',
+          mensaje: 'Si nunca se usó, se borra. Si ya tiene registros (cotizaciones, cobros, personal…), se archiva: queda desactivada, desaparece de esta lista y su historial se conserva.' + (Number(s.usuarios) ? ` ${Number(s.usuarios)} usuario(s) la tienen asignada.` : '') })) return;
+        const r = await api('/sucursales/' + s.id + '/eliminar', { method: 'POST', body: '{}' });
+        const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.error || 'No se pudo eliminar');
+        toast(j.mensaje);
+      } else if (b.id === 'btn-crear-sucursal') {
         const cuerpo = { nombre: $('ns-nombre').value, clave: $('ns-clave').value, direccion: $('ns-direccion').value, telefono: $('ns-telefono').value };
         const r = await api('/sucursales', { method: 'POST', body: JSON.stringify(cuerpo) });
         const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.error || 'No se pudo crear');
@@ -68,6 +78,9 @@ const Sucursales = (() => {
         toast('Sucursal ' + j.nombre + ' creada. Ahora asígnale usuarios.');
       } else {
         const fila = b.closest('[data-sucursal]'), id = Number(fila.dataset.sucursal), s = DATOS.sucursales.find(x => x.id === id);
+        // Desactivar pide confirmación y dice a cuántos usuarios afecta (auditoría 2026-11-04, H-017).
+        if (b.dataset.sucActivo !== undefined && s.activo && !await solicitarDialogo({ titulo: 'Desactivar ' + s.nombre, aceptar: 'Desactivar',
+          mensaje: (Number(s.usuarios) ? `${Number(s.usuarios)} usuario(s) trabajan en esta sucursal: quienes solo tienen esta, ya no podrán trabajar hasta que la reactives o les des otra. ` : '') + 'Sus registros se conservan y puedes volver a activarla.' })) return;
         const cuerpo = b.dataset.sucActivo !== undefined ? { activo: !s.activo } : Object.fromEntries([...fila.querySelectorAll('[data-campo]')].map(i => [i.dataset.campo, i.value]));
         const r = await api('/sucursales/' + id, { method: 'PUT', body: JSON.stringify(cuerpo) });
         const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.error || 'No se pudo guardar');

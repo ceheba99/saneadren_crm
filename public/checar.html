@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Checar · Saneadren</title>
+<!-- CHECAR DESDE EL CELULAR (server/checador.js, F5 2026-11-03). Se abre en /checar en el celular de la persona, que antes
+     se ligó con el enlace de un solo uso que le mandó RH (su token queda en este navegador). Para checar: PIN + selfie +
+     ubicación, con la hora del servidor. La ubicación solo se pide al checar. Sin sesión del CRM; el script va aquí mismo. -->
+<style>
+  :root{--oscuro:#1a1d23;--amarillo:#f6b103;--texto:#1f2937;--sec:#6b7280;--linea:#e5e7eb;--fondo:#f4f5f7;--verde:#15803d;--rojo:#b91c1c;}
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  body{margin:0;font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;background:var(--fondo);color:var(--texto);min-height:100vh;display:flex;flex-direction:column;}
+  header{background:var(--oscuro);color:#fff;padding:10px 16px;border-bottom:4px solid var(--amarillo);display:flex;align-items:center;justify-content:space-between;}
+  header img{height:32px;display:block;}
+  #reloj{font-size:1.6rem;font-weight:700;font-variant-numeric:tabular-nums;}
+  main{flex:1;padding:16px;max-width:480px;width:100%;margin:0 auto;text-align:center;}
+  h1{font-size:1.5rem;margin:8px 0 4px;}
+  .ayuda{color:var(--sec);font-size:1rem;margin:0 0 14px;}
+  .puntos{display:flex;justify-content:center;gap:14px;margin:10px 0 16px;}
+  .puntos span{width:22px;height:22px;border-radius:50%;border:3px solid var(--oscuro);}
+  .puntos span.lleno{background:var(--oscuro);}
+  .teclado{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;max-width:340px;margin:0 auto;}
+  button{font:inherit;border:0;border-radius:12px;cursor:pointer;touch-action:manipulation;}
+  .teclado button{font-size:1.7rem;font-weight:600;padding:14px 0;background:#fff;border:2px solid var(--linea);color:var(--texto);}
+  .teclado .sec{font-size:1rem;color:var(--sec);}
+  .botones{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px;}
+  .botones button{font-size:1.05rem;font-weight:700;padding:18px 8px;background:#fff;border:3px solid var(--linea);color:var(--texto);}
+  .botones button.sugerido{background:var(--amarillo);border-color:#c98f00;}
+  .btn{font-size:1rem;padding:12px 20px;background:#fff;border:2px solid var(--linea);margin-top:14px;}
+  .camara{width:200px;height:150px;margin:0 auto 6px;border-radius:12px;overflow:hidden;background:#111;color:#fff;display:flex;align-items:center;justify-content:center;font-size:.9rem;}
+  .camara video{width:100%;height:100%;object-fit:cover;transform:scaleX(-1);}
+  .gps{font-size:.95rem;margin:6px 0;}
+  .gps.mal{color:var(--rojo);} .gps.bien{color:var(--verde);}
+  .icono{font-size:4rem;line-height:1;margin-top:20px;}
+  .ok h1{color:var(--verde);} .error h1{color:var(--rojo);}
+  .aviso-privacidad{font-size:.8rem;color:var(--sec);margin-top:18px;}
+  [hidden]{display:none!important;}
+</style>
+</head>
+<body>
+<header><img src="/logo-saneadren.png" alt="Saneadren"><div id="reloj">--:--</div></header>
+<main id="pantalla"></main>
+<canvas id="lienzo" width="480" height="360" hidden></canvas>
+<script>
+(() => {
+  'use strict';
+  const LLAVE = 'saneadren_celular', ZONA = 'America/Mexico_City';
+  const $ = id => document.getElementById(id);
+  let token = null, info = null, desfase = 0, pin = '', flujo = null, camara = null, posicion = null, errorGps = '';
+  try { token = localStorage.getItem(LLAVE); } catch { token = null; }
+  const el = (tag, props = {}, ...hijos) => { const e = document.createElement(tag); Object.assign(e, props); for (const h of hijos) e.append(h); return e; };
+  const pintar = (...n) => $('pantalla').replaceChildren(...n);
+  const fmt = new Intl.DateTimeFormat('es-MX', { timeZone: ZONA, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
+  setInterval(() => { $('reloj').textContent = fmt.format(new Date(Date.now() + desfase)); }, 1000);
+  async function api(ruta, cuerpo) {
+    const r = await fetch('/api/publico/celular/' + ruta, { method: cuerpo ? 'POST' : 'GET', headers: { 'Content-Type': 'application/json', 'X-Celular': token || '' }, body: cuerpo ? JSON.stringify(cuerpo) : undefined, cache: 'no-store' });
+    return { status: r.status, ok: r.ok, j: await r.json().catch(() => ({})) };
+  }
+  function mensaje(clase, icono, titulo, texto, boton, accion) {
+    apagarCamara();
+    pintar(el('div', { className: clase }, el('div', { className: 'icono', textContent: icono }), el('h1', { textContent: titulo }), el('p', { className: 'ayuda', textContent: texto }),
+      ...(boton ? [el('button', { type: 'button', className: 'btn', textContent: boton, onclick: accion })] : [])));
+  }
+  const sinLigar = () => mensaje('error', '📱', 'Este celular no está ligado', 'Pide a RH o a tu gerente el enlace para checar desde tu celular y ábrelo aquí. El enlace sirve una sola vez.');
+
+  // ---------- Teclado de PIN ----------
+  function teclado(titulo, ayuda, listo) {
+    let v = '';
+    const puntos = el('div', { className: 'puntos' });
+    const ver = () => puntos.replaceChildren(...[0, 1, 2, 3].map(i => el('span', { className: i < v.length ? 'lleno' : '' })));
+    const tecla = d => { if (v.length < 4) { v += d; ver(); if (v.length === 4) setTimeout(() => listo(v), 120); } };
+    const t = ['1', '2', '3', '4', '5', '6', '7', '8', '9'].map(d => el('button', { type: 'button', textContent: d, onclick: () => tecla(d) }));
+    t.push(el('button', { type: 'button', className: 'sec', textContent: 'Borrar', onclick: () => { v = ''; ver(); } }), el('button', { type: 'button', textContent: '0', onclick: () => tecla('0') }),
+      el('button', { type: 'button', className: 'sec', textContent: '⌫', ariaLabel: 'Borrar uno', onclick: () => { v = v.slice(0, -1); ver(); } }));
+    ver();
+    pintar(el('h1', { textContent: titulo }), el('p', { className: 'ayuda', textContent: ayuda }), puntos, el('div', { className: 'teclado' }, ...t));
+  }
+
+  // ---------- Cámara y ubicación (solo mientras se checa) ----------
+  async function encenderCamara(caja) {
+    try {
+      camara = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } }, audio: false });
+      const v = el('video', { autoplay: true, playsInline: true, muted: true }); v.srcObject = camara; caja.replaceChildren(v); await v.play().catch(() => {});
+    } catch { camara = null; caja.textContent = 'Sin cámara: tu checada quedará por revisar'; }
+  }
+  function apagarCamara() { camara?.getTracks().forEach(t => t.stop()); camara = null; }
+  function foto() {
+    const v = document.querySelector('.camara video'); if (!v || !v.videoWidth) return null;
+    const c = $('lienzo'); c.getContext('2d').drawImage(v, 0, 0, c.width, c.height); return c.toDataURL('image/jpeg', 0.7);
+  }
+  function pedirUbicacion(nota) {
+    if (!navigator.geolocation) { errorGps = 'Este celular no da ubicación'; nota.textContent = '📍 ' + errorGps; nota.className = 'gps mal'; return; }
+    nota.textContent = '📍 Buscando tu ubicación…'; nota.className = 'gps';
+    navigator.geolocation.getCurrentPosition(p => {
+      posicion = { lat: p.coords.latitude, lon: p.coords.longitude, precision: p.coords.accuracy, cuando: Date.now() }; errorGps = '';
+      nota.textContent = `📍 Ubicación lista (±${Math.round(p.coords.accuracy)} m)`; nota.className = 'gps ' + (p.coords.accuracy <= 150 ? 'bien' : 'mal');
+    }, e => { posicion = null; errorGps = e.code === 1 ? 'Permite la ubicación en tu navegador' : 'No se pudo obtener tu ubicación'; nota.textContent = '📍 ' + errorGps + ': tu checada quedará por revisar'; nota.className = 'gps mal'; },
+    { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 });
+  }
+
+  // ---------- Flujo ----------
+  async function inicio() {
+    if (!token) return sinLigar();
+    let r; try { r = await api('estado'); } catch { return mensaje('error', '📶', 'Sin conexión', 'Para checar desde el celular necesitas internet (datos o wifi).', 'Reintentar', inicio); }
+    if (r.status === 401) { try { localStorage.removeItem(LLAVE); } catch { /* */ } token = null; return sinLigar(); }
+    if (!r.ok) return mensaje('error', '⚠️', 'No se pudo', r.j.error || 'Intenta de nuevo', 'Reintentar', inicio);
+    info = r.j; desfase = Date.parse(info.utc) - Date.now();
+    if (!info.activo) return mensaje('error', '⚠️', 'No estás en el reloj checador', 'Avisa a RH.');
+    pin = '';
+    if (info.pin_temporal) return teclado('Hola, ' + info.nombre, 'Escribe el PIN temporal que te dio RH', p => elegirPin(p));
+    teclado('Hola, ' + info.nombre, 'Escribe tu PIN para checar', p => { pin = p; botones(); });
+  }
+  function elegirPin(temporal) {
+    teclado('Elige tu PIN', '4 números que solo tú sepas (no 1111, 1234 ni tu código)', nuevo => teclado('Repite tu PIN nuevo', 'Escríbelo otra vez', async otra => {
+      if (otra !== nuevo) return mensaje('error', '⚠️', 'No coinciden', 'Los dos PIN no son iguales.', 'Volver a empezar', inicio);
+      const r = await api('cambiar-pin', { pin: temporal, nuevo }).catch(() => null);
+      if (!r) return mensaje('error', '📶', 'Sin conexión', 'Intenta de nuevo con internet.', 'Reintentar', inicio);
+      if (!r.ok) return mensaje('error', '⚠️', 'No se pudo', r.j.error || 'Intenta de nuevo', 'Volver a empezar', inicio);
+      pin = nuevo; info.pin_temporal = false; botones('Listo: ya tienes tu PIN.');
+    }));
+  }
+  function botones(aviso) {
+    const caja = el('div', { className: 'camara', textContent: 'Encendiendo cámara…' }), gps = el('p', { className: 'gps' });
+    const lista = Object.entries(info.tipos).map(([k, t]) => el('button', { type: 'button', className: k === info.sugerido ? 'sugerido' : '', textContent: t, onclick: () => checar(k) }));
+    pintar(el('h1', { textContent: 'Hola, ' + info.nombre }), el('p', { className: 'ayuda', textContent: aviso || (info.ultima ? `Tu última checada de hoy: ${info.ultima.tipo} a las ${info.ultima.hora}` : 'Mira a la cámara y elige qué vas a registrar.') }),
+      caja, gps, el('div', { className: 'botones' }, ...lista), el('button', { type: 'button', className: 'btn', textContent: 'Cancelar', onclick: () => { apagarCamara(); inicio(); } }),
+      el('p', { className: 'aviso-privacidad' }, 'Tu foto y tu ubicación se toman solo al checar y las ve únicamente RH o tu gerente. ', el('a', { href: '/aviso-privacidad-checador.html', target: '_blank', rel: 'noopener', textContent: 'Aviso de privacidad' })));
+    encenderCamara(caja); posicion = null; pedirUbicacion(gps);
+    flujo = setTimeout(() => { apagarCamara(); inicio(); }, 90000);
+  }
+  async function checar(tipo) {
+    clearTimeout(flujo);
+    const imagen = foto(), u = posicion && Date.now() - posicion.cuando < 120000 ? posicion : null;
+    apagarCamara();
+    pintar(el('p', { className: 'ayuda', textContent: 'Registrando…' }));
+    let r; try { r = await api('checar', { pin, tipo, foto: imagen, ...(u ? { lat: u.lat, lon: u.lon, precision: u.precision } : {}) }); }
+    catch { return mensaje('error', '📶', 'Sin conexión', 'No se registró: vuelve a intentarlo con internet.', 'Reintentar', inicio); }
+    pin = '';
+    if (r.status === 401 && r.j.codigo === 'CELULAR_NO_LIGADO') { try { localStorage.removeItem(LLAVE); } catch { /* */ } token = null; return sinLigar(); }
+    if (!r.ok) return mensaje('error', '⚠️', 'No se pudo', r.j.error || 'Intenta de nuevo', 'Volver', inicio);
+    mensaje('ok', '✅', `${r.j.tipo} · ${r.j.hora}`, r.j.repetida ? 'Ya estaba registrada hace un momento.' : r.j.por_revisar ? `Gracias, ${r.j.nombre}. Quedó por revisar: ${r.j.por_revisar}.` : `Gracias, ${r.j.nombre}.`, 'Listo', inicio);
+  }
+
+  // ---------- Arranque: ligar con el enlace (#e=…) si viene ----------
+  (async () => {
+    const m = location.hash.match(/^#e=([A-Za-z0-9_-]{40,60})$/);
+    if (m) {
+      history.replaceState(null, '', location.pathname); // el enlace no se queda en la barra ni en el historial
+      let r; try { r = await fetch('/api/publico/celular/ligar', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enlace: m[1] }) }); }
+      catch { return mensaje('error', '📶', 'Sin conexión', 'Abre el enlace otra vez cuando tengas internet.'); }
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) return mensaje('error', '⚠️', 'Enlace no válido', j.error || 'Pide a RH un enlace nuevo.');
+      try { localStorage.setItem(LLAVE, j.token); } catch { return mensaje('error', '⚠️', 'No se pudo guardar', 'Tu navegador no deja guardar datos (¿modo privado?). Ábrelo en una ventana normal.'); }
+      token = j.token;
+      return mensaje('ok', '✅', 'Celular listo', `Hola, ${j.nombre}: desde ahora puedes checar aquí. Guarda esta página en tu pantalla de inicio para encontrarla fácil.`, 'Empezar', inicio);
+    }
+    inicio();
+  })();
+})();
+</script>
+</body>
+</html>

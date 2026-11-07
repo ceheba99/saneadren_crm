@@ -471,6 +471,8 @@ module.exports = function compras(app, db, h, finanzas) {
     if (!o) return res.status(404).json({ error: 'Orden de compra no encontrada' });
     if (o.estado === 'cancelada') return res.status(409).json({ error: 'Esta orden está cancelada' });
     if (o.recibida_at) return res.status(409).json({ error: 'Ya estaba marcada como recibida el ' + String(o.recibida_at).slice(0, 10).split('-').reverse().join('/') });
+    // Primero se autoriza y luego se recibe (Dirección, 2026-11-05): si se compró de urgencia, se autoriza y después se marca.
+    if (o.estado !== 'autorizada') return res.status(409).json({ error: 'Primero hay que autorizar esta orden de compra; después se marca como recibida' });
     const evidencia = db.prepare("SELECT tipo, COUNT(*) n FROM documentos_oc WHERE oc_id = ? AND eliminado = 0 AND tipo IN ('evidencia', 'firma_recepcion') GROUP BY tipo").all(o.id);
     if (!evidencia.length) return res.status(400).json({ error: 'Agrega la foto de lo que llegó y/o la firma de quien lo recibe' });
     const recibio = texto(req.body?.recibio, 120);

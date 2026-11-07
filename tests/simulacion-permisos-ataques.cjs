@@ -56,7 +56,8 @@ const azar = () => { semilla = (semilla * 1103515245 + 12345) % 2147483648; retu
   const sucs = (await pedir('GET', '/sucursales', A))[1].sucursales, QRO = sucs.find(x => x.clave === 'QRO').id, CDMX = sucs.find(x => x.clave === 'CDMX')?.id;
   const AREAS = j.areas.map(a => a.clave);
   const EDITABLES = j.areas.filter(a => a.editable).map(a => a.clave);
-  const VIRTUALES = [...AREAS.flatMap(a => [a + '.ver', a + '.sucursal', a + '.empresa']), ...EDITABLES.map(a => a + '.editar'), 'ventas.ver', 'compras.ver'];
+  const VIRTUALES = [...AREAS.flatMap(a => [a + '.ver', a + '.sucursal', a + '.empresa']), ...EDITABLES.map(a => a + '.editar'), 'ventas.ver', 'compras.ver', 'cotizaciones_ordenes.ver', 'calendario.ver'];
+  const GRUPOS = ['ventas.ver', 'compras.ver', 'cotizaciones_ordenes.ver', 'calendario.ver']; // salen de las áreas (menú e Inicio)
   const cuerpo = (lista, extra = {}) => {
     if (!Array.isArray(lista)) return { permisos: lista, ...extra };
     const alcances = Object.fromEntries(AREAS.map(a => [a, lista.includes(a + '.empresa') ? 3 : lista.includes(a + '.sucursal') ? 2 : lista.includes(a + '.ver') ? 1 : 0]));
@@ -99,7 +100,8 @@ const azar = () => { semilla = (semilla * 1103515245 + 12345) % 2147483648; retu
   // Y borrar (cotizaciones, órdenes, usuarios…): solo Dirección (2026-10-26).
   // Marketing tampoco: el rol «con todo» copia al gerente, que no ve Marketing (2026-10-26).
   // Facturación (2026-10-27): la conexión con factura.com y la serie y el CP de cada sucursal son solo de Dirección (como el respaldo).
-  const deDireccion = k => DIRECCION_ESPERADO.test(k) || /^DELETE /.test(k) || /^\w+ \/marketing(\/|$)/.test(k) || /^\w+ \/facturacion(\/|$)/.test(k);
+  // Reloj checador (2026-11-03): borrar ya las fotos viejas de las checadas de todas las sucursales (F6).
+  const deDireccion = k => DIRECCION_ESPERADO.test(k) || /^DELETE /.test(k) || /^POST \/(usuarios|sucursales)\/\d+\/eliminar$/.test(k) || /^\w+ \/marketing(\/|$)/.test(k) || /^\w+ \/facturacion(\/|$)/.test(k) || k === 'POST /asistencia/fotos/limpiar' || k === 'POST /asistencia/festivos';
   revisa(soloDireccion.every(deDireccion), `lo que el rol con todo NO puede y Dirección sí son solo cosas de todas las sucursales o borrar (${soloDireccion.length})`, soloDireccion.filter(k => !deDireccion(k)));
   revisa(fT['GET /permisos'] === 403 && fT['PUT /roles/1/permisos'] === 403 && fT['POST /roles'] === 403, 'ni con todos los permisos se editan roles (solo Dirección)');
 
@@ -191,7 +193,7 @@ const azar = () => { semilla = (semilla * 1103515245 + 12345) % 2147483648; retu
   for (const [cuerpo, texto] of [[{ permisos: null }, 'null'], [{ permisos: {} }, 'objeto'], [{ permisos: [1, 2] }, 'números'], [{ permisos: ['__proto__'] }, '__proto__'], [{ permisos: ['cxc.ver', 'constructor'] }, 'constructor'], [{}, 'sin lista']]) {
     [s] = await guardar(ROL_AUX, cuerpo.permisos === undefined ? undefined : cuerpo.permisos); revisa(s === 400, `lista inválida (${texto}) se rechaza`, s);
   }
-  [s, j] = await guardar(ROL_AUX, Array(20000).fill('cxc.ver')); revisa(s === 200 && (await permisosDe(ROL_AUX)).join() === 'cxc.ver', 'una lista con 20,000 repetidos se guarda como uno solo', [s, j]);
+  [s, j] = await guardar(ROL_AUX, Array(20000).fill('cxc.ver')); revisa(s === 200 && (await permisosDe(ROL_AUX)).filter(c => !GRUPOS.includes(c)).join() === 'cxc.ver', 'una lista con 20,000 repetidos se guarda como uno solo', [s, j]);
   for (const clave of ['__proto__', 'constructor', '..%2F..%2Fadmin', 'admin%00', "ventas' OR '1'='1"]) {
     [s] = await pedir('PUT', '/roles/' + clave + '/permisos', A, { permisos: [] }); revisa(s === 404 || s === 400, `clave trampa en la ruta: ${clave}`, s);
   }
@@ -228,7 +230,7 @@ const azar = () => { semilla = (semilla * 1103515245 + 12345) % 2147483648; retu
     [s, j] = await guardar(ROL_NADA, [...set]);
     if (s !== 200) { fallas.push(['no guardó', [...set], j]); continue; }
     const [, mios] = await pedir('GET', '/permisos/mios', T['Prueba Nada']);
-    const sinGrupos = l => [...l].filter(c => c !== 'ventas.ver' && c !== 'compras.ver').sort().join(); // «ve algo de ventas/compras» sale de las áreas
+    const sinGrupos = l => [...l].filter(c => !GRUPOS.includes(c)).sort().join(); // «ve algo de ventas/compras/calendario» sale de las áreas
     if (sinGrupos(set) !== sinGrupos(mios.permisos)) fallas.push(['permisos/mios no coincide', vueltas]);
     for (const [p, m, r, b] of PRUEBAS) {
       const [st] = await pedir(m, r, T['Prueba Nada'], b);
@@ -246,7 +248,7 @@ const azar = () => { semilla = (semilla * 1103515245 + 12345) % 2147483648; retu
   await guardar(ROL_NADA, ['cxc.ver']);
   const [, final] = await pedir('GET', '/permisos/mios', T['Prueba Nada']);
   const [stC] = await pedir('GET', '/finanzas/cartera', T['Prueba Nada']), [stP] = await pedir('GET', '/finanzas/cxp', T['Prueba Nada']);
-  revisa(final.permisos.join() === 'cxc.ver' && stC === 200 && stP === 403, 'al terminar, queda exactamente lo último que se guardó', [final.permisos, stC, stP]);
+  revisa(final.permisos.filter(c => !GRUPOS.includes(c)).join() === 'cxc.ver' && stC === 200 && stP === 403, 'al terminar, queda exactamente lo último que se guardó', [final.permisos, stC, stP]);
 
   // «Ver como» no abre lo que es solo de Dirección (para que la vista previa sea fiel).
   for (const r of ['/clientes/duplicados', '/admin/integridad', '/auditoria']) {

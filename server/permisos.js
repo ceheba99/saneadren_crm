@@ -26,7 +26,7 @@ const CATALOGO = [
   ['cobros.registrar', 'Cuentas por cobrar', 'Registrar cobros', 'Anotar pagos que hizo un cliente', TODOS.filter(r => r !== 'costos')],
   ['cobros.confirmar', 'Cuentas por cobrar', 'Confirmar cobros', 'Revisar y confirmar cobros que están «por confirmar»', TODOS.filter(r => r !== 'tecnico')],
   ['cobros.directo', 'Cuentas por cobrar', 'Sus cobros entran ya confirmados', 'Si no lo tiene, lo que registra queda «por confirmar» para que otra persona lo revise', ['gerente', 'atencion']],
-  ['cobranza.factura', 'Cuentas por cobrar', 'Crédito y datos de factura', 'Cambiar días de crédito y datos de facturación', TODOS],
+  ['cobranza.factura', 'Cuentas por cobrar', 'Crédito y datos de factura', 'Cambiar días de crédito y datos de facturación', ['gerente']], // 2026-11-05: era TODOS
   ['cobros.ajustes', 'Cuentas por cobrar', 'Ajustes, descuentos y revisión inicial', '', ['gerente']],
   ['facturacion.fiscales', 'Facturación', 'Datos fiscales de clientes', 'Ver y capturar el RFC, la razón social, el código postal, el régimen, el uso de CFDI y el correo de un cliente para facturarle. Marcarlo a quien factura', ['gerente']],
   ['facturacion.timbrar', 'Facturación', 'Timbrar facturas', 'Timbrar la factura electrónica (CFDI) de una orden de servicio con factura.com, y ver y descargar las facturas de las órdenes (XML y PDF). Marcarlo a quien factura', ['gerente']],
@@ -43,6 +43,12 @@ const CATALOGO = [
   ['personal.ver', 'Personal', 'Ver personal', 'Lista y fichas del personal de su sucursal (sin datos de pago ni expediente)', ['gerente']],
   ['personal.editar', 'Personal', 'Editar personal', 'Altas, cambios, bajas, vacaciones e incidencias', ['gerente']],
   ['personal.sensibles', 'Personal', 'Datos sensibles del personal', 'CLABE, RFC, CURP, NSS, salario, contrato y documentos del expediente', ['gerente']],
+  // Reloj checador (2026-11-03): ver la asistencia, corregirla con motivo (nunca borrar) y registrar los kioscos.
+  ['asistencia.ver', 'Personal', 'Ver asistencia', 'Las checadas (entradas, comida, salidas y tiempo extra) del personal de su sucursal', ['gerente']],
+  ['asistencia.corregir', 'Personal', 'Corregir asistencia', 'Agregar una checada olvidada, anular una equivocada o aceptar una por revisar, siempre con motivo (las checadas nunca se borran)', ['gerente']],
+  ['asistencia.kioscos', 'Personal', 'Kioscos del checador', 'Registrar la tableta o computadora de la entrada como kiosco del reloj checador, y darla de baja', ['gerente']],
+  ['asistencia.horarios', 'Personal', 'Horarios y días festivos', 'Crear y cambiar horarios (entrada, salida, tolerancia y comida de cada día), asignarlos a cada persona y marcar días festivos', ['gerente']],
+  ['asistencia.extra', 'Personal', 'Autorizar tiempo extra', 'Autorizar el tiempo extra que se registró al checar (lo autorizado es lo que cuenta para la nómina)', ['gerente']],
   ['usuarios.administrar', 'Administración', 'Usuarios', 'Crear usuarios, cambiar su rol, contraseña y sucursales', ['gerente']],
   // Marketing (2026-10-26): aprueban Dirección (siempre) y el Gerente de marketing.
   ['marketing.aprobar', 'Marketing', 'Aprobar publicaciones', 'Aprobar o pedir cambios a las publicaciones antes de subirlas a redes', ['marketing_gerente']],
@@ -83,12 +89,15 @@ const ALCANCE_INICIAL = {
 };
 // Permisos virtuales de las áreas: «X.ver» (ve algo), «X.sucursal» (toda su sucursal), «X.empresa» (todas las
 // sucursales) y «X.editar». Además «ventas.ver» y «compras.ver»: ve alguna pantalla de ese grupo (menú e Inicio).
-const VIRTUALES = [...AREAS.flatMap(a => [a.clave + '.ver', a.clave + '.sucursal', a.clave + '.empresa', ...(a.editable ? [a.clave + '.editar'] : [])]), 'ventas.ver', 'compras.ver'];
+// «cotizaciones_ordenes.ver»: ve cotizaciones u órdenes (pantalla «Cotizaciones» y avisos de Inicio); «calendario.ver»:
+// además, o solo, la cobranza (2026-11-03: ver contactos ya no basta para esas pantallas).
+const VIRTUALES = [...AREAS.flatMap(a => [a.clave + '.ver', a.clave + '.sucursal', a.clave + '.empresa', ...(a.editable ? [a.clave + '.editar'] : [])]), 'ventas.ver', 'compras.ver', 'cotizaciones_ordenes.ver', 'calendario.ver'];
 const GRUPO_VENTAS = ['contactos', 'prospeccion', 'generador', 'cotizaciones', 'ordenes'], GRUPO_COMPRAS = ['solicitudes', 'ordenes_compra'];
 const virtualesDe = (niv, edita = {}) => [
   ...AREAS.flatMap(a => [...(niv[a.clave] >= 1 ? [a.clave + '.ver'] : []), ...(niv[a.clave] >= 2 ? [a.clave + '.sucursal'] : []), ...(niv[a.clave] >= 3 ? [a.clave + '.empresa'] : []),
     ...(a.editable && edita[a.clave] && niv[a.clave] >= 1 ? [a.clave + '.editar'] : [])]),
   ...(GRUPO_VENTAS.some(a => niv[a] >= 1) ? ['ventas.ver'] : []), ...(GRUPO_COMPRAS.some(a => niv[a] >= 1) ? ['compras.ver'] : []),
+  ...(['cotizaciones', 'ordenes'].some(a => niv[a] >= 1) ? ['cotizaciones_ordenes.ver'] : []), ...(['cotizaciones', 'ordenes', 'cxc'].some(a => niv[a] >= 1) ? ['calendario.ver'] : []),
 ];
 const CLAVES = new Set([...CATALOGO.map(p => p.clave), ...VIRTUALES]);
 const REALES = new Set(CATALOGO.map(p => p.clave));
@@ -113,6 +122,11 @@ const DEPENDE = {
   'clientes.exportar': ['ordenes.importes', 'contactos.ver'], // el Excel lleva los importes
   'personal.editar': ['personal.ver'],
   'personal.sensibles': ['personal.ver'],
+  'asistencia.ver': ['personal.ver'],
+  'asistencia.corregir': ['asistencia.ver'],
+  'asistencia.kioscos': ['asistencia.ver'],
+  'asistencia.horarios': ['asistencia.ver'],
+  'asistencia.extra': ['asistencia.ver'],
   'marketing.aprobar': ['marketing.ver'],
   'marketing.dinero': ['marketing.ver'],
 };
@@ -121,6 +135,8 @@ const nombreDe = c => {
   const [area, tipo] = c.split('.'), a = AREAS.find(x => x.clave === area);
   if (c === 'ventas.ver') return 'ver alguna pantalla de ventas';
   if (c === 'compras.ver') return 'ver solicitudes u órdenes de compra';
+  if (c === 'cotizaciones_ordenes.ver') return 'ver cotizaciones u órdenes';
+  if (c === 'calendario.ver') return 'ver cotizaciones, órdenes o la cobranza';
   return a ? `${a.nombre}: ${{ sucursal: 'ver toda su sucursal', empresa: 'ver toda la empresa', editar: 'editar' }[tipo] || 'ver al menos lo suyo'}` : c;
 };
 // Combinaciones sin sentido en un conjunto de permisos: [[permiso, el que le falta], …]
@@ -164,6 +180,12 @@ module.exports = function crearPermisos(db, app, h) {
     const inventados = [...roles].filter(r => r !== 'admin' && !ALCANCE_INICIAL[r]);
     const antes = Object.fromEntries(inventados.map(r => [r, { importes: tenia(r, 'ordenes.importes'), prospeccion: tenia(r, 'prospeccion.ver') }]));
     let sembroAlgo = false;
+    // Ajuste único (Dirección, 2026-11-05): el crédito al cliente es dinero; crédito y datos de factura solo Dirección y
+    // Gerente. Se quita una sola vez a los roles de fábrica que lo tenían; si Dirección se lo vuelve a dar, se respeta.
+    if (!ya.has('ajuste:credito-solo-gerente') && ya.has('cobranza.factura')) {
+      db.prepare("DELETE FROM rol_permisos WHERE permiso = 'cobranza.factura' AND rol IN ('ventas', 'atencion', 'tecnico', 'costos')").run();
+      marcar('ajuste:credito-solo-gerente'); sembroAlgo = true;
+    } else if (!ya.has('ajuste:credito-solo-gerente')) marcar('ajuste:credito-solo-gerente');
     for (const p of CATALOGO) {
       if (ya.has(p.clave)) continue;
       p.roles.filter(r => roles.has(r)).forEach(r => dar.run(r, p.clave));

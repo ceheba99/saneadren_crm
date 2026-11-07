@@ -40,14 +40,14 @@ const CATALOGO = [...SERVER['permisos.js'].matchAll(/^\s*\['([a-z_]+\.[a-z_]+)',
 // Áreas de «qué ve» (2026-10-26: cada pantalla la suya): ver, toda su sucursal, toda la empresa y, las editables, editar.
 const BLOQUE_AREAS = SERVER['permisos.js'].slice(SERVER['permisos.js'].indexOf('const AREAS = ['), SERVER['permisos.js'].indexOf('].map(([clave, nombre, suyo'));
 const AREAS = [...BLOQUE_AREAS.matchAll(/^\s*\['([a-z_]+)', '[^\n]*?(, true)?\],$/gm)].map(m => ({ clave: m[1], editable: !!m[2] }));
-const VIRTUALES = [...AREAS.flatMap(a => [a.clave + '.ver', a.clave + '.sucursal', a.clave + '.empresa', ...(a.editable ? [a.clave + '.editar'] : [])]), 'ventas.ver', 'compras.ver'];
+const VIRTUALES = [...AREAS.flatMap(a => [a.clave + '.ver', a.clave + '.sucursal', a.clave + '.empresa', ...(a.editable ? [a.clave + '.editar'] : [])]), 'ventas.ver', 'compras.ver', 'cotizaciones_ordenes.ver', 'calendario.ver'];
 const PERMISOS = new Set([...CATALOGO, ...VIRTUALES]);
 console.log(`Inventario: ${RUTAS.length} rutas, ${VISTAS_HTML.length} pantallas, ${PERMISOS.size} permisos, ${Object.keys(PUBLICO).length} archivos de pantalla, ${Object.keys(SERVER).length} del servidor`);
 
 // ================= B. Código =================
 console.log('B. Código');
 // B1. Toda ruta atrapa sus errores (envuelta en h(...)), salvo las que lo hacen a mano.
-const MANEJAN_SOLAS = ['/api/salud', '/api/demo/entrar', '/api/demo/estado', '/api/admin/backup'];
+const MANEJAN_SOLAS = ['/api/salud', '/api/demo/entrar', '/api/demo/estado', '/api/admin/backup', '/descargas/respaldo-completo'];
 const envuelta = r => { if (/\bh\(/.test(r.resto) || MANEJAN_SOLAS.includes(r.ruta)) return true; const fn = (r.resto.match(/^\s*([A-Za-z_]\w*)\(/) || [])[1]; return !!fn && new RegExp(`(const|let)\\s+${fn}\\s*=\\s*\\([^)]*\\)\\s*=>\\s*h\\(`).test(SERVER[r.archivo]); };
 for (const r of RUTAS) revisa(envuelta(r), 'rutas', `${r.metodo} ${r.ruta} (${r.archivo}) no está envuelta en h(): un error la tumbaría sin respuesta`);
 // B2. La pantalla solo llama rutas que existen (con el método correcto).
@@ -123,7 +123,7 @@ revisa(!imgsSinAlt.length, 'accesibilidad', 'imágenes sin texto alternativo', i
 // que se guardó (r.ok, exigirOk, o un ayudante del módulo que lanza el error). api() lanza los rechazos salvo el 409
 // (conflicto), que deja pasar: quien no revisa la respuesta dice «guardado» con un 409. Así pasaba al crear una orden o
 // cotización cuando el servidor respondía conflicto (p. ej. un teléfono que ya es de otro cliente).
-const SIN_RESPUESTA = { 'app.js': [/api\('\/logout'/] }; // cerrar sesión: se sale aunque falle
+const SIN_RESPUESTA = { 'app.js': [/api\('\/logout'/, /api\('\/registro-sistema\/pantalla'/] }; // cerrar sesión: se sale aunque falle; avisar un error de pantalla: si no llega, no pasa nada
 // Revisan la respuesta más abajo, después de preguntar «¿es otro?» ante un posible duplicado (se comprueba en 15 renglones).
 const REVISAN_DESPUES = { 'finanzas.js': [/let res = await api\(ruta, \{ method: metodo/, /const enviar = c => api\('\/finanzas\/proveedores'/], 'flujo.js': [/let r=await api\('\/contactos'/] };
 for (const [f, t] of Object.entries(PUBLICO)) {
