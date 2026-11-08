@@ -103,18 +103,17 @@
   .inicio-saludo .ayuda { margin: 10px 0 0; font-size: 14px; }
   .inicio-resumen {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(145px, 1fr));
-    gap: 12px;
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: 10px;
     margin: 0 0 28px;
   }
   .inicio-chip {
     display: flex;
     flex-direction: column;
     align-items: flex-start;
-    justify-content: space-between;
-    gap: 7px;
+    gap: 4px;
     min-width: 0;
-    padding: 16px;
+    padding: 10px 12px;
     border: 1px solid #dbe1e5;
     border-top: 3px solid #c2ced6;
     border-radius: 12px;
@@ -123,12 +122,29 @@
     transition: border-color .15s, box-shadow .15s;
   }
   .inicio-chip:hover { border-color: #6a8596; box-shadow: 0 3px 10px rgb(20 38 48 / 8%); }
+  .inicio-chip-cab {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    width: 100%;
+  }
   .inicio-chip-etiqueta { color: var(--texto-sec); font-size: 12px; font-weight: 600; }
-  .inicio-chip b { font-size: 25px; line-height: 1.25; letter-spacing: -.5px; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
-  .inicio-chip-accion { display: flex; justify-content: space-between; gap: 12px; width: 100%; font-size: 11px; color: var(--azul-600); }
+  .inicio-chip b { font-size: 23px; line-height: 1.2; letter-spacing: -.5px; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+  .inicio-chip-flecha { margin-inline-start: auto; font-size: 13px; color: var(--azul-600); }
+  .inicio-chip-dinero { grid-column: span 2; }
+  .inicio-chip-dinero b { white-space: nowrap; }
+  .inicio-chip-estado {
+    padding: 2px 6px;
+    border-radius: 4px;
+    background: #eaf1f5;
+    color: #375568;
+    font-size: 10px;
+    font-weight: 700;
+  }
   .inicio-chip.urgente { background: #fffafa; border-color: #ecd6d3; border-top-color: var(--rojo); }
   .inicio-chip.urgente:hover { border-color: var(--rojo); }
-  .inicio-chip.urgente .inicio-chip-accion { color: #91372f; }
+  .inicio-chip.urgente .inicio-chip-flecha { color: #91372f; }
+  .inicio-chip.urgente .inicio-chip-estado { background: #f8e7e4; color: #91372f; }
   .inicio-chip:focus-visible { outline: 3px solid var(--azul-600); outline-offset: 3px; }
   .inicio-rejilla, .inicio-col { gap: 20px; }
   .inicio-rejilla .inicio-bloque {
@@ -231,9 +247,8 @@
     .inicio-saludo { margin-bottom: 20px; }
     .inicio-saludo h2 { font-size: 28px; }
     .inicio-resumen { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-bottom: 22px; }
-    .inicio-chip { padding: 12px; gap: 5px; }
+    .inicio-chip { padding: 9px 11px; }
     .inicio-chip b { font-size: 22px; }
-    .inicio-chip-accion { display: none; }
     .inicio-cab, .inicio-plegar { min-height: 64px; }
     .inicio-plegar { padding: 14px 6px 14px 14px; gap: 8px; font-size: 15px; }
     .inicio-cuenta { font-size: 11px; padding: 4px 7px; }

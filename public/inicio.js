@@ -100,7 +100,20 @@ const Inicio = (() => {
       acomodar();
       const cont = document.getElementById('inicio-resumen'); if (!cont) return;
       const chips = bloques().filter(visible).map(b => ({ b, e: estado(b) })).filter(({ e }) => e.filas.length || e.resumen || e.error)
-        .map(({ b, e }) => `<button type="button" class="inicio-chip${e.urgente || e.error ? ' urgente' : ''}" data-inicio-ir="${esc(listaDe(b).id)}"><span class="inicio-chip-etiqueta">${esc(b.dataset.tituloCorto || '')}</span><b>${esc(e.error ? '!' : e.resumen || String(e.filas.length))}</b><span class="inicio-chip-accion">${e.error ? 'Revisar carga' : 'Ver pendientes'} <span aria-hidden="true">↗</span></span></button>`);
+        .map(({ b, e }) => {
+          const lista = listaDe(b);
+          const importe = !e.error && lista.dataset.resumenImporte;
+          const cifra = e.error ? '!' : importe || e.resumen || String(e.filas.length);
+          return `<button type="button" class="inicio-chip${e.urgente || e.error ? ' urgente' : ''}${importe ? ' inicio-chip-dinero' : ''}" data-inicio-ir="${esc(lista.id)}">
+            <span class="inicio-chip-cab">
+              <span class="inicio-chip-etiqueta">${esc(b.dataset.tituloCorto || '')}</span>
+              ${importe ? `<span class="inicio-chip-estado">${esc(lista.dataset.resumenEstado)}</span>` : ''}
+              <span class="inicio-chip-flecha" aria-hidden="true">↗</span>
+            </span>
+            <b>${esc(cifra)}</b>
+            <span class="sr-solo">${e.error ? 'Revisar carga' : 'Ver pendientes'}</span>
+          </button>`;
+        });
       cont.innerHTML = chips.join('');
       cont.hidden = !chips.length;
     });

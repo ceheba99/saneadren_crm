@@ -1168,7 +1168,11 @@ const Finanzas = (() => {
     if (r.pagar_semana !== undefined) html += fila('pagar', `Pagar esta semana: ${formatoMoneda(r.pagar_semana)}`, `${Number(r.facturas_semana)} facturas de proveedores (incluye vencidas)`, r.pagar_semana > 0 ? 'aviso' : '');
     if (esAdmin() && r.por_revisar) html += fila('cobrar', `Revisión inicial pendiente: ${Number(r.por_revisar)} órdenes`, 'Indica cuáles ya se cobraron para que la cartera sea real', 'aviso');
     // Lo que dice el encabezado de la ficha y el resumen de Inicio (inicio.js): el dinero, no cuántos renglones hay.
-    cont.dataset.resumen = r.vencido > 0 ? `${formatoMoneda(r.vencido)} vencido` : r.por_cobrar > 0 ? `${formatoMoneda(r.por_cobrar)} por cobrar` : 'Al corriente';
+    const saldo = r.vencido > 0 ? formatoMoneda(r.vencido) : r.por_cobrar > 0 ? formatoMoneda(r.por_cobrar) : '';
+    const estado = r.vencido > 0 ? 'Vencido' : 'Por cobrar';
+    cont.dataset.resumenImporte = saldo;
+    cont.dataset.resumenEstado = saldo ? estado : '';
+    cont.dataset.resumen = saldo ? `${saldo} ${estado.toLowerCase()}` : 'Al corriente';
     cont.dataset.urgente = r.vencido > 0 ? '1' : '';
     cont.innerHTML = html;
   }
