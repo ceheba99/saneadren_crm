@@ -197,6 +197,9 @@ Dirección la revisa y la aprueba. Si un cambio altera lo que ve un rol, la prue
 | Imprimir credenciales (con su QR de verificación para clientes y su vigencia) | ✔ | ✔ | — | — | — | — | — | — |
 | Activar o quitar a una persona el checar por WhatsApp (foráneos) | ✔ | ✔ | — | — | — | — | — | — |
 | Dar el código para registrar la cara de una persona en el kiosco, o borrar su registro (biométrico) | ✔ | ✔ | — | — | — | — | — | — |
+| Ver en Inicio (ficha «Personal») el aviso de que la cara no coincidió en el kiosco | ✔ | ✔ | — | — | — | — | — | — |
+| Marcar como revisado el aviso de que la cara no coincidió | ✔ | ✔ | — | — | — | — | — | — |
+| Cambiar las reglas del tiempo extra (semana de nómina, desde cuándo cuenta, redondeo…) | ✔ | — | — | — | — | — | — | — |
 | Ver la pestaña RH (resumen del personal: sin horario, sin checador, sin aviso firmado…) | ✔ | ✔ | — | — | — | — | — | — |
 | Cargar trabajadores en lote desde la plantilla de Excel (revisar y guardar) | ✔ | ✔ | — | — | — | — | — | — |
 | Ver la asistencia del día y de la semana (retardos, faltas, tiempo extra) | ✔ | ✔ | — | — | — | — | — | — |
@@ -288,6 +291,8 @@ Dirección la revisa y la aprueba. Si un cambio altera lo que ve un rol, la prue
 - **2026-10-26** · Dirección ve y aprueba todo Marketing.
 - **2026-10-27** · Dinero de Marketing (presupuesto, gastos, costo por contacto y retorno): lo ven Dirección y el Gerente de marketing; el rol Marketing y los demás roles no.
 - **2026-11-04** · Llamadas de Google Ads (subir el reporte «Detalles de las llamadas» y verlo cruzado con los contactos, ventas e importes): lo ven y lo cargan solo Dirección y el Gerente de marketing; el rol Marketing y los demás roles no.
+- **2026-11-09** · Cara que no coincide en el kiosco (o parece foto o pantalla): además de pedir el PIN y tomar la foto, sale un aviso en Inicio (ficha «Personal») por persona y día, hasta que alguien lo revisa. Lo ven quienes ven los intentos fallidos (Dirección y el Gerente, de su sucursal); marcarlo revisado lo hacen quienes corrigen la asistencia (Dirección y el Gerente). Los demás roles no.
+- **2026-11-09** · Reglas del tiempo extra (semana de nómina —semana vencida de lunes a domingo—, desde cuántos minutos después de la salida cuenta, llegar antes, redondeo, descansos y festivos): valen para TODA la empresa, así que las cambia quien cambia los días festivos (Dirección, o RH de la empresa); cada cambio vale desde una fecha y lo pasado no cambia. El Gerente de una sola sucursal y los demás roles no.
 - **2026-11-05** · Listas de los servicios (las opciones que se eligen para la parte que cambia de la descripción, p. ej. [VOLUMEN]: 4M3, 8M3… o [SUCURSAL] de KFC): las agregan o quitan solo Dirección; ningún otro rol, ni el Gerente. Quienes cotizan solo eligen de la lista. Quitar no borra: queda en la bitácora.
 - **2026-10-27** · Presupuesto de Marketing: lo propone el Gerente de marketing y lo aprueba solo Dirección.
 - **2026-10-27** · Gastos de Marketing: los registran Dirección y el Gerente de marketing, y son control interno del departamento: no aparecen en Cuentas por pagar.

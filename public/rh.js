@@ -38,7 +38,8 @@ const RH = (() => {
       ${acceso('👷', 'Personal y expedientes', 'Altas, bajas, datos, vacaciones, incidencias, documentos, código del checador y celular', 'personal')}
       ${acceso('📥', 'Cargar trabajadores', 'Plantilla de Excel para dar de alta a varios a la vez', 'importar', p.editar)}
       ${acceso('🕒', 'Asistencia del día', 'Entradas, comida, salidas, retardos, faltas y checadas por revisar', 'dia', p.asistencia)}
-      ${acceso('📅', 'Semana y Excel de nómina', 'De viernes a jueves: horas, faltas, retardos y tiempo extra autorizado', 'semana', p.asistencia)}
+      ${acceso('📅', 'Semana y Excel de nómina', 'Semana vencida (de lunes a domingo): horas, faltas, retardos y tiempo extra autorizado', 'semana', p.asistencia)}
+      ${acceso('⏱️', 'Reglas del tiempo extra', 'Cuándo empieza la semana y cuándo ya cuenta como tiempo extra', 'reglas', p.asistencia)}
       ${acceso('🗓️', 'Horarios', 'Entrada, salida, tolerancia y comida de cada día, por sucursal', 'horarios', p.asistencia)}
       ${acceso('🎉', 'Días festivos', 'Los de la ley y los de la empresa', 'festivos', p.asistencia)}
       ${acceso('📟', 'Kioscos del checador', 'Registrar o dar de baja la tableta de la entrada', 'kioscos', p.kioscos)}
@@ -50,7 +51,7 @@ const RH = (() => {
   }
   function ir(accion) {
     if (accion === 'personal') cambiarVista('personal');
-    else if (['dia', 'semana', 'horarios', 'festivos'].includes(accion)) { cambiarVista('asistencia'); document.querySelector(`[data-as-pestana="${accion}"]`)?.click(); }
+    else if (['dia', 'semana', 'horarios', 'festivos', 'reglas'].includes(accion)) { cambiarVista('asistencia'); document.querySelector(`[data-as-pestana="${accion}"]`)?.click(); }
     else if (accion === 'kioscos') { cambiarVista('personal'); setTimeout(() => document.querySelector('.pe-kioscos')?.scrollIntoView({ behavior: 'smooth' }), 300); }
     else if (accion === 'aviso') window.open('/aviso-privacidad-checador.html', '_blank', 'noopener');
     else if (accion === 'credenciales') { pintarCredenciales(); $('rh-credenciales').scrollIntoView({ behavior: 'smooth' }); }

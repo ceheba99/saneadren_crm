@@ -298,6 +298,9 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
     ['emiteCredencial', 'Imprimir credenciales (con su QR de verificación para clientes y su vigencia)'],
     ['activaWhatsapp', 'Activar o quitar a una persona el checar por WhatsApp (foráneos)'],
     ['registraRostro', 'Dar el código para registrar la cara de una persona en el kiosco, o borrar su registro (biométrico)'],
+    ['veAvisoCara', 'Ver en Inicio (ficha «Personal») el aviso de que la cara no coincidió en el kiosco'],
+    ['revisaCara', 'Marcar como revisado el aviso de que la cara no coincidió'],
+    ['reglasExtra', 'Cambiar las reglas del tiempo extra (semana de nómina, desde cuándo cuenta, redondeo…)'],
     ['veRH', 'Ver la pestaña RH (resumen del personal: sin horario, sin checador, sin aviso firmado…)'],
     ['importaPersonal', 'Cargar trabajadores en lote desde la plantilla de Excel (revisar y guardar)'],
     ['veAsistencia', 'Ver la asistencia del día y de la semana (retardos, faltas, tiempo extra)'],
@@ -369,6 +372,15 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
     VE[rol].emiteCredencial = ok(await pedir('POST', '/rh/credenciales', t, { ids: [], vigencia: dia(365) })) || (await pedir('POST', '/rh/credenciales', t, { ids: [], vigencia: dia(365) }))[0] === 400;
     VE[rol].activaWhatsapp = ok(await pedir('PUT', '/asistencia/personal/' + EMP.id + '/whatsapp', t, { activo: false }));
     { const [s] = await pedir('POST', '/asistencia/personal/' + EMP.id + '/biometria/borrar', t); VE[rol].registraRostro = s === 200; }
+    { // Cara que no coincidió (2026-11-09): un intento nuevo de Obsidiana en el kiosco; el aviso de Inicio y marcarlo revisado.
+      const { DatabaseSync } = require('node:sqlite'); const d = new DatabaseSync(DB);
+      const kid = d.prepare("SELECT id FROM checador_dispositivos WHERE nombre = 'Kiosco foto'").get().id;
+      d.prepare("INSERT INTO checador_intentos (dispositivo_id, personal_id, codigo, motivo, momento_utc, fecha, hora) VALUES (?, ?, '0000', 'La cara no coincide', ?, ?, '08:31:00')").run(kid, EMP.id, new Date().toISOString(), dia(-1)); d.close();
+      const [sa, av] = await pedir('GET', '/personal/avisos', t);
+      VE[rol].veAvisoCara = sa === 200 && Array.isArray(av) && av.some(a => a.tipo === 'cara' && a.persona_id === EMP.id);
+      VE[rol].revisaCara = ok(await pedir('POST', '/asistencia/intentos/revisar', t, { personal_id: EMP.id, fecha: dia(-1) })); }
+    { const [sr, rg] = await pedir('GET', '/asistencia/reglas-extra', A), v = sr === 200 ? rg.vigente : null;
+      VE[rol].reglasExtra = !!v && ok(await pedir('PUT', '/asistencia/reglas-extra', t, { desde: HOY, inicio_semana: v.inicio_semana, modo: v.modo, despues_min: v.despues_min, antes_cuenta: !!v.antes_cuenta, antes_min: v.antes_min, bloque_min: v.bloque_min, descanso_todo: !!v.descanso_todo })); }
     VE[rol].veRH = ok(await pedir('GET', '/rh/resumen', t));
     VE[rol].importaPersonal = ok(await pedir('POST', '/rh/importar/revisar', t, { filas: [{ nombre: 'Prueba Carga ' + rol, puesto: 'Ayudante' }] }));
     VE[rol].daCelular = ok(await pedir('POST', '/asistencia/personal/' + EMP.id + '/celular/quitar', t));
@@ -492,6 +504,10 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
       admin: { presupMk: 1, gastoMk: 1 }, marketing_gerente: { presupMk: 1, gastoMk: 1 }, ...Object.fromEntries(['marketing', 'gerente', 'ventas', 'atencion', 'tecnico', 'costos'].map(r => [r, { presupMk: 0, gastoMk: 0 }])) }],
     ['2026-11-04', 'Llamadas de Google Ads (subir el reporte «Detalles de las llamadas» y verlo cruzado con los contactos, ventas e importes): lo ven y lo cargan solo Dirección y el Gerente de marketing; el rol Marketing y los demás roles no.', {
       admin: { gAds: 1, cargaAds: 1 }, marketing_gerente: { gAds: 1, cargaAds: 1 }, ...Object.fromEntries(['marketing', 'gerente', 'ventas', 'atencion', 'tecnico', 'costos'].map(r => [r, { gAds: 0, cargaAds: 0 }])) }],
+    ['2026-11-09', 'Cara que no coincide en el kiosco (o parece foto o pantalla): además de pedir el PIN y tomar la foto, sale un aviso en Inicio (ficha «Personal») por persona y día, hasta que alguien lo revisa. Lo ven quienes ven los intentos fallidos (Dirección y el Gerente, de su sucursal); marcarlo revisado lo hacen quienes corrigen la asistencia (Dirección y el Gerente). Los demás roles no.', {
+      admin: { veAvisoCara: 1, revisaCara: 1 }, gerente: { veAvisoCara: 1, revisaCara: 1 }, ...Object.fromEntries(['ventas', 'atencion', 'tecnico', 'costos', 'marketing', 'marketing_gerente'].map(r => [r, { veAvisoCara: 0, revisaCara: 0 }])) }],
+    ['2026-11-09', 'Reglas del tiempo extra (semana de nómina —semana vencida de lunes a domingo—, desde cuántos minutos después de la salida cuenta, llegar antes, redondeo, descansos y festivos): valen para TODA la empresa, así que las cambia quien cambia los días festivos (Dirección, o RH de la empresa); cada cambio vale desde una fecha y lo pasado no cambia. El Gerente de una sola sucursal y los demás roles no.', {
+      admin: { reglasExtra: 1 }, ...Object.fromEntries(['gerente', 'ventas', 'atencion', 'tecnico', 'costos', 'marketing', 'marketing_gerente'].map(r => [r, { reglasExtra: 0 }])) }],
     ['2026-11-05', 'Listas de los servicios (las opciones que se eligen para la parte que cambia de la descripción, p. ej. [VOLUMEN]: 4M3, 8M3… o [SUCURSAL] de KFC): las agregan o quitan solo Dirección; ningún otro rol, ni el Gerente. Quienes cotizan solo eligen de la lista. Quitar no borra: queda en la bitácora.', {
       admin: { editaListaServ: 1 }, ...Object.fromEntries(['gerente', 'ventas', 'atencion', 'tecnico', 'costos', 'marketing', 'marketing_gerente'].map(r => [r, { editaListaServ: 0 }])) }],
     ['2026-10-27', 'Presupuesto de Marketing: lo propone el Gerente de marketing y lo aprueba solo Dirección.', {

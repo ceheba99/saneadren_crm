@@ -1,7 +1,10 @@
 // ASISTENCIA (Ajustes → Asistencia, RH F3 2026-11-03): el día y la semana de cada persona (entrada, comida, salida,
 // retardos, faltas y tiempo extra), sus checadas con las correcciones (con motivo), la autorización del tiempo extra,
 // los horarios (por versión, con fecha «desde») y los días festivos. Todo lo calcula el servidor (server/asistencia.js).
-// F4 (2026-11-03): Excel de la semana de nómina (viernes a jueves) con resumen, detalle por día y pendientes.
+// F4 (2026-11-03): Excel de la semana de nómina con resumen, detalle por día y pendientes. Semana vencida de lunes a
+// domingo (2026-11-09; el día en que empieza y cuándo cuenta el tiempo extra están en «Reglas del tiempo extra»).
+// Ventana de checadas (2026-11-09): al pulsar el nombre de una persona se abre su día y su semana en una ventana, con
+// sus checadas, fotos, intentos fallidos (cara que no coincidió) y las correcciones.
 // Lleva horas; quien ve sueldos ve además el pago del tiempo extra (precio de la hora por puesto, en Horarios).
 const Asistencia = (() => {
   const $ = id => document.getElementById(id);
@@ -14,7 +17,7 @@ const Asistencia = (() => {
   const fechaLarga = f => new Date(f + 'T12:00:00').toLocaleDateString('es-MX', { weekday: 'short', day: '2-digit', month: 'short' });
   const TIPOS = { entrada: 'Entrada', comida_sale: 'Salida a comer', comida_regresa: 'Regreso de comer', salida: 'Salida', extra_inicia: 'Inicio de tiempo extra', extra_termina: 'Fin de tiempo extra' };
   const INCIDENCIA = { vacaciones: 'Vacaciones', incapacidad: 'Incapacidad', permiso: 'Permiso', falta: 'Falta registrada', retardo: 'Retardo registrado', otro: 'Incidencia' };
-  let pestana = 'dia', fecha = hoy(), semana = hoy(), anio = hoy().slice(0, 4), datos = null, abierto = null, consulta = 0;
+  let pestana = 'dia', fecha = hoy(), semana = null, anio = hoy().slice(0, 4), datos = null, consulta = 0;
   async function pedir(ruta, opciones) {
     const r = await api('/asistencia' + ruta, opciones), j = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(j.error || 'No se pudo completar');
@@ -31,12 +34,13 @@ const Asistencia = (() => {
       // (p. ej. «Día» al entrar desde RH → Horarios), no debe pisar los datos de la que se ve.
       let r;
       if (pestana === 'dia') r = await pedir('/dia?fecha=' + encodeURIComponent(fecha));
-      else if (pestana === 'semana') r = await pedir('/semana?desde=' + encodeURIComponent(semana));
+      else if (pestana === 'semana') r = await pedir(semana ? '/semana?desde=' + encodeURIComponent(semana) : '/semana?vencida=1');
+      else if (pestana === 'reglas') r = await pedir('/reglas-extra');
       else if (pestana === 'horarios') { r = await pedir('/horarios'); r.ubicaciones = await pedir('/sucursales').catch(() => null); }
       else r = await pedir('/festivos?anio=' + encodeURIComponent(anio));
       if (turno !== consulta) return;
       datos = r;
-      ({ dia: pintarDia, semana: pintarSemana, horarios: pintarHorarios, festivos: pintarFestivos })[pestana]();
+      ({ dia: pintarDia, semana: pintarSemana, horarios: pintarHorarios, festivos: pintarFestivos, reglas: pintarReglas })[pestana]();
     } catch (e) { if (turno === consulta) fallo(e); }
   }
 
@@ -63,60 +67,121 @@ const Asistencia = (() => {
         <td>${d.retardo_min ? `<b class="as-rojo">${esc(d.retardo_min)} min</b>` : '—'}</td>
         <td>${d.extra_min ? `${esc(hm(d.extra_min))}<small class="pe-cuenta">${d.extra_autorizado_min == null ? 'sin autorizar' : 'autorizado ' + esc(hm(d.extra_autorizado_min))}</small>` : '—'}</td>
         <td>${estadoDia(d).map(t => `<span class="as-chip">${esc(t)}</span>`).join(' ')}</td></tr>`;
-      if (abierto === d.personal_id) h += `<tr><td colspan="9"><div class="as-detalle" id="as-detalle">Cargando…</div></td></tr>`;
     }
-    $('as-cuerpo').innerHTML = h + '</tbody></table></div>' + seccionIntentos();
-    if (abierto) pintarDetalle(filas.find(x => x.personal_id === abierto));
+    $('as-cuerpo').innerHTML = h + '</tbody></table></div><p class="ayuda">Pulsa el nombre de una persona para ver sus checadas, fotos y su semana.</p>' + seccionIntentos();
   }
   // Intentos fallidos del día en los kioscos (código o PIN malo, PIN bloqueado), con su foto.
   function seccionIntentos() {
     const l = datos.intentos || [];
     if (!l.length) return '';
     return `<div class="modal-section"><h3 class="pe-sub">⚠️ Intentos fallidos en el kiosco (${esc(l.length)})</h3><p class="ayuda">El kiosco toma foto cuando alguien se equivoca de código o PIN: sirve para ver si alguien prueba el código de otra persona.</p>
-      <ul class="pe-ordenes">${l.map(i => `<li><b>${esc(i.hora)}</b> · ${esc(i.motivo)}${i.detalle ? ` <small class="pe-cuenta">(${esc(i.detalle)})</small>` : ''} · código ${esc(i.codigo || '—')}${i.persona ? ` (de <b>${esc(i.persona)}</b>)` : ' (no es de nadie)'} · ${esc(i.kiosco || '')}
+      <ul class="pe-ordenes">${l.map(i => `<li><b>${esc(i.hora)}</b> · <span class="${i.es_cara ? 'ac-cara-mal' : ''}">${esc(i.motivo)}</span>${i.es_cara && i.revisado_por_nombre ? ` <small class="pe-cuenta">revisado por ${esc(i.revisado_por_nombre)}</small>` : ''}${i.detalle ? ` <small class="pe-cuenta">(${esc(i.detalle)})</small>` : ''} · código ${esc(i.codigo || '—')}${i.persona ? ` (de <button type="button" class="btn-link" data-as-abrir="${Number(i.personal_id)}">${esc(i.persona)}</button>)` : ' (no es de nadie)'} · ${esc(i.kiosco || '')}
         ${i.tiene_foto ? ` <button type="button" class="btn-link" data-as-intento-foto="${Number(i.id)}">📷 Foto</button>` : esc(i.foto_borrada ? ' · foto borrada (plazo cumplido)' : ' · sin foto')}</li>`).join('')}</ul><div id="as-intento-foto"></div></div>`;
   }
   const revisar = c => c.estado === 'por_revisar', vigente = c => c.estado !== 'anulada';
   // Ubicación de una checada desde el celular: enlace al mapa (se abre solo si quien revisa lo pulsa).
   const mapa = c => (c.lat == null ? '' : ` <a class="btn-link" target="_blank" rel="noopener noreferrer" href="${esc('https://www.google.com/maps?q=' + Number(c.lat) + ',' + Number(c.lon))}">📍 Mapa${c.precision_m ? ' ±' + Number(c.precision_m) + ' m' : ''}</a>`);
   const botonCorregir = (si, accion, id, texto) => (si ? ` <button type="button" class="btn-link" data-as-${accion}="${Number(id)}">${esc(texto)}</button>` : '');
-  async function pintarDetalle(d) {
-    if (!d || !$('as-detalle')) return;
-    let ch;
-    try { const r = await api(`/asistencia/checadas?fecha=${encodeURIComponent(fecha)}&personal_id=${Number(d.personal_id)}`); ch = await r.json(); if (!r.ok) throw new Error(ch.error || 'No se pudo'); }
-    catch (e) { $('as-detalle').textContent = e.message; return; }
-    const p = datos.puede || {};
-    let h = `<h4 class="pe-sub2">Checadas de ${esc(d.nombre)} · ${esc(fechaLarga(fecha))}</h4>`;
-    h += ch.length ? '<ul class="pe-ordenes">' + ch.map(c => `<li class="${c.estado === 'anulada' ? 'pe-baja' : ''}"><b>${esc(String(c.hora).slice(0, 5))}</b> · ${esc(TIPOS[c.tipo] || c.tipo)} · ${esc(c.origen === 'manual' ? 'a mano por ' + (c.registrado_por_nombre || '') : c.origen === 'celular' ? 'desde su celular' : c.origen === 'whatsapp' ? 'por WhatsApp' : c.kiosco || c.origen)}${esc(c.sin_conexion ? ' · sin conexión' : '')}
-      ${esc(c.estado === 'anulada' ? ' · anulada' : c.estado === 'por_revisar' ? ' · por revisar' : '')}${c.observaciones ? ` <small>(${esc(c.observaciones)})</small>` : ''}
-      ${c.biometria === 'coincide' ? ' <small title="El biométrico reconoció su cara">🙂 cara ✔</small>' : ''}${c.tiene_foto ? ` <button type="button" class="btn-link" data-as-foto="${Number(c.id)}">📷 Foto</button>` : ''}${mapa(c)}${esc(c.foto_borrada ? ' · foto borrada (plazo cumplido)' : '')}
-      ${botonCorregir(p.corregir && revisar(c), 'aceptar', c.id, 'Aceptar')}${botonCorregir(p.corregir && vigente(c), 'anular', c.id, 'Anular')}</li>`).join('') + '</ul><div id="as-foto"></div>'
-      : '<p class="ayuda">No checó este día.</p>';
-    if (p.corregir) h += `<div class="filtros as-form"><b>Agregar checada olvidada:</b><select id="as-n-tipo" aria-label="Qué se registra">${Object.entries(TIPOS).map(([k, t]) => `<option value="${esc(k)}">${esc(t)}</option>`).join('')}</select>
-      <input type="time" id="as-n-hora" aria-label="Hora"><input id="as-n-motivo" maxlength="300" placeholder="Motivo (obligatorio)" aria-label="Motivo"><button type="button" class="btn btn-secundario" id="as-n-guardar">Agregar</button></div>`;
-    if (p.extra && d.extra_min) h += `<div class="filtros as-form"><b>Tiempo extra:</b> registrado ${esc(hm(d.extra_min))}${d.extra_autorizado_por ? ` · autorizado ${esc(hm(d.extra_autorizado_min))} por ${esc(d.extra_autorizado_por)}` : ''}.
-      Autorizar <input type="number" id="as-x-min" min="0" max="${Number(d.extra_min)}" value="${Number(d.extra_autorizado_min ?? d.extra_min)}" aria-label="Minutos autorizados" class="as-num"> min
-      <input id="as-x-motivo" maxlength="300" placeholder="Motivo (si autorizas menos)" aria-label="Motivo"><button type="button" class="btn btn-secundario" id="as-x-guardar">Autorizar</button></div>`;
-    $('as-detalle').innerHTML = h;
-  }
   async function pedirMotivo(titulo, mensaje) {
     const m = await solicitarDialogo({ titulo, mensaje, aceptar: 'Guardar', campo: { etiqueta: 'Motivo (obligatorio)', requerido: 'Escribe el motivo' } });
     if (m === null) return null;
     if (m.trim().length < 4) { toast('El motivo debe tener al menos 4 letras'); return null; }
     return m.trim();
   }
-  async function accion(fn, ok) { try { await fn(); if (ok) toast(ok); await cargar(); } catch (e) { toast(e.message); } }
+  async function accion(fn, ok) { try { await fn(); if (ok) toast(ok); await cargar(); if (pp && $('overlay-checadas').classList.contains('mostrar')) await pintarPersona(); } catch (e) { toast(e.message); } }
+
+  // ---------- Ventana de checadas de una persona (2026-11-09) ----------
+  // Un día de la persona (con su semana arriba para cambiar de día): resumen, checadas con foto y resultado del
+  // biométrico, intentos fallidos (la cara que no coincidió) y, según permisos, aceptar/anular, agregar la checada
+  // olvidada, autorizar el tiempo extra y marcar revisado el aviso de la cara. Se abre desde Asistencia y desde Inicio.
+  let pp = null, puedeAs = null;
+  const BIOMETRIA = { coincide: ['🙂 cara ✔', ''], no_coincide: ['✖ la cara no coincidió', 'ac-cara-mal'], no_vivo: ['✖ parecía foto o pantalla', 'ac-cara-mal'], sin_rostro: ['sin cara', 'ac-cara-mal'] };
+  function verPersona(id, f) {
+    pp = { id: Number(id), fecha: f && f <= hoy() ? f : hoy(), turno: 0 };
+    $('ac-titulo').textContent = 'Checadas';
+    $('ac-cuerpo').innerHTML = '<p class="ayuda" role="status">Cargando…</p>';
+    abrirVentana('overlay-checadas');
+    pintarPersona();
+  }
+  async function pintarPersona() {
+    if (!pp) return;
+    const yo = ++pp.turno, { id, fecha: f } = pp, q = `fecha=${encodeURIComponent(f)}&personal_id=${id}`;
+    let sem, ch, ints;
+    try {
+      if (!puedeAs) puedeAs = (await pedir('')).puede;
+      [sem, ch, ints] = await Promise.all([pedir(`/semana?desde=${encodeURIComponent(f)}&personal_id=${id}`), pedir('/checadas?' + q), pedir('/intentos?' + q).catch(() => [])]);
+    } catch (e) { if (yo === pp?.turno) $('ac-cuerpo').innerHTML = `<p class="aviso-error-carga" role="alert">${esc(e.message)}</p>`; return; }
+    if (yo !== pp?.turno) return;
+    const fila = sem.filas[0];
+    if (!fila) { $('ac-cuerpo').innerHTML = '<p class="ayuda">Esta persona no está en el reloj checador ese día.</p>'; return; }
+    const d = fila.dias.find(x => x.fecha === f) || {}, p = puedeAs || {};
+    $('ac-titulo').textContent = `${fila.nombre}${fila.puesto ? ' · ' + fila.puesto : ''}`;
+    let h = `<div class="filtros"><button type="button" class="btn btn-outline" data-ac-dia="-1">◀ Día anterior</button><label>Día <input type="date" id="ac-fecha" value="${esc(f)}" max="${esc(hoy())}"></label>
+      <button type="button" class="btn btn-outline" data-ac-dia="1"${f >= hoy() ? ' disabled' : ''}>Día siguiente ▶</button><span class="ayuda">Semana ${esc(fechaLarga(sem.desde))} al ${esc(fechaLarga(sem.hasta))}</span></div>`;
+    h += `<div class="ac-semana" role="group" aria-label="Días de la semana">${fila.dias.map(x => `<button type="button" data-ac-ir="${esc(x.fecha)}" class="${x.falta ? 'as-falta' : ''}"${x.fecha === f ? ' aria-current="date"' : ''}${x.fecha > hoy() ? ' disabled' : ''}>
+      <b>${esc(fechaLarga(x.fecha))}</b><span>${x.entrada || x.salida ? esc(`${x.entrada || '?'}–${x.salida || '?'}`) : x.falta ? '❌ Falta' : esc(x.incidencia ? INCIDENCIA[x.incidencia] || x.incidencia : x.programado ? '—' : 'Descanso')}</span>
+      ${x.extra_min ? `<small>+${esc(hm(x.extra_min))} extra</small>` : ''}${x.por_revisar ? '<small class="as-rojo">⚠️ revisar</small>' : ''}</button>`).join('')}</div>`;
+    const dato = (t, v, extra = '') => `<span><small>${esc(t)}</small><b>${esc(v)}</b>${extra}</span>`;
+    h += `<div class="ac-resumen">${dato('Horario', d.programado ? `${d.programado.entrada}–${d.programado.salida}` : d.festivo ? 'Festivo' : 'Descanso', d.horario ? `<small>${esc(d.horario)}</small>` : '')}${dato('Entrada', d.entrada || '—')}
+      ${dato('Comida', d.comida_min ? hm(d.comida_min) : '—', d.exceso_comida_min ? `<small class="as-rojo">+${esc(d.exceso_comida_min)} min</small>` : '')}${dato('Salida', d.salida || '—', d.salida_anticipada_min ? `<small class="as-rojo">${esc(d.salida_anticipada_min)} min antes</small>` : '')}
+      ${dato('Trabajado', hm(d.trabajado_min))}${dato('Retardo', d.retardo_min ? d.retardo_min + ' min' : '—')}${dato('Tiempo extra', d.extra_min ? hm(d.extra_min) : '—', d.extra_min ? `<small>${d.extra_autorizado_min == null ? 'sin autorizar' : 'autorizado ' + esc(hm(d.extra_autorizado_min))}</small>` : '')}</div>`;
+    const chips = estadoDia(d);
+    if (chips.length) h += `<p>${chips.map(t => `<span class="as-chip">${esc(t)}</span>`).join(' ')}</p>`;
+    h += `<h4 class="pe-sub2">Checadas</h4>`;
+    h += ch.length ? '<ul class="pe-ordenes">' + ch.map(c => `<li class="${c.estado === 'anulada' ? 'pe-baja' : ''}"><b>${esc(String(c.hora).slice(0, 5))}</b> · ${esc(TIPOS[c.tipo] || c.tipo)} · ${esc(c.origen === 'manual' ? 'a mano por ' + (c.registrado_por_nombre || '') : c.origen === 'celular' ? 'desde su celular' : c.origen === 'whatsapp' ? 'por WhatsApp' : c.kiosco || c.origen)}${esc(c.sin_conexion ? ' · sin conexión' : '')}
+      ${esc(c.estado === 'anulada' ? ' · anulada' : c.estado === 'por_revisar' ? ' · por revisar' : '')}${c.biometria && BIOMETRIA[c.biometria] ? ` <small class="${BIOMETRIA[c.biometria][1]}">${esc(BIOMETRIA[c.biometria][0])}${c.distancia_rostro != null && c.biometria !== 'coincide' ? ' (' + esc(Number(c.distancia_rostro).toFixed(2)) + ')' : ''}</small>` : ''}${c.observaciones ? ` <small>(${esc(c.observaciones)})</small>` : ''}
+      ${c.tiene_foto ? ` <button type="button" class="btn-link" data-ac-foto="${Number(c.id)}">📷 Foto</button>` : ''}${mapa(c)}${esc(c.foto_borrada ? ' · foto borrada (plazo cumplido)' : '')}
+      ${p.corregir && revisar(c) ? ` <button type="button" class="btn-link" data-ac-aceptar="${Number(c.id)}">Aceptar</button>` : ''}${p.corregir && vigente(c) ? ` <button type="button" class="btn-link" data-ac-anular="${Number(c.id)}">Anular</button>` : ''}</li>`).join('') + '</ul>'
+      : '<p class="ayuda">No checó este día.</p>';
+    if (ints.length) {
+      const sinRevisar = ints.filter(i => i.es_cara && !i.revisado_at).length;
+      h += `<h4 class="pe-sub2">⚠️ Intentos fallidos en el kiosco (${esc(ints.length)})</h4><ul class="pe-ordenes">${ints.map(i => `<li><b>${esc(i.hora)}</b> · <span class="${i.es_cara ? 'ac-cara-mal' : ''}">${esc(i.motivo)}</span>${i.detalle ? ` <small class="pe-cuenta">(${esc(i.detalle)})</small>` : ''} · ${esc(i.kiosco || '')}
+        ${i.tiene_foto ? ` <button type="button" class="btn-link" data-ac-intento-foto="${Number(i.id)}">📷 Foto</button>` : esc(i.foto_borrada ? ' · foto borrada (plazo cumplido)' : ' · sin foto')}${i.es_cara && i.revisado_por_nombre ? ` <small class="pe-cuenta">revisado por ${esc(i.revisado_por_nombre)}</small>` : ''}</li>`).join('')}</ul>
+        ${sinRevisar && p.corregir ? `<div class="btn-group"><button type="button" class="btn btn-secundario" id="ac-revisado">✔ Ya lo revisé (quitar el aviso de Inicio)</button></div>` : ''}`;
+    }
+    h += '<div id="ac-foto"></div>';
+    if (p.corregir) h += `<div class="filtros as-form"><b>Agregar checada olvidada:</b><select id="ac-n-tipo" aria-label="Qué se registra">${Object.entries(TIPOS).map(([k, t]) => `<option value="${esc(k)}">${esc(t)}</option>`).join('')}</select>
+      <input type="time" id="ac-n-hora" aria-label="Hora"><input id="ac-n-motivo" maxlength="300" placeholder="Motivo (obligatorio)" aria-label="Motivo"><button type="button" class="btn btn-secundario" id="ac-n-guardar">Agregar</button></div>`;
+    if (p.extra && d.extra_min) h += `<div class="filtros as-form"><b>Tiempo extra:</b> registrado ${esc(hm(d.extra_min))}${d.extra_autorizado_por ? ` · autorizado ${esc(hm(d.extra_autorizado_min))} por ${esc(d.extra_autorizado_por)}` : ''}.
+      Autorizar <input type="number" id="ac-x-min" min="0" max="${Number(d.extra_min)}" value="${Number(d.extra_autorizado_min ?? d.extra_min)}" aria-label="Minutos autorizados" class="as-num"> min
+      <input id="ac-x-motivo" maxlength="300" placeholder="Motivo (si autorizas menos)" aria-label="Motivo"><button type="button" class="btn btn-secundario" id="ac-x-guardar">Autorizar</button></div>`;
+    $('ac-cuerpo').innerHTML = h;
+  }
+  async function verFoto(ruta, alt) {
+    try { const r = await api(ruta); if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || 'No se pudo abrir la foto');
+      const url = URL.createObjectURL(await r.blob()), img = document.createElement('img'); img.src = url; img.alt = alt; img.className = 'pe-foto'; img.onload = () => URL.revokeObjectURL(url); $('ac-foto').replaceChildren(img); img.scrollIntoView({ block: 'nearest' }); } catch (err) { toast(err.message); }
+  }
+  const irDia = f => { if (!pp || !f || f > hoy()) return; pp.fecha = f; pintarPersona(); };
+  $('ac-cuerpo').addEventListener('change', e => { if (e.target.id === 'ac-fecha') irDia(e.target.value); });
+  $('ac-cuerpo').addEventListener('click', async e => {
+    const b = e.target.closest('button'); if (!b || !pp) return;
+    const d = b.dataset;
+    if (d.acDia) irDia((() => { const x = new Date(pp.fecha + 'T12:00:00Z'); x.setUTCDate(x.getUTCDate() + Number(d.acDia)); return x.toISOString().slice(0, 10); })());
+    else if (d.acIr) irDia(d.acIr);
+    else if (d.acFoto) verFoto('/asistencia/checadas/' + Number(d.acFoto) + '/foto', 'Foto de la checada');
+    else if (d.acIntentoFoto) verFoto('/asistencia/intentos/' + Number(d.acIntentoFoto) + '/foto', 'Foto del intento fallido');
+    else if (d.acAceptar) { const m = await pedirMotivo('Aceptar la checada', 'Quedará como válida y contará para la nómina. Queda en la bitácora con tu nombre.'); if (m) accion(() => pedir('/checadas/' + Number(d.acAceptar) + '/aceptar', { method: 'POST', body: JSON.stringify({ motivo: m }) }), 'Checada aceptada'); }
+    else if (d.acAnular) { const m = await pedirMotivo('Anular la checada', 'No se borra: queda tachada y deja de contar. Queda en la bitácora con tu nombre.'); if (m) accion(() => pedir('/checadas/' + Number(d.acAnular) + '/anular', { method: 'POST', body: JSON.stringify({ motivo: m }) }), 'Checada anulada'); }
+    else if (b.id === 'ac-n-guardar') accion(() => pedir('/checadas', { method: 'POST', body: JSON.stringify({ personal_id: pp.id, tipo: $('ac-n-tipo').value, fecha: pp.fecha, hora: $('ac-n-hora').value, motivo: $('ac-n-motivo').value }) }), 'Checada agregada');
+    else if (b.id === 'ac-x-guardar') accion(() => pedir('/extra', { method: 'POST', body: JSON.stringify({ personal_id: pp.id, fecha: pp.fecha, minutos: Number($('ac-x-min').value), motivo: $('ac-x-motivo').value }) }), 'Tiempo extra autorizado');
+    else if (b.id === 'ac-revisado') { b.disabled = true; await accion(() => pedir('/intentos/revisar', { method: 'POST', body: JSON.stringify({ personal_id: pp.id, fecha: pp.fecha }) }), 'Aviso revisado'); if (typeof Personal !== 'undefined') Personal.pintarInicio(); }
+  });
+  $('ac-cerrar').onclick = () => $('overlay-checadas').classList.remove('mostrar');
 
   // ---------- Semana ----------
   function pintarSemana() {
     const d = datos;
-    let h = `<div class="filtros"><label>Semana del <input type="date" id="as-semana" value="${esc(d.desde)}"></label>${d.filas.length ? '<button type="button" class="btn btn-secundario" id="as-excel">📥 Excel de nómina</button>' : ''}<span class="ayuda">${esc(fechaLarga(d.desde))} al ${esc(fechaLarga(d.hasta))}. Semana de nómina: de viernes a jueves. Tiempo extra autorizado: las primeras 9 horas de la semana son dobles y lo demás triples (LFT).${d.dinero ? ' El pago usa el precio de la hora de cada puesto (Horarios → Precio de la hora).' : ''}</span></div>`;
+    const cual = d.desde === d.vencida ? ' · <b>semana vencida (la que se paga)</b>' : d.desde === d.en_curso ? ' · semana en curso' : '';
+    let h = `<div class="filtros"><button type="button" class="btn btn-outline" data-as-semana-ir="${esc(d.anterior)}">◀ Anterior</button><button type="button" class="btn btn-outline" data-as-semana-ir="${esc(d.vencida)}"${d.desde === d.vencida ? ' aria-pressed="true"' : ''}>Semana vencida</button><button type="button" class="btn btn-outline" data-as-semana-ir="${esc(d.en_curso)}"${d.desde === d.en_curso ? ' aria-pressed="true"' : ''}>En curso</button>${d.desde < d.en_curso ? `<button type="button" class="btn btn-outline" data-as-semana-ir="${esc(d.siguiente)}">Siguiente ▶</button>` : ''}
+      <label>Semana del <input type="date" id="as-semana" value="${esc(d.desde)}"></label>${d.filas.length ? '<button type="button" class="btn btn-secundario" id="as-excel">📥 Excel de nómina</button>' : ''}</div>
+      <p class="ayuda">${esc(fechaLarga(d.desde))} al ${esc(fechaLarga(d.hasta))}${cual}. Semana de nómina: ${esc(d.semana_texto || '')}${d.corta ? ' (esta semana es más corta porque cambió el día en que empieza la semana)' : ''}. Tiempo extra autorizado: las primeras 9 horas de la semana son dobles y lo demás triples (LFT). Cuándo cuenta el tiempo extra: pestaña «Reglas del tiempo extra».${d.dinero ? ' El pago usa el precio de la hora de cada puesto (Horarios → Precio de la hora).' : ''} Pulsa un nombre o un día para ver sus checadas.</p>`;
     if (!d.filas.length) { $('as-cuerpo').innerHTML = h + '<p class="ayuda">No hay personas en el reloj checador.</p>'; return; }
     h += `<div class="tabla-scroll"><table class="tabla-resumen as-tabla as-semana"><thead><tr><th>Persona</th>${d.fechas.map((f, i) => `<th>${esc(fechaLarga(f))}${d.festivos[i] ? '<small class="pe-cuenta">🎉 festivo</small>' : ''}</th>`).join('')}
       <th>Trabajado</th><th>Retardos</th><th>Faltas</th><th>Extra registrado</th><th>Extra autorizado</th><th>Dobles</th><th>Triples</th>${d.dinero ? '<th>Pago extra</th>' : ''}</tr></thead><tbody>`;
     for (const f of d.filas) {
       const t = f.totales;
-      h += `<tr><td><b>${esc(f.nombre)}</b><small class="pe-cuenta">${esc(f.puesto || '')}</small></td>${f.dias.map(x => `<td class="${x.falta ? 'as-falta' : ''}">${x.entrada || x.salida ? esc(`${x.entrada || '?'}–${x.salida || '?'}`) : x.falta ? '❌' : esc(x.incidencia ? INCIDENCIA[x.incidencia] || x.incidencia : x.programado ? '—' : 'Descanso')}
+      const ultimo = [...f.dias].reverse().find(x => x.fecha <= hoy())?.fecha || d.desde;
+      h += `<tr><td><button type="button" class="pe-nombre" data-as-abrir="${Number(f.personal_id)}" data-fecha="${esc(ultimo)}">${esc(f.nombre)}</button><small class="pe-cuenta">${esc(f.puesto || '')}</small></td>${f.dias.map(x => `<td class="${x.falta ? 'as-falta' : ''}">${x.fecha <= hoy() ? `<button type="button" class="btn-link" data-as-abrir="${Number(f.personal_id)}" data-fecha="${esc(x.fecha)}" aria-label="Checadas de ${esc(f.nombre)} el ${esc(fechaLarga(x.fecha))}">` : '<span>'}${x.entrada || x.salida ? esc(`${x.entrada || '?'}–${x.salida || '?'}`) : x.falta ? '❌' : esc(x.incidencia ? INCIDENCIA[x.incidencia] || x.incidencia : x.programado ? '—' : 'Descanso')}${x.fecha <= hoy() ? '</button>' : '</span>'}
         ${x.retardo_min ? `<small class="as-rojo">R ${esc(x.retardo_min)}′</small>` : ''}${x.extra_min ? `<small class="pe-cuenta">+${esc(hm(x.extra_min))}${x.extra_autorizado_min == null ? '' : ' ✔'}</small>` : ''}${x.por_revisar ? '<small class="as-rojo">⚠️ revisar</small>' : ''}</td>`).join('')}
         <td>${esc(hm(t.trabajado_min))}</td><td>${esc(t.retardos)}${t.retardo_min ? ` <small>(${esc(t.retardo_min)} min)</small>` : ''}</td><td>${esc(t.faltas)}</td><td>${esc(hm(t.extra_min))}</td><td>${esc(hm(t.extra_autorizado_min))}</td><td>${esc(hm(t.extra_dobles_min))}</td><td>${esc(hm(t.extra_triples_min))}</td>${d.dinero ? `<td>${esc(pagoExtra(f.dinero))}${f.dinero?.valor_hora_cent != null ? `<small class="pe-cuenta">hora ${esc(pesos(f.dinero.valor_hora_cent))}</small>` : ''}</td>` : ''}</tr>`;
     }
@@ -258,8 +323,34 @@ const Asistencia = (() => {
     $('as-cuerpo').innerHTML = h;
   }
 
+  // ---------- Reglas del tiempo extra (2026-11-09) ----------
+  // Para toda la empresa; cada cambio vale desde una fecha (lo anterior no cambia). Las cambia quien cambia los festivos.
+  function pintarReglas() {
+    const { vigente: v, dias, bloques, editar, proximas, versiones, semana_actual: sa } = datos, dis = editar ? '' : ' disabled';
+    const nombreDia = k => dias[k].toLowerCase(), fin = k => nombreDia(((k + 5) % 7) + 1);
+    let h = `<div class="modal-section as-reglas"><h3 class="pe-sub">⏱️ Reglas del tiempo extra</h3>
+      <p class="ayuda">Valen para todas las sucursales. Ahora: semana de nómina de <b>${esc(nombreDia(v.inicio_semana))} a ${esc(fin(v.inicio_semana))}</b> (semana vencida: se paga la que ya cerró; la de hoy va del ${esc(fechaLarga(sa.desde))} al ${esc(fechaLarga(sa.hasta))}). Las primeras 9 horas autorizadas de la semana son dobles y lo demás triples (LFT, no se cambia). Vigente desde ${esc(v.desde === '2020-01-01' ? 'el inicio' : fechaLarga(v.desde))}${v.por ? ' · ' + esc(v.por) : ''}.</p>
+      ${proximas.length ? `<p class="ayuda">Cambio programado desde el ${esc(fechaLarga(proximas[0].desde))}.</p>` : ''}
+      <label>La semana de nómina empieza el <select id="as-r-inicio"${dis}>${Object.entries(dias).map(([k, n]) => `<option value="${esc(k)}"${Number(k) === v.inicio_semana ? ' selected' : ''}>${esc(n)}</option>`).join('')}</select> <small class="pe-cuenta">y termina el día anterior. Si lo cambias, el cambio debe valer desde ese día; la semana del cambio queda más corta.</small></label>
+      <label>¿Cómo se cuenta? <select id="as-r-modo"${dis}><option value="auto"${v.modo === 'auto' ? ' selected' : ''}>Automático: lo que trabaje fuera de su horario (y los botones de tiempo extra)</option><option value="botones"${v.modo === 'botones' ? ' selected' : ''}>Solo lo que marque con los botones «Inicio / Fin de tiempo extra»</option></select></label>
+      <label>Después de su hora de salida, cuenta cuando se queda al menos <input type="number" id="as-r-despues" class="as-num" min="0" max="240" value="${Number(v.despues_min)}"${dis}> min <small class="pe-cuenta">0 = desde el primer minuto. Si llega a esos minutos, cuenta todo desde su hora de salida; si no, no cuenta.</small></label>
+      <label><input type="checkbox" id="as-r-antes"${v.antes_cuenta ? ' checked' : ''}${dis}> Llegar antes de su entrada cuenta como tiempo extra si llega más de <input type="number" id="as-r-antes-min" class="as-num" min="0" max="240" value="${Number(v.antes_min)}"${dis}> min antes <small class="pe-cuenta">(entonces cuenta todo desde que llegó)</small></label>
+      <label>Redondear el tiempo extra de cada día hacia abajo a <select id="as-r-bloque"${dis}>${bloques.map(b => `<option value="${b}"${b === v.bloque_min ? ' selected' : ''}>${b === 1 ? 'minuto a minuto (sin redondeo)' : 'bloques de ' + b + ' min'}</option>`).join('')}</select></label>
+      <label><input type="checkbox" id="as-r-descanso"${v.descanso_todo ? ' checked' : ''}${dis}> En su día de descanso o en un festivo, todo lo que trabaje es tiempo extra <small class="pe-cuenta">(si no, solo lo que marque con los botones)</small></label>
+      ${editar ? `<div class="filtros"><label>Vale desde <input type="date" id="as-r-desde" value="${esc(hoy())}"></label><button type="button" class="btn btn-primario" id="as-r-guardar">Guardar reglas</button></div>` : '<p class="ayuda">Las cambia Dirección o RH de la empresa.</p>'}</div>`;
+    if (versiones.length > 1) h += `<div class="modal-section"><h3 class="pe-sub">Historial</h3><ul class="pe-ordenes">${versiones.map(x => `<li><b>Desde ${esc(x.desde === '2020-01-01' ? 'el inicio' : fechaLarga(x.desde))}</b>: semana ${esc(nombreDia(x.inicio_semana))} a ${esc(fin(x.inicio_semana))} · ${esc(x.modo === 'auto' ? 'automático' : 'solo botones')} · después de la salida desde ${esc(x.despues_min)} min · llegar antes ${x.antes_cuenta ? 'desde ' + esc(x.antes_min) + ' min' : 'no cuenta'} · ${esc(x.bloque_min === 1 ? 'minuto a minuto' : 'bloques de ' + x.bloque_min + ' min')} · descanso/festivo ${x.descanso_todo ? 'todo es extra' : 'solo botones'}${x.por ? ' <small class="pe-cuenta">' + esc(x.por) + '</small>' : ''}</li>`).join('')}</ul></div>`;
+    $('as-cuerpo').innerHTML = h;
+  }
+  async function guardarReglas(b) {
+    const r = { inicio_semana: Number($('as-r-inicio').value), modo: $('as-r-modo').value, despues_min: Number($('as-r-despues').value), antes_cuenta: $('as-r-antes').checked, antes_min: Number($('as-r-antes-min').value), bloque_min: Number($('as-r-bloque').value), descanso_todo: $('as-r-descanso').checked, desde: $('as-r-desde').value };
+    if (!await solicitarDialogo({ titulo: 'Guardar las reglas del tiempo extra', mensaje: `Valen para todas las sucursales desde el ${fechaLarga(r.desde)}. Lo anterior a esa fecha no cambia. Queda en la bitácora con tu nombre.`, aceptar: 'Guardar' })) return;
+    b.disabled = true;
+    try { const x = await pedir('/reglas-extra', { method: 'PUT', body: JSON.stringify(r) }); toast(x.cambios ? 'Reglas guardadas' : 'Sin cambios'); semana = null; await cargar(); }
+    catch (e) { toast(e.message); b.disabled = false; }
+  }
+
   // ---------- Eventos ----------
-  document.querySelectorAll('[data-as-pestana]').forEach(b => { b.onclick = () => { pestana = b.dataset.asPestana; abierto = null; editando = null; cargar(); }; });
+  document.querySelectorAll('[data-as-pestana]').forEach(b => { b.onclick = () => { pestana = b.dataset.asPestana; editando = null; cargar(); }; });
   // Ubicación de cada sucursal: el celular que checa más lejos que su radio queda «por revisar» (la captura Dirección).
   function seccionUbicaciones() {
     const u = datos.ubicaciones;
@@ -270,7 +361,7 @@ const Asistencia = (() => {
         ${u.editar ? `<span class="filtros as-form"><input id="as-u-${Number(s.id)}" value="${esc(s.lat == null ? '' : s.lat + ', ' + s.lon)}" placeholder="20.5888, -100.3899" aria-label="Ubicación de ${esc(s.nombre)}"><input type="number" id="as-r-${Number(s.id)}" class="as-num" min="100" max="20000" value="${esc(s.radio_m || u.radio_omision)}" aria-label="Radio en metros"> m <button type="button" class="btn btn-secundario" data-as-ubicacion="${Number(s.id)}">Guardar</button></span>` : ''}</li>`).join('')}</ul></div>`;
   }
   $('as-cuerpo').addEventListener('change', e => {
-    if (e.target.id === 'as-fecha' && e.target.value) { fecha = e.target.value; abierto = null; cargar(); }
+    if (e.target.id === 'as-fecha' && e.target.value) { fecha = e.target.value; cargar(); }
     else if (e.target.id === 'as-semana' && e.target.value) { semana = e.target.value; cargar(); }
     else if (e.target.id === 'as-anio') { anio = e.target.value; cargar(); }
     else if (e.target.id === 'as-p-suc') { precioSuc = Number(e.target.value); pintarPrecios(); }
@@ -278,7 +369,9 @@ const Asistencia = (() => {
   $('as-cuerpo').addEventListener('click', async e => {
     const b = e.target.closest('button'); if (!b) return;
     const d = b.dataset;
-    if (d.asAbrir) { abierto = abierto === Number(d.asAbrir) ? null : Number(d.asAbrir); pintarDia(); }
+    if (d.asAbrir) verPersona(d.asAbrir, d.fecha || fecha);
+    else if (d.asSemanaIr) { semana = d.asSemanaIr; cargar(); }
+    else if (b.id === 'as-r-guardar') guardarReglas(b);
     else if (d.asIntentoFoto) {
       try { const r = await api('/asistencia/intentos/' + Number(d.asIntentoFoto) + '/foto'); if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || 'No se pudo abrir la foto');
         const url = URL.createObjectURL(await r.blob()), img = document.createElement('img'); img.src = url; img.alt = 'Foto del intento fallido'; img.className = 'pe-foto'; img.onload = () => URL.revokeObjectURL(url); $('as-intento-foto').replaceChildren(img); } catch (err) { toast(err.message); }
@@ -288,13 +381,6 @@ const Asistencia = (() => {
       try { await pedir('/sucursales/' + id + '/ubicacion', { method: 'PUT', body: JSON.stringify({ ubicacion: $('as-u-' + id).value, radio_m: $('as-r-' + id).value === '' ? null : Number($('as-r-' + id).value) }) }); toast('Ubicación guardada'); await cargar(); }
       catch (err) { toast(err.message); }
     }
-    else if (d.asFoto) {
-      try { const r = await api('/asistencia/checadas/' + Number(d.asFoto) + '/foto'); if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || 'No se pudo abrir la foto');
-        const url = URL.createObjectURL(await r.blob()), img = document.createElement('img'); img.src = url; img.alt = 'Foto de la checada'; img.className = 'pe-foto'; img.onload = () => URL.revokeObjectURL(url); $('as-foto').replaceChildren(img); } catch (err) { toast(err.message); }
-    } else if (d.asAceptar) { const m = await pedirMotivo('Aceptar la checada', 'Quedará como válida y contará para la nómina. Queda en la bitácora con tu nombre.'); if (m) accion(() => pedir('/checadas/' + Number(d.asAceptar) + '/aceptar', { method: 'POST', body: JSON.stringify({ motivo: m }) }), 'Checada aceptada'); }
-    else if (d.asAnular) { const m = await pedirMotivo('Anular la checada', 'No se borra: queda tachada y deja de contar. Queda en la bitácora con tu nombre.'); if (m) accion(() => pedir('/checadas/' + Number(d.asAnular) + '/anular', { method: 'POST', body: JSON.stringify({ motivo: m }) }), 'Checada anulada'); }
-    else if (b.id === 'as-n-guardar') accion(() => pedir('/checadas', { method: 'POST', body: JSON.stringify({ personal_id: abierto, tipo: $('as-n-tipo').value, fecha, hora: $('as-n-hora').value, motivo: $('as-n-motivo').value }) }), 'Checada agregada');
-    else if (b.id === 'as-x-guardar') accion(() => pedir('/extra', { method: 'POST', body: JSON.stringify({ personal_id: abierto, fecha, minutos: Number($('as-x-min').value), motivo: $('as-x-motivo').value }) }), 'Tiempo extra autorizado');
     else if (b.id === 'as-excel') excelNomina(b);
     else if (d.asPrecio !== undefined) {
       const i = Number(d.asPrecio), puesto = precios?.puestos[i], valor = $('as-p-' + i)?.value;
@@ -311,5 +397,5 @@ const Asistencia = (() => {
     else if (b.id === 'as-f-guardar') accion(() => pedir('/festivos', { method: 'POST', body: JSON.stringify({ fecha: $('as-f-fecha').value, nombre: $('as-f-nombre').value }) }), 'Día festivo agregado');
     else if (d.asFestivo) accion(() => pedir('/festivos', { method: 'POST', body: JSON.stringify({ fecha: d.asFestivo, nombre: d.nombre, activo: !!d.activo }) }));
   });
-  return { cargar };
+  return { cargar, verPersona };
 })();

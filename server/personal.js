@@ -287,8 +287,15 @@ module.exports = function personal(app, db, h) {
         AND NOT EXISTS (SELECT 1 FROM orden_personal op WHERE op.lead_id = l.id AND op.papel = 'responsable') ORDER BY l.fecha_servicio`).all(en(-30), semana))
       avisos.push({ tipo: 'sin_responsable', nivel: l.fecha_servicio < hoy ? 'rojo' : 'amarillo', lead_id: l.id, nombre: l.cliente, folio: require('./sucursales').folioLead(l), fecha: l.fecha_servicio,
         texto: l.fecha_servicio < hoy ? 'Orden ya pasada de fecha y sin técnico responsable' : 'Orden sin técnico responsable' });
+    // Cara que no coincidió en el kiosco (2026-11-09): por persona y día, hasta que alguien lo revisa (checador.js).
+    if (P.puede(req, 'asistencia.ver')) for (const c of app.locals.checador?.avisosCara?.() || []) {
+      const partes = [];
+      if (c.intentos) partes.push(`${c.motivos.some(m => /foto/i.test(m)) && !c.motivos.includes('La cara no coincide') ? 'Parecía foto o pantalla' : 'La cara no coincidió'} ${c.intentos === 1 ? 'una vez' : c.intentos + ' veces'}${c.hora ? ' (última ' + c.hora + ')' : ''}${c.kioscos.length ? ' en ' + c.kioscos.join(', ') : ''}: se le pidió su PIN y se tomó su foto`);
+      if (c.checadas) partes.push(`${c.checadas} checada(s) por revisar`);
+      avisos.push({ tipo: 'cara', nivel: 'rojo', persona_id: c.personal_id, nombre: c.nombre, fecha: c.fecha, intentos: c.intentos, checadas: c.checadas, texto: partes.join(' · ') });
+    }
     const peso = { rojo: 0, amarillo: 1, azul: 2 };
-    res.json(avisos.sort((a, b) => peso[a.nivel] - peso[b.nivel] || String(a.fecha).localeCompare(String(b.fecha))));
+    res.json(avisos.sort((a, b) => (b.tipo === 'cara') - (a.tipo === 'cara') || peso[a.nivel] - peso[b.nivel] || String(a.fecha).localeCompare(String(b.fecha))));
   }));
   app.get('/api/personal/:id', h((req, res) => {
     if (!ve(req)) return negar(res);

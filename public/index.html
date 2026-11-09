@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Saneadren · Cotizaciones y Servicios</title>
-<link rel="stylesheet" href="styles.css?v=lg3">
+<link rel="stylesheet" href="styles.css?v=reglas1">
 <link rel="stylesheet" href="servicios-tabla.css">
 <link rel="stylesheet" href="flujo.css?v=cel1">
 <link rel="stylesheet" href="interfaz.css?v=visual19">
@@ -95,7 +95,7 @@
 
     <div class="inicio-bloque inicio-bloque-personal perm-personal-ver" data-titulo-corto="Personal">
       <h3>👷 Personal</h3>
-      <p class="ayuda">Licencias y contratos vencidos o por vencer, quién falta esta semana (vacaciones, incapacidades, permisos) y órdenes próximas sin técnico responsable.</p>
+      <p class="ayuda">Licencias y contratos vencidos o por vencer, quién falta esta semana (vacaciones, incapacidades, permisos), órdenes próximas sin técnico responsable y, para quien ve la asistencia, cuando la cara de alguien no coincidió en el kiosco (hasta que alguien lo revisa).</p>
       <div id="inicio-personal" class="inicio-lista"></div>
     </div>
 
@@ -517,7 +517,7 @@
 <section class="vista" id="vista-asistencia">
 <div class="pe-encabezado"><h2>Asistencia</h2></div>
 <p class="ayuda">Entradas, comida, salidas, retardos, faltas y tiempo extra del personal, según su horario. Las checadas no se borran: se corrigen con motivo.</p>
-<div class="btn-group as-pestanas" role="group" aria-label="Vista de asistencia"><button type="button" class="btn btn-outline" data-as-pestana="dia" aria-pressed="true">Día</button><button type="button" class="btn btn-outline" data-as-pestana="semana" aria-pressed="false">Semana</button><button type="button" class="btn btn-outline" data-as-pestana="horarios" aria-pressed="false">Horarios</button><button type="button" class="btn btn-outline" data-as-pestana="festivos" aria-pressed="false">Días festivos</button></div>
+<div class="btn-group as-pestanas" role="group" aria-label="Vista de asistencia"><button type="button" class="btn btn-outline" data-as-pestana="dia" aria-pressed="true">Día</button><button type="button" class="btn btn-outline" data-as-pestana="semana" aria-pressed="false">Semana</button><button type="button" class="btn btn-outline" data-as-pestana="horarios" aria-pressed="false">Horarios</button><button type="button" class="btn btn-outline" data-as-pestana="festivos" aria-pressed="false">Días festivos</button><button type="button" class="btn btn-outline" data-as-pestana="reglas" aria-pressed="false">Reglas del tiempo extra</button></div>
 <div id="as-cuerpo"></div>
 </section>
 <section class="vista vista-comercial" id="vista-prospeccion">
@@ -1612,6 +1612,7 @@
 <script src="https://unpkg.com/docx@8.5.0/build/index.umd.js" integrity="sha384-4xaIisuLEy2lo2HkB2C4rEf7v8jbTb2kuogX6TkuEt9feTWKBSFSOzsqNNbV+sKh" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/1.3.8/FileSaver.js" integrity="sha384-ph76mR0W+Z/3+JTfCgW7I+2WZrKUE1M2EabdJVneuKwpssRuQggPhzQJ3oDectWZ" crossorigin="anonymous"></script>
 
+<div class="overlay" id="overlay-checadas"><div class="modal" style="max-width:980px"><div class="modal-header"><h2 id="ac-titulo">Checadas</h2><button class="close-btn" id="ac-cerrar" aria-label="Cerrar checadas de la persona">✕</button></div><div class="modal-body" id="ac-cuerpo"></div></div></div>
 <div class="overlay" id="overlay-personal"><div class="modal" style="max-width:940px"><div class="modal-header"><h2 id="pe-titulo">Persona</h2><button class="close-btn" id="pe-cerrar" aria-label="Cerrar ficha de la persona">✕</button></div><div class="modal-body" id="pe-cuerpo"></div></div></div>
 <div class="overlay" id="overlay-prospeccion"><div class="modal" style="max-width:920px"><div class="modal-header"><h2 id="pr-titulo">Establecimiento</h2><button class="close-btn" id="pr-cerrar" aria-label="Cerrar establecimiento">✕</button></div><div class="modal-body"><div class="modal-section pr-cabeza" id="pr-cabeza" hidden></div><div class="modal-section" id="pr-seguimiento" hidden><div class="seccion-tit">📒 Seguimiento</div>
 <p class="ayuda">Anota cada llamada, mensaje o visita: qué pasó y cuándo toca la siguiente. Queda con fecha y quién la hizo, y actualiza el estado y la próxima fecha de la ficha.</p>
@@ -1856,9 +1857,9 @@
 <script src="encuestas.js?v=enc1"></script>
 <script src="app.js?v=carta2"></script>
 <script src="listas-servicio.js?v=ls1"></script>
-<script src="personal.js?v=bio2"></script>
-<script src="asistencia.js?v=giro1"></script>
-<script src="rh.js?v=bio3"></script>
+<script src="personal.js?v=cara1"></script>
+<script src="asistencia.js?v=reglas1"></script>
+<script src="rh.js?v=reglas1"></script>
 <script src="buscador.js?v=suc1"></script>
 <script src="demo.js?v=demo1"></script>
 <script src="prospeccion.js?v=pro2"></script>

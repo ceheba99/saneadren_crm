@@ -26,9 +26,8 @@ const conBase = fn => { const d = new DatabaseSync(DB); try { d.exec('PRAGMA bus
 const HOY = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Mexico_City' }).format(new Date());
 const sumar = (f, k) => { const d = new Date(f + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() + k); return d.toISOString().slice(0, 10); };
 const dow = f => { const d = new Date(f + 'T12:00:00Z').getUTCDay(); return d === 0 ? 7 : d; };
-// Semana de nómina (viernes a jueves) que ya pasó completa. D(0..3) = lunes a jueves; D(4..6) = viernes, sábado y
-// domingo de esa misma semana (los días antes del lunes).
-const VIE = sumar(sumar(HOY, -7), -((dow(sumar(HOY, -7)) - 5 + 7) % 7)), LUN = sumar(VIE, 3), D = k => (k <= 3 ? sumar(LUN, k) : sumar(VIE, k - 4));
+// Semana de nómina (semana vencida de lunes a domingo, Dirección 2026-11-09) que ya pasó completa: D(0..6) = lunes a domingo.
+const LUN = sumar(sumar(HOY, -7), -(dow(sumar(HOY, -7)) - 1)), D = k => sumar(LUN, k);
 
 (async () => {
   for (let i = 0; i < 160 && !/corriendo/.test(salida); i++) await espera(100);
@@ -91,8 +90,8 @@ const VIE = sumar(sumar(HOY, -7), -((dow(sumar(HOY, -7)) - 5 + 7) % 7)), LUN = s
   exigir(await pedir('POST', '/asistencia/extra', T.Gema, { personal_id: juan.id, fecha: D(2), minutos: 120, motivo: 'Media hora fue por su cuenta' }), 'corregir autorización');
   const [, sem] = await pedir('GET', '/asistencia/semana?desde=' + D(3), T.Gema);
   const tj = sem.filas.find(x => x.personal_id === juan.id)?.totales;
-  revisa(sem.desde === VIE && sem.hasta === sumar(VIE, 6) && tj && tj.extra_min === 1090 && tj.extra_autorizado_min === 1060 && tj.extra_dobles_min === 540 && tj.extra_triples_min === 520 && tj.faltas === 1 && tj.retardos === 1 && tj.domingos === 1 && tj.festivos_trabajados === 1,
-    'Semana de nómina viernes a jueves (cualquier día lleva a su viernes): extra 18:10, autorizado 17:40 (la última autorización cuenta) → 9 h dobles y 8:40 triples; 1 falta, 1 retardo, domingo y festivo', tj);
+  revisa(sem.desde === LUN && sem.hasta === sumar(LUN, 6) && sem.vencida === LUN && sem.fechas.length === 7 && tj && tj.extra_min === 1090 && tj.extra_autorizado_min === 1060 && tj.extra_dobles_min === 540 && tj.extra_triples_min === 520 && tj.faltas === 1 && tj.retardos === 1 && tj.domingos === 1 && tj.festivos_trabajados === 1,
+    'Semana de nómina lunes a domingo (cualquier día lleva a su lunes; es la semana vencida): extra 18:10, autorizado 17:40 (la última autorización cuenta) → 9 h dobles y 8:40 triples; 1 falta, 1 retardo, domingo y festivo', tj);
 
   revisa(tj.dias_trabajados === 5 && tj.permisos === 1 && tj.descansos_trabajados === 1 && tj.extra_sin_autorizar_min === 0 && tj.sin_salida === 0, 'Totales para el Excel: 5 días trabajados, 1 permiso, 1 descanso trabajado, nada sin autorizar', tj);
   // Precio de la hora por puesto (2026-11-03): quien ve sueldos ve el pago; 9 h dobles y 8:40 triples a $62.35 la hora.
@@ -126,7 +125,7 @@ const VIE = sumar(sumar(HOY, -7), -((dow(sumar(HOY, -7)) - 5 + 7) % 7)), LUN = s
   revisa(conBase(d => d.prepare('SELECT activo FROM dias_festivos WHERE fecha = ?').get(HOY.slice(0, 4) + '-05-01').activo) === 0, 'Quitar un festivo lo desactiva (no se borra)');
   revisa((await pedir('POST', '/asistencia/festivos', T.Valeria, { fecha: HOY, nombre: 'Día libre' }))[0] === 403, 'Ventas no agrega festivos');
   revisa((await pedir('GET', '/asistencia/dia', T.Valeria))[0] === 403 && (await pedir('GET', '/asistencia/semana', T.Valeria))[0] === 403, 'Ventas no ve la asistencia');
-  revisa(!(await pedir('GET', '/asistencia/semana?desde=' + VIE, T.Gus))[1].filas.some(x => x.personal_id === juan.id), 'El gerente de CDMX no ve la asistencia de Querétaro');
+  revisa(!(await pedir('GET', '/asistencia/semana?desde=' + LUN, T.Gus))[1].filas.some(x => x.personal_id === juan.id), 'El gerente de CDMX no ve la asistencia de Querétaro');
   revisa((await pedir('GET', '/asistencia/personal/' + juan.id + '/horario', T.Gus))[0] === 404, 'Ni el horario de una persona de otra sucursal');
   revisa((await pedir('PUT', '/asistencia/horarios/' + op.id, T.Gus, { dias: { 1: { entrada: '07:00', salida: '15:00' } }, tolerancia_min: 0, comida_min: 0 }))[0] === 404, 'El gerente de CDMX no cambia los horarios de Querétaro');
   const hMx = (await pedir('GET', '/asistencia/horarios', T.Gus))[1].horarios;
@@ -161,6 +160,46 @@ const VIE = sumar(sumar(HOY, -7), -((dow(sumar(HOY, -7)) - 5 + 7) % 7)), LUN = s
   revisa(vie4.extra_min === 31 + 90 && !vie4.notas.includes('Inició tiempo extra y no marcó el fin'), 'Con el fin agregado, el bloque cuenta y el aviso se va', vie4);
   await checar(HOY, 'extra_inicia', '06:00');
   revisa(!(await dia(HOY)).notas.includes('Inició tiempo extra y no marcó el fin'), 'Hoy todavía no avisa (puede seguir trabajando)');
+
+  console.log('8. Reglas del tiempo extra (2026-11-09)');
+  const [, rg0] = await pedir('GET', '/asistencia/reglas-extra', T.Gema);
+  revisa(rg0.vigente && rg0.vigente.inicio_semana === 1 && rg0.vigente.modo === 'auto' && rg0.vigente.despues_min === 0 && rg0.vigente.antes_min === 30 && rg0.vigente.bloque_min === 1 && rg0.vigente.descanso_todo === true && rg0.editar === false,
+    'De arranque: semana de lunes a domingo, automático, minuto a minuto, llegar 30 min antes; la gerente de una sucursal las ve pero no las cambia', rg0);
+  const reglas = (x = {}) => ({ inicio_semana: 1, modo: 'auto', despues_min: 0, antes_cuenta: true, antes_min: 30, bloque_min: 1, descanso_todo: true, desde: sumar(HOY, -7), ...x });
+  revisa((await pedir('PUT', '/asistencia/reglas-extra', T.Gema, reglas({ despues_min: 30 })))[0] === 403, 'La gerente de una sola sucursal no cambia las reglas (valen para todas)');
+  revisa((await pedir('PUT', '/asistencia/reglas-extra', A, reglas({ desde: sumar(HOY, -20) })))[0] === 400, 'No valen hacia atrás más de 7 días');
+  revisa((await pedir('PUT', '/asistencia/reglas-extra', A, reglas({ bloque_min: 7 })))[0] === 400, 'Redondeo solo de la lista');
+  revisa((await pedir('PUT', '/asistencia/reglas-extra', A, reglas()))[1].cambios === 0, 'Guardar lo mismo no crea otra versión');
+  // Ana (Administrativo, L-V 8:30–18:00) un día entre semana de los últimos 6: entra 8:30 y sale 18:20 (20 min después).
+  const ana = exigir(await pedir('POST', '/personal', T.Gema, { nombre: 'Ana Reglas Extra', puesto: 'Operador', fecha_ingreso: sumar(HOY, -400) }), 'alta de Ana');
+  exigir(await pedir('PUT', '/asistencia/personal/' + ana.id + '/horario', T.Gema, { horario_id: adm.id, desde: sumar(HOY, -30) }), 'horario de Ana');
+  let X = sumar(HOY, -1); while (dow(X) > 5) X = sumar(X, -1);
+  const marca = async (tipo, hora) => exigir(await pedir('POST', '/asistencia/checadas', T.Gema, { personal_id: ana.id, tipo, fecha: X, hora, motivo: 'Prueba de reglas' }), 'checada de Ana');
+  const diaAna = async () => (await pedir('GET', '/asistencia/dia?fecha=' + X, T.Gema))[1].filas.find(x => x.personal_id === ana.id);
+  await marca('entrada', '08:30'); await marca('salida', '18:20');
+  revisa((await diaAna()).extra_min === 20, 'Minuto a minuto: 20 min después de su salida son 20 min de extra');
+  exigir(await pedir('PUT', '/asistencia/reglas-extra', A, reglas({ desde: X, despues_min: 30 })), 'regla 30 min');
+  const dx = await diaAna();
+  revisa(dx.extra_min === 0 && dx.notas.some(x => /no cuenta: el tiempo extra empieza a los 30 min/.test(x)), 'Con «desde 30 min»: quedarse 20 min no cuenta y se dice por qué', dx);
+  await marca('salida', '18:40');
+  revisa((await diaAna()).extra_min === 40, 'Si se queda 40 min (pasa los 30), cuenta todo desde su salida');
+  exigir(await pedir('PUT', '/asistencia/reglas-extra', A, reglas({ desde: X, despues_min: 30, bloque_min: 30 })), 'regla con redondeo');
+  const dx2 = await diaAna();
+  revisa(dx2.extra_min === 30 && dx2.notas.some(x => /redondeado a bloques de 30 min/.test(x)), 'Redondeo a bloques de 30 min (hacia abajo): 40 → 30', dx2);
+  revisa((await dia(D(0))).extra_min === 70, 'La semana pasada no cambia con las reglas nuevas');
+  exigir(await pedir('PUT', '/asistencia/reglas-extra', A, reglas({ desde: X, modo: 'botones' })), 'solo botones');
+  revisa((await diaAna()).extra_min === 0, 'Con «solo con los botones», quedarse después de la salida no cuenta');
+  exigir(await pedir('PUT', '/asistencia/reglas-extra', A, reglas({ desde: X })), 'volver a como estaba');
+  revisa((await diaAna()).extra_min === 40, 'Al volver a la regla anterior, vuelve a contar los 40 min');
+  // Cambiar el día en que empieza la semana: debe valer desde ese día y la semana del cambio se corta.
+  const prox = k => { let f = sumar(HOY, 1); while (dow(f) !== k) f = sumar(f, 1); return f; };
+  const mier = prox(3);
+  revisa((await pedir('PUT', '/asistencia/reglas-extra', A, reglas({ desde: sumar(mier, 1), inicio_semana: 3 })))[0] === 400, 'Si la semana empezará en miércoles, el cambio debe valer desde un miércoles');
+  exigir(await pedir('PUT', '/asistencia/reglas-extra', A, reglas({ desde: mier, inicio_semana: 3 })), 'semana de miércoles a martes');
+  const [, sc] = await pedir('GET', '/asistencia/semana?desde=' + sumar(mier, -1), T.Gema), [, sn] = await pedir('GET', '/asistencia/semana?desde=' + mier, T.Gema);
+  revisa(sc.hasta === sumar(mier, -1) && sc.corta === true && dow(sc.desde) === 1 && sn.desde === mier && sn.hasta === sumar(mier, 6) && sn.semana_texto === 'de miércoles a martes',
+    'La semana del cambio se corta el martes (ningún día queda en dos semanas) y la nueva va de miércoles a martes', [sc.desde, sc.hasta, sn.desde, sn.hasta, sn.semana_texto]);
+  revisa(intento('DELETE FROM reglas_extra') && intento('UPDATE reglas_extra SET despues_min = 99'), 'El historial de las reglas no se borra ni se cambia');
 
   console.log(`\n${n - malos.length}/${n} correctas`);
   srv.kill(); fs.rmSync(dir, { recursive: true, force: true });
