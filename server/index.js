@@ -192,6 +192,8 @@ require('./eliminar')(app, db, h, { sesiones });
 const unicos = require('./clientes-unicos')(app, db, h);
 const listasServicio = require('./listas-servicio')(app, db, h, { permisos, audit }); // Listas de la parte que cambia de cada servicio (2026-11-05)
 require('./tablas-retiradas')(db); // Sucursales del cliente y descripciones por cliente: retiradas el 2026-11-05, se conservan sus datos
+// Carga de clientes con plantilla y eliminar clientes sin registros: solo Dirección, en Ajustes (2026-11-09).
+require('./clientes-carga')(app, db, h, { unicos, normalizarTelefono });
 require('./prospeccion')(app,db,h,unicos);
 // Cuentas por cobrar y por pagar. Devuelve ganchos que usan las rutas de órdenes de abajo.
 const finanzas = require('./finanzas')(app, db, h, unicos);
