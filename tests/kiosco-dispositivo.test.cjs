@@ -138,111 +138,126 @@ test('la primera tecla suena aunque Android tarde en reanudar el audio', async (
   assert.deepEqual(e.notas.map(n => n.frequency.value), [540]);
 });
 
-const codigoRostro = tramo('  // Apertura del ojo', '  // Mientras se toma la cara:');
-const abiertos = [.29, .26], cerrados = [.20, .17];
-function cuadro(ojos = abiertos, giro = 0, x = 0) {
+const codigoRostro = tramo('  // ---------- Captura de la cara', '  // Mientras se toma la cara:');
+// Un cuadro: dónde está la cara, cuánto está volteada y qué dice el modelo de vida (≥ 0 real, < 0 foto/pantalla).
+function cuadro(vida = 2, { giro = 0, x = 0, ancho = 100 } = {}) {
   const positions = Array.from({ length: 68 }, () => ({ x: 0, y: 0 }));
   positions[16] = { x: 100, y: 0 };
   positions[30] = { x: 50 + giro * 100, y: 0 };
-  ojos.forEach((ojo, i) => {
-    const alto = ojo * 20;
-    positions.splice(36 + i * 6, 6, ...[[0, 0], [5, alto / 2], [15, alto / 2], [20, 0], [15, -alto / 2], [5, -alto / 2]]
-      .map(([x, y]) => ({ x, y })));
-  });
-  return { landmarks: { positions }, detection: { box: { x, y: 0, width: 100, height: 100 } } };
+  return { landmarks: { positions }, detection: { box: { x, y: 0, width: ancho, height: ancho } }, vida };
 }
 async function rostro(cuadros, opciones = {}) {
-  let reloj = 1000, indice = 0;
+  let reloj = 1000, indice = 0, actual = null;
   const video = { currentTime: 0, videoWidth: 640 }, avisos = [], procesados = [];
   const detector = {
     TinyFaceDetectorOptions: class {},
-    detectSingleFace() {
+    detectSingleFace(imagen) {
+      assert.equal(imagen, 'lienzo'); // se busca la cara en la misma imagen que revisa la prueba de vida
       const frame = cuadros[indice++] ?? null;
+      actual = frame;
       reloj += 175;
       video.currentTime += .175;
       return { withFaceLandmarks() {
         return {
-          then(resolve) { procesados.push('ojos'); resolve(frame); },
-          async withFaceDescriptor() {
-            procesados.push('descriptor');
-            return frame && { ...frame, descriptor: [1] };
-          }
+          then(resolve) { procesados.push('cara'); resolve(frame); },
+          async withFaceDescriptor() { procesados.push('descriptor'); return frame && { ...frame, descriptor: [1] }; }
         };
       } };
     }
   };
   const ctx = vm.createContext({
-    cargarFaceApi: async () => detector, $: () => video, camaraLista: true,
+    cargarFaceApi: async () => detector, cargarAntispoof: async () => opciones.sinModelo ? Promise.reject(new Error('sin modelo')) : 'modelo',
+    cuadroDe: () => 'lienzo',
+    vidaDe: async (modelo, imagen, caja) => { assert.equal(modelo, 'modelo'); assert.equal(caja, actual.detection.box); procesados.push('vida'); return actual.vida; },
+    $: () => video, camaraLista: true,
     Date: { now: () => reloj },
     setTimeout(fn, ms) { reloj += ms; fn(); }
   });
-  ctx.opciones = { ms: 5000, aviso: msg => avisos.push(msg), ...opciones };
+  ctx.opciones = { ms: 10000, aviso: msg => avisos.push(msg), ...opciones };
   const captura = await vm.runInContext(codigoRostro + '\ncapturarCara(opciones)', ctx);
   return { captura, avisos, procesados };
 }
-test('detecta el cierre breve de ambos ojos y la reapertura sin calcular descriptores durante el reto', async () => {
-  const r = await rostro([cuadro(cerrados), cuadro(), cuadro(), cuadro(), cuadro(), cuadro(cerrados), cuadro()]);
+test('una cara real pasa con 3 cuadros reales seguidos, sin gestos', async () => {
+  const r = await rostro([cuadro(), cuadro(), cuadro()]);
   assert.equal(r.captura.vivo, true);
   assert.equal(r.captura.descriptores.length, 1);
-  assert.deepEqual(r.procesados, ['ojos', 'ojos', 'ojos', 'ojos', 'descriptor', 'ojos', 'ojos']);
-  assert.ok(r.avisos.some(msg => msg.includes('Cierre detectado')));
+  assert.deepEqual(r.procesados, ['descriptor', 'vida', 'cara', 'vida', 'cara', 'vida']);
   assert.equal(r.avisos.at(-1), 'Listo');
+  assert.equal(r.captura.diag.reales, 3);
+  assert.equal(r.captura.diag.seguidos, 3);
 });
-test('exige ambos ojos y reapertura, y descarta el gesto al perder el seguimiento', async () => {
-  const inicio = Array.from({ length: 4 }, () => cuadro());
-  for (const secuencia of [
-    [cuadro(), cuadro()],
-    [cuadro([.20, .26]), cuadro()],
-    Array.from({ length: 25 }, () => cuadro(cerrados)),
-    [cuadro(cerrados), null, null, cuadro(), cuadro(), cuadro(), cuadro()],
-    [cuadro(cerrados), cuadro(abiertos, 0, 80)]
-  ]) {
-    assert.equal((await rostro([...inicio, ...secuencia])).captura.vivo, false);
-  }
-});
-test('también acepta girar la cabeza y volver al centro', async () => {
-  const r = await rostro([...Array.from({ length: 4 }, () => cuadro()), cuadro(abiertos, .15), cuadro()]);
+test('un cuadro dudoso rompe la racha, pero la persona real termina pasando', async () => {
+  const r = await rostro([cuadro(1), cuadro(-.5), cuadro(.3), cuadro(2), cuadro(1.5)]);
   assert.equal(r.captura.vivo, true);
-  assert.ok(r.avisos.some(msg => msg.includes('Giro detectado')));
+  assert.equal(r.captura.diag.evaluados, 5);
 });
-test('basta voltear un poco la cabeza (0.09) y regresar; el aviso pide voltear la cabeza', async () => {
-  const r = await rostro([...Array.from({ length: 4 }, () => cuadro()), cuadro(abiertos, .09), cuadro(abiertos, .02)]);
-  assert.equal(r.captura.vivo, true);
-  assert.ok(r.avisos.some(msg => msg.includes('voltea la cabeza')));
-  assert.ok(r.captura.diag.giroMax >= .09 && r.captura.diag.calibrado === true);
-});
-test('una foto quieta (giro y ojos con ruido pequeño) no pasa la prueba de vida', async () => {
-  const ruido = [0, .02, -.015, .01, -.02, .015, 0, -.01, .02, -.02];
-  const r = await rostro([...Array.from({ length: 4 }, () => cuadro()), ...Array.from({ length: 24 }, (_, i) => cuadro([.29 - ruido[i % 10] / 2, .26 + ruido[(i + 3) % 10] / 2], ruido[i % 10]))]);
+test('una foto o pantalla (el modelo dice «falso») no pasa y se deja de intentar a los 12 cuadros', async () => {
+  const r = await rostro(Array.from({ length: 40 }, (_, i) => cuadro(i % 3 ? -3 : .4)));
   assert.equal(r.captura.vivo, false);
-  assert.ok(r.captura.diag.giroMax < .08);
+  assert.equal(r.captura.diag.evaluados, 12);
+  assert.ok(r.captura.diag.seguidos < 3);
+  assert.ok(r.captura.diag.vida < 0);
+  assert.equal(r.captura.descriptores.length, 1); // la cara sí se tomó: el servidor registra el intento como «parece foto»
 });
-test('con ojos medidos con mucho ruido igual termina de calibrar y toma la muestra', async () => {
-  const ojosRuido = [[.29, .26], [.36, .20], [.24, .31], [.33, .22], [.27, .29], [.31, .24], [.26, .27], [.34, .23], [.28, .25]];
-  const r = await rostro([...ojosRuido.map(o => cuadro(o)), ...Array.from({ length: 6 }, () => cuadro())], { vida: false });
-  assert.equal(r.captura.diag.calibrado, true);
-  assert.equal(r.captura.descriptores.length, 1);
-});
-test('si la cara se pierde un momento al voltear, el giro sigue contando al volver al centro', async () => {
-  const r = await rostro([...Array.from({ length: 4 }, () => cuadro()), cuadro(abiertos, .1), null, null, null, cuadro(abiertos, .01)]);
+test('de lado o muy lejos no se revisa ni se toma la muestra; avisa qué corregir', async () => {
+  const r = await rostro([cuadro(2, { giro: .2 }), cuadro(2, { ancho: 60 }), cuadro(), cuadro(), cuadro()]);
   assert.equal(r.captura.vivo, true);
-  assert.equal(r.captura.descriptores.length, 1);
+  assert.equal(r.procesados.filter(p => p === 'vida').length, 3);
+  assert.ok(r.avisos.includes('Mira de frente a la cámara'));
+  assert.ok(r.avisos.includes('Acércate un poco a la cámara'));
+  assert.equal(r.captura.diag.chica, true);
 });
-test('si tras perderla aparece otra cara en otro lugar, se empieza de nuevo (no se puede cambiar de cara a media prueba)', async () => {
-  const r = await rostro([...Array.from({ length: 4 }, () => cuadro()), cuadro(abiertos, .1), null, null, cuadro(abiertos, 0, 80)]);
+test('si aparece otra cara en otro lugar, se empieza de nuevo (no se mezclan caras)', async () => {
+  const r = await rostro([cuadro(), cuadro(), cuadro(2, { x: 200 }), cuadro(2, { x: 200 })]);
   assert.equal(r.captura.vivo, false);
 });
-test('el alta reúne tres muestras frontales con ojos abiertos sin pedir un gesto', async () => {
-  const r = await rostro([...Array.from({ length: 3 }, () => cuadro()), cuadro(cerrados), cuadro(),
-    cuadro(), cuadro(), cuadro(), cuadro(abiertos, .2), ...Array.from({ length: 5 }, () => cuadro())], { muestras: 3, vida: false });
+test('perder la cara un momento no borra la racha; tras ~2 s sin cara se empieza de nuevo', async () => {
+  assert.equal((await rostro([cuadro(), cuadro(), null, null, cuadro()])).captura.vivo, true);
+  const r = await rostro([cuadro(), cuadro(), ...Array(12).fill(null), cuadro()]);
+  assert.equal(r.captura.vivo, false);
+  assert.ok(r.avisos.some(msg => msg.includes('No te vemos')));
+});
+test('sin cara en todo el tiempo: no hay muestra ni vida', async () => {
+  const r = await rostro([]);
+  assert.equal(r.captura.vivo, false);
+  assert.equal(r.captura.vistas, 0);
+  assert.equal(r.captura.descriptores.length, 0);
+});
+test('si no carga la prueba de vida, falla la captura (el kiosco pide el PIN)', async () => {
+  await assert.rejects(rostro([cuadro()], { sinModelo: true }));
+});
+test('el alta reúne tres muestras frontales sin prueba de vida', async () => {
+  const r = await rostro([cuadro(), cuadro(), cuadro(2, { giro: .2 }), ...Array.from({ length: 9 }, () => cuadro())], { muestras: 3, vida: false });
   assert.equal(r.captura.descriptores.length, 3);
-  assert.equal(r.procesados.filter(p => p === 'descriptor').length, 5);
+  assert.equal(r.procesados.filter(p => p === 'vida').length, 0);
   assert.ok(r.avisos.some(msg => msg.includes('2 de 3 muestras')));
   assert.equal(r.avisos.at(-1), 'Listo');
 });
 test('cancelar detiene la captura en curso', async () => {
   let sigue = true;
   const r = await rostro([cuadro(), cuadro(), cuadro(), cuadro()], { sigue: () => sigue, aviso: () => { sigue = false; } });
-  assert.deepEqual(r.procesados, ['ojos']);
-  assert.equal(r.captura.descriptores.length, 0);
+  assert.deepEqual(r.procesados, ['descriptor', 'vida']);
+  assert.equal(r.captura.vivo, false);
+});
+// El recorte para el modelo: igual que el del autor (cuadrado de 1.5 veces, borde reflejado, 128×128, RGB, CHW, /255).
+const codigoVida = tramo('  // Igual que el preprocesado del modelo', '  // ---------- Captura de la cara');
+test('el recorte de la prueba de vida respeta el preprocesado del modelo', async () => {
+  const W = 40, H = 30, px = new Uint8ClampedArray(W * H * 4);
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const i = (y * W + x) * 4; px[i] = x; px[i + 1] = y; px[i + 2] = 200; px[i + 3] = 255; }
+  let entrada;
+  const ort = { Tensor: class { constructor(t, d, forma) { entrada = { t, d, forma }; } } };
+  const sesion = { inputNames: ['input'], outputNames: ['logits'], run: async e => { assert.ok(e.input); return { logits: { data: [1.5, -.5] } }; } };
+  const lienzo = { width: W, height: H, getContext: () => ({ getImageData: () => ({ data: px }) }) };
+  const ctx = vm.createContext({ Float32Array, Math });
+  vm.runInContext(codigoVida + '\nglobalThis.vidaDe = vidaDe; globalThis.reflejo = reflejo;', ctx);
+  // Cara de 20×20 en el centro: recorte de 30 px, se sale 0 px a los lados en x (5..35) y 0 en y (0..30).
+  const d = await ctx.vidaDe({ ort, sesion }, lienzo, { x: 10, y: 5, width: 20, height: 20 });
+  assert.equal(d, 2);
+  assert.equal(JSON.stringify(entrada.forma), '[1,3,128,128]');
+  assert.equal(entrada.t, 'float32');
+  const N = 128 * 128, en = (c, y, x) => entrada.d[c * N + y * 128 + x];
+  assert.ok(Math.abs(en(0, 0, 0) - 5 / 255) < 1e-6, 'rojo = x del primer píxel del recorte');
+  assert.ok(Math.abs(en(1, 127, 0) - 29 / 255) < 1e-6, 'verde = y del último renglón');
+  assert.ok(Math.abs(en(2, 64, 64) - 200 / 255) < 1e-6, 'azul');
+  assert.equal([-1, -2, 0, 9, 10, 11].map(i => ctx.reflejo(i, 10)).join(), '1,2,0,9,8,7');
 });

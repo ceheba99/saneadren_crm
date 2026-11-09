@@ -6,8 +6,8 @@
 //    «Registrar mi cara» → código → se toman 3 muestras mirando de frente (sin prueba de vida: RH está presente). La tableta calcula los descriptores
 //    (face-api, alojado en /vendor/face-api) y el servidor guarda SOLO su promedio, CIFRADO. Las fotos no se guardan.
 //  · Al checar: comparación 1:1 contra SU plantilla (ya se sabe quién es por código y PIN), con prueba de vida
-//    (parpadeo). Si no coincide, la persona checa igual pero la checada queda «por revisar» (decidido con Dirección).
-//    La tableta puede intentar hasta 3 veces por checada; la decisión final la toma el servidor.
+//    (prueba de vida pasiva: foto o pantalla vs. cara real). Si no coincide, la persona checa igual pero la checada queda «por revisar» (decidido con Dirección).
+//    La tableta toma la cara una vez (otra solo si no la vio); la decisión final la toma el servidor.
 //  · Nadie ve ni descarga la plantilla. Se borra al revocar el consentimiento (quitar la marca, borrar el registro o
 //    quitar el documento) y al causar baja (revisión cada 12 h).
 //  · Umbral: distancia euclidiana entre descriptores de face-api (128 números); ≤ BIOMETRIA_UMBRAL (0.55 por omisión)
@@ -75,7 +75,7 @@ module.exports = function biometria(app, db, h) {
     if (!plantilla) return { resultado: 'sin_registro', distancia: null, nota: 'Biométrico: su registro no se pudo leer (que RH lo vuelva a registrar)' };
     const d = descriptorDe(rostro?.descriptor);
     if (!d) return { resultado: 'sin_rostro', distancia: null, nota: 'Biométrico: no se detectó su cara' };
-    if (rostro.vivo !== true) return { resultado: 'no_vivo', distancia: null, nota: 'Biométrico: no volteó la cabeza ni cerró los ojos (podría ser una foto)' };
+    if (rostro.vivo !== true) return { resultado: 'no_vivo', distancia: null, nota: 'Biométrico: no pasó la prueba de vida (parece foto o pantalla)' };
     const dist = Math.round(distancia(d, plantilla) * 1000) / 1000;
     return dist <= UMBRAL ? { resultado: 'coincide', distancia: dist, nota: null } : { resultado: 'no_coincide', distancia: dist, nota: `Biométrico: la cara no coincide (${dist.toFixed(2)})` };
   }
