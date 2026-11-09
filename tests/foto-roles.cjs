@@ -288,6 +288,8 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
     ['precioExtra', 'Ponerle precio a la hora de cada puesto (para pagar el tiempo extra)'],
     ['dineroExtra', 'Ver cuánto dinero sale por tiempo extra (en la semana y en el Excel de nómina)'],
     ['cambiaCredito', 'Cambiar los días de crédito y los datos de factura de una orden'],
+    ['cargaClientes', 'Cargar clientes con la plantilla de Excel (revisar y guardar) y ver las cargas anteriores'],
+    ['eliminaCliente', 'Eliminar un cliente que no tiene cotizaciones, órdenes ni cobros'],
     ['eliminaUsuario', 'Eliminar un usuario (se borra si nunca se usó; si ya tiene registros, se archiva)'],
     ['veLogs', 'Ver los logs del sistema (entradas y salidas, contraseñas equivocadas, bloqueos, errores del servidor y quién está conectado)'],
     ['eliminaSucursal', 'Eliminar una sucursal (se borra si nunca se usó; si ya tiene registros, se archiva)'],
@@ -382,6 +384,14 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
       VE[rol].eliminaSucursal = ok(await pedir('POST', '/sucursales/' + s.id + '/eliminar', t, {})); }
     VE[rol].veAsistencia = ok(await pedir('GET', '/asistencia/semana', t));
     VE[rol].veLogs = ok(await pedir('GET', '/registro-sistema', t));
+    VE[rol].cargaClientes = ok(await pedir('POST', '/clientes-carga/revisar', t, { filas: [{ nombre: 'Cliente Carga', telefono: '4429' + String(100000 + ROLES.findIndex(r => r[0] === rol)).slice(-6) }] })) && ok(await pedir('GET', '/clientes-carga', t));
+    { // Eliminar cliente (2026-11-09): Dirección da de alta uno sin registros y cada rol intenta eliminarlo.
+      const k = ROLES.findIndex(r => r[0] === rol), canal = (await pedir('GET', '/canales', A))[1][0];
+      const alta = { nombre: 'Desechable Cliente ' + String.fromCharCode(65 + k), telefono: '4427' + String(200000 + k).slice(-6), canal_origen_id: canal.id };
+      let rc = await pedir('POST', '/contactos', A, alta);
+      if (rc[1]?.parecidos) rc = await pedir('POST', '/contactos', A, { ...alta, distinto_de: rc[1].parecidos.map(x => x.id) }); // es otro cliente
+      const c = exigir(rc, 'cliente desechable');
+      VE[rol].eliminaCliente = ok(await pedir('POST', '/clientes/' + (c.id || c.cliente_id) + '/eliminar', t, {})); }
     VE[rol].cargaAds = ok(await pedir('POST', '/marketing/google-ads/cargar', t, { csv: CSV_ADS })); // el mismo archivo: no duplica nada
     // XML de la factura de un gasto (2026-11-04): Tomás registra un gasto nuevo y cada rol intenta subirle su XML y corregirle el IVA.
     { const g = exigir(await pedir('POST', '/finanzas/cxp', T.Tomas, { proveedor_id: prov.id, categoria: 'combustible', concepto: 'Gasolina ' + rol, total: 1160, tipo_comprobante: 'factura', fecha_documento: HOY, lead_id: O1.id, dias_credito: 0 }), 'gasto para el XML');
@@ -461,6 +471,8 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
     ['2026-11-05', 'Checar por WhatsApp (foráneos, respaldo del celular): solo quien RH active en su ficha y desde el celular de su ficha; sin foto ni ubicación, cada checada queda «por revisar». Activarlo o quitarlo lo hacen quienes editan el personal (Dirección y el Gerente, de su sucursal), nunca para sí mismos (salvo Dirección).', {
       admin: { activaWhatsapp: 1 }, gerente: { activaWhatsapp: 1 },
       ...Object.fromEntries(['ventas', 'atencion', 'tecnico', 'costos', 'marketing', 'marketing_gerente'].map(r => [r, { activaWhatsapp: 0 }])) }],
+    ['2026-11-09', 'Clientes con plantilla (Configuración → Ajustes): cargar clientes en lote con la plantilla de Excel, ver las cargas anteriores y deshacerlas, y eliminar un cliente lo hace solo Dirección; ningún otro rol, ni el Gerente. Un cliente solo se elimina si no tiene cotizaciones, órdenes, cobros ni facturas; si ya tiene, se queda. Queda en la bitácora.', {
+      admin: { cargaClientes: 1, eliminaCliente: 1 }, ...Object.fromEntries(['gerente', 'ventas', 'atencion', 'tecnico', 'costos', 'marketing', 'marketing_gerente'].map(r => [r, { cargaClientes: 0, eliminaCliente: 0 }])) }],
     ['2026-11-05', 'Crédito al cliente y datos de factura de una orden (días de crédito, folio, fecha y total): los cambian solo Dirección y el Gerente, porque el crédito es una decisión de dinero. Ventas, Atención y los demás roles lo ven pero no lo cambian. (Antes lo cambiaba cualquiera que viera la cobranza.)', {
       admin: { cambiaCredito: 1 }, gerente: { cambiaCredito: 1 }, ...Object.fromEntries(['ventas', 'atencion', 'tecnico', 'costos', 'marketing', 'marketing_gerente'].map(r => [r, { cambiaCredito: 0 }])) }],
     ['2026-11-05', 'Logs del sistema (Configuración → Ajustes): quién entró y salió, desde qué IP y equipo, contraseñas equivocadas, bloqueos por intentos, contraseñas restablecidas, errores del servidor y quién está conectado ahora. Los ve solo Dirección; ningún otro rol, ni el Gerente. Nunca guardan contraseñas.', {
