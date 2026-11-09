@@ -205,6 +205,33 @@ test('también acepta girar la cabeza y volver al centro', async () => {
   assert.equal(r.captura.vivo, true);
   assert.ok(r.avisos.some(msg => msg.includes('Giro detectado')));
 });
+test('basta voltear un poco la cabeza (0.09) y regresar; el aviso pide voltear la cabeza', async () => {
+  const r = await rostro([...Array.from({ length: 4 }, () => cuadro()), cuadro(abiertos, .09), cuadro(abiertos, .02)]);
+  assert.equal(r.captura.vivo, true);
+  assert.ok(r.avisos.some(msg => msg.includes('voltea la cabeza')));
+  assert.ok(r.captura.diag.giroMax >= .09 && r.captura.diag.calibrado === true);
+});
+test('una foto quieta (giro y ojos con ruido pequeño) no pasa la prueba de vida', async () => {
+  const ruido = [0, .02, -.015, .01, -.02, .015, 0, -.01, .02, -.02];
+  const r = await rostro([...Array.from({ length: 4 }, () => cuadro()), ...Array.from({ length: 24 }, (_, i) => cuadro([.29 - ruido[i % 10] / 2, .26 + ruido[(i + 3) % 10] / 2], ruido[i % 10]))]);
+  assert.equal(r.captura.vivo, false);
+  assert.ok(r.captura.diag.giroMax < .08);
+});
+test('con ojos medidos con mucho ruido igual termina de calibrar y toma la muestra', async () => {
+  const ojosRuido = [[.29, .26], [.36, .20], [.24, .31], [.33, .22], [.27, .29], [.31, .24], [.26, .27], [.34, .23], [.28, .25]];
+  const r = await rostro([...ojosRuido.map(o => cuadro(o)), ...Array.from({ length: 6 }, () => cuadro())], { vida: false });
+  assert.equal(r.captura.diag.calibrado, true);
+  assert.equal(r.captura.descriptores.length, 1);
+});
+test('si la cara se pierde un momento al voltear, el giro sigue contando al volver al centro', async () => {
+  const r = await rostro([...Array.from({ length: 4 }, () => cuadro()), cuadro(abiertos, .1), null, null, null, cuadro(abiertos, .01)]);
+  assert.equal(r.captura.vivo, true);
+  assert.equal(r.captura.descriptores.length, 1);
+});
+test('si tras perderla aparece otra cara en otro lugar, se empieza de nuevo (no se puede cambiar de cara a media prueba)', async () => {
+  const r = await rostro([...Array.from({ length: 4 }, () => cuadro()), cuadro(abiertos, .1), null, null, cuadro(abiertos, 0, 80)]);
+  assert.equal(r.captura.vivo, false);
+});
 test('el alta reúne tres muestras frontales con ojos abiertos sin pedir un gesto', async () => {
   const r = await rostro([...Array.from({ length: 3 }, () => cuadro()), cuadro(cerrados), cuadro(),
     cuadro(), cuadro(), cuadro(), cuadro(abiertos, .2), ...Array.from({ length: 5 }, () => cuadro())], { muestras: 3, vida: false });

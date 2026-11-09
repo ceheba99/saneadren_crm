@@ -75,7 +75,7 @@ module.exports = function biometria(app, db, h) {
     if (!plantilla) return { resultado: 'sin_registro', distancia: null, nota: 'Biométrico: su registro no se pudo leer (que RH lo vuelva a registrar)' };
     const d = descriptorDe(rostro?.descriptor);
     if (!d) return { resultado: 'sin_rostro', distancia: null, nota: 'Biométrico: no se detectó su cara' };
-    if (rostro.vivo !== true) return { resultado: 'no_vivo', distancia: null, nota: 'Biométrico: no parpadeó (podría ser una foto)' };
+    if (rostro.vivo !== true) return { resultado: 'no_vivo', distancia: null, nota: 'Biométrico: no volteó la cabeza ni cerró los ojos (podría ser una foto)' };
     const dist = Math.round(distancia(d, plantilla) * 1000) / 1000;
     return dist <= UMBRAL ? { resultado: 'coincide', distancia: dist, nota: null } : { resultado: 'no_coincide', distancia: dist, nota: `Biométrico: la cara no coincide (${dist.toFixed(2)})` };
   }
