@@ -63,7 +63,7 @@ module.exports = {
       vistas: ['rh', 'personal', 'asistencia'],
       // Reloj checador (2026-11-03): checadas, sus correcciones y los kioscos; el kiosco entra sin sesión, con su token.
       tablas: ['personal', 'documentos_personal', 'incidencias_personal', 'checadas', 'checadas_correcciones', 'checador_dispositivos', 'checador_intentos', 'checador_enlaces', 'credenciales', 'whatsapp_mensajes', 'rostros', 'rostro_codigos',
-        'horarios', 'horario_versiones', 'personal_horario', 'dias_festivos', 'extra_autorizaciones', 'precios_hora_puesto'],
+        'horarios', 'horario_versiones', 'personal_horario', 'dias_festivos', 'extra_autorizaciones', 'precios_hora_puesto', 'reglas_extra'],
       rutas: [/^\/api\/personal(\/|$)/, /^\/api\/(asistencia|rh|publico\/(kiosco|celular|whatsapp))(\/|$)/],
       pendientes: 'licencias y contratos por vencer, quién falta esta semana y órdenes sin técnico responsable',
       inicio: ['inicio-personal'],
@@ -161,6 +161,8 @@ module.exports = {
   // se capturan con otro nombre ({ como, razon }: la auditoría comprueba que la pantalla mande esa llave). Un dato que se
   // muestra y no está aquí ni se captura es un dato muerto (como «Realizó: propio/subcontratado», que se quitó).
   generados: {
+    revisado_por_nombre: 'quien marcó revisado el aviso «la cara no coincidió»: lo pone el sistema con la sesión (2026-11-09)',
+    distancia_rostro: 'qué tanto se parece la cara a su registro: la calcula el sistema al checar con el biométrico',
     creados: 'clientes que dio de alta una carga con plantilla: los cuenta el sistema al guardar (2026-11-09)',
     omitidos: 'filas de una carga de clientes que no se cargaron porque su teléfono ya existía: las cuenta el sistema (2026-11-09)',
     ip: 'red (IP) desde la que se entró o se checó: la toma el sistema de la conexión (logs del sistema, checadas, intentos del kiosco)',

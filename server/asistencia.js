@@ -18,7 +18,15 @@
 //    (2026-11-05, Dirección): hasta 30 min antes no es extra; si llega más temprano, cuenta todo desde que llegó
 //    (como la tolerancia del retardo). Al extra nunca se le descuenta comida: solo cuenta la comida que se marca. En descanso o festivo, todo lo
 //    trabajado es extra (y se marca). Falta = día laboral ya pasado sin entrada, sin vacaciones/incapacidad/permiso.
-//  · Semana de nómina: de VIERNES a JUEVES (decidido con Dirección el 2026-11-03: cierra el jueves y se paga el viernes).
+//  · Semana de nómina: SEMANA VENCIDA DE LUNES A DOMINGO (Dirección, 2026-11-09; antes era de viernes a jueves). Se
+//    paga la semana que ya cerró. El día en que empieza es una de las «reglas del tiempo extra» (abajo).
+//  · Reglas del tiempo extra (Dirección, 2026-11-09: «quiero poder configurar cuándo ya cuenta como tiempo extra»),
+//    con versiones «desde» como los horarios y para TODA la empresa (las cambia quien cambia los festivos):
+//    día en que empieza la semana; contar automático (lo trabajado fuera del horario) o solo con los botones de tiempo
+//    extra; minutos que debe quedarse después de su salida para que cuente (y entonces cuenta todo desde la salida);
+//    si llegar antes cuenta y desde cuántos minutos antes; redondeo hacia abajo por día (minuto a minuto, 15, 30 o
+//    60 min); si en descanso o festivo todo lo trabajado es extra. Si cambia el día en que empieza la semana, la semana
+//    del cambio se corta el día anterior (puede quedar más corta) para que ningún día quede en dos semanas.
 //  · Tiempo extra: lo AUTORIZAN RH y el Gerente (permiso «Autorizar tiempo extra»), hasta los minutos calculados. Cada
 //    autorización es un registro nuevo (la última cuenta); no se borran. Semana: las primeras 9 horas autorizadas son
 //    dobles y lo demás triples (arts. 67 y 68 LFT).
@@ -37,9 +45,25 @@ const texto = (v, max) => { const t = String(v ?? '').trim().replace(/\s+/g, ' '
 const min = h => { const [a, b] = String(h).split(':').map(Number); return a * 60 + b; };
 const sumar = (f, n) => { const d = new Date(f + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
 const diaSemana = f => { const d = new Date(f + 'T12:00:00Z').getUTCDay(); return d === 0 ? 7 : d; };
-const INICIO_SEMANA = 5; // viernes
-// Primer día (viernes) de la semana de nómina a la que pertenece una fecha.
-const inicioSemana = f => sumar(f, -((diaSemana(f) - INICIO_SEMANA + 7) % 7));
+// Primer día de la semana que empieza en «inicio» (1 = lunes … 7 = domingo) a la que pertenece una fecha.
+const inicioSemana = (f, inicio = 1) => sumar(f, -((diaSemana(f) - inicio + 7) % 7));
+// Reglas del tiempo extra de arranque (lo que se hacía hasta el 2026-11-09, con la semana ya de lunes a domingo).
+const REGLAS_INICIALES = { inicio_semana: 1, modo: 'auto', despues_min: 0, antes_cuenta: 1, antes_min: 30, bloque_min: 1, descanso_todo: 1 };
+const BLOQUES = [1, 5, 10, 15, 30, 60];
+// Semana de nómina de una fecha según una lista de reglas [{ desde, inicio_semana }] ordenada por fecha.
+function semanaCon(reglas, f) {
+  const efectivas = [];
+  for (const r of reglas) { if (efectivas.length && efectivas.at(-1).desde === r.desde) efectivas[efectivas.length - 1] = r; else efectivas.push(r); }
+  const cortes = efectivas.filter((r, i) => i > 0 && r.inicio_semana !== efectivas[i - 1].inicio_semana).map(r => r.desde);
+  const vig = [...efectivas].reverse().find(r => r.desde <= f) || efectivas[0] || REGLAS_INICIALES;
+  let desde = inicioSemana(f, vig.inicio_semana);
+  const antes = cortes.filter(c => c <= f).pop();
+  if (antes && antes > desde) desde = antes;
+  let hasta = sumar(desde, 6);
+  const despues = cortes.find(c => c > desde && c <= hasta);
+  if (despues) hasta = sumar(despues, -1);
+  return { desde, hasta };
+}
 // Días festivos obligatorios de la LFT (art. 74) de un año. Las jornadas electorales las agrega RH.
 function festivosLey(anio) {
   const lunes = (mes, n) => { const d = new Date(Date.UTC(anio, mes - 1, 1, 12)); while (d.getUTCDay() !== 1) d.setUTCDate(d.getUTCDate() + 1); d.setUTCDate(d.getUTCDate() + 7 * (n - 1)); return d.toISOString().slice(0, 10); };
@@ -147,7 +171,28 @@ function migrar(db) {
     CREATE INDEX IF NOT EXISTS idx_precios_hora_puesto ON precios_hora_puesto(sucursal_id, puesto, desde);
     CREATE TRIGGER IF NOT EXISTS precios_hora_fijos BEFORE UPDATE ON precios_hora_puesto BEGIN SELECT RAISE(ABORT, 'Un precio se cambia con uno nuevo'); END;
     CREATE TRIGGER IF NOT EXISTS precios_hora_no_borrar BEFORE DELETE ON precios_hora_puesto BEGIN SELECT RAISE(ABORT, 'El historial de precios no se borra'); END;
+    -- Reglas del tiempo extra (2026-11-09), para toda la empresa, con versiones «desde» que no se cambian ni se borran.
+    CREATE TABLE IF NOT EXISTS reglas_extra (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      desde TEXT NOT NULL,
+      inicio_semana INTEGER NOT NULL CHECK(inicio_semana BETWEEN 1 AND 7),
+      modo TEXT NOT NULL CHECK(modo IN ('auto', 'botones')),
+      despues_min INTEGER NOT NULL CHECK(despues_min BETWEEN 0 AND 240),
+      antes_cuenta INTEGER NOT NULL CHECK(antes_cuenta IN (0, 1)),
+      antes_min INTEGER NOT NULL CHECK(antes_min BETWEEN 0 AND 240),
+      bloque_min INTEGER NOT NULL CHECK(bloque_min IN (1, 5, 10, 15, 30, 60)),
+      descanso_todo INTEGER NOT NULL CHECK(descanso_todo IN (0, 1)),
+      creado_por INTEGER, creado_por_nombre TEXT, created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_reglas_extra ON reglas_extra(desde);
+    CREATE TRIGGER IF NOT EXISTS reglas_extra_fijas BEFORE UPDATE ON reglas_extra BEGIN SELECT RAISE(ABORT, 'Una regla del tiempo extra se cambia con una versión nueva'); END;
+    CREATE TRIGGER IF NOT EXISTS reglas_extra_no_borrar BEFORE DELETE ON reglas_extra BEGIN SELECT RAISE(ABORT, 'El historial de las reglas del tiempo extra no se borra'); END;
   `);
+  if (!db.prepare('SELECT 1 FROM main.reglas_extra LIMIT 1').get()) {
+    const r = REGLAS_INICIALES;
+    db.prepare("INSERT INTO main.reglas_extra (desde, inicio_semana, modo, despues_min, antes_cuenta, antes_min, bloque_min, descanso_todo, creado_por_nombre) VALUES ('2020-01-01', ?, ?, ?, ?, ?, ?, ?, 'Sistema')")
+      .run(r.inicio_semana, r.modo, r.despues_min, r.antes_cuenta, r.antes_min, r.bloque_min, r.descanso_todo);
+  }
   sembrarHorarios(db);
   // Festivos de la ley de este año y el siguiente (no revive uno que RH desactivó).
   const anio = Number(ahoraMexico().fecha.slice(0, 4)), ins = db.prepare("INSERT OR IGNORE INTO dias_festivos (fecha, nombre, origen) VALUES (?, ?, 'ley')");
@@ -172,11 +217,14 @@ module.exports = function asistencia(app, db, h) {
   }
   const festivoDe = fecha => db.prepare('SELECT nombre FROM main.dias_festivos WHERE fecha = ? AND activo = 1').get(fecha)?.nombre || null;
 
-  const LLEGADA_ANTES_MIN = 30; // llegar hasta 30 min antes de la entrada no es tiempo extra (Dirección, 2026-11-05)
+  // ---------- Reglas del tiempo extra ----------
+  const reglaDe = fecha => db.prepare('SELECT * FROM main.reglas_extra WHERE desde <= ? ORDER BY desde DESC, id DESC LIMIT 1').get(fecha)
+    || db.prepare('SELECT * FROM main.reglas_extra ORDER BY desde, id LIMIT 1').get() || REGLAS_INICIALES;
+  const semanaDe = f => semanaCon(db.prepare('SELECT desde, inicio_semana FROM main.reglas_extra ORDER BY desde, id').all(), f);
   const horas = m => (m >= 60 ? Math.floor(m / 60) + ' h' + (m % 60 ? ' ' + (m % 60) + ' min' : '') : m + ' min');
   // ---------- Cálculo de un día ----------
   function calcularDia(p, fecha, hoy = ahoraMexico().fecha) {
-    const hor = horarioDe(p.id, fecha), dia = hor?.dias[diaSemana(fecha)] || null, festivo = festivoDe(fecha);
+    const hor = horarioDe(p.id, fecha), dia = hor?.dias[diaSemana(fecha)] || null, festivo = festivoDe(fecha), rg = reglaDe(fecha);
     const laboral = !!dia && !festivo;
     const ch = db.prepare('SELECT id, tipo, hora, estado, origen, sin_conexion FROM main.checadas WHERE personal_id = ? AND fecha = ? AND estado <> \'anulada\' ORDER BY momento_utc, id').all(p.id, fecha);
     const validas = ch.filter(c => c.estado === 'valida'), m = c => min(c.hora.slice(0, 5));
@@ -202,16 +250,31 @@ module.exports = function asistencia(app, db, h) {
       // Los bloques marcados con los botones solo cuentan FUERA del horario (auditoría 2026-11-05: apretar «Inicio» y
       // «Fin de tiempo extra» a media jornada convertía horas normales en extra).
       const desdeH = min(dia.entrada), hastaH = min(dia.salida), fuera = bloques.flatMap(([a, b]) => [[a, Math.min(b, desdeH)], [Math.max(a, hastaH), b]]);
-      const antes = entrada !== null && entrada < desdeH - LLEGADA_ANTES_MIN ? [[entrada, desdeH]] : [];
-      if (antes.length) r.notas.push(`Llegó ${horas(desdeH - entrada)} antes de su entrada (cuenta como tiempo extra)`);
-      r.extra_min = unidos([...antes, ...(salida !== null ? [[hastaH, salida]] : []), ...fuera]);
+      // Automático (reglas del tiempo extra): llegar antes (si cuenta y pasa los minutos) y quedarse después de la
+      // salida (si llega a los minutos: entonces cuenta todo desde la salida). Con «solo botones», solo los bloques.
+      const partes = [...fuera];
+      if (rg.modo === 'auto') {
+        if (rg.antes_cuenta && entrada !== null && entrada < desdeH - rg.antes_min) { partes.push([entrada, desdeH]); r.notas.push(`Llegó ${horas(desdeH - entrada)} antes de su entrada (cuenta como tiempo extra)`); }
+        if (salida !== null && salida > hastaH) {
+          if (salida - hastaH >= Math.max(1, rg.despues_min)) partes.push([hastaH, salida]);
+          else r.notas.push(`Se quedó ${horas(salida - hastaH)} después de su salida (no cuenta: el tiempo extra empieza a los ${rg.despues_min} min)`);
+        }
+      }
+      r.extra_min = unidos(partes);
       // La comida siempre se marca: si trabajó 6 h o más sin marcarla, RH lo ve (no se descuenta sola).
       if (hor.comida && trabajado >= 360 && !validas.some(c => c.tipo === 'comida_sale')) r.notas.push('No marcó su comida');
       if (entrada === null && fecha < hoy && !AUSENCIAS.includes(r.incidencia)) r.falta = true;
     } else if (trabajado !== null || bloques.length) {
       // Descanso o festivo trabajado: todo lo trabajado es tiempo extra (y se marca para pagarlo como tal).
-      r.extra_min = unidos([...(trabajado !== null ? [[entrada, salida]] : []), ...bloques]) - (trabajado !== null ? comida : 0);
+      // Con la regla «en descanso o festivo todo es extra» apagada, solo cuentan los bloques marcados con los botones.
+      r.extra_min = rg.descanso_todo ? unidos([...(trabajado !== null ? [[entrada, salida]] : []), ...bloques]) - (trabajado !== null ? comida : 0) : unidos(bloques);
       r.notas.push(festivo ? 'Festivo trabajado' : 'Descanso trabajado');
+    }
+    // Redondeo hacia abajo por día (reglas del tiempo extra).
+    if (rg.bloque_min > 1 && r.extra_min > 0) {
+      const redondo = Math.floor(r.extra_min / rg.bloque_min) * rg.bloque_min;
+      if (redondo !== r.extra_min) r.notas.push(`Tiempo extra redondeado a bloques de ${rg.bloque_min} min (${horas(r.extra_min)} → ${horas(redondo)})`);
+      r.extra_min = redondo;
     }
     if (diaSemana(fecha) === 7 && (trabajado !== null || bloques.length)) r.notas.push('Domingo trabajado (prima dominical)');
     if (!hor) r.notas.push('Sin horario asignado');
@@ -240,14 +303,17 @@ module.exports = function asistencia(app, db, h) {
     if (!fechaOk(fecha)) return res.status(400).json({ error: 'Revisa la fecha' });
     res.json({ fecha, festivo: festivoDe(fecha), filas: gente(fecha).map(p => calcularDia(p, fecha)), intentos: app.locals.checador?.intentosDe(fecha) || [], puede: { corregir: puede(req, 'asistencia.corregir'), extra: puede(req, 'asistencia.extra') } });
   }));
-  // Semana de nómina (viernes a jueves): cada día y los totales. Tiempo extra: dobles hasta 9 h autorizadas, luego triples.
+  // Semana de nómina (semana vencida, de lunes a domingo por omisión; ver las reglas): cada día y los totales.
+  // Tiempo extra: dobles hasta 9 h autorizadas, luego triples. «vencida=1»: la última semana que ya cerró (la que se paga).
   app.get('/api/asistencia/semana', h((req, res) => {
     if (!puede(req, 'asistencia.ver')) return negar(res);
-    let desde = req.query.desde || ahoraMexico().fecha;
-    if (!fechaOk(desde)) return res.status(400).json({ error: 'Revisa la fecha' });
-    desde = inicioSemana(desde);
-    const fechas = [0, 1, 2, 3, 4, 5, 6].map(i => sumar(desde, i)), pid = req.query.personal_id ? idDe(req.query.personal_id) : null;
-    const filas = gente(fechas[6], pid).map(p => {
+    const hoy = ahoraMexico().fecha, enCurso = semanaDe(hoy);
+    let f = req.query.vencida === '1' ? sumar(enCurso.desde, -1) : req.query.desde || hoy;
+    if (!fechaOk(f)) return res.status(400).json({ error: 'Revisa la fecha' });
+    const { desde, hasta } = semanaDe(f), fechas = [];
+    for (let d = desde; d <= hasta; d = sumar(d, 1)) fechas.push(d);
+    const pid = req.query.personal_id ? idDe(req.query.personal_id) : null;
+    const filas = gente(hasta, pid).map(p => {
       const dias = fechas.map(f => calcularDia(p, f));
       const t = k => dias.reduce((s, d) => s + (d[k] || 0), 0), autorizado = dias.reduce((s, d) => s + (d.extra_autorizado_min || 0), 0);
       return { personal_id: p.id, nombre: p.nombre, puesto: p.puesto, dias, totales: {
@@ -264,11 +330,13 @@ module.exports = function asistencia(app, db, h) {
     // Dinero del tiempo extra: solo para quien ve sueldos, con el precio del puesto vigente al cierre de la semana.
     const dinero = verDinero(req);
     if (dinero) for (const f of filas) {
-      const p = gente(fechas[6], f.personal_id)[0], pr = p ? precioDe(p.sucursal_id, p.puesto, fechas[6]) : null, v = pr?.valor_cent ?? null;
+      const p = gente(hasta, f.personal_id)[0], pr = p ? precioDe(p.sucursal_id, p.puesto, hasta) : null, v = pr?.valor_cent ?? null;
       f.dinero = v == null ? { valor_hora_cent: null } : { valor_hora_cent: v, dobles_cent: pago(f.totales.extra_dobles_min, v, 2), triples_cent: pago(f.totales.extra_triples_min, v, 3) };
       if (v != null) f.dinero.total_cent = f.dinero.dobles_cent + f.dinero.triples_cent;
     }
-    res.json({ desde, hasta: fechas[6], fechas, festivos: fechas.map(festivoDe), filas, ...(dinero ? { dinero: true } : {}), puede: { corregir: puede(req, 'asistencia.corregir'), extra: puede(req, 'asistencia.extra'), precios: cambiaPrecio(req) } });
+    const rg = reglaDe(hasta);
+    res.json({ desde, hasta, fechas, festivos: fechas.map(festivoDe), filas, en_curso: enCurso.desde, vencida: semanaDe(sumar(enCurso.desde, -1)).desde, anterior: semanaDe(sumar(desde, -1)).desde, siguiente: sumar(hasta, 1),
+      semana_texto: `de ${DIAS[rg.inicio_semana].toLowerCase()} a ${DIAS[((rg.inicio_semana + 5) % 7) + 1].toLowerCase()}`, corta: fechas.length < 7, ...(dinero ? { dinero: true } : {}), puede: { corregir: puede(req, 'asistencia.corregir'), extra: puede(req, 'asistencia.extra'), precios: cambiaPrecio(req) } });
   }));
 
   // ---------- Precio de la hora por puesto ----------
@@ -319,6 +387,37 @@ module.exports = function asistencia(app, db, h) {
       .run(p.id, b.fecha, calc.extra_min, minutos, motivo, req.usuarioSesion.id, req.usuarioSesion.nombre);
     audit(req, p.id, 'tiempo extra', `${p.nombre}: ${b.fecha} · autorizó ${minutos} de ${calc.extra_min} min${motivo ? ' · ' + motivo : ''}`);
     res.status(201).json(calcularDia(p, b.fecha));
+  }));
+
+  // ---------- Reglas del tiempo extra (2026-11-09) ----------
+  // Las ve quien ve la asistencia; las cambia quien cambia los festivos (valen para toda la empresa). Cada cambio es una
+  // versión nueva «desde» una fecha (hasta 7 días atrás o a futuro); lo anterior no cambia.
+  const publicaRegla = r => r && ({ id: r.id, desde: r.desde, inicio_semana: r.inicio_semana, modo: r.modo, despues_min: r.despues_min, antes_cuenta: !!r.antes_cuenta, antes_min: r.antes_min, bloque_min: r.bloque_min, descanso_todo: !!r.descanso_todo, por: r.creado_por_nombre || null, created_at: r.created_at || null });
+  app.get('/api/asistencia/reglas-extra', h((req, res) => {
+    if (!puede(req, 'asistencia.ver')) return negar(res);
+    const hoy = ahoraMexico().fecha, versiones = db.prepare('SELECT * FROM main.reglas_extra ORDER BY desde DESC, id DESC').all();
+    res.json({ hoy, dias: DIAS, bloques: BLOQUES, dobles_semana_min: 540, vigente: publicaRegla(reglaDe(hoy)), semana_actual: semanaDe(hoy),
+      proximas: versiones.filter(v => v.desde > hoy).map(publicaRegla).reverse(), versiones: versiones.map(publicaRegla), editar: editaFestivos(req) });
+  }));
+  app.put('/api/asistencia/reglas-extra', h((req, res) => {
+    if (!editaFestivos(req)) return negar(res, 'Las reglas del tiempo extra valen para todas las sucursales: las cambia RH de la empresa o Dirección');
+    const b = req.body || {}, n = (v, a, z) => { const x = Number(v); return Number.isInteger(x) && x >= a && x <= z ? x : null; };
+    const r = { inicio_semana: n(b.inicio_semana, 1, 7), modo: ['auto', 'botones'].includes(b.modo) ? b.modo : null, despues_min: n(b.despues_min, 0, 240), antes_cuenta: b.antes_cuenta ? 1 : 0, antes_min: n(b.antes_min, 0, 240), bloque_min: BLOQUES.includes(Number(b.bloque_min)) ? Number(b.bloque_min) : null, descanso_todo: b.descanso_todo ? 1 : 0 };
+    if (r.inicio_semana === null) return res.status(400).json({ error: 'Elige el día en que empieza la semana' });
+    if (!r.modo) return res.status(400).json({ error: 'Elige cómo se cuenta el tiempo extra' });
+    if (r.despues_min === null || r.antes_min === null) return res.status(400).json({ error: 'Los minutos van de 0 a 240' });
+    if (r.bloque_min === null) return res.status(400).json({ error: 'Elige el redondeo (minuto a minuto, 5, 10, 15, 30 o 60 min)' });
+    const desde = desdeDe(b);
+    if (!desde) return res.status(400).json({ error: 'El cambio puede valer desde hace 7 días como máximo (lo anterior ya se calculó para la nómina)' });
+    const antes = reglaDe(desde);
+    if (antes && r.inicio_semana !== antes.inicio_semana && diaSemana(desde) !== r.inicio_semana)
+      return res.status(400).json({ error: `Si cambias el día en que empieza la semana, el cambio debe valer desde un ${DIAS[r.inicio_semana].toLowerCase()} (el primer día de la semana nueva)` });
+    const igual = antes && Object.keys(r).every(k => Number(antes[k]) === Number(r[k]) || antes[k] === r[k]);
+    if (igual) return res.json({ ok: true, cambios: 0 });
+    db.prepare('INSERT INTO main.reglas_extra (desde, inicio_semana, modo, despues_min, antes_cuenta, antes_min, bloque_min, descanso_todo, creado_por, creado_por_nombre) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+      .run(desde, r.inicio_semana, r.modo, r.despues_min, r.antes_cuenta, r.antes_min, r.bloque_min, r.descanso_todo, req.usuarioSesion.id, req.usuarioSesion.nombre);
+    app.locals.auditoria?.registrar(req, 'reglas_extra', null, 'cambio', `Desde ${desde}: semana empieza ${DIAS[r.inicio_semana].toLowerCase()} · ${r.modo === 'auto' ? 'automático' : 'solo con botones'} · después de la salida desde ${r.despues_min} min · llegar antes ${r.antes_cuenta ? 'cuenta desde ' + r.antes_min + ' min' : 'no cuenta'} · redondeo ${r.bloque_min} min · descanso/festivo ${r.descanso_todo ? 'todo es extra' : 'solo botones'}`);
+    res.json({ ok: true, cambios: 1 });
   }));
 
   // ---------- Horarios ----------
@@ -432,8 +531,9 @@ module.exports = function asistencia(app, db, h) {
     res.json(db.prepare('SELECT * FROM main.dias_festivos WHERE fecha = ?').get(fecha));
   }));
 
-  return { calcularDia, horarioDe, asignarHorario, horarioPorNombre };
+  return { calcularDia, horarioDe, asignarHorario, horarioPorNombre, semanaDe };
 };
 module.exports.festivosLey = festivosLey;
 module.exports.unidos = unidos;
 module.exports.inicioSemana = inicioSemana;
+module.exports.semanaCon = semanaCon;

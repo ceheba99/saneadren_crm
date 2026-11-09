@@ -2195,6 +2195,20 @@ table.tabla-clientes.py-tareas tbody td{white-space:normal;}
 .as-chip{display:inline-block;background:#f3f4f6;border-radius:10px;padding:1px 8px;font-size:12px;margin:1px 0;}
 .as-festivo{font-weight:600;}
 .as-detalle{background:#fafafa;border-radius:8px;padding:10px;text-align:left;}
+/* Ventana de checadas de una persona (2026-11-09) */
+.ac-semana{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:6px;margin:10px 0;}
+.ac-semana button{display:flex;flex-direction:column;align-items:flex-start;gap:2px;padding:6px 8px;border:1px solid #dbe1e7;border-radius:8px;background:#fff;font-size:12px;text-align:left;cursor:pointer;min-width:0;}
+.ac-semana button b{font-size:12px;}
+.ac-semana button[aria-current="date"]{border-color:#1d4ed8;box-shadow:0 0 0 2px #bfdbfe;}
+.ac-semana button.as-falta{background:#fff1f1;}
+.ac-resumen{display:flex;flex-wrap:wrap;gap:6px 18px;margin:8px 0 12px;}
+.ac-resumen span small{display:block;color:#6b7280;font-size:11px;}
+.ac-cara-mal{color:#b91c1c;font-weight:600;}
+.as-semana td .btn-link{color:inherit;text-decoration:none;}
+.as-semana td .btn-link:hover,.as-semana td .btn-link:focus-visible{text-decoration:underline;color:#1d4ed8;}
+.as-reglas label{display:block;margin:10px 0;}
+.as-reglas .as-num{width:80px;}
+@media (max-width:640px){.ac-semana{grid-template-columns:repeat(4,minmax(0,1fr));}}
 .as-tabla th,.as-tabla td,.as-form-horario td,.as-form-horario th{text-align:left !important;vertical-align:top;}
 .as-form{align-items:center;margin-top:8px;}
 .as-num{width:80px;}

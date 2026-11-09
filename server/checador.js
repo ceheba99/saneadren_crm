@@ -70,6 +70,8 @@ function fotoDe(v) {
   return buf.length >= 1000 && buf.length <= MAX_FOTO && tipoReal(buf) === 'jpg' ? buf : null;
 }
 
+// Motivos de un intento del biométrico que avisan en Inicio (los dos últimos, de versiones anteriores del kiosco).
+const MOTIVOS_CARA = ['La cara no coincide', 'Parece foto o pantalla', 'No volteó la cabeza (¿foto?)', 'Cara sin parpadeo (¿foto?)'];
 const idDe = v => { if (!/^\d{1,15}$/.test(String(v))) return 0; const n = Number(v); return Number.isSafeInteger(n) && n > 0 ? n : 0; };
 const texto = (v, max) => { const t = String(v ?? '').trim().replace(/\s+/g, ' '); return t ? t.slice(0, max) : null; };
 const primerNombre = n => String(n || '').trim().split(/\s+/)[0] || '';
@@ -107,7 +109,11 @@ function migrar(db) {
   agregar('personal', 'pin_cambiado_at', 'TEXT');
   agregar('personal', 'checa', 'INTEGER NOT NULL DEFAULT 1');
   const existe = t => !!db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(t);
-  if (existe('checador_intentos')) agregar('checador_intentos', 'detalle', 'TEXT'); // diagnóstico del biométrico (2026-11-09)
+  if (existe('checador_intentos')) {
+    agregar('checador_intentos', 'detalle', 'TEXT'); // diagnóstico del biométrico (2026-11-09)
+    // Aviso de Inicio «la cara no coincidió» (2026-11-09): queda hasta que alguien lo marca revisado (con su nombre).
+    agregar('checador_intentos', 'revisado_at', 'TEXT'); agregar('checador_intentos', 'revisado_por_nombre', 'TEXT');
+  }
   if (existe('checadas')) { agregar('checadas', 'uid_kiosco', 'TEXT'); agregar('checadas', 'precision_m', 'REAL'); agregar('checadas', 'foto_borrada_at', 'TEXT'); agregar('checadas', 'ip', 'TEXT'); agregar('checadas', 'distancia_m', 'REAL'); agregar('checadas', 'biometria', 'TEXT'); agregar('checadas', 'distancia_rostro', 'REAL'); }
   if (existe('checador_dispositivos')) { agregar('checador_dispositivos', 'tipo', "TEXT NOT NULL DEFAULT 'kiosco'"); agregar('checador_dispositivos', 'personal_id', 'INTEGER REFERENCES personal(id)'); agregar('checador_dispositivos', 'red_habitual', 'TEXT'); }
   // Ubicación de cada sucursal para revisar las checadas del celular (la captura Dirección).
@@ -177,7 +183,7 @@ function migrar(db) {
       codigo TEXT, motivo TEXT NOT NULL, ip TEXT,
       momento_utc TEXT NOT NULL, fecha TEXT NOT NULL, hora TEXT NOT NULL,
       foto_archivo TEXT, foto_borrada_at TEXT,
-      created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')), detalle TEXT
+      created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')), detalle TEXT, revisado_at TEXT, revisado_por_nombre TEXT
     );
     CREATE INDEX IF NOT EXISTS idx_checador_intentos_fecha ON checador_intentos(fecha);
     CREATE TRIGGER IF NOT EXISTS checador_intentos_no_borrar BEFORE DELETE ON checador_intentos
@@ -732,14 +738,47 @@ module.exports = function checador(app, db, h) {
     res.send(buf);
   }));
   // Intentos fallidos en los kioscos de sus sucursales (vista checador_intentos), de un día.
-  const intentosDe = fecha => db.prepare(`SELECT i.id, i.fecha, substr(i.hora, 1, 5) AS hora, i.codigo, i.motivo, i.detalle, i.ip, i.foto_archivo IS NOT NULL AS tiene_foto, i.foto_borrada_at IS NOT NULL AS foto_borrada,
+  const intentosDe = (fecha, pid = null) => db.prepare(`SELECT i.id, i.personal_id, i.fecha, substr(i.hora, 1, 5) AS hora, i.codigo, i.motivo, i.detalle, i.ip, i.foto_archivo IS NOT NULL AS tiene_foto, i.foto_borrada_at IS NOT NULL AS foto_borrada,
+      i.motivo IN (${MOTIVOS_CARA.map(() => '?').join(', ')}) AS es_cara, i.revisado_at, i.revisado_por_nombre,
       p.nombre AS persona, d.nombre AS kiosco FROM checador_intentos i LEFT JOIN personal p ON p.id = i.personal_id LEFT JOIN main.checador_dispositivos d ON d.id = i.dispositivo_id
-      WHERE i.fecha = ? ORDER BY i.momento_utc DESC, i.id DESC`).all(fecha);
+      WHERE i.fecha = ? ${pid ? 'AND i.personal_id = ?' : ''} ORDER BY i.momento_utc DESC, i.id DESC`).all(...MOTIVOS_CARA, fecha, ...(pid ? [pid] : [])).map(i => ({ ...i, es_cara: !!i.es_cara }));
   app.get('/api/asistencia/intentos', h((req, res) => {
     if (!puede(req, 'asistencia.ver')) return negar(res, 'No tienes permiso para ver la asistencia');
     const fecha = req.query.fecha || ahoraMexico().fecha;
     if (!fechaOk(fecha)) return res.status(400).json({ error: 'Revisa la fecha' });
-    res.json(intentosDe(fecha));
+    res.json(intentosDe(fecha, req.query.personal_id ? idDe(req.query.personal_id) : null));
+  }));
+  // ---------- Aviso «la cara no coincidió» (2026-11-09, pedido de Dirección) ----------
+  // Por persona y día (últimos 30 días): intentos del biométrico que no coincidieron o parecían foto/pantalla y que
+  // nadie ha revisado, más sus checadas que siguen por revisar por la cara. Sale en Inicio (ficha «Personal») para
+  // quien ve la asistencia, de sus sucursales (vistas). «No se vio la cara» no avisa: es la cámara, no un intento raro.
+  function avisosCara() {
+    const hoy = ahoraMexico().fecha, grupos = new Map();
+    const de = (pid, fecha, nombre) => { const k = pid + '|' + fecha; if (!grupos.has(k)) grupos.set(k, { personal_id: pid, nombre, fecha, intentos: 0, checadas: 0, motivos: [], kioscos: [], hora: null }); return grupos.get(k); };
+    for (const i of db.prepare(`SELECT i.personal_id, i.fecha, substr(i.hora, 1, 5) AS hora, i.motivo, d.nombre AS kiosco, p.nombre FROM checador_intentos i JOIN personal p ON p.id = i.personal_id
+      LEFT JOIN main.checador_dispositivos d ON d.id = i.dispositivo_id WHERE i.fecha >= date(?, '-30 days') AND i.revisado_at IS NULL AND i.motivo IN (${MOTIVOS_CARA.map(() => '?').join(', ')}) ORDER BY i.momento_utc`).all(hoy, ...MOTIVOS_CARA)) {
+      const g = de(i.personal_id, i.fecha, i.nombre); g.intentos++; g.hora = i.hora;
+      if (!g.motivos.includes(i.motivo)) g.motivos.push(i.motivo);
+      if (i.kiosco && !g.kioscos.includes(i.kiosco)) g.kioscos.push(i.kiosco);
+    }
+    for (const c of db.prepare(`SELECT c.personal_id, c.fecha, COUNT(*) n, p.nombre FROM checadas c JOIN personal p ON p.id = c.personal_id
+      WHERE c.fecha >= date(?, '-30 days') AND c.estado = 'por_revisar' AND c.biometria IN ('no_coincide', 'no_vivo') GROUP BY c.personal_id, c.fecha`).all(hoy)) de(c.personal_id, c.fecha, c.nombre).checadas = c.n;
+    return [...grupos.values()].sort((a, b) => b.fecha.localeCompare(a.fecha) || a.nombre.localeCompare(b.nombre));
+  }
+  // Marcar revisados los intentos de la cara de una persona en un día (quien corrige la asistencia). Sus checadas por
+  // revisar se aceptan o anulan aparte, con su motivo.
+  app.post('/api/asistencia/intentos/revisar', h((req, res) => {
+    if (!puede(req, 'asistencia.corregir')) return negar(res, 'No tienes permiso para revisar la asistencia');
+    const pid = idDe(req.body?.personal_id), fecha = String(req.body?.fecha || '');
+    if (!pid || !fechaOk(fecha)) return res.status(400).json({ error: 'Indica la persona y el día' });
+    const p = db.prepare('SELECT id, nombre FROM personal WHERE id = ?').get(pid); // de sus sucursales
+    if (!p) return res.status(404).json({ error: 'Persona no encontrada' });
+    if (app.locals.personal.esPropio(req, res, p.id, 'revisar tus propios avisos del checador')) return;
+    const ids = db.prepare(`SELECT id FROM checador_intentos WHERE personal_id = ? AND fecha = ? AND revisado_at IS NULL AND motivo IN (${MOTIVOS_CARA.map(() => '?').join(', ')})`).all(p.id, fecha, ...MOTIVOS_CARA).map(x => x.id);
+    const marcar = db.prepare("UPDATE main.checador_intentos SET revisado_at = datetime('now','localtime'), revisado_por_nombre = ? WHERE id = ? AND revisado_at IS NULL");
+    db.transaction(() => { for (const id of ids) marcar.run(req.usuarioSesion.nombre, id); })();
+    if (ids.length) audit(req, p.id, 'revisó', `${p.nombre}: revisó ${ids.length} intento(s) en que la cara no coincidió (${fecha})`);
+    res.json({ ok: true, revisados: ids.length });
   }));
   app.get('/api/asistencia/intentos/:id/foto', h((req, res) => {
     if (!puede(req, 'asistencia.ver')) return negar(res, 'No tienes permiso para ver la asistencia');
@@ -842,7 +881,7 @@ module.exports = function checador(app, db, h) {
     res.json({ ok: true });
   }));
 
-  return { TIPOS, altaChecador, intentosDe };
+  return { TIPOS, altaChecador, intentosDe, avisosCara };
 };
 module.exports.pinDebil = pinDebil;
 module.exports.TIPOS = TIPOS;
