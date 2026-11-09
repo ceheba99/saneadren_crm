@@ -2252,3 +2252,8 @@ tr.logs-aviso td{background:#fffaf0;}
 @media (max-width:1100px){.logs-tarjetas{grid-template-columns:repeat(3,1fr);}}
 @media (max-width:700px){.logs-tarjetas{grid-template-columns:repeat(2,1fr);}}
 #panel-logs .tabla-resumen th,#panel-logs .tabla-resumen td{text-align:left;}
+/* Clientes: carga con plantilla y eliminar (Ajustes, solo Dirección). */
+#panel-clientes-carga .tabla-resumen th,#panel-clientes-carga .tabla-resumen td{text-align:left;}
+.cc-buscar{width:100%;max-width:420px;margin:4px 0 10px;}
+.cc-acciones{white-space:nowrap;}
+.btn-peligro-texto{color:var(--rojo);}

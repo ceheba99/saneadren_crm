@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Saneadren · Cotizaciones y Servicios</title>
-<link rel="stylesheet" href="styles.css?v=reglas1">
+<link rel="stylesheet" href="styles.css?v=reglas2">
 <link rel="stylesheet" href="servicios-tabla.css">
 <link rel="stylesheet" href="flujo.css?v=cel1">
 <link rel="stylesheet" href="interfaz.css?v=visual19">
@@ -788,6 +788,17 @@
           <button class="btn btn-primario" id="btn-crear-usuario">Crear usuario</button>
         </div>
       </div>
+    </div>
+    <div class="panel-alta solo-general" id="panel-clientes-carga">
+      <h2>👥 Clientes: cargar con plantilla y eliminar</h2>
+      <p class="ayuda">Solo Dirección. Sube muchos clientes a la vez con la plantilla de Excel, revisa lo que entró en cada carga y elimina los que no quieras. Un cliente solo se elimina si no tiene cotizaciones, órdenes ni cobros (para no perder su historial). Todo queda en la bitácora.</p>
+      <h3 class="util-13">Cargar clientes</h3>
+      <div id="cc-carga"></div>
+      <h3 class="util-13">Cargas anteriores</h3>
+      <div id="cc-cargas"></div>
+      <h3 class="util-13">Buscar un cliente para eliminarlo</h3>
+      <input type="search" id="cc-buscar" placeholder="Nombre, empresa, teléfono o ID (CLI-0001)" aria-label="Buscar cliente para eliminar" class="cc-buscar">
+      <div id="cc-resultados"></div>
     </div>
     <div class="panel-alta solo-general" id="panel-roles">
       <h2>Roles y permisos</h2>
@@ -1855,11 +1866,12 @@
 <script src="sucursales.js?v=perm4"></script>
 <script src="facturacion.js?v=fx10"></script>
 <script src="encuestas.js?v=enc1"></script>
-<script src="app.js?v=carta2"></script>
+<script src="app.js?v=cc1"></script>
 <script src="listas-servicio.js?v=ls1"></script>
 <script src="personal.js?v=cara1"></script>
 <script src="asistencia.js?v=reglas1"></script>
 <script src="rh.js?v=reglas1"></script>
+<script src="clientes-carga.js?v=cc1"></script>
 <script src="buscador.js?v=suc1"></script>
 <script src="demo.js?v=demo1"></script>
 <script src="prospeccion.js?v=pro2"></script>

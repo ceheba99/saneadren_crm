@@ -9,8 +9,8 @@ module.exports = {
     ventas: {
       nombre: 'Contactos, cotizaciones y órdenes de servicio',
       vistas: ['alta', 'leads', 'clientes', 'calendario', 'generador'],
-      tablas: ['clientes', 'clientes_alias', 'clientes_distintos', 'clientes_fusionados', 'telefonos_cliente', 'leads', 'historial', 'historial_archivo', 'canales', 'canales_alias', 'tipos_cliente', 'catalogo_servicios', 'servicios_alias', 'contadores_folio', 'orden_personal', 'plantillas_descripcion', 'cliente_sucursales', 'servicio_listas'],
-      rutas: [/^\/api\/(leads|contactos|clientes|servicios|canales|tipos-cliente|recompras|alertas|generador|historial)(\/|$)/],
+      tablas: ['clientes', 'clientes_alias', 'clientes_distintos', 'clientes_fusionados', 'telefonos_cliente', 'leads', 'historial', 'historial_archivo', 'canales', 'canales_alias', 'tipos_cliente', 'catalogo_servicios', 'servicios_alias', 'contadores_folio', 'orden_personal', 'plantillas_descripcion', 'cliente_sucursales', 'servicio_listas', 'cargas_clientes'],
+      rutas: [/^\/api\/(leads|contactos|clientes|clientes-carga|clientes-gestion|servicios|canales|tipos-cliente|recompras|alertas|generador|historial)(\/|$)/],
       pendientes: 'recordatorios vencidos, cotizaciones sin movimiento, servicios por concluir y recompras',
       inicio: ['inicio-cotizaciones', 'inicio-concluir', 'inicio-recompras'],
       demo: ['clientes', 'leads', 'historial', 'orden_personal'],
@@ -163,6 +163,8 @@ module.exports = {
   generados: {
     revisado_por_nombre: 'quien marcó revisado el aviso «la cara no coincidió»: lo pone el sistema con la sesión (2026-11-09)',
     distancia_rostro: 'qué tanto se parece la cara a su registro: la calcula el sistema al checar con el biométrico',
+    creados: 'clientes que dio de alta una carga con plantilla: los cuenta el sistema al guardar (2026-11-09)',
+    omitidos: 'filas de una carga de clientes que no se cargaron porque su teléfono ya existía: las cuenta el sistema (2026-11-09)',
     ip: 'red (IP) desde la que se entró o se checó: la toma el sistema de la conexión (logs del sistema, checadas, intentos del kiosco)',
     // Gastos con XML (2026-11-04): salen del XML de la factura que se sube, no de un campo del formulario.
     emisor_rfc: 'RFC de quien emite la factura de un gasto: lo lee el sistema del XML (CFDI) que se sube',
