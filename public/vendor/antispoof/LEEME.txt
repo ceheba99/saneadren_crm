@@ -1,0 +1,2 @@
+Modelo de prueba de vida pasiva (foto/pantalla vs cara real): facenox/face-antispoof-onnx, models/best_model_quantized.onnx (MiniFASNetV2-SE, Apache-2.0, ver LICENSE), commit 2b0a221, sha256 fde20585635cae62ed1d41796f76b6f8bc4b92cd91ec1cf0f1bc6485d2d587a9 (2026-11-09).
+Entrada: recorte cuadrado de 1.5 veces la caja de la cara, 128x128 RGB, CHW, /255. Salida: [real, falso] (logits). Real si real - falso >= umbral.

@@ -313,13 +313,15 @@ module.exports = function checador(app, db, h) {
   }
   const paraChecar = (req, p) => {
     const { fecha } = ahoraMexico(), u = ultimaDe(p.id, fecha);
-    // biometria: la tableta debe pedirle que parpadee y mandar su cara (biometria.js).
+    // biometria: la tableta debe tomar su cara con la prueba de vida y mandarla (biometria.js).
     return { ticket: nuevoTicket('checar', p, req.kiosco.id), nombre: primerNombre(p.nombre), sugerido: SIGUIENTE[u?.tipo || ''], ultima: u ? { tipo: TIPOS[u.tipo], hora: u.hora.slice(0, 5) } : null, tipos: TIPOS, biometria: !!app.locals.biometria?.activo(p.id) };
   };
 
   // La pantalla del kiosco: la única página del sistema con permiso de cámara (seguridad.js la bloquea en las demás).
   app.get('/kiosco', (req, res) => {
     res.setHeader('Permissions-Policy', 'camera=(self), microphone=(), geolocation=()');
+    // La prueba de vida (public/vendor/ort + vendor/antispoof) corre en WebAssembly: solo esta página lo permite.
+    res.setHeader('Content-Security-Policy', String(res.getHeader('Content-Security-Policy') || '').replace("script-src 'self'", "script-src 'self' 'wasm-unsafe-eval'"));
     res.sendFile(path.join(__dirname, '..', 'public', 'kiosco.html'));
   });
   app.get('/api/publico/kiosco/estado', kiosco, h((req, res) => {
@@ -378,17 +380,19 @@ module.exports = function checador(app, db, h) {
   function detalleDe(d, ev) {
     const partes = [];
     if (d && typeof d === 'object') {
-      const c = num(d.cuadros, 10000), s = num(d.segundos, 600), o = num(d.ojosMin, 10), g = num(d.giroMax, 10);
+      const c = num(d.cuadros, 10000), s = num(d.segundos, 600), ev2 = num(d.evaluados, 1000), re = num(d.reales, 1000), sg = num(d.seguidos, 1000), vp = num(d.vida, 100);
       if (c !== null) partes.push(`${c} cuadros${s ? ` en ${s} s` : ''}`);
-      if (d.calibrado === false) partes.push('no calibró');
-      if (o !== null) partes.push(`ojos bajaron a ${Math.round(o * 100)} %`);
-      if (g !== null) partes.push(`giro ${g.toFixed(3)} (pide 0.080)`);
+      // Prueba de vida pasiva (2026-11-09): cuántos cuadros revisó el modelo, cuántos salieron «persona real», la racha
+      // más larga (pide 3 seguidos) y el promedio (positivo = real, negativo = foto o pantalla).
+      if (ev2 !== null) partes.push(`vida: ${re ?? 0} de ${ev2} reales, racha ${sg ?? 0} (pide 3)${vp !== null ? `, promedio ${vp.toFixed(1)}` : ''}`);
+      if (d.chica === true) partes.push('cara muy lejos');
+      if (d.sinModelo === true) partes.push('no cargó la prueba de vida');
     }
     if (ev?.distancia != null) partes.push(`distancia ${Number(ev.distancia).toFixed(2)}`);
     return partes.join(' · ').slice(0, 200) || null;
   }
   // ---------- Entrar con la cara en vez del PIN (biométrico, decidido con Dirección el 2026-11-05) ----------
-  // Código (o credencial) → si la persona tiene biométrico, la tablet la escanea: si coincide y parpadeó, SE SALTA EL
+  // Código (o credencial) → si la persona tiene biométrico, la tablet la escanea: si coincide y pasa la prueba de vida, SE SALTA EL
   // PIN. Tras 3 caras que no coinciden en 10 min, solo con PIN (y cada intento fallido queda con su foto en «Intentos
   // fallidos» para RH). No aplica a quien tiene PIN temporal (primero elige su PIN).
   const fallosCara = new Map(), INTENTOS_CARA = 3, VENTANA_CARA_MS = 10 * 60 * 1000;
@@ -409,7 +413,7 @@ module.exports = function checador(app, db, h) {
     const t = Date.now(); let f = fallosCara.get(p.id);
     if (!f || f.reinicia <= t) { f = { n: 0, reinicia: t + VENTANA_CARA_MS }; fallosCara.set(p.id, f); }
     f.n++;
-    const motivo = { no_coincide: 'La cara no coincide', no_vivo: 'No volteó la cabeza (¿foto?)', sin_rostro: 'No se vio la cara' }[ev?.resultado] || 'Biométrico sin resultado';
+    const motivo = { no_coincide: 'La cara no coincide', no_vivo: 'Parece foto o pantalla', sin_rostro: 'No se vio la cara' }[ev?.resultado] || 'Biométrico sin resultado';
     const intento = registrarIntento(req, codigo, { status: 401 }, motivo, detalleDe(req.body?.rostro?.diag, ev));
     res.status(401).json({ coincide: false, resultado: ev?.resultado || null, intentos: f.n, pin: f.n >= INTENTOS_CARA, ...(intento ? { intento } : {}) });
   }));

@@ -248,7 +248,7 @@ const Personal = (() => {
   // Código de 6 dígitos (10 min, un solo uso) para que la persona registre su cara en el kiosco con RH a un lado.
   async function codigoBiometria(id) {
     try { const r = await api('/asistencia/personal/' + Number(id) + '/biometria/codigo', { method: 'POST' }); const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.error || 'No se pudo');
-      $('pe-bio-codigo').innerHTML = `<p class="pe-pin-nuevo" role="alert">Código: <b>${esc(j.codigo)}</b> · vale ${esc(j.minutos)} minutos y una sola vez.<br><small>En el kiosco: «🙂 Registrar mi cara (con RH)» → escribe este código → que mire a la cámara y parpadee. Quédate con la persona mientras lo hace.</small></p>`; }
+      $('pe-bio-codigo').innerHTML = `<p class="pe-pin-nuevo" role="alert">Código: <b>${esc(j.codigo)}</b> · vale ${esc(j.minutos)} minutos y una sola vez.<br><small>En el kiosco: «🙂 Registrar mi cara (con RH)» → escribe este código → que mire de frente a la cámara unos segundos. Quédate con la persona mientras lo hace.</small></p>`; }
     catch (err) { toast(err.message); }
   }
   async function consentimientoBiometria(id, firmado) {
