@@ -107,6 +107,7 @@ function migrar(db) {
   agregar('personal', 'pin_cambiado_at', 'TEXT');
   agregar('personal', 'checa', 'INTEGER NOT NULL DEFAULT 1');
   const existe = t => !!db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(t);
+  if (existe('checador_intentos')) agregar('checador_intentos', 'detalle', 'TEXT'); // diagnóstico del biométrico (2026-11-09)
   if (existe('checadas')) { agregar('checadas', 'uid_kiosco', 'TEXT'); agregar('checadas', 'precision_m', 'REAL'); agregar('checadas', 'foto_borrada_at', 'TEXT'); agregar('checadas', 'ip', 'TEXT'); agregar('checadas', 'distancia_m', 'REAL'); agregar('checadas', 'biometria', 'TEXT'); agregar('checadas', 'distancia_rostro', 'REAL'); }
   if (existe('checador_dispositivos')) { agregar('checador_dispositivos', 'tipo', "TEXT NOT NULL DEFAULT 'kiosco'"); agregar('checador_dispositivos', 'personal_id', 'INTEGER REFERENCES personal(id)'); agregar('checador_dispositivos', 'red_habitual', 'TEXT'); }
   // Ubicación de cada sucursal para revisar las checadas del celular (la captura Dirección).
@@ -176,7 +177,7 @@ function migrar(db) {
       codigo TEXT, motivo TEXT NOT NULL, ip TEXT,
       momento_utc TEXT NOT NULL, fecha TEXT NOT NULL, hora TEXT NOT NULL,
       foto_archivo TEXT, foto_borrada_at TEXT,
-      created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+      created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')), detalle TEXT
     );
     CREATE INDEX IF NOT EXISTS idx_checador_intentos_fecha ON checador_intentos(fecha);
     CREATE TRIGGER IF NOT EXISTS checador_intentos_no_borrar BEFORE DELETE ON checador_intentos
@@ -359,17 +360,32 @@ module.exports = function checador(app, db, h) {
   // Paso 1: código y PIN. Si son correctos regresa un ticket de 90 s para checar (o para elegir PIN si es temporal).
   // Intento fallido: se registra (uno por código y kiosco cada 30 s) y se regresa un permiso de 90 s para subir su foto.
   // «motivo»: para los intentos con la cara (biométrico); esos no se limitan a uno cada 30 s (ya son máx. 3 por persona).
-  function registrarIntento(req, codigo, v, motivo = null) {
+  // «detalle»: diagnóstico del biométrico (cuadros vistos, ojos, giro) para poder ajustar con datos reales.
+  function registrarIntento(req, codigo, v, motivo = null, detalle = null) {
     if (![401, 423].includes(v.status)) return null;
     const cod = /^\d{4}$/.test(codigo) ? codigo : null, llave = req.kiosco.id + ':' + (cod || '-'), t = Date.now();
     if (!motivo && ultimoIntento.has(llave) && ultimoIntento.get(llave) + 30000 > t) return null;
     if (!motivo) ultimoIntento.set(llave, t);
     const quien = cod ? db.prepare('SELECT id FROM main.personal WHERE codigo_checador = ?').get(cod) : null, a = ahoraMexico();
-    const id = Number(db.prepare('INSERT INTO main.checador_intentos (dispositivo_id, personal_id, codigo, motivo, ip, momento_utc, fecha, hora) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
-      .run(req.kiosco.id, quien?.id ?? null, cod, motivo || (v.status === 423 ? 'PIN bloqueado' : 'Código o PIN incorrecto'), req.ipCliente || null, a.utc, a.fecha, a.hora).lastInsertRowid);
+    const id = Number(db.prepare('INSERT INTO main.checador_intentos (dispositivo_id, personal_id, codigo, motivo, ip, momento_utc, fecha, hora, detalle) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+      .run(req.kiosco.id, quien?.id ?? null, cod, motivo || (v.status === 423 ? 'PIN bloqueado' : 'Código o PIN incorrecto'), req.ipCliente || null, a.utc, a.fecha, a.hora, detalle).lastInsertRowid);
     const permiso = crypto.randomBytes(24).toString('base64url');
     fotosIntento.set(permiso, { id, dispositivoId: req.kiosco.id, fecha: a.fecha, expira: t + TICKET_MS });
     return permiso;
+  }
+  // Diagnóstico que manda la tableta (solo números) + la distancia de la cara, en una línea legible.
+  const num = (v, max) => (typeof v === 'number' && Number.isFinite(v) && Math.abs(v) <= max ? v : null);
+  function detalleDe(d, ev) {
+    const partes = [];
+    if (d && typeof d === 'object') {
+      const c = num(d.cuadros, 10000), s = num(d.segundos, 600), o = num(d.ojosMin, 10), g = num(d.giroMax, 10);
+      if (c !== null) partes.push(`${c} cuadros${s ? ` en ${s} s` : ''}`);
+      if (d.calibrado === false) partes.push('no calibró');
+      if (o !== null) partes.push(`ojos bajaron a ${Math.round(o * 100)} %`);
+      if (g !== null) partes.push(`giro ${g.toFixed(3)} (pide 0.080)`);
+    }
+    if (ev?.distancia != null) partes.push(`distancia ${Number(ev.distancia).toFixed(2)}`);
+    return partes.join(' · ').slice(0, 200) || null;
   }
   // ---------- Entrar con la cara en vez del PIN (biométrico, decidido con Dirección el 2026-11-05) ----------
   // Código (o credencial) → si la persona tiene biométrico, la tablet la escanea: si coincide y parpadeó, SE SALTA EL
@@ -393,8 +409,8 @@ module.exports = function checador(app, db, h) {
     const t = Date.now(); let f = fallosCara.get(p.id);
     if (!f || f.reinicia <= t) { f = { n: 0, reinicia: t + VENTANA_CARA_MS }; fallosCara.set(p.id, f); }
     f.n++;
-    const motivo = { no_coincide: 'La cara no coincide', no_vivo: 'Cara sin parpadeo (¿foto?)', sin_rostro: 'No se vio la cara' }[ev?.resultado] || 'Biométrico sin resultado';
-    const intento = registrarIntento(req, codigo, { status: 401 }, motivo);
+    const motivo = { no_coincide: 'La cara no coincide', no_vivo: 'No volteó la cabeza (¿foto?)', sin_rostro: 'No se vio la cara' }[ev?.resultado] || 'Biométrico sin resultado';
+    const intento = registrarIntento(req, codigo, { status: 401 }, motivo, detalleDe(req.body?.rostro?.diag, ev));
     res.status(401).json({ coincide: false, resultado: ev?.resultado || null, intentos: f.n, pin: f.n >= INTENTOS_CARA, ...(intento ? { intento } : {}) });
   }));
   app.post('/api/publico/kiosco/identificar', kiosco, h((req, res) => {
@@ -712,7 +728,7 @@ module.exports = function checador(app, db, h) {
     res.send(buf);
   }));
   // Intentos fallidos en los kioscos de sus sucursales (vista checador_intentos), de un día.
-  const intentosDe = fecha => db.prepare(`SELECT i.id, i.fecha, substr(i.hora, 1, 5) AS hora, i.codigo, i.motivo, i.ip, i.foto_archivo IS NOT NULL AS tiene_foto, i.foto_borrada_at IS NOT NULL AS foto_borrada,
+  const intentosDe = fecha => db.prepare(`SELECT i.id, i.fecha, substr(i.hora, 1, 5) AS hora, i.codigo, i.motivo, i.detalle, i.ip, i.foto_archivo IS NOT NULL AS tiene_foto, i.foto_borrada_at IS NOT NULL AS foto_borrada,
       p.nombre AS persona, d.nombre AS kiosco FROM checador_intentos i LEFT JOIN personal p ON p.id = i.personal_id LEFT JOIN main.checador_dispositivos d ON d.id = i.dispositivo_id
       WHERE i.fecha = ? ORDER BY i.momento_utc DESC, i.id DESC`).all(fecha);
   app.get('/api/asistencia/intentos', h((req, res) => {

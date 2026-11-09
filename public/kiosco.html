@@ -380,7 +380,9 @@
 
   // ---------- Biométrico facial (server/biometria.js) ----------
   // face-api (alojado en /vendor/face-api) calcula en la tableta un «descriptor» de 128 números de la cara; el servidor lo
-  // compara con la plantilla de la persona. Prueba de vida al checar: cerrar y abrir los ojos, o voltear la cabeza y regresar.
+  // compara con la plantilla de la persona. Prueba de vida al checar: VOLTEAR LA CABEZA y regresar al centro (2026-11-09:
+  // en la tableta real los ojos se miden con mucho ruido y el cierre casi no se detectaba); cerrar y abrir los ojos
+  // también vale si se detecta.
   let faceApi = null;
   function cargarFaceApi() {
     if (faceApi) return faceApi;
@@ -403,6 +405,9 @@
   const mediana = l => [...l].sort((a, b) => a - b)[Math.floor(l.length / 2)];
   const TIEMPO_ROSTRO = 15000;
   const MIRAR_DE_FRENTE = 'Mira al centro de la cámara con los ojos abiertos';
+  const VOLTEAR = 'Ahora voltea la cabeza hacia un lado (como para ver tu hombro) y regresa al centro';
+  // Giro: desde 0.08 (antes 0.12) cuenta como volteado; de regreso, a menos de 0.04 del centro.
+  const GIRO_VOLTEADO = .08, GIRO_CENTRO = .04;
   function mismaCara(a, b) {
     const proporcion = b.width / a.width;
     return proporcion > .65 && proporcion < 1.55 &&
@@ -410,8 +415,10 @@
   }
   async function capturarCara({ muestras = 1, vida = true, ms = TIEMPO_ROSTRO, aviso = () => {}, sigue = () => true } = {}) {
     const f = await cargarFaceApi(), v = $('video'), opciones = new f.TinyFaceDetectorOptions({ inputSize: 224, scoreThreshold: 0.4 });
-    const hasta = Date.now() + ms, descriptores = [], calibracion = [];
-    let base = null, caja = null, perdidos = 0, gesto = null, retoDesde = 0, ultimaMuestra = 0, vistas = 0;
+    const hasta = Date.now() + ms, descriptores = [], calibracion = [], inicio = Date.now();
+    let base = null, caja = null, perdidos = 0, gesto = null, retoDesde = 0, ultimaMuestra = 0, vistas = 0, intentosCalibrar = 0;
+    // Diagnóstico para RH/soporte si no se completa: cuántos cuadros vio, cuánto bajaron los ojos, cuánto giró.
+    const diag = { cuadros: 0, ojosMin: null, giroMax: 0, calibrado: false };
     let vivo = !vida, cuadroAnterior = -1;
     const reiniciarRostro = () => {
       base = caja = gesto = null;
@@ -435,14 +442,18 @@
       if (!sigue() || Date.now() >= hasta) break;
       if (!r) {
         aviso.ojos?.(null);
+        // Al voltear la cabeza el detector puede dejar de ver la cara un momento: eso NO borra el giro ni la muestra
+        // (2026-11-09: antes se reiniciaba todo y el giro casi nunca se completaba). Un cierre de ojos sí se descarta, y
+        // tras ~2 s sin cara se empieza de nuevo. Si reaparece otra cara en otro lugar, se reinicia (abajo).
         if (++perdidos >= 2) {
-          reiniciarRostro();
-          aviso('No te vemos. Acércate y mira de frente a la cámara');
+          if (gesto === 'ojos') gesto = null;
+          if (perdidos >= 12) reiniciarRostro();
+          aviso(gesto === 'giro' ? 'Giro detectado. Ahora mira al centro' : 'No te vemos. Acércate y mira de frente a la cámara');
         }
         continue;
       }
       perdidos = 0;
-      vistas++;
+      vistas++; diag.cuadros = vistas;
       const nuevaCaja = r.detection.box;
       if (caja && !mismaCara(caja, nuevaCaja)) reiniciarRostro();
       caja = nuevaCaja;
@@ -458,15 +469,20 @@
         }
         calibracion.push({ ojos, giro });
         if (calibracion.length < 3) continue;
+        // Con ruido en los ojos (tableta) la calibración podía no terminar nunca: más tolerancia y, tras 6 intentos, se
+        // toma la mediana de lo visto.
         const estables = ojos.every((_, i) => {
           const medidas = calibracion.map(c => c.ojos[i]);
-          return Math.max(...medidas) - Math.min(...medidas) <= .045;
+          return Math.max(...medidas) - Math.min(...medidas) <= .07;
         });
-        if (estables) base = { ojos: ojos.map((_, i) => mediana(calibracion.map(c => c.ojos[i]))), giro: mediana(calibracion.map(c => c.giro)) };
+        if (estables || ++intentosCalibrar >= 6) { base = { ojos: ojos.map((_, i) => mediana(calibracion.map(c => c.ojos[i]))), giro: mediana(calibracion.map(c => c.giro)) }; diag.calibrado = true; }
         calibracion.shift();
         continue;
       }
       const diferencia = Math.abs(giro - base.giro);
+      diag.giroMax = Math.max(diag.giroMax, diferencia);
+      const proporcion = Math.min(...ojos.map((ojo, i) => ojo / (base.ojos[i] || 1)));
+      diag.ojosMin = diag.ojosMin === null ? proporcion : Math.min(diag.ojosMin, proporcion);
       const abiertos = ojos.every((ojo, i) => ojo >= base.ojos[i] * .92);
       const cerrados = ojos.every((ojo, i) => ojo <= base.ojos[i] - Math.max(.03, base.ojos[i] * .16));
       if (descriptores.length < muestras) {
@@ -481,18 +497,21 @@
         if (vida) retoDesde = Date.now();
       } else if (vida) {
         const reabrio = gesto === 'ojos' && abiertos && diferencia < .08;
-        const volvioAlCentro = gesto === 'giro' && diferencia < .05;
+        const volvioAlCentro = gesto === 'giro' && diferencia < GIRO_CENTRO;
         if (reabrio || volvioAlCentro) vivo = true;
+        else if (!gesto && diferencia > GIRO_VOLTEADO) gesto = 'giro';
         else if (!gesto && cerrados && diferencia < .08) gesto = 'ojos';
-        else if (!gesto && diferencia > .12) gesto = 'giro';
       }
       aviso.ojos?.(abiertos ? true : cerrados && diferencia < .08 ? false : null);
       if (vivo) aviso('Listo');
       else if (gesto === 'ojos') aviso('Cierre detectado. Ahora abre los ojos');
       else if (gesto === 'giro') aviso('Giro detectado. Ahora mira al centro');
-      else aviso(Date.now() - retoDesde < 3500 ? 'Cierra los ojos un momento, hasta que te pida abrirlos' : 'Cierra los ojos o gira un poco la cabeza y vuelve al centro');
+      else aviso(VOLTEAR);
     }
-    return { vivo, descriptores, vistas };
+    diag.segundos = Math.round((Date.now() - inicio) / 100) / 10;
+    diag.ojosMin = diag.ojosMin === null ? null : Math.round(diag.ojosMin * 100) / 100;
+    diag.giroMax = Math.round(diag.giroMax * 1000) / 1000;
+    return { vivo, descriptores, vistas, diag };
   }
   // Mientras se toma la cara: ventana a pantalla completa con la cámara en grande, un óvalo para acomodar la cara y la
   // instrucción en letras grandes. Se cierra sola cuando sigue el trámite (la siguiente pantalla) o con «Cancelar».
@@ -523,7 +542,7 @@
     try { cap = await capturarCara({ aviso, sigue: () => estado.cara === yo }); }
     catch { if (estado.cara === yo) elegirTipo({ ...datos, aviso: 'No se pudo usar el reconocimiento facial: tu checada quedará por revisar.' }); return; }
     if (estado.cara !== yo) return; // canceló
-    const rostro = { descriptor: cap.descriptores[0] || null, vivo: cap.vivo };
+    const rostro = { descriptor: cap.descriptores[0] || null, vivo: cap.vivo, diag: cap.diag };
     let coincide = false;
     if (rostro.descriptor && rostro.vivo) { try { const r = await api('rostro-verificar', { ticket: datos.ticket, rostro }); coincide = r.ok && r.j.coincide; } catch { coincide = false; } }
     if (estado.cara !== yo) return;
@@ -666,7 +685,7 @@
     let cap;
     try { cap = await capturarCara({ aviso, sigue: () => estado.cara === yo }); } catch { return estado.cara === yo ? pedirPin(codigo, null, 'Escribe tu PIN') : undefined; }
     if (estado.cara !== yo) return;
-    const rostro = { descriptor: cap.descriptores[0] || null, vivo: cap.vivo };
+    const rostro = { descriptor: cap.descriptores[0] || null, vivo: cap.vivo, diag: cap.diag };
     let r; try { r = await api('rostro-entrar', { codigo, rostro }); } catch { if (estado.cara === yo) pedirPin(codigo, rostro, 'Escribe tu PIN'); return; }
     if (estado.cara !== yo) return;
     if (r.ok) { if (sinConexion) { sinConexion = false; avisos(); } return elegirTipo({ ...r.j, rostro, aviso: '✔ Te reconocimos. ¿Qué vas a registrar?' }); }

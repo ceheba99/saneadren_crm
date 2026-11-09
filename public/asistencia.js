@@ -73,7 +73,7 @@ const Asistencia = (() => {
     const l = datos.intentos || [];
     if (!l.length) return '';
     return `<div class="modal-section"><h3 class="pe-sub">⚠️ Intentos fallidos en el kiosco (${esc(l.length)})</h3><p class="ayuda">El kiosco toma foto cuando alguien se equivoca de código o PIN: sirve para ver si alguien prueba el código de otra persona.</p>
-      <ul class="pe-ordenes">${l.map(i => `<li><b>${esc(i.hora)}</b> · ${esc(i.motivo)} · código ${esc(i.codigo || '—')}${i.persona ? ` (de <b>${esc(i.persona)}</b>)` : ' (no es de nadie)'} · ${esc(i.kiosco || '')}
+      <ul class="pe-ordenes">${l.map(i => `<li><b>${esc(i.hora)}</b> · ${esc(i.motivo)}${i.detalle ? ` <small class="pe-cuenta">(${esc(i.detalle)})</small>` : ''} · código ${esc(i.codigo || '—')}${i.persona ? ` (de <b>${esc(i.persona)}</b>)` : ' (no es de nadie)'} · ${esc(i.kiosco || '')}
         ${i.tiene_foto ? ` <button type="button" class="btn-link" data-as-intento-foto="${Number(i.id)}">📷 Foto</button>` : esc(i.foto_borrada ? ' · foto borrada (plazo cumplido)' : ' · sin foto')}</li>`).join('')}</ul><div id="as-intento-foto"></div></div>`;
   }
   const revisar = c => c.estado === 'por_revisar', vigente = c => c.estado !== 'anulada';
