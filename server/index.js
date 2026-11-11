@@ -930,7 +930,8 @@ app.post('/api/leads', validarPartidas, validarRegistro, h((req, res) => {
   }
   return db.prepare('SELECT * FROM leads WHERE id = ?').get(info.lastInsertRowid);
   })();
-  res.status(201).json(creado);
+  const avisosAgenda = creado?.estatus === 'ganado' ? require('./agenda').choques(db, creado.id) : []; // H10: solo avisa
+  res.status(201).json(avisosAgenda.length ? { ...creado, avisos_agenda: avisosAgenda } : creado);
 }));
 
 // ---------- Editar lead (datos, etapa, responsable, estatus) ----------
@@ -1159,7 +1160,10 @@ app.put('/api/leads/:id', validarPartidas, validarRegistro, h((req, res) => {
         .run(id, texto, req.usuarioSesion.nombre);
     }
   })();
-  res.json(db.prepare('SELECT * FROM leads WHERE id = ?').get(id));
+  // Avisa (no bloquea) si el equipo, el técnico o la unidad ya tienen otro servicio cerca ese día, o alguien falta (H10).
+  const tocaAgenda = ['fecha_servicio', 'hora_servicio', 'equipo', 'tecnico_id', 'estatus'].some(k => req.body[k] !== undefined) || !!equipoNuevo;
+  const avisosAgenda = tocaAgenda ? require('./agenda').choques(db, id) : [];
+  res.json({ ...db.prepare('SELECT * FROM leads WHERE id = ?').get(id), ...(avisosAgenda.length ? { avisos_agenda: avisosAgenda } : {}) });
 }));
 
 // ---------- Historial: observaciones y alertas ----------

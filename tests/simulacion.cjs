@@ -142,7 +142,8 @@ const espera = ms => new Promise(r => setTimeout(r, ms));
   [s] = await pedir('GET', '/finanzas/por-confirmar', L); ok(s === 200, 'ventas SÍ ve la bandeja de pagos por confirmar');
   [s] = await pedir('GET', '/finanzas/revision-inicial', L); ok(s === 403, 'ventas NO hace la revisión inicial (solo admin)');
   [s, j] = await pedir('POST', '/leads/' + cot.id + '/cobros', L, { monto: 1000, metodo: 'efectivo' });
-  ok(s === 201 && j.confirmado === false && j.cuenta.saldo === 2500 && j.cuenta.estado === 'parcial', 'ventas registra un anticipo en campo: queda por confirmar y baja el saldo', j);
+  // H06 (2026-11-11): lo reportado sin confirmar no baja el saldo; baja lo que falta que el cliente pague.
+  ok(s === 201 && j.confirmado === false && j.cuenta.saldo === 3500 && j.cuenta.sin_reportar === 2500 && j.cuenta.cobrado_por_confirmar === 1000 && j.cuenta.estado === 'parcial', 'ventas registra un anticipo en campo: queda por confirmar (el saldo confirmado no baja; lo que falta por pagar sí)', j);
   const cobroVentas = j.id;
   [s, j] = await pedir('POST', '/leads/' + cot.id + '/cobros', L, { monto: 1000, metodo: 'efectivo' });
   ok(s === 409 && j.codigo === 'POSIBLE_DUPLICADO', 'doble toque detectado');
@@ -215,6 +216,7 @@ const espera = ms => new Promise(r => setTimeout(r, ms));
   const provVentas = j;
   [s, j] = await pedir('POST', '/finanzas/cxp', L, { proveedor_id: provVentas.id, concepto: 'Gasto de ventas', total: 10, ya_pagado: true, metodo: 'efectivo' }); ok(s === 403, 'ventas NO registra compras sin orden de servicio (van por Solicitud de compra)');
   [s, j] = await pedir('POST', '/finanzas/cxp', L, { proveedor_id: provVentas.id, concepto: 'Casetas del viaje', total: 10, ya_pagado: true, metodo: 'efectivo', lead_id: cot.id }); ok(s === 201, 'ventas SÍ registra un costo ya pagado de un servicio');
+  ok(j.por_reembolsar === true, 'ventas no paga a proveedores: su «ya pagado» queda por reembolsar a ella (H01)', j);
   const gastoVentas = (await pedir('POST', '/finanzas/cxp', L, { proveedor_id: provVentas.id, concepto: 'Renta de herramienta', total: 50, dias_credito: 0, lead_id: cot.id }))[1];
   [s] = await pedir('POST', '/finanzas/cxp/' + gastoVentas.id + '/pagos', L, { monto: 50, metodo: 'efectivo' }); ok(s === 403, 'ventas NO paga a proveedores (lo hace administración o el encargado de costos)');
   [s] = await pedir('POST', '/finanzas/cxp/' + gastoVentas.id + '/cancelar', L, { motivo: 'Me equivoqué de monto' }); ok(s === 403, 'ventas NO cancela cuentas por pagar');
@@ -238,7 +240,7 @@ const espera = ms => new Promise(r => setTimeout(r, ms));
   [s, j] = await pedir('GET', '/finanzas/cxp', A);
   ok(!j.some(x => x.concepto === 'Diésel pipa'), 'el gasto de contado no queda como pendiente');
   [s, j] = await pedir('GET', '/finanzas/resumen', A);
-  ok(j.por_pagar === 2000 && j.pagado_mes >= 1800, 'resumen de pagos: $2,000 por pagar', j);
+  ok(j.por_pagar === 2010 && j.pagado_mes >= 1800, 'resumen de pagos: $2,000 por pagar + $10 por reembolsar a ventas (H01)', j);
   [s, j] = await pedir('POST', '/finanzas/cxp', A, { proveedor_id: prov.id, concepto: 'Disposición octubre', total: 500, factura_folio: 'F-77', dias_credito: 30 });
   ok(s === 201, 'factura F-77 registrada');
   [s, j] = await pedir('POST', '/finanzas/cxp', A, { proveedor_id: prov.id, concepto: 'Disposición octubre', total: 500, factura_folio: 'F-77', dias_credito: 30 });
@@ -532,7 +534,7 @@ const espera = ms => new Promise(r => setTimeout(r, ms));
   // Servicio subcontratado: al marcarlo realizado, el pago al tercero y otros gastos se cargan en Cuentas por pagar.
   [s, j] = await altaIva({ partidas_json: part(27510), iva_modo: 'mas_iva', estatus: 'ganado', fecha_servicio: '2026-10-01', equipo: 'C-22', operador: 'Eduardo Hernández' });
   const ordenSub = j;
-  [s, j] = await pedir('POST', '/leads/' + ordenSub.id + '/ejecucion', L, { estado: 'realizado', fecha: '2026-10-01', realizado_por: 'subcontratado', gastos: [
+  [s, j] = await pedir('POST', '/leads/' + ordenSub.id + '/ejecucion', A, { estado: 'realizado', fecha: '2026-10-01', realizado_por: 'subcontratado', gastos: [ // Dirección paga a proveedores (H01)
     { proveedor_id: pipas.id, categoria: 'subcontratacion', concepto: 'Renta de pipas', total: '7,500.00', ya_pagado: true, metodo: 'nomina', fecha_pago: '2026-10-02', referencia: 'Semana 40' },
     { proveedor_id: pipas.id, categoria: 'casetas_viaticos', concepto: 'Casetas', total: 350 }] });
   ok(s === 200 && j.gastos === 2 && j.lead.realizado_por === 'subcontratado', 'servicio subcontratado: se registran 2 gastos', j);

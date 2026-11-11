@@ -294,6 +294,10 @@ module.exports = function personal(app, db, h) {
       if (c.checadas) partes.push(`${c.checadas} checada(s) por revisar`);
       avisos.push({ tipo: 'cara', nivel: 'rojo', persona_id: c.personal_id, nombre: c.nombre, fecha: c.fecha, intentos: c.intentos, checadas: c.checadas, texto: partes.join(' · ') });
     }
+    // Baja en RH con su usuario del CRM todavía activo (Dirección, 2026-11-11, auditoría H11): pendiente obligatorio para
+    // Dirección hasta que desactive o elimine el usuario (RH no administra usuarios). Se va solo al desactivarlo.
+    if (P.direccion(req)) for (const p of db.prepare('SELECT p.id, p.nombre, p.fecha_baja, u.nombre AS usuario FROM main.personal p JOIN main.usuarios u ON u.id = p.usuario_id WHERE p.activo = 0 AND u.activo = 1').all())
+      avisos.push({ tipo: 'baja_con_acceso', nivel: 'rojo', persona_id: p.id, nombre: p.nombre, texto: `Se dio de baja en RH pero su usuario «${p.usuario}» sigue activo: desactívalo en Configuración › Ajustes`, fecha: p.fecha_baja });
     const peso = { rojo: 0, amarillo: 1, azul: 2 };
     res.json(avisos.sort((a, b) => (b.tipo === 'cara') - (a.tipo === 'cara') || peso[a.nivel] - peso[b.nivel] || String(a.fecha).localeCompare(String(b.fecha))));
   }));

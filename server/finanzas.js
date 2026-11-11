@@ -270,7 +270,8 @@ const SQL_CUENTA = `
     COALESCE(l.factura_total_cent, ${SQL_TOTAL_ORDEN}) AS total_cent,
     (SELECT COALESCE(SUM(monto_cent), 0) FROM main.cobros k WHERE k.lead_id = l.id AND k.cancelado = 0) AS cobrado_cent,
     (SELECT COALESCE(SUM(monto_cent), 0) FROM main.cobros k WHERE k.lead_id = l.id AND k.cancelado = 0 AND k.tipo <> 'ajuste') AS pagado_real_cent,
-    (SELECT COUNT(*) FROM main.cobros k WHERE k.lead_id = l.id AND k.cancelado = 0 AND k.confirmado = 0) AS por_confirmar
+    (SELECT COUNT(*) FROM main.cobros k WHERE k.lead_id = l.id AND k.cancelado = 0 AND k.confirmado = 0) AS por_confirmar,
+    (SELECT COALESCE(SUM(monto_cent), 0) FROM main.cobros k WHERE k.lead_id = l.id AND k.cancelado = 0 AND k.confirmado = 0) AS por_confirmar_cent
   FROM leads l
   LEFT JOIN clientes c ON c.id = l.cliente_id
   LEFT JOIN catalogo_servicios s ON s.id = l.servicio_id`;
@@ -278,29 +279,34 @@ const SQL_CUENTA = `
 function describirCuenta(f, hoy) {
   // Servicio NO realizado: el cliente no debe nada; lo que ya pagó (anticipo) queda a su favor.
   const noRealizado = f.ejecucion === 'no_realizado';
-  const saldo = noRealizado ? 0 : f.total_cent - f.cobrado_cent;
+  // Cobros «por confirmar» (Dirección, 2026-11-11, auditoría H06): el cliente dijo que pagó pero nadie confirmó que llegó.
+  // «Pagada» y el saldo cuentan solo lo CONFIRMADO; lo reportado sin confirmar se muestra aparte. Para cobrar y para
+  // los vencimientos manda lo que el cliente todavía no ha reportado (no se le vuelve a cobrar lo que ya dijo que pagó).
+  const porConfirmar = f.por_confirmar_cent || 0, confirmado = f.cobrado_cent - porConfirmar;
+  const sinReportar = noRealizado ? 0 : f.total_cent - f.cobrado_cent;
+  const saldo = noRealizado ? 0 : f.total_cent - confirmado;
   const aFavor = noRealizado ? (f.pagado_real_cent ?? f.cobrado_cent) : Math.max(0, f.cobrado_cent - f.total_cent);
   // El crédito corre desde la factura; sin factura, desde que se realizó el servicio (o su fecha acordada).
   const base = f.factura_fecha || f.fecha_realizado || f.fecha_servicio || String(f.created_at).slice(0, 10);
   const realizado = f.ejecucion === 'realizado';
   const vence = sumarDias(base, f.dias_credito || 0);
   const diasVencido = diasEntre(vence, hoy);
-  let estado = noRealizado ? (aFavor > 0 ? 'a_favor' : 'cancelada') : saldo <= 0 ? 'pagada' : f.cobrado_cent > 0 ? 'parcial' : 'pendiente';
+  let estado = noRealizado ? (aFavor > 0 ? 'a_favor' : 'cancelada') : saldo <= 0 ? 'pagada' : sinReportar <= 0 ? 'por_confirmar' : f.cobrado_cent > 0 ? 'parcial' : 'pendiente';
   // Se debe cuando el servicio se marca realizado o cuando se factura (hay servicios sin factura: basta con concluirlo).
   // Mientras tanto no cuenta como «te deben» (decisión del dueño, 2026-10-21): si su fecha es futura está «programada»
   // (por realizar); si ya pasó, «por concluir», para que se marque y no se olvide cobrarla.
   const programada = !realizado && !noRealizado && !f.factura_folio;
   const porConcluir = programada && (!f.fecha_servicio || f.fecha_servicio <= hoy);
-  const vencida = saldo > 0 && diasVencido > 0 && !programada;
+  const vencida = sinReportar > 0 && diasVencido > 0 && !programada;
   let tramo = null;
-  if (saldo > 0) tramo = diasVencido <= 0 ? 'por_vencer' : diasVencido <= 15 ? '1-15' : diasVencido <= 30 ? '16-30' : diasVencido <= 60 ? '31-60' : '60+';
+  if (sinReportar > 0) tramo = diasVencido <= 0 ? 'por_vencer' : diasVencido <= 15 ? '1-15' : diasVencido <= 30 ? '16-30' : diasVencido <= 60 ? '31-60' : '60+';
   return {
     lead_id: f.id, folio: folioOS(f.id, f.created_at), sucursal_id: f.sucursal_id, cliente_id: f.cliente_id, cliente_nombre: f.cliente_nombre, empresa_contacto: f.empresa_contacto,
     telefono: f.telefono, rfc: f.rfc, servicio_nombre: f.servicio_nombre, created_at: f.created_at, fecha_servicio: f.fecha_servicio,
     dias_credito: f.dias_credito || 0, factura_folio: f.factura_folio, factura_fecha: f.factura_fecha, factura_metodo: f.factura_metodo || null,
     factura_total: f.factura_total_cent == null ? null : aPesos(f.factura_total_cent),
-    total: aPesos(f.total_cent), cobrado: aPesos(f.cobrado_cent), saldo: aPesos(Math.max(saldo, 0)), a_favor: aPesos(aFavor),
-    vence, dias_vencido: saldo > 0 && !programada ? diasVencido : 0, estado, vencida, programada, por_concluir: porConcluir, tramo: programada ? null : tramo,
+    total: aPesos(f.total_cent), cobrado: aPesos(confirmado), cobrado_por_confirmar: aPesos(porConfirmar), saldo: aPesos(Math.max(saldo, 0)), sin_reportar: aPesos(Math.max(sinReportar, 0)), a_favor: aPesos(aFavor),
+    vence, dias_vencido: sinReportar > 0 && !programada ? diasVencido : 0, estado, vencida, programada, por_concluir: porConcluir, tramo: programada ? null : tramo,
     por_confirmar: f.por_confirmar, por_revisar: !!f.cobranza_por_revisar,
     ejecucion: f.ejecucion || null, realizado_por: f.realizado_por || null, fecha_realizado: f.fecha_realizado || null,
     // Ya facturada (se debe) pero nadie marcó si el servicio se hizo: falta marcarla para el Generador y Resultados.
@@ -475,7 +481,7 @@ module.exports = function finanzas(app, db, h, unicos) {
     if (tipo === 'ajuste' && !P.puede(req, 'cobros.ajustes')) return res.status(403).json({ error: 'Solo un administrador puede registrar ajustes o descuentos' });
 
     const cuenta = cuentaDeOrden(lead.id); // con todos los cobros de la orden (SQL_CUENTA), aunque quien registra solo vea los suyos
-    const saldoCent = Math.round(cuenta.saldo * 100);
+    const saldoCent = Math.round(cuenta.sin_reportar * 100); // lo que falta que el cliente pague (lo reportado sin confirmar ya cuenta)
     if (monto > saldoCent) {
       if (!cobranzaDe(lead)) return res.status(400).json({ error: 'El pago es mayor que lo que falta por cobrar de esta orden. Revisa el monto con administración.' });
       return res.status(400).json({ error: `El pago (${fmt(monto)}) es mayor que el saldo de la orden (${fmt(saldoCent)}). ` + (lead.iva_modo
@@ -1064,12 +1070,19 @@ module.exports = function finanzas(app, db, h, unicos) {
     }
     return { listos };
   }
+  // «Ya pagado» de quien NO mueve dinero (Dirección, 2026-11-11, auditoría H01): lo pagó él (de su bolsa o del efectivo
+  // que trae), así que no se registra un pago a proveedor: queda por pagar como REEMBOLSO a esa persona, vence hoy, y el
+  // pago real lo registra quien tiene «Pagar a proveedores» (dinero.mover).
+  const reembolso = (req, metodo, fechaPago) => ({ beneficiario: 'Reembolso a ' + req.usuarioSesion.nombre,
+    nota: `Lo pagó ${req.usuarioSesion.nombre}${metodo ? ' (' + metodo + ')' : ''}${fechaPago ? ' el ' + fechaPago.split('-').reverse().join('/') : ''}: por reembolsar.` });
   function cargarGastos(listos, lead, fecha, nota, req) {
+    const mueve = P.puede(req, 'dinero.mover');
     for (const g of listos) {
-      const info = db.prepare(`INSERT INTO main.cuentas_por_pagar (proveedor_id, categoria, concepto, factura_folio, fecha_documento, fecha_vencimiento, total_cent, lead_id, equipo, notas, registrado_por)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(g.prov.id, g.categoria, g.concepto, g.folio, fecha, sumarDias(fecha, g.prov.dias_credito), g.total, lead.id, lead.equipo || null, nota, req.usuarioSesion.id);
+      const r = g.ya_pagado && !mueve ? reembolso(req, g.metodo, g.fechaPago) : null;
+      const info = db.prepare(`INSERT INTO main.cuentas_por_pagar (proveedor_id, categoria, concepto, factura_folio, fecha_documento, fecha_vencimiento, total_cent, lead_id, equipo, notas, registrado_por, beneficiario)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(g.prov.id, g.categoria, g.concepto, g.folio, fecha, r ? fecha : sumarDias(fecha, g.prov.dias_credito), g.total, lead.id, lead.equipo || null, r ? nota + ' · ' + r.nota : nota, req.usuarioSesion.id, r ? r.beneficiario : null);
       app.locals.sucursales.asignar('cuentas_por_pagar', Number(info.lastInsertRowid), lead.sucursal_id);
-      if (g.ya_pagado) db.prepare('INSERT INTO main.pagos_proveedor (cxp_id, fecha, monto_cent, metodo, referencia, registrado_por) VALUES (?, ?, ?, ?, ?, ?)')
+      if (g.ya_pagado && mueve) db.prepare('INSERT INTO main.pagos_proveedor (cxp_id, fecha, monto_cent, metodo, referencia, registrado_por) VALUES (?, ?, ?, ?, ?, ?)')
         .run(info.lastInsertRowid, g.fechaPago, g.total, g.metodo, g.referencia, req.usuarioSesion.id);
     }
   }
@@ -1209,15 +1222,19 @@ module.exports = function finanzas(app, db, h, unicos) {
         beneficiario && unicos.clave(beneficiario) !== unicos.clave(prov.nombre) ? beneficiario : null, tipoComp, metodoSat, iva.cent, xml?.ivaCent != null ? 'xml' : iva.cent != null ? 'manual' : null);
       if (xml) XML.guardar(req, Number(info.lastInsertRowid), Buffer.from(b.xml, 'utf8'), texto(b.xml_nombre, 120) || 'factura.xml', xml);
       app.locals.sucursales.asignar('cuentas_por_pagar', Number(info.lastInsertRowid), leadId ? app.locals.sucursales.de('leads', leadId) : undefined);
-      if (b.ya_pagado) {
+      if (b.ya_pagado && P.puede(req, 'dinero.mover')) {
         db.prepare('INSERT INTO main.pagos_proveedor (cxp_id, fecha, monto_cent, metodo, referencia, registrado_por, cuenta_origen) VALUES (?, ?, ?, ?, ?, ?, ?)')
           .run(info.lastInsertRowid, fechaPagoGasto || (fecha > hoyMexico() ? hoyMexico() : fecha), total, b.metodo, texto(b.referencia, 120), req.usuarioSesion.id, texto(b.cuenta_origen, 80));
+      } else if (b.ya_pagado) { // lo pagó quien lo registra: queda como reembolso para esa persona (auditoría H01)
+        const r = reembolso(req, b.metodo, fechaPagoGasto || fecha);
+        db.prepare('UPDATE main.cuentas_por_pagar SET beneficiario = ?, fecha_vencimiento = ?, notas = trim(COALESCE(notas, \'\') || \' \' || ?) WHERE id = ?').run(r.beneficiario, fecha, r.nota, info.lastInsertRowid);
       }
-      if (leadId) bitacora(leadId, `Costo con terceros registrado: «${concepto}» de ${prov.nombre} por ${fmt(total)}${b.ya_pagado ? ' (ya pagado)' : ' (pendiente de pago en Cuentas por pagar)'}.`, req, 'cxp');
-      app.locals.auditoria?.registrar(req, 'cuenta_por_pagar', Number(info.lastInsertRowid), 'creada', `${prov.nombre} · «${concepto}» · ${fmt(total)}${iva.cent != null ? ' (IVA ' + fmt(iva.cent) + ')' : ''}${folioFactura ? ' · factura ' + folioFactura : ''}${b.ya_pagado ? ' · pagada al registrar' : ''}${xml ? ' · ' + XML.resumen(xml) : ''}`);
+      const reembolsar = b.ya_pagado && !P.puede(req, 'dinero.mover');
+      if (leadId) bitacora(leadId, `Costo con terceros registrado: «${concepto}» de ${prov.nombre} por ${fmt(total)}${reembolsar ? ` (lo pagó ${req.usuarioSesion.nombre}: por reembolsar)` : b.ya_pagado ? ' (ya pagado)' : ' (pendiente de pago en Cuentas por pagar)'}.`, req, 'cxp');
+      app.locals.auditoria?.registrar(req, 'cuenta_por_pagar', Number(info.lastInsertRowid), 'creada', `${prov.nombre} · «${concepto}» · ${fmt(total)}${iva.cent != null ? ' (IVA ' + fmt(iva.cent) + ')' : ''}${folioFactura ? ' · factura ' + folioFactura : ''}${reembolsar ? ' · lo pagó ' + req.usuarioSesion.nombre + ': por reembolsar' : b.ya_pagado ? ' · pagada al registrar' : ''}${xml ? ' · ' + XML.resumen(xml) : ''}`);
       return info.lastInsertRowid;
     })();
-    res.status(201).json({ id, ...(xml ? { avisos: xml.avisos, iva: xml.ivaCent != null ? aPesos(xml.ivaCent) : null } : {}) });
+    res.status(201).json({ id, por_reembolsar: !!b.ya_pagado && !P.puede(req, 'dinero.mover'), ...(xml ? { avisos: xml.avisos, iva: xml.ivaCent != null ? aPesos(xml.ivaCent) : null } : {}) });
   }));
 
   // Capturar o corregir el IVA de un gasto ya registrado (los viejos no lo traen): cambia la utilidad de Resultados.

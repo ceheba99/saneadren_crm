@@ -79,7 +79,7 @@ const RANGO = 'desde=2020-01-01&hasta=' + dia(60);
   [s, j] = await pedir('PUT', '/leads/' + L2.id + '/facturacion', R, { dias_credito: 30 }); revisa(s === 403, 'Raúl no cambia crédito ni factura', [s, j]);
   [s, j] = await pedir('GET', '/finanzas/por-confirmar', R); revisa(s === 403, 'Raúl no confirma cobros (no ve la lista por confirmar)', s);
   [s, j] = await pedir('GET', '/leads/' + L2.id + '/cobros', L);
-  revisa(s === 200 && j.cuenta && j.cobros.length === 2 && j.cuenta.cobrado === 1516.9, 'Laura (cobranza de sus órdenes) ve la cuenta completa con los dos cobros', j.cuenta);
+  revisa(s === 200 && j.cuenta && j.cobros.length === 2 && j.cuenta.cobrado + j.cuenta.cobrado_por_confirmar === 1516.9, 'Laura (cobranza de sus órdenes) ve la cuenta completa con los dos cobros (confirmado + por confirmar)', j.cuenta);
   // Proveedores: quien pide compras sin ver cuentas por pagar recibe nombre, categoría y crédito; sin CLABE ni saldos.
   [s, j] = await pedir('POST', '/roles', A, { nombre: 'Solicitante' }); const SOL = j.clave;
   [s, j] = await pedir('PUT', '/roles/' + SOL + '/permisos', A, { permisos: [], alcances: { solicitudes: 1, ordenes_compra: 1 }, ediciones: { solicitudes: true } });

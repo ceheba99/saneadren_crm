@@ -415,6 +415,7 @@ async function guardarServicioNuevo(descargar=false) {
       creado = await res.json().catch(() => ({}));
       if (!res.ok) { toast(creado.error || 'No se pudo guardar'); return; }
     }
+    avisarAgenda(creado.avisos_agenda);
     FlujoCRM.marcarGuardado('overlay-servicio-nuevo');
     const folio = esDirecto ? folioOrdenServicio(creado) : folioCotizacion(creado);
     const hecho = (CONVERTIR_ID ? 'Cotización convertida en orden de servicio' : DUPLICADO_DE ? 'Orden de servicio duplicada' : esDirecto ? 'Orden de servicio creada' : 'Cotización creada') + ': ' + folio;
@@ -2241,8 +2242,16 @@ async function guardarLeadExistente(payload) {
   const res = await api('/leads/' + LEAD_ACTUAL.id, { method: 'PUT', body: JSON.stringify(payload) });
   const datos = await res.json();
   if (!res.ok) { toast(datos.error || 'No se pudo guardar el registro'); return null; }
+  avisarAgenda(datos.avisos_agenda);
+  delete datos.avisos_agenda;
   LEAD_ACTUAL = { ...LEAD_ACTUAL, ...datos };
   return datos;
+}
+
+// Choques de agenda (auditoría H10): se guarda igual; solo se avisa para que se revise la programación.
+function avisarAgenda(avisos) {
+  if (!Array.isArray(avisos) || !avisos.length) return;
+  solicitarDialogo({ titulo: '⚠ Revisa la agenda', mensaje: 'Se guardó, pero ojo:\n\n• ' + avisos.join('\n• ') + '\n\nSi es correcto (p. ej. dos servicios seguidos en la misma zona), no tienes que hacer nada.', aceptar: 'Entendido', soloAviso: true });
 }
 
 function recolectarPayloadFicha() {

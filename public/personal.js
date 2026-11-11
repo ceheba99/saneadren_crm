@@ -432,7 +432,7 @@ const Personal = (() => {
   new MutationObserver(() => { if (!$('overlay-personal').classList.contains('mostrar') && !ocupado) { $('pe-cuerpo').innerHTML = ''; actual = null; base = ''; } })
     .observe($('overlay-personal'), { attributes: true, attributeFilter: ['class'] });
   // ---------- Bloque «Personal» de Inicio ----------
-  const TAG = { cara: '🙂 Cara no coincide', licencia_vence: '🪪 Licencia', contrato_vence: '📄 Contrato', ausencia: '🏖️ Ausencia', sin_responsable: '👷 Sin responsable', cifrado: '🔒 Cifrado' };
+  const TAG = { baja_con_acceso: '🔐 Baja con acceso al CRM', cara: '🙂 Cara no coincide', licencia_vence: '🪪 Licencia', contrato_vence: '📄 Contrato', ausencia: '🏖️ Ausencia', sin_responsable: '👷 Sin responsable', cifrado: '🔒 Cifrado' };
   async function pintarInicio() {
     const cont = $('inicio-personal'); if (!cont || !Permisos.puede('personal.ver')) return;
     cont.innerHTML = '<p class="util-45" role="status">Cargando…</p>';
@@ -441,7 +441,7 @@ const Personal = (() => {
     cont.innerHTML = avisos.length ? avisos.map(a => `<div class="fila-alerta ${a.nivel === 'rojo' ? 'vencido' : a.nivel === 'azul' ? 'tipo-alerta' : 'tipo-recompra'}">
         <div class="info"><span class="tipo-tag ${a.nivel === 'rojo' ? 'rojo' : a.nivel === 'azul' ? 'alerta' : 'recompra'}">${esc(TAG[a.tipo] || a.tipo)}</span>
           <div><b>${esc(a.nombre || 'Sin nombre')}</b>${a.folio ? ' · ' + esc(a.folio) : ''}</div><div class="txt">${esc(a.texto)}</div>${a.fecha ? `<div class="fecha">${esc(fecha(a.fecha))}</div>` : ''}</div>
-        <div class="util-46">${a.tipo === 'cara' ? `<button type="button" class="btn btn-outline" data-pe-inicio-checadas="${Number(a.persona_id)}" data-fecha="${esc(a.fecha)}">Ver checadas</button>${a.intentos && Permisos.puede('asistencia.corregir') ? `<button type="button" class="btn btn-outline" data-pe-inicio-revisado="${Number(a.persona_id)}" data-fecha="${esc(a.fecha)}">Ya lo revisé</button>` : ''}`
+        <div class="util-46">${a.tipo === 'baja_con_acceso' ? '<button type="button" class="btn btn-outline" data-pe-inicio-ajustes="1">Ir a Ajustes</button>' : a.tipo === 'cara' ? `<button type="button" class="btn btn-outline" data-pe-inicio-checadas="${Number(a.persona_id)}" data-fecha="${esc(a.fecha)}">Ver checadas</button>${a.intentos && Permisos.puede('asistencia.corregir') ? `<button type="button" class="btn btn-outline" data-pe-inicio-revisado="${Number(a.persona_id)}" data-fecha="${esc(a.fecha)}">Ya lo revisé</button>` : ''}`
           : a.lead_id ? `<button type="button" class="btn btn-outline" data-pe-inicio-orden="${Number(a.lead_id)}">Abrir orden</button>` : `<button type="button" class="btn btn-outline" data-pe-inicio-persona="${Number(a.persona_id)}">Abrir ficha</button>`}</div></div>`).join('')
       : '<p class="util-45">Todo en orden con el personal: sin licencias ni contratos por vencer, nadie falta esta semana y las órdenes próximas tienen responsable. 🎉</p>';
   }
@@ -450,6 +450,7 @@ const Personal = (() => {
     if (b.dataset.peInicioOrden) abrirFicha(Number(b.dataset.peInicioOrden));
     else if (b.dataset.peInicioPersona) abrir(b.dataset.peInicioPersona);
     else if (b.dataset.peInicioReintentar) pintarInicio();
+    else if (b.dataset.peInicioAjustes) cambiarVista('usuarios');
     else if (b.dataset.peInicioChecadas) Asistencia.verPersona(b.dataset.peInicioChecadas, b.dataset.fecha);
     else if (b.dataset.peInicioRevisado) {
       b.disabled = true;
