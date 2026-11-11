@@ -111,7 +111,8 @@ body>*:not(#impresion-docs){display:none!important}#impresion-docs{display:block
     };
     // Botones de una orden: «Orden de servicio» y, si tiene factura timbrada, «Factura». Al tocarlos se prepara el
     // PDF y se abre «Imprimir»; después quedan «Imprimir otra vez» y «Compartir PDF». alTocar: reinicia la espera.
-    function botones(permiso, conFactura, alTocar = () => {}) {
+    // sinCompartir (2026-11-11, Dirección): en el calendario del kiosco no se ofrece «Compartir PDF», solo imprimir.
+    function botones(permiso, conFactura, alTocar = () => {}, sinCompartir = false) {
       const caja = document.createElement('div'); caja.className = 'acciones';
       const aviso = document.createElement('span'); aviso.className = 'mal'; aviso.setAttribute('role', 'status');
       const boton = (texto, fn) => { const b = document.createElement('button'); b.type = 'button'; b.textContent = texto; b.onclick = () => fn(b); return b; };
@@ -123,7 +124,7 @@ body>*:not(#impresion-docs){display:none!important}#impresion-docs{display:block
           try {
             if (!doc) {
               doc = await traer[que](permiso);
-              if (puedeCompartir(doc)) grupo.append(boton('📤 Compartir PDF', async () => { alTocar(); try { await compartir(doc); } catch (e) { aviso.textContent = e.message; } }));
+              if (!sinCompartir && puedeCompartir(doc)) grupo.append(boton('📤 Compartir PDF', async () => { alTocar(); try { await compartir(doc); } catch (e) { aviso.textContent = e.message; } }));
             }
             await imprimir(doc);
             b.textContent = (que === 'orden' ? '🖨️ Orden' : '🧾 Factura') + ': imprimir otra vez';
