@@ -319,7 +319,7 @@ const MenuPrincipal = (() => {
       if (activa) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
     });
     nav.querySelectorAll('.menu-grupo').forEach(g => g.classList.toggle('activa', !!g.querySelector('[data-vista].activa')));
-    const actual = nav.querySelector('[data-vista].activa');
+    const actual = [...nav.querySelectorAll('[data-vista].activa')].find(b => getComputedStyle(b).display !== 'none') || nav.querySelector('[data-vista].activa');
     document.getElementById('menu-actual').textContent = actual ? texto(actual) : '';
   }
   // Un grupo sin nada que ver para el rol (p. ej. Finanzas para quien solo hace Marketing) no se muestra vacío.

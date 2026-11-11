@@ -206,6 +206,8 @@ module.exports = function asistencia(app, db, h) {
   const negar = (res, msg) => res.status(403).json({ error: msg || 'No tienes permiso para la asistencia' });
   // Dinero del tiempo extra: quien ve sueldos lo ve; quien además edita el personal cambia el precio de la hora.
   const verDinero = req => puede(req, 'personal.sensibles'), cambiaPrecio = req => verDinero(req) && puede(req, 'personal.editar');
+  // «Descargar la nómina» (2026-11-11): la semana de nómina con su pago, sin el resto de la asistencia.
+  const veNomina = req => puede(req, 'asistencia.ver') || puede(req, 'asistencia.nomina');
 
   // ---------- Horario vigente ----------
   const versionDe = (horarioId, fecha) => db.prepare('SELECT * FROM main.horario_versiones WHERE horario_id = ? AND desde <= ? ORDER BY desde DESC, id DESC LIMIT 1').get(horarioId, fecha);
@@ -306,7 +308,7 @@ module.exports = function asistencia(app, db, h) {
   // Semana de nómina (semana vencida, de lunes a domingo por omisión; ver las reglas): cada día y los totales.
   // Tiempo extra: dobles hasta 9 h autorizadas, luego triples. «vencida=1»: la última semana que ya cerró (la que se paga).
   app.get('/api/asistencia/semana', h((req, res) => {
-    if (!puede(req, 'asistencia.ver')) return negar(res);
+    if (!veNomina(req)) return negar(res);
     const hoy = ahoraMexico().fecha, enCurso = semanaDe(hoy);
     let f = req.query.vencida === '1' ? sumar(enCurso.desde, -1) : req.query.desde || hoy;
     if (!fechaOk(f)) return res.status(400).json({ error: 'Revisa la fecha' });
@@ -328,7 +330,7 @@ module.exports = function asistencia(app, db, h) {
         por_revisar: t('por_revisar') } };
     });
     // Dinero del tiempo extra: solo para quien ve sueldos, con el precio del puesto vigente al cierre de la semana.
-    const dinero = verDinero(req);
+    const dinero = verDinero(req) || puede(req, 'asistencia.nomina');
     if (dinero) for (const f of filas) {
       const p = gente(hasta, f.personal_id)[0], pr = p ? precioDe(p.sucursal_id, p.puesto, hasta) : null, v = pr?.valor_cent ?? null;
       f.dinero = v == null ? { valor_hora_cent: null } : { valor_hora_cent: v, dobles_cent: pago(f.totales.extra_dobles_min, v, 2), triples_cent: pago(f.totales.extra_triples_min, v, 3) };
@@ -336,7 +338,7 @@ module.exports = function asistencia(app, db, h) {
     }
     const rg = reglaDe(hasta);
     res.json({ desde, hasta, fechas, festivos: fechas.map(festivoDe), filas, en_curso: enCurso.desde, vencida: semanaDe(sumar(enCurso.desde, -1)).desde, anterior: semanaDe(sumar(desde, -1)).desde, siguiente: sumar(hasta, 1),
-      semana_texto: `de ${DIAS[rg.inicio_semana].toLowerCase()} a ${DIAS[((rg.inicio_semana + 5) % 7) + 1].toLowerCase()}`, corta: fechas.length < 7, ...(dinero ? { dinero: true } : {}), puede: { corregir: puede(req, 'asistencia.corregir'), extra: puede(req, 'asistencia.extra'), precios: cambiaPrecio(req) } });
+      semana_texto: `de ${DIAS[rg.inicio_semana].toLowerCase()} a ${DIAS[((rg.inicio_semana + 5) % 7) + 1].toLowerCase()}`, corta: fechas.length < 7, ...(dinero ? { dinero: true } : {}), puede: { asistencia: puede(req, 'asistencia.ver'), corregir: puede(req, 'asistencia.corregir'), extra: puede(req, 'asistencia.extra'), precios: cambiaPrecio(req) } });
   }));
 
   // ---------- Precio de la hora por puesto ----------

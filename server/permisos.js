@@ -49,6 +49,9 @@ const CATALOGO = [
   ['asistencia.kioscos', 'Personal', 'Kioscos del checador', 'Registrar la tableta o computadora de la entrada como kiosco del reloj checador, y darla de baja', ['gerente']],
   ['asistencia.horarios', 'Personal', 'Horarios y días festivos', 'Crear y cambiar horarios (entrada, salida, tolerancia y comida de cada día), asignarlos a cada persona y marcar días festivos', ['gerente']],
   ['asistencia.extra', 'Personal', 'Autorizar tiempo extra', 'Autorizar el tiempo extra que se registró al checar (lo autorizado es lo que cuenta para la nómina)', ['gerente']],
+  // Nómina (2026-11-11, pedido de Dirección): solo descargar la semana de nómina (horas y pago del tiempo extra), sin
+  // ver nada más de RH. Se puede dar a un rol que no tenga ningún otro permiso de Personal.
+  ['asistencia.nomina', 'Personal', 'Descargar la nómina', 'Solo la semana de nómina: horas trabajadas, retardos, faltas y tiempo extra de cada persona de su sucursal, con el pago del tiempo extra, y su Excel. Con solo este permiso no ve nada más de RH (fichas, checadas, fotos, horarios)', ['gerente']],
   ['usuarios.administrar', 'Administración', 'Usuarios', 'Crear usuarios, cambiar su rol, contraseña y sucursales', ['gerente']],
   // Marketing (2026-10-26): aprueban Dirección (siempre) y el Gerente de marketing.
   ['marketing.aprobar', 'Marketing', 'Aprobar publicaciones', 'Aprobar o pedir cambios a las publicaciones antes de subirlas a redes', ['marketing_gerente']],
