@@ -66,6 +66,9 @@ const HOY = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Mexico_City' }
   console.log('3. Descargas');
   [s, r] = await pedir('GET', '/contabilidad/excel?mes=' + MES, C);
   revisa(s === 200 && r.facturas.length === 2 && r.cobros.length === 2 && r.gastos.length === 2 && r.pagos.length === 1 && r.gastos.find(x => x.folio === 'G-2').xml === 'Falta', 'El Excel trae facturas, cobros, gastos y pagos del mes', [r.facturas?.length, r.cobros?.length, r.gastos?.length, r.pagos?.length]);
+  const d1 = r.gastos.find(x => x.folio === 'G-1'), d2 = r.gastos.find(x => x.folio === 'G-2');
+  revisa(d1.status === 'PAGADO' && d1.pagado === 1160 && d1.pendiente === 0 && d1.fecha_pago === HOY && d1.via === 'transferencia' && d1.capturo === 'admin' && d1.categoria !== 'combustible'
+    && d2.status === 'PENDIENTE' && d2.pendiente === 580 && d2.vence, 'Los gastos traen las columnas del Excel CXP (status, pagado, pendiente, fecha y vía de pago, capturó, categoría con nombre)', [d1, d2]);
   let [s2, , buf, tipo] = await pedir('GET', '/contabilidad/xml?mes=' + MES, C);
   const txt = buf.toString('latin1');
   revisa(s2 === 200 && /x-tar/.test(tipo) && txt.includes('emitidas/F-1_UUID-UNO.xml') && txt.includes('<cfdi:Comprobante Folio="1"/>') && txt.includes('LEEME.txt'), 'Los XML del mes salen en un .tar (emitidas/ y LEEME)', [s2, tipo]);
