@@ -54,6 +54,8 @@ const CATALOGO = [
   // Nómina (2026-11-11, pedido de Dirección): solo descargar la semana de nómina (horas y pago del tiempo extra), sin
   // ver nada más de RH. Se puede dar a un rol que no tenga ningún otro permiso de Personal.
   ['asistencia.nomina', 'Personal', 'Descargar la nómina', 'Solo la semana de nómina: horas trabajadas, retardos, faltas y tiempo extra de cada persona de su sucursal, con el pago del tiempo extra, y su Excel. Con solo este permiso no ve nada más de RH (fichas, checadas, fotos, horarios)', ['gerente']],
+  // Avisos (2026-11-11, pedido de Dirección): comunicados a personas elegidas, con «Enterado», correo y WhatsApp.
+  ['avisos.publicar', 'Administración', 'Publicar avisos', 'Escribir avisos a personas elegidas (personal y usuarios del sistema): les salen en el reloj checador, su celular o el Inicio hasta que tocan «Enterado», y si se elige también por correo y WhatsApp. Ve quién ya lo leyó y lo puede retirar', []],
   ['usuarios.administrar', 'Administración', 'Usuarios', 'Crear usuarios, cambiar su rol, contraseña y sucursales', ['gerente']],
   // Marketing (2026-10-26): aprueban Dirección (siempre) y el Gerente de marketing.
   ['marketing.aprobar', 'Marketing', 'Aprobar publicaciones', 'Aprobar o pedir cambios a las publicaciones antes de subirlas a redes', ['marketing_gerente']],

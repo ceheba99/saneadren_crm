@@ -32,6 +32,18 @@ module.exports = {
       buscador: null, buscadorRazon: 'los cobros se buscan por su orden de servicio (folio OS)',
       permisos: ['cxc.ver', 'cxc.sucursal', 'cxc.empresa', 'cobros.registrar', 'cobros.confirmar', 'cobros.directo', 'cobranza.factura', 'cobros.ajustes'],
     },
+    avisos: {
+      nombre: 'Avisos (2026-11-11): comunicados a personas elegidas, con «Enterado» en el reloj checador, el celular y el Inicio, y por correo o WhatsApp',
+      vistas: ['avisos'],
+      tablas: ['avisos', 'avisos_destinatarios'],
+      rutas: [/^\/api\/avisos(-mios)?(\/|$)/],
+      pendientes: null, pendientesRazon: 'los avisos de cada quien salen hasta arriba del Inicio (#inicio-avisos-mios), fuera de los bloques: no dependen de un permiso, cada usuario ve solo los suyos',
+      inicio: [],
+      demo: [], demoRazon: 'se prueban publicando uno: no hacen falta avisos de ejemplo',
+      integridad: [], integridadRazon: 'no tiene dinero ni folios: quién lo leyó queda en su propia tabla y no se borra',
+      buscador: null, buscadorRazon: 'son mensajes internos: se ven en su pantalla y en Inicio',
+      permisos: ['avisos.publicar'],
+    },
     contabilidad: {
       nombre: 'Contabilidad del mes para el contador (módulo contable F1, 2026-11-11): resumen de ingresos, egresos e IVA, pendientes de comprobar y descarga de Excel y XML. Solo consulta',
       vistas: ['contabilidad'],
@@ -173,6 +185,13 @@ module.exports = {
   // se capturan con otro nombre ({ como, razon }: la auditoría comprueba que la pantalla mande esa llave). Un dato que se
   // muestra y no está aquí ni se captura es un dato muerto (como «Realizó: propio/subcontratado», que se quitó).
   generados: {
+    // Avisos (2026-11-11)
+    retirado_por_nombre: 'quien retiró un aviso: lo pone el sistema con la sesión',
+    por_correo: { como: 'correo', razon: 'la casilla «Mandarlo también por correo» al publicar un aviso' },
+    por_whatsapp: { como: 'whatsapp', razon: 'la casilla «Mandarlo también por WhatsApp» al publicar un aviso' },
+    enterado_en: 'dónde tocó «Enterado» (reloj checador, celular o sistema): lo pone el sistema',
+    correo_estado: 'si el correo del aviso salió: lo pone el sistema al mandarlo',
+    whatsapp_estado: 'si el WhatsApp del aviso salió: lo pone el sistema al mandarlo',
     revisado_por_nombre: 'quien marcó revisado el aviso «la cara no coincidió»: lo pone el sistema con la sesión (2026-11-09)',
     distancia_rostro: 'qué tanto se parece la cara a su registro: la calcula el sistema al checar con el biométrico',
     creados: 'clientes que dio de alta una carga con plantilla: los cuenta el sistema al guardar (2026-11-09)',
