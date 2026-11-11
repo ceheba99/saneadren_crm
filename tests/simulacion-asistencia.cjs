@@ -201,6 +201,25 @@ const LUN = sumar(sumar(HOY, -7), -(dow(sumar(HOY, -7)) - 1)), D = k => sumar(LU
     'La semana del cambio se corta el martes (ningún día queda en dos semanas) y la nueva va de miércoles a martes', [sc.desde, sc.hasta, sn.desde, sn.hasta, sn.semana_texto]);
   revisa(intento('DELETE FROM reglas_extra') && intento('UPDATE reglas_extra SET despues_min = 99'), 'El historial de las reglas no se borra ni se cambia');
 
+  console.log('9. Solo «Descargar la nómina» (2026-11-11)');
+  const rolN = exigir(await pedir('POST', '/roles', A, { nombre: 'Solo nómina' }), 'crear rol');
+  exigir(await pedir('PUT', '/roles/' + rolN.clave + '/permisos', A, { permisos: ['asistencia.nomina'], alcances: {} }), 'permisos del rol');
+  exigir(await pedir('POST', '/usuarios', A, { nombre: 'Nora Nómina', password: CLAVE, rol: rolN.clave, sucursales: [qro.id] }), 'usuaria de nómina');
+  const N = exigir(await pedir('POST', '/login', null, { nombre: 'Nora Nómina', password: CLAVE }), 'entrar Nora').token;
+  const mios = (await pedir('GET', '/permisos/mios', N))[1].permisos;
+  revisa(mios.includes('asistencia.nomina') && !mios.includes('asistencia.ver') && !mios.includes('personal.ver'), 'El rol tiene solo «Descargar la nómina» (no arrastra «Ver personal» ni «Ver asistencia»)', mios);
+  const [sN, semN] = await pedir('GET', '/asistencia/semana?desde=' + LUN, N), fN = semN.filas?.find(x => x.personal_id === juan.id);
+  revisa(sN === 200 && fN && fN.totales.extra_autorizado_min === tj.extra_autorizado_min && fN.totales.extra_dobles_min === 540 && semN.dinero === true && fN.dinero?.valor_hora_cent === 7000 && semN.puede.asistencia === false,
+    'Ve la semana de nómina con horas, tiempo extra y su pago (para el Excel)', [sN, fN?.totales, fN?.dinero, semN.puede]);
+  revisa((await pedir('GET', '/asistencia/semana?vencida=1', N))[0] === 200, 'y la semana vencida');
+  const cerradas = [['GET', '/asistencia/dia'], ['GET', '/asistencia/checadas?fecha=' + D(0)], ['GET', '/asistencia/intentos'], ['GET', '/asistencia/horarios'], ['GET', '/asistencia/reglas-extra'],
+    ['GET', '/asistencia/precios'], ['GET', '/asistencia/festivos'], ['GET', '/asistencia'], ['GET', '/personal'], ['GET', '/personal/' + juan.id], ['GET', '/personal/avisos'], ['GET', '/rh/resumen'],
+    ['GET', '/asistencia/personal/' + juan.id + '/horario'], ['POST', '/asistencia/extra'], ['POST', '/asistencia/checadas'], ['PUT', '/asistencia/precios']];
+  const abiertas = [];
+  for (const [m, r] of cerradas) { const st = (await pedir(m, r, N, m === 'GET' ? undefined : { personal_id: juan.id, fecha: D(0), minutos: 0, tipo: 'salida', hora: '18:00', motivo: 'Prueba', sucursal_id: qro.id, puesto: 'Operador', valor: 1 }))[0]; if (st < 400) abiertas.push(`${m} ${r} → ${st}`); }
+  revisa(!abiertas.length, 'Y nada más de RH: ni el día, checadas, intentos, horarios, reglas, precios, festivos, fichas, avisos ni el inicio de RH', abiertas);
+  revisa(!(await pedir('GET', '/asistencia/semana?desde=' + LUN, T.Valeria))[1].filas, 'Ventas sigue sin ver la nómina');
+
   console.log(`\n${n - malos.length}/${n} correctas`);
   srv.kill(); fs.rmSync(dir, { recursive: true, force: true });
   process.exit(malos.length ? 1 : 0);

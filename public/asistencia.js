@@ -26,7 +26,14 @@ const Asistencia = (() => {
   const cargando = () => { $('as-cuerpo').innerHTML = '<p class="ayuda" role="status">Cargando…</p>'; };
   const fallo = e => { $('as-cuerpo').innerHTML = `<p class="aviso-error-carga" role="alert">${esc(e.message)}</p>`; };
 
+  // «Descargar la nómina» sin «Ver asistencia» (2026-11-11): solo la semana de nómina y su Excel, sin las demás
+  // pestañas ni la ventana de checadas.
+  const soloNomina = () => !Permisos.puede('asistencia.ver') && Permisos.puede('asistencia.nomina');
   async function cargar() {
+    const solo = soloNomina();
+    if (solo) pestana = 'semana';
+    $('vista-asistencia').classList.toggle('as-solo-nomina', solo);
+    $('as-titulo').textContent = solo ? 'Nómina semanal' : 'Asistencia';
     document.querySelectorAll('[data-as-pestana]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.asPestana === pestana)));
     const turno = ++consulta; cargando();
     try {
@@ -171,17 +178,18 @@ const Asistencia = (() => {
   // ---------- Semana ----------
   function pintarSemana() {
     const d = datos;
+    const abre = d.puede?.asistencia !== false; // con solo «Descargar la nómina» no se abren las checadas
     const cual = d.desde === d.vencida ? ' · <b>semana vencida (la que se paga)</b>' : d.desde === d.en_curso ? ' · semana en curso' : '';
     let h = `<div class="filtros"><button type="button" class="btn btn-outline" data-as-semana-ir="${esc(d.anterior)}">◀ Anterior</button><button type="button" class="btn btn-outline" data-as-semana-ir="${esc(d.vencida)}"${d.desde === d.vencida ? ' aria-pressed="true"' : ''}>Semana vencida</button><button type="button" class="btn btn-outline" data-as-semana-ir="${esc(d.en_curso)}"${d.desde === d.en_curso ? ' aria-pressed="true"' : ''}>En curso</button>${d.desde < d.en_curso ? `<button type="button" class="btn btn-outline" data-as-semana-ir="${esc(d.siguiente)}">Siguiente ▶</button>` : ''}
       <label>Semana del <input type="date" id="as-semana" value="${esc(d.desde)}"></label>${d.filas.length ? '<button type="button" class="btn btn-secundario" id="as-excel">📥 Excel de nómina</button>' : ''}</div>
-      <p class="ayuda">${esc(fechaLarga(d.desde))} al ${esc(fechaLarga(d.hasta))}${cual}. Semana de nómina: ${esc(d.semana_texto || '')}${d.corta ? ' (esta semana es más corta porque cambió el día en que empieza la semana)' : ''}. Tiempo extra autorizado: las primeras 9 horas de la semana son dobles y lo demás triples (LFT). Cuándo cuenta el tiempo extra: pestaña «Reglas del tiempo extra».${d.dinero ? ' El pago usa el precio de la hora de cada puesto (Horarios → Precio de la hora).' : ''} Pulsa un nombre o un día para ver sus checadas.</p>`;
+      <p class="ayuda">${esc(fechaLarga(d.desde))} al ${esc(fechaLarga(d.hasta))}${cual}. Semana de nómina: ${esc(d.semana_texto || '')}${d.corta ? ' (esta semana es más corta porque cambió el día en que empieza la semana)' : ''}. Tiempo extra autorizado: las primeras 9 horas de la semana son dobles y lo demás triples (LFT).${abre ? ' Cuándo cuenta el tiempo extra: pestaña «Reglas del tiempo extra».' : ''}${d.dinero ? ` El pago usa el precio de la hora de cada puesto${abre ? ' (Horarios → Precio de la hora)' : ''}.` : ''}${abre ? ' Pulsa un nombre o un día para ver sus checadas.' : ''}</p>`;
     if (!d.filas.length) { $('as-cuerpo').innerHTML = h + '<p class="ayuda">No hay personas en el reloj checador.</p>'; return; }
     h += `<div class="tabla-scroll"><table class="tabla-resumen as-tabla as-semana"><thead><tr><th>Persona</th>${d.fechas.map((f, i) => `<th>${esc(fechaLarga(f))}${d.festivos[i] ? '<small class="pe-cuenta">🎉 festivo</small>' : ''}</th>`).join('')}
       <th>Trabajado</th><th>Retardos</th><th>Faltas</th><th>Extra registrado</th><th>Extra autorizado</th><th>Dobles</th><th>Triples</th>${d.dinero ? '<th>Pago extra</th>' : ''}</tr></thead><tbody>`;
     for (const f of d.filas) {
       const t = f.totales;
       const ultimo = [...f.dias].reverse().find(x => x.fecha <= hoy())?.fecha || d.desde;
-      h += `<tr><td><button type="button" class="pe-nombre" data-as-abrir="${Number(f.personal_id)}" data-fecha="${esc(ultimo)}">${esc(f.nombre)}</button><small class="pe-cuenta">${esc(f.puesto || '')}</small></td>${f.dias.map(x => `<td class="${x.falta ? 'as-falta' : ''}">${x.fecha <= hoy() ? `<button type="button" class="btn-link" data-as-abrir="${Number(f.personal_id)}" data-fecha="${esc(x.fecha)}" aria-label="Checadas de ${esc(f.nombre)} el ${esc(fechaLarga(x.fecha))}">` : '<span>'}${x.entrada || x.salida ? esc(`${x.entrada || '?'}–${x.salida || '?'}`) : x.falta ? '❌' : esc(x.incidencia ? INCIDENCIA[x.incidencia] || x.incidencia : x.programado ? '—' : 'Descanso')}${x.fecha <= hoy() ? '</button>' : '</span>'}
+      h += `<tr><td>${abre ? `<button type="button" class="pe-nombre" data-as-abrir="${Number(f.personal_id)}" data-fecha="${esc(ultimo)}">${esc(f.nombre)}</button>` : `<b>${esc(f.nombre)}</b>`}<small class="pe-cuenta">${esc(f.puesto || '')}</small></td>${f.dias.map(x => `<td class="${x.falta ? 'as-falta' : ''}">${abre && x.fecha <= hoy() ? `<button type="button" class="btn-link" data-as-abrir="${Number(f.personal_id)}" data-fecha="${esc(x.fecha)}" aria-label="Checadas de ${esc(f.nombre)} el ${esc(fechaLarga(x.fecha))}">` : '<span>'}${x.entrada || x.salida ? esc(`${x.entrada || '?'}–${x.salida || '?'}`) : x.falta ? '❌' : esc(x.incidencia ? INCIDENCIA[x.incidencia] || x.incidencia : x.programado ? '—' : 'Descanso')}${abre && x.fecha <= hoy() ? '</button>' : '</span>'}
         ${x.retardo_min ? `<small class="as-rojo">R ${esc(x.retardo_min)}′</small>` : ''}${x.extra_min ? `<small class="pe-cuenta">+${esc(hm(x.extra_min))}${x.extra_autorizado_min == null ? '' : ' ✔'}</small>` : ''}${x.por_revisar ? '<small class="as-rojo">⚠️ revisar</small>' : ''}</td>`).join('')}
         <td>${esc(hm(t.trabajado_min))}</td><td>${esc(t.retardos)}${t.retardo_min ? ` <small>(${esc(t.retardo_min)} min)</small>` : ''}</td><td>${esc(t.faltas)}</td><td>${esc(hm(t.extra_min))}</td><td>${esc(hm(t.extra_autorizado_min))}</td><td>${esc(hm(t.extra_dobles_min))}</td><td>${esc(hm(t.extra_triples_min))}</td>${d.dinero ? `<td>${esc(pagoExtra(f.dinero))}${f.dinero?.valor_hora_cent != null ? `<small class="pe-cuenta">hora ${esc(pesos(f.dinero.valor_hora_cent))}</small>` : ''}</td>` : ''}</tr>`;
     }

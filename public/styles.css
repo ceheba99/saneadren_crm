@@ -2257,3 +2257,6 @@ tr.logs-aviso td{background:#fffaf0;}
 .cc-buscar{width:100%;max-width:420px;margin:4px 0 10px;}
 .cc-acciones{white-space:nowrap;}
 .btn-peligro-texto{color:var(--rojo);}
+
+/* Solo «Descargar la nómina» (2026-11-11): sin pestañas ni explicación de la asistencia. */
+#vista-asistencia.as-solo-nomina .as-pestanas,#vista-asistencia.as-solo-nomina .as-intro{display:none!important;}
