@@ -1,0 +1,4 @@
+pdf.js (pdfjs-dist) 4.10.38, licencia Apache-2.0 (Mozilla), de npm; integridad sha512-/Y3fcFrXEAsMjJXeL9J8+ZG9U01LbuWaYypvDW2ycW1jL269L3js3DVBjDJ0Up9Np1uqDXsDrRihHANhZOlwdQ== (2026-11-11).
+Solo la versión «legacy»: pdf.min.mjs + pdf.worker.min.mjs. Dibuja el PDF de la orden y la factura para imprimir desde el reloj checador (public/imprimir-documentos.js).
+Versión posterior a la corrección de CVE-2024-4367 (4.2.67); además se usa con isEvalSupported: false.
+Incluye standard_fonts/ (letras estándar de los PDF que no las traen, como los que hace jsPDF; licencias LICENSE_FOXIT y LICENSE_LIBERATION ahí mismo).

@@ -54,7 +54,7 @@
 <header><img src="/logo-saneadren.png" alt="Saneadren"><div id="reloj">--:--</div></header>
 <main id="pantalla"></main>
 <canvas id="lienzo" width="480" height="360" hidden></canvas>
-<script src="/imprimir-documentos.js?v=1"></script>
+<script src="/imprimir-documentos.js?v=2"></script>
 <script>
 (() => {
   'use strict';
@@ -149,15 +149,9 @@
   const impresora = window.ImprimirDocs?.crear('/api/publico/celular/', () => ({ 'X-Celular': token || '' }));
   function botonesImprimir(x) {
     if (!x.imprimir || !impresora) return '';
-    const aviso = el('span', { className: 'mal', role: 'status' });
-    const boton = (texto, que) => el('button', { type: 'button', textContent: texto, onclick: async e => {
-      const b = e.currentTarget, antes = b.textContent;
-      b.disabled = true; b.textContent = 'Preparando…'; aviso.textContent = ''; clearTimeout(flujo); flujo = setTimeout(() => { pin = ''; inicio(); }, 180000);
-      try { await impresora[que](x.imprimir); b.textContent = '✔ Descargado: ábrelo e imprime'; }
-      catch (err) { b.disabled = false; b.textContent = antes; aviso.textContent = err.message; }
-    } });
-    return el('div', { className: 'acciones' }, boton('🖨️ Orden de servicio', 'orden'), x.con_factura ? boton('🧾 Factura', 'factura') : '', aviso);
+    return impresora.botones(x.imprimir, x.con_factura, () => { clearTimeout(flujo); flujo = setTimeout(() => { pin = ''; inicio(); }, 180000); });
   }
+
   function listaServicios(l) {
     if (!l?.length) return el('p', { className: 'ayuda', textContent: '📋 No tienes servicios asignados para hoy ni los próximos días.' });
     const dias = [...new Set(l.map(x => x.fecha))];
