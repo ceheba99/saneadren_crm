@@ -75,6 +75,12 @@ const LUN = sumar(sumar(HOY, -7), -(dow(sumar(HOY, -7)) - 1)), D = k => sumar(LU
   revisa(mar.retardo_min === 0 && mar.extra_min === 30, 'Martes: 8:38 está dentro de la tolerancia; 30 min de tiempo extra con los botones', mar);
   const mie = await dia(D(2));
   revisa(mie.extra_min === 150, 'Miércoles: salida tarde y bloque de extra empalmados cuentan 2:30 (sin contar dos veces)', mie);
+  // Detalle del tiempo extra (2026-11-11): cada tramo con su hora, si cuenta y por qué, y el traslape.
+  const pm = mar.extra_detalle?.piezas || [];
+  revisa(pm.length === 1 && pm[0].desde === '18:40' && pm[0].hasta === '19:10' && pm[0].cuenta && /Botones/.test(pm[0].motivo),
+    'Detalle del martes: el bloque 18:40–19:10 cuenta por los botones', mar.extra_detalle);
+  revisa(mie.extra_detalle?.traslape_min === 60 && mie.extra_detalle.sin_redondeo_min === 150, 'Detalle del miércoles: los tramos se enciman 1 h y se cuenta una vez', mie.extra_detalle);
+  revisa(lun.extra_detalle?.regla && /Automático/.test(lun.extra_detalle.regla), 'El detalle dice la regla que se usó ese día', lun.extra_detalle);
   const jue = await dia(D(3)), vie = await dia(D(4));
   revisa(jue.falta && !vie.falta && vie.incidencia === 'permiso', 'Jueves sin checar es falta; viernes con permiso no', [jue, vie]);
   const sab = await dia(D(5)), dom = await dia(D(6));
@@ -181,11 +187,13 @@ const LUN = sumar(sumar(HOY, -7), -(dow(sumar(HOY, -7)) - 1)), D = k => sumar(LU
   exigir(await pedir('PUT', '/asistencia/reglas-extra', A, reglas({ desde: X, despues_min: 30 })), 'regla 30 min');
   const dx = await diaAna();
   revisa(dx.extra_min === 0 && dx.notas.some(x => /no cuenta: el tiempo extra empieza a los 30 min/.test(x)), 'Con «desde 30 min»: quedarse 20 min no cuenta y se dice por qué', dx);
+  revisa(dx.extra_detalle?.piezas?.length === 1 && dx.extra_detalle.piezas[0].cuenta === false && dx.extra_detalle.piezas[0].desde === '18:00' && dx.extra_detalle.piezas[0].hasta === '18:20', 'El detalle muestra el tramo 18:00–18:20 que no contó', dx.extra_detalle);
   await marca('salida', '18:40');
   revisa((await diaAna()).extra_min === 40, 'Si se queda 40 min (pasa los 30), cuenta todo desde su salida');
   exigir(await pedir('PUT', '/asistencia/reglas-extra', A, reglas({ desde: X, despues_min: 30, bloque_min: 30 })), 'regla con redondeo');
   const dx2 = await diaAna();
   revisa(dx2.extra_min === 30 && dx2.notas.some(x => /redondeado a bloques de 30 min/.test(x)), 'Redondeo a bloques de 30 min (hacia abajo): 40 → 30', dx2);
+  revisa(dx2.extra_detalle?.redondeo?.bloque_min === 30 && dx2.extra_detalle.redondeo.perdidos_min === 10 && dx2.extra_detalle.sin_redondeo_min === 40, 'El detalle muestra el redondeo (40 → 30, no cuentan 10 min)', dx2.extra_detalle);
   revisa((await dia(D(0))).extra_min === 70, 'La semana pasada no cambia con las reglas nuevas');
   exigir(await pedir('PUT', '/asistencia/reglas-extra', A, reglas({ desde: X, modo: 'botones' })), 'solo botones');
   revisa((await diaAna()).extra_min === 0, 'Con «solo con los botones», quedarse después de la salida no cuenta');
