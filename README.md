@@ -118,7 +118,7 @@ El correo de saneadren.com.mx está en **Google Workspace**. Copia `.env.example
 | `USUARIO_PRUEBA_NOMBRE` / `USUARIO_PRUEBA_PASSWORD` | `Karla` / (la contraseña) | Opcional: usuario de pruebas que se crea solo al arrancar (útil en Render sin disco, donde la base se borra en cada despliegue). `USUARIO_PRUEBA_ROL` (ventas por defecto) y `USUARIO_PRUEBA_CORREO` son opcionales. |
 | `USUARIO_2_PASSWORD` | (la contraseña) | Opcional: crea a **Luis Perea** al arrancar. `USUARIO_2_NOMBRE` (Luis Perea por defecto), `USUARIO_2_ROL` (ventas por defecto) y `USUARIO_2_CORREO` son opcionales. |
 
-Sin `SMTP_HOST` los correos **no se envían**: se imprimen en la consola del servidor con su enlace (útil para probar). Nunca guardes `SMTP_PASS` en el repositorio.
+Sin `SMTP_HOST` los correos **no se envían**: se imprimen en la consola del servidor con el enlace **tapado**. Para probar en tu computadora y ver el enlace completo, agrega `CORREO_CONSOLA=1` (nunca en el servidor). Nunca guardes `SMTP_PASS` en el repositorio.
 
 ## Personalizar catálogos iniciales
 Edita el bloque `seed()` en `server/db.js`:

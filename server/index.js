@@ -991,6 +991,14 @@ app.put('/api/leads/:id', validarPartidas, validarRegistro, h((req, res) => {
   if (req.body.tecnico_id !== undefined) {
     req.body.tecnico_id = req.body.tecnico_id === null || req.body.tecnico_id === '' ? null : Number(req.body.tecnico_id);
     if (req.body.tecnico_id !== null && !db.prepare('SELECT 1 FROM usuarios WHERE id = ? AND activo = 1').get(req.body.tecnico_id)) return res.status(400).json({ error: 'El técnico indicado no existe o está desactivado' });
+    // Las mismas reglas que el equipo de la orden (auditoría H05): de la sucursal de la orden y, si tiene ficha, activa.
+    if (req.body.tecnico_id !== null && req.body.tecnico_id !== actual.tecnico_id) {
+      const t = db.prepare('SELECT rol FROM main.usuarios WHERE id = ?').get(req.body.tecnico_id);
+      if (t.rol !== 'admin' && !db.prepare('SELECT 1 FROM main.usuario_sucursales WHERE usuario_id = ? AND sucursal_id = ?').get(req.body.tecnico_id, actual.sucursal_id))
+        return res.status(400).json({ error: 'El técnico debe ser de la sucursal de la orden' });
+      const ficha = db.prepare('SELECT activo, sucursal_id FROM main.personal WHERE usuario_id = ?').get(req.body.tecnico_id);
+      if (ficha && (!ficha.activo || ficha.sucursal_id !== actual.sucursal_id)) return res.status(400).json({ error: ficha.activo ? 'El técnico debe ser de la sucursal de la orden' : 'Ese técnico está dado de baja en Personal' });
+    }
   }
   if (req.body.etapa !== undefined && !(Number(req.body.etapa) >= 1 && Number(req.body.etapa) <= 4)) return res.status(400).json({ error: 'Etapa inválida (1-4)' });
   if (req.body.estatus !== undefined && !['abierto', 'ganado', 'perdido'].includes(req.body.estatus)) return res.status(400).json({ error: 'Estatus inválido: use abierto, ganado o perdido' });
@@ -1104,64 +1112,75 @@ app.put('/api/leads/:id', validarPartidas, validarRegistro, h((req, res) => {
   set.push('version = version + 1');
   params.push(id);
 
-  db.prepare(`UPDATE main.leads SET ${set.join(', ')} WHERE id = ?`).run(...params);
-  if (equipoNuevo) {
-    const antesEq = personalMod.textoEquipo(personalMod.equipoDe(id));
-    personalMod.guardarEquipo(id, equipoNuevo);
-    const despuesEq = personalMod.textoEquipo(personalMod.equipoDe(id));
-    if (antesEq !== despuesEq) db.prepare(`INSERT INTO main.historial (lead_id, tipo, texto, usuario, origen) VALUES (?, 'observacion', ?, ?, 'sistema')`).run(id, 'Personal de la orden: ' + antesEq + ' → ' + despuesEq + '.', req.usuarioSesion.nombre);
-  } else if (req.body.tecnico_id !== undefined) personalMod.responsableDesdeUsuario(id, req.body.tecnico_id);
+  // Todo el cambio (orden, equipo, historial, crédito) se guarda junto o no se guarda (auditoría H07).
+  db.transaction(() => {
+    db.prepare(`UPDATE main.leads SET ${set.join(', ')} WHERE id = ?`).run(...params);
+    if (equipoNuevo) {
+      const antesEq = personalMod.textoEquipo(personalMod.equipoDe(id));
+      personalMod.guardarEquipo(id, equipoNuevo);
+      const despuesEq = personalMod.textoEquipo(personalMod.equipoDe(id));
+      if (antesEq !== despuesEq) db.prepare(`INSERT INTO main.historial (lead_id, tipo, texto, usuario, origen) VALUES (?, 'observacion', ?, ?, 'sistema')`).run(id, 'Personal de la orden: ' + antesEq + ' → ' + despuesEq + '.', req.usuarioSesion.nombre);
+    } else if (req.body.tecnico_id !== undefined) personalMod.responsableDesdeUsuario(id, req.body.tecnico_id);
 
-  // Queda registro de cualquier otro dato que cambie (fechas, etapa, responsable, servicios, notas…).
-  const otrosCambios = cambiosDeOrden(actual, req.body);
-  if (otrosCambios) db.prepare(`INSERT INTO main.historial (lead_id, tipo, texto, usuario, origen) VALUES (?, 'observacion', ?, ?, 'sistema')`).run(id, 'Cambios: ' + otrosCambios + '.', req.usuarioSesion.nombre);
-  if (motivoPerdida) {
-    db.prepare('UPDATE main.leads SET motivo_perdida = ? WHERE id = ?').run(motivoPerdida, id);
-    db.prepare(`INSERT INTO main.historial (lead_id, tipo, texto, usuario, origen) VALUES (?, 'observacion', ?, ?, 'sistema')`).run(id, 'Cotización no aceptada. Motivo: ' + motivoPerdida, req.usuarioSesion.nombre);
-  }
+    // Queda registro de cualquier otro dato que cambie (fechas, etapa, responsable, servicios, notas…).
+    const otrosCambios = cambiosDeOrden(actual, req.body);
+    if (otrosCambios) db.prepare(`INSERT INTO main.historial (lead_id, tipo, texto, usuario, origen) VALUES (?, 'observacion', ?, ?, 'sistema')`).run(id, 'Cambios: ' + otrosCambios + '.', req.usuarioSesion.nombre);
+    if (motivoPerdida) {
+      db.prepare('UPDATE main.leads SET motivo_perdida = ? WHERE id = ?').run(motivoPerdida, id);
+      db.prepare(`INSERT INTO main.historial (lead_id, tipo, texto, usuario, origen) VALUES (?, 'observacion', ?, ?, 'sistema')`).run(id, 'Cotización no aceptada. Motivo: ' + motivoPerdida, req.usuarioSesion.nombre);
+    }
 
-  if (req.body.estatus !== undefined && req.body.estatus !== actual.estatus) {
-    // Una cotización cerrada (ganada o perdida) ya no necesita recordatorios de seguimiento pendientes:
-    // se resuelven solos para no dejar tareas obsoletas en la vista de Alertas.
-    if (req.body.estatus === 'ganado' || req.body.estatus === 'perdido') {
-      db.prepare(`UPDATE main.historial SET resuelta = 1 WHERE lead_id = ? AND tipo = 'alerta' AND resuelta = 0`).run(id);
+    if (req.body.estatus !== undefined && req.body.estatus !== actual.estatus) {
+      // Una cotización cerrada (ganada o perdida) ya no necesita recordatorios de seguimiento pendientes:
+      // se resuelven solos para no dejar tareas obsoletas en la vista de Alertas.
+      if (req.body.estatus === 'ganado' || req.body.estatus === 'perdido') {
+        db.prepare(`UPDATE main.historial SET resuelta = 1 WHERE lead_id = ? AND tipo = 'alerta' AND resuelta = 0`).run(id);
+      }
+      const textoEvento = { ganado: 'Cotización marcada como ganada (servicio contratado).', perdido: 'Cotización marcada como no aceptada.', abierto: 'Cotización reabierta.' }[req.body.estatus] || ('Estatus cambiado a ' + req.body.estatus + '.');
+      db.prepare(`INSERT INTO main.historial (lead_id, tipo, texto, usuario, origen) VALUES (?, 'observacion', ?, ?, 'sistema')`)
+        .run(id, textoEvento, req.usuarioSesion?.nombre || null);
+      if (req.body.estatus === 'ganado') finanzas.copiarCredito(id);
+      const fmtTotal = cent => '$' + (Number(cent || 0) / 100).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      if (actual.estatus === 'ganado') db.prepare('UPDATE main.leads SET reabierta_total_cent = ? WHERE id = ?').run(totalActualCent, id);
+      if (req.body.estatus === 'ganado' && actual.reabierta_total_cent != null) {
+        const n = db.prepare('SELECT valor, iva_cent FROM main.leads WHERE id = ?').get(id), nuevo = Math.round(Number(n.valor || 0) * 100) + (n.iva_cent || 0);
+        if (nuevo !== actual.reabierta_total_cent) db.prepare(`INSERT INTO main.historial (lead_id, tipo, texto, usuario, origen) VALUES (?, 'observacion', ?, ?, 'sistema')`)
+          .run(id, `Se volvió a ganar con otro importe: ${fmtTotal(actual.reabierta_total_cent)} → ${fmtTotal(nuevo)}. Si ya se entregó el PDF de la orden anterior, ese ya no vale: entrega el nuevo.`, req.usuarioSesion.nombre);
+        db.prepare('UPDATE main.leads SET reabierta_total_cent = NULL WHERE id = ?').run(id);
+      }
     }
-    const textoEvento = { ganado: 'Cotización marcada como ganada (servicio contratado).', perdido: 'Cotización marcada como no aceptada.', abierto: 'Cotización reabierta.' }[req.body.estatus] || ('Estatus cambiado a ' + req.body.estatus + '.');
-    db.prepare(`INSERT INTO main.historial (lead_id, tipo, texto, usuario, origen) VALUES (?, 'observacion', ?, ?, 'sistema')`)
-      .run(id, textoEvento, req.usuarioSesion?.nombre || null);
-    if (req.body.estatus === 'ganado') finanzas.copiarCredito(id);
-    const fmtTotal = cent => '$' + (Number(cent || 0) / 100).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-    if (actual.estatus === 'ganado') db.prepare('UPDATE main.leads SET reabierta_total_cent = ? WHERE id = ?').run(totalActualCent, id);
-    if (req.body.estatus === 'ganado' && actual.reabierta_total_cent != null) {
-      const n = db.prepare('SELECT valor, iva_cent FROM main.leads WHERE id = ?').get(id), nuevo = Math.round(Number(n.valor || 0) * 100) + (n.iva_cent || 0);
-      if (nuevo !== actual.reabierta_total_cent) db.prepare(`INSERT INTO main.historial (lead_id, tipo, texto, usuario, origen) VALUES (?, 'observacion', ?, ?, 'sistema')`)
-        .run(id, `Se volvió a ganar con otro importe: ${fmtTotal(actual.reabierta_total_cent)} → ${fmtTotal(nuevo)}. Si ya se entregó el PDF de la orden anterior, ese ya no vale: entrega el nuevo.`, req.usuarioSesion.nombre);
-      db.prepare('UPDATE main.leads SET reabierta_total_cent = NULL WHERE id = ?').run(id);
+    if (cambiaImporte || cambiaIva) {
+      const fmt = cent => '$' + (Number(cent || 0) / 100).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      const iva = cambiaIva ? `IVA: ${Importes.etiquetaModo(actual.iva_modo, actual.iva_tasa)} → ${Importes.etiquetaModo(req.body.iva_modo, req.body.iva_tasa)}` : '';
+      const texto = cambiaImporte
+        ? `Importe de la orden cambiado: ${fmt(totalActualCent)} → ${fmt(totalNuevoCent)}${iva ? ' (' + iva + ')' : ''}.`
+        : `${iva} en la orden; el total no cambia (${fmt(totalNuevoCent)}).`;
+      db.prepare(`INSERT INTO main.historial (lead_id, tipo, texto, usuario, origen) VALUES (?, 'observacion', ?, ?, 'sistema')`)
+        .run(id, texto, req.usuarioSesion.nombre);
     }
-  }
-  if (cambiaImporte || cambiaIva) {
-    const fmt = cent => '$' + (Number(cent || 0) / 100).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-    const iva = cambiaIva ? `IVA: ${Importes.etiquetaModo(actual.iva_modo, actual.iva_tasa)} → ${Importes.etiquetaModo(req.body.iva_modo, req.body.iva_tasa)}` : '';
-    const texto = cambiaImporte
-      ? `Importe de la orden cambiado: ${fmt(totalActualCent)} → ${fmt(totalNuevoCent)}${iva ? ' (' + iva + ')' : ''}.`
-      : `${iva} en la orden; el total no cambia (${fmt(totalNuevoCent)}).`;
-    db.prepare(`INSERT INTO main.historial (lead_id, tipo, texto, usuario, origen) VALUES (?, 'observacion', ?, ?, 'sistema')`)
-      .run(id, texto, req.usuarioSesion.nombre);
-  }
+  })();
   res.json(db.prepare('SELECT * FROM leads WHERE id = ?').get(id));
 }));
 
 // ---------- Historial: observaciones y alertas ----------
+// Seguimiento de una cotización u orden (auditoría H04, 2026-11-11): notas y recordatorios los agrega quien puede
+// editarla o el técnico asignado; ver la orden ya no basta. Lo único que la pantalla anota sola (descargó, urgente,
+// recordatorio por WhatsApp) sale como «Sistema» y lo puede anotar quien la ve; cualquier otro texto es «manual».
+const EVENTO_PANTALLA = /^(Orden de servicio descargada|Cotización descargada) \([A-Z]{2,5}\)\.$|^(Marcado como urgente|Ya no está marcado como urgente|Recordatorio de pago enviado por WhatsApp)\.$/;
+const llevaSeguimiento = (req, lead) => puedeEditarLead(req, lead) || (lead.tecnico_id != null && lead.tecnico_id === req.usuarioSesion.id)
+  || (lead.estatus === 'ganado' && permisos.puede(req, 'cxc.ver') && finanzas.cobranzaDe(lead)); // quien lleva su cobranza anota el seguimiento del cobro
 app.post('/api/leads/:id/historial', h((req, res) => {
   const { tipo, texto, fecha_alerta } = req.body;
   const usuario = req.usuarioSesion.nombre; // nunca se confía en el valor que mande el navegador
-  const origen = req.body.origen === 'sistema' ? 'sistema' : 'manual'; // cualquier otro valor cae en 'manual'
   if (!texto || !texto.trim()) return res.status(400).json({ error: 'Texto requerido' });
   const tipoFinal = tipo || 'observacion';
   if (!['observacion', 'alerta'].includes(tipoFinal)) return res.status(400).json({ error: 'Tipo inválido' });
   if (tipoFinal === 'alerta' && !fecha_alerta) return res.status(400).json({ error: 'Los recordatorios requieren fecha y hora' });
-  const lead = db.prepare('SELECT id FROM leads WHERE id = ?').get(req.params.id);
+  const lead = db.prepare('SELECT * FROM leads WHERE id = ?').get(req.params.id);
   if (!lead) return res.status(404).json({ error: 'Cotización no encontrada' });
+  const evento = req.body.origen === 'sistema' && tipoFinal === 'observacion' && EVENTO_PANTALLA.test(String(texto).trim());
+  if (!evento && !llevaSeguimiento(req, lead)) return res.status(403).json({ error: 'Las notas y recordatorios los agrega quien puede editar esta orden o su técnico' });
+  const origen = evento ? 'sistema' : 'manual';
 
   const info = db.prepare(`
     INSERT INTO main.historial (lead_id, tipo, texto, fecha_alerta, usuario, origen)
@@ -1172,8 +1191,12 @@ app.post('/api/leads/:id/historial', h((req, res) => {
 }));
 
 app.put('/api/historial/:id/resolver', h((req, res) => {
-  const info = db.prepare('UPDATE main.historial SET resuelta = 1 WHERE id = ?').run(req.params.id);
-  if (info.changes === 0) return res.status(404).json({ error: 'Registro de historial no encontrado' });
+  // Solo un aviso de una orden que ve (otra sucursal = «no existe») y que puede atender (auditoría H04).
+  const item = db.prepare('SELECT h.id, h.lead_id FROM historial h WHERE h.id = ?').get(req.params.id);
+  const lead = item && db.prepare('SELECT * FROM leads WHERE id = ?').get(item.lead_id);
+  if (!item || !lead) return res.status(404).json({ error: 'Registro de historial no encontrado' });
+  if (!llevaSeguimiento(req, lead)) return res.status(403).json({ error: 'Los avisos los marca resueltos quien puede editar esta orden o su técnico' });
+  db.prepare('UPDATE main.historial SET resuelta = 1 WHERE id = ?').run(item.id);
   res.json({ ok: true });
 }));
 

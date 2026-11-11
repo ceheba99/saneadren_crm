@@ -41,7 +41,11 @@ let avisarFallo = null;
 async function enviar(para, asunto, contenido) {
   const { html, texto } = plantilla(contenido);
   if (!transporte) {
-    console.log(`\n[correo · modo desarrollo, NO enviado] Para: ${para}\nAsunto: ${asunto}\n${texto}\n`);
+    // Sin SMTP el correo no sale. El texto completo (con el enlace para entrar o cambiar la contraseña) solo se escribe
+    // en la consola si se pide a propósito para probar (CORREO_CONSOLA=1); si no, el enlace queda tapado: en un servidor
+    // sin correo configurado, quien leyera los registros podría usarlo (auditoría H13).
+    const visible = process.env.CORREO_CONSOLA === '1' ? texto : texto.replace(/https?:\/\/\S+/g, '[enlace oculto: configura SMTP o usa CORREO_CONSOLA=1 al probar]');
+    console.log(`\n[correo NO enviado: falta SMTP_HOST] Para: ${para}\nAsunto: ${asunto}\n${visible}\n`);
     return;
   }
   try { await transporte.sendMail({ from: REMITENTE, to: para, subject: asunto, html, text: texto }); }

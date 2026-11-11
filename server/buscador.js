@@ -106,7 +106,8 @@ module.exports = function buscador(app, db, h) {
         estado: k.cancelada ? 'Cancelada' : k.total_cent - k.pagado_cent <= 0 ? 'Pagada' : 'Por pagar · vence ' + k.fecha_vencimiento.split('-').reverse().join('/'), fecha: k.fecha_vencimiento }),
     },
     {
-      tipo: 'proveedor', titulo: 'Proveedores', puede: () => true,
+      // Proveedores: solo quien trabaja con ellos (cuentas por pagar o compras); antes salían a todos (auditoría H02).
+      tipo: 'proveedor', titulo: 'Proveedores', puede: req => app.locals.permisos.puede(req, 'cxp.ver') || app.locals.permisos.puede(req, 'compras.ver'),
       base: `FROM proveedores p`,
       texto: `p.nombre || ' ' || COALESCE(p.rfc,'') || ' ' || COALESCE(p.contacto,'')`,
       telefono: `solo_digitos(p.telefono) LIKE ?`, telParams: 1,

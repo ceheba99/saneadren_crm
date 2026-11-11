@@ -14,7 +14,7 @@ const ADMIN = { usuario: 'admin', correo: 'marketing@saneadren.com.mx', password
 let salida = '';
 const srv = spawn(process.execPath, [path.join(__dirname, '..', 'server', 'index.js')], {
   env: { ...process.env, PORT: PUERTO, DB_PATH: path.join(dir, 'sim.db'), APP_URL: 'http://localhost:' + PUERTO,
-    ADMIN_USUARIO: ADMIN.usuario, ADMIN_CORREO: ADMIN.correo, ADMIN_PASSWORD: ADMIN.password, SMTP_HOST: '',
+    ADMIN_USUARIO: ADMIN.usuario, ADMIN_CORREO: ADMIN.correo, ADMIN_PASSWORD: ADMIN.password, SMTP_HOST: '', CORREO_CONSOLA: '1',
     USUARIO_PRUEBA_NOMBRE: 'Karla Prueba', USUARIO_PRUEBA_PASSWORD: 'Pruebas-Campo-31', USUARIO_PRUEBA_ROL: 'tecnico', USUARIO_2_PASSWORD: 'Cobranza-Luis-2026' }
 });
 srv.stdout.on('data', d => salida += d); srv.stderr.on('data', d => salida += d);

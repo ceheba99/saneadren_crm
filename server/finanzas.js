@@ -924,7 +924,9 @@ module.exports = function finanzas(app, db, h, unicos) {
       WHERE d.proveedor_id = ? AND d.tipo = 'cotizacion' AND d.eliminado = 0 ORDER BY d.created_at DESC, d.id DESC`).all(p.id)
       .map(d => ({ id: d.id, solicitud_id: d.solicitud_id, solicitud_folio: folioSolx({ id: d.solicitud_id, created_at: d.sol_created_at }), que: d.que, monto: d.monto_cent == null ? null : aPesos(d.monto_cent),
         entrega: d.entrega, fecha: String(d.created_at).slice(0, 10), gano: d.ganadora_id === d.id, decidida: !!d.ganadora_id })) : [];
-    const historial = db.prepare("SELECT fecha, accion, detalle, usuario FROM auditoria WHERE entidad = 'proveedor' AND entidad_id = ? ORDER BY fecha DESC, id DESC LIMIT 100").all(p.id);
+    // Sin permiso de pagos, la CLABE de los cambios viejos se ve tapada (últimos 4 dígitos; auditoría H02).
+    const historial = db.prepare("SELECT fecha, accion, detalle, usuario FROM auditoria WHERE entidad = 'proveedor' AND entidad_id = ? ORDER BY fecha DESC, id DESC LIMIT 100").all(p.id)
+      .map(x => (veClabe(req) || x.detalle == null ? x : { ...x, detalle: String(x.detalle).replace(/\d{10,}/g, d => '•••' + d.slice(-4)) }));
     res.json({ proveedor: veClabe(req) ? p : sinBanco(p),
       debe: aPesos(cent(conSaldo.map(x => x.saldo))), vencido: aPesos(cent(conSaldo.filter(x => x.vencida).map(x => x.saldo))),
       esta_semana: aPesos(cent(conSaldo.filter(x => !x.vencida && x.fecha_vencimiento <= semana).map(x => x.saldo))),
@@ -1102,6 +1104,8 @@ module.exports = function finanzas(app, db, h, unicos) {
       if (!motivo || !conSentido(motivo, 5)) return res.status(400).json({ error: 'Escribe por qué no se realizó (mínimo 5 caracteres)' });
       const fechaGasto = lead.fecha_servicio && lead.fecha_servicio <= hoy ? lead.fecha_servicio : hoy;
       const vg = validarGastos(b.gastos, lead, fechaGasto, hoy); if (vg.error) return res.status(400).json({ error: vg.error });
+      // Repetir «no realizado» (doble clic, reintento tras perder la respuesta) no vuelve a cargar los gastos (auditoría H03).
+      if (lead.ejecucion === 'no_realizado') return res.status(409).json({ error: 'Este servicio ya está marcado como no realizado: no se volvió a registrar nada.', codigo: 'YA_NO_REALIZADO' });
       // Avisos: lo que el cliente ya pagó queda a su favor, y los gastos ya cargados siguen en Cuentas por pagar.
       const cobrado = db.prepare("SELECT COALESCE(SUM(monto_cent), 0) t FROM main.cobros WHERE lead_id = ? AND cancelado = 0 AND tipo <> 'ajuste'").get(lead.id).t;
       const gastos = cuentasPorPagar().filter(x => x.lead_id === lead.id);
@@ -1588,6 +1592,8 @@ module.exports = function finanzas(app, db, h, unicos) {
   return {
     // Para el panorama general de Resultados (server/tablero.js).
     cartera, cuentasPorPagar, CATEGORIAS, categoriaActiva, conSentido,
+    // ¿Quien pide lleva la cobranza de esta orden? (para anotar el seguimiento del cobro, auditoría H04)
+    cobranzaDe,
     // Centavos cobrados (no cancelados) de una orden.
     cobradoCent: leadId => db.prepare('SELECT COALESCE(SUM(monto_cent), 0) t FROM main.cobros WHERE lead_id = ? AND cancelado = 0').get(leadId).t,
     // ¿Tiene pagos activos? (no se puede borrar ni reabrir como cotización)

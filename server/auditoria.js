@@ -30,6 +30,9 @@ const ETIQUETAS = {
   nota: 'Nota', observaciones: 'Observaciones', total_cent: 'Total', iva_modo: 'IVA', solicitante_nombre: 'Solicitante', solicitante_cargo: 'Cargo', lead_id: 'Orden de servicio', proveedor_nombre: 'Proveedor', centro_nombre: 'Centro de costos',
 };
 const vacio = v => v === null || v === undefined || String(v).trim() === '';
+// CLABE o cuenta: se guarda completa (Dirección necesita ver a qué cuenta se cambió), pero a quien no maneja pagos se le
+// muestra tapada, con los últimos 4 dígitos (auditoría H02: el historial de un proveedor lo leía cualquiera).
+const tapaCuenta = t => String(t).replace(/\d{10,}/g, d => '•••' + d.slice(-4));
 const mostrar = (k, v) => {
   if (vacio(v)) return '(vacío)';
   if (k === 'total_cent') return '$' + (Number(v) / 100).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -64,9 +67,11 @@ module.exports = function auditoria(app, db, h) {
         : entidad === 'cliente' ? !!suc?.verCliente(n)
         : entidad === 'usuario' ? n === req.usuarioSesion.id || (app.locals.permisos.puede(req, 'usuarios.administrar') && !!db.prepare('SELECT 1 FROM usuarios WHERE id = ?').get(n) && suc?.puedeAdministrar(req, db.prepare('SELECT * FROM usuarios WHERE id = ?').get(n)))
         : entidad === 'personal' ? !!app.locals.permisos?.puede(req, 'personal.ver') && !!db.prepare('SELECT 1 FROM personal WHERE id = ?').get(n)
-        : entidad === 'proveedor';
+        : entidad === 'proveedor' ? (app.locals.permisos.puede(req, 'cxp.ver') || app.locals.permisos.puede(req, 'compras.ver')) : false;
       if (!visible) return res.json([]);
-      return res.json(db.prepare('SELECT * FROM auditoria WHERE entidad = ? AND entidad_id = ? ORDER BY id DESC LIMIT 500').all(String(entidad), Number(id)));
+      // Lo que se anotó antes de tapar las CLABE: también se tapa al mostrarlo a quien no maneja pagos.
+      const filas = db.prepare('SELECT * FROM auditoria WHERE entidad = ? AND entidad_id = ? ORDER BY id DESC LIMIT 500').all(String(entidad), Number(id));
+      return res.json(app.locals.permisos.puede(req, 'dinero.mover') ? filas : filas.map(f => ({ ...f, detalle: f.detalle == null ? f.detalle : tapaCuenta(f.detalle) })));
     }
     if (!req.usuarioSesion.admin_general) return res.status(403).json({ error: 'La bitácora completa es solo para Dirección' });
     const filtros = [], params = [];
