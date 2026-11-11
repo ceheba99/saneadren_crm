@@ -38,7 +38,7 @@ function camposOrden(datos) {
 }
 const COLOR_ORDEN = { oscuro: [26, 29, 35], amarillo: [246, 177, 3], gris: [107, 114, 128], linea: [214, 217, 222], fondo: [246, 247, 249] };
 
-// opciones (reloj checador, 2026-11-11): { membrete, qr } ya cargados (fuera del CRM no existen cargarMembrete ni la
+// opciones (reloj checador, 2026-11-11): { membrete, qr, devolver } ya cargados (fuera del CRM no existen cargarMembrete ni la
 // encuesta con sesión). Sin opciones, los carga el CRM como siempre.
 async function generarPDFOrdenServicio(datos, opciones = {}) {
   const membrete = opciones.membrete || await cargarMembreteOrdenServicio();
@@ -154,5 +154,7 @@ async function generarPDFOrdenServicio(datos, opciones = {}) {
   }
   const paginas = doc.getNumberOfPages();
   for (let i = 1; i <= paginas; i++) { doc.setPage(i); fuente(7.5, false, C.gris); doc.text('Orden de servicio ' + datos.folio + ' · Página ' + i + ' de ' + paginas, derecha, 694, { align: 'right' }); }
+  // Reloj checador: regresa el PDF para dibujarlo e imprimirlo ahí (en la app de Android una descarga se abre en blanco).
+  if (opciones.devolver) return { bytes: new Uint8Array(doc.output('arraybuffer')), nombre: nombreArchivoOrdenServicio(datos,'pdf') };
   doc.save(nombreArchivoOrdenServicio(datos,'pdf'));
 }
