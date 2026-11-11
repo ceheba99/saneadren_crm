@@ -40,7 +40,7 @@ const HOY = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Mexico_City' }
   const o = exigir(await pedir('PUT', '/leads/' + l.id, A, { version: l.version, estatus: 'ganado', fecha_servicio: HOY }), 'orden');
   exigir(await pedir('POST', '/leads/' + o.id + '/cobros', A, { monto: 580, metodo: 'transferencia' }), 'cobro confirmado (Dirección)');
   exigir(await pedir('POST', '/leads/' + o.id + '/cobros', V, { monto: 100, metodo: 'efectivo' }), 'cobro por confirmar (ventas)');
-  const prov = exigir(await pedir('POST', '/finanzas/proveedores', A, { nombre: 'Gasolinera Centro', categoria: 'combustible', dias_credito: 0 }), 'proveedor');
+  const prov = exigir(await pedir('POST', '/finanzas/proveedores', A, { nombre: 'Gasolinera Centro', categoria: 'combustible', dias_credito: 0, clabe: '012180001234567899', banco: 'BBVA' }), 'proveedor');
   const g1 = exigir(await pedir('POST', '/finanzas/cxp', A, { proveedor_id: prov.id, categoria: 'combustible', concepto: 'Diésel', total: 1160, iva: 160, fecha_documento: HOY, dias_credito: 0, tipo_comprobante: 'factura', factura_folio: 'G-1', ya_pagado: true, metodo: 'transferencia' }), 'gasto con IVA');
   exigir(await pedir('POST', '/finanzas/cxp', A, { proveedor_id: prov.id, categoria: 'combustible', concepto: 'Gasolina sin IVA capturado', total: 580, fecha_documento: HOY, dias_credito: 0, tipo_comprobante: 'factura', factura_folio: 'G-2' }), 'gasto IVA estimado');
   // Una factura emitida en sandbox (timbrada, con su XML) y una cancelada.
@@ -69,6 +69,13 @@ const HOY = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Mexico_City' }
   const d1 = r.gastos.find(x => x.folio === 'G-1'), d2 = r.gastos.find(x => x.folio === 'G-2');
   revisa(d1.status === 'PAGADO' && d1.pagado === 1160 && d1.pendiente === 0 && d1.fecha_pago === HOY && d1.via === 'transferencia' && d1.capturo === 'admin' && d1.categoria !== 'combustible'
     && d2.status === 'PENDIENTE' && d2.pendiente === 580 && d2.vence, 'Los gastos traen las columnas del Excel CXP (status, pagado, pendiente, fecha y vía de pago, capturó, categoría con nombre)', [d1, d2]);
+  // Flujo de banco (hoja «BNT»): solo dinero que se movió, en orden, con saldo y su factura.
+  const fl = r.flujo;
+  revisa(r.saldo_inicial === 0 && fl.length === 2 && fl[0].ingreso === 580 && fl[0].metodo === 'PUE' && /F-1/.test(fl[0].cfdi) && fl[1].egreso === 1160 && fl[1].saldo === 580 - 1160,
+    'Flujo de banco: el cobro confirmado (no el por confirmar) y el pago, con saldo corrido y la factura de cada uno', fl);
+  revisa(fl[1].clabe === '•••7899' && /•••7899/.test(fl[1].cuenta_tercero) && fl[1].cfdi_monto === 1160 && fl[1].no_deducible === 0 && fl[1].por_comprobar === 0 && fl[1].tipo_gasto !== 'combustible',
+    'El contador ve la CLABE tapada; el gasto con factura es deducible y no queda por comprobar', fl[1]);
+  revisa((await pedir('GET', '/contabilidad/excel?mes=' + MES, A))[1].flujo[1].clabe === '012180001234567899', 'Dirección (hace pagos) ve la CLABE completa');
   let [s2, , buf, tipo] = await pedir('GET', '/contabilidad/xml?mes=' + MES, C);
   const txt = buf.toString('latin1');
   revisa(s2 === 200 && /x-tar/.test(tipo) && txt.includes('emitidas/F-1_UUID-UNO.xml') && txt.includes('<cfdi:Comprobante Folio="1"/>') && txt.includes('LEEME.txt'), 'Los XML del mes salen en un .tar (emitidas/ y LEEME)', [s2, tipo]);

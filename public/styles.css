@@ -2278,3 +2278,5 @@ tr.logs-aviso td{background:#fffaf0;}
 #vista-contabilidad .ct-tabla td.ct-num{text-align:right;font-variant-numeric:tabular-nums;}
 .ct-tabla tfoot td{font-weight:700;background:#fff7e0;border-top:2px solid var(--amarillo);}
 .ct-tabla tbody tr:nth-child(even) td{background:#fafbfc;}
+.ct-saldo{display:inline-flex;align-items:center;gap:6px;margin-left:6px;font-weight:600;}
+.ct-saldo input{width:140px;}
