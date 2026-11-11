@@ -32,6 +32,18 @@ module.exports = {
       buscador: null, buscadorRazon: 'los cobros se buscan por su orden de servicio (folio OS)',
       permisos: ['cxc.ver', 'cxc.sucursal', 'cxc.empresa', 'cobros.registrar', 'cobros.confirmar', 'cobros.directo', 'cobranza.factura', 'cobros.ajustes'],
     },
+    contabilidad: {
+      nombre: 'Contabilidad del mes para el contador (módulo contable F1, 2026-11-11): resumen de ingresos, egresos e IVA, pendientes de comprobar y descarga de Excel y XML. Solo consulta',
+      vistas: ['contabilidad'],
+      tablas: [], tablasRazon: 'no guarda nada: lee facturas, cobros, cuentas por pagar y pagos',
+      rutas: [/^\/api\/contabilidad\//],
+      pendientes: null, pendientesRazon: 'los pendientes de comprobar se ven en su propia pantalla, al revisar el mes',
+      inicio: [],
+      demo: [], demoRazon: 'usa los datos de ejemplo de facturas, cobros y gastos',
+      integridad: [], integridadRazon: 'no tiene datos propios',
+      buscador: null, buscadorRazon: 'se consulta por mes, no por registro',
+      permisos: ['contabilidad.ver'],
+    },
     pagar: {
       nombre: 'Cuentas por pagar y proveedores',
       vistas: [],

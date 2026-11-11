@@ -2260,3 +2260,7 @@ tr.logs-aviso td{background:#fffaf0;}
 
 /* Solo «Descargar la nómina» (2026-11-11): sin pestañas ni explicación de la asistencia. */
 #vista-asistencia.as-solo-nomina .as-pestanas,#vista-asistencia.as-solo-nomina .as-intro{display:none!important;}
+/* Contabilidad del mes (módulo contable F1). */
+#vista-contabilidad .logs-tarjeta small{font-size:11px;}
+.ct-pendientes{margin:4px 0 10px;padding-left:18px;}
+.ct-pendientes li{margin:3px 0;}

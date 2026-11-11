@@ -128,3 +128,5 @@ module.exports = function respaldoCompleto(app, db, h, { hoyMexico }) {
   });
 };
 module.exports.armarTar = armarTar;
+module.exports.encabezado = encabezado; // para armar otros .tar (los XML del mes de contabilidad.js)
+module.exports.relleno = relleno;

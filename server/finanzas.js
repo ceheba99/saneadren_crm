@@ -1296,6 +1296,27 @@ module.exports = function finanzas(app, db, h, unicos) {
     res.json({ ok: true });
   }));
 
+  // Gastos fijos (renta, internet, sueldos de oficina…): «Repetir» copia el gasto al mes siguiente, por pagar, sin folio,
+  // XML ni pagos (decisión 2026-11-11: lo más sencillo para los recurrentes del Excel CXP; nada se crea solo).
+  const masUnMes = f => { const [a, m, d] = f.split('-').map(Number), ult = new Date(Date.UTC(a, m + 1, 0)).getUTCDate(); return new Date(Date.UTC(a, m, Math.min(d, ult))).toISOString().slice(0, 10); };
+  app.post('/api/finanzas/cxp/:id/repetir', h((req, res) => {
+    if (!puedePagar(req, res)) return;
+    const x = db.prepare('SELECT * FROM cuentas_por_pagar WHERE id = ?').get(Number(req.params.id)); // vista: solo lo que ve
+    if (!x) return res.status(404).json({ error: 'Cuenta por pagar no encontrada' });
+    if (x.cancelada) return res.status(409).json({ error: 'Está cancelada: no se repite' });
+    const fecha = masUnMes(x.fecha_documento), vence = masUnMes(x.fecha_vencimiento);
+    if (!req.body?.forzar && db.prepare('SELECT 1 FROM cuentas_por_pagar WHERE proveedor_id = ? AND concepto = ? AND fecha_documento = ? AND cancelada = 0').get(x.proveedor_id, x.concepto, fecha))
+      return res.status(409).json({ error: `Ya existe «${x.concepto}» de ese proveedor con fecha ${fecha.split('-').reverse().join('/')}. ¿Lo repites de todos modos?`, codigo: 'POSIBLE_DUPLICADO' });
+    const id = db.transaction(() => {
+      const info = db.prepare(`INSERT INTO main.cuentas_por_pagar (proveedor_id, categoria, concepto, fecha_documento, fecha_vencimiento, total_cent, equipo, notas, registrado_por, dias_credito, beneficiario, tipo_comprobante, metodo_sat)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(x.proveedor_id, x.categoria, x.concepto, fecha, vence, x.total_cent, x.equipo, 'Repetido del gasto del ' + x.fecha_documento.split('-').reverse().join('/'), req.usuarioSesion.id, x.dias_credito, x.beneficiario, x.tipo_comprobante, x.metodo_sat);
+      app.locals.sucursales.asignar('cuentas_por_pagar', Number(info.lastInsertRowid), x.sucursal_id);
+      app.locals.auditoria?.registrar(req, 'cuenta_por_pagar', Number(info.lastInsertRowid), 'creada', `Repetido de #${x.id} · «${x.concepto}» · ${fmt(x.total_cent)} · ${fecha}`);
+      return Number(info.lastInsertRowid);
+    })();
+    res.status(201).json({ id, fecha, fecha_vencimiento: vence });
+  }));
+
   app.post('/api/finanzas/cxp/:id/cancelar', h((req, res) => {
     if (!puedePagar(req, res)) return;
     const motivo = texto(req.body.motivo, 300);

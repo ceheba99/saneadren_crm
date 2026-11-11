@@ -1,0 +1,130 @@
+// MÓDULO CONTABLE · F1 (2026-11-11): «Contabilidad del mes» para el contador. Solo consulta y descarga; nada se cambia aquí.
+//  · Quién: Dirección y quien tenga «Contabilidad del mes» (contabilidad.ver), con las sucursales que ve.
+//  · Resumen del mes: lo facturado (CFDI reales), lo cobrado CONFIRMADO, los gastos del mes y lo pagado a proveedores, y el
+//    IVA visto de dos formas (según las facturas del mes y según el dinero que entró y salió). Son cifras de apoyo: qué
+//    se declara lo decide el contador.
+//  · Pendientes de comprobar: gastos con factura sin su XML, gastos con IVA estimado, cobros por confirmar y facturas
+//    canceladas en el mes.
+//  · Descargas: los datos del Excel (la pantalla lo arma, como los demás Excel) y un .tar con los XML del mes (facturas
+//    emitidas y de gastos).
+const path = require('path'), fs = require('fs');
+const MES = /^\d{4}-(0[1-9]|1[0-2])$/;
+const pesos = c => Math.round(Number(c || 0)) / 100;
+
+module.exports = function contabilidad(app, db, h) {
+  const P = app.locals.permisos;
+  const puede = req => P.direccion(req) || P.puede(req, 'contabilidad.ver');
+  const negar = res => res.status(403).json({ error: 'La contabilidad del mes la ven Dirección y quien tenga «Contabilidad del mes»' });
+  const { ivaDeGasto } = require('./finanzas');
+  const { estadoConfig } = require('./facturacion-config');
+  const entorno = () => (process.env.MODO_DEMO === '1' ? 'demo' : estadoConfig(process.env).entorno);
+  const base = process.env.DB_PATH ? path.dirname(path.resolve(process.env.DB_PATH)) : path.join(__dirname, '..');
+  const dirXmlGastos = path.join(base, 'archivos', 'cuentas_por_pagar');
+  const tabla = t => !!db.prepare("SELECT 1 FROM sqlite_master WHERE name = ?").get(t);
+  const folioOS = (id, creado) => (id ? require('./sucursales').folio('OS', 'leads', id, creado) : '');
+  const rango = mes => [mes + '-01', mes + '-31'];
+
+  // Todo lo del mes de las SUCURSALES que ve quien pide (en_alcance), sin el filtro «lo suyo» de cada área: el contador
+  // necesita la contabilidad completa de su sucursal aunque no opere cobranza ni pagos.
+  function datosDelMes(mes, sucursal) {
+    const [d, hst] = rango(mes), suc = col => (sucursal ? ` AND ${col} = ${Number(sucursal)}` : '') + ` AND en_alcance(${col})`;
+    const facturas = tabla('facturas') ? db.prepare(`SELECT f.*, l.created_at AS lead_created_at FROM main.facturas f LEFT JOIN main.leads l ON l.id = f.lead_id
+      WHERE f.entorno = ? AND f.estatus IN ('timbrada', 'cancelacion_solicitada', 'cancelada') AND substr(f.fecha_timbrado, 1, 10) BETWEEN ? AND ?${suc('f.sucursal_id')}
+      ORDER BY f.fecha_timbrado, f.id`).all(entorno(), d, hst) : [];
+    const cobros = db.prepare(`SELECT k.*, l.created_at AS lead_created_at, l.iva_cent, l.valor, l.factura_folio, COALESCE(c.empresa_contacto, c.nombre) AS cliente, l.sucursal_id
+      FROM main.cobros k JOIN main.leads l ON l.id = k.lead_id LEFT JOIN main.clientes c ON c.id = l.cliente_id
+      WHERE k.cancelado = 0 AND k.tipo <> 'ajuste' AND k.fecha BETWEEN ? AND ?${suc('l.sucursal_id')} ORDER BY k.fecha, k.id`).all(d, hst);
+    const gastos = db.prepare(`SELECT x.*, p.nombre AS proveedor, p.rfc AS proveedor_rfc FROM main.cuentas_por_pagar x JOIN main.proveedores p ON p.id = x.proveedor_id
+      WHERE x.cancelada = 0 AND COALESCE(x.tipo_comprobante, '') <> 'informativo' AND x.fecha_documento BETWEEN ? AND ?${suc('x.sucursal_id')} ORDER BY x.fecha_documento, x.id`).all(d, hst)
+      .map(x => ({ ...x, ...(() => { const i = ivaDeGasto(x); return { iva: i.iva_cent, estimado: i.estimado }; })() }));
+    const xmls = new Map(tabla('cfdi_gastos') ? db.prepare('SELECT cxp_id, uuid, archivo FROM main.cfdi_gastos WHERE eliminado = 0').all().map(r => [r.cxp_id, r]) : []);
+    const pagos = db.prepare(`SELECT g.*, x.concepto, x.total_cent AS cxp_total, x.iva_cent AS cxp_iva, x.tipo_comprobante, x.factura_folio, x.categoria, p.nombre AS proveedor
+      FROM main.pagos_proveedor g JOIN main.cuentas_por_pagar x ON x.id = g.cxp_id JOIN main.proveedores p ON p.id = x.proveedor_id
+      WHERE g.cancelado = 0 AND g.fecha BETWEEN ? AND ?${suc('x.sucursal_id')} ORDER BY g.fecha, g.id`).all(d, hst);
+    return { facturas, cobros, gastos, xmls, pagos };
+  }
+
+  function resumen(mes, sucursal) {
+    const { facturas, cobros, gastos, xmls, pagos } = datosDelMes(mes, sucursal);
+    const vigentes = facturas.filter(f => f.tipo_documento === 'factura' && f.estatus !== 'cancelada');
+    const sum = (a, k) => a.reduce((t, x) => t + Number(x[k] || 0), 0);
+    // IVA de lo cobrado / pagado: la parte de IVA de cada pago, en proporción al total de su orden o gasto.
+    const totalOrden = k => Math.round(Number(k.valor || 0) * 100) + (k.iva_cent || 0);
+    const ivaCobrado = cobros.filter(k => k.confirmado).reduce((t, k) => t + (totalOrden(k) > 0 ? Math.round(k.monto_cent * (k.iva_cent || 0) / totalOrden(k)) : 0), 0);
+    const ivaPagado = pagos.reduce((t, g) => { const i = ivaDeGasto({ total_cent: g.cxp_total, iva_cent: g.cxp_iva, tipo_comprobante: g.tipo_comprobante, factura_folio: g.factura_folio, categoria: g.categoria });
+      return t + (g.cxp_total > 0 ? Math.round(g.monto_cent * i.iva_cent / g.cxp_total) : 0); }, 0);
+    const ivaGastos = sum(gastos, 'iva'), ivaFacturado = sum(vigentes, 'iva_cent');
+    const conFactura = gastos.filter(x => x.tipo_comprobante === 'factura' || x.factura_folio);
+    return {
+      mes, entorno: entorno(),
+      ingresos: { facturas: vigentes.length, facturado_subtotal: pesos(sum(vigentes, 'subtotal_cent')), facturado_iva: pesos(ivaFacturado), facturado_total: pesos(sum(vigentes, 'total_cent')),
+        canceladas: facturas.filter(f => f.estatus === 'cancelada').length, complementos: facturas.filter(f => f.tipo_documento === 'pago' && f.estatus !== 'cancelada').length,
+        cobrado: pesos(sum(cobros.filter(k => k.confirmado), 'monto_cent')), cobrado_iva: pesos(ivaCobrado), por_confirmar: pesos(sum(cobros.filter(k => !k.confirmado), 'monto_cent')) },
+      egresos: { gastos: gastos.length, gastos_total: pesos(sum(gastos, 'total_cent')), gastos_iva: pesos(ivaGastos), gastos_iva_estimado: pesos(sum(gastos.filter(x => x.estimado), 'iva')),
+        pagado: pesos(sum(pagos, 'monto_cent')), pagado_iva: pesos(ivaPagado) },
+      iva: { segun_facturas: pesos(ivaFacturado - ivaGastos), segun_flujo: pesos(ivaCobrado - ivaPagado) },
+      pendientes: {
+        gastos_sin_xml: conFactura.filter(x => !xmls.has(x.id)).length,
+        gastos_iva_estimado: gastos.filter(x => x.estimado).length,
+        cobros_por_confirmar: cobros.filter(k => !k.confirmado).length,
+        facturas_canceladas: facturas.filter(f => f.estatus === 'cancelada').length,
+      },
+      xml_disponibles: facturas.filter(f => f.xml).length + gastos.filter(x => xmls.has(x.id)).length,
+    };
+  }
+  const leerMes = (req, res) => {
+    const mes = String(req.query.mes || '');
+    if (!MES.test(mes)) { res.status(400).json({ error: 'Elige el mes (AAAA-MM)' }); return null; }
+    return mes;
+  };
+
+  app.get('/api/contabilidad/resumen', h((req, res) => {
+    if (!puede(req)) return negar(res);
+    const mes = leerMes(req, res); if (!mes) return;
+    res.json(resumen(mes, req.query.sucursal ? Number(req.query.sucursal) : null));
+  }));
+
+  // Los renglones del Excel del mes (la pantalla arma el archivo).
+  app.get('/api/contabilidad/excel', h((req, res) => {
+    if (!puede(req)) return negar(res);
+    const mes = leerMes(req, res); if (!mes) return;
+    const suc = req.query.sucursal ? Number(req.query.sucursal) : null;
+    const { facturas, cobros, gastos, xmls, pagos } = datosDelMes(mes, suc);
+    const claveSuc = id => app.locals.sucursales?.claveDe?.(id) || '';
+    res.json({
+      resumen: resumen(mes, suc),
+      facturas: facturas.map(f => ({ tipo: f.tipo_documento === 'pago' ? 'Complemento de pago' : 'Factura', fecha: String(f.fecha_timbrado || '').slice(0, 10), folio: [f.serie, f.folio].filter(Boolean).join('-'), uuid: f.uuid || '',
+        orden: folioOS(f.lead_id, f.lead_created_at), rfc: f.receptor_rfc || '', cliente: f.receptor_razon_social || '', metodo: f.metodo_pago || '', forma: f.forma_pago || '',
+        subtotal: pesos(f.subtotal_cent), iva: pesos(f.iva_cent), total: pesos(f.total_cent), estatus: f.estatus, cancelada: f.cancelada_at ? String(f.cancelada_at).slice(0, 10) : '', sucursal: claveSuc(f.sucursal_id) })),
+      cobros: cobros.map(k => ({ fecha: k.fecha, orden: folioOS(k.lead_id, k.lead_created_at), cliente: k.cliente || '', factura: k.factura_folio || '', monto: pesos(k.monto_cent), metodo: k.metodo, referencia: k.referencia || '',
+        estado: k.confirmado ? 'Confirmado' : 'Por confirmar', sucursal: claveSuc(k.sucursal_id) })),
+      gastos: gastos.map(x => ({ fecha: x.fecha_documento, proveedor: x.proveedor, rfc: x.proveedor_rfc || '', folio: x.factura_folio || '', uuid: xmls.get(x.id)?.uuid || '', comprobante: x.tipo_comprobante || '', concepto: x.concepto, categoria: x.categoria,
+        subtotal: pesos(x.total_cent - x.iva), iva: pesos(x.iva), iva_origen: x.estimado ? 'Estimado 16 %' : x.iva_origen === 'xml' ? 'XML' : x.iva_cent != null ? 'Capturado' : '', total: pesos(x.total_cent),
+        xml: xmls.has(x.id) ? 'Sí' : (x.tipo_comprobante === 'factura' || x.factura_folio ? 'Falta' : ''), beneficiario: x.beneficiario || '', sucursal: claveSuc(x.sucursal_id) })),
+      pagos: pagos.map(g => ({ fecha: g.fecha, proveedor: g.proveedor, concepto: g.concepto, folio: g.factura_folio || '', monto: pesos(g.monto_cent), metodo: g.metodo, referencia: g.referencia || '', cuenta: g.cuenta_origen || '' })),
+    });
+  }));
+
+  // Los XML del mes en un .tar: emitidas/ (facturas y complementos timbrados) y gastos/ (los XML subidos a cada gasto).
+  app.get('/api/contabilidad/xml', h((req, res) => {
+    if (!puede(req)) return negar(res);
+    const mes = leerMes(req, res); if (!mes) return;
+    const { encabezado, relleno } = require('./respaldo-completo');
+    const { facturas, gastos, xmls } = datosDelMes(mes, req.query.sucursal ? Number(req.query.sucursal) : null);
+    const partes = [], omitidos = [];
+    const agrega = (nombre, buf) => { const e = encabezado(nombre, buf.length, Date.now()); if (!e) return; partes.push(e, buf, relleno(buf.length)); };
+    for (const f of facturas) if (f.xml) agrega(`emitidas/${[f.serie, f.folio].filter(Boolean).join('-') || 'factura-' + f.id}_${f.uuid || f.id}.xml`, Buffer.from(f.xml, 'utf8'));
+    for (const x of gastos) {
+      const r = xmls.get(x.id); if (!r) continue;
+      try { agrega(`gastos/${x.fecha_documento}_${String(x.proveedor).replace(/[^\w.-]+/g, '_').slice(0, 40)}_${r.uuid || x.id}.xml`, fs.readFileSync(path.join(dirXmlGastos, r.archivo))); }
+      catch { omitidos.push(`${x.proveedor} · ${x.concepto} (no se encontró el archivo)`); }
+    }
+    const nota = Buffer.from([`XML de ${mes} · Saneadren CRM`, `emitidas/: facturas y complementos timbrados (${facturas.filter(f => f.xml).length})`, `gastos/: XML subidos a cada gasto (${gastos.filter(x => xmls.has(x.id)).length})`,
+      ...(omitidos.length ? ['', 'NO SE INCLUYERON:', ...omitidos] : [])].join('\n') + '\n');
+    agrega('LEEME.txt', nota);
+    partes.push(Buffer.alloc(1024));
+    app.locals.auditoria?.registrar(req, 'contabilidad', null, 'descarga XML', `XML de ${mes}`);
+    res.set({ 'Content-Type': 'application/x-tar', 'Content-Disposition': `attachment; filename="xml_${mes}.tar"`, 'Cache-Control': 'private, no-store' });
+    res.send(Buffer.concat(partes));
+  }));
+};

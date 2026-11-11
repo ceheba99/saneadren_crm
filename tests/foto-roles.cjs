@@ -289,6 +289,8 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
     ['dineroExtra', 'Ver cuánto dinero sale por tiempo extra (en la semana y en el Excel de nómina)'],
     ['cambiaCredito', 'Cambiar los días de crédito y los datos de factura de una orden'],
     ['buscaProveedor', 'Encontrar proveedores en el buscador general (Ctrl K)'],
+    ['veContabilidad', 'Ver la contabilidad del mes y descargar su Excel y los XML (para el contador)'],
+    ['repiteGasto', 'Repetir un gasto fijo al mes siguiente (renta, internet…)'],
     ['pagaAlRegistrar', 'Registrar un gasto «ya pagado» como pago a proveedor (sin esto queda «por reembolsar» a quien lo pagó)'],
     ['cargaClientes', 'Cargar clientes con la plantilla de Excel (revisar y guardar) y ver las cargas anteriores'],
     ['eliminaCliente', 'Eliminar un cliente que no tiene cotizaciones, órdenes ni cobros'],
@@ -398,6 +400,9 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
       VE[rol].eliminaSucursal = ok(await pedir('POST', '/sucursales/' + s.id + '/eliminar', t, {})); }
     VE[rol].veAsistencia = ok(await pedir('GET', '/asistencia/semana', t));
     VE[rol].veLogs = ok(await pedir('GET', '/registro-sistema', t));
+    VE[rol].veContabilidad = ok(await pedir('GET', '/contabilidad/resumen?mes=' + HOY.slice(0, 7), t));
+    { const g = (await pedir('GET', '/finanzas/cxp?vista=todas', A))[1].find(x => x.concepto === 'Renta de pipa');
+      VE[rol].repiteGasto = !!g && [200, 201].includes((await pedir('POST', '/finanzas/cxp/' + g.id + '/repetir', t, { forzar: true }))[0]); }
     { // Gasto «ya pagado» (2026-11-11, H01): quien mueve dinero lo deja pagado; los demás, por reembolsar a ellos.
       const [st, g] = await pedir('POST', '/finanzas/cxp', t, { proveedor_id: prov.id, categoria: 'combustible', concepto: 'Gasolina de prueba ' + rol, total: 100, fecha_documento: HOY, lead_id: O1.id, dias_credito: 0, ya_pagado: true, metodo: 'efectivo' });
       VE[rol].pagaAlRegistrar = st === 201 && !g.por_reembolsar; }
@@ -489,6 +494,9 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
     ['2026-11-05', 'Checar por WhatsApp (foráneos, respaldo del celular): solo quien RH active en su ficha y desde el celular de su ficha; sin foto ni ubicación, cada checada queda «por revisar». Activarlo o quitarlo lo hacen quienes editan el personal (Dirección y el Gerente, de su sucursal), nunca para sí mismos (salvo Dirección).', {
       admin: { activaWhatsapp: 1 }, gerente: { activaWhatsapp: 1 },
       ...Object.fromEntries(['ventas', 'atencion', 'tecnico', 'costos', 'marketing', 'marketing_gerente'].map(r => [r, { activaWhatsapp: 0 }])) }],
+    ['2026-11-11', 'Módulo contable F1: «Contabilidad del mes» (resumen de ingresos, egresos e IVA, pendientes de comprobar y descarga del Excel y los XML) la ven Dirección, el Gerente (de su sucursal) y el rol que Dirección cree con el permiso «Contabilidad del mes» (p. ej. Contador); los demás roles de fábrica no. Es solo consulta. «Repetir» un gasto fijo al mes siguiente lo hace quien paga a proveedores (Dirección, Gerente, Compras).', {
+      admin: { veContabilidad: 1, repiteGasto: 1 }, gerente: { veContabilidad: 1, repiteGasto: 1 }, costos: { veContabilidad: 0, repiteGasto: 1 },
+      ...Object.fromEntries(['ventas', 'atencion', 'tecnico', 'marketing', 'marketing_gerente'].map(r => [r, { veContabilidad: 0, repiteGasto: 0 }])) }],
     ['2026-11-11', 'Auditoría externa, decisiones de Dirección. H01: un gasto marcado «ya pagado» solo se registra como pago a proveedor si quien lo registra paga a proveedores (Dirección, Gerente, Compras); para los demás (Ventas, Atención, Técnico) queda por pagar como «Reembolso a <su nombre>», vence ese día, y el pago lo hace quien tiene permiso. H11: si RH da de baja a alguien y su usuario sigue activo, Dirección ve un pendiente en Inicio hasta desactivarlo. (H06 y H10 no cambian quién hace qué: cobrado y «pagada» cuentan solo lo confirmado; los choques de agenda solo avisan.)', {}],
     ['2026-11-11', 'Auditoría externa (H02 y H04): los proveedores salen en el buscador general solo a quien trabaja con ellos (cuentas por pagar o compras), y su historial también; la CLABE de los cambios viejos se ve tapada (últimos 4 dígitos) a quien no hace pagos. Las notas y recordatorios de una orden los agregan quien puede editarla, su técnico o quien lleva su cobranza; ver la orden ya no basta. Marcar resuelto un aviso pide lo mismo.', {}],
     ['2026-11-09', 'Clientes con plantilla (Configuración → Ajustes): cargar clientes en lote con la plantilla de Excel, ver las cargas anteriores y deshacerlas, y eliminar un cliente lo hace solo Dirección; ningún otro rol, ni el Gerente. Un cliente solo se elimina si no tiene cotizaciones, órdenes, cobros ni facturas; si ya tiene, se queda. Queda en la bitácora.', {

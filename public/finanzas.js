@@ -713,6 +713,7 @@ const Finanzas = (() => {
       { k: 'acciones', t: '', fija: true, sinOrden: true, clase: 'celda-acciones', v: x => '<div class="acciones-fila">' + (x.saldo > 0 ? '<button type="button" class="btn btn-primario btn-chico perm-dinero-mover" data-pagar-cxp="' + Number(x.id) + '">Pagar</button>' : '')
         + '<button type="button" class="btn btn-outline btn-chico" data-detalle-cxp="' + Number(x.id) + '" title="Pagos y XML de la factura">Pagos' + (x.xml ? ' · XML' : '') + '</button>'
         + (x.es_factura ? '<button type="button" class="btn btn-outline btn-chico perm-dinero-mover" data-iva-cxp="' + Number(x.id) + '" title="Capturar o corregir el IVA de la factura">IVA</button>' : '')
+        + '<button type="button" class="btn btn-outline btn-chico perm-dinero-mover" data-repetir-cxp="' + Number(x.id) + '" title="Gasto fijo: copiarlo al mes siguiente, por pagar">🔁 Repetir</button>'
         + (x.pagado === 0 ? '<button type="button" class="btn btn-outline btn-chico perm-dinero-mover" data-cancelar-cxp="' + Number(x.id) + '">Cancelar</button>' : '') + '</div>' },
     ];
     if (!CXP.length) { cont.innerHTML = '<p class="util-45">No hay cuentas por pagar. 🎉</p>'; return; }
@@ -740,7 +741,12 @@ const Finanzas = (() => {
     const btn = e.target.closest('button'); if (!btn) return;
     if (btn.dataset.abrirOrdenCxp) return abrirFicha(Number(btn.dataset.abrirOrdenCxp));
     if (btn.dataset.provCuenta) return abrirCuentaProveedor(Number(btn.dataset.provCuenta));
-    const id = Number(btn.dataset.pagarCxp || btn.dataset.detalleCxp || btn.dataset.cancelarCxp || btn.dataset.ivaCxp);
+    const id = Number(btn.dataset.pagarCxp || btn.dataset.detalleCxp || btn.dataset.cancelarCxp || btn.dataset.ivaCxp || btn.dataset.repetirCxp);
+    if (btn.dataset.repetirCxp) {
+      const x = CXP.find(c => c.id === id); if (!x) return;
+      if (!await solicitarDialogo({ titulo: 'Repetir el próximo mes', mensaje: `Se crea «${x.concepto}» de ${x.proveedor_nombre} por ${formatoMoneda(x.total)} con fecha del mes siguiente, por pagar (sin folio ni XML: agrégalos cuando llegue la factura).`, aceptar: 'Repetir' })) return;
+      return conBoton(btn, async () => { const r = await enviar('/finanzas/cxp/' + id + '/repetir', 'POST', {}); if (r) { toast('Repetido para el ' + fechaTxt(r.fecha)); cargar({ pestana: 'pagar' }); } });
+    }
     if (btn.dataset.ivaCxp) {
       const x = CXP.find(c => c.id === id); if (!x) return;
       const v = await solicitarDialogo({ titulo: 'IVA de la factura', mensaje: `«${x.concepto}» · total ${formatoMoneda(x.total)}. ${x.iva_estimado ? 'No se capturó: se estima en ' : 'Capturado: '}${formatoMoneda(x.iva)}. Escribe el IVA que trae la factura (0 si es tasa 0 o exenta).`, aceptar: 'Guardar', campo: { etiqueta: 'IVA (MXN)', requerido: 'Escribe el IVA (0 si no trae)' } });

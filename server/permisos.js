@@ -39,6 +39,8 @@ const CATALOGO = [
   ['compras.autorizar', 'Compras', 'Autorizar órdenes de compra', 'Autorizar (se vuelven deuda), cancelar autorizadas y quitar documentos', ['gerente']],
   ['reportes.analisis', 'Reportes', 'Análisis comercial', 'Contactos nuevos, conversión, vendido y recurrentes de lo que ve', ['gerente', 'ventas', 'atencion']],
   ['reportes.panorama', 'Reportes', 'Panorama general', 'Ventas, cobranza, gastos y utilidad de la empresa', ['gerente']],
+  // Módulo contable F1 (2026-11-11): para el rol «Contador» que crea Dirección. Solo consulta y descarga; no cambia nada.
+  ['contabilidad.ver', 'Reportes', 'Contabilidad del mes', 'Resumen de ingresos, egresos e IVA del mes y descarga del Excel y los XML (facturas emitidas y de gastos) para el contador. Solo consulta', ['gerente']],
   ['catalogos.editar', 'Catálogos', 'Catálogos compartidos', 'Canales, tipos de cliente, centros de costo, unidades, categorías de gasto y descripción y orden de los servicios (los usan todas las sucursales)', ['gerente', 'costos']],
   ['personal.ver', 'Personal', 'Ver personal', 'Lista y fichas del personal de su sucursal (sin datos de pago ni expediente)', ['gerente']],
   ['personal.editar', 'Personal', 'Editar personal', 'Altas, cambios, bajas, vacaciones e incidencias', ['gerente']],
