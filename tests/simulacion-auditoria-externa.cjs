@@ -100,6 +100,51 @@ const HOY = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Mexico_City' }
   await espera(300);
   revisa(/correo NO enviado/.test(salida) && !/restablecer\?token=|token=[A-Za-z0-9_-]{20,}/.test(salida) && /enlace oculto/.test(salida), 'El enlace para cambiar la contraseña no se escribe en la consola');
 
+  console.log('H01 · «ya pagado» de quien no paga a proveedores (decisión 11-nov)');
+  [s, j] = await pedir('POST', '/finanzas/cxp', V.t, { proveedor_id: prov.id, categoria: 'combustible', concepto: 'Gasolina de la visita', total: 450, fecha_documento: HOY, lead_id: oV.id, dias_credito: 0, ya_pagado: true, metodo: 'efectivo' });
+  const gR = uno(`SELECT * FROM cuentas_por_pagar WHERE id = ${Number(j.id)}`);
+  revisa(s === 201 && j.por_reembolsar && gR.beneficiario === 'Reembolso a Valeria Ventas' && gR.fecha_vencimiento === HOY && /por reembolsar/.test(gR.notas || ''), 'Queda por pagar como reembolso a quien lo pagó, vence hoy', [j, gR]);
+  revisa(uno(`SELECT COUNT(*) n FROM pagos_proveedor WHERE cxp_id = ${Number(j.id)}`).n === 0, 'No se registró ningún pago a proveedor');
+  [s, j] = await pedir('POST', '/finanzas/cxp', A, { proveedor_id: prov.id, categoria: 'combustible', concepto: 'Gasolina pagada por Dirección', total: 300, fecha_documento: HOY, lead_id: oV.id, dias_credito: 0, ya_pagado: true, metodo: 'efectivo' });
+  revisa(s === 201 && !j.por_reembolsar && uno(`SELECT COUNT(*) n FROM pagos_proveedor WHERE cxp_id = ${Number(j.id)}`).n === 1, 'Quien paga a proveedores sí lo deja pagado');
+
+  console.log('H06 · cobros por confirmar (decisión 11-nov)');
+  const oC = await orden(V.t, V.id);
+  [s, j] = await pedir('POST', '/leads/' + oC.id + '/cobros', V.t, { monto: 1160, metodo: 'efectivo' });
+  revisa(s === 201 && j.confirmado === false && j.cuenta.estado === 'por_confirmar' && j.cuenta.saldo === 1160 && j.cuenta.sin_reportar === 0 && j.cuenta.cobrado === 0 && j.cuenta.cobrado_por_confirmar === 1160,
+    'El cliente pagó todo pero falta confirmar: no sale «pagada» y no se le vuelve a cobrar', j.cuenta);
+  [s, j] = await pedir('POST', '/leads/' + oC.id + '/cobros', V.t, { monto: 1, metodo: 'efectivo' });
+  revisa(s === 400, 'Ya no se puede registrar más de lo que falta que el cliente pague');
+  const cobroId = uno(`SELECT id FROM cobros WHERE lead_id = ${oC.id}`).id;
+  [s] = await pedir('POST', '/finanzas/cobros/' + cobroId + '/confirmar', A);
+  j = (await pedir('GET', '/leads/' + oC.id + '/cobros', A))[1];
+  revisa(s === 200 && j.cuenta?.estado === 'pagada' && j.cuenta.saldo === 0, 'Al confirmarlo, ya sale «pagada»', [s, j.cuenta?.estado]);
+
+  console.log('H10 · choques de agenda (decisión 11-nov: solo avisa)');
+  const o1 = await orden(V.t, V.id), o2 = await orden(V.t, V.id);
+  let v1 = (await pedir('GET', '/leads/' + o1.id, A))[1];
+  exigir(await pedir('PUT', '/leads/' + o1.id, A, { version: v1.version, hora_servicio: '09:00', equipo: 'Pipa 7' }), 'agenda 1');
+  let v2 = (await pedir('GET', '/leads/' + o2.id, A))[1];
+  [s, j] = await pedir('PUT', '/leads/' + o2.id, A, { version: v2.version, hora_servicio: '10:00', equipo: 'pipa 7' });
+  revisa(s === 200 && j.avisos_agenda?.some(x => /unidad «pipa 7».*ya está en la orden/i.test(x)), 'Misma unidad a una hora cercana: avisa, pero guarda', j.avisos_agenda);
+  v2 = (await pedir('GET', '/leads/' + o2.id, A))[1];
+  [s, j] = await pedir('PUT', '/leads/' + o2.id, A, { version: v2.version, hora_servicio: '15:00' });
+  revisa(s === 200 && !j.avisos_agenda, 'A otra hora del día ya no avisa', j.avisos_agenda);
+  const per = exigir(await pedir('POST', '/personal', A, { nombre: 'Omar Operador', puesto: 'Operador', sucursal_id: qro.id, fecha_ingreso: '2020-01-15' }), 'persona');
+  exigir(await pedir('POST', '/personal/' + per.id + '/incidencias', A, { tipo: 'vacaciones', fecha_inicio: HOY, fecha_fin: HOY }), 'vacaciones');
+  v2 = (await pedir('GET', '/leads/' + o2.id, A))[1];
+  [s, j] = await pedir('PUT', '/leads/' + o2.id, A, { version: v2.version, equipo_personal: [{ personal_id: per.id, papel: 'responsable' }] });
+  revisa(s === 200 && j.avisos_agenda?.some(x => /Omar Operador está de vacaciones/.test(x)), 'Asignar a alguien de vacaciones: avisa', j.avisos_agenda);
+
+  console.log('H11 · baja con usuario activo (decisión 11-nov)');
+  { const d = new DatabaseSync(DB); d.prepare('UPDATE personal SET usuario_id = ? WHERE id = ?').run(V2.id, per.id); d.close(); }
+  exigir(await pedir('POST', '/personal/' + per.id + '/baja', A, { motivo: 'Renuncia voluntaria' }), 'baja');
+  [s, j] = await pedir('GET', '/personal/avisos', A);
+  revisa(s === 200 && j.some(x => x.tipo === 'baja_con_acceso' && x.persona_id === per.id), 'Dirección ve el pendiente: dado de baja con usuario activo', j.map(x => x.tipo));
+  { const d = new DatabaseSync(DB); d.prepare('UPDATE usuarios SET activo = 0 WHERE id = ?').run(V2.id); d.close(); }
+  [s, j] = await pedir('GET', '/personal/avisos', A);
+  revisa(!j.some(x => x.tipo === 'baja_con_acceso'), 'Al desactivar el usuario, el pendiente se va solo');
+
   console.log(`\n${n - malos.length}/${n} correctas`);
   srv.kill(); fs.rmSync(dir, { recursive: true, force: true });
   process.exit(malos.length ? 1 : 0);
