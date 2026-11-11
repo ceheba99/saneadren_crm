@@ -13,6 +13,8 @@ const Asistencia = (() => {
   // Texto del pago del tiempo extra de una fila de la semana (solo llega a quien ve sueldos).
   const pagoExtra = x => (!x ? '' : x.valor_hora_cent == null ? 'sin precio' : pesos(x.total_cent));
   const hoy = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Mexico_City' }).format(new Date());
+  // Tramos del tiempo extra de un día en una línea (columna del Excel): «17:00–18:30 ✔ después de su salida».
+  const textoExtra = x => [...(x.extra_detalle?.piezas || []).map(z => [z.desde + '–' + z.hasta, z.cuenta ? '✔' : '✖', z.motivo].join(' ')), x.extra_detalle?.redondeo ? `redondeo a ${x.extra_detalle.redondeo.bloque_min} min (−${x.extra_detalle.redondeo.perdidos_min} min)` : ''].filter(Boolean).join(' · ');
   const hm = m => (m == null ? '—' : `${Math.floor(m / 60)}:${String(m % 60).padStart(2, '0')}`);
   const fechaLarga = f => new Date(f + 'T12:00:00').toLocaleDateString('es-MX', { weekday: 'short', day: '2-digit', month: 'short' });
   const TIPOS = { entrada: 'Entrada', comida_sale: 'Salida a comer', comida_regresa: 'Regreso de comer', salida: 'Salida', extra_inicia: 'Inicio de tiempo extra', extra_termina: 'Fin de tiempo extra' };
@@ -132,6 +134,7 @@ const Asistencia = (() => {
     h += `<div class="ac-resumen">${dato('Horario', d.programado ? `${d.programado.entrada}–${d.programado.salida}` : d.festivo ? 'Festivo' : 'Descanso', d.horario ? `<small>${esc(d.horario)}</small>` : '')}${dato('Entrada', d.entrada || '—')}
       ${dato('Comida', d.comida_min ? hm(d.comida_min) : '—', d.exceso_comida_min ? `<small class="as-rojo">+${esc(d.exceso_comida_min)} min</small>` : '')}${dato('Salida', d.salida || '—', d.salida_anticipada_min ? `<small class="as-rojo">${esc(d.salida_anticipada_min)} min antes</small>` : '')}
       ${dato('Trabajado', hm(d.trabajado_min))}${dato('Retardo', d.retardo_min ? d.retardo_min + ' min' : '—')}${dato('Tiempo extra', d.extra_min ? hm(d.extra_min) : '—', d.extra_min ? `<small>${d.extra_autorizado_min == null ? 'sin autorizar' : 'autorizado ' + esc(hm(d.extra_autorizado_min))}</small>` : '')}</div>`;
+    h += detalleExtra(d, fila, sem, f);
     const chips = estadoDia(d);
     if (chips.length) h += `<p>${chips.map(t => `<span class="as-chip">${esc(t)}</span>`).join(' ')}</p>`;
     h += `<h4 class="pe-sub2">Checadas</h4>`;
@@ -153,6 +156,31 @@ const Asistencia = (() => {
       Autorizar <input type="number" id="ac-x-min" min="0" max="${Number(d.extra_min)}" value="${Number(d.extra_autorizado_min ?? d.extra_min)}" aria-label="Minutos autorizados" class="as-num"> min
       <input id="ac-x-motivo" maxlength="300" placeholder="Motivo (si autorizas menos)" aria-label="Motivo"><button type="button" class="btn btn-secundario" id="ac-x-guardar">Autorizar</button></div>`;
     $('ac-cuerpo').innerHTML = h;
+  }
+  // Detalle del tiempo extra (2026-11-11): de dónde sale el del día (cada tramo, si cuenta o no y por qué, traslape,
+  // redondeo y autorización) y el de toda su semana de nómina día por día, con dobles y triples.
+  function detalleExtra(d, fila, sem, f) {
+    const x = d.extra_detalle, dias = fila.dias.filter(y => y.extra_min || y.extra_detalle?.piezas?.some(z => z.cuenta));
+    if (!x && !dias.length) return '';
+    let h = '<details class="ac-extra" open><summary><b>⏱️ Tiempo extra a detalle</b></summary>';
+    if (x) {
+      h += `<h4 class="pe-sub2">Este día: ${esc(fechaLarga(f))}</h4><div class="tabla-scroll"><table class="tabla-resumen as-tabla"><thead><tr><th>De</th><th>A</th><th>Minutos</th><th>¿Cuenta?</th><th>Por qué</th></tr></thead><tbody>
+        ${x.piezas.map(z => `<tr class="${z.cuenta ? '' : 'pe-baja'}"><td>${esc(z.desde)}</td><td>${esc(z.hasta)}</td><td>${esc(hm(z.min))}</td><td>${z.cuenta ? '✔ Sí' : '✖ No'}</td><td>${esc(z.motivo)}</td></tr>`).join('')}
+        ${x.sin_fin ? `<tr class="pe-baja"><td>${esc(x.sin_fin)}</td><td>?</td><td>—</td><td>✖ No</td><td>Marcó «Inicio de tiempo extra» y no marcó el fin: no cuenta hasta que RH agregue la hora real del fin</td></tr>` : ''}</tbody></table></div><ul class="pe-ordenes">`;
+      if (x.traslape_min) h += `<li>Los tramos se enciman ${esc(hm(x.traslape_min))}: ese tiempo se cuenta una sola vez.</li>`;
+      h += `<li>Tiempo extra del día: <b>${esc(hm(x.sin_redondeo_min))}</b>${x.redondeo ? ` → redondeado hacia abajo a bloques de ${esc(x.redondeo.bloque_min)} min: <b>${esc(hm(d.extra_min))}</b> (no cuentan ${esc(hm(x.redondeo.perdidos_min))})` : ''}.</li>`;
+      if (d.extra_min) h += `<li>${d.extra_autorizado_min == null ? '<span class="as-rojo">Sin autorizar</span>: no se paga hasta que RH o el gerente lo autoricen.' : `Autorizado <b>${esc(hm(d.extra_autorizado_min))}</b> por ${esc(d.extra_autorizado_por || '')}${d.extra_autorizado_motivo ? ' · ' + esc(d.extra_autorizado_motivo) : ''}.`}</li>`;
+      h += `<li class="ayuda">Regla de ese día: ${esc(x.regla)}.</li></ul>`;
+    }
+    if (dias.length) {
+      const t = fila.totales;
+      h += `<h4 class="pe-sub2">Su semana de nómina (${esc(fechaLarga(sem.desde))} al ${esc(fechaLarga(sem.hasta))})</h4><div class="tabla-scroll"><table class="tabla-resumen as-tabla"><thead><tr><th>Día</th><th>Tramos que cuentan</th><th>Registrado</th><th>Autorizado</th><th>Por</th></tr></thead><tbody>
+        ${dias.map(y => `<tr><td><button type="button" class="btn-link" data-ac-ir="${esc(y.fecha)}">${esc(fechaLarga(y.fecha))}</button></td><td>${esc((y.extra_detalle?.piezas || []).filter(z => z.cuenta).map(z => z.desde + '–' + z.hasta).join(', ') || '—')}</td>
+          <td>${esc(hm(y.extra_min))}</td><td>${y.extra_min ? (y.extra_autorizado_min == null ? '<span class="as-rojo">sin autorizar</span>' : esc(hm(y.extra_autorizado_min))) : '—'}</td><td>${esc(y.extra_autorizado_por || '')}</td></tr>`).join('')}</tbody>
+        <tfoot><tr><th>Semana</th><th></th><th>${esc(hm(t.extra_min))}</th><th>${esc(hm(t.extra_autorizado_min))}</th><th></th></tr></tfoot></table></div>
+        <p class="ayuda">Del tiempo autorizado: <b>${esc(hm(t.extra_dobles_min))}</b> al doble (las primeras 9 h de la semana) y <b>${esc(hm(t.extra_triples_min))}</b> al triple.${fila.dinero?.valor_hora_cent != null ? ` Pago: ${esc(pagoExtra(fila.dinero))}.` : ''}</p>`;
+    }
+    return h + '</details>';
   }
   async function verFoto(ruta, alt) {
     try { const r = await api(ruta); if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || 'No se pudo abrir la foto');
@@ -219,7 +247,7 @@ const Asistencia = (() => {
         ['Descansos trabajados', 10], ['Vacaciones (días)', 10], ['Incapacidad (días)', 10], ['Permisos (días)', 10], ['Pendientes', 40],
         ...(d.dinero ? [['Precio hora normal', 12, '$'], ['Pago extra dobles', 12, '$'], ['Pago extra triples', 12, '$'], ['Pago tiempo extra', 13, '$']] : [])]);
       const D = hoja('Detalle por día', [['Fecha', 12], ['Día', 11], ['Persona', 30], ['Horario', 18], ['Entrada programada', 10], ['Salida programada', 10], ['Entrada', 9], ['Salida', 9],
-        ['Comida (min)', 9], ['Horas trabajadas', 11, 'h'], ['Retardo (min)', 9], ['Extra registrado', 11, 'h'], ['Extra autorizado', 11, 'h'], ['Autorizó', 22], ['Falta', 7], ['Incidencia', 14], ['Avisos', 50]]);
+        ['Comida (min)', 9], ['Horas trabajadas', 11, 'h'], ['Retardo (min)', 9], ['Extra registrado', 11, 'h'], ['Extra autorizado', 11, 'h'], ['Autorizó', 22], ['Detalle del tiempo extra', 50], ['Falta', 7], ['Incidencia', 14], ['Avisos', 50]]);
       const P = hoja('Pendientes', [['Persona', 30], ['Fecha', 12], ['Qué falta', 60]]);
       for (const f of d.filas) {
         const t = f.totales, pendientes = [];
@@ -234,7 +262,7 @@ const Asistencia = (() => {
           ...(d.dinero ? (f.dinero?.valor_hora_cent == null ? ['sin precio', null, null, null] : [f.dinero.valor_hora_cent / 100, f.dinero.dobles_cent / 100, f.dinero.triples_cent / 100, f.dinero.total_cent / 100]) : [])]);
         for (const x of f.dias) {
           D.addRow([x.fecha, x.dia, f.nombre, x.horario || 'Sin horario', x.programado?.entrada || (x.festivo ? 'Festivo' : 'Descanso'), x.programado?.salida || '', x.entrada || '', x.salida || '',
-            x.comida_min || null, horas(x.trabajado_min), x.retardo_min || null, horas(x.extra_min || null), horas(x.extra_autorizado_min), x.extra_autorizado_por || '', x.falta ? 'Sí' : '',
+            x.comida_min || null, horas(x.trabajado_min), x.retardo_min || null, horas(x.extra_min || null), horas(x.extra_autorizado_min), x.extra_autorizado_por || '', textoExtra(x), x.falta ? 'Sí' : '',
             x.incidencia ? INCIDENCIA[x.incidencia] || x.incidencia : '', [x.festivo ? 'Festivo: ' + x.festivo : '', ...x.notas, x.por_revisar ? `${x.por_revisar} por revisar` : ''].filter(Boolean).join(' · ')]);
           const q = [];
           if (x.por_revisar) q.push(`${x.por_revisar} checada(s) por revisar (Asistencia → Día)`);
