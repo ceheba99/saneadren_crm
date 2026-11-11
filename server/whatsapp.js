@@ -65,10 +65,23 @@ module.exports = function whatsapp(app, db, h) {
         const motivo = `Meta rechazó el envío (HTTP ${r.status}, código ${e.code ?? '—'}): ${String(e.message || '').replace(/\+?\d{10,15}/g, '***').slice(0, 200)}`;
         console.error('[whatsapp] ' + motivo);
         app.locals.registro?.servicio('whatsapp_fallo', motivo);
+        return false;
       }
-    } catch (e) { console.error('[whatsapp] no se pudo enviar:', e.message); app.locals.registro?.servicio('whatsapp_fallo', 'No se pudo conectar con Meta: ' + String(e.message).slice(0, 200)); }
+      return true;
+    } catch (e) { console.error('[whatsapp] no se pudo enviar:', e.message); app.locals.registro?.servicio('whatsapp_fallo', 'No se pudo conectar con Meta: ' + String(e.message).slice(0, 200)); return false; }
   }
   const texto = (para, t) => enviar(para, { type: 'text', text: { preview_url: false, body: t } });
+  // Avisos (2026-11-11, server/avisos.js): fuera de la ventana de 24 h Meta solo deja mandar PLANTILLAS aprobadas.
+  // Variables: WHATSAPP_PLANTILLA_AVISO (nombre de la plantilla en Meta, con {{1}} = título y {{2}} = texto en el
+  // cuerpo) y WHATSAPP_PLANTILLA_IDIOMA (por omisión es_MX). Los valores van en una sola línea (sin saltos ni tabs).
+  const plantillaLista = () => configurado() && !!process.env.WHATSAPP_PLANTILLA_AVISO;
+  const enLinea = (t, max) => String(t || '').replace(/[\r\n\t]+/g, ' · ').replace(/ {4,}/g, '   ').trim().slice(0, max);
+  function plantilla(para, valores) {
+    if (!plantillaLista()) return Promise.resolve(false);
+    return enviar(para, { type: 'template', template: { name: process.env.WHATSAPP_PLANTILLA_AVISO, language: { code: process.env.WHATSAPP_PLANTILLA_IDIOMA || 'es_MX' },
+      components: [{ type: 'body', parameters: valores.map((v, i) => ({ type: 'text', text: enLinea(v, i ? 900 : 120) || '—' })) }] } });
+  }
+  app.locals.whatsapp = { plantilla, plantillaLista };
   function menu(para, p) {
     const a = ahoraMexico(), u = ultimaDe(p.id, a.fecha), sug = SIGUIENTE[u?.tipo || ''];
     const orden = [sug, ...Object.keys(TIPOS).filter(k => k !== sug)];

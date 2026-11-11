@@ -37,6 +37,16 @@
   .ok h1{color:var(--verde);} .error h1{color:var(--rojo);}
   .aviso-privacidad{font-size:.8rem;color:var(--sec);margin-top:18px;}
   [hidden]{display:none!important;}
+  /* Avisos (2026-11-11) */
+  .avisos{text-align:left;margin:10px 0 14px;}
+  .avisos h2{font-size:1.1rem;margin:0 0 6px;}
+  .avisos .aviso{border:2px solid #f6b103;background:#fffbeb;border-radius:12px;padding:10px 12px;margin:8px 0;color:#1a1d23;}
+  .avisos .aviso.urgente{border-color:#dc2626;background:#fef2f2;}
+  .avisos .aviso.leido{opacity:.6;}
+  .avisos .aviso p{white-space:pre-line;margin:6px 0;}
+  .avisos .aviso small{display:block;color:#6b7280;margin-bottom:6px;}
+  .avisos .aviso button{min-height:44px;padding:8px 16px;}
+  .avisos .aviso button.hecho{background:#16a34a;color:#fff;border-color:#16a34a;}
   /* Mis servicios (2026-11-11) */
   .servicios{text-align:left;margin:6px 0 14px;}
   .servicios h2{font-size:1.1rem;margin:0 0 4px;}
@@ -142,6 +152,22 @@
     encenderCamara(caja); posicion = null; pedirUbicacion(gps);
     flujo = setTimeout(() => { apagarCamara(); inicio(); }, 90000);
   }
+  // Avisos (2026-11-11, server/avisos.js): los que le mandaron y no ha marcado «Enterado».
+  function bloqueAvisos(avisos, alTocar = () => {}) {
+    if (!Array.isArray(avisos) || !avisos.length) return '';
+    return el('div', { className: 'avisos' }, el('h2', { textContent: avisos.length === 1 ? '📢 Tienes un aviso' : `📢 Tienes ${avisos.length} avisos` }), ...avisos.map(a => {
+      const aviso = el('span', { className: 'mal', role: 'status' });
+      const b = el('button', { type: 'button', className: 'sugerido', textContent: '✔ Enterado', onclick: async () => {
+        b.disabled = true; aviso.textContent = ''; alTocar();
+        let r; try { r = await api('enterado', { enterado: a.enterado }); } catch { b.disabled = false; aviso.textContent = 'Sin conexión: inténtalo otra vez.'; return; }
+        if (!r.ok) { b.disabled = false; aviso.textContent = r.j.error || 'No se pudo'; return; }
+        b.textContent = '✔ Enterado'; b.className = 'hecho'; tarjeta.classList.add('leido');
+      } });
+      const tarjeta = el('div', { className: 'aviso' + (a.urgente ? ' urgente' : '') }, el('b', { textContent: (a.urgente ? '⚠️ URGENTE · ' : '') + a.titulo }), el('p', { textContent: a.texto }),
+        el('small', { textContent: [a.de ? 'De ' + a.de : '', String(a.created_at || '').slice(0, 10).split('-').reverse().join('/')].filter(Boolean).join(' · ') }), el('div', {}, b, aviso));
+      return tarjeta;
+    }));
+  }
   // ---------- Mis servicios (2026-11-11): las órdenes que le asignaron, sin precios ni teléfonos ----------
   const hoyCel = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Mexico_City' }).format(new Date(Date.now() + desfase));
   const fmtDia = new Intl.DateTimeFormat('es-MX', { timeZone: 'UTC', weekday: 'long', day: 'numeric', month: 'long' });
@@ -167,7 +193,7 @@
     pintar(el('p', { className: 'ayuda', textContent: 'Buscando tus servicios…' }));
     let r; try { r = await api('servicios', { pin }); } catch { return mensaje('error', '📶', 'Sin conexión', 'Para ver tus servicios necesitas internet.', 'Volver', inicio); }
     if (!r.ok) { pin = ''; return mensaje('error', '⚠️', 'No se pudo', r.j.error || 'Intenta de nuevo', 'Volver', inicio); }
-    pintar(el('h1', { textContent: 'Hola, ' + info.nombre }), listaServicios(r.j.servicios), el('div', { className: 'botones' }, el('button', { type: 'button', className: 'sugerido', textContent: 'Checar', onclick: () => botones() })),
+    pintar(el('h1', { textContent: 'Hola, ' + info.nombre }), bloqueAvisos(r.j.avisos), listaServicios(r.j.servicios), el('div', { className: 'botones' }, el('button', { type: 'button', className: 'sugerido', textContent: 'Checar', onclick: () => botones() })),
       el('button', { type: 'button', className: 'btn', textContent: 'Salir', onclick: () => { pin = ''; inicio(); } }));
     flujo = setTimeout(() => { pin = ''; inicio(); }, 120000);
   }
@@ -183,6 +209,7 @@
     if (!r.ok) return mensaje('error', '⚠️', 'No se pudo', r.j.error || 'Intenta de nuevo', 'Volver', inicio);
     mensaje('ok', '✅', `${r.j.tipo} · ${r.j.hora}`, r.j.repetida ? 'Ya estaba registrada hace un momento.' : r.j.por_revisar ? `Gracias, ${r.j.nombre}. Quedó por revisar: ${r.j.por_revisar}.` : `Gracias, ${r.j.nombre}.`, 'Listo', inicio);
     if (r.j.servicios?.length) document.getElementById('pantalla').querySelector('button')?.before(listaServicios(r.j.servicios));
+    if (r.j.avisos?.length) { const pa = document.getElementById('pantalla'); (pa.querySelector('.servicios') || pa.querySelector('button'))?.before(bloqueAvisos(r.j.avisos)); }
   }
 
   // ---------- Arranque: ligar con el enlace (#e=…) si viene ----------

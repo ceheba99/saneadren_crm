@@ -65,7 +65,7 @@ const azar = () => { semilla = (semilla * 1103515245 + 12345) % 2147483648; retu
     return { permisos: lista.filter(c => !VIRTUALES.includes(c)), alcances, ediciones, ...extra };
   };
   // «Todo» como el gerente: toda su sucursal (no toda la empresa) y edita. Marketing no: el gerente no lo ve (2026-10-26).
-  const TODO = [...CATALOGO, ...VIRTUALES.filter(c => !c.endsWith('.empresa'))].filter(c => !c.startsWith('marketing.'));
+  const TODO = [...CATALOGO, ...VIRTUALES.filter(c => !c.endsWith('.empresa'))].filter(c => !c.startsWith('marketing.') && c !== 'avisos.publicar'); // ni «Publicar avisos»: de fábrica solo Dirección (2026-11-11)
   const crearRol = async (nombre, permisos) => { const [, r] = await pedir('POST', '/roles', A, { nombre }); await pedir('PUT', '/roles/' + r.clave + '/permisos', A, cuerpo(permisos)); return r.clave; };
   const ROL_TODO = await crearRol('Todo de prueba', TODO), ROL_NADA = await crearRol('Nada de prueba', []);
   const crearUsuario = async (nombre, rol, sucursales = [QRO]) => (await pedir('POST', '/usuarios', A, { nombre, password: CLAVE, rol, sucursales }));
@@ -101,7 +101,7 @@ const azar = () => { semilla = (semilla * 1103515245 + 12345) % 2147483648; retu
   // Marketing tampoco: el rol «con todo» copia al gerente, que no ve Marketing (2026-10-26).
   // Facturación (2026-10-27): la conexión con factura.com y la serie y el CP de cada sucursal son solo de Dirección (como el respaldo).
   // Reloj checador (2026-11-03): borrar ya las fotos viejas de las checadas de todas las sucursales (F6).
-  const deDireccion = k => DIRECCION_ESPERADO.test(k) || /^DELETE /.test(k) || /^POST \/(usuarios|sucursales|clientes)\/\d+\/eliminar$/.test(k) || /^\w+ \/clientes-(carga|gestion)(\/|$)/.test(k) || /^\w+ \/marketing(\/|$)/.test(k) || /^\w+ \/facturacion(\/|$)/.test(k) || k === 'POST /asistencia/fotos/limpiar' || k === 'POST /asistencia/festivos' || k === 'PUT /asistencia/reglas-extra'; // festivos y reglas del tiempo extra valen para todas las sucursales
+  const deDireccion = k => DIRECCION_ESPERADO.test(k) || /^DELETE /.test(k) || /^POST \/(usuarios|sucursales|clientes)\/\d+\/eliminar$/.test(k) || /^\w+ \/clientes-(carga|gestion)(\/|$)/.test(k) || /^\w+ \/marketing(\/|$)/.test(k) || /^\w+ \/facturacion(\/|$)/.test(k) || k === 'POST /asistencia/fotos/limpiar' || k === 'POST /asistencia/festivos' || k === 'PUT /asistencia/reglas-extra' || /^\w+ \/avisos(\/|$)/.test(k); // festivos y reglas del tiempo extra valen para todas las sucursales; avisos: de fábrica solo Dirección (se da con «Publicar avisos»)
   revisa(soloDireccion.every(deDireccion), `lo que el rol con todo NO puede y Dirección sí son solo cosas de todas las sucursales o borrar (${soloDireccion.length})`, soloDireccion.filter(k => !deDireccion(k)));
   revisa(fT['GET /permisos'] === 403 && fT['PUT /roles/1/permisos'] === 403 && fT['POST /roles'] === 403, 'ni con todos los permisos se editan roles (solo Dirección)');
 

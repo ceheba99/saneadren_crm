@@ -2292,3 +2292,17 @@ tr.logs-aviso td{background:#fffaf0;}
 .ac-checadas td,.ac-checadas th{white-space:nowrap;}
 .ac-checadas td:nth-child(6){white-space:normal;}
 @media (max-width:640px){#ac-cuerpo{padding:12px 14px 16px;}.ac-semana{grid-template-columns:repeat(auto-fit,minmax(96px,1fr));}}
+/* Avisos (2026-11-11) */
+.av-inicio-lista:empty{display:none;}
+.av-inicio-lista{display:flex;flex-direction:column;gap:8px;margin:0 0 14px;}
+.av-inicio{display:flex;gap:12px;align-items:center;justify-content:space-between;border:2px solid #f6b103;background:#fffbeb;border-radius:10px;padding:10px 14px;}
+.av-inicio.urgente{border-color:#dc2626;background:#fef2f2;}
+.av-inicio p{white-space:pre-line;margin:4px 0;}
+.av-inicio small{color:#6b7280;}
+.av-inicio .btn{flex:none;}
+.av-lista{max-height:320px;overflow:auto;border:1px solid #dbe1e7;border-radius:8px;}
+.av-persona{display:flex;gap:10px;align-items:flex-start;padding:8px 10px;border-bottom:1px solid #eef1f4;cursor:pointer;}
+.av-persona small{display:block;color:#6b7280;font-size:12px;}
+.av-check{display:block;margin:6px 0;}
+.av-texto{white-space:pre-line;}
+@media (max-width:640px){.av-inicio{flex-direction:column;align-items:stretch;}}

@@ -411,7 +411,7 @@ module.exports = function checador(app, db, h) {
   const paraChecar = (req, p) => {
     const ah = ahoraMexico(), { fecha } = ah, u = ultimaDe(p.id, fecha);
     // biometria: la tableta debe tomar su cara con la prueba de vida y mandarla (biometria.js).
-    return { ticket: nuevoTicket('checar', p, req.kiosco.id), nombre: primerNombre(p.nombre), sugerido: sugeridoPara(p.id, ah), ultima: u ? { tipo: TIPOS[u.tipo], hora: u.hora.slice(0, 5) } : null, tipos: TIPOS, biometria: !!app.locals.biometria?.activo(p.id), servicios: serviciosDe(p.id, req.kiosco.id) };
+    return { ticket: nuevoTicket('checar', p, req.kiosco.id), nombre: primerNombre(p.nombre), sugerido: sugeridoPara(p.id, ah), ultima: u ? { tipo: TIPOS[u.tipo], hora: u.hora.slice(0, 5) } : null, tipos: TIPOS, biometria: !!app.locals.biometria?.activo(p.id), avisos: avisosDe(p.id, req.kiosco.id), servicios: serviciosDe(p.id, req.kiosco.id) };
   };
 
   // La pantalla del kiosco: la única página del sistema con permiso de cámara (seguridad.js la bloquea en las demás).
@@ -571,10 +571,10 @@ module.exports = function checador(app, db, h) {
     // Doble toque: la misma checada de la misma persona en menos de 2 minutos no se repite.
     const previa = db.prepare("SELECT id, hora FROM main.checadas WHERE personal_id = ? AND tipo = ? AND estado <> 'anulada' AND momento_utc >= ? ORDER BY id DESC LIMIT 1")
       .get(p.id, tipo, new Date(Date.now() - DUPLICADO_MS).toISOString());
-    if (previa) return res.json({ id: previa.id, nombre: primerNombre(p.nombre), tipo: TIPOS[tipo], hora: previa.hora.slice(0, 5), repetida: true, servicios: serviciosDe(p.id, req.kiosco.id) });
+    if (previa) return res.json({ id: previa.id, nombre: primerNombre(p.nombre), tipo: TIPOS[tipo], hora: previa.hora.slice(0, 5), repetida: true, avisos: avisosDe(p.id, req.kiosco.id), servicios: serviciosDe(p.id, req.kiosco.id) });
     const foto = fotoDe(req.body?.foto), bio = app.locals.biometria?.evaluar(p.id, req.body?.rostro) || null;
     const id = guardarChecada({ p, d, tipo, a, foto, ip: req.ipCliente || null, bio });
-    res.status(201).json({ id, nombre: primerNombre(p.nombre), tipo: TIPOS[tipo], hora: a.hora.slice(0, 5), ...(foto ? {} : { sin_foto: true }), ...(bio?.nota ? { por_revisar: bio.nota } : {}), servicios: serviciosDe(p.id, req.kiosco.id) });
+    res.status(201).json({ id, nombre: primerNombre(p.nombre), tipo: TIPOS[tipo], hora: a.hora.slice(0, 5), ...(foto ? {} : { sin_foto: true }), ...(bio?.nota ? { por_revisar: bio.nota } : {}), avisos: avisosDe(p.id, req.kiosco.id), servicios: serviciosDe(p.id, req.kiosco.id) });
   }));
   // Checada que el kiosco guardó SIN CONEXIÓN y sube al volver internet (una por petición). El PIN se revisa aquí, con
   // los mismos topes. La hora = ahora del servidor − el tiempo que pasó según el kiosco («edad»): con su reloj interno
@@ -664,11 +664,11 @@ module.exports = function checador(app, db, h) {
     if (p.pin_temporal) return res.status(409).json({ error: 'Primero elige tu PIN', codigo: 'PIN_TEMPORAL' });
     const previa = db.prepare("SELECT id, hora FROM main.checadas WHERE personal_id = ? AND tipo = ? AND estado <> 'anulada' AND momento_utc >= ? ORDER BY id DESC LIMIT 1")
       .get(p.id, tipo, new Date(Date.now() - DUPLICADO_MS).toISOString());
-    if (previa) return res.json({ id: previa.id, nombre: primerNombre(p.nombre), tipo: TIPOS[tipo], hora: previa.hora.slice(0, 5), repetida: true, servicios: serviciosDe(p.id, req.kiosco.id) });
+    if (previa) return res.json({ id: previa.id, nombre: primerNombre(p.nombre), tipo: TIPOS[tipo], hora: previa.hora.slice(0, 5), repetida: true, avisos: avisosDe(p.id, req.kiosco.id), servicios: serviciosDe(p.id, req.kiosco.id) });
     const foto = fotoDe(b.foto), ubicacion = ubicacionDe(b), a = ahoraMexico();
     const id = guardarChecada({ p, d, tipo, a, foto, origen: 'celular', ubicacion, ip: req.ipCliente || null });
     const est = db.prepare('SELECT estado, observaciones FROM main.checadas WHERE id = ?').get(id);
-    res.status(201).json({ id, nombre: primerNombre(p.nombre), tipo: TIPOS[tipo], hora: a.hora.slice(0, 5), ...(est.estado === 'por_revisar' ? { por_revisar: est.observaciones } : {}), servicios: serviciosDe(p.id, req.kiosco.id) });
+    res.status(201).json({ id, nombre: primerNombre(p.nombre), tipo: TIPOS[tipo], hora: a.hora.slice(0, 5), ...(est.estado === 'por_revisar' ? { por_revisar: est.observaciones } : {}), avisos: avisosDe(p.id, req.kiosco.id), servicios: serviciosDe(p.id, req.kiosco.id) });
   }));
   // ---------- Calendario de servicios en el kiosco (2026-11-11, Dirección: «un calendario para todos con las órdenes
   // de servicio, pero para imprimir que sí se verifiquen») ----------
@@ -705,6 +705,10 @@ module.exports = function checador(app, db, h) {
     const factura = !!db.prepare("SELECT 1 FROM main.facturas WHERE lead_id = ? AND estatus = 'timbrada' AND pdf_path IS NOT NULL LIMIT 1").get(l.id);
     res.json({ nombre: primerNombre(v.p.nombre), permiso: permisoDocumento(l.id, v.p.id, req.kiosco.id), con_factura: factura });
   }));
+  // Avisos (2026-11-11, server/avisos.js): «Enterado» con el token que trae cada aviso pendiente (un dispositivo, 15 min).
+  const avisosDe = (personaId, dispositivoId) => app.locals.avisos?.pendientes(personaId, dispositivoId) || [];
+  app.post('/api/publico/kiosco/enterado', kiosco, h((req, res) => app.locals.avisos.enteradoPublico(false)(req, res)));
+  app.post('/api/publico/celular/enterado', celular, h((req, res) => app.locals.avisos.enteradoPublico(true)(req, res)));
   app.post('/api/publico/kiosco/orden', kiosco, h(imprimirOrden));
   app.post('/api/publico/kiosco/factura', kiosco, h(imprimirFactura));
   app.post('/api/publico/celular/orden', celular, h(imprimirOrden));
@@ -714,7 +718,7 @@ module.exports = function checador(app, db, h) {
     const v = verificar(req.kiosco, req.persona.codigo_checador, String(req.body?.pin ?? ''));
     if (!v.p) return res.status(v.status).json({ error: v.error });
     if (v.p.pin_temporal) return res.status(409).json({ error: 'Primero elige tu PIN', codigo: 'PIN_TEMPORAL' });
-    res.json({ servicios: serviciosDe(v.p.id, req.kiosco.id) });
+    res.json({ avisos: avisosDe(v.p.id, req.kiosco.id), servicios: serviciosDe(v.p.id, req.kiosco.id) });
   }));
 
   // ---------- Administración (con sesión) ----------

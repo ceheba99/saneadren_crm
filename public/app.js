@@ -142,6 +142,7 @@ function cambiarVista(v, opciones) {
   if ((v === 'cobrar' || (v === 'cuentas' && !['pagar', 'proveedores'].includes(opciones?.pestana))) && !Permisos.puede('cxc.ver')) v = 'inicio';
   if ((v === 'pagar' || (v === 'cuentas' && ['pagar', 'proveedores'].includes(opciones?.pestana))) && !Permisos.puede('cxp.ver')) v = 'inicio';
   if (v === 'contabilidad' && !Permisos.puede('contabilidad.ver') && !Permisos.direccion()) v = 'inicio';
+  if (v === 'avisos' && !Permisos.puede('avisos.publicar') && !Permisos.direccion()) v = 'inicio';
   if (v === 'pendientes') v = 'inicio'; // Pendientes ahora es parte de Inicio
   // «Proveedores» (menú Finanzas) es la pestaña de Cuentas por pagar.
   if (v === 'proveedores') { opciones = { ...opciones, pestana: 'proveedores' }; v = Permisos.puede('cxp.ver') ? 'pagar' : 'inicio'; }
@@ -162,6 +163,7 @@ function cambiarVista(v, opciones) {
   if (v === 'rh') RH.cargar();
   if (v === 'resultados') abrirResultados();
   if (v === 'contabilidad') window.Contabilidad?.cargar();
+  if (v === 'avisos') Avisos.cargar();
   if (v === 'generador') cargarGenerador();
   if (v === 'calendario') Calendario.cargar();
   if (v === 'compras') Compras.cargar();
@@ -544,6 +546,7 @@ async function cargarInicio() {
   if (typeof Prospeccion !== 'undefined') Prospeccion.pintarInicio(); // bloque «Prospección» (a quién llamar hoy)
   if (typeof Marketing !== 'undefined') Marketing.pintarInicio(); // bloque «Marketing» (por aprobar, cambios, por subir)
   window.Facturacion?.pintarInicio(); // bloque «Facturación» (sin respuesta, borradores, por facturar)
+  if (typeof Avisos !== 'undefined') Avisos.pintarInicio(); // avisos para este usuario, arriba, hasta que toque «Enterado»
 }
 function filaEstancada(l) {
   const dias = diasSinMovimiento(l.updated_at);
