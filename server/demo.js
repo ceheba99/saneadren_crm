@@ -529,6 +529,9 @@ module.exports = function demo(app, db, { sesiones, PORT, SESSION_TTL_MS }) {
       });
     }
 
+    // ===== 11. Muchos más ejemplos (2026-11-11): seis meses de historia, más clientes, gastos fijos, prospección, marketing y checadas =====
+    await require('./demo-mas')({ db, URL, pedir, orden, total, dia, HOY, tok, A, V, C, T, VC, GC, prov, PER, persona, clabe, servicios, canal, idDe, cdmx, qroId, centros, subir, pdf, png });
+
     // Al final: la revisión de integridad debe salir limpia.
     const r = require('./alcance').global(() => require('./integridad').revisar(db, {}));
     console.log(`[demo] revisión de integridad: ${r.errores} errores, ${r.avisos} avisos`);

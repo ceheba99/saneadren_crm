@@ -58,7 +58,7 @@ const pedir = async (m, r, t, b) => { const x = await fetch(`http://localhost:${
   console.log('2b. Personal: qué ve y qué hace cada quien');
   const j0Ventas = (await pedir('GET', '/permisos/mios', tok.ventas))[1] && (await pedir('GET', '/usuarios', tok.admin))[1].find(u => u.nombre === 'Laura Ventas - Demo').id;
   const [, todos] = await pedir('GET', '/personal?estado=todos', tok.admin);
-  revisa(todos.length === 15 && todos.filter(p => !p.activo).length === 1 && todos.filter(p => p.usuario_nombre).length === 9, 'Dirección ve a las 15 personas (1 dada de baja; 9 con cuenta en el sistema)', [todos.length, todos.filter(p => !p.activo).length, todos.filter(p => p.usuario_nombre).length]);
+  revisa(todos.length === 25 && todos.filter(p => !p.activo).length === 1 && todos.filter(p => p.usuario_nombre).length === 9, 'Dirección ve a las 25 personas (1 dada de baja; 9 con cuenta en el sistema)', [todos.length, todos.filter(p => !p.activo).length, todos.filter(p => p.usuario_nombre).length]);
   const raul = todos.find(p => p.nombre === 'Raúl Técnico - Demo'), juan = todos.find(p => p.nombre === 'Juan Carlos Ríos');
   const [, fichaRaul] = await pedir('GET', '/personal/' + raul.id, tok.admin), doc = fichaRaul.documentos?.[0];
   revisa(fichaRaul.clabe === '012180001234567899' && fichaRaul.documentos.length === 2 && fichaRaul.incidencias.length >= 1, 'la ficha de Raúl trae CLABE, 2 documentos y sus vacaciones', [fichaRaul.clabe, fichaRaul.documentos?.length]);
@@ -72,7 +72,7 @@ const pedir = async (m, r, t, b) => { const x = await fetch(`http://localhost:${
   [s, j] = await pedir('GET', '/personal/' + juan.id, tok.nomina); revisa(s === 200 && j.clabe && j.salario === 480 && j.puede && !j.puede.editar, 'Nómina ve CLABE y salario para pagar…', [s, j.puede]);
   [s] = await pedir('PUT', '/personal/' + juan.id, tok.nomina, { telefono: '1' }); revisa(s === 403, '…pero no cambia fichas', s);
   [s] = await pedir('POST', '/personal/' + juan.id + '/incidencias', tok.nomina, { tipo: 'falta', fecha_inicio: '2020-01-02' }); revisa(s === 403, '…ni registra incidencias', s);
-  [s, j] = await pedir('GET', '/personal', tok.gerente_cdmx); revisa(s === 200 && j.length === 3 && j.every(p => /Óscar|Mónica|Pedro/.test(p.nombre)), 'la gerente de CDMX solo ve al personal de CDMX', j.map?.(p => p.nombre));
+  [s, j] = await pedir('GET', '/personal', tok.gerente_cdmx); revisa(s === 200 && j.length === 5 && j.every(p => /Óscar|Mónica|Pedro|Hugo|Iván/.test(p.nombre)), 'la gerente de CDMX solo ve al personal de CDMX', j.map?.(p => p.nombre));
   [s] = await pedir('GET', '/personal/' + raul.id, tok.gerente_cdmx); revisa(s === 404, 'y el de Querétaro «no existe» para ella', s);
   for (const r of ['ventas', 'tecnico', 'atencion', 'costos']) { [s] = await pedir('GET', '/personal', tok[r]); revisa(s === 403, r + ' no entra a Personal', s); }
   [s, j] = await pedir('GET', '/personal/para-asignar', tok.ventas); revisa(s === 200 && j.length >= 10 && !JSON.stringify(j).includes('clabe'), 'ventas sí puede elegir personal para el equipo de una orden (solo nombre y puesto)', j.length);
@@ -102,7 +102,7 @@ const pedir = async (m, r, t, b) => { const x = await fetch(`http://localhost:${
   // «Cuenta como gasto» se decide al crear la categoría (solo Dirección).
   { const [st, c] = await pedir('POST', '/finanzas/categorias', tok.admin, { nombre: 'Préstamo de socios', es_gasto: false }); const [, cats] = await pedir('GET', '/finanzas/categorias', tok.admin);
     revisa(st === 201 && cats.find(x => x.clave === c.clave)?.es_gasto === 0, 'Dirección crea una categoría que NO cuenta como gasto (préstamo)', [st, c]); }
-  [s, j] = await pedir('GET', '/prospeccion', tok.ventas); revisa(s === 200 && j.length === 5 && new Set(j.map(e => e.estado)).size === 5, 'prospección: 5 establecimientos, uno en cada estado', j.map?.(e => e.estado));
+  [s, j] = await pedir('GET', '/prospeccion', tok.ventas); revisa(s === 200 && j.length === 29 && new Set(j.map(e => e.estado)).size === 5, 'prospección: 29 establecimientos, en los 5 estados', j.map?.(e => e.estado));
   [s, j] = await pedir('GET', '/tablero', tok.admin); revisa(j.alertas?.some(a => /sin IVA capturado/.test(a.texto)), 'Resultados avisa de las facturas con IVA estimado (para enseñar a capturarlo)', j.alertas?.map(a => a.texto));
   const [, leads] = await pedir('GET', '/leads', tok.admin);
   const de = emp => leads.filter(l => (l.empresa_contacto || l.cliente_empresa || l.empresa || '').includes(emp) || JSON.stringify(l).includes(emp));
