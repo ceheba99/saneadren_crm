@@ -114,7 +114,7 @@ const archivosDe = d => fs.readdirSync(d, { withFileTypes: true }).flatMap(e => 
   revisa(se === 200 && estado.fecha === HOY && /^\d\d:\d\d$/.test(estado.hora), 'El kiosco muestra la fecha y hora del servidor en hora de México', estado);
   const [, i1] = await kio(KQ, 'POST', 'identificar', { codigo: altaJuan.codigo, pin: PIN });
   const [sc, ch] = await kio(KQ, 'POST', 'checar', { ticket: i1.ticket, tipo: 'entrada', foto: FOTO });
-  revisa(sc === 201 && ch.nombre === 'Juan' && ch.tipo === 'Entrada' && Object.keys(ch).sort().join() === 'hora,id,nombre,tipo', 'Checa su entrada; el kiosco solo recibe nombre corto, tipo y hora', ch);
+  revisa(sc === 201 && ch.nombre === 'Juan' && ch.tipo === 'Entrada' && Object.keys(ch).sort().join() === 'hora,id,nombre,servicios,tipo' && Array.isArray(ch.servicios), 'Checa su entrada; el kiosco solo recibe nombre corto, tipo, hora y sus servicios asignados (2026-11-11, simulacion-mis-servicios)', ch);
   const fila = conBase(d => d.prepare('SELECT * FROM checadas WHERE id = ?').get(ch.id));
   const ahoraMx = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Mexico_City', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date());
   revisa(fila.fecha === HOY && fila.hora.slice(0, 5) <= ahoraMx && Math.abs(Date.parse(fila.momento_utc) - Date.now()) < 60000 && fila.estado === 'valida', 'Se guarda con la hora del servidor (UTC y hora de México)', fila);
