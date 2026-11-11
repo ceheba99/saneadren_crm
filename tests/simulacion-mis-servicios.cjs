@@ -103,6 +103,31 @@ const sumar = (f, k) => { const d = new Date(f + 'T12:00:00Z'); d.setUTCDate(d.g
   revisa(sc === 200 && nombres(jc.servicios).length === 3, 'Con su PIN, «Ver mis servicios» en el celular', jc);
   revisa((await cel(null, 'servicios', { pin: PIN[oscar.id] }))[0] === 401, 'Sin celular ligado, nada');
 
+  console.log('4. Imprimir la orden de servicio y su factura (2026-11-11)');
+  const i2 = exigir(await kio(K, 'identificar', { codigo: oscar.codigo, pin: PIN[oscar.id] }), 'identificar Óscar');
+  const sv = i2.servicios.find(x => x.cliente === 'Restaurante Hoy SA');
+  revisa(typeof sv.imprimir === 'string' && sv.imprimir.length > 20 && sv.con_factura === false, 'Cada servicio trae su permiso para imprimir (y si tiene factura)', sv);
+  const [so, od] = await kio(K, 'orden', { permiso: sv.imprimir });
+  revisa(so === 200 && od.folio === sv.folio && od.items.length === 1 && od.items[0].importe === undefined ? true : so === 200 && od.folio === sv.folio, 'La orden llega con su folio', [so, od.folio]);
+  revisa(od.cliente?.telefono === '442 555 0101' && od.cliente.empresa === 'Restaurante Hoy SA' && od.fechaServicio === HOY.split('-').reverse().join('/') && /^https?:\/\/.+\/e\/[\w-]+$/.test(od.encuesta || ''),
+    'Trae lo mismo que la orden impresa del CRM: cliente con teléfono, fecha y el enlace de su encuesta (para el QR)', od);
+  revisa((await kio(KM, 'orden', { permiso: sv.imprimir }))[0] === 401, 'El permiso no sirve en otro kiosco');
+  revisa((await kio(K, 'orden', { permiso: 'inventado-' + 'x'.repeat(20) }))[0] === 401, 'Un permiso inventado no sirve');
+  revisa((await kio(K, 'factura', { permiso: sv.imprimir }))[0] === 404, 'Sin factura guardada, dice que la pida a la oficina');
+  // Una factura timbrada con su PDF guardado (como la deja el timbrado: archivos/ junto a la base).
+  fs.mkdirSync(path.join(dir, 'archivos', 'facturas'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'archivos', 'facturas', 'f-prueba.pdf'), '%PDF-1.4\nFACTURA-PRUEBA\n%%EOF');
+  conBase(d => d.prepare("INSERT INTO facturas (lead_id, sucursal_id, estatus, num_order, entorno, receptor_rfc, receptor_razon_social, metodo_pago, forma_pago, subtotal_cent, iva_cent, total_cent, serie, folio, cfdi_uid, uuid, pdf_path) VALUES (?, ?, 'timbrada', 'SERV-1', 'sandbox', 'XAXX010101000', 'PUBLICO', 'PUE', '03', 432150, 69144, 501294, 'F', '7', 'uid-serv', '5A1D0C0B-F070-4C0B-8000-00000000AB01', 'facturas/f-prueba.pdf')").run(hoy1, qro.id));
+  const i3 = exigir(await kio(K, 'identificar', { codigo: oscar.codigo, pin: PIN[oscar.id] }), 'identificar Óscar');
+  const sv3 = i3.servicios.find(x => x.cliente === 'Restaurante Hoy SA');
+  const rf = await fetch(URLB + '/api/publico/kiosco/factura', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Kiosco': K }, body: JSON.stringify({ permiso: sv3.imprimir }) });
+  const pdf = Buffer.from(await rf.arrayBuffer()).toString();
+  revisa(sv3.con_factura === true && rf.status === 200 && /application\/pdf/.test(rf.headers.get('content-type')) && pdf.includes('FACTURA-PRUEBA') && /factura-F7-PRUEBA\.pdf/.test(rf.headers.get('content-disposition')), 'Con factura timbrada, se descarga su PDF', [sv3.con_factura, rf.status]);
+  revisa(conBase(d => d.prepare("SELECT COUNT(*) n FROM auditoria WHERE accion = 'imprimió' AND detalle LIKE '%Óscar Operador%'").get().n) >= 2, 'Cada impresión queda en la bitácora con quién y dónde');
+  const [, jc2] = await cel(C, 'servicios', { pin: PIN[oscar.id] }), svc = jc2.servicios.find(x => x.cliente === 'Restaurante Hoy SA');
+  revisa((await cel(C, 'orden', { permiso: svc.imprimir }))[0] === 200 && (await kio(K, 'orden', { permiso: svc.imprimir }))[0] === 401, 'Desde el celular también; el permiso del celular no sirve en el kiosco');
+  revisa((await cel(C, 'orden', { permiso: sv3.imprimir }))[0] === 401, 'Ni el del kiosco en el celular');
+
   console.log(`\n${n - malos.length}/${n} correctas`);
   srv.kill(); fs.rmSync(dir, { recursive: true, force: true });
   process.exit(malos.length ? 1 : 0);

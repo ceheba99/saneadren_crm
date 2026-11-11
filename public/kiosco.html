@@ -53,6 +53,9 @@
   .servicios .dia::first-letter{text-transform:uppercase;}
   .servicio{background:#fff;border:1px solid var(--linea);border-left:5px solid var(--amarillo);border-radius:12px;padding:10px 12px;margin:6px 0;font-size:1rem;line-height:1.35;}
   .servicio b{font-size:1.08rem;}
+  .servicio .acciones{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px;}
+  .servicio .acciones button{font:inherit;font-size:.95rem;border:1px solid var(--linea);background:#fff;border-radius:10px;padding:8px 12px;cursor:pointer;}
+  .servicio .acciones .mal{color:var(--rojo);font-size:.9rem;}
   .servicio small{display:block;color:var(--sec);}
   .servicios-lista{max-height:46vh;overflow:auto;}
   .botones button{font-size:1.25rem;font-weight:700;padding:22px 10px;background:#fff;border:3px solid var(--linea);color:var(--texto);}
@@ -183,6 +186,7 @@
 <footer class="kiosco-pie"><div id="pendientes" role="status"></div>
 <button type="button" id="pantalla-completa">Pantalla completa</button>
 <a id="aviso-privacidad" href="/aviso-privacidad-checador.html" target="_blank" rel="noopener">Aviso de privacidad</a></footer>
+<script src="/imprimir-documentos.js?v=1"></script>
 <script>
 (() => {
   'use strict';
@@ -752,12 +756,25 @@
   const hoyKiosco = () => new Intl.DateTimeFormat('en-CA', { timeZone: ZONA }).format(new Date(Date.now() + desfase));
   const fmtDia = new Intl.DateTimeFormat('es-MX', { timeZone: 'UTC', weekday: 'long', day: 'numeric', month: 'long' });
   const nombreDia = f => (f === hoyKiosco() ? 'Hoy' : fmtDia.format(new Date(f + 'T12:00:00Z')));
+  // Imprimir la orden de servicio (con precios) y su factura (2026-11-11): public/imprimir-documentos.js.
+  const impresora = window.ImprimirDocs?.crear('/api/publico/kiosco/', () => ({ 'X-Kiosco': registro?.token || '' }));
+  function botonesImprimir(x) {
+    if (!x.imprimir || !impresora) return '';
+    const aviso = el('span', { className: 'mal', role: 'status' });
+    const boton = (texto, que) => el('button', { type: 'button', textContent: texto, onclick: async e => {
+      const b = e.currentTarget, antes = b.textContent;
+      b.disabled = true; b.textContent = 'Preparando…'; aviso.textContent = ''; reiniciarEspera(60000);
+      try { await impresora[que](x.imprimir); b.textContent = '✔ Descargado: ábrelo e imprime'; }
+      catch (err) { b.disabled = false; b.textContent = antes; aviso.textContent = err.message; }
+    } });
+    return el('div', { className: 'acciones' }, boton('🖨️ Orden de servicio', 'orden'), x.con_factura ? boton('🧾 Factura', 'factura') : '', aviso);
+  }
   function tarjetaServicio(x) {
     return el('div', { className: 'servicio' }, el('b', { textContent: `${x.hora ? x.hora + ' · ' : ''}${x.cliente || 'Cliente'}` }),
       el('small', { textContent: [x.servicio, x.descripcion].filter(Boolean).join(' — ') }),
       x.direccion ? el('small', { textContent: '📍 ' + x.direccion }) : '',
       el('small', { textContent: [x.folio, x.unidad ? 'Unidad: ' + x.unidad : '', 'Tú: ' + x.papel].filter(Boolean).join(' · ') }),
-      x.equipo?.length ? el('small', { textContent: 'Equipo: ' + x.equipo.join(', ') }) : '');
+      x.equipo?.length ? el('small', { textContent: 'Equipo: ' + x.equipo.join(', ') }) : '', botonesImprimir(x));
   }
   // completo: todos los días agrupados; si no, solo los de hoy (para la pantalla de elegir qué registrar).
   function bloqueServicios(servicios, completo) {

@@ -45,12 +45,16 @@
   .servicio{background:#fff;border:1px solid var(--linea);border-left:5px solid var(--amarillo);border-radius:12px;padding:10px 12px;margin:6px 0;line-height:1.35;}
   .servicio small,.servicio a{display:block;color:var(--sec);font-size:.92rem;margin-top:2px;}
   .servicio a{color:#1d4ed8;}
+  .servicio .acciones{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px;}
+  .servicio .acciones button{font:inherit;font-size:.95rem;border:1px solid var(--linea);background:#fff;border-radius:10px;padding:8px 12px;cursor:pointer;}
+  .servicio .acciones .mal{color:var(--rojo);font-size:.9rem;}
 </style>
 </head>
 <body>
 <header><img src="/logo-saneadren.png" alt="Saneadren"><div id="reloj">--:--</div></header>
 <main id="pantalla"></main>
 <canvas id="lienzo" width="480" height="360" hidden></canvas>
+<script src="/imprimir-documentos.js?v=1"></script>
 <script>
 (() => {
   'use strict';
@@ -141,6 +145,19 @@
   // ---------- Mis servicios (2026-11-11): las órdenes que le asignaron, sin precios ni teléfonos ----------
   const hoyCel = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Mexico_City' }).format(new Date(Date.now() + desfase));
   const fmtDia = new Intl.DateTimeFormat('es-MX', { timeZone: 'UTC', weekday: 'long', day: 'numeric', month: 'long' });
+  // Imprimir la orden de servicio (con precios) y su factura (2026-11-11): public/imprimir-documentos.js.
+  const impresora = window.ImprimirDocs?.crear('/api/publico/celular/', () => ({ 'X-Celular': token || '' }));
+  function botonesImprimir(x) {
+    if (!x.imprimir || !impresora) return '';
+    const aviso = el('span', { className: 'mal', role: 'status' });
+    const boton = (texto, que) => el('button', { type: 'button', textContent: texto, onclick: async e => {
+      const b = e.currentTarget, antes = b.textContent;
+      b.disabled = true; b.textContent = 'Preparando…'; aviso.textContent = ''; clearTimeout(flujo); flujo = setTimeout(() => { pin = ''; inicio(); }, 180000);
+      try { await impresora[que](x.imprimir); b.textContent = '✔ Descargado: ábrelo e imprime'; }
+      catch (err) { b.disabled = false; b.textContent = antes; aviso.textContent = err.message; }
+    } });
+    return el('div', { className: 'acciones' }, boton('🖨️ Orden de servicio', 'orden'), x.con_factura ? boton('🧾 Factura', 'factura') : '', aviso);
+  }
   function listaServicios(l) {
     if (!l?.length) return el('p', { className: 'ayuda', textContent: '📋 No tienes servicios asignados para hoy ni los próximos días.' });
     const dias = [...new Set(l.map(x => x.fecha))];
@@ -149,7 +166,7 @@
         el('small', { textContent: [x.servicio, x.descripcion].filter(Boolean).join(' — ') }),
         x.direccion ? el('a', { href: 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(x.direccion), target: '_blank', rel: 'noopener noreferrer', textContent: '📍 ' + x.direccion }) : '',
         el('small', { textContent: [x.folio, x.unidad ? 'Unidad: ' + x.unidad : '', 'Tú: ' + x.papel].filter(Boolean).join(' · ') }),
-        x.equipo?.length ? el('small', { textContent: 'Equipo: ' + x.equipo.join(', ') }) : ''))]));
+        x.equipo?.length ? el('small', { textContent: 'Equipo: ' + x.equipo.join(', ') }) : '', botonesImprimir(x)))]));
   }
   async function verServicios() {
     clearTimeout(flujo); apagarCamara();
