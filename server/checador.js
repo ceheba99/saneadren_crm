@@ -705,6 +705,21 @@ module.exports = function checador(app, db, h) {
     const factura = !!db.prepare("SELECT 1 FROM main.facturas WHERE lead_id = ? AND estatus = 'timbrada' AND pdf_path IS NOT NULL LIMIT 1").get(l.id);
     res.json({ nombre: primerNombre(v.p.nombre), permiso: permisoDocumento(l.id, v.p.id, req.kiosco.id), con_factura: factura });
   }));
+  // Diagnóstico del kiosco (2026-11-11): cuando su vigilante lo recupera (pantalla vacía, no inició, recarga), lo
+  // anota y lo manda aquí para verlo en los Logs del sistema. Solo texto corto; tope de 30 por kiosco por hora.
+  const diagKiosco = new Map();
+  app.post('/api/publico/kiosco/diagnostico', kiosco, h((req, res) => {
+    const l = Array.isArray(req.body?.eventos) ? req.body.eventos.slice(-10) : null;
+    if (!l) return res.status(400).json({ error: 'Faltan los eventos' });
+    const t = Date.now(); let c = diagKiosco.get(req.kiosco.id); if (!c || c.reinicia <= t) { c = { n: 0, reinicia: t + 3600000 }; diagKiosco.set(req.kiosco.id, c); }
+    for (const x of l) {
+      if (c.n >= 30) break;
+      const m = String(x?.m || '').replace(/\s+/g, ' ').replace(/[^\p{L}\p{N} .,:;()«»\-_/]/gu, '').slice(0, 160), cuando = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(String(x?.t || '')) ? String(x.t).slice(0, 16).replace('T', ' ') + ' UTC' : '';
+      if (!m) continue;
+      c.n++; app.locals.registro?.servicio('kiosco_recuperado', `Kiosco «${req.kiosco.nombre}»${req.kiosco.sucursal ? ' (' + req.kiosco.sucursal + ')' : ''}: ${m}${cuando ? ' · ' + cuando : ''}`);
+    }
+    res.json({ ok: true });
+  }));
   // Avisos (2026-11-11, server/avisos.js): «Enterado» con el token que trae cada aviso pendiente (un dispositivo, 15 min).
   const avisosDe = (personaId, dispositivoId) => app.locals.avisos?.pendientes(personaId, dispositivoId) || [];
   app.post('/api/publico/kiosco/enterado', kiosco, h((req, res) => app.locals.avisos.enteradoPublico(false)(req, res)));

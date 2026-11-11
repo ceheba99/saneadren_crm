@@ -28,6 +28,7 @@ const EVENTOS = {
   respaldo_ok: ['servicio', 'info', 'Respaldo automático hecho'],
   respaldo_fallo: ['servicio', 'grave', 'Respaldo automático falló'],
   whatsapp_fallo: ['servicio', 'aviso', 'WhatsApp no se envió'],
+  kiosco_recuperado: ['servicio', 'aviso', 'El reloj checador se recuperó solo'],
   inicio: ['servicio', 'info', 'Sistema iniciado'],
   descarga: ['seguridad', 'aviso', 'Descargó un respaldo']
 };
