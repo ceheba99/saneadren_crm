@@ -128,6 +128,33 @@ const sumar = (f, k) => { const d = new Date(f + 'T12:00:00Z'); d.setUTCDate(d.g
   revisa((await cel(C, 'orden', { permiso: svc.imprimir }))[0] === 200 && (await kio(K, 'orden', { permiso: svc.imprimir }))[0] === 401, 'Desde el celular también; el permiso del celular no sirve en el kiosco');
   revisa((await cel(C, 'orden', { permiso: sv3.imprimir }))[0] === 401, 'Ni el del kiosco en el celular');
 
+  console.log('5. Calendario para todos en el kiosco; para imprimir, código y PIN (2026-11-11)');
+  const [scal, cal] = await pedir('GET', '/publico/kiosco/calendario', null, undefined, { 'X-Kiosco': K });
+  const enCal = (cal.ordenes || []).map(o => o.cliente);
+  revisa(scal === 200 && ['Restaurante Hoy SA', 'Escuela Sin Equipo', 'Hotel Mañana', 'Fábrica de Toño', 'Ya Hecha Hoy'].every(x => enCal.includes(x)) && !enCal.includes('Oficina CDMX') && !enCal.includes('Solo Cotización') && !enCal.includes('Planta Lejana'),
+    'Sin identificarse, el kiosco muestra las órdenes de su sucursal de la semana (no las de otra, ni cotizaciones)', enCal);
+  revisa(!/4321|442 555|0101|precio|valor|telefono|imprimir|permiso/i.test(JSON.stringify(cal.ordenes)), 'Sin precios, teléfonos ni permisos de impresión', JSON.stringify(cal.ordenes).slice(0, 200));
+  revisa(cal.ordenes.find(o => o.cliente === 'Ya Hecha Hoy').estado === 'Realizada', 'Dice si ya se realizó');
+  const [, sig] = await pedir('GET', '/publico/kiosco/calendario?desde=' + sumar(HOY, 7), null, undefined, { 'X-Kiosco': K });
+  revisa(sig.ordenes.some(o => o.cliente === 'Planta Lejana') && sig.desde === sumar(HOY, 7), 'Se puede ver la semana siguiente', sig.ordenes.map(o => o.cliente));
+  revisa((await pedir('GET', '/publico/kiosco/calendario', null))[0] === 401, 'Sin kiosco registrado, nada');
+  const ordenCal = cal.ordenes.find(o => o.cliente === 'Hotel Mañana');
+  const [sx, jx] = await kio(K, 'calendario-imprimir', { codigo: alba.codigo, pin: '0000', orden: ordenCal.id });
+  revisa(sx === 401 && typeof jx.intento === 'string' && !jx.permiso, 'Con PIN equivocado no imprime y queda el intento (con foto)', [sx, jx]);
+  revisa((await kio(K, 'calendario-imprimir', { codigo: alba.codigo, pin: PIN[alba.id], orden: ordenCal.id }))[0] === 403, 'Alba no va al Hotel Mañana: no la imprime (solo asignados, Dirección 2026-11-11)');
+  const [sy, jy] = await kio(K, 'calendario-imprimir', { codigo: oscar.codigo, pin: PIN[oscar.id], orden: ordenCal.id });
+  revisa(sy === 200 && jy.nombre === 'Óscar' && typeof jy.permiso === 'string' && jy.con_factura === false, 'Óscar (asignado) sí la imprime con su código y PIN', jy);
+  const [sz, oz] = await kio(K, 'orden', { permiso: jy.permiso });
+  revisa(sz === 200 && oz.folio === ordenCal.folio, 'Y la orden sale', [sz, oz.folio]);
+  const sinEq = cal.ordenes.find(o => o.cliente === 'Escuela Sin Equipo');
+  revisa((await kio(K, 'calendario-imprimir', { codigo: sara.codigo, pin: PIN[sara.id], orden: sinEq.id }))[0] === 200 && (await kio(K, 'calendario-imprimir', { codigo: toño.codigo, pin: PIN[toño.id], orden: sinEq.id }))[0] === 403, 'La supervisora imprime cualquiera de su sucursal; un técnico no asignado, no');
+  const deT = cal.ordenes.find(o => o.cliente === 'Fábrica de Toño');
+  revisa((await kio(K, 'calendario-imprimir', { codigo: toño.codigo, pin: PIN[toño.id], orden: deT.id }))[0] === 200, 'El técnico de la orden (ficha ligada a su usuario) sí');
+  const conFact = cal.ordenes.find(o => o.cliente === 'Restaurante Hoy SA'), [, jf] = await kio(K, 'calendario-imprimir', { codigo: alba.codigo, pin: PIN[alba.id], orden: conFact.id });
+  revisa(jf.con_factura === true && (await fetch(URLB + '/api/publico/kiosco/factura', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Kiosco': K }, body: JSON.stringify({ permiso: jf.permiso }) })).status === 200, 'También la factura de una orden que la tiene');
+  revisa((await kio(K, 'calendario-imprimir', { codigo: memo.codigo, pin: PIN[memo.id], orden: ordenCal.id }))[0] === 403, 'Alguien de otra sucursal no imprime en este kiosco');
+  revisa((await kio(K, 'calendario-imprimir', { codigo: alba.codigo, pin: PIN[alba.id], orden: deCdmx }))[0] === 404 && (await kio(K, 'calendario-imprimir', { codigo: alba.codigo, pin: PIN[alba.id], orden: cotiza }))[0] === 404, 'Ni una orden de otra sucursal o una cotización');
+
   console.log(`\n${n - malos.length}/${n} correctas`);
   srv.kill(); fs.rmSync(dir, { recursive: true, force: true });
   process.exit(malos.length ? 1 : 0);
