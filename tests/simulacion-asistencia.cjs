@@ -79,6 +79,7 @@ const LUN = sumar(sumar(HOY, -7), -(dow(sumar(HOY, -7)) - 1)), D = k => sumar(LU
   const pm = mar.extra_detalle?.piezas || [];
   revisa(pm.length === 1 && pm[0].desde === '18:40' && pm[0].hasta === '19:10' && pm[0].cuenta && /Botones/.test(pm[0].motivo),
     'Detalle del martes: el bloque 18:40–19:10 cuenta por los botones', mar.extra_detalle);
+  revisa(pm[0]?.checadas?.length === 2 && pm[0].checadas.every(Number.isInteger), 'Evidencia: el tramo de los botones trae sus dos checadas (inicio y fin) para ver la foto', pm[0]);
   revisa(mie.extra_detalle?.traslape_min === 60 && mie.extra_detalle.sin_redondeo_min === 150, 'Detalle del miércoles: los tramos se enciman 1 h y se cuenta una vez', mie.extra_detalle);
   revisa(lun.extra_detalle?.regla && /Automático/.test(lun.extra_detalle.regla), 'El detalle dice la regla que se usó ese día', lun.extra_detalle);
   const jue = await dia(D(3)), vie = await dia(D(4));
@@ -86,6 +87,7 @@ const LUN = sumar(sumar(HOY, -7), -(dow(sumar(HOY, -7)) - 1)), D = k => sumar(LU
   const sab = await dia(D(5)), dom = await dia(D(6));
   revisa(sab.festivo === 'Jornada electoral' && sab.extra_min === 600 && sab.notas.includes('Festivo trabajado') && !sab.falta, 'Sábado festivo trabajado: todo es tiempo extra y se marca', sab);
   revisa(dom.extra_min === 240 && dom.notas.some(x => /Descanso trabajado/.test(x)) && dom.notas.some(x => /Domingo/.test(x)), 'Domingo (descanso) trabajado: tiempo extra y prima dominical', dom);
+  revisa((dom.extra_detalle?.piezas || []).some(z => z.checadas?.length === 2), 'Evidencia: el descanso trabajado trae su entrada y su salida', dom.extra_detalle);
 
   console.log('3. Tiempo extra autorizado');
   revisa((await pedir('POST', '/asistencia/extra', T.Valeria, { personal_id: juan.id, fecha: D(0), minutos: 70 }))[0] === 403, 'Ventas no autoriza tiempo extra');

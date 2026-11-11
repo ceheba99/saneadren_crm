@@ -134,14 +134,19 @@ const Asistencia = (() => {
     h += `<div class="ac-resumen">${dato('Horario', d.programado ? `${d.programado.entrada}–${d.programado.salida}` : d.festivo ? 'Festivo' : 'Descanso', d.horario ? `<small>${esc(d.horario)}</small>` : '')}${dato('Entrada', d.entrada || '—')}
       ${dato('Comida', d.comida_min ? hm(d.comida_min) : '—', d.exceso_comida_min ? `<small class="as-rojo">+${esc(d.exceso_comida_min)} min</small>` : '')}${dato('Salida', d.salida || '—', d.salida_anticipada_min ? `<small class="as-rojo">${esc(d.salida_anticipada_min)} min antes</small>` : '')}
       ${dato('Trabajado', hm(d.trabajado_min))}${dato('Retardo', d.retardo_min ? d.retardo_min + ' min' : '—')}${dato('Tiempo extra', d.extra_min ? hm(d.extra_min) : '—', d.extra_min ? `<small>${d.extra_autorizado_min == null ? 'sin autorizar' : 'autorizado ' + esc(hm(d.extra_autorizado_min))}</small>` : '')}</div>`;
-    h += detalleExtra(d, fila, sem, f);
+    h += detalleExtra(d, fila, sem, f, ch);
     const chips = estadoDia(d);
     if (chips.length) h += `<p>${chips.map(t => `<span class="as-chip">${esc(t)}</span>`).join(' ')}</p>`;
+    // Tabla de checadas (2026-11-11, Dirección: «entrada · Entrada» confundía; la segunda era el nombre del kiosco).
     h += `<h4 class="pe-sub2">Checadas</h4>`;
-    h += ch.length ? '<ul class="pe-ordenes">' + ch.map(c => `<li class="${c.estado === 'anulada' ? 'pe-baja' : ''}"><b>${esc(String(c.hora).slice(0, 5))}</b> · ${esc(TIPOS[c.tipo] || c.tipo)} · ${esc(c.origen === 'manual' ? 'a mano por ' + (c.registrado_por_nombre || '') : c.origen === 'celular' ? 'desde su celular' : c.origen === 'whatsapp' ? 'por WhatsApp' : c.kiosco || c.origen)}${esc(c.sin_conexion ? ' · sin conexión' : '')}
-      ${esc(c.estado === 'anulada' ? ' · anulada' : c.estado === 'por_revisar' ? ' · por revisar' : '')}${c.biometria && BIOMETRIA[c.biometria] ? ` <small class="${BIOMETRIA[c.biometria][1]}">${esc(BIOMETRIA[c.biometria][0])}${c.distancia_rostro != null && c.biometria !== 'coincide' ? ' (' + esc(Number(c.distancia_rostro).toFixed(2)) + ')' : ''}</small>` : ''}${c.observaciones ? ` <small>(${esc(c.observaciones)})</small>` : ''}
-      ${c.tiene_foto ? ` <button type="button" class="btn-link" data-ac-foto="${Number(c.id)}">📷 Foto</button>` : ''}${mapa(c)}${esc(c.foto_borrada ? ' · foto borrada (plazo cumplido)' : '')}
-      ${p.corregir && revisar(c) ? ` <button type="button" class="btn-link" data-ac-aceptar="${Number(c.id)}">Aceptar</button>` : ''}${p.corregir && vigente(c) ? ` <button type="button" class="btn-link" data-ac-anular="${Number(c.id)}">Anular</button>` : ''}</li>`).join('') + '</ul>'
+    h += ch.length ? `<div class="tabla-scroll"><table class="tabla-resumen as-tabla ac-checadas"><thead><tr><th>Hora</th><th>Qué marcó</th><th>Desde dónde</th><th>Cara</th><th>Evidencia</th><th>Notas</th>${p.corregir ? '<th></th>' : ''}</tr></thead><tbody>
+      ${ch.map(c => `<tr class="${c.estado === 'anulada' ? 'pe-baja' : ''}"><td><b>${esc(String(c.hora).slice(0, 5))}</b></td><td>${esc(TIPOS[c.tipo] || c.tipo)}</td>
+        <td>${esc(dondeChecada(c))}${mapa(c)}</td>
+        <td>${c.biometria && BIOMETRIA[c.biometria] ? `<span class="${BIOMETRIA[c.biometria][1]}">${esc(BIOMETRIA[c.biometria][0])}${c.distancia_rostro != null && c.biometria !== 'coincide' ? ' (' + esc(Number(c.distancia_rostro).toFixed(2)) + ')' : ''}</span>` : '—'}</td>
+        <td>${c.tiene_foto ? `<button type="button" class="btn-link" data-ac-foto="${Number(c.id)}">📷 Ver foto</button>` : esc(c.foto_borrada ? 'Foto borrada (plazo cumplido)' : '—')}</td>
+        <td>${esc([c.estado === 'anulada' ? 'Anulada' : c.estado === 'por_revisar' ? 'Por revisar' : '', c.sin_conexion ? 'Sin conexión' : '', c.observaciones || ''].filter(Boolean).join(' · ') || '')}</td>
+        ${p.corregir ? `<td>${revisar(c) ? `<button type="button" class="btn-link" data-ac-aceptar="${Number(c.id)}">Aceptar</button> ` : ''}${vigente(c) ? `<button type="button" class="btn-link" data-ac-anular="${Number(c.id)}">Anular</button>` : ''}</td>` : ''}</tr>`).join('')}
+      </tbody></table></div>`
       : '<p class="ayuda">No checó este día.</p>';
     if (ints.length) {
       const sinRevisar = ints.filter(i => i.es_cara && !i.revisado_at).length;
@@ -159,14 +164,22 @@ const Asistencia = (() => {
   }
   // Detalle del tiempo extra (2026-11-11): de dónde sale el del día (cada tramo, si cuenta o no y por qué, traslape,
   // redondeo y autorización) y el de toda su semana de nómina día por día, con dobles y triples.
-  function detalleExtra(d, fila, sem, f) {
+  const dondeChecada = c => (c.origen === 'manual' ? 'A mano, por ' + (c.registrado_por_nombre || 'RH') : c.origen === 'celular' ? 'Desde su celular' : c.origen === 'whatsapp' ? 'Por WhatsApp' : c.kiosco ? 'Reloj checador «' + c.kiosco + '»' : c.origen || '');
+  // Evidencia de un tramo: la foto de cada checada que lo marca (entrada, salida, inicio o fin de tiempo extra).
+  function evidencia(ids, ch) {
+    const l = (ids || []).map(id => ch.find(c => c.id === id)).filter(Boolean);
+    if (!l.length) return '—';
+    return l.map(c => c.tiene_foto ? `<button type="button" class="btn-link" data-ac-evidencia="${Number(c.id)}">📷 ${esc(TIPOS[c.tipo] || c.tipo)} ${esc(String(c.hora).slice(0, 5))}</button>`
+      : `<small class="pe-cuenta">${esc(TIPOS[c.tipo] || c.tipo)} ${esc(String(c.hora).slice(0, 5))}: ${esc(c.foto_borrada ? 'foto borrada' : c.origen === 'manual' ? 'a mano, sin foto' : 'sin foto')}</small>`).join('<br>');
+  }
+  function detalleExtra(d, fila, sem, f, ch) {
     const x = d.extra_detalle, dias = fila.dias.filter(y => y.extra_min || y.extra_detalle?.piezas?.some(z => z.cuenta));
     if (!x && !dias.length) return '';
     let h = '<details class="ac-extra" open><summary><b>⏱️ Tiempo extra a detalle</b></summary>';
     if (x) {
-      h += `<h4 class="pe-sub2">Este día: ${esc(fechaLarga(f))}</h4><div class="tabla-scroll"><table class="tabla-resumen as-tabla"><thead><tr><th>De</th><th>A</th><th>Minutos</th><th>¿Cuenta?</th><th>Por qué</th></tr></thead><tbody>
-        ${x.piezas.map(z => `<tr class="${z.cuenta ? '' : 'pe-baja'}"><td>${esc(z.desde)}</td><td>${esc(z.hasta)}</td><td>${esc(hm(z.min))}</td><td>${z.cuenta ? '✔ Sí' : '✖ No'}</td><td>${esc(z.motivo)}</td></tr>`).join('')}
-        ${x.sin_fin ? `<tr class="pe-baja"><td>${esc(x.sin_fin)}</td><td>?</td><td>—</td><td>✖ No</td><td>Marcó «Inicio de tiempo extra» y no marcó el fin: no cuenta hasta que RH agregue la hora real del fin</td></tr>` : ''}</tbody></table></div><ul class="pe-ordenes">`;
+      h += `<h4 class="pe-sub2">Este día: ${esc(fechaLarga(f))}</h4><div class="tabla-scroll"><table class="tabla-resumen as-tabla"><thead><tr><th>De</th><th>A</th><th>Minutos</th><th>¿Cuenta?</th><th>Por qué</th><th>Evidencia</th></tr></thead><tbody>
+        ${x.piezas.map(z => `<tr class="${z.cuenta ? '' : 'pe-baja'}"><td>${esc(z.desde)}</td><td>${esc(z.hasta)}</td><td>${esc(hm(z.min))}</td><td>${z.cuenta ? '✔ Sí' : '✖ No'}</td><td>${esc(z.motivo)}</td><td>${evidencia(z.checadas, ch)}</td></tr>`).join('')}
+        ${x.sin_fin ? `<tr class="pe-baja"><td>${esc(x.sin_fin)}</td><td>?</td><td>—</td><td>✖ No</td><td>Marcó «Inicio de tiempo extra» y no marcó el fin: no cuenta hasta que RH agregue la hora real del fin</td><td>${evidencia([x.sin_fin_checada], ch)}</td></tr>` : ''}</tbody></table></div><div id="ac-foto-extra"></div><ul class="pe-ordenes">`;
       if (x.traslape_min) h += `<li>Los tramos se enciman ${esc(hm(x.traslape_min))}: ese tiempo se cuenta una sola vez.</li>`;
       h += `<li>Tiempo extra del día: <b>${esc(hm(x.sin_redondeo_min))}</b>${x.redondeo ? ` → redondeado hacia abajo a bloques de ${esc(x.redondeo.bloque_min)} min: <b>${esc(hm(d.extra_min))}</b> (no cuentan ${esc(hm(x.redondeo.perdidos_min))})` : ''}.</li>`;
       if (d.extra_min) h += `<li>${d.extra_autorizado_min == null ? '<span class="as-rojo">Sin autorizar</span>: no se paga hasta que RH o el gerente lo autoricen.' : `Autorizado <b>${esc(hm(d.extra_autorizado_min))}</b> por ${esc(d.extra_autorizado_por || '')}${d.extra_autorizado_motivo ? ' · ' + esc(d.extra_autorizado_motivo) : ''}.`}</li>`;
@@ -182,9 +195,9 @@ const Asistencia = (() => {
     }
     return h + '</details>';
   }
-  async function verFoto(ruta, alt) {
+  async function verFoto(ruta, alt, destino = 'ac-foto') {
     try { const r = await api(ruta); if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || 'No se pudo abrir la foto');
-      const url = URL.createObjectURL(await r.blob()), img = document.createElement('img'); img.src = url; img.alt = alt; img.className = 'pe-foto'; img.onload = () => URL.revokeObjectURL(url); $('ac-foto').replaceChildren(img); img.scrollIntoView({ block: 'nearest' }); } catch (err) { toast(err.message); }
+      const url = URL.createObjectURL(await r.blob()), img = document.createElement('img'); img.src = url; img.alt = alt; img.className = 'pe-foto'; img.onload = () => URL.revokeObjectURL(url); $(destino).replaceChildren(img); img.scrollIntoView({ block: 'nearest' }); } catch (err) { toast(err.message); }
   }
   const irDia = f => { if (!pp || !f || f > hoy()) return; pp.fecha = f; pintarPersona(); };
   $('ac-cuerpo').addEventListener('change', e => { if (e.target.id === 'ac-fecha') irDia(e.target.value); });
@@ -193,6 +206,7 @@ const Asistencia = (() => {
     const d = b.dataset;
     if (d.acDia) irDia((() => { const x = new Date(pp.fecha + 'T12:00:00Z'); x.setUTCDate(x.getUTCDate() + Number(d.acDia)); return x.toISOString().slice(0, 10); })());
     else if (d.acIr) irDia(d.acIr);
+    else if (d.acEvidencia) verFoto('/asistencia/checadas/' + Number(d.acEvidencia) + '/foto', 'Evidencia: foto de la checada', 'ac-foto-extra');
     else if (d.acFoto) verFoto('/asistencia/checadas/' + Number(d.acFoto) + '/foto', 'Foto de la checada');
     else if (d.acIntentoFoto) verFoto('/asistencia/intentos/' + Number(d.acIntentoFoto) + '/foto', 'Foto del intento fallido');
     else if (d.acAceptar) { const m = await pedirMotivo('Aceptar la checada', 'Quedará como válida y contará para la nómina. Queda en la bitácora con tu nombre.'); if (m) accion(() => pedir('/checadas/' + Number(d.acAceptar) + '/aceptar', { method: 'POST', body: JSON.stringify({ motivo: m }) }), 'Checada aceptada'); }
