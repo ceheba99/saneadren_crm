@@ -325,7 +325,7 @@ module.exports = function checador(app, db, h) {
   const PAPELES = { responsable: 'Responsable', operador: 'Operador', ayudante: 'Ayudante' };
   // Descripción del trabajo (partidas, sin cantidades ni precios). El nombre del servicio no se repite si ya es el de la orden.
   const textoServicio = (json, servicio) => { try { const l = JSON.parse(json || '[]'); return Array.isArray(l) ? l.map(x => [x?.servicio && x.servicio !== servicio ? x.servicio : null, x?.leyenda].filter(Boolean).join(': ')).filter(Boolean).join(' · ').slice(0, 400) : ''; } catch { return ''; } };
-  function serviciosDe(personaId) {
+  function serviciosDe(personaId, dispositivoId = null) {
     const p = db.prepare('SELECT id, puesto, sucursal_id, usuario_id FROM main.personal WHERE id = ?').get(personaId);
     if (!p) return [];
     const hoy = ahoraMexico().fecha, hasta = (() => { const d = new Date(hoy + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() + 6); return d.toISOString().slice(0, 10); })();
@@ -339,14 +339,72 @@ module.exports = function checador(app, db, h) {
       ORDER BY l.fecha_servicio, COALESCE(l.hora_servicio, '99:99'), l.id LIMIT 40`).all(p.id, hoy, hasta, hoy, p.id, p.usuario_id ?? -1, supervisor ? 1 : 0, p.sucursal_id ?? -1);
     const equipo = db.prepare('SELECT pe.nombre, op.papel FROM main.orden_personal op JOIN main.personal pe ON pe.id = op.personal_id WHERE op.lead_id = ? ORDER BY CASE op.papel WHEN \'responsable\' THEN 0 WHEN \'operador\' THEN 1 ELSE 2 END, pe.nombre');
     const folioLead = require('./sucursales').folioLead;
-    return filas.map(l => ({ folio: folioLead(l), fecha: l.fecha_servicio, hora: l.hora_servicio || null, cliente: l.cliente || '', direccion: l.direccion || '', servicio: l.servicio || '',
+    const factura = db.prepare("SELECT 1 FROM main.facturas WHERE lead_id = ? AND estatus = 'timbrada' AND pdf_path IS NOT NULL LIMIT 1");
+    return filas.map(l => ({ folio: folioLead(l), ...(dispositivoId ? { imprimir: permisoDocumento(l.id, p.id, dispositivoId), con_factura: !!factura.get(l.id) } : {}), fecha: l.fecha_servicio, hora: l.hora_servicio || null, cliente: l.cliente || '', direccion: l.direccion || '', servicio: l.servicio || '',
       descripcion: textoServicio(l.partidas_json, l.servicio), unidad: l.equipo || '', papel: PAPELES[l.papel] || (l.papel ? l.papel : supervisor ? 'Supervisor' : 'Técnico'),
       equipo: equipo.all(l.id).map(x => `${x.nombre} (${PAPELES[x.papel] || x.papel})`) }));
   }
+  // ---------- Imprimir la orden de servicio y su factura (2026-11-11, Dirección: «sí tiene que imprimir la orden de
+  // servicio y factura con precio») ----------
+  // Cada servicio de «Mis servicios» trae un permiso de un solo dispositivo que vale 15 min: solo quien está asignado
+  // (o el supervisor de la sucursal) y solo después de identificarse. Cada impresión queda en la bitácora.
+  const permisosDoc = new Map(), PERMISO_DOC_MS = 15 * 60 * 1000;
+  setInterval(() => { const t = Date.now(); for (const [k, v] of permisosDoc) if (v.expira <= t) permisosDoc.delete(k); }, 60 * 1000).unref();
+  function permisoDocumento(leadId, personaId, dispositivoId) {
+    const t = crypto.randomBytes(18).toString('base64url');
+    permisosDoc.set(t, { leadId, personaId, dispositivoId, expira: Date.now() + PERMISO_DOC_MS });
+    return t;
+  }
+  const permisoValido = (req, res) => {
+    const x = permisosDoc.get(String(req.body?.permiso || ''));
+    if (!x || x.expira <= Date.now() || x.dispositivoId !== req.kiosco.id) { res.status(401).json({ error: 'Se acabó el tiempo. Vuelve a identificarte para imprimir.' }); return null; }
+    const persona = db.prepare('SELECT id, nombre, activo FROM main.personal WHERE id = ?').get(x.personaId);
+    if (!persona?.activo) { res.status(401).json({ error: 'Ya no estás activo en el reloj checador' }); return null; }
+    return { ...x, persona };
+  };
+  const dondeImprime = req => (req.persona ? 'desde su celular' : `en el kiosco «${req.kiosco.nombre}»`);
+  // Los datos de la orden para dibujar el PDF en la tableta (public/orden-servicio-pdf.js), igual que en el CRM.
+  function datosOrden(req, leadId) {
+    const l = db.prepare(`SELECT l.*, c.nombre AS c_nombre, c.empresa_contacto AS c_empresa FROM main.leads l LEFT JOIN main.clientes c ON c.id = l.cliente_id WHERE l.id = ? AND l.estatus = 'ganado'`).get(leadId);
+    if (!l) return null;
+    const Importes = require('../public/importes.js'), suc = require('./sucursales');
+    let items = []; try { items = JSON.parse(l.partidas_json || '[]').filter(x => x && (x.servicio || x.importe || x.leyenda)); } catch { items = []; }
+    const modo = l.iva_modo || null, tasa = l.iva_tasa ?? null, r = Importes.calcular(items, modo, tasa);
+    let e = db.prepare('SELECT token FROM main.encuestas WHERE lead_id = ?').get(l.id);
+    if (!e) { db.prepare('INSERT OR IGNORE INTO main.encuestas (lead_id, token) VALUES (?, ?)').run(l.id, crypto.randomBytes(16).toString('base64url')); e = db.prepare('SELECT token FROM main.encuestas WHERE lead_id = ?').get(l.id); }
+    const base = process.env.APP_URL ? process.env.APP_URL.replace(/\/+$/, '') : (req.get('x-forwarded-proto') || req.protocol) + '://' + req.get('host');
+    const equipo = db.prepare('SELECT p.nombre FROM main.orden_personal op JOIN main.personal p ON p.id = op.personal_id WHERE op.lead_id = ? ORDER BY op.papel = \'responsable\' DESC, p.nombre').all(l.id).map(x => x.nombre);
+    return {
+      leadId: l.id, folio: suc.folioLead(l), folioCotizacion: l.origen === 'directo' ? '' : suc.folioLead({ ...l, estatus: 'abierto' }),
+      fechaServicio: l.fecha_servicio ? l.fecha_servicio.split('-').reverse().join('/') : 'Por confirmar',
+      cliente: { nombre: l.nombre || l.c_nombre || 'Cliente', empresa: l.empresa_contacto || l.c_empresa || '', telefono: l.telefono || '', direccion: l.direccion || '' },
+      equipo: l.equipo || '', operador: [...equipo, l.operador].filter(Boolean).join(', '), proyecto: l.proyecto || '', observaciones: l.observaciones || '', items,
+      modo, total: r.total_cent / 100, totalLetras: Importes.enLetras(r.total_cent), totales: Importes.filasTotales(r, modo, tasa), leyendaIva: Importes.leyenda(modo, tasa),
+      encabezadoImporte: Importes.encabezadoImporte(modo) + ' (MXN)', conCantidad: items.some(i => Importes.cantidadDe(i) !== 1),
+      encuesta: e ? base + '/e/' + e.token : null,
+    };
+  }
+  const dirFacturas = path.join(process.env.DB_PATH ? path.dirname(path.resolve(process.env.DB_PATH)) : path.join(__dirname, '..'), 'archivos');
+  const imprimirOrden = (req, res) => {
+    const x = permisoValido(req, res); if (!x) return;
+    const d = datosOrden(req, x.leadId);
+    if (!d) return res.status(404).json({ error: 'La orden ya no está disponible' });
+    audit(null, x.persona.id, 'imprimió', `${x.persona.nombre}: imprimió la orden de servicio ${d.folio} ${dondeImprime(req)}`);
+    res.json(d);
+  };
+  const imprimirFactura = (req, res) => {
+    const x = permisoValido(req, res); if (!x) return;
+    const f = db.prepare("SELECT id, serie, folio, entorno, pdf_path FROM main.facturas WHERE lead_id = ? AND estatus = 'timbrada' AND pdf_path IS NOT NULL ORDER BY id DESC LIMIT 1").get(x.leadId);
+    const ruta = f ? path.resolve(dirFacturas, f.pdf_path) : null;
+    if (!ruta || !ruta.startsWith(path.resolve(dirFacturas) + path.sep) || !fs.existsSync(ruta)) return res.status(404).json({ error: 'Esta orden no tiene factura guardada. Pídela a la oficina.' });
+    const nombre = `factura-${String(f.serie || '').replace(/[^A-Za-z0-9]/g, '')}${String(f.folio || f.id).replace(/[^A-Za-z0-9]/g, '')}${f.entorno === 'prod' ? '' : '-PRUEBA'}.pdf`;
+    audit(null, x.persona.id, 'imprimió', `${x.persona.nombre}: imprimió la factura ${f.serie || ''}${f.folio || f.id} ${dondeImprime(req)}`);
+    res.set({ 'Content-Type': 'application/pdf', 'Content-Disposition': `attachment; filename="${nombre}"`, 'Cache-Control': 'private, no-store' }).send(fs.readFileSync(ruta));
+  };
   const paraChecar = (req, p) => {
     const { fecha } = ahoraMexico(), u = ultimaDe(p.id, fecha);
     // biometria: la tableta debe tomar su cara con la prueba de vida y mandarla (biometria.js).
-    return { ticket: nuevoTicket('checar', p, req.kiosco.id), nombre: primerNombre(p.nombre), sugerido: SIGUIENTE[u?.tipo || ''], ultima: u ? { tipo: TIPOS[u.tipo], hora: u.hora.slice(0, 5) } : null, tipos: TIPOS, biometria: !!app.locals.biometria?.activo(p.id), servicios: serviciosDe(p.id) };
+    return { ticket: nuevoTicket('checar', p, req.kiosco.id), nombre: primerNombre(p.nombre), sugerido: SIGUIENTE[u?.tipo || ''], ultima: u ? { tipo: TIPOS[u.tipo], hora: u.hora.slice(0, 5) } : null, tipos: TIPOS, biometria: !!app.locals.biometria?.activo(p.id), servicios: serviciosDe(p.id, req.kiosco.id) };
   };
 
   // La pantalla del kiosco: la única página del sistema con permiso de cámara (seguridad.js la bloquea en las demás).
@@ -506,10 +564,10 @@ module.exports = function checador(app, db, h) {
     // Doble toque: la misma checada de la misma persona en menos de 2 minutos no se repite.
     const previa = db.prepare("SELECT id, hora FROM main.checadas WHERE personal_id = ? AND tipo = ? AND estado <> 'anulada' AND momento_utc >= ? ORDER BY id DESC LIMIT 1")
       .get(p.id, tipo, new Date(Date.now() - DUPLICADO_MS).toISOString());
-    if (previa) return res.json({ id: previa.id, nombre: primerNombre(p.nombre), tipo: TIPOS[tipo], hora: previa.hora.slice(0, 5), repetida: true, servicios: serviciosDe(p.id) });
+    if (previa) return res.json({ id: previa.id, nombre: primerNombre(p.nombre), tipo: TIPOS[tipo], hora: previa.hora.slice(0, 5), repetida: true, servicios: serviciosDe(p.id, req.kiosco.id) });
     const foto = fotoDe(req.body?.foto), bio = app.locals.biometria?.evaluar(p.id, req.body?.rostro) || null;
     const id = guardarChecada({ p, d, tipo, a, foto, ip: req.ipCliente || null, bio });
-    res.status(201).json({ id, nombre: primerNombre(p.nombre), tipo: TIPOS[tipo], hora: a.hora.slice(0, 5), ...(foto ? {} : { sin_foto: true }), ...(bio?.nota ? { por_revisar: bio.nota } : {}), servicios: serviciosDe(p.id) });
+    res.status(201).json({ id, nombre: primerNombre(p.nombre), tipo: TIPOS[tipo], hora: a.hora.slice(0, 5), ...(foto ? {} : { sin_foto: true }), ...(bio?.nota ? { por_revisar: bio.nota } : {}), servicios: serviciosDe(p.id, req.kiosco.id) });
   }));
   // Checada que el kiosco guardó SIN CONEXIÓN y sube al volver internet (una por petición). El PIN se revisa aquí, con
   // los mismos topes. La hora = ahora del servidor − el tiempo que pasó según el kiosco («edad»): con su reloj interno
@@ -599,18 +657,22 @@ module.exports = function checador(app, db, h) {
     if (p.pin_temporal) return res.status(409).json({ error: 'Primero elige tu PIN', codigo: 'PIN_TEMPORAL' });
     const previa = db.prepare("SELECT id, hora FROM main.checadas WHERE personal_id = ? AND tipo = ? AND estado <> 'anulada' AND momento_utc >= ? ORDER BY id DESC LIMIT 1")
       .get(p.id, tipo, new Date(Date.now() - DUPLICADO_MS).toISOString());
-    if (previa) return res.json({ id: previa.id, nombre: primerNombre(p.nombre), tipo: TIPOS[tipo], hora: previa.hora.slice(0, 5), repetida: true, servicios: serviciosDe(p.id) });
+    if (previa) return res.json({ id: previa.id, nombre: primerNombre(p.nombre), tipo: TIPOS[tipo], hora: previa.hora.slice(0, 5), repetida: true, servicios: serviciosDe(p.id, req.kiosco.id) });
     const foto = fotoDe(b.foto), ubicacion = ubicacionDe(b), a = ahoraMexico();
     const id = guardarChecada({ p, d, tipo, a, foto, origen: 'celular', ubicacion, ip: req.ipCliente || null });
     const est = db.prepare('SELECT estado, observaciones FROM main.checadas WHERE id = ?').get(id);
-    res.status(201).json({ id, nombre: primerNombre(p.nombre), tipo: TIPOS[tipo], hora: a.hora.slice(0, 5), ...(est.estado === 'por_revisar' ? { por_revisar: est.observaciones } : {}), servicios: serviciosDe(p.id) });
+    res.status(201).json({ id, nombre: primerNombre(p.nombre), tipo: TIPOS[tipo], hora: a.hora.slice(0, 5), ...(est.estado === 'por_revisar' ? { por_revisar: est.observaciones } : {}), servicios: serviciosDe(p.id, req.kiosco.id) });
   }));
+  app.post('/api/publico/kiosco/orden', kiosco, h(imprimirOrden));
+  app.post('/api/publico/kiosco/factura', kiosco, h(imprimirFactura));
+  app.post('/api/publico/celular/orden', celular, h(imprimirOrden));
+  app.post('/api/publico/celular/factura', celular, h(imprimirFactura));
   // Ver sus servicios desde el celular, sin checar: con su PIN (cuenta como intento si está mal, igual que al checar).
   app.post('/api/publico/celular/servicios', celular, h((req, res) => {
     const v = verificar(req.kiosco, req.persona.codigo_checador, String(req.body?.pin ?? ''));
     if (!v.p) return res.status(v.status).json({ error: v.error });
     if (v.p.pin_temporal) return res.status(409).json({ error: 'Primero elige tu PIN', codigo: 'PIN_TEMPORAL' });
-    res.json({ servicios: serviciosDe(v.p.id) });
+    res.json({ servicios: serviciosDe(v.p.id, req.kiosco.id) });
   }));
 
   // ---------- Administración (con sesión) ----------

@@ -312,7 +312,8 @@ formularios();
     const url = concreta(r), cuerpo = r.metodo === 'GET' ? undefined : {};
     for (const [quien, t] of [['sin sesión', null], ['sesión falsa', crypto.randomBytes(32).toString('hex')]]) {
       const [st] = await pedir(r.metodo, url, t, cuerpo); llamadas++;
-      revisa(PUBLICAS.test(r.ruta) || st === 401, 'sesión', `${quien}: ${r.metodo} ${r.ruta} responde ${st} (debe ser 401)`);
+      // Las rutas del kiosco y del celular cuentan los tokens inválidos por conexión: tras varios, responden 429 (también es un «no»).
+      revisa(PUBLICAS.test(r.ruta) || st === 401 || (st === 429 && /^\/api\/publico\/(kiosco|celular)\//.test(r.ruta)), 'sesión', `${quien}: ${r.metodo} ${r.ruta} responde ${st} (debe ser 401)`);
     }
   }
   // C2. Consultas: cada rol en cada ruta GET (nunca 500); CDMX no abre registros de Querétaro.
