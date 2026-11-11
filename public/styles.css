@@ -2278,6 +2278,8 @@ tr.logs-aviso td{background:#fffaf0;}
 #vista-contabilidad .ct-tabla td.ct-num{text-align:right;font-variant-numeric:tabular-nums;}
 .ct-tabla tfoot td{font-weight:700;background:#fff7e0;border-top:2px solid var(--amarillo);}
 .ct-tabla tbody tr:nth-child(even) td{background:#fafbfc;}
+.ct-saldo{display:inline-flex;align-items:center;gap:6px;margin-left:6px;font-weight:600;}
+.ct-saldo input{width:140px;}
 /* Tiempo extra a detalle en la ventana de checadas (2026-11-11). */
 .ac-extra{margin:12px 0;padding:8px 12px;border:1px solid #dbe1e7;border-radius:8px;background:#f8fafc;}
 .ac-extra summary{cursor:pointer;}
