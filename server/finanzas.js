@@ -1669,6 +1669,7 @@ module.exports.aCentavos = aCentavos;
 module.exports.migrar = migrar;
 module.exports.folioOS = folioOS;
 module.exports.CATEGORIAS_NO_GASTO = CATEGORIAS_NO_GASTO;
+module.exports.CATEGORIAS = CATEGORIAS; // nombres de las categorías (se llenan del catálogo al arrancar)
 module.exports.ivaDeGasto = ivaDeGasto;
 module.exports.COMPROBANTES = COMPROBANTES;
 module.exports.describirCuenta = describirCuenta;

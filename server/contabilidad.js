@@ -15,7 +15,7 @@ module.exports = function contabilidad(app, db, h) {
   const P = app.locals.permisos;
   const puede = req => P.direccion(req) || P.puede(req, 'contabilidad.ver');
   const negar = res => res.status(403).json({ error: 'La contabilidad del mes la ven Dirección y quien tenga «Contabilidad del mes»' });
-  const { ivaDeGasto } = require('./finanzas');
+  const { ivaDeGasto, CATEGORIAS } = require('./finanzas');
   const { estadoConfig } = require('./facturacion-config');
   const entorno = () => (process.env.MODO_DEMO === '1' ? 'demo' : estadoConfig(process.env).entorno);
   const base = process.env.DB_PATH ? path.dirname(path.resolve(process.env.DB_PATH)) : path.join(__dirname, '..');
@@ -34,7 +34,11 @@ module.exports = function contabilidad(app, db, h) {
     const cobros = db.prepare(`SELECT k.*, l.created_at AS lead_created_at, l.iva_cent, l.valor, l.factura_folio, COALESCE(c.empresa_contacto, c.nombre) AS cliente, l.sucursal_id
       FROM main.cobros k JOIN main.leads l ON l.id = k.lead_id LEFT JOIN main.clientes c ON c.id = l.cliente_id
       WHERE k.cancelado = 0 AND k.tipo <> 'ajuste' AND k.fecha BETWEEN ? AND ?${suc('l.sucursal_id')} ORDER BY k.fecha, k.id`).all(d, hst);
-    const gastos = db.prepare(`SELECT x.*, p.nombre AS proveedor, p.rfc AS proveedor_rfc FROM main.cuentas_por_pagar x JOIN main.proveedores p ON p.id = x.proveedor_id
+    // Con lo pagado de cada gasto (como en el Excel CXP: PAGADO, PENDIENTE, STATUS, FECHA y VÍA del último pago) y quién lo capturó.
+    const gastos = db.prepare(`SELECT x.*, p.nombre AS proveedor, p.rfc AS proveedor_rfc, u.nombre AS capturo,
+        (SELECT COALESCE(SUM(g.monto_cent), 0) FROM main.pagos_proveedor g WHERE g.cxp_id = x.id AND g.cancelado = 0) AS pagado_cent,
+        (SELECT g.fecha || '|' || g.metodo FROM main.pagos_proveedor g WHERE g.cxp_id = x.id AND g.cancelado = 0 ORDER BY g.fecha DESC, g.id DESC LIMIT 1) AS ultimo_pago
+      FROM main.cuentas_por_pagar x JOIN main.proveedores p ON p.id = x.proveedor_id LEFT JOIN main.usuarios u ON u.id = x.registrado_por
       WHERE x.cancelada = 0 AND COALESCE(x.tipo_comprobante, '') <> 'informativo' AND x.fecha_documento BETWEEN ? AND ?${suc('x.sucursal_id')} ORDER BY x.fecha_documento, x.id`).all(d, hst)
       .map(x => ({ ...x, ...(() => { const i = ivaDeGasto(x); return { iva: i.iva_cent, estimado: i.estimado }; })() }));
     const xmls = new Map(tabla('cfdi_gastos') ? db.prepare('SELECT cxp_id, uuid, archivo FROM main.cfdi_gastos WHERE eliminado = 0').all().map(r => [r.cxp_id, r]) : []);
@@ -98,9 +102,12 @@ module.exports = function contabilidad(app, db, h) {
         subtotal: pesos(f.subtotal_cent), iva: pesos(f.iva_cent), total: pesos(f.total_cent), estatus: f.estatus, cancelada: f.cancelada_at ? String(f.cancelada_at).slice(0, 10) : '', sucursal: claveSuc(f.sucursal_id) })),
       cobros: cobros.map(k => ({ fecha: k.fecha, orden: folioOS(k.lead_id, k.lead_created_at), cliente: k.cliente || '', factura: k.factura_folio || '', monto: pesos(k.monto_cent), metodo: k.metodo, referencia: k.referencia || '',
         estado: k.confirmado ? 'Confirmado' : 'Por confirmar', sucursal: claveSuc(k.sucursal_id) })),
-      gastos: gastos.map(x => ({ fecha: x.fecha_documento, proveedor: x.proveedor, rfc: x.proveedor_rfc || '', folio: x.factura_folio || '', uuid: xmls.get(x.id)?.uuid || '', comprobante: x.tipo_comprobante || '', concepto: x.concepto, categoria: x.categoria,
-        subtotal: pesos(x.total_cent - x.iva), iva: pesos(x.iva), iva_origen: x.estimado ? 'Estimado 16 %' : x.iva_origen === 'xml' ? 'XML' : x.iva_cent != null ? 'Capturado' : '', total: pesos(x.total_cent),
-        xml: xmls.has(x.id) ? 'Sí' : (x.tipo_comprobante === 'factura' || x.factura_folio ? 'Falta' : ''), beneficiario: x.beneficiario || '', sucursal: claveSuc(x.sucursal_id) })),
+      gastos: gastos.map(x => { const [fechaPago, via] = String(x.ultimo_pago || '|').split('|'), pend = x.total_cent - x.pagado_cent;
+        return { vence: x.fecha_vencimiento, fecha: x.fecha_documento, proveedor: x.proveedor, beneficiario: x.beneficiario || x.proveedor, rfc: x.proveedor_rfc || '', concepto: x.concepto, capturo: x.capturo || '',
+          folio: x.factura_folio || '', uuid: xmls.get(x.id)?.uuid || '', comprobante: x.tipo_comprobante || '', via: via || '', subtotal: pesos(x.total_cent - x.iva), iva: pesos(x.iva),
+          iva_origen: x.estimado ? 'Estimado 16 %' : x.iva_origen === 'xml' ? 'XML' : x.iva_cent != null ? 'Capturado' : '', total: pesos(x.total_cent), pagado: pesos(x.pagado_cent), pendiente: pesos(pend),
+          dias_credito: x.dias_credito ?? '', categoria: CATEGORIAS[x.categoria] || x.categoria, status: pend <= 0 ? 'PAGADO' : x.pagado_cent > 0 ? 'PARCIAL' : 'PENDIENTE', fecha_pago: fechaPago || '',
+          xml: xmls.has(x.id) ? 'Sí' : (x.tipo_comprobante === 'factura' || x.factura_folio ? 'Falta' : ''), observaciones: x.notas || '', sucursal: claveSuc(x.sucursal_id) }; }),
       pagos: pagos.map(g => ({ fecha: g.fecha, proveedor: g.proveedor, concepto: g.concepto, folio: g.factura_folio || '', monto: pesos(g.monto_cent), metodo: g.metodo, referencia: g.referencia || '', cuenta: g.cuenta_origen || '' })),
     });
   }));
