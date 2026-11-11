@@ -2284,3 +2284,11 @@ tr.logs-aviso td{background:#fffaf0;}
 .ac-extra{margin:12px 0;padding:8px 12px;border:1px solid #dbe1e7;border-radius:8px;background:#f8fafc;}
 .ac-extra summary{cursor:pointer;}
 .ac-extra tr.pe-baja td{color:#6b7280;}
+/* Ventana de checadas (2026-11-11, Dirección: el contenido tocaba los bordes y el domingo se cortaba). */
+.ac-modal{max-width:1100px;width:calc(100vw - 32px);}
+#ac-cuerpo{padding:16px 24px 20px;}
+#ac-cuerpo > .filtros:first-child{margin-top:0;}
+.ac-semana{grid-template-columns:repeat(auto-fit,minmax(118px,1fr));}
+.ac-checadas td,.ac-checadas th{white-space:nowrap;}
+.ac-checadas td:nth-child(6){white-space:normal;}
+@media (max-width:640px){#ac-cuerpo{padding:12px 14px 16px;}.ac-semana{grid-template-columns:repeat(auto-fit,minmax(96px,1fr));}}

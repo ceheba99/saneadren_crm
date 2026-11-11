@@ -43,7 +43,10 @@ const fechaOk = v => { if (!/^\d{4}-\d{2}-\d{2}$/.test(v)) return false; const d
 const idDe = v => { if (!/^\d{1,15}$/.test(String(v))) return 0; const n = Number(v); return Number.isSafeInteger(n) && n > 0 ? n : 0; };
 const texto = (v, max) => { const t = String(v ?? '').trim().replace(/\s+/g, ' '); return t ? t.slice(0, max) : null; };
 const min = h => { const [a, b] = String(h).split(':').map(Number); return a * 60 + b; };
-const hhmm = m => String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0');
+const hhmm = m => (m >= 1440 ? hhmm(m - 1440) + ' del día siguiente' : String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0'));
+// Tiempo extra que pasa de medianoche (2026-11-11): el «Fin» de la madrugada siguiente cierra el «Inicio» de la noche
+// anterior si es la PRIMERA checada de ese día y es antes de esta hora. Se cuenta en el día en que empezó.
+const MEDIANOCHE_HASTA = 12 * 60;
 const sumar = (f, n) => { const d = new Date(f + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
 const diaSemana = f => { const d = new Date(f + 'T12:00:00Z').getUTCDay(); return d === 0 ? 7 : d; };
 // Primer día de la semana que empieza en «inicio» (1 = lunes … 7 = domingo) a la que pertenece una fecha.
@@ -226,6 +229,10 @@ module.exports = function asistencia(app, db, h) {
   const semanaDe = f => semanaCon(db.prepare('SELECT desde, inicio_semana FROM main.reglas_extra ORDER BY desde, id').all(), f);
   const horas = m => (m >= 60 ? Math.floor(m / 60) + ' h' + (m % 60 ? ' ' + (m % 60) + ' min' : '') : m + ' min');
   // ---------- Cálculo de un día ----------
+  // Checadas válidas de un día y el «Inicio de tiempo extra» que quedó abierto al final (para la madrugada siguiente).
+  const validasDe = (pid, f) => db.prepare("SELECT id, tipo, hora, origen, foto_archivo IS NOT NULL AS tiene_foto, foto_borrada_at IS NOT NULL AS foto_borrada FROM main.checadas WHERE personal_id = ? AND fecha = ? AND estado = 'valida' ORDER BY momento_utc, id").all(pid, f);
+  function abiertoAlFinal(l) { let a = null; for (const c of l) { if (c.tipo === 'extra_inicia') a = c; else if (c.tipo === 'extra_termina') a = null; } return a; }
+  const cierraLaNoche = l => (l[0]?.tipo === 'extra_termina' && min(l[0].hora.slice(0, 5)) < MEDIANOCHE_HASTA ? l[0] : null);
   function calcularDia(p, fecha, hoy = ahoraMexico().fecha) {
     const hor = horarioDe(p.id, fecha), dia = hor?.dias[diaSemana(fecha)] || null, festivo = festivoDe(fecha), rg = reglaDe(fecha);
     const laboral = !!dia && !festivo;
@@ -241,6 +248,14 @@ module.exports = function asistencia(app, db, h) {
     // bloqueIds: las checadas de inicio y fin de cada bloque (su foto es la evidencia en el detalle del tiempo extra).
     const bloques = [], bloqueIds = []; let ini = null, iniId = null;
     for (const c of validas) { if (c.tipo === 'extra_inicia') { ini = m(c); iniId = c.id; } else if (c.tipo === 'extra_termina' && ini !== null) { bloques.push([ini, m(c)]); bloqueIds.push([iniId, c.id]); ini = null; } }
+    // Pasó de medianoche: el «Fin» es la primera checada del día siguiente (antes de las 12:00) y se cuenta hoy.
+    let finOtroDia = null;
+    if (ini !== null) {
+      const fin = cierraLaNoche(validasDe(p.id, sumar(fecha, 1)));
+      if (fin) { bloques.push([ini, 1440 + m(fin)]); bloqueIds.push([iniId, fin.id]); finOtroDia = { ...fin, fecha: sumar(fecha, 1) }; ini = null; }
+    }
+    // Y al revés: un «Fin» al empezar el día que cierra el tiempo extra de anoche ya se contó ayer.
+    const primera = validas[0], deAnoche = primera?.tipo === 'extra_termina' && cierraLaNoche(validas) ? abiertoAlFinal(validasDe(p.id, sumar(fecha, -1))) : null;
     const trabajado = entrada !== null && salida !== null && salida > entrada ? salida - entrada - comida : null;
     // Detalle del tiempo extra (2026-11-11, Dirección: «ver el checado de su tiempo extra más a detalle»): cada tramo
     // con su hora de inicio y fin, por qué cuenta o por qué no, la regla que se usó, el traslape y el redondeo.
@@ -291,6 +306,8 @@ module.exports = function asistencia(app, db, h) {
       r.notas.push(festivo ? 'Festivo trabajado' : 'Descanso trabajado');
     }
     piezas.sort((x, y) => x.desde.localeCompare(y.desde) || x.hasta.localeCompare(y.hasta));
+    if (deAnoche) piezas.unshift({ desde: hhmm(m(primera)), hasta: hhmm(m(primera)), min: 0, motivo: `Fin del tiempo extra que empezó ayer a las ${deAnoche.hora.slice(0, 5)}: se cuenta en el día anterior`, cuenta: false, checadas: [primera.id], ayer: true });
+    else if (primera?.tipo === 'extra_termina') piezas.unshift({ desde: hhmm(m(primera)), hasta: hhmm(m(primera)), min: 0, motivo: 'Fin de tiempo extra sin un inicio antes: no cuenta', cuenta: false, checadas: [primera.id] });
     const det = { piezas, regla: `${rg.modo === 'auto' ? 'Automático' : 'Solo botones'} · después de la salida ${rg.despues_min ? 'desde ' + rg.despues_min + ' min' : 'desde el primer minuto'} · llegar antes ${rg.antes_cuenta ? 'cuenta si son más de ' + rg.antes_min + ' min' : 'no cuenta'} · ${rg.bloque_min === 1 ? 'minuto a minuto' : 'redondeo a bloques de ' + rg.bloque_min + ' min'} · descanso/festivo ${rg.descanso_todo ? 'todo es extra' : 'solo botones'}`, sin_redondeo_min: r.extra_min, redondeo: null };
     const sumaTramos = piezas.filter(x => x.cuenta).reduce((s, x) => s + x.min, 0) - (!laboral && rg.descanso_todo && trabajado !== null ? comida : 0);
     if (sumaTramos > r.extra_min) det.traslape_min = sumaTramos - r.extra_min;
@@ -308,6 +325,7 @@ module.exports = function asistencia(app, db, h) {
     // «Inicio de tiempo extra» sin «Fin»: ese bloque no cuenta (no se inventa la hora); RH agrega el fin real con motivo.
     if (ini !== null && fecha < hoy) r.notas.push('Inició tiempo extra y no marcó el fin');
     if (ini !== null) { det.sin_fin = hhmm(ini); det.sin_fin_checada = iniId; }
+    if (finOtroDia) det.otras = [finOtroDia];
     r.extra_detalle = piezas.length || det.sin_fin ? det : null;
     const aut = db.prepare('SELECT minutos_autorizados, minutos_calculados, autorizado_por_nombre, motivo FROM main.extra_autorizaciones WHERE personal_id = ? AND fecha = ? ORDER BY id DESC LIMIT 1').get(p.id, fecha);
     r.extra_autorizado_min = aut ? Math.min(aut.minutos_autorizados, r.extra_min) : null;

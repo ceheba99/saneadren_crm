@@ -195,7 +195,7 @@
 <footer class="kiosco-pie"><div id="pendientes" role="status"></div>
 <button type="button" id="pantalla-completa">Pantalla completa</button>
 <a id="aviso-privacidad" href="/aviso-privacidad-checador.html" target="_blank" rel="noopener">Aviso de privacidad</a></footer>
-<script src="/imprimir-documentos.js?v=2"></script>
+<script src="/imprimir-documentos.js?v=3"></script>
 <script>
 (() => {
   'use strict';
@@ -770,7 +770,7 @@
   const impresora = window.ImprimirDocs?.crear('/api/publico/kiosco/', () => ({ 'X-Kiosco': registro?.token || '' }));
   function botonesImprimir(x) {
     if (!x.imprimir || !impresora) return '';
-    return impresora.botones(x.imprimir, x.con_factura, () => { reiniciarEspera(60000); });
+    return impresora.botones(x.imprimir, x.con_factura, () => { reiniciarEspera(60000); }, !!x.sinCompartir);
   }
 
   function tarjetaServicio(x) {
@@ -844,9 +844,9 @@
           return error(r.j.error || 'No se pudo', volver);
         }
         reiniciarEspera(90000);
-        pintar(el('h1', { textContent: 'Hola, ' + r.j.nombre }), el('p', { className: 'ayuda', textContent: `${o.folio} · ${o.cliente}. Toca lo que vas a imprimir: se abre «Imprimir» (o «Compartir PDF» para mandarlo a otra app).` }),
+        pintar(el('h1', { textContent: 'Hola, ' + r.j.nombre }), el('p', { className: 'ayuda', textContent: `${o.folio} · ${o.cliente}. Toca lo que vas a imprimir: se abre «Imprimir».` }),
           el('div', { className: 'servicios' }, el('div', { className: 'servicio' }, el('b', { textContent: `${o.hora ? o.hora + ' · ' : ''}${o.cliente}` }), el('small', { textContent: o.servicio }),
-            botonesImprimir({ imprimir: r.j.permiso, con_factura: r.j.con_factura }))),
+            botonesImprimir({ imprimir: r.j.permiso, con_factura: r.j.con_factura, sinCompartir: true }))),
           el('button', { type: 'button', className: 'btn', textContent: 'Volver al calendario', onclick: volver }));
       }, volver);
     }, volver);

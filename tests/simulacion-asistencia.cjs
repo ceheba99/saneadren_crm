@@ -211,6 +211,27 @@ const LUN = sumar(sumar(HOY, -7), -(dow(sumar(HOY, -7)) - 1)), D = k => sumar(LU
     'La semana del cambio se corta el martes (ningún día queda en dos semanas) y la nueva va de miércoles a martes', [sc.desde, sc.hasta, sn.desde, sn.hasta, sn.semana_texto]);
   revisa(intento('DELETE FROM reglas_extra') && intento('UPDATE reglas_extra SET despues_min = 99'), 'El historial de las reglas no se borra ni se cambia');
 
+  console.log('8b. Tiempo extra que pasa de medianoche (2026-11-11)');
+  let V = sumar(HOY, -21); while (dow(V) > 3) V = sumar(V, -1);
+  const marcaA = async (fecha, tipo, hora) => exigir(await pedir('POST', '/asistencia/checadas', T.Gema, { personal_id: ana.id, tipo, fecha, hora, motivo: 'Prueba de medianoche' }), 'checada de Ana');
+  const diaA = async f => (await pedir('GET', '/asistencia/dia?fecha=' + f, T.Gema))[1].filas.find(x => x.personal_id === ana.id);
+  // Día 1: jornada normal y a las 21:00 empieza tiempo extra; día 2: lo termina a las 02:30 y luego su jornada.
+  for (const [t, h] of [['entrada', '08:30'], ['salida', '18:00'], ['extra_inicia', '21:00']]) await marcaA(V, t, h);
+  for (const [t, h] of [['extra_termina', '02:30'], ['entrada', '09:00'], ['salida', '18:00']]) await marcaA(sumar(V, 1), t, h);
+  const n1 = await diaA(V), n2 = await diaA(sumar(V, 1)), tr = (n1.extra_detalle?.piezas || []).find(z => z.cuenta);
+  revisa(n1.extra_min === 330 && !n1.notas.includes('Inició tiempo extra y no marcó el fin') && tr?.desde === '21:00' && tr.hasta === '02:30 del día siguiente' && tr.checadas.length === 2 && n1.extra_detalle.otras?.[0]?.fecha === sumar(V, 1),
+    'De 21:00 a 02:30 del día siguiente son 5:30 de extra, en el día en que empezó, con las dos checadas de evidencia', n1);
+  revisa(n2.extra_min === 0 && n2.extra_detalle?.piezas?.some(z => z.ayer && !z.cuenta), 'El día siguiente no lo cuenta otra vez y dice que se contó el día anterior', n2);
+  // Si al otro día lo primero es la entrada, no se une (no se inventa la hora): sigue el aviso de que no marcó el fin.
+  const W = sumar(V, 7);
+  await marcaA(W, 'extra_inicia', '22:00'); await marcaA(sumar(W, 1), 'entrada', '08:30'); await marcaA(sumar(W, 1), 'extra_termina', '09:00');
+  const w1 = await diaA(W);
+  revisa(w1.extra_min === 0 && w1.notas.includes('Inició tiempo extra y no marcó el fin'), 'Si al otro día lo primero que marca es la entrada, no se une', w1);
+  // Un «Fin» después de las 12:00 del día siguiente tampoco se une.
+  const Y = sumar(V, 14);
+  await marcaA(Y, 'extra_inicia', '23:00'); await marcaA(sumar(Y, 1), 'extra_termina', '13:00');
+  revisa((await diaA(Y)).notas.includes('Inició tiempo extra y no marcó el fin'), 'Un «Fin» después de las 12:00 del día siguiente no se une');
+
   console.log('9. Solo «Descargar la nómina» (2026-11-11)');
   const rolN = exigir(await pedir('POST', '/roles', A, { nombre: 'Solo nómina' }), 'crear rol');
   exigir(await pedir('PUT', '/roles/' + rolN.clave + '/permisos', A, { permisos: ['asistencia.nomina'], alcances: {} }), 'permisos del rol');
