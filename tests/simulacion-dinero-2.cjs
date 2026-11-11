@@ -84,7 +84,7 @@ const HOY = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Mexico_City' }
   const o3 = j;
   [s, j] = await pedir('POST', '/leads/' + o3.id + '/cobros', V, { monto: 2000, metodo: 'efectivo' });
   const pv = j.id;
-  revisa(s === 201 && j.cuenta.saldo === 0, 'un pago por confirmar ya descuenta el saldo', j.cuenta);
+  revisa(s === 201 && j.cuenta.saldo === 2000 && j.cuenta.sin_reportar === 0 && j.cuenta.estado === 'por_confirmar', 'un pago por confirmar NO cuenta como pagada: queda «por confirmar» (H06)', j.cuenta);
   let cc = (await cartera()).find(c => c.lead_id === o3.id);
   revisa(cc && cc.por_confirmar === 1, 'la cuenta marca "pago por confirmar"', cc && cc.por_confirmar);
   [s, j] = await pedir('POST', '/finanzas/cobros/' + pv + '/confirmar', V); revisa(s === 200 || s === 403, 'confirmar pago (según permisos)', s);

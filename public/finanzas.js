@@ -44,9 +44,11 @@ const Finanzas = (() => {
   // Estado de la cuenta en palabras claras: si el servicio ya se hizo y qué falta (realizarlo, marcarlo o cobrarlo).
   function textoEstado(c) {
     const dias = n => Number(n) === 1 ? '1 día' : Number(n) + ' días';
-    const falta = c.estado === 'parcial' ? `pagó una parte, falta ${formatoMoneda(c.saldo)}` : 'pendiente de cobrar';
+    const falta = c.estado === 'parcial' ? `pagó una parte, falta ${formatoMoneda(c.sin_reportar ?? c.saldo)}` : 'pendiente de cobrar';
     if (c.ejecucion === 'no_realizado') return c.a_favor > 0 ? ['a-favor', `No realizado · ${formatoMoneda(c.a_favor)} a favor del cliente (devolver o aplicar)`] : ['programada', 'No realizado · no se cobra'];
     if (c.estado === 'pagada') return ['pagada', 'Cobrado completo ✓'];
+    // El cliente ya reportó todo, pero falta confirmar que llegó el dinero: todavía no es «pagada» (auditoría H06).
+    if (c.estado === 'por_confirmar') return ['por-confirmar', `Pagó todo · ${formatoMoneda(c.cobrado_por_confirmar)} por confirmar que llegó`];
     if (c.programada) return c.por_concluir ? ['parcial', 'Por concluir · se cobra cuando se marque realizado'] : ['programada', 'Por realizar · aún no se cobra'];
     const servicio = c.ejecucion === 'realizado' ? 'Servicio realizado' : c.sin_marcar ? 'Facturado, sin marcar realizado' : 'Servicio';
     if (c.vencida) return ['vencida', `${servicio} · cobro vencido hace ${dias(c.dias_vencido)}`];
@@ -892,7 +894,7 @@ const Finanzas = (() => {
     // Quien no mueve dinero solo registra costos de una orden (las compras van por Solicitud de compra): ahí es obligatoria.
     document.querySelector('label[for="gasto-orden"]').textContent = Permisos.puede('dinero.mover') ? 'Orden de servicio relacionada (opcional)' : 'Orden de servicio relacionada (obligatorio)';
     ['gasto-concepto', 'gasto-total', 'gasto-folio', 'gasto-orden', 'gasto-equipo', 'gasto-referencia'].forEach(id => { $(id).value = prellenado[id] || ''; });
-    $('gasto-fecha').value = hoy(); $('gasto-vence').value = ''; $('gasto-fecha-pago').value = hoy(); $('gasto-pagado').checked = false; $('gasto-metodo-wrap').hidden = true;
+    $('gasto-fecha').value = hoy(); $('gasto-vence').value = ''; $('gasto-fecha-pago').value = hoy(); $('gasto-pagado').checked = false; $('gasto-metodo-wrap').hidden = true; etiquetaPagado();
     $('gasto-credito').value = ''; $('gasto-credito').disabled = false; $('gasto-credito-ayuda').textContent = '';
     $('gasto-comprobante').innerHTML = '<option value="">Selecciona…</option>' + COMPROBANTES.map(([v, t]) => '<option value="' + v + '">' + esc(t) + '</option>').join('');
     $('gasto-sat').value = ''; $('gasto-sat-wrap').hidden = true; $('gasto-beneficiario').value = '';
@@ -984,6 +986,8 @@ const Finanzas = (() => {
     const p = PROVEEDORES.find(x => x.id === Number($('gasto-proveedor').value)); if (p) $('gasto-categoria').value = p.categoria; recalcularVence();
   });
   $('gasto-fecha').addEventListener('change', recalcularVence);
+  // Quien no paga a proveedores marca que lo pagó él: queda como reembolso para él (auditoría H01).
+  const etiquetaPagado = () => { const l = $('gasto-pagado')?.parentNode; if (l?.lastChild) l.lastChild.textContent = Permisos.puede('dinero.mover') ? ' Ya lo pagué (gasto de contado)' : ' Lo pagué yo (de mi bolsa o del efectivo que traigo): se me reembolsa'; };
   $('gasto-pagado').addEventListener('change', () => {
     const pagado = $('gasto-pagado').checked;
     $('gasto-metodo-wrap').hidden = !pagado;
@@ -1601,7 +1605,7 @@ const Finanzas = (() => {
         <div class="campo"><label>Concepto del costo (obligatorio)</label><input class="rg-concepto" maxlength="200" value="${esc(g.concepto || '')}" placeholder="Ej. Diésel, casetas, renta de pipa 20 m³, disposición de lodos" required></div>
         <div class="campo"><label>Monto con IVA (MXN)</label><input class="rg-total" type="text" inputmode="decimal" autocomplete="off" value="${esc(g.total || '')}"></div>
       </div>
-      <label class="diseno-campo-checkbox"><input type="checkbox" class="rg-pagado"> Ya se pagó</label>
+      <label class="diseno-campo-checkbox"><input type="checkbox" class="rg-pagado"> ${Permisos.puede('dinero.mover') ? 'Ya se pagó' : 'Lo pagué yo: se me reembolsa'}</label>
       <div class="form-grid-2 rg-pago" hidden>
         <div class="campo"><label>¿Cómo se pagó?</label><select class="rg-metodo">${opcionesMetodo()}</select></div>
         <div class="campo"><label>Fecha de pago</label><input class="rg-fecha" type="date"></div>

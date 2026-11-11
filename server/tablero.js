@@ -81,7 +81,9 @@ module.exports = function tablero(app, db, h, finanzas) {
     const gastoTotal = deGasto.reduce((t, x) => t + x.neto, 0), gastoConIva = deGasto.reduce((t, x) => t + x.total_cent, 0);
     const estimados = deGasto.filter(x => x.estimado);
     const noGasto = delPeriodo.filter(x => CATEGORIAS_NO_GASTO.has(x.categoria)).reduce((t, x) => t + x.neto, 0);
-    const cobrado = uno("SELECT COALESCE(SUM(monto_cent), 0) t, COUNT(*) n FROM cobros WHERE cancelado = 0 AND tipo <> 'ajuste' AND fecha BETWEEN ? AND ?", d, h);
+    // Cobrado = dinero CONFIRMADO; lo reportado sin confirmar va aparte (auditoría H06, Dirección 2026-11-11).
+    const cobrado = uno("SELECT COALESCE(SUM(monto_cent), 0) t, COUNT(*) n FROM cobros WHERE cancelado = 0 AND confirmado = 1 AND tipo <> 'ajuste' AND fecha BETWEEN ? AND ?", d, h);
+    const porConfirmar = uno("SELECT COALESCE(SUM(monto_cent), 0) t, COUNT(*) n FROM cobros WHERE cancelado = 0 AND confirmado = 0 AND tipo <> 'ajuste' AND fecha BETWEEN ? AND ?", d, h);
     const descuentos = uno("SELECT COALESCE(SUM(monto_cent), 0) t FROM cobros WHERE cancelado = 0 AND tipo = 'ajuste' AND fecha BETWEEN ? AND ?", d, h).t;
     const pagado = uno('SELECT COALESCE(SUM(monto_cent), 0) t FROM pagos_proveedor WHERE cancelado = 0 AND fecha BETWEEN ? AND ?', d, h).t;
     const cot = uno(`SELECT COUNT(*) n, COALESCE(SUM(valor), 0) v,
@@ -102,7 +104,7 @@ module.exports = function tablero(app, db, h, finanzas) {
         costo_directo: pesos(costoDirecto), margen_directo: pesos(ventaSub - costoDirecto),
         gasto: pesos(gastoTotal), gasto_con_iva: pesos(gastoConIva), iva_gastos: pesos(gastoConIva - gastoTotal), iva_estimado: pesos(estimados.reduce((t, x) => t + x.iva, 0)), iva_estimado_n: estimados.length,
         no_gasto: pesos(noGasto), utilidad: pesos(ventaSub - gastoTotal), margen_pct: ventaSub ? Math.round((ventaSub - gastoTotal) / ventaSub * 1000) / 10 : null,
-        cobrado: pesos(cobrado.t), cobros_n: cobrado.n, descuentos: pesos(descuentos), pagado: pesos(pagado), flujo: pesos(cobrado.t - pagado),
+        cobrado: pesos(cobrado.t), cobros_n: cobrado.n, cobrado_por_confirmar: pesos(porConfirmar.t), cobros_por_confirmar_n: porConfirmar.n, descuentos: pesos(descuentos), pagado: pesos(pagado), flujo: pesos(cobrado.t - pagado),
         cotizaciones: cot.n, cotizado: Math.round((cot.v || 0) * 100) / 100, cot_ganadas: cot.ganadas || 0, cot_perdidas: cot.perdidas || 0,
         cierre_pct: (cot.ganadas || 0) + (cot.perdidas || 0) ? Math.round(cot.ganadas / (cot.ganadas + cot.perdidas) * 1000) / 10 : null,
         no_realizados: noRealizados.n, no_realizado_valor: Math.round((noRealizados.v || 0) * 100) / 100,
@@ -156,7 +158,7 @@ module.exports = function tablero(app, db, h, finanzas) {
     const mapa = (filas) => new Map(filas.map(f => [f.mes, f.t]));
     const venta = mapa(db.prepare(`SELECT substr(${FECHA_VENTA}, 1, 7) mes, SUM(CAST(ROUND(COALESCE(l.valor, 0) * 100) AS INTEGER)) t FROM leads l
       WHERE l.estatus = 'ganado' AND l.ejecucion = 'realizado' AND ${FECHA_VENTA} BETWEEN ? AND ? GROUP BY mes`).all(ini, fin));
-    const cobrado = mapa(db.prepare("SELECT substr(fecha, 1, 7) mes, SUM(monto_cent) t FROM cobros WHERE cancelado = 0 AND tipo <> 'ajuste' AND fecha BETWEEN ? AND ? GROUP BY mes").all(ini, fin));
+    const cobrado = mapa(db.prepare("SELECT substr(fecha, 1, 7) mes, SUM(monto_cent) t FROM cobros WHERE cancelado = 0 AND confirmado = 1 AND tipo <> 'ajuste' AND fecha BETWEEN ? AND ? GROUP BY mes").all(ini, fin));
     const { CATEGORIAS_NO_GASTO } = require('./finanzas'), gasto = new Map();
     for (const x of vivos('fecha_documento BETWEEN ? AND ?', ini, fin)) if (!CATEGORIAS_NO_GASTO.has(x.categoria)) { const mes = x.fecha_documento.slice(0, 7); gasto.set(mes, (gasto.get(mes) || 0) + x.neto); }
     const pagado = mapa(db.prepare('SELECT substr(fecha, 1, 7) mes, SUM(monto_cent) t FROM pagos_proveedor WHERE cancelado = 0 AND fecha BETWEEN ? AND ? GROUP BY mes').all(ini, fin));
