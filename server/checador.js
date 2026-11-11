@@ -304,6 +304,13 @@ module.exports = function checador(app, db, h) {
     next();
   }
   const ultimaDe = (personaId, fecha) => db.prepare("SELECT tipo, hora FROM main.checadas WHERE personal_id = ? AND fecha = ? AND estado <> 'anulada' ORDER BY momento_utc DESC, id DESC LIMIT 1").get(personaId, fecha);
+  // Qué botón sugerir. Tiempo extra que pasa de medianoche (2026-11-11): si hoy aún no checa, es antes de las 12:00 y
+  // anoche dejó abierto el «Inicio de tiempo extra», se sugiere «Fin de tiempo extra» (server/asistencia.js lo une).
+  function sugeridoPara(personaId, a) {
+    const u = ultimaDe(personaId, a.fecha);
+    if (!u && a.hora < '12:00') { const ayer = ultimaDe(personaId, new Date(Date.parse(a.fecha + 'T12:00:00Z') - 864e5).toISOString().slice(0, 10)); if (ayer?.tipo === 'extra_inicia') return 'extra_termina'; }
+    return SIGUIENTE[u?.tipo || ''];
+  }
   function nuevoTicket(tipo, persona, dispositivoId) {
     const t = crypto.randomBytes(24).toString('base64url');
     tickets.set(t, { tipo, personaId: persona.id, dispositivoId, expira: Date.now() + TICKET_MS });
@@ -402,9 +409,9 @@ module.exports = function checador(app, db, h) {
     res.set({ 'Content-Type': 'application/pdf', 'Content-Disposition': `attachment; filename="${nombre}"`, 'Cache-Control': 'private, no-store' }).send(fs.readFileSync(ruta));
   };
   const paraChecar = (req, p) => {
-    const { fecha } = ahoraMexico(), u = ultimaDe(p.id, fecha);
+    const ah = ahoraMexico(), { fecha } = ah, u = ultimaDe(p.id, fecha);
     // biometria: la tableta debe tomar su cara con la prueba de vida y mandarla (biometria.js).
-    return { ticket: nuevoTicket('checar', p, req.kiosco.id), nombre: primerNombre(p.nombre), sugerido: SIGUIENTE[u?.tipo || ''], ultima: u ? { tipo: TIPOS[u.tipo], hora: u.hora.slice(0, 5) } : null, tipos: TIPOS, biometria: !!app.locals.biometria?.activo(p.id), servicios: serviciosDe(p.id, req.kiosco.id) };
+    return { ticket: nuevoTicket('checar', p, req.kiosco.id), nombre: primerNombre(p.nombre), sugerido: sugeridoPara(p.id, ah), ultima: u ? { tipo: TIPOS[u.tipo], hora: u.hora.slice(0, 5) } : null, tipos: TIPOS, biometria: !!app.locals.biometria?.activo(p.id), servicios: serviciosDe(p.id, req.kiosco.id) };
   };
 
   // La pantalla del kiosco: la única página del sistema con permiso de cámara (seguridad.js la bloquea en las demás).
@@ -637,7 +644,7 @@ module.exports = function checador(app, db, h) {
   app.get('/api/publico/celular/estado', celular, h((req, res) => {
     const p = req.persona, a = ahoraMexico(), u = ultimaDe(p.id, a.fecha);
     db.prepare("UPDATE main.checador_dispositivos SET ultimo_uso = datetime('now','localtime') WHERE id = ?").run(req.kiosco.id);
-    res.json({ nombre: primerNombre(p.nombre), sucursal: req.kiosco.sucursal, utc: a.utc, tipos: TIPOS, sugerido: SIGUIENTE[u?.tipo || ''], ultima: u ? { tipo: TIPOS[u.tipo], hora: u.hora.slice(0, 5) } : null, pin_temporal: !!p.pin_temporal, activo: !!(p.activo && p.checa) });
+    res.json({ nombre: primerNombre(p.nombre), sucursal: req.kiosco.sucursal, utc: a.utc, tipos: TIPOS, sugerido: sugeridoPara(p.id, a), ultima: u ? { tipo: TIPOS[u.tipo], hora: u.hora.slice(0, 5) } : null, pin_temporal: !!p.pin_temporal, activo: !!(p.activo && p.checa) });
   }));
   app.post('/api/publico/celular/cambiar-pin', celular, h((req, res) => {
     const p = req.persona, v = verificar(req.kiosco, p.codigo_checador, String(req.body?.pin ?? ''));

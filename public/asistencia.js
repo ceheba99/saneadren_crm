@@ -168,9 +168,11 @@ const Asistencia = (() => {
   // Evidencia de un tramo: la foto de cada checada que lo marca (entrada, salida, inicio o fin de tiempo extra).
   function evidencia(ids, ch) {
     const l = (ids || []).map(id => ch.find(c => c.id === id)).filter(Boolean);
+    // La checada de otro día (el «Fin» de la madrugada siguiente) dice de qué día es.
+    const cuando = c => esc(String(c.hora).slice(0, 5)) + (c.fecha && ch.length && c.fecha !== ch[0].fecha ? ' (' + esc(fechaLarga(c.fecha)) + ')' : '');
     if (!l.length) return '—';
-    return l.map(c => c.tiene_foto ? `<button type="button" class="btn-link" data-ac-evidencia="${Number(c.id)}">📷 ${esc(TIPOS[c.tipo] || c.tipo)} ${esc(String(c.hora).slice(0, 5))}</button>`
-      : `<small class="pe-cuenta">${esc(TIPOS[c.tipo] || c.tipo)} ${esc(String(c.hora).slice(0, 5))}: ${esc(c.foto_borrada ? 'foto borrada' : c.origen === 'manual' ? 'a mano, sin foto' : 'sin foto')}</small>`).join('<br>');
+    return l.map(c => c.tiene_foto ? `<button type="button" class="btn-link" data-ac-evidencia="${Number(c.id)}">📷 ${esc(TIPOS[c.tipo] || c.tipo)} ${cuando(c)}</button>`
+      : `<small class="pe-cuenta">${esc(TIPOS[c.tipo] || c.tipo)} ${cuando(c)}: ${esc(c.foto_borrada ? 'foto borrada' : c.origen === 'manual' ? 'a mano, sin foto' : 'sin foto')}</small>`).join('<br>');
   }
   function detalleExtra(d, fila, sem, f, ch) {
     const x = d.extra_detalle, dias = fila.dias.filter(y => y.extra_min || y.extra_detalle?.piezas?.some(z => z.cuenta));
@@ -178,7 +180,7 @@ const Asistencia = (() => {
     let h = '<details class="ac-extra" open><summary><b>⏱️ Tiempo extra a detalle</b></summary>';
     if (x) {
       h += `<h4 class="pe-sub2">Este día: ${esc(fechaLarga(f))}</h4><div class="tabla-scroll"><table class="tabla-resumen as-tabla"><thead><tr><th>De</th><th>A</th><th>Minutos</th><th>¿Cuenta?</th><th>Por qué</th><th>Evidencia</th></tr></thead><tbody>
-        ${x.piezas.map(z => `<tr class="${z.cuenta ? '' : 'pe-baja'}"><td>${esc(z.desde)}</td><td>${esc(z.hasta)}</td><td>${esc(hm(z.min))}</td><td>${z.cuenta ? '✔ Sí' : '✖ No'}</td><td>${esc(z.motivo)}</td><td>${evidencia(z.checadas, ch)}</td></tr>`).join('')}
+        ${x.piezas.map(z => `<tr class="${z.cuenta ? '' : 'pe-baja'}"><td>${esc(z.desde)}</td><td>${z.min ? esc(z.hasta) : '—'}</td><td>${z.min ? esc(hm(z.min)) : '—'}</td><td>${z.cuenta ? '✔ Sí' : '✖ No'}</td><td>${esc(z.motivo)}</td><td>${evidencia(z.checadas, [...ch, ...(x.otras || [])])}</td></tr>`).join('')}
         ${x.sin_fin ? `<tr class="pe-baja"><td>${esc(x.sin_fin)}</td><td>?</td><td>—</td><td>✖ No</td><td>Marcó «Inicio de tiempo extra» y no marcó el fin: no cuenta hasta que RH agregue la hora real del fin</td><td>${evidencia([x.sin_fin_checada], ch)}</td></tr>` : ''}</tbody></table></div><div id="ac-foto-extra"></div><ul class="pe-ordenes">`;
       if (x.traslape_min) h += `<li>Los tramos se enciman ${esc(hm(x.traslape_min))}: ese tiempo se cuenta una sola vez.</li>`;
       h += `<li>Tiempo extra del día: <b>${esc(hm(x.sin_redondeo_min))}</b>${x.redondeo ? ` → redondeado hacia abajo a bloques de ${esc(x.redondeo.bloque_min)} min: <b>${esc(hm(d.extra_min))}</b> (no cuentan ${esc(hm(x.redondeo.perdidos_min))})` : ''}.</li>`;
