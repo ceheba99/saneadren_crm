@@ -269,6 +269,15 @@ const archivosDe = d => fs.readdirSync(d, { withFileTypes: true }).flatMap(e => 
   { const x = await fetch(URLB + '/api/personal/' + juan.id + '/documentos', { method: 'POST', headers: { Authorization: 'Bearer ' + T.Gema, 'Content-Type': 'application/octet-stream', 'X-Tipo': 'privacidad', 'X-Nombre': encodeURIComponent('aviso-juan.pdf') }, body: Buffer.from('%PDF-1.4 aviso firmado ' + crypto.randomBytes(8).toString('hex') + '\n%%EOF') }); revisa(x.status === 201, 'Se sube el aviso firmado al expediente'); }
   revisa((await pedir('GET', '/asistencia/personal/' + juan.id, T.Gema))[1].aviso_firmado === true, 'Con el aviso firmado en el expediente, la alerta desaparece');
 
+  // Diagnóstico del kiosco (2026-11-11): lo que su vigilante recuperó llega a los Logs del sistema de Dirección.
+  revisa((await kio(null, 'POST', 'diagnostico', { eventos: [{ t: new Date().toISOString(), m: 'pantalla vacía' }] }))[0] === 401, 'Sin token de kiosco no se aceptan diagnósticos');
+  revisa((await kio(KQ, 'POST', 'diagnostico', {}))[0] === 400, 'Un diagnóstico sin eventos se rechaza');
+  revisa((await kio(KQ, 'POST', 'diagnostico', { eventos: [{ t: new Date().toISOString(), m: 'pantalla vacía <script>alert(1)</script>' }, { m: '' }] }))[0] === 200, 'El kiosco manda lo que su vigilante recuperó');
+  const logK = ((await pedir('GET', '/registro-sistema?q=Kiosco', A))[1].filas || []).filter(f => f.evento === 'kiosco_recuperado');
+  revisa(logK.length === 1 && /pantalla vacía/.test(JSON.stringify(logK[0])) && !/[<>]/.test(logK[0].detalle || ''), 'Dirección lo ve en los Logs del sistema (un renglón, sin símbolos raros)', logK);
+  for (let i = 0; i < 5; i++) await kio(KQ, 'POST', 'diagnostico', { eventos: Array.from({ length: 10 }, (_, k) => ({ m: 'prueba ' + i + '-' + k })) });
+  revisa(((await pedir('GET', '/registro-sistema?q=Kiosco', A))[1].filas || []).length <= 31, 'Tope de 30 diagnósticos por kiosco por hora');
+
   console.log(`\n${n - malos.length}/${n} correctas`);
   srv.kill(); fs.rmSync(dir, { recursive: true, force: true });
   process.exit(malos.length ? 1 : 0);

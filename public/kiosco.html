@@ -17,7 +17,8 @@
 <style>
   :root{--oscuro:#1a1d23;--amarillo:#f6b103;--texto:#1f2937;--sec:#6b7280;--linea:#e5e7eb;--fondo:#f4f5f7;--verde:#15803d;--rojo:#b91c1c;--azul:#1d4ed8;}
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
-  html,body{height:100%;}
+  html,body{height:100%;overscroll-behavior:none;} /* sin «jalar para recargar»: una recarga a medias dejaba la pantalla en blanco */
+  .arranque{text-align:center;padding:30px 10px;}.arranque h1{font-size:1.5rem;margin:0 0 8px;}.arranque p{color:#4b5563;margin:0 0 16px;}.arranque a,.arranque button{display:inline-block;font-size:1.15rem;font-weight:700;padding:14px 26px;border-radius:12px;border:0;background:#f6b103;color:#1a1d23;text-decoration:none;}
   body{margin:0;font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;background:var(--fondo);color:var(--texto);display:flex;flex-direction:column;user-select:none;}
   header{background:var(--oscuro);color:#fff;padding:12px 16px;border-bottom:4px solid var(--amarillo);display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;}
   header img{height:38px;display:block;}
@@ -200,12 +201,59 @@
 <div class="hora"><div class="hora-etiqueta">REGISTRO DE ASISTENCIA</div><div id="reloj" aria-live="off">--:--</div><div id="fecha"></div></div>
 <div id="avisos" role="status"></div>
 <div id="bateria-aviso" role="status" hidden></div>
-<main><div class="pantalla" id="pantalla"></div></main>
+<main><div class="pantalla" id="pantalla"><div class="arranque" id="arranque"><h1>Iniciando el reloj checador…</h1><p>Si no avanza en unos segundos, toca el botón.</p><a href="/kiosco">Reintentar</a></div></div></main>
 <div class="camara-oculta" hidden><video id="video" autoplay playsinline muted></video><canvas id="lienzo" width="480" height="360"></canvas></div>
 <footer class="kiosco-pie"><div id="pendientes" role="status"></div>
 <button type="button" id="pantalla-completa">Pantalla completa</button>
 <a id="aviso-privacidad" href="/aviso-privacidad-checador.html" target="_blank" rel="noopener">Aviso de privacidad</a></footer>
-<script src="/imprimir-documentos.js?v=3"></script>
+<script>
+/* VIGILANTE (2026-11-11, Dirección: «quiero que sea realmente a prueba de errores»). Va en su propio bloque y no usa nada
+   del programa del kiosco: si aquel falla, se queda a medias o deja la pantalla vacía (al volver del bloqueo, con el
+   ahorro de energía o tras muchas recargas), este lo nota y lo recupera solo: primero pide al programa que vuelva al
+   inicio; si no puede, recarga la página (espaciando los intentos: 0, 5, 15, 30 y 60 s) y siempre deja un botón. */
+(function () {
+  var LLAVE = 'saneadren_kiosco_vigia', DIAG = 'saneadren_kiosco_diag', cargado = Date.now(), vaciaDesde = 0, recuperando = false, oculto = 0;
+  var K = window.__kiosco = { listo: false, latido: 0, revivir: null, errores: 0 };
+  function leer() { try { return JSON.parse(sessionStorage.getItem(LLAVE) || '{}'); } catch (e) { return {}; } }
+  function guardar(v) { try { sessionStorage.setItem(LLAVE, JSON.stringify(v)); } catch (e) { /* sin almacenamiento */ } }
+  // Lo que pasó queda anotado para mandarlo al servidor (Logs del sistema) cuando haya conexión.
+  K.anotar = function (motivo) {
+    try { var l = JSON.parse(localStorage.getItem(DIAG) || '[]'); l.push({ t: new Date().toISOString(), m: String(motivo).slice(0, 200) }); localStorage.setItem(DIAG, JSON.stringify(l.slice(-10))); } catch (e) { /* sin almacenamiento */ }
+  };
+  function vacia() {
+    var p = document.getElementById('pantalla');
+    return !p || document.getElementById('arranque') || !p.firstElementChild || !(p.innerText || p.textContent || '').trim();
+  }
+  function panel(texto, segundos) {
+    var p = document.getElementById('pantalla'); if (!p) return;
+    p.className = 'pantalla';
+    p.innerHTML = '<div class="arranque" id="arranque"><h1>Reiniciando el reloj checador…</h1><p></p><button type="button">Reintentar ahora</button></div>';
+    p.querySelector('p').textContent = texto + (segundos ? ' Se reintenta solo en ' + segundos + ' s.' : '');
+    p.querySelector('button').onclick = function () { location.replace('/kiosco'); };
+  }
+  function recuperar(motivo) {
+    if (recuperando) return; recuperando = true;
+    K.anotar(motivo);
+    // 1) Sin recargar: que el programa vuelva a su pantalla de inicio.
+    try { if (K.listo && typeof K.revivir === 'function') { K.revivir(motivo); if (!vacia()) { recuperando = false; vaciaDesde = 0; return; } } } catch (e) { /* sigue a la recarga */ }
+    // 2) Recargar, espaciando los intentos para no entrar en un ciclo de recargas.
+    var v = leer(), n = (v.n || 0) + 1, espera = [0, 5, 15, 30, 60][Math.min(n - 1, 4)];
+    guardar({ n: n, t: Date.now() });
+    panel('No respondió (' + motivo + ').', espera);
+    setTimeout(function () { location.replace('/kiosco'); }, espera * 1000 + 300);
+  }
+  window.addEventListener('error', function (e) { K.errores++; if (!K.listo && Date.now() - cargado > 3000) recuperar('error al iniciar: ' + String(e && e.message || '').slice(0, 80)); });
+  window.addEventListener('unhandledrejection', function () { K.errores++; });
+  document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'hidden') oculto = Date.now(); else { vaciaDesde = 0; cargado = Math.max(cargado, Date.now() - 6000); } });
+  setInterval(function () {
+    if (recuperando || document.visibilityState === 'hidden') return;
+    var ahora = Date.now();
+    if (K.listo && !vacia()) { var v = leer(); if (v.n && ahora - (v.t || 0) > 60000) guardar({}); vaciaDesde = 0; return; } // un minuto bien: se olvidan los intentos
+    if (!K.listo && ahora - cargado > 12000) return recuperar('no terminó de iniciar');
+    if (K.listo && vacia()) { if (!vaciaDesde) vaciaDesde = ahora; else if (ahora - vaciaDesde > 4000) recuperar('pantalla vacía'); }
+  }, 2000);
+})();
+</script>
 <script>
 (() => {
   'use strict';
@@ -336,22 +384,35 @@
   // ---------- Reloj (referencia: la hora válida la pone el servidor) ----------
   const fmtHora = new Intl.DateTimeFormat('es-MX', { timeZone: ZONA, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
   const fmtFecha = new Intl.DateTimeFormat('es-MX', { timeZone: ZONA, weekday: 'long', day: 'numeric', month: 'long' });
-  function tic() { const d = new Date(Date.now() + desfase); $('reloj').textContent = fmtHora.format(d); $('fecha').textContent = fmtFecha.format(d); }
+  function tic() { if (!Number.isFinite(desfase)) desfase = 0; const d = new Date(Date.now() + desfase); $('reloj').textContent = fmtHora.format(d); $('fecha').textContent = fmtFecha.format(d); }
   setInterval(tic, 1000); tic();
 
   // ---------- Servidor ----------
+  // Toda petición tiene límite de tiempo (2026-11-11): al volver del bloqueo o con ahorro de energía la red puede no
+  // contestar nunca, y sin límite el kiosco se quedaba esperando (pantalla vacía o «Registrando…» para siempre). Si se
+  // agota, cuenta como «sin conexión»: cada paso ya sabe qué hacer en ese caso (guardar la checada aquí, avisar…).
+  const LIMITES = { checar: 20000, 'sin-conexion': 25000, 'rostro-registrar': 20000 };
   async function api(ruta, cuerpo) {
-    const r = await fetch('/api/publico/kiosco/' + ruta, { method: cuerpo ? 'POST' : 'GET', headers: { 'Content-Type': 'application/json', 'X-Kiosco': registro?.token || '' }, body: cuerpo ? JSON.stringify(cuerpo) : undefined, cache: 'no-store' });
-    const j = await r.json().catch(() => ({}));
-    return { status: r.status, ok: r.ok, j };
+    const corte = new AbortController(), t = setTimeout(() => corte.abort(), LIMITES[ruta.split('?')[0]] || 12000);
+    try {
+      const r = await fetch('/api/publico/kiosco/' + ruta, { method: cuerpo ? 'POST' : 'GET', headers: { 'Content-Type': 'application/json', 'X-Kiosco': registro?.token || '' }, body: cuerpo ? JSON.stringify(cuerpo) : undefined, cache: 'no-store', signal: corte.signal });
+      // Solo vale una respuesta del servidor del checador (JSON). El portal del Wi-Fi, una página de error de la red o
+      // una respuesta vacía cuentan como «sin conexión»: antes se tomaban por buenas y descomponían la pantalla.
+      if (!/application\/json/i.test(r.headers.get('content-type') || '')) throw new Error('respuesta ajena al checador');
+      const j = await r.json().catch(() => null);
+      if (!j || typeof j !== 'object') throw new Error('respuesta ilegible');
+      return { status: r.status, ok: r.ok, j };
+    } finally { clearTimeout(t); }
   }
   async function conectar() {
     try {
       const r = await api('estado');
       if (r.status === 401) { noRegistrado(); return false; }
       if (!r.ok) throw new Error('servidor');
+      const hora = Date.parse(r.j.utc);
+      if (!Number.isFinite(hora)) throw new Error('servidor'); // sin hora válida no es el servidor del checador
       conexionConfirmada = true;
-      TIPOS = r.j.tipos || TIPOS; desfase = Date.parse(r.j.utc) - Date.now();
+      TIPOS = r.j.tipos || TIPOS; desfase = hora - Date.now();
       $('kiosco-nombre').textContent = r.j.nombre + (r.j.sucursal ? ' · ' + r.j.sucursal : '');
       sinConexion = false; avisos();
       return true;
@@ -373,7 +434,7 @@
   // Solo se prende cuando hace falta (pedido de Dirección, 2026-11-05): al escribir el PIN (para la foto de la checada o
   // del intento fallido) y al tocar «Leer mi credencial». En reposo, en la pantalla del código, está apagada.
   // En Android solo una app a la vez usa la cámara: también se suelta al ocultarse la pantalla y se dice el motivo.
-  const MOTIVOS = { NotAllowedError: 'el permiso de cámara está bloqueado', NotReadableError: 'otra app o pestaña la está usando', NotFoundError: 'no se encontró cámara', AbortError: 'otra app o pestaña la está usando', SecurityError: 'el permiso de cámara está bloqueado' };
+  const MOTIVOS = { NotAllowedError: 'el permiso de cámara está bloqueado', NotReadableError: 'otra app o pestaña la está usando', NotFoundError: 'no se encontró cámara', AbortError: 'otra app o pestaña la está usando', SecurityError: 'el permiso de cámara está bloqueado', TimeoutError: 'tardó demasiado en encender' };
   let pidiendo = null;
   function iniciarCamara() {
     if (camaraLista) return Promise.resolve();
@@ -381,7 +442,12 @@
     pidiendo = (async () => {
       try {
         if (!navigator.mediaDevices?.getUserMedia) throw Object.assign(new Error(), { name: 'NotFoundError' });
-        const s = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } }, audio: false });
+        // Con la pantalla bloqueada o en ahorro de energía la cámara puede no contestar nunca: se espera 8 s como máximo
+        // (si llega después, se apaga) para que el siguiente intento no se quede colgado de este.
+        const pedida = navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } }, audio: false });
+        let vencio = false;
+        const s = await Promise.race([pedida, new Promise((_, mal) => setTimeout(() => { vencio = true; mal(Object.assign(new Error(), { name: 'TimeoutError' })); }, 8000))]);
+        pedida.then(x => { if (vencio) x.getTracks().forEach(t => t.stop()); }).catch(() => {});
         $('video').srcObject = s; await $('video').play().catch(() => {}); camaraLista = true; camaraMotivo = ''; camaraFallo = false;
       } catch (e) { camaraLista = false; camaraMotivo = MOTIVOS[e?.name] || ''; camaraFallo = true; }
       pidiendo = null;
@@ -777,8 +843,11 @@
   const fmtDia = new Intl.DateTimeFormat('es-MX', { timeZone: 'UTC', weekday: 'long', day: 'numeric', month: 'long' });
   const nombreDia = f => (f === hoyKiosco() ? 'Hoy' : fmtDia.format(new Date(f + 'T12:00:00Z')));
   // Imprimir la orden de servicio (con precios) y su factura (2026-11-11): public/imprimir-documentos.js.
-  const impresora = window.ImprimirDocs?.crear('/api/publico/kiosco/', () => ({ 'X-Kiosco': registro?.token || '' }));
+  // Se crea al usarla: su archivo se carga aparte (al final de la página) para que nunca detenga el arranque del kiosco.
+  let impresoraLista = null;
+  const impresoraDe = () => (impresoraLista ||= window.ImprimirDocs?.crear('/api/publico/kiosco/', () => ({ 'X-Kiosco': registro?.token || '' })) || null);
   function botonesImprimir(x) {
+    const impresora = impresoraDe();
     if (!x.imprimir || !impresora) return '';
     return impresora.botones(x.imprimir, x.con_factura, () => { reiniciarEspera(60000); }, !!x.sinCompartir);
   }
@@ -959,8 +1028,45 @@
   // Para que abra aunque la tableta se reinicie sin internet (solo la página del kiosco; ver kiosco-sw.js).
   try { navigator.serviceWorker?.register('/kiosco-sw.js', { scope: '/kiosco' }).catch(() => {}); } catch { /* no disponible */ }
   $('pantalla-completa').onclick = () => { (document.documentElement.requestFullscreen?.() || Promise.resolve()).catch(() => {}); };
-  const despierta = async () => { try { await navigator.wakeLock?.request('screen'); } catch { /* no disponible */ } };
-  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') despierta(); else soltarCamara(); });
+  // La pantalla no se apaga sola: el permiso se pierde cada vez que la tableta se bloquea, así que se vuelve a pedir.
+  let candado = null;
+  const despierta = async () => {
+    if (candado || document.visibilityState !== 'visible') return;
+    try { candado = await navigator.wakeLock?.request('screen') || null; candado?.addEventListener('release', () => { candado = null; }); } catch { candado = null; }
+  };
+  // ---------- Volver a la vida (2026-11-11) ----------
+  // Al bloquear y desbloquear la tableta, entrar o salir del ahorro de energía o volver de otra app, el navegador
+  // congela la página: los relojes internos se detienen, la cámara se suelta y la red tarda en volver. Al regresar se
+  // revisa todo: pantalla encendida, reloj al día, y si se quedó a media checada (o vacía) se vuelve al inicio.
+  // Varios avisos seguidos (bloquear muchas veces) cuentan como uno solo.
+  let ocultoDesde = 0, reviviendo = null, ultimaConexion = 0;
+  function revivir(motivo = '') {
+    clearTimeout(reviviendo);
+    reviviendo = setTimeout(() => {
+      if (document.visibilityState !== 'visible') return;
+      const fuera = ocultoDesde ? Date.now() - ocultoDesde : 0; ocultoDesde = 0;
+      despierta(); tic();
+      // Forzar a redibujar: en algunas tabletas la página vuelve en blanco hasta que algo cambia en pantalla.
+      document.body.style.transform = 'translateZ(0)'; requestAnimationFrame(() => { document.body.style.transform = ''; });
+      const p = $('pantalla'), vacia = !p.firstElementChild || !!$('arranque') || !p.innerText.trim();
+      if (!deBaja && registro?.token && (vacia || motivo === 'vigilante' || (fuera > 15000 && !estado.esCodigo))) inicio();
+      if (!deBaja && Date.now() - ultimaConexion > 5000) { ultimaConexion = Date.now(); conectar().then(ok => { if (ok && !deBaja) { subirPendientes(); mandarDiagnostico(); } }); }
+    }, 350);
+  }
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') revivir(); else { ocultoDesde = ocultoDesde || Date.now(); soltarCamara(); } });
+  window.addEventListener('pageshow', e => { if (e.persisted) revivir(); });
+  document.addEventListener('resume', () => revivir());
+  window.addEventListener('focus', () => revivir());
+  // Lo que anotó el vigilante (pantalla vacía, recargas…) se manda al servidor para verlo en los Logs del sistema.
+  async function mandarDiagnostico() {
+    let l = []; try { l = JSON.parse(localStorage.getItem('saneadren_kiosco_diag') || '[]'); } catch { l = []; }
+    if (!Array.isArray(l) || !l.length) return;
+    try { const r = await api('diagnostico', { eventos: l.slice(-10) }); if (r.ok || r.status === 400) localStorage.removeItem('saneadren_kiosco_diag'); } catch { /* después */ }
+  }
+  // La caché (kiosco-sw.js) avisa cuando bajó una versión nueva de la página: se recarga sola cuando nadie la usa.
+  let versionNueva = false;
+  navigator.serviceWorker?.addEventListener('message', e => { if (e.data?.kiosco === 'version-nueva') versionNueva = true; });
+  setInterval(() => { if (versionNueva && estado.esCodigo && !$('pantalla').querySelector('.digitos')?.textContent.match(/\d/) && document.visibilityState === 'visible') { versionNueva = false; location.reload(); } }, 15000);
   window.addEventListener('online', async () => { if (!deBaja && await conectar()) subirPendientes(); });
   window.addEventListener('offline', () => { sinConexion = true; avisos(); });
   // Un kiosco no conserva la sesión del CRM: si el gerente la dejó abierta al registrarlo (o alguien entra en otra
@@ -974,16 +1080,23 @@
     cerrarSesionCrm();
     window.addEventListener('storage', e => { if (e.key === 'usuario_actual' && e.newValue) cerrarSesionCrm(); });
   }
+  // El vigilante (arriba) puede pedir volver al inicio sin recargar.
+  window.__kiosco.revivir = () => { ocultoDesde = 0; clearTimeout(reviviendo); if (!deBaja && registro?.token) inicio(); revivir('vigilante'); };
   (async () => {
-    if (!registro?.token) return noRegistrado();
-    avisos();
+    if (!registro?.token) { noRegistrado(); window.__kiosco.listo = true; return; }
+    // Primero la pantalla (2026-11-11): el teclado sale de inmediato y el servidor se consulta por detrás. Antes se
+    // esperaba al servidor sin límite y, si la red no contestaba, la pantalla se quedaba vacía.
+    avisos(); inicio(); window.__kiosco.listo = true; despierta(); contarPendientes();
+    ultimaConexion = Date.now();
     if (!await conectar()) return;
     // Al abrir se pide la cámara una vez (para que el permiso quede dado) y se apaga hasta que alguien cheque.
-    iniciarCamara().then(() => { if (estado.esCodigo) soltarCamara(); }); despierta(); inicio(); contarPendientes(); subirPendientes();
+    iniciarCamara().then(() => { if (estado.esCodigo) soltarCamara(); }); subirPendientes(); mandarDiagnostico();
     setTimeout(() => { cargarFaceApi().catch(() => {}); cargarAntispoof().catch(() => {}); }, 5000); // reconocimiento y prueba de vida, listos en segundo plano
-    setInterval(async () => { if (!deBaja && await conectar()) subirPendientes(); }, 60000);
+    setInterval(async () => { if (document.visibilityState === 'visible' && !deBaja && await conectar()) { subirPendientes(); mandarDiagnostico(); } }, 60000);
   })();
 })();
 </script>
+<!-- Imprimir (orden y factura): al final y sin detener nada; el kiosco lo usa solo cuando alguien toca «Imprimir». -->
+<script src="/imprimir-documentos.js?v=3" async></script>
 </body>
 </html>

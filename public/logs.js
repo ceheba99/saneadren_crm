@@ -7,7 +7,7 @@ const Logs = (() => {
     bloqueado: ['🔴', 'Bloqueado por intentos'], rechazado: ['🟠', 'Intentó entrar estando bloqueado'],
     olvido: ['🔑', 'Pidió restablecer su contraseña'], restablecio: ['🔑', 'Restableció su contraseña'], error: ['⛔', 'Error del servidor'],
     pantalla: ['⚠️', 'Error en pantalla'], correo_fallo: ['📧', 'Correo que no salió'], respaldo_ok: ['💾', 'Respaldo automático hecho'],
-    respaldo_fallo: ['💾', 'Respaldo automático falló'], whatsapp_fallo: ['💬', 'WhatsApp no se envió'], inicio: ['🔄', 'Sistema iniciado (actualización o reinicio)'],
+    respaldo_fallo: ['💾', 'Respaldo automático falló'], whatsapp_fallo: ['💬', 'WhatsApp no se envió'], kiosco_recuperado: ['🕒', 'El reloj checador se recuperó solo'], inicio: ['🔄', 'Sistema iniciado (actualización o reinicio)'],
     descarga: ['⬇️', 'Descargó un respaldo'], factura_ok: ['🧾', 'Facturación'], factura_error: ['🧾', 'Facturación: error']
   };
   const fechaHora = f => { const [d, h] = String(f || '').split(' '); return (d || '').split('-').reverse().join('/') + (h ? ' ' + h.slice(0, 5) : ''); };
