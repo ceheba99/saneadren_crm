@@ -26,6 +26,7 @@ Dirección la revisa y la aprueba. Si un cambio altera lo que ve un rol, la prue
 | 🧑‍💼 Inicio de RH | ✔ | ✔ | — | — | — | — | — | — |
 | 👷 Personal | ✔ | ✔ | — | — | — | — | — | — |
 | 🕒 Asistencia | ✔ | ✔ | — | — | — | — | — | — |
+| 📅 Nómina semanal | — | — | — | — | — | — | — | — |
 | 📚 Catálogos | ✔ | ✔ | — | — | — | ✔ | — | — |
 | 🛠️ Ajustes | ✔ | ✔ | — | — | — | — | — | — |
 | 🗂️ Bitácora | ✔ | — | — | — | — | — | — | — |
@@ -243,6 +244,7 @@ Dirección la revisa y la aprueba. Si un cambio altera lo que ve un rol, la prue
 | Personal · Kioscos del checador | ✔ | ✔ | — | — | — | — | — | — |
 | Personal · Horarios y días festivos | ✔ | ✔ | — | — | — | — | — | — |
 | Personal · Autorizar tiempo extra | ✔ | ✔ | — | — | — | — | — | — |
+| Personal · Descargar la nómina | ✔ | ✔ | — | — | — | — | — | — |
 | Administración · Usuarios | ✔ | ✔ | — | — | — | — | — | — |
 | Marketing · Aprobar publicaciones | ✔ | — | — | — | — | — | — | ✔ |
 | Marketing · Dinero de Marketing | ✔ | — | — | — | — | — | — | ✔ |
@@ -298,6 +300,7 @@ Dirección la revisa y la aprueba. Si un cambio altera lo que ve un rol, la prue
 - **2026-11-04** · Llamadas de Google Ads (subir el reporte «Detalles de las llamadas» y verlo cruzado con los contactos, ventas e importes): lo ven y lo cargan solo Dirección y el Gerente de marketing; el rol Marketing y los demás roles no.
 - **2026-11-09** · Cara que no coincide en el kiosco (o parece foto o pantalla): además de pedir el PIN y tomar la foto, sale un aviso en Inicio (ficha «Personal») por persona y día, hasta que alguien lo revisa. Lo ven quienes ven los intentos fallidos (Dirección y el Gerente, de su sucursal); marcarlo revisado lo hacen quienes corrigen la asistencia (Dirección y el Gerente). Los demás roles no.
 - **2026-11-09** · Reglas del tiempo extra (semana de nómina —semana vencida de lunes a domingo—, desde cuántos minutos después de la salida cuenta, llegar antes, redondeo, descansos y festivos): valen para TODA la empresa, así que las cambia quien cambia los días festivos (Dirección, o RH de la empresa); cada cambio vale desde una fecha y lo pasado no cambia. El Gerente de una sola sucursal y los demás roles no.
+- **2026-11-11** · Descargar la nómina (la semana con horas trabajadas, retardos, faltas y tiempo extra de cada persona, con el pago del tiempo extra, y su Excel): es un permiso aparte, «Descargar la nómina», que Dirección puede dar a cualquier rol en Roles y permisos. Quien solo tiene ese permiso ve únicamente esa pantalla: nada más de RH (fichas, checadas, fotos, intentos, horarios, precios, kioscos). De fábrica lo tienen Dirección y el Gerente; los demás roles no.
 - **2026-11-05** · Listas de los servicios (las opciones que se eligen para la parte que cambia de la descripción, p. ej. [VOLUMEN]: 4M3, 8M3… o [SUCURSAL] de KFC): las agregan o quitan solo Dirección; ningún otro rol, ni el Gerente. Quienes cotizan solo eligen de la lista. Quitar no borra: queda en la bitácora.
 - **2026-10-27** · Presupuesto de Marketing: lo propone el Gerente de marketing y lo aprueba solo Dirección.
 - **2026-10-27** · Gastos de Marketing: los registran Dirección y el Gerente de marketing, y son control interno del departamento: no aparecen en Cuentas por pagar.

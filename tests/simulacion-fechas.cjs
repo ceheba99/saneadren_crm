@@ -47,7 +47,7 @@ const pdf = () => Buffer.from('%PDF-1.4\n% ' + crypto.randomBytes(8).toString('h
   const ganar = async (id, extra) => { const [, l] = await pedir('GET', '/leads/' + id, A); return pedir('PUT', '/leads/' + id, A, { version: l.version, estatus: 'ganado', ...extra }); };
   [s, j] = await ganar(c1.id, { fecha_servicio: dias(FCOT, -5) });
   revisa(s === 400, 'INCONGRUENCIA: un servicio con fecha ANTES de la cotización no se acepta', [s, j.error]);
-  for (const f of ['2027-01-31', '2027-02-28', '2028-02-29', '2027-12-31']) { // fechas futuras: la cotización es de este mes
+  for (const f of ['2027-10-31', '2027-02-28', '2028-02-29', '2027-12-31']) {
     const [, c] = await cotizar(FCOT); [s, j] = await ganar(c.id, { fecha_servicio: f });
     const [, l] = await pedir('GET', '/leads/' + c.id, A);
     revisa(s === 200 && l.fecha_servicio === f, 'fecha de servicio ' + f + ' se guarda igual (fin de mes / bisiesto)', [s, l.fecha_servicio, j.error]);

@@ -70,7 +70,7 @@ module.exports = {
       demo: ['personal', 'documentos_personal', 'incidencias_personal'],
       integridad: ['personal', 'documentos_personal', 'incidencias_personal'],
       buscador: null, buscadorRazon: 'datos personales: no se exponen en el buscador general (se buscan dentro de Personal, con permiso)',
-      permisos: ['personal.ver', 'personal.editar', 'personal.sensibles', 'asistencia.ver', 'asistencia.corregir', 'asistencia.kioscos', 'asistencia.horarios', 'asistencia.extra'],
+      permisos: ['personal.ver', 'personal.editar', 'personal.sensibles', 'asistencia.ver', 'asistencia.corregir', 'asistencia.kioscos', 'asistencia.horarios', 'asistencia.extra', 'asistencia.nomina'],
     },
     prospeccion: {
       nombre: 'Prospección',

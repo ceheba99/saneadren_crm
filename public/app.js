@@ -134,7 +134,7 @@ document.querySelectorAll('header nav [data-vista]').forEach(btn => {
 function cambiarVista(v, opciones) {
   if (v === 'usuarios' && !Permisos.puede('usuarios.administrar')) v = 'inicio';
   if (v === 'personal' && !Permisos.puede('personal.ver')) v = 'inicio';
-  if (v === 'asistencia' && !Permisos.puede('asistencia.ver')) v = 'inicio';
+  if (v === 'asistencia' && !Permisos.puede('asistencia.ver') && !Permisos.puede('asistencia.nomina')) v = 'inicio'; // con solo «Descargar la nómina», la semana (asistencia.js)
   if (v === 'rh' && !Permisos.puede('personal.ver')) v = 'inicio';
   if (v === 'prospeccion' && !Permisos.puede('prospeccion.ver')) v = 'inicio';
   if (v === 'marketing' && !Permisos.puede('marketing.ver')) v = 'inicio';
