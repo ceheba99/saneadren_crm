@@ -46,6 +46,15 @@
   .teclado button:active{background:#e5e7eb;}
   .teclado .secundario{font-size:1.1rem;color:var(--sec);}
   .botones{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:14px;}
+  /* Mis servicios (2026-11-11): las órdenes asignadas a quien se identificó. */
+  .servicios{text-align:left;margin-top:16px;}
+  .servicios h2{font-size:1.15rem;margin:0 0 6px;}
+  .servicios .dia{font-weight:700;color:var(--sec);margin:12px 0 4px;}
+  .servicios .dia::first-letter{text-transform:uppercase;}
+  .servicio{background:#fff;border:1px solid var(--linea);border-left:5px solid var(--amarillo);border-radius:12px;padding:10px 12px;margin:6px 0;font-size:1rem;line-height:1.35;}
+  .servicio b{font-size:1.08rem;}
+  .servicio small{display:block;color:var(--sec);}
+  .servicios-lista{max-height:46vh;overflow:auto;}
   .botones button{font-size:1.25rem;font-weight:700;padding:22px 10px;background:#fff;border:3px solid var(--linea);color:var(--texto);}
   .botones button.sugerido{background:var(--amarillo);border-color:#c98f00;color:#1a1d23;}
   .btn{font-size:1.1rem;padding:14px 22px;background:#fff;border:2px solid var(--linea);color:var(--texto);margin-top:16px;}
@@ -738,6 +747,32 @@
       }, () => nuevoPin(datos));
     });
   }
+  // ---------- Mis servicios (2026-11-11) ----------
+  // Las órdenes de servicio que le asignaron (de hoy y los próximos días), sin precios ni teléfonos (server/checador.js).
+  const hoyKiosco = () => new Intl.DateTimeFormat('en-CA', { timeZone: ZONA }).format(new Date(Date.now() + desfase));
+  const fmtDia = new Intl.DateTimeFormat('es-MX', { timeZone: 'UTC', weekday: 'long', day: 'numeric', month: 'long' });
+  const nombreDia = f => (f === hoyKiosco() ? 'Hoy' : fmtDia.format(new Date(f + 'T12:00:00Z')));
+  function tarjetaServicio(x) {
+    return el('div', { className: 'servicio' }, el('b', { textContent: `${x.hora ? x.hora + ' · ' : ''}${x.cliente || 'Cliente'}` }),
+      el('small', { textContent: [x.servicio, x.descripcion].filter(Boolean).join(' — ') }),
+      x.direccion ? el('small', { textContent: '📍 ' + x.direccion }) : '',
+      el('small', { textContent: [x.folio, x.unidad ? 'Unidad: ' + x.unidad : '', 'Tú: ' + x.papel].filter(Boolean).join(' · ') }),
+      x.equipo?.length ? el('small', { textContent: 'Equipo: ' + x.equipo.join(', ') }) : '');
+  }
+  // completo: todos los días agrupados; si no, solo los de hoy (para la pantalla de elegir qué registrar).
+  function bloqueServicios(servicios, completo) {
+    const l = Array.isArray(servicios) ? servicios : [];
+    const hoy = hoyKiosco(), deHoy = l.filter(x => x.fecha === hoy), resto = l.length - deHoy.length;
+    if (!completo) {
+      if (!l.length) return '';
+      return el('div', { className: 'servicios' }, el('h2', { textContent: deHoy.length ? `📋 Tus servicios de hoy (${deHoy.length})` : '📋 Hoy no tienes servicios asignados' }),
+        ...deHoy.slice(0, 3).map(tarjetaServicio), deHoy.length > 3 || resto ? el('p', { className: 'ayuda', textContent: `${deHoy.length > 3 ? `y ${deHoy.length - 3} más hoy. ` : ''}${resto ? `Esta semana tienes ${resto} más.` : ''} Los ves todos al registrar tu checada.` }) : '');
+    }
+    if (!l.length) return el('div', { className: 'servicios' }, el('p', { className: 'ayuda', textContent: '📋 No tienes servicios asignados para hoy ni los próximos días.' }));
+    const dias = [...new Set(l.map(x => x.fecha))];
+    return el('div', { className: 'servicios' }, el('h2', { textContent: '📋 Tus servicios' }),
+      el('div', { className: 'servicios-lista' }, ...dias.flatMap(f => [el('div', { className: 'dia', textContent: nombreDia(f) }), ...l.filter(x => x.fecha === f).map(tarjetaServicio)])));
+  }
   function elegirTipo(datos) {
     estado.teclado = null;
     reiniciarEspera();
@@ -746,7 +781,7 @@
       el('h1', { textContent: datos.nombre ? 'Hola, ' + datos.nombre : 'Sin conexión' }),
       el('p', { className: 'ayuda', textContent: datos.aviso || (datos.ultima ? `Tu última checada de hoy: ${datos.ultima.tipo} a las ${datos.ultima.hora}` : datos.nombre ? '¿Qué vas a registrar? Mira a la cámara.' : 'Tu checada se guardará y se revisará tu PIN al volver internet. Mira a la cámara.') }),
       el('div', { className: 'checar' }, vistaCamara(), el('div', {}, el('div', { className: 'botones' }, ...botones),
-        el('button', { type: 'button', className: 'btn', textContent: 'Cancelar', onclick: inicio }))));
+        el('button', { type: 'button', className: 'btn', textContent: 'Cancelar', onclick: inicio }))), bloqueServicios(datos.servicios, false));
     $('pantalla').classList.add('ancha');
   }
   async function checar(datos, tipo) {
@@ -758,12 +793,16 @@
     try { r = await api('checar', { ticket: datos.ticket, tipo, foto: imagen, ...(datos.rostro ? { rostro: datos.rostro } : {}) }); }
     catch { return error('Se perdió la conexión mientras checabas. Vuelve a intentarlo: se guardará en este kiosco.'); }
     if (!r.ok) return error(r.j.error || 'No se pudo registrar');
-    listo('ok', `${r.j.tipo} · ${r.j.hora}`, r.j.repetida ? 'Ya estaba registrada hace un momento.' : r.j.por_revisar ? `Gracias, ${r.j.nombre}. No se reconoció tu cara: tu gerente la revisará.` : r.j.sin_foto ? `Gracias, ${r.j.nombre}. Sin foto: tu gerente la revisará.` : `Gracias, ${r.j.nombre}.`);
+    listo('ok', `${r.j.tipo} · ${r.j.hora}`, r.j.repetida ? 'Ya estaba registrada hace un momento.' : r.j.por_revisar ? `Gracias, ${r.j.nombre}. No se reconoció tu cara: tu gerente la revisará.` : r.j.sin_foto ? `Gracias, ${r.j.nombre}. Sin foto: tu gerente la revisará.` : `Gracias, ${r.j.nombre}.`, r.j.servicios);
   }
-  function listo(clase, titulo, texto) {
+  // servicios: si la persona tiene órdenes asignadas, se muestran abajo y la pantalla espera más (30 s o «Listo»).
+  function listo(clase, titulo, texto, servicios = null) {
     Sonidos.sonar(clase);
-    pintar(el('div', { className: 'listo ' + clase }, el('div', { className: 'icono', textContent: clase === 'ok' ? '✅' : '💾' }), el('h1', { textContent: titulo }), el('p', { className: 'ayuda', textContent: texto })));
-    reiniciarEspera(4000);
+    const con = Array.isArray(servicios) && servicios.length;
+    pintar(el('div', { className: 'listo ' + clase }, el('div', { className: 'icono', textContent: clase === 'ok' ? '✅' : '💾' }), el('h1', { textContent: titulo }), el('p', { className: 'ayuda', textContent: texto })),
+      ...(con ? [bloqueServicios(servicios, true), el('button', { type: 'button', className: 'btn', textContent: 'Listo', onclick: inicio })] : []));
+    if (con) $('pantalla').classList.add('ancha');
+    reiniciarEspera(con ? 30000 : 4000);
   }
   function error(texto, despues) {
     Sonidos.sonar('error');

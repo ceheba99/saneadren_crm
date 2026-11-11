@@ -37,6 +37,14 @@
   .ok h1{color:var(--verde);} .error h1{color:var(--rojo);}
   .aviso-privacidad{font-size:.8rem;color:var(--sec);margin-top:18px;}
   [hidden]{display:none!important;}
+  /* Mis servicios (2026-11-11) */
+  .servicios{text-align:left;margin:6px 0 14px;}
+  .servicios h2{font-size:1.1rem;margin:0 0 4px;}
+  .servicios .dia{font-weight:700;color:var(--sec);margin:12px 0 4px;}
+  .servicios .dia::first-letter{text-transform:uppercase;}
+  .servicio{background:#fff;border:1px solid var(--linea);border-left:5px solid var(--amarillo);border-radius:12px;padding:10px 12px;margin:6px 0;line-height:1.35;}
+  .servicio small,.servicio a{display:block;color:var(--sec);font-size:.92rem;margin-top:2px;}
+  .servicio a{color:#1d4ed8;}
 </style>
 </head>
 <body>
@@ -125,10 +133,32 @@
     const caja = el('div', { className: 'camara', textContent: 'Encendiendo cámara…' }), gps = el('p', { className: 'gps' });
     const lista = Object.entries(info.tipos).map(([k, t]) => el('button', { type: 'button', className: k === info.sugerido ? 'sugerido' : '', textContent: t, onclick: () => checar(k) }));
     pintar(el('h1', { textContent: 'Hola, ' + info.nombre }), el('p', { className: 'ayuda', textContent: aviso || (info.ultima ? `Tu última checada de hoy: ${info.ultima.tipo} a las ${info.ultima.hora}` : 'Mira a la cámara y elige qué vas a registrar.') }),
-      caja, gps, el('div', { className: 'botones' }, ...lista), el('button', { type: 'button', className: 'btn', textContent: 'Cancelar', onclick: () => { apagarCamara(); inicio(); } }),
+      caja, gps, el('div', { className: 'botones' }, ...lista), el('button', { type: 'button', className: 'btn', textContent: '📋 Ver mis servicios', onclick: verServicios }), el('button', { type: 'button', className: 'btn', textContent: 'Cancelar', onclick: () => { apagarCamara(); inicio(); } }),
       el('p', { className: 'aviso-privacidad' }, 'Tu foto y tu ubicación se toman solo al checar y las ve únicamente RH o tu gerente. ', el('a', { href: '/aviso-privacidad-checador.html', target: '_blank', rel: 'noopener', textContent: 'Aviso de privacidad' })));
     encenderCamara(caja); posicion = null; pedirUbicacion(gps);
     flujo = setTimeout(() => { apagarCamara(); inicio(); }, 90000);
+  }
+  // ---------- Mis servicios (2026-11-11): las órdenes que le asignaron, sin precios ni teléfonos ----------
+  const hoyCel = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Mexico_City' }).format(new Date(Date.now() + desfase));
+  const fmtDia = new Intl.DateTimeFormat('es-MX', { timeZone: 'UTC', weekday: 'long', day: 'numeric', month: 'long' });
+  function listaServicios(l) {
+    if (!l?.length) return el('p', { className: 'ayuda', textContent: '📋 No tienes servicios asignados para hoy ni los próximos días.' });
+    const dias = [...new Set(l.map(x => x.fecha))];
+    return el('div', { className: 'servicios' }, el('h2', { textContent: '📋 Tus servicios' }), ...dias.flatMap(f => [el('div', { className: 'dia', textContent: f === hoyCel() ? 'Hoy' : fmtDia.format(new Date(f + 'T12:00:00Z')) }),
+      ...l.filter(x => x.fecha === f).map(x => el('div', { className: 'servicio' }, el('b', { textContent: `${x.hora ? x.hora + ' · ' : ''}${x.cliente || 'Cliente'}` }),
+        el('small', { textContent: [x.servicio, x.descripcion].filter(Boolean).join(' — ') }),
+        x.direccion ? el('a', { href: 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(x.direccion), target: '_blank', rel: 'noopener noreferrer', textContent: '📍 ' + x.direccion }) : '',
+        el('small', { textContent: [x.folio, x.unidad ? 'Unidad: ' + x.unidad : '', 'Tú: ' + x.papel].filter(Boolean).join(' · ') }),
+        x.equipo?.length ? el('small', { textContent: 'Equipo: ' + x.equipo.join(', ') }) : ''))]));
+  }
+  async function verServicios() {
+    clearTimeout(flujo); apagarCamara();
+    pintar(el('p', { className: 'ayuda', textContent: 'Buscando tus servicios…' }));
+    let r; try { r = await api('servicios', { pin }); } catch { return mensaje('error', '📶', 'Sin conexión', 'Para ver tus servicios necesitas internet.', 'Volver', inicio); }
+    if (!r.ok) { pin = ''; return mensaje('error', '⚠️', 'No se pudo', r.j.error || 'Intenta de nuevo', 'Volver', inicio); }
+    pintar(el('h1', { textContent: 'Hola, ' + info.nombre }), listaServicios(r.j.servicios), el('div', { className: 'botones' }, el('button', { type: 'button', className: 'sugerido', textContent: 'Checar', onclick: () => botones() })),
+      el('button', { type: 'button', className: 'btn', textContent: 'Salir', onclick: () => { pin = ''; inicio(); } }));
+    flujo = setTimeout(() => { pin = ''; inicio(); }, 120000);
   }
   async function checar(tipo) {
     clearTimeout(flujo);
@@ -141,6 +171,7 @@
     if (r.status === 401 && r.j.codigo === 'CELULAR_NO_LIGADO') { try { localStorage.removeItem(LLAVE); } catch { /* */ } token = null; return sinLigar(); }
     if (!r.ok) return mensaje('error', '⚠️', 'No se pudo', r.j.error || 'Intenta de nuevo', 'Volver', inicio);
     mensaje('ok', '✅', `${r.j.tipo} · ${r.j.hora}`, r.j.repetida ? 'Ya estaba registrada hace un momento.' : r.j.por_revisar ? `Gracias, ${r.j.nombre}. Quedó por revisar: ${r.j.por_revisar}.` : `Gracias, ${r.j.nombre}.`, 'Listo', inicio);
+    if (r.j.servicios?.length) document.getElementById('pantalla').querySelector('button')?.before(listaServicios(r.j.servicios));
   }
 
   // ---------- Arranque: ligar con el enlace (#e=…) si viene ----------
