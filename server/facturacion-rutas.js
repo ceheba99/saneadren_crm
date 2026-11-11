@@ -491,10 +491,19 @@ module.exports = function rutasFacturacion(app, db, h, { direccion, puede = () =
       if (!FECHA.test(String(q[k]))) return { error: 'La fecha no es válida' };
       donde.push(`substr(COALESCE(fecha_timbrado, created_at), 1, 10) ${op} ?`); args.push(String(q[k]));
     }
-    let filas = db.prepare(`SELECT * FROM facturas ${donde.length ? 'WHERE ' + donde.join(' AND ') : ''} ORDER BY id DESC LIMIT 1000`).all(...args);
+    // Solo facturas de órdenes que quien pide puede ver, igual que la ficha de una factura (auditoría H08).
+    donde.push('(lead_id IS NULL OR lead_id IN (SELECT id FROM leads))');
+    // El texto se busca en la base ANTES del corte de 1,000: antes solo se buscaba entre las 1,000 más nuevas (auditoría H09).
     const t = textoFiltro(q.q);
-    if (t) filas = filas.filter(f => [f.serie && f.folio ? `${f.serie}-${f.folio}` : '', f.serie, f.folio, f.uuid, f.receptor_rfc, f.receptor_razon_social, folioDeOrden(f)].some(x => textoFiltro(x).includes(t)));
-    return { filas };
+    if (t) {
+      // Folio de la orden (OS-QRO-202611-0001): solo si lo que se busca trae números.
+      const ordenes = /\d/.test(t) ? db.prepare("SELECT id, created_at FROM leads WHERE estatus = 'ganado'").all().filter(l => textoFiltro(folioDeOrden({ lead_id: l.id, created_at: l.created_at })).includes(t)).map(l => l.id).slice(0, 500) : [];
+      donde.push(`(lower(COALESCE(serie, '') || '-' || COALESCE(folio, '')) LIKE ? OR lower(COALESCE(uuid, '')) LIKE ? OR lower(COALESCE(receptor_rfc, '')) LIKE ? OR lower(COALESCE(receptor_razon_social, '')) LIKE ?${ordenes.length ? ` OR lead_id IN (${ordenes.map(() => '?').join(',')})` : ''})`);
+      const like = '%' + t.replace(/[%_]/g, '') + '%'; args.push(like, like, like, like, ...ordenes);
+    }
+    const filas = db.prepare(`SELECT * FROM facturas ${donde.length ? 'WHERE ' + donde.join(' AND ') : ''} ORDER BY id DESC LIMIT 1001`).all(...args);
+    const total = filas.length > 1000 ? db.prepare(`SELECT COUNT(*) n FROM facturas WHERE ${donde.join(' AND ')}`).get(...args).n : filas.length;
+    return { filas: filas.slice(0, 1000), total };
   }
 
   app.get('/api/facturacion/facturas', h((req, res) => {
@@ -502,7 +511,7 @@ module.exports = function rutasFacturacion(app, db, h, { direccion, puede = () =
     const r = consultarFacturas(req.query); if (r.error) return res.status(400).json({ error: r.error });
     const filas = r.filas.map(filaLista);
     const c = estadoConfig(env);
-    res.json({ entorno: esDemo() ? 'demo' : c.entorno, total: filas.length, truncado: filas.length > 200, facturas: filas.slice(0, 200),
+    res.json({ entorno: esDemo() ? 'demo' : c.entorno, total: r.total, truncado: r.total > 200, facturas: filas.slice(0, 200),
       sucursales: db.prepare('SELECT id, nombre FROM sucursales WHERE activo = 1 ORDER BY id').all() });
   }));
 
@@ -511,7 +520,7 @@ module.exports = function rutasFacturacion(app, db, h, { direccion, puede = () =
     if (sinPermisoTimbrar(req, res)) return;
     const r = consultarFacturas(req.query); if (r.error) return res.status(400).json({ error: r.error });
     const suc = Object.fromEntries(db.prepare('SELECT id, nombre FROM sucursales').all().map(x => [x.id, x.nombre]));
-    res.json({ entorno: esDemo() ? 'demo' : estadoConfig(env).entorno, total: r.filas.length, truncado: r.filas.length >= 1000, filas: r.filas.map(f => ({
+    res.json({ entorno: esDemo() ? 'demo' : estadoConfig(env).entorno, total: r.total, truncado: r.total > 1000, filas: r.filas.map(f => ({
       tipo: f.tipo_documento === 'pago' ? 'Complemento de pago' : 'Factura', folio: f.serie && f.folio ? `${f.serie}-${f.folio}` : '', fecha: String(f.fecha_timbrado || f.created_at || '').slice(0, 10),
       orden: folioDeOrden(f), cliente: f.receptor_razon_social || '', rfc: f.receptor_rfc || '', subtotal_cent: f.subtotal_cent ?? 0, iva_cent: f.iva_cent ?? 0, total_cent: f.total_cent ?? 0,
       metodo_pago: f.metodo_pago || '', forma_pago: f.forma_pago || '', estatus: f.estatus, motivo_cancelacion: f.motivo_cancelacion || '', entorno: f.entorno === 'prod' ? 'Real' : f.entorno === 'demo' ? 'Demostración' : 'Prueba',
@@ -523,26 +532,28 @@ module.exports = function rutasFacturacion(app, db, h, { direccion, puede = () =
     if (sinPermisoTimbrar(req, res)) return;
     const entorno = esDemo() ? 'demo' : estadoConfig(env).entorno, avisos = [];
     const TEXTO = { cancelacion_solicitada: ['amarillo', 'Cancelación pedida y todavía sin confirmar por el SAT: consulta su estatus'], timbrando: ['rojo', 'Sin respuesta de factura.com: abre la orden y pulsa «Verificar» (no la mandes otra vez sin revisar)'], borrador_error: ['rojo', 'Quedó en borrador: corrige lo que dice el motivo y vuelve a timbrar'], pendiente: ['amarillo', 'No se timbró: revisa el motivo y vuelve a intentar'] };
-    for (const f of db.prepare("SELECT * FROM facturas WHERE entorno = ? AND ((estatus IN ('timbrando', 'borrador_error', 'cancelacion_solicitada')) OR (estatus = 'pendiente' AND error_json IS NOT NULL)) AND NOT (tipo_documento = 'pago' AND sustituye_a IS NULL AND estatus IN ('pendiente', 'borrador_error')) ORDER BY id DESC LIMIT 30").all(entorno)) {
+    for (const f of db.prepare("SELECT * FROM facturas WHERE entorno = ? AND (lead_id IS NULL OR lead_id IN (SELECT id FROM leads)) AND ((estatus IN ('timbrando', 'borrador_error', 'cancelacion_solicitada')) OR (estatus = 'pendiente' AND error_json IS NOT NULL)) AND NOT (tipo_documento = 'pago' AND sustituye_a IS NULL AND estatus IN ('pendiente', 'borrador_error')) ORDER BY id DESC LIMIT 30").all(entorno)) {
       const v = vistaFactura(f), [nivel, texto] = TEXTO[f.estatus];
       avisos.push({ tipo: f.estatus, nivel, lead_id: f.lead_id, folio: folioDeOrden(f), nombre: f.receptor_razon_social, texto: v.error ? `${texto}. Motivo: ${v.error}` : texto });
     }
     // Sustituta timbrada y original todavía vigente: hay DOS facturas vigentes ante el SAT para la misma venta.
-    for (const o of db.prepare("SELECT o.* FROM facturas o JOIN facturas s ON s.sustituye_a = o.id AND s.estatus = 'timbrada' WHERE o.entorno = ? AND o.estatus = 'timbrada' ORDER BY o.id DESC LIMIT 20").all(entorno))
+    for (const o of db.prepare("SELECT o.* FROM facturas o JOIN facturas s ON s.sustituye_a = o.id AND s.estatus = 'timbrada' WHERE o.entorno = ? AND o.estatus = 'timbrada' AND (o.lead_id IS NULL OR o.lead_id IN (SELECT id FROM leads)) ORDER BY o.id DESC LIMIT 20").all(entorno))
       avisos.push({ tipo: 'sin_cancelar', nivel: 'rojo', lead_id: o.lead_id, folio: folioDeOrden(o), nombre: o.receptor_razon_social, texto: o.tipo_documento === 'pago' ? `El complemento de pago ${o.serie || ''}-${o.folio || ''} ya tiene su corrección timbrada y sigue vigente: cancélalo con el motivo 01` : `La factura ${o.serie || ''}-${o.folio || ''} ya tiene su sustituta timbrada y sigue vigente: cancélala con el motivo 01` });
-    // Realizadas en los últimos 60 días, con IVA, sin folio de factura capturado ni factura vigente en este entorno.
-    const porFacturar = db.prepare(`SELECT l.id, l.created_at, l.fecha_realizado, COALESCE(c.empresa_contacto, c.nombre) AS cliente FROM leads l LEFT JOIN clientes c ON c.id = l.cliente_id
+    // Realizadas con IVA, sin folio de factura capturado ni factura vigente en este entorno. Se listan las 40 más recientes,
+    // pero se cuentan TODAS y cuántas tienen más de 60 días (auditoría H09: antes solo contaba 40 de los últimos 60 días).
+    const sinFacturar = `FROM leads l LEFT JOIN clientes c ON c.id = l.cliente_id
       WHERE l.estatus = 'ganado' AND l.ejecucion = 'realizado' AND l.iva_modo IN ('mas_iva', 'incluido') AND (l.factura_folio IS NULL OR l.factura_folio = '')
-        AND l.fecha_realizado >= date('now', 'localtime', '-60 days')
-        AND NOT EXISTS (SELECT 1 FROM facturas f WHERE f.lead_id = l.id AND f.entorno = ? AND f.tipo_documento = 'factura' AND (f.estatus IN (${VIGENTES}) OR (f.estatus = 'cancelada' AND f.motivo_cancelacion = '03')))
-      ORDER BY l.fecha_realizado DESC, l.id DESC LIMIT 40`).all(entorno);
+        AND NOT EXISTS (SELECT 1 FROM facturas f WHERE f.lead_id = l.id AND f.entorno = ? AND f.tipo_documento = 'factura' AND (f.estatus IN (${VIGENTES}) OR (f.estatus = 'cancelada' AND f.motivo_cancelacion = '03')))`;
+    const reciente = `AND l.fecha_realizado >= date('now', 'localtime', '-60 days')`;
+    const porFacturar = db.prepare(`SELECT l.id, l.created_at, l.fecha_realizado, COALESCE(c.empresa_contacto, c.nombre) AS cliente ${sinFacturar} ${reciente} ORDER BY l.fecha_realizado DESC, l.id DESC LIMIT 40`).all(entorno);
+    const cuentaSinFacturar = db.prepare(`SELECT SUM(l.fecha_realizado >= date('now', 'localtime', '-60 days')) n, SUM(l.fecha_realizado < date('now', 'localtime', '-60 days')) viejas ${sinFacturar}`).get(entorno);
     // F6: pagos de facturas PPD sin complemento de pago. Rojo si ya venció el día 5 del mes siguiente; amarillo si faltan 3 días o menos.
     const en3 = new Intl.DateTimeFormat('sv-SE', { timeZone: 'America/Mexico_City' }).format(new Date(Date.now() + 3 * 86400000));
     for (const k of pendientes(db, entorno).slice(0, 30)) avisos.push({ tipo: 'complemento_pendiente', nivel: k.vencido ? 'rojo' : k.fecha_limite <= en3 ? 'amarillo' : 'azul', lead_id: k.lead_id,
       cobro_id: k.cobro_id, folio: require('./sucursales').folio('OS', 'leads', k.lead_id, db.prepare('SELECT created_at FROM leads WHERE id = ?').get(k.lead_id)?.created_at), nombre: k.receptor_razon_social, fecha: k.fecha,
       texto: `Pago de ${(k.monto_cent / 100).toLocaleString('es-MX', { style: 'currency', currency: 'MXN' })} del ${k.fecha} sin complemento de pago (factura ${k.serie || ''}-${k.folio || ''}). ${k.vencido ? 'Ya venció' : 'Fecha límite'}: ${k.fecha_limite}${k.complemento_estatus === 'borrador_error' ? '. Quedó en borrador: revisa el motivo' : ''}` });
     for (const o of porFacturar.slice(0, 15)) avisos.push({ tipo: 'por_facturar', nivel: 'azul', lead_id: o.id, folio: require('./sucursales').folio('OS', 'leads', o.id, o.created_at), nombre: o.cliente || '', fecha: o.fecha_realizado, texto: 'Realizada con IVA y todavía sin factura' });
-    res.json({ entorno, avisos, por_facturar_total: porFacturar.length });
+    res.json({ entorno, avisos, por_facturar_total: cuentaSinFacturar.n || 0, por_facturar_viejas: cuentaSinFacturar.viejas || 0 });
   }));
 
   // Reenviar la factura al correo que tiene factura.com del cliente. Solo producción, solo timbradas.

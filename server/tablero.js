@@ -230,7 +230,9 @@ module.exports = function tablero(app, db, h, finanzas) {
     // Viendo varias sucursales: el mismo cálculo para cada una (cada número sale solo con lo de esa sucursal).
     const sucs = [...req.alcanceSuc.ids];
     const porSucursal = sucs.length < 2 ? [] : db.prepare(`SELECT id, nombre, clave FROM sucursales WHERE id IN (${sucs.map(() => '?').join(',')}) ORDER BY id`).all(...sucs).map(s =>
-      alcance.correr({ todo: false, ids: new Set([s.id]), alta: s.id }, () => {
+      // Conserva lo que ve el rol (niveles por área y quién pide): antes solo se pasaba la sucursal y el desglose
+      // podía sumar más de lo que el rol ve en sus listas (auditoría H08).
+      alcance.correr({ ...req.alcanceSuc, todo: false, todas: false, ids: new Set([s.id]), alta: s.id }, () => {
         const r = periodo(desde, hasta).r, ca = finanzas.cartera().filter(c => c.saldo > 0 && !c.programada), px = finanzas.cuentasPorPagar().filter(x => x.saldo > 0 && x.tipo_comprobante !== 'informativo');
         const cent = arr => Math.round(arr.reduce((t, x) => t + x.saldo * 100, 0)) / 100;
         return { id: s.id, nombre: s.nombre, clave: s.clave, venta: r.venta, servicios: r.servicios, gasto: r.gasto, gasto_con_iva: r.gasto_con_iva, utilidad: r.utilidad, margen_pct: r.margen_pct, cobrado: r.cobrado, pagado: r.pagado, flujo: r.flujo,

@@ -681,7 +681,8 @@ const Facturacion = (() => {
     cont.innerHTML = r.avisos.length ? r.avisos.map(a => `<div class="fila-alerta ${clase(a.nivel)}">
         <div class="info"><span class="tipo-tag ${tag(a.nivel)}">${esc(TAG_FX[a.tipo] || a.tipo)}</span>
           <div><b>${esc(a.folio || '')}</b> · ${esc(a.nombre || '')}</div><div class="txt">${esc(a.texto)}</div>${a.fecha ? `<div class="fecha">${a.tipo === 'complemento_pendiente' ? 'Pago del' : 'Realizada el'} ${esc(String(a.fecha).split('-').reverse().join('/'))}</div>` : ''}</div>
-        <div class="util-46"><button type="button" class="btn btn-outline" data-fx-inicio-orden="${Number(a.lead_id)}">Abrir orden</button></div></div>`).join('') + (r.por_facturar_total > 15 ? `<p class="ayuda">Y ${r.por_facturar_total - 15} orden(es) más por facturar.</p>` : '')
+        <div class="util-46"><button type="button" class="btn btn-outline" data-fx-inicio-orden="${Number(a.lead_id)}">Abrir orden</button></div></div>`).join('') + (r.por_facturar_total > 15 ? `<p class="ayuda">Y ${Number(r.por_facturar_total) - 15} orden(es) más por facturar.</p>` : '')
+        + (r.por_facturar_viejas ? `<p class="ayuda">⚠ Además, ${Number(r.por_facturar_viejas)} orden(es) realizadas hace más de 60 días siguen sin factura.</p>` : '')
       : '<p class="util-45">Nada pendiente de facturar. 🎉</p>';
   }
   $('inicio-facturacion')?.addEventListener('click', e => { const b = e.target.closest('[data-fx-inicio-orden]'); if (b) abrirFicha(Number(b.dataset.fxInicioOrden)); });

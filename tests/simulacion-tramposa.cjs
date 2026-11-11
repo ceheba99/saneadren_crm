@@ -5,7 +5,7 @@ const { spawn } = require('child_process'); const fs = require('fs'), os = requi
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'crm-tramposa-')); const PUERTO = String(6100 + Math.floor(Math.random() * 300));
 const ADMIN = { correo: 'marketing@saneadren.com.mx', password: 'Tramposa-' + Math.random().toString(36).slice(2) + '-3' };
 let salida = '';
-const srv = spawn(process.execPath, [path.join(__dirname, '..', 'server', 'index.js')], { env: { ...process.env, PORT: PUERTO, DB_PATH: path.join(dir, 't.db'), APP_URL: 'http://localhost:' + PUERTO, ADMIN_USUARIO: 'admin', ADMIN_CORREO: ADMIN.correo, ADMIN_PASSWORD: ADMIN.password, SMTP_HOST: '' } });
+const srv = spawn(process.execPath, [path.join(__dirname, '..', 'server', 'index.js')], { env: { ...process.env, PORT: PUERTO, DB_PATH: path.join(dir, 't.db'), APP_URL: 'http://localhost:' + PUERTO, ADMIN_USUARIO: 'admin', ADMIN_CORREO: ADMIN.correo, ADMIN_PASSWORD: ADMIN.password, SMTP_HOST: '', CORREO_CONSOLA: '1' } });
 srv.stdout.on('data', d => salida += d); srv.stderr.on('data', d => salida += d);
 const pedir = async (m, r, t, b) => { const x = await fetch(`http://localhost:${PUERTO}/api` + r, { method: m, headers: { 'Content-Type': 'application/json', ...(t ? { Authorization: 'Bearer ' + t } : {}) }, body: b === undefined ? undefined : JSON.stringify(b) }); return [x.status, await x.json().catch(() => ({}))]; };
 const espera = ms => new Promise(r => setTimeout(r, ms));
