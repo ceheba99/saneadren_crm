@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Saneadren · Cotizaciones y Servicios</title>
-<link rel="stylesheet" href="styles.css?v=nomina2">
+<link rel="stylesheet" href="styles.css?v=ct1">
 <link rel="stylesheet" href="servicios-tabla.css">
 <link rel="stylesheet" href="flujo.css?v=cel1">
 <link rel="stylesheet" href="interfaz.css?v=visual19">
@@ -49,6 +49,7 @@
           <button type="button" class="menu-item perm-solicitudes-ver" data-vista="solicitudes"><span class="menu-icono" aria-hidden="true">📝</span>Solicitudes de compra</button>
           <button type="button" class="menu-item perm-ordenes_compra-ver" data-vista="compras"><span class="menu-icono" aria-hidden="true">🛒</span>Órdenes de compra</button>
           <button type="button" class="menu-item perm-reportes-analisis" data-vista="resultados"><span class="menu-icono" aria-hidden="true">📊</span>Resultados</button>
+          <button type="button" class="menu-item perm-contabilidad-ver" data-vista="contabilidad" id="nav-contabilidad"><span class="menu-icono" aria-hidden="true">🧮</span>Contabilidad</button>
         </div>
       </div>
       <div class="menu-grupo" data-grupo="rh">
@@ -693,6 +694,20 @@
       <p class="tabla-conteo" id="bib-conteo" role="status"></p>
       <div class="bib-rejilla" id="bib-rejilla"></div>
     </div>
+  </section>
+
+  <!-- ====== VISTA: CONTABILIDAD DEL MES (módulo contable F1; Dirección y «Contabilidad del mes») ====== -->
+  <section class="vista" id="vista-contabilidad">
+    <div class="vista-encabezado">
+      <div><h2>Contabilidad del mes</h2><p class="ayuda">Lo que necesita tu contador cada mes: lo facturado y lo cobrado, los gastos y lo pagado, el IVA y lo que falta comprobar. Descarga el Excel y los XML. Aquí solo se consulta: nada se cambia. Las cifras son de apoyo; qué se declara lo decide el contador.</p></div>
+    </div>
+    <div class="filtros">
+      <label>Mes <input type="month" id="ct-mes"></label>
+      <select id="ct-sucursal" aria-label="Sucursal"></select>
+      <button type="button" class="btn btn-outline" id="ct-excel">📊 Descargar Excel del mes</button>
+      <button type="button" class="btn btn-outline" id="ct-xml">🗂️ Descargar XML del mes</button>
+    </div>
+    <div id="ct-resumen"></div>
   </section>
 
   <!-- ====== VISTA: USUARIOS (solo admin) ====== -->
@@ -1856,7 +1871,7 @@
 <script src="servicios-tabla.js?v=pf1"></script>
 <script src="flujo.js?v=con1"></script>
 <script src="cuentas.js?v=rev1"></script>
-<script src="finanzas.js?v=h1106"></script>
+<script src="finanzas.js?v=ct1"></script>
 <script src="calendario.js?v=esp1"></script>
 <script src="tablero.js?v=enc1"></script>
 <script src="bitacora.js?v=hc1"></script>
@@ -1867,12 +1882,13 @@
 <script src="sucursales.js?v=perm4"></script>
 <script src="facturacion.js?v=fx11"></script>
 <script src="encuestas.js?v=enc1"></script>
-<script src="app.js?v=h1106"></script>
+<script src="app.js?v=ct1"></script>
 <script src="listas-servicio.js?v=ls1"></script>
 <script src="personal.js?v=h1106"></script>
 <script src="asistencia.js?v=nomina1"></script>
 <script src="rh.js?v=reglas1"></script>
 <script src="clientes-carga.js?v=cc1"></script>
+<script src="contabilidad.js?v=ct2"></script>
 <script src="buscador.js?v=suc1"></script>
 <script src="demo.js?v=demo1"></script>
 <script src="prospeccion.js?v=pro2"></script>
