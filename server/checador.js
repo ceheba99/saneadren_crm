@@ -667,8 +667,9 @@ module.exports = function checador(app, db, h) {
   // de servicio, pero para imprimir que sí se verifiquen») ----------
   // Lo ve cualquiera frente al kiosco (sin identificarse): las órdenes de servicio de la sucursal del kiosco de hoy y los
   // próximos 6 días, con lo mismo que «Mis servicios» (sin precios ni teléfonos). Para imprimir la orden o su factura hay
-  // que escribir código y PIN: vale cualquier persona activa de esa sucursal que use el checador; cuenta como intento
-  // (con foto) si se equivoca, y la impresión queda en la bitácora con su nombre.
+  // que escribir código y PIN, y SOLO quien está asignado a esa orden (equipo de la orden o técnico) o el Supervisor de
+  // la sucursal (Dirección, 2026-11-11: «sí, solo asignados»); cuenta como intento (con foto) si se equivoca, y la
+  // impresión queda en la bitácora con su nombre.
   const CAL_DIAS = 7;
   app.get('/api/publico/kiosco/calendario', kiosco, h((req, res) => {
     const hoy = ahoraMexico().fecha, d0 = /^\d{4}-\d{2}-\d{2}$/.test(String(req.query.desde || '')) ? String(req.query.desde) : hoy;
@@ -690,8 +691,10 @@ module.exports = function checador(app, db, h) {
     if (!v.p) { const intento = registrarIntento(req, codigo, v); return res.status(v.status).json({ error: v.error, ...(intento ? { intento } : {}) }); }
     if (v.p.pin_temporal) return res.status(409).json({ error: 'Primero elige tu PIN: escribe tu código en la pantalla principal' });
     if (v.p.sucursal_id !== req.kiosco.sucursal_id) return res.status(403).json({ error: 'Solo el personal de esta sucursal imprime sus órdenes' });
-    const l = db.prepare("SELECT id FROM main.leads WHERE id = ? AND estatus = 'ganado' AND sucursal_id = ?").get(idDe(req.body?.orden), req.kiosco.sucursal_id);
+    const l = db.prepare("SELECT id, tecnico_id FROM main.leads WHERE id = ? AND estatus = 'ganado' AND sucursal_id = ?").get(idDe(req.body?.orden), req.kiosco.sucursal_id);
     if (!l) return res.status(404).json({ error: 'Esa orden ya no está en el calendario' });
+    const asignado = !!db.prepare('SELECT 1 FROM main.orden_personal WHERE lead_id = ? AND personal_id = ?').get(l.id, v.p.id) || (l.tecnico_id != null && l.tecnico_id === v.p.usuario_id);
+    if (!asignado && v.p.puesto !== 'Supervisor') return res.status(403).json({ error: 'Solo quien está asignado a esta orden (o el supervisor) la puede imprimir. Pide a la oficina que te asignen.' });
     const factura = !!db.prepare("SELECT 1 FROM main.facturas WHERE lead_id = ? AND estatus = 'timbrada' AND pdf_path IS NOT NULL LIMIT 1").get(l.id);
     res.json({ nombre: primerNombre(v.p.nombre), permiso: permisoDocumento(l.id, v.p.id, req.kiosco.id), con_factura: factura });
   }));

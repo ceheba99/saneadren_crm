@@ -836,11 +836,11 @@
       barra, lista, el('button', { type: 'button', className: 'btn', textContent: 'Salir', onclick: inicio }));
     $('pantalla').classList.add('ancha');
   }
-  // Imprimir desde el calendario: código y PIN de alguien de la sucursal (no hace falta estar asignado).
+  // Imprimir desde el calendario: código y PIN de quien está asignado a la orden (o el supervisor de la sucursal).
   function imprimirDelCalendario(o, desde, dia) {
     const volver = () => calendario(desde, dia);
     reiniciarEspera(60000);
-    teclado('Imprimir ' + o.folio, 'Para imprimir, escribe tu código', false, codigo => {
+    teclado('Imprimir ' + o.folio, 'Solo quien va a este servicio (o el supervisor). Escribe tu código', false, codigo => {
       teclado('Escribe tu PIN', 'Los 4 números de tu PIN', true, async pin => {
         estado.teclado = null; adelantadas = '';
         pintar(el('p', { className: 'ayuda', textContent: 'Revisando…' }));

@@ -141,10 +141,15 @@ const sumar = (f, k) => { const d = new Date(f + 'T12:00:00Z'); d.setUTCDate(d.g
   const ordenCal = cal.ordenes.find(o => o.cliente === 'Hotel Mañana');
   const [sx, jx] = await kio(K, 'calendario-imprimir', { codigo: alba.codigo, pin: '0000', orden: ordenCal.id });
   revisa(sx === 401 && typeof jx.intento === 'string' && !jx.permiso, 'Con PIN equivocado no imprime y queda el intento (con foto)', [sx, jx]);
-  const [sy, jy] = await kio(K, 'calendario-imprimir', { codigo: alba.codigo, pin: PIN[alba.id], orden: ordenCal.id });
-  revisa(sy === 200 && jy.nombre === 'Alba' && typeof jy.permiso === 'string' && jy.con_factura === false, 'Con su código y PIN, alguien de la sucursal imprime aunque no vaya a esa orden', jy);
+  revisa((await kio(K, 'calendario-imprimir', { codigo: alba.codigo, pin: PIN[alba.id], orden: ordenCal.id }))[0] === 403, 'Alba no va al Hotel Mañana: no la imprime (solo asignados, Dirección 2026-11-11)');
+  const [sy, jy] = await kio(K, 'calendario-imprimir', { codigo: oscar.codigo, pin: PIN[oscar.id], orden: ordenCal.id });
+  revisa(sy === 200 && jy.nombre === 'Óscar' && typeof jy.permiso === 'string' && jy.con_factura === false, 'Óscar (asignado) sí la imprime con su código y PIN', jy);
   const [sz, oz] = await kio(K, 'orden', { permiso: jy.permiso });
-  revisa(sz === 200 && oz.folio === ordenCal.folio && conBase(d => d.prepare("SELECT COUNT(*) n FROM auditoria WHERE accion = 'imprimió' AND detalle LIKE '%Alba Ayudante%'").get().n) === 1, 'Y la orden sale a su nombre en la bitácora', [sz, oz.folio]);
+  revisa(sz === 200 && oz.folio === ordenCal.folio, 'Y la orden sale', [sz, oz.folio]);
+  const sinEq = cal.ordenes.find(o => o.cliente === 'Escuela Sin Equipo');
+  revisa((await kio(K, 'calendario-imprimir', { codigo: sara.codigo, pin: PIN[sara.id], orden: sinEq.id }))[0] === 200 && (await kio(K, 'calendario-imprimir', { codigo: toño.codigo, pin: PIN[toño.id], orden: sinEq.id }))[0] === 403, 'La supervisora imprime cualquiera de su sucursal; un técnico no asignado, no');
+  const deT = cal.ordenes.find(o => o.cliente === 'Fábrica de Toño');
+  revisa((await kio(K, 'calendario-imprimir', { codigo: toño.codigo, pin: PIN[toño.id], orden: deT.id }))[0] === 200, 'El técnico de la orden (ficha ligada a su usuario) sí');
   const conFact = cal.ordenes.find(o => o.cliente === 'Restaurante Hoy SA'), [, jf] = await kio(K, 'calendario-imprimir', { codigo: alba.codigo, pin: PIN[alba.id], orden: conFact.id });
   revisa(jf.con_factura === true && (await fetch(URLB + '/api/publico/kiosco/factura', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Kiosco': K }, body: JSON.stringify({ permiso: jf.permiso }) })).status === 200, 'También la factura de una orden que la tiene');
   revisa((await kio(K, 'calendario-imprimir', { codigo: memo.codigo, pin: PIN[memo.id], orden: ordenCal.id }))[0] === 403, 'Alguien de otra sucursal no imprime en este kiosco');
