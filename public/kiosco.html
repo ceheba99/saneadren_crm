@@ -49,8 +49,8 @@
   /* Mis servicios (2026-11-11): las órdenes asignadas a quien se identificó. */
   .servicios{text-align:left;margin-top:16px;}
   .servicios h2{font-size:1.15rem;margin:0 0 6px;}
-  .servicios .dia{font-weight:700;color:var(--sec);margin:12px 0 4px;}
-  .servicios .dia::first-letter{text-transform:uppercase;}
+  .servicios .dia,.cal-lista .dia{font-weight:700;color:var(--sec);margin:12px 0 4px;}
+  .servicios .dia::first-letter,.cal-lista .dia::first-letter{text-transform:uppercase;}
   .servicio{background:#fff;border:1px solid var(--linea);border-left:5px solid var(--amarillo);border-radius:12px;padding:10px 12px;margin:6px 0;font-size:1rem;line-height:1.35;}
   .servicio b{font-size:1.08rem;}
   .servicio .acciones{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px;}
@@ -58,6 +58,15 @@
   .servicio .acciones .mal{color:var(--rojo);font-size:.9rem;}
   .servicio small{display:block;color:var(--sec);}
   .servicios-lista{max-height:46vh;overflow:auto;}
+  /* Calendario de servicios (2026-11-11): lo ve cualquiera; para imprimir se pide código y PIN. */
+  .abajo-inicio{display:flex;flex-wrap:wrap;justify-content:center;gap:8px;margin-top:12px;}
+  .btn-calendario{font-size:1.05rem;padding:12px 18px;background:#fff;border:2px solid var(--linea);color:var(--texto);}
+  .cal-dias{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:6px;margin:6px 0 10px;}
+  .cal-dias button{font:inherit;font-size:.92rem;border:2px solid var(--linea);background:#fff;border-radius:12px;padding:8px 4px;cursor:pointer;line-height:1.25;}
+  .cal-dias button[aria-pressed="true"]{border-color:var(--amarillo);background:#fff7d6;font-weight:700;}
+  .cal-dias small{display:block;color:var(--sec);}
+  .cal-lista{text-align:left;max-height:52vh;overflow:auto;}
+  .cal-nav{display:flex;justify-content:space-between;gap:8px;margin-bottom:6px;}
   .botones button{font-size:1.25rem;font-weight:700;padding:22px 10px;background:#fff;border:3px solid var(--linea);color:var(--texto);}
   .botones button.sugerido{background:var(--amarillo);border-color:#c98f00;color:#1a1d23;}
   .btn{font-size:1.1rem;padding:14px 22px;background:#fff;border:2px solid var(--linea);color:var(--texto);margin-top:16px;}
@@ -675,7 +684,8 @@
     // Con lector de QR: el botón grande va a un lado del teclado (en horizontal) o arriba (en vertical).
     teclado('Escribe tu código', 'Tu número de 4 dígitos para checar', false, codigo => trasCodigo(codigo), null,
       lectorQR ? el('button', { type: 'button', className: 'btn-credencial', onclick: leerCredencial }, el('span', { className: 'icono', textContent: '🪪' }), el('b', { textContent: 'Leer mi credencial' }), el('small', { textContent: 'Toca aquí y enseña el QR a la cámara' })) : null,
-      el('button', { type: 'button', className: 'btn btn-chico', textContent: '🙂 Registrar mi cara (con RH)', onclick: registrarCara }));
+      el('div', { className: 'abajo-inicio' }, el('button', { type: 'button', className: 'btn btn-calendario', textContent: '📅 Calendario de servicios', onclick: () => calendario() }),
+        el('button', { type: 'button', className: 'btn btn-chico', textContent: '🙂 Registrar mi cara (con RH)', onclick: registrarCara })));
   }
   // Después del código: con biométrico, primero la cara (si coincide, se salta el PIN); si no, el PIN.
   async function trasCodigo(codigo) {
@@ -789,6 +799,63 @@
     const dias = [...new Set(l.map(x => x.fecha))];
     return el('div', { className: 'servicios' }, el('h2', { textContent: '📋 Tus servicios' }),
       el('div', { className: 'servicios-lista' }, ...dias.flatMap(f => [el('div', { className: 'dia', textContent: nombreDia(f) }), ...l.filter(x => x.fecha === f).map(tarjetaServicio)])));
+  }
+  // ---------- Calendario de servicios de la sucursal (2026-11-11) ----------
+  // Para todos, sin identificarse: órdenes de hoy y los próximos días (sin precios ni teléfonos). «Imprimir» pide código
+  // y PIN; el servidor da el permiso para la orden y su factura (server/checador.js).
+  const fmtCorto = new Intl.DateTimeFormat('es-MX', { timeZone: 'UTC', weekday: 'short', day: 'numeric' });
+  async function calendario(desde = null, diaElegido = null) {
+    estado = { calendario: Symbol('calendario') }; adelantadas = '';
+    const yo = estado.calendario;
+    reiniciarEspera(120000);
+    pintar(el('p', { className: 'ayuda', textContent: 'Cargando el calendario…' }));
+    let r; try { r = await api('calendario' + (desde ? '?desde=' + encodeURIComponent(desde) : '')); } catch { if (estado.calendario === yo) error('Para ver el calendario se necesita internet.'); return; }
+    if (estado.calendario !== yo) return;
+    if (!r.ok) return error(r.j.error || 'No se pudo cargar el calendario');
+    const { ordenes, hoy } = r.j, dias = [];
+    for (let f = r.j.desde; f <= r.j.hasta; f = (d => { d.setUTCDate(d.getUTCDate() + 1); return d.toISOString().slice(0, 10); })(new Date(f + 'T12:00:00Z'))) dias.push(f);
+    let elegido = diaElegido && dias.includes(diaElegido) ? diaElegido : dias.includes(hoy) ? hoy : dias[0];
+    const lista = el('div', { className: 'cal-lista' }), barra = el('div', { className: 'cal-dias', role: 'group', ariaLabel: 'Días' });
+    const correr = k => { const d = new Date(r.j.desde + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() + k); return d.toISOString().slice(0, 10); };
+    const pintarDia = () => {
+      barra.replaceChildren(...dias.map(f => el('button', { type: 'button', ariaPressed: String(f === elegido), onclick: () => { elegido = f; reiniciarEspera(120000); pintarDia(); } },
+        el('span', { textContent: f === hoy ? 'Hoy' : fmtCorto.format(new Date(f + 'T12:00:00Z')) }), el('small', { textContent: (n => n ? `${n} ${n === 1 ? 'servicio' : 'servicios'}` : '—')(ordenes.filter(o => o.fecha === f).length) }))));
+      const delDia = ordenes.filter(o => o.fecha === elegido);
+      lista.replaceChildren(el('div', { className: 'dia', textContent: nombreDia(elegido) }),
+        ...(delDia.length ? delDia.map(o => el('div', { className: 'servicio' }, el('b', { textContent: `${o.hora ? o.hora + ' · ' : ''}${o.cliente || 'Cliente'}${o.estado ? ' · ' + o.estado : ''}` }),
+          el('small', { textContent: [o.servicio, o.descripcion].filter(Boolean).join(' — ') }), o.direccion ? el('small', { textContent: '📍 ' + o.direccion }) : '',
+          el('small', { textContent: [o.folio, o.unidad ? 'Unidad: ' + o.unidad : ''].filter(Boolean).join(' · ') }),
+          el('small', { textContent: o.equipo.length ? 'Equipo: ' + o.equipo.join(', ') : 'Sin equipo asignado' }),
+          el('div', { className: 'acciones' }, el('button', { type: 'button', textContent: '🖨️ Imprimir', onclick: () => imprimirDelCalendario(o, r.j.desde, elegido) }))))
+          : [el('p', { className: 'ayuda', textContent: 'No hay servicios programados este día.' })]));
+    };
+    pintarDia();
+    pintar(el('h1', { textContent: '📅 Servicios de la sucursal' }),
+      el('div', { className: 'cal-nav' }, el('button', { type: 'button', className: 'btn', textContent: '◀ Semana anterior', onclick: () => calendario(correr(-7)) }),
+        el('button', { type: 'button', className: 'btn', textContent: 'Semana siguiente ▶', onclick: () => calendario(correr(7)) })),
+      barra, lista, el('button', { type: 'button', className: 'btn', textContent: 'Salir', onclick: inicio }));
+    $('pantalla').classList.add('ancha');
+  }
+  // Imprimir desde el calendario: código y PIN de alguien de la sucursal (no hace falta estar asignado).
+  function imprimirDelCalendario(o, desde, dia) {
+    const volver = () => calendario(desde, dia);
+    reiniciarEspera(60000);
+    teclado('Imprimir ' + o.folio, 'Para imprimir, escribe tu código', false, codigo => {
+      teclado('Escribe tu PIN', 'Los 4 números de tu PIN', true, async pin => {
+        estado.teclado = null; adelantadas = '';
+        pintar(el('p', { className: 'ayuda', textContent: 'Revisando…' }));
+        let r; try { r = await api('calendario-imprimir', { codigo, pin, orden: o.id }); } catch { return error('Para imprimir se necesita internet.', volver); }
+        if (!r.ok) {
+          if (r.j.intento) { await camaraA(); const imagen = foto(); soltarCamara(); if (imagen) api('intento-foto', { intento: r.j.intento, foto: imagen }).catch(() => {}); }
+          return error(r.j.error || 'No se pudo', volver);
+        }
+        reiniciarEspera(90000);
+        pintar(el('h1', { textContent: 'Hola, ' + r.j.nombre }), el('p', { className: 'ayuda', textContent: `${o.folio} · ${o.cliente}. Toca lo que vas a imprimir: se descarga y lo abres para imprimir.` }),
+          el('div', { className: 'servicios' }, el('div', { className: 'servicio' }, el('b', { textContent: `${o.hora ? o.hora + ' · ' : ''}${o.cliente}` }), el('small', { textContent: o.servicio }),
+            botonesImprimir({ imprimir: r.j.permiso, con_factura: r.j.con_factura }))),
+          el('button', { type: 'button', className: 'btn', textContent: 'Volver al calendario', onclick: volver }));
+      }, volver);
+    }, volver);
   }
   function elegirTipo(datos) {
     estado.teclado = null;

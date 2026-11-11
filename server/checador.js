@@ -663,6 +663,38 @@ module.exports = function checador(app, db, h) {
     const est = db.prepare('SELECT estado, observaciones FROM main.checadas WHERE id = ?').get(id);
     res.status(201).json({ id, nombre: primerNombre(p.nombre), tipo: TIPOS[tipo], hora: a.hora.slice(0, 5), ...(est.estado === 'por_revisar' ? { por_revisar: est.observaciones } : {}), servicios: serviciosDe(p.id, req.kiosco.id) });
   }));
+  // ---------- Calendario de servicios en el kiosco (2026-11-11, Dirección: «un calendario para todos con las órdenes
+  // de servicio, pero para imprimir que sí se verifiquen») ----------
+  // Lo ve cualquiera frente al kiosco (sin identificarse): las órdenes de servicio de la sucursal del kiosco de hoy y los
+  // próximos 6 días, con lo mismo que «Mis servicios» (sin precios ni teléfonos). Para imprimir la orden o su factura hay
+  // que escribir código y PIN: vale cualquier persona activa de esa sucursal que use el checador; cuenta como intento
+  // (con foto) si se equivoca, y la impresión queda en la bitácora con su nombre.
+  const CAL_DIAS = 7;
+  app.get('/api/publico/kiosco/calendario', kiosco, h((req, res) => {
+    const hoy = ahoraMexico().fecha, d0 = /^\d{4}-\d{2}-\d{2}$/.test(String(req.query.desde || '')) ? String(req.query.desde) : hoy;
+    const sumarDias = (f, k) => { const x = new Date(f + 'T12:00:00Z'); x.setUTCDate(x.getUTCDate() + k); return x.toISOString().slice(0, 10); };
+    const desde = d0 < sumarDias(hoy, -7) ? sumarDias(hoy, -7) : d0 > sumarDias(hoy, 30) ? sumarDias(hoy, 30) : d0, hasta = sumarDias(desde, CAL_DIAS - 1);
+    const filas = db.prepare(`SELECT l.id, l.created_at, l.estatus, l.folio_num, l.sucursal_id, l.fecha_servicio, l.hora_servicio, l.direccion, l.equipo, l.partidas_json, l.ejecucion,
+        COALESCE(c.empresa_contacto, c.nombre, l.empresa_contacto, l.nombre) AS cliente, s.nombre AS servicio
+      FROM main.leads l LEFT JOIN main.clientes c ON c.id = l.cliente_id LEFT JOIN main.catalogo_servicios s ON s.id = l.servicio_id
+      WHERE l.estatus = 'ganado' AND l.sucursal_id = ? AND l.fecha_servicio BETWEEN ? AND ? ORDER BY l.fecha_servicio, COALESCE(l.hora_servicio, '99:99'), l.id LIMIT 300`).all(req.kiosco.sucursal_id, desde, hasta);
+    const equipo = db.prepare("SELECT pe.nombre, op.papel FROM main.orden_personal op JOIN main.personal pe ON pe.id = op.personal_id WHERE op.lead_id = ? ORDER BY CASE op.papel WHEN 'responsable' THEN 0 WHEN 'operador' THEN 1 ELSE 2 END, pe.nombre");
+    const folioLead = require('./sucursales').folioLead;
+    res.json({ hoy, desde, hasta, ordenes: filas.map(l => ({ id: l.id, folio: folioLead(l), fecha: l.fecha_servicio, hora: l.hora_servicio || null, cliente: l.cliente || '', direccion: l.direccion || '', servicio: l.servicio || '',
+      descripcion: textoServicio(l.partidas_json, l.servicio), unidad: l.equipo || '', estado: l.ejecucion === 'realizado' ? 'Realizada' : l.ejecucion === 'no_realizado' ? 'No realizada' : null,
+      equipo: equipo.all(l.id).map(x => `${x.nombre} (${PAPELES[x.papel] || x.papel})`) })) });
+  }));
+  // Permiso para imprimir una orden del calendario: código y PIN de alguien activo de la sucursal del kiosco.
+  app.post('/api/publico/kiosco/calendario-imprimir', kiosco, h((req, res) => {
+    const codigo = String(req.body?.codigo ?? ''), v = verificar(req.kiosco, codigo, String(req.body?.pin ?? ''));
+    if (!v.p) { const intento = registrarIntento(req, codigo, v); return res.status(v.status).json({ error: v.error, ...(intento ? { intento } : {}) }); }
+    if (v.p.pin_temporal) return res.status(409).json({ error: 'Primero elige tu PIN: escribe tu código en la pantalla principal' });
+    if (v.p.sucursal_id !== req.kiosco.sucursal_id) return res.status(403).json({ error: 'Solo el personal de esta sucursal imprime sus órdenes' });
+    const l = db.prepare("SELECT id FROM main.leads WHERE id = ? AND estatus = 'ganado' AND sucursal_id = ?").get(idDe(req.body?.orden), req.kiosco.sucursal_id);
+    if (!l) return res.status(404).json({ error: 'Esa orden ya no está en el calendario' });
+    const factura = !!db.prepare("SELECT 1 FROM main.facturas WHERE lead_id = ? AND estatus = 'timbrada' AND pdf_path IS NOT NULL LIMIT 1").get(l.id);
+    res.json({ nombre: primerNombre(v.p.nombre), permiso: permisoDocumento(l.id, v.p.id, req.kiosco.id), con_factura: factura });
+  }));
   app.post('/api/publico/kiosco/orden', kiosco, h(imprimirOrden));
   app.post('/api/publico/kiosco/factura', kiosco, h(imprimirFactura));
   app.post('/api/publico/celular/orden', celular, h(imprimirOrden));
