@@ -1,4 +1,5 @@
-/* Contabilidad del mes (módulo contable F1, 2026-11-11). Servidor: server/contabilidad.js. Solo consulta.
+/* Contabilidad del mes (módulo contable F1, 2026-11-11). Servidor: server/contabilidad.js y server/contabilidad-cierres.js
+   (2026-11-12: cerrar el mes y el saldo inicial del banco guardado en el sistema, con rastro).
    Pestañas: Resumen (tarjetas y pendientes) y las tablas del mes —Facturas, Cobros, Gastos (con las columnas del Excel CXP
    de Dirección, en su orden, y lo que le faltaba: subtotal, IVA, XML, UUID) y Pagos—, cada una con buscador, orden por
    columna y totales. El Excel que se descarga trae exactamente las mismas columnas, más la hoja Resumen. */
@@ -35,16 +36,17 @@ const Contabilidad = (() => {
   const CHIP = { PUE: 'pagada', 'PPD/CP': 'parcial', 'NO APLICA': '', FALTA: 'vencida', 'Pedirlo al proveedor': 'parcial',  PAGADO: 'pagada', PARCIAL: 'parcial', PENDIENTE: 'vencida', Confirmado: 'pagada', 'Por confirmar': 'por-confirmar', timbrada: 'pagada', cancelada: 'vencida', cancelacion_solicitada: 'parcial', Sí: 'pagada', Falta: 'vencida' };
   const textoDe = (v, tipo) => (tipo === 'f' ? fecha(v) : tipo === 'v' ? VIA[v] || v || '' : tipo === 'c' ? COMP[v] || v || '' : tipo === 'd' || tipo === 'S' ? dinero(v) : String(v ?? ''));
   let listo = false, consulta = 0, DATOS = null, PESTANA = 'resumen';
-  // Saldo inicial del banco: el que calcula el CRM o el que escriba quien consulta (se recuerda en este navegador por mes).
-  const claveSaldo = () => 'ct-saldo-' + $('ct-mes').value + '-' + ($('ct-sucursal').value || 'todas');
-  const saldoGuardado = () => { try { const v = localStorage.getItem(claveSaldo()); return v === null ? null : Number(v); } catch { return null; } };
-  // Filas del flujo con el saldo corrido desde el saldo inicial que se esté usando.
+  // Saldo inicial del banco (2026-11-12): se guarda en el sistema por mes y sucursal, con quién y cuándo; si nadie lo
+  // escribió, es el que calcula el CRM. Ya no se guarda en el navegador.
+  // Filas del flujo con el saldo corrido desde el saldo inicial.
   function flujoConSaldo() {
-    const ini = saldoGuardado() ?? DATOS.saldo_inicial; let saldo = ini;
+    const ini = Number(DATOS.saldo_inicial || 0); let saldo = ini;
     return { ini, filas: (DATOS.flujo || []).map(f => { saldo = Math.round((saldo + Number(f.ingreso) - Number(f.egreso)) * 100) / 100; return { ...f, saldo }; }), fin: () => saldo };
   }
   const estado = {}; // por tabla: { q, k, dir }
   const conBoton = async (b, fn) => { if (b.disabled) return; b.disabled = true; try { await fn(); } finally { b.disabled = false; } };
+  const pedir = async (ruta, opciones) => { const res = await api(ruta, opciones), j = await res.json().catch(() => ({})); if (!res.ok) throw new Error(j.error || 'No se pudo completar'); return j; };
+  const cuando = t => (t ? fecha(t) + ' ' + String(t).slice(11, 16) : '');
   const consultaDe = () => { const q = new URLSearchParams({ mes: $('ct-mes').value }); if ($('ct-sucursal').value) q.set('sucursal', $('ct-sucursal').value); return q; };
   const tarjeta = (t, v, sub, malo) => `<div class="logs-tarjeta${malo ? ' logs-alerta' : ''}"><b>${esc(v)}</b><span>${esc(t)}</span>${sub ? `<small class="util-45">${esc(sub)}</small>` : ''}</div>`;
 
@@ -63,10 +65,33 @@ const Contabilidad = (() => {
   function pintar() {
     const d = DATOS, n = k => (d[k] || []).length;
     const pestanas = [['resumen', 'Resumen'], ...Object.entries(TABLAS).map(([k, t]) => [k, `${t.titulo} (${n(k)})`]), ...(window.Conciliacion ? [['conciliacion', 'Conciliación bancaria']] : [])];
-    $('ct-resumen').innerHTML = `<div class="ct-pestanas" role="tablist">${pestanas.map(([k, t]) => `<button type="button" role="tab" class="ct-pestana${k === PESTANA ? ' activa' : ''}" aria-selected="${k === PESTANA}" data-ct-pestana="${esc(k)}">${esc(t)}</button>`).join('')}</div>
+    $('ct-resumen').innerHTML = `${cierreHtml(d.cierre)}<div class="ct-pestanas" role="tablist">${pestanas.map(([k, t]) => `<button type="button" role="tab" class="ct-pestana${k === PESTANA ? ' activa' : ''}" aria-selected="${k === PESTANA}" data-ct-pestana="${esc(k)}">${esc(t)}</button>`).join('')}</div>
       <div id="ct-contenido">${PESTANA === 'resumen' ? resumenHtml(d.resumen) : PESTANA === 'conciliacion' ? '<div id="cc-cuerpo"></div>' : tablaHtml(PESTANA)}</div>`;
     // Conciliación bancaria (F4): la dibuja public/conciliacion.js con el mes elegido.
     if (PESTANA === 'conciliacion') window.Conciliacion.pintar($('cc-cuerpo'), $('ct-mes').value);
+  }
+  // Mes cerrado (2026-11-12): cerrado, solo Dirección cambia cobros, pagos, anticipos y saldo de ese mes.
+  function cierreHtml(c) {
+    if (!c) return '';
+    const sucs = c.sucursales || [], varias = sucs.length > 1;
+    const linea = s => `${varias ? `<b>${esc(s.clave || s.nombre)}:</b> ` : ''}${s.cerrado ? `🔒 cerrado por ${esc(s.ultimo.usuario)} el ${esc(cuando(s.ultimo.fecha))}` : '🔓 abierto' + (s.ultimo ? ` (reabierto por ${esc(s.ultimo.usuario)} el ${esc(cuando(s.ultimo.fecha))}: ${esc(s.ultimo.motivo)})` : '')}`
+      + (s.cerrado && c.puede_reabrir ? ` <button type="button" class="btn btn-outline btn-chico" data-ct-reabrir="${Number(s.sucursal_id)}">Reabrir</button>` : '');
+    const cerrar = c.puede_cerrar && c.terminado && !c.cerrado ? `<button type="button" class="btn btn-outline btn-chico" id="ct-cerrar-mes">🔒 Cerrar el mes${varias ? ' (todas las sucursales que ves)' : ''}</button>` : '';
+    return `<div class="apartado ct-cierre"><p>${sucs.map(linea).join('<br>') || 'Sin sucursal'}</p>
+      <p class="ayuda">${c.cerrado || c.alguno_cerrado ? (c.es_direccion ? 'Mes cerrado: tú (Dirección) todavía puedes corregir; cada cambio queda en la bitácora.' : 'Mes cerrado: los cobros, pagos, anticipos y el saldo inicial de este mes solo los cambia Dirección.')
+        : c.terminado ? 'Al cerrar el mes, solo Dirección podrá registrar, corregir o cancelar movimientos con fecha de este mes.' : 'El mes todavía no termina: se cierra cuando ya pasó.'} ${cerrar}</p></div>`;
+  }
+  // Saldo inicial guardado en el sistema: se cambia con una sola sucursal elegida; se ve quién lo cambió y el anterior.
+  function saldoHtml(fl) {
+    const sis = DATOS.saldos_iniciales || [], c = DATOS.cierre || {};
+    if (sis.length !== 1) return `<p class="ayuda">Saldo inicial: la suma del de cada sucursal (${sis.map(s => `${esc(s.clave || s.nombre)} ${esc(dinero(s.saldo))}${s.escrito ? ' escrito' : ' del CRM'}`).join(' · ')}). Para cambiarlo, elige una sucursal arriba.</p>`;
+    const s = sis[0], cerrado = (c.sucursales || []).some(x => x.sucursal_id === s.sucursal_id && x.cerrado), bloqueado = !c.puede_saldo || (cerrado && !c.es_direccion);
+    const h = s.historial || [], ult = h[0], ant = h[1];
+    const rastro = ult ? `Lo cambió ${esc(ult.usuario)} el ${esc(cuando(ult.fecha))}${ant ? `; antes era ${ant.saldo == null ? 'el del CRM' : esc(dinero(ant.saldo))}` : `; antes era el del CRM (${esc(dinero(s.crm))})`}.` : '';
+    return `<p class="ayuda">Solo entra el dinero que ya se movió: cobros <b>confirmados</b> y pagos registrados. Si el saldo de tu banco al inicio del mes es otro, escríbelo y guárdalo: queda para todos y con rastro.
+      <label class="ct-saldo">Saldo inicial del banco <input type="number" step="0.01" id="ct-saldo-inicial" value="${Number(fl.ini)}"${bloqueado ? ' disabled' : ''}></label>
+      ${bloqueado ? (cerrado ? '🔒 Mes cerrado: solo Dirección lo cambia.' : '') : `<button type="button" class="btn btn-outline btn-chico" id="ct-saldo-guardar">Guardar saldo</button>${s.escrito ? ` <button type="button" class="btn btn-outline btn-chico" id="ct-saldo-crm">Usar el del CRM (${esc(dinero(s.crm))})</button>` : ''}`}
+      ${rastro ? `<br><small class="util-45">${rastro}</small>` : ''}</p>`;
   }
   function resumenHtml(r) {
     const p = r.pendientes, pend = [
@@ -107,10 +132,10 @@ const Contabilidad = (() => {
     const fl = k === 'flujo' ? flujoConSaldo() : null;
     const totales = t.cols.map(([c, , , tp]) => (tp === 'd' ? dinero(filas.reduce((s, f) => s + Number(f[c] || 0), 0)) : tp === 'S' && fl ? dinero(fl.fin()) : ''));
     const cabeza = !fl ? '' : (() => { const ing = (DATOS.flujo || []).reduce((s, f) => s + Number(f.ingreso), 0), egr = (DATOS.flujo || []).reduce((s, f) => s + Number(f.egreso), 0), pc = (DATOS.flujo || []).filter(f => f.revisar).length;
-      return `<div class="logs-tarjetas">${tarjeta('Saldo inicial', dinero(fl.ini), saldoGuardado() == null ? 'calculado por el CRM' : 'el que escribiste')}${tarjeta('Ingresos (cobros y reintegros)', dinero(ing))}${tarjeta('Egresos (pagos y anticipos)', dinero(egr))}
+      const escrito = (DATOS.saldos_iniciales || []).some(x => x.escrito);
+      return `<div class="logs-tarjetas">${tarjeta('Saldo inicial', dinero(fl.ini), escrito ? 'escrito en el sistema' : 'calculado por el CRM')}${tarjeta('Ingresos (cobros y reintegros)', dinero(ing))}${tarjeta('Egresos (pagos y anticipos)', dinero(egr))}
         ${tarjeta('Saldo final', dinero(fl.fin()))}${tarjeta('Movimientos por revisar', String(pc), 'falta XML, complemento o comprobar', pc > 0)}</div>
-        <p class="ayuda">Solo entra el dinero que ya se movió: cobros <b>confirmados</b> y pagos registrados. Si el saldo de tu banco al inicio del mes es otro, escríbelo aquí y el saldo se recalcula:
-        <label class="ct-saldo">Saldo inicial del banco <input type="number" step="0.01" id="ct-saldo-inicial" value="${Number(fl.ini)}"></label> <button type="button" class="btn btn-outline btn-chico" id="ct-saldo-crm">Usar el del CRM</button></p>`; })();
+        ${saldoHtml(fl)}`; })();
     return `${cabeza}<div class="filtros"><input type="search" id="ct-buscar" data-ct-tabla="${esc(k)}" value="${esc(e.q)}" placeholder="Buscar en ${esc(t.titulo.toLowerCase())}…" aria-label="Buscar en la tabla"><span class="util-45">${Number(filas.length)} renglón(es)</span></div>
       ${filas.length ? `<div class="tabla-scroll ct-tabla-scroll"><table class="tabla-resumen ct-tabla"><thead><tr>${t.cols.map(([c, titulo]) => `<th><button type="button" class="ct-orden" data-ct-orden="${esc(c)}">${esc(titulo)}${e.k === c ? (e.dir > 0 ? ' ▲' : ' ▼') : ''}</button></th>`).join('')}</tr></thead>
         <tbody>${filas.map(f => `<tr>${t.cols.map(c => celda(f, c)).join('')}</tr>`).join('')}</tbody>
@@ -150,6 +175,25 @@ const Contabilidad = (() => {
     catch (e) { toast(e.message); }
   }
 
+  const sucursalSaldo = () => (DATOS.saldos_iniciales || [])[0]?.sucursal_id;
+  async function guardarSaldo(valor) {
+    try { await pedir('/contabilidad/saldo-inicial', { method: 'POST', body: JSON.stringify({ mes: $('ct-mes').value, sucursal: sucursalSaldo(), saldo: valor === null ? null : String(valor).trim() }) }); toast('Saldo inicial guardado'); await cargar(); }
+    catch (e) { toast(e.message); }
+  }
+  async function cerrarMes() {
+    const mes = $('ct-mes').value;
+    const ok = await solicitarDialogo({ titulo: 'Cerrar el mes', mensaje: `Después de cerrar ${mes}, solo Dirección podrá registrar, corregir o cancelar cobros, pagos y anticipos con fecha de ese mes, y cambiar su saldo inicial. Reabrirlo también es solo de Dirección.`, aceptar: 'Cerrar el mes' });
+    if (!ok) return;
+    try { await pedir('/contabilidad/cierre', { method: 'POST', body: JSON.stringify({ mes, sucursal: $('ct-sucursal').value || undefined }) }); toast('Mes cerrado'); await cargar(); }
+    catch (e) { toast(e.message); }
+  }
+  async function reabrir(sucursal) {
+    const motivo = await solicitarDialogo({ titulo: 'Reabrir el mes', mensaje: 'Al reabrirlo, quien tenga permiso podrá volver a registrar y cancelar movimientos de este mes. Queda en la bitácora con tu motivo.', aceptar: 'Reabrir', campo: { tipo: 'text', etiqueta: 'Motivo', requerido: 'Escribe el motivo (mínimo 5 letras)' } });
+    if (!motivo) return;
+    try { await pedir('/contabilidad/cierre/reabrir', { method: 'POST', body: JSON.stringify({ mes: $('ct-mes').value, sucursal, motivo }) }); toast('Mes reabierto'); await cargar(); }
+    catch (e) { toast(e.message); }
+  }
+
   function preparar() {
     listo = true;
     $('ct-mes').value = mesActual();
@@ -162,15 +206,12 @@ const Contabilidad = (() => {
     $('ct-resumen').addEventListener('click', e => {
       const b = e.target.closest('button'); if (!b || !DATOS) return;
       if (b.dataset.ctPestana) { PESTANA = b.dataset.ctPestana; pintar(); }
-      else if (b.id === 'ct-saldo-crm') { try { localStorage.removeItem(claveSaldo()); } catch { /* */ } $('ct-contenido').innerHTML = tablaHtml('flujo'); }
+      else if (b.id === 'ct-saldo-guardar' || b.id === 'ct-saldo-crm') conBoton(b, () => guardarSaldo(b.id === 'ct-saldo-crm' ? null : $('ct-saldo-inicial').value));
+      else if (b.id === 'ct-cerrar-mes') conBoton(b, cerrarMes);
+      else if (b.dataset.ctReabrir) conBoton(b, () => reabrir(Number(b.dataset.ctReabrir)));
       else if (b.dataset.ctOrden) { const s = estado[PESTANA]; s.dir = s.k === b.dataset.ctOrden ? -s.dir : 1; s.k = b.dataset.ctOrden; $('ct-contenido').innerHTML = tablaHtml(PESTANA); }
     });
     let espera;
-    $('ct-resumen').addEventListener('change', e => {
-      if (e.target.id !== 'ct-saldo-inicial') return;
-      try { localStorage.setItem(claveSaldo(), String(Number(e.target.value) || 0)); } catch { /* sin almacenamiento: solo esta vez */ }
-      $('ct-contenido').innerHTML = tablaHtml('flujo');
-    });
     $('ct-resumen').addEventListener('input', e => {
       if (e.target.id !== 'ct-buscar') return;
       const k = e.target.dataset.ctTabla; estado[k].q = e.target.value; clearTimeout(espera);
