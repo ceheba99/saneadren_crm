@@ -305,7 +305,9 @@ module.exports = function asistencia(app, db, h) {
       r.extra_min = unidos(partes);
       // La comida siempre se marca: si trabajó 6 h o más sin marcarla, RH lo ve (no se descuenta sola).
       if (hor.comida && trabajado >= 360 && !validas.some(c => c.tipo === 'comida_sale')) r.notas.push('No marcó su comida');
-      if (entrada === null && fecha < hoy && !AUSENCIAS.includes(r.incidencia)) r.falta = true;
+      // Después de su baja ya no trabaja aquí: esos días no son falta (auditoría A-05).
+      const yaDeBaja = !p.activo && p.fecha_baja && fecha > p.fecha_baja;
+      if (entrada === null && fecha < hoy && !AUSENCIAS.includes(r.incidencia) && !yaDeBaja) r.falta = true;
     } else if (trabajado !== null || bloques.length) {
       // Descanso o festivo trabajado: todo lo trabajado es tiempo extra (y se marca para pagarlo como tal).
       // Con la regla «en descanso o festivo todo es extra» apagada, solo cuentan los bloques marcados con los botones.
@@ -345,8 +347,10 @@ module.exports = function asistencia(app, db, h) {
     return r;
   }
   // Personas que checan, de las sucursales de quien pide (vista «personal»), activas en esa fecha.
-  const gente = (fecha, personaId) => db.prepare(`SELECT id, nombre, puesto, sucursal_id FROM personal WHERE checa = 1 AND (activo = 1 OR fecha_baja >= ?)
-    AND (fecha_ingreso IS NULL OR fecha_ingreso <= ?) ${personaId ? 'AND id = ?' : ''} ORDER BY nombre`).all(...[fecha, fecha, ...(personaId ? [personaId] : [])]);
+  // «bajaDesde»: para la semana es su primer día (auditoría A-05, etapa 7): quien se dio de baja a media semana sigue en ella
+  // con los días que trabajó; para un solo día es ese mismo día.
+  const gente = (fecha, personaId, bajaDesde = fecha) => db.prepare(`SELECT id, nombre, puesto, sucursal_id, activo, fecha_baja FROM personal WHERE checa = 1 AND (activo = 1 OR fecha_baja >= ?)
+    AND (fecha_ingreso IS NULL OR fecha_ingreso <= ?) ${personaId ? 'AND id = ?' : ''} ORDER BY nombre`).all(...[bajaDesde, fecha, ...(personaId ? [personaId] : [])]);
 
   // Qué puede hacer quien pide en la pantalla de asistencia (y la fecha de hoy del servidor).
   app.get('/api/asistencia', h((req, res) => {
@@ -364,7 +368,7 @@ module.exports = function asistencia(app, db, h) {
   function resumenSemana(f, pid, conDinero) {
     const { desde, hasta } = semanaDe(f), fechas = [];
     for (let d = desde; d <= hasta; d = sumar(d, 1)) fechas.push(d);
-    const filas = gente(hasta, pid).map(p => {
+    const filas = gente(hasta, pid, desde).map(p => {
       const dias = fechas.map(f => calcularDia(p, f));
       const t = k => dias.reduce((s, d) => s + (d[k] || 0), 0), autorizado = dias.reduce((s, d) => s + (d.extra_autorizado_min || 0), 0);
       return { personal_id: p.id, nombre: p.nombre, puesto: p.puesto, dias, totales: {
@@ -380,7 +384,7 @@ module.exports = function asistencia(app, db, h) {
     });
     // Dinero del tiempo extra: solo para quien ve sueldos, con el precio del puesto vigente al cierre de la semana.
     if (conDinero) for (const f of filas) {
-      const p = gente(hasta, f.personal_id)[0], pr = p ? precioDe(p.sucursal_id, p.puesto, hasta) : null, v = pr?.valor_cent ?? null;
+      const p = gente(hasta, f.personal_id, desde)[0], pr = p ? precioDe(p.sucursal_id, p.puesto, hasta) : null, v = pr?.valor_cent ?? null;
       f.dinero = v == null ? { valor_hora_cent: null } : { valor_hora_cent: v, dobles_cent: pago(f.totales.extra_dobles_min, v, 2), triples_cent: pago(f.totales.extra_triples_min, v, 3) };
       if (v != null) f.dinero.total_cent = f.dinero.dobles_cent + f.dinero.triples_cent;
     }
