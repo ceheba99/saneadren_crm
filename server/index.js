@@ -40,7 +40,11 @@ app.use('/api/marketing/google-ads', express.json({ limit: '5mb' })); // reporte
 app.use('/api/publico/whatsapp', express.raw({ type: () => true, limit: '1mb' })); // la firma de Meta se revisa sobre el cuerpo tal cual
 app.use(express.json({ limit: '1mb' }));
 app.use('/api', limitarCampos);
-app.use(express.static(path.join(__dirname, '..', 'public')));
+// La página principal nunca se guarda en el navegador (2026-11-12): una copia vieja con los archivos nuevos deja la
+// pantalla a medias. Los demás archivos se revisan contra el servidor en cada carga (si no cambiaron, no se vuelven a bajar).
+app.use(express.static(path.join(__dirname, '..', 'public'), {
+  setHeaders(res, archivo) { res.set('Cache-Control', path.basename(archivo) === 'index.html' ? 'no-store' : 'no-cache'); },
+}));
 
 // ---------- Sesiones (token) ----------
 // Antes, cada acción "solo admin" confiaba en un solicitante_id que mandaba el propio navegador:
