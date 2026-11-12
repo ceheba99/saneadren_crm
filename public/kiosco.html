@@ -232,6 +232,34 @@
   K.anotar = function (motivo) {
     try { var l = JSON.parse(localStorage.getItem(DIAG) || '[]'); l.push({ t: new Date().toISOString(), m: String(motivo).slice(0, 200) }); localStorage.setItem(DIAG, JSON.stringify(l.slice(-10))); } catch (e) { /* sin almacenamiento */ }
   };
+  // CAJA NEGRA (2026-11-12, Dirección: «otra vez se puso en blanco al desbloquear y tuve que reiniciar la app»; en los
+  // Logs no quedó nada porque el vigilante solo anota lo que él mismo arregla). Cada 5 s se guarda una señal de vida
+  // (y si la página está a la vista u oculta). Al arrancar, si la vez anterior no terminó por una recarga que pidió el
+  // propio kiosco, se anota cómo quedó: así se sabe si el programa seguía vivo (pantalla sin dibujar) o si el navegador
+  // lo había descartado, y si la caché tardó en entregar la página. Llega a los Logs del sistema con lo demás.
+  var CAJA = 'saneadren_kiosco_caja', ultimaSenal = 0;
+  function caja(cambios) { try { var c = JSON.parse(localStorage.getItem(CAJA) || '{}'); for (var k in cambios) c[k] = cambios[k]; localStorage.setItem(CAJA, JSON.stringify(c)); } catch (e) { /* sin almacenamiento */ } }
+  function hace(ms) { var m = Math.max(0, Math.round(ms / 60000)); return m < 1 ? 'menos de 1 min' : m < 90 ? m + ' min' : Math.round(m / 60) + ' h'; }
+  K.cierre = function (motivo) { caja({ fin: String(motivo).slice(0, 40), finT: Date.now() }); }; // recarga que pide el propio kiosco
+  (function () {
+    var a = null, ahora = Date.now();
+    try { a = JSON.parse(localStorage.getItem(CAJA) || 'null'); } catch (e) { a = null; }
+    try { localStorage.setItem(CAJA, JSON.stringify({ lat: ahora, ocu: document.visibilityState === 'hidden' ? ahora : 0 })); } catch (e) { /* sin almacenamiento */ }
+    if (!a || !a.lat || (a.finT && ahora - a.finT < 30000)) return;
+    var como = 'abrieron la app';
+    try { var n = performance.getEntriesByType('navigation')[0].type; if (n === 'reload') como = 'recarga del navegador'; else if (n === 'back_forward') como = 'regreso'; } catch (e) { /* no disponible */ }
+    var texto = 'Reinicio (' + como + '). Última señal hace ' + hace(ahora - a.lat) + '; ' + (a.ocu ? 'estaba bloqueada u oculta' : 'estaba a la vista') + (a.mem ? '; memoria ' + a.mem + ' MB' : '') + (document.wasDiscarded ? '; descartada' : '');
+    var anotado = false, anotar = function (extra) { if (!anotado) { anotado = true; K.anotar(texto + extra); } };
+    try {
+      // Aperturas de la página desde la última señal (la última es esta misma): ¿alguna se quedó sin respuesta o tardó?
+      caches.match('/kiosco-bitacora').then(function (r) { return r ? r.json() : []; }).then(function (l) {
+        l = l.filter(function (x) { return x && x.t > a.lat; }).slice(0, -1);
+        var sin = l.filter(function (x) { return x.ms == null; }).length, lenta = Math.max.apply(null, [0].concat(l.map(function (x) { return x.ms || 0; })));
+        anotar(sin ? '; caché: ' + sin + ' sin responder' : lenta > 4000 ? '; caché lenta: ' + Math.round(lenta / 1000) + ' s' : '');
+      }, function () { anotar(''); });
+      setTimeout(function () { anotar(''); }, 3000);
+    } catch (e) { anotar(''); }
+  })();
   function vacia() {
     var p = document.getElementById('pantalla');
     return !p || document.getElementById('arranque') || !p.firstElementChild || !(p.innerText || p.textContent || '').trim();
@@ -241,8 +269,9 @@
     p.className = 'pantalla';
     p.innerHTML = '<div class="arranque" id="arranque"><h1>Reiniciando el reloj checador…</h1><p></p><button type="button">Reintentar ahora</button></div>';
     p.querySelector('p').textContent = texto + (segundos ? ' Se reintenta solo en ' + segundos + ' s.' : '');
-    p.querySelector('button').onclick = function () { location.replace('/kiosco'); };
+    p.querySelector('button').onclick = recargar;
   }
+  function recargar() { K.cierre('vigilante'); location.replace('/kiosco'); }
   function recuperar(motivo) {
     if (recuperando) return; recuperando = true;
     K.anotar(motivo);
@@ -252,14 +281,21 @@
     var v = leer(), n = (v.n || 0) + 1, espera = [0, 5, 15, 30, 60][Math.min(n - 1, 4)];
     guardar({ n: n, t: Date.now() });
     panel('No respondió (' + motivo + ').', espera);
-    setTimeout(function () { location.replace('/kiosco'); }, espera * 1000 + 300);
+    setTimeout(recargar, espera * 1000 + 300);
   }
   window.addEventListener('error', function (e) { K.errores++; if (!K.listo && Date.now() - cargado > 3000) recuperar('error al iniciar: ' + String(e && e.message || '').slice(0, 80)); });
   window.addEventListener('unhandledrejection', function () { K.errores++; });
-  document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'hidden') oculto = Date.now(); else { vaciaDesde = 0; cargado = Math.max(cargado, Date.now() - 6000); } });
+  document.addEventListener('visibilitychange', function () {
+    var t = Date.now();
+    if (document.visibilityState === 'hidden') { oculto = t; caja({ lat: t, ocu: t }); } else { vaciaDesde = 0; cargado = Math.max(cargado, t - 6000); ultimaSenal = t; caja({ lat: t, ocu: 0 }); }
+  });
   setInterval(function () {
-    if (recuperando || document.visibilityState === 'hidden') return;
     var ahora = Date.now();
+    if (document.visibilityState !== 'hidden' && ahora - ultimaSenal >= 5000) {
+      var mem = 0; try { mem = Math.round(performance.memory.usedJSHeapSize / 1048576) || 0; } catch (e) { mem = 0; }
+      ultimaSenal = ahora; caja({ lat: ahora, ocu: 0, mem: mem });
+    }
+    if (recuperando || document.visibilityState === 'hidden') return;
     if (K.listo && !vacia()) { var v = leer(); if (v.n && ahora - (v.t || 0) > 60000) guardar({}); vaciaDesde = 0; return; } // un minuto bien: se olvidan los intentos
     if (!K.listo && ahora - cargado > 12000) return recuperar('no terminó de iniciar');
     if (K.listo && vacia()) { if (!vaciaDesde) vaciaDesde = ahora; else if (ahora - vaciaDesde > 4000) recuperar('pantalla vacía'); }
@@ -1173,12 +1209,18 @@
   // congela la página: los relojes internos se detienen, la cámara se suelta y la red tarda en volver. Al regresar se
   // revisa todo: pantalla encendida, reloj al día, y si se quedó a media checada (o vacía) se vuelve al inicio.
   // Varios avisos seguidos (bloquear muchas veces) cuentan como uno solo.
+  // 2026-11-12 (Dirección: «otra vez en blanco al desbloquear; tuve que reiniciar la app», y el vigilante no anotó nada:
+  // el programa seguía vivo o el navegador no volvió a dibujar). Al volver de un bloqueo de más de 15 s el kiosco hace
+  // solo lo que Dirección hacía a mano: se reinicia. Abre al instante con la copia guardada («?copia=1», kiosco-sw.js),
+  // así que no depende de que la red ya haya vuelto; por eso solo se hace cuando la caché está al mando de la página.
+  const REINICIO_MS = 15000;
   let ocultoDesde = 0, reviviendo = null, ultimaConexion = 0;
   function revivir(motivo = '') {
     clearTimeout(reviviendo);
     reviviendo = setTimeout(() => {
       if (document.visibilityState !== 'visible') return;
       const fuera = ocultoDesde ? Date.now() - ocultoDesde : 0; ocultoDesde = 0;
+      if (fuera > REINICIO_MS && !deBaja && registro?.token && navigator.serviceWorker?.controller) { window.__kiosco.cierre('regreso del bloqueo'); location.replace('/kiosco?copia=1'); return; }
       despierta(); tic();
       // Forzar a redibujar: en algunas tabletas la página vuelve en blanco hasta que algo cambia en pantalla.
       document.body.style.transform = 'translateZ(0)'; requestAnimationFrame(() => { document.body.style.transform = ''; });
@@ -1200,7 +1242,7 @@
   // La caché (kiosco-sw.js) avisa cuando bajó una versión nueva de la página: se recarga sola cuando nadie la usa.
   let versionNueva = false;
   navigator.serviceWorker?.addEventListener('message', e => { if (e.data?.kiosco === 'version-nueva') versionNueva = true; });
-  setInterval(() => { if (versionNueva && estado.esCodigo && !$('pantalla').querySelector('.digitos')?.textContent.match(/\d/) && document.visibilityState === 'visible') { versionNueva = false; location.reload(); } }, 15000);
+  setInterval(() => { if (versionNueva && estado.esCodigo && !$('pantalla').querySelector('.digitos')?.textContent.match(/\d/) && document.visibilityState === 'visible') { versionNueva = false; window.__kiosco.cierre('versión nueva'); location.reload(); } }, 15000);
   window.addEventListener('online', async () => { if (!deBaja && await conectar()) subirPendientes(); });
   window.addEventListener('offline', () => { sinConexion = true; avisos(); });
   // Un kiosco no conserva la sesión del CRM: si el gerente la dejó abierta al registrarlo (o alguien entra en otra
