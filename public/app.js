@@ -1,4 +1,12 @@
 const API = '/api';
+// Página a medias (2026-11-12): un navegador se quedó todo el día con la página principal vieja y este archivo nuevo,
+// y Inicio fallaba con «formatoMoneda is not defined» (esa función vive en orden-servicio-pdf.js desde el 11-nov).
+// Si al llegar aquí falta, se recarga UNA vez para traer la página completa; si sigue faltando, se anota en Logs por qué.
+const PAGINA_INCOMPLETA = typeof formatoMoneda !== 'function';
+try {
+  if (!PAGINA_INCOMPLETA) sessionStorage.removeItem('recarga_incompleta');
+  else if (!sessionStorage.getItem('recarga_incompleta')) { sessionStorage.setItem('recarga_incompleta', '1'); location.reload(); }
+} catch { /* sin almacenamiento o fuera del navegador: se sigue */ }
 let CATALOGOS = { usuarios: [], servicios: [], canales: [] };
 let LEAD_ACTUAL = null;
 let ETAPA_FICHA = 1;
@@ -2757,5 +2765,7 @@ function renderGraficosComerciales(d){
   };
   window.addEventListener('error', e => avisar(e.message, e.filename ? String(e.filename).split('/').pop().split('?')[0] + ':' + e.lineno : ''));
   // Las respuestas del servidor con error (permiso, datos inválidos…) ya traen su mensaje y las graves se anotan allá: aquí solo fallas del código.
+  if (PAGINA_INCOMPLETA) window.addEventListener('load', () => avisar('Página incompleta tras recargar: ' + (document.querySelector('script[src*="orden-servicio-pdf"]')
+    ? 'orden-servicio-pdf.js no cargó en este navegador' : 'el navegador sigue usando la página principal vieja'), ''));
   window.addEventListener('unhandledrejection', e => { const r = e.reason; if (r?.status || r?.name === 'AbortError') return; avisar(r?.message || String(r || ''), ''); });
 })();
