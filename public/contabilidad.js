@@ -126,20 +126,107 @@ const Contabilidad = (() => {
       <section class="apartado"><h3 class="util-13">Pendientes de comprobar</h3>${pend.length ? '<ul class="ct-pendientes">' + pend.map(t => '<li>⚠ ' + esc(t) + '</li>').join('') + '</ul>' : '<p class="util-45">Nada pendiente de comprobar este mes. 🎉</p>'}
       <p class="ayuda">${Number(r.xml_disponibles)} XML disponibles para descargar este mes.</p></section>`;
   }
-  // Filas de una tabla con el buscador y el orden aplicados.
-  function filasDe(k) {
-    const t = TABLAS[k], e = estado[k] || (estado[k] = { q: '', k: k === 'flujo' ? 'fecha' : t.cols[0][0], dir: 1 }), q = e.q.trim().toLowerCase();
-    const base = k === 'flujo' ? flujoConSaldo().filas : (DATOS[k] || []);
-    const tipo = (t.cols.find(c => c[0] === e.k) || [])[3];
-    const filas = base.filter(f => !q || t.cols.some(([c, , , tp]) => textoDe(f[c], tp).toLowerCase().includes(q)));
-    return filas.sort((a, b) => { const x = a[e.k], y = b[e.k]; const r = tipo === 'd' || tipo === 'n' ? Number(x || 0) - Number(y || 0) : String(x ?? '').localeCompare(String(y ?? ''), 'es'); return r * e.dir; });
+  // ---------- Buscador como los filtros de Excel (2026-11-12) ----------
+  // Un buscador general y, debajo de cada encabezado, un filtro según la columna: lista para elegir (si tiene pocos valores
+  // distintos), texto que contenga, importes con >1000, <500, 1000-5000 o el monto exacto, y la fecha como se ve (05/11).
+  // Atajos del flujo: solo con FALTA, solo por revisar, solo corregidos. Los totales se calculan con lo filtrado.
+  const estadoDe = k => estado[k] || (estado[k] = { q: '', k: k === 'flujo' ? 'fecha' : TABLAS[k].cols[0][0], dir: 1, col: {}, rapido: '' });
+  const baseDe = k => (k === 'flujo' ? flujoConSaldo().filas : (DATOS[k] || []));
+  const sinAcentos = t => String(t ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+  // Valores distintos de una columna (para la lista); null si son muchos (entonces se escribe).
+  function opcionesDe(k, c, tp) {
+    if (tp === 'd' || tp === 'S' || tp === 'f' || tp === 'n') return null;
+    const vals = [...new Set(baseDe(k).map(f => textoDe(f[c], tp)))];
+    return vals.length <= 15 && vals.length > 1 ? vals.sort((a, b) => a.localeCompare(b, 'es')) : null;
   }
+  // «>1000», «<=500», «1000-5000» o «1160» (exacto), con o sin $ y comas.
+  function cumpleMonto(v, filtro) {
+    const t = String(filtro).replace(/[$,\s]/g, ''), n = Number(v || 0);
+    let m = t.match(/^(>=|<=|>|<)(-?\d+(?:\.\d+)?)$/);
+    if (m) { const x = Number(m[2]); return m[1] === '>' ? n > x : m[1] === '<' ? n < x : m[1] === '>=' ? n >= x : n <= x; }
+    m = t.match(/^(-?\d+(?:\.\d+)?)-(-?\d+(?:\.\d+)?)$/);
+    if (m) return n >= Number(m[1]) && n <= Number(m[2]);
+    return /^-?\d+(\.\d+)?$/.test(t) ? Math.abs(n - Number(t)) < 0.005 : textoDe(v, 'd').includes(filtro);
+  }
+  const RAPIDOS = [['falta', 'Solo con FALTA', f => [f.marca_transf, f.marca_oc, f.marca_comp].includes('FALTA')], ['revisar', 'Solo por revisar', f => !!f.revisar], ['corregidos', 'Solo corregidos', f => !!f.corregido && Object.keys(f.corregido).length > 0]];
+  // Filas de una tabla con el buscador, los filtros y el orden aplicados.
+  function filasDe(k) {
+    const t = TABLAS[k], e = estadoDe(k), q = sinAcentos(e.q.trim());
+    const tipo = (t.cols.find(c => c[0] === e.k) || [])[3];
+    const filtros = Object.entries(e.col).filter(([, v]) => String(v).trim() !== '');
+    const rapido = RAPIDOS.find(r => r[0] === e.rapido);
+    const filas = baseDe(k).filter(f => (!q || t.cols.some(([c, , , tp]) => sinAcentos(textoDe(f[c], tp)).includes(q)))
+      && (!rapido || rapido[2](f))
+      && filtros.every(([c, v]) => { const tp = (t.cols.find(x => x[0] === c) || [])[3]; const op = opcionesDe(k, c, tp);
+        return tp === 'd' || tp === 'S' ? cumpleMonto(f[c], v) : op ? textoDe(f[c], tp) === v : sinAcentos(textoDe(f[c], tp)).includes(sinAcentos(v.trim())); }));
+    return filas.sort((a, b) => { const x = a[e.k], y = b[e.k]; const r = tipo === 'd' || tipo === 'n' || tipo === 'S' ? Number(x || 0) - Number(y || 0) : String(x ?? '').localeCompare(String(y ?? ''), 'es'); return r * e.dir; });
+  }
+  function filtroHtml(k, [c, titulo, , tp]) {
+    const e = estadoDe(k), v = e.col[c] ?? '', op = opcionesDe(k, c, tp), etiqueta = 'Filtrar ' + String(titulo).toLowerCase().trim();
+    if (op) return `<th><select class="ct-filtro" data-ct-filtro="${esc(c)}" aria-label="${esc(etiqueta)}"><option value="">Todos</option>${op.map(o => `<option value="${esc(o)}"${o === v ? ' selected' : ''}>${esc(o || '(vacío)')}</option>`).join('')}</select></th>`;
+    return `<th><input type="search" class="ct-filtro" data-ct-filtro="${esc(c)}" value="${esc(v)}" placeholder="${tp === 'd' || tp === 'S' ? '>1000, 100-500' : tp === 'f' ? 'dd/mm' : 'contiene…'}" aria-label="${esc(etiqueta)}"></th>`;
+  }
+
+  // ---------- Editar el flujo de banco (parte 3, 2026-11-12) ----------
+  // «✏️ Editar tabla» abre las celdas; «💾 Guardar cambios» guarda todo junto; «🔒 Bloquear edición» regresa a solo ver.
+  // La corrección queda encima del dato del sistema con quién y cuándo (server/contabilidad.js). El saldo, X comprobar,
+  // los importes y las fechas no se editan aquí.
+  let EDITANDO = false;
+  const PEND = new Map(); // 'ref|campo' → valor (null = volver al del sistema)
+  const CAMPO = { cuenta: 'cuenta_id' }; // columna en pantalla → campo que se guarda
+  const MARCAS = ['S', 'FALTA', 'NA'], MARCAS_A = [...MARCAS, 'DOMICILIADO', 'LAYOUT'];
+  const editable = (f, c) => EDITANDO && f.editable && (DATOS.editables || []).includes(CAMPO[c] || c);
+  const valorSistema = (f, campo) => (f.corregido?.[campo] ? f.corregido[campo].sistema : f[campo]);
+  const igual = (campo, a, b) => (campo === 'cfdi_monto' || campo === 'no_deducible' ? Math.abs(Number(String(a).replace(/[$,]/g, '') || 0) - Number(b || 0)) < 0.005 && String(a).trim() !== '' : String(a ?? '').trim() === String(b ?? '').trim());
+  function anotar(ref, campo, valor) {
+    const f = (DATOS.flujo || []).find(x => x.ref === ref); if (!f) return;
+    const clave = ref + '|' + campo;
+    if (igual(campo, valor, valorSistema(f, campo))) { if (f.corregido?.[campo]) PEND.set(clave, null); else PEND.delete(clave); }
+    else if (igual(campo, valor, f[campo])) PEND.delete(clave);
+    else PEND.set(clave, valor);
+    const b = $('ct-guardar-flujo'); if (b) { b.textContent = `💾 Guardar cambios (${PEND.size})`; b.disabled = !PEND.size; }
+  }
+  function celdaEditable(f, c, tp) {
+    const campo = CAMPO[c] || c, clave = f.ref + '|' + campo, pend = PEND.has(clave), v = pend ? (PEND.get(clave) ?? valorSistema(f, campo)) : f[campo];
+    const attrs = `class="ct-edit${pend ? ' ct-cambiada' : ''}" data-ct-ref="${esc(f.ref)}" data-ct-campo="${esc(campo)}" aria-label="${esc(campo)}"`;
+    if (campo === 'cuenta_id') return `<select ${attrs}>${(DATOS.cuentas || []).map(x => `<option value="${Number(x.id)}"${Number(v) === x.id ? ' selected' : ''}>${esc(nombreCuenta(x))}</option>`).join('')}</select>`;
+    if (/^marca_/.test(campo)) { const ops = campo === 'marca_transf' ? MARCAS_A : MARCAS; return `<select ${attrs}>${[...new Set([...ops, String(v ?? '')])].filter(Boolean).map(o => `<option${o === v ? ' selected' : ''}>${esc(o)}</option>`).join('')}</select>`; }
+    return `<input type="text" ${attrs} value="${esc(v ?? '')}"${tp === 'd' ? ' inputmode="decimal"' : ''}>`;
+  }
+  const notaCorregida = (f, c) => { const k = f.corregido?.[CAMPO[c] || c]; if (!k) return '';
+    const sistema = (CAMPO[c] || c) === 'cuenta_id' ? nombreCuenta((DATOS.cuentas || []).find(x => x.id === Number(k.sistema)) || { id: 0 }) : String(k.sistema ?? '') || '(vacío)';
+    return ` title="${esc(`Corregido por ${k.usuario} el ${cuando(k.fecha)} · el sistema decía: ${sistema}`)}"`; };
+  function barraEdicion() {
+    if (!DATOS.puede_editar) return '';
+    if (!EDITANDO) return `<div class="filtros ct-barra-edicion"><button type="button" class="btn btn-outline btn-chico" id="ct-editar-flujo">✏️ Editar tabla</button>
+      <small class="util-45">Las celdas corregidas se marcan con ✎ (pasa el cursor para ver quién, cuándo y qué decía el sistema).</small></div>`;
+    return `<div class="filtros ct-barra-edicion ct-editando"><b>✏️ Editando</b>
+      <button type="button" class="btn btn-chico" id="ct-guardar-flujo"${PEND.size ? '' : ' disabled'}>💾 Guardar cambios (${PEND.size})</button>
+      <button type="button" class="btn btn-outline btn-chico" id="ct-bloquear-flujo">🔒 Bloquear edición</button>
+      <small class="util-45">Corrige las celdas en blanco. Si dejas una como decía el sistema, vuelve a la original. El saldo, X comprobar, los importes y las fechas no se cambian aquí: se corrigen en el cobro o pago.${DATOS.es_direccion ? '' : ' Lo de un mes cerrado lo corrige solo Dirección.'}</small></div>`;
+  }
+  async function guardarFlujo() {
+    if (!PEND.size) return;
+    const cambios = [...PEND].map(([clave, valor]) => { const i = clave.lastIndexOf('|'); return { ref: clave.slice(0, i), campo: clave.slice(i + 1), valor }; });
+    try { const r = await pedir('/contabilidad/flujo/correcciones', { method: 'POST', body: JSON.stringify({ mes: $('ct-mes').value, cambios }) }); PEND.clear(); toast(`${Number(r.guardados)} cambio(s) guardado(s)`); await cargar(); }
+    catch (e) { toast(e.message); }
+  }
+  // Antes de salir de la edición o cambiar de mes, sucursal, cuenta o pestaña: ¿descartar lo que no se guardó?
+  async function sePuedeDescartar() {
+    if (!PEND.size) return true;
+    const ok = await solicitarDialogo({ titulo: 'Cambios sin guardar', mensaje: `Tienes ${PEND.size} cambio(s) sin guardar en el flujo de banco. Si sigues, se pierden.`, aceptar: 'Descartarlos' });
+    if (ok) PEND.clear();
+    return !!ok;
+  }
+
   function tablaHtml(k) {
-    const t = TABLAS[k], e = estado[k] || (estado[k] = { q: '', k: k === 'flujo' ? 'fecha' : t.cols[0][0], dir: 1 }), filas = filasDe(k);
-    const celda = (f, [c, , , tp]) => {
-      const v = textoDe(f[c], tp);
-      if (tp === 's') return v ? `<td><span class="estado-cxc ${esc(CHIP[f[c]] ?? 'por-confirmar')}">${esc(v)}</span></td>` : '<td></td>';
-      return `<td class="${tp === 'd' || tp === 'n' || tp === 'S' ? 'ct-num' : ''}">${esc(v)}</td>`;
+    const t = TABLAS[k], e = estadoDe(k), filas = filasDe(k), total = baseDe(k).length;
+    const celda = (f, col) => {
+      const [c, , , tp] = col;
+      if (k === 'flujo' && editable(f, c)) return `<td class="ct-celda-edit">${celdaEditable(f, c, tp)}</td>`;
+      const v = textoDe(f[c], tp), corr = k === 'flujo' ? notaCorregida(f, c) : '', marca = corr ? ' <span class="ct-marca-corr" aria-hidden="true">✎</span>' : '';
+      if (tp === 's') return v ? `<td${corr}${corr ? ' class="ct-corregida"' : ''}><span class="estado-cxc ${esc(CHIP[f[c]] ?? 'por-confirmar')}">${esc(v)}</span>${marca}</td>` : `<td${corr}></td>`;
+      return `<td${corr} class="${tp === 'd' || tp === 'n' || tp === 'S' ? 'ct-num' : ''}${corr ? ' ct-corregida' : ''}">${esc(v)}${marca}</td>`;
     };
     const fl = k === 'flujo' ? flujoConSaldo() : null;
     const totales = t.cols.map(([c, , , tp]) => (tp === 'd' ? dinero(filas.reduce((s, f) => s + Number(f[c] || 0), 0)) : tp === 'S' && fl ? dinero(fl.fin()) : ''));
@@ -147,12 +234,23 @@ const Contabilidad = (() => {
       const escrito = (DATOS.saldos_iniciales || []).some(x => x.escrito);
       return `<div class="logs-tarjetas">${tarjeta('Saldo inicial', dinero(fl.ini), escrito ? 'escrito en el sistema' : 'calculado por el CRM')}${tarjeta('Ingresos (cobros y reintegros)', dinero(ing))}${tarjeta('Egresos (pagos y anticipos)', dinero(egr))}
         ${tarjeta('Saldo final', dinero(fl.fin()))}${tarjeta('Movimientos por revisar', String(pc), 'falta XML, complemento o comprobar', pc > 0)}</div>
-        ${cuentaHtml()}${saldoHtml(fl)}`; })();
-    return `${cabeza}<div class="filtros"><input type="search" id="ct-buscar" data-ct-tabla="${esc(k)}" value="${esc(e.q)}" placeholder="Buscar en ${esc(t.titulo.toLowerCase())}…" aria-label="Buscar en la tabla"><span class="util-45">${Number(filas.length)} renglón(es)</span></div>
-      ${filas.length ? `<div class="tabla-scroll ct-tabla-scroll"><table class="tabla-resumen ct-tabla"><thead><tr>${t.cols.map(([c, titulo]) => `<th><button type="button" class="ct-orden" data-ct-orden="${esc(c)}">${esc(titulo)}${e.k === c ? (e.dir > 0 ? ' ▲' : ' ▼') : ''}</button></th>`).join('')}</tr></thead>
-        <tbody>${filas.map(f => `<tr>${t.cols.map(c => celda(f, c)).join('')}</tr>`).join('')}</tbody>
+        ${cuentaHtml()}${saldoHtml(fl)}${barraEdicion()}`; })();
+    const hayFiltros = e.q.trim() || e.rapido || Object.values(e.col).some(v => String(v).trim());
+    const rapidos = k === 'flujo' ? RAPIDOS.map(([id, txt]) => `<button type="button" class="btn btn-chico ${e.rapido === id ? '' : 'btn-outline'}" data-ct-rapido="${esc(id)}" aria-pressed="${e.rapido === id}">${esc(txt)}</button>`).join('') : '';
+    return `${cabeza}<div class="filtros"><input type="search" id="ct-buscar" data-ct-tabla="${esc(k)}" value="${esc(e.q)}" placeholder="Buscar en toda la tabla…" aria-label="Buscar en la tabla">${rapidos}
+      ${hayFiltros ? '<button type="button" class="btn btn-outline btn-chico" id="ct-limpiar">✕ Limpiar filtros</button>' : ''}<span class="util-45">${Number(filas.length)} de ${Number(total)} renglón(es)</span></div>
+      ${total ? `<div class="tabla-scroll ct-tabla-scroll"><table class="tabla-resumen ct-tabla"><thead><tr>${t.cols.map(([c, titulo]) => `<th><button type="button" class="ct-orden" data-ct-orden="${esc(c)}">${esc(titulo)}${e.k === c ? (e.dir > 0 ? ' ▲' : ' ▼') : ''}</button></th>`).join('')}</tr>
+        <tr class="ct-fila-filtros">${t.cols.map(col => filtroHtml(k, col)).join('')}</tr></thead>
+        <tbody>${filas.length ? filas.map(f => `<tr>${t.cols.map(c => celda(f, c)).join('')}</tr>`).join('') : `<tr><td colspan="${t.cols.length}" class="util-45">Ningún renglón cumple los filtros.</td></tr>`}</tbody>
         <tfoot><tr>${totales.map((v, i) => `<td class="ct-num">${i === 0 ? 'TOTAL' : esc(v)}</td>`).join('')}</tr></tfoot></table></div>`
       : '<p class="util-45">No hay renglones este mes.</p>'}`;
+  }
+  // Vuelve a pintar la tabla sin perder dónde estaba escribiendo la persona.
+  function repintar(k) {
+    const a = document.activeElement, id = a?.id, filtro = a?.dataset?.ctFiltro, pos = a && 'selectionStart' in a ? a.selectionStart : null;
+    $('ct-contenido').innerHTML = tablaHtml(k);
+    const n = id ? $(id) : filtro ? $('ct-contenido').querySelector(`[data-ct-filtro="${CSS.escape(filtro)}"]`) : null;
+    if (n) { n.focus(); if (pos != null && n.setSelectionRange) try { n.setSelectionRange(pos, pos); } catch { /* select */ } }
   }
 
   async function excel() {
@@ -239,23 +337,37 @@ const Contabilidad = (() => {
     const sucs = window.Sucursales?.datos?.sucursales || [];
     $('ct-sucursal').innerHTML = '<option value="">Todas las sucursales</option>' + sucs.map(s => `<option value="${Number(s.id)}">${esc(s.nombre)}</option>`).join('');
     $('ct-sucursal').hidden = sucs.length < 2;
-    $('ct-mes').addEventListener('change', cargar); $('ct-sucursal').addEventListener('change', () => { CUENTA = ''; cargar(); });
+    // Cambiar de mes o sucursal con cambios sin guardar: se pregunta antes (y si no, se regresa a como estaba).
+    let mesAntes = $('ct-mes').value, sucAntes = $('ct-sucursal').value;
+    $('ct-mes').addEventListener('change', async () => { if (!await sePuedeDescartar()) { $('ct-mes').value = mesAntes; return; } mesAntes = $('ct-mes').value; cargar(); });
+    $('ct-sucursal').addEventListener('change', async () => { if (!await sePuedeDescartar()) { $('ct-sucursal').value = sucAntes; return; } sucAntes = $('ct-sucursal').value; CUENTA = ''; cargar(); });
     $('ct-excel').addEventListener('click', e => conBoton(e.currentTarget, excel));
     $('ct-xml').addEventListener('click', e => conBoton(e.currentTarget, xml));
     $('ct-resumen').addEventListener('click', e => {
       const b = e.target.closest('button'); if (!b || !DATOS) return;
-      if (b.dataset.ctPestana) { PESTANA = b.dataset.ctPestana; pintar(); }
+      if (b.dataset.ctPestana) { if (b.dataset.ctPestana === PESTANA) return; sePuedeDescartar().then(ok => { if (ok) { EDITANDO = false; PESTANA = b.dataset.ctPestana; pintar(); } }); }
+      else if (b.id === 'ct-editar-flujo') { EDITANDO = true; repintar('flujo'); }
+      else if (b.id === 'ct-guardar-flujo') conBoton(b, guardarFlujo);
+      else if (b.id === 'ct-bloquear-flujo') sePuedeDescartar().then(ok => { if (ok) { EDITANDO = false; repintar('flujo'); } });
+      else if (b.dataset.ctRapido) { const s = estadoDe(PESTANA); s.rapido = s.rapido === b.dataset.ctRapido ? '' : b.dataset.ctRapido; repintar(PESTANA); }
+      else if (b.id === 'ct-limpiar') { const s = estadoDe(PESTANA); s.q = ''; s.col = {}; s.rapido = ''; repintar(PESTANA); }
       else if (b.id === 'ct-saldo-guardar' || b.id === 'ct-saldo-crm') conBoton(b, () => guardarSaldo(b.id === 'ct-saldo-crm' ? null : $('ct-saldo-inicial').value));
       else if (b.id === 'ct-cerrar-mes') conBoton(b, cerrarMes);
       else if (b.dataset.ctReabrir) conBoton(b, () => reabrir(Number(b.dataset.ctReabrir)));
-      else if (b.dataset.ctOrden) { const s = estado[PESTANA]; s.dir = s.k === b.dataset.ctOrden ? -s.dir : 1; s.k = b.dataset.ctOrden; $('ct-contenido').innerHTML = tablaHtml(PESTANA); }
+      else if (b.dataset.ctOrden) { const s = estadoDe(PESTANA); s.dir = s.k === b.dataset.ctOrden ? -s.dir : 1; s.k = b.dataset.ctOrden; repintar(PESTANA); }
     });
     let espera;
-    $('ct-resumen').addEventListener('change', e => { if (e.target.id === 'ct-cuenta') { CUENTA = e.target.value; cargar(); } });
+    $('ct-resumen').addEventListener('change', async e => {
+      if (e.target.id === 'ct-cuenta') { const v = e.target.value; if (!await sePuedeDescartar()) { e.target.value = CUENTA; return; } CUENTA = v; cargar(); }
+      else if (e.target.tagName === 'SELECT' && e.target.dataset.ctFiltro) { estadoDe(PESTANA).col[e.target.dataset.ctFiltro] = e.target.value; repintar(PESTANA); }
+      else if (e.target.tagName === 'SELECT' && e.target.dataset.ctRef) anotar(e.target.dataset.ctRef, e.target.dataset.ctCampo, e.target.value);
+    });
     $('ct-resumen').addEventListener('input', e => {
-      if (e.target.id !== 'ct-buscar') return;
-      const k = e.target.dataset.ctTabla; estado[k].q = e.target.value; clearTimeout(espera);
-      espera = setTimeout(() => { $('ct-contenido').innerHTML = tablaHtml(k); const i = $('ct-buscar'); i.focus(); i.setSelectionRange(i.value.length, i.value.length); }, 250);
+      const t = e.target;
+      if (t.dataset.ctRef && t.tagName === 'INPUT') { anotar(t.dataset.ctRef, t.dataset.ctCampo, t.value); t.classList.toggle('ct-cambiada', PEND.has(t.dataset.ctRef + '|' + t.dataset.ctCampo)); return; }
+      if (t.id !== 'ct-buscar' && !(t.tagName === 'INPUT' && t.dataset.ctFiltro)) return;
+      const k = PESTANA; if (t.id === 'ct-buscar') estadoDe(k).q = t.value; else estadoDe(k).col[t.dataset.ctFiltro] = t.value;
+      clearTimeout(espera); espera = setTimeout(() => repintar(k), 250);
     });
   }
   return { cargar };

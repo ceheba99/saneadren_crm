@@ -46,6 +46,22 @@ function migrar(db) {
     CREATE TRIGGER IF NOT EXISTS saldos_fijos_upd BEFORE UPDATE ON flujo_saldos_iniciales BEGIN SELECT RAISE(ABORT, 'El historial de saldos no se modifica'); END;
     CREATE TRIGGER IF NOT EXISTS saldos_fijos_del BEFORE DELETE ON flujo_saldos_iniciales BEGIN SELECT RAISE(ABORT, 'El historial de saldos no se borra'); END;
   `);
+  // Correcciones a mano del Flujo de banco (parte 3, 2026-11-12): una por renglón (ref = cobro:12, pago:5, anticipo:3,
+  // reintegro:3) y columna; vale la última. valor NULL = volver al dato del sistema. No se cambian ni se borran.
+  db.exec(`CREATE TABLE IF NOT EXISTS flujo_correcciones (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      ref TEXT NOT NULL CHECK(ref GLOB '[a-z]*:[0-9]*'),
+      campo TEXT NOT NULL,
+      valor TEXT, valor_anterior TEXT,
+      mes TEXT NOT NULL CHECK(length(mes) = 7),
+      sucursal_id INTEGER NOT NULL REFERENCES sucursales(id),
+      usuario_id INTEGER REFERENCES usuarios(id),
+      usuario TEXT NOT NULL,
+      fecha TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_flujo_corr_ref ON flujo_correcciones(ref, campo, id);
+    CREATE TRIGGER IF NOT EXISTS flujo_corr_fijas_upd BEFORE UPDATE ON flujo_correcciones BEGIN SELECT RAISE(ABORT, 'Las correcciones del flujo no se modifican'); END;
+    CREATE TRIGGER IF NOT EXISTS flujo_corr_fijas_del BEFORE DELETE ON flujo_correcciones BEGIN SELECT RAISE(ABORT, 'Las correcciones del flujo no se borran'); END;`);
   // 2026-11-12 (formato del Excel «flujo banco»): un saldo por cuenta de banco (Conciliación › cuentas); 0 = «Sin cuenta».
   if (!db.prepare('PRAGMA table_info(flujo_saldos_iniciales)').all().some(c => c.name === 'cuenta_id')) db.exec('ALTER TABLE flujo_saldos_iniciales ADD COLUMN cuenta_id INTEGER NOT NULL DEFAULT 0');
   db.exec('CREATE INDEX IF NOT EXISTS idx_saldos_cuenta ON flujo_saldos_iniciales(sucursal_id, cuenta_id, mes, id)');
@@ -82,6 +98,8 @@ module.exports = function contabilidadCierres(app, db, h) {
       OR NEW.referencia IS NOT OLD.referencia OR NEW.cuenta_origen IS NOT OLD.cuenta_origen OR NEW.cxp_id IS NOT OLD.cxp_id)
       AND (mes_bloqueado(OLD.fecha, ${sucPago('OLD.cxp_id')}) OR mes_bloqueado(NEW.fecha, ${sucPago('NEW.cxp_id')}))`],
   ];
+  // Correcciones a mano del flujo de un mes cerrado: solo Dirección (también en la base).
+  disparadores.push(['cierre_flujo_corr_ins', 'BEFORE INSERT ON main.flujo_correcciones', "mes_bloqueado(NEW.mes || '-01', NEW.sucursal_id)"]);
   if (tabla('anticipos')) disparadores.push(
     ['cierre_anticipos_ins', 'BEFORE INSERT ON main.anticipos', 'mes_bloqueado(NEW.fecha, NEW.sucursal_id)'],
     // La entrega (su fecha y monto, o cancelarlo) y el reintegro (lo que regresó) se revisan cada uno con su fecha: cerrar
