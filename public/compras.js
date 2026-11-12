@@ -334,20 +334,20 @@ const Compras = (() => {
       : '<p class="util-45">Todavía no es deuda: al autorizarla pasa a Cuentas por pagar.</p>';
     cont.innerHTML = '<div class="oc-exp-cab"><div class="seccion-tit">📁 Expediente de la orden</div><button type="button" class="btn btn-primario btn-chico" id="oc-exp-zip">📦 Descargar expediente completo (ZIP)</button></div>'
       + lista + recepcionHTML(e.orden)
-      + '<div class="oc-exp-bloque"><div class="seccion-sub">Documentos</div>' + docs + subir
+      + '<div class="oc-exp-bloque apartado"><div class="seccion-sub">Documentos</div>' + docs + subir
       + (quitados.length ? '<details class="oc-exp-quitados"><summary>' + quitados.length + ' documento(s) quitado(s)</summary><ul>' + quitados.map(d => '<li>' + esc(d.tipo_nombre) + ': «' + esc(d.nombre) + '» · quitado por ' + esc(d.eliminado_por || '') + ' el ' + esc(fechaTxt(String(d.eliminado_at || '').slice(0, 10))) + ' · ' + esc(d.motivo_eliminado || '') + '</li>').join('') + '</ul></details>' : '') + '</div>'
-      + '<div class="oc-exp-bloque"><div class="seccion-sub">Pagos</div>' + cuenta + '</div>'
-      + '<div class="oc-exp-bloque"><div class="seccion-sub">Historial de la orden</div>' + (e.historial.length ? Bitacora.tabla(e.historial, false) : '<p class="util-45">Sin movimientos.</p>') + '</div>';
+      + '<div class="oc-exp-bloque apartado"><div class="seccion-sub">Pagos</div>' + cuenta + '</div>'
+      + '<div class="oc-exp-bloque apartado"><div class="seccion-sub">Historial de la orden</div>' + (e.historial.length ? Bitacora.tabla(e.historial, false) : '<p class="util-45">Sin movimientos.</p>') + '</div>';
     prepararFirma();
   }
   // Subir: el archivo va tal cual (sin convertirlo), con su tipo y nombre en encabezados.
   // ---------- Recepción: el encargado marca que llegó lo comprado, con foto y/o firma de quien recibe ----------
   function recepcionHTML(o) {
     if (o.estado === 'cancelada') return '';
-    if (o.recibida_at) return '<div class="oc-recepcion listo"><div class="seccion-sub">📦 Recepción</div>✔ Recibido el ' + esc(fechaTxt(String(o.recibida_at).slice(0, 10))) + ' · recibió <b>' + esc(o.recibio_nombre || '') + '</b> · lo marcó ' + esc(o.recibida_por_nombre || '') + (o.recepcion_nota ? '<br><small>' + esc(o.recepcion_nota) + '</small>' : '') + ' <small class="util-45">(la foto y la firma están en los documentos)</small>' + (Permisos.direccion() ? ' <button type="button" class="btn btn-outline btn-chico" id="oc-deshacer-recepcion">↩ Deshacer recepción</button>' : '') + '</div>';
-    if (o.estado !== 'autorizada') return '<div class="oc-recepcion"><div class="seccion-sub">📦 Recepción</div><span class="util-45">Primero hay que autorizar la orden; después se marca como recibida.</span></div>';
-    if (!esCostos()) return '<div class="oc-recepcion"><div class="seccion-sub">📦 Recepción</div><span class="util-45">Pendiente: cuando llegue, lo marca el encargado de centro de costos con foto y/o firma.</span></div>';
-    return '<div class="oc-recepcion"><div class="seccion-sub">📦 ¿Ya llegó? Márcalo como recibido</div>'
+    if (o.recibida_at) return '<div class="oc-recepcion listo apartado"><div class="seccion-sub">📦 Recepción</div>✔ Recibido el ' + esc(fechaTxt(String(o.recibida_at).slice(0, 10))) + ' · recibió <b>' + esc(o.recibio_nombre || '') + '</b> · lo marcó ' + esc(o.recibida_por_nombre || '') + (o.recepcion_nota ? '<br><small>' + esc(o.recepcion_nota) + '</small>' : '') + ' <small class="util-45">(la foto y la firma están en los documentos)</small>' + (Permisos.direccion() ? ' <button type="button" class="btn btn-outline btn-chico" id="oc-deshacer-recepcion">↩ Deshacer recepción</button>' : '') + '</div>';
+    if (o.estado !== 'autorizada') return '<div class="oc-recepcion apartado"><div class="seccion-sub">📦 Recepción</div><span class="util-45">Primero hay que autorizar la orden; después se marca como recibida.</span></div>';
+    if (!esCostos()) return '<div class="oc-recepcion apartado"><div class="seccion-sub">📦 Recepción</div><span class="util-45">Pendiente: cuando llegue, lo marca el encargado de centro de costos con foto y/o firma.</span></div>';
+    return '<div class="oc-recepcion apartado"><div class="seccion-sub">📦 ¿Ya llegó? Márcalo como recibido</div>'
       + '<div class="oc-rec-campos"><label class="cat-campo"><span>Foto de lo que llegó</span><input type="file" id="oc-rec-foto" accept="image/*,application/pdf" capture="environment"></label>'
       + '<label class="cat-campo"><span>Quién lo recibe</span><input id="oc-rec-nombre" maxlength="120" value="' + esc(USUARIO_ACTUAL?.nombre || '') + '"></label>'
       + '<label class="cat-campo"><span>Nota (opcional)</span><input id="oc-rec-nota" maxlength="300" placeholder="Ej. llegaron completas"></label></div>'

@@ -78,16 +78,16 @@ const Contabilidad = (() => {
         return `${Number(p.anticipos_abiertos)} anticipo(s) sin cerrar` + (con.length ? `: ${dinero(p.anticipos_por_comprobar)} por comprobar (${con.map(a => a.persona + ' ' + dinero(a.por_comprobar)).join(', ')})` : '') // sin HTML: se escapa al pintar la lista
           + (sin ? `${con.length ? '; ' : ': '}${sin} ya comprobado(s), solo falta cerrarlo(s)` : '') + ' · se revisan en Cuentas por pagar › Anticipos'; })() : ''].filter(Boolean);
     return `${r.entorno !== 'prod' ? `<p class="aviso-error-carga">La facturación está en ${r.entorno === 'demo' ? 'demostración' : 'pruebas (sandbox)'}: lo facturado aquí no tiene validez fiscal.</p>` : ''}
-      <h3 class="util-13">Ingresos</h3><div class="logs-tarjetas">${tarjeta('Facturado (sin IVA)', dinero(r.ingresos.facturado_subtotal), r.ingresos.facturas + ' factura(s)')}${tarjeta('IVA facturado', dinero(r.ingresos.facturado_iva))}
+      <section class="apartado"><h3 class="util-13">Ingresos</h3><div class="logs-tarjetas">${tarjeta('Facturado (sin IVA)', dinero(r.ingresos.facturado_subtotal), r.ingresos.facturas + ' factura(s)')}${tarjeta('IVA facturado', dinero(r.ingresos.facturado_iva))}
         ${tarjeta('Total facturado', dinero(r.ingresos.facturado_total))}${tarjeta('Cobrado confirmado', dinero(r.ingresos.cobrado), 'IVA cobrado ' + dinero(r.ingresos.cobrado_iva))}
-        ${tarjeta('Cobros por confirmar', dinero(r.ingresos.por_confirmar), null, r.ingresos.por_confirmar > 0)}${tarjeta('Complementos de pago', String(r.ingresos.complementos))}</div>
-      <h3 class="util-13">Egresos</h3><div class="logs-tarjetas">${tarjeta('Gastos del mes (con IVA)', dinero(r.egresos.gastos_total), r.egresos.gastos + ' gasto(s)')}${tarjeta('IVA de los gastos', dinero(r.egresos.gastos_iva), r.egresos.gastos_iva_estimado ? 'de ello ' + dinero(r.egresos.gastos_iva_estimado) + ' estimado' : '', r.egresos.gastos_iva_estimado > 0)}
+        ${tarjeta('Cobros por confirmar', dinero(r.ingresos.por_confirmar), null, r.ingresos.por_confirmar > 0)}${tarjeta('Complementos de pago', String(r.ingresos.complementos))}</div></section>
+      <section class="apartado"><h3 class="util-13">Egresos</h3><div class="logs-tarjetas">${tarjeta('Gastos del mes (con IVA)', dinero(r.egresos.gastos_total), r.egresos.gastos + ' gasto(s)')}${tarjeta('IVA de los gastos', dinero(r.egresos.gastos_iva), r.egresos.gastos_iva_estimado ? 'de ello ' + dinero(r.egresos.gastos_iva_estimado) + ' estimado' : '', r.egresos.gastos_iva_estimado > 0)}
         ${tarjeta('Pagado a proveedores', dinero(r.egresos.pagado), 'IVA pagado ' + dinero(r.egresos.pagado_iva))}
-        ${r.egresos.anticipos_entregados || r.egresos.anticipos_reintegrados ? tarjeta('Anticipos entregados', dinero(r.egresos.anticipos_entregados), 'regresaron ' + dinero(r.egresos.anticipos_reintegrados)) : ''}</div>
-      <h3 class="util-13">IVA del mes (apoyo para el contador)</h3><div class="logs-tarjetas">${tarjeta('Según facturas: facturado − gastos', dinero(Math.abs(r.iva.segun_facturas)), r.iva.segun_facturas >= 0 ? 'a cargo' : 'a favor')}
-        ${tarjeta('Según el dinero: cobrado − pagado', dinero(Math.abs(r.iva.segun_flujo)), r.iva.segun_flujo >= 0 ? 'a cargo' : 'a favor')}</div>
-      <h3 class="util-13">Pendientes de comprobar</h3>${pend.length ? '<ul class="ct-pendientes">' + pend.map(t => '<li>⚠ ' + esc(t) + '</li>').join('') + '</ul>' : '<p class="util-45">Nada pendiente de comprobar este mes. 🎉</p>'}
-      <p class="ayuda">${Number(r.xml_disponibles)} XML disponibles para descargar este mes.</p>`;
+        ${r.egresos.anticipos_entregados || r.egresos.anticipos_reintegrados ? tarjeta('Anticipos entregados', dinero(r.egresos.anticipos_entregados), 'regresaron ' + dinero(r.egresos.anticipos_reintegrados)) : ''}</div></section>
+      <section class="apartado"><h3 class="util-13">IVA del mes (apoyo para el contador)</h3><div class="logs-tarjetas">${tarjeta('Según facturas: facturado − gastos', dinero(Math.abs(r.iva.segun_facturas)), r.iva.segun_facturas >= 0 ? 'a cargo' : 'a favor')}
+        ${tarjeta('Según el dinero: cobrado − pagado', dinero(Math.abs(r.iva.segun_flujo)), r.iva.segun_flujo >= 0 ? 'a cargo' : 'a favor')}</div></section>
+      <section class="apartado"><h3 class="util-13">Pendientes de comprobar</h3>${pend.length ? '<ul class="ct-pendientes">' + pend.map(t => '<li>⚠ ' + esc(t) + '</li>').join('') + '</ul>' : '<p class="util-45">Nada pendiente de comprobar este mes. 🎉</p>'}
+      <p class="ayuda">${Number(r.xml_disponibles)} XML disponibles para descargar este mes.</p></section>`;
   }
   // Filas de una tabla con el buscador y el orden aplicados.
   function filasDe(k) {

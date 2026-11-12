@@ -563,11 +563,11 @@ const Finanzas = (() => {
       + t('Por realizar', formatoMoneda(r.programado), '', 'por_realizar') + (r.por_concluir > 0 ? t('Por concluir', formatoMoneda(r.por_concluir), '', 'por_concluir') : '') + (r.a_favor > 0 ? t('A favor del cliente', formatoMoneda(r.a_favor), 'favor', 'a_favor') : '')
       + t('Pagado en total', formatoMoneda(r.pagado), '', 'pagado_total') + '<div class="cc-tarjeta"><small>Crédito</small><b>' + Number(r.dias_credito) + ' días</b>' + (puedeEditarFactura() ? '<button type="button" class="enlace" data-cc-credito>Cambiar</button>' : '') + '</div></div>'
       + '<div class="btn-group cc-acciones">' + wa + '<button type="button" class="btn btn-outline" data-cc-ficha>Abrir ficha del contacto</button></div>'
-      + '<div class="cc-seccion"><div class="cc-seccion-cab"><h3>Órdenes de servicio</h3><label class="cc-check"><input type="checkbox" data-cc-pagadas' + (VER_PAGADAS ? ' checked' : '') + '> Mostrar también las pagadas</label></div>'
+      + '<div class="cc-seccion apartado"><div class="cc-seccion-cab"><h3>Órdenes de servicio</h3><label class="cc-check"><input type="checkbox" data-cc-pagadas' + (VER_PAGADAS ? ' checked' : '') + '> Mostrar también las pagadas</label></div>'
       + (ordenes.length ? '<div class="tabla-scroll tabla-dinero-caja"><table class="tabla-resumen tabla-dinero"><thead><tr><th>OS</th><th>Factura</th><th>Servicio</th><th class="st-num">Total</th><th class="st-num">A/C</th><th class="st-num">Saldo</th><th>Vence</th><th class="st-num">Días</th><th>Status</th><th></th></tr></thead><tbody>'
         + ordenes.map(filaOrden).join('') + '</tbody><tfoot><tr><td colspan="3"><b>Totales · ' + ordenes.length + '</b></td><td class="st-num"><b>' + formatoMoneda(ordenes.reduce((s, c) => s + c.total, 0)) + '</b></td><td class="st-num"><b>' + formatoMoneda(ordenes.reduce((s, c) => s + c.cobrado, 0)) + '</b></td><td class="st-num"><b>' + formatoMoneda(ordenes.reduce((s, c) => s + c.saldo, 0)) + '</b></td><td colspan="4"></td></tr></tfoot></table></div>'
         : '<p class="util-45">' + (VER_PAGADAS ? 'Este cliente no tiene órdenes de servicio.' : 'No debe nada. 🎉 Marca «Mostrar también las pagadas» para ver su historial.') + '</p>')
-      + '</div><div class="cc-seccion"><div class="cc-seccion-cab"><h3>Pagos realizados</h3><span class="ayuda">' + vivos.length + ' ' + (vivos.length === 1 ? 'pago' : 'pagos') + '</span></div>'
+      + '</div><div class="cc-seccion apartado"><div class="cc-seccion-cab"><h3>Pagos realizados</h3><span class="ayuda">' + vivos.length + ' ' + (vivos.length === 1 ? 'pago' : 'pagos') + '</span></div>'
       + (r.cobros.length ? '<div class="tabla-scroll tabla-dinero-caja"><table class="tabla-resumen tabla-dinero"><thead><tr><th>Fecha</th><th>OS</th><th class="st-num">Monto</th><th>Tipo</th><th>Método</th><th>CP / referencia</th><th>Estado</th><th>Registró</th></tr></thead><tbody>'
         + r.cobros.map(filaPago).join('') + '</tbody></table></div>' : '<p class="util-45">Todavía no hay pagos registrados.</p>') + '</div>';
   }
@@ -633,7 +633,7 @@ const Finanzas = (() => {
       + '<td class="st-num">' + (c.monto == null ? '—' : formatoMoneda(c.monto)) + '</td><td>' + esc(c.entrega || '—') + '</td>'
       + '<td>' + (c.gano ? '<span class="estado-cxc pagada">Ganó ✓</span>' : c.decidida ? '<span class="estado-cxc vencida">No se eligió</span>' : '<span class="estado-cxc programada">En revisión</span>') + '</td></tr>';
     const tabla = (cab, filas) => '<div class="tabla-scroll tabla-dinero-caja"><table class="tabla-resumen tabla-dinero"><thead><tr>' + cab.map(c => '<th' + (c.startsWith('$') ? ' class="st-num">' + esc(c.slice(1)) : '>' + esc(c)) + '</th>').join('') + '</tr></thead><tbody>' + filas + '</tbody></table></div>';
-    const seccion = (titulo, extra, cuerpo) => '<div class="cc-seccion"><div class="cc-seccion-cab"><h3>' + esc(titulo) + '</h3>' + extra + '</div>' + cuerpo + '</div>';
+    const seccion = (titulo, extra, cuerpo) => '<div class="cc-seccion apartado"><div class="cc-seccion-cab"><h3>' + esc(titulo) + '</h3>' + extra + '</div>' + cuerpo + '</div>';
     const ganadas = r.cotizaciones.filter(c => c.gano).length;
     const vivos = r.pagos.filter(g => !g.cancelado);
     $('cp-cuerpo').innerHTML =
