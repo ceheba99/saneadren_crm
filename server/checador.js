@@ -116,7 +116,7 @@ function migrar(db) {
     agregar('checador_intentos', 'revisado_at', 'TEXT'); agregar('checador_intentos', 'revisado_por_nombre', 'TEXT');
   }
   if (existe('checadas')) { agregar('checadas', 'uid_kiosco', 'TEXT'); agregar('checadas', 'precision_m', 'REAL'); agregar('checadas', 'foto_borrada_at', 'TEXT'); agregar('checadas', 'ip', 'TEXT'); agregar('checadas', 'distancia_m', 'REAL'); agregar('checadas', 'biometria', 'TEXT'); agregar('checadas', 'distancia_rostro', 'REAL'); }
-  if (existe('checador_dispositivos')) { agregar('checador_dispositivos', 'tipo', "TEXT NOT NULL DEFAULT 'kiosco'"); agregar('checador_dispositivos', 'personal_id', 'INTEGER REFERENCES personal(id)'); agregar('checador_dispositivos', 'red_habitual', 'TEXT'); }
+  if (existe('checador_dispositivos')) { agregar('checador_dispositivos', 'tipo', "TEXT NOT NULL DEFAULT 'kiosco'"); agregar('checador_dispositivos', 'personal_id', 'INTEGER REFERENCES personal(id)'); agregar('checador_dispositivos', 'red_habitual', 'TEXT'); agregar('checador_dispositivos', 'eliminado_at', 'TEXT'); agregar('checador_dispositivos', 'eliminado_por', 'TEXT'); }
   // Ubicación de cada sucursal para revisar las checadas del celular (la captura Dirección).
   agregar('sucursales', 'lat', 'REAL'); agregar('sucursales', 'lon', 'REAL'); agregar('sucursales', 'radio_m', 'INTEGER');
   db.exec(`
@@ -129,7 +129,8 @@ function migrar(db) {
       activo INTEGER NOT NULL DEFAULT 1 CHECK(activo IN (0, 1)),
       registrado_por INTEGER, registrado_por_nombre TEXT, created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
       ultimo_uso TEXT, revocado_por TEXT, revocado_at TEXT,
-      tipo TEXT NOT NULL DEFAULT 'kiosco', personal_id INTEGER REFERENCES personal(id), red_habitual TEXT
+      tipo TEXT NOT NULL DEFAULT 'kiosco', personal_id INTEGER REFERENCES personal(id), red_habitual TEXT,
+      eliminado_at TEXT, eliminado_por TEXT
     );
     -- Enlaces de un solo uso para ligar el celular de una persona (F5). Solo se guarda el hash del enlace.
     CREATE TABLE IF NOT EXISTS checador_enlaces (
@@ -831,7 +832,7 @@ module.exports = function checador(app, db, h) {
     // red_cambiada: su última checada llegó desde otra red (p. ej. el internet de la oficina cambió de IP).
     res.json(db.prepare(`SELECT d.id, d.nombre, d.sucursal_id, s.nombre AS sucursal, d.activo, d.registrado_por_nombre, d.created_at, d.ultimo_uso, d.revocado_por, d.revocado_at,
       COALESCE((SELECT c.ip FROM main.checadas c WHERE c.dispositivo_id = d.id AND c.ip IS NOT NULL ORDER BY c.id DESC LIMIT 1) <> d.red_habitual, 0) AS red_cambiada
-      FROM checador_dispositivos d LEFT JOIN main.sucursales s ON s.id = d.sucursal_id WHERE d.tipo = 'kiosco' ORDER BY d.activo DESC, d.nombre`).all());
+      FROM checador_dispositivos d LEFT JOIN main.sucursales s ON s.id = d.sucursal_id WHERE d.tipo = 'kiosco' AND d.eliminado_at IS NULL ORDER BY d.activo DESC, d.nombre`).all());
   }));
   app.post('/api/asistencia/dispositivos', h((req, res) => {
     if (!puede(req, 'asistencia.kioscos')) return negar(res, 'No tienes permiso para registrar kioscos');
@@ -865,6 +866,22 @@ module.exports = function checador(app, db, h) {
     for (const [k, v] of tickets) if (v.dispositivoId === d.id) tickets.delete(k);
     app.locals.auditoria?.registrar(req, 'checador_dispositivo', d.id, 'baja', `Kiosco «${d.nombre}»: ya no puede checar`);
     res.json({ ok: true });
+  }));
+
+  // Eliminar un kiosco de la lista (2026-11-11, Dirección: «solo para administradores»). Si nunca se usó, se borra; si
+  // tiene checadas o intentos, esos registros no se tocan (la bitácora no se borra) y el kiosco solo deja de salir en la
+  // lista, con quién y cuándo lo eliminó. En los dos casos deja de poder checar al instante.
+  app.delete('/api/asistencia/dispositivos/:id', h((req, res) => {
+    if (!P.direccion(req)) return negar(res, 'Solo Dirección elimina kioscos');
+    const d = db.prepare("SELECT * FROM checador_dispositivos WHERE id = ? AND tipo = 'kiosco' AND eliminado_at IS NULL").get(idDe(req.params.id));
+    if (!d) return res.status(404).json({ error: 'Kiosco no encontrado' });
+    const usado = db.prepare('SELECT EXISTS(SELECT 1 FROM main.checadas WHERE dispositivo_id = ?) OR EXISTS(SELECT 1 FROM main.checador_intentos WHERE dispositivo_id = ?) AS u').get(d.id, d.id).u;
+    let borrado = false;
+    if (!usado) { try { db.prepare('DELETE FROM main.checador_dispositivos WHERE id = ?').run(d.id); borrado = true; } catch { borrado = false; } }
+    if (!borrado) db.prepare("UPDATE main.checador_dispositivos SET activo = 0, revocado_por = COALESCE(revocado_por, ?), revocado_at = COALESCE(revocado_at, datetime('now','localtime')), eliminado_por = ?, eliminado_at = datetime('now','localtime') WHERE id = ?").run(req.usuarioSesion.nombre, req.usuarioSesion.nombre, d.id);
+    for (const [k, v] of tickets) if (v.dispositivoId === d.id) tickets.delete(k);
+    app.locals.auditoria?.registrar(req, 'checador_dispositivo', d.id, 'eliminar', `Kiosco «${d.nombre}»: eliminado de la lista${borrado ? ' (nunca se usó)' : ' (sus checadas e intentos se conservan)'}`);
+    res.json({ ok: true, borrado });
   }));
 
   // ---------- Checadas: consulta y correcciones ----------

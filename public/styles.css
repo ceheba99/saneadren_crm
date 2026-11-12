@@ -2204,6 +2204,20 @@ table.tabla-clientes.py-tareas tbody td{white-space:normal;}
 .ac-resumen{display:flex;flex-wrap:wrap;gap:6px 18px;margin:8px 0 12px;}
 .ac-resumen span small{display:block;color:#6b7280;font-size:11px;}
 .ac-cara-mal{color:#b91c1c;font-weight:600;}
+.as-intentos td{min-width:72px;}
+.as-intentos td:nth-child(2){min-width:140px;}
+.as-intentos td small.pe-cuenta{max-width:300px;}
+/* En el celular cada intento es una tarjeta: «Etiqueta: dato» en renglones (sin columnas escondidas a la derecha). */
+@media (max-width:700px){
+  .tabla-scroll:has(.as-intentos){max-height:none;overflow:visible;}
+  .as-intentos thead{display:none;}
+  .as-intentos,.as-intentos tbody,.as-intentos tr,.as-intentos td{display:block;width:100%;}
+  .as-intentos tr{border:1px solid var(--borde,#e5e7eb);border-radius:12px;padding:10px 12px;margin-bottom:10px;background:#fff;}
+  .as-intentos td{border:0 !important;padding:3px 0 !important;min-width:0 !important;display:flex;gap:8px;}
+  .as-intentos td::before{content:attr(data-et);flex:0 0 78px;color:#6b7280;font-size:.82rem;font-weight:600;}
+  .as-intentos td > div{flex:1;min-width:0;}
+  .as-intentos td small.pe-cuenta{display:block;max-width:none;}
+}
 .as-semana td .btn-link{color:inherit;text-decoration:none;}
 .as-semana td .btn-link:hover,.as-semana td .btn-link:focus-visible{text-decoration:underline;color:#1d4ed8;}
 .as-reglas label{display:block;margin:10px 0;}

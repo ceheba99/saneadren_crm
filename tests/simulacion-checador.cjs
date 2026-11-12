@@ -138,6 +138,19 @@ const archivosDe = d => fs.readdirSync(d, { withFileTypes: true }).flatMap(e => 
   revisa((await pedir('POST', '/asistencia/dispositivos/' + kmId + '/revocar', T.Gema))[0] === 404, 'La gerente de Querétaro no ve ni revoca el kiosco de CDMX');
   exigir(await pedir('POST', '/asistencia/dispositivos/' + kmId + '/revocar', T.Gus), 'revocar kiosco');
   revisa((await kio(KM, 'GET', 'estado'))[0] === 401, 'Un kiosco dado de baja ya no entra');
+  // Eliminar (2026-11-11): solo Dirección. Usado → sale de la lista y se conservan sus checadas; sin usar → se borra.
+  revisa((await pedir('DELETE', '/asistencia/dispositivos/' + kmId, T.Gus))[0] === 403, 'El gerente no elimina kioscos (solo Dirección)');
+  const [sEl, jEl] = await pedir('DELETE', '/asistencia/dispositivos/' + kmId, A);
+  revisa(sEl === 200 && jEl.borrado === false, 'Dirección elimina un kiosco que ya se usó: no se borra de la base', [sEl, jEl]);
+  revisa(!(await pedir('GET', '/asistencia/dispositivos', A))[1].some(x => x.id === kmId), 'Ya no sale en la lista de kioscos');
+  revisa(conBase(d => d.prepare('SELECT COUNT(*) n FROM checadas WHERE dispositivo_id = ?').get(kmId).n) >= 1 && conBase(d => d.prepare('SELECT eliminado_por FROM checador_dispositivos WHERE id = ?').get(kmId).eliminado_por), 'Sus checadas se conservan y queda quién lo eliminó');
+  revisa((await pedir('DELETE', '/asistencia/dispositivos/' + kmId, A))[0] === 404, 'Un kiosco eliminado no se elimina dos veces');
+  const KX = exigir(await pedir('POST', '/asistencia/dispositivos', A, { nombre: 'Tableta de prueba', sucursal_id: qro.id }), 'kiosco de prueba');
+  revisa((await kio(KX.token, 'GET', 'estado'))[0] === 200, 'El kiosco de prueba entra');
+  const [, jx] = await pedir('DELETE', '/asistencia/dispositivos/' + KX.id, A);
+  revisa(jx.borrado === true && !conBase(d => d.prepare('SELECT 1 FROM checador_dispositivos WHERE id = ?').get(KX.id)), 'Un kiosco que nunca se usó se borra por completo', jx);
+  revisa((await kio(KX.token, 'GET', 'estado'))[0] === 401, 'Eliminado, ya no puede checar al instante');
+  revisa(conBase(d => d.prepare("SELECT COUNT(*) n FROM auditoria WHERE entidad = 'checador_dispositivo' AND accion = 'eliminar'").get().n) === 2, 'Queda en la bitácora');
   // Persona dada de baja: ya no checa.
   const [, iA] = await kio(KQ, 'POST', 'identificar', { codigo: altaAna.codigo, pin: altaAna.pin });
   const [, cA] = await kio(KQ, 'POST', 'cambiar-pin', { ticket: iA.ticket, nuevo: '5072' });
