@@ -51,7 +51,8 @@ const ORIGENES = ['kiosco', 'celular', 'whatsapp', 'manual'];
 // BLOQUEO_TOTAL: el bloqueo «para siempre» de antes (los que ya estén así siguen hasta que RH los desbloquee).
 const FALLOS_ESPERA = 5, FALLOS_TOTAL = 10, ESPERA_MS = 15 * 60 * 1000, BLOQUEO_LARGO_MS = 24 * 3600000, BLOQUEO_TOTAL = 8.64e15;
 const FALLOS_KIOSCO = 20, VENTANA_KIOSCO_MS = 10 * 60 * 1000, FALLOS_IP = 30, VENTANA_IP_MS = 15 * 60 * 1000;
-const TICKET_MS = 90 * 1000, DUPLICADO_MS = 2 * 60 * 1000;
+// 3 minutos (antes 90 s): la comprobación de la cara ahora da tiempo de acomodarse y de intentarlo otra vez.
+const TICKET_MS = 180 * 1000, DUPLICADO_MS = 2 * 60 * 1000;
 const MAX_FOTO = 400 * 1024, MAX_SIN_CONEXION_MS = 7 * 86400000, ENLACE_MS = 24 * 3600000, PRECISION_MAX_M = 150, RADIO_SUCURSAL_M = 500;
 const contextoFoto = id => `checadas.foto:${id}`, contextoIntento = id => `checador_intentos.foto:${id}`;
 // Distancia en metros entre dos puntos (fórmula del haversine).
@@ -456,8 +457,8 @@ module.exports = function checador(app, db, h) {
     if (p.pin_fallos || p.pin_bloqueado_hasta) db.prepare('UPDATE main.personal SET pin_fallos = 0, pin_bloqueado_hasta = 0 WHERE id = ?').run(p.id);
     return { p };
   }
-  // Paso 1: código y PIN. Si son correctos regresa un ticket de 90 s para checar (o para elegir PIN si es temporal).
-  // Intento fallido: se registra (uno por código y kiosco cada 30 s) y se regresa un permiso de 90 s para subir su foto.
+  // Paso 1: código y PIN. Si son correctos regresa un ticket de 3 min para checar (o para elegir PIN si es temporal).
+  // Intento fallido: se registra (uno por código y kiosco cada 30 s) y se regresa un permiso de 3 min para subir su foto.
   // «motivo»: para los intentos con la cara (biométrico); esos no se limitan a uno cada 30 s (ya son máx. 3 por persona).
   // «detalle»: diagnóstico del biométrico (cuadros vistos, ojos, giro) para poder ajustar con datos reales.
   function registrarIntento(req, codigo, v, motivo = null, detalle = null) {
@@ -482,6 +483,10 @@ module.exports = function checador(app, db, h) {
       // Prueba de vida pasiva (2026-11-09): cuántos cuadros revisó el modelo, cuántos salieron «persona real», la racha
       // más larga (pide 3 seguidos) y el promedio (positivo = real, negativo = foto o pantalla).
       if (ev2 !== null) partes.push(`vida: ${re ?? 0} de ${ev2} reales, racha ${sg ?? 0} (pide 3)${vp !== null ? `, promedio ${vp.toFixed(1)}` : ''}`);
+      const ac = num(d.acomodo, 600), rg = num(d.regresos, 10);
+      if (ac !== null) partes.push(`se acomodó en ${ac} s`);
+      if (rg) partes.push(`se movió ${rg} ${rg === 1 ? 'vez' : 'veces'}`);
+      if (d.oscuro === true) partes.push('poca luz');
       if (d.chica === true) partes.push('cara muy lejos');
       if (d.sinModelo === true) partes.push('no cargó la prueba de vida');
     }
@@ -531,7 +536,7 @@ module.exports = function checador(app, db, h) {
     audit(null, p.id, 'checador', `${p.nombre}: eligió su PIN en el kiosco «${req.kiosco.nombre}»`);
     res.json(paraChecar(req, p));
   }));
-  // La foto de un intento fallido (una sola, del mismo kiosco, dentro de 90 s).
+  // La foto de un intento fallido (una sola, del mismo kiosco, dentro de 3 min).
   app.post('/api/publico/kiosco/intento-foto', kiosco, h((req, res) => {
     const t = String(req.body?.intento || ''), x = fotosIntento.get(t);
     if (!x || x.expira <= Date.now() || x.dispositivoId !== req.kiosco.id) return res.status(401).json({ error: 'Se acabó el tiempo' });

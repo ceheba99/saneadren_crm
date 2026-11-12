@@ -3,7 +3,7 @@
 //    «Firmó el consentimiento biométrico» (queda quién y cuándo). También vale el documento «Consentimiento biométrico
 //    firmado» si se sube al expediente digital. Sin consentimiento, la persona checa como siempre y su plantilla no se usa.
 //  · Registro EN LA TABLETA con RH: desde la ficha, RH da un código de 6 dígitos (un solo uso, 10 min); en el kiosco,
-//    «Registrar mi cara» → código → se toman 3 muestras mirando de frente (sin prueba de vida: RH está presente). La tableta calcula los descriptores
+//    «Registrar mi cara» → código → se toman 5 muestras (mínimo 3) mirando de frente (sin prueba de vida: RH está presente). La tableta calcula los descriptores
 //    (face-api, alojado en /vendor/face-api) y el servidor guarda SOLO su promedio, CIFRADO. Las fotos no se guardan.
 //  · Al checar: comparación 1:1 contra SU plantilla (ya se sabe quién es por código y PIN), con prueba de vida
 //    (prueba de vida pasiva: foto o pantalla vs. cara real). Si no coincide, la persona checa igual pero la checada queda «por revisar» (decidido con Dirección).
@@ -17,7 +17,9 @@ const C = require('./cifrado');
 const { hashToken } = require('./seguridad');
 
 const UMBRAL = (() => { const u = Number(process.env.BIOMETRIA_UMBRAL); return u > 0.2 && u < 0.9 ? u : 0.55; })();
-const CODIGO_MS = 10 * 60 * 1000, MUESTRAS = 3, CONSISTENCIA = 0.6, FALLOS_CODIGO = 10, VENTANA_MS = 10 * 60 * 1000;
+// Alta: de 3 a 5 muestras (2026-11-11: la tableta toma 5 con calma y quita las movidas). Al checar: hasta 3 muestras
+// de la misma toma y cuenta la que más se parece (una imagen movida ya no hace fallar a la persona correcta).
+const CODIGO_MS = 10 * 60 * 1000, MUESTRAS = 3, MUESTRAS_MAX = 5, MUESTRAS_CHECAR = 3, CONSISTENCIA = 0.6, FALLOS_CODIGO = 10, VENTANA_MS = 10 * 60 * 1000;
 const contexto = id => `rostros.plantilla:${id}`;
 const idDe = v => { if (!/^\d{1,15}$/.test(String(v))) return 0; const n = Number(v); return Number.isSafeInteger(n) && n > 0 ? n : 0; };
 // Un descriptor válido: 128 números finitos y chicos (face-api da valores entre −1 y 1, aprox.).
@@ -73,10 +75,10 @@ module.exports = function biometria(app, db, h) {
     if (!activo(pid)) return null;
     const plantilla = plantillaDe(pid);
     if (!plantilla) return { resultado: 'sin_registro', distancia: null, nota: 'Biométrico: su registro no se pudo leer (que RH lo vuelva a registrar)' };
-    const d = descriptorDe(rostro?.descriptor);
-    if (!d) return { resultado: 'sin_rostro', distancia: null, nota: 'Biométrico: no se detectó su cara' };
+    const ds = [rostro?.descriptor, ...(Array.isArray(rostro?.descriptores) ? rostro.descriptores.slice(0, MUESTRAS_CHECAR) : [])].map(descriptorDe).filter(Boolean).slice(0, MUESTRAS_CHECAR + 1);
+    if (!ds.length) return { resultado: 'sin_rostro', distancia: null, nota: 'Biométrico: no se detectó su cara' };
     if (rostro.vivo !== true) return { resultado: 'no_vivo', distancia: null, nota: 'Biométrico: no pasó la prueba de vida (parece foto o pantalla)' };
-    const dist = Math.round(distancia(d, plantilla) * 1000) / 1000;
+    const dist = Math.round(Math.min(...ds.map(d => distancia(d, plantilla))) * 1000) / 1000;
     return dist <= UMBRAL ? { resultado: 'coincide', distancia: dist, nota: null } : { resultado: 'no_coincide', distancia: dist, nota: `Biométrico: la cara no coincide (${dist.toFixed(2)})` };
   }
 
@@ -93,8 +95,8 @@ module.exports = function biometria(app, db, h) {
     if (!p || !consentimiento(p.id)) return { status: 409, error: 'Falta marcar en su ficha que firmó el consentimiento biométrico.' };
     // Sin prueba de vida al registrar (2026-11-06): RH está presente, por eso dio el código. Al checar sí se pide.
     const ds = Array.isArray(descriptores) ? descriptores.map(descriptorDe) : [];
-    if (ds.length !== MUESTRAS || ds.some(d => !d)) return { status: 400, error: 'No se tomaron bien las 3 muestras de la cara. Vuelve a intentarlo.' };
-    // Las 3 muestras deben ser de la misma persona (si no, alguien se cruzó frente a la cámara).
+    if (ds.length < MUESTRAS || ds.length > MUESTRAS_MAX || ds.some(d => !d)) return { status: 400, error: 'No se tomaron bien las fotos de la cara. Vuelve a intentarlo.' };
+    // Todas las muestras deben ser de la misma persona (si no, alguien se cruzó frente a la cámara).
     for (let i = 0; i < ds.length; i++) for (let j = i + 1; j < ds.length; j++) if (distancia(ds[i], ds[j]) > CONSISTENCIA) return { status: 400, error: 'Las muestras no se parecen entre sí. Que solo esté la persona frente a la cámara y vuelve a intentarlo.' };
     const prom = Array.from({ length: 128 }, (_, k) => Math.round((ds.reduce((s, d) => s + d[k], 0) / ds.length) * 1e6) / 1e6);
     db.transaction(() => {

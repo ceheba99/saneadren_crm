@@ -92,6 +92,18 @@
   .ventana-cara .vc-aviso{font-size:2rem;font-weight:800;color:var(--amarillo);margin:0;line-height:1.2;}
   .ventana-cara .vc-guia{position:absolute;top:50%;left:50%;width:min(62vw,62vh);aspect-ratio:3/4;transform:translate(-50%,-50%);border:4px dashed rgba(246,177,3,.9);border-radius:50%;pointer-events:none;}
   .ventana-cara .btn{margin-top:0;background:rgba(255,255,255,.92);}
+  .ventana-cara .vc-guia.bien{border:6px solid #22c55e;box-shadow:0 0 0 4px rgba(34,197,94,.25);}
+  .ventana-cara .vc-paso{margin:6px 0 0;font-size:1.05rem;color:#fff;opacity:.9;}
+  .ventana-cara .vc-barra{width:min(520px,80vw);height:14px;border-radius:8px;background:rgba(255,255,255,.25);overflow:hidden;}
+  .ventana-cara .vc-barra i{display:block;height:100%;width:0;background:var(--amarillo);border-radius:8px;transition:width .2s;}
+  .ventana-cara .vc-barra.toma i{background:#22c55e;}
+  .ventana-cara .vc-botones{display:flex;gap:12px;flex-wrap:wrap;justify-content:center;}
+  .reintento .icono{font-size:3rem;}
+  .reintento h1{color:var(--texto);}
+  .consejos{text-align:left;margin:0 auto 6px;padding-left:22px;max-width:440px;font-size:1.05rem;line-height:1.5;}
+  .reintento-botones{display:flex;flex-direction:column;gap:10px;margin-top:12px;}
+  .reintento-botones .btn{margin-top:0;font-size:1.2rem;padding:16px 22px;}
+  .btn-principal{background:var(--amarillo);border-color:var(--amarillo);font-weight:800;}
   .ventana-cara .vc-sin{flex:1;display:flex;align-items:center;justify-content:center;color:#fff;font-size:1.3rem;}
   .camara{position:relative;width:min(100%,440px);aspect-ratio:4/3;max-height:42vh;margin:0 auto 6px;border-radius:12px;overflow:hidden;background:#111;}
   /* Pantalla de los botones: en tableta horizontal, la cámara grande a la izquierda y los botones a la derecha. */
@@ -537,29 +549,91 @@
     return l[0] - l[1];
   }
 
+  // Qué tan iluminada está la cara (0 = negro, 255 = blanco), con una muestra de puntos de su caja. null = no se sabe.
+  function luzDe(lienzo, caja) {
+    try {
+      const x = Math.max(0, Math.floor(caja.x)), y = Math.max(0, Math.floor(caja.y)), w = Math.min(lienzo.width - x, Math.floor(caja.width)), h = Math.min(lienzo.height - y, Math.floor(caja.height));
+      if (w < 8 || h < 8) return null;
+      const px = lienzo.getContext('2d', { willReadFrequently: true }).getImageData(x, y, w, h).data, paso = Math.max(1, Math.floor(w * h / 400)) * 4;
+      let s = 0, n = 0;
+      for (let i = 0; i < px.length; i += paso) { s += .299 * px[i] + .587 * px[i + 1] + .114 * px[i + 2]; n++; }
+      return n ? s / n : null;
+    } catch { return null; }
+  }
+
   // ---------- Captura de la cara ----------
-  const TIEMPO_ROSTRO = 10000;
+  // 2026-11-11 (Dirección: «va demasiado rápido y toma desprevenida a la gente; aunque sea la persona correcta no la
+  // reconoce»). Antes se tomaba la PRIMERA imagen con cara (muchas veces movida, mientras la persona todavía se
+  // acomodaba) y la prueba de vida se rendía a los 2 o 3 segundos. Ahora la toma va en dos pasos:
+  //  1. ACOMODO (sin prisa, hasta 25 s): no se toma nada hasta que la cara esté de frente, al centro, a buena distancia,
+  //     con luz y QUIETA varios cuadros seguidos. La pantalla dice qué corregir.
+  //  2. TOMA: ya con la persona lista, la prueba de vida y varias muestras de la cara (el servidor usa la mejor).
+  // Si la persona se mueve o se pierde en la toma, se regresa al acomodo (hasta 2 veces) en vez de fallar.
+  const TIEMPO_ACOMODO = 25000, TIEMPO_ROSTRO = 12000;
   const MIRAR_DE_FRENTE = 'Mira de frente a la cámara y quédate quieto';
   // Prueba de vida: 3 cuadros «cara real» SEGUIDOS (lo que recomienda el modelo). Si en 12 cuadros revisados no los
-  // junta, parece foto o pantalla: se deja de intentar y se pide el PIN. UMBRAL_VIDA 0 = probabilidad 50 %.
+  // junta, parece foto o pantalla: se deja de intentar. UMBRAL_VIDA 0 = probabilidad 50 %.
   const VIDA_SEGUIDOS = 3, VIDA_MAX = 12, UMBRAL_VIDA = 0;
   // La cara debe medir al menos 80 px de ancho en la imagen (el modelo pide caras de 64 px o más).
   const CARA_MIN = 80;
+  // Acomodo: cuadros buenos seguidos para empezar, cuánto puede moverse entre dos cuadros (parte del ancho de la cara),
+  // luz mínima de la cara (0 a 255; solo detiene los primeros segundos, por si el lugar es oscuro) y regresos permitidos.
+  const QUIETOS = 4, MOVIMIENTO = .12, LUZ_MIN = 45, LUZ_ESPERA_MS = 8000, REGRESOS = 2, REGRESO_MS = 10000;
   function mismaCara(a, b) {
     const proporcion = b.width / a.width;
     return proporcion > .65 && proporcion < 1.55 &&
       Math.hypot(b.x + b.width / 2 - a.x - a.width / 2, b.y + b.height / 2 - a.y - a.height / 2) < a.width * .4;
   }
-  async function capturarCara({ muestras = 1, vida = true, ms = TIEMPO_ROSTRO, aviso = () => {}, sigue = () => true } = {}) {
+  const seMovio = (a, b) => Math.abs(b.width / a.width - 1) > .15 ||
+    Math.hypot(b.x + b.width / 2 - a.x - a.width / 2, b.y + b.height / 2 - a.y - a.height / 2) > a.width * MOVIMIENTO;
+  // Qué le falta a la cara para tomarla bien (el mensaje que se enseña) o null si está bien puesta.
+  function acomodoDe(r, W, H) {
+    const c = r.detection.box, p = r.landmarks.positions, lx = p[16].x - p[0].x, ly = p[16].y - p[0].y;
+    // De frente: la nariz cerca del centro entre ambos lados de la cara.
+    const giro = (((p[30].x - p[0].x) * lx + (p[30].y - p[0].y) * ly) / ((lx * lx + ly * ly) || 1)) - .5;
+    if (Math.abs(giro) > .16) return 'Mira de frente a la cámara';
+    if (c.width < CARA_MIN) return 'Acércate un poco a la cámara';
+    if (W && c.width > W * .8) return 'Aléjate un poco de la cámara';
+    if (W && H) {
+      const cx = c.x + c.width / 2, cy = c.y + c.height / 2;
+      if (cx < W * .2 || cx > W * .8 || cy < H * .18 || cy > H * .82) return 'Acomoda la tableta: tu cara debe quedar al centro';
+    }
+    return null;
+  }
+  const distanciaCaras = (a, b) => Math.sqrt(a.reduce((s, x, i) => s + (x - b[i]) ** 2, 0));
+  // Del alta: se quitan las muestras que menos se parecen a las demás (una salió movida) sin bajar del mínimo.
+  function mejoresMuestras(ds, minimo = 3, tope = .45) {
+    const l = ds.slice();
+    while (l.length > minimo) {
+      const peor = l.map((d, i) => Math.max(...l.filter((_, j) => j !== i).map(o => distanciaCaras(d, o))));
+      const m = Math.max(...peor);
+      if (m <= tope) break;
+      const medias = l.map((d, i) => l.reduce((s, o, j) => (j === i ? s : s + distanciaCaras(d, o)), 0));
+      l.splice(medias.indexOf(Math.max(...medias)), 1);
+    }
+    return l;
+  }
+  // «muestras»: cuántas se quieren; «espacio»: ms entre una y otra; «etapa(fase, avance)»: para la barra de la pantalla.
+  // Regresa «preparado» = la persona llegó a estar bien acomodada (si no, no vale la pena preguntar al servidor).
+  async function capturarCara({ muestras = 1, vida = true, ms = TIEMPO_ROSTRO, msAcomodo = TIEMPO_ACOMODO, espacio = 350, aviso = () => {}, etapa = () => {}, sigue = () => true } = {}) {
     const [f, modelo] = await Promise.all([cargarFaceApi(), vida ? cargarAntispoof() : null]);
     const v = $('video'), opciones = new f.TinyFaceDetectorOptions({ inputSize: 224, scoreThreshold: 0.4 });
-    const hasta = Date.now() + ms, descriptores = [], inicio = Date.now();
+    const inicio = Date.now(), descriptores = [];
     // Diagnóstico para RH/soporte: cuadros con cara, cuántos revisó la prueba de vida, cuántos salieron reales, la racha
-    // más larga y el promedio (positivo = real).
-    const diag = { cuadros: 0, evaluados: 0, reales: 0, seguidos: 0, vida: null, chica: false };
+    // más larga, el promedio (positivo = real), cuánto tardó en acomodarse y cuántas veces hubo que volver a acomodarse.
+    const diag = { cuadros: 0, evaluados: 0, reales: 0, seguidos: 0, vida: null, chica: false, acomodo: null, regresos: 0 };
     let vivo = !vida, caja = null, perdidos = 0, racha = 0, suma = 0, ultimaMuestra = 0, cuadroAnterior = -1;
-    const reiniciar = () => { caja = null; racha = 0; ultimaMuestra = 0; descriptores.length = 0; };
-    while (sigue() && Date.now() < hasta && (!vivo || descriptores.length < muestras)) {
+    let fase = 'acomodo', quietos = 0, hasta = inicio + msAcomodo, preparado = false, fin = false;
+    const avance = () => etapa(fase, fase === 'acomodo' ? quietos / QUIETOS
+      : ((vida ? (vivo ? VIDA_SEGUIDOS : Math.min(racha, VIDA_SEGUIDOS)) : 0) + descriptores.length) / ((vida ? VIDA_SEGUIDOS : 0) + muestras));
+    // En la toma se movió, se perdió o apareció otra cara: se empieza de nuevo desde el acomodo (no se mezclan caras).
+    const regresar = () => {
+      if (diag.regresos >= REGRESOS) { fin = true; return; }
+      diag.regresos++; fase = 'acomodo'; quietos = 0; caja = null; racha = 0; ultimaMuestra = 0; descriptores.length = 0;
+      hasta = Date.now() + Math.min(msAcomodo, REGRESO_MS);
+    };
+    avance();
+    while (!fin && sigue() && Date.now() < hasta && (!vivo || descriptores.length < muestras)) {
       if (!vivo && diag.evaluados >= VIDA_MAX) break; // parece foto o pantalla
       if (!camaraLista || !v.videoWidth || v.currentTime === cuadroAnterior) {
         await new Promise(r => setTimeout(r, 35));
@@ -567,7 +641,7 @@
       }
       cuadroAnterior = v.currentTime;
       const imagen = cuadroDe(v);
-      const conDescriptor = descriptores.length < muestras && Date.now() - ultimaMuestra > 350;
+      const conDescriptor = fase === 'toma' && descriptores.length < muestras && Date.now() - ultimaMuestra > espacio;
       let r = null;
       try {
         const tarea = f.detectSingleFace(imagen, opciones).withFaceLandmarks();
@@ -575,20 +649,36 @@
       } catch { /* un cuadro fallido cuenta como «no se vio» */ }
       if (!sigue() || Date.now() >= hasta) break;
       if (!r) {
-        if (++perdidos >= 3) aviso('No te vemos. Acércate y mira de frente a la cámara');
-        if (perdidos >= 12) reiniciar(); // ~2 s sin cara: se empieza de nuevo
+        perdidos++;
+        if (fase === 'acomodo') { quietos = 0; caja = null; aviso(perdidos >= 3 ? 'No te vemos. Acércate y mira de frente a la cámara' : 'Ponte frente a la cámara'); }
+        else if (perdidos >= 3) { aviso('No te vemos. Acércate y mira de frente a la cámara'); if (perdidos >= 6) regresar(); } // ~1 s sin cara
+        avance();
         continue;
       }
       perdidos = 0;
       diag.cuadros++;
-      const nuevaCaja = r.detection.box;
-      if (caja && !mismaCara(caja, nuevaCaja)) reiniciar(); // otra cara en otro lugar: no se mezclan
+      const nuevaCaja = r.detection.box, anterior = caja, falta = acomodoDe(r, v.videoWidth, v.videoHeight);
+      if (nuevaCaja.width < CARA_MIN) diag.chica = true;
+      if (fase === 'acomodo') {
+        caja = nuevaCaja;
+        if (falta) { quietos = 0; aviso(falta); }
+        else if (anterior && seMovio(anterior, nuevaCaja)) { quietos = 1; aviso('Quédate quieto un momento'); }
+        else {
+          const luz = Date.now() - inicio < LUZ_ESPERA_MS ? luzDe(imagen, nuevaCaja) : null;
+          if (typeof luz === 'number' && luz < LUZ_MIN) { diag.oscuro = true; quietos = 0; aviso('Hay poca luz: busca luz de frente'); }
+          else { quietos++; aviso('Muy bien, no te muevas…'); }
+        }
+        if (quietos >= QUIETOS) {
+          fase = 'toma'; preparado = true; racha = 0; hasta = Date.now() + ms;
+          if (diag.acomodo === null) diag.acomodo = Math.round((Date.now() - inicio) / 100) / 10;
+        }
+        avance();
+        continue;
+      }
+      if (anterior && !mismaCara(anterior, nuevaCaja)) { regresar(); avance(); continue; } // otra cara en otro lugar
       caja = nuevaCaja;
-      // De frente: la nariz cerca del centro entre ambos lados de la cara.
-      const p = r.landmarks.positions, lx = p[16].x - p[0].x, ly = p[16].y - p[0].y;
-      const giro = (((p[30].x - p[0].x) * lx + (p[30].y - p[0].y) * ly) / ((lx * lx + ly * ly) || 1)) - .5;
-      if (Math.abs(giro) > .16) { aviso('Mira de frente a la cámara'); continue; }
-      if (nuevaCaja.width < CARA_MIN) { diag.chica = true; aviso('Acércate un poco a la cámara'); continue; }
+      if (falta) { aviso(falta); continue; }
+      if (anterior && seMovio(anterior, nuevaCaja)) { aviso('No te muevas'); continue; } // imagen movida: no se usa
       if (r.descriptor && descriptores.length < muestras) {
         descriptores.push(Array.from(r.descriptor, x => Math.round(x * 1e6) / 1e6));
         ultimaMuestra = Date.now();
@@ -604,78 +694,119 @@
           if (racha >= VIDA_SEGUIDOS) vivo = true;
         }
       }
+      avance();
       if (vivo && descriptores.length >= muestras) aviso('Listo');
-      else aviso(vida ? MIRAR_DE_FRENTE : `Mira de frente · ${descriptores.length} de ${muestras} muestras`);
+      else aviso(muestras > 1 ? 'No te muevas · foto ' + Math.min(descriptores.length + 1, muestras) + ' de ' + muestras : 'No te muevas…');
     }
     diag.segundos = Math.round((Date.now() - inicio) / 100) / 10;
     diag.vida = diag.evaluados ? Math.round(suma / diag.evaluados * 10) / 10 : null;
-    return { vivo, descriptores, vistas: diag.cuadros, diag };
+    return { vivo, descriptores, vistas: diag.cuadros, preparado, diag };
   }
-  // Mientras se toma la cara: ventana a pantalla completa con la cámara en grande, un óvalo para acomodar la cara y la
-  // instrucción en letras grandes. Se cierra sola cuando sigue el trámite (la siguiente pantalla) o con «Cancelar».
-  function pantallaCara(titulo, texto) {
+  // Mientras se toma la cara: ventana a pantalla completa con la cámara en grande, un óvalo para acomodar la cara (se
+  // pone verde cuando ya está bien puesta), la instrucción en letras grandes y una barra de avance. Se cierra sola cuando
+  // sigue el trámite (la siguiente pantalla) o con «Cancelar». «otro»: [texto, acción] de un segundo botón (usar el PIN).
+  function pantallaCara(titulo, texto, otro = null) {
     pintar(el('p', { className: 'ayuda', textContent: texto }));
     const msg = el('p', { className: 'vc-aviso', role: 'status', textContent: texto });
+    const lleno = el('i'), barra = el('div', { className: 'vc-barra' }, lleno), guia = el('div', { className: 'vc-guia' }), paso = el('p', { className: 'vc-paso', textContent: 'Paso 1 de 2 · Acomódate con calma' });
     let video;
     if (camaraLista) { video = el('video', { autoplay: true, playsInline: true, muted: true }); video.srcObject = $('video').srcObject; video.play().catch(() => {}); }
     document.body.append(el('div', { className: 'ventana-cara', role: 'dialog', ariaLabel: titulo },
       video || el('div', { className: 'vc-sin', textContent: 'Sin cámara' }),
-      el('div', { className: 'vc-guia' }),
-      el('div', { className: 'vc-arriba' }, el('h1', { textContent: titulo })),
-      el('div', { className: 'vc-abajo' }, msg, el('button', { type: 'button', className: 'btn', textContent: 'Cancelar', onclick: inicio }))));
+      guia,
+      el('div', { className: 'vc-arriba' }, el('h1', { textContent: titulo }), paso),
+      el('div', { className: 'vc-abajo' }, msg, barra, el('div', { className: 'vc-botones' },
+        ...(otro ? [el('button', { type: 'button', className: 'btn', textContent: otro[0], onclick: otro[1] })] : []),
+        el('button', { type: 'button', className: 'btn', textContent: 'Cancelar', onclick: inicio })))));
     const aviso = t => { if (msg.textContent !== t) msg.textContent = t; };
-    return aviso;
+    const etapa = (fase, avance) => {
+      const toma = fase !== 'acomodo', t = toma ? 'Paso 2 de 2 · Tomando tu cara, no te muevas' : 'Paso 1 de 2 · Acomódate con calma';
+      guia.classList.toggle('bien', toma); barra.classList.toggle('toma', toma);
+      if (paso.textContent !== t) paso.textContent = t;
+      lleno.style.width = Math.round(Math.max(0, Math.min(1, Number(avance) || 0)) * 100) + '%';
+    };
+    return { aviso, etapa };
   }
-  // Después del PIN (cuando no se pudo entrar con la cara): una sola toma; otra solo si no se vio la cara. Si no
-  // coincide o parece foto, checa igual y la checada queda por revisar.
+  // Cuando la cara no salió: en vez de seguir de largo, se explica qué corregir y la persona decide (con calma).
+  // «botones»: [texto, acción, principal].
+  const CONSEJOS_CARA = ['Ponte frente a la tableta, a un brazo de distancia.', 'Que la luz te dé de frente (no a contraluz).', 'Sin gorra, lentes oscuros ni cubrebocas.', 'Mira a la cámara y no te muevas hasta que diga «Listo».'];
+  function otraVezCara(titulo, texto, botones) {
+    Sonidos.sonar('error');
+    estado.teclado = null; estado.cara = null;
+    pintar(el('div', { className: 'reintento' }, el('div', { className: 'icono', textContent: '🙂' }), el('h1', { textContent: titulo }), el('p', { className: 'ayuda', textContent: texto }),
+      el('ul', { className: 'consejos' }, ...CONSEJOS_CARA.map(c => el('li', { textContent: c }))),
+      el('div', { className: 'reintento-botones' }, ...botones.map(([t, accion, principal]) => el('button', { type: 'button', className: 'btn' + (principal ? ' btn-principal' : ''), textContent: t, onclick: accion })))));
+    reiniciarEspera(45000);
+  }
+  const ESPERA_CARA = TIEMPO_ACOMODO + TIEMPO_ROSTRO + 2 * REGRESO_MS + 15000;
+  const rostroDe = cap => ({ descriptor: cap.descriptores[0] || null, descriptores: cap.descriptores, vivo: cap.vivo, diag: cap.diag });
+  // Después del PIN (cuando no se pudo entrar con la cara). Si no sale, la persona puede intentarlo otra vez o seguir:
+  // checa igual y la checada queda por revisar.
   async function verificarCara(datos, intento = 1) {
     estado.teclado = null;
     const yo = Symbol('cara'); estado.cara = yo;
-    reiniciarEspera(30000);
-    const aviso = pantallaCara('Hola, ' + datos.nombre + ': mira a la cámara', MIRAR_DE_FRENTE);
+    reiniciarEspera(ESPERA_CARA);
+    const sinCara = aviso => elegirTipo({ ...datos, aviso });
+    const { aviso, etapa } = pantallaCara('Hola, ' + datos.nombre + ': mira a la cámara', MIRAR_DE_FRENTE);
     let cap;
-    try { cap = await capturarCara({ aviso, sigue: () => estado.cara === yo }); }
-    catch { if (estado.cara === yo) elegirTipo({ ...datos, aviso: 'No se pudo usar el reconocimiento facial: tu checada quedará por revisar.' }); return; }
+    try { cap = await capturarCara({ muestras: 3, aviso, etapa, sigue: () => estado.cara === yo }); }
+    catch { if (estado.cara === yo) sinCara('No se pudo usar el reconocimiento facial: tu checada quedará por revisar.'); return; }
     if (estado.cara !== yo) return; // canceló
-    const rostro = { descriptor: cap.descriptores[0] || null, vivo: cap.vivo, diag: cap.diag };
-    let coincide = false;
-    if (rostro.descriptor && rostro.vivo) { try { const r = await api('rostro-verificar', { ticket: datos.ticket, rostro }); coincide = r.ok && r.j.coincide; } catch { coincide = false; } }
+    const rostro = rostroDe(cap);
+    let coincide = false, quedan = intento < 2;
+    if (rostro.descriptor && rostro.vivo) {
+      try { const r = await api('rostro-verificar', { ticket: datos.ticket, rostro }); coincide = r.ok && r.j.coincide; if (r.status === 429 || r.status === 401) quedan = false; } catch { coincide = false; }
+    }
     if (estado.cara !== yo) return;
     if (coincide) return elegirTipo({ ...datos, rostro, aviso: '✔ Te reconocimos. ¿Qué vas a registrar?' });
-    if (!rostro.descriptor && intento < 2) {
-      aviso('No vimos tu cara. Acércate, con luz de frente, y otra vez…');
-      await new Promise(r => setTimeout(r, 1500));
-      if (estado.cara === yo) verificarCara(datos, intento + 1);
-      return;
-    }
-    elegirTipo({ ...datos, rostro, aviso: 'No se reconoció tu cara: tu checada quedará por revisar.' });
+    const seguir = () => elegirTipo({ ...datos, rostro, aviso: 'No se reconoció tu cara: tu checada quedará por revisar.' });
+    if (!quedan) return seguir();
+    otraVezCara(cap.preparado ? 'No te reconocimos' : 'No alcanzamos a ver bien tu cara', 'Acomódate con calma y vuelve a intentarlo:',
+      [['Intentar otra vez', () => verificarCara(datos, intento + 1), true], ['Checar así (queda por revisar)', seguir]]);
   }
-  // Registro de la cara con el código de 6 dígitos que da RH desde la ficha.
+  // Registro de la cara con el código de 6 dígitos que da RH desde la ficha. Con calma: primero una pantalla que explica
+  // cómo ponerse; la toma empieza hasta que la persona toca «Estoy listo» y está bien acomodada; son 5 fotos espaciadas.
+  const MUESTRAS_ALTA = 5, MUESTRAS_ALTA_MIN = 3;
   function registrarCara() {
     estado = {}; adelantadas = '';
     reiniciarEspera(60000);
-    teclado('Registrar mi cara', 'Escribe el código de 6 números que te dio RH', false, async codigo => {
-      estado.teclado = null;
-      const yo = Symbol('registro'); estado.cara = yo;
-      reiniciarEspera(45000);
-      pintar(el('p', { className: 'ayuda', textContent: 'Prendiendo la cámara…' }));
-      await camaraA(4000);
-      if (estado.cara !== yo) return;
-      if (!camaraLista) return error('No se pudo prender la cámara. Avisa a RH.');
-      // Sin prueba de vida al registrar: RH está presente (dio el código). Solo 3 muestras mirando de frente.
-      const aviso = pantallaCara('Registrar mi cara', MIRAR_DE_FRENTE);
-      let cap;
-      try { cap = await capturarCara({ muestras: 3, vida: false, ms: 25000, aviso, sigue: () => estado.cara === yo }); }
-      catch (e) { if (estado.cara === yo) error(e.message || 'No se pudo cargar el reconocimiento facial'); return; }
-      if (estado.cara !== yo) return;
-      // Decir qué faltó, para saber qué corregir (antes era un mensaje igual para todo).
-      if (!cap.vistas) return error('La cámara no vio ninguna cara. Ponte frente a la tableta, a unos 40 cm, con luz de frente (no a contraluz). Vuelve a intentarlo con el mismo código.', registrarCara);
-      if (cap.descriptores.length < 3) return error(`Solo se tomaron ${cap.descriptores.length} de 3 fotos de tu cara. Quédate quieto, de frente y con buena luz. Vuelve a intentarlo con el mismo código.`, registrarCara);
-      let r; try { r = await api('rostro-registrar', { codigo, descriptores: cap.descriptores, vivo: cap.vivo }); } catch { if (estado.cara === yo) error('Sin conexión: el registro de la cara se hace con internet.'); return; }
-      if (estado.cara !== yo) return;
-      if (!r.ok) return error(r.j.error || 'No se pudo registrar tu cara');
-      listo('ok', 'Cara registrada', `Listo, ${r.j.nombre}. Desde ahora el reloj comprobará que eres tú.`);
-    }, inicio, null, null, 6);
+    teclado('Registrar mi cara', 'Escribe el código de 6 números que te dio RH', false, codigo => prepararAlta(codigo), inicio, null, null, 6);
+  }
+  function prepararAlta(codigo) {
+    estado.teclado = null; estado.cara = null;
+    iniciarCamara(); // se prende mientras lee las indicaciones
+    pintar(el('div', { className: 'reintento' }, el('div', { className: 'icono', textContent: '🙂' }), el('h1', { textContent: 'Vamos a registrar tu cara' }),
+      el('p', { className: 'ayuda', textContent: 'Sin prisa. Se toman ' + MUESTRAS_ALTA + ' fotos de tu cara; antes de empezar:' }),
+      el('ul', { className: 'consejos' }, ...CONSEJOS_CARA.map(c => el('li', { textContent: c }))),
+      el('div', { className: 'reintento-botones' }, el('button', { type: 'button', className: 'btn btn-principal', textContent: 'Estoy listo', onclick: () => tomarAlta(codigo) }),
+        el('button', { type: 'button', className: 'btn', textContent: 'Cancelar', onclick: inicio }))));
+    reiniciarEspera(120000);
+  }
+  async function tomarAlta(codigo) {
+    const yo = Symbol('registro'); estado.cara = yo;
+    const msAcomodo = 45000, ms = 30000;
+    reiniciarEspera(msAcomodo + ms + 2 * REGRESO_MS + 15000);
+    pintar(el('p', { className: 'ayuda', textContent: 'Prendiendo la cámara…' }));
+    await camaraA(4000);
+    if (estado.cara !== yo) return;
+    if (!camaraLista) return error('No se pudo prender la cámara. Avisa a RH.');
+    const otraVez = () => prepararAlta(codigo);
+    // Sin prueba de vida al registrar: RH está presente (dio el código).
+    const { aviso, etapa } = pantallaCara('Registrar mi cara', MIRAR_DE_FRENTE);
+    let cap;
+    try { cap = await capturarCara({ muestras: MUESTRAS_ALTA, vida: false, ms, msAcomodo, espacio: 700, aviso, etapa, sigue: () => estado.cara === yo }); }
+    catch (e) { if (estado.cara === yo) error(e.message || 'No se pudo cargar el reconocimiento facial'); return; }
+    if (estado.cara !== yo) return;
+    // Decir qué faltó, para saber qué corregir. El código sigue sirviendo (10 minutos): no hay que pedir otro.
+    if (!cap.vistas) return otraVezCara('La cámara no vio ninguna cara', 'Tu código sigue sirviendo. Revisa esto y vuelve a intentarlo:', [['Intentar otra vez', otraVez, true], ['Salir', inicio]]);
+    const buenas = mejoresMuestras(cap.descriptores, MUESTRAS_ALTA_MIN);
+    if (buenas.length < MUESTRAS_ALTA_MIN) return otraVezCara('Solo se tomaron ' + cap.descriptores.length + ' de ' + MUESTRAS_ALTA + ' fotos', 'Tu código sigue sirviendo. Revisa esto y vuelve a intentarlo:', [['Intentar otra vez', otraVez, true], ['Salir', inicio]]);
+    aviso('Guardando tu cara…');
+    let r; try { r = await api('rostro-registrar', { codigo, descriptores: buenas, vivo: cap.vivo }); } catch { if (estado.cara === yo) error('Sin conexión: el registro de la cara se hace con internet.'); return; }
+    if (estado.cara !== yo) return;
+    if (!r.ok && r.status === 400) return otraVezCara('Las fotos no salieron bien', (r.j.error || 'No se pudo registrar tu cara') + ' Tu código sigue sirviendo:', [['Intentar otra vez', otraVez, true], ['Salir', inicio]]);
+    if (!r.ok) return error(r.j.error || 'No se pudo registrar tu cara');
+    listo('ok', 'Cara registrada', 'Listo, ' + r.j.nombre + '. Desde ahora el reloj comprobará que eres tú.');
   }
 
   // ---------- Teclado numérico (4 dígitos) ----------
@@ -771,33 +902,36 @@
     try { const r = await Promise.race([api('rostro-previo', { codigo }), new Promise((_, mal) => setTimeout(() => mal(new Error('lento')), 4000))]); bio = r.ok && r.j.biometria; } catch { bio = false; }
     return bio ? caraPrimero(codigo) : pedirPin(codigo);
   }
-  // Entrar con la cara (2026-11-09): una sola toma de unos segundos. Si coincide y es una cara real, se salta el PIN.
-  // Si no coincide o parece foto/pantalla: el servidor registra el intento fallido (aviso en RH), se toma la foto del
-  // intento y se pide el PIN; la checada queda por revisar. Solo si no se vio la cara se intenta una vez más.
-  async function caraPrimero(codigo, intento = 1) {
-    const yo = Symbol('cara'); estado.cara = yo;
-    reiniciarEspera(30000);
+  // Entrar con la cara (2026-11-09; con calma desde el 2026-11-11). Si coincide y es una cara real, se salta el PIN.
+  // Si la persona nunca llegó a acomodarse, NO se pregunta al servidor (no cuenta como intento fallido ni avisa a RH):
+  // se le explica cómo ponerse y decide entre intentar otra vez o usar su PIN. Si no coincide o parece foto/pantalla:
+  // el servidor registra el intento (aviso en RH, con su foto) y la persona puede intentarlo otra vez (el servidor
+  // permite 3 en 10 minutos) o escribir su PIN; con PIN, la checada queda por revisar.
+  async function caraPrimero(codigo) {
+    const yo = Symbol('cara'); estado.cara = yo; estado.teclado = null;
+    reiniciarEspera(ESPERA_CARA);
     await camaraA(4000);
     if (estado.cara !== yo) return;
     if (!camaraLista) return pedirPin(codigo, null, 'No se pudo usar la cámara: escribe tu PIN');
-    const aviso = pantallaCara('Mira a la cámara', MIRAR_DE_FRENTE);
+    let ultimo = null;
+    const conPin = ayuda => pedirPin(codigo, ultimo || { descriptor: null, vivo: false }, ayuda);
+    const { aviso, etapa } = pantallaCara('Mira a la cámara', MIRAR_DE_FRENTE, ['Usar mi PIN', () => conPin('Escribe tu PIN. RH revisará tu checada.')]);
     let cap;
-    try { cap = await capturarCara({ aviso, sigue: () => estado.cara === yo }); } catch { return estado.cara === yo ? pedirPin(codigo, null, 'Escribe tu PIN') : undefined; }
+    try { cap = await capturarCara({ muestras: 3, aviso, etapa, sigue: () => estado.cara === yo }); } catch { return estado.cara === yo ? pedirPin(codigo, null, 'Escribe tu PIN') : undefined; }
     if (estado.cara !== yo) return;
-    const rostro = { descriptor: cap.descriptores[0] || null, vivo: cap.vivo, diag: cap.diag };
+    const rostro = ultimo = rostroDe(cap);
+    const botones = [['Intentar otra vez', () => caraPrimero(codigo), true], ['Usar mi PIN', () => conPin('Escribe tu PIN. Se tomó tu foto y RH revisará tu checada.')]];
+    if (!cap.preparado || !rostro.descriptor) return otraVezCara('No alcanzamos a ver bien tu cara', 'No pasa nada. Acomódate con calma y vuelve a intentarlo:', botones);
+    aviso('Revisando…');
     let r; try { r = await api('rostro-entrar', { codigo, rostro }); } catch { if (estado.cara === yo) pedirPin(codigo, rostro, 'Escribe tu PIN'); return; }
     if (estado.cara !== yo) return;
     if (r.ok) { if (sinConexion) { sinConexion = false; avisos(); } return elegirTipo({ ...r.j, rostro, aviso: '✔ Te reconocimos. ¿Qué vas a registrar?' }); }
     // No pasó: foto del intento para RH (la persona sigue frente a la cámara).
     if (r.j.intento) { const imagen = foto(); if (imagen) api('intento-foto', { intento: r.j.intento, foto: imagen }).catch(() => {}); }
-    if (r.j.resultado === 'sin_rostro' && !r.j.pin && intento < 2) {
-      aviso('No vimos tu cara. Acércate, con luz de frente, y otra vez…');
-      await new Promise(z => setTimeout(z, 1500));
-      if (estado.cara === yo) caraPrimero(codigo, intento + 1);
-      return;
-    }
     const porque = r.j.resultado === 'no_vivo' ? 'No pudimos confirmar tu cara' : r.j.resultado === 'sin_rostro' ? 'No vimos tu cara' : 'Tu cara no coincidió';
-    return pedirPin(codigo, rostro, `${porque}: escribe tu PIN. Se tomó tu foto y RH revisará tu checada.`);
+    if (r.j.pin || r.status !== 401) return pedirPin(codigo, rostro, porque + ': escribe tu PIN. Se tomó tu foto y RH revisará tu checada.');
+    const quedan = 3 - (Number(r.j.intentos) || 0);
+    otraVezCara(porque, quedan > 0 ? 'Puedes intentarlo ' + (quedan === 1 ? 'una vez más' : quedan + ' veces más') + '. Acomódate con calma:' : 'Acomódate con calma:', botones);
   }
   // «rostro»: la última cara que se tomó (si falló, la checada queda por revisar). «ayuda»: mensaje arriba del teclado.
   function pedirPin(codigo, rostro = null, ayuda = null) {
