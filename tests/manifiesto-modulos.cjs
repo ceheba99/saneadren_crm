@@ -59,7 +59,7 @@ module.exports = {
     nomina: {
       nombre: 'Nómina semanal (módulo contable F3, 2026-11-11): sueldos IMSS y bono de la ficha, tiempo extra del checador, descuentos y neto del IMSS a mano, cerrar, pagar (gasto de Sueldos) y lista para el banco',
       vistas: ['nomina'],
-      tablas: ['nominas', 'nomina_lineas'],
+      tablas: ['nominas', 'nomina_lineas', 'reglas_puntualidad'],
       rutas: [/^\/api\/nomina(\/|$)/],
       pendientes: 'la nómina de la semana que terminó sin cerrar y las cerradas sin pagar',
       inicio: ['inicio-nomina'],
@@ -276,6 +276,10 @@ module.exports = {
     extra_min: 'la nómina lo toma del tiempo extra autorizado en el checador',
     dias_trabajados: 'la nómina lo cuenta de las checadas de la semana',
     sin_precio_extra: 'la nómina lo marca cuando el puesto no tiene precio por hora',
+    puntualidad_razon: 'la nómina explica si ganó el bono de puntualidad según la regla de su puesto',
+    puntualidad_quitada: { como: 'quitar_puntualidad', razon: 'RH le quita el bono de puntualidad a una persona, con motivo' },
+    retardo_min: 'la nómina lo toma de los minutos de retardo del checador',
+    max_retardo_min: { como: 'max_retardo_min', razon: 'los minutos de retardo máximos de una regla de puntualidad' },
     // Resultados de una publicación (2026-10-27): una casilla por dato del catálogo METRICAS; se mandan juntos en «valores».
     ...Object.fromEntries(['alcance', 'impresiones', 'reproducciones', 'me_gusta', 'comentarios', 'compartidos', 'guardados', 'clics', 'mensajes'].map(k => [k, { como: 'valores', razon: 'se capturan en «📊 Resultados» de cada publicación publicada (una casilla por dato), dentro de «valores»' }])),
     motivo_no_realizado: { como: 'motivo', razon: 'se pide al marcar que un servicio no se realizó' },

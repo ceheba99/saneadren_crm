@@ -75,6 +75,31 @@ const dia = k => { const x = new Date(HOY + 'T12:00:00Z'); x.setUTCDate(x.getUTC
   revisa(r.lineas.find(l => /Ana/.test(l.nombre)).total === 2250 && r.lineas.find(l => /Beto/.test(l.nombre)).total === 700 && r.totales.total === 2950,
     'Totales: Ana 1,800 neto + 500 bono + 50 − 100 = 2,250; Beto 700 (Carla todavía sin sueldo)', r.totales);
 
+  console.log('3b. Bono de puntualidad (por puesto)');
+  revisa((await pedir('POST', '/nomina/reglas-puntualidad', V, { sucursal_id: qro.id, puesto: 'Ayudante', monto: 200, desde: dia(-30) }))[0] === 403, 'Ventas no pone reglas de puntualidad');
+  revisa((await pedir('POST', '/nomina/reglas-puntualidad', G, { sucursal_id: qro.id, puesto: 'Chofer raro', monto: 200, desde: dia(-30) }))[0] === 400, 'Un puesto que no existe se rechaza');
+  revisa((await pedir('POST', '/nomina/reglas-puntualidad', G, { sucursal_id: qro.id, puesto: 'Ayudante', monto: 200, max_retardos: 9, desde: dia(-30) }))[0] === 400, 'Más de 7 retardos permitidos se rechaza');
+  exigir(await pedir('POST', '/nomina/reglas-puntualidad', G, { sucursal_id: qro.id, puesto: 'Ayudante', monto: 200, max_retardos: 1, max_faltas: 0, desde: dia(-30) }), 'regla de Ayudante');
+  r = exigir(await pedir('GET', SEM, G), 'ver con la regla');
+  { const b2 = r.lineas.find(l => /Beto/.test(l.nombre)), a2 = r.lineas.find(l => /Ana/.test(l.nombre));
+    revisa(b2.puntualidad === 200 && /Lo ganó/.test(b2.puntualidad_razon) && b2.total === 900, 'Beto (Ayudante, sin faltas ni retardos) gana $200 de puntualidad: total 900 (la nómina abierta se recalculó sola)', b2);
+    revisa(a2.puntualidad === 0, 'Ana (Operador, sin regla) no recibe bono de puntualidad', a2.puntualidad);
+    revisa((await pedir('PUT', '/nomina/lineas/' + b2.id, G, { quitar_puntualidad: true }))[0] === 400, 'Quitar el bono sin motivo se rechaza');
+    exigir(await pedir('PUT', '/nomina/lineas/' + b2.id, G, { quitar_puntualidad: true, puntualidad_motivo: 'Llegó tarde y el checador falló' }), 'quitar bono');
+    let r2 = exigir(await pedir('GET', SEM, G), 'ver'); let b3 = r2.lineas.find(l => /Beto/.test(l.nombre));
+    revisa(b3.puntualidad === 0 && b3.puntualidad_quitada && b3.total === 700, 'Quitado con motivo: Beto vuelve a 700', b3);
+    exigir(await pedir('POST', '/nomina/' + nom.id + '/actualizar', G, {}), 'actualizar');
+    r2 = exigir(await pedir('GET', SEM, G), 'ver'); b3 = r2.lineas.find(l => /Beto/.test(l.nombre));
+    revisa(b3.puntualidad_quitada && b3.total === 700, '«Actualizar» no le regresa el bono quitado', b3.total);
+    exigir(await pedir('PUT', '/nomina/lineas/' + b2.id, G, { quitar_puntualidad: false }), 'regresar bono');
+    r2 = exigir(await pedir('GET', SEM, G), 'ver');
+    revisa(r2.lineas.find(l => /Beto/.test(l.nombre)).total === 900 && r2.totales.puntualidad === 200, 'Regresado: Beto 900, y el total de puntualidad de la semana es 200'); }
+  { const rg = exigir(await pedir('GET', '/nomina/reglas-puntualidad?sucursal=' + qro.id, G), 'reglas');
+    const ay = rg.vigentes.find(v => v.puesto === 'Ayudante');
+    revisa(ay.regla && ay.regla.monto === 200 && ay.regla.max_retardos === 1 && rg.historial.length === 1, 'La pantalla de reglas muestra la de Ayudante vigente', ay); }
+  { const d = new DatabaseSync(DB); let e1 = ''; try { d.prepare('UPDATE reglas_puntualidad SET monto_cent = 1').run(); } catch (e) { e1 = e.message; } d.close();
+    revisa(/no se cambia/.test(e1), 'La base no deja cambiar una regla (se pone una nueva desde otra fecha)', e1); }
+
   console.log('4. Cerrar y reabrir');
   [s, r] = await pedir('POST', '/nomina/' + nom.id + '/cerrar', G, {});
   revisa(s === 409 && r.codigo === 'PENDIENTES' && /Carla/.test(r.error) && !r.puede_forzar, 'Con pendientes (Carla sin sueldo) el Gerente no la cierra', r);
@@ -93,16 +118,19 @@ const dia = k => { const x = new Date(HOY + 'T12:00:00Z'); x.setUTCDate(x.getUTC
   revisa((await pedir('GET', '/nomina/' + nom.id + '/lista-banco', C))[0] === 403, 'El Contador (no mueve dinero) no baja la lista con las CLABE');
   revisa((await pedir('POST', '/nomina/' + nom.id + '/pagar', C, { metodo: 'layout', cuenta_origen: 'Santander nómina' }))[0] === 403, 'El Contador no la paga');
   const [sl, , csv] = await pedir('GET', '/nomina/' + nom.id + '/lista-banco', G);
-  revisa(sl === 200 && csv.includes('012180555888222117') && /Ana Operadora.*2250\.00/.test(csv) && /Beto Ayudante.*700\.00.*SIN CLABE/.test(csv), 'El Gerente baja la lista: Ana con su CLABE y Beto marcado «SIN CLABE»', csv.slice(0, 300));
+  revisa(sl === 200 && csv.includes('012180555888222117') && /Ana Operadora.*2250\.00/.test(csv) && /Beto Ayudante.*900\.00.*SIN CLABE/.test(csv), 'El Gerente baja la lista: Ana con su CLABE y Beto marcado «SIN CLABE»', csv.slice(0, 300));
   revisa((await pedir('POST', '/nomina/' + nom.id + '/pagar', G, { metodo: 'vales', cuenta_origen: 'Santander' }))[0] === 400, 'Vía de pago inválida se rechaza');
   revisa((await pedir('POST', '/nomina/' + nom.id + '/pagar', G, { metodo: 'layout' }))[0] === 400, 'Sin cuenta de salida se rechaza');
   [s, r] = await pedir('POST', '/nomina/' + nom.id + '/pagar', G, { metodo: 'layout', cuenta_origen: 'Santander nómina', fecha: HOY });
   revisa(s === 200 && r.estado === 'pagada' && r.cxp_id, 'Se paga: queda «pagada» con su gasto', r);
   revisa((await pedir('POST', '/nomina/' + nom.id + '/pagar', G, { metodo: 'layout', cuenta_origen: 'Santander nómina' }))[0] === 409, 'No se paga dos veces');
   { const x = (await pedir('GET', '/finanzas/cxp?vista=todas', A))[1].find(c => c.id === r.cxp_id);
-    revisa(x && x.categoria === 'sueldos' && Math.abs(x.total - 4350) < 0.001 && x.saldo === 0, 'En Cuentas por pagar: gasto de «Sueldos» por $4,350 (con Carla), pagado', x && { cat: x.categoria, t: x.total, s: x.saldo }); }
+    revisa(x && x.categoria === 'sueldos' && Math.abs(x.total - 4550) < 0.001 && x.saldo === 0, 'En Cuentas por pagar: gasto de «Sueldos» por $4,550 (con Carla y el bono de Beto), pagado', x && { cat: x.categoria, t: x.total, s: x.saldo }); }
   { const ex = exigir(await pedir('GET', '/contabilidad/excel?mes=' + MES, A), 'Excel del mes');
-    revisa(!HOY.startsWith(MES) || ex.flujo.some(f => /Nómina \(sueldos\)/.test(f.beneficiario) && f.egreso === 4350 && f.cuenta_salida === 'Santander nómina'), 'Flujo de banco: sale el pago de la nómina desde «Santander nómina»'); }
+    revisa(!HOY.startsWith(MES) || ex.flujo.some(f => /Nómina \(sueldos\)/.test(f.beneficiario) && f.egreso === 4550 && f.cuenta_salida === 'Santander nómina'), 'Flujo de banco: sale el pago de la nómina desde «Santander nómina»'); }
+
+  revisa((await pedir('POST', '/nomina/reglas-puntualidad', G, { sucursal_id: qro.id, puesto: 'Ayudante', monto: 300, desde: dia(-30) }))[0] === 409, 'Una regla que empieza dentro de una semana ya pagada se rechaza (no cambia lo cerrado)');
+  revisa((await pedir('POST', '/nomina/reglas-puntualidad', G, { sucursal_id: qro.id, puesto: 'Ayudante', monto: 300, desde: dia(1) }))[0] === 201, 'Una regla nueva desde mañana sí se guarda');
 
   console.log('6. Avisos y candados');
   const av = (await pedir('GET', '/nomina/avisos', G))[1].avisos;

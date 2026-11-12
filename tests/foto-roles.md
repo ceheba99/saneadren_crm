@@ -220,6 +220,7 @@ Dirección la revisa y la aprueba. Si un cambio altera lo que ve un rol, la prue
 | Agregar o quitar opciones en la lista de un servicio (p. ej. 4M3, 8M3 para [VOLUMEN]) | ✔ | — | — | — | — | — | — | — |
 | Ver y preparar la nómina semanal (los dos sueldos de cada persona, descuentos y neto del IMSS) | ✔ | ✔ | — | — | — | — | — | — |
 | Pagar la nómina y bajar la lista para el banco (con la CLABE de cada persona) | ✔ | ✔ | — | — | — | — | — | — |
+| Poner o cambiar las reglas del bono de puntualidad (monto por puesto, retardos y faltas permitidos) | ✔ | ✔ | — | — | — | — | — | — |
 | Entregar un anticipo por comprobar a una persona del personal (y cerrarlo o cancelarlo) | ✔ | ✔ | — | — | — | — | — | — |
 | Ver los anticipos por comprobar de otras personas (el de Ernesto Obsidiana) | ✔ | ✔ | — | — | — | — | — | — |
 
@@ -336,6 +337,7 @@ Dirección la revisa y la aprueba. Si un cambio altera lo que ve un rol, la prue
 - **2026-11-03** · Ver la revisión «¿está lista la facturación para producción?» (qué falta en llaves, series, claves del SAT y respaldos, sin mostrar nunca una llave): solo Dirección, como el resto de la configuración de facturación.
 - **2026-11-11** · Nómina semanal: la ven, preparan y cierran Dirección, el Gerente y a quien Dirección le dé «Preparar la nómina» (p. ej. el contador): ven los dos sueldos de cada persona (IMSS y bono). Los demás roles no.
 - **2026-11-11** · Pagar la nómina y bajar la lista para el banco con la CLABE de cada persona: quien prepara la nómina y además mueve dinero (Dirección y el Gerente). Compras mueve dinero pero no ve sueldos: no.
+- **2026-11-11** · Bono de puntualidad: sus reglas (monto por puesto y sucursal, retardos y faltas permitidos; vacaciones, incapacidades y permisos se respetan) las ponen quienes preparan la nómina: Dirección y el Gerente. Los demás roles no.
 - **2026-11-11** · Anticipos por comprobar: los entregan, cierran y cancelan Dirección y quien mueve dinero y ya ve al personal (el Gerente). Compras mueve dinero pero no ve al personal (regla del 2026-10-19): por ahora no; los demás roles tampoco.
 - **2026-11-11** · Anticipos por comprobar: Dirección, el Gerente y quien tiene «Contabilidad del mes» ven todos los de su sucursal; cada persona ve solo los suyos (los comprueba con sus gastos, aunque no tenga orden de servicio).
 - **2026-10-28** · Una orden con factura real ya timbrada: su folio, fecha, total y método de pago salen de la factura y nadie los cambia a mano (ni Dirección); los días de crédito sí.

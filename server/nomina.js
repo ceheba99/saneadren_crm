@@ -11,6 +11,10 @@
 //  4. Pagar: quien además mueve dinero. Se registra como gasto de «Sueldos» ya pagado (Cuentas por pagar, Flujo de banco
 //     y Contabilidad) y se baja la lista para el banco con la CLABE de cada persona. El formato exacto de Santander y
 //     Banorte queda pendiente de una muestra del portal de cada banco: por ahora es una lista genérica (CSV).
+//  · BONO DE PUNTUALIDAD (2026-11-11, Dirección): reglas por sucursal y PUESTO (monto semanal, retardos y faltas
+//    permitidos, minutos de retardo máximos opcional, desde qué fecha). Vacaciones, incapacidades y permisos se respetan
+//    (el checador no los cuenta como falta). Solo para quien checa. Se calcula solo en la nómina; RH lo puede quitar a
+//    una persona con motivo. Las reglas no se borran: un cambio es una versión nueva «desde» una fecha.
 //  · Quién: «Preparar la nómina» (nomina.preparar; Gerente, y a quien Dirección se lo dé) y Dirección. Pagar: además
 //    «Mover dinero». Lo de cada sucursal, solo con las sucursales que ve. Nada se borra.
 const { hoyMexico } = require('./fechas');
@@ -53,6 +57,32 @@ module.exports = function nomina(app, db, h) {
     UNIQUE(nomina_id, personal_id)
   )`);
   db.exec('CREATE INDEX IF NOT EXISTS idx_nominas_estado ON nominas(estado, desde)');
+  { const cols = db.prepare('PRAGMA table_info(nomina_lineas)').all().map(c => c.name);
+    for (const [c, tipo] of [['puntualidad_cent', 'INTEGER NOT NULL DEFAULT 0'], ['puntualidad_razon', 'TEXT'], ['puntualidad_quitada', 'INTEGER NOT NULL DEFAULT 0'], ['puntualidad_motivo', 'TEXT'], ['retardo_min', 'INTEGER NOT NULL DEFAULT 0']])
+      if (!cols.includes(c)) db.exec(`ALTER TABLE nomina_lineas ADD COLUMN ${c} ${tipo}`); }
+  db.exec(`CREATE TABLE IF NOT EXISTS reglas_puntualidad (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    sucursal_id INTEGER NOT NULL REFERENCES sucursales(id),
+    puesto TEXT NOT NULL,
+    desde TEXT NOT NULL CHECK(length(desde) = 10 AND date(desde, '+0 days') = desde),
+    monto_cent INTEGER NOT NULL CHECK(typeof(monto_cent) = 'integer' AND monto_cent >= 0),
+    max_retardos INTEGER NOT NULL DEFAULT 0 CHECK(max_retardos BETWEEN 0 AND 7),
+    max_faltas INTEGER NOT NULL DEFAULT 0 CHECK(max_faltas BETWEEN 0 AND 7),
+    max_retardo_min INTEGER CHECK(max_retardo_min IS NULL OR max_retardo_min BETWEEN 0 AND 600),
+    creada_por INTEGER NOT NULL REFERENCES usuarios(id), creada_por_nombre TEXT, created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+  )`);
+  db.exec('CREATE INDEX IF NOT EXISTS idx_reglas_puntualidad ON reglas_puntualidad(sucursal_id, puesto, desde)');
+  { const t = (n, c) => { db.exec(`DROP TRIGGER IF EXISTS ${n}`); db.exec(`CREATE TRIGGER ${n} ${c}`); };
+    t('reglas_puntualidad_fijas', `BEFORE UPDATE ON reglas_puntualidad BEGIN SELECT RAISE(ABORT, 'Una regla no se cambia: se pone una nueva desde otra fecha'); END`);
+    t('reglas_puntualidad_sin_borrar', `BEFORE DELETE ON reglas_puntualidad BEGIN SELECT RAISE(ABORT, 'Las reglas no se borran: se pone una nueva (monto 0 = sin bono)'); END`); }
+  // La regla vigente de una sucursal y puesto en una fecha (la última «desde» que ya empezó). Monto 0 = sin bono.
+  const reglaDe = (sucursalId, puesto, fecha) => db.prepare('SELECT * FROM main.reglas_puntualidad WHERE sucursal_id = ? AND puesto = ? AND desde <= ? ORDER BY desde DESC, id DESC LIMIT 1').get(sucursalId, puesto, fecha) || null;
+  const puntualidad = (regla, t) => {
+    if (!regla || !regla.monto_cent) return { cent: 0, razon: null };
+    const falla = [t.faltas > regla.max_faltas ? `${t.faltas} falta(s) (se permiten ${regla.max_faltas})` : '', t.retardos > regla.max_retardos ? `${t.retardos} retardo(s) (se permiten ${regla.max_retardos})` : '',
+      regla.max_retardo_min != null && (t.retardo_min || 0) > regla.max_retardo_min ? `${t.retardo_min} min de retardo (máximo ${regla.max_retardo_min})` : ''].filter(Boolean);
+    return falla.length ? { cent: 0, razon: 'No lo ganó: ' + falla.join(', ') } : { cent: regla.monto_cent, razon: `Lo ganó: ${t.faltas || 0} falta(s), ${t.retardos || 0} retardo(s)` };
+  };
   const trigger = (nombre, cuerpo) => { db.exec(`DROP TRIGGER IF EXISTS ${nombre}`); db.exec(`CREATE TRIGGER ${nombre} ${cuerpo}`); };
   trigger('nominas_sin_borrar', `BEFORE DELETE ON nominas BEGIN SELECT RAISE(ABORT, 'Las nóminas no se borran'); END`);
   trigger('nomina_lineas_sin_borrar', `BEFORE DELETE ON nomina_lineas WHEN (SELECT estado FROM nominas WHERE id = OLD.nomina_id) <> 'abierta' BEGIN SELECT RAISE(ABORT, 'Una nómina cerrada no se cambia'); END`);
@@ -63,7 +93,8 @@ module.exports = function nomina(app, db, h) {
   const paga = req => prepara(req) && (P.direccion(req) || P.puede(req, 'dinero.mover'));
   const negar = res => res.status(403).json({ error: 'La nómina la preparan Dirección y quien tiene «Preparar la nómina»' });
   const enAlcance = s => !!db.prepare('SELECT en_alcance(?) v').get(s).v;
-  const totalDe = l => (l.neto_imss_cent ?? l.sueldo_imss_cent) + l.bono_cent + l.extra_cent + l.otros_cent - l.descuento_cent;
+  const puntualidadDe = l => (l.puntualidad_quitada ? 0 : l.puntualidad_cent || 0);
+  const totalDe = l => (l.neto_imss_cent ?? l.sueldo_imss_cent) + l.bono_cent + l.extra_cent + puntualidadDe(l) + l.otros_cent - l.descuento_cent;
   const sucursalTxt = id => app.locals.sucursales?.claveDe?.(id) || '';
 
   // Las líneas que tocan a una sucursal y semana: quien está activo en la semana, de esa sucursal, si checa o tiene sueldo.
@@ -82,7 +113,9 @@ module.exports = function nomina(app, db, h) {
         t.sin_salida ? `${t.sin_salida} día(s) sin salida` : '', t.extra_sin_fin ? `${t.extra_sin_fin} tiempo extra sin fin` : ''].filter(Boolean) : [];
       if (p.ilegibles.some(k => /sueldo|bono/.test(k))) pend.push('Su sueldo no se puede leer (clave de cifrado)');
       else if (!imss && !bono) pend.push('Sin sueldo semanal en su ficha (captúralo en Personal)');
+      const pu = a ? puntualidad(reglaDe(sucursalId, p.puesto, sem.hasta), t) : { cent: 0, razon: null };
       lineas.push({ personal_id: id, nombre: p.nombre, puesto: p.puesto, numero_empleado: p.numero_empleado || null, sueldo_imss_cent: imss, bono_cent: bono,
+        puntualidad_cent: pu.cent, puntualidad_razon: pu.razon, retardo_min: t.retardo_min || 0,
         extra_cent: a?.dinero?.total_cent || 0, extra_min: t.extra_autorizado_min || 0, sin_precio_extra: a && t.extra_autorizado_min && a.dinero?.valor_hora_cent == null ? 1 : 0,
         dias_trabajados: t.dias_trabajados || 0, faltas: t.faltas || 0, retardos: t.retardos || 0, checa: a ? 1 : 0, pendientes: pend.length ? JSON.stringify(pend) : null });
     }
@@ -91,11 +124,12 @@ module.exports = function nomina(app, db, h) {
   // Vuelve a leer checador y fichas en una nómina abierta, sin tocar lo capturado a mano.
   function refrescar(n) {
     const c = calcular(n.sucursal_id, n.desde);
-    const ins = db.prepare(`INSERT INTO main.nomina_lineas (nomina_id, personal_id, nombre, puesto, numero_empleado, sueldo_imss_cent, bono_cent, extra_cent, extra_min, sin_precio_extra, dias_trabajados, faltas, retardos, checa, pendientes)
-      VALUES (@nomina_id, @personal_id, @nombre, @puesto, @numero_empleado, @sueldo_imss_cent, @bono_cent, @extra_cent, @extra_min, @sin_precio_extra, @dias_trabajados, @faltas, @retardos, @checa, @pendientes)
+    const ins = db.prepare(`INSERT INTO main.nomina_lineas (nomina_id, personal_id, nombre, puesto, numero_empleado, sueldo_imss_cent, bono_cent, extra_cent, extra_min, sin_precio_extra, dias_trabajados, faltas, retardos, checa, pendientes, puntualidad_cent, puntualidad_razon, retardo_min)
+      VALUES (@nomina_id, @personal_id, @nombre, @puesto, @numero_empleado, @sueldo_imss_cent, @bono_cent, @extra_cent, @extra_min, @sin_precio_extra, @dias_trabajados, @faltas, @retardos, @checa, @pendientes, @puntualidad_cent, @puntualidad_razon, @retardo_min)
       ON CONFLICT(nomina_id, personal_id) DO UPDATE SET nombre = excluded.nombre, puesto = excluded.puesto, numero_empleado = excluded.numero_empleado, sueldo_imss_cent = excluded.sueldo_imss_cent,
         bono_cent = excluded.bono_cent, extra_cent = excluded.extra_cent, extra_min = excluded.extra_min, sin_precio_extra = excluded.sin_precio_extra, dias_trabajados = excluded.dias_trabajados,
-        faltas = excluded.faltas, retardos = excluded.retardos, checa = excluded.checa, pendientes = excluded.pendientes`);
+        faltas = excluded.faltas, retardos = excluded.retardos, checa = excluded.checa, pendientes = excluded.pendientes,
+        puntualidad_cent = excluded.puntualidad_cent, puntualidad_razon = excluded.puntualidad_razon, retardo_min = excluded.retardo_min`);
     db.transaction(() => {
       for (const l of c.lineas) ins.run({ nomina_id: n.id, ...l });
       // Quien ya no entra (cambió de sucursal, se quitó su sueldo) y no tiene nada capturado, sale.
@@ -112,13 +146,14 @@ module.exports = function nomina(app, db, h) {
       sueldo_imss: pesos(l.sueldo_imss_cent), bono: pesos(l.bono_cent), extra: pesos(l.extra_cent), extra_min: l.extra_min, sin_precio_extra: !!l.sin_precio_extra,
       dias_trabajados: l.dias_trabajados, faltas: l.faltas, retardos: l.retardos, pendientes: l.pendientes ? JSON.parse(l.pendientes) : [],
       descuento: pesos(l.descuento_cent || 0), descuento_nota: l.descuento_nota || '', otros: pesos(l.otros_cent || 0), otros_nota: l.otros_nota || '',
+      puntualidad: pesos(puntualidadDe(l)), puntualidad_calculada: pesos(l.puntualidad_cent || 0), puntualidad_razon: l.puntualidad_razon || '', puntualidad_quitada: !!l.puntualidad_quitada, puntualidad_motivo: l.puntualidad_motivo || '',
       neto_imss: l.neto_imss_cent == null ? null : pesos(l.neto_imss_cent), falta_neto: (l.sueldo_imss_cent > 0) && l.neto_imss_cent == null,
       total: pesos(totalDe({ descuento_cent: 0, otros_cent: 0, neto_imss_cent: null, ...l })) }));
     const suma = k => Math.round(lineas.reduce((t, l) => t + Math.round(l[k] * 100), 0)) / 100;
     return { id: n?.id || null, estado: n?.estado || 'sin_preparar', sucursal_id: n?.sucursal_id, sucursal: sucursalTxt(n?.sucursal_id), desde: n?.desde, hasta: n?.hasta,
       cerro: n?.cerro || '', cerrada_at: n?.cerrada_at || '', forzada_motivo: n?.forzada_motivo || '', pago: n?.pago || '', fecha_pago: n?.fecha_pago || '', metodo_pago: n?.metodo_pago || '', cuenta_origen: n?.cuenta_origen || '',
       actualizada_at: n?.actualizada_at || '', lineas,
-      totales: { personas: lineas.length, sueldo_imss: suma('sueldo_imss'), bono: suma('bono'), extra: suma('extra'), descuento: suma('descuento'), otros: suma('otros'), total: suma('total'),
+      totales: { personas: lineas.length, sueldo_imss: suma('sueldo_imss'), bono: suma('bono'), extra: suma('extra'), puntualidad: suma('puntualidad'), descuento: suma('descuento'), otros: suma('otros'), total: suma('total'),
         faltas: lineas.reduce((t, l) => t + l.faltas, 0), retardos: lineas.reduce((t, l) => t + l.retardos, 0) },
       pendientes: lineas.filter(l => l.pendientes.length).length, sin_neto: lineas.filter(l => l.falta_neto).length,
       puede: { editar: prepara(req) && n?.estado === 'abierta', pagar: paga(req), reabrir: P.direccion(req) && n?.estado === 'cerrada', forzar: P.direccion(req) } };
@@ -180,6 +215,14 @@ module.exports = function nomina(app, db, h) {
     };
     if (!monto('descuento', 'el descuento') || !monto('otros', 'los otros pagos') || !monto('neto_imss', 'el neto del IMSS')) return;
     for (const k of ['descuento_nota', 'otros_nota']) if (b[k] !== undefined) cambios[k] = texto(b[k], 200);
+    // Quitarle (o regresarle) el bono de puntualidad a una persona: con motivo.
+    if (b.quitar_puntualidad !== undefined) {
+      if (b.quitar_puntualidad) {
+        const m = texto(b.puntualidad_motivo, 200);
+        if (!m || !conSentido(m, 5)) return res.status(400).json({ error: 'Escribe por qué se le quita el bono de puntualidad (mínimo 5 letras)' });
+        cambios.puntualidad_quitada = 1; cambios.puntualidad_motivo = m;
+      } else { cambios.puntualidad_quitada = 0; cambios.puntualidad_motivo = null; }
+    }
     const nuevo = { ...l, ...cambios };
     if (nuevo.descuento_cent > 0 && !conSentido(nuevo.descuento_nota, 3)) return res.status(400).json({ error: 'Escribe por qué se descuenta (por ejemplo: falta del martes)' });
     if (nuevo.otros_cent > 0 && !conSentido(nuevo.otros_nota, 3)) return res.status(400).json({ error: 'Escribe qué son los otros pagos (por ejemplo: bono de puntualidad)' });
@@ -291,6 +334,44 @@ module.exports = function nomina(app, db, h) {
     app.locals.auditoria?.registrar(req, 'nomina', n.id, 'lista para el banco', `${filas.length - 1} personas${sinClabe ? ` · ${sinClabe} sin CLABE` : ''}`);
     res.set({ 'Content-Type': 'text/csv; charset=utf-8', 'Content-Disposition': `attachment; filename="nomina_${sucursalTxt(n.sucursal_id)}_${n.desde}.csv"`, 'Cache-Control': 'private, no-store' });
     res.send('﻿' + filas.map(f => f.map(csv).join(',')).join('\r\n') + '\r\n');
+  }));
+
+  // ---------- Reglas del bono de puntualidad ----------
+  // Las vigentes hoy de una sucursal (una por puesto) y su historial. Quien prepara la nómina las pone.
+  app.get('/api/nomina/reglas-puntualidad', h((req, res) => {
+    if (!prepara(req)) return negar(res);
+    const suc = sucursalPedida(req, req.query.sucursal);
+    if (!suc) return res.status(400).json({ error: 'Elige la sucursal' });
+    const hoy = hoyMexico(), PUESTOS = app.locals.personal.PUESTOS;
+    const todas = db.prepare('SELECT * FROM main.reglas_puntualidad WHERE sucursal_id = ? ORDER BY puesto, desde DESC, id DESC').all(suc);
+    const fmtR = r => r && ({ id: r.id, puesto: r.puesto, desde: r.desde, monto: pesos(r.monto_cent), max_retardos: r.max_retardos, max_faltas: r.max_faltas, max_retardo_min: r.max_retardo_min, creada_por: r.creada_por_nombre || '', created_at: r.created_at });
+    res.json({ sucursal_id: suc, puestos: PUESTOS,
+      vigentes: PUESTOS.map(p => ({ puesto: p, regla: fmtR(reglaDe(suc, p, hoy)), proxima: fmtR(db.prepare('SELECT * FROM main.reglas_puntualidad WHERE sucursal_id = ? AND puesto = ? AND desde > ? ORDER BY desde, id LIMIT 1').get(suc, p, hoy)) })),
+      historial: todas.map(fmtR) });
+  }));
+  app.post('/api/nomina/reglas-puntualidad', h((req, res) => {
+    if (!prepara(req)) return negar(res);
+    const x = b(req), suc = sucursalPedida(req, x.sucursal_id);
+    if (!suc) return res.status(400).json({ error: 'Elige la sucursal' });
+    if (!app.locals.personal.PUESTOS.includes(x.puesto)) return res.status(400).json({ error: 'Elige el puesto' });
+    const monto = /^\s*0+(\.0+)?\s*$/.test(String(x.monto ?? '')) ? 0 : aCentavos(x.monto);
+    if (monto === null || monto === undefined) return res.status(400).json({ error: 'Escribe el monto del bono por semana (0 = sin bono)' });
+    const entero = (v, max, nombre) => { const n = v === '' || v === null || v === undefined ? 0 : Number(v); return Number.isInteger(n) && n >= 0 && n <= max ? n : { error: `Revisa ${nombre} (de 0 a ${max})` }; };
+    const mr = entero(x.max_retardos, 7, 'los retardos permitidos'), mf = entero(x.max_faltas, 7, 'las faltas permitidas');
+    if (mr.error || mf.error) return res.status(400).json({ error: (mr.error || mf.error) });
+    const mm = x.max_retardo_min === '' || x.max_retardo_min === null || x.max_retardo_min === undefined ? null : entero(x.max_retardo_min, 600, 'los minutos de retardo');
+    if (mm?.error) return res.status(400).json({ error: mm.error });
+    const desde = x.desde || hoyMexico();
+    if (!FECHA.test(desde) || !fechaValida(desde)) return res.status(400).json({ error: 'Revisa la fecha desde la que aplica' });
+    // Una nómina ya cerrada o pagada no cambia: la regla nueva no puede empezar dentro de una semana ya cerrada.
+    const cerrada = db.prepare("SELECT desde, hasta FROM main.nominas WHERE sucursal_id = ? AND estado <> 'abierta' AND hasta >= ? ORDER BY desde LIMIT 1").get(suc, desde);
+    if (cerrada) return res.status(409).json({ error: `La nómina del ${dma(cerrada.desde)} al ${dma(cerrada.hasta)} ya está cerrada: la regla debe empezar después del ${dma(cerrada.hasta)}` });
+    const id = Number(db.prepare('INSERT INTO main.reglas_puntualidad (sucursal_id, puesto, desde, monto_cent, max_retardos, max_faltas, max_retardo_min, creada_por, creada_por_nombre) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+      .run(suc, x.puesto, desde, monto, mr, mf, mm, req.usuarioSesion.id, req.usuarioSesion.nombre).lastInsertRowid);
+    app.locals.auditoria?.registrar(req, 'nomina', null, 'regla de puntualidad', `${sucursalTxt(suc)} · ${x.puesto} · ${monto ? fmt(monto) : 'sin bono'} desde ${dma(desde)} · retardos ≤ ${mr}, faltas ≤ ${mf}${mm != null ? `, ≤ ${mm} min de retardo` : ''}`);
+    // Las nóminas abiertas de esa sucursal se vuelven a calcular con la regla nueva.
+    for (const n of db.prepare("SELECT * FROM main.nominas WHERE sucursal_id = ? AND estado = 'abierta' AND hasta >= ?").all(suc, desde)) refrescar(n);
+    res.status(201).json({ id });
   }));
 
   // ---------- Avisos para Inicio ----------
