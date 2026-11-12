@@ -346,7 +346,12 @@ module.exports = function checador(app, db, h) {
   // anoche dejó abierto el «Inicio de tiempo extra», se sugiere «Fin de tiempo extra» (server/asistencia.js lo une).
   function sugeridoPara(personaId, a) {
     const u = ultimaDe(personaId, a.fecha);
-    if (!u && a.hora < '12:00') { const ayer = ultimaDe(personaId, new Date(Date.parse(a.fecha + 'T12:00:00Z') - 864e5).toISOString().slice(0, 10)); if (ayer?.tipo === 'extra_inicia') return 'extra_termina'; }
+    if (!u && a.hora < '12:00') {
+      const ayer = ultimaDe(personaId, new Date(Date.parse(a.fecha + 'T12:00:00Z') - 864e5).toISOString().slice(0, 10));
+      if (ayer?.tipo === 'extra_inicia') return 'extra_termina';
+      // Salida de madrugada (2026-11-12): antes de las 06:00, si ayer entró y no ha salido, se sugiere «Salida».
+      if (a.hora < '06:00' && ['entrada', 'comida_regresa'].includes(ayer?.tipo)) return 'salida';
+    }
     return SIGUIENTE[u?.tipo || ''];
   }
   function nuevoTicket(tipo, persona, dispositivoId) {

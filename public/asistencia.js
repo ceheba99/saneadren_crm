@@ -72,7 +72,7 @@ const Asistencia = (() => {
       const prog = d.programado ? `${d.programado.entrada}–${d.programado.salida}` : 'Descanso';
       h += `<tr class="${d.falta ? 'as-falta' : ''}"><td><button type="button" class="pe-nombre" data-as-abrir="${Number(d.personal_id)}">${esc(d.nombre)}</button></td>
         <td>${esc(d.horario || 'Sin horario')}<small class="pe-cuenta">${esc(prog)}</small></td><td>${esc(d.entrada || '—')}</td><td>${esc(d.comida_min ? hm(d.comida_min) : '—')}${d.exceso_comida_min ? `<small class="as-rojo">+${esc(d.exceso_comida_min)} min</small>` : ''}</td>
-        <td>${esc(d.salida || '—')}${d.salida_anticipada_min ? `<small class="as-rojo">${esc(d.salida_anticipada_min)} min antes</small>` : ''}</td><td>${esc(hm(d.trabajado_min))}</td>
+        <td>${esc(d.salida || '—')}${d.salida_dia_siguiente ? '<small>del día siguiente</small>' : ''}${d.salida_anticipada_min ? `<small class="as-rojo">${esc(d.salida_anticipada_min)} min antes</small>` : ''}</td><td>${esc(hm(d.trabajado_min))}</td>
         <td>${d.retardo_min ? `<b class="as-rojo">${esc(d.retardo_min)} min</b>` : '—'}</td>
         <td>${d.extra_min ? `${esc(hm(d.extra_min))}<small class="pe-cuenta">${d.extra_autorizado_min == null ? 'sin autorizar' : 'autorizado ' + esc(hm(d.extra_autorizado_min))}</small>` : '—'}</td>
         <td>${estadoDia(d).map(t => `<span class="as-chip">${esc(t)}</span>`).join(' ')}</td></tr>`;
