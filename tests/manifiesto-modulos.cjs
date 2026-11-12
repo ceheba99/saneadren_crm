@@ -56,6 +56,18 @@ module.exports = {
       buscador: null, buscadorRazon: 'se consulta por mes, no por registro',
       permisos: ['contabilidad.ver'],
     },
+    conciliacion: {
+      nombre: 'Conciliación bancaria (módulo contable F4, 2026-11-11): subir el estado de cuenta de cada banco, emparejarlo con cobros, pagos, anticipos y nómina, y ver lo que no cuadra',
+      vistas: [], vistasRazon: 'es la pestaña «Conciliación» de Contabilidad (vista «contabilidad»)',
+      tablas: ['cuentas_banco', 'movimientos_banco'],
+      rutas: [/^\/api\/conciliacion(\/|$)/],
+      pendientes: null, pendientesRazon: 'se revisa al cerrar el mes con el contador, en su pestaña',
+      inicio: [],
+      demo: ['cuentas_banco', 'movimientos_banco'],
+      integridad: ['movimientos_banco'],
+      buscador: null, buscadorRazon: 'se consulta por cuenta y mes en su pestaña',
+      permisos: ['contabilidad.ver', 'dinero.mover'],
+    },
     nomina: {
       nombre: 'Nómina semanal (módulo contable F3, 2026-11-11): sueldos IMSS y bono de la ficha, tiempo extra del checador, descuentos y neto del IMSS a mano, cerrar, pagar (gasto de Sueldos) y lista para el banco',
       vistas: ['nomina'],
@@ -279,6 +291,7 @@ module.exports = {
     puntualidad_razon: 'la nómina explica si ganó el bono de puntualidad según la regla de su puesto',
     puntualidad_quitada: { como: 'quitar_puntualidad', razon: 'RH le quita el bono de puntualidad a una persona, con motivo' },
     retardo_min: 'la nómina lo toma de los minutos de retardo del checador',
+    no_aplica: 'la conciliación lo marca al pulsar «No aplica» (con su motivo) en un movimiento del banco',
     max_retardo_min: { como: 'max_retardo_min', razon: 'los minutos de retardo máximos de una regla de puntualidad' },
     // Resultados de una publicación (2026-10-27): una casilla por dato del catálogo METRICAS; se mandan juntos en «valores».
     ...Object.fromEntries(['alcance', 'impresiones', 'reproducciones', 'me_gusta', 'comentarios', 'compartidos', 'guardados', 'clics', 'mensajes'].map(k => [k, { como: 'valores', razon: 'se capturan en «📊 Resultados» de cada publicación publicada (una casilla por dato), dentro de «valores»' }])),

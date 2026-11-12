@@ -20,7 +20,7 @@
 const alcance = require('./alcance');
 
 // Tablas con sucursal propia y tablas que la heredan de su registro (en orden: primero las de arriba).
-const CON_SUCURSAL = ['leads', 'cuentas_por_pagar', 'solicitudes_compra', 'ordenes_compra', 'establecimientos', 'historial_archivo', 'clientes', 'personal', 'facturas', 'checadas', 'checador_dispositivos', 'horarios', 'precios_hora_puesto', 'anticipos', 'nominas', 'reglas_puntualidad'];
+const CON_SUCURSAL = ['leads', 'cuentas_por_pagar', 'solicitudes_compra', 'ordenes_compra', 'establecimientos', 'historial_archivo', 'clientes', 'personal', 'facturas', 'checadas', 'checador_dispositivos', 'horarios', 'precios_hora_puesto', 'anticipos', 'nominas', 'reglas_puntualidad', 'cuentas_banco'];
 const VISTAS = [
   ['leads', 've_lead(sucursal_id, responsable_id, tecnico_id, estatus, capturado_por)'],
   // Gastos: los de su sucursal o los que él registró; con «Ver los gastos de sus órdenes», también los de sus órdenes.
@@ -53,7 +53,9 @@ const VISTAS = [
   ['precios_hora_puesto', 'en_alcance(sucursal_id)'], // precio de la hora por puesto: cada sucursal el suyo
   ['nominas', 'en_alcance(sucursal_id)'], // nómina semanal (F3): quién la ve lo decide nomina.js (permisos)
   ['nomina_lineas', 'nomina_id IN (SELECT id FROM nominas)'],
-  ['reglas_puntualidad', 'en_alcance(sucursal_id)'], // bono de puntualidad: cada sucursal sus reglas
+  ['reglas_puntualidad', 'en_alcance(sucursal_id)'],
+  ['cuentas_banco', 'en_alcance(sucursal_id)'], // conciliación bancaria (F4): las cuentas de sus sucursales
+  ['movimientos_banco', 'cuenta_id IN (SELECT id FROM cuentas_banco)'], // bono de puntualidad: cada sucursal sus reglas
   ['anticipos', 'en_alcance(sucursal_id)'], // anticipos por comprobar (F2): quién ve cuáles lo decide anticipos.js (permisos y «los suyos»)
   ['orden_personal', 'lead_id IN (SELECT id FROM leads)'],
   ['encuestas', 'lead_id IN (SELECT id FROM leads)'], // la encuesta, con su orden

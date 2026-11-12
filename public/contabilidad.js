@@ -62,9 +62,11 @@ const Contabilidad = (() => {
   }
   function pintar() {
     const d = DATOS, n = k => (d[k] || []).length;
-    const pestanas = [['resumen', 'Resumen'], ...Object.entries(TABLAS).map(([k, t]) => [k, `${t.titulo} (${n(k)})`])];
+    const pestanas = [['resumen', 'Resumen'], ...Object.entries(TABLAS).map(([k, t]) => [k, `${t.titulo} (${n(k)})`]), ...(window.Conciliacion ? [['conciliacion', 'Conciliación bancaria']] : [])];
     $('ct-resumen').innerHTML = `<div class="ct-pestanas" role="tablist">${pestanas.map(([k, t]) => `<button type="button" role="tab" class="ct-pestana${k === PESTANA ? ' activa' : ''}" aria-selected="${k === PESTANA}" data-ct-pestana="${esc(k)}">${esc(t)}</button>`).join('')}</div>
-      <div id="ct-contenido">${PESTANA === 'resumen' ? resumenHtml(d.resumen) : tablaHtml(PESTANA)}</div>`;
+      <div id="ct-contenido">${PESTANA === 'resumen' ? resumenHtml(d.resumen) : PESTANA === 'conciliacion' ? '<div id="cc-cuerpo"></div>' : tablaHtml(PESTANA)}</div>`;
+    // Conciliación bancaria (F4): la dibuja public/conciliacion.js con el mes elegido.
+    if (PESTANA === 'conciliacion') window.Conciliacion.pintar($('cc-cuerpo'), $('ct-mes').value);
   }
   function resumenHtml(r) {
     const p = r.pendientes, pend = [
