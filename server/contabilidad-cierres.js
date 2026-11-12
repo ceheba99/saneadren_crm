@@ -5,7 +5,8 @@
 //    Reabrirlo: solo Dirección, con motivo.
 //  · El candado está en la base: disparadores TEMPORALES de esta conexión (solo existen con el sistema encendido; las
 //    herramientas y pruebas que abren la base directo no los tienen). Revisan la fecha anterior y la nueva.
-//  · Saldo inicial del banco por mes y sucursal (antes se guardaba en el navegador): el del CRM o el que se escriba.
+//  · Saldo inicial del banco por mes, sucursal y cuenta de banco (antes se guardaba en el navegador): el que se escriba o, si
+//    no, el calculado (el último escrito antes más lo que se movió desde entonces). El cálculo está en server/contabilidad.js.
 //  · Rastro: nada se borra ni se cambia. Cada cierre, reapertura y saldo es un renglón nuevo con quién y cuándo; el estado
 //    vigente es el último. Además queda en la bitácora general con el valor anterior.
 const alcance = require('./alcance');
@@ -45,6 +46,9 @@ function migrar(db) {
     CREATE TRIGGER IF NOT EXISTS saldos_fijos_upd BEFORE UPDATE ON flujo_saldos_iniciales BEGIN SELECT RAISE(ABORT, 'El historial de saldos no se modifica'); END;
     CREATE TRIGGER IF NOT EXISTS saldos_fijos_del BEFORE DELETE ON flujo_saldos_iniciales BEGIN SELECT RAISE(ABORT, 'El historial de saldos no se borra'); END;
   `);
+  // 2026-11-12 (formato del Excel «flujo banco»): un saldo por cuenta de banco (Conciliación › cuentas); 0 = «Sin cuenta».
+  if (!db.prepare('PRAGMA table_info(flujo_saldos_iniciales)').all().some(c => c.name === 'cuenta_id')) db.exec('ALTER TABLE flujo_saldos_iniciales ADD COLUMN cuenta_id INTEGER NOT NULL DEFAULT 0');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_saldos_cuenta ON flujo_saldos_iniciales(sucursal_id, cuenta_id, mes, id)');
 }
 
 module.exports = function contabilidadCierres(app, db, h) {
@@ -117,32 +121,18 @@ module.exports = function contabilidadCierres(app, db, h) {
   }
 
   // ---------- Saldo inicial del banco ----------
-  const ultimoSaldo = db.prepare('SELECT * FROM main.flujo_saldos_iniciales WHERE mes = ? AND sucursal_id = ? ORDER BY id DESC LIMIT 1');
-  // Lo que el CRM acumuló antes del mes en esa sucursal: cobros confirmados − pagos (sin los hechos con anticipo) −
-  // anticipos entregados + reintegros (las mismas reglas que el flujo de banco).
-  function saldoCrm(desde, suc) {
-    const conAnt = tabla('anticipos');
-    return db.prepare(`SELECT (SELECT COALESCE(SUM(k.monto_cent), 0) FROM main.cobros k JOIN main.leads l ON l.id = k.lead_id WHERE k.cancelado = 0 AND k.confirmado = 1 AND k.tipo <> 'ajuste' AND k.fecha < ? AND l.sucursal_id = ?)
-      - (SELECT COALESCE(SUM(g.monto_cent), 0) FROM main.pagos_proveedor g JOIN main.cuentas_por_pagar x ON x.id = g.cxp_id WHERE g.cancelado = 0 AND g.metodo <> 'anticipo' AND g.fecha < ? AND x.sucursal_id = ?)
-      ${conAnt ? `- (SELECT COALESCE(SUM(a.monto_cent), 0) FROM main.anticipos a WHERE a.estado <> 'cancelado' AND a.fecha < ? AND a.sucursal_id = ?)
-      + (SELECT COALESCE(SUM(a.reintegro_cent), 0) FROM main.anticipos a WHERE a.estado <> 'cancelado' AND a.reintegro_cent > 0 AND a.reintegro_fecha < ? AND a.sucursal_id = ?)` : ''} AS n`)
-      .get(...(conAnt ? [desde, suc, desde, suc, desde, suc, desde, suc] : [desde, suc, desde, suc])).n;
+  // Lo escrito para una sucursal y cuenta: el vigente de ese mes (si el último renglón de ese mes no es «volver al del CRM»),
+  // el último vigente de un mes anterior (de ahí se encadena) y el historial de ese mes. El cálculo está en server/contabilidad.js.
+  function escrito(suc, cuenta, mes) {
+    const historial = db.prepare('SELECT saldo_cent, usuario, fecha FROM main.flujo_saldos_iniciales WHERE sucursal_id = ? AND cuenta_id = ? AND mes = ? ORDER BY id DESC').all(suc, cuenta, mes);
+    const anterior = db.prepare(`SELECT f.mes, f.saldo_cent FROM main.flujo_saldos_iniciales f WHERE f.sucursal_id = ? AND f.cuenta_id = ? AND f.mes < ?
+      AND f.id = (SELECT MAX(id) FROM main.flujo_saldos_iniciales WHERE sucursal_id = f.sucursal_id AND cuenta_id = f.cuenta_id AND mes = f.mes) AND f.saldo_cent IS NOT NULL ORDER BY f.mes DESC LIMIT 1`).get(suc, cuenta, mes);
+    return { este: historial[0] && historial[0].saldo_cent != null ? historial[0] : null, anterior: anterior || null, historial };
   }
-  // Saldo inicial del mes en esas sucursales: por cada una, el escrito (si hay) o el del CRM; y su historial.
-  function saldoInicial(mes, sucursales) {
-    const desde = mes + '-01';
-    const filas = sucursales.map(id => {
-      const crm = saldoCrm(desde, id), ult = ultimoSaldo.get(mes, id), manual = ult && ult.saldo_cent != null ? ult.saldo_cent : null;
-      const hist = db.prepare('SELECT saldo_cent, usuario, fecha FROM main.flujo_saldos_iniciales WHERE mes = ? AND sucursal_id = ? ORDER BY id DESC').all(mes, id)
-        .map(r => ({ saldo: r.saldo_cent == null ? null : pesos(r.saldo_cent), usuario: r.usuario, fecha: r.fecha }));
-      const s = datosSuc(id);
-      return { sucursal_id: id, clave: s.clave, nombre: s.nombre, crm_cent: crm, usado_cent: manual ?? crm, crm: pesos(crm), saldo: pesos(manual ?? crm), escrito: manual != null, historial: hist };
-    });
-    const suma = k => filas.reduce((t, f) => t + f[k], 0);
-    return { saldo_cent: suma('usado_cent'), crm_cent: suma('crm_cent'), sucursales: filas.map(({ crm_cent, usado_cent, ...f }) => f) };
-  }
+  const cuentasEscritas = suc => db.prepare('SELECT DISTINCT cuenta_id FROM main.flujo_saldos_iniciales WHERE sucursal_id = ?').all(suc).map(r => r.cuenta_id);
+  const saldoInicial = (req, mes, sucursales, cuenta) => app.locals.flujoBanco.saldoInicial(req, mes, sucursales, cuenta);
   // Para server/contabilidad.js (flujo de banco y su Excel).
-  app.locals.contabilidadCierres = { estadoCierre, saldoInicial, sucursalesDe, cerrado };
+  app.locals.contabilidadCierres = { estadoCierre, sucursalesDe, cerrado, escrito, cuentasEscritas };
 
   const leerMes = (v, res) => { const mes = String(v || ''); if (!MES.test(mes)) { res.status(400).json({ error: 'Elige el mes (AAAA-MM)' }); return null; } return mes; };
 
@@ -150,7 +140,7 @@ module.exports = function contabilidadCierres(app, db, h) {
     if (!puedeVer(req)) return res.status(403).json({ error: 'La contabilidad del mes la ven Dirección y quien tenga «Contabilidad del mes»' });
     const mes = leerMes(req.query.mes, res); if (!mes) return;
     const suc = sucursalesDe(req, req.query.sucursal); if (!suc) return res.status(404).json({ error: 'No encontrado' });
-    res.json({ ...estadoCierre(req, mes, suc), saldo_inicial: (() => { const s = saldoInicial(mes, suc); return { saldo: pesos(s.saldo_cent), crm: pesos(s.crm_cent), sucursales: s.sucursales }; })() });
+    res.json({ ...estadoCierre(req, mes, suc), saldo_inicial: (() => { const s = saldoInicial(req, mes, suc, null); return { saldo: pesos(s.saldo_cent), crm: pesos(s.crm_cent), sucursales: s.sucursales }; })() });
   }));
 
   // Cerrar el mes (la sucursal elegida o todas las que ve). Solo un mes que ya terminó.
@@ -184,14 +174,19 @@ module.exports = function contabilidadCierres(app, db, h) {
     res.json(estadoCierre(req, mes, suc));
   }));
 
-  // Saldo inicial del banco de un mes y una sucursal: el que se escribe, o null para volver al del CRM.
+  // Saldo inicial del banco de un mes, una sucursal y una cuenta: el que se escribe, o null para volver al calculado.
   app.post('/api/contabilidad/saldo-inicial', h((req, res) => {
     if (!puedeVer(req)) return res.status(403).json({ error: 'El saldo inicial lo cambian Dirección y quien tenga «Contabilidad del mes»' });
     const mes = leerMes(req.body?.mes, res); if (!mes) return;
     const suc = sucursalesDe(req, req.body?.sucursal);
     if (!suc) return res.status(404).json({ error: 'No encontrado' });
     if (suc.length !== 1) return res.status(400).json({ error: 'Elige una sucursal: cada una tiene su propio saldo inicial del banco' });
-    const id = suc[0], v = req.body?.saldo;
+    const id = suc[0], cuentas = app.locals.flujoBanco.cuentasDe([id]), b = req.body || {};
+    // La cuenta: la elegida (de esa sucursal) o «Sin cuenta» (0). Si la sucursal ya tiene cuentas de banco, hay que decir cuál.
+    if ((b.cuenta === undefined || b.cuenta === null || b.cuenta === '') && cuentas.length > 1) return res.status(400).json({ error: 'Elige la cuenta de banco: cada cuenta tiene su propio saldo inicial' });
+    const cuenta = Number(b.cuenta || 0);
+    if (!cuentas.some(c => c.id === cuenta)) return res.status(404).json({ error: 'No se encontró esa cuenta de banco' });
+    const v = b.saldo;
     let cent = null;
     if (v !== null && v !== undefined && v !== '') {
       const t = String(v).trim();
@@ -199,12 +194,14 @@ module.exports = function contabilidadCierres(app, db, h) {
       cent = Math.round(Number(t) * 100);
     }
     if (cerrado(mes, id) && !P.direccion(req)) return res.status(409).json({ error: `${nombreMes(mes)} ya está cerrado: su saldo inicial lo cambia solo Dirección`, codigo: 'MES_CERRADO' });
-    const antes = saldoInicial(mes, [id]).sucursales[0];
-    if ((antes.escrito ? Math.round(antes.saldo * 100) : null) === cent) return res.json({ ok: true, sin_cambios: true, ...saldoInicial(mes, [id]).sucursales[0] });
+    const actual = () => saldoInicial(req, mes, [id], cuenta).sucursales[0];
+    const antes = actual();
+    if ((antes.escrito ? Math.round(antes.saldo * 100) : null) === cent) return res.json({ ok: true, sin_cambios: true, ...antes });
+    const quien = `${nombreMes(mes)} · ${datosSuc(id).clave || 'sucursal ' + id} · ${antes.cuenta}`;
     db.transaction(() => {
-      db.prepare('INSERT INTO main.flujo_saldos_iniciales (mes, sucursal_id, saldo_cent, usuario_id, usuario) VALUES (?, ?, ?, ?, ?)').run(mes, id, cent, req.usuarioSesion.id, req.usuarioSesion.nombre);
-      app.locals.auditoria?.registrar(req, 'contabilidad', id, 'saldo inicial', `${nombreMes(mes)} · ${datosSuc(id).clave || 'sucursal ' + id}: ${antes.escrito ? fmt(Math.round(antes.saldo * 100)) : fmt(Math.round(antes.crm * 100)) + ' (el del CRM)'} → ${cent == null ? fmt(Math.round(antes.crm * 100)) + ' (el del CRM)' : fmt(cent)}`);
+      db.prepare('INSERT INTO main.flujo_saldos_iniciales (mes, sucursal_id, cuenta_id, saldo_cent, usuario_id, usuario) VALUES (?, ?, ?, ?, ?, ?)').run(mes, id, cuenta, cent, req.usuarioSesion.id, req.usuarioSesion.nombre);
+      app.locals.auditoria?.registrar(req, 'contabilidad', id, 'saldo inicial', `${quien}: ${antes.escrito ? fmt(Math.round(antes.saldo * 100)) : fmt(Math.round(antes.crm * 100)) + ' (el calculado)'} → ${cent == null ? fmt(Math.round(antes.crm * 100)) + ' (el calculado)' : fmt(cent)}`);
     }).immediate();
-    res.json({ ok: true, ...saldoInicial(mes, [id]).sucursales[0] });
+    res.json({ ok: true, ...actual() });
   }));
 };

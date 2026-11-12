@@ -12,14 +12,15 @@ const Contabilidad = (() => {
   const COMP = { factura: 'Factura', recibo: 'Recibo', estado_cuenta: 'Estado de cuenta', linea_captura: 'Línea de captura', nomina: 'Nómina', pagadora: 'Pagadora', sin_factura: 'Sin factura', otro: 'Otro' };
   // Columnas: [llave, título, ancho en Excel, tipo] · tipo: f fecha, d dinero, s estado (chip), v vía, c comprobante, n número.
   const TABLAS = {
-    // Flujo de banco: la hoja «BNT» de Dirección, en su mismo orden (A–Z), llenada sola con cobros confirmados, pagos y
-    // anticipos (la entrega sale y el reintegro entra; lo pagado con el anticipo no sale otra vez).
-    flujo: { titulo: 'Flujo de banco', hoja: 'Flujo de banco', cols: [['via', 'TRANSFERENCIA', 14, 'v'], ['oc', 'O.C. O REQ / ORDEN', 20], ['comprobante', 'COMPROBANTE', 18], ['fecha', 'FECHA', 11, 'f'],
+    // Flujo de banco: tal cual el Excel «flujo banco» de Dirección (A–Z, 2026-11-12), llenado solo con cobros confirmados,
+    // pagos y anticipos (la entrega sale y el reintegro entra; lo pagado con el anticipo no sale otra vez). A, B y C son
+    // marcas S / FALTA / NA; K es el número seguido de las salidas. Al final, 3 columnas del sistema.
+    flujo: { titulo: 'Flujo de banco', hoja: 'Flujo de banco', cols: [['marca_transf', 'TRANSFERENCIA', 14, 's'], ['marca_oc', 'O.C O REQ', 10, 's'], ['marca_comp', 'COMPROBANTE', 13, 's'], ['fecha', 'FECHA', 11, 'f'],
       ['concepto_banco', 'CONCEPTO', 30], ['clabe', 'CLABE BENEFICIARIO', 20], ['beneficiario', 'NOMBRE BENEFICIARIO', 26], ['egreso', 'EGRESOS', 14, 'd'], ['ingreso', 'INGRESOS', 14, 'd'], ['saldo', 'SALDO', 15, 'S'],
-      ['transferencia', '# TRANSFERENCIA', 18], ['metodo', 'MÉTODO DE PAGO', 12, 's'], ['cfdi', 'PPD/PUE COMPROBANTE FISCAL', 34], ['complemento', 'COMPLEMENTO PAGO COMPROBANTE', 30, 's'], ['tercero', 'PROVEEDOR/CLIENTE', 28],
+      ['consecutivo', '# TRANSFERENCIA', 10], ['metodo', 'MÉTODO DE PAGO', 12, 's'], ['cfdi', 'PPD/PUE COMPROBANTE FISCAL', 34], ['complemento', 'COMPLEMENTO PAGO COMPROBANTE', 30, 's'], ['tercero', 'PROVEEDOR/CLIENTE', 28],
       ['concepto', 'CONCEPTO ', 28], ['observaciones', 'OBSERVACIONES', 28], ['cfdi_monto', 'MONTO REAL CFDI', 14, 'd'], ['no_deducible', 'NO DEDUCIBLES', 14, 'd'], ['por_comprobar', 'X COMPROBAR / EXCEDENTE', 14, 'd'],
       ['cuenta_abono', 'CUENTA ABONO', 13], ['proyecto', 'PROYECTO', 9], ['unidad', 'UNIDAD', 12], ['tipo_gasto', 'TIPO DE GASTO', 20], ['cuenta_tercero', 'CUENTA BANCARIA PROVEEDOR/CL', 26],
-      ['revisar', 'OBSERVACIONES (REVISAR)', 30, 's'], ['cuenta_salida', 'CUENTA DE SALIDA', 18]] },
+      ['observaciones_z', 'OBSERVACIONES', 24], ['revisar', 'REVISAR (SISTEMA)', 30, 's'], ['cuenta', 'CUENTA DE BANCO (SISTEMA)', 22], ['datos_sistema', 'DATOS DEL SISTEMA', 40]] },
     gastos: { titulo: 'Gastos (CXP)', hoja: 'CXP', cols: [['vence', 'FECHA VENCIMIENTO', 13, 'f'], ['proveedor', 'PROVEEDOR', 28], ['beneficiario', 'BENEFICIARIO', 24], ['concepto', 'DESCRIPCIÓN', 32],
       ['fecha', 'FECHA FACTURA', 12, 'f'], ['capturo', 'CAPTURÓ', 16], ['folio', 'FOLIO FACTURA', 13], ['via', 'VÍA DE PAGO', 14, 'v'], ['total', 'MONTO TOTAL', 14, 'd'], ['pendiente', 'PENDIENTE', 14, 'd'],
       ['pagado', 'PAGADO', 14, 'd'], ['dias_credito', 'DÍAS DE CRÉDITO', 10, 'n'], ['categoria', 'CONCEPTO DE GASTO', 20], ['status', 'STATUS', 11, 's'], ['fecha_pago', 'FECHA DE PAGO', 12, 'f'],
@@ -33,9 +34,10 @@ const Contabilidad = (() => {
     pagos: { titulo: 'Pagos a proveedores', hoja: 'Pagos a proveedores', cols: [['fecha', 'FECHA', 11, 'f'], ['proveedor', 'PROVEEDOR', 28], ['concepto', 'CONCEPTO', 32], ['folio', 'FOLIO', 12], ['monto', 'MONTO', 14, 'd'],
       ['metodo', 'VÍA', 14, 'v'], ['referencia', 'REFERENCIA', 20], ['cuenta', 'CUENTA DE SALIDA', 20]] },
   };
-  const CHIP = { PUE: 'pagada', 'PPD/CP': 'parcial', 'NO APLICA': '', FALTA: 'vencida', 'Pedirlo al proveedor': 'parcial',  PAGADO: 'pagada', PARCIAL: 'parcial', PENDIENTE: 'vencida', Confirmado: 'pagada', 'Por confirmar': 'por-confirmar', timbrada: 'pagada', cancelada: 'vencida', cancelacion_solicitada: 'parcial', Sí: 'pagada', Falta: 'vencida' };
+  const CHIP = { S: 'pagada', NA: '', DOMICILIADO: '', LAYOUT: '', CN01: 'pagada', PUE: 'pagada', 'PPD/CP': 'parcial', 'NO APLICA': '', FALTA: 'vencida', 'Pedirlo al proveedor': 'parcial',  PAGADO: 'pagada', PARCIAL: 'parcial', PENDIENTE: 'vencida', Confirmado: 'pagada', 'Por confirmar': 'por-confirmar', timbrada: 'pagada', cancelada: 'vencida', cancelacion_solicitada: 'parcial', Sí: 'pagada', Falta: 'vencida' };
   const textoDe = (v, tipo) => (tipo === 'f' ? fecha(v) : tipo === 'v' ? VIA[v] || v || '' : tipo === 'c' ? COMP[v] || v || '' : tipo === 'd' || tipo === 'S' ? dinero(v) : String(v ?? ''));
-  let listo = false, consulta = 0, DATOS = null, PESTANA = 'resumen';
+  let listo = false, consulta = 0, DATOS = null, PESTANA = 'resumen', CUENTA = ''; // CUENTA: '' todas, '0' sin cuenta, o el id
+  const nombreCuenta = c => (c.id ? [c.nombre, c.banco, c.terminacion ? '••' + c.terminacion : ''].filter(Boolean).join(' · ') : 'Sin cuenta'); // texto plano: se escapa al pintarlo
   // Saldo inicial del banco (2026-11-12): se guarda en el sistema por mes y sucursal, con quién y cuándo; si nadie lo
   // escribió, es el que calcula el CRM. Ya no se guarda en el navegador.
   // Filas del flujo con el saldo corrido desde el saldo inicial.
@@ -47,7 +49,7 @@ const Contabilidad = (() => {
   const conBoton = async (b, fn) => { if (b.disabled) return; b.disabled = true; try { await fn(); } finally { b.disabled = false; } };
   const pedir = async (ruta, opciones) => { const res = await api(ruta, opciones), j = await res.json().catch(() => ({})); if (!res.ok) throw new Error(j.error || 'No se pudo completar'); return j; };
   const cuando = t => (t ? fecha(t) + ' ' + String(t).slice(11, 16) : '');
-  const consultaDe = () => { const q = new URLSearchParams({ mes: $('ct-mes').value }); if ($('ct-sucursal').value) q.set('sucursal', $('ct-sucursal').value); return q; };
+  const consultaDe = (cuenta = CUENTA) => { const q = new URLSearchParams({ mes: $('ct-mes').value }); if ($('ct-sucursal').value) q.set('sucursal', $('ct-sucursal').value); if (cuenta !== '') q.set('cuenta', cuenta); return q; };
   const tarjeta = (t, v, sub, malo) => `<div class="logs-tarjeta${malo ? ' logs-alerta' : ''}"><b>${esc(v)}</b><span>${esc(t)}</span>${sub ? `<small class="util-45">${esc(sub)}</small>` : ''}</div>`;
 
   async function cargar() {
@@ -81,17 +83,27 @@ const Contabilidad = (() => {
       <p class="ayuda">${c.cerrado || c.alguno_cerrado ? (c.es_direccion ? 'Mes cerrado: tú (Dirección) todavía puedes corregir; cada cambio queda en la bitácora.' : 'Mes cerrado: los cobros, pagos, anticipos y el saldo inicial de este mes solo los cambia Dirección.')
         : c.terminado ? 'Al cerrar el mes, solo Dirección podrá registrar, corregir o cancelar movimientos con fecha de este mes.' : 'El mes todavía no termina: se cierra cuando ya pasó.'} ${cerrar}</p></div>`;
   }
-  // Saldo inicial guardado en el sistema: se cambia con una sola sucursal elegida; se ve quién lo cambió y el anterior.
+  // Saldo inicial guardado en el sistema, por sucursal y cuenta de banco: se cambia con una sola sucursal y una cuenta
+  // elegidas; se ve quién lo cambió y el anterior. Si no se escribió, es el calculado (encadenado desde el último escrito).
+  const nombreMes = m => { const [a, n] = String(m).split('-').map(Number); return n ? ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'][n - 1] + ' ' + a : ''; };
   function saldoHtml(fl) {
     const sis = DATOS.saldos_iniciales || [], c = DATOS.cierre || {};
-    if (sis.length !== 1) return `<p class="ayuda">Saldo inicial: la suma del de cada sucursal (${sis.map(s => `${esc(s.clave || s.nombre)} ${esc(dinero(s.saldo))}${s.escrito ? ' escrito' : ' del CRM'}`).join(' · ')}). Para cambiarlo, elige una sucursal arriba.</p>`;
+    const intro = 'Solo entra el dinero que ya se movió: cobros <b>confirmados</b> y pagos registrados.';
+    if (sis.length !== 1) return `<p class="ayuda">${intro} Saldo inicial: la suma de ${sis.length} saldo(s) (${sis.filter(s => s.saldo || s.escrito).map(s => `${esc(s.clave || s.nombre)} ${esc(s.cuenta)} ${esc(dinero(s.saldo))}`).join(' · ') || 'todos en cero'}). Para escribirlo, elige arriba una sucursal y una cuenta.</p>`;
     const s = sis[0], cerrado = (c.sucursales || []).some(x => x.sucursal_id === s.sucursal_id && x.cerrado), bloqueado = !c.puede_saldo || (cerrado && !c.es_direccion);
     const h = s.historial || [], ult = h[0], ant = h[1];
-    const rastro = ult ? `Lo cambió ${esc(ult.usuario)} el ${esc(cuando(ult.fecha))}${ant ? `; antes era ${ant.saldo == null ? 'el del CRM' : esc(dinero(ant.saldo))}` : `; antes era el del CRM (${esc(dinero(s.crm))})`}.` : '';
-    return `<p class="ayuda">Solo entra el dinero que ya se movió: cobros <b>confirmados</b> y pagos registrados. Si el saldo de tu banco al inicio del mes es otro, escríbelo y guárdalo: queda para todos y con rastro.
+    const origen = s.escrito ? '' : s.viene_de ? `Calculado: el saldo escrito en ${esc(nombreMes(s.viene_de))} más lo que se movió desde entonces.` : 'Calculado por el CRM con todo lo que se movió antes de este mes.';
+    const rastro = ult ? `Lo cambió ${esc(ult.usuario)} el ${esc(cuando(ult.fecha))}${ant ? `; antes era ${ant.saldo == null ? 'el calculado' : esc(dinero(ant.saldo))}` : `; antes era el calculado (${esc(dinero(s.crm))})`}.` : '';
+    return `<p class="ayuda">${intro} Si el saldo de <b>${esc(s.cuenta)}</b> al inicio del mes es otro, escríbelo y guárdalo: queda para todos y con rastro, y los meses siguientes arrancan de él.
       <label class="ct-saldo">Saldo inicial del banco <input type="number" step="0.01" id="ct-saldo-inicial" value="${Number(fl.ini)}"${bloqueado ? ' disabled' : ''}></label>
-      ${bloqueado ? (cerrado ? '🔒 Mes cerrado: solo Dirección lo cambia.' : '') : `<button type="button" class="btn btn-outline btn-chico" id="ct-saldo-guardar">Guardar saldo</button>${s.escrito ? ` <button type="button" class="btn btn-outline btn-chico" id="ct-saldo-crm">Usar el del CRM (${esc(dinero(s.crm))})</button>` : ''}`}
-      ${rastro ? `<br><small class="util-45">${rastro}</small>` : ''}</p>`;
+      ${bloqueado ? (cerrado ? '🔒 Mes cerrado: solo Dirección lo cambia.' : '') : `<button type="button" class="btn btn-outline btn-chico" id="ct-saldo-guardar">Guardar saldo</button>${s.escrito ? ` <button type="button" class="btn btn-outline btn-chico" id="ct-saldo-crm">Usar el calculado (${esc(dinero(s.crm))})</button>` : ''}`}
+      ${origen || rastro ? `<br><small class="util-45">${[origen, rastro].filter(Boolean).join(' ')}</small>` : ''}</p>`;
+  }
+  // Selector de cuenta de banco (las de Conciliación › cuentas, y «Sin cuenta» para lo que no se sabe de qué cuenta salió).
+  function cuentaHtml() {
+    const cs = DATOS.cuentas || [];
+    return `<label class="ct-saldo">Cuenta de banco <select id="ct-cuenta"><option value="">Todas las cuentas</option>${cs.map(c => `<option value="${Number(c.id)}"${String(c.id) === CUENTA ? ' selected' : ''}>${esc(nombreCuenta(c))} (${Number(c.movimientos)})</option>`).join('')}</select></label>
+      ${cs.length < 2 ? '<small class="util-45">Para llevar un flujo por cuenta (Santander, Banorte…), da de alta las cuentas en la pestaña Conciliación bancaria.</small>' : ''}`;
   }
   function resumenHtml(r) {
     const p = r.pendientes, pend = [
@@ -135,7 +147,7 @@ const Contabilidad = (() => {
       const escrito = (DATOS.saldos_iniciales || []).some(x => x.escrito);
       return `<div class="logs-tarjetas">${tarjeta('Saldo inicial', dinero(fl.ini), escrito ? 'escrito en el sistema' : 'calculado por el CRM')}${tarjeta('Ingresos (cobros y reintegros)', dinero(ing))}${tarjeta('Egresos (pagos y anticipos)', dinero(egr))}
         ${tarjeta('Saldo final', dinero(fl.fin()))}${tarjeta('Movimientos por revisar', String(pc), 'falta XML, complemento o comprobar', pc > 0)}</div>
-        ${saldoHtml(fl)}`; })();
+        ${cuentaHtml()}${saldoHtml(fl)}`; })();
     return `${cabeza}<div class="filtros"><input type="search" id="ct-buscar" data-ct-tabla="${esc(k)}" value="${esc(e.q)}" placeholder="Buscar en ${esc(t.titulo.toLowerCase())}…" aria-label="Buscar en la tabla"><span class="util-45">${Number(filas.length)} renglón(es)</span></div>
       ${filas.length ? `<div class="tabla-scroll ct-tabla-scroll"><table class="tabla-resumen ct-tabla"><thead><tr>${t.cols.map(([c, titulo]) => `<th><button type="button" class="ct-orden" data-ct-orden="${esc(c)}">${esc(titulo)}${e.k === c ? (e.dir > 0 ? ' ▲' : ' ▼') : ''}</button></th>`).join('')}</tr></thead>
         <tbody>${filas.map(f => `<tr>${t.cols.map(c => celda(f, c)).join('')}</tr>`).join('')}</tbody>
@@ -156,11 +168,18 @@ const Contabilidad = (() => {
       ['IVA SEGÚN FACTURAS (facturado − gastos)', r.iva.segun_facturas], ['IVA SEGÚN EL DINERO (cobrado − pagado)', r.iva.segun_flujo], [], ['Cifras de apoyo: qué se declara lo decide el contador.']]
       .forEach((f, i) => { const row = R.addRow(f); if (typeof f[1] === 'number') row.getCell(2).numFmt = '"$"#,##0.00'; if (f.length === 1 || i === 0) row.font = { bold: true }; });
     // Mismas columnas y orden que en pantalla; fechas como fecha y montos como número (para sumar en Excel), con fila TOTAL.
+    // Flujo de banco: una hoja por cuenta con movimientos (como la hoja «STD» de Dirección); si no hay cuentas, una sola.
+    const conMov = (d.cuentas || []).filter(c => c.movimientos > 0), usados = new Set();
+    const nombreHoja = t => { let n = String(t).replace(/[\\/*?:[\]]/g, ' ').slice(0, 31).trim() || 'Flujo', i = 2; while (usados.has(n.toLowerCase())) n = n.slice(0, 28) + ' ' + i++; usados.add(n.toLowerCase()); return n; };
+    const flujos = conMov.length > 1 || (conMov.length === 1 && conMov[0].id) ? await Promise.all(conMov.map(async c => ({ hoja: 'Flujo ' + (c.id ? c.nombre : 'sin cuenta'), d: await pedir('/contabilidad/flujo?' + consultaDe(String(c.id))) })))
+      : [{ hoja: 'Flujo de banco', d: await pedir('/contabilidad/flujo?' + consultaDe('')) }];
+    for (const fl of flujos) hojaFlujo(wb, nombreHoja(fl.hoja), fl.d);
     for (const [k, t] of Object.entries(TABLAS)) {
+      if (k === 'flujo') continue;
       const ws = wb.addWorksheet(t.hoja, { views: [{ state: 'frozen', ySplit: 1 }] });
       ws.columns = t.cols.map(([c, titulo, ancho, tp]) => ({ header: titulo, key: c, width: ancho, style: tp === 'd' || tp === 'S' ? { numFmt: '"$"#,##0.00' } : tp === 'f' ? { numFmt: 'dd/mm/yyyy' } : {} }));
       ws.getRow(1).font = { bold: true }; ws.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF6B103' } };
-      const filasHoja = k === 'flujo' ? (() => { DATOS = d; return flujoConSaldo().filas; })() : d[k] || [];
+      const filasHoja = d[k] || [];
       for (const f of filasHoja) ws.addRow(Object.fromEntries(t.cols.map(([c, , , tp]) => [c, tp === 'f' ? (f[c] ? new Date(f[c].slice(0, 10) + 'T12:00:00Z') : null) : tp === 'd' || tp === 'S' ? Number(f[c] || 0) : tp === 'v' || tp === 'c' ? textoDe(f[c], tp) : f[c]])));
       if ((d[k] || []).length) {
         const n = (d[k] || []).length + 1, fila = ws.addRow({});
@@ -170,6 +189,25 @@ const Contabilidad = (() => {
     }
     saveAs(new Blob([await wb.xlsx.writeBuffer()], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), `contabilidad_${$('ct-mes').value}.xlsx`);
   }
+  // Una hoja del flujo tal cual la de Dirección: encabezado, el saldo inicial arriba (columna J), los movimientos con su saldo
+  // corrido y, al final, los totales de egresos, ingresos, saldo final y monto real CFDI.
+  function hojaFlujo(wb, nombre, fd) {
+    const t = TABLAS.flujo, ws = wb.addWorksheet(nombre, { views: [{ state: 'frozen', ySplit: 2 }] });
+    ws.columns = t.cols.map(([c, titulo, ancho, tp]) => ({ header: titulo, key: c, width: ancho, style: tp === 'd' || tp === 'S' ? { numFmt: '"$"#,##0.00' } : tp === 'f' ? { numFmt: 'dd/mm/yyyy' } : {} }));
+    ws.getRow(1).font = { bold: true }; ws.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF6B103' } };
+    const ini = Number(fd.saldo_inicial || 0); let saldo = ini;
+    const inicio = ws.addRow({ concepto_banco: 'SALDO INICIAL', saldo: ini }); inicio.font = { bold: true };
+    for (const f of fd.flujo || []) {
+      saldo = Math.round((saldo + Number(f.ingreso) - Number(f.egreso)) * 100) / 100;
+      ws.addRow(Object.fromEntries(t.cols.map(([c, , , tp]) => [c, c === 'saldo' ? saldo : tp === 'f' ? (f[c] ? new Date(f[c].slice(0, 10) + 'T12:00:00Z') : null) : tp === 'd' ? Number(f[c] || 0) : tp === 'v' || tp === 'c' ? textoDe(f[c], tp) : f[c]])));
+    }
+    const n = (fd.flujo || []).length + 2, col = k => ws.getColumn(t.cols.findIndex(c => c[0] === k) + 1).letter;
+    ws.addRow({});
+    const tot = ws.addRow({ concepto_banco: 'TOTAL' });
+    for (const k of ['egreso', 'ingreso', 'cfdi_monto', 'no_deducible', 'por_comprobar']) tot.getCell(col(k)).value = { formula: `SUM(${col(k)}3:${col(k)}${n})` };
+    tot.getCell(col('saldo')).value = { formula: `${col('saldo')}2+${col('ingreso')}${n + 2}-${col('egreso')}${n + 2}` };
+    tot.font = { bold: true };
+  }
   async function xml() {
     try { const res = await api('/contabilidad/xml?' + consultaDe()); if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'No se pudo descargar'); saveAs(await res.blob(), `xml_${$('ct-mes').value}.tar`); }
     catch (e) { toast(e.message); }
@@ -177,7 +215,8 @@ const Contabilidad = (() => {
 
   const sucursalSaldo = () => (DATOS.saldos_iniciales || [])[0]?.sucursal_id;
   async function guardarSaldo(valor) {
-    try { await pedir('/contabilidad/saldo-inicial', { method: 'POST', body: JSON.stringify({ mes: $('ct-mes').value, sucursal: sucursalSaldo(), saldo: valor === null ? null : String(valor).trim() }) }); toast('Saldo inicial guardado'); await cargar(); }
+    const s = (DATOS.saldos_iniciales || [])[0] || {};
+    try { await pedir('/contabilidad/saldo-inicial', { method: 'POST', body: JSON.stringify({ mes: $('ct-mes').value, sucursal: sucursalSaldo(), cuenta: s.cuenta_id ?? 0, saldo: valor === null ? null : String(valor).trim() }) }); toast('Saldo inicial guardado'); await cargar(); }
     catch (e) { toast(e.message); }
   }
   async function cerrarMes() {
@@ -200,7 +239,7 @@ const Contabilidad = (() => {
     const sucs = window.Sucursales?.datos?.sucursales || [];
     $('ct-sucursal').innerHTML = '<option value="">Todas las sucursales</option>' + sucs.map(s => `<option value="${Number(s.id)}">${esc(s.nombre)}</option>`).join('');
     $('ct-sucursal').hidden = sucs.length < 2;
-    $('ct-mes').addEventListener('change', cargar); $('ct-sucursal').addEventListener('change', cargar);
+    $('ct-mes').addEventListener('change', cargar); $('ct-sucursal').addEventListener('change', () => { CUENTA = ''; cargar(); });
     $('ct-excel').addEventListener('click', e => conBoton(e.currentTarget, excel));
     $('ct-xml').addEventListener('click', e => conBoton(e.currentTarget, xml));
     $('ct-resumen').addEventListener('click', e => {
@@ -212,6 +251,7 @@ const Contabilidad = (() => {
       else if (b.dataset.ctOrden) { const s = estado[PESTANA]; s.dir = s.k === b.dataset.ctOrden ? -s.dir : 1; s.k = b.dataset.ctOrden; $('ct-contenido').innerHTML = tablaHtml(PESTANA); }
     });
     let espera;
+    $('ct-resumen').addEventListener('change', e => { if (e.target.id === 'ct-cuenta') { CUENTA = e.target.value; cargar(); } });
     $('ct-resumen').addEventListener('input', e => {
       if (e.target.id !== 'ct-buscar') return;
       const k = e.target.dataset.ctTabla; estado[k].q = e.target.value; clearTimeout(espera);
