@@ -64,6 +64,11 @@ const CFDI = ({ total, rfc = 'RBA010101AB1', uuid = 'A1B2C3D4-0000-4000-8000-000
   [s, j] = await subir(V, oc.id, 'evidencia', 'falso.pdf', Buffer.from('<html><script>alert(1)</script></html>')); revisa(s === 400, 'un HTML disfrazado de PDF se rechaza', [s, j.error]);
   [s, j] = await subir(V, oc.id, 'inventado', 'x.pdf', PDF('x')); revisa(s === 400, 'tipo de documento inventado');
   [s, j] = await subir(V, oc.id, 'otro', 'enorme.pdf', Buffer.concat([PDF('grande'), Buffer.alloc(10 * 1024 * 1024 + 10)])); revisa(s === 413, 'más de 10 MB se rechaza', s);
+  { // A-03: un XML mal formado no congela el servidor, y uno de más de 2 MB se rechaza
+    const malo = '<?xml version="1.0"?><cfdi:Comprobante Version="4.0" Total="1.00">' + '<cfdi:Conceptos>'.repeat(40000);
+    const t0 = Date.now(); [s, j] = await subir(V, oc.id, 'otro', 'malo.xml', Buffer.from(malo)); const ms = Date.now() - t0;
+    revisa(ms < 500, 'un XML mal formado de 640 KB se procesa en menos de 0.5 s (A-03)', [s, ms + ' ms']);
+    [s, j] = await subir(V, oc.id, 'otro', 'enorme.xml', Buffer.from('<?xml version="1.0"?><cfdi:Comprobante Version="4.0">' + ' '.repeat(2 * 1024 * 1024 + 10))); revisa(s === 413, 'un XML de más de 2 MB se rechaza (A-03)', [s, j.error]); }
   [s, j] = await subir(V, oc.id, 'factura_xml', 'factura.xml', CFDI({ total: 3480, uuid: 'AAAA1111-2222-4333-8444-555566667777' }));
   revisa(s === 201 && !j.avisos.length && j.datos.uuid === 'AAAA1111-2222-4333-8444-555566667777' && j.datos.total === 3480, 'factura XML: se leen folio fiscal y total, y coinciden con la orden', [s, j]);
   [s, j] = await pedir('GET', '/compras/ordenes/' + oc.id + '/expediente', V);
