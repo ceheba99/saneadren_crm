@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Saneadren · Cotizaciones y Servicios</title>
-<link rel="stylesheet" href="styles.css?v=fb2">
+<link rel="stylesheet" href="styles.css?v=an1">
 <link rel="stylesheet" href="servicios-tabla.css">
 <link rel="stylesheet" href="flujo.css?v=cel1">
 <link rel="stylesheet" href="interfaz.css?v=visual19">
@@ -101,6 +101,12 @@
       <h3>👷 Personal</h3>
       <p class="ayuda">Licencias y contratos vencidos o por vencer, quién falta esta semana (vacaciones, incapacidades, permisos), órdenes próximas sin técnico responsable y, para quien ve la asistencia, cuando la cara de alguien no coincidió en el kiosco (hasta que alguien lo revisa).</p>
       <div id="inicio-personal" class="inicio-lista"></div>
+    </div>
+
+    <div class="inicio-bloque inicio-bloque-anticipos perm-cxp-ver" data-titulo-corto="Anticipos">
+      <h3>💵 Anticipos</h3>
+      <p class="ayuda">Anticipos por comprobar: los tuyos con algo pendiente y, si tú los entregaste, los que pasan de 7 días sin cerrarse.</p>
+      <div id="inicio-anticipos" class="inicio-lista"></div>
     </div>
 
     <div class="inicio-bloque inicio-bloque-compras perm-compras-ver" data-titulo-corto="Compras">
@@ -864,6 +870,7 @@
     <div class="cuentas-pestanas" role="tablist" id="cuentas-pestanas">
       <button type="button" role="tab" data-pestana="pagar">Facturas y gastos</button>
       <button type="button" role="tab" data-pestana="proveedores">Proveedores</button>
+      <button type="button" role="tab" data-pestana="anticipos">Anticipos</button>
     </div>
 
     <div class="cuentas-panel" data-panel="cobrar">
@@ -925,6 +932,11 @@
         </div>
       </div>
       <div id="pagar-lista"></div>
+    </div>
+
+    <!-- Anticipos por comprobar (módulo contable F2, 2026-11-11): public/anticipos.js -->
+    <div class="cuentas-panel" data-panel="anticipos" hidden>
+      <div id="anticipos-panel"></div>
     </div>
 
     <div class="cuentas-panel" data-panel="proveedores" hidden>
@@ -1426,7 +1438,8 @@
   <div class="modal modal-dinero">
     <div class="modal-header"><h2>Registrar gasto o factura</h2><button class="close-btn" type="button">✕</button></div>
     <div class="modal-body">
-      <p class="cuentas-aviso noperm-dinero-mover">Aquí se registran los <b>costos de un servicio</b> (pipas, tiros, casetas…): elige la orden de servicio. Las compras van por <b>Solicitudes de compra</b>.</p>
+      <p class="cuentas-aviso" id="gasto-anticipo-info" role="status" hidden></p>
+      <p class="cuentas-aviso noperm-dinero-mover" id="gasto-aviso-orden">Aquí se registran los <b>costos de un servicio</b> (pipas, tiros, casetas…): elige la orden de servicio. Las compras van por <b>Solicitudes de compra</b>.</p>
       <div class="campo"><label for="gasto-proveedor">Proveedor (obligatorio)</label><select id="gasto-proveedor"></select><small class="ayuda">¿No está? Agrégalo en la pestaña Proveedores.</small></div>
       <div class="campo"><label for="gasto-categoria">Categoría (obligatorio)</label><select id="gasto-categoria"></select></div>
       <!-- Orden de servicio relacionada: se busca por folio, número, cliente, servicio o unidad y se muestra su información. -->
@@ -1883,7 +1896,7 @@
 <script src="servicios-tabla.js?v=pf1"></script>
 <script src="flujo.js?v=con1"></script>
 <script src="cuentas.js?v=rev1"></script>
-<script src="finanzas.js?v=ct1"></script>
+<script src="finanzas.js?v=an1"></script>
 <script src="calendario.js?v=esp1"></script>
 <script src="tablero.js?v=enc1"></script>
 <script src="bitacora.js?v=hc1"></script>
@@ -1894,13 +1907,14 @@
 <script src="sucursales.js?v=perm4"></script>
 <script src="facturacion.js?v=fx11"></script>
 <script src="encuestas.js?v=enc1"></script>
-<script src="app.js?v=ct1os2"></script>
+<script src="app.js?v=an1"></script>
 <script src="listas-servicio.js?v=ls1"></script>
 <script src="personal.js?v=h1106"></script>
 <script src="asistencia.js?v=nomina1"></script>
 <script src="rh.js?v=reglas1"></script>
 <script src="clientes-carga.js?v=cc1"></script>
-<script src="contabilidad.js?v=fb1"></script>
+<script src="contabilidad.js?v=an1"></script>
+<script src="anticipos.js?v=an1"></script>
 <script src="avisos.js?v=1"></script>
 <script src="buscador.js?v=suc1"></script>
 <script src="demo.js?v=demo1"></script>

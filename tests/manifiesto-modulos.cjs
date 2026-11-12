@@ -56,6 +56,18 @@ module.exports = {
       buscador: null, buscadorRazon: 'se consulta por mes, no por registro',
       permisos: ['contabilidad.ver'],
     },
+    anticipos: {
+      nombre: 'Anticipos por comprobar (módulo contable F2, 2026-11-11): dinero que se entrega antes del gasto, se comprueba con gastos de Cuentas por pagar y se cierra con reintegro',
+      vistas: [], vistasRazon: 'es la pestaña «Anticipos» de Cuentas por pagar (vista «pagar»)',
+      tablas: ['anticipos'],
+      rutas: [/^\/api\/anticipos(\/|$)/],
+      pendientes: 'anticipos propios por comprobar y los que entregaste y pasan de 7 días sin cerrarse',
+      inicio: ['inicio-anticipos'],
+      demo: ['anticipos'],
+      integridad: ['anticipos'],
+      buscador: null, buscadorRazon: 'se buscan en su pestaña por persona; sus gastos ya salen en el buscador como cuentas por pagar',
+      permisos: ['dinero.mover', 'contabilidad.ver'],
+    },
     pagar: {
       nombre: 'Cuentas por pagar y proveedores',
       vistas: [],
@@ -243,6 +255,9 @@ module.exports = {
     solicitante_id: 'quien capturó la solicitud (su sesión)',
     motivo_cancelacion: { como: 'motivo', razon: 'se pide al cancelar un cobro, una cuenta, un pago, una orden de compra o una incidencia' },
     motivo_eliminado: { como: 'motivo', razon: 'se pide al quitar un documento' },
+    reintegro_fecha: { como: 'fecha', razon: 'al cerrar un anticipo con sobrante: la fecha en que regresó el dinero' },
+    reintegro_metodo: { como: 'metodo', razon: 'al cerrar un anticipo con sobrante: cómo regresó el dinero' },
+    nota_cierre: { como: 'nota', razon: 'la nota opcional al cerrar un anticipo' },
     // Resultados de una publicación (2026-10-27): una casilla por dato del catálogo METRICAS; se mandan juntos en «valores».
     ...Object.fromEntries(['alcance', 'impresiones', 'reproducciones', 'me_gusta', 'comentarios', 'compartidos', 'guardados', 'clics', 'mensajes'].map(k => [k, { como: 'valores', razon: 'se capturan en «📊 Resultados» de cada publicación publicada (una casilla por dato), dentro de «valores»' }])),
     motivo_no_realizado: { como: 'motivo', razon: 'se pide al marcar que un servicio no se realizó' },

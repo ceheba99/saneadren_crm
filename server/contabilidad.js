@@ -3,8 +3,8 @@
 //  · Resumen del mes: lo facturado (CFDI reales), lo cobrado CONFIRMADO, los gastos del mes y lo pagado a proveedores, y el
 //    IVA visto de dos formas (según las facturas del mes y según el dinero que entró y salió). Son cifras de apoyo: qué
 //    se declara lo decide el contador.
-//  · Pendientes de comprobar: gastos con factura sin su XML, gastos con IVA estimado, cobros por confirmar y facturas
-//    canceladas en el mes.
+//  · Pendientes de comprobar: gastos con factura sin su XML, gastos con IVA estimado, cobros por confirmar, facturas
+//    canceladas en el mes y anticipos por comprobar abiertos (F2, server/anticipos.js).
 //  · Descargas: los datos del Excel (la pantalla lo arma, como los demás Excel) y un .tar con los XML del mes (facturas
 //    emitidas y de gastos).
 const path = require('path'), fs = require('fs');
@@ -49,8 +49,23 @@ module.exports = function contabilidad(app, db, h) {
     return { facturas, cobros, gastos, xmls, pagos };
   }
 
+  // Anticipos por comprobar (F2): entregados y regresados en el mes, y los que siguen abiertos al cierre del mes.
+  function anticiposDelMes(mes, sucursal) {
+    if (!tabla('anticipos')) return { entregado: 0, reintegrado: 0, abiertos: [] };
+    const [d, hst] = rango(mes), suc = (sucursal ? ` AND a.sucursal_id = ${Number(sucursal)}` : '') + ' AND en_alcance(a.sucursal_id)';
+    const comprobado = id => app.locals.anticipos?.comprobadoDe(id) || 0;
+    const uno = sql => db.prepare(sql).get(d, hst).n;
+    return {
+      entregado: uno(`SELECT COALESCE(SUM(a.monto_cent), 0) n FROM main.anticipos a WHERE a.estado <> 'cancelado' AND a.fecha BETWEEN ? AND ?${suc}`),
+      reintegrado: uno(`SELECT COALESCE(SUM(a.reintegro_cent), 0) n FROM main.anticipos a WHERE a.estado <> 'cancelado' AND a.reintegro_fecha BETWEEN ? AND ?${suc}`),
+      abiertos: db.prepare(`SELECT a.id, a.fecha, a.monto_cent, a.motivo, p.nombre AS persona FROM main.anticipos a JOIN main.personal p ON p.id = a.personal_id
+        WHERE a.estado = 'abierto' AND a.fecha <= ?${suc} ORDER BY a.fecha`).all(hst).map(a => ({ ...a, saldo_cent: a.monto_cent - comprobado(a.id) })),
+    };
+  }
+
   function resumen(mes, sucursal) {
     const { facturas, cobros, gastos, xmls, pagos } = datosDelMes(mes, sucursal);
+    const ant = anticiposDelMes(mes, sucursal);
     const vigentes = facturas.filter(f => f.tipo_documento === 'factura' && f.estatus !== 'cancelada');
     const sum = (a, k) => a.reduce((t, x) => t + Number(x[k] || 0), 0);
     // IVA de lo cobrado / pagado: la parte de IVA de cada pago, en proporción al total de su orden o gasto.
@@ -66,13 +81,16 @@ module.exports = function contabilidad(app, db, h) {
         canceladas: facturas.filter(f => f.estatus === 'cancelada').length, complementos: facturas.filter(f => f.tipo_documento === 'pago' && f.estatus !== 'cancelada').length,
         cobrado: pesos(sum(cobros.filter(k => k.confirmado), 'monto_cent')), cobrado_iva: pesos(ivaCobrado), por_confirmar: pesos(sum(cobros.filter(k => !k.confirmado), 'monto_cent')) },
       egresos: { gastos: gastos.length, gastos_total: pesos(sum(gastos, 'total_cent')), gastos_iva: pesos(ivaGastos), gastos_iva_estimado: pesos(sum(gastos.filter(x => x.estimado), 'iva')),
-        pagado: pesos(sum(pagos, 'monto_cent')), pagado_iva: pesos(ivaPagado) },
+        pagado: pesos(sum(pagos, 'monto_cent')), pagado_iva: pesos(ivaPagado),
+        anticipos_entregados: pesos(ant.entregado), anticipos_reintegrados: pesos(ant.reintegrado) },
       iva: { segun_facturas: pesos(ivaFacturado - ivaGastos), segun_flujo: pesos(ivaCobrado - ivaPagado) },
       pendientes: {
         gastos_sin_xml: conFactura.filter(x => !xmls.has(x.id)).length,
         gastos_iva_estimado: gastos.filter(x => x.estimado).length,
         cobros_por_confirmar: cobros.filter(k => !k.confirmado).length,
         facturas_canceladas: facturas.filter(f => f.estatus === 'cancelada').length,
+        anticipos_abiertos: ant.abiertos.length, anticipos_por_comprobar: pesos(sum(ant.abiertos, 'saldo_cent')),
+        anticipos: ant.abiertos.map(a => ({ id: a.id, persona: a.persona, fecha: a.fecha, monto: pesos(a.monto_cent), por_comprobar: pesos(a.saldo_cent), motivo: a.motivo })),
       },
       xml_disponibles: facturas.filter(f => f.xml).length + gastos.filter(x => xmls.has(x.id)).length,
     };
@@ -114,7 +132,7 @@ module.exports = function contabilidad(app, db, h) {
         (SELECT o.id || '|' || o.created_at FROM main.ordenes_compra o WHERE o.cxp_id = x.id LIMIT 1) AS oc,
         (SELECT q.uuid FROM main.cfdi_gastos q WHERE q.cxp_id = x.id AND q.eliminado = 0 LIMIT 1) AS uuid
       FROM main.pagos_proveedor g JOIN main.cuentas_por_pagar x ON x.id = g.cxp_id JOIN main.proveedores p ON p.id = x.proveedor_id
-      WHERE g.cancelado = 0 AND g.fecha BETWEEN ? AND ?${suc('x.sucursal_id')}`).all(d, hst)) {
+      WHERE g.cancelado = 0 AND g.metodo <> 'anticipo' AND g.fecha BETWEEN ? AND ?${suc('x.sucursal_id')}`).all(d, hst)) {
       const esFactura = g.tipo_comprobante === 'factura' || (!g.tipo_comprobante && !!g.factura_folio), monto = g.monto_cent;
       const [ocId, ocCreado] = String(g.oc || '').split('|');
       const reembolso = /^Reembolso a /.test(g.beneficiario || '');
@@ -126,16 +144,38 @@ module.exports = function contabilidad(app, db, h) {
         cfdi_monto: esFactura ? monto : 0, no_deducible: esFactura ? 0 : monto, cuenta_abono: reembolso ? 'REEMBOLSO' : 'PROVEEDOR', proyecto: app.locals.sucursales?.claveDe?.(g.sucursal_id) || '',
         unidad: g.equipo || 'NO APLICA', tipo_gasto: CATEGORIAS[g.categoria] || g.categoria, cuenta_tercero: [g.banco, clabe(g.clabe)].filter(Boolean).join(' · '), via: g.metodo, cuenta_salida: g.cuenta_origen || '' });
     }
+    // Anticipos por comprobar (F2, 2026-11-11): la entrega SALE del banco y lo que regresó (reintegro) ENTRA. Los gastos que
+    // se pagaron con el anticipo (vía «anticipo») no son otra salida: arriba se dejan fuera para no contarlos dos veces.
+    const conAnt = tabla('anticipos');
+    // La CLABE del personal es dato sensible (y va cifrada): aquí no se muestra.
+    const comprobacion = conAnt ? db.prepare(`SELECT COALESCE(SUM(CASE WHEN x.tipo_comprobante = 'factura' OR (x.tipo_comprobante IS NULL AND x.factura_folio IS NOT NULL) THEN g.monto_cent END), 0) AS cfdi,
+        COALESCE(SUM(CASE WHEN x.tipo_comprobante = 'factura' OR (x.tipo_comprobante IS NULL AND x.factura_folio IS NOT NULL) THEN 0 ELSE g.monto_cent END), 0) AS otro
+      FROM main.pagos_proveedor g JOIN main.cuentas_por_pagar x ON x.id = g.cxp_id WHERE x.anticipo_id = ? AND x.cancelada = 0 AND g.cancelado = 0 AND g.metodo = 'anticipo'`) : null;
+    if (conAnt) for (const a of db.prepare(`SELECT a.*, p.nombre AS persona, l.created_at AS lead_created_at, l.equipo FROM main.anticipos a JOIN main.personal p ON p.id = a.personal_id
+        LEFT JOIN main.leads l ON l.id = a.lead_id WHERE a.estado <> 'cancelado' AND (a.fecha BETWEEN ? AND ? OR (a.reintegro_cent > 0 AND a.reintegro_fecha BETWEEN ? AND ?))${suc('a.sucursal_id')}`).all(d, hst, d, hst)) {
+      const comun = { oc: folioOS(a.lead_id, a.lead_created_at), comprobante: 'Anticipo', clabe: '', beneficiario: a.persona, metodo: 'NO APLICA', cfdi: 'NO APLICA', complemento: 'NO APLICA',
+        tercero: a.persona, cuenta_abono: 'ANTICIPO', proyecto: app.locals.sucursales?.claveDe?.(a.sucursal_id) || '', unidad: a.equipo || 'NO APLICA',
+        tipo_gasto: 'ANTICIPO POR COMPROBAR', cuenta_tercero: '', anticipo: true };
+      // Lo comprobado con sus gastos (con factura = deducible; sin factura = no deducible) y lo que falta por comprobar hoy.
+      const c = comprobacion.get(a.id), falta = Math.max(0, a.monto_cent - c.cfdi - c.otro - a.reintegro_cent);
+      if (a.fecha >= d && a.fecha <= hst) filas.push({ ...comun, orden: a.fecha + '|3|' + a.id, fecha: a.fecha, transferencia: a.referencia || '', concepto_banco: `Anticipo por comprobar a ${a.persona}`,
+        egreso: a.monto_cent, ingreso: 0, concepto: a.motivo, cfdi_monto: c.cfdi, no_deducible: c.otro, por_comprobar_cent: falta,
+        observaciones: (a.estado === 'cerrado' ? 'Cerrado' : 'Abierto') + (a.reintegro_cent ? ` · regresó ${pesos(a.reintegro_cent).toFixed(2)}` : ''), via: a.metodo, cuenta_salida: a.cuenta_origen || '' });
+      if (a.reintegro_cent > 0 && a.reintegro_fecha >= d && a.reintegro_fecha <= hst) filas.push({ ...comun, orden: a.reintegro_fecha + '|4|' + a.id, fecha: a.reintegro_fecha, transferencia: a.reintegro_referencia || '',
+        concepto_banco: `Reintegro de anticipo de ${a.persona}`, egreso: 0, ingreso: a.reintegro_cent, cfdi_monto: 0, no_deducible: 0, por_comprobar_cent: 0, concepto: 'Lo que sobró: ' + a.motivo, observaciones: a.nota_cierre || '', via: a.reintegro_metodo, cuenta_salida: a.reintegro_cuenta || '' });
+    }
     filas.sort((a, b) => a.orden.localeCompare(b.orden));
     // Lo que el CRM acumuló antes del mes en las mismas sucursales (sirve si el banco empezó en cero con el CRM).
     const antes = db.prepare(`SELECT (SELECT COALESCE(SUM(k.monto_cent), 0) FROM main.cobros k JOIN main.leads l ON l.id = k.lead_id WHERE k.cancelado = 0 AND k.confirmado = 1 AND k.tipo <> 'ajuste' AND k.fecha < ?${suc('l.sucursal_id')})
-      - (SELECT COALESCE(SUM(g.monto_cent), 0) FROM main.pagos_proveedor g JOIN main.cuentas_por_pagar x ON x.id = g.cxp_id WHERE g.cancelado = 0 AND g.fecha < ?${suc('x.sucursal_id')}) AS n`).get(d, d).n;
+      - (SELECT COALESCE(SUM(g.monto_cent), 0) FROM main.pagos_proveedor g JOIN main.cuentas_por_pagar x ON x.id = g.cxp_id WHERE g.cancelado = 0 AND g.metodo <> 'anticipo' AND g.fecha < ?${suc('x.sucursal_id')})
+      ${conAnt ? `- (SELECT COALESCE(SUM(a.monto_cent), 0) FROM main.anticipos a WHERE a.estado <> 'cancelado' AND a.fecha < ?${suc('a.sucursal_id')})
+      + (SELECT COALESCE(SUM(a.reintegro_cent), 0) FROM main.anticipos a WHERE a.estado <> 'cancelado' AND a.reintegro_cent > 0 AND a.reintegro_fecha < ?${suc('a.sucursal_id')})` : ''} AS n`).get(...(conAnt ? [d, d, d, d] : [d, d])).n;
     let saldo = antes;
-    return { saldo_inicial: pesos(antes), filas: filas.map(({ orden, ...f }) => {
+    return { saldo_inicial: pesos(antes), filas: filas.map(({ orden, anticipo, por_comprobar_cent, ...f }) => {
       saldo += f.ingreso - f.egreso;
-      const porComprobar = f.egreso + f.ingreso - f.cfdi_monto - f.no_deducible;
+      const porComprobar = por_comprobar_cent ?? f.egreso + f.ingreso - f.cfdi_monto - f.no_deducible;
       return { ...f, egreso: pesos(f.egreso), ingreso: pesos(f.ingreso), saldo: pesos(saldo), cfdi_monto: pesos(f.cfdi_monto), no_deducible: pesos(f.no_deducible), por_comprobar: pesos(porComprobar),
-        revisar: [f.complemento === 'FALTA' ? 'Falta el complemento de pago' : '', f.comprobante === 'Factura sin XML' ? 'Falta el XML' : '', porComprobar > 0 && f.egreso ? 'Por comprobar' : ''].filter(Boolean).join(' · ') };
+        revisar: [f.complemento === 'FALTA' ? 'Falta el complemento de pago' : '', f.comprobante === 'Factura sin XML' ? 'Falta el XML' : '', porComprobar > 0 && f.egreso ? (anticipo ? 'Se comprueba con los gastos del anticipo' : 'Por comprobar') : ''].filter(Boolean).join(' · ') };
     }) };
   }
 
