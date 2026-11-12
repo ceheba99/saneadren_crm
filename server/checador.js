@@ -44,6 +44,7 @@ const C = require('./cifrado');
 const { tipoReal } = require('./expediente-oc');
 const { hashToken, nuevoToken } = require('./seguridad');
 const { ahoraMexico } = require('./fechas');
+const { vigia, ventana, correosDe } = require('./kiosco-vigia');
 
 const TIPOS = { entrada: 'Entrada', comida_sale: 'Salida a comer', comida_regresa: 'Regreso de comer', salida: 'Salida', extra_inicia: 'Inicio de tiempo extra', extra_termina: 'Fin de tiempo extra' };
 const SIGUIENTE = { '': 'entrada', entrada: 'comida_sale', comida_sale: 'comida_regresa', comida_regresa: 'salida', salida: 'extra_inicia', extra_inicia: 'extra_termina', extra_termina: 'extra_inicia' };
@@ -303,8 +304,29 @@ module.exports = function checador(app, db, h) {
     const d = /^[A-Za-z0-9_-]{40,60}$/.test(t) ? dispositivoDe.get(hashToken(t)) : null;
     if (!d) return tokenInvalido(req, res, t, 'Este dispositivo no está registrado como kiosco (o lo dieron de baja). Pide al gerente que lo registre.', 'KIOSCO_NO_REGISTRADO');
     req.kiosco = d;
+    vigiaKioscos.senal(d.id); // señal de vida (kiosco-vigia.js)
     next();
   }
+  // ---------- Aviso «el reloj checador no responde» (2026-11-12, pedido de Dirección; regla en kiosco-vigia.js) ----------
+  // Queda en los Logs del sistema, sale en Inicio (personal.js, para quien tiene «Kioscos del checador», de sus
+  // sucursales) y se manda por correo a Dirección (usuarios con rol admin) y a los correos de CORREO_AVISOS_CHECADOR.
+  const textoKiosco = k => `Kiosco «${k.nombre}»${k.sucursal ? ' (' + k.sucursal + ')' : ''}`;
+  function avisarKiosco(tipo, k) {
+    const cayo = tipo === 'sin_respuesta';
+    app.locals.registro?.servicio(cayo ? 'kiosco_sin_respuesta' : 'kiosco_volvio', cayo ? `${textoKiosco(k)}: sin señal desde ${k.desde || 'hace más de 5 minutos'}` : `${textoKiosco(k)}: volvió a dar señal a las ${k.volvio}`);
+    const correo = require('./correo');
+    const para = correosDe(db.prepare("SELECT correo FROM main.usuarios WHERE rol = 'admin' AND activo = 1 AND correo IS NOT NULL AND trim(correo) <> ''").all().map(u => u.correo), process.env.CORREO_AVISOS_CHECADOR);
+    const asunto = cayo ? `⚠️ El reloj checador no responde: ${k.nombre}` : `✅ El reloj checador ya responde: ${k.nombre}`;
+    const mensaje = cayo
+      ? `${textoKiosco(k)} no da señal desde ${k.desde || 'hace más de 5 minutos'}. Revisa que la tableta esté prendida, desbloqueada, con internet y con el checador abierto. Mientras tanto, quien tenga su enlace puede checar desde su celular.`
+      : `${textoKiosco(k)} volvió a dar señal a las ${k.volvio}. No había respondido desde ${k.desde || 'antes de las ' + k.hora}.`;
+    for (const c of para) correo.enviar(c, asunto, { titulo: cayo ? 'El reloj checador no responde' : 'El reloj checador ya responde', saludo: 'Hola:', mensaje,
+      pie: 'Aviso automático del CRM de Saneadren: llega una vez cuando el checador deja de responder en horario de trabajo y otra cuando vuelve.' }).catch(e => console.error('[kiosco] correo:', e.message));
+  }
+  const vigiaKioscos = vigia({ ahoraMexico, avisar: avisarKiosco, ventanaDe: (suc, fecha) => { try { return ventana(db, suc, fecha); } catch { return null; } },
+    kioscos: () => db.prepare(`SELECT d.id, d.nombre, d.sucursal_id, s.nombre AS sucursal FROM main.checador_dispositivos d LEFT JOIN main.sucursales s ON s.id = d.sucursal_id
+      WHERE d.tipo = 'kiosco' AND d.activo = 1 AND d.eliminado_at IS NULL AND d.ultimo_uso >= datetime('now', 'localtime', '-7 days')`).all() });
+  if (process.env.MODO_DEMO !== '1') setInterval(() => { try { vigiaKioscos.revisar(); } catch (e) { console.error('[kiosco] vigía:', e.message); } }, 60000).unref();
   const ultimaDe = (personaId, fecha) => db.prepare("SELECT tipo, hora FROM main.checadas WHERE personal_id = ? AND fecha = ? AND estado <> 'anulada' ORDER BY momento_utc DESC, id DESC LIMIT 1").get(personaId, fecha);
   // Qué botón sugerir. Tiempo extra que pasa de medianoche (2026-11-11): si hoy aún no checa, es antes de las 12:00 y
   // anoche dejó abierto el «Inicio de tiempo extra», se sugiere «Fin de tiempo extra» (server/asistencia.js lo une).
@@ -1067,7 +1089,7 @@ module.exports = function checador(app, db, h) {
     res.json({ ok: true });
   }));
 
-  return { TIPOS, altaChecador, intentosDe, avisosCara };
+  return { TIPOS, altaChecador, intentosDe, avisosCara, kioscosCaidos: () => vigiaKioscos.caidos() };
 };
 module.exports.pinDebil = pinDebil;
 module.exports.TIPOS = TIPOS;
