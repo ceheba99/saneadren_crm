@@ -10,8 +10,6 @@
 .contacto-resumen .flujo-kicker{color:var(--texto-sec);}.contacto-resumen strong,.contacto-resumen span{display:block;}.contacto-resumen strong{font-size:18px;}.contacto-resumen span{font-size:12px;}
 .relacion-registros{display:flex;flex-direction:column;gap:4px;padding:4px 0 20px;}
 #overlay-ficha-cliente .modal-header{background:#263847;}
-#overlay-ficha-cliente .modal-body>.modal-section:first-child{border-bottom:6px solid var(--gris-200);}
-#overlay-ficha-cliente .modal-body>.modal-section:last-child{background:#fafbfc;}
 .estado-guardado{display:block;font-size:12px;color:var(--texto-sec);align-self:center;}.estado-guardado.pendiente{color:#865c00;font-weight:700;}
 .contacto-relacion{display:block;font-size:11px;color:var(--texto-sec);margin-top:4px;}
 #registro-contacto + .ficha-meta{margin-bottom:0;}

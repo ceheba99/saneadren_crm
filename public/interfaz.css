@@ -554,8 +554,6 @@
 
   #overlay-personal .modal-header { padding: 20px 24px; border-bottom: 1px solid #e0e6eb; }
   #overlay-personal .modal-header h2 { font-size: 21px; line-height: 1.4; padding-right: 16px; }
-  #pe-cuerpo { padding: 0 24px 24px; }
-  #pe-cuerpo .modal-section { padding-top: 20px; margin-top: 20px; }
   #pe-cuerpo .pe-sub { font-size: 16px; line-height: 1.4; }
   #pe-cuerpo .pe-doc { padding: 12px; gap: 12px; border-radius: 10px; }
   #pe-cuerpo .pe-doc small { line-height: 1.5; }
@@ -583,7 +581,6 @@
     .pe-kioscos .filtros .btn { width: 100%; }
     #vista-asistencia .as-pestanas { width: 100%; }
     #vista-asistencia .as-pestanas .btn { flex: 1 1 calc(50% - 6px); padding: 10px; }
-    #pe-cuerpo { padding: 0 16px 20px; }
     #overlay-personal .modal-header { padding: 16px; }
     #overlay-personal .modal-header h2 { font-size: 18px; }
   }
@@ -1801,5 +1798,42 @@
       padding-inline: 9px;
       font-size: 13px;
     }
+  }
+}
+
+/* Apartados de las fichas (2026-11-12): en cada ventana, cada apartado (.modal-section) es una tarjeta
+   sobre fondo gris, para ver dónde termina uno y empieza el otro aunque todo esté desplegado.
+   Un solo estilo para todas las fichas (orden, cliente, proveedor, personal, marketing, avisos…);
+   las pantallas no repiten este CSS. Solo en pantalla: la impresión queda igual. */
+@media screen {
+  :root {
+    --apartado-fondo: #e9edf0;
+    --apartado-tarjeta: var(--blanco);
+    --apartado-borde: #cdd5da;
+    --apartado-sombra: 0 2px 6px rgb(11 31 43 / 10%);
+    --apartado-hueco: 14px;
+  }
+  .modal-body:has(.modal-section) { background: var(--apartado-fondo); padding: var(--apartado-hueco); }
+  .modal-body .modal-section {
+    background: var(--apartado-tarjeta);
+    border: 1px solid var(--apartado-borde);
+    border-radius: 12px;
+    box-shadow: var(--apartado-sombra);
+    margin: 0 0 var(--apartado-hueco);
+  }
+  .modal-body .modal-section:last-child { margin-bottom: 0; }
+  /* Título del apartado: oscuro y con una línea que lo separa de su contenido. */
+  .modal-body .modal-section > :is(.seccion-tit, .pe-sub) {
+    color: var(--texto);
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--gris-200);
+    margin-bottom: 14px;
+  }
+  .modal-body .modal-section > .seccion-tit { font-size: 13.5px; }
+  .modal-body .modal-section.plegada > :is(.seccion-tit, .pe-sub) { border-bottom-color: transparent; margin-bottom: 0; padding-bottom: 6px; }
+  /* Pie con los botones de guardar: no es un apartado, va sin tarjeta. */
+  .modal-body .modal-section.pe-pie { background: transparent; border: 0; box-shadow: none; padding: 6px 2px 0; }
+  @media (max-width: 768px) {
+    :root { --apartado-hueco: 8px; }
   }
 }
