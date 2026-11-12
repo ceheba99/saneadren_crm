@@ -57,7 +57,8 @@ const Personal = (() => {
       notas: v('notas'), usuario_id: v('usuario_id') || null };
     if ($('pe-sucursal_id')) d.sucursal_id = Number(v('sucursal_id')) || null;
     if (actual?.puede?.sensibles ?? Permisos.puede('personal.sensibles')) Object.assign(d, { banco: v('banco'), clabe: (v('clabe') || '').replace(/\s+/g, ''), rfc: v('rfc'), curp: v('curp'), nss: v('nss'),
-      salario: v('salario') === '' ? null : Number(v('salario')), salario_periodo: v('salario_periodo') || null, tipo_contrato: v('tipo_contrato') || null, contrato_vence: v('contrato_vence') || null });
+      salario: v('salario') === '' ? null : Number(v('salario')), salario_periodo: v('salario_periodo') || null,
+      sueldo_imss_semanal: (v('sueldo_imss_semanal') ?? '') === '' ? null : Number(v('sueldo_imss_semanal')), bono_semanal: (v('bono_semanal') ?? '') === '' ? null : Number(v('bono_semanal')), tipo_contrato: v('tipo_contrato') || null, contrato_vence: v('contrato_vence') || null });
     return d;
   }
   const pendiente = () => !!$('pe-nombre') && base !== JSON.stringify(datosFormulario());
@@ -104,6 +105,8 @@ const Personal = (() => {
         ${campo('curp', 'CURP (opcional)', input('curp', p.curp, 'maxlength="18" autocapitalize="characters" autocomplete="off"' + ro))}
         ${campo('nss', 'Número de seguro social (opcional)', input('nss', p.nss, 'maxlength="11" inputmode="numeric" autocomplete="off"' + ro))}
         ${campo('salario', 'Salario (opcional)', `<div class="pe-salario"><input id="pe-salario" type="number" min="0" step="0.01" autocomplete="off" value="${Number.isFinite(p.salario) ? p.salario : ''}"${ro}><select id="pe-salario_periodo" aria-label="Periodo del salario"${ro}>${opciones(CAT.periodos, p.salario_periodo, 'Periodo')}</select></div>`)}
+        ${campo('sueldo_imss_semanal', 'Sueldo semanal registrado en el IMSS (opcional)', `<input id="pe-sueldo_imss_semanal" type="number" min="0" step="0.01" autocomplete="off" value="${Number.isFinite(p.sueldo_imss_semanal) ? p.sueldo_imss_semanal : ''}"${ro}>`)}
+        ${campo('bono_semanal', 'Bono semanal (opcional)', `<input id="pe-bono_semanal" type="number" min="0" step="0.01" autocomplete="off" value="${Number.isFinite(p.bono_semanal) ? p.bono_semanal : ''}"${ro}>`)}
         ${campo('tipo_contrato', 'Contrato (opcional)', `<select id="pe-tipo_contrato"${ro}>${opciones(CAT.contratos, p.tipo_contrato, 'Sin especificar')}</select>`)}
         ${campo('contrato_vence', 'Contrato vence (opcional)', input('contrato_vence', p.contrato_vence, 'type="date"' + ro))}
         </div>`;

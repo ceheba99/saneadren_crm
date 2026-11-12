@@ -235,4 +235,27 @@ module.exports = async function masEjemplos(x) {
       }
     }
   })();
+
+  // ===== Nómina semanal (módulo contable F3, 2026-11-11): sueldos en las fichas, una semana pagada y la semana a pagar abierta =====
+  {
+    const SUELDOS = [[PER.raul, 2400, 600], [PER.diego, 2200, 500], [PER.juan, 2100, 450], [PER.miguel, 2100, 450], [PER.luis, 1800, 300], [PER.oscar, 2300, 550], ...NUE.map((n, i) => [n.id, 1900 + (i % 4) * 100, 250 + (i % 3) * 100])];
+    // El resto del personal (oficina) también con sueldo semanal, para que la nómina de ejemplo no salga llena de pendientes.
+    const conSueldo = new Set(SUELDOS.map(x => x[0]));
+    for (const p of (await pedir('GET', '/personal?estado=activos', A)).filter(p => !conSueldo.has(p.id))) SUELDOS.push([p.id, 3200 + (p.id % 5) * 150, 0]);
+    for (const [id, imss, bono] of SUELDOS) {
+      const p = await pedir('GET', '/personal/' + id, A);
+      await pedir('PUT', '/personal/' + id, A, { version: p.version, sueldo_imss_semanal: imss, bono_semanal: bono });
+    }
+    const netos = async nom => { for (const l of nom.lineas) if (l.sueldo_imss > 0) await pedir('PUT', '/nomina/lineas/' + l.id, A, { neto_imss: Math.round(l.sueldo_imss * 0.88 * 100) / 100 }); };
+    // Hace dos semanas (Querétaro): preparada, con un descuento por falta que decidió RH, cerrada y pagada por Santander.
+    const vieja = await pedir('POST', '/nomina/preparar', A, { desde: dia(-14), sucursal_id: qroId });
+    await netos(vieja);
+    const conFalta = vieja.lineas.find(l => l.faltas > 0 && l.bono > 0);
+    if (conFalta) await pedir('PUT', '/nomina/lineas/' + conFalta.id, A, { descuento: Math.min(conFalta.bono, 300), descuento_nota: 'Falta sin aviso (decidió RH descontarla)' });
+    await pedir('POST', '/nomina/' + vieja.id + '/cerrar', A, { forzar: true, motivo: 'Ejemplo del demo: checadas olvidadas revisadas con el supervisor' });
+    await pedir('POST', '/nomina/' + vieja.id + '/pagar', A, { metodo: 'layout', cuenta_origen: 'Santander nómina', fecha: dia(-6), referencia: 'Layout nómina' });
+    // La semana a pagar (Querétaro): preparada y abierta, con netos a medias (el contador todavía no termina).
+    const actual = await pedir('POST', '/nomina/preparar', A, { desde: dia(-7), sucursal_id: qroId });
+    for (const l of actual.lineas.slice(0, 4)) if (l.sueldo_imss > 0) await pedir('PUT', '/nomina/lineas/' + l.id, A, { neto_imss: Math.round(l.sueldo_imss * 0.88 * 100) / 100 });
+  }
 };

@@ -2345,3 +2345,21 @@ tr.logs-aviso td{background:#fffaf0;}
 .ant-gastos li b{font-variant-numeric:tabular-nums;}
 .ant-reembolso{grid-column:1 / -1;color:var(--amarillo-texto);}
 .ant-acciones{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:auto;}
+
+/* Nómina semanal (módulo contable F3, 2026-11-11) */
+#vista-nomina .filtros{display:flex;flex-wrap:wrap;gap:8px;align-items:center;}
+.nm-cabeza{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin:8px 0;}
+.nm-acciones{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0;}
+.nm-tabla-caja{overflow-x:auto;background:var(--blanco);border:1px solid var(--gris-200);border-radius:var(--radio);}
+.nm-tabla{width:100%;border-collapse:collapse;font-size:.9rem;min-width:980px;}
+.nm-tabla th,.nm-tabla td{padding:8px;border-bottom:1px solid var(--gris-200);text-align:left;vertical-align:top;}
+.nm-tabla th{background:var(--gris-100);font-size:.78rem;color:var(--texto-sec);}
+.nm-tabla tfoot td{font-weight:700;background:var(--gris-100);}
+.nm-tabla .nm-d{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap;}
+.nm-tabla .nm-c{text-align:center;white-space:nowrap;}
+.nm-tabla tr.nm-pend td:first-child{border-left:3px solid var(--amarillo);}
+.nm-num{width:96px;text-align:right;}
+.nm-nota{display:block;width:140px;margin-top:4px;font-size:.8rem;}
+.nm-avisos{margin:4px 0 0;padding:0;list-style:none;font-size:.78rem;color:var(--amarillo-texto);}
+.nm-pago{background:var(--blanco);border:1px solid var(--gris-200);border-radius:var(--radio);padding:14px;margin:14px 0;display:grid;gap:10px;}
+.nm-pago h3{margin:0;font-size:1rem;}
