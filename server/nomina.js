@@ -103,9 +103,14 @@ module.exports = function nomina(app, db, h) {
     const sem = A.resumenSemana(desde, null, true), porPersona = new Map(sem.filas.map(f => [f.personal_id, f]));
     const ids = db.prepare(`SELECT id FROM main.personal WHERE sucursal_id = ? AND (activo = 1 OR fecha_baja >= ?) AND (fecha_ingreso IS NULL OR fecha_ingreso <= ?) ORDER BY nombre`).all(sucursalId, sem.desde, sem.hasta).map(r => r.id);
     const lineas = [];
+    // Auditoría del checador (2026-11-12): quien ya está en la nómina CERRADA o PAGADA de esta misma semana en otra
+    // sucursal (cambió de sucursal después) no entra otra vez aquí: se pagaba dos veces.
+    const yaEnOtra = db.prepare("SELECT 1 FROM main.nomina_lineas l JOIN main.nominas n ON n.id = l.nomina_id WHERE l.personal_id = ? AND n.desde = ? AND n.sucursal_id <> ? AND n.estado <> 'abierta'");
+    const vigencia = db.prepare('SELECT fecha_ingreso, fecha_baja FROM main.personal WHERE id = ?');
     for (const id of ids) {
       const p = Pe.fichaPago(id), a = porPersona.get(id);
       if (!p) continue;
+      if (yaEnOtra.get(id, sem.desde, sucursalId)) continue;
       const imss = p.sueldo_imss_semanal_cent || 0, bono = p.bono_semanal_cent || 0;
       if (!a && !imss && !bono) continue; // ni checa ni tiene sueldo semanal: no entra
       const t = a?.totales || {};
@@ -113,7 +118,13 @@ module.exports = function nomina(app, db, h) {
         t.sin_salida ? `${t.sin_salida} día(s) sin salida` : '', t.extra_sin_fin ? `${t.extra_sin_fin} tiempo extra sin fin` : ''].filter(Boolean) : [];
       if (p.ilegibles.some(k => /sueldo|bono/.test(k))) pend.push('Su sueldo no se puede leer (clave de cifrado)');
       else if (!imss && !bono) pend.push('Sin sueldo semanal en su ficha (captúralo en Personal)');
-      const pu = a ? puntualidad(reglaDe(sucursalId, p.puesto, sem.hasta), t) : { cent: 0, razon: null };
+      // Checa y no tiene horario asignado (2026-11-12): sin horario no hay faltas ni retardos que contar; antes ganaba la
+      // puntualidad sin checar y nadie lo veía. Es un pendiente y no gana el bono hasta que se le asigne.
+      const v = a ? vigencia.get(id) : null;
+      const sinHorario = a ? a.dias.filter(d => d.notas.includes('Sin horario asignado') && (!v?.fecha_ingreso || d.fecha >= v.fecha_ingreso) && (!v?.fecha_baja || d.fecha <= v.fecha_baja)).length : 0;
+      if (sinHorario) pend.unshift(`Sin horario asignado ${sinHorario} día(s): no se pueden contar sus faltas ni retardos (asígnalo en Asistencia → Horarios)`);
+      const regla = a ? reglaDe(sucursalId, p.puesto, sem.hasta) : null;
+      const pu = !a ? { cent: 0, razon: null } : sinHorario && regla?.monto_cent ? { cent: 0, razon: 'No lo ganó: no tiene horario asignado (no se pueden contar sus faltas ni retardos)' } : puntualidad(regla, t);
       lineas.push({ personal_id: id, nombre: p.nombre, puesto: p.puesto, numero_empleado: p.numero_empleado || null, sueldo_imss_cent: imss, bono_cent: bono,
         puntualidad_cent: pu.cent, puntualidad_razon: pu.razon, retardo_min: t.retardo_min || 0,
         extra_cent: a?.dinero?.total_cent || 0, extra_min: t.extra_autorizado_min || 0, sin_precio_extra: a && t.extra_autorizado_min && a.dinero?.valor_hora_cent == null ? 1 : 0,

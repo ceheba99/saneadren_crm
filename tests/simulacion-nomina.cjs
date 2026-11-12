@@ -39,6 +39,13 @@ const dia = k => { const x = new Date(HOY + 'T12:00:00Z'); x.setUTCDate(x.getUTC
   const beto = exigir(await pedir('POST', '/personal', A, { nombre: 'Beto Ayudante', puesto: 'Ayudante', sucursal_id: qro.id, bono_semanal: 700 }), 'ficha Beto');
   const carla = exigir(await pedir('POST', '/personal', A, { nombre: 'Carla Sin Sueldo', puesto: 'Operador', sucursal_id: qro.id }), 'ficha Carla');
   void ficha;
+  // 2026-11-12: quien checa sin horario asignado ya no gana la puntualidad (es un pendiente). Los tres tienen horario
+  // (Administrativo, lunes a viernes 8:30–18:00) y checaron completa la semana pasada: sin faltas, retardos ni tiempo extra.
+  { const adm = (await pedir('GET', '/asistencia/horarios', A))[1].horarios.find(x => x.nombre === 'Administrativo' && x.sucursal_id === qro.id);
+    for (const p of [ana, beto, carla]) exigir(await pedir('PUT', '/asistencia/personal/' + p.id + '/horario', A, { horario_id: adm.id, desde: dia(-60) }), 'horario');
+    const sem = exigir(await pedir('GET', '/asistencia/semana?desde=' + dia(-7), A), 'semana pasada');
+    for (const fila of sem.filas) for (const d of fila.dias.filter(x => x.laboral)) for (const [tipo, hora] of [['entrada', '08:30'], ['salida', '18:00']])
+      exigir(await pedir('POST', '/asistencia/checadas', A, { personal_id: fila.personal_id, tipo, fecha: d.fecha, hora, motivo: 'Semana de prueba' }), 'checada'); }
 
   console.log('1. Sueldos en la ficha');
   { const d = new DatabaseSync(DB); const f = d.prepare('SELECT sueldo_imss_semanal_cent s, bono_semanal_cent b FROM personal WHERE id = ?').get(ana.id); d.close();
