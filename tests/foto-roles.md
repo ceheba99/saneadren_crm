@@ -231,6 +231,8 @@ Dirección la revisa y la aprueba. Si un cambio altera lo que ve un rol, la prue
 | Actualizar el avance de una tarea que le asignaron a él | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
 | Entregar un anticipo por comprobar a una persona del personal (y cerrarlo o cancelarlo) | ✔ | ✔ | — | — | — | — | — | — |
 | Ver los anticipos por comprobar de otras personas (el de Ernesto Obsidiana) | ✔ | ✔ | — | — | — | — | — | — |
+| Contabilidad › Flujo de banco: guardar el saldo inicial del banco de un mes (queda para todos, con quién y cuándo) | ✔ | ✔ | — | — | — | — | — | — |
+| Contabilidad: cerrar un mes ya terminado (después solo Dirección cambia cobros, pagos y anticipos de ese mes) | ✔ | — | — | — | — | — | — | — |
 
 | Permiso | Dirección | Gerente | Ventas | Atención | Técnico | Costos y compras | Marketing | Gerente de marketing |
 |---|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|
@@ -256,6 +258,7 @@ Dirección la revisa y la aprueba. Si un cambio altera lo que ve un rol, la prue
 | Reportes · Análisis comercial | ✔ | ✔ | ✔ | ✔ | — | — | — | — |
 | Reportes · Panorama general | ✔ | ✔ | — | — | — | — | — | — |
 | Reportes · Contabilidad del mes | ✔ | ✔ | — | — | — | — | — | — |
+| Reportes · Cerrar el mes de contabilidad | ✔ | — | — | — | — | — | — | — |
 | Catálogos · Catálogos compartidos | ✔ | ✔ | — | — | — | ✔ | — | — |
 | Personal · Ver personal | ✔ | ✔ | — | — | — | — | — | — |
 | Personal · Editar personal | ✔ | ✔ | — | — | — | — | — | — |
@@ -349,6 +352,7 @@ Dirección la revisa y la aprueba. Si un cambio altera lo que ve un rol, la prue
 - **2026-11-11** · Proyectos y tareas con Gantt: asignan tareas Dirección y el Gerente (este solo a gente de su sucursal) y ven las del equipo; cada persona ve y avanza solo las suyas (las marca terminadas y quien la asignó la acepta o la regresa). Al asignarla le llega en Inicio y por correo.
 - **2026-11-11** · Reporte de Dirección: las metas del mes (venta, cobranza, margen, satisfacción y cumplimiento) las pone solo Dirección; el Gerente las ve en su Panorama. El reporte ejecutivo del mes llega por correo a Dirección el día 1, y mandarlo a mano también es solo de Dirección.
 - **2026-11-11** · Análisis comercial: los indicadores nuevos (satisfacción, cobranza a tiempo, servicios en fecha, recompras) los ve quien ve el análisis comercial, cada quien con lo suyo; nada de cuentas por pagar ni dinero de la empresa (eso queda en el Panorama, para Dirección y el Gerente).
+- **2026-11-12** · Contabilidad: el saldo inicial del banco (Flujo de banco) lo guardan en el sistema Dirección, el Gerente y quien tiene «Contabilidad del mes» (el Contador), y queda quién y cuándo. Cerrar un mes ya terminado: Dirección y el rol que Dirección cree con «Cerrar el mes de contabilidad» (el Contador); el Gerente no. Ya cerrado, solo Dirección registra, confirma, corrige o cancela cobros, pagos y anticipos con fecha de ese mes (en cualquier pantalla) y cambia su saldo inicial; reabrirlo es solo de Dirección, con motivo.
 - **2026-11-11** · Conciliación bancaria (subir el estado de cuenta de Santander o Banorte y emparejarlo con cobros, pagos, anticipos y nómina del CRM): Dirección, el Gerente y quien tiene «Contabilidad del mes» (el Contador). Registrar como gasto un cargo del banco que no está en el CRM (p. ej. una comisión) además pide «Mover dinero». Los demás roles no.
 - **2026-11-11** · Bono de puntualidad: sus reglas (monto por puesto y sucursal, retardos y faltas permitidos; vacaciones, incapacidades y permisos se respetan) las ponen quienes preparan la nómina: Dirección y el Gerente. Los demás roles no.
 - **2026-11-11** · Anticipos por comprobar: los entregan, cierran y cancelan Dirección y quien mueve dinero y ya ve al personal (el Gerente). Compras mueve dinero pero no ve al personal (regla del 2026-10-19): por ahora no; los demás roles tampoco.

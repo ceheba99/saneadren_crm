@@ -45,16 +45,16 @@ module.exports = {
       permisos: ['avisos.publicar'],
     },
     contabilidad: {
-      nombre: 'Contabilidad del mes para el contador (módulo contable F1, 2026-11-11): resumen de ingresos, egresos e IVA, pendientes de comprobar y descarga de Excel y XML. Solo consulta',
+      nombre: 'Contabilidad del mes para el contador (módulo contable F1, 2026-11-11): resumen de ingresos, egresos e IVA, pendientes de comprobar y descarga de Excel y XML; desde 2026-11-12, cerrar el mes (solo Dirección cambia lo de un mes cerrado) y el saldo inicial del banco guardado en el sistema',
       vistas: ['contabilidad'],
-      tablas: [], tablasRazon: 'no guarda nada: lee facturas, cobros, cuentas por pagar y pagos',
+      tablas: ['contabilidad_cierres', 'flujo_saldos_iniciales'], // lo demás lo lee de facturas, cobros, cuentas por pagar y pagos
       rutas: [/^\/api\/contabilidad\//],
       pendientes: null, pendientesRazon: 'los pendientes de comprobar se ven en su propia pantalla, al revisar el mes',
       inicio: [],
       demo: [], demoRazon: 'usa los datos de ejemplo de facturas, cobros y gastos',
-      integridad: [], integridadRazon: 'no tiene datos propios',
+      integridad: [], integridadRazon: 'su historial (cierres y saldos) no se cambia ni se borra: lo cuidan candados en la base',
       buscador: null, buscadorRazon: 'se consulta por mes, no por registro',
-      permisos: ['contabilidad.ver'],
+      permisos: ['contabilidad.ver', 'contabilidad.cerrar'],
     },
     tareas: {
       nombre: 'Proyectos y tareas con Gantt (2026-11-11): Dirección y el Gerente asignan tareas con fechas; cada quien avanza las suyas y quien asignó las revisa',

@@ -329,6 +329,8 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
     ['avanzaTareaPropia', 'Actualizar el avance de una tarea que le asignaron a él'],
     ['entregaAnticipo', 'Entregar un anticipo por comprobar a una persona del personal (y cerrarlo o cancelarlo)'],
     ['veAnticipoAjeno', 'Ver los anticipos por comprobar de otras personas (el de Ernesto Obsidiana)'],
+    ['cambiaSaldo', 'Contabilidad › Flujo de banco: guardar el saldo inicial del banco de un mes (queda para todos, con quién y cuándo)'],
+    ['cierraMes', 'Contabilidad: cerrar un mes ya terminado (después solo Dirección cambia cobros, pagos y anticipos de ese mes)'],
   ];
   // Proyectos y tareas (2026-11-11): Dirección le asigna una tarea a Tito (técnico que no es observador de ningún rol).
   const TAREA_TOMAS = exigir(await pedir('POST', '/tareas', A, { titulo: 'Tarea Coral de Tito', asignado_a: ID.Tito, inicio: dia(0), fin: dia(7) }), 'tarea de Tito');
@@ -429,6 +431,10 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
     VE[rol].pagaNomina = ok(await pedir('GET', '/nomina/' + NOM.id + '/lista-banco', t));
     { const k = ROLES.findIndex(r => r[0] === rol), [sc, c] = await pedir('POST', '/conciliacion/cuentas', t, { nombre: 'Cuenta foto ' + String.fromCharCode(65 + k), banco: 'Santander', sucursal_id: qro.id });
       VE[rol].concilia = sc === 201 && ok(await pedir('POST', '/conciliacion/cargar', t, { cuenta_id: c.id, filas: [{ fecha: dia(-2), concepto: 'Depósito foto', cargo: '', abono: '123.45' }] })); }
+    // Editar Contabilidad (2026-11-12): cada rol con un mes viejo distinto y sin movimientos (2025-01, 2025-02…), para no estorbar a los demás.
+    { const mesViejo = '2025-' + String(ROLES.findIndex(r => r[0] === rol) + 1).padStart(2, '0');
+      VE[rol].cambiaSaldo = ok(await pedir('POST', '/contabilidad/saldo-inicial', t, { mes: mesViejo, sucursal: qro.id, saldo: '1000.00' }));
+      VE[rol].cierraMes = ok(await pedir('POST', '/contabilidad/cierre', t, { mes: mesViejo, sucursal: qro.id })); }
     VE[rol].editaMetas = ok(await pedir('PUT', '/tablero/metas', t, { mes: HOY.slice(0, 7), metas: { venta: 100000 } }));
     { const [se] = await pedir('POST', '/tablero/enviar-reporte', t, { mes: HOY.slice(0, 7) }); VE[rol].enviaReporte = se !== 403 && se !== 401; } // sin correo configurado responde 409: aun así sí puede
     { const k = ROLES.findIndex(r => r[0] === rol);
@@ -623,6 +629,8 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
       admin: { editaMetas: 1, enviaReporte: 1 }, ...Object.fromEntries(['gerente', 'costos', 'ventas', 'atencion', 'tecnico', 'marketing', 'marketing_gerente'].map(r => [r, { editaMetas: 0, enviaReporte: 0 }])) }],
     ['2026-11-11', 'Análisis comercial: los indicadores nuevos (satisfacción, cobranza a tiempo, servicios en fecha, recompras) los ve quien ve el análisis comercial, cada quien con lo suyo; nada de cuentas por pagar ni dinero de la empresa (eso queda en el Panorama, para Dirección y el Gerente).', {
       admin: { veIndicadores: 1 }, gerente: { veIndicadores: 1 }, ventas: { veIndicadores: 1 }, atencion: { veIndicadores: 1 }, ...Object.fromEntries(['tecnico', 'costos', 'marketing', 'marketing_gerente'].map(r => [r, { veIndicadores: 0 }])) }],
+    ['2026-11-12', 'Contabilidad: el saldo inicial del banco (Flujo de banco) lo guardan en el sistema Dirección, el Gerente y quien tiene «Contabilidad del mes» (el Contador), y queda quién y cuándo. Cerrar un mes ya terminado: Dirección y el rol que Dirección cree con «Cerrar el mes de contabilidad» (el Contador); el Gerente no. Ya cerrado, solo Dirección registra, confirma, corrige o cancela cobros, pagos y anticipos con fecha de ese mes (en cualquier pantalla) y cambia su saldo inicial; reabrirlo es solo de Dirección, con motivo.', {
+      admin: { cambiaSaldo: 1, cierraMes: 1 }, gerente: { cambiaSaldo: 1, cierraMes: 0 }, ...Object.fromEntries(['costos', 'ventas', 'atencion', 'tecnico', 'marketing', 'marketing_gerente'].map(r => [r, { cambiaSaldo: 0, cierraMes: 0 }])) }],
     ['2026-11-11', 'Conciliación bancaria (subir el estado de cuenta de Santander o Banorte y emparejarlo con cobros, pagos, anticipos y nómina del CRM): Dirección, el Gerente y quien tiene «Contabilidad del mes» (el Contador). Registrar como gasto un cargo del banco que no está en el CRM (p. ej. una comisión) además pide «Mover dinero». Los demás roles no.', {
       admin: { concilia: 1 }, gerente: { concilia: 1 }, ...Object.fromEntries(['costos', 'ventas', 'atencion', 'tecnico', 'marketing', 'marketing_gerente'].map(r => [r, { concilia: 0 }])) }],
     ['2026-11-11', 'Bono de puntualidad: sus reglas (monto por puesto y sucursal, retardos y faltas permitidos; vacaciones, incapacidades y permisos se respetan) las ponen quienes preparan la nómina: Dirección y el Gerente. Los demás roles no.', {

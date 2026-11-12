@@ -65,7 +65,7 @@ const azar = () => { semilla = (semilla * 1103515245 + 12345) % 2147483648; retu
     return { permisos: lista.filter(c => !VIRTUALES.includes(c)), alcances, ediciones, ...extra };
   };
   // «Todo» como el gerente: toda su sucursal (no toda la empresa) y edita. Marketing no: el gerente no lo ve (2026-10-26).
-  const TODO = [...CATALOGO, ...VIRTUALES.filter(c => !c.endsWith('.empresa'))].filter(c => !c.startsWith('marketing.') && c !== 'avisos.publicar'); // ni «Publicar avisos»: de fábrica solo Dirección (2026-11-11)
+  const TODO = [...CATALOGO, ...VIRTUALES.filter(c => !c.endsWith('.empresa'))].filter(c => !c.startsWith('marketing.') && c !== 'avisos.publicar' && c !== 'contabilidad.cerrar'); // ni «Publicar avisos» ni «Cerrar el mes de contabilidad»: de fábrica solo Dirección (2026-11-11, 2026-11-12)
   const crearRol = async (nombre, permisos) => { const [, r] = await pedir('POST', '/roles', A, { nombre }); await pedir('PUT', '/roles/' + r.clave + '/permisos', A, cuerpo(permisos)); return r.clave; };
   const ROL_TODO = await crearRol('Todo de prueba', TODO), ROL_NADA = await crearRol('Nada de prueba', []);
   const crearUsuario = async (nombre, rol, sucursales = [QRO]) => (await pedir('POST', '/usuarios', A, { nombre, password: CLAVE, rol, sucursales }));
@@ -96,7 +96,7 @@ const azar = () => { semilla = (semilla * 1103515245 + 12345) % 2147483648; retu
   const soloDireccion = Object.keys(fD).filter(k => fD[k] !== 403 && fT[k] === 403);
   // Además de lo de todas las sucursales: «deshacer» (recepción de compra, aviso resuelto) es solo de Dirección por decisión
   // del dueño (2026-10-21), con motivo y registro en la bitácora.
-  const DIRECCION_ESPERADO = /\/(admin\/|sucursales|auditoria$|roles|permisos$|clientes\/(duplicados|distintos)|clientes\/1\/fusionar|servicios|canales|tipos-cliente|finanzas\/categorias|prospeccion\/sectores|compras\/(formato|centros|unidades)|compras\/ordenes\/1\/deshacer-recepcion$|historial\/1\/reabrir$|nomina\/1\/reabrir$|tablero\/(metas|enviar-reporte|reporte-correo)$)/; // metas y reporte por correo: decisiones de Dirección (2026-11-11) // reabrir una nómina cerrada sin pagar: solo Dirección (F3 contable, 2026-11-11)
+  const DIRECCION_ESPERADO = /\/(admin\/|sucursales|auditoria$|roles|permisos$|clientes\/(duplicados|distintos)|clientes\/1\/fusionar|servicios|canales|tipos-cliente|finanzas\/categorias|prospeccion\/sectores|compras\/(formato|centros|unidades)|compras\/ordenes\/1\/deshacer-recepcion$|historial\/1\/reabrir$|nomina\/1\/reabrir$|contabilidad\/cierre(\/reabrir)?$|tablero\/(metas|enviar-reporte|reporte-correo)$)/; // metas y reporte por correo: decisiones de Dirección (2026-11-11) // reabrir una nómina cerrada sin pagar: solo Dirección (F3 contable, 2026-11-11)
   // Y borrar (cotizaciones, órdenes, usuarios…): solo Dirección (2026-10-26).
   // Marketing tampoco: el rol «con todo» copia al gerente, que no ve Marketing (2026-10-26).
   // Facturación (2026-10-27): la conexión con factura.com y la serie y el CP de cada sucursal son solo de Dirección (como el respaldo).

@@ -1,4 +1,5 @@
-// MÓDULO CONTABLE · F1 (2026-11-11): «Contabilidad del mes» para el contador. Solo consulta y descarga; nada se cambia aquí.
+// MÓDULO CONTABLE · F1 (2026-11-11): «Contabilidad del mes» para el contador. Consulta y descarga; el cierre del mes y el
+// saldo inicial del banco (2026-11-12) están en server/contabilidad-cierres.js.
 //  · Quién: Dirección y quien tenga «Contabilidad del mes» (contabilidad.ver), con las sucursales que ve.
 //  · Resumen del mes: lo facturado (CFDI reales), lo cobrado CONFIRMADO, los gastos del mes y lo pagado a proveedores, y el
 //    IVA visto de dos formas (según las facturas del mes y según el dinero que entró y salió). Son cifras de apoyo: qué
@@ -165,13 +166,11 @@ module.exports = function contabilidad(app, db, h) {
         concepto_banco: `Reintegro de anticipo de ${a.persona}`, egreso: 0, ingreso: a.reintegro_cent, cfdi_monto: 0, no_deducible: 0, por_comprobar_cent: 0, concepto: 'Lo que sobró: ' + a.motivo, observaciones: a.nota_cierre || '', via: a.reintegro_metodo, cuenta_salida: a.reintegro_cuenta || '' });
     }
     filas.sort((a, b) => a.orden.localeCompare(b.orden));
-    // Lo que el CRM acumuló antes del mes en las mismas sucursales (sirve si el banco empezó en cero con el CRM).
-    const antes = db.prepare(`SELECT (SELECT COALESCE(SUM(k.monto_cent), 0) FROM main.cobros k JOIN main.leads l ON l.id = k.lead_id WHERE k.cancelado = 0 AND k.confirmado = 1 AND k.tipo <> 'ajuste' AND k.fecha < ?${suc('l.sucursal_id')})
-      - (SELECT COALESCE(SUM(g.monto_cent), 0) FROM main.pagos_proveedor g JOIN main.cuentas_por_pagar x ON x.id = g.cxp_id WHERE g.cancelado = 0 AND g.metodo <> 'anticipo' AND g.fecha < ?${suc('x.sucursal_id')})
-      ${conAnt ? `- (SELECT COALESCE(SUM(a.monto_cent), 0) FROM main.anticipos a WHERE a.estado <> 'cancelado' AND a.fecha < ?${suc('a.sucursal_id')})
-      + (SELECT COALESCE(SUM(a.reintegro_cent), 0) FROM main.anticipos a WHERE a.estado <> 'cancelado' AND a.reintegro_cent > 0 AND a.reintegro_fecha < ?${suc('a.sucursal_id')})` : ''} AS n`).get(...(conAnt ? [d, d, d, d] : [d, d])).n;
+    // Saldo inicial (Editar Contabilidad, 2026-11-12): por sucursal, el que se escribió en el sistema (con quién y cuándo)
+    // o lo que el CRM acumuló antes del mes (cobros − pagos − anticipos + reintegros). Ver server/contabilidad-cierres.js.
+    const si = app.locals.contabilidadCierres.saldoInicial(mes, app.locals.contabilidadCierres.sucursalesDe(req, sucursal) || []), antes = si.saldo_cent;
     let saldo = antes;
-    return { saldo_inicial: pesos(antes), filas: filas.map(({ orden, anticipo, por_comprobar_cent, ...f }) => {
+    return { saldo_inicial: pesos(antes), saldo_inicial_crm: pesos(si.crm_cent), saldos_iniciales: si.sucursales, filas: filas.map(({ orden, anticipo, por_comprobar_cent, ...f }) => {
       saldo += f.ingreso - f.egreso;
       const porComprobar = por_comprobar_cent ?? f.egreso + f.ingreso - f.cfdi_monto - f.no_deducible;
       return { ...f, egreso: pesos(f.egreso), ingreso: pesos(f.ingreso), saldo: pesos(saldo), cfdi_monto: pesos(f.cfdi_monto), no_deducible: pesos(f.no_deducible), por_comprobar: pesos(porComprobar),
@@ -194,7 +193,8 @@ module.exports = function contabilidad(app, db, h) {
     const claveSuc = id => app.locals.sucursales?.claveDe?.(id) || '';
     const flujo = flujoDelMes(req, mes, suc);
     res.json({
-      flujo: flujo.filas, saldo_inicial: flujo.saldo_inicial,
+      flujo: flujo.filas, saldo_inicial: flujo.saldo_inicial, saldo_inicial_crm: flujo.saldo_inicial_crm, saldos_iniciales: flujo.saldos_iniciales,
+      cierre: app.locals.contabilidadCierres.estadoCierre(req, mes, app.locals.contabilidadCierres.sucursalesDe(req, suc) || []),
       resumen: resumen(mes, suc),
       facturas: facturas.map(f => ({ tipo: f.tipo_documento === 'pago' ? 'Complemento de pago' : 'Factura', fecha: String(f.fecha_timbrado || '').slice(0, 10), folio: [f.serie, f.folio].filter(Boolean).join('-'), uuid: f.uuid || '',
         orden: folioOS(f.lead_id, f.lead_created_at), rfc: f.receptor_rfc || '', cliente: f.receptor_razon_social || '', metodo: f.metodo_pago || '', forma: f.forma_pago || '',
