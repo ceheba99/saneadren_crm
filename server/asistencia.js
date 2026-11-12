@@ -239,15 +239,23 @@ module.exports = function asistencia(app, db, h) {
     const ch = db.prepare('SELECT id, tipo, hora, estado, origen, sin_conexion FROM main.checadas WHERE personal_id = ? AND fecha = ? AND estado <> \'anulada\' ORDER BY momento_utc, id').all(p.id, fecha);
     const validas = ch.filter(c => c.estado === 'valida'), m = c => min(c.hora.slice(0, 5));
     const entradas = validas.filter(c => c.tipo === 'entrada'), salidas = validas.filter(c => c.tipo === 'salida');
-    const eId = entradas[0]?.id, sId = salidas.at(-1)?.id;
-    const entrada = entradas.length ? m(entradas[0]) : null, salida = salidas.length ? m(salidas[salidas.length - 1]) : null;
+    // 2026-11-12 (Dirección: «marcó tiempo extra como entrada y su salida normal; que lo tome en cuenta»): en un día
+    // laboral sin «Entrada», si lo PRIMERO que marcó fue «Inicio de tiempo extra» antes de su hora de salida, esa checada
+    // es su entrada. Si no marcó el «Fin», el tiempo extra va de esa hora a su hora de entrada (nunca dentro del horario).
+    const porExtra = laboral && !entradas.length && validas[0]?.tipo === 'extra_inicia' && m(validas[0]) < min(dia.salida) ? validas[0] : null;
+    const finPropio = porExtra ? (() => { for (const c of validas.slice(1)) { if (c.tipo === 'extra_termina') return true; if (c.tipo === 'extra_inicia') return false; } return false; })() : false;
+    const llegada = entradas[0] || porExtra;
+    const eId = llegada?.id, sId = salidas.at(-1)?.id;
+    const entrada = llegada ? m(llegada) : null, salida = salidas.length ? m(salidas[salidas.length - 1]) : null;
     // Comida: cada salida a comer con el regreso que le sigue.
     let comida = 0, abierta = null;
     for (const c of validas) { if (c.tipo === 'comida_sale') abierta = m(c); else if (c.tipo === 'comida_regresa' && abierta !== null) { comida += Math.max(0, m(c) - abierta); abierta = null; } }
     // Bloques de tiempo extra marcados con los botones.
     // bloqueIds: las checadas de inicio y fin de cada bloque (su foto es la evidencia en el detalle del tiempo extra).
     const bloques = [], bloqueIds = []; let ini = null, iniId = null;
-    for (const c of validas) { if (c.tipo === 'extra_inicia') { ini = m(c); iniId = c.id; } else if (c.tipo === 'extra_termina' && ini !== null) { bloques.push([ini, m(c)]); bloqueIds.push([iniId, c.id]); ini = null; } }
+    for (const c of validas) {
+      if (c === porExtra && !finPropio) { if (m(c) < min(dia.entrada)) { bloques.push([m(c), min(dia.entrada)]); bloqueIds.push([c.id]); } continue; }
+      if (c.tipo === 'extra_inicia') { ini = m(c); iniId = c.id; } else if (c.tipo === 'extra_termina' && ini !== null) { bloques.push([ini, m(c)]); bloqueIds.push([iniId, c.id]); ini = null; } }
     // Pasó de medianoche: el «Fin» es la primera checada del día siguiente (antes de las 12:00) y se cuenta hoy.
     let finOtroDia = null;
     if (ini !== null) {
@@ -261,7 +269,7 @@ module.exports = function asistencia(app, db, h) {
     // con su hora de inicio y fin, por qué cuenta o por qué no, la regla que se usó, el traslape y el redondeo.
     const piezas = [], pieza = (a, b, motivo, cuenta = true, checadas = []) => { if (a !== null && b !== null && b > a) piezas.push({ desde: hhmm(a), hasta: hhmm(b), min: b - a, motivo, cuenta, checadas: checadas.filter(Boolean) }); };
     const r = { personal_id: p.id, nombre: p.nombre, fecha, dia: DIAS[diaSemana(fecha)], horario: hor?.nombre || null, programado: dia, festivo, laboral,
-      entrada: entrada === null ? null : entradas[0].hora.slice(0, 5), salida: salida === null ? null : salidas[salidas.length - 1].hora.slice(0, 5),
+      entrada: entrada === null ? null : llegada.hora.slice(0, 5), salida: salida === null ? null : salidas[salidas.length - 1].hora.slice(0, 5),
       comida_min: comida, trabajado_min: trabajado, retardo_min: 0, exceso_comida_min: 0, salida_anticipada_min: 0, extra_min: 0,
       por_revisar: ch.filter(c => c.estado === 'por_revisar').length, incidencia: null, falta: false, notas: [] };
     const inc = db.prepare('SELECT tipo FROM main.incidencias_personal WHERE personal_id = ? AND cancelada = 0 AND fecha_inicio <= ? AND fecha_fin >= ? ORDER BY id DESC LIMIT 1').get(p.id, fecha, fecha);
@@ -277,19 +285,21 @@ module.exports = function asistencia(app, db, h) {
       // salida (si llega a los minutos: entonces cuenta todo desde la salida). Con «solo botones», solo los bloques.
       const partes = [...fuera];
       for (const [k, [a, b]] of bloques.entries()) {
-        pieza(a, Math.min(b, desdeH), 'Botones «Inicio / Fin de tiempo extra», antes de su entrada', true, bloqueIds[k]);
+        pieza(a, Math.min(b, desdeH), bloqueIds[k].length === 1 ? `Marcó «Inicio de tiempo extra» al llegar y no marcó el fin: cuenta hasta su hora de entrada (${dia.entrada})` : 'Botones «Inicio / Fin de tiempo extra», antes de su entrada', true, bloqueIds[k]);
         pieza(Math.max(a, hastaH), b, 'Botones «Inicio / Fin de tiempo extra», después de su salida', true, bloqueIds[k]);
         pieza(Math.max(a, desdeH), Math.min(b, hastaH), 'Botones de tiempo extra dentro de su horario: no cuenta (son horas normales)', false, bloqueIds[k]);
       }
+      if (porExtra) r.notas.push('Marcó «Inicio de tiempo extra» al llegar y no marcó «Entrada»: se tomó como su entrada');
       if (rg.modo === 'auto') {
-        if (rg.antes_cuenta && entrada !== null && entrada < desdeH - rg.antes_min) { partes.push([entrada, desdeH]); pieza(entrada, desdeH, `Llegó antes de su entrada (${dia.entrada}): cuenta desde que llegó porque fue más de ${rg.antes_min} min antes`, true, [eId]); r.notas.push(`Llegó ${horas(desdeH - entrada)} antes de su entrada (cuenta como tiempo extra)`); }
+        if (porExtra) { /* lo de antes de su entrada ya es el bloque del botón */ }
+        else if (rg.antes_cuenta && entrada !== null && entrada < desdeH - rg.antes_min) { partes.push([entrada, desdeH]); pieza(entrada, desdeH, `Llegó antes de su entrada (${dia.entrada}): cuenta desde que llegó porque fue más de ${rg.antes_min} min antes`, true, [eId]); r.notas.push(`Llegó ${horas(desdeH - entrada)} antes de su entrada (cuenta como tiempo extra)`); }
         else if (entrada !== null && entrada < desdeH) pieza(entrada, desdeH, rg.antes_cuenta ? `Llegó antes de su entrada (${dia.entrada}): no cuenta, solo cuenta si llega más de ${rg.antes_min} min antes` : `Llegó antes de su entrada (${dia.entrada}): no cuenta (regla: llegar antes no es tiempo extra)`, false, [eId]);
         if (salida !== null && salida > hastaH) {
           if (salida - hastaH >= Math.max(1, rg.despues_min)) { partes.push([hastaH, salida]); pieza(hastaH, salida, `Se quedó después de su salida (${dia.salida})${rg.despues_min ? `: cuenta todo porque pasó los ${rg.despues_min} min` : ''}`, true, [sId]); }
           else { pieza(hastaH, salida, `Se quedó después de su salida (${dia.salida}): no cuenta, el tiempo extra empieza a los ${rg.despues_min} min`, false, [sId]); r.notas.push(`Se quedó ${horas(salida - hastaH)} después de su salida (no cuenta: el tiempo extra empieza a los ${rg.despues_min} min)`); }
         }
       } else {
-        pieza(entrada, salida === null ? desdeH : Math.min(desdeH, salida), `Llegó antes de su entrada (${dia.entrada}): no cuenta (regla: solo cuenta lo marcado con los botones)`, false, [eId]);
+        if (!porExtra) pieza(entrada, salida === null ? desdeH : Math.min(desdeH, salida), `Llegó antes de su entrada (${dia.entrada}): no cuenta (regla: solo cuenta lo marcado con los botones)`, false, [eId]);
         pieza(entrada === null ? hastaH : Math.max(hastaH, entrada), salida, `Se quedó después de su salida (${dia.salida}): no cuenta (regla: solo cuenta lo marcado con los botones)`, false, [sId]);
       }
       r.extra_min = unidos(partes);
