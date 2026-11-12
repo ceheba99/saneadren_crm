@@ -2368,3 +2368,17 @@ tr.logs-aviso td{background:#fffaf0;}
 .nm-reglas{margin:14px 0;background:var(--blanco);border:1px solid var(--gris-200);border-radius:var(--radio);padding:10px 14px;}
 .nm-reglas > summary{cursor:pointer;font-weight:600;padding:4px 0;}
 .nm-reglas-lista{margin:8px 0;padding-left:18px;display:grid;gap:4px;}
+
+/* Conciliación bancaria (módulo contable F4, 2026-11-11) */
+.cc-cab{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin:10px 0;}
+.cc-cab label{display:inline-flex;gap:6px;align-items:center;}
+.cc-subir{cursor:pointer;}
+.cc-nueva{margin:6px 0 12px;}
+.cc-nueva > summary{display:inline-flex;list-style:none;cursor:pointer;}
+.cc-nueva > summary::-webkit-details-marker{display:none;}
+.cc-tabla{width:100%;border-collapse:collapse;font-size:.88rem;}
+.cc-tabla th,.cc-tabla td{padding:7px 8px;border-bottom:1px solid var(--gris-200);text-align:left;vertical-align:top;}
+.cc-tabla th{background:var(--gris-100);font-size:.78rem;color:var(--texto-sec);white-space:nowrap;}
+.cc-tabla td{overflow-wrap:anywhere;}
+.cc-acciones{display:flex;flex-wrap:wrap;gap:6px;align-items:center;}
+.cc-cand{list-style:none;margin:8px 0 0;padding:0;display:grid;gap:6px;font-size:.85rem;}

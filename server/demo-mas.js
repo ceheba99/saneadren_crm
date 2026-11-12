@@ -261,4 +261,19 @@ module.exports = async function masEjemplos(x) {
     const actual = await pedir('POST', '/nomina/preparar', A, { desde: dia(-7), sucursal_id: qroId });
     for (const l of actual.lineas.slice(0, 4)) if (l.sueldo_imss > 0) await pedir('PUT', '/nomina/lineas/' + l.id, A, { neto_imss: Math.round(l.sueldo_imss * 0.88 * 100) / 100 });
   }
+
+  // ===== Conciliación bancaria (módulo contable F4, 2026-11-11): cuenta Santander con su estado de cuenta del último mes =====
+  {
+    const cta = await pedir('POST', '/conciliacion/cuentas', A, { nombre: 'Santander empresa', banco: 'Santander', terminacion: '4821', sucursal_id: qroId });
+    const desde = dia(-35), hoyD = dia(0), masUno = f => (f >= hoyD ? f : dia(Math.min(0, Math.round((Date.parse(f + 'T12:00:00Z') - Date.parse(hoyD + 'T12:00:00Z')) / 864e5) + 1)));
+    const dmy = f => f.split('-').reverse().join('/'), filas = [];
+    for (const g of db.prepare("SELECT g.fecha, g.monto_cent, p.nombre FROM main.pagos_proveedor g JOIN main.cuentas_por_pagar x ON x.id = g.cxp_id JOIN main.proveedores p ON p.id = x.proveedor_id WHERE g.cancelado = 0 AND g.cuenta_origen = 'Santander empresa' AND g.fecha >= ? AND x.sucursal_id = ?").all(desde, qroId))
+      filas.push({ fecha: dmy(masUno(g.fecha)), concepto: 'SPEI ENVIADO ' + g.nombre.toUpperCase().slice(0, 30), referencia: '', cargo: (g.monto_cent / 100).toFixed(2), abono: '' });
+    const cobros = db.prepare("SELECT k.fecha, k.monto_cent FROM main.cobros k JOIN main.leads l ON l.id = k.lead_id WHERE k.cancelado = 0 AND k.confirmado = 1 AND k.metodo = 'transferencia' AND k.fecha >= ? AND l.sucursal_id = ? ORDER BY k.fecha").all(desde, qroId);
+    cobros.slice(0, Math.max(0, cobros.length - 2)).forEach((k, i) => filas.push({ fecha: dmy(masUno(k.fecha)), concepto: 'SPEI RECIBIDO CLIENTE', referencia: String(70000 + i), cargo: '', abono: (k.monto_cent / 100).toFixed(2) }));
+    for (const k of [-30, -20, -10]) filas.push({ fecha: dmy(dia(k)), concepto: 'COMISION POR SPEI E IVA', referencia: '', cargo: '17.40', abono: '' });
+    filas.push({ fecha: dmy(dia(-15)), concepto: 'TRASPASO A CUENTA BANORTE NOMINA', referencia: 'TR-1', cargo: '50000.00', abono: '' });
+    filas.push({ fecha: dmy(dia(-8)), concepto: 'DEPOSITO EN EFECTIVO SUCURSAL', referencia: '', cargo: '', abono: '3480.00' });
+    if (filas.length) await pedir('POST', '/conciliacion/cargar', A, { cuenta_id: cta.id, filas, archivo: 'estado_santander_ejemplo.xlsx', columnas: { fecha: 0, concepto: 1, referencia: 2, cargo: 3, abono: 4, importe: -1, saldo: -1, desde: 1 } });
+  }
 };

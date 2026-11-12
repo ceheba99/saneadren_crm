@@ -138,6 +138,17 @@ function revisar(db, { dirArchivos } = {}) {
     chequeo('Nómina', 'Nómina cerrada sin pagar desde hace más de 7 días', 'aviso', () => nom.filter(n => n.estado === 'cerrada' && n.hasta < db.prepare("SELECT date(?, '-7 days') d").get(hoy).d).map(n => ({ ref: refN(n), detalle: 'regístrale el pago' })));
   }
 
+  // ---------- Conciliación bancaria (módulo contable F4, 2026-11-11) ----------
+  if (existe(db, 'movimientos_banco')) {
+    const movs = db.prepare('SELECT b.*, c.nombre AS cuenta FROM movimientos_banco b JOIN cuentas_banco c ON c.id = b.cuenta_id WHERE b.conciliado_id IS NOT NULL').all();
+    const vivo = (t, id) => t === 'cobro' ? db.prepare('SELECT monto_cent m FROM cobros WHERE id = ? AND cancelado = 0').get(id)?.m
+      : t === 'pago' ? db.prepare('SELECT monto_cent m FROM pagos_proveedor WHERE id = ? AND cancelado = 0').get(id)?.m
+      : t === 'anticipo' ? (existe(db, 'anticipos') ? db.prepare("SELECT monto_cent m FROM anticipos WHERE id = ? AND estado <> 'cancelado'").get(id)?.m : null)
+      : t === 'reintegro' ? (existe(db, 'anticipos') ? db.prepare("SELECT reintegro_cent m FROM anticipos WHERE id = ? AND estado = 'cerrado'").get(id)?.m : null) : null;
+    chequeo('Conciliación', 'Movimiento del banco conciliado con algo del CRM que ya se canceló o cambió de monto', 'error', () => movs.filter(b => vivo(b.conciliado_tipo, b.conciliado_id) !== (b.cargo_cent || b.abono_cent))
+      .map(b => ({ ref: `${b.cuenta} · ${dma(b.fecha)}`, detalle: `${pesos(b.cargo_cent || b.abono_cent)} con ${b.conciliado_tipo} #${b.conciliado_id}: suéltalo y vuelve a emparejar` })));
+  }
+
   // ---------- Facturación electrónica (F4, 2026-10-28) ----------
   if (existe(db, 'facturas')) {
     const fac = db.prepare("SELECT * FROM main.facturas WHERE estatus <> 'cancelada'").all();
