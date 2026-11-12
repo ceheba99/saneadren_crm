@@ -294,3 +294,33 @@ test('página: el botón «Leer mi credencial» aparece aunque el lector de QR c
   assert.deepEqual((await hacer([[]], { esCodigo: true })).esperas, [2000, 5000, 15000, 60000], 'sin lector: 4 reintentos y ya');
   assert.match(HTML, /despierta\(\); tic\(\); buscarLectorQR\(\);/, 'y al desbloquear la tableta');
 });
+// 2026-11-12 (Dirección: «revisa a detalle todo el checador y blinda todo lo que se pueda»).
+test('blindaje: si la red falla justo al checar, se reintenta y la checada de quien puso su PIN se guarda aquí (no se pierde)', () => {
+  const checar = HTML.slice(HTML.indexOf('  async function checar(datos, tipo) {'), HTML.indexOf('  // servicios: si la persona tiene órdenes asignadas'));
+  assert.match(checar, /for \(let i = 0; i < 2 && !r; i\+\+\) \{ try \{ r = await api\('checar', cuerpo\); \}/, 'dos intentos con el mismo permiso');
+  assert.match(checar, /if \(!r \|\| r\.status >= 500\) \{\s+if \(datos\.respaldo\) \{[^}]*\} return guardarSinConexion\(\{ \.\.\.datos\.respaldo, tipo, foto: imagen \}\);/, 'sin red o con el servidor fallando: se guarda en el kiosco');
+  assert.match(checar, /r\.status === 401 && r\.j\.codigo !== 'KIOSCO_NO_REGISTRADO' && datos\.respaldo/, 'permiso caducado (el sistema se actualizó): se pide otro solo');
+  assert.match(HTML, /const datos = \{ \.\.\.r\.j, respaldo: \{ codigo, pin \} \};/);
+});
+test('blindaje: una checada guardada que el servidor no acepta no detiene a las demás de la cola', () => {
+  const subir = HTML.slice(HTML.indexOf('  async function subirPendientes() {'), HTML.indexOf('  // ---------- Arranque ----------'));
+  assert.match(subir, /if \(r\.status === 429\) break;/); assert.match(subir, /x\.intentos = \(x\.intentos \|\| 0\) \+ 1; await cola\('readwrite', s => s\.put\(x\)\);\s+if \(\+\+fallas >= 5\) break;/);
+  assert.match(subir, /\.sort\(\(a, b\) => \(a\.intentos \|\| 0\) - \(b\.intentos \|\| 0\) \|\| a\.t0 - b\.t0\)/, 'primero las que menos intentos llevan');
+  assert.doesNotMatch(subir, /break; \/\/ 429 o error del servidor/);
+});
+test('blindaje: solo el servidor del checador puede desregistrar la tableta o desligar el celular', () => {
+  assert.match(HTML, /if \(r\.status === 401 && r\.j\.codigo === 'KIOSCO_NO_REGISTRADO'\) \{ noRegistrado\(\); return false; \}/);
+  const CEL = fs.readFileSync(path.join(__dirname, '../public/checar.html'), 'utf8');
+  assert.equal((CEL.match(/localStorage\.removeItem\(LLAVE\)/g) || []).length, 2);
+  assert.equal((CEL.match(/r\.status === 401 && r\.j\.codigo === 'CELULAR_NO_LIGADO'\) \{ try \{ localStorage\.removeItem\(LLAVE\)/g) || []).length, 2, 'las dos veces, solo con el aviso del servidor');
+  assert.match(CEL, /new AbortController\(\), t = setTimeout\(\(\) => corte\.abort\(\), 20000\)/, 'el celular ya no se queda en «Registrando…» para siempre');
+  assert.match(CEL, /for \(let i = 0; i < 3 && !r; i\+\+\) \{ try \{ r = await api\('checar', cuerpo\); \}/, 'con mala señal reintenta con la misma foto');
+});
+test('blindaje: la pantalla encendida se vuelve a pedir sola, lo guardado se protege y la tableta reporta batería y cámara', () => {
+  assert.match(HTML, /candado\?\.addEventListener\('release', \(\) => \{ candado = null; setTimeout\(despierta, 1000\); \}\)/);
+  assert.match(HTML, /despierta\(\); \/\/ el sistema puede soltar «pantalla encendida»/);
+  assert.match(HTML, /navigator\.storage\?\.persist\?\.\(\)/);
+  assert.match(HTML, /const r = await api\('estado' \+ estadoTableta\(\)\);/);
+  assert.match(HTML, /if \(camaraFallo && estado\.esCodigo\) iniciarCamara\(\)/, 'la cámara se prueba sola otra vez');
+});
+

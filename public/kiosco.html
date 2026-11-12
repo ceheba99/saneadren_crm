@@ -330,6 +330,8 @@
   function reiniciarEspera(ms = ESPERA_MS) { clearTimeout(temporizador); temporizador = setTimeout(inicio, ms); }
 
   // ---------- Batería del dispositivo (solo lectura local, independiente de las checadas) ----------
+  // tabletaBateria: la misma lectura viaja con la señal al servidor para que avise si se está quedando sin pila (2026-11-12).
+  let tabletaBateria = null;
   (() => {
     const indicador = $('bateria'), texto = $('bateria-texto'), nivel = $('bateria-nivel'), aviso = $('bateria-aviso');
     let bateria = null;
@@ -357,7 +359,7 @@
     try {
       Promise.resolve(navigator.getBattery()).then(b => {
         if (!b || typeof b.addEventListener !== 'function') { noDisponible(); return; }
-        bateria = b;
+        bateria = tabletaBateria = b;
         bateria.addEventListener('levelchange', actualizar);
         bateria.addEventListener('chargingchange', actualizar);
         document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') actualizar(); });
@@ -439,7 +441,7 @@
   // Toda petición tiene límite de tiempo (2026-11-11): al volver del bloqueo o con ahorro de energía la red puede no
   // contestar nunca, y sin límite el kiosco se quedaba esperando (pantalla vacía o «Registrando…» para siempre). Si se
   // agota, cuenta como «sin conexión»: cada paso ya sabe qué hacer en ese caso (guardar la checada aquí, avisar…).
-  const LIMITES = { checar: 20000, 'sin-conexion': 25000, 'rostro-registrar': 20000 };
+  const LIMITES = { checar: 12000, 'sin-conexion': 25000, 'rostro-registrar': 20000 };
   async function api(ruta, cuerpo) {
     const corte = new AbortController(), t = setTimeout(() => corte.abort(), LIMITES[ruta.split('?')[0]] || 12000);
     try {
@@ -452,10 +454,18 @@
       return { status: r.status, ok: r.ok, j };
     } finally { clearTimeout(t); }
   }
+  // Con cada señal la tableta dice cómo está: batería, si tiene cargador y si su cámara sirve (server/kiosco-vigia.js).
+  function estadoTableta() {
+    const p = ['cam=' + (camaraFallo ? 0 : 1)], b = tabletaBateria;
+    if (b && typeof b.level === 'number' && b.level >= 0 && b.level <= 1) p.push('b=' + Math.round(b.level * 100), 'c=' + (b.charging === true ? 1 : 0));
+    return '?' + p.join('&');
+  }
   async function conectar() {
     try {
-      const r = await api('estado');
-      if (r.status === 401) { noRegistrado(); return false; }
+      const r = await api('estado' + estadoTableta());
+      // Solo el servidor del checador puede decir «este kiosco no está registrado» (2026-11-12): cualquier otro 401 es un
+      // problema de la red y cuenta como sin conexión (antes dejaba la tableta en «no es un kiosco» hasta reiniciarla).
+      if (r.status === 401 && r.j.codigo === 'KIOSCO_NO_REGISTRADO') { noRegistrado(); return false; }
       if (!r.ok) throw new Error('servidor');
       const hora = Date.parse(r.j.utc);
       if (!Number.isFinite(hora)) throw new Error('servidor'); // sin hora válida no es el servidor del checador
@@ -1009,8 +1019,10 @@
     if (sinConexion) { sinConexion = false; avisos(); }
     if (r.j.cambiar_pin) return nuevoPin(r.j);
     await camaraA(); // que la vista de la cámara ya esté prendida al elegir
-    if (rostro) return elegirTipo({ ...r.j, rostro }); // ya se intentó con la cara y no coincidió: por revisar
-    continuar(r.j);
+    // respaldo: si la red se cae justo al checar, con esto la checada se guarda aquí en vez de perderse (ver checar()).
+    const datos = { ...r.j, respaldo: { codigo, pin } };
+    if (rostro) return elegirTipo({ ...datos, rostro }); // ya se intentó con la cara y no coincidió: por revisar
+    continuar(datos);
   }
   // Con biométrico pero sin haber pasado por la cara (p. ej. no se pudo preguntar), se comprueba antes de elegir.
   const continuar = datos => (datos.biometria ? verificarCara(datos) : elegirTipo(datos));
@@ -1134,9 +1146,21 @@
     const imagen = foto();
     pintar(el('p', { className: 'ayuda', textContent: 'Registrando…' }));
     if (datos.sinConexion) return guardarSinConexion({ ...datos.sinConexion, tipo, foto: imagen });
-    let r;
-    try { r = await api('checar', { ticket: datos.ticket, tipo, foto: imagen, ...(datos.rostro ? { rostro: datos.rostro } : {}) }); }
-    catch { return error('Se perdió la conexión mientras checabas. Vuelve a intentarlo: se guardará en este kiosco.'); }
+    // 2026-11-12 (blindaje): si la red falla justo al checar, antes había que empezar de nuevo y quien ya se había ido
+    // se quedaba sin checada. Ahora se intenta otra vez (el servidor reconoce el mismo permiso: no duplica) y, si sigue
+    // sin red o el servidor falla, la checada de quien entró con su PIN se guarda aquí como las de «sin conexión».
+    const cuerpo = { ticket: datos.ticket, tipo, foto: imagen, ...(datos.rostro ? { rostro: datos.rostro } : {}) };
+    let r = null;
+    for (let i = 0; i < 2 && !r; i++) { try { r = await api('checar', cuerpo); } catch { r = null; if (!i) await new Promise(ok => setTimeout(ok, 1500)); } }
+    if (!r || r.status >= 500) {
+      if (datos.respaldo) { if (!r) { sinConexion = true; avisos(); } return guardarSinConexion({ ...datos.respaldo, tipo, foto: imagen }); }
+      return error(r ? r.j.error || 'No se pudo registrar' : 'Se perdió la conexión mientras checabas. Vuelve a intentarlo y escribe tu PIN: se guardará en este kiosco.');
+    }
+    // El permiso para checar ya no servía (p. ej. el sistema se actualizó en ese momento): con el PIN que la persona
+    // ya escribió se pide otro y se checa, sin que tenga que empezar de nuevo.
+    if (r.status === 401 && r.j.codigo !== 'KIOSCO_NO_REGISTRADO' && datos.respaldo) {
+      try { const n = await api('identificar', datos.respaldo); if (n.ok && n.j.ticket && !n.j.cambiar_pin) r = await api('checar', { ...cuerpo, ticket: n.j.ticket }); } catch { /* se queda con la respuesta anterior */ }
+    }
     if (!r.ok) return error(r.j.error || 'No se pudo registrar');
     listo('ok', `${r.j.tipo} · ${r.j.hora}`, r.j.repetida ? 'Ya estaba registrada hace un momento.' : r.j.por_revisar ? `Gracias, ${r.j.nombre}. No se reconoció tu cara: tu gerente la revisará.` : r.j.sin_foto ? `Gracias, ${r.j.nombre}. Sin foto: tu gerente la revisará.` : `Gracias, ${r.j.nombre}.`, r.j.servicios, r.j.avisos);
   }
@@ -1197,7 +1221,11 @@
   async function subirPendientes() {
     if (subiendo || !registro?.token) return; subiendo = true;
     try {
-      const items = await cola('readonly', s => s.getAll());
+      // 2026-11-12 (blindaje): una checada que el servidor no acepta por un error suyo ya no detiene a las que vienen
+      // detrás. Se cuenta el intento, se sigue con las demás (primero las que menos intentos llevan) y se vuelve a
+      // probar en la siguiente vuelta; tras 5 fallas seguidas se deja para después.
+      const items = (await cola('readonly', s => s.getAll())).sort((a, b) => (a.intentos || 0) - (b.intentos || 0) || a.t0 - b.t0);
+      let fallas = 0;
       for (const x of items) {
         const mismaSesion = x.sesion === SESION;
         const edad = Math.max(0, Math.round(mismaSesion ? performance.now() - x.p0 : Date.now() - x.t0));
@@ -1205,8 +1233,10 @@
         try { r = await api('sin-conexion', { uid: x.uid, codigo: x.codigo, pin: x.pin, tipo: x.tipo, foto: x.foto, edad_ms: edad, monotonica: mismaSesion, hora_dispositivo: new Date(x.t0).toISOString() }); }
         catch { sinConexion = true; avisos(); break; }
         if (r.status === 401 && r.j.codigo === 'KIOSCO_NO_REGISTRADO') break;
-        if (r.ok || r.j.descartar) { await cola('readwrite', s => s.delete(x.uid)); if (!r.ok) rechazadas++; continue; }
-        break; // 429 o error del servidor: se reintenta después
+        if (r.ok || r.j.descartar) { await cola('readwrite', s => s.delete(x.uid)); if (!r.ok) rechazadas++; fallas = 0; continue; }
+        if (r.status === 429) break; // el servidor pide esperar
+        x.intentos = (x.intentos || 0) + 1; await cola('readwrite', s => s.put(x));
+        if (++fallas >= 5) break;
       }
     } catch { /* sin IndexedDB */ }
     subiendo = false; contarPendientes();
@@ -1220,7 +1250,7 @@
   let candado = null;
   const despierta = async () => {
     if (candado || document.visibilityState !== 'visible') return;
-    try { candado = await navigator.wakeLock?.request('screen') || null; candado?.addEventListener('release', () => { candado = null; }); } catch { candado = null; }
+    try { candado = await navigator.wakeLock?.request('screen') || null; candado?.addEventListener('release', () => { candado = null; setTimeout(despierta, 1000); }); } catch { candado = null; }
   };
   // ---------- Volver a la vida (2026-11-11) ----------
   // Al bloquear y desbloquear la tableta, entrar o salir del ahorro de energía o volver de otra app, el navegador
@@ -1281,12 +1311,20 @@
     // Primero la pantalla (2026-11-11): el teclado sale de inmediato y el servidor se consulta por detrás. Antes se
     // esperaba al servidor sin límite y, si la red no contestaba, la pantalla se quedaba vacía.
     avisos(); inicio(); window.__kiosco.listo = true; despierta(); contarPendientes();
+    // Que el navegador no borre por su cuenta lo guardado aquí (el registro del kiosco y las checadas sin subir).
+    try { navigator.storage?.persist?.().catch(() => {}); } catch { /* no disponible */ }
     ultimaConexion = Date.now();
     if (!await conectar()) return;
     // Al abrir se pide la cámara una vez (para que el permiso quede dado) y se apaga hasta que alguien cheque.
     iniciarCamara().then(() => { if (estado.esCodigo) soltarCamara(); }); subirPendientes(); mandarDiagnostico();
     setTimeout(() => { cargarFaceApi().catch(() => {}); cargarAntispoof().catch(() => {}); }, 5000); // reconocimiento y prueba de vida, listos en segundo plano
-    setInterval(async () => { if (document.visibilityState === 'visible' && !deBaja && await conectar()) { subirPendientes(); mandarDiagnostico(); } }, 60000);
+    setInterval(async () => {
+      if (document.visibilityState !== 'visible' || deBaja) return;
+      despierta(); // el sistema puede soltar «pantalla encendida» (p. ej. con poca batería): se vuelve a pedir cada minuto
+      // La cámara falló y nadie está checando: se prueba sola otra vez (si ya sirve, el aviso se quita sin que nadie lo toque).
+      if (camaraFallo && estado.esCodigo) iniciarCamara().then(() => { if (estado.esCodigo) soltarCamara(); });
+      if (await conectar()) { subirPendientes(); mandarDiagnostico(); }
+    }, 60000);
   })();
 })();
 </script>

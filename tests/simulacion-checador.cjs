@@ -293,6 +293,24 @@ const archivosDe = d => fs.readdirSync(d, { withFileTypes: true }).flatMap(e => 
   for (let i = 0; i < 5; i++) await kio(KQ, 'POST', 'diagnostico', { eventos: Array.from({ length: 10 }, (_, k) => ({ m: 'prueba ' + i + '-' + k })) });
   revisa(((await pedir('GET', '/registro-sistema?q=Kiosco', A))[1].filas || []).length <= 31, 'Tope de 30 diagnósticos por kiosco por hora');
 
+  // Blindaje (2026-11-12): red inestable al checar. La tableta repite la checada con el mismo permiso si no le llegó la
+  // respuesta, y si sigue sin red la guarda «sin conexión»: en ningún caso debe quedar dos veces.
+  { const altaB = exigir(await pedir('POST', '/asistencia/personal/' + juan.id + '/pin', A), 'PIN nuevo de Juan'), PINB = altaB.codigo === '7306' ? '7305' : '7306';
+    const [, tB] = await kio(KQ, 'POST', 'identificar', { codigo: altaB.codigo, pin: altaB.pin });
+    const [sI, iB] = await kio(KQ, 'POST', 'cambiar-pin', { ticket: tB?.ticket, nuevo: PINB });
+    const [s1, c1] = await kio(KQ, 'POST', 'checar', { ticket: iB?.ticket, tipo: 'extra_inicia', foto: FOTO });
+    const [s2, c2] = await kio(KQ, 'POST', 'checar', { ticket: iB?.ticket, tipo: 'extra_inicia', foto: FOTO });
+    revisa(sI === 200 && [200, 201].includes(s1) && s2 === 200 && c2.id === c1.id && c2.repetida === true && c2.hora === c1.hora, 'Repetir la misma checada con el mismo permiso (no llegó la respuesta) regresa la misma, sin duplicar', [sI, s1, s2, c1, c2]);
+    revisa((await kio(KQ, 'POST', 'checar', { ticket: iB?.ticket, tipo: 'extra_termina' }))[0] === 401 && (await kio(KM, 'POST', 'checar', { ticket: iB?.ticket, tipo: 'extra_inicia' }))[0] === 401, 'El permiso usado no sirve para otra checada ni en otro kiosco');
+    const [s3, c3] = await kio(KQ, 'POST', 'sin-conexion', { uid: crypto.randomBytes(15).toString('base64url'), codigo: altaB.codigo, pin: PINB, tipo: 'extra_inicia', foto: FOTO, edad_ms: 20000, monotonica: true });
+    revisa(s3 === 200 && c3.id === c1.id && c3.repetida === true, 'Si además la tableta la guardó «sin conexión», al subirla el servidor reconoce que ya la tenía', [s3, c3]);
+    const [s4, c4] = await kio(KQ, 'POST', 'sin-conexion', { uid: crypto.randomBytes(15).toString('base64url'), codigo: altaB.codigo, pin: PINB, tipo: 'extra_inicia', edad_ms: 30 * 60000, monotonica: true });
+    revisa(s4 === 201 && c4.id !== c1.id, 'Una checada sin conexión de otro momento (30 min antes) sí se guarda', [s4, c4]);
+    // La tableta manda su batería y su cámara con la señal: datos raros no rompen nada.
+    for (const q of ['?cam=1&b=15&c=0', '?cam=0', '?b=999&c=x&cam=tal%20vez', '?b=<script>'])
+      revisa((await kio(KQ, 'GET', 'estado' + q))[0] === 200, 'La señal del kiosco acepta su estado: ' + q);
+    revisa((await kio(null, 'GET', 'estado?b=15&c=0'))[0] === 401, 'Sin token, la señal no se acepta'); }
+
   console.log(`\n${n - malos.length}/${n} correctas`);
   srv.kill(); fs.rmSync(dir, { recursive: true, force: true });
   process.exit(malos.length ? 1 : 0);
