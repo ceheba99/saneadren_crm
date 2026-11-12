@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Saneadren · Cotizaciones y Servicios</title>
-<link rel="stylesheet" href="styles.css?v=cc1">
+<link rel="stylesheet" href="styles.css?v=dir1">
 <link rel="stylesheet" href="servicios-tabla.css">
 <link rel="stylesheet" href="flujo.css?v=cel1">
 <link rel="stylesheet" href="interfaz.css?v=visual19">
@@ -471,6 +471,8 @@
         <button type="button" class="btn btn-primario" id="pg-aplicar">Consultar</button>
         <button type="button" class="btn btn-outline" id="pg-exportar">📥 Exportar a Excel</button>
         <button type="button" class="btn btn-outline" id="pg-imprimir">🖨 Imprimir / PDF</button>
+        <button type="button" class="btn btn-outline" id="pg-ejecutivo" title="Una hoja: lo principal, metas, cumplimiento, contabilidad y lo que hay que atender">📄 Reporte ejecutivo</button>
+        <button type="button" class="btn btn-outline solo-general" id="pg-correo">✉️ Correo a Dirección</button>
       </div>
       <p class="ayuda" id="pg-estado" role="status"></p>
       <div id="pg-cuerpo"></div>
@@ -480,6 +482,7 @@
     <p class="ayuda">Contactos nuevos: fecha de registro. Vendido: servicios realizados, por la fecha en que se realizaron (igual que Panorama y el Generador); los contratados que aún no se concluyen aparecen aparte como «Por realizar». Cada contacto y sus servicios se atribuyen a “Cómo se enteró de nosotros”. Lo vendido no equivale a cobros ni utilidad. Los importes son sin IVA (la venta real); lo cobrado y los gastos sí incluyen IVA.</p>
     <p id="res-estado" role="status"></p><div class="res-grid" id="res-kpis" data-ayuda-zona></div>
     <div class="solo-cobranza" id="res-dinero-periodo"></div>
+    <div id="res-indicadores"></div>
     <div class="res-section"><h3>¿Qué canales traen contactos y generan ventas?</h3><p class="ayuda">Conversión: contactos nuevos del periodo que ya tienen un servicio realizado al día de hoy / contactos nuevos del periodo. Las ventas pueden provenir de contactos registrados antes.</p><div class="tabla-scroll"><table class="tabla-resumen"><thead><tr><th>Canal de origen</th><th>Leads nuevos (contactos)</th><th>Convertidos a cliente</th><th>Conversión</th><th>Clientes con servicio</th><th>Servicios realizados</th><th>Vendido (sin IVA)</th><th>Promedio por servicio</th><th>Propuestas abiertas</th><th>Importe abierto (sin IVA)</th></tr></thead><tbody id="res-canales"></tbody></table></div></div>
     <div class="res-two-col"><div class="res-section"><h3>Vendido por canal (sin IVA)</h3><div id="res-dinero-canal" class="bar-chart"></div></div><div class="res-section"><h3>Contactos nuevos por canal</h3><div id="res-contactos-canal" class="bar-chart"></div></div></div>
     <div id="res-kpis-extra" class="res-grid"></div>
@@ -1921,7 +1924,8 @@
 <script src="cuentas.js?v=rev1"></script>
 <script src="finanzas.js?v=an1"></script>
 <script src="calendario.js?v=esp1"></script>
-<script src="tablero.js?v=enc1"></script>
+<script src="tablero.js?v=dir1"></script>
+<script src="reportes-comercial.js?v=dir1"></script>
 <script src="bitacora.js?v=hc1"></script>
 <script src="logs.js?v=lg3"></script>
 <script src="compras.js?v=ed1"></script>
@@ -1930,7 +1934,7 @@
 <script src="sucursales.js?v=perm4"></script>
 <script src="facturacion.js?v=fx11"></script>
 <script src="encuestas.js?v=enc1"></script>
-<script src="app.js?v=nm1"></script>
+<script src="app.js?v=dir1"></script>
 <script src="listas-servicio.js?v=ls1"></script>
 <script src="personal.js?v=nm1"></script>
 <script src="asistencia.js?v=nomina1"></script>

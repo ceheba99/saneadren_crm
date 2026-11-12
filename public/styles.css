@@ -2382,3 +2382,18 @@ tr.logs-aviso td{background:#fffaf0;}
 .cc-tabla td{overflow-wrap:anywhere;}
 .cc-acciones{display:flex;flex-wrap:wrap;gap:6px;align-items:center;}
 .cc-cand{list-style:none;margin:8px 0 0;padding:0;display:grid;gap:6px;font-size:.85rem;}
+
+/* Reportes de Dirección (2026-11-11): metas con semáforo y reporte ejecutivo de una hoja */
+.pg-metas{display:grid;gap:8px;grid-template-columns:repeat(auto-fill,minmax(min(100%,260px),1fr));}
+.pg-meta{display:flex;gap:10px;align-items:flex-start;border:1px solid var(--gris-200);border-left:5px solid var(--gris-300);border-radius:8px;padding:8px 10px;background:var(--blanco);}
+.pg-meta.pg-sem-verde{border-left-color:var(--verde);}
+.pg-meta.pg-sem-ambar{border-left-color:var(--amarillo);}
+.pg-meta.pg-sem-rojo{border-left-color:var(--rojo);}
+.pg-meta-ic{font-size:1.1rem;line-height:1.3;}
+.pg-meta-txt{display:grid;gap:2px;min-width:0;}
+.pg-meta-txt span{font-size:.85rem;color:var(--texto-sec);overflow-wrap:anywhere;}
+.pg-metas-editor{margin-top:12px;border-top:1px solid var(--gris-200);padding-top:12px;display:grid;gap:10px;}
+@media print{
+  body.pg-imprimir-ejecutivo #pg-cuerpo > :not(.pg-tarjetas):not(.pg-periodo):not(.pg-ej){display:none !important;}
+  body.pg-imprimir-ejecutivo .pg-metas-editor, body.pg-imprimir-ejecutivo [data-pg-metas]{display:none !important;}
+}

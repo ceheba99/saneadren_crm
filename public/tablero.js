@@ -86,6 +86,43 @@ const Panorama = (() => {
         + (c.mejorar ? '<br>💬 ' + esc(c.mejorar) : '') + (c.reconocimiento ? '<br>👏 ' + esc(c.reconocimiento) : '') + '</li>').join('') + '</ul>' : '')
       + '</div>';
   }
+  // ---------- Reportes de Dirección (2026-11-11): metas con semáforo, cumplimiento, contabilidad y ranking por vendedor ----------
+  const SEM = { verde: ['pg-sem-verde', '🟢', 'Cumple la meta'], ambar: ['pg-sem-ambar', '🟡', 'Cerca de la meta (90 % o más)'], rojo: ['pg-sem-rojo', '🔴', 'Debajo de la meta'] };
+  const valorInd = (i, v) => (v === null || v === undefined ? '—' : i.tipo === 'dinero' ? dinero(v) : i.tipo === 'pct' ? v + ' %' : String(v));
+  let EDITANDO_METAS = false;
+  function cajasDireccion(d) {
+    if (!d.cumplimiento) return '';
+    const c = d.cumplimiento, m = d.metas, ct = d.contabilidad || {}, pctTxt = v => (v === null || v === undefined ? '—' : v + ' %');
+    const conMeta = m.indicadores.filter(i => i.meta !== null);
+    const metas = '<div class="pg-caja pg-ej"><div class="pg-caja-cab"><h3>🎯 Metas del periodo</h3>' + (m.puede_editar ? '<button type="button" class="enlace" data-pg-metas="editar">' + (EDITANDO_METAS ? 'Cerrar' : 'Poner o cambiar metas') + ' ›</button>' : '') + '</div>'
+      + (conMeta.length ? '<div class="pg-metas">' + conMeta.map(i => { const [cl, ic, tt] = SEM[i.semaforo] || ['', '⚪', 'Sin dato']; return '<div class="pg-meta ' + cl + '" title="' + esc(tt) + '"><span class="pg-meta-ic" aria-hidden="true">' + ic + '</span><span class="pg-meta-txt"><b>' + esc(i.nombre) + '</b><span>' + esc(valorInd(i, i.real)) + ' de ' + esc(valorInd(i, i.meta)) + ' · ' + esc(tt) + '</span></span></div>'; }).join('') + '</div>'
+        + (m.proporcional ? '<p class="ayuda">Las metas de dinero van en proporción a los días del periodo (por ejemplo, a medio mes cuenta la mitad de la meta del mes).</p>' : '')
+        : '<p class="ayuda">' + (m.puede_editar ? 'Todavía no hay metas para este periodo. Ponlas y el semáforo dirá si se cumplen.' : 'Dirección todavía no pone metas para este periodo.') + '</p>')
+      + (EDITANDO_METAS && m.puede_editar ? editorMetas(d) : '') + '</div>';
+    const cumpl = '<div class="pg-caja pg-ej"><h3>✅ Cumplimiento del periodo</h3><div class="pg-tarjetas pg-tarjetas-chicas" data-ayuda-zona>'
+      + tarjeta('Cobrado a tiempo', pctTxt(c.cobranza.pct), c.cobranza.liquidadas ? c.cobranza.a_tiempo + ' de ' + c.cobranza.liquidadas + ' órdenes liquidadas · ' + (c.cobranza.dias_promedio ?? '—') + ' días promedio (crédito ' + (c.cobranza.credito_promedio ?? 0) + ')' : 'Ninguna orden liquidada', '', c.cobranza.pct != null && c.cobranza.pct < 70 ? 'aviso' : '', 'pg_cobro_tiempo')
+      + tarjeta('Pagado a tiempo', pctTxt(c.pagos.pct), c.pagos.liquidadas ? c.pagos.a_tiempo + ' de ' + c.pagos.liquidadas + ' facturas pagadas · ' + (c.pagos.dias_promedio ?? '—') + ' días promedio' : 'Ninguna factura liquidada', '', c.pagos.pct != null && c.pagos.pct < 70 ? 'aviso' : '', 'pg_pago_tiempo')
+      + tarjeta('Servicios en su fecha', pctTxt(c.operacion.pct), c.operacion.en_fecha + ' de ' + c.operacion.realizados + ' realizados · ' + c.operacion.no_realizados + ' no realizados', '', c.operacion.pct != null && c.operacion.pct < 80 ? 'aviso' : '', 'pg_en_fecha')
+      + tarjeta('Clientes insatisfechos', c.satisfaccion ? pctTxt(c.satisfaccion.insatisfechos_pct) : '—', c.satisfaccion ? (c.satisfaccion.insatisfechos || 0) + ' de ' + (c.satisfaccion.encuestas || 0) + ' encuestas' : 'Sin encuestas', '', c.satisfaccion?.insatisfechos ? 'aviso' : '', 'pg_insatisfechos')
+      + tarjeta('Encuestas contestadas', pctTxt(c.encuestas.pct), c.encuestas.contestadas + ' de ' + c.encuestas.mandadas + ' mandadas', '', '', 'pg_respuesta')
+      + '</div>' + (c.operacion.motivos_no_realizado.length ? '<p class="ayuda">No realizados: ' + c.operacion.motivos_no_realizado.map(x => esc(x.motivo) + ' (' + Number(x.n) + ')').join(' · ') + '</p>' : '') + '</div>';
+    const conta = Object.keys(ct).length ? '<div class="pg-caja pg-ej"><div class="pg-caja-cab"><h3>🧮 Contabilidad</h3><button type="button" class="enlace" data-pg-ir="contabilidad">Ver contabilidad ›</button></div><div class="pg-tarjetas pg-tarjetas-chicas">'
+      + (ct.anticipos_abiertos != null ? tarjeta('Anticipos sin comprobar', dinero(ct.anticipos_por_comprobar), ct.anticipos_abiertos + ' abiertos (hoy)', '', ct.anticipos_por_comprobar > 0 ? 'aviso' : '', '') : '')
+      + (ct.nomina_pagada != null ? tarjeta('Nómina pagada', dinero(ct.nomina_pagada), ct.nominas_pagadas + ' semanas · tiempo extra ' + dinero(ct.tiempo_extra) + (ct.tiempo_extra_pct != null ? ' (' + ct.tiempo_extra_pct + ' %)' : ''), '', '', '') : '')
+      + (ct.banco_movimientos != null ? tarjeta('Banco conciliado', pctTxt(ct.banco_conciliado_pct), ct.banco_movimientos + ' movimientos del banco en el periodo', '', ct.banco_conciliado_pct != null && ct.banco_conciliado_pct < 90 ? 'aviso' : '', '') : '')
+      + '</div></div>' : '';
+    const vend = (d.vendedores || []).length ? '<div class="pg-caja"><h3>🏆 Por vendedor</h3><div class="tabla-scroll"><table class="pg-tabla"><thead><tr><th>Vendedor</th><th class="st-num">Venta</th><th class="st-num">Servicios</th><th class="st-num">Cierre</th><th class="st-num">Cobrado a tiempo</th><th class="st-num">Satisfacción</th></tr></thead><tbody>'
+      + d.vendedores.map(v => '<tr><td>' + esc(v.nombre) + '</td><td class="st-num">' + dinero(v.venta) + '</td><td class="st-num">' + Number(v.servicios) + '</td><td class="st-num">' + esc(pctTxt(v.cierre_pct)) + '<br><small class="celda-sub">' + Number(v.cotizaciones) + ' cotizaciones</small></td><td class="st-num">' + esc(pctTxt(v.cobro_a_tiempo_pct)) + '</td><td class="st-num">' + (v.satisfaccion == null ? '—' : esc(String(v.satisfaccion)) + ' de 5') + (v.encuestas ? '<br><small class="celda-sub">' + Number(v.encuestas) + ' encuestas' + (v.nps != null ? ' · NPS ' + Number(v.nps) : '') + '</small>' : '') + '</td></tr>').join('')
+      + '</tbody></table></div></div>' : '';
+    return metas + cumpl + conta + vend;
+  }
+  function editorMetas(d) {
+    const mes = d.hasta.slice(0, 7);
+    return '<div class="pg-metas-editor"><p class="ayuda">Metas de <b>' + esc(mes) + '</b> para toda la empresa. Deja vacío lo que no quieras medir. Los porcentajes van de 0 a 100; la satisfacción de 1 a 5.</p><div class="form-grid-2">'
+      + d.metas.indicadores.map(i => '<div class="campo"><label for="pg-meta-' + esc(i.clave) + '">' + esc(i.nombre) + (i.tipo === 'dinero' ? ' ($)' : i.tipo === 'pct' ? ' (%)' : '') + '</label><input id="pg-meta-' + esc(i.clave) + '" data-pg-meta="' + esc(i.clave) + '" inputmode="decimal" value="' + (d.metas.meses.length === 1 && d.metas.crudos?.[i.clave] != null ? esc(String(d.metas.crudos[i.clave])) : '') + '"></div>').join('')
+      + '</div><button type="button" class="btn btn-primario" data-pg-metas="guardar" data-mes="' + esc(mes) + '">Guardar metas de ' + esc(mes) + '</button></div>';
+  }
+
   function pintar() {
     const d = DATOS, a = d.actual, p = d.previo, f = d.foto, sat = d.satisfaccion || { encuestas: 0, por_sucursal: [], aspectos: [], comentarios: [] };
     const periodoTxt = fechaTxt(d.desde) + ' – ' + fechaTxt(d.hasta), anteriorTxt = fechaTxt(d.anterior.desde) + ' – ' + fechaTxt(d.anterior.hasta);
@@ -104,12 +141,14 @@ const Panorama = (() => {
       + tarjeta('Flujo de efectivo', dinero(a.flujo), 'Cobrado menos pagado', delta(a.flujo, p.flujo), a.flujo < 0 ? 'negativo' : '', 'pg_flujo')
       + tarjeta('Gastos del periodo (sin IVA)', dinero(a.gasto), 'Con IVA: ' + dinero(a.gasto_con_iva) + (a.iva_estimado_n ? ' · IVA estimado en ' + Number(a.iva_estimado_n) + (a.iva_estimado_n === 1 ? ' factura' : ' facturas') : ''), delta(a.gasto, p.gasto, false), '', 'pg_gastos')
       + '</div>'
+      // 1a. Reportes de Dirección: metas, cumplimiento, contabilidad y ranking por vendedor
+      + cajasDireccion(d)
       // 1b. Comparativo por sucursal (solo si se ven varias)
       + ((d.por_sucursal || []).length > 1 ? '<div class="pg-caja"><div class="pg-caja-cab"><h3>Por sucursal</h3><span class="ayuda">Cada renglón solo con lo de esa sucursal; la suma es el total de arriba.</span></div><div class="tabla-scroll"><table class="pg-tabla pg-sucursales"><thead><tr><th>Sucursal</th><th class="st-num">Venta</th><th class="st-num">Gastos</th><th class="st-num">Utilidad</th><th class="st-num">Margen</th><th class="st-num">Cobrado</th><th class="st-num">Pagado</th><th class="st-num">Te deben</th><th class="st-num">Vencido</th><th class="st-num">Debes</th></tr></thead><tbody>'
         + d.por_sucursal.map(s => '<tr><td><b>' + esc(s.clave) + '</b> · ' + esc(s.nombre) + '<small class="celda-sub">' + s.servicios + (s.servicios === 1 ? ' servicio' : ' servicios') + '</small></td><td class="st-num">' + dinero(s.venta) + '</td><td class="st-num">' + dinero(s.gasto) + '</td><td class="st-num' + (s.utilidad < 0 ? ' rojo' : '') + '">' + dinero(s.utilidad) + '</td><td class="st-num">' + pct(s.margen_pct) + '</td><td class="st-num">' + dinero(s.cobrado) + '</td><td class="st-num">' + dinero(s.pagado) + '</td><td class="st-num">' + dinero(s.te_deben) + '</td><td class="st-num' + (s.vencido > 0 ? ' rojo' : '') + '">' + dinero(s.vencido) + '</td><td class="st-num">' + dinero(s.debes) + '</td></tr>').join('')
         + '</tbody></table></div></div>' : '')
       // 2. Alertas
-      + '<div class="pg-caja"><h3>Para atender</h3><ul class="pg-alertas">' + alertas + '</ul></div>'
+      + '<div class="pg-caja pg-ej"><h3>Para atender</h3><ul class="pg-alertas">' + alertas + '</ul></div>'
       // 3. Tendencia
       + '<div class="pg-caja"><div class="pg-caja-cab"><h3>Últimos 12 meses</h3><span class="ayuda">Pasa el ratón sobre un mes para ver sus cifras.</span></div>' + grafica(d.tendencia) + '</div>'
       // 4. Hoy: lo que te deben y lo que debes
@@ -156,6 +195,21 @@ const Panorama = (() => {
       + '<p class="ayuda pg-nota">Venta realizada: servicios marcados como realizados en el periodo, sin IVA (lo mismo que el Generador). Utilidad estimada: venta realizada menos facturas y gastos del periodo, los dos sin IVA. A cada factura de gasto se le quita su IVA (el capturado o, si no se capturó, el 16 % incluido, marcado como estimado); los gastos sin factura cuentan completos. No restan los comprobantes informativos ni lo que no es gasto (inversión, préstamos y traspasos). Flujo: dinero que entró (pagos de clientes, sin descuentos) menos el que salió (pagos a proveedores). "Te deben" y "Debes" son al día de hoy.</p>';
   }
 
+  async function guardarMetas(b) {
+    const metas = Object.fromEntries([...document.querySelectorAll('[data-pg-meta]')].map(i => [i.dataset.pgMeta, i.value.trim() === '' ? null : i.value.trim()]));
+    b.disabled = true;
+    try { const r = await api('/tablero/metas', { method: 'PUT', body: JSON.stringify({ mes: b.dataset.mes, metas }) }); const j = await r.json(); if (!r.ok) throw new Error(j.error || 'No se pudo guardar'); toast('Metas guardadas'); EDITANDO_METAS = false; cargar(); }
+    catch (err) { toast(err.message); } finally { b.disabled = false; }
+  }
+  // Correo del mes a Dirección: primero se ve cómo llegaría y a quién; después se manda.
+  async function correoDireccion() {
+    let v; try { const r = await api('/tablero/reporte-correo'); v = await r.json(); if (!r.ok) throw new Error(v.error); } catch (err) { toast(err.message); return; }
+    const msg = `Llega a: ${v.destinatarios.join(', ') || 'nadie (Dirección sin correo)'}\nAsunto: ${v.asunto}\n\n${v.mensaje}${v.correo_configurado ? '' : '\n\n⚠ El correo del sistema no está configurado: así llegaría, pero no puede salir todavía.'}\n\nCada día 1 se manda solo con el mes anterior.`;
+    if (!await solicitarDialogo({ titulo: 'Reporte del mes por correo', mensaje: msg, aceptar: v.correo_configurado ? 'Mandarlo ahora' : 'Entendido', soloAviso: !v.correo_configurado })) return;
+    if (!v.correo_configurado) return;
+    try { const r = await api('/tablero/enviar-reporte', { method: 'POST', body: JSON.stringify({ mes: v.mes }) }); const j = await r.json(); if (!r.ok) throw new Error(j.error); toast(`Reporte mandado a ${j.enviados} persona(s)`); } catch (err) { toast(err.message); }
+  }
+
   function exportar() {
     if (!DATOS) return;
     const d = DATOS, a = d.actual, p = d.previo;
@@ -165,6 +219,9 @@ const Panorama = (() => {
       ['Gastos del periodo (sin IVA)', a.gasto, p.gasto], ['Gastos del periodo (con IVA)', a.gasto_con_iva, p.gasto_con_iva], ['Utilidad estimada', a.utilidad, p.utilidad], ['Margen %', a.margen_pct, p.margen_pct],
       ['Costo de terceros en servicios', a.costo_directo, p.costo_directo], ['Dinero cobrado', a.cobrado, p.cobrado], ['Pagado a proveedores', a.pagado, p.pagado], ['Flujo de efectivo', a.flujo, p.flujo],
       ['Cotizaciones', a.cotizaciones, p.cotizaciones], ['Tasa de cierre %', a.cierre_pct, p.cierre_pct], ['Clientes atendidos', a.clientes_activos, p.clientes_activos], ['Clientes nuevos', a.clientes_nuevos, p.clientes_nuevos],
+      ...(d.cumplimiento ? [[], ['CUMPLIMIENTO', 'Periodo actual'], ['Cobrado a tiempo %', d.cumplimiento.cobranza.pct ?? ''], ['Pagado a tiempo %', d.cumplimiento.pagos.pct ?? ''], ['Servicios en su fecha %', d.cumplimiento.operacion.pct ?? ''],
+        ['Encuestas contestadas %', d.cumplimiento.encuestas.pct ?? ''], ...d.metas.indicadores.filter(i => i.meta != null).map(i => ['Meta · ' + i.nombre, i.real ?? '', i.meta, i.semaforo || ''])] : []),
+      ...((d.vendedores || []).length ? [[], ['Vendedor', 'Venta', 'Servicios', 'Cierre %', 'Cobrado a tiempo %', 'Satisfacción'], ...d.vendedores.map(v => [v.nombre, v.venta, v.servicios, v.cierre_pct ?? '', v.cobro_a_tiempo_pct ?? '', v.satisfaccion ?? ''])] : []),
       [], ['Mes', 'Venta (sin IVA)', 'Gastos (sin IVA)', 'Utilidad', 'Cobrado', 'Pagado'], ...d.tendencia.map(m => [m.mes, m.venta, m.gasto, m.utilidad, m.cobrado, m.pagado]),
       ...((d.por_sucursal || []).length > 1 ? [[], ['Sucursal', 'Venta', 'Gastos', 'Utilidad', 'Cobrado', 'Pagado', 'Te deben', 'Vencido', 'Debes'], ...d.por_sucursal.map(s => [s.clave + ' · ' + s.nombre, s.venta, s.gasto, s.utilidad, s.cobrado, s.pagado, s.te_deben, s.vencido, s.debes])] : [])];
     descargarCSV('panorama_' + d.desde + '_a_' + d.hasta + '.csv', filas[0].map((t, i) => ({ titulo: t, valor: f => f[i] ?? '' })), filas.slice(1));
@@ -178,6 +235,11 @@ const Panorama = (() => {
     if (e.target.closest('#pg-aplicar')) { cargar('personalizado'); return; }
     if (e.target.closest('#pg-exportar')) exportar();
     if (e.target.closest('#pg-imprimir')) window.print();
+    if (e.target.closest('#pg-ejecutivo')) { document.body.classList.add('pg-imprimir-ejecutivo'); window.print(); setTimeout(() => document.body.classList.remove('pg-imprimir-ejecutivo'), 500); }
+    if (e.target.closest('#pg-correo')) correoDireccion();
+    const bm = e.target.closest('[data-pg-metas]');
+    if (bm && bm.dataset.pgMetas === 'editar') { EDITANDO_METAS = !EDITANDO_METAS; pintar(); }
+    if (bm && bm.dataset.pgMetas === 'guardar') guardarMetas(bm);
   });
   return { cargar: () => cargar() };
 })();

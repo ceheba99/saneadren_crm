@@ -174,7 +174,13 @@ module.exports = function tablero(app, db, h, finanzas) {
     const desde = req.query.desde || hoy.slice(0, 8) + '01', hasta = req.query.hasta || hoy;
     if (!fechaOk(desde) || !fechaOk(hasta) || desde > hasta) return res.status(400).json({ error: 'Revisa el rango de fechas' });
     if (diasEntre(desde, hasta) > 3660) return res.status(400).json({ error: 'El rango máximo es de 10 años' });
-    const [antDesde, antHasta] = periodoAnterior(desde, hasta, String(req.query.tipo || ''));
+    res.json(construir(req, desde, hasta, String(req.query.tipo || '')));
+  }));
+
+  // Todo el Panorama de un periodo, con el alcance de quien pide (o el global, para el reporte por correo).
+  function construir(req, desde, hasta, tipo) {
+    const hoy = hoyMexico();
+    const [antDesde, antHasta] = periodoAnterior(desde, hasta, tipo);
     const act = periodo(desde, hasta), ant = periodo(antDesde, antHasta);
 
     // Fotografía de hoy: cartera, cuentas por pagar, operación y comercial abiertos.
@@ -240,11 +246,14 @@ module.exports = function tablero(app, db, h, finanzas) {
         return { id: s.id, nombre: s.nombre, clave: s.clave, venta: r.venta, servicios: r.servicios, gasto: r.gasto, gasto_con_iva: r.gasto_con_iva, utilidad: r.utilidad, margen_pct: r.margen_pct, cobrado: r.cobrado, pagado: r.pagado, flujo: r.flujo,
           te_deben: cent(ca), vencido: cent(ca.filter(c => c.vencida)), debes: cent(px) };
       }));
-    res.json({
+    // Encuesta de satisfacción (2026-10-26): lo contestado en el periodo, por vendedor, técnico, servicio y sucursal.
+    const sat = app.locals.encuestas ? { ...app.locals.encuestas.reporte(desde, hasta), previo: app.locals.encuestas.reporte(antDesde, antHasta) } : null;
+    return {
+      // Reportes de Dirección (2026-11-11, reportes.js): cumplimiento, contabilidad, ranking por vendedor y metas con semáforo.
+      ...(app.locals.reportes ? app.locals.reportes.paraPanorama(req, desde, hasta, act.r, sat) : {}),
       desde, hasta, anterior: { desde: antDesde, hasta: antHasta }, generado: new Date().toISOString(),
       actual: act.r, previo: ant.r, foto, alertas, por_sucursal: porSucursal,
-      // Encuesta de satisfacción (2026-10-26): lo contestado en el periodo, por vendedor, técnico, servicio y sucursal.
-      satisfaccion: app.locals.encuestas ? { ...app.locals.encuestas.reporte(desde, hasta), previo: app.locals.encuestas.reporte(antDesde, antHasta) } : null,
+      satisfaccion: sat,
       gastos: act.gastos, tendencia: tendencia(hasta),
       top_clientes: ranking(act.ventas, act.costos, l => l.cliente), por_servicio: porServicio(act.ventas),
       // Cotizaciones del periodo que no se aceptaron, con el motivo que se pide al marcarlas (antes solo quedaba en su historial).
@@ -252,6 +261,13 @@ module.exports = function tablero(app, db, h, finanzas) {
         FROM leads l LEFT JOIN clientes c ON c.id = l.cliente_id WHERE l.origen = 'cotizacion' AND l.estatus = 'perdido' AND date(l.created_at) BETWEEN ? AND ?
         ORDER BY l.created_at DESC LIMIT 30`).all(desde, hasta),
       por_canal: ranking(act.ventas, act.costos, l => l.canal), por_unidad: ranking(act.ventas, act.costos, l => l.equipo), por_operador: ranking(act.ventas, act.costos, l => (l.equipo_personal ? l.equipo_personal.split('|') : []).concat(l.operador ? [l.operador] : [])),
-    });
-  }));
+    };
+  }
+  // Reporte ejecutivo del mes (reportes.js → correo a Dirección): toda la empresa, como la ve Dirección.
+  app.locals.tablero = {
+    resumen: (desde, hasta) => alcance.global(() => {
+      const ids = new Set(db.prepare('SELECT id FROM sucursales').all().map(s => s.id));
+      return construir({ alcanceSuc: { todo: true, ids, permitidas: [...ids] }, usuarioSesion: { rol: 'admin', nombre: 'Reporte mensual' } }, desde, hasta, 'mes');
+    }),
+  };
 };

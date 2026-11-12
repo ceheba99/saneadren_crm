@@ -96,7 +96,7 @@ const azar = () => { semilla = (semilla * 1103515245 + 12345) % 2147483648; retu
   const soloDireccion = Object.keys(fD).filter(k => fD[k] !== 403 && fT[k] === 403);
   // Además de lo de todas las sucursales: «deshacer» (recepción de compra, aviso resuelto) es solo de Dirección por decisión
   // del dueño (2026-10-21), con motivo y registro en la bitácora.
-  const DIRECCION_ESPERADO = /\/(admin\/|sucursales|auditoria$|roles|permisos$|clientes\/(duplicados|distintos)|clientes\/1\/fusionar|servicios|canales|tipos-cliente|finanzas\/categorias|prospeccion\/sectores|compras\/(formato|centros|unidades)|compras\/ordenes\/1\/deshacer-recepcion$|historial\/1\/reabrir$|nomina\/1\/reabrir$)/; // reabrir una nómina cerrada sin pagar: solo Dirección (F3 contable, 2026-11-11)
+  const DIRECCION_ESPERADO = /\/(admin\/|sucursales|auditoria$|roles|permisos$|clientes\/(duplicados|distintos)|clientes\/1\/fusionar|servicios|canales|tipos-cliente|finanzas\/categorias|prospeccion\/sectores|compras\/(formato|centros|unidades)|compras\/ordenes\/1\/deshacer-recepcion$|historial\/1\/reabrir$|nomina\/1\/reabrir$|tablero\/(metas|enviar-reporte|reporte-correo)$)/; // metas y reporte por correo: decisiones de Dirección (2026-11-11) // reabrir una nómina cerrada sin pagar: solo Dirección (F3 contable, 2026-11-11)
   // Y borrar (cotizaciones, órdenes, usuarios…): solo Dirección (2026-10-26).
   // Marketing tampoco: el rol «con todo» copia al gerente, que no ve Marketing (2026-10-26).
   // Facturación (2026-10-27): la conexión con factura.com y la serie y el CP de cada sucursal son solo de Dirección (como el respaldo).
