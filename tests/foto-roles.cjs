@@ -447,7 +447,7 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
       VE[rol].concilia = sc === 201 && ok(await pedir('POST', '/conciliacion/cargar', t, { cuenta_id: c.id, filas: [{ fecha: dia(-2), concepto: 'Depósito foto', cargo: '', abono: '123.45' }] })); }
     // Editar Contabilidad (2026-11-12): cada rol con un mes viejo distinto y sin movimientos (2025-01, 2025-02…), para no estorbar a los demás.
     { const mesViejo = '2025-' + String(ROLES.findIndex(r => r[0] === rol) + 1).padStart(2, '0');
-      VE[rol].cambiaSaldo = ok(await pedir('POST', '/contabilidad/saldo-inicial', t, { mes: mesViejo, sucursal: qro.id, saldo: '1000.00' }));
+      VE[rol].cambiaSaldo = ok(await pedir('POST', '/contabilidad/saldo-inicial', t, { mes: mesViejo, sucursal: qro.id, cuenta: 0, saldo: '1000.00' }));
       VE[rol].cierraMes = ok(await pedir('POST', '/contabilidad/cierre', t, { mes: mesViejo, sucursal: qro.id })); }
     VE[rol].editaMetas = ok(await pedir('PUT', '/tablero/metas', t, { mes: HOY.slice(0, 7), metas: { venta: 100000 } }));
     { const [se] = await pedir('POST', '/tablero/enviar-reporte', t, { mes: HOY.slice(0, 7) }); VE[rol].enviaReporte = se !== 403 && se !== 401; } // sin correo configurado responde 409: aun así sí puede

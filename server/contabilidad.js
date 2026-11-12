@@ -11,6 +11,7 @@
 const path = require('path'), fs = require('fs');
 const MES = /^\d{4}-(0[1-9]|1[0-2])$/;
 const pesos = c => Math.round(Number(c || 0)) / 100;
+const VIA = { transferencia: 'Transferencia', efectivo: 'Efectivo', deposito: 'Depósito', cheque: 'Cheque', tarjeta: 'Tarjeta', otro: 'Otro', nomina: 'Nómina', layout: 'Layout', pagadora: 'Pagadora', domiciliado: 'Domiciliado', linea_captura: 'Línea de captura', directo: 'Directo' };
 const COMP = { recibo: 'Recibo', estado_cuenta: 'Estado de cuenta', linea_captura: 'Línea de captura', nomina: 'Nómina', pagadora: 'Pagadora', sin_factura: 'Sin factura', otro: 'Otro' };
 
 module.exports = function contabilidad(app, db, h) {
@@ -102,12 +103,32 @@ module.exports = function contabilidad(app, db, h) {
     return mes;
   };
 
-  // FLUJO DE BANCO (2026-11-11, con el formato de la hoja «BNT» de Dirección): cada peso que entró (cobros CONFIRMADOS)
-  // y salió (pagos a proveedores) en el mes, en orden, con su saldo, su factura (PUE / PPD y complemento), lo deducible,
-  // lo no deducible y lo que falta por comprobar. Lo que la hoja se capturaba a mano aquí sale solo del CRM.
-  // Saldo inicial: lo que el CRM acumuló antes del mes (cobros − pagos), o el que escriba quien consulta (el del banco).
-  function flujoDelMes(req, mes, sucursal) {
-    const [d, hst] = rango(mes), suc = col => (sucursal ? ` AND ${col} = ${Number(sucursal)}` : '') + ` AND en_alcance(${col})`;
+  // FLUJO DE BANCO (2026-11-11; formato «tal cual» del Excel «flujo banco.xlsx» de Dirección, 2026-11-12): cada peso que
+  // entró (cobros CONFIRMADOS, reintegros) y salió (pagos a proveedores, anticipos) en orden, con su saldo, su factura (PUE /
+  // PPD y complemento; CN01 la nómina), lo deducible, lo no deducible y lo que falta por comprobar.
+  //  · A, B y C son marcas como en la hoja: S (sí está), FALTA o NA (no aplica); DOMICILIADO o LAYOUT en A. K es el número
+  //    seguido de cada salida del mes (las entradas llevan «.»).
+  //  · Cada renglón va a una cuenta de banco: la del estado de cuenta si ya se concilió; si no, la que se escribió como
+  //    «cuenta de salida» (por nombre, terminación o banco); si no se sabe, «Sin cuenta».
+  //  · Saldo inicial por cuenta y sucursal: el que se escribió en ese mes o, si no, el último escrito antes más lo que se movió
+  //    desde entonces (como la hoja, que arranca del final del mes anterior); sin ninguno escrito, lo que acumuló el CRM.
+  const clave = t => String(t ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  const cuentasBanco = () => (tabla('cuentas_banco') ? db.prepare('SELECT id, nombre, banco, terminacion, sucursal_id, activa FROM main.cuentas_banco ORDER BY id').all() : []);
+  // A qué cuenta de banco va un texto escrito a mano («Santander nómina», «BNT 4521», «Banorte»…), dentro de su sucursal.
+  function cuentaDeTexto(texto, suc, cuentas) {
+    const t = clave(texto); if (!t) return 0;
+    const deSuc = cuentas.filter(c => c.sucursal_id === suc), dig = String(texto).replace(/\D/g, '');
+    const porNombre = deSuc.find(c => clave(c.nombre) === t) || deSuc.find(c => clave(c.nombre) && t.includes(clave(c.nombre)));
+    if (porNombre) return porNombre.id;
+    const porTerm = deSuc.filter(c => c.terminacion && dig.length >= 4 && dig.endsWith(String(c.terminacion).replace(/\D/g, '')));
+    if (porTerm.length === 1) return porTerm[0].id;
+    const porBanco = deSuc.filter(c => clave(c.banco) && t.split(' ').includes(clave(c.banco)));
+    return porBanco.length === 1 ? porBanco[0].id : 0;
+  }
+  // Los renglones (en centavos) con fecha entre «desde» y «hasta» (null = sin límite) de esas sucursales, ya con su cuenta.
+  function filasFlujo(req, desde, hasta, sucursal) {
+    const suc = col => (sucursal ? ` AND ${col} = ${Number(sucursal)}` : '') + ` AND en_alcance(${col})`;
+    const rangoSql = col => `${desde ? ` AND ${col} >= '${desde}'` : ''}${hasta ? ` AND ${col} <= '${hasta}'` : ''}`;
     const veClabe = P.direccion(req) || P.puede(req, 'dinero.mover'); // la CLABE completa solo quien paga (2026-10-22)
     const clabe = c => (!c ? '' : veClabe ? c : '•••' + String(c).slice(-4));
     const folioF = f => (f ? [f.serie, f.folio].filter(Boolean).join('-') + (f.uuid ? ` (${f.uuid})` : '') : '');
@@ -116,34 +137,49 @@ module.exports = function contabilidad(app, db, h) {
       AND estatus IN ('timbrada', 'cancelacion_solicitada') ORDER BY id DESC LIMIT 1`).get(leadId, entorno()) : null);
     const complementoDe = cobroId => (conComp ? db.prepare(`SELECT c.serie, c.folio, c.uuid FROM main.factura_cobros fc JOIN main.facturas c ON c.id = fc.complemento_id
       WHERE fc.cobro_id = ? AND c.estatus = 'timbrada' ORDER BY c.id DESC LIMIT 1`).get(cobroId) : null);
+    const cuentas = cuentasBanco();
+    const conciliado = new Map(tabla('movimientos_banco') ? db.prepare('SELECT conciliado_tipo, conciliado_id, cuenta_id FROM main.movimientos_banco WHERE conciliado_id IS NOT NULL').all()
+      .map(m => [m.conciliado_tipo + ':' + m.conciliado_id, m.cuenta_id]) : []);
+    const cuentaDe = (tipo, id, texto, s) => conciliado.get(tipo + ':' + id) || cuentaDeTexto(texto, s, cuentas);
+    const enBanco = (tipo, id) => conciliado.has(tipo + ':' + id);
+    const proyectoDe = (proyecto, s) => String(proyecto || '').trim() || app.locals.sucursales?.claveDe?.(s) || '';
+    const VIA_A = { domiciliado: 'DOMICILIADO', layout: 'LAYOUT' };
+    const marcaA = (tipo, id, metodo, referencia) => VIA_A[metodo] || (enBanco(tipo, id) || String(referencia || '').trim() ? 'S' : 'FALTA');
+    const datos = (...p) => p.filter(Boolean).join(' · ');
     const filas = [];
-    for (const k of db.prepare(`SELECT k.*, l.created_at AS lead_created_at, l.factura_folio, l.factura_metodo, l.equipo, l.sucursal_id, l.iva_modo, COALESCE(c.empresa_contacto, c.nombre) AS cliente
+    for (const k of db.prepare(`SELECT k.*, l.created_at AS lead_created_at, l.factura_folio, l.factura_metodo, l.equipo, l.proyecto, l.sucursal_id, l.iva_modo, COALESCE(c.empresa_contacto, c.nombre) AS cliente
       FROM main.cobros k JOIN main.leads l ON l.id = k.lead_id LEFT JOIN main.clientes c ON c.id = l.cliente_id
-      WHERE k.cancelado = 0 AND k.confirmado = 1 AND k.tipo <> 'ajuste' AND k.fecha BETWEEN ? AND ?${suc('l.sucursal_id')}`).all(d, hst)) {
+      WHERE k.cancelado = 0 AND k.confirmado = 1 AND k.tipo <> 'ajuste'${rangoSql('k.fecha')}${suc('l.sucursal_id')}`).all()) {
       const f = facturaDe(k.lead_id), cp = complementoDe(k.id), metodo = f?.metodo_pago || k.factura_metodo || '';
-      const conCfdi = !!(f || k.factura_folio), monto = k.monto_cent;
-      filas.push({ orden: k.fecha + '|1|' + k.id, fecha: k.fecha, transferencia: k.referencia || '', oc: folioOS(k.lead_id, k.lead_created_at), comprobante: f ? 'Factura' : k.factura_folio ? 'Factura (folio capturado)' : 'Sin factura',
-        concepto_banco: `Cobro ${folioOS(k.lead_id, k.lead_created_at)}${k.tipo === 'anticipo' ? ' (anticipo)' : ''}`, clabe: '', beneficiario: 'SANEADREN', egreso: 0, ingreso: monto,
+      const conCfdi = !!(f || k.factura_folio), monto = k.monto_cent, os = folioOS(k.lead_id, k.lead_created_at);
+      filas.push({ orden: k.fecha + '|1|' + k.id, ref: 'cobro:' + k.id, sucursal_id: k.sucursal_id, cuenta_id: cuentaDe('cobro', k.id, '', k.sucursal_id), fecha: k.fecha,
+        marca_transf: marcaA('cobro', k.id, k.metodo, k.referencia), marca_oc: 'NA', marca_comp: conCfdi ? 'S' : k.iva_modo && k.iva_modo !== 'sin_iva' ? 'FALTA' : 'NA', // con IVA y sin factura: falta; sin IVA: no aplica
+        concepto_banco: `Cobro ${os}${k.tipo === 'anticipo' ? ' (anticipo)' : ''}`, clabe: '', beneficiario: 'SANEADREN', egreso: 0, ingreso: monto,
         metodo: !conCfdi ? 'NO APLICA' : metodo === 'PPD' ? 'PPD/CP' : metodo || 'PUE', cfdi: folioF(f) || k.factura_folio || '', complemento: metodo === 'PPD' ? (folioF(cp) || 'FALTA') : 'NO APLICA',
         tercero: k.cliente || '', concepto: k.tipo === 'anticipo' ? 'ANTICIPO' : 'SERVICIO', observaciones: k.notas || '', cfdi_monto: conCfdi ? monto : 0, no_deducible: 0,
-        cuenta_abono: 'CLIENTE', proyecto: app.locals.sucursales?.claveDe?.(k.sucursal_id) || '', unidad: k.equipo || 'NO APLICA', tipo_gasto: 'INGRESO', cuenta_tercero: '', via: k.metodo });
+        cuenta_abono: 'CLIENTE', proyecto: proyectoDe(k.proyecto, k.sucursal_id), unidad: k.equipo || 'NO APLICA', tipo_gasto: 'INGRESO', cuenta_tercero: '', via: k.metodo, cuenta_salida: '',
+        datos_sistema: datos(VIA[k.metodo] || k.metodo, k.referencia ? 'ref. ' + k.referencia : '', os) });
     }
     for (const g of db.prepare(`SELECT g.*, x.id AS cxp_id, x.concepto, x.categoria, x.tipo_comprobante, x.factura_folio, x.metodo_sat, x.beneficiario, x.equipo, x.sucursal_id, x.notas AS cxp_notas,
-        p.nombre AS proveedor, p.clabe, p.banco,
+        p.nombre AS proveedor, p.clabe, p.banco, l.proyecto,
         (SELECT o.id || '|' || o.created_at FROM main.ordenes_compra o WHERE o.cxp_id = x.id LIMIT 1) AS oc,
         (SELECT q.uuid FROM main.cfdi_gastos q WHERE q.cxp_id = x.id AND q.eliminado = 0 LIMIT 1) AS uuid
-      FROM main.pagos_proveedor g JOIN main.cuentas_por_pagar x ON x.id = g.cxp_id JOIN main.proveedores p ON p.id = x.proveedor_id
-      WHERE g.cancelado = 0 AND g.metodo <> 'anticipo' AND g.fecha BETWEEN ? AND ?${suc('x.sucursal_id')}`).all(d, hst)) {
-      const esFactura = g.tipo_comprobante === 'factura' || (!g.tipo_comprobante && !!g.factura_folio), monto = g.monto_cent;
-      const [ocId, ocCreado] = String(g.oc || '').split('|');
+      FROM main.pagos_proveedor g JOIN main.cuentas_por_pagar x ON x.id = g.cxp_id JOIN main.proveedores p ON p.id = x.proveedor_id LEFT JOIN main.leads l ON l.id = x.lead_id
+      WHERE g.cancelado = 0 AND g.metodo <> 'anticipo'${rangoSql('g.fecha')}${suc('x.sucursal_id')}`).all()) {
+      const nomina = g.categoria === 'sueldos' || g.tipo_comprobante === 'nomina';
+      const esFactura = !nomina && (g.tipo_comprobante === 'factura' || (!g.tipo_comprobante && !!g.factura_folio)), monto = g.monto_cent;
+      const [ocId, ocCreado] = String(g.oc || '').split('|'), oc = ocId ? require('./sucursales').folio('OC', 'ordenes_compra', Number(ocId), ocCreado) : '';
       const reembolso = /^Reembolso a /.test(g.beneficiario || '');
-      filas.push({ orden: g.fecha + '|2|' + g.id, fecha: g.fecha, transferencia: g.referencia || '', oc: ocId ? require('./sucursales').folio('OC', 'ordenes_compra', Number(ocId), ocCreado) : '',
-        comprobante: esFactura ? (g.uuid ? 'Factura con XML' : 'Factura sin XML') : (COMP[g.tipo_comprobante] || 'Sin comprobante'),
+      const comprobante = esFactura ? (g.uuid ? 'Factura con XML' : 'Factura sin XML') : (COMP[g.tipo_comprobante] || 'Sin comprobante');
+      filas.push({ orden: g.fecha + '|2|' + g.id, ref: 'pago:' + g.id, sucursal_id: g.sucursal_id, cuenta_id: cuentaDe('pago', g.id, g.cuenta_origen, g.sucursal_id), fecha: g.fecha,
+        marca_transf: marcaA('pago', g.id, g.metodo, g.referencia), marca_oc: oc ? 'S' : nomina || g.metodo === 'domiciliado' || !esFactura && g.tipo_comprobante && g.tipo_comprobante !== 'sin_factura' ? 'NA' : 'FALTA',
+        marca_comp: nomina ? 'S' : esFactura ? (g.uuid ? 'S' : 'FALTA') : g.tipo_comprobante === 'sin_factura' ? 'NA' : g.tipo_comprobante ? 'S' : 'FALTA',
         concepto_banco: `Pago a ${g.beneficiario || g.proveedor}`, clabe: reembolso ? '' : clabe(g.clabe), beneficiario: g.beneficiario || g.proveedor, egreso: monto, ingreso: 0,
-        metodo: esFactura ? (g.metodo_sat === 'PPD' ? 'PPD/CP' : 'PUE') : 'NO APLICA', cfdi: esFactura ? [g.factura_folio, g.uuid ? `(${g.uuid})` : ''].filter(Boolean).join(' ') : 'NO APLICA',
+        metodo: nomina ? 'CN01' : esFactura ? (g.metodo_sat === 'PPD' ? 'PPD/CP' : 'PUE') : 'NO APLICA', cfdi: nomina ? 'ANEXO NOMINA CFDI' : esFactura ? [g.factura_folio, g.uuid ? `(${g.uuid})` : ''].filter(Boolean).join(' ') : 'NO APLICA',
         complemento: esFactura && g.metodo_sat === 'PPD' ? 'Pedirlo al proveedor' : 'NO APLICA', tercero: g.proveedor, concepto: g.concepto, observaciones: g.cxp_notas || '',
-        cfdi_monto: esFactura ? monto : 0, no_deducible: esFactura ? 0 : monto, cuenta_abono: reembolso ? 'REEMBOLSO' : 'PROVEEDOR', proyecto: app.locals.sucursales?.claveDe?.(g.sucursal_id) || '',
-        unidad: g.equipo || 'NO APLICA', tipo_gasto: CATEGORIAS[g.categoria] || g.categoria, cuenta_tercero: [g.banco, clabe(g.clabe)].filter(Boolean).join(' · '), via: g.metodo, cuenta_salida: g.cuenta_origen || '' });
+        cfdi_monto: esFactura ? monto : 0, no_deducible: esFactura || nomina ? 0 : monto, cuenta_abono: nomina ? 'NOMINA' : reembolso ? 'REEMBOLSO' : 'PROVEEDOR', proyecto: proyectoDe(g.proyecto, g.sucursal_id),
+        unidad: g.equipo || 'NO APLICA', tipo_gasto: CATEGORIAS[g.categoria] || g.categoria, cuenta_tercero: [g.banco, clabe(g.clabe)].filter(Boolean).join(' · '), via: g.metodo, cuenta_salida: g.cuenta_origen || '',
+        comprobante, datos_sistema: datos(VIA[g.metodo] || g.metodo, g.referencia ? 'ref. ' + g.referencia : '', oc, comprobante) });
     }
     // Anticipos por comprobar (F2, 2026-11-11): la entrega SALE del banco y lo que regresó (reintegro) ENTRA. Los gastos que
     // se pagaron con el anticipo (vía «anticipo») no son otra salida: arriba se dejan fuera para no contarlos dos veces.
@@ -152,36 +188,89 @@ module.exports = function contabilidad(app, db, h) {
     const comprobacion = conAnt ? db.prepare(`SELECT COALESCE(SUM(CASE WHEN x.tipo_comprobante = 'factura' OR (x.tipo_comprobante IS NULL AND x.factura_folio IS NOT NULL) THEN g.monto_cent END), 0) AS cfdi,
         COALESCE(SUM(CASE WHEN x.tipo_comprobante = 'factura' OR (x.tipo_comprobante IS NULL AND x.factura_folio IS NOT NULL) THEN 0 ELSE g.monto_cent END), 0) AS otro
       FROM main.pagos_proveedor g JOIN main.cuentas_por_pagar x ON x.id = g.cxp_id WHERE x.anticipo_id = ? AND x.cancelada = 0 AND g.cancelado = 0 AND g.metodo = 'anticipo'`) : null;
-    if (conAnt) for (const a of db.prepare(`SELECT a.*, p.nombre AS persona, l.created_at AS lead_created_at, l.equipo FROM main.anticipos a JOIN main.personal p ON p.id = a.personal_id
-        LEFT JOIN main.leads l ON l.id = a.lead_id WHERE a.estado <> 'cancelado' AND (a.fecha BETWEEN ? AND ? OR (a.reintegro_cent > 0 AND a.reintegro_fecha BETWEEN ? AND ?))${suc('a.sucursal_id')}`).all(d, hst, d, hst)) {
-      const comun = { oc: folioOS(a.lead_id, a.lead_created_at), comprobante: 'Anticipo', clabe: '', beneficiario: a.persona, metodo: 'NO APLICA', cfdi: 'NO APLICA', complemento: 'NO APLICA',
-        tercero: a.persona, cuenta_abono: 'ANTICIPO', proyecto: app.locals.sucursales?.claveDe?.(a.sucursal_id) || '', unidad: a.equipo || 'NO APLICA',
+    const enRango = f => !!f && (!desde || f >= desde) && (!hasta || f <= hasta);
+    if (conAnt) for (const a of db.prepare(`SELECT a.*, p.nombre AS persona, l.created_at AS lead_created_at, l.equipo, l.proyecto FROM main.anticipos a JOIN main.personal p ON p.id = a.personal_id
+        LEFT JOIN main.leads l ON l.id = a.lead_id WHERE a.estado <> 'cancelado'${suc('a.sucursal_id')}`).all()) {
+      const os = folioOS(a.lead_id, a.lead_created_at);
+      const comun = { sucursal_id: a.sucursal_id, oc: os, clabe: '', beneficiario: a.persona, metodo: 'NO APLICA', cfdi: 'NO APLICA', complemento: 'NO APLICA', marca_oc: 'NA',
+        tercero: a.persona, cuenta_abono: 'ANTICIPO', proyecto: proyectoDe(a.proyecto, a.sucursal_id), unidad: a.equipo || 'NO APLICA',
         tipo_gasto: 'ANTICIPO POR COMPROBAR', cuenta_tercero: '', anticipo: true };
       // Lo comprobado con sus gastos (con factura = deducible; sin factura = no deducible) y lo que falta por comprobar hoy.
       const c = comprobacion.get(a.id), falta = Math.max(0, a.monto_cent - c.cfdi - c.otro - a.reintegro_cent);
-      if (a.fecha >= d && a.fecha <= hst) filas.push({ ...comun, orden: a.fecha + '|3|' + a.id, fecha: a.fecha, transferencia: a.referencia || '', concepto_banco: `Anticipo por comprobar a ${a.persona}`,
+      if (enRango(a.fecha)) filas.push({ ...comun, orden: a.fecha + '|3|' + a.id, ref: 'anticipo:' + a.id, cuenta_id: cuentaDe('anticipo', a.id, a.cuenta_origen, a.sucursal_id), fecha: a.fecha,
+        marca_transf: marcaA('anticipo', a.id, a.metodo, a.referencia), marca_comp: falta > 0 ? 'FALTA' : 'S', concepto_banco: `Anticipo por comprobar a ${a.persona}`,
         egreso: a.monto_cent, ingreso: 0, concepto: a.motivo, cfdi_monto: c.cfdi, no_deducible: c.otro, por_comprobar_cent: falta,
-        observaciones: (a.estado === 'cerrado' ? 'Cerrado' : 'Abierto') + (a.reintegro_cent ? ` · regresó ${pesos(a.reintegro_cent).toFixed(2)}` : ''), via: a.metodo, cuenta_salida: a.cuenta_origen || '' });
-      if (a.reintegro_cent > 0 && a.reintegro_fecha >= d && a.reintegro_fecha <= hst) filas.push({ ...comun, orden: a.reintegro_fecha + '|4|' + a.id, fecha: a.reintegro_fecha, transferencia: a.reintegro_referencia || '',
-        concepto_banco: `Reintegro de anticipo de ${a.persona}`, egreso: 0, ingreso: a.reintegro_cent, cfdi_monto: 0, no_deducible: 0, por_comprobar_cent: 0, concepto: 'Lo que sobró: ' + a.motivo, observaciones: a.nota_cierre || '', via: a.reintegro_metodo, cuenta_salida: a.reintegro_cuenta || '' });
+        observaciones: (a.estado === 'cerrado' ? 'Cerrado' : 'Abierto') + (a.reintegro_cent ? ` · regresó ${pesos(a.reintegro_cent).toFixed(2)}` : ''), via: a.metodo, cuenta_salida: a.cuenta_origen || '',
+        datos_sistema: datos(VIA[a.metodo] || a.metodo, a.referencia ? 'ref. ' + a.referencia : '', os) });
+      if (a.reintegro_cent > 0 && enRango(a.reintegro_fecha)) filas.push({ ...comun, orden: a.reintegro_fecha + '|4|' + a.id, ref: 'reintegro:' + a.id, cuenta_id: cuentaDe('reintegro', a.id, a.reintegro_cuenta, a.sucursal_id),
+        fecha: a.reintegro_fecha, marca_transf: marcaA('reintegro', a.id, a.reintegro_metodo, a.reintegro_referencia), marca_comp: 'S',
+        concepto_banco: `Reintegro de anticipo de ${a.persona}`, egreso: 0, ingreso: a.reintegro_cent, cfdi_monto: 0, no_deducible: 0, por_comprobar_cent: 0, concepto: 'Lo que sobró: ' + a.motivo, observaciones: a.nota_cierre || '',
+        via: a.reintegro_metodo, cuenta_salida: a.reintegro_cuenta || '', datos_sistema: datos(VIA[a.reintegro_metodo] || a.reintegro_metodo, a.reintegro_referencia ? 'ref. ' + a.reintegro_referencia : '', os) });
     }
-    filas.sort((a, b) => a.orden.localeCompare(b.orden));
-    // Saldo inicial (Editar Contabilidad, 2026-11-12): por sucursal, el que se escribió en el sistema (con quién y cuándo)
-    // o lo que el CRM acumuló antes del mes (cobros − pagos − anticipos + reintegros). Ver server/contabilidad-cierres.js.
-    const si = app.locals.contabilidadCierres.saldoInicial(mes, app.locals.contabilidadCierres.sucursalesDe(req, sucursal) || []), antes = si.saldo_cent;
-    let saldo = antes;
-    return { saldo_inicial: pesos(antes), saldo_inicial_crm: pesos(si.crm_cent), saldos_iniciales: si.sucursales, filas: filas.map(({ orden, anticipo, por_comprobar_cent, ...f }) => {
-      saldo += f.ingreso - f.egreso;
-      const porComprobar = por_comprobar_cent ?? f.egreso + f.ingreso - f.cfdi_monto - f.no_deducible;
-      return { ...f, egreso: pesos(f.egreso), ingreso: pesos(f.ingreso), saldo: pesos(saldo), cfdi_monto: pesos(f.cfdi_monto), no_deducible: pesos(f.no_deducible), por_comprobar: pesos(porComprobar),
-        revisar: [f.complemento === 'FALTA' ? 'Falta el complemento de pago' : '', f.comprobante === 'Factura sin XML' ? 'Falta el XML' : '', porComprobar > 0 && f.egreso ? (anticipo ? 'Se comprueba con los gastos del anticipo' : 'Por comprobar') : ''].filter(Boolean).join(' · ') };
-    }) };
+    return filas.sort((a, b) => a.orden.localeCompare(b.orden));
   }
+  // Cuentas que se muestran en el selector: las de las sucursales elegidas y «Sin cuenta» (0).
+  function cuentasDe(sucursales) {
+    const ids = new Set(sucursales);
+    return [...cuentasBanco().filter(c => ids.has(c.sucursal_id)).map(c => ({ id: c.id, nombre: c.nombre, banco: c.banco, terminacion: c.terminacion || '', sucursal_id: c.sucursal_id, activa: !!c.activa })),
+      { id: 0, nombre: 'Sin cuenta', banco: '', terminacion: '', sucursal_id: null, activa: true }];
+  }
+  // Saldo inicial del mes por cada sucursal y cuenta (cuenta = null: todas). Encadenado: el último escrito (de ese mes o de
+  // antes) más lo que se movió desde ese mes; sin ninguno escrito, todo lo que acumuló el CRM antes del mes.
+  function saldoInicial(req, mes, sucursales, cuenta) {
+    const d = mes + '-01', antes = filasFlujo(req, null, null, null).filter(f => f.fecha < d);
+    const CC = app.locals.contabilidadCierres;
+    const pares = [];
+    for (const s of sucursales) {
+      const ids = cuenta == null ? [...new Set([0, ...cuentasBanco().filter(c => c.sucursal_id === s).map(c => c.id), ...antes.filter(f => f.sucursal_id === s).map(f => f.cuenta_id), ...CC.cuentasEscritas(s)])] : [Number(cuenta)];
+      for (const c of ids) {
+        const esc = CC.escrito(s, c, mes), net = desde => antes.filter(f => f.sucursal_id === s && f.cuenta_id === c && (!desde || f.fecha >= desde)).reduce((t, f) => t + f.ingreso - f.egreso, 0);
+        const crm = esc.anterior ? esc.anterior.saldo_cent + net(esc.anterior.mes + '-01') : net(null);
+        pares.push({ sucursal_id: s, cuenta_id: c, crm_cent: crm, usado_cent: esc.este ? esc.este.saldo_cent : crm, escrito: !!esc.este, historial: esc.historial,
+          desde_mes: esc.anterior?.mes || null });
+      }
+    }
+    const suma = k => pares.reduce((t, p) => t + p[k], 0);
+    const cuentaNombre = id => (id ? cuentasBanco().find(c => c.id === id)?.nombre || 'Cuenta ' + id : 'Sin cuenta');
+    return { saldo_cent: suma('usado_cent'), crm_cent: suma('crm_cent'),
+      sucursales: pares.map(p => { const s = app.locals.sucursales?.lista?.().find(x => x.id === p.sucursal_id) || {};
+        return { sucursal_id: p.sucursal_id, clave: s.clave || '', nombre: s.nombre || '', cuenta_id: p.cuenta_id, cuenta: cuentaNombre(p.cuenta_id), crm: pesos(p.crm_cent), saldo: pesos(p.usado_cent),
+          escrito: p.escrito, viene_de: p.desde_mes, historial: p.historial.map(r => ({ saldo: r.saldo_cent == null ? null : pesos(r.saldo_cent), usuario: r.usuario, fecha: r.fecha })) }; }) };
+  }
+  // El flujo del mes de esas sucursales y una cuenta (null = todas; 0 = sin cuenta), con saldo corrido y el número seguido.
+  function flujoDelMes(req, mes, sucursal, cuenta) {
+    const [d, hst] = rango(mes), sucs = app.locals.contabilidadCierres.sucursalesDe(req, sucursal) || [];
+    const cuentaN = cuenta === undefined || cuenta === null || cuenta === '' ? null : Number(cuenta);
+    const todas = filasFlujo(req, d, hst, sucursal), filas = cuentaN == null ? todas : todas.filter(f => f.cuenta_id === cuentaN);
+    const si = saldoInicial(req, mes, sucs, cuentaN), cuentas = cuentasDe(sucs);
+    const nombreCuenta = id => cuentas.find(c => c.id === id)?.nombre || 'Sin cuenta';
+    let saldo = si.saldo_cent, n = 0;
+    return { saldo_inicial: pesos(si.saldo_cent), saldo_inicial_crm: pesos(si.crm_cent), saldos_iniciales: si.sucursales, cuenta: cuentaN,
+      cuentas: cuentas.map(c => ({ ...c, movimientos: todas.filter(f => f.cuenta_id === c.id).length })),
+      filas: filas.map(({ orden, anticipo, por_comprobar_cent, sucursal_id, ...f }) => {
+        saldo += f.ingreso - f.egreso;
+        const porComprobar = por_comprobar_cent ?? f.egreso + f.ingreso - f.cfdi_monto - f.no_deducible;
+        return { ...f, consecutivo: f.egreso ? String(++n) : '.', cuenta: f.cuenta_id ? nombreCuenta(f.cuenta_id) : f.cuenta_salida ? f.cuenta_salida + ' (sin ligar)' : 'Sin cuenta',
+          egreso: pesos(f.egreso), ingreso: pesos(f.ingreso), saldo: pesos(saldo), cfdi_monto: pesos(f.cfdi_monto), no_deducible: pesos(f.no_deducible), por_comprobar: pesos(porComprobar),
+          revisar: [f.complemento === 'FALTA' ? 'Falta el complemento de pago' : '', f.comprobante === 'Factura sin XML' ? 'Falta el XML' : '', porComprobar > 0 && f.egreso ? (anticipo ? 'Se comprueba con los gastos del anticipo' : 'Por comprobar') : ''].filter(Boolean).join(' · ') };
+      }) };
+  }
+  app.locals.flujoBanco = { saldoInicial, cuentasDe };
 
   app.get('/api/contabilidad/resumen', h((req, res) => {
     if (!puede(req)) return negar(res);
     const mes = leerMes(req, res); if (!mes) return;
     res.json(resumen(mes, req.query.sucursal ? Number(req.query.sucursal) : null));
+  }));
+
+  // Solo el flujo de banco de una cuenta (para el Excel: una hoja por cuenta, como la hoja «STD» de Dirección).
+  app.get('/api/contabilidad/flujo', h((req, res) => {
+    if (!puede(req)) return negar(res);
+    const mes = leerMes(req, res); if (!mes) return;
+    const suc = req.query.sucursal ? Number(req.query.sucursal) : null;
+    if (!app.locals.contabilidadCierres.sucursalesDe(req, suc)) return res.status(404).json({ error: 'No encontrado' });
+    const f = flujoDelMes(req, mes, suc, req.query.cuenta);
+    res.json({ flujo: f.filas, saldo_inicial: f.saldo_inicial, saldo_inicial_crm: f.saldo_inicial_crm, saldos_iniciales: f.saldos_iniciales, flujo_cuenta: f.cuenta, cuentas: f.cuentas });
   }));
 
   // Los renglones del Excel del mes (la pantalla arma el archivo).
@@ -191,9 +280,9 @@ module.exports = function contabilidad(app, db, h) {
     const suc = req.query.sucursal ? Number(req.query.sucursal) : null;
     const { facturas, cobros, gastos, xmls, pagos } = datosDelMes(mes, suc);
     const claveSuc = id => app.locals.sucursales?.claveDe?.(id) || '';
-    const flujo = flujoDelMes(req, mes, suc);
+    const flujo = flujoDelMes(req, mes, suc, req.query.cuenta);
     res.json({
-      flujo: flujo.filas, saldo_inicial: flujo.saldo_inicial, saldo_inicial_crm: flujo.saldo_inicial_crm, saldos_iniciales: flujo.saldos_iniciales,
+      flujo: flujo.filas, saldo_inicial: flujo.saldo_inicial, saldo_inicial_crm: flujo.saldo_inicial_crm, saldos_iniciales: flujo.saldos_iniciales, flujo_cuenta: flujo.cuenta, cuentas: flujo.cuentas,
       cierre: app.locals.contabilidadCierres.estadoCierre(req, mes, app.locals.contabilidadCierres.sucursalesDe(req, suc) || []),
       resumen: resumen(mes, suc),
       facturas: facturas.map(f => ({ tipo: f.tipo_documento === 'pago' ? 'Complemento de pago' : 'Factura', fecha: String(f.fecha_timbrado || '').slice(0, 10), folio: [f.serie, f.folio].filter(Boolean).join('-'), uuid: f.uuid || '',
