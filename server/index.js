@@ -200,6 +200,7 @@ const finanzas = require('./finanzas')(app, db, h, unicos);
 const encuestas = require('./encuestas')(app, db, h, { urlBase: URL_BASE }); // encuesta de satisfacción con QR por orden
 app.locals.encuestas = encuestas;
 require('./tablero')(app, db, h, finanzas); // Resultados: panorama general
+require('./reportes')(app, db, h); // Reportes de Dirección (2026-11-11): cumplimiento, metas, ranking, indicadores comerciales y correo mensual
 require('./contabilidad')(app, db, h); // Contabilidad del mes para el contador (módulo contable F1, 2026-11-11)
 require('./compras')(app, db, h, finanzas); // Órdenes de compra (formato CM-F-03)
 require('./carga-generador')(app, db, h, unicos); // Carga masiva del Generador (Excel por meses)

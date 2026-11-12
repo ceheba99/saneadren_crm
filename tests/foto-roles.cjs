@@ -319,6 +319,9 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
     ['pagaNomina', 'Pagar la nómina y bajar la lista para el banco (con la CLABE de cada persona)'],
     ['reglaPuntualidad', 'Poner o cambiar las reglas del bono de puntualidad (monto por puesto, retardos y faltas permitidos)'],
     ['concilia', 'Conciliación bancaria: dar de alta una cuenta de banco, subir su estado de cuenta y emparejar sus movimientos con el CRM'],
+    ['editaMetas', 'Poner las metas del mes (venta, cobranza, margen, satisfacción…) contra las que se mide el semáforo del Panorama'],
+    ['enviaReporte', 'Mandar por correo a Dirección el reporte ejecutivo del mes'],
+    ['veIndicadores', 'Ver los indicadores del Análisis comercial (satisfacción, cobranza a tiempo, servicios en fecha y recompras de lo que ve)'],
     ['entregaAnticipo', 'Entregar un anticipo por comprobar a una persona del personal (y cerrarlo o cancelarlo)'],
     ['veAnticipoAjeno', 'Ver los anticipos por comprobar de otras personas (el de Ernesto Obsidiana)'],
   ];
@@ -418,6 +421,9 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
     VE[rol].pagaNomina = ok(await pedir('GET', '/nomina/' + NOM.id + '/lista-banco', t));
     { const k = ROLES.findIndex(r => r[0] === rol), [sc, c] = await pedir('POST', '/conciliacion/cuentas', t, { nombre: 'Cuenta foto ' + String.fromCharCode(65 + k), banco: 'Santander', sucursal_id: qro.id });
       VE[rol].concilia = sc === 201 && ok(await pedir('POST', '/conciliacion/cargar', t, { cuenta_id: c.id, filas: [{ fecha: dia(-2), concepto: 'Depósito foto', cargo: '', abono: '123.45' }] })); }
+    VE[rol].editaMetas = ok(await pedir('PUT', '/tablero/metas', t, { mes: HOY.slice(0, 7), metas: { venta: 100000 } }));
+    { const [se] = await pedir('POST', '/tablero/enviar-reporte', t, { mes: HOY.slice(0, 7) }); VE[rol].enviaReporte = se !== 403 && se !== 401; } // sin correo configurado responde 409: aun así sí puede
+    VE[rol].veIndicadores = ok(await pedir('GET', '/analisis/indicadores?' + RANGO, t));
     VE[rol].reglaPuntualidad = ok(await pedir('POST', '/nomina/reglas-puntualidad', t, { sucursal_id: qro.id, puesto: 'Operador', monto: 150, max_retardos: 0, max_faltas: 0, desde: dia(1) }));
     { const [st, a] = await pedir('POST', '/anticipos', t, { personal_id: EMP.id, monto: 10, metodo: 'efectivo', motivo: 'Prueba de ' + rol, forzar: true });
       VE[rol].entregaAnticipo = st === 201 && ok(await pedir('POST', '/anticipos/' + a.id + '/cancelar', t, { motivo: 'Prueba de la foto de roles' }));
@@ -597,6 +603,10 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
       admin: { preparaNomina: 1 }, gerente: { preparaNomina: 1 }, ...Object.fromEntries(['costos', 'ventas', 'atencion', 'tecnico', 'marketing', 'marketing_gerente'].map(r => [r, { preparaNomina: 0 }])) }],
     ['2026-11-11', 'Pagar la nómina y bajar la lista para el banco con la CLABE de cada persona: quien prepara la nómina y además mueve dinero (Dirección y el Gerente). Compras mueve dinero pero no ve sueldos: no.', {
       admin: { pagaNomina: 1 }, gerente: { pagaNomina: 1 }, ...Object.fromEntries(['costos', 'ventas', 'atencion', 'tecnico', 'marketing', 'marketing_gerente'].map(r => [r, { pagaNomina: 0 }])) }],
+    ['2026-11-11', 'Reporte de Dirección: las metas del mes (venta, cobranza, margen, satisfacción y cumplimiento) las pone solo Dirección; el Gerente las ve en su Panorama. El reporte ejecutivo del mes llega por correo a Dirección el día 1, y mandarlo a mano también es solo de Dirección.', {
+      admin: { editaMetas: 1, enviaReporte: 1 }, ...Object.fromEntries(['gerente', 'costos', 'ventas', 'atencion', 'tecnico', 'marketing', 'marketing_gerente'].map(r => [r, { editaMetas: 0, enviaReporte: 0 }])) }],
+    ['2026-11-11', 'Análisis comercial: los indicadores nuevos (satisfacción, cobranza a tiempo, servicios en fecha, recompras) los ve quien ve el análisis comercial, cada quien con lo suyo; nada de cuentas por pagar ni dinero de la empresa (eso queda en el Panorama, para Dirección y el Gerente).', {
+      admin: { veIndicadores: 1 }, gerente: { veIndicadores: 1 }, ventas: { veIndicadores: 1 }, atencion: { veIndicadores: 1 }, ...Object.fromEntries(['tecnico', 'costos', 'marketing', 'marketing_gerente'].map(r => [r, { veIndicadores: 0 }])) }],
     ['2026-11-11', 'Conciliación bancaria (subir el estado de cuenta de Santander o Banorte y emparejarlo con cobros, pagos, anticipos y nómina del CRM): Dirección, el Gerente y quien tiene «Contabilidad del mes» (el Contador). Registrar como gasto un cargo del banco que no está en el CRM (p. ej. una comisión) además pide «Mover dinero». Los demás roles no.', {
       admin: { concilia: 1 }, gerente: { concilia: 1 }, ...Object.fromEntries(['costos', 'ventas', 'atencion', 'tecnico', 'marketing', 'marketing_gerente'].map(r => [r, { concilia: 0 }])) }],
     ['2026-11-11', 'Bono de puntualidad: sus reglas (monto por puesto y sucursal, retardos y faltas permitidos; vacaciones, incapacidades y permisos se respetan) las ponen quienes preparan la nómina: Dirección y el Gerente. Los demás roles no.', {

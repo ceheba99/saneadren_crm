@@ -276,4 +276,10 @@ module.exports = async function masEjemplos(x) {
     filas.push({ fecha: dmy(dia(-8)), concepto: 'DEPOSITO EN EFECTIVO SUCURSAL', referencia: '', cargo: '', abono: '3480.00' });
     if (filas.length) await pedir('POST', '/conciliacion/cargar', A, { cuenta_id: cta.id, filas, archivo: 'estado_santander_ejemplo.xlsx', columnas: { fecha: 0, concepto: 1, referencia: 2, cargo: 3, abono: 4, importe: -1, saldo: -1, desde: 1 } });
   }
+
+  // ===== Reportes de Dirección (2026-11-11): metas del mes pasado y de este, para ver el semáforo en el Panorama =====
+  for (const k of [-1, 0]) {
+    const [a, m] = dia(0).split('-').map(Number), d = new Date(Date.UTC(a, m - 1 + k, 1)), mes = d.toISOString().slice(0, 7);
+    await pedir('PUT', '/tablero/metas', A, { mes, metas: { venta: 900000, cobrado: 850000, margen_pct: 30, cobro_a_tiempo_pct: 80, pago_a_tiempo_pct: 85, servicios_en_fecha_pct: 90, satisfaccion: 4.3, nps: 50 } });
+  }
 };

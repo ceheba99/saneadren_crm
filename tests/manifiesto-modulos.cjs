@@ -147,11 +147,11 @@ module.exports = {
     reportes: {
       nombre: 'Resultados y análisis',
       vistas: ['resultados'],
-      tablas: [],
+      tablas: ['metas_direccion'], // metas del mes que pone Dirección (reportes.js, 2026-11-11)
       rutas: [/^\/api\/(tablero|kpis|analisis)(\/|$)/],
       pendientes: null, pendientesRazon: 'solo consulta: sus alertas se ven dentro de Resultados',
       inicio: [],
-      demo: [], integridad: null, integridadRazon: 'no guarda datos propios; la auditoría compara Resultados con el Generador',
+      demo: ['metas_direccion'], integridad: null, integridadRazon: 'solo guarda las metas del mes (un número por indicador, validado al guardarlo); la auditoría compara Resultados con el Generador',
       buscador: null, buscadorRazon: 'no tiene registros propios',
       permisos: ['reportes.analisis', 'reportes.panorama'],
     },
