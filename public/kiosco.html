@@ -892,8 +892,26 @@
   // pantalla del código tiene el botón «Leer mi credencial»: prende la cámara hasta 20 s, lee el QR, pone el código y
   // pasa al PIN. Quien la olvidó teclea su código como siempre. El QR solo reemplaza al código: el PIN se sigue pidiendo.
   const QR_CREDENCIAL = /^SANEADREN-CHECADOR:(\d{4})$/;
-  let lectorQR = null;
-  try { if ('BarcodeDetector' in window) BarcodeDetector.getSupportedFormats().then(f => { if (f.includes('qr_code')) lectorQR = new BarcodeDetector({ formats: ['qr_code'] }); }).catch(() => {}); } catch { lectorQR = null; }
+  // 2026-11-12 (Dirección: «al cerrar y abrir la app, o al reinstalarla, no sale el botón de leer la credencial»). El
+  // lector de QR de la tableta contesta un momento DESPUÉS de que sale el teclado (y recién instalada la app puede
+  // tardar más o decir que todavía no): antes se preguntaba una sola vez y el botón ya no aparecía. Ahora, cuando el
+  // lector está listo, la pantalla del código se vuelve a pintar con su botón (si nadie ha tecleado nada), y si no
+  // contesta se vuelve a preguntar (a los 2, 5, 15 y 60 s, y cada vez que la tableta se desbloquea).
+  let lectorQR = null, buscandoQR = false;
+  function buscarLectorQR(intento = 0) {
+    if (lectorQR || buscandoQR || !('BarcodeDetector' in window)) return;
+    buscandoQR = true;
+    const otra = () => { buscandoQR = false; const espera = [2000, 5000, 15000, 60000][intento]; if (espera) setTimeout(() => buscarLectorQR(intento + 1), espera); };
+    try {
+      BarcodeDetector.getSupportedFormats().then(f => {
+        if (!f.includes('qr_code')) return otra();
+        lectorQR = new BarcodeDetector({ formats: ['qr_code'] }); buscandoQR = false;
+        const p = $('pantalla');
+        if (estado.esCodigo && !p.querySelector('.btn-credencial') && !/\d/.test(p.querySelector('.digitos')?.textContent || '')) inicio();
+      }).catch(otra);
+    } catch { otra(); }
+  }
+  buscarLectorQR();
   const LECTURA_MS = 20000;
   async function leerCredencial() {
     estado = { leyendo: Symbol('lectura') }; adelantadas = '';
@@ -1221,7 +1239,7 @@
       if (document.visibilityState !== 'visible') return;
       const fuera = ocultoDesde ? Date.now() - ocultoDesde : 0; ocultoDesde = 0;
       if (fuera > REINICIO_MS && !deBaja && registro?.token && navigator.serviceWorker?.controller) { window.__kiosco.cierre('regreso del bloqueo'); location.replace('/kiosco?copia=1'); return; }
-      despierta(); tic();
+      despierta(); tic(); buscarLectorQR();
       // Forzar a redibujar: en algunas tabletas la página vuelve en blanco hasta que algo cambia en pantalla.
       document.body.style.transform = 'translateZ(0)'; requestAnimationFrame(() => { document.body.style.transform = ''; });
       const p = $('pantalla'), vacia = !p.firstElementChild || !!$('arranque') || !p.innerText.trim();
