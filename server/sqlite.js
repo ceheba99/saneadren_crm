@@ -27,12 +27,20 @@ class Database {
   // Solo se usa para ajustes ("journal_mode = WAL", "foreign_keys = ON", …).
   pragma(texto) { return this.db.prepare('PRAGMA ' + texto).all(); }
   // Igual que better-sqlite3: devuelve una función que corre todo junto o nada.
+  // .immediate(...) (también como en better-sqlite3) aparta la base para escribir desde el inicio: si otro proceso
+  // está a mitad de una operación, espera a que termine (busy_timeout) en vez de leer un saldo que está por cambiar.
+  // Se usa donde se revisa un saldo y luego se guarda dinero (auditoría ARQ-14 / H-001).
   transaction(fn) {
+    const normal = this.envolver(fn, 'BEGIN');
+    normal.immediate = this.envolver(fn, 'BEGIN IMMEDIATE');
+    return normal;
+  }
+  envolver(fn, inicio) {
     const base = this;
     return function (...args) {
       const nivel = base.profundidad++;
       const punto = 'sp_' + nivel;
-      base.db.exec(nivel === 0 ? 'BEGIN' : 'SAVEPOINT ' + punto);
+      base.db.exec(nivel === 0 ? inicio : 'SAVEPOINT ' + punto);
       try {
         const r = fn.apply(this, args);
         base.db.exec(nivel === 0 ? 'COMMIT' : 'RELEASE ' + punto);

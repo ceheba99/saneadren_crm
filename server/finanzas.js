@@ -480,29 +480,33 @@ module.exports = function finanzas(app, db, h, unicos) {
     if (!TIPOS_COBRO.includes(tipo)) return res.status(400).json({ error: 'Tipo de pago inválido' });
     if (tipo === 'ajuste' && !P.puede(req, 'cobros.ajustes')) return res.status(403).json({ error: 'Solo un administrador puede registrar ajustes o descuentos' });
 
-    const cuenta = cuentaDeOrden(lead.id); // con todos los cobros de la orden (SQL_CUENTA), aunque quien registra solo vea los suyos
-    const saldoCent = Math.round(cuenta.sin_reportar * 100); // lo que falta que el cliente pague (lo reportado sin confirmar ya cuenta)
-    if (monto > saldoCent) {
-      if (!cobranzaDe(lead)) return res.status(400).json({ error: 'El pago es mayor que lo que falta por cobrar de esta orden. Revisa el monto con administración.' });
-      return res.status(400).json({ error: `El pago (${fmt(monto)}) es mayor que el saldo de la orden (${fmt(saldoCent)}). ` + (lead.iva_modo
-        ? 'Si la factura salió por otro total (retención o centavos), captúralo primero en Crédito y factura.'
-        : 'Si el cliente pagó con IVA, captura primero el total facturado.') });
-    }
-    // Doble toque: mismo pago de la misma persona en menos de 2 minutos.
-    if (!req.body.forzar) {
-      const repetido = db.prepare(`SELECT id FROM cobros WHERE lead_id = ? AND monto_cent = ? AND fecha = ? AND metodo = ? AND registrado_por = ?
-        AND cancelado = 0 AND created_at >= datetime('now','localtime','-2 minutes')`).get(lead.id, monto, fecha, metodo, req.usuarioSesion.id);
-      if (repetido) return res.status(409).json({ error: 'Ese mismo pago se acaba de registrar. ¿Es un pago distinto?', codigo: 'POSIBLE_DUPLICADO' });
-    }
     const confirmado = P.puede(req, 'cobros.directo') ? 1 : 0;
-    const id = db.transaction(() => {
+    // Revisar el saldo y guardar el cobro van juntos y con la base apartada (immediate): si el sistema corriera en dos
+    // procesos, el segundo cobro espera a que termine el primero y ve el saldo ya descontado (auditoría ARQ-14 / H-001).
+    const r = db.transaction(() => {
+      const cuenta = cuentaDeOrden(lead.id); // con todos los cobros de la orden (SQL_CUENTA), aunque quien registra solo vea los suyos
+      const saldoCent = Math.round(cuenta.sin_reportar * 100); // lo que falta que el cliente pague (lo reportado sin confirmar ya cuenta)
+      if (monto > saldoCent) {
+        if (!cobranzaDe(lead)) return { status: 400, error: { error: 'El pago es mayor que lo que falta por cobrar de esta orden. Revisa el monto con administración.' } };
+        return { status: 400, error: { error: `El pago (${fmt(monto)}) es mayor que el saldo de la orden (${fmt(saldoCent)}). ` + (lead.iva_modo
+          ? 'Si la factura salió por otro total (retención o centavos), captúralo primero en Crédito y factura.'
+          : 'Si el cliente pagó con IVA, captura primero el total facturado.') } };
+      }
+      // Doble toque: mismo pago de la misma persona en menos de 2 minutos.
+      if (!req.body.forzar) {
+        const repetido = db.prepare(`SELECT id FROM cobros WHERE lead_id = ? AND monto_cent = ? AND fecha = ? AND metodo = ? AND registrado_por = ?
+          AND cancelado = 0 AND created_at >= datetime('now','localtime','-2 minutes')`).get(lead.id, monto, fecha, metodo, req.usuarioSesion.id);
+        if (repetido) return { status: 409, error: { error: 'Ese mismo pago se acaba de registrar. ¿Es un pago distinto?', codigo: 'POSIBLE_DUPLICADO' } };
+      }
       const info = db.prepare(`INSERT INTO main.cobros (lead_id, fecha, monto_cent, tipo, metodo, referencia, notas, confirmado, confirmado_por, confirmado_at, registrado_por)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ${confirmado ? "datetime('now','localtime')" : 'NULL'}, ?)`)
         .run(lead.id, fecha, monto, tipo, metodo, texto(req.body.referencia, 120), texto(req.body.notas, 500), confirmado, confirmado ? req.usuarioSesion.id : null, req.usuarioSesion.id);
       if (lead.cobranza_por_revisar) db.prepare('UPDATE main.leads SET cobranza_por_revisar = 0 WHERE id = ?').run(lead.id);
       bitacora(lead.id, `${tipo === 'anticipo' ? 'Anticipo' : tipo === 'ajuste' ? 'Ajuste' : 'Pago'} registrado: ${fmt(monto)} por ${metodo} (${fecha})${confirmado ? '' : ' · por confirmar'}.`, req, 'cxc');
-      return info.lastInsertRowid;
-    })();
+      return { id: info.lastInsertRowid };
+    }).immediate();
+    if (r.error) return res.status(r.status).json(r.error);
+    const id = r.id;
     res.status(201).json({ id, confirmado: !!confirmado, ...(cobranzaDe(lead) ? { cuenta: cuentaDeOrden(lead.id) } : {}) });
   }));
 
@@ -1268,28 +1272,34 @@ module.exports = function finanzas(app, db, h, unicos) {
 
   app.post('/api/finanzas/cxp/:id/pagos', h((req, res) => {
     if (!puedePagar(req, res)) return;
-    const x = cuentasPorPagar().find(c => c.id === Number(req.params.id));
-    if (!x) return res.status(404).json({ error: 'Cuenta por pagar no encontrada' });
     const monto = aCentavos(req.body.monto);
-    if (!monto) return res.status(400).json({ error: 'Escribe un monto mayor a 0, con máximo 2 decimales' });
-    if (monto > Math.round(x.saldo * 100)) return res.status(400).json({ error: `El pago es mayor que el saldo (${fmt(Math.round(x.saldo * 100))})` });
-    const hoy = hoyMexico(), fecha = req.body.fecha || hoy;
-    if (!fechaValida(fecha) || fecha > hoy) return res.status(400).json({ error: 'La fecha del pago no es válida o es futura' });
-    if (!METODOS_PROV.includes(req.body.metodo)) return res.status(400).json({ error: 'Elige cómo se pagó' });
-    // Pagar una orden de compra que todavía no llega (anticipo, contado): se permite con motivo (Dirección, 2026-11-05).
-    const ocSinRecibir = db.prepare("SELECT id FROM main.ordenes_compra WHERE cxp_id = ? AND estado = 'autorizada' AND recibida_at IS NULL").get(x.id);
-    const motivoAnticipo = texto(req.body.motivo, 300);
-    if (ocSinRecibir && (!motivoAnticipo || !conSentido(motivoAnticipo, 5))) return res.status(409).json({ error: 'Esta orden de compra todavía no se recibe. ¿Por qué se paga antes de que llegue? (por ejemplo: anticipo, compra de contado)', codigo: 'PIDE_MOTIVO', titulo: 'Pago antes de recibir' });
-    if (!req.body.forzar && db.prepare(`SELECT id FROM pagos_proveedor WHERE cxp_id = ? AND monto_cent = ? AND fecha = ? AND cancelado = 0
-      AND created_at >= datetime('now','localtime','-2 minutes')`).get(x.id, monto, fecha)) {
-      return res.status(409).json({ error: 'Ese mismo pago se acaba de registrar. ¿Es un pago distinto?', codigo: 'POSIBLE_DUPLICADO' });
-    }
-    const info = db.prepare('INSERT INTO main.pagos_proveedor (cxp_id, fecha, monto_cent, metodo, referencia, registrado_por, cuenta_origen) VALUES (?, ?, ?, ?, ?, ?, ?)')
-      .run(x.id, fecha, monto, req.body.metodo, texto(req.body.referencia, 120), req.usuarioSesion.id, texto(req.body.cuenta_origen, 80));
-    if (x.lead_id) bitacora(x.lead_id, `Pago a tercero: ${fmt(monto)} a ${x.proveedor_nombre || 'proveedor'} por «${x.concepto}» (${req.body.metodo}, ${fecha}).`, req, 'cxp');
-    app.locals.auditoria?.registrar(req, 'cuenta_por_pagar', x.id, 'pago', `${fmt(monto)} por ${req.body.metodo} el ${fecha}${texto(req.body.referencia, 120) ? ' · ref. ' + texto(req.body.referencia, 120) : ''}${ocSinRecibir ? ' · antes de recibir: ' + motivoAnticipo : ''}`);
-    if (ocSinRecibir) app.locals.auditoria?.registrar(req, 'orden_compra', ocSinRecibir.id, 'pago antes de recibir', `${fmt(monto)} · ${motivoAnticipo}`);
-    res.status(201).json({ id: info.lastInsertRowid });
+    // Todo junto o nada (auditoría DB-04): el pago, la nota en el historial de la orden y la bitácora. Y con la base
+    // apartada (immediate): el saldo se revisa adentro, así dos procesos no pagan dos veces la misma cuenta (ARQ-14).
+    const r = db.transaction(() => {
+      const x = cuentasPorPagar().find(c => c.id === Number(req.params.id));
+      if (!x) return { status: 404, error: { error: 'Cuenta por pagar no encontrada' } };
+      if (!monto) return { status: 400, error: { error: 'Escribe un monto mayor a 0, con máximo 2 decimales' } };
+      if (monto > Math.round(x.saldo * 100)) return { status: 400, error: { error: `El pago es mayor que el saldo (${fmt(Math.round(x.saldo * 100))})` } };
+      const hoy = hoyMexico(), fecha = req.body.fecha || hoy;
+      if (!fechaValida(fecha) || fecha > hoy) return { status: 400, error: { error: 'La fecha del pago no es válida o es futura' } };
+      if (!METODOS_PROV.includes(req.body.metodo)) return { status: 400, error: { error: 'Elige cómo se pagó' } };
+      // Pagar una orden de compra que todavía no llega (anticipo, contado): se permite con motivo (Dirección, 2026-11-05).
+      const ocSinRecibir = db.prepare("SELECT id FROM main.ordenes_compra WHERE cxp_id = ? AND estado = 'autorizada' AND recibida_at IS NULL").get(x.id);
+      const motivoAnticipo = texto(req.body.motivo, 300);
+      if (ocSinRecibir && (!motivoAnticipo || !conSentido(motivoAnticipo, 5))) return { status: 409, error: { error: 'Esta orden de compra todavía no se recibe. ¿Por qué se paga antes de que llegue? (por ejemplo: anticipo, compra de contado)', codigo: 'PIDE_MOTIVO', titulo: 'Pago antes de recibir' } };
+      if (!req.body.forzar && db.prepare(`SELECT id FROM pagos_proveedor WHERE cxp_id = ? AND monto_cent = ? AND fecha = ? AND cancelado = 0
+        AND created_at >= datetime('now','localtime','-2 minutes')`).get(x.id, monto, fecha)) {
+        return { status: 409, error: { error: 'Ese mismo pago se acaba de registrar. ¿Es un pago distinto?', codigo: 'POSIBLE_DUPLICADO' } };
+      }
+      const info = db.prepare('INSERT INTO main.pagos_proveedor (cxp_id, fecha, monto_cent, metodo, referencia, registrado_por, cuenta_origen) VALUES (?, ?, ?, ?, ?, ?, ?)')
+        .run(x.id, fecha, monto, req.body.metodo, texto(req.body.referencia, 120), req.usuarioSesion.id, texto(req.body.cuenta_origen, 80));
+      if (x.lead_id) bitacora(x.lead_id, `Pago a tercero: ${fmt(monto)} a ${x.proveedor_nombre || 'proveedor'} por «${x.concepto}» (${req.body.metodo}, ${fecha}).`, req, 'cxp');
+      app.locals.auditoria?.registrar(req, 'cuenta_por_pagar', x.id, 'pago', `${fmt(monto)} por ${req.body.metodo} el ${fecha}${texto(req.body.referencia, 120) ? ' · ref. ' + texto(req.body.referencia, 120) : ''}${ocSinRecibir ? ' · antes de recibir: ' + motivoAnticipo : ''}`);
+      if (ocSinRecibir) app.locals.auditoria?.registrar(req, 'orden_compra', ocSinRecibir.id, 'pago antes de recibir', `${fmt(monto)} · ${motivoAnticipo}`);
+      return { id: info.lastInsertRowid };
+    }).immediate();
+    if (r.error) return res.status(r.status).json(r.error);
+    res.status(201).json({ id: r.id });
   }));
 
   app.get('/api/finanzas/cxp/:id/pagos', h((req, res) => {
