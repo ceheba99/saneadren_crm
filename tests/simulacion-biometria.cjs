@@ -50,6 +50,7 @@ const PDF = Buffer.from('%PDF-1.4\n% consentimiento biometrico\n' + crypto.rando
     U[nombre.split(' ')[0]] = exigir(await pedir('POST', '/usuarios', A, { nombre, password: CLAVE, rol, sucursales: [s] }), 'crear ' + nombre);
     T[nombre.split(' ')[0]] = exigir(await pedir('POST', '/login', null, { nombre, password: CLAVE }), 'entrar ' + nombre).token;
   }
+  require('./ligar-fichas.cjs')(DB, ['Gema Gerente', 'Gus GerenteMx']); // etapa 6: quien edita personal tiene su ficha ligada
   const PIN = {};
   const alta = async (nombre, pin) => {
     const p = exigir(await pedir('POST', '/personal', T.Gema, { nombre, puesto: 'Técnico' }), 'alta'); const c = exigir(await pedir('POST', '/asistencia/personal/' + p.id + '/pin', T.Gema), 'checador');
@@ -69,6 +70,7 @@ const PDF = Buffer.from('%PDF-1.4\n% consentimiento biometrico\n' + crypto.rando
   revisa(conBase(d => d.prepare("SELECT COUNT(*) n FROM auditoria WHERE detalle LIKE '%firmó el consentimiento biométrico%'").get().n) === 1, 'La marca queda en la bitácora');
   revisa((await pedir('POST', '/asistencia/personal/' + juan.id + '/biometria/codigo', T.Valeria))[0] === 403, 'Ventas no da códigos');
   revisa((await pedir('POST', '/asistencia/personal/' + juan.id + '/biometria/codigo', T.Gus))[0] === 404, 'El gerente de CDMX no da códigos para Querétaro');
+  require('./ligar-fichas.cjs').soltar(DB, 'Gema Gerente'); // su ficha de verdad sustituye a la de prueba
   const gemaFicha = exigir(await pedir('POST', '/personal', A, { nombre: 'Gema Gerente Ficha', puesto: 'Administración', usuario_id: U.Gema.id, sucursal_id: qro.id }), 'ficha de Gema');
   revisa((await pedir('POST', '/asistencia/personal/' + gemaFicha.id + '/biometria/codigo', T.Gema))[1].codigo === 'PROPIO', 'Gema no se da un código a sí misma');
   revisa((await pedir('PUT', '/asistencia/personal/' + gemaFicha.id + '/biometria/consentimiento', T.Gema, { firmado: true }))[1].codigo === 'PROPIO', 'Ni marca su propio consentimiento');

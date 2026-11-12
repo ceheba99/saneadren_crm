@@ -47,6 +47,7 @@ const CLABE = '014680655039528945', CLABE2 = '012180001234567899';
     [s, j] = await pedir('POST', '/usuarios', A, { nombre, password: CLAVE, rol, sucursales: [suc] }); if (s !== 201) throw new Error(JSON.stringify(j));
     ID[nombre.split(' ')[0]] = j.id; T[nombre.split(' ')[0]] = (await pedir('POST', '/login', null, { nombre, password: CLAVE }))[1].token;
   }
+  require('./ligar-fichas.cjs')(DB, ['Monica Gerente', 'Sergio Supervisor', 'Gerardo Cdmx']); // etapa 6: quien edita personal tiene su ficha ligada
   const { Monica: M, Sergio: S, Laura: L, Raul: R, Gerardo: G } = T;
 
   console.log('1. Altas y validaciones');
@@ -86,7 +87,7 @@ const CLABE = '014680655039528945', CLABE2 = '012180001234567899';
   [s] = await pedir('PUT', '/personal/' + pOscar.id, M, { telefono: '1' }); revisa(s === 404, 'ni lo edita');
   [s] = await pedir('POST', '/personal/' + pOscar.id + '/baja', M, { motivo: 'hack hack' }); revisa(s === 404, 'ni lo da de baja');
   [s, j] = await pedir('GET', '/personal', G); revisa(s === 200 && j.length === 1 && j[0].id === pOscar.id, 'Gerardo (CDMX) solo ve a Óscar', j.map?.(p => p.nombre));
-  [s, j] = await pedir('GET', '/personal?estado=todos', A); revisa(j.length === 4, 'Dirección ve a todos');
+  [s, j] = await pedir('GET', '/personal?estado=todos', A); revisa(j.filter(p => !/^Ficha propia /.test(p.nombre)).length === 4, 'Dirección ve a todos');
   [s, j] = await pedir('GET', '/personal/usuarios/sin-ficha', G); revisa(s === 200 && !j.some(u => /Monica|Sergio|Laura/.test(u.nombre)), 'para ligar cuentas, Gerardo solo ve usuarios de CDMX', j.map?.(u => u.nombre));
   [s, j] = await pedir('PUT', '/personal/' + pOscar.id, G, { usuario_id: ID.Laura }); revisa(s === 400, 'y no puede ligar a Óscar la cuenta de alguien de Querétaro', j);
 

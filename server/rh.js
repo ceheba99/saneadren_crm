@@ -67,6 +67,8 @@ module.exports = function rh(app, db, h) {
         else if (suc) { horario = asistencia.horarioPorNombre(suc.id, x.horario); if (!horario) errores.push(`No existe el horario «${x.horario}» en ${suc.nombre}`); }
       }
       if (x.checador && !SI.test(x.checador) && !/^(no|0|)$/i.test(x.checador)) errores.push('En «Checador» escribe Sí o No');
+      // Etapa 6 (A-04): sin ficha ligada no se dan PIN (el sistema no sabría cuál es la suya).
+      if (SI.test(x.checador) && personal.sinFicha(req)) errores.push('Para dar de alta en el checador primero deben ligar tu usuario a tu ficha de personal (lo hace Dirección o RH): deja «Checador» en No');
       salida.push({ fila, nombre: x.nombre, puesto, sucursal: suc?.nombre || null, horario: horario?.nombre || null, checador: SI.test(x.checador), errores, _datos: v.datos, _horario: horario });
     });
     return { filas: salida, hay_errores: salida.some(f => f.errores.length) };

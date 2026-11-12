@@ -101,7 +101,10 @@ const azar = () => { semilla = (semilla * 1103515245 + 12345) % 2147483648; retu
   // Marketing tampoco: el rol «con todo» copia al gerente, que no ve Marketing (2026-10-26).
   // Facturación (2026-10-27): la conexión con factura.com y la serie y el CP de cada sucursal son solo de Dirección (como el respaldo).
   // Reloj checador (2026-11-03): borrar ya las fotos viejas de las checadas de todas las sucursales (F6).
-  const deDireccion = k => DIRECCION_ESPERADO.test(k) || /^DELETE /.test(k) || /^POST \/(usuarios|sucursales|clientes)\/\d+\/eliminar$/.test(k) || /^\w+ \/clientes-(carga|gestion)(\/|$)/.test(k) || /^\w+ \/marketing(\/|$)/.test(k) || /^\w+ \/facturacion(\/|$)/.test(k) || k === 'POST /asistencia/fotos/limpiar' || k === 'POST /asistencia/festivos' || k === 'PUT /asistencia/reglas-extra' || /^\w+ \/avisos(\/|$)/.test(k); // festivos y reglas del tiempo extra valen para todas las sucursales; avisos: de fábrica solo Dirección (se da con «Publicar avisos»)
+  // Etapa 6 (2026-11-12, regla aprobada por Dirección): quien no tiene su ficha de personal ligada (aquí, «Prueba Todo») no da
+  // PIN, enlace del celular ni código de la cara; Dirección sí.
+  const SIN_FICHA = new Set(['POST /asistencia/personal/1/pin', 'POST /asistencia/personal/1/celular', 'POST /asistencia/personal/1/biometria/codigo']);
+  const deDireccion = k => SIN_FICHA.has(k) || DIRECCION_ESPERADO.test(k) || /^DELETE /.test(k) || /^POST \/(usuarios|sucursales|clientes)\/\d+\/eliminar$/.test(k) || /^\w+ \/clientes-(carga|gestion)(\/|$)/.test(k) || /^\w+ \/marketing(\/|$)/.test(k) || /^\w+ \/facturacion(\/|$)/.test(k) || k === 'POST /asistencia/fotos/limpiar' || k === 'POST /asistencia/festivos' || k === 'PUT /asistencia/reglas-extra' || /^\w+ \/avisos(\/|$)/.test(k); // festivos y reglas del tiempo extra valen para todas las sucursales; avisos: de fábrica solo Dirección (se da con «Publicar avisos»)
   revisa(soloDireccion.every(deDireccion), `lo que el rol con todo NO puede y Dirección sí son solo cosas de todas las sucursales o borrar (${soloDireccion.length})`, soloDireccion.filter(k => !deDireccion(k)));
   revisa(fT['GET /permisos'] === 403 && fT['PUT /roles/1/permisos'] === 403 && fT['POST /roles'] === 403, 'ni con todos los permisos se editan roles (solo Dirección)');
 

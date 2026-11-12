@@ -156,6 +156,16 @@ module.exports = function personal(app, db, h) {
     res.status(403).json({ error: `No puedes ${que} de ti mismo: pídeselo a otra persona con permiso (RH, tu gerente o Dirección).`, codigo: 'PROPIO' });
     return true;
   };
+  // Auditoría 2026-11-12 (etapa 6, A-04, regla aprobada por Dirección): el candado de arriba depende de que la ficha esté
+  // ligada a su usuario. Quien no tiene ficha ligada no cambia sueldos ni datos de pago ni da PIN, enlaces o códigos de
+  // cara (el sistema no sabría cuál es la suya); primero Dirección o RH ligan su ficha. Dirección es la excepción.
+  const sinFicha = req => !P.direccion(req) && !db.prepare('SELECT 1 FROM main.personal WHERE usuario_id = ?').get(req.usuarioSesion?.id ?? -1);
+  const sinFichaLigada = (req, res, que) => {
+    if (!sinFicha(req)) return false;
+    res.status(403).json({ error: `Para ${que} primero deben ligar tu usuario a tu ficha de personal (lo hace Dirección o RH). Así el sistema sabe cuál es la tuya y no te la cambias tú.`, codigo: 'SIN_FICHA' });
+    return true;
+  };
+  const esSensible = k => SENSIBLES.includes(k.replace(/_cent$/, ''));
 
   // Lo que se manda de una persona: lo sensible solo con permiso (si no, la CLABE enmascarada y lo demás fuera).
   // En la lista (lista = true) nunca va lo sensible, ni con permiso: así no sale todo de golpe en una sola respuesta.
@@ -304,12 +314,22 @@ module.exports = function personal(app, db, h) {
       if (c.checadas) partes.push(`${c.checadas} checada(s) por revisar`);
       avisos.push({ tipo: 'cara', nivel: 'rojo', persona_id: c.personal_id, nombre: c.nombre, fecha: c.fecha, intentos: c.intentos, checadas: c.checadas, texto: partes.join(' · ') });
     }
+    // El reloj checador no responde (2026-11-12, kiosco-vigia.js): para quien maneja los kioscos, de sus sucursales.
+    if (P.puede(req, 'asistencia.kioscos')) {
+      const mios = new Set(db.prepare("SELECT id FROM checador_dispositivos WHERE tipo = 'kiosco'").all().map(k => k.id));
+      for (const k of app.locals.checador?.kioscosCaidos?.() || []) if (mios.has(k.id))
+        avisos.push({ tipo: 'kiosco', nivel: 'rojo', nombre: k.nombre + (k.sucursal ? ' · ' + k.sucursal : ''), fecha: k.fecha,
+          texto: `No da señal desde ${k.desde || 'hace más de 5 minutos'}: revisa que la tableta esté prendida, desbloqueada, con internet y con el checador abierto` });
+      for (const k of app.locals.checador?.kioscosAtencion?.() || []) if (mios.has(k.id))
+        avisos.push({ tipo: 'kiosco_atencion', nivel: 'amarillo', nombre: k.nombre + (k.sucursal ? ' · ' + k.sucursal : ''), fecha: k.fecha,
+          texto: k.tipo === 'bateria' ? `Batería en ${k.bateria} % y sin cargador: conéctala para que no se apague` : 'La cámara no está funcionando: las checadas quedan sin foto y por revisar' });
+    }
     // Baja en RH con su usuario del CRM todavía activo (Dirección, 2026-11-11, auditoría H11): pendiente obligatorio para
     // Dirección hasta que desactive o elimine el usuario (RH no administra usuarios). Se va solo al desactivarlo.
     if (P.direccion(req)) for (const p of db.prepare('SELECT p.id, p.nombre, p.fecha_baja, u.nombre AS usuario FROM main.personal p JOIN main.usuarios u ON u.id = p.usuario_id WHERE p.activo = 0 AND u.activo = 1').all())
       avisos.push({ tipo: 'baja_con_acceso', nivel: 'rojo', persona_id: p.id, nombre: p.nombre, texto: `Se dio de baja en RH pero su usuario «${p.usuario}» sigue activo: desactívalo en Configuración › Ajustes`, fecha: p.fecha_baja });
     const peso = { rojo: 0, amarillo: 1, azul: 2 };
-    res.json(avisos.sort((a, b) => (b.tipo === 'cara') - (a.tipo === 'cara') || peso[a.nivel] - peso[b.nivel] || String(a.fecha).localeCompare(String(b.fecha))));
+    res.json(avisos.sort((a, b) => (b.tipo === 'kiosco') - (a.tipo === 'kiosco') || (b.tipo === 'cara') - (a.tipo === 'cara') || peso[a.nivel] - peso[b.nivel] || String(a.fecha).localeCompare(String(b.fecha))));
   }));
   app.get('/api/personal/:id', h((req, res) => {
     if (!ve(req)) return negar(res);
@@ -338,6 +358,9 @@ module.exports = function personal(app, db, h) {
   function revisarAlta(req, b) {
     const v = validar(req, b || {}, null);
     if (v.error) return v;
+    // Etapa 6 (A-04): nadie liga su propio usuario a una ficha, y sin ficha ligada no se capturan datos de pago.
+    if (!P.direccion(req) && v.datos.usuario_id && v.datos.usuario_id === req.usuarioSesion?.id) return { error: 'No puedes ligar tu propio usuario a una ficha: pídeselo a otra persona con permiso (RH, tu gerente o Dirección).', status: 403 };
+    if (sinFicha(req) && Object.keys(v.datos).some(k => esSensible(k) && v.datos[k] !== null)) return { error: 'Para capturar sueldos o datos de pago primero deben ligar tu usuario a tu ficha de personal (lo hace Dirección o RH). Así el sistema sabe cuál es la tuya y no te la cambias tú.', status: 403 };
     if (db.prepare('SELECT 1 FROM personal WHERE lower(nombre) = lower(?) AND activo = 1').get(v.datos.nombre)) return { error: 'Ya hay una persona activa con ese nombre', status: 409 };
     return v;
   }
@@ -372,6 +395,16 @@ module.exports = function personal(app, db, h) {
     if (d.nombre && d.nombre.toLowerCase() !== p.nombre.toLowerCase() && db.prepare('SELECT 1 FROM personal WHERE lower(nombre) = lower(?) AND activo = 1 AND id <> ?').get(d.nombre, p.id)) return res.status(409).json({ error: 'Ya hay una persona activa con ese nombre' });
     const cambian = Object.keys(d).filter(k => String(d[k] ?? '') !== String(p[k] ?? ''));
     if (!cambian.length) return res.json(presentar(req, p));
+    // Etapa 6 (A-04, regla aprobada por Dirección el 2026-11-12): nadie cambia su propio sueldo o datos de pago, ni la
+    // cuenta ligada a su ficha (desligarse quitaba el candado de «nadie se corrige a sí mismo»), ni liga su propio usuario
+    // a otra ficha. Sin ficha ligada no se cambian datos de pago de nadie. Dirección sí.
+    const sens = cambian.filter(esSensible), cuenta = cambian.includes('usuario_id');
+    if (!P.direccion(req)) {
+      if (sens.length && esPropio(req, res, p.id, 'cambiar el sueldo o los datos de pago')) return;
+      if (cuenta && esPropio(req, res, p.id, 'cambiar la cuenta ligada a la ficha')) return;
+      if (cuenta && d.usuario_id === req.usuarioSesion?.id) return res.status(403).json({ error: 'No puedes ligar tu propio usuario a una ficha: pídeselo a otra persona con permiso (RH, tu gerente o Dirección).', codigo: 'PROPIO' });
+      if (sens.length && sinFichaLigada(req, res, 'cambiar sueldos o datos de pago')) return;
+    }
     const c = sellar(p.id, Object.fromEntries(cambian.map(k => [k, d[k]])));
     db.transaction(() => {
       db.prepare(`UPDATE main.personal SET ${cambian.map(k => k + ' = ?').join(', ')}, updated_at = datetime('now','localtime'), version = version + 1 WHERE id = ?`).run(...cambian.map(k => c[k]), p.id);
@@ -613,7 +646,7 @@ module.exports = function personal(app, db, h) {
   // Nómina (nomina.js, F3 contable): la ficha descifrada (sueldos semanales y CLABE) de una persona, sin pasar por la pantalla.
   const fichaPago = id => { const p = leer(id); return p ? { id: p.id, nombre: p.nombre, puesto: p.puesto, sucursal_id: p.sucursal_id, activo: p.activo, fecha_baja: p.fecha_baja, fecha_ingreso: p.fecha_ingreso, checa: p.checa,
     numero_empleado: p.numero_empleado, banco: p.banco, clabe: p.clabe, sueldo_imss_semanal_cent: p.sueldo_imss_semanal_cent ?? null, bono_semanal_cent: p.bono_semanal_cent ?? null, ilegibles: p._ilegibles || [] } : null; };
-  return { fichaPago, esPropio, revisarAlta, guardarAlta, PUESTOS, validarEquipo, guardarEquipo, responsableDesdeUsuario, equipoDe, textoEquipo, PAPELES, vacacionesDe: p => vacacionesDe(p, usadas, hoyMexico()), clabeValida, diasLFT };
+  return { fichaPago, esPropio, sinFicha, sinFichaLigada, revisarAlta, guardarAlta, PUESTOS, validarEquipo, guardarEquipo, responsableDesdeUsuario, equipoDe, textoEquipo, PAPELES, vacacionesDe: p => vacacionesDe(p, usadas, hoyMexico()), clabeValida, diasLFT };
 };
 module.exports.diasLFT = diasLFT;
 module.exports.clabeValida = clabeValida;

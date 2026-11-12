@@ -232,6 +232,34 @@
   K.anotar = function (motivo) {
     try { var l = JSON.parse(localStorage.getItem(DIAG) || '[]'); l.push({ t: new Date().toISOString(), m: String(motivo).slice(0, 200) }); localStorage.setItem(DIAG, JSON.stringify(l.slice(-10))); } catch (e) { /* sin almacenamiento */ }
   };
+  // CAJA NEGRA (2026-11-12, Dirección: «otra vez se puso en blanco al desbloquear y tuve que reiniciar la app»; en los
+  // Logs no quedó nada porque el vigilante solo anota lo que él mismo arregla). Cada 5 s se guarda una señal de vida
+  // (y si la página está a la vista u oculta). Al arrancar, si la vez anterior no terminó por una recarga que pidió el
+  // propio kiosco, se anota cómo quedó: así se sabe si el programa seguía vivo (pantalla sin dibujar) o si el navegador
+  // lo había descartado, y si la caché tardó en entregar la página. Llega a los Logs del sistema con lo demás.
+  var CAJA = 'saneadren_kiosco_caja', ultimaSenal = 0;
+  function caja(cambios) { try { var c = JSON.parse(localStorage.getItem(CAJA) || '{}'); for (var k in cambios) c[k] = cambios[k]; localStorage.setItem(CAJA, JSON.stringify(c)); } catch (e) { /* sin almacenamiento */ } }
+  function hace(ms) { var m = Math.max(0, Math.round(ms / 60000)); return m < 1 ? 'menos de 1 min' : m < 90 ? m + ' min' : Math.round(m / 60) + ' h'; }
+  K.cierre = function (motivo) { caja({ fin: String(motivo).slice(0, 40), finT: Date.now() }); }; // recarga que pide el propio kiosco
+  (function () {
+    var a = null, ahora = Date.now();
+    try { a = JSON.parse(localStorage.getItem(CAJA) || 'null'); } catch (e) { a = null; }
+    try { localStorage.setItem(CAJA, JSON.stringify({ lat: ahora, ocu: document.visibilityState === 'hidden' ? ahora : 0 })); } catch (e) { /* sin almacenamiento */ }
+    if (!a || !a.lat || (a.finT && ahora - a.finT < 30000)) return;
+    var como = 'abrieron la app';
+    try { var n = performance.getEntriesByType('navigation')[0].type; if (n === 'reload') como = 'recarga del navegador'; else if (n === 'back_forward') como = 'regreso'; } catch (e) { /* no disponible */ }
+    var texto = 'Reinicio (' + como + '). Última señal hace ' + hace(ahora - a.lat) + '; ' + (a.ocu ? 'estaba bloqueada u oculta' : 'estaba a la vista') + (a.mem ? '; memoria ' + a.mem + ' MB' : '') + (document.wasDiscarded ? '; descartada' : '');
+    var anotado = false, anotar = function (extra) { if (!anotado) { anotado = true; K.anotar(texto + extra); } };
+    try {
+      // Aperturas de la página desde la última señal (la última es esta misma): ¿alguna se quedó sin respuesta o tardó?
+      caches.match('/kiosco-bitacora').then(function (r) { return r ? r.json() : []; }).then(function (l) {
+        l = l.filter(function (x) { return x && x.t > a.lat; }).slice(0, -1);
+        var sin = l.filter(function (x) { return x.ms == null; }).length, lenta = Math.max.apply(null, [0].concat(l.map(function (x) { return x.ms || 0; })));
+        anotar(sin ? '; caché: ' + sin + ' sin responder' : lenta > 4000 ? '; caché lenta: ' + Math.round(lenta / 1000) + ' s' : '');
+      }, function () { anotar(''); });
+      setTimeout(function () { anotar(''); }, 3000);
+    } catch (e) { anotar(''); }
+  })();
   function vacia() {
     var p = document.getElementById('pantalla');
     return !p || document.getElementById('arranque') || !p.firstElementChild || !(p.innerText || p.textContent || '').trim();
@@ -241,8 +269,9 @@
     p.className = 'pantalla';
     p.innerHTML = '<div class="arranque" id="arranque"><h1>Reiniciando el reloj checador…</h1><p></p><button type="button">Reintentar ahora</button></div>';
     p.querySelector('p').textContent = texto + (segundos ? ' Se reintenta solo en ' + segundos + ' s.' : '');
-    p.querySelector('button').onclick = function () { location.replace('/kiosco'); };
+    p.querySelector('button').onclick = recargar;
   }
+  function recargar() { K.cierre('vigilante'); location.replace('/kiosco'); }
   function recuperar(motivo) {
     if (recuperando) return; recuperando = true;
     K.anotar(motivo);
@@ -252,14 +281,21 @@
     var v = leer(), n = (v.n || 0) + 1, espera = [0, 5, 15, 30, 60][Math.min(n - 1, 4)];
     guardar({ n: n, t: Date.now() });
     panel('No respondió (' + motivo + ').', espera);
-    setTimeout(function () { location.replace('/kiosco'); }, espera * 1000 + 300);
+    setTimeout(recargar, espera * 1000 + 300);
   }
   window.addEventListener('error', function (e) { K.errores++; if (!K.listo && Date.now() - cargado > 3000) recuperar('error al iniciar: ' + String(e && e.message || '').slice(0, 80)); });
   window.addEventListener('unhandledrejection', function () { K.errores++; });
-  document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'hidden') oculto = Date.now(); else { vaciaDesde = 0; cargado = Math.max(cargado, Date.now() - 6000); } });
+  document.addEventListener('visibilitychange', function () {
+    var t = Date.now();
+    if (document.visibilityState === 'hidden') { oculto = t; caja({ lat: t, ocu: t }); } else { vaciaDesde = 0; cargado = Math.max(cargado, t - 6000); ultimaSenal = t; caja({ lat: t, ocu: 0 }); }
+  });
   setInterval(function () {
-    if (recuperando || document.visibilityState === 'hidden') return;
     var ahora = Date.now();
+    if (document.visibilityState !== 'hidden' && ahora - ultimaSenal >= 5000) {
+      var mem = 0; try { mem = Math.round(performance.memory.usedJSHeapSize / 1048576) || 0; } catch (e) { mem = 0; }
+      ultimaSenal = ahora; caja({ lat: ahora, ocu: 0, mem: mem });
+    }
+    if (recuperando || document.visibilityState === 'hidden') return;
     if (K.listo && !vacia()) { var v = leer(); if (v.n && ahora - (v.t || 0) > 60000) guardar({}); vaciaDesde = 0; return; } // un minuto bien: se olvidan los intentos
     if (!K.listo && ahora - cargado > 12000) return recuperar('no terminó de iniciar');
     if (K.listo && vacia()) { if (!vaciaDesde) vaciaDesde = ahora; else if (ahora - vaciaDesde > 4000) recuperar('pantalla vacía'); }
@@ -294,6 +330,8 @@
   function reiniciarEspera(ms = ESPERA_MS) { clearTimeout(temporizador); temporizador = setTimeout(inicio, ms); }
 
   // ---------- Batería del dispositivo (solo lectura local, independiente de las checadas) ----------
+  // tabletaBateria: la misma lectura viaja con la señal al servidor para que avise si se está quedando sin pila (2026-11-12).
+  let tabletaBateria = null;
   (() => {
     const indicador = $('bateria'), texto = $('bateria-texto'), nivel = $('bateria-nivel'), aviso = $('bateria-aviso');
     let bateria = null;
@@ -321,7 +359,7 @@
     try {
       Promise.resolve(navigator.getBattery()).then(b => {
         if (!b || typeof b.addEventListener !== 'function') { noDisponible(); return; }
-        bateria = b;
+        bateria = tabletaBateria = b;
         bateria.addEventListener('levelchange', actualizar);
         bateria.addEventListener('chargingchange', actualizar);
         document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') actualizar(); });
@@ -403,7 +441,7 @@
   // Toda petición tiene límite de tiempo (2026-11-11): al volver del bloqueo o con ahorro de energía la red puede no
   // contestar nunca, y sin límite el kiosco se quedaba esperando (pantalla vacía o «Registrando…» para siempre). Si se
   // agota, cuenta como «sin conexión»: cada paso ya sabe qué hacer en ese caso (guardar la checada aquí, avisar…).
-  const LIMITES = { checar: 20000, 'sin-conexion': 25000, 'rostro-registrar': 20000 };
+  const LIMITES = { checar: 12000, 'sin-conexion': 25000, 'rostro-registrar': 20000 };
   async function api(ruta, cuerpo) {
     const corte = new AbortController(), t = setTimeout(() => corte.abort(), LIMITES[ruta.split('?')[0]] || 12000);
     try {
@@ -416,10 +454,18 @@
       return { status: r.status, ok: r.ok, j };
     } finally { clearTimeout(t); }
   }
+  // Con cada señal la tableta dice cómo está: batería, si tiene cargador y si su cámara sirve (server/kiosco-vigia.js).
+  function estadoTableta() {
+    const p = ['cam=' + (camaraFallo ? 0 : 1)], b = tabletaBateria;
+    if (b && typeof b.level === 'number' && b.level >= 0 && b.level <= 1) p.push('b=' + Math.round(b.level * 100), 'c=' + (b.charging === true ? 1 : 0));
+    return '?' + p.join('&');
+  }
   async function conectar() {
     try {
-      const r = await api('estado');
-      if (r.status === 401) { noRegistrado(); return false; }
+      const r = await api('estado' + estadoTableta());
+      // Solo el servidor del checador puede decir «este kiosco no está registrado» (2026-11-12): cualquier otro 401 es un
+      // problema de la red y cuenta como sin conexión (antes dejaba la tableta en «no es un kiosco» hasta reiniciarla).
+      if (r.status === 401 && r.j.codigo === 'KIOSCO_NO_REGISTRADO') { noRegistrado(); return false; }
       if (!r.ok) throw new Error('servidor');
       const hora = Date.parse(r.j.utc);
       if (!Number.isFinite(hora)) throw new Error('servidor'); // sin hora válida no es el servidor del checador
@@ -856,8 +902,26 @@
   // pantalla del código tiene el botón «Leer mi credencial»: prende la cámara hasta 20 s, lee el QR, pone el código y
   // pasa al PIN. Quien la olvidó teclea su código como siempre. El QR solo reemplaza al código: el PIN se sigue pidiendo.
   const QR_CREDENCIAL = /^SANEADREN-CHECADOR:(\d{4})$/;
-  let lectorQR = null;
-  try { if ('BarcodeDetector' in window) BarcodeDetector.getSupportedFormats().then(f => { if (f.includes('qr_code')) lectorQR = new BarcodeDetector({ formats: ['qr_code'] }); }).catch(() => {}); } catch { lectorQR = null; }
+  // 2026-11-12 (Dirección: «al cerrar y abrir la app, o al reinstalarla, no sale el botón de leer la credencial»). El
+  // lector de QR de la tableta contesta un momento DESPUÉS de que sale el teclado (y recién instalada la app puede
+  // tardar más o decir que todavía no): antes se preguntaba una sola vez y el botón ya no aparecía. Ahora, cuando el
+  // lector está listo, la pantalla del código se vuelve a pintar con su botón (si nadie ha tecleado nada), y si no
+  // contesta se vuelve a preguntar (a los 2, 5, 15 y 60 s, y cada vez que la tableta se desbloquea).
+  let lectorQR = null, buscandoQR = false;
+  function buscarLectorQR(intento = 0) {
+    if (lectorQR || buscandoQR || !('BarcodeDetector' in window)) return;
+    buscandoQR = true;
+    const otra = () => { buscandoQR = false; const espera = [2000, 5000, 15000, 60000][intento]; if (espera) setTimeout(() => buscarLectorQR(intento + 1), espera); };
+    try {
+      BarcodeDetector.getSupportedFormats().then(f => {
+        if (!f.includes('qr_code')) return otra();
+        lectorQR = new BarcodeDetector({ formats: ['qr_code'] }); buscandoQR = false;
+        const p = $('pantalla');
+        if (estado.esCodigo && !p.querySelector('.btn-credencial') && !/\d/.test(p.querySelector('.digitos')?.textContent || '')) inicio();
+      }).catch(otra);
+    } catch { otra(); }
+  }
+  buscarLectorQR();
   const LECTURA_MS = 20000;
   async function leerCredencial() {
     estado = { leyendo: Symbol('lectura') }; adelantadas = '';
@@ -955,8 +1019,10 @@
     if (sinConexion) { sinConexion = false; avisos(); }
     if (r.j.cambiar_pin) return nuevoPin(r.j);
     await camaraA(); // que la vista de la cámara ya esté prendida al elegir
-    if (rostro) return elegirTipo({ ...r.j, rostro }); // ya se intentó con la cara y no coincidió: por revisar
-    continuar(r.j);
+    // respaldo: si la red se cae justo al checar, con esto la checada se guarda aquí en vez de perderse (ver checar()).
+    const datos = { ...r.j, respaldo: { codigo, pin } };
+    if (rostro) return elegirTipo({ ...datos, rostro }); // ya se intentó con la cara y no coincidió: por revisar
+    continuar(datos);
   }
   // Con biométrico pero sin haber pasado por la cara (p. ej. no se pudo preguntar), se comprueba antes de elegir.
   const continuar = datos => (datos.biometria ? verificarCara(datos) : elegirTipo(datos));
@@ -1080,9 +1146,21 @@
     const imagen = foto();
     pintar(el('p', { className: 'ayuda', textContent: 'Registrando…' }));
     if (datos.sinConexion) return guardarSinConexion({ ...datos.sinConexion, tipo, foto: imagen });
-    let r;
-    try { r = await api('checar', { ticket: datos.ticket, tipo, foto: imagen, ...(datos.rostro ? { rostro: datos.rostro } : {}) }); }
-    catch { return error('Se perdió la conexión mientras checabas. Vuelve a intentarlo: se guardará en este kiosco.'); }
+    // 2026-11-12 (blindaje): si la red falla justo al checar, antes había que empezar de nuevo y quien ya se había ido
+    // se quedaba sin checada. Ahora se intenta otra vez (el servidor reconoce el mismo permiso: no duplica) y, si sigue
+    // sin red o el servidor falla, la checada de quien entró con su PIN se guarda aquí como las de «sin conexión».
+    const cuerpo = { ticket: datos.ticket, tipo, foto: imagen, ...(datos.rostro ? { rostro: datos.rostro } : {}) };
+    let r = null;
+    for (let i = 0; i < 2 && !r; i++) { try { r = await api('checar', cuerpo); } catch { r = null; if (!i) await new Promise(ok => setTimeout(ok, 1500)); } }
+    if (!r || r.status >= 500) {
+      if (datos.respaldo) { if (!r) { sinConexion = true; avisos(); } return guardarSinConexion({ ...datos.respaldo, tipo, foto: imagen }); }
+      return error(r ? r.j.error || 'No se pudo registrar' : 'Se perdió la conexión mientras checabas. Vuelve a intentarlo y escribe tu PIN: se guardará en este kiosco.');
+    }
+    // El permiso para checar ya no servía (p. ej. el sistema se actualizó en ese momento): con el PIN que la persona
+    // ya escribió se pide otro y se checa, sin que tenga que empezar de nuevo.
+    if (r.status === 401 && r.j.codigo !== 'KIOSCO_NO_REGISTRADO' && datos.respaldo) {
+      try { const n = await api('identificar', datos.respaldo); if (n.ok && n.j.ticket && !n.j.cambiar_pin) r = await api('checar', { ...cuerpo, ticket: n.j.ticket }); } catch { /* se queda con la respuesta anterior */ }
+    }
     if (!r.ok) return error(r.j.error || 'No se pudo registrar');
     listo('ok', `${r.j.tipo} · ${r.j.hora}`, r.j.repetida ? 'Ya estaba registrada hace un momento.' : r.j.por_revisar ? `Gracias, ${r.j.nombre}. No se reconoció tu cara: tu gerente la revisará.` : r.j.sin_foto ? `Gracias, ${r.j.nombre}. Sin foto: tu gerente la revisará.` : `Gracias, ${r.j.nombre}.`, r.j.servicios, r.j.avisos);
   }
@@ -1143,7 +1221,11 @@
   async function subirPendientes() {
     if (subiendo || !registro?.token) return; subiendo = true;
     try {
-      const items = await cola('readonly', s => s.getAll());
+      // 2026-11-12 (blindaje): una checada que el servidor no acepta por un error suyo ya no detiene a las que vienen
+      // detrás. Se cuenta el intento, se sigue con las demás (primero las que menos intentos llevan) y se vuelve a
+      // probar en la siguiente vuelta; tras 5 fallas seguidas se deja para después.
+      const items = (await cola('readonly', s => s.getAll())).sort((a, b) => (a.intentos || 0) - (b.intentos || 0) || a.t0 - b.t0);
+      let fallas = 0;
       for (const x of items) {
         const mismaSesion = x.sesion === SESION;
         const edad = Math.max(0, Math.round(mismaSesion ? performance.now() - x.p0 : Date.now() - x.t0));
@@ -1151,8 +1233,10 @@
         try { r = await api('sin-conexion', { uid: x.uid, codigo: x.codigo, pin: x.pin, tipo: x.tipo, foto: x.foto, edad_ms: edad, monotonica: mismaSesion, hora_dispositivo: new Date(x.t0).toISOString() }); }
         catch { sinConexion = true; avisos(); break; }
         if (r.status === 401 && r.j.codigo === 'KIOSCO_NO_REGISTRADO') break;
-        if (r.ok || r.j.descartar) { await cola('readwrite', s => s.delete(x.uid)); if (!r.ok) rechazadas++; continue; }
-        break; // 429 o error del servidor: se reintenta después
+        if (r.ok || r.j.descartar) { await cola('readwrite', s => s.delete(x.uid)); if (!r.ok) rechazadas++; fallas = 0; continue; }
+        if (r.status === 429) break; // el servidor pide esperar
+        x.intentos = (x.intentos || 0) + 1; await cola('readwrite', s => s.put(x));
+        if (++fallas >= 5) break;
       }
     } catch { /* sin IndexedDB */ }
     subiendo = false; contarPendientes();
@@ -1166,20 +1250,26 @@
   let candado = null;
   const despierta = async () => {
     if (candado || document.visibilityState !== 'visible') return;
-    try { candado = await navigator.wakeLock?.request('screen') || null; candado?.addEventListener('release', () => { candado = null; }); } catch { candado = null; }
+    try { candado = await navigator.wakeLock?.request('screen') || null; candado?.addEventListener('release', () => { candado = null; setTimeout(despierta, 1000); }); } catch { candado = null; }
   };
   // ---------- Volver a la vida (2026-11-11) ----------
   // Al bloquear y desbloquear la tableta, entrar o salir del ahorro de energía o volver de otra app, el navegador
   // congela la página: los relojes internos se detienen, la cámara se suelta y la red tarda en volver. Al regresar se
   // revisa todo: pantalla encendida, reloj al día, y si se quedó a media checada (o vacía) se vuelve al inicio.
   // Varios avisos seguidos (bloquear muchas veces) cuentan como uno solo.
+  // 2026-11-12 (Dirección: «otra vez en blanco al desbloquear; tuve que reiniciar la app», y el vigilante no anotó nada:
+  // el programa seguía vivo o el navegador no volvió a dibujar). Al volver de un bloqueo de más de 15 s el kiosco hace
+  // solo lo que Dirección hacía a mano: se reinicia. Abre al instante con la copia guardada («?copia=1», kiosco-sw.js),
+  // así que no depende de que la red ya haya vuelto; por eso solo se hace cuando la caché está al mando de la página.
+  const REINICIO_MS = 15000;
   let ocultoDesde = 0, reviviendo = null, ultimaConexion = 0;
   function revivir(motivo = '') {
     clearTimeout(reviviendo);
     reviviendo = setTimeout(() => {
       if (document.visibilityState !== 'visible') return;
       const fuera = ocultoDesde ? Date.now() - ocultoDesde : 0; ocultoDesde = 0;
-      despierta(); tic();
+      if (fuera > REINICIO_MS && !deBaja && registro?.token && navigator.serviceWorker?.controller) { window.__kiosco.cierre('regreso del bloqueo'); location.replace('/kiosco?copia=1'); return; }
+      despierta(); tic(); buscarLectorQR();
       // Forzar a redibujar: en algunas tabletas la página vuelve en blanco hasta que algo cambia en pantalla.
       document.body.style.transform = 'translateZ(0)'; requestAnimationFrame(() => { document.body.style.transform = ''; });
       const p = $('pantalla'), vacia = !p.firstElementChild || !!$('arranque') || !p.innerText.trim();
@@ -1200,7 +1290,7 @@
   // La caché (kiosco-sw.js) avisa cuando bajó una versión nueva de la página: se recarga sola cuando nadie la usa.
   let versionNueva = false;
   navigator.serviceWorker?.addEventListener('message', e => { if (e.data?.kiosco === 'version-nueva') versionNueva = true; });
-  setInterval(() => { if (versionNueva && estado.esCodigo && !$('pantalla').querySelector('.digitos')?.textContent.match(/\d/) && document.visibilityState === 'visible') { versionNueva = false; location.reload(); } }, 15000);
+  setInterval(() => { if (versionNueva && estado.esCodigo && !$('pantalla').querySelector('.digitos')?.textContent.match(/\d/) && document.visibilityState === 'visible') { versionNueva = false; window.__kiosco.cierre('versión nueva'); location.reload(); } }, 15000);
   window.addEventListener('online', async () => { if (!deBaja && await conectar()) subirPendientes(); });
   window.addEventListener('offline', () => { sinConexion = true; avisos(); });
   // Un kiosco no conserva la sesión del CRM: si el gerente la dejó abierta al registrarlo (o alguien entra en otra
@@ -1221,12 +1311,20 @@
     // Primero la pantalla (2026-11-11): el teclado sale de inmediato y el servidor se consulta por detrás. Antes se
     // esperaba al servidor sin límite y, si la red no contestaba, la pantalla se quedaba vacía.
     avisos(); inicio(); window.__kiosco.listo = true; despierta(); contarPendientes();
+    // Que el navegador no borre por su cuenta lo guardado aquí (el registro del kiosco y las checadas sin subir).
+    try { navigator.storage?.persist?.().catch(() => {}); } catch { /* no disponible */ }
     ultimaConexion = Date.now();
     if (!await conectar()) return;
     // Al abrir se pide la cámara una vez (para que el permiso quede dado) y se apaga hasta que alguien cheque.
     iniciarCamara().then(() => { if (estado.esCodigo) soltarCamara(); }); subirPendientes(); mandarDiagnostico();
     setTimeout(() => { cargarFaceApi().catch(() => {}); cargarAntispoof().catch(() => {}); }, 5000); // reconocimiento y prueba de vida, listos en segundo plano
-    setInterval(async () => { if (document.visibilityState === 'visible' && !deBaja && await conectar()) { subirPendientes(); mandarDiagnostico(); } }, 60000);
+    setInterval(async () => {
+      if (document.visibilityState !== 'visible' || deBaja) return;
+      despierta(); // el sistema puede soltar «pantalla encendida» (p. ej. con poca batería): se vuelve a pedir cada minuto
+      // La cámara falló y nadie está checando: se prueba sola otra vez (si ya sirve, el aviso se quita sin que nadie lo toque).
+      if (camaraFallo && estado.esCodigo) iniciarCamara().then(() => { if (estado.esCodigo) soltarCamara(); });
+      if (await conectar()) { subirPendientes(); mandarDiagnostico(); }
+    }, 60000);
   })();
 })();
 </script>

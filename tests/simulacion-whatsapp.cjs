@@ -58,6 +58,7 @@ const ultimo = () => enviados[enviados.length - 1];
     U[nombre.split(' ')[0]] = exigir(await pedir('POST', '/usuarios', A, { nombre, password: CLAVE, rol, sucursales: [s] }), 'crear ' + nombre);
     T[nombre.split(' ')[0]] = exigir(await pedir('POST', '/login', null, { nombre, password: CLAVE }), 'entrar ' + nombre).token;
   }
+  require('./ligar-fichas.cjs')(DB, ['Gema Gerente', 'Gus GerenteMx']); // etapa 6: quien edita personal tiene su ficha ligada
   const alta = async (nombre, telefono) => { const p = exigir(await pedir('POST', '/personal', T.Gema, { nombre, puesto: 'Técnico', telefono }), 'alta'); exigir(await pedir('POST', '/asistencia/personal/' + p.id + '/pin', T.Gema), 'checador'); return p; };
   const juan = await alta('Juan Pérez Foráneo', '442 123 4567'), beto = await alta('Beto Ruiz', '442 765 4321'), sinTel = await alta('Sin Teléfono', '');
   const JUAN = '5214421234567', BETO = '5214427654321'; // así llegan los números de México en WhatsApp (con 52 y a veces 1)
@@ -78,6 +79,7 @@ const ultimo = () => enviados[enviados.length - 1];
   exigir(await pedir('PUT', '/asistencia/personal/' + juan.id + '/whatsapp', T.Gema, { activo: true }), 'activar a Juan');
   exigir(await pedir('PUT', '/personal/' + beto.id, T.Gema, { telefono: '4421234567', version: conBase(d => d.prepare('SELECT version FROM personal WHERE id = ?').get(beto.id).version) }), 'poner a Beto el número de Juan');
   revisa((await pedir('PUT', '/asistencia/personal/' + beto.id + '/whatsapp', T.Gema, { activo: true }))[0] === 409, 'El mismo celular no se activa en dos personas');
+  require('./ligar-fichas.cjs').soltar(DB, 'Gema Gerente'); // su ficha de verdad sustituye a la de prueba
   const gemaFicha = exigir(await pedir('POST', '/personal', A, { nombre: 'Gema Gerente Ficha', puesto: 'Administración', telefono: '4429990000', usuario_id: U.Gema.id, sucursal_id: qro.id }), 'ficha de Gema');
   exigir(await pedir('POST', '/asistencia/personal/' + gemaFicha.id + '/pin', A), 'checador de Gema');
   const [sp, jp] = await pedir('PUT', '/asistencia/personal/' + gemaFicha.id + '/whatsapp', T.Gema, { activo: true });

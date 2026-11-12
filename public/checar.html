@@ -76,9 +76,16 @@
   const pintar = (...n) => $('pantalla').replaceChildren(...n);
   const fmt = new Intl.DateTimeFormat('es-MX', { timeZone: ZONA, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
   setInterval(() => { $('reloj').textContent = fmt.format(new Date(Date.now() + desfase)); }, 1000);
+  // Toda petición tiene límite de tiempo (2026-11-12, blindaje): con mala señal se quedaba en «Registrando…» para
+  // siempre. Y solo vale una respuesta del servidor del checador (JSON): la página de un Wi-Fi con portal o un error de
+  // la red cuentan como «sin conexión».
   async function api(ruta, cuerpo) {
-    const r = await fetch('/api/publico/celular/' + ruta, { method: cuerpo ? 'POST' : 'GET', headers: { 'Content-Type': 'application/json', 'X-Celular': token || '' }, body: cuerpo ? JSON.stringify(cuerpo) : undefined, cache: 'no-store' });
-    return { status: r.status, ok: r.ok, j: await r.json().catch(() => ({})) };
+    const corte = new AbortController(), t = setTimeout(() => corte.abort(), 20000);
+    try {
+      const r = await fetch('/api/publico/celular/' + ruta, { method: cuerpo ? 'POST' : 'GET', headers: { 'Content-Type': 'application/json', 'X-Celular': token || '' }, body: cuerpo ? JSON.stringify(cuerpo) : undefined, cache: 'no-store', signal: corte.signal });
+      if (!/application\/json/i.test(r.headers.get('content-type') || '')) throw new Error('respuesta ajena al checador');
+      return { status: r.status, ok: r.ok, j: await r.json().catch(() => ({})) };
+    } finally { clearTimeout(t); }
   }
   function mensaje(clase, icono, titulo, texto, boton, accion) {
     apagarCamara();
@@ -126,7 +133,9 @@
   async function inicio() {
     if (!token) return sinLigar();
     let r; try { r = await api('estado'); } catch { return mensaje('error', '📶', 'Sin conexión', 'Para checar desde el celular necesitas internet (datos o wifi).', 'Reintentar', inicio); }
-    if (r.status === 401) { try { localStorage.removeItem(LLAVE); } catch { /* */ } token = null; return sinLigar(); }
+    // El celular solo se desliga cuando el servidor del checador lo dice (2026-11-12): antes cualquier 401 (p. ej. de
+    // una red con portal) borraba la liga y había que pedirle a RH un enlace nuevo.
+    if (r.status === 401 && r.j.codigo === 'CELULAR_NO_LIGADO') { try { localStorage.removeItem(LLAVE); } catch { /* */ } token = null; return sinLigar(); }
     if (!r.ok) return mensaje('error', '⚠️', 'No se pudo', r.j.error || 'Intenta de nuevo', 'Reintentar', inicio);
     info = r.j; desfase = Date.parse(info.utc) - Date.now();
     if (!info.activo) return mensaje('error', '⚠️', 'No estás en el reloj checador', 'Avisa a RH.');
@@ -202,8 +211,11 @@
     const imagen = foto(), u = posicion && Date.now() - posicion.cuando < 120000 ? posicion : null;
     apagarCamara();
     pintar(el('p', { className: 'ayuda', textContent: 'Registrando…' }));
-    let r; try { r = await api('checar', { pin, tipo, foto: imagen, ...(u ? { lat: u.lat, lon: u.lon, precision: u.precision } : {}) }); }
-    catch { return mensaje('error', '📶', 'Sin conexión', 'No se registró: vuelve a intentarlo con internet.', 'Reintentar', inicio); }
+    // Con mala señal se intenta hasta 3 veces con la misma foto y ubicación (el servidor no duplica la checada).
+    const cuerpo = { pin, tipo, foto: imagen, ...(u ? { lat: u.lat, lon: u.lon, precision: u.precision } : {}) };
+    let r = null;
+    for (let i = 0; i < 3 && !r; i++) { try { r = await api('checar', cuerpo); } catch { r = null; if (i < 2) await new Promise(ok => setTimeout(ok, 2000)); } }
+    if (!r) return mensaje('error', '📶', 'Sin conexión', 'No se registró: vuelve a intentarlo con internet.', 'Reintentar', inicio);
     pin = '';
     if (r.status === 401 && r.j.codigo === 'CELULAR_NO_LIGADO') { try { localStorage.removeItem(LLAVE); } catch { /* */ } token = null; return sinLigar(); }
     if (!r.ok) return mensaje('error', '⚠️', 'No se pudo', r.j.error || 'Intenta de nuevo', 'Volver', inicio);

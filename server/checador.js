@@ -44,6 +44,7 @@ const C = require('./cifrado');
 const { tipoReal } = require('./expediente-oc');
 const { hashToken, nuevoToken } = require('./seguridad');
 const { ahoraMexico } = require('./fechas');
+const { vigia, ventana, correosDe } = require('./kiosco-vigia');
 
 const TIPOS = { entrada: 'Entrada', comida_sale: 'Salida a comer', comida_regresa: 'Regreso de comer', salida: 'Salida', extra_inicia: 'Inicio de tiempo extra', extra_termina: 'Fin de tiempo extra' };
 const SIGUIENTE = { '': 'entrada', entrada: 'comida_sale', comida_sale: 'comida_regresa', comida_regresa: 'salida', salida: 'extra_inicia', extra_inicia: 'extra_termina', extra_termina: 'extra_inicia' };
@@ -274,8 +275,12 @@ module.exports = function checador(app, db, h) {
 
   // ---------- Kiosco (sin sesión: lo identifica su token) ----------
   const fallosKiosco = new Map(), fallosIp = new Map(), tickets = new Map(), fotosIntento = new Map(), ultimoIntento = new Map();
+  // Permisos de checar ya usados (2 min): si la tableta repite la misma checada porque no le llegó la respuesta (red
+  // inestable), recibe la misma respuesta en vez de «se acabó el tiempo» (2026-11-12).
+  const ticketsUsados = new Map();
   setInterval(() => {
     const t = Date.now();
+    for (const [k, v] of ticketsUsados) if (v.expira <= t) ticketsUsados.delete(k);
     for (const m of [fallosKiosco, fallosIp]) for (const [k, v] of m) if (v.reinicia <= t) m.delete(k);
     for (const [k, v] of tickets) if (v.expira <= t) tickets.delete(k);
     for (const [k, v] of fotosIntento) if (v.expira <= t) fotosIntento.delete(k);
@@ -303,8 +308,39 @@ module.exports = function checador(app, db, h) {
     const d = /^[A-Za-z0-9_-]{40,60}$/.test(t) ? dispositivoDe.get(hashToken(t)) : null;
     if (!d) return tokenInvalido(req, res, t, 'Este dispositivo no está registrado como kiosco (o lo dieron de baja). Pide al gerente que lo registre.', 'KIOSCO_NO_REGISTRADO');
     req.kiosco = d;
+    vigiaKioscos.senal(d.id); // señal de vida (kiosco-vigia.js)
     next();
   }
+  // ---------- Aviso «el reloj checador no responde» (2026-11-12, pedido de Dirección; regla en kiosco-vigia.js) ----------
+  // Queda en los Logs del sistema, sale en Inicio (personal.js, para quien tiene «Kioscos del checador», de sus
+  // sucursales) y se manda por correo a Dirección (usuarios con rol admin) y a los correos de CORREO_AVISOS_CHECADOR.
+  const textoKiosco = k => `Kiosco «${k.nombre}»${k.sucursal ? ' (' + k.sucursal + ')' : ''}`;
+  function avisarKiosco(tipo, k) {
+    if (tipo === 'bateria' || tipo === 'camara') return avisarAtencion(tipo, k);
+    const cayo = tipo === 'sin_respuesta';
+    app.locals.registro?.servicio(cayo ? 'kiosco_sin_respuesta' : 'kiosco_volvio', cayo ? `${textoKiosco(k)}: sin señal desde ${k.desde || 'hace más de 5 minutos'}` : `${textoKiosco(k)}: volvió a dar señal a las ${k.volvio}`);
+    const correo = require('./correo');
+    const para = correosDe(db.prepare("SELECT correo FROM main.usuarios WHERE rol = 'admin' AND activo = 1 AND correo IS NOT NULL AND trim(correo) <> ''").all().map(u => u.correo), process.env.CORREO_AVISOS_CHECADOR);
+    const asunto = cayo ? `⚠️ El reloj checador no responde: ${k.nombre}` : `✅ El reloj checador ya responde: ${k.nombre}`;
+    const mensaje = cayo
+      ? `${textoKiosco(k)} no da señal desde ${k.desde || 'hace más de 5 minutos'}. Revisa que la tableta esté prendida, desbloqueada, con internet y con el checador abierto. Mientras tanto, quien tenga su enlace puede checar desde su celular.`
+      : `${textoKiosco(k)} volvió a dar señal a las ${k.volvio}. No había respondido desde ${k.desde || 'antes de las ' + k.hora}.`;
+    for (const c of para) correo.enviar(c, asunto, { titulo: cayo ? 'El reloj checador no responde' : 'El reloj checador ya responde', saludo: 'Hola:', mensaje,
+      pie: 'Aviso automático del CRM de Saneadren: llega una vez cuando el checador deja de responder en horario de trabajo y otra cuando vuelve.' }).catch(e => console.error('[kiosco] correo:', e.message));
+  }
+  // «Necesita atención»: batería baja sin cargador o cámara que no funciona (para arreglarlo antes de que falle).
+  const textoAtencion = k => (k.tipo === 'bateria' ? `batería en ${k.bateria} % y sin cargador: conéctala para que no se apague` : 'la cámara no está funcionando: las checadas quedan sin foto y por revisar (toca el aviso amarillo de la tableta o cierra y abre el checador)');
+  function avisarAtencion(tipo, k) {
+    app.locals.registro?.servicio('kiosco_atencion', `${textoKiosco(k)}: ${textoAtencion(k)}`);
+    const correo = require('./correo');
+    const para = correosDe(db.prepare("SELECT correo FROM main.usuarios WHERE rol = 'admin' AND activo = 1 AND correo IS NOT NULL AND trim(correo) <> ''").all().map(u => u.correo), process.env.CORREO_AVISOS_CHECADOR);
+    for (const c of para) correo.enviar(c, `⚠️ El reloj checador necesita atención: ${k.nombre}`, { titulo: 'El reloj checador necesita atención', saludo: 'Hola:', mensaje: `${textoKiosco(k)}: ${textoAtencion(k)}.`,
+      pie: 'Aviso automático del CRM de Saneadren: llega una sola vez; en Inicio se quita solo cuando se arregla.' }).catch(e => console.error('[kiosco] correo:', e.message));
+  }
+  const vigiaKioscos = vigia({ ahoraMexico, avisar: avisarKiosco, ventanaDe: (suc, fecha) => { try { return ventana(db, suc, fecha); } catch { return null; } },
+    kioscos: () => db.prepare(`SELECT d.id, d.nombre, d.sucursal_id, s.nombre AS sucursal FROM main.checador_dispositivos d LEFT JOIN main.sucursales s ON s.id = d.sucursal_id
+      WHERE d.tipo = 'kiosco' AND d.activo = 1 AND d.eliminado_at IS NULL AND d.ultimo_uso >= datetime('now', 'localtime', '-7 days')`).all() });
+  if (process.env.MODO_DEMO !== '1') setInterval(() => { try { vigiaKioscos.revisar(); } catch (e) { console.error('[kiosco] vigía:', e.message); } }, 60000).unref();
   const ultimaDe = (personaId, fecha) => db.prepare("SELECT tipo, hora FROM main.checadas WHERE personal_id = ? AND fecha = ? AND estado <> 'anulada' ORDER BY momento_utc DESC, id DESC LIMIT 1").get(personaId, fecha);
   // Qué botón sugerir. Tiempo extra que pasa de medianoche (2026-11-11): si hoy aún no checa, es antes de las 12:00 y
   // anoche dejó abierto el «Inicio de tiempo extra», se sugiere «Fin de tiempo extra» (server/asistencia.js lo une).
@@ -426,6 +462,9 @@ module.exports = function checador(app, db, h) {
   app.get('/api/publico/kiosco/estado', kiosco, h((req, res) => {
     const a = ahoraMexico();
     db.prepare("UPDATE main.checador_dispositivos SET ultimo_uso = datetime('now','localtime') WHERE id = ?").run(req.kiosco.id);
+    // La tableta dice cómo está (batería, cargador, cámara): el vigía avisa antes de que falle (kiosco-vigia.js).
+    const q = req.query, b = /^\d{1,3}$/.test(String(q.b ?? '')) ? Number(q.b) : null, si = v => (v === '1' ? true : v === '0' ? false : null);
+    vigiaKioscos.reporte(req.kiosco.id, { bateria: b, cargando: si(q.c), camara: si(q.cam) });
     res.json({ nombre: req.kiosco.nombre, sucursal: req.kiosco.sucursal, fecha: a.fecha, hora: a.hora.slice(0, 5), utc: a.utc, tipos: TIPOS });
   }));
   // Revisa código y PIN con todos los topes. Regresa { p } o { status, error } (el error ya va listo para la pantalla).
@@ -571,16 +610,19 @@ module.exports = function checador(app, db, h) {
   app.post('/api/publico/kiosco/checar', kiosco, h((req, res) => {
     const tipo = String(req.body?.tipo || '');
     if (!TIPOS[tipo]) return res.status(400).json({ error: 'Elige qué vas a registrar' });
+    const tk = String(req.body?.ticket || ''), ya = ticketsUsados.get(tk);
+    if (ya && ya.expira > Date.now() && ya.dispositivoId === req.kiosco.id && ya.tipo === tipo) return res.json({ ...ya.respuesta, repetida: true });
     const p = tomarTicket(req, ['checar']);
     if (!p) return res.status(401).json({ error: 'Se acabó el tiempo. Vuelve a escribir tu código y PIN.' });
     const d = req.kiosco, a = ahoraMexico();
+    const responder = (estatus, respuesta) => { ticketsUsados.set(tk, { dispositivoId: d.id, tipo, respuesta, expira: Date.now() + DUPLICADO_MS }); res.status(estatus).json(respuesta); };
     // Doble toque: la misma checada de la misma persona en menos de 2 minutos no se repite.
     const previa = db.prepare("SELECT id, hora FROM main.checadas WHERE personal_id = ? AND tipo = ? AND estado <> 'anulada' AND momento_utc >= ? ORDER BY id DESC LIMIT 1")
       .get(p.id, tipo, new Date(Date.now() - DUPLICADO_MS).toISOString());
-    if (previa) return res.json({ id: previa.id, nombre: primerNombre(p.nombre), tipo: TIPOS[tipo], hora: previa.hora.slice(0, 5), repetida: true, avisos: avisosDe(p.id, req.kiosco.id), servicios: serviciosDe(p.id, req.kiosco.id) });
+    if (previa) return responder(200, { id: previa.id, nombre: primerNombre(p.nombre), tipo: TIPOS[tipo], hora: previa.hora.slice(0, 5), repetida: true, avisos: avisosDe(p.id, req.kiosco.id), servicios: serviciosDe(p.id, req.kiosco.id) });
     const foto = fotoDe(req.body?.foto), bio = app.locals.biometria?.evaluar(p.id, req.body?.rostro) || null;
     const id = guardarChecada({ p, d, tipo, a, foto, ip: req.ipCliente || null, bio });
-    res.status(201).json({ id, nombre: primerNombre(p.nombre), tipo: TIPOS[tipo], hora: a.hora.slice(0, 5), ...(foto ? {} : { sin_foto: true }), ...(bio?.nota ? { por_revisar: bio.nota } : {}), avisos: avisosDe(p.id, req.kiosco.id), servicios: serviciosDe(p.id, req.kiosco.id) });
+    responder(201, { id, nombre: primerNombre(p.nombre), tipo: TIPOS[tipo], hora: a.hora.slice(0, 5), ...(foto ? {} : { sin_foto: true }), ...(bio?.nota ? { por_revisar: bio.nota } : {}), avisos: avisosDe(p.id, req.kiosco.id), servicios: serviciosDe(p.id, req.kiosco.id) });
   }));
   // Checada que el kiosco guardó SIN CONEXIÓN y sube al volver internet (una por petición). El PIN se revisa aquí, con
   // los mismos topes. La hora = ahora del servidor − el tiempo que pasó según el kiosco («edad»): con su reloj interno
@@ -599,6 +641,11 @@ module.exports = function checador(app, db, h) {
     if (previa) return res.json({ id: previa.id, nombre: primerNombre(p.nombre), tipo: TIPOS[previa.tipo], hora: previa.hora.slice(0, 5), repetida: true });
     if (p.pin_temporal) { audit(null, p.id, 'checada sin conexión rechazada', `${p.nombre}: tenía PIN temporal (debe elegir su PIN con internet)`); return res.status(409).json({ error: 'Debe elegir su PIN con internet', descartar: true }); }
     const a = ahoraMexico(new Date(Date.now() - edad)), monotonica = b.monotonica === true;
+    // La misma checada ya está (2026-11-12): la tableta la guardó «sin conexión» porque no le llegó la respuesta, pero el
+    // servidor sí la había recibido. Misma persona y mismo botón a menos de 2 minutos: no se duplica.
+    const cerca = db.prepare("SELECT id, hora FROM main.checadas WHERE personal_id = ? AND tipo = ? AND estado <> 'anulada' AND momento_utc BETWEEN ? AND ? ORDER BY id DESC LIMIT 1")
+      .get(p.id, tipo, new Date(Date.parse(a.utc) - DUPLICADO_MS).toISOString(), new Date(Date.parse(a.utc) + DUPLICADO_MS).toISOString());
+    if (cerca) return res.json({ id: cerca.id, nombre: primerNombre(p.nombre), tipo: TIPOS[tipo], hora: cerca.hora.slice(0, 5), repetida: true });
     const hd = typeof b.hora_dispositivo === 'string' && /^\d{4}-\d{2}-\d{2}T[\d:.]+Z$/.test(b.hora_dispositivo) ? b.hora_dispositivo : null;
     const id = guardarChecada({ p, d, tipo, a, foto: fotoDe(b.foto), uid, ip: req.ipCliente || null,
       sinConexion: { horaDispositivo: hd, nota: 'Sin conexión: hora ' + (monotonica ? 'calculada con el reloj interno del kiosco' : 'estimada con el reloj de la tableta (el kiosco se reinició)') } });
@@ -777,6 +824,12 @@ module.exports = function checador(app, db, h) {
     const p = persona(req.params.id);
     if (!p) return res.status(404).json({ error: 'Persona no encontrada' });
     if (!p.activo) return res.status(409).json({ error: 'Está dada de baja: no puede checar' });
+    // Etapa 6 (FLW-H08, SEC-04; regla aprobada por Dirección el 2026-11-12): la primera alta sigue con «Editar personal»;
+    // reiniciar un PIN que ya existe pide «Corregir asistencia» (con el PIN nuevo se podía checar por otra persona).
+    // Nunca para uno mismo, y sin ficha ligada tampoco. Dirección sí.
+    if (p.pin_hash && !puede(req, 'asistencia.corregir')) return negar(res, 'Reiniciar el PIN de alguien que ya tiene uno lo hace quien corrige la asistencia (tu gerente o Dirección). Si solo lo bloqueó, usa «Desbloquear».');
+    if (app.locals.personal.esPropio(req, res, p.id, 'dar el PIN del checador')) return;
+    if (app.locals.personal.sinFichaLigada(req, res, 'dar PINes del checador')) return;
     res.json({ ...altaChecador(req, p), aviso: 'Anota el PIN y dáselo a la persona: no se vuelve a mostrar. En su primera checada elegirá el suyo.' });
   }));
   app.post('/api/asistencia/personal/:id/desbloquear', h((req, res) => {
@@ -789,10 +842,12 @@ module.exports = function checador(app, db, h) {
   }));
   // Enlace de un solo uso (24 h) para ligar el celular de la persona. Se muestra una vez; la base guarda solo su hash.
   app.post('/api/asistencia/personal/:id/celular', h((req, res) => {
-    if (!puede(req, 'personal.editar')) return negar(res, 'No tienes permiso para ligar celulares');
+    // Etapa 6 (SEC-04): con el enlace se liga cualquier teléfono como si fuera el de la persona; lo da quien corrige la asistencia.
+    if (!puede(req, 'personal.editar') || !puede(req, 'asistencia.corregir')) return negar(res, 'El enlace para checar desde el celular lo manda quien corrige la asistencia (tu gerente o Dirección)');
     const p = persona(req.params.id);
     if (!p) return res.status(404).json({ error: 'Persona no encontrada' });
     if (app.locals.personal.esPropio(req, res, p.id, 'mandar el enlace para checar desde el celular')) return;
+    if (app.locals.personal.sinFichaLigada(req, res, 'mandar enlaces del celular')) return;
     if (!p.activo || !p.codigo_checador) return res.status(409).json({ error: 'Primero dala de alta en el reloj checador (código y PIN)' });
     const token = nuevoToken();
     db.transaction(() => {
@@ -1059,7 +1114,7 @@ module.exports = function checador(app, db, h) {
     res.json({ ok: true });
   }));
 
-  return { TIPOS, altaChecador, intentosDe, avisosCara };
+  return { TIPOS, altaChecador, intentosDe, avisosCara, kioscosCaidos: () => vigiaKioscos.caidos(), kioscosAtencion: () => vigiaKioscos.atencion() };
 };
 module.exports.pinDebil = pinDebil;
 module.exports.TIPOS = TIPOS;
