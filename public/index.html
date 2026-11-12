@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Saneadren · Cotizaciones y Servicios</title>
-<link rel="stylesheet" href="styles.css?v=dir1">
+<link rel="stylesheet" href="styles.css?v=tg1">
 <link rel="stylesheet" href="servicios-tabla.css">
 <link rel="stylesheet" href="flujo.css?v=cel1">
 <link rel="stylesheet" href="interfaz.css?v=visual19">
@@ -28,6 +28,7 @@
     <div class="menu-items" id="menu-items">
       <button type="button" class="menu-item activa" data-vista="inicio"><span class="menu-icono" aria-hidden="true">🏠</span>Inicio <span id="badge-pendientes" style="display:none">0</span></button>
       <button type="button" class="menu-item perm-calendario-ver" data-vista="calendario"><span class="menu-icono" aria-hidden="true">📅</span>Calendario</button>
+      <button type="button" class="menu-item" data-vista="tareas" id="nav-tareas"><span class="menu-icono" aria-hidden="true">📋</span>Tareas</button>
       <button type="button" class="menu-item perm-marketing-ver" data-vista="marketing"><span class="menu-icono" aria-hidden="true">🎨</span>Marketing</button>
       <div class="menu-grupo perm-ventas-ver" data-grupo="ventas">
         <button type="button" class="menu-grupo-btn" aria-expanded="false"><span class="menu-icono" aria-hidden="true">💼</span>Ventas<span class="menu-flecha" aria-hidden="true">▾</span></button>
@@ -90,6 +91,7 @@
       <p class="ayuda">Revisa lo que necesita atención y abre cada sección para continuar.</p>
     </div>
     <div id="inicio-avisos-mios" class="av-inicio-lista" aria-label="Avisos para ti"></div>
+    <div id="inicio-tareas-mias" aria-label="Tus tareas"></div>
     <div class="inicio-resumen" id="inicio-resumen" aria-label="Resumen de pendientes"></div>
 
     <div class="inicio-rejilla" id="inicio-rejilla">
@@ -737,6 +739,14 @@
       <button type="button" class="btn btn-outline" id="nm-excel">📊 Excel para el contador</button>
     </div>
     <div id="nm-cuerpo"></div>
+  </section>
+
+  <!-- Proyectos y tareas con Gantt (2026-11-11): public/tareas.js · server/tareas.js -->
+  <section class="vista" id="vista-tareas">
+    <div class="vista-encabezado">
+      <div><h2>Proyectos y tareas</h2><p class="ayuda">Dirección y el Gerente asignan tareas con fecha de inicio y de entrega; cada quien ve las suyas, pone su avance y las marca terminadas, y quien la asignó la acepta o la regresa. El Gantt muestra todo en el tiempo.</p></div>
+    </div>
+    <div id="tg-cuerpo"></div>
   </section>
 
   <section class="vista" id="vista-contabilidad">
@@ -1924,6 +1934,7 @@
 <script src="cuentas.js?v=rev1"></script>
 <script src="finanzas.js?v=an1"></script>
 <script src="calendario.js?v=esp1"></script>
+<script src="tareas.js?v=tg1"></script>
 <script src="tablero.js?v=dir1"></script>
 <script src="reportes-comercial.js?v=dir1"></script>
 <script src="bitacora.js?v=hc1"></script>
@@ -1934,7 +1945,7 @@
 <script src="sucursales.js?v=perm4"></script>
 <script src="facturacion.js?v=fx11"></script>
 <script src="encuestas.js?v=enc1"></script>
-<script src="app.js?v=dir1"></script>
+<script src="app.js?v=tg1"></script>
 <script src="listas-servicio.js?v=ls1"></script>
 <script src="personal.js?v=nm1"></script>
 <script src="asistencia.js?v=nomina1"></script>

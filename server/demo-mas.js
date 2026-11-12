@@ -282,4 +282,22 @@ module.exports = async function masEjemplos(x) {
     const [a, m] = dia(0).split('-').map(Number), d = new Date(Date.UTC(a, m - 1 + k, 1)), mes = d.toISOString().slice(0, 7);
     await pedir('PUT', '/tablero/metas', A, { mes, metas: { venta: 900000, cobrado: 850000, margen_pct: 30, cobro_a_tiempo_pct: 80, pago_a_tiempo_pct: 85, servicios_en_fecha_pct: 90, satisfaccion: 4.3, nps: 50 } });
   }
+
+  // ===== Proyectos y tareas con Gantt (2026-11-11): un proyecto por sucursal con tareas en cada estado =====
+  {
+    const pq = await pedir('POST', '/tareas/proyectos', A, { nombre: 'Mantenimiento mayor de pipas', descripcion: 'Dejar las 3 pipas al 100 % antes de temporada de lluvias', sucursal_id: qroId });
+    const tarea = (cuerpo) => pedir('POST', '/tareas', A, cuerpo);
+    const t1 = await tarea({ titulo: 'Cotizar refacciones de bombas', asignado_a: idDe('costos'), inicio: dia(-12), fin: dia(-6), prioridad: 'alta', proyecto_id: pq.id });
+    const t2 = await tarea({ titulo: 'Cambiar mangueras y válvulas de la pipa 2', asignado_a: idDe('tecnico'), inicio: dia(-5), fin: dia(3), prioridad: 'alta', proyecto_id: pq.id, depende_de: t1.id });
+    await tarea({ titulo: 'Verificación de emisiones de las 3 pipas', asignado_a: idDe('tecnico'), inicio: dia(-8), fin: dia(-2), prioridad: 'media', proyecto_id: pq.id });
+    await tarea({ titulo: 'Pipas listas para temporada', asignado_a: idDe('admin'), inicio: dia(10), fin: dia(10), es_hito: true, proyecto_id: pq.id, depende_de: t2.id });
+    await pedir('POST', '/tareas/' + t1.id + '/terminar', C, { comentario: 'Tres cotizaciones subidas en Compras' });
+    await pedir('POST', '/tareas/' + t1.id + '/revisar', A, { acepta: true });
+    await pedir('POST', '/tareas/' + t2.id + '/avance', T, { avance: 40, comentario: 'Mangueras cambiadas; faltan válvulas' });
+    const t5 = await tarea({ titulo: 'Actualizar la lista de precios 2027', asignado_a: idDe('ventas'), inicio: dia(-4), fin: dia(2), prioridad: 'media', descripcion: 'Revisar costos de disposición y combustible' });
+    await pedir('POST', '/tareas/' + t5.id + '/terminar', V, { comentario: 'Lista enviada por correo' });
+    const pc = await pedir('POST', '/tareas/proyectos', A, { nombre: 'Arranque de la sucursal CDMX', sucursal_id: cdmx.id });
+    await tarea({ titulo: 'Contratar dos operadores', asignado_a: idDe('gerente_cdmx'), inicio: dia(-3), fin: dia(14), prioridad: 'alta', proyecto_id: pc.id });
+    await tarea({ titulo: 'Visitar 10 plazas comerciales', asignado_a: idDe('ventas_cdmx'), inicio: dia(0), fin: dia(20), prioridad: 'media', proyecto_id: pc.id });
+  }
 };

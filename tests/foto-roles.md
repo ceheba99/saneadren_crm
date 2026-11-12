@@ -10,6 +10,7 @@ Dirección la revisa y la aprueba. Si un cambio altera lo que ve un rol, la prue
 |---|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|
 | 🏠 Inicio | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
 | 📅 Calendario | ✔ | ✔ | ✔ | ✔ | ✔ | — | — | — |
+| 📋 Tareas | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
 | 🎨 Marketing | ✔ | — | — | — | — | — | ✔ | ✔ |
 | ➕ Nuevo contacto | ✔ | ✔ | ✔ | ✔ | — | — | — | — |
 | 👥 Contactos | ✔ | ✔ | ✔ | ✔ | — | — | — | — |
@@ -225,6 +226,9 @@ Dirección la revisa y la aprueba. Si un cambio altera lo que ve un rol, la prue
 | Poner las metas del mes (venta, cobranza, margen, satisfacción…) contra las que se mide el semáforo del Panorama | ✔ | — | — | — | — | — | — | — |
 | Mandar por correo a Dirección el reporte ejecutivo del mes | ✔ | — | — | — | — | — | — | — |
 | Ver los indicadores del Análisis comercial (satisfacción, cobranza a tiempo, servicios en fecha y recompras de lo que ve) | ✔ | ✔ | ✔ | ✔ | — | — | — | — |
+| Asignar una tarea (con fechas, para el Gantt) a alguien del equipo de su sucursal | ✔ | ✔ | — | — | — | — | — | — |
+| Ver una tarea asignada a otra persona (la que Dirección le asignó a Tito) | ✔ | ✔ | — | — | — | — | — | — |
+| Actualizar el avance de una tarea que le asignaron a él | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
 | Entregar un anticipo por comprobar a una persona del personal (y cerrarlo o cancelarlo) | ✔ | ✔ | — | — | — | — | — | — |
 | Ver los anticipos por comprobar de otras personas (el de Ernesto Obsidiana) | ✔ | ✔ | — | — | — | — | — | — |
 
@@ -264,6 +268,7 @@ Dirección la revisa y la aprueba. Si un cambio altera lo que ve un rol, la prue
 | Personal · Descargar la nómina | ✔ | ✔ | — | — | — | — | — | — |
 | Personal · Preparar la nómina | ✔ | ✔ | — | — | — | — | — | — |
 | Administración · Publicar avisos | ✔ | — | — | — | — | — | — | — |
+| Administración · Asignar tareas | ✔ | ✔ | — | — | — | — | — | — |
 | Administración · Usuarios | ✔ | ✔ | — | — | — | — | — | — |
 | Marketing · Aprobar publicaciones | ✔ | — | — | — | — | — | — | ✔ |
 | Marketing · Dinero de Marketing | ✔ | — | — | — | — | — | — | ✔ |
@@ -341,6 +346,7 @@ Dirección la revisa y la aprueba. Si un cambio altera lo que ve un rol, la prue
 - **2026-11-03** · Ver la revisión «¿está lista la facturación para producción?» (qué falta en llaves, series, claves del SAT y respaldos, sin mostrar nunca una llave): solo Dirección, como el resto de la configuración de facturación.
 - **2026-11-11** · Nómina semanal: la ven, preparan y cierran Dirección, el Gerente y a quien Dirección le dé «Preparar la nómina» (p. ej. el contador): ven los dos sueldos de cada persona (IMSS y bono). Los demás roles no.
 - **2026-11-11** · Pagar la nómina y bajar la lista para el banco con la CLABE de cada persona: quien prepara la nómina y además mueve dinero (Dirección y el Gerente). Compras mueve dinero pero no ve sueldos: no.
+- **2026-11-11** · Proyectos y tareas con Gantt: asignan tareas Dirección y el Gerente (este solo a gente de su sucursal) y ven las del equipo; cada persona ve y avanza solo las suyas (las marca terminadas y quien la asignó la acepta o la regresa). Al asignarla le llega en Inicio y por correo.
 - **2026-11-11** · Reporte de Dirección: las metas del mes (venta, cobranza, margen, satisfacción y cumplimiento) las pone solo Dirección; el Gerente las ve en su Panorama. El reporte ejecutivo del mes llega por correo a Dirección el día 1, y mandarlo a mano también es solo de Dirección.
 - **2026-11-11** · Análisis comercial: los indicadores nuevos (satisfacción, cobranza a tiempo, servicios en fecha, recompras) los ve quien ve el análisis comercial, cada quien con lo suyo; nada de cuentas por pagar ni dinero de la empresa (eso queda en el Panorama, para Dirección y el Gerente).
 - **2026-11-11** · Conciliación bancaria (subir el estado de cuenta de Santander o Banorte y emparejarlo con cobros, pagos, anticipos y nómina del CRM): Dirección, el Gerente y quien tiene «Contabilidad del mes» (el Contador). Registrar como gasto un cargo del banco que no está en el CRM (p. ej. una comisión) además pide «Mover dinero». Los demás roles no.

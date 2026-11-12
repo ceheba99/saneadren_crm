@@ -322,9 +322,15 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
     ['editaMetas', 'Poner las metas del mes (venta, cobranza, margen, satisfacción…) contra las que se mide el semáforo del Panorama'],
     ['enviaReporte', 'Mandar por correo a Dirección el reporte ejecutivo del mes'],
     ['veIndicadores', 'Ver los indicadores del Análisis comercial (satisfacción, cobranza a tiempo, servicios en fecha y recompras de lo que ve)'],
+    ['asignaTarea', 'Asignar una tarea (con fechas, para el Gantt) a alguien del equipo de su sucursal'],
+    ['veTareaAjena', 'Ver una tarea asignada a otra persona (la que Dirección le asignó a Tito)'],
+    ['avanzaTareaPropia', 'Actualizar el avance de una tarea que le asignaron a él'],
     ['entregaAnticipo', 'Entregar un anticipo por comprobar a una persona del personal (y cerrarlo o cancelarlo)'],
     ['veAnticipoAjeno', 'Ver los anticipos por comprobar de otras personas (el de Ernesto Obsidiana)'],
   ];
+  // Proyectos y tareas (2026-11-11): Dirección le asigna una tarea a Tito (técnico que no es observador de ningún rol).
+  const TAREA_TOMAS = exigir(await pedir('POST', '/tareas', A, { titulo: 'Tarea Coral de Tito', asignado_a: ID.Tito, inicio: dia(0), fin: dia(7) }), 'tarea de Tito');
+  const OBS_ID = { admin: (() => { const { DatabaseSync } = require('node:sqlite'), d = new DatabaseSync(DB), r = d.prepare("SELECT id FROM usuarios WHERE nombre = 'admin'").get(); d.close(); return r.id; })(), gerente: ID.Gema, ventas: ID.Valeria, atencion: ID.Alicia, tecnico: ID.Tomas, costos: ID.Carlos, marketing: ID.Mara, marketing_gerente: ID.Gil };
   // Nómina semanal (F3, 2026-11-11): Dirección prepara y cierra la de la semana pasada de Querétaro.
   const NOM = exigir(await pedir('POST', '/nomina/preparar', A, { desde: dia(-7), sucursal_id: qro.id }), 'preparar la nómina');
   exigir(await pedir('POST', '/nomina/' + NOM.id + '/cerrar', A, { forzar: true }), 'cerrar la nómina');
@@ -423,6 +429,11 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
       VE[rol].concilia = sc === 201 && ok(await pedir('POST', '/conciliacion/cargar', t, { cuenta_id: c.id, filas: [{ fecha: dia(-2), concepto: 'Depósito foto', cargo: '', abono: '123.45' }] })); }
     VE[rol].editaMetas = ok(await pedir('PUT', '/tablero/metas', t, { mes: HOY.slice(0, 7), metas: { venta: 100000 } }));
     { const [se] = await pedir('POST', '/tablero/enviar-reporte', t, { mes: HOY.slice(0, 7) }); VE[rol].enviaReporte = se !== 403 && se !== 401; } // sin correo configurado responde 409: aun así sí puede
+    { const k = ROLES.findIndex(r => r[0] === rol);
+      VE[rol].asignaTarea = ok(await pedir('POST', '/tareas', t, { titulo: 'Tarea foto ' + String.fromCharCode(65 + k), asignado_a: ID.Tito, inicio: dia(0), fin: dia(5) }));
+      const [sv, lv] = await pedir('GET', '/tareas?vista=todas', t); VE[rol].veTareaAjena = sv === 200 && (lv.tareas || []).some(x => x.id === TAREA_TOMAS.id);
+      const propia = exigir(await pedir('POST', '/tareas', A, { titulo: 'Propia ' + String.fromCharCode(65 + k), asignado_a: OBS_ID[rol], inicio: dia(0), fin: dia(3) }), 'tarea propia');
+      VE[rol].avanzaTareaPropia = ok(await pedir('POST', '/tareas/' + propia.id + '/avance', t, { avance: 50 })); }
     VE[rol].veIndicadores = ok(await pedir('GET', '/analisis/indicadores?' + RANGO, t));
     VE[rol].reglaPuntualidad = ok(await pedir('POST', '/nomina/reglas-puntualidad', t, { sucursal_id: qro.id, puesto: 'Operador', monto: 150, max_retardos: 0, max_faltas: 0, desde: dia(1) }));
     { const [st, a] = await pedir('POST', '/anticipos', t, { personal_id: EMP.id, monto: 10, metodo: 'efectivo', motivo: 'Prueba de ' + rol, forzar: true });
@@ -603,6 +614,9 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
       admin: { preparaNomina: 1 }, gerente: { preparaNomina: 1 }, ...Object.fromEntries(['costos', 'ventas', 'atencion', 'tecnico', 'marketing', 'marketing_gerente'].map(r => [r, { preparaNomina: 0 }])) }],
     ['2026-11-11', 'Pagar la nómina y bajar la lista para el banco con la CLABE de cada persona: quien prepara la nómina y además mueve dinero (Dirección y el Gerente). Compras mueve dinero pero no ve sueldos: no.', {
       admin: { pagaNomina: 1 }, gerente: { pagaNomina: 1 }, ...Object.fromEntries(['costos', 'ventas', 'atencion', 'tecnico', 'marketing', 'marketing_gerente'].map(r => [r, { pagaNomina: 0 }])) }],
+    ['2026-11-11', 'Proyectos y tareas con Gantt: asignan tareas Dirección y el Gerente (este solo a gente de su sucursal) y ven las del equipo; cada persona ve y avanza solo las suyas (las marca terminadas y quien la asignó la acepta o la regresa). Al asignarla le llega en Inicio y por correo.', {
+      admin: { asignaTarea: 1, veTareaAjena: 1, avanzaTareaPropia: 1 }, gerente: { asignaTarea: 1, veTareaAjena: 1, avanzaTareaPropia: 1 },
+      ...Object.fromEntries(['costos', 'ventas', 'atencion', 'tecnico', 'marketing', 'marketing_gerente'].map(r => [r, { asignaTarea: 0, veTareaAjena: 0, avanzaTareaPropia: 1 }])) }],
     ['2026-11-11', 'Reporte de Dirección: las metas del mes (venta, cobranza, margen, satisfacción y cumplimiento) las pone solo Dirección; el Gerente las ve en su Panorama. El reporte ejecutivo del mes llega por correo a Dirección el día 1, y mandarlo a mano también es solo de Dirección.', {
       admin: { editaMetas: 1, enviaReporte: 1 }, ...Object.fromEntries(['gerente', 'costos', 'ventas', 'atencion', 'tecnico', 'marketing', 'marketing_gerente'].map(r => [r, { editaMetas: 0, enviaReporte: 0 }])) }],
     ['2026-11-11', 'Análisis comercial: los indicadores nuevos (satisfacción, cobranza a tiempo, servicios en fecha, recompras) los ve quien ve el análisis comercial, cada quien con lo suyo; nada de cuentas por pagar ni dinero de la empresa (eso queda en el Panorama, para Dirección y el Gerente).', {

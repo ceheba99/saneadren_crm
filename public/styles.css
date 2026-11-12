@@ -2397,3 +2397,46 @@ tr.logs-aviso td{background:#fffaf0;}
   body.pg-imprimir-ejecutivo #pg-cuerpo > :not(.pg-tarjetas):not(.pg-periodo):not(.pg-ej){display:none !important;}
   body.pg-imprimir-ejecutivo .pg-metas-editor, body.pg-imprimir-ejecutivo [data-pg-metas]{display:none !important;}
 }
+
+/* Proyectos y tareas con Gantt (2026-11-11) */
+.tg-filtros{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin:10px 0;}
+.tg-filtros label{display:inline-flex;gap:6px;align-items:center;}
+.tg-form{margin:10px 0;}
+.tg-resumen{margin:8px 0;color:var(--texto-sec);}
+.tg-gantt{--tg-nombre:220px;position:relative;background:var(--blanco);border:1px solid var(--gris-200);border-radius:var(--radio);overflow-x:auto;}
+.tg-filas{position:relative;min-width:640px;}
+.tg-fila{display:grid;grid-template-columns:var(--tg-nombre) 1fr;min-width:640px;border-bottom:1px solid var(--gris-100);}
+.tg-cab{background:var(--gris-100);font-size:.75rem;color:var(--texto-sec);height:38px;}
+.tg-nombre{all:unset;box-sizing:border-box;padding:6px 10px;cursor:pointer;display:grid;gap:1px;min-width:0;border-right:1px solid var(--gris-200);}
+.tg-nombre b{font-size:.85rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.tg-nombre small{color:var(--texto-sec);font-size:.75rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.tg-nombre:focus-visible{outline:2px solid var(--azul-500);}
+.tg-pista{position:relative;height:40px;cursor:pointer;}
+.tg-cab .tg-pista{height:38px;cursor:default;}
+.tg-marca{position:absolute;top:6px;transform:translateX(-2px);white-space:nowrap;}
+.tg-hoy-et{position:absolute;top:21px;transform:translateX(-50%);color:var(--rojo);font-weight:700;font-size:.7rem;}
+.tg-hoy{position:absolute;top:0;bottom:0;width:2px;background:var(--rojo);opacity:.6;z-index:1;pointer-events:none;}
+.tg-grupo{background:#f8f6ef;font-weight:700;font-size:.8rem;padding:4px 10px;border-bottom:1px solid var(--gris-200);}
+.tg-barra{position:absolute;top:10px;height:20px;border-radius:5px;overflow:hidden;box-shadow:inset 0 0 0 1px rgba(0,0,0,.08);}
+.tg-relleno{position:absolute;left:0;top:0;bottom:0;background:rgba(0,0,0,.18);}
+.tg-hito{position:absolute;top:12px;width:16px;height:16px;transform:translateX(-50%) rotate(45deg);border-radius:2px;}
+.tg-pend{background:#cfd8dc;}
+.tg-proc{background:#7fb3d5;}
+.tg-rev{background:#f6d365;}
+.tg-ok{background:#8fd19e;}
+.tg-canc{background:#e4e8ea;}
+.tg-venc{background:#f1948a;}
+.tg-leyenda{display:flex;flex-wrap:wrap;gap:6px 12px;align-items:center;font-size:.8rem;color:var(--texto-sec);margin:6px 0 0;}
+.tg-cuadro{display:inline-block;width:12px;height:12px;border-radius:3px;vertical-align:middle;margin-right:4px;}
+.tg-det{margin:10px 0;}
+.tg-desc{white-space:pre-wrap;margin:0;}
+.tg-avance{display:flex;flex-wrap:wrap;gap:8px;align-items:center;}
+.tg-avance input[type=range]{flex:1 1 160px;}
+.tg-avance #tg-avance-c{flex:2 1 200px;}
+.tg-hist{list-style:none;margin:0;padding:0;display:grid;gap:6px;font-size:.88rem;max-height:260px;overflow:auto;}
+.tg-hist li{border-left:3px solid var(--gris-200);padding-left:8px;overflow-wrap:anywhere;}
+.tg-inicio{background:var(--blanco);border:1px solid var(--gris-200);border-radius:var(--radio);padding:10px 14px;margin:0 0 14px;display:grid;gap:6px;}
+.tg-inicio h3{margin:0;font-size:1rem;}
+@media (max-width:600px){.tg-gantt{--tg-nombre:150px;}}
+.tg-filtros label{max-width:100%;}
+.tg-filtros select{max-width:min(100%,260px);}

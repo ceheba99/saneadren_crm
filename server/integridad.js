@@ -149,6 +149,13 @@ function revisar(db, { dirArchivos } = {}) {
       .map(b => ({ ref: `${b.cuenta} · ${dma(b.fecha)}`, detalle: `${pesos(b.cargo_cent || b.abono_cent)} con ${b.conciliado_tipo} #${b.conciliado_id}: suéltalo y vuelve a emparejar` })));
   }
 
+  // ---------- Proyectos y tareas (2026-11-11) ----------
+  if (existe(db, 'tareas')) {
+    const abiertas = db.prepare("SELECT t.id, t.titulo, t.fin, t.terminada_at, t.estado, u.nombre, u.activo FROM tareas t JOIN usuarios u ON u.id = t.asignado_a WHERE t.estado NOT IN ('terminada', 'cancelada')").all();
+    chequeo('Tareas', 'Tarea abierta asignada a un usuario desactivado', 'aviso', () => abiertas.filter(t => !t.activo).map(t => ({ ref: t.titulo, detalle: `de ${t.nombre}: reasígnala o cancélala` })));
+    chequeo('Tareas', 'Tarea marcada terminada hace más de 7 días y sin revisar', 'aviso', () => abiertas.filter(t => t.estado === 'por_revisar' && String(t.terminada_at || '').slice(0, 10) < db.prepare("SELECT date(?, '-7 days') d").get(hoy).d).map(t => ({ ref: t.titulo, detalle: `${t.nombre} la terminó; acéptala o regrésala` })));
+  }
+
   // ---------- Facturación electrónica (F4, 2026-10-28) ----------
   if (existe(db, 'facturas')) {
     const fac = db.prepare("SELECT * FROM main.facturas WHERE estatus <> 'cancelada'").all();
