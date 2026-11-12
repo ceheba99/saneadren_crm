@@ -140,7 +140,7 @@ const Prospeccion=(()=>{
   // Vendedor: los suyos; quien ve toda su sucursal: todos los de su sucursal.
   async function pintarInicio(){
     const cont=$('inicio-prospeccion');if(!cont||!Permisos.puede('prospeccion.ver'))return;
-    cont.innerHTML='<p class="util-45" role="status">Cargando…</p>';
+    if (!cont.innerHTML.trim()) cont.innerHTML='<p class="util-45" role="status">Cargando…</p>'; // al refrescar, lo de antes se queda hasta que llega lo nuevo
     let lista;
     try{lista=await pedir('?pendientes=1'+(Permisos.puede('prospeccion.sucursal')?'':'&responsable_id='+Number(USUARIO_ACTUAL.id)));}
     catch(e){cont.innerHTML=`<div class="aviso-error-carga" role="alert"><p>${esc(e.message)}</p></div>`;return;}

@@ -744,7 +744,7 @@ const Compras = (() => {
   const TAG_INICIO = { por_aprobar: '📝 Por aprobar', cotizar: '📑 Cotizar', hacer_oc: '🧾 Hacer orden', por_autorizar: '✅ Por autorizar', por_recibir: '📦 Por recibir', mi_solicitud: '🙋 Tu solicitud' };
   async function pintarInicio() {
     const cont = $('inicio-compras'); if (!cont || !Permisos.puede('compras.ver')) return;
-    cont.innerHTML = '<p class="util-45" role="status">Cargando…</p>';
+    if (!cont.innerHTML.trim()) cont.innerHTML = '<p class="util-45" role="status">Cargando…</p>'; // al refrescar, lo de antes se queda hasta que llega lo nuevo
     let avisos;
     try { avisos = await api('/compras/avisos').then(json); } catch (e) { if (e.status !== 401) cont.innerHTML = `<div class="aviso-error-carga" role="alert"><p>${esc(e.message)}</p><button type="button" class="btn btn-outline" data-co-inicio-reintentar="1">Reintentar</button></div>`; return; }
     cont.innerHTML = avisos.length ? avisos.map(a => `<div class="fila-alerta ${a.nivel === 'rojo' ? 'vencido' : a.nivel === 'azul' ? 'tipo-alerta' : 'tipo-recompra'}">
