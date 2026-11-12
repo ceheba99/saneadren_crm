@@ -274,3 +274,23 @@ test('página: al volver del bloqueo se recupera sola y nada externo detiene el 
   assert.ok(scripts.length && scripts.every(m => / async/.test(m[2])), 'ningún archivo externo se carga deteniendo la página');
   assert.match(HTML, /overscroll-behavior:none/, 'sin «jalar para recargar»');
 });
+// 2026-11-12 (Dirección: «al cerrar y abrir la app no sale el botón de leer la credencial»).
+test('página: el botón «Leer mi credencial» aparece aunque el lector de QR conteste después del teclado, y se reintenta', async () => {
+  const codigo = HTML.slice(HTML.indexOf('  let lectorQR = null, buscandoQR = false;'), HTML.indexOf('  const LECTURA_MS'));
+  const hacer = async (formatos, estado, tecleado = '') => {
+    const pintadas = [], esperas = [];
+    const pantalla = { querySelector: q => (q === '.btn-credencial' ? null : { textContent: tecleado.padEnd(4, '·') }) };
+    function BarcodeDetector() {} let n = 0;
+    BarcodeDetector.getSupportedFormats = () => { const f = formatos[Math.min(n++, formatos.length - 1)]; return f ? Promise.resolve(f) : Promise.reject(new Error('no')); };
+    const ctx = vm.createContext({ window: { BarcodeDetector }, BarcodeDetector, estado, $: () => pantalla, inicio: () => pintadas.push(1), setTimeout: (fn, ms) => { esperas.push(ms); if (esperas.length < 8) fn(); } });
+    vm.runInContext(codigo + '; globalThis.lector = () => lectorQR;', ctx);
+    for (let i = 0; i < 20; i++) await null;
+    return { pintadas: pintadas.length, esperas, lector: !!ctx.lector() };
+  };
+  assert.deepEqual(await hacer([['qr_code']], { esCodigo: true }), { pintadas: 1, esperas: [], lector: true }, 'contesta tarde: se vuelve a pintar con el botón');
+  assert.equal((await hacer([['qr_code']], { esCodigo: true }, '12')).pintadas, 0, 'si alguien ya está tecleando no se le borra');
+  assert.equal((await hacer([['qr_code']], {})).pintadas, 0, 'en otra pantalla no se toca nada');
+  assert.deepEqual(await hacer([[], null, ['qr_code']], { esCodigo: true }), { pintadas: 1, esperas: [2000, 5000], lector: true }, 'recién instalada: todavía no hay lector → se reintenta');
+  assert.deepEqual((await hacer([[]], { esCodigo: true })).esperas, [2000, 5000, 15000, 60000], 'sin lector: 4 reintentos y ya');
+  assert.match(HTML, /despierta\(\); tic\(\); buscarLectorQR\(\);/, 'y al desbloquear la tableta');
+});
