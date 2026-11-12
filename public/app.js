@@ -171,6 +171,7 @@ function cambiarVista(v, opciones) {
   if ((v === 'cobrar' || (v === 'cuentas' && !['pagar', 'proveedores', 'anticipos'].includes(opciones?.pestana))) && !Permisos.puede('cxc.ver')) v = 'inicio';
   if ((v === 'pagar' || (v === 'cuentas' && ['pagar', 'proveedores', 'anticipos'].includes(opciones?.pestana))) && !Permisos.puede('cxp.ver')) v = 'inicio';
   if (v === 'contabilidad' && !Permisos.puede('contabilidad.ver') && !Permisos.direccion()) v = 'inicio';
+  if (v === 'nomina' && !Permisos.puede('nomina.preparar') && !Permisos.direccion()) v = 'inicio';
   if (v === 'avisos' && !Permisos.puede('avisos.publicar') && !Permisos.direccion()) v = 'inicio';
   if (v === 'pendientes') v = 'inicio'; // Pendientes ahora es parte de Inicio
   // «Proveedores» (menú Finanzas) es la pestaña de Cuentas por pagar.
@@ -192,6 +193,7 @@ function cambiarVista(v, opciones) {
   if (v === 'rh') RH.cargar();
   if (v === 'resultados') abrirResultados();
   if (v === 'contabilidad') window.Contabilidad?.cargar();
+  if (v === 'nomina') window.Nomina?.cargar();
   if (v === 'avisos') Avisos.cargar();
   if (v === 'generador') cargarGenerador();
   if (v === 'calendario') Calendario.cargar();
@@ -573,7 +575,8 @@ async function cargarInicio(silencioso = false) {
   Finanzas.pintarInicio();
   if (typeof Personal !== 'undefined') Personal.pintarInicio(); // bloque «Personal» (licencias, contratos, ausencias, órdenes sin responsable)
   if (typeof Compras !== 'undefined') Compras.pintarInicio(); // bloque «Compras» (aprobar, cotizar, autorizar, recibir)
-  window.Anticipos?.pintarInicio(); // bloque «Anticipos» (por comprobar los suyos; los que entregó y pasan de 7 días)
+  window.Anticipos?.pintarInicio();
+  window.Nomina?.pintarInicio(); // bloque «Nómina» (semana por cerrar; cerradas sin pagar) // bloque «Anticipos» (por comprobar los suyos; los que entregó y pasan de 7 días)
   if (typeof Prospeccion !== 'undefined') Prospeccion.pintarInicio(); // bloque «Prospección» (a quién llamar hoy)
   if (typeof Marketing !== 'undefined') Marketing.pintarInicio(); // bloque «Marketing» (por aprobar, cambios, por subir)
   window.Facturacion?.pintarInicio(); // bloque «Facturación» (sin respuesta, borradores, por facturar)

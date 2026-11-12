@@ -349,16 +349,11 @@ module.exports = function asistencia(app, db, h) {
     if (!fechaOk(fecha)) return res.status(400).json({ error: 'Revisa la fecha' });
     res.json({ fecha, festivo: festivoDe(fecha), filas: gente(fecha).map(p => calcularDia(p, fecha)), intentos: app.locals.checador?.intentosDe(fecha) || [], puede: { corregir: puede(req, 'asistencia.corregir'), extra: puede(req, 'asistencia.extra') } });
   }));
-  // Semana de nómina (semana vencida, de lunes a domingo por omisión; ver las reglas): cada día y los totales.
-  // Tiempo extra: dobles hasta 9 h autorizadas, luego triples. «vencida=1»: la última semana que ya cerró (la que se paga).
-  app.get('/api/asistencia/semana', h((req, res) => {
-    if (!veNomina(req)) return negar(res);
-    const hoy = ahoraMexico().fecha, enCurso = semanaDe(hoy);
-    let f = req.query.vencida === '1' ? sumar(enCurso.desde, -1) : req.query.desde || hoy;
-    if (!fechaOk(f)) return res.status(400).json({ error: 'Revisa la fecha' });
+  // La semana de nómina de una fecha: cada día y los totales de cada persona que checa (de las sucursales de quien pide);
+  // con «conDinero», también el pago del tiempo extra. La usan esta pantalla y la nómina (nomina.js, F3 contable).
+  function resumenSemana(f, pid, conDinero) {
     const { desde, hasta } = semanaDe(f), fechas = [];
     for (let d = desde; d <= hasta; d = sumar(d, 1)) fechas.push(d);
-    const pid = req.query.personal_id ? idDe(req.query.personal_id) : null;
     const filas = gente(hasta, pid).map(p => {
       const dias = fechas.map(f => calcularDia(p, f));
       const t = k => dias.reduce((s, d) => s + (d[k] || 0), 0), autorizado = dias.reduce((s, d) => s + (d.extra_autorizado_min || 0), 0);
@@ -374,12 +369,23 @@ module.exports = function asistencia(app, db, h) {
         por_revisar: t('por_revisar') } };
     });
     // Dinero del tiempo extra: solo para quien ve sueldos, con el precio del puesto vigente al cierre de la semana.
-    const dinero = verDinero(req) || puede(req, 'asistencia.nomina');
-    if (dinero) for (const f of filas) {
+    if (conDinero) for (const f of filas) {
       const p = gente(hasta, f.personal_id)[0], pr = p ? precioDe(p.sucursal_id, p.puesto, hasta) : null, v = pr?.valor_cent ?? null;
       f.dinero = v == null ? { valor_hora_cent: null } : { valor_hora_cent: v, dobles_cent: pago(f.totales.extra_dobles_min, v, 2), triples_cent: pago(f.totales.extra_triples_min, v, 3) };
       if (v != null) f.dinero.total_cent = f.dinero.dobles_cent + f.dinero.triples_cent;
     }
+    return { desde, hasta, fechas, filas };
+  }
+  // Semana de nómina (semana vencida, de lunes a domingo por omisión; ver las reglas): cada día y los totales.
+  // Tiempo extra: dobles hasta 9 h autorizadas, luego triples. «vencida=1»: la última semana que ya cerró (la que se paga).
+  app.get('/api/asistencia/semana', h((req, res) => {
+    if (!veNomina(req)) return negar(res);
+    const hoy = ahoraMexico().fecha, enCurso = semanaDe(hoy);
+    let f = req.query.vencida === '1' ? sumar(enCurso.desde, -1) : req.query.desde || hoy;
+    if (!fechaOk(f)) return res.status(400).json({ error: 'Revisa la fecha' });
+    const pid = req.query.personal_id ? idDe(req.query.personal_id) : null;
+    const dinero = verDinero(req) || puede(req, 'asistencia.nomina');
+    const { desde, hasta, fechas, filas } = resumenSemana(f, pid, dinero);
     const rg = reglaDe(hasta);
     res.json({ desde, hasta, fechas, festivos: fechas.map(festivoDe), filas, en_curso: enCurso.desde, vencida: semanaDe(sumar(enCurso.desde, -1)).desde, anterior: semanaDe(sumar(desde, -1)).desde, siguiente: sumar(hasta, 1),
       semana_texto: `de ${DIAS[rg.inicio_semana].toLowerCase()} a ${DIAS[((rg.inicio_semana + 5) % 7) + 1].toLowerCase()}`, corta: fechas.length < 7, ...(dinero ? { dinero: true } : {}), puede: { asistencia: puede(req, 'asistencia.ver'), corregir: puede(req, 'asistencia.corregir'), extra: puede(req, 'asistencia.extra'), precios: cambiaPrecio(req) } });
@@ -577,7 +583,7 @@ module.exports = function asistencia(app, db, h) {
     res.json(db.prepare('SELECT * FROM main.dias_festivos WHERE fecha = ?').get(fecha));
   }));
 
-  return { calcularDia, horarioDe, asignarHorario, horarioPorNombre, semanaDe };
+  return { calcularDia, horarioDe, asignarHorario, horarioPorNombre, semanaDe, resumenSemana };
 };
 module.exports.festivosLey = festivosLey;
 module.exports.unidos = unidos;

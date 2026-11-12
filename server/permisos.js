@@ -54,6 +54,9 @@ const CATALOGO = [
   // Nómina (2026-11-11, pedido de Dirección): solo descargar la semana de nómina (horas y pago del tiempo extra), sin
   // ver nada más de RH. Se puede dar a un rol que no tenga ningún otro permiso de Personal.
   ['asistencia.nomina', 'Personal', 'Descargar la nómina', 'Solo la semana de nómina: horas trabajadas, retardos, faltas y tiempo extra de cada persona de su sucursal, con el pago del tiempo extra, y su Excel. Con solo este permiso no ve nada más de RH (fichas, checadas, fotos, horarios)', ['gerente']],
+  // Nómina semanal (módulo contable F3, 2026-11-11, Dirección): ver los dos sueldos de la semana y preparar la nómina. Pagarla
+  // necesita además «Mover dinero». Se le puede dar al rol «Contador» para que capture el neto del IMSS.
+  ['nomina.preparar', 'Personal', 'Preparar la nómina', 'La nómina semanal de su sucursal: los dos sueldos de cada persona (IMSS y bono), su tiempo extra autorizado, faltas y retardos; capturar descuentos, otros pagos y el neto del IMSS que calcula el contador, y cerrar la semana. Pagarla y bajar la lista con las CLABE necesita además «Mover dinero»', ['gerente']],
   // Avisos (2026-11-11, pedido de Dirección): comunicados a personas elegidas, con «Enterado», correo y WhatsApp.
   ['avisos.publicar', 'Administración', 'Publicar avisos', 'Escribir avisos a personas elegidas (personal y usuarios del sistema): les salen en el reloj checador, su celular o el Inicio hasta que tocan «Enterado», y si se elige también por correo y WhatsApp. Ve quién ya lo leyó y lo puede retirar', []],
   ['usuarios.administrar', 'Administración', 'Usuarios', 'Crear usuarios, cambiar su rol, contraseña y sucursales', ['gerente']],

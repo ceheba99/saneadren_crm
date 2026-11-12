@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Saneadren · Cotizaciones y Servicios</title>
-<link rel="stylesheet" href="styles.css?v=an1">
+<link rel="stylesheet" href="styles.css?v=nm1">
 <link rel="stylesheet" href="servicios-tabla.css">
 <link rel="stylesheet" href="flujo.css?v=cel1">
 <link rel="stylesheet" href="interfaz.css?v=visual19">
@@ -58,6 +58,7 @@
           <button type="button" class="menu-item perm-personal-ver" data-vista="rh" id="nav-rh"><span class="menu-icono" aria-hidden="true">🧑‍💼</span>Inicio de RH</button>
           <button type="button" class="menu-item perm-personal-ver" data-vista="personal" id="nav-personal"><span class="menu-icono" aria-hidden="true">👷</span>Personal</button>
           <button type="button" class="menu-item perm-asistencia-ver" data-vista="asistencia" id="nav-asistencia"><span class="menu-icono" aria-hidden="true">🕒</span>Asistencia</button>
+          <button type="button" class="menu-item perm-nomina-preparar" data-vista="nomina" id="nav-nomina-pago"><span class="menu-icono" aria-hidden="true">💵</span>Nómina y pago</button>
           <button type="button" class="menu-item perm-asistencia-nomina noperm-asistencia-ver" data-vista="asistencia" id="nav-nomina"><span class="menu-icono" aria-hidden="true">📅</span>Nómina semanal</button>
         </div>
       </div>
@@ -101,6 +102,12 @@
       <h3>👷 Personal</h3>
       <p class="ayuda">Licencias y contratos vencidos o por vencer, quién falta esta semana (vacaciones, incapacidades, permisos), órdenes próximas sin técnico responsable y, para quien ve la asistencia, cuando la cara de alguien no coincidió en el kiosco (hasta que alguien lo revisa).</p>
       <div id="inicio-personal" class="inicio-lista"></div>
+    </div>
+
+    <div class="inicio-bloque inicio-bloque-nomina perm-nomina-preparar" data-titulo-corto="Nómina">
+      <h3>💵 Nómina</h3>
+      <p class="ayuda">La nómina de la semana que ya terminó sin cerrar y, para quien paga, las cerradas sin pagar.</p>
+      <div id="inicio-nomina" class="inicio-lista"></div>
     </div>
 
     <div class="inicio-bloque inicio-bloque-anticipos perm-cxp-ver" data-titulo-corto="Anticipos">
@@ -713,6 +720,22 @@
   </section>
 
   <!-- ====== VISTA: CONTABILIDAD DEL MES (módulo contable F1; Dirección y «Contabilidad del mes») ====== -->
+  <!-- Nómina semanal (módulo contable F3, 2026-11-11): public/nomina.js · server/nomina.js -->
+  <section class="vista" id="vista-nomina">
+    <div class="vista-encabezado">
+      <div><h2>Nómina y pago</h2><p class="ayuda">La semana de nómina de cada sucursal: los dos sueldos de la ficha (IMSS y bono), el tiempo extra autorizado del checador, faltas y retardos. Las faltas solo se reportan: si RH decide descontar, lo escribe con su motivo. El neto del IMSS lo calcula el contador. Al cerrar queda fija; al pagar se registra como gasto de «Sueldos».</p></div>
+    </div>
+    <div class="filtros">
+      <select id="nm-sucursal" aria-label="Sucursal"></select>
+      <button type="button" class="btn btn-outline" id="nm-anterior" aria-label="Semana anterior">‹ Anterior</button>
+      <strong id="nm-semana"></strong>
+      <button type="button" class="btn btn-outline" id="nm-siguiente" aria-label="Semana siguiente">Siguiente ›</button>
+      <button type="button" class="btn btn-outline" id="nm-vencida">Semana a pagar</button>
+      <button type="button" class="btn btn-outline" id="nm-excel">📊 Excel para el contador</button>
+    </div>
+    <div id="nm-cuerpo"></div>
+  </section>
+
   <section class="vista" id="vista-contabilidad">
     <div class="vista-encabezado">
       <div><h2>Contabilidad del mes</h2><p class="ayuda">Lo que necesita tu contador cada mes: lo facturado y lo cobrado, los gastos y lo pagado, el IVA y lo que falta comprobar. Descarga el Excel y los XML. Aquí solo se consulta: nada se cambia. Las cifras son de apoyo; qué se declara lo decide el contador.</p></div>
@@ -1907,14 +1930,15 @@
 <script src="sucursales.js?v=perm4"></script>
 <script src="facturacion.js?v=fx11"></script>
 <script src="encuestas.js?v=enc1"></script>
-<script src="app.js?v=an1"></script>
+<script src="app.js?v=nm1"></script>
 <script src="listas-servicio.js?v=ls1"></script>
-<script src="personal.js?v=h1106"></script>
+<script src="personal.js?v=nm1"></script>
 <script src="asistencia.js?v=nomina1"></script>
 <script src="rh.js?v=reglas1"></script>
 <script src="clientes-carga.js?v=cc1"></script>
 <script src="contabilidad.js?v=an1"></script>
 <script src="anticipos.js?v=an1"></script>
+<script src="nomina.js?v=nm1"></script>
 <script src="avisos.js?v=1"></script>
 <script src="buscador.js?v=suc1"></script>
 <script src="demo.js?v=demo1"></script>

@@ -315,9 +315,14 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
     ['subeXmlGasto', 'Subir el XML de la factura a un gasto que registró Tomás (el sistema llena el IVA)'],
     ['corrigeIvaGasto', 'Corregir a mano el IVA de ese gasto (botón «IVA»)'],
     ['editaListaServ', 'Agregar o quitar opciones en la lista de un servicio (p. ej. 4M3, 8M3 para [VOLUMEN])'],
+    ['preparaNomina', 'Ver y preparar la nómina semanal (los dos sueldos de cada persona, descuentos y neto del IMSS)'],
+    ['pagaNomina', 'Pagar la nómina y bajar la lista para el banco (con la CLABE de cada persona)'],
     ['entregaAnticipo', 'Entregar un anticipo por comprobar a una persona del personal (y cerrarlo o cancelarlo)'],
     ['veAnticipoAjeno', 'Ver los anticipos por comprobar de otras personas (el de Ernesto Obsidiana)'],
   ];
+  // Nómina semanal (F3, 2026-11-11): Dirección prepara y cierra la de la semana pasada de Querétaro.
+  const NOM = exigir(await pedir('POST', '/nomina/preparar', A, { desde: dia(-7), sucursal_id: qro.id }), 'preparar la nómina');
+  exigir(await pedir('POST', '/nomina/' + NOM.id + '/cerrar', A, { forzar: true }), 'cerrar la nómina');
   // Anticipo por comprobar de Ernesto Obsidiana (no tiene usuario): lo entrega Dirección (módulo contable F2, 2026-11-11).
   const ANT_OBS = exigir(await pedir('POST', '/anticipos', A, { personal_id: EMP.id, monto: 777.31, metodo: 'efectivo', motivo: 'Anticipo Turquesa' }), 'anticipo de Obsidiana');
   const ok = r => r[0] === 200 || r[0] === 201;
@@ -407,6 +412,8 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
     VE[rol].veAsistencia = ok(await pedir('GET', '/asistencia/semana', t));
     VE[rol].veLogs = ok(await pedir('GET', '/registro-sistema', t));
     VE[rol].veContabilidad = ok(await pedir('GET', '/contabilidad/resumen?mes=' + HOY.slice(0, 7), t));
+    VE[rol].preparaNomina = ok(await pedir('GET', '/nomina?desde=' + dia(-7) + '&sucursal=' + qro.id, t));
+    VE[rol].pagaNomina = ok(await pedir('GET', '/nomina/' + NOM.id + '/lista-banco', t));
     { const [st, a] = await pedir('POST', '/anticipos', t, { personal_id: EMP.id, monto: 10, metodo: 'efectivo', motivo: 'Prueba de ' + rol, forzar: true });
       VE[rol].entregaAnticipo = st === 201 && ok(await pedir('POST', '/anticipos/' + a.id + '/cancelar', t, { motivo: 'Prueba de la foto de roles' }));
       const [sl, l] = await pedir('GET', '/anticipos?estado=todos', t); VE[rol].veAnticipoAjeno = sl === 200 && (l.anticipos || []).some(x => x.id === ANT_OBS.id); }
@@ -581,6 +588,10 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
       admin: { exportaFact: 1 }, gerente: { exportaFact: 1 }, ...Object.fromEntries(['ventas', 'atencion', 'tecnico', 'costos', 'marketing', 'marketing_gerente'].map(r => [r, { exportaFact: 0 }])) }],
     ['2026-11-03', 'Ver la revisión «¿está lista la facturación para producción?» (qué falta en llaves, series, claves del SAT y respaldos, sin mostrar nunca una llave): solo Dirección, como el resto de la configuración de facturación.', {
       admin: { revisaProd: 1 }, ...Object.fromEntries(['gerente', 'ventas', 'atencion', 'tecnico', 'costos', 'marketing', 'marketing_gerente'].map(r => [r, { revisaProd: 0 }])) }],
+    ['2026-11-11', 'Nómina semanal: la ven, preparan y cierran Dirección, el Gerente y a quien Dirección le dé «Preparar la nómina» (p. ej. el contador): ven los dos sueldos de cada persona (IMSS y bono). Los demás roles no.', {
+      admin: { preparaNomina: 1 }, gerente: { preparaNomina: 1 }, ...Object.fromEntries(['costos', 'ventas', 'atencion', 'tecnico', 'marketing', 'marketing_gerente'].map(r => [r, { preparaNomina: 0 }])) }],
+    ['2026-11-11', 'Pagar la nómina y bajar la lista para el banco con la CLABE de cada persona: quien prepara la nómina y además mueve dinero (Dirección y el Gerente). Compras mueve dinero pero no ve sueldos: no.', {
+      admin: { pagaNomina: 1 }, gerente: { pagaNomina: 1 }, ...Object.fromEntries(['costos', 'ventas', 'atencion', 'tecnico', 'marketing', 'marketing_gerente'].map(r => [r, { pagaNomina: 0 }])) }],
     ['2026-11-11', 'Anticipos por comprobar: los entregan, cierran y cancelan Dirección y quien mueve dinero y ya ve al personal (el Gerente). Compras mueve dinero pero no ve al personal (regla del 2026-10-19): por ahora no; los demás roles tampoco.', {
       admin: { entregaAnticipo: 1 }, gerente: { entregaAnticipo: 1 }, ...Object.fromEntries(['costos', 'ventas', 'atencion', 'tecnico', 'marketing', 'marketing_gerente'].map(r => [r, { entregaAnticipo: 0 }])) }],
     ['2026-11-11', 'Anticipos por comprobar: Dirección, el Gerente y quien tiene «Contabilidad del mes» ven todos los de su sucursal; cada persona ve solo los suyos (los comprueba con sus gastos, aunque no tenga orden de servicio).', {

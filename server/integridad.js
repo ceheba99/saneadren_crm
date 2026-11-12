@@ -121,6 +121,23 @@ function revisar(db, { dirArchivos } = {}) {
       .map(a => ({ ref: refA(a), detalle: `${pesos(a.monto_cent - conAnt(a.id))} por comprobar: comprueba los gastos y ciérralo` })));
   }
 
+  // ---------- Nómina semanal (módulo contable F3, 2026-11-11) ----------
+  if (existe(db, 'nominas') && existe(db, 'nomina_lineas')) {
+    const nom = db.prepare("SELECT * FROM nominas").all();
+    const lineasDe = id => db.prepare('SELECT * FROM nomina_lineas WHERE nomina_id = ?').all(id);
+    const totalL = l => (l.neto_imss_cent ?? l.sueldo_imss_cent) + l.bono_cent + l.extra_cent + l.otros_cent - l.descuento_cent;
+    const refN = n => `Nómina ${dma(n.desde)}–${dma(n.hasta)} (sucursal ${n.sucursal_id})`;
+    chequeo('Nómina', 'Línea de nómina con total negativo', 'error', () => nom.flatMap(n => lineasDe(n.id).filter(l => totalL(l) < 0).map(l => ({ ref: refN(n), detalle: l.nombre }))));
+    chequeo('Nómina', 'Nómina pagada cuyo gasto no cuadra o ya no tiene su pago', 'error', () => nom.filter(n => n.estado === 'pagada').map(n => {
+      const x = cxp.find(c => c.id === n.cxp_id), total = lineasDe(n.id).reduce((t, l) => t + totalL(l), 0);
+      if (!x) return { ref: refN(n), detalle: 'su gasto #' + n.cxp_id + ' no existe' };
+      if (x.cancelada || pagadoCxp(x.id) !== x.total_cent) return { ref: refN(n), detalle: 'el gasto de sueldos se canceló o su pago ya no está completo' };
+      if (x.total_cent !== total) return { ref: refN(n), detalle: `gasto ${pesos(x.total_cent)} · nómina ${pesos(total)}` };
+      return null;
+    }).filter(Boolean));
+    chequeo('Nómina', 'Nómina cerrada sin pagar desde hace más de 7 días', 'aviso', () => nom.filter(n => n.estado === 'cerrada' && n.hasta < db.prepare("SELECT date(?, '-7 days') d").get(hoy).d).map(n => ({ ref: refN(n), detalle: 'regístrale el pago' })));
+  }
+
   // ---------- Facturación electrónica (F4, 2026-10-28) ----------
   if (existe(db, 'facturas')) {
     const fac = db.prepare("SELECT * FROM main.facturas WHERE estatus <> 'cancelada'").all();
@@ -173,7 +190,7 @@ function revisar(db, { dirArchivos } = {}) {
   // ---------- Archivos ----------
   // ---------- Seguridad: datos sensibles del personal cifrados (cifrado.js) ----------
   if (existe(db, 'personal')) {
-    const C = require('./cifrado'), CIFRADOS = ['clabe', 'rfc', 'curp', 'nss', 'salario_cent'];
+    const C = require('./cifrado'), colsP = db.prepare('PRAGMA table_info(personal)').all().map(c => c.name), CIFRADOS = ['clabe', 'rfc', 'curp', 'nss', 'salario_cent', 'sueldo_imss_semanal_cent', 'bono_semanal_cent'].filter(k => colsP.includes(k));
     const filas = db.prepare('SELECT id, nombre, ' + CIFRADOS.join(', ') + ' FROM main.personal').all();
     chequeo('Seguridad', 'Datos sensibles del personal guardados sin cifrar', 'error', () => filas.flatMap(p => CIFRADOS.filter(k => p[k] !== null && p[k] !== '' && !C.esCifrado(p[k])).map(k => ({ ref: p.nombre, detalle: k.replace('_cent', '') + ' sin cifrar (se cifra solo al reiniciar el sistema)' })))
       .concat(existe(db, 'incidencias_personal') ? db.prepare('SELECT i.id, p.nombre, i.notas FROM main.incidencias_personal i JOIN main.personal p ON p.id = i.personal_id WHERE i.notas IS NOT NULL').all().filter(i => !C.esCifrado(i.notas)).map(i => ({ ref: i.nombre, detalle: 'notas de una incidencia sin cifrar (se cifran solo al reiniciar el sistema)' })) : []));

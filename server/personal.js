@@ -37,14 +37,16 @@ const DOCUMENTOS = { ine: 'INE', curp: 'CURP', domicilio: 'Comprobante de domici
 const INCIDENCIAS = { vacaciones: 'Vacaciones', falta: 'Falta', incapacidad: 'Incapacidad', permiso: 'Permiso', retardo: 'Retardo', otro: 'Otro' };
 const PAPELES = { responsable: 'Técnico responsable', operador: 'Operador', ayudante: 'Ayudante' };
 // Lo que solo se ve y cambia con «personal.sensibles».
-const SENSIBLES = ['banco', 'clabe', 'rfc', 'curp', 'nss', 'salario', 'salario_periodo', 'tipo_contrato', 'contrato_vence'];
+const SENSIBLES = ['banco', 'clabe', 'rfc', 'curp', 'nss', 'salario', 'salario_periodo', 'tipo_contrato', 'contrato_vence', 'sueldo_imss_semanal', 'bono_semanal'];
 // Columnas que se guardan cifradas (el salario, en centavos).
-const CIFRADOS = ['clabe', 'rfc', 'curp', 'nss', 'salario_cent'];
+// Nómina semanal (módulo contable F3, 2026-11-11, Dirección): dos sueldos por semana, el registrado en el IMSS y el bono.
+const CIFRADOS = ['clabe', 'rfc', 'curp', 'nss', 'salario_cent', 'sueldo_imss_semanal_cent', 'bono_semanal_cent'];
+const CENTAVOS = new Set(['salario_cent', 'sueldo_imss_semanal_cent', 'bono_semanal_cent']);
 const contexto = (col, id) => `personal.${col}:${id}`;
 const contextoDoc = id => `documentos_personal:${id}`;
 const contextoNota = id => `incidencias_personal.notas:${id}`;
 // En la bitácora (la ve quien tiene «Ver personal») nunca va el valor de un dato sensible: solo que cambió.
-const OCULTOS_BITACORA = new Set(['banco', 'rfc', 'curp', 'nss', 'salario', 'salario_periodo', 'tipo_contrato', 'contrato_vence']);
+const OCULTOS_BITACORA = new Set(['banco', 'rfc', 'curp', 'nss', 'salario', 'salario_periodo', 'tipo_contrato', 'contrato_vence', 'sueldo_imss_semanal', 'bono_semanal']);
 const GENERALES = ['nombre', 'puesto', 'telefono', 'correo', 'direccion', 'fecha_ingreso', 'contacto_emergencia', 'tel_emergencia', 'licencia_tipo', 'licencia_numero', 'licencia_vence', 'notas', 'usuario_id', 'sucursal_id'];
 
 const fechaOk = v => /^\d{4}-\d{2}-\d{2}$/.test(v) && !Number.isNaN(Date.parse(v + 'T00:00:00Z')) && new Date(v + 'T00:00:00Z').toISOString().slice(0, 10) === v;
@@ -123,6 +125,7 @@ function migrar(db) {
   `);
   // Número de empleado: columna aditiva; a quien ya existía se le da en orden de alta (id).
   if (!db.prepare('PRAGMA table_info(personal)').all().some(c => c.name === 'numero_empleado')) db.exec('ALTER TABLE personal ADD COLUMN numero_empleado TEXT');
+  for (const c of ['sueldo_imss_semanal_cent', 'bono_semanal_cent']) if (!db.prepare('PRAGMA table_info(personal)').all().some(x => x.name === c)) db.exec(`ALTER TABLE personal ADD COLUMN ${c} TEXT`); // cifrados
   db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_personal_numero_empleado ON personal(numero_empleado) WHERE numero_empleado IS NOT NULL');
   // Una vez puesto, el número de empleado no cambia (aunque alguien edite la base a mano).
   db.exec("CREATE TRIGGER IF NOT EXISTS personal_numero_fijo BEFORE UPDATE OF numero_empleado ON personal WHEN OLD.numero_empleado IS NOT NULL BEGIN SELECT RAISE(ABORT, 'El número de empleado no se cambia'); END;");
@@ -165,6 +168,8 @@ module.exports = function personal(app, db, h) {
     x.tiene_foto = !!p.foto_archivo; delete x.foto_archivo;
     const conSens = sensible(req) && !lista;
     if (sensible(req) && p._ilegibles?.length) x.datos_ilegibles = p._ilegibles;
+    delete x.sueldo_imss_semanal_cent; delete x.bono_semanal_cent;
+    if (conSens) { x.sueldo_imss_semanal = p.sueldo_imss_semanal_cent == null ? null : p.sueldo_imss_semanal_cent / 100; x.bono_semanal = p.bono_semanal_cent == null ? null : p.bono_semanal_cent / 100; }
     if (!conSens) { for (const k of SENSIBLES) delete x[k]; delete x.salario_cent; x.clabe_mascara = mascaraClabe(p.clabe); x.tiene_clabe = !!p.clabe || !!p._ilegibles?.includes('clabe'); }
     else { x.salario = p.salario_cent == null ? null : p.salario_cent / 100; x.clabe_mascara = mascaraClabe(p.clabe); }
     x.vacaciones = vacacionesDe(p, usadas, hoy);
@@ -182,8 +187,8 @@ module.exports = function personal(app, db, h) {
     const p = { ...fila, _ilegibles: [] };
     for (const k of CIFRADOS) {
       if (p[k] === null || p[k] === undefined) continue;
-      try { const t = C.descifrar(p[k], contexto(k, p.id)); p[k] = k === 'salario_cent' ? Number(t) : t; }
-      catch { p[k] = null; p._ilegibles.push(k === 'salario_cent' ? 'salario' : k); }
+      try { const t = C.descifrar(p[k], contexto(k, p.id)); p[k] = CENTAVOS.has(k) ? (t === null || t === '' ? null : Number(t)) : t; }
+      catch { p[k] = null; p._ilegibles.push(CENTAVOS.has(k) ? k.replace('_cent', '') : k); }
     }
     return p;
   }
@@ -232,6 +237,11 @@ module.exports = function personal(app, db, h) {
       if (b.nss !== undefined) { const r = String(b.nss ?? '').replace(/\D/g, ''); if (r && r.length !== 11) return { error: 'El NSS lleva 11 dígitos' }; fija('nss', r || null); }
       if (b.salario !== undefined) { const v = b.salario === null || b.salario === '' ? null : Number(b.salario); if (v !== null && (!Number.isFinite(v) || v < 0 || v > 1e7 || Math.abs(v * 100 - Math.round(v * 100)) > 1e-6)) return { error: 'Revisa el salario (máximo 2 decimales)' }; fija('salario_cent', v === null ? null : Math.round(v * 100)); }
       if (b.salario_periodo !== undefined) { if (b.salario_periodo && !PERIODOS.includes(b.salario_periodo)) return { error: 'Periodo de salario inválido' }; fija('salario_periodo', b.salario_periodo || null); }
+      for (const k of ['sueldo_imss_semanal', 'bono_semanal']) if (b[k] !== undefined) {
+        const v = b[k] === null || b[k] === '' ? null : Number(b[k]);
+        if (v !== null && (!Number.isFinite(v) || v < 0 || v > 1e6 || Math.abs(v * 100 - Math.round(v * 100)) > 1e-6)) return { error: k === 'bono_semanal' ? 'Revisa el bono semanal (máximo 2 decimales)' : 'Revisa el sueldo semanal del IMSS (máximo 2 decimales)' };
+        fija(k + '_cent', v === null ? null : Math.round(v * 100));
+      }
       if (b.tipo_contrato !== undefined) { if (b.tipo_contrato && !CONTRATOS.includes(b.tipo_contrato)) return { error: 'Tipo de contrato inválido' }; fija('tipo_contrato', b.tipo_contrato || null); }
     }
     return { datos: d };
@@ -600,7 +610,10 @@ module.exports = function personal(app, db, h) {
   }
   asegurarCifrado();
 
-  return { esPropio, revisarAlta, guardarAlta, PUESTOS, validarEquipo, guardarEquipo, responsableDesdeUsuario, equipoDe, textoEquipo, PAPELES, vacacionesDe: p => vacacionesDe(p, usadas, hoyMexico()), clabeValida, diasLFT };
+  // Nómina (nomina.js, F3 contable): la ficha descifrada (sueldos semanales y CLABE) de una persona, sin pasar por la pantalla.
+  const fichaPago = id => { const p = leer(id); return p ? { id: p.id, nombre: p.nombre, puesto: p.puesto, sucursal_id: p.sucursal_id, activo: p.activo, fecha_baja: p.fecha_baja, fecha_ingreso: p.fecha_ingreso, checa: p.checa,
+    numero_empleado: p.numero_empleado, banco: p.banco, clabe: p.clabe, sueldo_imss_semanal_cent: p.sueldo_imss_semanal_cent ?? null, bono_semanal_cent: p.bono_semanal_cent ?? null, ilegibles: p._ilegibles || [] } : null; };
+  return { fichaPago, esPropio, revisarAlta, guardarAlta, PUESTOS, validarEquipo, guardarEquipo, responsableDesdeUsuario, equipoDe, textoEquipo, PAPELES, vacacionesDe: p => vacacionesDe(p, usadas, hoyMexico()), clabeValida, diasLFT };
 };
 module.exports.diasLFT = diasLFT;
 module.exports.clabeValida = clabeValida;
