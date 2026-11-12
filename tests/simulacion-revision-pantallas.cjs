@@ -45,8 +45,8 @@ const PDF = Buffer.from('%PDF-1.4\n% prueba\n%%EOF');
     [s, j] = await pedir('POST', '/finanzas/proveedores', T[rol], { nombre, categoria: cats[0].clave, dias_credito: '0', rfc: '', telefono: '', contacto: '', clabe: '', banco: '' });
     revisa(s === 201, `proveedor nuevo con lo opcional vacío (${rol})`, j);
   }
-  const gasto = lead => ({ proveedor_id: provs[0].id, categoria: cats[0].clave, concepto: 'Gasto de prueba', total: '116', fecha_documento: HOY, dias_credito: 0, tipo_comprobante: 'recibo', metodo_sat: null, beneficiario: null, iva: null, factura_folio: '', lead_id: lead, equipo: '', ya_pagado: false, metodo: null, fecha_pago: null, referencia: null });
-  for (const rol of ['admin', 'costos']) { [s, j] = await pedir('POST', '/finanzas/cxp', T[rol], gasto(null)); revisa(s === 201, `gasto sin orden (${rol}: mueve dinero, la orden es opcional)`, j); }
+  const gasto = (lead, quien = '') => ({ proveedor_id: provs[0].id, categoria: cats[0].clave, concepto: 'Gasto de prueba ' + quien, total: '116', fecha_documento: HOY, dias_credito: 0, tipo_comprobante: 'recibo', metodo_sat: null, beneficiario: null, iva: null, factura_folio: '', lead_id: lead, equipo: '', ya_pagado: false, metodo: null, fecha_pago: null, referencia: null });
+  for (const rol of ['admin', 'costos']) { [s, j] = await pedir('POST', '/finanzas/cxp', T[rol], gasto(null, rol)); revisa(s === 201, `gasto sin orden (${rol}: mueve dinero, la orden es opcional)`, j); }
   for (const rol of ['tecnico', 'ventas', 'atencion']) { [s, j] = await pedir('POST', '/finanzas/cxp', T[rol], gasto(null)); revisa(s === 403, `gasto sin orden (${rol}): se exige, como dice «(obligatorio)» en su pantalla`, [s, j]); }
   [s, j] = await pedir('POST', '/finanzas/cxp', T.admin, gasto(orden.id)); const g = j; revisa(s === 201, 'gasto ligado a la orden', j);
   [s, j] = await pedir('POST', '/finanzas/cxp/' + g.id + '/pagos', T.admin, { monto: '10', metodo: 'transferencia', fecha: HOY, referencia: '', cuenta_origen: '' }); revisa(s === 201, 'pago a proveedor sin referencia ni cuenta', j);

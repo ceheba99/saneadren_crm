@@ -79,6 +79,8 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
   exigir(await pedir('POST', '/leads/' + O1.id + '/ejecucion', T.Valeria, { estado: 'realizado', fecha: dia(-1) }), 'realizado');
   exigir(await pedir('POST', '/finanzas/cxp', T.Valeria, { proveedor_id: prov.id, categoria: 'otro', concepto: 'Casetas de visita', total: 311.13, fecha_documento: HOY, lead_id: O1.id, dias_credito: 0 }), 'gasto de Valeria');
   exigir(await pedir('POST', '/finanzas/cxp', T.Carlos, { proveedor_id: prov.id, categoria: 'renta_maquinaria', concepto: 'Renta de pipa', total: 2577.19, fecha_documento: HOY, lead_id: O4.id, dias_credito: 15 }), 'gasto de Carlos');
+  // Gasto fijo sin orden de servicio: con él se prueba quién puede «Repetir» (un costo de una orden ya no se repite, FLW-H07).
+  exigir(await pedir('POST', '/finanzas/cxp', A, { proveedor_id: prov.id, categoria: 'renta_maquinaria', concepto: 'Renta de bodega fija', total: 5000, fecha_documento: HOY, dias_credito: 15 }), 'gasto fijo');
   exigir(await pedir('POST', '/finanzas/cxp', T.Alicia, { proveedor_id: prov.id, categoria: 'otro', concepto: 'Mensajería de documentos', total: 419.23, fecha_documento: HOY, lead_id: O4.id, dias_credito: 0 }), 'gasto de Alicia');
   // Solicitudes de compra.
   exigir(await pedir('POST', '/compras/solicitudes', T.Tomas, { que: 'Manguera Jade', para_que: 'Se rompió en servicio', centro_id: centros[0].id }), 'solicitud de Tomás');
@@ -439,7 +441,7 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
     { const [st, a] = await pedir('POST', '/anticipos', t, { personal_id: EMP.id, monto: 10, metodo: 'efectivo', motivo: 'Prueba de ' + rol, forzar: true });
       VE[rol].entregaAnticipo = st === 201 && ok(await pedir('POST', '/anticipos/' + a.id + '/cancelar', t, { motivo: 'Prueba de la foto de roles' }));
       const [sl, l] = await pedir('GET', '/anticipos?estado=todos', t); VE[rol].veAnticipoAjeno = sl === 200 && (l.anticipos || []).some(x => x.id === ANT_OBS.id); }
-    { const g = (await pedir('GET', '/finanzas/cxp?vista=todas', A))[1].find(x => x.concepto === 'Renta de pipa');
+    { const g = (await pedir('GET', '/finanzas/cxp?vista=todas', A))[1].find(x => x.concepto === 'Renta de bodega fija');
       VE[rol].repiteGasto = !!g && [200, 201].includes((await pedir('POST', '/finanzas/cxp/' + g.id + '/repetir', t, { forzar: true }))[0]); }
     { // Gasto «ya pagado» (2026-11-11, H01): quien mueve dinero lo deja pagado; los demás, por reembolsar a ellos.
       const [st, g] = await pedir('POST', '/finanzas/cxp', t, { proveedor_id: prov.id, categoria: 'combustible', concepto: 'Gasolina de prueba ' + rol, total: 100, fecha_documento: HOY, lead_id: O1.id, dias_credito: 0, ya_pagado: true, metodo: 'efectivo' });

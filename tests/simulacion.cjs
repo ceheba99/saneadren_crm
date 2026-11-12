@@ -303,7 +303,7 @@ const espera = ms => new Promise(r => setTimeout(r, ms));
   [s, j] = await pedir('GET', '/leads/' + j[0].lead_id + '/cobros', A);
   ok(j.cobros[0]?.fecha === '2026-02-19', 'fecha de pago sin año (19-February) toma el año correcto', j.cobros);
   [s, j] = await pedir('POST', '/finanzas/importar/cxc?simular=1', A, { filas: filasCxc });
-  ok(j.errores.length === 3 && /ya se importó/.test(j.errores[0].errores.join()), 'subir el mismo archivo otra vez se detecta como duplicado', j.errores);
+  ok(j.errores.length === 0 && j.omitidas === filasCxc.length && j.resumen.filter(x => /Ya se había subido/.test(x.omitida || '')).length === 3, 'subir el mismo archivo otra vez se detecta: los 3 renglones ya subidos se brincan (regla 2026-11-12)', j);
 
   const filasCxp = [
     { fila: 2, proveedor: 'Refaccionaria Vactor', categoria: 'Refacciones y mantenimiento', concepto: 'Manguera', factura_folio: 'R-10', fecha_documento: '2026-10-01', total: 3000, pagado: 1000, metodo: 'Efectivo', equipo: 'E-37-04' },
@@ -321,7 +321,7 @@ const espera = ms => new Promise(r => setTimeout(r, ms));
   [s, j] = await pedir('GET', '/finanzas/proveedores', A);
   ok(j.filter(p => /refaccionaria vactor/i.test(p.nombre)).length === 1, 'el proveedor nuevo se creó una sola vez (sin importar mayúsculas)');
   [s, j] = await pedir('POST', '/finanzas/importar/cxp?simular=1', A, { filas: filasCxp });
-  ok(j.errores.some(e => /ya está registrada/.test(e.errores.join())), 'subir otra vez las mismas facturas se detecta');
+  ok(j.errores.length === 0 && j.omitidas === 3 && j.resumen.every(x => /Ya se había subido/.test(x.omitida || '')), 'subir otra vez las mismas facturas se detecta: se brincan (regla 2026-11-12)', j);
   [s, j] = await pedir('POST', '/finanzas/importar/cxc?simular=1', A, { filas: Array.from({ length: 1001 }, (_, i) => ({ fila: i + 2 })) });
   ok(s === 400, 'más de 1,000 renglones se rechaza');
 
