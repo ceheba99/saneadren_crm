@@ -8,6 +8,8 @@ const crypto = require('crypto');
 const express = require('express');
 
 const MAX_BYTES = 10 * 1024 * 1024;
+// Tope para los XML de facturas (A-03): una factura real pesa unos KB (con muchas partidas, unos cientos); 2 MB sobra.
+const MAX_XML_BYTES = 2 * 1024 * 1024;
 const TIPOS = {
   cotizacion: { nombre: 'Cotización del proveedor', admite: ['pdf', 'jpg', 'png'] },
   orden_firmada: { nombre: 'Orden de compra firmada', admite: ['pdf', 'jpg', 'png'] },
@@ -44,23 +46,59 @@ const aCent = v => {
 };
 const desescapar = t => (t == null ? t : t.replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&'));
 const atributo = (texto, nombre) => { const m = texto.match(new RegExp('\\s' + nombre + '\\s*=\\s*(?:"([^"]*)"|\'([^\']*)\')', 'i')); return m ? desescapar(m[1] ?? m[2]) : null; };
+// Lector LINEAL (auditoría A-03): antes se usaban expresiones regulares con «[\s\S]*?» que, con etiquetas sin cerrar, revisaban el resto del
+// archivo desde cada etiqueta (tiempo cuadrático): un XML de 640 KB congelaba el servidor varios segundos. Ahora se recorre el texto UNA vez,
+// etiqueta por etiqueta. Cada etiqueta: nombre sin prefijo, si es de cierre o autocerrada, y dónde empieza y termina su texto de atributos.
+function etiquetasXml(xml) {
+  const out = []; let gt = -2; const n = xml.length;
+  for (let i = xml.indexOf('<'); i !== -1 && i < n; i = xml.indexOf('<', i + 1)) {
+    if (gt !== -1 && gt < i) gt = xml.indexOf('>', i); // un solo «>» sirve a todas las etiquetas que lo anteceden: sin releer el archivo
+    const m = /^(\/?)(?:\w+:)?(\w+)/.exec(xml.slice(i + 1, i + 80));
+    if (!m) continue;
+    const fin = gt === -1 ? n : gt, ini = i + 1 + m[0].length;
+    out.push({ pos: i, nombre: m[2].toLowerCase(), cierre: !!m[1], auto: xml[fin - 1] === '/', ini, fin: Math.max(ini, fin), hasta: gt === -1 ? n : gt + 1 });
+  }
+  return out;
+}
+const textoAttrs = (xml, t) => xml.slice(t.ini, t.fin);
+// Quita los bloques Conceptos y Complemento (del primer cierre en adelante, como antes; si nunca cierran se dejan).
+function sinBloques(xml, tags) {
+  const cierres = { conceptos: tags.filter(t => t.cierre && t.nombre === 'conceptos'), complemento: tags.filter(t => t.cierre && t.nombre === 'complemento') };
+  const punt = { conceptos: 0, complemento: 0 }; let partes = [], desde = 0;
+  for (const t of tags) {
+    if (t.pos < desde || t.cierre || (t.nombre !== 'conceptos' && t.nombre !== 'complemento')) continue;
+    const c = cierres[t.nombre]; while (punt[t.nombre] < c.length && c[punt[t.nombre]].pos < t.hasta) punt[t.nombre]++;
+    const cierre = c[punt[t.nombre]]; if (!cierre) continue;
+    partes.push(xml.slice(desde, t.pos)); desde = cierre.hasta;
+  }
+  partes.push(xml.slice(desde)); return partes.join('');
+}
 function impuestosCfdi(xml) {
-  const sinConceptos = xml.replace(/<(?:\w+:)?Conceptos\b[\s\S]*?<\/(?:\w+:)?Conceptos\s*>/gi, '').replace(/<(?:\w+:)?Complemento\b[\s\S]*?<\/(?:\w+:)?Complemento\s*>/gi, '');
-  const m = sinConceptos.match(/<(?:\w+:)?Impuestos\b([^>]*?)(?:\/>|>([\s\S]*?)<\/(?:\w+:)?Impuestos\s*>)/i);
-  const cuerpo = m?.[2] || '';
-  const lista = etiqueta => [...cuerpo.matchAll(new RegExp('<(?:\\w+:)?' + etiqueta + '\\b([^>]*)>', 'gi'))].map(([, a]) => ({
-    impuesto: atributo(a, 'Impuesto'), tipo_factor: atributo(a, 'TipoFactor'), tasa: atributo(a, 'TasaOCuota'), base: atributo(a, 'Base'), importe: atributo(a, 'Importe'), importe_cent: aCent(atributo(a, 'Importe')) || 0 }));
+  const todas = etiquetasXml(xml), sinConceptos = sinBloques(xml, todas), tags = etiquetasXml(sinConceptos);
+  const cierres = tags.filter(t => t.cierre && t.nombre === 'impuestos'); let p = 0, m = null, cuerpo = '';
+  for (const t of tags) {
+    if (t.cierre || t.nombre !== 'impuestos') continue;
+    if (t.auto) { m = [null, textoAttrs(sinConceptos, t), undefined]; break; }
+    while (p < cierres.length && cierres[p].pos < t.hasta) p++;
+    if (p < cierres.length) { m = [null, textoAttrs(sinConceptos, t), sinConceptos.slice(t.hasta, cierres[p].pos)]; break; }
+  }
+  if (m) cuerpo = m[2] || '';
+  const tagsCuerpo = etiquetasXml(cuerpo);
+  const lista = etiqueta => tagsCuerpo.filter(t => !t.cierre && t.nombre === etiqueta.toLowerCase()).map(t => { const a = textoAttrs(cuerpo, t); return ({
+    impuesto: atributo(a, 'Impuesto'), tipo_factor: atributo(a, 'TipoFactor'), tasa: atributo(a, 'TasaOCuota'), base: atributo(a, 'Base'), importe: atributo(a, 'Importe'), importe_cent: aCent(atributo(a, 'Importe')) || 0 }); });
   const traslados = lista('Traslado'), retenciones = lista('Retencion');
   const suma = (l, imp) => l.filter(x => x.impuesto === imp).reduce((t, x) => t + x.importe_cent, 0);
   return { traslados, retenciones,
     iva_cent: suma(traslados, '002'), ieps_cent: suma(traslados, '003'), ret_isr_cent: suma(retenciones, '001'), ret_iva_cent: suma(retenciones, '002'),
     otros: [...traslados, ...retenciones].filter(x => !['001', '002', '003'].includes(x.impuesto)).map(x => x.impuesto),
     total_trasladados: atributo(m?.[1] || '', 'TotalImpuestosTrasladados'), total_retenidos: atributo(m?.[1] || '', 'TotalImpuestosRetenidos'),
-    locales: /<(?:\w+:)?ImpuestosLocales\b/i.test(xml) };
+    locales: todas.some(t => !t.cierre && t.nombre === 'impuestoslocales') };
 }
 function leerCfdi(xml) {
-  xml = String(xml || '').replace(/^\uFEFF/, '');
-  const nodo = etiqueta => (xml.match(new RegExp('<(?:\\w+:)?' + etiqueta + '\\b([^>]*)>', 'i')) || [])[1] || null;
+  xml = String(xml || '').replace(/^﻿/, '');
+  const tags = etiquetasXml(xml), primero = new Map();
+  for (const t of tags) if (!t.cierre && !primero.has(t.nombre)) primero.set(t.nombre, t);
+  const nodo = etiqueta => { const t = primero.get(etiqueta.toLowerCase()); return t ? textoAttrs(xml, t) : null; };
   const comp = nodo('Comprobante');
   if (comp == null) return null;
   const attr = (etiqueta, nombre) => { const n = etiqueta === 'Comprobante' ? comp : nodo(etiqueta); return n == null ? null : atributo(n, nombre); };
@@ -166,6 +204,7 @@ module.exports = function expedienteOC(app, db, h, { leer, esAdmin, folioOC }) {
     if (!buf.length) return res.status(400).json({ error: 'El archivo está vacío' });
     if (buf.length > MAX_BYTES) return res.status(413).json({ error: 'El archivo pasa de 10 MB' });
     const formato = tipoReal(buf);
+    if (formato === 'xml' && buf.length > MAX_XML_BYTES) return res.status(413).json({ error: 'El XML pasa de 2 MB: una factura normal pesa mucho menos. Revisa que sea el archivo correcto' });
     if (!formato) return res.status(400).json({ error: 'Solo se aceptan PDF, JPG, PNG o el XML de la factura' });
     if (!TIPOS[tipo].admite.includes(formato)) return res.status(400).json({ error: `${TIPOS[tipo].nombre}: el archivo debe ser ${TIPOS[tipo].admite.map(x => x.toUpperCase()).join(' o ')} (este es ${formato.toUpperCase()})` });
     const sha = crypto.createHash('sha256').update(buf).digest('hex');
@@ -231,4 +270,5 @@ module.exports = function expedienteOC(app, db, h, { leer, esAdmin, folioOC }) {
 module.exports.leerCfdi = leerCfdi;
 module.exports.tipoReal = tipoReal;
 module.exports.MAX_BYTES = MAX_BYTES;
+module.exports.MAX_XML_BYTES = MAX_XML_BYTES;
 module.exports.nombreSeguro = nombreSeguro;

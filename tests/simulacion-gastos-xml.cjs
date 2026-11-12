@@ -94,6 +94,11 @@ const FECHA = HOY + 'T09:30:00';
     ['<?xml version="1.0"?><pedido><total>5</total></pedido>', 400, /no es el XML de una factura/, 'un XML que no es factura: se rechaza'],
   ];
   for (const [xmlTxt, st, re, que] of casos) { [s, j] = await gasto({ concepto: 'Prueba de validación', xml: xmlTxt, total: 116 }); revisa(s === st && re.test(j.error || ''), que, [s, j]); }
+  { // A-03: un XML mal formado no congela el servidor, y uno de más de 2 MB se rechaza
+    const malo = Buffer.from('<?xml version="1.0"?><cfdi:Comprobante Version="4.0" Total="1.00">' + '<cfdi:Conceptos>'.repeat(40000));
+    const t0 = Date.now(); [s, j] = await subir('/finanzas/cxp/leer-xml', A, malo); const ms = Date.now() - t0;
+    revisa(ms < 500 && s === 400, 'leer-xml: un XML mal formado de 640 KB se rechaza en menos de 0.5 s (A-03)', [s, ms + ' ms']);
+    [s, j] = await subir('/finanzas/cxp/leer-xml', A, Buffer.from('<?xml version="1.0"?><cfdi:Comprobante Version="4.0">' + ' '.repeat(2 * 1024 * 1024 + 10))); revisa(s === 413, 'leer-xml: un XML de más de 2 MB se rechaza (A-03)', [s, j.error]); }
   [s, j] = await subir('/finanzas/cxp/leer-xml', A, Buffer.from('%PDF-1.4 algo %%EOF')); revisa(s === 400 && /XML/.test(j.error), 'subir el PDF en lugar del XML: se pide el XML', j);
   [s, j] = await gasto({ concepto: 'Total distinto', xml: cfdi({ total: '580.00', traslados: [['002', '80.00']], fecha: FECHA }), total: 2000 });
   revisa(s === 400 && j.codigo === 'TOTAL_DISTINTO' && j.error.includes('580.00') && j.error.includes('2,000.00'), 'el total capturado no coincide con el del XML: se rechaza diciendo los dos', j);

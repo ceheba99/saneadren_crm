@@ -11,7 +11,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const express = require('express');
-const { leerCfdi, tipoReal, MAX_BYTES, nombreSeguro } = require('./expediente-oc');
+const { leerCfdi, tipoReal, MAX_BYTES, MAX_XML_BYTES, nombreSeguro } = require('./expediente-oc');
 
 // Diferencia que se tolera entre el total capturado y el del XML (redondeos al capturar): $1.00.
 const TOLERANCIA_CENT = 100;
@@ -119,6 +119,7 @@ module.exports = function gastosXml(app, db, h, { P, fmt, ivaDeGasto }) {
     if (!buf.length) { res.status(400).json({ error: 'El archivo está vacío' }); return null; }
     if (buf.length > MAX_BYTES) { res.status(413).json({ error: 'El archivo pasa de 10 MB' }); return null; }
     if (tipoReal(buf) !== 'xml') { res.status(400).json({ error: 'Sube el archivo XML de la factura (no el PDF)' }); return null; }
+    if (buf.length > MAX_XML_BYTES) { res.status(413).json({ error: 'El XML pasa de 2 MB: una factura normal pesa mucho menos. Revisa que sea el archivo correcto' }); return null; }
     return buf;
   };
   const nombreDe = req => { try { return decodeURIComponent(String(req.get('x-nombre') || '')); } catch { return 'factura.xml'; } };
