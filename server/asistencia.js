@@ -47,6 +47,10 @@ const hhmm = m => (m >= 1440 ? hhmm(m - 1440) + ' del día siguiente' : String(M
 // Tiempo extra que pasa de medianoche (2026-11-11): el «Fin» de la madrugada siguiente cierra el «Inicio» de la noche
 // anterior si es la PRIMERA checada de ese día y es antes de esta hora. Se cuenta en el día en que empezó.
 const MEDIANOCHE_HASTA = 12 * 60;
+// Salida de madrugada (auditoría del checador, 2026-11-12): quien trabaja pasada la medianoche y marca «Salida» ya en
+// el día siguiente. Si esa «Salida» es la PRIMERA checada del día, es antes de esta hora y ayer tuvo entrada y no tuvo
+// salida, cierra la jornada de AYER (antes el día quedaba «Sin salida», con 0 horas y 0 tiempo extra).
+const MADRUGADA_HASTA = 6 * 60;
 const sumar = (f, n) => { const d = new Date(f + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
 const diaSemana = f => { const d = new Date(f + 'T12:00:00Z').getUTCDay(); return d === 0 ? 7 : d; };
 // Primer día de la semana que empieza en «inicio» (1 = lunes … 7 = domingo) a la que pertenece una fecha.
@@ -233,20 +237,26 @@ module.exports = function asistencia(app, db, h) {
   const validasDe = (pid, f) => db.prepare("SELECT id, tipo, hora, origen, foto_archivo IS NOT NULL AS tiene_foto, foto_borrada_at IS NOT NULL AS foto_borrada FROM main.checadas WHERE personal_id = ? AND fecha = ? AND estado = 'valida' ORDER BY momento_utc, id").all(pid, f);
   function abiertoAlFinal(l) { let a = null; for (const c of l) { if (c.tipo === 'extra_inicia') a = c; else if (c.tipo === 'extra_termina') a = null; } return a; }
   const cierraLaNoche = l => (l[0]?.tipo === 'extra_termina' && min(l[0].hora.slice(0, 5)) < MEDIANOCHE_HASTA ? l[0] : null);
+  const salidaMadrugada = l => (l[0]?.tipo === 'salida' && min(l[0].hora.slice(0, 5)) < MADRUGADA_HASTA ? l[0] : null);
+  const jornadaAbierta = l => l.some(c => c.tipo === 'entrada') && !l.some(c => c.tipo === 'salida');
   function calcularDia(p, fecha, hoy = ahoraMexico().fecha) {
     const hor = horarioDe(p.id, fecha), dia = hor?.dias[diaSemana(fecha)] || null, festivo = festivoDe(fecha), rg = reglaDe(fecha);
     const laboral = !!dia && !festivo;
     const ch = db.prepare('SELECT id, tipo, hora, estado, origen, sin_conexion FROM main.checadas WHERE personal_id = ? AND fecha = ? AND estado <> \'anulada\' ORDER BY momento_utc, id').all(p.id, fecha);
     const validas = ch.filter(c => c.estado === 'valida'), m = c => min(c.hora.slice(0, 5));
-    const entradas = validas.filter(c => c.tipo === 'entrada'), salidas = validas.filter(c => c.tipo === 'salida');
+    // La «Salida» de madrugada que cierra la jornada de ayer no es de hoy.
+    const deAyer = salidaMadrugada(validas) && jornadaAbierta(validasDe(p.id, sumar(fecha, -1))) ? validas[0] : null;
+    const entradas = validas.filter(c => c.tipo === 'entrada'), salidas = validas.filter(c => c.tipo === 'salida' && c !== deAyer);
+    // Y al revés: hoy hubo entrada y no salida, y la primera checada de mañana es una «Salida» de madrugada.
+    const cierre = entradas.length && !salidas.length ? salidaMadrugada(validasDe(p.id, sumar(fecha, 1))) : null;
     // 2026-11-12 (Dirección: «marcó tiempo extra como entrada y su salida normal; que lo tome en cuenta»): en un día
     // laboral sin «Entrada», si lo PRIMERO que marcó fue «Inicio de tiempo extra» antes de su hora de salida, esa checada
     // es su entrada. Si no marcó el «Fin», el tiempo extra va de esa hora a su hora de entrada (nunca dentro del horario).
     const porExtra = laboral && !entradas.length && validas[0]?.tipo === 'extra_inicia' && m(validas[0]) < min(dia.salida) ? validas[0] : null;
     const finPropio = porExtra ? (() => { for (const c of validas.slice(1)) { if (c.tipo === 'extra_termina') return true; if (c.tipo === 'extra_inicia') return false; } return false; })() : false;
     const llegada = entradas[0] || porExtra;
-    const eId = llegada?.id, sId = salidas.at(-1)?.id;
-    const entrada = llegada ? m(llegada) : null, salida = salidas.length ? m(salidas[salidas.length - 1]) : null;
+    const eId = llegada?.id, sId = cierre ? cierre.id : salidas.at(-1)?.id;
+    const entrada = llegada ? m(llegada) : null, salida = cierre ? 1440 + m(cierre) : salidas.length ? m(salidas[salidas.length - 1]) : null;
     // Comida: cada salida a comer con el regreso que le sigue.
     let comida = 0, abierta = null;
     for (const c of validas) { if (c.tipo === 'comida_sale') abierta = m(c); else if (c.tipo === 'comida_regresa' && abierta !== null) { comida += Math.max(0, m(c) - abierta); abierta = null; } }
@@ -269,7 +279,7 @@ module.exports = function asistencia(app, db, h) {
     // con su hora de inicio y fin, por qué cuenta o por qué no, la regla que se usó, el traslape y el redondeo.
     const piezas = [], pieza = (a, b, motivo, cuenta = true, checadas = []) => { if (a !== null && b !== null && b > a) piezas.push({ desde: hhmm(a), hasta: hhmm(b), min: b - a, motivo, cuenta, checadas: checadas.filter(Boolean) }); };
     const r = { personal_id: p.id, nombre: p.nombre, fecha, dia: DIAS[diaSemana(fecha)], horario: hor?.nombre || null, programado: dia, festivo, laboral,
-      entrada: entrada === null ? null : llegada.hora.slice(0, 5), salida: salida === null ? null : salidas[salidas.length - 1].hora.slice(0, 5),
+      entrada: entrada === null ? null : llegada.hora.slice(0, 5), salida: salida === null ? null : (cierre || salidas[salidas.length - 1]).hora.slice(0, 5), salida_dia_siguiente: !!cierre,
       comida_min: comida, trabajado_min: trabajado, retardo_min: 0, exceso_comida_min: 0, salida_anticipada_min: 0, extra_min: 0,
       por_revisar: ch.filter(c => c.estado === 'por_revisar').length, incidencia: null, falta: false, notas: [] };
     const inc = db.prepare('SELECT tipo FROM main.incidencias_personal WHERE personal_id = ? AND cancelada = 0 AND fecha_inicio <= ? AND fecha_fin >= ? ORDER BY id DESC LIMIT 1').get(p.id, fecha, fecha);
@@ -337,7 +347,9 @@ module.exports = function asistencia(app, db, h) {
     // «Inicio de tiempo extra» sin «Fin»: ese bloque no cuenta (no se inventa la hora); RH agrega el fin real con motivo.
     if (ini !== null && fecha < hoy) r.notas.push('Inició tiempo extra y no marcó el fin');
     if (ini !== null) { det.sin_fin = hhmm(ini); det.sin_fin_checada = iniId; }
-    if (finOtroDia) det.otras = [finOtroDia];
+    if (cierre) r.notas.push(`Salió a las ${cierre.hora.slice(0, 5)} del día siguiente (esa «Salida» de madrugada cierra esta jornada)`);
+    if (deAyer) r.notas.push(`Su «Salida» de las ${deAyer.hora.slice(0, 5)} cierra la jornada de ayer (se cuenta en el día anterior)`);
+    if (finOtroDia || cierre) det.otras = [finOtroDia, cierre ? { ...cierre, fecha: sumar(fecha, 1) } : null].filter(Boolean);
     r.extra_detalle = piezas.length || det.sin_fin ? det : null;
     const aut = db.prepare('SELECT minutos_autorizados, minutos_calculados, autorizado_por_nombre, motivo FROM main.extra_autorizaciones WHERE personal_id = ? AND fecha = ? ORDER BY id DESC LIMIT 1').get(p.id, fecha);
     r.extra_autorizado_min = aut ? Math.min(aut.minutos_autorizados, r.extra_min) : null;
