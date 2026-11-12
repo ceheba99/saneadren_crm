@@ -56,6 +56,18 @@ module.exports = {
       buscador: null, buscadorRazon: 'se consulta por mes, no por registro',
       permisos: ['contabilidad.ver'],
     },
+    tareas: {
+      nombre: 'Proyectos y tareas con Gantt (2026-11-11): Dirección y el Gerente asignan tareas con fechas; cada quien avanza las suyas y quien asignó las revisa',
+      vistas: ['tareas'],
+      tablas: ['proyectos_tareas', 'tareas', 'tarea_comentarios'],
+      rutas: [/^\/api\/tareas(\/|$)/],
+      pendientes: null, pendientesRazon: 'las tareas de cada quien salen hasta arriba del Inicio (#inicio-tareas-mias), fuera de los bloques: no dependen de un permiso, cada usuario ve las suyas (y quien asigna, las de su equipo por revisar o vencidas)',
+      inicio: [],
+      demo: ['proyectos_tareas', 'tareas', 'tarea_comentarios'],
+      integridad: ['tareas'],
+      buscador: null, buscadorRazon: 'se consultan en su pantalla por proyecto o persona',
+      permisos: ['tareas.asignar'],
+    },
     conciliacion: {
       nombre: 'Conciliación bancaria (módulo contable F4, 2026-11-11): subir el estado de cuenta de cada banco, emparejarlo con cobros, pagos, anticipos y nómina, y ver lo que no cuadra',
       vistas: [], vistasRazon: 'es la pestaña «Conciliación» de Contabilidad (vista «contabilidad»)',

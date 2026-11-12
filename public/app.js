@@ -194,6 +194,7 @@ function cambiarVista(v, opciones) {
   if (v === 'resultados') abrirResultados();
   if (v === 'contabilidad') window.Contabilidad?.cargar();
   if (v === 'nomina') window.Nomina?.cargar();
+  if (v === 'tareas') window.Tareas?.cargar();
   if (v === 'avisos') Avisos.cargar();
   if (v === 'generador') cargarGenerador();
   if (v === 'calendario') Calendario.cargar();
@@ -576,7 +577,8 @@ async function cargarInicio(silencioso = false) {
   if (typeof Personal !== 'undefined') Personal.pintarInicio(); // bloque «Personal» (licencias, contratos, ausencias, órdenes sin responsable)
   if (typeof Compras !== 'undefined') Compras.pintarInicio(); // bloque «Compras» (aprobar, cotizar, autorizar, recibir)
   window.Anticipos?.pintarInicio();
-  window.Nomina?.pintarInicio(); // bloque «Nómina» (semana por cerrar; cerradas sin pagar) // bloque «Anticipos» (por comprobar los suyos; los que entregó y pasan de 7 días)
+  window.Nomina?.pintarInicio();
+  window.Tareas?.pintarInicio(); // «Mis tareas» hasta arriba de Inicio (y lo del equipo por revisar o vencido) // bloque «Nómina» (semana por cerrar; cerradas sin pagar) // bloque «Anticipos» (por comprobar los suyos; los que entregó y pasan de 7 días)
   if (typeof Prospeccion !== 'undefined') Prospeccion.pintarInicio(); // bloque «Prospección» (a quién llamar hoy)
   if (typeof Marketing !== 'undefined') Marketing.pintarInicio(); // bloque «Marketing» (por aprobar, cambios, por subir)
   window.Facturacion?.pintarInicio(); // bloque «Facturación» (sin respuesta, borradores, por facturar)

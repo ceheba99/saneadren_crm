@@ -20,7 +20,7 @@
 const alcance = require('./alcance');
 
 // Tablas con sucursal propia y tablas que la heredan de su registro (en orden: primero las de arriba).
-const CON_SUCURSAL = ['leads', 'cuentas_por_pagar', 'solicitudes_compra', 'ordenes_compra', 'establecimientos', 'historial_archivo', 'clientes', 'personal', 'facturas', 'checadas', 'checador_dispositivos', 'horarios', 'precios_hora_puesto', 'anticipos', 'nominas', 'reglas_puntualidad', 'cuentas_banco'];
+const CON_SUCURSAL = ['leads', 'cuentas_por_pagar', 'solicitudes_compra', 'ordenes_compra', 'establecimientos', 'historial_archivo', 'clientes', 'personal', 'facturas', 'checadas', 'checador_dispositivos', 'horarios', 'precios_hora_puesto', 'anticipos', 'nominas', 'reglas_puntualidad', 'cuentas_banco', 'proyectos_tareas', 'tareas'];
 const VISTAS = [
   ['leads', 've_lead(sucursal_id, responsable_id, tecnico_id, estatus, capturado_por)'],
   // Gastos: los de su sucursal o los que él registró; con «Ver los gastos de sus órdenes», también los de sus órdenes.
@@ -55,7 +55,11 @@ const VISTAS = [
   ['nomina_lineas', 'nomina_id IN (SELECT id FROM nominas)'],
   ['reglas_puntualidad', 'en_alcance(sucursal_id)'],
   ['cuentas_banco', 'en_alcance(sucursal_id)'], // conciliación bancaria (F4): las cuentas de sus sucursales
-  ['movimientos_banco', 'cuenta_id IN (SELECT id FROM cuentas_banco)'], // bono de puntualidad: cada sucursal sus reglas
+  ['movimientos_banco', 'cuenta_id IN (SELECT id FROM cuentas_banco)'],
+  // Proyectos y tareas (2026-11-11): quién ve cuáles lo decide tareas.js (cada quien las suyas aunque sean de otra sucursal).
+  ['proyectos_tareas', 'en_alcance(sucursal_id)'],
+  ['tareas', 'en_alcance(sucursal_id)'],
+  ['tarea_comentarios', 'tarea_id IN (SELECT id FROM tareas)'], // bono de puntualidad: cada sucursal sus reglas
   ['anticipos', 'en_alcance(sucursal_id)'], // anticipos por comprobar (F2): quién ve cuáles lo decide anticipos.js (permisos y «los suyos»)
   ['orden_personal', 'lead_id IN (SELECT id FROM leads)'],
   ['encuestas', 'lead_id IN (SELECT id FROM leads)'], // la encuesta, con su orden
