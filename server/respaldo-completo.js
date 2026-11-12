@@ -76,7 +76,12 @@ async function* armarTar({ base, dirArchivos }) {
     `Contiene: saneadren.db (la base) y ${n} archivo(s) de la carpeta «archivos/».`,
     'Los documentos y fotos van CIFRADOS: para abrirlos hace falta la clave de cifrado del servidor (CLAVE_CIFRADO),',
     'que NO viene en este respaldo. Guárdala aparte.',
-    'Para restaurar: detén el sistema, pon saneadren.db en la ruta de DB_PATH y la carpeta «archivos/» junto a ella.',
+    'Para restaurar:',
+    '  1. Detén el sistema.',
+    '  2. En la carpeta de la base (la de DB_PATH), BORRA los archivos saneadren.db-wal y saneadren.db-shm si existen.',
+    '     Si se quedan, se mezclan con la base restaurada y la dañan.',
+    '  3. Pon este saneadren.db en la ruta de DB_PATH y la carpeta «archivos/» junto a ella.',
+    '  4. Arranca el sistema.',
     ...(omitidos.length ? ['', 'NO SE INCLUYERON:', ...omitidos] : []),
   ].join('\n') + '\n');
   yield encabezado('LEEME.txt', nota.length, Date.now());

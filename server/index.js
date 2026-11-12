@@ -1891,6 +1891,18 @@ app.use((err, req, res, next) => {
 process.on('uncaughtException', err => { console.error('uncaughtException (servidor sigue vivo):', err); app.locals.registro?.error(null, err); });
 process.on('unhandledRejection', err => { console.error('unhandledRejection (servidor sigue vivo):', err); app.locals.registro?.error(null, err); });
 
+// Apagado ordenado (auditoría DB-01): al detener el sistema se cierra la base. SQLite pasa lo pendiente de
+// «saneadren.db-wal» al archivo principal y borra -wal y -shm; así una restauración «encima» no mezcla datos viejos.
+let apagando = false;
+const apagar = senal => {
+  if (apagando) return; apagando = true;
+  console.log(`Señal ${senal}: cerrando la base y deteniendo el sistema.`);
+  try { db.close(); } catch (err) { console.error('No se pudo cerrar la base al apagar:', err.message); }
+  process.exit(0);
+};
+process.on('SIGTERM', () => apagar('SIGTERM'));
+process.on('SIGINT', () => apagar('SIGINT'));
+
 suc.activarCandados(); // al final: todas las tablas ya existen
 app.listen(PORT, () => {
   console.log(`Saneadren CRM corriendo en http://localhost:${PORT}`); demo.alEscuchar();
