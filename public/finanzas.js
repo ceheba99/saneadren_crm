@@ -713,7 +713,7 @@ const Finanzas = (() => {
       { k: 'acciones', t: '', fija: true, sinOrden: true, clase: 'celda-acciones', v: x => '<div class="acciones-fila">' + (x.saldo > 0 ? '<button type="button" class="btn btn-primario btn-chico perm-dinero-mover" data-pagar-cxp="' + Number(x.id) + '">Pagar</button>' : '')
         + '<button type="button" class="btn btn-outline btn-chico" data-detalle-cxp="' + Number(x.id) + '" title="Pagos y XML de la factura">Pagos' + (x.xml ? ' · XML' : '') + '</button>'
         + (x.es_factura ? '<button type="button" class="btn btn-outline btn-chico perm-dinero-mover" data-iva-cxp="' + Number(x.id) + '" title="Capturar o corregir el IVA de la factura">IVA</button>' : '')
-        + '<button type="button" class="btn btn-outline btn-chico perm-dinero-mover" data-repetir-cxp="' + Number(x.id) + '" title="Gasto fijo: copiarlo al mes siguiente, por pagar">🔁 Repetir</button>'
+        + (x.repetible ? '<button type="button" class="btn btn-outline btn-chico perm-dinero-mover" data-repetir-cxp="' + Number(x.id) + '" title="Gasto fijo: copiarlo al mes siguiente, por pagar">🔁 Repetir</button>' : '')
         + (x.pagado === 0 ? '<button type="button" class="btn btn-outline btn-chico perm-dinero-mover" data-cancelar-cxp="' + Number(x.id) + '">Cancelar</button>' : '') + '</div>' },
     ];
     if (!CXP.length) { cont.innerHTML = '<p class="util-45">No hay cuentas por pagar. 🎉</p>'; return; }
@@ -1528,16 +1528,18 @@ const Finanzas = (() => {
     const nuevos = r.resumen.filter(x => !x.omitida && (x.cliente_nuevo || x.proveedor_nuevo)).length;
     const validos = r.resumen.filter(x => !x.omitida);
     const total = validos.reduce((t, x) => t + (x.total || 0), 0), pagado = validos.reduce((t, x) => t + (x.pagado || 0), 0);
-    const omitidas = r.omitidas ? ` · ${Number(r.omitidas)} omitidos (cancelados o sin datos)` : '';
+    const omitidas = r.omitidas ? ` · ${Number(r.omitidas)} omitidos (ya subidos antes, cancelados o sin datos)` : '';
+    const nuevosRenglones = Number(r.total - (r.omitidas || 0));
     $('importar-resumen').innerHTML = r.errores.length
       ? `<b>${Number(r.errores.length)} de ${Number(r.total)} renglones tienen errores.</b> Corrígelos en el Excel y vuelve a subirlo: no se importará nada mientras haya errores.`
-      : `<b>Todo listo:</b> ${Number(r.total - (r.omitidas || 0))} renglones · total ${formatoMoneda(total)} · ya pagado ${formatoMoneda(pagado)} · saldo ${formatoMoneda(total - pagado)}${nuevos ? ` · ${nuevos} ${tipo === 'cxc' ? 'clientes' : 'proveedores'} nuevos` : ''}${omitidas}.`;
+      : !nuevosRenglones ? `<b>No hay nada nuevo que importar:</b> los ${Number(r.total)} renglones ya se habían subido antes o se omiten.`
+      : `<b>Todo listo:</b> ${nuevosRenglones} renglones · total ${formatoMoneda(total)} · ya pagado ${formatoMoneda(pagado)} · saldo ${formatoMoneda(total - pagado)}${nuevos ? ` · ${nuevos} ${tipo === 'cxc' ? 'clientes' : 'proveedores'} nuevos` : ''}${omitidas}.`;
     $('importar-errores').innerHTML = r.errores.length ? '<div class="importar-errores">' + r.errores.slice(0, 200).map(e => `<div class="pago-fila"><div><b>Renglón ${Number(e.fila)}</b><small class="motivo">${e.errores.map(esc).join(' · ')}</small></div></div>`).join('') + (r.errores.length > 200 ? '<p class="ayuda">…y más.</p>' : '') + '</div>' : '';
     const primeros = r.resumen.slice(0, 100);
-    $('importar-tabla').innerHTML = `<div class="importar-tabla"><table><thead><tr><th>Renglón</th><th>${tipo === 'cxc' ? 'Cliente' : 'Proveedor'}</th><th>${tipo === 'cxc' ? 'Factura' : 'Concepto'}</th><th>Total</th><th>Pagado</th>${tipo === 'cxc' ? '<th>Estado</th>' : ''}</tr></thead><tbody>`
-      + primeros.map(x => `<tr><td>${Number(x.fila)}</td><td>${esc(x.cliente || x.proveedor || '')}${x.cliente_nuevo || x.proveedor_nuevo ? ' <span class="estado-cxc programada">nuevo</span>' : ''}</td><td>${esc(x.folio || x.concepto || '')}</td><td>${x.total == null ? '—' : formatoMoneda(x.total)}</td><td>${formatoMoneda(x.pagado || 0)}</td>${tipo === 'cxc' ? `<td>${esc(x.omitida || x.estado || '')}</td>` : ''}</tr>`).join('')
+    $('importar-tabla').innerHTML = `<div class="importar-tabla"><table><thead><tr><th>Renglón</th><th>${tipo === 'cxc' ? 'Cliente' : 'Proveedor'}</th><th>${tipo === 'cxc' ? 'Factura' : 'Concepto'}</th><th>Total</th><th>Pagado</th><th>${tipo === 'cxc' ? 'Estado' : 'Nota'}</th></tr></thead><tbody>`
+      + primeros.map(x => `<tr><td>${Number(x.fila)}</td><td>${esc(x.cliente || x.proveedor || '')}${x.cliente_nuevo || x.proveedor_nuevo ? ' <span class="estado-cxc programada">nuevo</span>' : ''}</td><td>${esc(x.folio || x.concepto || '')}</td><td>${x.total == null ? '—' : formatoMoneda(x.total)}</td><td>${formatoMoneda(x.pagado || 0)}</td><td>${esc(x.omitida || x.estado || '')}</td></tr>`).join('')
       + '</tbody></table></div>' + (r.resumen.length > 100 ? `<p class="ayuda">Se muestran los primeros 100 de ${Number(r.resumen.length)} renglones.</p>` : '');
-    if (!r.errores.length) { $('importar-confirmar').hidden = false; $('importar-confirmar').textContent = `Importar ${Number(r.total - (r.omitidas || 0))} renglones`; }
+    if (!r.errores.length && nuevosRenglones) { $('importar-confirmar').hidden = false; $('importar-confirmar').textContent = `Importar ${nuevosRenglones} renglones`; }
   }
   $('importar-confirmar').addEventListener('click', e => conBoton(e.currentTarget, async () => {
     if (!IMPORTACION) return;

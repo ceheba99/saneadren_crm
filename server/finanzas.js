@@ -185,6 +185,12 @@ function migrar(db) {
       // Más datos del proveedor (2026-10-26): razón social y datos fiscales, correo, otro teléfono, domicilio, qué vende y cómo se le paga.
       ...['razon_social', 'correo', 'telefono2', 'domicilio', 'codigo_postal', 'regimen_fiscal', 'que_vende', 'forma_pago'].map(c => ['proveedores', c, 'TEXT'])])
       if (!cols(t).includes(c)) db.exec(`ALTER TABLE ${t} ADD COLUMN ${c} ${tipo}`); }
+  // Huella del renglón de Excel importado (auditoría A-02): subir otra vez el mismo archivo no duplica gastos ni cobros.
+  // En órdenes es la misma columna de la carga del Generador (las huellas no chocan: cada carga arma la suya distinta).
+  agregar('cuentas_por_pagar', 'import_huella', 'TEXT');
+  agregar('leads', 'import_huella', 'TEXT');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_cxp_import_huella ON cuentas_por_pagar(import_huella)');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_leads_import_huella ON leads(import_huella)');
 }
 // Categorías del Excel de Cuentas por pagar (sus 200 conceptos se agrupan en éstas). «es_gasto» = 0: compras de
 // bienes (inversión), préstamos y traspasos o devoluciones: NO se restan como gasto en Resultados.
@@ -730,13 +736,15 @@ module.exports = function finanzas(app, db, h, unicos) {
     const xmls = XML.deGastos();
     return db.prepare(`SELECT x.*, p.nombre AS proveedor_nombre, (SELECT created_at FROM main.leads l WHERE l.id = x.lead_id) AS lead_created_at,
         (SELECT COALESCE(SUM(monto_cent), 0) FROM pagos_proveedor g WHERE g.cxp_id = x.id AND g.cancelado = 0) AS pagado_cent,
-        (SELECT fecha || '|' || metodo || '|' || COALESCE(referencia, '') FROM pagos_proveedor g WHERE g.cxp_id = x.id AND g.cancelado = 0 ORDER BY fecha DESC, id DESC LIMIT 1) AS ultimo_pago
+        (SELECT fecha || '|' || metodo || '|' || COALESCE(referencia, '') FROM pagos_proveedor g WHERE g.cxp_id = x.id AND g.cancelado = 0 ORDER BY fecha DESC, id DESC LIMIT 1) AS ultimo_pago,
+        ${tablaExiste('ordenes_compra') ? 'EXISTS (SELECT 1 FROM main.ordenes_compra o WHERE o.cxp_id = x.id)' : '0'} AS de_orden_compra
       FROM cuentas_por_pagar x JOIN proveedores p ON p.id = x.proveedor_id WHERE x.cancelada = 0`).all()
-      .map(x => {
+      .map(({ de_orden_compra, ...x }) => {
         const saldo = x.total_cent - x.pagado_cent;
         const iva = ivaDeGasto(x);
         return { ...x, orden_folio: x.lead_id ? folioOS(x.lead_id, x.lead_created_at) : null, categoria_nombre: CATEGORIAS[x.categoria] || x.categoria, total: aPesos(x.total_cent), pagado: aPesos(x.pagado_cent),
           iva: aPesos(iva.iva_cent), iva_estimado: iva.estimado, es_factura: esFactura(x), xml: xmls.get(x.id) || null,
+          repetible: !x.lead_id && !de_orden_compra, // «Repetir» solo en gastos fijos (FLW-H07)
           saldo: aPesos(Math.max(saldo, 0)), vencida: saldo > 0 && x.fecha_vencimiento < hoy, dias_para_vencer: diasEntre(hoy, x.fecha_vencimiento) };
       });
   }
@@ -1225,6 +1233,12 @@ module.exports = function finanzas(app, db, h, unicos) {
     if (folioFactura && !b.forzar && db.prepare("SELECT id FROM main.cuentas_por_pagar WHERE en_alcance(sucursal_id) AND proveedor_id = ? AND replace(upper(factura_folio), ' ', '') = replace(upper(?), ' ', '') AND cancelada = 0").get(prov.id, folioFactura)) {
       return res.status(409).json({ error: `Ya registraste la factura ${folioFactura} de ${prov.nombre}. ¿Es otra factura?`, codigo: 'POSIBLE_DUPLICADO' });
     }
+    // Sin folio (de contado o a crédito): el mismo gasto guardado hace menos de 2 minutos es un doble clic o un reenvío
+    // (auditoría M-09; mismo candado que cobros y pagos a proveedor). Confirmando, se guarda: la renta de cada mes no choca.
+    if (!folioFactura && !b.forzar && db.prepare(`SELECT id FROM main.cuentas_por_pagar WHERE en_alcance(sucursal_id) AND proveedor_id = ? AND total_cent = ? AND fecha_documento = ?
+      AND lower(trim(concepto)) = lower(trim(?)) AND lead_id IS ? AND cancelada = 0 AND created_at >= datetime('now','localtime','-2 minutes')`).get(prov.id, total, fecha, concepto, leadId)) {
+      return res.status(409).json({ error: `Ese mismo gasto («${concepto}» de ${prov.nombre} por ${fmt(total)}) se acaba de registrar. ¿Es un gasto distinto?`, codigo: 'POSIBLE_DUPLICADO' });
+    }
     const id = db.transaction(() => {
       const info = db.prepare(`INSERT INTO main.cuentas_por_pagar (proveedor_id, categoria, concepto, factura_folio, fecha_documento, fecha_vencimiento, total_cent, lead_id, equipo, notas, registrado_por, dias_credito, beneficiario, tipo_comprobante, metodo_sat, iva_cent, iva_origen)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(prov.id, categoria, concepto, xml ? folioFactura : texto(b.factura_folio, 60), fecha, vence, total, leadId, texto(b.equipo, 200), texto(b.notas, 1000), req.usuarioSesion.id, dias,
@@ -1325,12 +1339,22 @@ module.exports = function finanzas(app, db, h, unicos) {
 
   // Gastos fijos (renta, internet, sueldos de oficina…): «Repetir» copia el gasto al mes siguiente, por pagar, sin folio,
   // XML ni pagos (decisión 2026-11-11: lo más sencillo para los recurrentes del Excel CXP; nada se crea solo).
+  const motivoNoRepetir = x => {
+    const oc = tablaExiste('ordenes_compra') && db.prepare('SELECT id, created_at FROM main.ordenes_compra WHERE cxp_id = ? LIMIT 1').get(x.id);
+    if (oc) return `Esta cuenta es de la orden de compra ${folioOCx(oc)}: no se repite. Si se vuelve a comprar, haz una nueva solicitud u orden de compra.`;
+    if (x.lead_id) return `Es un costo de la orden de servicio ${folioOS(x.lead_id, db.prepare('SELECT created_at FROM main.leads WHERE id = ?').get(x.lead_id)?.created_at)}: no se repite. Cada servicio registra sus propios costos.`;
+    return null;
+  };
   const masUnMes = f => { const [a, m, d] = f.split('-').map(Number), ult = new Date(Date.UTC(a, m + 1, 0)).getUTCDate(); return new Date(Date.UTC(a, m, Math.min(d, ult))).toISOString().slice(0, 10); };
   app.post('/api/finanzas/cxp/:id/repetir', h((req, res) => {
     if (!puedePagar(req, res)) return;
     const x = db.prepare('SELECT * FROM cuentas_por_pagar WHERE id = ?').get(Number(req.params.id)); // vista: solo lo que ve
     if (!x) return res.status(404).json({ error: 'Cuenta por pagar no encontrada' });
     if (x.cancelada) return res.status(409).json({ error: 'Está cancelada: no se repite' });
+    // Solo se repiten gastos fijos (auditoría FLW-H07): la deuda de una orden de compra o el costo de un servicio no son
+    // recurrentes, y una copia se pagaría dos veces o dejaría de contar en su servicio. No se salta ni confirmando.
+    const noRepetir = motivoNoRepetir(x);
+    if (noRepetir) return res.status(409).json({ error: noRepetir });
     const fecha = masUnMes(x.fecha_documento), vence = masUnMes(x.fecha_vencimiento);
     if (!req.body?.forzar && db.prepare('SELECT 1 FROM cuentas_por_pagar WHERE proveedor_id = ? AND concepto = ? AND fecha_documento = ? AND cancelada = 0').get(x.proveedor_id, x.concepto, fecha))
       return res.status(409).json({ error: `Ya existe «${x.concepto}» de ese proveedor con fecha ${fecha.split('-').reverse().join('/')}. ¿Lo repites de todos modos?`, codigo: 'POSIBLE_DUPLICADO' });
@@ -1406,6 +1430,14 @@ module.exports = function finanzas(app, db, h, unicos) {
       }
     }
   }
+  // Huella de un renglón importado (auditoría A-02, reglas de Dirección 2026-11-12): proveedor o cliente, fecha, concepto,
+  // total y folio. Si ya se subió, el renglón se brinca. Dos renglones iguales del MISMO archivo son dos gastos distintos:
+  // cada uno lleva su número de vez, y al volver a subir ese archivo los dos se reconocen.
+  const huellaRenglon = (tipo, partes, vistas) => {
+    const base = [tipo, ...partes.map(p => claveNombre(p == null ? '' : String(p)).replace(/\s+/g, ''))].join('|');
+    const vez = (vistas.get(base) || 0) + 1; vistas.set(base, vez);
+    return require('crypto').createHash('sha256').update(base + '|' + vez).digest('hex').slice(0, 32);
+  };
   const responder = (res, simular, resultado) => {
     const conError = resultado.filter(x => x.errores.length), omitidas = resultado.filter(x => x.omitida).length;
     res.status(conError.length || simular ? 200 : 201).json({
@@ -1466,7 +1498,8 @@ module.exports = function finanzas(app, db, h, unicos) {
       for (const k of [claveNombre(c.nombre), claveNombre(c.empresa_contacto)]) if (k && !porNombre.has(k)) porNombre.set(k, c);
     }
     const facturaExiste = db.prepare("SELECT 1 FROM main.leads WHERE lower(factura_folio) = lower(?) AND en_alcance(sucursal_id)");
-    const vistos = new Set(), nuevosEnArchivo = new Set(), nuevosParecidos = [];
+    const yaImportada = db.prepare("SELECT id, created_at FROM main.leads WHERE import_huella = ? AND en_alcance(sucursal_id)");
+    const vistos = new Set(), nuevosEnArchivo = new Set(), nuevosParecidos = [], huellas = new Map();
     const resultado = filas.map((f, i) => {
       const errores = [];
       const fila = Number(f.fila) || i + 2;
@@ -1535,6 +1568,10 @@ module.exports = function finanzas(app, db, h, unicos) {
       if (servicioTxt && !servicio) errores.push(`SERVICIO "${servicioTxt.slice(0, 40)}" no está en el catálogo`);
       const direccion = textoMax(f.direccion, LIM.direccion, 'DIRECCIÓN', errores) || existente?.direccion || null;
       const folioTxt = [serie, folio].filter(Boolean).join('-') || null;
+      // El mismo renglón ya se subió antes (auditoría A-02): se brinca, con o sin folio de factura.
+      const huella = nombre && fecha && total ? huellaRenglon('cxc', [nombre, fecha, servicioTxt, total, folioTxt], huellas) : null;
+      const previa = huella && yaImportada.get(huella);
+      if (previa) return { fila, errores: [], omitida: true, resumen: { cliente: existente?.nombre || nombre, folio: folioTxt, total: aPesos(total), omitida: `Ya se había subido (${folioOS(previa.id, previa.created_at)}): se omite` } };
       // La factura (serie y folio) identifica el renglón: no se importa dos veces.
       if (folioTxt) {
         if (vistos.has(claveNombre(folioTxt))) errores.push(`La factura ${folioTxt} está repetida en el archivo`);
@@ -1545,7 +1582,7 @@ module.exports = function finanzas(app, db, h, unicos) {
         .map(([k, v]) => celda(v) ? `${k}: ${celda(v)}` : '').filter(Boolean).join(' · ');
       const notas = textoMax(extra, LIM.notas, 'Notas', errores);
       const referencia = [celda(f.cp), celda(f.observaciones)].filter(Boolean).join(' · ').slice(0, 120) || null;
-      return { fila, errores, datos: { tel, nombre, clave, existente, servicio, direccion, fecha, subtotal, modo, imp, facturaTotalCent, folioTxt, dias, pagado, fechaCobro, notas, referencia, metodo: esBanco(f.observaciones) ? 'transferencia' : 'otro', mp: ['PUE', 'PPD'].includes(String(f.metodo_pago || '').trim().toUpperCase()) ? String(f.metodo_pago).trim().toUpperCase() : null },
+      return { fila, errores, datos: { huella, tel, nombre, clave, existente, servicio, direccion, fecha, subtotal, modo, imp, facturaTotalCent, folioTxt, dias, pagado, fechaCobro, notas, referencia, metodo: esBanco(f.observaciones) ? 'transferencia' : 'otro', mp: ['PUE', 'PPD'].includes(String(f.metodo_pago || '').trim().toUpperCase()) ? String(f.metodo_pago).trim().toUpperCase() : null },
         resumen: { cliente: existente?.nombre || nombre, folio: folioTxt, total: total ? aPesos(total) : null, pagado: aPesos(pagado), estado: status === 'pagado' && pagado < total ? 'Pagado en parte' : status === 'pagado' ? 'Pagado' : 'Pendiente', cliente_nuevo: !existente && !nuevoRepetido } };
     });
     if (simular || resultado.some(x => x.errores.length)) return responder(res, simular, resultado);
@@ -1562,6 +1599,8 @@ module.exports = function finanzas(app, db, h, unicos) {
       for (const r of resultado) {
         if (r.omitida) continue;
         const d = r.datos;
+        // Otra carga del mismo archivo terminó mientras ésta se revisaba (dos procesos): el renglón ya está, se brinca.
+        if (d.huella && yaImportada.get(d.huella)) { r.omitida = true; continue; }
         let cli = d.existente || creados.get(d.clave);
         if (!cli) {
           // Sin teléfono en el archivo: el cliente se crea sin él (se agrega después desde su ficha).
@@ -1577,10 +1616,11 @@ module.exports = function finanzas(app, db, h, unicos) {
           d.modo, Importes.tasaDe(d.modo), d.imp.iva_cent).lastInsertRowid;
         app.locals.sucursales.asignar('leads', leadId);
         if (d.mp) db.prepare('UPDATE main.leads SET factura_metodo = ? WHERE id = ?').run(d.mp, leadId);
+        if (d.huella) db.prepare('UPDATE main.leads SET import_huella = ? WHERE id = ?').run(d.huella, leadId);
         if (d.pagado) insCobro.run(leadId, d.fechaCobro, d.pagado, d.metodo, d.referencia, req.usuarioSesion.id, req.usuarioSesion.id);
         bitacora(leadId, 'Orden importada desde la plantilla de cobranza' + (d.folioTxt ? ` (factura ${d.folioTxt})` : '') + '.' + (d.pagado ? ` Cobrado: ${fmt(d.pagado)}.` : ''), req);
       }
-    })();
+    }).immediate();
     responder(res, false, resultado);
   }));
 
@@ -1593,7 +1633,8 @@ module.exports = function finanzas(app, db, h, unicos) {
     const nombreCategoria = new Map(Object.entries(CATEGORIAS).flatMap(([k, n]) => [[k, k], [n.toLowerCase(), k]]));
     const nombreMetodo = new Map(METODOS_PROV.map(m => [m, m]).concat([['depósito', 'deposito'], ['nómina', 'nomina']]));
     const provPorClave = new Map(db.prepare('SELECT * FROM proveedores').all().map(x => [claveNombre(x.nombre), x]));
-    const vistos = new Set();
+    const yaImportada = db.prepare('SELECT id FROM main.cuentas_por_pagar WHERE import_huella = ? AND cancelada = 0 AND en_alcance(sucursal_id)');
+    const vistos = new Set(), huellas = new Map();
     const resultado = filas.map((f, i) => {
       const errores = [];
       const fila = Number(f.fila) || i + 2;
@@ -1625,13 +1666,17 @@ module.exports = function finanzas(app, db, h, unicos) {
       }
       const equipo = textoMax(f.equipo, LIM.equipo, 'Equipo', errores);
       const notas = textoMax(f.notas, LIM.notas, 'Notas', errores);
+      // El mismo renglón ya se subió antes (auditoría A-02): se brinca, con o sin folio de factura.
+      const huella = proveedor && fecha && total ? huellaRenglon('cxp', [proveedor, fecha, concepto, total, folio], huellas) : null;
+      const previa = huella && yaImportada.get(huella);
+      if (previa) return { fila, errores: [], omitida: true, resumen: { proveedor: prov?.nombre || proveedor, concepto, total: aPesos(total), pagado: 0, omitida: `Ya se había subido (cuenta #${previa.id}): se omite` } };
       if (proveedor && folio) {
         const llave = claveNombre(proveedor) + '|' + folio;
         if (vistos.has(llave)) errores.push('Factura repetida dentro del archivo');
         vistos.add(llave);
         if (prov && db.prepare('SELECT 1 FROM main.cuentas_por_pagar WHERE en_alcance(sucursal_id) AND proveedor_id = ? AND factura_folio = ? AND cancelada = 0').get(prov.id, folio)) errores.push(`La factura ${folio} de ${prov.nombre} ya está registrada`);
       }
-      return { fila, errores, datos: { proveedor, prov, categoria, concepto, folio, fecha, vence, total, pagado, metodo, leadId, equipo, notas },
+      return { fila, errores, datos: { huella, proveedor, prov, categoria, concepto, folio, fecha, vence, total, pagado, metodo, leadId, equipo, notas },
         resumen: { proveedor: prov?.nombre || proveedor, concepto, total: total ? aPesos(total) : null, pagado: pagado ? aPesos(pagado) : 0, proveedor_nuevo: !prov } };
     });
     if (simular || resultado.some(x => x.errores.length)) return responder(res, simular, resultado);
@@ -1639,17 +1684,21 @@ module.exports = function finanzas(app, db, h, unicos) {
     db.transaction(() => {
       const nuevos = new Map();
       const insProv = db.prepare('INSERT INTO proveedores (nombre, categoria, dias_credito) VALUES (?, ?, 0)');
-      const insCxp = db.prepare(`INSERT INTO main.cuentas_por_pagar (proveedor_id, categoria, concepto, factura_folio, fecha_documento, fecha_vencimiento, total_cent, lead_id, equipo, notas, registrado_por)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+      const insCxp = db.prepare(`INSERT INTO main.cuentas_por_pagar (proveedor_id, categoria, concepto, factura_folio, fecha_documento, fecha_vencimiento, total_cent, lead_id, equipo, notas, registrado_por, import_huella)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
       const insPago = db.prepare('INSERT INTO main.pagos_proveedor (cxp_id, fecha, monto_cent, metodo, referencia, registrado_por) VALUES (?, ?, ?, ?, ?, ?)');
-      for (const { datos: d } of resultado) {
+      for (const r of resultado) {
+        if (r.omitida) continue;
+        const d = r.datos;
+        // Otra carga del mismo archivo terminó mientras ésta se revisaba (dos procesos): el renglón ya está, se brinca.
+        if (d.huella && yaImportada.get(d.huella)) { r.omitida = true; continue; }
         let provId = d.prov?.id || nuevos.get(claveNombre(d.proveedor));
         if (!provId) { provId = insProv.run(d.proveedor, d.categoria).lastInsertRowid; nuevos.set(claveNombre(d.proveedor), provId); }
-        const id = insCxp.run(provId, d.categoria, d.concepto, d.folio, d.fecha, d.vence, d.total, d.leadId, d.equipo, d.notas, req.usuarioSesion.id).lastInsertRowid;
+        const id = insCxp.run(provId, d.categoria, d.concepto, d.folio, d.fecha, d.vence, d.total, d.leadId, d.equipo, d.notas, req.usuarioSesion.id, d.huella).lastInsertRowid;
         app.locals.sucursales.asignar('cuentas_por_pagar', Number(id), d.leadId ? app.locals.sucursales.de('leads', d.leadId) : undefined);
         if (d.pagado) insPago.run(id, d.fecha <= hoy ? d.fecha : hoy, d.pagado, d.metodo, 'Importado desde plantilla de Excel', req.usuarioSesion.id);
       }
-    })();
+    }).immediate();
     responder(res, false, resultado);
   }));
 
