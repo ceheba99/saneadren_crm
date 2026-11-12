@@ -232,6 +232,25 @@ const LUN = sumar(sumar(HOY, -7), -(dow(sumar(HOY, -7)) - 1)), D = k => sumar(LU
   await marcaA(Y, 'extra_inicia', '23:00'); await marcaA(sumar(Y, 1), 'extra_termina', '13:00');
   revisa((await diaA(Y)).notas.includes('Inició tiempo extra y no marcó el fin'), 'Un «Fin» después de las 12:00 del día siguiente no se une');
 
+  console.log('8c. «Inicio de tiempo extra» en lugar de «Entrada» (2026-11-12)');
+  // Caso real: a las 04:34 apretó «Inicio de tiempo extra» (no «Entrada»), comió y salió a su hora normal.
+  const Z1 = sumar(V, 2), Z2 = sumar(Y, 2), Z3 = sumar(W, 2);
+  for (const [t, h] of [['extra_inicia', '04:34'], ['comida_sale', '15:17'], ['comida_regresa', '16:11'], ['salida', '18:12']]) await marcaA(Z1, t, h);
+  const z1 = await diaA(Z1), p1 = (z1.extra_detalle?.piezas || []).filter(z => z.cuenta);
+  revisa(!z1.falta && z1.entrada === '04:34' && z1.trabajado_min === 18 * 60 + 12 - (4 * 60 + 34) - 54 && z1.retardo_min === 0
+    && z1.notas.some(x => /se tomó como su entrada/.test(x)) && !z1.notas.includes('Inició tiempo extra y no marcó el fin'),
+    'Sin «Entrada», el «Inicio de tiempo extra» de las 04:34 es su entrada: no es falta, ni retardo, ni «no marcó el fin»', z1);
+  revisa(p1.some(z => z.desde === '04:34' && z.hasta === '08:30' && z.checadas.length === 1) && z1.extra_min >= 236 && p1.filter(z => z.desde === '04:34').length === 1,
+    'El tiempo extra cuenta de 04:34 a su hora de entrada (08:30), una sola vez', p1);
+  // Si sí marcó el «Fin», se respeta su hora de fin.
+  for (const [t, h] of [['extra_inicia', '06:00'], ['extra_termina', '07:30'], ['salida', '18:00']]) await marcaA(Z2, t, h);
+  const z2 = await diaA(Z2), p2 = (z2.extra_detalle?.piezas || []).filter(z => z.cuenta);
+  revisa(!z2.falta && z2.entrada === '06:00' && p2.length === 1 && p2[0].desde === '06:00' && p2[0].hasta === '07:30', 'Con «Fin» marcado, cuenta de su inicio a su fin y el inicio es su entrada', z2);
+  // Si lo apretó ya tarde (después de su hora de entrada), es su entrada con retardo y no hay tiempo extra.
+  for (const [t, h] of [['extra_inicia', '09:15'], ['salida', '18:00']]) await marcaA(Z3, t, h);
+  const z3 = await diaA(Z3);
+  revisa(!z3.falta && z3.entrada === '09:15' && z3.retardo_min === 45 && z3.extra_min === 0 && !z3.notas.includes('Inició tiempo extra y no marcó el fin'), 'Apretado tarde: cuenta como entrada con retardo, sin tiempo extra', z3);
+
   console.log('9. Solo «Descargar la nómina» (2026-11-11)');
   const rolN = exigir(await pedir('POST', '/roles', A, { nombre: 'Solo nómina' }), 'crear rol');
   exigir(await pedir('PUT', '/roles/' + rolN.clave + '/permisos', A, { permisos: ['asistencia.nomina'], alcances: {} }), 'permisos del rol');
