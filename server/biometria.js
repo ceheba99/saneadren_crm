@@ -111,10 +111,13 @@ module.exports = function biometria(app, db, h) {
   // ---------- Administración (desde la ficha) ----------
   const persona = id => db.prepare('SELECT * FROM personal WHERE id = ?').get(idDe(id)); // vista: solo sus sucursales
   app.post('/api/asistencia/personal/:id/biometria/codigo', h((req, res) => {
-    if (!puede(req, 'personal.editar')) return negar(res, 'No tienes permiso para registrar el biométrico');
+    // Etapa 6 (SEC-04, regla aprobada por Dirección el 2026-11-12): con el código se registra una cara como si fuera la de
+    // la persona; lo da quien corrige la asistencia, nunca para sí mismo ni sin ficha ligada. Dirección sí.
+    if (!puede(req, 'personal.editar') || !puede(req, 'asistencia.corregir')) return negar(res, 'El código para registrar la cara lo da quien corrige la asistencia (tu gerente o Dirección)');
     const p = persona(req.params.id);
     if (!p) return res.status(404).json({ error: 'Persona no encontrada' });
-    if (app.locals.personal.esPropio(req, res, p.id, 'registrar tu propia cara')) return;
+    if (app.locals.personal.esPropio(req, res, p.id, 'registrar la cara')) return;
+    if (app.locals.personal.sinFichaLigada(req, res, 'dar códigos para registrar la cara')) return;
     if (!p.activo || !p.codigo_checador) return res.status(409).json({ error: 'Primero dala de alta en el reloj checador (código y PIN)' });
     if (!consentimiento(p.id)) return res.status(409).json({ error: 'Primero marca en su ficha que firmó el consentimiento biométrico' });
     const codigo = String(crypto.randomInt(0, 1000000)).padStart(6, '0');

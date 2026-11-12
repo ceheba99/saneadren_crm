@@ -54,6 +54,7 @@ const archivosDe = d => fs.readdirSync(d, { withFileTypes: true }).flatMap(e => 
     exigir(await pedir('POST', '/usuarios', A, { nombre, password: CLAVE, rol, sucursales: [s] }), 'crear ' + nombre);
     T[nombre.split(' ')[0]] = exigir(await pedir('POST', '/login', null, { nombre, password: CLAVE }), 'entrar ' + nombre).token;
   }
+  require('./ligar-fichas.cjs')(DB, ['Gema Gerente', 'Gus GerenteMx']); // etapa 6: quien edita personal tiene su ficha ligada
   const juan = exigir(await pedir('POST', '/personal', T.Gema, { nombre: 'Juan Pérez Operador', puesto: 'Operador' }), 'alta de Juan');
   const ana = exigir(await pedir('POST', '/personal', T.Gema, { nombre: 'Ana López Admin', puesto: 'Administración' }), 'alta de Ana');
   const mx = exigir(await pedir('POST', '/personal', T.Gus, { nombre: 'Mario CDMX', puesto: 'Técnico' }), 'alta en CDMX');
@@ -182,6 +183,7 @@ const archivosDe = d => fs.readdirSync(d, { withFileTypes: true }).flatMap(e => 
   revisa(conBase(d => d.prepare('SELECT COUNT(*) n FROM checadas').get().n) === 3, 'Siguen todas las checadas (incluida la anulada)');
   // Nadie se corrige a sí mismo (auditoría 2026-11-03): la gerente tiene su ficha ligada a su cuenta.
   { const gemaId = exigir(await pedir('GET', '/permisos/mios', T.Gema), 'mis permisos').usuario_id;
+    require('./ligar-fichas.cjs').soltar(DB, 'Gema Gerente'); // su ficha de verdad sustituye a la de prueba
     const gema = exigir(await pedir('POST', '/personal', A, { nombre: 'Gema Gerente', puesto: 'Supervisor', sucursal_id: qro.id, usuario_id: gemaId }), 'ficha de Gema');
     const propio = r => r[0] === 403 && r[1]?.codigo === 'PROPIO';
     revisa(propio(await pedir('POST', '/asistencia/checadas', T.Gema, { personal_id: gema.id, tipo: 'entrada', fecha: ayer, hora: '08:30', motivo: 'Me la agrego yo' })), 'La gerente no se agrega checadas a sí misma');
