@@ -12,14 +12,15 @@ const Contabilidad = (() => {
   const COMP = { factura: 'Factura', recibo: 'Recibo', estado_cuenta: 'Estado de cuenta', linea_captura: 'Línea de captura', nomina: 'Nómina', pagadora: 'Pagadora', sin_factura: 'Sin factura', otro: 'Otro' };
   // Columnas: [llave, título, ancho en Excel, tipo] · tipo: f fecha, d dinero, s estado (chip), v vía, c comprobante, n número.
   const TABLAS = {
-    // Flujo de banco: la hoja «BNT» de Dirección, en su mismo orden (A–Z), llenada sola con cobros confirmados, pagos y
-    // anticipos (la entrega sale y el reintegro entra; lo pagado con el anticipo no sale otra vez).
-    flujo: { titulo: 'Flujo de banco', hoja: 'Flujo de banco', cols: [['via', 'TRANSFERENCIA', 14, 'v'], ['oc', 'O.C. O REQ / ORDEN', 20], ['comprobante', 'COMPROBANTE', 18], ['fecha', 'FECHA', 11, 'f'],
+    // Flujo de banco: tal cual el Excel «flujo banco» de Dirección (A–Z, 2026-11-12), llenado solo con cobros confirmados,
+    // pagos y anticipos (la entrega sale y el reintegro entra; lo pagado con el anticipo no sale otra vez). A, B y C son
+    // marcas S / FALTA / NA; K es el número seguido de las salidas. Al final, 3 columnas del sistema.
+    flujo: { titulo: 'Flujo de banco', hoja: 'Flujo de banco', cols: [['marca_transf', 'TRANSFERENCIA', 14, 's'], ['marca_oc', 'O.C O REQ', 10, 's'], ['marca_comp', 'COMPROBANTE', 13, 's'], ['fecha', 'FECHA', 11, 'f'],
       ['concepto_banco', 'CONCEPTO', 30], ['clabe', 'CLABE BENEFICIARIO', 20], ['beneficiario', 'NOMBRE BENEFICIARIO', 26], ['egreso', 'EGRESOS', 14, 'd'], ['ingreso', 'INGRESOS', 14, 'd'], ['saldo', 'SALDO', 15, 'S'],
-      ['transferencia', '# TRANSFERENCIA', 18], ['metodo', 'MÉTODO DE PAGO', 12, 's'], ['cfdi', 'PPD/PUE COMPROBANTE FISCAL', 34], ['complemento', 'COMPLEMENTO PAGO COMPROBANTE', 30, 's'], ['tercero', 'PROVEEDOR/CLIENTE', 28],
+      ['consecutivo', '# TRANSFERENCIA', 10], ['metodo', 'MÉTODO DE PAGO', 12, 's'], ['cfdi', 'PPD/PUE COMPROBANTE FISCAL', 34], ['complemento', 'COMPLEMENTO PAGO COMPROBANTE', 30, 's'], ['tercero', 'PROVEEDOR/CLIENTE', 28],
       ['concepto', 'CONCEPTO ', 28], ['observaciones', 'OBSERVACIONES', 28], ['cfdi_monto', 'MONTO REAL CFDI', 14, 'd'], ['no_deducible', 'NO DEDUCIBLES', 14, 'd'], ['por_comprobar', 'X COMPROBAR / EXCEDENTE', 14, 'd'],
       ['cuenta_abono', 'CUENTA ABONO', 13], ['proyecto', 'PROYECTO', 9], ['unidad', 'UNIDAD', 12], ['tipo_gasto', 'TIPO DE GASTO', 20], ['cuenta_tercero', 'CUENTA BANCARIA PROVEEDOR/CL', 26],
-      ['revisar', 'OBSERVACIONES (REVISAR)', 30, 's'], ['cuenta_salida', 'CUENTA DE SALIDA', 18]] },
+      ['observaciones_z', 'OBSERVACIONES', 24], ['revisar', 'REVISAR (SISTEMA)', 30, 's'], ['cuenta', 'CUENTA DE BANCO (SISTEMA)', 22], ['datos_sistema', 'DATOS DEL SISTEMA', 40]] },
     gastos: { titulo: 'Gastos (CXP)', hoja: 'CXP', cols: [['vence', 'FECHA VENCIMIENTO', 13, 'f'], ['proveedor', 'PROVEEDOR', 28], ['beneficiario', 'BENEFICIARIO', 24], ['concepto', 'DESCRIPCIÓN', 32],
       ['fecha', 'FECHA FACTURA', 12, 'f'], ['capturo', 'CAPTURÓ', 16], ['folio', 'FOLIO FACTURA', 13], ['via', 'VÍA DE PAGO', 14, 'v'], ['total', 'MONTO TOTAL', 14, 'd'], ['pendiente', 'PENDIENTE', 14, 'd'],
       ['pagado', 'PAGADO', 14, 'd'], ['dias_credito', 'DÍAS DE CRÉDITO', 10, 'n'], ['categoria', 'CONCEPTO DE GASTO', 20], ['status', 'STATUS', 11, 's'], ['fecha_pago', 'FECHA DE PAGO', 12, 'f'],
@@ -33,9 +34,10 @@ const Contabilidad = (() => {
     pagos: { titulo: 'Pagos a proveedores', hoja: 'Pagos a proveedores', cols: [['fecha', 'FECHA', 11, 'f'], ['proveedor', 'PROVEEDOR', 28], ['concepto', 'CONCEPTO', 32], ['folio', 'FOLIO', 12], ['monto', 'MONTO', 14, 'd'],
       ['metodo', 'VÍA', 14, 'v'], ['referencia', 'REFERENCIA', 20], ['cuenta', 'CUENTA DE SALIDA', 20]] },
   };
-  const CHIP = { PUE: 'pagada', 'PPD/CP': 'parcial', 'NO APLICA': '', FALTA: 'vencida', 'Pedirlo al proveedor': 'parcial',  PAGADO: 'pagada', PARCIAL: 'parcial', PENDIENTE: 'vencida', Confirmado: 'pagada', 'Por confirmar': 'por-confirmar', timbrada: 'pagada', cancelada: 'vencida', cancelacion_solicitada: 'parcial', Sí: 'pagada', Falta: 'vencida' };
+  const CHIP = { S: 'pagada', NA: '', DOMICILIADO: '', LAYOUT: '', CN01: 'pagada', PUE: 'pagada', 'PPD/CP': 'parcial', 'NO APLICA': '', FALTA: 'vencida', 'Pedirlo al proveedor': 'parcial',  PAGADO: 'pagada', PARCIAL: 'parcial', PENDIENTE: 'vencida', Confirmado: 'pagada', 'Por confirmar': 'por-confirmar', timbrada: 'pagada', cancelada: 'vencida', cancelacion_solicitada: 'parcial', Sí: 'pagada', Falta: 'vencida' };
   const textoDe = (v, tipo) => (tipo === 'f' ? fecha(v) : tipo === 'v' ? VIA[v] || v || '' : tipo === 'c' ? COMP[v] || v || '' : tipo === 'd' || tipo === 'S' ? dinero(v) : String(v ?? ''));
-  let listo = false, consulta = 0, DATOS = null, PESTANA = 'resumen';
+  let listo = false, consulta = 0, DATOS = null, PESTANA = 'resumen', CUENTA = ''; // CUENTA: '' todas, '0' sin cuenta, o el id
+  const nombreCuenta = c => (c.id ? [c.nombre, c.banco, c.terminacion ? '••' + c.terminacion : ''].filter(Boolean).join(' · ') : 'Sin cuenta'); // texto plano: se escapa al pintarlo
   // Saldo inicial del banco (2026-11-12): se guarda en el sistema por mes y sucursal, con quién y cuándo; si nadie lo
   // escribió, es el que calcula el CRM. Ya no se guarda en el navegador.
   // Filas del flujo con el saldo corrido desde el saldo inicial.
@@ -47,7 +49,7 @@ const Contabilidad = (() => {
   const conBoton = async (b, fn) => { if (b.disabled) return; b.disabled = true; try { await fn(); } finally { b.disabled = false; } };
   const pedir = async (ruta, opciones) => { const res = await api(ruta, opciones), j = await res.json().catch(() => ({})); if (!res.ok) throw new Error(j.error || 'No se pudo completar'); return j; };
   const cuando = t => (t ? fecha(t) + ' ' + String(t).slice(11, 16) : '');
-  const consultaDe = () => { const q = new URLSearchParams({ mes: $('ct-mes').value }); if ($('ct-sucursal').value) q.set('sucursal', $('ct-sucursal').value); return q; };
+  const consultaDe = (cuenta = CUENTA) => { const q = new URLSearchParams({ mes: $('ct-mes').value }); if ($('ct-sucursal').value) q.set('sucursal', $('ct-sucursal').value); if (cuenta !== '') q.set('cuenta', cuenta); return q; };
   const tarjeta = (t, v, sub, malo) => `<div class="logs-tarjeta${malo ? ' logs-alerta' : ''}"><b>${esc(v)}</b><span>${esc(t)}</span>${sub ? `<small class="util-45">${esc(sub)}</small>` : ''}</div>`;
 
   async function cargar() {
@@ -81,17 +83,27 @@ const Contabilidad = (() => {
       <p class="ayuda">${c.cerrado || c.alguno_cerrado ? (c.es_direccion ? 'Mes cerrado: tú (Dirección) todavía puedes corregir; cada cambio queda en la bitácora.' : 'Mes cerrado: los cobros, pagos, anticipos y el saldo inicial de este mes solo los cambia Dirección.')
         : c.terminado ? 'Al cerrar el mes, solo Dirección podrá registrar, corregir o cancelar movimientos con fecha de este mes.' : 'El mes todavía no termina: se cierra cuando ya pasó.'} ${cerrar}</p></div>`;
   }
-  // Saldo inicial guardado en el sistema: se cambia con una sola sucursal elegida; se ve quién lo cambió y el anterior.
+  // Saldo inicial guardado en el sistema, por sucursal y cuenta de banco: se cambia con una sola sucursal y una cuenta
+  // elegidas; se ve quién lo cambió y el anterior. Si no se escribió, es el calculado (encadenado desde el último escrito).
+  const nombreMes = m => { const [a, n] = String(m).split('-').map(Number); return n ? ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'][n - 1] + ' ' + a : ''; };
   function saldoHtml(fl) {
     const sis = DATOS.saldos_iniciales || [], c = DATOS.cierre || {};
-    if (sis.length !== 1) return `<p class="ayuda">Saldo inicial: la suma del de cada sucursal (${sis.map(s => `${esc(s.clave || s.nombre)} ${esc(dinero(s.saldo))}${s.escrito ? ' escrito' : ' del CRM'}`).join(' · ')}). Para cambiarlo, elige una sucursal arriba.</p>`;
+    const intro = 'Solo entra el dinero que ya se movió: cobros <b>confirmados</b> y pagos registrados.';
+    if (sis.length !== 1) return `<p class="ayuda">${intro} Saldo inicial: la suma de ${sis.length} saldo(s) (${sis.filter(s => s.saldo || s.escrito).map(s => `${esc(s.clave || s.nombre)} ${esc(s.cuenta)} ${esc(dinero(s.saldo))}`).join(' · ') || 'todos en cero'}). Para escribirlo, elige arriba una sucursal y una cuenta.</p>`;
     const s = sis[0], cerrado = (c.sucursales || []).some(x => x.sucursal_id === s.sucursal_id && x.cerrado), bloqueado = !c.puede_saldo || (cerrado && !c.es_direccion);
     const h = s.historial || [], ult = h[0], ant = h[1];
-    const rastro = ult ? `Lo cambió ${esc(ult.usuario)} el ${esc(cuando(ult.fecha))}${ant ? `; antes era ${ant.saldo == null ? 'el del CRM' : esc(dinero(ant.saldo))}` : `; antes era el del CRM (${esc(dinero(s.crm))})`}.` : '';
-    return `<p class="ayuda">Solo entra el dinero que ya se movió: cobros <b>confirmados</b> y pagos registrados. Si el saldo de tu banco al inicio del mes es otro, escríbelo y guárdalo: queda para todos y con rastro.
+    const origen = s.escrito ? '' : s.viene_de ? `Calculado: el saldo escrito en ${esc(nombreMes(s.viene_de))} más lo que se movió desde entonces.` : 'Calculado por el CRM con todo lo que se movió antes de este mes.';
+    const rastro = ult ? `Lo cambió ${esc(ult.usuario)} el ${esc(cuando(ult.fecha))}${ant ? `; antes era ${ant.saldo == null ? 'el calculado' : esc(dinero(ant.saldo))}` : `; antes era el calculado (${esc(dinero(s.crm))})`}.` : '';
+    return `<p class="ayuda">${intro} Si el saldo de <b>${esc(s.cuenta)}</b> al inicio del mes es otro, escríbelo y guárdalo: queda para todos y con rastro, y los meses siguientes arrancan de él.
       <label class="ct-saldo">Saldo inicial del banco <input type="number" step="0.01" id="ct-saldo-inicial" value="${Number(fl.ini)}"${bloqueado ? ' disabled' : ''}></label>
-      ${bloqueado ? (cerrado ? '🔒 Mes cerrado: solo Dirección lo cambia.' : '') : `<button type="button" class="btn btn-outline btn-chico" id="ct-saldo-guardar">Guardar saldo</button>${s.escrito ? ` <button type="button" class="btn btn-outline btn-chico" id="ct-saldo-crm">Usar el del CRM (${esc(dinero(s.crm))})</button>` : ''}`}
-      ${rastro ? `<br><small class="util-45">${rastro}</small>` : ''}</p>`;
+      ${bloqueado ? (cerrado ? '🔒 Mes cerrado: solo Dirección lo cambia.' : '') : `<button type="button" class="btn btn-outline btn-chico" id="ct-saldo-guardar">Guardar saldo</button>${s.escrito ? ` <button type="button" class="btn btn-outline btn-chico" id="ct-saldo-crm">Usar el calculado (${esc(dinero(s.crm))})</button>` : ''}`}
+      ${origen || rastro ? `<br><small class="util-45">${[origen, rastro].filter(Boolean).join(' ')}</small>` : ''}</p>`;
+  }
+  // Selector de cuenta de banco (las de Conciliación › cuentas, y «Sin cuenta» para lo que no se sabe de qué cuenta salió).
+  function cuentaHtml() {
+    const cs = DATOS.cuentas || [];
+    return `<label class="ct-saldo">Cuenta de banco <select id="ct-cuenta"><option value="">Todas las cuentas</option>${cs.map(c => `<option value="${Number(c.id)}"${String(c.id) === CUENTA ? ' selected' : ''}>${esc(nombreCuenta(c))} (${Number(c.movimientos)})</option>`).join('')}</select></label>
+      ${cs.length < 2 ? '<small class="util-45">Para llevar un flujo por cuenta (Santander, Banorte…), da de alta las cuentas en la pestaña Conciliación bancaria.</small>' : ''}`;
   }
   function resumenHtml(r) {
     const p = r.pendientes, pend = [
@@ -114,20 +126,107 @@ const Contabilidad = (() => {
       <section class="apartado"><h3 class="util-13">Pendientes de comprobar</h3>${pend.length ? '<ul class="ct-pendientes">' + pend.map(t => '<li>⚠ ' + esc(t) + '</li>').join('') + '</ul>' : '<p class="util-45">Nada pendiente de comprobar este mes. 🎉</p>'}
       <p class="ayuda">${Number(r.xml_disponibles)} XML disponibles para descargar este mes.</p></section>`;
   }
-  // Filas de una tabla con el buscador y el orden aplicados.
-  function filasDe(k) {
-    const t = TABLAS[k], e = estado[k] || (estado[k] = { q: '', k: k === 'flujo' ? 'fecha' : t.cols[0][0], dir: 1 }), q = e.q.trim().toLowerCase();
-    const base = k === 'flujo' ? flujoConSaldo().filas : (DATOS[k] || []);
-    const tipo = (t.cols.find(c => c[0] === e.k) || [])[3];
-    const filas = base.filter(f => !q || t.cols.some(([c, , , tp]) => textoDe(f[c], tp).toLowerCase().includes(q)));
-    return filas.sort((a, b) => { const x = a[e.k], y = b[e.k]; const r = tipo === 'd' || tipo === 'n' ? Number(x || 0) - Number(y || 0) : String(x ?? '').localeCompare(String(y ?? ''), 'es'); return r * e.dir; });
+  // ---------- Buscador como los filtros de Excel (2026-11-12) ----------
+  // Un buscador general y, debajo de cada encabezado, un filtro según la columna: lista para elegir (si tiene pocos valores
+  // distintos), texto que contenga, importes con >1000, <500, 1000-5000 o el monto exacto, y la fecha como se ve (05/11).
+  // Atajos del flujo: solo con FALTA, solo por revisar, solo corregidos. Los totales se calculan con lo filtrado.
+  const estadoDe = k => estado[k] || (estado[k] = { q: '', k: k === 'flujo' ? 'fecha' : TABLAS[k].cols[0][0], dir: 1, col: {}, rapido: '' });
+  const baseDe = k => (k === 'flujo' ? flujoConSaldo().filas : (DATOS[k] || []));
+  const sinAcentos = t => String(t ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+  // Valores distintos de una columna (para la lista); null si son muchos (entonces se escribe).
+  function opcionesDe(k, c, tp) {
+    if (tp === 'd' || tp === 'S' || tp === 'f' || tp === 'n') return null;
+    const vals = [...new Set(baseDe(k).map(f => textoDe(f[c], tp)))];
+    return vals.length <= 15 && vals.length > 1 ? vals.sort((a, b) => a.localeCompare(b, 'es')) : null;
   }
+  // «>1000», «<=500», «1000-5000» o «1160» (exacto), con o sin $ y comas.
+  function cumpleMonto(v, filtro) {
+    const t = String(filtro).replace(/[$,\s]/g, ''), n = Number(v || 0);
+    let m = t.match(/^(>=|<=|>|<)(-?\d+(?:\.\d+)?)$/);
+    if (m) { const x = Number(m[2]); return m[1] === '>' ? n > x : m[1] === '<' ? n < x : m[1] === '>=' ? n >= x : n <= x; }
+    m = t.match(/^(-?\d+(?:\.\d+)?)-(-?\d+(?:\.\d+)?)$/);
+    if (m) return n >= Number(m[1]) && n <= Number(m[2]);
+    return /^-?\d+(\.\d+)?$/.test(t) ? Math.abs(n - Number(t)) < 0.005 : textoDe(v, 'd').includes(filtro);
+  }
+  const RAPIDOS = [['falta', 'Solo con FALTA', f => [f.marca_transf, f.marca_oc, f.marca_comp].includes('FALTA')], ['revisar', 'Solo por revisar', f => !!f.revisar], ['corregidos', 'Solo corregidos', f => !!f.corregido && Object.keys(f.corregido).length > 0]];
+  // Filas de una tabla con el buscador, los filtros y el orden aplicados.
+  function filasDe(k) {
+    const t = TABLAS[k], e = estadoDe(k), q = sinAcentos(e.q.trim());
+    const tipo = (t.cols.find(c => c[0] === e.k) || [])[3];
+    const filtros = Object.entries(e.col).filter(([, v]) => String(v).trim() !== '');
+    const rapido = RAPIDOS.find(r => r[0] === e.rapido);
+    const filas = baseDe(k).filter(f => (!q || t.cols.some(([c, , , tp]) => sinAcentos(textoDe(f[c], tp)).includes(q)))
+      && (!rapido || rapido[2](f))
+      && filtros.every(([c, v]) => { const tp = (t.cols.find(x => x[0] === c) || [])[3]; const op = opcionesDe(k, c, tp);
+        return tp === 'd' || tp === 'S' ? cumpleMonto(f[c], v) : op ? textoDe(f[c], tp) === v : sinAcentos(textoDe(f[c], tp)).includes(sinAcentos(v.trim())); }));
+    return filas.sort((a, b) => { const x = a[e.k], y = b[e.k]; const r = tipo === 'd' || tipo === 'n' || tipo === 'S' ? Number(x || 0) - Number(y || 0) : String(x ?? '').localeCompare(String(y ?? ''), 'es'); return r * e.dir; });
+  }
+  function filtroHtml(k, [c, titulo, , tp]) {
+    const e = estadoDe(k), v = e.col[c] ?? '', op = opcionesDe(k, c, tp), etiqueta = 'Filtrar ' + String(titulo).toLowerCase().trim();
+    if (op) return `<th><select class="ct-filtro" data-ct-filtro="${esc(c)}" aria-label="${esc(etiqueta)}"><option value="">Todos</option>${op.map(o => `<option value="${esc(o)}"${o === v ? ' selected' : ''}>${esc(o || '(vacío)')}</option>`).join('')}</select></th>`;
+    return `<th><input type="search" class="ct-filtro" data-ct-filtro="${esc(c)}" value="${esc(v)}" placeholder="${tp === 'd' || tp === 'S' ? '>1000, 100-500' : tp === 'f' ? 'dd/mm' : 'contiene…'}" aria-label="${esc(etiqueta)}"></th>`;
+  }
+
+  // ---------- Editar el flujo de banco (parte 3, 2026-11-12) ----------
+  // «✏️ Editar tabla» abre las celdas; «💾 Guardar cambios» guarda todo junto; «🔒 Bloquear edición» regresa a solo ver.
+  // La corrección queda encima del dato del sistema con quién y cuándo (server/contabilidad.js). El saldo, X comprobar,
+  // los importes y las fechas no se editan aquí.
+  let EDITANDO = false;
+  const PEND = new Map(); // 'ref|campo' → valor (null = volver al del sistema)
+  const CAMPO = { cuenta: 'cuenta_id' }; // columna en pantalla → campo que se guarda
+  const MARCAS = ['S', 'FALTA', 'NA'], MARCAS_A = [...MARCAS, 'DOMICILIADO', 'LAYOUT'];
+  const editable = (f, c) => EDITANDO && f.editable && (DATOS.editables || []).includes(CAMPO[c] || c);
+  const valorSistema = (f, campo) => (f.corregido?.[campo] ? f.corregido[campo].sistema : f[campo]);
+  const igual = (campo, a, b) => (campo === 'cfdi_monto' || campo === 'no_deducible' ? Math.abs(Number(String(a).replace(/[$,]/g, '') || 0) - Number(b || 0)) < 0.005 && String(a).trim() !== '' : String(a ?? '').trim() === String(b ?? '').trim());
+  function anotar(ref, campo, valor) {
+    const f = (DATOS.flujo || []).find(x => x.ref === ref); if (!f) return;
+    const clave = ref + '|' + campo;
+    if (igual(campo, valor, valorSistema(f, campo))) { if (f.corregido?.[campo]) PEND.set(clave, null); else PEND.delete(clave); }
+    else if (igual(campo, valor, f[campo])) PEND.delete(clave);
+    else PEND.set(clave, valor);
+    const b = $('ct-guardar-flujo'); if (b) { b.textContent = `💾 Guardar cambios (${PEND.size})`; b.disabled = !PEND.size; }
+  }
+  function celdaEditable(f, c, tp) {
+    const campo = CAMPO[c] || c, clave = f.ref + '|' + campo, pend = PEND.has(clave), v = pend ? (PEND.get(clave) ?? valorSistema(f, campo)) : f[campo];
+    const attrs = `class="ct-edit${pend ? ' ct-cambiada' : ''}" data-ct-ref="${esc(f.ref)}" data-ct-campo="${esc(campo)}" aria-label="${esc(campo)}"`;
+    if (campo === 'cuenta_id') return `<select ${attrs}>${(DATOS.cuentas || []).map(x => `<option value="${Number(x.id)}"${Number(v) === x.id ? ' selected' : ''}>${esc(nombreCuenta(x))}</option>`).join('')}</select>`;
+    if (/^marca_/.test(campo)) { const ops = campo === 'marca_transf' ? MARCAS_A : MARCAS; return `<select ${attrs}>${[...new Set([...ops, String(v ?? '')])].filter(Boolean).map(o => `<option${o === v ? ' selected' : ''}>${esc(o)}</option>`).join('')}</select>`; }
+    return `<input type="text" ${attrs} value="${esc(v ?? '')}"${tp === 'd' ? ' inputmode="decimal"' : ''}>`;
+  }
+  const notaCorregida = (f, c) => { const k = f.corregido?.[CAMPO[c] || c]; if (!k) return '';
+    const sistema = (CAMPO[c] || c) === 'cuenta_id' ? nombreCuenta((DATOS.cuentas || []).find(x => x.id === Number(k.sistema)) || { id: 0 }) : String(k.sistema ?? '') || '(vacío)';
+    return ` title="${esc(`Corregido por ${k.usuario} el ${cuando(k.fecha)} · el sistema decía: ${sistema}`)}"`; };
+  function barraEdicion() {
+    if (!DATOS.puede_editar) return '';
+    if (!EDITANDO) return `<div class="filtros ct-barra-edicion"><button type="button" class="btn btn-outline btn-chico" id="ct-editar-flujo">✏️ Editar tabla</button>
+      <small class="util-45">Las celdas corregidas se marcan con ✎ (pasa el cursor para ver quién, cuándo y qué decía el sistema).</small></div>`;
+    return `<div class="filtros ct-barra-edicion ct-editando"><b>✏️ Editando</b>
+      <button type="button" class="btn btn-chico" id="ct-guardar-flujo"${PEND.size ? '' : ' disabled'}>💾 Guardar cambios (${PEND.size})</button>
+      <button type="button" class="btn btn-outline btn-chico" id="ct-bloquear-flujo">🔒 Bloquear edición</button>
+      <small class="util-45">Corrige las celdas en blanco. Si dejas una como decía el sistema, vuelve a la original. El saldo, X comprobar, los importes y las fechas no se cambian aquí: se corrigen en el cobro o pago.${DATOS.es_direccion ? '' : ' Lo de un mes cerrado lo corrige solo Dirección.'}</small></div>`;
+  }
+  async function guardarFlujo() {
+    if (!PEND.size) return;
+    const cambios = [...PEND].map(([clave, valor]) => { const i = clave.lastIndexOf('|'); return { ref: clave.slice(0, i), campo: clave.slice(i + 1), valor }; });
+    try { const r = await pedir('/contabilidad/flujo/correcciones', { method: 'POST', body: JSON.stringify({ mes: $('ct-mes').value, cambios }) }); PEND.clear(); toast(`${Number(r.guardados)} cambio(s) guardado(s)`); await cargar(); }
+    catch (e) { toast(e.message); }
+  }
+  // Antes de salir de la edición o cambiar de mes, sucursal, cuenta o pestaña: ¿descartar lo que no se guardó?
+  async function sePuedeDescartar() {
+    if (!PEND.size) return true;
+    const ok = await solicitarDialogo({ titulo: 'Cambios sin guardar', mensaje: `Tienes ${PEND.size} cambio(s) sin guardar en el flujo de banco. Si sigues, se pierden.`, aceptar: 'Descartarlos' });
+    if (ok) PEND.clear();
+    return !!ok;
+  }
+
   function tablaHtml(k) {
-    const t = TABLAS[k], e = estado[k] || (estado[k] = { q: '', k: k === 'flujo' ? 'fecha' : t.cols[0][0], dir: 1 }), filas = filasDe(k);
-    const celda = (f, [c, , , tp]) => {
-      const v = textoDe(f[c], tp);
-      if (tp === 's') return v ? `<td><span class="estado-cxc ${esc(CHIP[f[c]] ?? 'por-confirmar')}">${esc(v)}</span></td>` : '<td></td>';
-      return `<td class="${tp === 'd' || tp === 'n' || tp === 'S' ? 'ct-num' : ''}">${esc(v)}</td>`;
+    const t = TABLAS[k], e = estadoDe(k), filas = filasDe(k), total = baseDe(k).length;
+    const celda = (f, col) => {
+      const [c, , , tp] = col;
+      if (k === 'flujo' && editable(f, c)) return `<td class="ct-celda-edit">${celdaEditable(f, c, tp)}</td>`;
+      const v = textoDe(f[c], tp), corr = k === 'flujo' ? notaCorregida(f, c) : '', marca = corr ? ' <span class="ct-marca-corr" aria-hidden="true">✎</span>' : '';
+      if (tp === 's') return v ? `<td${corr}${corr ? ' class="ct-corregida"' : ''}><span class="estado-cxc ${esc(CHIP[f[c]] ?? 'por-confirmar')}">${esc(v)}</span>${marca}</td>` : `<td${corr}></td>`;
+      return `<td${corr} class="${tp === 'd' || tp === 'n' || tp === 'S' ? 'ct-num' : ''}${corr ? ' ct-corregida' : ''}">${esc(v)}${marca}</td>`;
     };
     const fl = k === 'flujo' ? flujoConSaldo() : null;
     const totales = t.cols.map(([c, , , tp]) => (tp === 'd' ? dinero(filas.reduce((s, f) => s + Number(f[c] || 0), 0)) : tp === 'S' && fl ? dinero(fl.fin()) : ''));
@@ -135,12 +234,23 @@ const Contabilidad = (() => {
       const escrito = (DATOS.saldos_iniciales || []).some(x => x.escrito);
       return `<div class="logs-tarjetas">${tarjeta('Saldo inicial', dinero(fl.ini), escrito ? 'escrito en el sistema' : 'calculado por el CRM')}${tarjeta('Ingresos (cobros y reintegros)', dinero(ing))}${tarjeta('Egresos (pagos y anticipos)', dinero(egr))}
         ${tarjeta('Saldo final', dinero(fl.fin()))}${tarjeta('Movimientos por revisar', String(pc), 'falta XML, complemento o comprobar', pc > 0)}</div>
-        ${saldoHtml(fl)}`; })();
-    return `${cabeza}<div class="filtros"><input type="search" id="ct-buscar" data-ct-tabla="${esc(k)}" value="${esc(e.q)}" placeholder="Buscar en ${esc(t.titulo.toLowerCase())}…" aria-label="Buscar en la tabla"><span class="util-45">${Number(filas.length)} renglón(es)</span></div>
-      ${filas.length ? `<div class="tabla-scroll ct-tabla-scroll"><table class="tabla-resumen ct-tabla"><thead><tr>${t.cols.map(([c, titulo]) => `<th><button type="button" class="ct-orden" data-ct-orden="${esc(c)}">${esc(titulo)}${e.k === c ? (e.dir > 0 ? ' ▲' : ' ▼') : ''}</button></th>`).join('')}</tr></thead>
-        <tbody>${filas.map(f => `<tr>${t.cols.map(c => celda(f, c)).join('')}</tr>`).join('')}</tbody>
+        ${cuentaHtml()}${saldoHtml(fl)}${barraEdicion()}`; })();
+    const hayFiltros = e.q.trim() || e.rapido || Object.values(e.col).some(v => String(v).trim());
+    const rapidos = k === 'flujo' ? RAPIDOS.map(([id, txt]) => `<button type="button" class="btn btn-chico ${e.rapido === id ? '' : 'btn-outline'}" data-ct-rapido="${esc(id)}" aria-pressed="${e.rapido === id}">${esc(txt)}</button>`).join('') : '';
+    return `${cabeza}<div class="filtros"><input type="search" id="ct-buscar" data-ct-tabla="${esc(k)}" value="${esc(e.q)}" placeholder="Buscar en toda la tabla…" aria-label="Buscar en la tabla">${rapidos}
+      ${hayFiltros ? '<button type="button" class="btn btn-outline btn-chico" id="ct-limpiar">✕ Limpiar filtros</button>' : ''}<span class="util-45">${Number(filas.length)} de ${Number(total)} renglón(es)</span></div>
+      ${total ? `<div class="tabla-scroll ct-tabla-scroll"><table class="tabla-resumen ct-tabla"><thead><tr>${t.cols.map(([c, titulo]) => `<th><button type="button" class="ct-orden" data-ct-orden="${esc(c)}">${esc(titulo)}${e.k === c ? (e.dir > 0 ? ' ▲' : ' ▼') : ''}</button></th>`).join('')}</tr>
+        <tr class="ct-fila-filtros">${t.cols.map(col => filtroHtml(k, col)).join('')}</tr></thead>
+        <tbody>${filas.length ? filas.map(f => `<tr>${t.cols.map(c => celda(f, c)).join('')}</tr>`).join('') : `<tr><td colspan="${t.cols.length}" class="util-45">Ningún renglón cumple los filtros.</td></tr>`}</tbody>
         <tfoot><tr>${totales.map((v, i) => `<td class="ct-num">${i === 0 ? 'TOTAL' : esc(v)}</td>`).join('')}</tr></tfoot></table></div>`
       : '<p class="util-45">No hay renglones este mes.</p>'}`;
+  }
+  // Vuelve a pintar la tabla sin perder dónde estaba escribiendo la persona.
+  function repintar(k) {
+    const a = document.activeElement, id = a?.id, filtro = a?.dataset?.ctFiltro, pos = a && 'selectionStart' in a ? a.selectionStart : null;
+    $('ct-contenido').innerHTML = tablaHtml(k);
+    const n = id ? $(id) : filtro ? $('ct-contenido').querySelector(`[data-ct-filtro="${CSS.escape(filtro)}"]`) : null;
+    if (n) { n.focus(); if (pos != null && n.setSelectionRange) try { n.setSelectionRange(pos, pos); } catch { /* select */ } }
   }
 
   async function excel() {
@@ -156,11 +266,18 @@ const Contabilidad = (() => {
       ['IVA SEGÚN FACTURAS (facturado − gastos)', r.iva.segun_facturas], ['IVA SEGÚN EL DINERO (cobrado − pagado)', r.iva.segun_flujo], [], ['Cifras de apoyo: qué se declara lo decide el contador.']]
       .forEach((f, i) => { const row = R.addRow(f); if (typeof f[1] === 'number') row.getCell(2).numFmt = '"$"#,##0.00'; if (f.length === 1 || i === 0) row.font = { bold: true }; });
     // Mismas columnas y orden que en pantalla; fechas como fecha y montos como número (para sumar en Excel), con fila TOTAL.
+    // Flujo de banco: una hoja por cuenta con movimientos (como la hoja «STD» de Dirección); si no hay cuentas, una sola.
+    const conMov = (d.cuentas || []).filter(c => c.movimientos > 0), usados = new Set();
+    const nombreHoja = t => { let n = String(t).replace(/[\\/*?:[\]]/g, ' ').slice(0, 31).trim() || 'Flujo', i = 2; while (usados.has(n.toLowerCase())) n = n.slice(0, 28) + ' ' + i++; usados.add(n.toLowerCase()); return n; };
+    const flujos = conMov.length > 1 || (conMov.length === 1 && conMov[0].id) ? await Promise.all(conMov.map(async c => ({ hoja: 'Flujo ' + (c.id ? c.nombre : 'sin cuenta'), d: await pedir('/contabilidad/flujo?' + consultaDe(String(c.id))) })))
+      : [{ hoja: 'Flujo de banco', d: await pedir('/contabilidad/flujo?' + consultaDe('')) }];
+    for (const fl of flujos) hojaFlujo(wb, nombreHoja(fl.hoja), fl.d);
     for (const [k, t] of Object.entries(TABLAS)) {
+      if (k === 'flujo') continue;
       const ws = wb.addWorksheet(t.hoja, { views: [{ state: 'frozen', ySplit: 1 }] });
       ws.columns = t.cols.map(([c, titulo, ancho, tp]) => ({ header: titulo, key: c, width: ancho, style: tp === 'd' || tp === 'S' ? { numFmt: '"$"#,##0.00' } : tp === 'f' ? { numFmt: 'dd/mm/yyyy' } : {} }));
       ws.getRow(1).font = { bold: true }; ws.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF6B103' } };
-      const filasHoja = k === 'flujo' ? (() => { DATOS = d; return flujoConSaldo().filas; })() : d[k] || [];
+      const filasHoja = d[k] || [];
       for (const f of filasHoja) ws.addRow(Object.fromEntries(t.cols.map(([c, , , tp]) => [c, tp === 'f' ? (f[c] ? new Date(f[c].slice(0, 10) + 'T12:00:00Z') : null) : tp === 'd' || tp === 'S' ? Number(f[c] || 0) : tp === 'v' || tp === 'c' ? textoDe(f[c], tp) : f[c]])));
       if ((d[k] || []).length) {
         const n = (d[k] || []).length + 1, fila = ws.addRow({});
@@ -170,6 +287,25 @@ const Contabilidad = (() => {
     }
     saveAs(new Blob([await wb.xlsx.writeBuffer()], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), `contabilidad_${$('ct-mes').value}.xlsx`);
   }
+  // Una hoja del flujo tal cual la de Dirección: encabezado, el saldo inicial arriba (columna J), los movimientos con su saldo
+  // corrido y, al final, los totales de egresos, ingresos, saldo final y monto real CFDI.
+  function hojaFlujo(wb, nombre, fd) {
+    const t = TABLAS.flujo, ws = wb.addWorksheet(nombre, { views: [{ state: 'frozen', ySplit: 2 }] });
+    ws.columns = t.cols.map(([c, titulo, ancho, tp]) => ({ header: titulo, key: c, width: ancho, style: tp === 'd' || tp === 'S' ? { numFmt: '"$"#,##0.00' } : tp === 'f' ? { numFmt: 'dd/mm/yyyy' } : {} }));
+    ws.getRow(1).font = { bold: true }; ws.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF6B103' } };
+    const ini = Number(fd.saldo_inicial || 0); let saldo = ini;
+    const inicio = ws.addRow({ concepto_banco: 'SALDO INICIAL', saldo: ini }); inicio.font = { bold: true };
+    for (const f of fd.flujo || []) {
+      saldo = Math.round((saldo + Number(f.ingreso) - Number(f.egreso)) * 100) / 100;
+      ws.addRow(Object.fromEntries(t.cols.map(([c, , , tp]) => [c, c === 'saldo' ? saldo : tp === 'f' ? (f[c] ? new Date(f[c].slice(0, 10) + 'T12:00:00Z') : null) : tp === 'd' ? Number(f[c] || 0) : tp === 'v' || tp === 'c' ? textoDe(f[c], tp) : f[c]])));
+    }
+    const n = (fd.flujo || []).length + 2, col = k => ws.getColumn(t.cols.findIndex(c => c[0] === k) + 1).letter;
+    ws.addRow({});
+    const tot = ws.addRow({ concepto_banco: 'TOTAL' });
+    for (const k of ['egreso', 'ingreso', 'cfdi_monto', 'no_deducible', 'por_comprobar']) tot.getCell(col(k)).value = { formula: `SUM(${col(k)}3:${col(k)}${n})` };
+    tot.getCell(col('saldo')).value = { formula: `${col('saldo')}2+${col('ingreso')}${n + 2}-${col('egreso')}${n + 2}` };
+    tot.font = { bold: true };
+  }
   async function xml() {
     try { const res = await api('/contabilidad/xml?' + consultaDe()); if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'No se pudo descargar'); saveAs(await res.blob(), `xml_${$('ct-mes').value}.tar`); }
     catch (e) { toast(e.message); }
@@ -177,7 +313,8 @@ const Contabilidad = (() => {
 
   const sucursalSaldo = () => (DATOS.saldos_iniciales || [])[0]?.sucursal_id;
   async function guardarSaldo(valor) {
-    try { await pedir('/contabilidad/saldo-inicial', { method: 'POST', body: JSON.stringify({ mes: $('ct-mes').value, sucursal: sucursalSaldo(), saldo: valor === null ? null : String(valor).trim() }) }); toast('Saldo inicial guardado'); await cargar(); }
+    const s = (DATOS.saldos_iniciales || [])[0] || {};
+    try { await pedir('/contabilidad/saldo-inicial', { method: 'POST', body: JSON.stringify({ mes: $('ct-mes').value, sucursal: sucursalSaldo(), cuenta: s.cuenta_id ?? 0, saldo: valor === null ? null : String(valor).trim() }) }); toast('Saldo inicial guardado'); await cargar(); }
     catch (e) { toast(e.message); }
   }
   async function cerrarMes() {
@@ -200,22 +337,37 @@ const Contabilidad = (() => {
     const sucs = window.Sucursales?.datos?.sucursales || [];
     $('ct-sucursal').innerHTML = '<option value="">Todas las sucursales</option>' + sucs.map(s => `<option value="${Number(s.id)}">${esc(s.nombre)}</option>`).join('');
     $('ct-sucursal').hidden = sucs.length < 2;
-    $('ct-mes').addEventListener('change', cargar); $('ct-sucursal').addEventListener('change', cargar);
+    // Cambiar de mes o sucursal con cambios sin guardar: se pregunta antes (y si no, se regresa a como estaba).
+    let mesAntes = $('ct-mes').value, sucAntes = $('ct-sucursal').value;
+    $('ct-mes').addEventListener('change', async () => { if (!await sePuedeDescartar()) { $('ct-mes').value = mesAntes; return; } mesAntes = $('ct-mes').value; cargar(); });
+    $('ct-sucursal').addEventListener('change', async () => { if (!await sePuedeDescartar()) { $('ct-sucursal').value = sucAntes; return; } sucAntes = $('ct-sucursal').value; CUENTA = ''; cargar(); });
     $('ct-excel').addEventListener('click', e => conBoton(e.currentTarget, excel));
     $('ct-xml').addEventListener('click', e => conBoton(e.currentTarget, xml));
     $('ct-resumen').addEventListener('click', e => {
       const b = e.target.closest('button'); if (!b || !DATOS) return;
-      if (b.dataset.ctPestana) { PESTANA = b.dataset.ctPestana; pintar(); }
+      if (b.dataset.ctPestana) { if (b.dataset.ctPestana === PESTANA) return; sePuedeDescartar().then(ok => { if (ok) { EDITANDO = false; PESTANA = b.dataset.ctPestana; pintar(); } }); }
+      else if (b.id === 'ct-editar-flujo') { EDITANDO = true; repintar('flujo'); }
+      else if (b.id === 'ct-guardar-flujo') conBoton(b, guardarFlujo);
+      else if (b.id === 'ct-bloquear-flujo') sePuedeDescartar().then(ok => { if (ok) { EDITANDO = false; repintar('flujo'); } });
+      else if (b.dataset.ctRapido) { const s = estadoDe(PESTANA); s.rapido = s.rapido === b.dataset.ctRapido ? '' : b.dataset.ctRapido; repintar(PESTANA); }
+      else if (b.id === 'ct-limpiar') { const s = estadoDe(PESTANA); s.q = ''; s.col = {}; s.rapido = ''; repintar(PESTANA); }
       else if (b.id === 'ct-saldo-guardar' || b.id === 'ct-saldo-crm') conBoton(b, () => guardarSaldo(b.id === 'ct-saldo-crm' ? null : $('ct-saldo-inicial').value));
       else if (b.id === 'ct-cerrar-mes') conBoton(b, cerrarMes);
       else if (b.dataset.ctReabrir) conBoton(b, () => reabrir(Number(b.dataset.ctReabrir)));
-      else if (b.dataset.ctOrden) { const s = estado[PESTANA]; s.dir = s.k === b.dataset.ctOrden ? -s.dir : 1; s.k = b.dataset.ctOrden; $('ct-contenido').innerHTML = tablaHtml(PESTANA); }
+      else if (b.dataset.ctOrden) { const s = estadoDe(PESTANA); s.dir = s.k === b.dataset.ctOrden ? -s.dir : 1; s.k = b.dataset.ctOrden; repintar(PESTANA); }
     });
     let espera;
+    $('ct-resumen').addEventListener('change', async e => {
+      if (e.target.id === 'ct-cuenta') { const v = e.target.value; if (!await sePuedeDescartar()) { e.target.value = CUENTA; return; } CUENTA = v; cargar(); }
+      else if (e.target.tagName === 'SELECT' && e.target.dataset.ctFiltro) { estadoDe(PESTANA).col[e.target.dataset.ctFiltro] = e.target.value; repintar(PESTANA); }
+      else if (e.target.tagName === 'SELECT' && e.target.dataset.ctRef) anotar(e.target.dataset.ctRef, e.target.dataset.ctCampo, e.target.value);
+    });
     $('ct-resumen').addEventListener('input', e => {
-      if (e.target.id !== 'ct-buscar') return;
-      const k = e.target.dataset.ctTabla; estado[k].q = e.target.value; clearTimeout(espera);
-      espera = setTimeout(() => { $('ct-contenido').innerHTML = tablaHtml(k); const i = $('ct-buscar'); i.focus(); i.setSelectionRange(i.value.length, i.value.length); }, 250);
+      const t = e.target;
+      if (t.dataset.ctRef && t.tagName === 'INPUT') { anotar(t.dataset.ctRef, t.dataset.ctCampo, t.value); t.classList.toggle('ct-cambiada', PEND.has(t.dataset.ctRef + '|' + t.dataset.ctCampo)); return; }
+      if (t.id !== 'ct-buscar' && !(t.tagName === 'INPUT' && t.dataset.ctFiltro)) return;
+      const k = PESTANA; if (t.id === 'ct-buscar') estadoDe(k).q = t.value; else estadoDe(k).col[t.dataset.ctFiltro] = t.value;
+      clearTimeout(espera); espera = setTimeout(() => repintar(k), 250);
     });
   }
   return { cargar };
