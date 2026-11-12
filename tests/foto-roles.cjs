@@ -337,6 +337,7 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
     ['veAnticipoAjeno', 'Ver los anticipos por comprobar de otras personas (el de Ernesto Obsidiana)'],
     ['cambiaSaldo', 'Contabilidad › Flujo de banco: guardar el saldo inicial del banco de un mes (queda para todos, con quién y cuándo)'],
     ['cierraMes', 'Contabilidad: cerrar un mes ya terminado (después solo Dirección cambia cobros, pagos y anticipos de ese mes)'],
+    ['editaFlujo', 'Contabilidad › Flujo de banco: «Editar tabla» y guardar correcciones en las celdas (marcas, textos, monto CFDI, cuenta de banco)'],
   ];
   // Proyectos y tareas (2026-11-11): Dirección le asigna una tarea a Tito (técnico que no es observador de ningún rol).
   const TAREA_TOMAS = exigir(await pedir('POST', '/tareas', A, { titulo: 'Tarea Coral de Tito', asignado_a: ID.Tito, inicio: dia(0), fin: dia(7) }), 'tarea de Tito');
@@ -347,6 +348,8 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
   // Anticipo por comprobar de Ernesto Obsidiana (no tiene usuario): lo entrega Dirección (módulo contable F2, 2026-11-11).
   const ANT_OBS = exigir(await pedir('POST', '/anticipos', A, { personal_id: EMP.id, monto: 777.31, metodo: 'efectivo', motivo: 'Anticipo Turquesa' }), 'anticipo de Obsidiana');
   const ok = r => r[0] === 200 || r[0] === 201;
+  // Un renglón del flujo de banco para corregir (Editar Contabilidad parte 3, 2026-11-12): del mes en curso o, a inicio de mes, del anterior.
+  const FLUJO_ED = await (async () => { for (const mes of [HOY.slice(0, 7), dia(-31).slice(0, 7)]) { const f = (await pedir('GET', '/contabilidad/flujo?mes=' + mes, A))[1].flujo?.[0]; if (f) return { mes, ref: f.ref }; } throw new Error('No hay renglones en el flujo de banco para la foto'); })();
   for (const [rol] of ROLES) {
     const t = OBSERVA[rol];
     const editar = async lead => { const v = (await pedir('GET', '/leads/' + lead.id, A))[1].version; return ok(await pedir('PUT', '/leads/' + lead.id, t, { version: v, observaciones: 'Revisión ' + rol })); };
@@ -447,8 +450,9 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
       VE[rol].concilia = sc === 201 && ok(await pedir('POST', '/conciliacion/cargar', t, { cuenta_id: c.id, filas: [{ fecha: dia(-2), concepto: 'Depósito foto', cargo: '', abono: '123.45' }] })); }
     // Editar Contabilidad (2026-11-12): cada rol con un mes viejo distinto y sin movimientos (2025-01, 2025-02…), para no estorbar a los demás.
     { const mesViejo = '2025-' + String(ROLES.findIndex(r => r[0] === rol) + 1).padStart(2, '0');
-      VE[rol].cambiaSaldo = ok(await pedir('POST', '/contabilidad/saldo-inicial', t, { mes: mesViejo, sucursal: qro.id, saldo: '1000.00' }));
+      VE[rol].cambiaSaldo = ok(await pedir('POST', '/contabilidad/saldo-inicial', t, { mes: mesViejo, sucursal: qro.id, cuenta: 0, saldo: '1000.00' }));
       VE[rol].cierraMes = ok(await pedir('POST', '/contabilidad/cierre', t, { mes: mesViejo, sucursal: qro.id })); }
+    VE[rol].editaFlujo = ok(await pedir('POST', '/contabilidad/flujo/correcciones', t, { mes: FLUJO_ED.mes, cambios: [{ ref: FLUJO_ED.ref, campo: 'observaciones_z', valor: 'Foto ' + rol }] }));
     VE[rol].editaMetas = ok(await pedir('PUT', '/tablero/metas', t, { mes: HOY.slice(0, 7), metas: { venta: 100000 } }));
     { const [se] = await pedir('POST', '/tablero/enviar-reporte', t, { mes: HOY.slice(0, 7) }); VE[rol].enviaReporte = se !== 403 && se !== 401; } // sin correo configurado responde 409: aun así sí puede
     { const k = ROLES.findIndex(r => r[0] === rol);
@@ -646,6 +650,8 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
       admin: { editaMetas: 1, enviaReporte: 1 }, ...Object.fromEntries(['gerente', 'costos', 'ventas', 'atencion', 'tecnico', 'marketing', 'marketing_gerente'].map(r => [r, { editaMetas: 0, enviaReporte: 0 }])) }],
     ['2026-11-11', 'Análisis comercial: los indicadores nuevos (satisfacción, cobranza a tiempo, servicios en fecha, recompras) los ve quien ve el análisis comercial, cada quien con lo suyo; nada de cuentas por pagar ni dinero de la empresa (eso queda en el Panorama, para Dirección y el Gerente).', {
       admin: { veIndicadores: 1 }, gerente: { veIndicadores: 1 }, ventas: { veIndicadores: 1 }, atencion: { veIndicadores: 1 }, ...Object.fromEntries(['tecnico', 'costos', 'marketing', 'marketing_gerente'].map(r => [r, { veIndicadores: 0 }])) }],
+    ['2026-11-12', 'Contabilidad › Flujo de banco: «Editar tabla» y guardar correcciones en las celdas (marcas S/FALTA/NA, textos, monto CFDI, cuenta de banco) lo hacen Dirección, el Gerente y quien tiene «Contabilidad del mes» (el Contador). Cada corrección queda con quién, cuándo y el valor anterior, y se puede regresar al dato del sistema. El saldo, X comprobar, los importes y las fechas no se corrigen ahí. Un mes cerrado lo corrige solo Dirección. Los demás roles no.', {
+      admin: { editaFlujo: 1 }, gerente: { editaFlujo: 1 }, ...Object.fromEntries(['costos', 'ventas', 'atencion', 'tecnico', 'marketing', 'marketing_gerente'].map(r => [r, { editaFlujo: 0 }])) }],
     ['2026-11-12', 'Contabilidad: el saldo inicial del banco (Flujo de banco) lo guardan en el sistema Dirección, el Gerente y quien tiene «Contabilidad del mes» (el Contador), y queda quién y cuándo. Cerrar un mes ya terminado: Dirección y el rol que Dirección cree con «Cerrar el mes de contabilidad» (el Contador); el Gerente no. Ya cerrado, solo Dirección registra, confirma, corrige o cancela cobros, pagos y anticipos con fecha de ese mes (en cualquier pantalla) y cambia su saldo inicial; reabrirlo es solo de Dirección, con motivo.', {
       admin: { cambiaSaldo: 1, cierraMes: 1 }, gerente: { cambiaSaldo: 1, cierraMes: 0 }, ...Object.fromEntries(['costos', 'ventas', 'atencion', 'tecnico', 'marketing', 'marketing_gerente'].map(r => [r, { cambiaSaldo: 0, cierraMes: 0 }])) }],
     ['2026-11-11', 'Conciliación bancaria (subir el estado de cuenta de Santander o Banorte y emparejarlo con cobros, pagos, anticipos y nómina del CRM): Dirección, el Gerente y quien tiene «Contabilidad del mes» (el Contador). Registrar como gasto un cargo del banco que no está en el CRM (p. ej. una comisión) además pide «Mover dinero». Los demás roles no.', {

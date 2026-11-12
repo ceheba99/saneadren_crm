@@ -104,7 +104,7 @@ const cerrada = (r) => r[0] === 409 && r[1].codigo === 'MES_CERRADO';
   console.log('4. El rastro');
   const bit = (await pedir('GET', '/auditoria?entidad=contabilidad', A))[1];
   revisa(Array.isArray(bit) && ['mes cerrado', 'mes reabierto', 'saldo inicial'].every(a => bit.some(b => b.accion === a)), 'La bitácora tiene el cierre, la reapertura y los cambios de saldo', bit);
-  revisa(bit.some(b => b.accion === 'saldo inicial' && /\$10,000\.50 → \$0\.00 \(el del CRM\)/.test(b.detalle)), 'El cambio de saldo dice el valor anterior → el nuevo', bit.filter(b => b.accion === 'saldo inicial'));
+  revisa(bit.some(b => b.accion === 'saldo inicial' && /\$10,000\.50 → \$0\.00 \(el calculado\)/.test(b.detalle)), 'El cambio de saldo dice el valor anterior → el nuevo', bit.filter(b => b.accion === 'saldo inicial'));
   { const d = new DatabaseSync(DB); let borro = false, cambio = false;
     try { d.exec('DELETE FROM contabilidad_cierres'); borro = true; } catch { /* */ }
     try { d.exec("UPDATE flujo_saldos_iniciales SET saldo_cent = 1"); cambio = true; } catch { /* */ }
