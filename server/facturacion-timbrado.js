@@ -309,16 +309,30 @@ async function descargarArchivos(db, cliente, f, { dirArchivos, usuarioId, soloX
     const r = await cliente.get(`/v4/cfdi40/${encodeURIComponent(id)}/xml`), b = contenido(r);
     const xml = b ? b.toString('utf8') : '';
     if (!/<cfdi:Comprobante\b/.test(xml)) throw new ErrorFactura('respuesta', 'factura.com no devolvió el XML');
+    // Etapa 5 (A-07): el XML timbrado SIEMPRE se guarda. Si su total difiere del calculado, se guarda el del XML (la verdad fiscal), se conserva el
+    // calculado y la factura queda marcada «revisar». Nada se descarta.
     const campos = { xml }, t = totalesDelXml(xml);
+    let revisar = null;
     if (t) {
-      if (t.total_cent !== f.total_cent) avisos.push(`El XML timbrado dice ${fmt(t.total_cent)} y el sistema calculó ${fmt(f.total_cent)}: se guarda lo del XML`);
+      if (t.total_cent !== f.total_cent) {
+        revisar = `El XML timbrado dice ${fmt(t.total_cent)} y el sistema calculó ${fmt(f.total_cent)} (subtotal ${fmt(t.subtotal_cent)} contra ${fmt(f.subtotal_cent)}, IVA ${fmt(t.iva_cent)} contra ${fmt(f.iva_cent)}): se guardó lo del XML`;
+        avisos.push(revisar + '. La factura queda marcada para revisar (y la cobranza de la orden).');
+        Object.assign(campos, { revisar, total_calculado_cent: f.total_cent });
+      }
       Object.assign(campos, t);
     }
-    db.transaction(() => {
-      actualizar(db, f.id, campos); log(db, f, 'descargar_xml', 'ok', null, usuarioId);
-      // La cobranza (solo producción) lleva el total del XML, que es la verdad fiscal.
-      if (t && f.entorno === 'prod' && f.lead_id && f.estatus === 'timbrada' && f.tipo_documento !== 'pago') db.prepare('UPDATE main.leads SET factura_total_cent = ? WHERE id = ? AND factura_folio = ?').run(t.total_cent, f.lead_id, `${f.serie}-${f.folio}`);
-    })();
+    try {
+      db.transaction(() => {
+        actualizar(db, f.id, campos); log(db, f, 'descargar_xml', 'ok', revisar, usuarioId);
+        // La cobranza (solo producción) lleva el total del XML, que es la verdad fiscal.
+        if (t && f.entorno === 'prod' && f.lead_id && f.estatus === 'timbrada' && f.tipo_documento !== 'pago') db.prepare('UPDATE main.leads SET factura_total_cent = ? WHERE id = ? AND factura_folio = ?').run(t.total_cent, f.lead_id, `${f.serie}-${f.folio}`);
+      })();
+    } catch (e) {
+      // Si los totales no se pudieron escribir (por lo que sea), el XML se guarda solo, marcado para revisar: nunca se pierde la copia legal.
+      const motivo = `Se guardó el XML, pero no sus totales (${String(e.message).slice(0, 150)})${revisar ? '. ' + revisar : ''}`;
+      db.transaction(() => { actualizar(db, f.id, { xml, revisar: motivo, ...(revisar ? { total_calculado_cent: f.total_cent } : {}) }); log(db, f, 'descargar_xml', 'ok', motivo, usuarioId); })();
+      avisos.push(motivo + '. Revisa la factura.');
+    }
   } catch (e) { avisos.push('No se pudo bajar el XML: ' + e.message); log(db, f, 'descargar_xml', 'error', e.message, usuarioId, e.httpStatus); }
   if (dirArchivos && !soloXml && !f.pdf_path) {
     try {
@@ -557,7 +571,8 @@ function vistaFactura(f) {
   return { id: f.id, lead_id: f.lead_id, tipo_documento: f.tipo_documento || 'factura', entorno: f.entorno, estatus: f.estatus, serie: f.serie, folio: f.folio, uuid: f.uuid, fecha_timbrado: f.fecha_timbrado,
     receptor_rfc: f.receptor_rfc, receptor_razon_social: f.receptor_razon_social, uso_cfdi: f.uso_cfdi, metodo_pago: f.metodo_pago, forma_pago: f.forma_pago,
     subtotal: f.subtotal_cent / 100, iva: f.iva_cent / 100, total: f.total_cent / 100, tiene_xml: !!f.xml, tiene_pdf: !!f.pdf_path, borrador: f.estatus === 'borrador_error' && !!f.cfdi_uid, descartada: f.estatus === 'cancelada' && !f.uuid,
-    sustituye_a: f.sustituye_a ?? null, motivo_cancelacion: f.motivo_cancelacion ?? null, cancelacion_estado: f.cancelacion_estado ?? null, tiene_acuse: !!f.acuse,
+    sustituye_a: f.sustituye_a ?? null, motivo_cancelacion: f.motivo_cancelacion ?? null, cancelacion_estado: f.cancelacion_estado ?? null, tiene_acuse: !!f.acuse || f.acuses_guardados > 0,
+    revisar: f.revisar && !f.revisada_at ? f.revisar : null, total_calculado: f.total_calculado_cent != null ? f.total_calculado_cent / 100 : null,
     error, created_at: f.created_at, updated_at: f.updated_at };
 }
 

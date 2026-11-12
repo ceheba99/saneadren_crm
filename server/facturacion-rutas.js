@@ -340,7 +340,10 @@ module.exports = function rutasFacturacion(app, db, h, { direccion, puede = () =
       usos: p.fiscal && cat.usos ? [...cat.usos].filter(([, u]) => !u.regimenes?.length || u.regimenes.includes(p.fiscal.regimen)).map(([clave, u]) => ({ clave, nombre: u.nombre })) : [],
       listo: !p.errores.length };
   }
-  const facturasDe = leadId => db.prepare('SELECT * FROM facturas WHERE lead_id = ? ORDER BY id DESC').all(leadId).map(f => ({ ...vistaFactura(f), sustituta: f.estatus === 'timbrada' ? sustitutaDe(f.id) : null }));
+  // Etapa 5 (M-24): cuántos acuses guardados tiene (aunque la cancelación se haya revertido), para mostrar el botón «Acuse».
+  const conAcuses = f => f && { ...f, acuses_guardados: db.prepare('SELECT COUNT(*) n FROM main.facturas_acuses WHERE factura_id = ?').get(f.id).n };
+  const facturasDe = leadId => db.prepare('SELECT * FROM facturas WHERE lead_id = ? ORDER BY id DESC').all(leadId).map(f => ({ ...vistaFactura(conAcuses(f)), sustituta: f.estatus === 'timbrada' ? sustitutaDe(f.id) : null }));
+  const folioTxt = f => `${f.serie || ''}-${f.folio || ''}`, entornoTxt = f => (f.entorno === 'prod' ? '' : f.entorno === 'demo' ? ' (demostración)' : ' (de prueba, sandbox)');
 
   app.get('/api/facturacion/ordenes/:id', h((req, res) => {
     if (sinPermisoTimbrar(req, res)) return;
@@ -417,6 +420,8 @@ module.exports = function rutasFacturacion(app, db, h, { direccion, puede = () =
       // La misma puerta que usa el timbrado: busca por NumOrder y solo libera la factura si no existe Y ya pasó el minuto de espera.
       const r = await resolverSinRespuesta(db, crearCliente(), f, ctxDe(req));
       const ahora = db.prepare('SELECT * FROM facturas WHERE id = ?').get(f.id);
+      // Etapa 5 (INT-01): la que quedó timbrada al verificar también se anota en la bitácora de negocio, como al timbrar.
+      if (ahora.estatus === 'timbrada') auditar(req, 'orden_servicio', ahora.lead_id, 'factura', `Timbró ${ahora.tipo_documento === 'pago' ? 'el complemento de pago' : 'la factura'} ${folioTxt(ahora)}${entornoTxt(ahora)} (se confirmó al pulsar «Verificar»)`);
       res.json({ encontrada: r.estado !== 'pendiente', estado: ahora.estatus, factura: vistaFactura(ahora), avisos: r.avisos || [], mensaje: r.mensaje || null });
       if (r.descargas) await r.descargas;
     });
@@ -475,7 +480,7 @@ module.exports = function rutasFacturacion(app, db, h, { direccion, puede = () =
   // La lista y los avisos los ve quien puede timbrar; la base ya filtra por sucursal (vista «facturas» de sucursales.js). Reenviar por correo solo
   // existe en PRODUCCIÓN (en pruebas no se manda correo: regla 7). Descartar un borrador atorado es solo de Dirección.
   const folioDeOrden = f => (f.lead_id ? require('./sucursales').folio('OS', 'leads', f.lead_id, f.created_at) : '');
-  const filaLista = f => ({ ...vistaFactura(f), folio_orden: folioDeOrden(f), sucursal_id: f.sucursal_id,
+  const filaLista = f => ({ ...vistaFactura(conAcuses(f)), folio_orden: folioDeOrden(f), sucursal_id: f.sucursal_id,
     puede_reenviar: f.estatus === 'timbrada' && f.entorno === 'prod' && !!f.receptor_correo, puede_descartar: f.estatus === 'borrador_error', sustituta: f.estatus === 'timbrada' ? sustitutaDe(f.id) : null });
   const sustitutaDe = id => db.prepare("SELECT id, serie, folio FROM facturas WHERE sustituye_a = ? AND estatus = 'timbrada' ORDER BY id DESC LIMIT 1").get(id) || null;
   const textoFiltro = v => String(v ?? '').trim().toLocaleLowerCase('es-MX');
@@ -536,6 +541,9 @@ module.exports = function rutasFacturacion(app, db, h, { direccion, puede = () =
       const v = vistaFactura(f), [nivel, texto] = TEXTO[f.estatus];
       avisos.push({ tipo: f.estatus, nivel, lead_id: f.lead_id, folio: folioDeOrden(f), nombre: f.receptor_razon_social, texto: v.error ? `${texto}. Motivo: ${v.error}` : texto });
     }
+    // Etapa 5 (A-07): el total del XML timbrado no coincidió con el calculado. Sale hasta que alguien pulse «Ya la revisé».
+    for (const f of db.prepare("SELECT * FROM facturas WHERE entorno = ? AND revisar IS NOT NULL AND revisada_at IS NULL AND estatus IN ('timbrada', 'cancelacion_solicitada') AND (lead_id IS NULL OR lead_id IN (SELECT id FROM leads)) ORDER BY id DESC LIMIT 20").all(entorno))
+      avisos.push({ tipo: 'revisar', nivel: 'amarillo', lead_id: f.lead_id, folio: folioDeOrden(f), nombre: f.receptor_razon_social, texto: `Revisa ${f.tipo_documento === 'pago' ? 'el complemento' : 'la factura'} ${folioTxt(f)}: ${f.revisar}` });
     // Sustituta timbrada y original todavía vigente: hay DOS facturas vigentes ante el SAT para la misma venta.
     for (const o of db.prepare("SELECT o.* FROM facturas o JOIN facturas s ON s.sustituye_a = o.id AND s.estatus = 'timbrada' WHERE o.entorno = ? AND o.estatus = 'timbrada' AND (o.lead_id IS NULL OR o.lead_id IN (SELECT id FROM leads)) ORDER BY o.id DESC LIMIT 20").all(entorno))
       avisos.push({ tipo: 'sin_cancelar', nivel: 'rojo', lead_id: o.lead_id, folio: folioDeOrden(o), nombre: o.receptor_razon_social, texto: o.tipo_documento === 'pago' ? `El complemento de pago ${o.serie || ''}-${o.folio || ''} ya tiene su corrección timbrada y sigue vigente: cancélalo con el motivo 01` : `La factura ${o.serie || ''}-${o.folio || ''} ya tiene su sustituta timbrada y sigue vigente: cancélala con el motivo 01` });
@@ -616,7 +624,7 @@ module.exports = function rutasFacturacion(app, db, h, { direccion, puede = () =
     return una('orden-' + f.lead_id, res, async () => {
       const r = await cancelar(db, db.prepare('SELECT * FROM main.facturas WHERE id = ?').get(f.id), { motivo: String(b.motivo || ''), sustituta_id: b.sustituta_id, reintentar: b.reintentar === true }, ctxDe(req));
       if (r.estado !== 'timbrada') auditar(req, 'orden_servicio', f.lead_id, 'factura', `Pidió cancelar la factura ${f.serie || ''}-${f.folio || ''} (motivo ${b.motivo})${r.estado === 'cancelada' ? ': cancelada' : ': en proceso'}${f.entorno === 'prod' ? '' : ' (de prueba)'}`);
-      res.json({ estado: r.estado, factura: vistaFactura(r.factura), mensaje: r.mensaje || null });
+      res.json({ estado: r.estado, factura: vistaFactura(conAcuses(r.factura)), mensaje: r.mensaje || null });
     });
   }));
   app.post('/api/facturacion/facturas/:id/estatus-cancelacion', h((req, res) => {
@@ -628,8 +636,20 @@ module.exports = function rutasFacturacion(app, db, h, { direccion, puede = () =
     return una('orden-' + f.lead_id, res, async () => {
       const r = await consultarEstatus(db, crearCliente(), db.prepare('SELECT * FROM main.facturas WHERE id = ?').get(f.id), ctxDe(req));
       if (r.estado === 'cancelada') auditar(req, 'orden_servicio', f.lead_id, 'factura', `El SAT confirmó la cancelación de la factura ${f.serie || ''}-${f.folio || ''}`);
-      res.json({ estado: r.estado, factura: vistaFactura(r.factura), mensaje: r.mensaje || null });
+      // Etapa 5 (M-24): que la cancelación se revirtió también queda en la bitácora de negocio (antes solo en la técnica).
+      if (r.estado === 'timbrada') auditar(req, 'orden_servicio', f.lead_id, 'factura', `La cancelación de la factura ${folioTxt(f)} no procedió: ${r.mensaje || 'sigue vigente'} El acuse se conserva.`);
+      res.json({ estado: r.estado, factura: vistaFactura(conAcuses(r.factura)), mensaje: r.mensaje || null });
     });
+  }));
+  // Etapa 5 (A-07): quien factura revisó la diferencia del total (contra el XML) y la da por revisada. La marca y lo calculado se conservan.
+  app.post('/api/facturacion/facturas/:id/revisada', h((req, res) => {
+    if (sinPermisoTimbrar(req, res)) return;
+    const f = facturaVisible(req, res); if (!f) return;
+    if (!f.revisar) return res.status(409).json({ error: 'Esta factura no tiene nada que revisar' });
+    if (f.revisada_at) return res.json({ ok: true, factura: vistaFactura(f) });
+    const hecho = db.prepare("UPDATE main.facturas SET revisada_at = datetime('now','localtime'), revisada_por = ?, updated_at = datetime('now','localtime') WHERE id = ? AND revisada_at IS NULL").run(req.usuarioSesion?.id ?? null, f.id);
+    if (hecho.changes) auditar(req, 'orden_servicio', f.lead_id, 'factura', `Dio por revisada la diferencia de total de la factura ${folioTxt(f)}: ${f.revisar}`);
+    res.json({ ok: true, factura: vistaFactura(db.prepare('SELECT * FROM facturas WHERE id = ?').get(f.id)) });
   }));
   // El acuse de cancelación del SAT (XML): de la base, o se baja de factura.com si falta.
   app.get('/api/facturacion/facturas/:id/acuse', h((req, res) => {
@@ -637,6 +657,9 @@ module.exports = function rutasFacturacion(app, db, h, { direccion, puede = () =
     const f = facturaVisible(req, res); if (!f) return;
     const enviar = xml => res.set('Content-Type', 'application/xml; charset=utf-8').set('Content-Disposition', `attachment; filename="${nombreArchivo(f, 'xml').replace(/^factura-/, 'acuse-cancelacion-')}"`).send(xml);
     if (f.acuse) return enviar(f.acuse);
+    // Etapa 5 (M-24): sin acuse en curso (p. ej. la cancelación se revirtió), se entrega el último guardado.
+    const guardado = db.prepare('SELECT acuse FROM main.facturas_acuses WHERE factura_id = ? ORDER BY id DESC LIMIT 1').get(f.id);
+    if (guardado) return enviar(guardado.acuse);
     if (f.estatus !== 'cancelada' || f.entorno === 'demo' || esDemo()) return res.status(404).json({ error: 'Esta factura no tiene acuse de cancelación' });
     if (f.entorno !== leerConfig(env).entorno) return res.status(409).json({ error: 'El acuse no está guardado y la conexión está en otro entorno' });
     return una('acuse-' + f.id, res, async () => {

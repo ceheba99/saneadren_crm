@@ -22,7 +22,7 @@ if (!fs.existsSync(DB_PATH)) alto('No existe la base en ' + DB_PATH);
 // En orden: primero lo que cuelga de otra tabla.
 const BORRAR_TABLAS = [
   // Facturación
-  'factura_cobros', 'factura_ventas', 'facturas_log', 'facturas', 'clientes_fiscales', 'series_factura',
+  'factura_cobros', 'factura_ventas', 'facturas_log', 'facturas_acuses', 'facturas', 'clientes_fiscales', 'series_factura',
   // Lo que cuelga de cada orden
   'encuestas', 'orden_personal', 'historial', 'historial_archivo',
   // Cuentas por pagar y compras

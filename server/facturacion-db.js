@@ -24,6 +24,10 @@ function crearTablasFacturacion(db) {
   const agregar = (tabla, col, def) => { if (!columnas(tabla).includes(col)) db.exec(`ALTER TABLE ${tabla} ADD COLUMN ${col} ${def}`); };
   const lista = a => a.map(x => `'${x}'`).join(', ');
 
+  // Etapa 5 (A-07): el candado anterior no dejaba guardar el XML si su total difería un centavo. Se reemplaza el TRIGGER (no se toca ninguna fila).
+  const candado = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'trigger' AND name = 'facturas_timbradas_fijas'").get();
+  if (candado && !/OLD\.xml IS NOT|NEW\.xml IS NOT OLD\.xml/.test(candado.sql)) db.exec('DROP TRIGGER facturas_timbradas_fijas');
+
   db.exec(`
     -- Datos fiscales de quien recibe la factura: varios por cliente (cada uno con su UID en factura.com).
     -- Se permiten incompletos (solo el RFC es obligatorio) para poder marcar «qué falta»; el servicio de timbrado no timbra con datos incompletos.
@@ -107,8 +111,13 @@ function crearTablasFacturacion(db) {
     -- mismo valor (p. ej. al verificar) se permite.
     CREATE TRIGGER IF NOT EXISTS facturas_timbradas_no_borrar BEFORE DELETE ON facturas WHEN COALESCE(OLD.uuid, '') <> ''
       BEGIN SELECT RAISE(ABORT, 'Una factura timbrada nunca se borra: se cancela'); END;
-    CREATE TRIGGER IF NOT EXISTS facturas_timbradas_fijas BEFORE UPDATE OF uuid, total_cent, serie, folio, lead_id ON facturas
-      WHEN COALESCE(OLD.uuid, '') <> '' AND (NEW.uuid IS NOT OLD.uuid OR NEW.total_cent IS NOT OLD.total_cent OR NEW.serie IS NOT OLD.serie OR NEW.folio IS NOT OLD.folio OR NEW.lead_id IS NOT OLD.lead_id)
+    -- Etapa 5 (A-07, 2026-11-12): el total SOLO se ajusta en la misma escritura que guarda el XML timbrado por primera vez (el XML es la verdad
+    -- fiscal; antes el candado rechazaba esa escritura y el XML se perdía). Ya con XML, el total queda fijo como todo lo demás.
+    -- El XML timbrado guardado tampoco se cambia ni se vacía (así nadie puede «vaciarlo» para abrir el total).
+    CREATE TRIGGER IF NOT EXISTS facturas_timbradas_fijas BEFORE UPDATE OF uuid, total_cent, serie, folio, lead_id, xml ON facturas
+      WHEN COALESCE(OLD.uuid, '') <> '' AND (NEW.uuid IS NOT OLD.uuid OR (NEW.total_cent IS NOT OLD.total_cent AND NOT (COALESCE(OLD.xml, '') = '' AND COALESCE(NEW.xml, '') <> ''))
+        OR (COALESCE(OLD.xml, '') <> '' AND NEW.xml IS NOT OLD.xml)
+        OR NEW.serie IS NOT OLD.serie OR NEW.folio IS NOT OLD.folio OR NEW.lead_id IS NOT OLD.lead_id)
       BEGIN SELECT RAISE(ABORT, 'Los datos de una factura timbrada no se cambian'); END;
 
     -- Factura global (público en general): enlaza UNA factura con VARIAS órdenes. Se usa desde la F6.
@@ -185,6 +194,32 @@ function crearTablasFacturacion(db) {
   agregar('facturas', 'cancelacion_estado', 'TEXT');
   agregar('facturas', 'cancelacion_revisada_at', 'TEXT');
   db.exec('CREATE INDEX IF NOT EXISTS idx_facturas_sustituye ON facturas(sustituye_a) WHERE sustituye_a IS NOT NULL');
+  // Etapa 5 (A-07, 2026-11-12): si el total del XML timbrado difiere del que calculó el sistema, se guarda el XML IGUAL (y su total) y la factura queda
+  // marcada para revisar: «revisar» dice qué pasó y «total_calculado_cent» conserva lo calculado (no se descarta nada). Se da por revisada a mano.
+  agregar('facturas', 'revisar', 'TEXT');
+  agregar('facturas', 'total_calculado_cent', 'INTEGER');
+  agregar('facturas', 'revisada_at', 'TEXT');
+  agregar('facturas', 'revisada_por', 'INTEGER REFERENCES usuarios(id)');
+  // Etapa 5 (M-24, 2026-11-12): TODO acuse de cancelación que llega se guarda aquí y ya no se borra ni se cambia. La columna facturas.acuse es el de la
+  // solicitud en curso; si el SAT dice después «No cancelable» la factura vuelve a vigente, pero su acuse sigue aquí (antes se borraba).
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS facturas_acuses (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      factura_id INTEGER NOT NULL REFERENCES facturas(id) ON DELETE RESTRICT,
+      acuse TEXT NOT NULL CHECK(length(acuse) > 0),
+      motivo TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_facturas_acuses_factura ON facturas_acuses(factura_id);
+    CREATE TRIGGER IF NOT EXISTS facturas_acuses_no_borrar BEFORE DELETE ON facturas_acuses
+      BEGIN SELECT RAISE(ABORT, 'Un acuse de cancelación nunca se borra'); END;
+    CREATE TRIGGER IF NOT EXISTS facturas_acuses_fijos BEFORE UPDATE ON facturas_acuses
+      BEGIN SELECT RAISE(ABORT, 'Un acuse de cancelación no se cambia'); END;
+    CREATE TRIGGER IF NOT EXISTS facturas_acuse_guardar AFTER UPDATE OF acuse ON facturas
+      WHEN COALESCE(NEW.acuse, '') <> '' AND NEW.acuse IS NOT OLD.acuse AND NOT EXISTS (SELECT 1 FROM facturas_acuses WHERE factura_id = NEW.id AND acuse = NEW.acuse)
+      BEGIN INSERT INTO facturas_acuses (factura_id, acuse, motivo) VALUES (NEW.id, NEW.acuse, NEW.motivo_cancelacion); END;
+    INSERT INTO facturas_acuses (factura_id, acuse, motivo)
+      SELECT f.id, f.acuse, f.motivo_cancelacion FROM facturas f WHERE COALESCE(f.acuse, '') <> '' AND NOT EXISTS (SELECT 1 FROM facturas_acuses a WHERE a.factura_id = f.id AND a.acuse = f.acuse);`);
   agregar('sucursales', 'cp_expedicion', "TEXT CHECK(cp_expedicion IS NULL OR (length(cp_expedicion) = 5 AND cp_expedicion NOT GLOB '*[^0-9]*'))");
 }
 
