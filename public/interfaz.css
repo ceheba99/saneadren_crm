@@ -1804,7 +1804,9 @@
 /* Apartados de las fichas (2026-11-12): en cada ventana, cada apartado (.modal-section) es una tarjeta
    sobre fondo gris, para ver dónde termina uno y empieza el otro aunque todo esté desplegado.
    Un solo estilo para todas las fichas (orden, cliente, proveedor, personal, marketing, avisos…);
-   las pantallas no repiten este CSS. Solo en pantalla: la impresión queda igual. */
+   las pantallas no repiten este CSS. Las que arman sus apartados de otra forma (estado de cuenta
+   del cliente y del proveedor, expediente de la OC, contabilidad, conciliación) les ponen la clase
+   «apartado» y toman la misma tarjeta. Solo en pantalla: la impresión queda igual. */
 @media screen {
   :root {
     --apartado-fondo: #e9edf0;
@@ -1813,15 +1815,16 @@
     --apartado-sombra: 0 2px 6px rgb(11 31 43 / 10%);
     --apartado-hueco: 14px;
   }
-  .modal-body:has(.modal-section) { background: var(--apartado-fondo); padding: var(--apartado-hueco); }
-  .modal-body .modal-section {
+  .modal-body:has(.modal-section, > .apartado) { background: var(--apartado-fondo); padding: var(--apartado-hueco); }
+  .modal-body .modal-section, .apartado {
     background: var(--apartado-tarjeta);
     border: 1px solid var(--apartado-borde);
     border-radius: 12px;
     box-shadow: var(--apartado-sombra);
     margin: 0 0 var(--apartado-hueco);
   }
-  .modal-body .modal-section:last-child { margin-bottom: 0; }
+  .modal-body .modal-section:last-child, .apartado:last-child { margin-bottom: 0; }
+  .apartado { padding: 18px 20px; }
   /* Título del apartado: oscuro y con una línea que lo separa de su contenido. */
   .modal-body .modal-section > :is(.seccion-tit, .pe-sub) {
     color: var(--texto);
@@ -1830,10 +1833,19 @@
     margin-bottom: 14px;
   }
   .modal-body .modal-section > .seccion-tit { font-size: 13.5px; }
+  .apartado > :is(h3, .seccion-sub, .cc-seccion-cab) {
+    color: var(--texto);
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--gris-200);
+    margin: 0 0 14px;
+  }
+  .apartado > h3, .apartado > .seccion-sub { font-size: 15px; }
+  .apartado > .cc-seccion-cab h3 { margin: 0; }
   .modal-body .modal-section.plegada > :is(.seccion-tit, .pe-sub) { border-bottom-color: transparent; margin-bottom: 0; padding-bottom: 6px; }
   /* Pie con los botones de guardar: no es un apartado, va sin tarjeta. */
   .modal-body .modal-section.pe-pie { background: transparent; border: 0; box-shadow: none; padding: 6px 2px 0; }
   @media (max-width: 768px) {
     :root { --apartado-hueco: 8px; }
+    .apartado { padding: 14px; }
   }
 }
