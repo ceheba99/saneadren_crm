@@ -213,6 +213,7 @@ const personalMod = require('./personal')(app, db, h);
 app.locals.personal = personalMod;
 app.locals.checador = require('./checador')(app, db, h);
 app.locals.asistencia = require('./asistencia')(app, db, h);
+require('./anticipos')(app, db, h); // Anticipos por comprobar (módulo contable F2, 2026-11-11): después de Personal y Cuentas por pagar
 app.locals.biometria = require('./biometria')(app, db, h); // biométrico facial del kiosco (2026-11-05)
 require('./whatsapp')(app, db, h); // Checar por WhatsApp para foráneos (F5b, 2026-11-05)
 require('./avisos')(app, db, h); // Avisos a personas elegidas: reloj checador, celular, Inicio, correo y WhatsApp (2026-11-11)

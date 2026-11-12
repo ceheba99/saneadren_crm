@@ -190,6 +190,28 @@ module.exports = async function masEjemplos(x) {
   for (const [n, concepto, rubro, monto] of [[-4, 'Pauta Facebook · desazolve', 'pauta', 8200], [-3, 'Pauta Instagram · trampas de grasa', 'pauta', 7600], [-3, 'Diseño de 8 piezas', 'diseno', 6400], [-2, 'Video de la flota', 'video', 9500], [-2, 'Pauta TikTok · detrás de cámaras', 'pauta', 5200]])
     await pedir('POST', '/marketing/gastos', GM, { fecha: dia(Math.round((Date.parse(mesDe(n)) - Date.parse(HOY)) / 86400000) + 10), concepto, rubro, monto, proveedor: rubro === 'pauta' ? 'Meta' : 'Estudio de ejemplo' });
 
+  // ===== Anticipos por comprobar (módulo contable F2, 2026-11-11): abiertos, uno vencido, uno que pasó del anticipo y uno cerrado con reintegro =====
+  {
+    const casetas = await pedir('POST', '/finanzas/proveedores', A, { nombre: 'Autopista y Peaje del Centro (ejemplo)', categoria: 'casetas_viaticos', dias_credito: 0 });
+    const diesel = await pedir('POST', '/finanzas/proveedores', A, { nombre: 'Combustibles La Cañada (ejemplo)', categoria: 'combustible', dias_credito: 0 });
+    const fonda = await pedir('POST', '/finanzas/proveedores', A, { nombre: 'Fonda Doña Chela (ejemplo)', categoria: 'casetas_viaticos', dias_credito: 0 });
+    const anticipo = (t, cuerpo) => pedir('POST', '/anticipos', t, cuerpo);
+    const gasto = (t, anticipo_id, proveedor, categoria, concepto, total, fecha, extra = {}) => pedir('POST', '/finanzas/cxp', t, { anticipo_id, proveedor_id: proveedor.id, categoria, concepto, total, fecha_documento: fecha, tipo_comprobante: 'recibo', ...extra });
+    // Raúl (tiene usuario): ruta larga hace 12 días; comprobó casetas y diésel; le faltan $510 y ya pasó de 7 días (aviso a Dirección).
+    const a1 = await anticipo(A, { personal_id: PER.raul, monto: 3000, metodo: 'efectivo', cuenta_origen: 'Caja chica', fecha: dia(-12), motivo: 'Casetas y diésel de la ruta a San Luis Potosí' });
+    await gasto(T, a1.id, casetas, 'casetas_viaticos', 'Casetas Querétaro–San Luis ida y vuelta', 640, dia(-12));
+    await gasto(T, a1.id, diesel, 'combustible', 'Diésel del camión de vacío', 1850, dia(-11), { tipo_comprobante: 'factura', factura_folio: 'CLC-7781', iva: 255.17 });
+    // Juan: comida de la cuadrilla; comprobó $980 y regresó $520: cerrado con reintegro.
+    const a2 = await anticipo(A, { personal_id: PER.juan, monto: 1500, metodo: 'transferencia', cuenta_origen: 'Santander empresa', referencia: 'SPEI 448812', fecha: dia(-20), motivo: 'Comida de la cuadrilla, semana de mantenimiento en planta' });
+    await gasto(A, a2.id, fonda, 'casetas_viaticos', 'Comidas de la cuadrilla (5 días)', 980, dia(-18));
+    await pedir('POST', '/anticipos/' + a2.id + '/cerrar', A, { metodo: 'efectivo', fecha: dia(-16), cuenta: 'Caja chica', nota: 'Regresó el sobrante en efectivo' });
+    // Miguel: el gasto pasó del anticipo: $350 quedan por reembolsarle en Cuentas por pagar.
+    const a3 = await anticipo(A, { personal_id: PER.miguel, monto: 2000, metodo: 'efectivo', cuenta_origen: 'Caja chica', fecha: dia(-3), motivo: 'Diésel para el servicio foráneo en Celaya' });
+    await gasto(A, a3.id, diesel, 'combustible', 'Diésel de ida y vuelta a Celaya', 2350, dia(-2));
+    // Luis: recién entregado, sin gastos todavía.
+    await anticipo(A, { personal_id: PER.luis, monto: 1200, metodo: 'efectivo', cuenta_origen: 'Caja chica', fecha: dia(-1), motivo: 'Material menudo de campo (cinta, tornillería)' });
+  }
+
   // ===== Asistencia: 4 semanas de checadas en el kiosco (con retardos, tiempo extra y olvidos) =====
   const insChecada = db.prepare(`INSERT INTO main.checadas (personal_id, tipo, momento_utc, fecha, hora, origen, sucursal_id, estado, biometria) VALUES (?, ?, ?, ?, ?, 'kiosco', ?, 'valida', 'coincide')`);
   const checar = (pid, suc, fecha, tipo, hora) => insChecada.run(pid, tipo, new Date(`${fecha}T${hora}:00-06:00`).toISOString(), fecha, hora + ':00', suc);

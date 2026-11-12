@@ -1159,10 +1159,15 @@ module.exports = function finanzas(app, db, h, unicos) {
 
   // Registrar una factura o gasto de proveedor. Con ya_pagado se crea también su pago (gasto de contado).
   app.post('/api/finanzas/cxp', h((req, res) => {
-    if (!permitido(req, res, 'gastos.registrar', 'No tienes permiso para esta acción')) return;
     const b = req.body;
+    // Gasto de un ANTICIPO por comprobar (F2, 2026-11-11): lo captura la persona que lo recibió o quien mueve dinero, con o
+    // sin orden de servicio (el anticipo ya lo autorizó quien entregó el dinero). Se paga con el anticipo hasta donde alcance.
+    const ant = b.anticipo_id ? app.locals.anticipos.paraGasto(req, b.anticipo_id) : null;
+    if (ant?.error) return res.status(ant.status).json({ error: ant.error });
+    if (ant && b.ya_pagado) return res.status(400).json({ error: 'Este gasto se paga con el anticipo: no marques «ya lo pagué»' });
+    if (!ant && !permitido(req, res, 'gastos.registrar', 'No tienes permiso para esta acción')) return;
     // Sin orden de servicio es una COMPRA: va por Solicitud de compra (o la registra administración / costos).
-    if (!b.lead_id && !P.puede(req, 'dinero.mover')) return res.status(403).json({ error: 'Las compras se piden con una Solicitud de compra. Aquí solo se registran costos de un servicio: elige la orden de servicio.' });
+    if (!ant && !b.lead_id && !P.puede(req, 'dinero.mover')) return res.status(403).json({ error: 'Las compras se piden con una Solicitud de compra. Aquí solo se registran costos de un servicio: elige la orden de servicio.' });
     const prov = db.prepare('SELECT * FROM proveedores WHERE id = ? AND activo = 1').get(b.proveedor_id);
     if (!prov) return res.status(400).json({ error: 'Elige un proveedor' });
     const categoria = b.categoria || prov.categoria;
@@ -1185,7 +1190,7 @@ module.exports = function finanzas(app, db, h, unicos) {
     if (!fechaValida(fecha)) return res.status(400).json({ error: 'La fecha del documento no es válida' });
     if (fecha > sumarDias(hoyMexico(), 60)) return res.status(400).json({ error: 'La fecha del documento está a más de 60 días en el futuro: revisa el año' });
     // Días de crédito de ESTA cuenta: obligatorios (0 = de contado). Si ya se pagó, es de contado.
-    const crudo = b.ya_pagado ? 0 : b.dias_credito;
+    const crudo = b.ya_pagado || ant ? 0 : b.dias_credito;
     const dias = typeof crudo === 'number' ? crudo : typeof crudo === 'string' && /^\s*\d{1,3}\s*$/.test(crudo) ? Number(crudo) : NaN;
     if (!Number.isInteger(dias) || dias < 0 || dias > 365) return res.status(400).json({ error: 'Escribe cuántos días de crédito tiene (0 si es de contado)', codigo: 'FALTA_CREDITO', credito_proveedor: prov.dias_credito });
     const vence = sumarDias(fecha, dias);
@@ -1221,8 +1226,18 @@ module.exports = function finanzas(app, db, h, unicos) {
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(prov.id, categoria, concepto, xml ? folioFactura : texto(b.factura_folio, 60), fecha, vence, total, leadId, texto(b.equipo, 200), texto(b.notas, 1000), req.usuarioSesion.id, dias,
         beneficiario && unicos.clave(beneficiario) !== unicos.clave(prov.nombre) ? beneficiario : null, tipoComp, metodoSat, iva.cent, xml?.ivaCent != null ? 'xml' : iva.cent != null ? 'manual' : null);
       if (xml) XML.guardar(req, Number(info.lastInsertRowid), Buffer.from(b.xml, 'utf8'), texto(b.xml_nombre, 120) || 'factura.xml', xml);
-      app.locals.sucursales.asignar('cuentas_por_pagar', Number(info.lastInsertRowid), leadId ? app.locals.sucursales.de('leads', leadId) : undefined);
-      if (b.ya_pagado && P.puede(req, 'dinero.mover')) {
+      app.locals.sucursales.asignar('cuentas_por_pagar', Number(info.lastInsertRowid), leadId ? app.locals.sucursales.de('leads', leadId) : ant ? ant.anticipo.sucursal_id : undefined);
+      if (ant) {
+        // Con el anticipo se paga lo que alcance (un pago con vía «anticipo»: no es otra salida del banco). Lo que pase del
+        // anticipo queda por pagar como reembolso a la persona, vence hoy (como los reembolsos de quien no mueve dinero).
+        const a = ant.anticipo, usado = Math.min(total, Math.max(0, app.locals.anticipos.paraGasto(req, a.id).saldo_cent ?? 0)), falta = total - usado;
+        db.prepare('UPDATE main.cuentas_por_pagar SET anticipo_id = ? WHERE id = ?').run(a.id, info.lastInsertRowid);
+        if (usado > 0) db.prepare("INSERT INTO main.pagos_proveedor (cxp_id, fecha, monto_cent, metodo, referencia, registrado_por) VALUES (?, ?, ?, 'anticipo', ?, ?)")
+          .run(info.lastInsertRowid, fecha > hoyMexico() ? hoyMexico() : (fecha < a.fecha ? a.fecha : fecha), usado, 'Anticipo #' + a.id + ' de ' + a.persona, req.usuarioSesion.id);
+        if (falta > 0) db.prepare("UPDATE main.cuentas_por_pagar SET beneficiario = ?, fecha_vencimiento = fecha_documento, notas = trim(COALESCE(notas, '') || ' ' || ?) WHERE id = ?")
+          .run('Reembolso a ' + a.persona, `Pasó del anticipo de ${a.persona} por ${fmt(falta)}: por reembolsar.`, info.lastInsertRowid);
+        ant.usado = usado; ant.falta = falta;
+      } else if (b.ya_pagado && P.puede(req, 'dinero.mover')) {
         db.prepare('INSERT INTO main.pagos_proveedor (cxp_id, fecha, monto_cent, metodo, referencia, registrado_por, cuenta_origen) VALUES (?, ?, ?, ?, ?, ?, ?)')
           .run(info.lastInsertRowid, fechaPagoGasto || (fecha > hoyMexico() ? hoyMexico() : fecha), total, b.metodo, texto(b.referencia, 120), req.usuarioSesion.id, texto(b.cuenta_origen, 80));
       } else if (b.ya_pagado) { // lo pagó quien lo registra: queda como reembolso para esa persona (auditoría H01)
@@ -1230,11 +1245,11 @@ module.exports = function finanzas(app, db, h, unicos) {
         db.prepare('UPDATE main.cuentas_por_pagar SET beneficiario = ?, fecha_vencimiento = ?, notas = trim(COALESCE(notas, \'\') || \' \' || ?) WHERE id = ?').run(r.beneficiario, fecha, r.nota, info.lastInsertRowid);
       }
       const reembolsar = b.ya_pagado && !P.puede(req, 'dinero.mover');
-      if (leadId) bitacora(leadId, `Costo con terceros registrado: «${concepto}» de ${prov.nombre} por ${fmt(total)}${reembolsar ? ` (lo pagó ${req.usuarioSesion.nombre}: por reembolsar)` : b.ya_pagado ? ' (ya pagado)' : ' (pendiente de pago en Cuentas por pagar)'}.`, req, 'cxp');
-      app.locals.auditoria?.registrar(req, 'cuenta_por_pagar', Number(info.lastInsertRowid), 'creada', `${prov.nombre} · «${concepto}» · ${fmt(total)}${iva.cent != null ? ' (IVA ' + fmt(iva.cent) + ')' : ''}${folioFactura ? ' · factura ' + folioFactura : ''}${reembolsar ? ' · lo pagó ' + req.usuarioSesion.nombre + ': por reembolsar' : b.ya_pagado ? ' · pagada al registrar' : ''}${xml ? ' · ' + XML.resumen(xml) : ''}`);
+      if (leadId) bitacora(leadId, `Costo con terceros registrado: «${concepto}» de ${prov.nombre} por ${fmt(total)}${ant ? ` (comprobado con el anticipo de ${ant.anticipo.persona}${ant.falta ? `; ${fmt(ant.falta)} por reembolsarle` : ''})` : reembolsar ? ` (lo pagó ${req.usuarioSesion.nombre}: por reembolsar)` : b.ya_pagado ? ' (ya pagado)' : ' (pendiente de pago en Cuentas por pagar)'}.`, req, 'cxp');
+      app.locals.auditoria?.registrar(req, 'cuenta_por_pagar', Number(info.lastInsertRowid), 'creada', `${prov.nombre} · «${concepto}» · ${fmt(total)}${iva.cent != null ? ' (IVA ' + fmt(iva.cent) + ')' : ''}${folioFactura ? ' · factura ' + folioFactura : ''}${ant ? ` · anticipo #${ant.anticipo.id} de ${ant.anticipo.persona} (${fmt(ant.usado)}${ant.falta ? `; ${fmt(ant.falta)} por reembolsarle` : ''})` : reembolsar ? ' · lo pagó ' + req.usuarioSesion.nombre + ': por reembolsar' : b.ya_pagado ? ' · pagada al registrar' : ''}${xml ? ' · ' + XML.resumen(xml) : ''}`);
       return info.lastInsertRowid;
     })();
-    res.status(201).json({ id, por_reembolsar: !!b.ya_pagado && !P.puede(req, 'dinero.mover'), ...(xml ? { avisos: xml.avisos, iva: xml.ivaCent != null ? aPesos(xml.ivaCent) : null } : {}) });
+    res.status(201).json({ id, por_reembolsar: !!b.ya_pagado && !P.puede(req, 'dinero.mover'), ...(ant ? { anticipo: { usado: aPesos(ant.usado), por_reembolsar: aPesos(ant.falta) } } : {}), ...(xml ? { avisos: xml.avisos, iva: xml.ivaCent != null ? aPesos(xml.ivaCent) : null } : {}) });
   }));
 
   // Capturar o corregir el IVA de un gasto ya registrado (los viejos no lo traen): cambia la utilidad de Resultados.
@@ -1288,6 +1303,8 @@ module.exports = function finanzas(app, db, h, unicos) {
     const motivo = texto(req.body.motivo, 300);
     if (!motivo || !conSentido(motivo, 5)) return res.status(400).json({ error: 'Escribe el motivo de la cancelación (mínimo 5 caracteres)' });
     const pagoAntes = db.prepare('SELECT g.*, c.lead_id, c.concepto FROM pagos_proveedor g JOIN cuentas_por_pagar c ON c.id = g.cxp_id WHERE g.id = ?').get(req.params.id);
+    const bloqueo = app.locals.anticipos?.bloqueaCancelarPago(pagoAntes);
+    if (bloqueo) return res.status(409).json({ error: bloqueo });
     const info = db.prepare("UPDATE main.pagos_proveedor SET cancelado = 1, cancelado_por = ?, cancelado_at = datetime('now','localtime'), motivo_cancelacion = ? WHERE id = ? AND cancelado = 0")
       .run(req.usuarioSesion.id, motivo, req.params.id);
     if (!info.changes) return res.status(404).json({ error: 'Pago no encontrado o ya cancelado' });
@@ -1666,6 +1683,7 @@ module.exports = function finanzas(app, db, h, unicos) {
   };
 };
 module.exports.aCentavos = aCentavos;
+Object.assign(module.exports, { METODOS_PROV, fechaValida, texto, conSentido, aPesos }); // los usa anticipos.js
 module.exports.migrar = migrar;
 module.exports.folioOS = folioOS;
 module.exports.CATEGORIAS_NO_GASTO = CATEGORIAS_NO_GASTO;

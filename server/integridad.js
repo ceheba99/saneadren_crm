@@ -106,6 +106,21 @@ function revisar(db, { dirArchivos } = {}) {
   // Solo los costos vivos: uno cancelado puede quedar ligado a una orden que después se descartó (es lo correcto).
   chequeo('Cuentas por pagar', 'Costos ligados a una orden de servicio que ya no existe o no es orden', 'error', () => cxp.filter(x => x.lead_id && !x.cancelada && leadPorId.get(x.lead_id)?.estatus !== 'ganado').map(x => ({ ref: refCxp(x), detalle: 'orden #' + x.lead_id })));
 
+  // ---------- Anticipos por comprobar (módulo contable F2, 2026-11-11) ----------
+  if (existe(db, 'anticipos')) {
+    const ant = db.prepare("SELECT a.*, p.nombre AS persona FROM anticipos a LEFT JOIN personal p ON p.id = a.personal_id WHERE a.estado <> 'cancelado'").all();
+    const conAnt = id => cxp.filter(x => x.anticipo_id === id && !x.cancelada).reduce((t, x) => t + pagos.filter(g => g.cxp_id === x.id && !g.cancelado && g.metodo === 'anticipo').reduce((s, g) => s + g.monto_cent, 0), 0);
+    const refA = a => `Anticipo de ${a.persona || 'persona #' + a.personal_id} del ${dma(a.fecha)}`;
+    chequeo('Anticipos', 'Se comprobó más de lo que se entregó (gastos pagados con el anticipo + reintegro > anticipo)', 'error', () => ant.filter(a => conAnt(a.id) + a.reintegro_cent > a.monto_cent)
+      .map(a => ({ ref: refA(a), detalle: `entregado ${pesos(a.monto_cent)} · comprobado ${pesos(conAnt(a.id))} · regresó ${pesos(a.reintegro_cent)}` })));
+    chequeo('Anticipos', 'Anticipo cerrado que no cuadra (comprobado + reintegro ≠ entregado)', 'error', () => ant.filter(a => a.estado === 'cerrado' && conAnt(a.id) + a.reintegro_cent !== a.monto_cent)
+      .map(a => ({ ref: refA(a), detalle: `entregado ${pesos(a.monto_cent)} · comprobado ${pesos(conAnt(a.id))} · regresó ${pesos(a.reintegro_cent)}` })));
+    chequeo('Anticipos', 'Pago con vía «anticipo» en un gasto que no es de un anticipo', 'error', () => pagos.filter(g => !g.cancelado && g.metodo === 'anticipo' && !cxp.find(x => x.id === g.cxp_id)?.anticipo_id)
+      .map(g => ({ ref: refCxp(cxp.find(x => x.id === g.cxp_id) || {}), detalle: pesos(g.monto_cent) + ' del ' + dma(g.fecha) })));
+    chequeo('Anticipos', 'Anticipo abierto desde hace más de 30 días', 'aviso', () => ant.filter(a => a.estado === 'abierto' && a.fecha < db.prepare("SELECT date(?, '-30 days') d").get(hoy).d)
+      .map(a => ({ ref: refA(a), detalle: `${pesos(a.monto_cent - conAnt(a.id))} por comprobar: comprueba los gastos y ciérralo` })));
+  }
+
   // ---------- Facturación electrónica (F4, 2026-10-28) ----------
   if (existe(db, 'facturas')) {
     const fac = db.prepare("SELECT * FROM main.facturas WHERE estatus <> 'cancelada'").all();

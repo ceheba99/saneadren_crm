@@ -7,11 +7,12 @@ const Contabilidad = (() => {
   const dinero = v => formatoMoneda(Number(v || 0));
   const mesActual = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Mexico_City', year: 'numeric', month: '2-digit' }).format(new Date());
   const fecha = f => (/^\d{4}-\d{2}-\d{2}/.test(f || '') ? f.slice(0, 10).split('-').reverse().join('/') : '');
-  const VIA = { transferencia: 'Transferencia', efectivo: 'Efectivo', deposito: 'Depósito', cheque: 'Cheque', tarjeta: 'Tarjeta', otro: 'Otro', nomina: 'Nómina', layout: 'Layout', pagadora: 'Pagadora', domiciliado: 'Domiciliado', linea_captura: 'Línea de captura', directo: 'Directo' };
+  const VIA = { anticipo: 'Anticipo', transferencia: 'Transferencia', efectivo: 'Efectivo', deposito: 'Depósito', cheque: 'Cheque', tarjeta: 'Tarjeta', otro: 'Otro', nomina: 'Nómina', layout: 'Layout', pagadora: 'Pagadora', domiciliado: 'Domiciliado', linea_captura: 'Línea de captura', directo: 'Directo' };
   const COMP = { factura: 'Factura', recibo: 'Recibo', estado_cuenta: 'Estado de cuenta', linea_captura: 'Línea de captura', nomina: 'Nómina', pagadora: 'Pagadora', sin_factura: 'Sin factura', otro: 'Otro' };
   // Columnas: [llave, título, ancho en Excel, tipo] · tipo: f fecha, d dinero, s estado (chip), v vía, c comprobante, n número.
   const TABLAS = {
-    // Flujo de banco: la hoja «BNT» de Dirección, en su mismo orden (A–Z), llenada sola con cobros confirmados y pagos.
+    // Flujo de banco: la hoja «BNT» de Dirección, en su mismo orden (A–Z), llenada sola con cobros confirmados, pagos y
+    // anticipos (la entrega sale y el reintegro entra; lo pagado con el anticipo no sale otra vez).
     flujo: { titulo: 'Flujo de banco', hoja: 'Flujo de banco', cols: [['via', 'TRANSFERENCIA', 14, 'v'], ['oc', 'O.C. O REQ / ORDEN', 20], ['comprobante', 'COMPROBANTE', 18], ['fecha', 'FECHA', 11, 'f'],
       ['concepto_banco', 'CONCEPTO', 30], ['clabe', 'CLABE BENEFICIARIO', 20], ['beneficiario', 'NOMBRE BENEFICIARIO', 26], ['egreso', 'EGRESOS', 14, 'd'], ['ingreso', 'INGRESOS', 14, 'd'], ['saldo', 'SALDO', 15, 'S'],
       ['transferencia', '# TRANSFERENCIA', 18], ['metodo', 'MÉTODO DE PAGO', 12, 's'], ['cfdi', 'PPD/PUE COMPROBANTE FISCAL', 34], ['complemento', 'COMPLEMENTO PAGO COMPROBANTE', 30, 's'], ['tercero', 'PROVEEDOR/CLIENTE', 28],
@@ -70,13 +71,17 @@ const Contabilidad = (() => {
       p.gastos_sin_xml ? `${Number(p.gastos_sin_xml)} gasto(s) con factura sin su XML (súbelo en Cuentas por pagar)` : '',
       p.gastos_iva_estimado ? `${Number(p.gastos_iva_estimado)} gasto(s) con IVA estimado al 16 % (falta capturar el real o subir el XML)` : '',
       p.cobros_por_confirmar ? `${Number(p.cobros_por_confirmar)} cobro(s) por confirmar (no cuentan como cobrados hasta confirmarlos)` : '',
-      p.facturas_canceladas ? `${Number(p.facturas_canceladas)} factura(s) cancelada(s) en el mes (no cuentan en lo facturado)` : ''].filter(Boolean);
+      p.facturas_canceladas ? `${Number(p.facturas_canceladas)} factura(s) cancelada(s) en el mes (no cuentan en lo facturado)` : '',
+      p.anticipos_abiertos ? (() => { const con = (p.anticipos || []).filter(a => a.por_comprobar > 0), sin = Number(p.anticipos_abiertos) - con.length;
+        return `${Number(p.anticipos_abiertos)} anticipo(s) sin cerrar` + (con.length ? `: ${dinero(p.anticipos_por_comprobar)} por comprobar (${con.map(a => a.persona + ' ' + dinero(a.por_comprobar)).join(', ')})` : '') // sin HTML: se escapa al pintar la lista
+          + (sin ? `${con.length ? '; ' : ': '}${sin} ya comprobado(s), solo falta cerrarlo(s)` : '') + ' · se revisan en Cuentas por pagar › Anticipos'; })() : ''].filter(Boolean);
     return `${r.entorno !== 'prod' ? `<p class="aviso-error-carga">La facturación está en ${r.entorno === 'demo' ? 'demostración' : 'pruebas (sandbox)'}: lo facturado aquí no tiene validez fiscal.</p>` : ''}
       <h3 class="util-13">Ingresos</h3><div class="logs-tarjetas">${tarjeta('Facturado (sin IVA)', dinero(r.ingresos.facturado_subtotal), r.ingresos.facturas + ' factura(s)')}${tarjeta('IVA facturado', dinero(r.ingresos.facturado_iva))}
         ${tarjeta('Total facturado', dinero(r.ingresos.facturado_total))}${tarjeta('Cobrado confirmado', dinero(r.ingresos.cobrado), 'IVA cobrado ' + dinero(r.ingresos.cobrado_iva))}
         ${tarjeta('Cobros por confirmar', dinero(r.ingresos.por_confirmar), null, r.ingresos.por_confirmar > 0)}${tarjeta('Complementos de pago', String(r.ingresos.complementos))}</div>
       <h3 class="util-13">Egresos</h3><div class="logs-tarjetas">${tarjeta('Gastos del mes (con IVA)', dinero(r.egresos.gastos_total), r.egresos.gastos + ' gasto(s)')}${tarjeta('IVA de los gastos', dinero(r.egresos.gastos_iva), r.egresos.gastos_iva_estimado ? 'de ello ' + dinero(r.egresos.gastos_iva_estimado) + ' estimado' : '', r.egresos.gastos_iva_estimado > 0)}
-        ${tarjeta('Pagado a proveedores', dinero(r.egresos.pagado), 'IVA pagado ' + dinero(r.egresos.pagado_iva))}</div>
+        ${tarjeta('Pagado a proveedores', dinero(r.egresos.pagado), 'IVA pagado ' + dinero(r.egresos.pagado_iva))}
+        ${r.egresos.anticipos_entregados || r.egresos.anticipos_reintegrados ? tarjeta('Anticipos entregados', dinero(r.egresos.anticipos_entregados), 'regresaron ' + dinero(r.egresos.anticipos_reintegrados)) : ''}</div>
       <h3 class="util-13">IVA del mes (apoyo para el contador)</h3><div class="logs-tarjetas">${tarjeta('Según facturas: facturado − gastos', dinero(Math.abs(r.iva.segun_facturas)), r.iva.segun_facturas >= 0 ? 'a cargo' : 'a favor')}
         ${tarjeta('Según el dinero: cobrado − pagado', dinero(Math.abs(r.iva.segun_flujo)), r.iva.segun_flujo >= 0 ? 'a cargo' : 'a favor')}</div>
       <h3 class="util-13">Pendientes de comprobar</h3>${pend.length ? '<ul class="ct-pendientes">' + pend.map(t => '<li>⚠ ' + esc(t) + '</li>').join('') + '</ul>' : '<p class="util-45">Nada pendiente de comprobar este mes. 🎉</p>'}
@@ -100,7 +105,7 @@ const Contabilidad = (() => {
     const fl = k === 'flujo' ? flujoConSaldo() : null;
     const totales = t.cols.map(([c, , , tp]) => (tp === 'd' ? dinero(filas.reduce((s, f) => s + Number(f[c] || 0), 0)) : tp === 'S' && fl ? dinero(fl.fin()) : ''));
     const cabeza = !fl ? '' : (() => { const ing = (DATOS.flujo || []).reduce((s, f) => s + Number(f.ingreso), 0), egr = (DATOS.flujo || []).reduce((s, f) => s + Number(f.egreso), 0), pc = (DATOS.flujo || []).filter(f => f.revisar).length;
-      return `<div class="logs-tarjetas">${tarjeta('Saldo inicial', dinero(fl.ini), saldoGuardado() == null ? 'calculado por el CRM' : 'el que escribiste')}${tarjeta('Ingresos (cobros confirmados)', dinero(ing))}${tarjeta('Egresos (pagos)', dinero(egr))}
+      return `<div class="logs-tarjetas">${tarjeta('Saldo inicial', dinero(fl.ini), saldoGuardado() == null ? 'calculado por el CRM' : 'el que escribiste')}${tarjeta('Ingresos (cobros y reintegros)', dinero(ing))}${tarjeta('Egresos (pagos y anticipos)', dinero(egr))}
         ${tarjeta('Saldo final', dinero(fl.fin()))}${tarjeta('Movimientos por revisar', String(pc), 'falta XML, complemento o comprobar', pc > 0)}</div>
         <p class="ayuda">Solo entra el dinero que ya se movió: cobros <b>confirmados</b> y pagos registrados. Si el saldo de tu banco al inicio del mes es otro, escríbelo aquí y el saldo se recalcula:
         <label class="ct-saldo">Saldo inicial del banco <input type="number" step="0.01" id="ct-saldo-inicial" value="${Number(fl.ini)}"></label> <button type="button" class="btn btn-outline btn-chico" id="ct-saldo-crm">Usar el del CRM</button></p>`; })();
@@ -119,7 +124,8 @@ const Contabilidad = (() => {
     R.columns = [{ width: 46 }, { width: 18 }];
     [['Contabilidad del mes', d.resumen.mes], [], ['INGRESOS'], ['Facturado sin IVA', r.ingresos.facturado_subtotal], ['IVA facturado', r.ingresos.facturado_iva], ['Total facturado', r.ingresos.facturado_total],
       ['Cobrado confirmado', r.ingresos.cobrado], ['IVA de lo cobrado', r.ingresos.cobrado_iva], ['Cobros por confirmar', r.ingresos.por_confirmar], [], ['EGRESOS'], ['Gastos del mes (con IVA)', r.egresos.gastos_total],
-      ['IVA de los gastos', r.egresos.gastos_iva], ['  de ello, estimado al 16 %', r.egresos.gastos_iva_estimado], ['Pagado a proveedores', r.egresos.pagado], ['IVA de lo pagado', r.egresos.pagado_iva], [],
+      ['IVA de los gastos', r.egresos.gastos_iva], ['  de ello, estimado al 16 %', r.egresos.gastos_iva_estimado], ['Pagado a proveedores', r.egresos.pagado], ['IVA de lo pagado', r.egresos.pagado_iva],
+      ['Anticipos entregados', r.egresos.anticipos_entregados || 0], ['Anticipos regresados (reintegros)', r.egresos.anticipos_reintegrados || 0], ['Anticipos abiertos por comprobar', r.pendientes.anticipos_por_comprobar || 0], [],
       ['IVA SEGÚN FACTURAS (facturado − gastos)', r.iva.segun_facturas], ['IVA SEGÚN EL DINERO (cobrado − pagado)', r.iva.segun_flujo], [], ['Cifras de apoyo: qué se declara lo decide el contador.']]
       .forEach((f, i) => { const row = R.addRow(f); if (typeof f[1] === 'number') row.getCell(2).numFmt = '"$"#,##0.00'; if (f.length === 1 || i === 0) row.font = { bold: true }; });
     // Mismas columnas y orden que en pantalla; fechas como fecha y montos como número (para sumar en Excel), con fila TOTAL.

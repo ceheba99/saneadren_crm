@@ -8,7 +8,7 @@ const Finanzas = (() => {
   // A proveedores y terceros también se les paga por nómina.
   const METODOS_PROV = [...METODOS.slice(0, -1), ['nomina', 'Nómina'], ['layout', 'Layout'], ['pagadora', 'Pagadora'], ['domiciliado', 'Domiciliado'], ['linea_captura', 'Línea de captura'], ['directo', 'Directo'], ['otro', 'Otro']];
   const COMPROBANTES = [['factura', 'Factura (CFDI)'], ['recibo', 'Recibo'], ['estado_cuenta', 'Estado de cuenta / corrida'], ['linea_captura', 'Línea de captura (impuestos)'], ['nomina', 'Nómina, finiquito o liquidación'], ['pagadora', 'Pagadora'], ['sin_factura', 'Sin factura'], ['informativo', 'Informativo (no se suma)'], ['otro', 'Otro']];
-  const NOMBRE_METODO = Object.fromEntries(METODOS_PROV);
+  const NOMBRE_METODO = { ...Object.fromEntries(METODOS_PROV), anticipo: 'Anticipo' }; // «anticipo»: gasto pagado con un anticipo por comprobar (F2)
   // Lo que puede cada quien lo decide su rol (permisos.js); el servidor lo vuelve a revisar.
   const esAdmin = () => Permisos.puede('cobros.ajustes'); // ajustes, descuentos y revisión inicial
   const puedeCartera = (seccion = 'cobrar') => Permisos.puede(seccion === 'pagar' ? 'cxp.ver' : 'cxc.ver');
@@ -225,7 +225,7 @@ const Finanzas = (() => {
     PESTANA = p;
     document.querySelectorAll('[data-pestana]').forEach(b => { b.classList.toggle('activo', b.dataset.pestana === p); b.setAttribute('aria-selected', String(b.dataset.pestana === p)); });
     document.querySelectorAll('.cuentas-panel').forEach(x => { x.hidden = x.dataset.panel !== p; });
-    if (p === 'cobrar') cargarCobrar(); else if (p === 'pagar') cargarPagar(); else cargarProveedores();
+    if (p === 'cobrar') cargarCobrar(); else if (p === 'pagar') cargarPagar(); else if (p === 'anticipos') window.Anticipos?.cargar(); else cargarProveedores();
   }
   document.querySelectorAll('[data-filtro-cobro]').forEach(b => b.addEventListener('click', () => {
     FILTRO = b.dataset.filtroCobro;
@@ -893,12 +893,17 @@ const Finanzas = (() => {
   });
 
   // GASTO_ALGUARDAR: qué refrescar después de guardar (la ficha de la orden o la vista de Cuentas por pagar).
-  let GASTO_ALGUARDAR = null;
+  let GASTO_ALGUARDAR = null, GASTO_ANTICIPO = null;
+  // prellenado.anticipo = { id, persona, saldo }: el gasto comprueba ese anticipo (public/anticipos.js) y se paga con él.
   async function nuevoGasto(prellenado = {}, alGuardar = null) {
     try { await catalogosPagos(); } catch (err) { toast('No se pudo cargar: ' + err.message); return; }
+    GASTO_ANTICIPO = prellenado.anticipo || null;
     llenarProveedoresGasto();
     // Quien no mueve dinero solo registra costos de una orden (las compras van por Solicitud de compra): ahí es obligatoria.
-    document.querySelector('label[for="gasto-orden"]').textContent = Permisos.puede('dinero.mover') ? 'Orden de servicio relacionada (opcional)' : 'Orden de servicio relacionada (obligatorio)';
+    document.querySelector('label[for="gasto-orden"]').textContent = Permisos.puede('dinero.mover') || GASTO_ANTICIPO ? 'Orden de servicio relacionada (opcional)' : 'Orden de servicio relacionada (obligatorio)';
+    $('gasto-anticipo-info').hidden = !GASTO_ANTICIPO; $('gasto-aviso-orden').hidden = !!GASTO_ANTICIPO;
+    if (GASTO_ANTICIPO) $('gasto-anticipo-info').textContent = `Comprueba el anticipo de ${GASTO_ANTICIPO.persona}: le quedan ${formatoMoneda(GASTO_ANTICIPO.saldo)} por comprobar. Este gasto se paga con el anticipo; si pasa de lo que queda, la diferencia se le reembolsa.`;
+    $('gasto-pagado').closest('label').hidden = !!GASTO_ANTICIPO;
     ['gasto-concepto', 'gasto-total', 'gasto-folio', 'gasto-orden', 'gasto-equipo', 'gasto-referencia'].forEach(id => { $(id).value = prellenado[id] || ''; });
     $('gasto-fecha').value = hoy(); $('gasto-vence').value = ''; $('gasto-fecha-pago').value = hoy(); $('gasto-pagado').checked = false; $('gasto-metodo-wrap').hidden = true; etiquetaPagado();
     $('gasto-credito').value = ''; $('gasto-credito').disabled = false; $('gasto-credito-ayuda').textContent = '';
@@ -913,6 +918,7 @@ const Finanzas = (() => {
     delete $('gasto-equipo').dataset.autollenado; delete $('gasto-concepto').dataset.autollenado;
     cargarOrdenesGasto().then(() => { if (prellenado['gasto-orden']) elegirOrdenGasto(buscarOrdenesGasto(prellenado['gasto-orden'])[0], false); });
     pintarMetodos('gasto-metodos', 'efectivo', METODOS_PROV);
+    if (GASTO_ANTICIPO) { $('gasto-credito').value = '0'; $('gasto-credito').disabled = true; }
     GASTO_ALGUARDAR = alGuardar;
     abrirVentana('overlay-gasto');
     if (!PROVEEDORES.some(p => p.activo)) toast('Elige "+ Nuevo proveedor…" para agregar a quien realizó el servicio');
@@ -1005,9 +1011,10 @@ const Finanzas = (() => {
     const orden = $('gasto-orden').value.trim();
     const leadId = orden ? Number($('gasto-orden').dataset.leadId) || null : null;
     if (orden && !leadId) { toast('Elige la orden de servicio de la lista (o deja el campo vacío)'); $('gasto-orden').focus(); return; }
-    if (!leadId && !Permisos.puede('dinero.mover')) { toast('Elige la orden de servicio. Las compras se piden con una Solicitud de compra.'); $('gasto-orden').focus(); return; }
+    if (!leadId && !Permisos.puede('dinero.mover') && !GASTO_ANTICIPO) { toast('Elige la orden de servicio. Las compras se piden con una Solicitud de compra.'); $('gasto-orden').focus(); return; }
     if (!$('gasto-comprobante').value) { toast('Elige el tipo de comprobante (factura, recibo, sin factura…)'); $('gasto-comprobante').focus(); return; }
-    const credito = $('gasto-pagado').checked ? '0' : $('gasto-credito').value.trim();
+    const pagado = $('gasto-pagado').checked && !GASTO_ANTICIPO;
+    const credito = pagado || GASTO_ANTICIPO ? '0' : $('gasto-credito').value.trim();
     if (!/^\d{1,3}$/.test(credito) || Number(credito) > 365) { toast('Escribe los días de crédito (0 si es de contado)'); $('gasto-credito').focus(); return; }
     const r = await enviar('/finanzas/cxp', 'POST', {
       proveedor_id: Number($('gasto-proveedor').value) || null, categoria: $('gasto-categoria').value, concepto: $('gasto-concepto').value,
@@ -1016,10 +1023,12 @@ const Finanzas = (() => {
       iva: $('gasto-comprobante').value === 'factura' && !GASTO_XML ? ($('gasto-iva').value.trim() || null) : null,
       xml: GASTO_XML?.texto || null, xml_nombre: GASTO_XML?.nombre || null,
       factura_folio: $('gasto-folio').value, lead_id: leadId, equipo: $('gasto-equipo').value,
-      ya_pagado: $('gasto-pagado').checked, metodo: metodoElegido('gasto-metodos'),
-      fecha_pago: $('gasto-pagado').checked ? $('gasto-fecha-pago').value : null, referencia: $('gasto-pagado').checked ? $('gasto-referencia').value : null });
+      ya_pagado: pagado, metodo: metodoElegido('gasto-metodos'), anticipo_id: GASTO_ANTICIPO?.id || null,
+      fecha_pago: pagado ? $('gasto-fecha-pago').value : null, referencia: pagado ? $('gasto-referencia').value : null });
     if (!r) return;
-    $('overlay-gasto').classList.remove('mostrar'); toast($('gasto-pagado').checked ? 'Gasto registrado como pagado' : 'Cuenta por pagar registrada');
+    $('overlay-gasto').classList.remove('mostrar');
+    toast(r.anticipo ? (r.anticipo.por_reembolsar > 0 ? `Gasto comprobado: ${formatoMoneda(r.anticipo.usado)} con el anticipo y ${formatoMoneda(r.anticipo.por_reembolsar)} por reembolsar` : 'Gasto comprobado con el anticipo') : pagado ? 'Gasto registrado como pagado' : 'Cuenta por pagar registrada');
+    GASTO_ANTICIPO = null;
     const alGuardar = GASTO_ALGUARDAR; GASTO_ALGUARDAR = null;
     if (alGuardar) await alGuardar(); else cargar({ pestana: 'pagar' });
   }));

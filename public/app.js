@@ -139,15 +139,15 @@ function cambiarVista(v, opciones) {
   if (v === 'prospeccion' && !Permisos.puede('prospeccion.ver')) v = 'inicio';
   if (v === 'marketing' && !Permisos.puede('marketing.ver')) v = 'inicio';
   if (v === 'facturas' && !Permisos.puede('facturacion.timbrar')) v = 'inicio';
-  if ((v === 'cobrar' || (v === 'cuentas' && !['pagar', 'proveedores'].includes(opciones?.pestana))) && !Permisos.puede('cxc.ver')) v = 'inicio';
-  if ((v === 'pagar' || (v === 'cuentas' && ['pagar', 'proveedores'].includes(opciones?.pestana))) && !Permisos.puede('cxp.ver')) v = 'inicio';
+  if ((v === 'cobrar' || (v === 'cuentas' && !['pagar', 'proveedores', 'anticipos'].includes(opciones?.pestana))) && !Permisos.puede('cxc.ver')) v = 'inicio';
+  if ((v === 'pagar' || (v === 'cuentas' && ['pagar', 'proveedores', 'anticipos'].includes(opciones?.pestana))) && !Permisos.puede('cxp.ver')) v = 'inicio';
   if (v === 'contabilidad' && !Permisos.puede('contabilidad.ver') && !Permisos.direccion()) v = 'inicio';
   if (v === 'avisos' && !Permisos.puede('avisos.publicar') && !Permisos.direccion()) v = 'inicio';
   if (v === 'pendientes') v = 'inicio'; // Pendientes ahora es parte de Inicio
   // «Proveedores» (menú Finanzas) es la pestaña de Cuentas por pagar.
   if (v === 'proveedores') { opciones = { ...opciones, pestana: 'proveedores' }; v = Permisos.puede('cxp.ver') ? 'pagar' : 'inicio'; }
   // Cuentas por cobrar y por pagar son dos secciones del menú Finanzas que usan la misma pantalla.
-  if (v === 'cuentas') v = ['pagar', 'proveedores'].includes(opciones?.pestana) ? 'pagar' : 'cobrar';
+  if (v === 'cuentas') v = ['pagar', 'proveedores', 'anticipos'].includes(opciones?.pestana) ? 'pagar' : 'cobrar';
   const seccionCuentas = ['cobrar', 'pagar'].includes(v) ? v : null;
   document.querySelectorAll('.vista').forEach(s => s.classList.remove('activa'));
   document.getElementById('vista-' + (seccionCuentas ? 'cuentas' : v)).classList.add('activa');
@@ -543,6 +543,7 @@ async function cargarInicio() {
   Finanzas.pintarInicio();
   if (typeof Personal !== 'undefined') Personal.pintarInicio(); // bloque «Personal» (licencias, contratos, ausencias, órdenes sin responsable)
   if (typeof Compras !== 'undefined') Compras.pintarInicio(); // bloque «Compras» (aprobar, cotizar, autorizar, recibir)
+  window.Anticipos?.pintarInicio(); // bloque «Anticipos» (por comprobar los suyos; los que entregó y pasan de 7 días)
   if (typeof Prospeccion !== 'undefined') Prospeccion.pintarInicio(); // bloque «Prospección» (a quién llamar hoy)
   if (typeof Marketing !== 'undefined') Marketing.pintarInicio(); // bloque «Marketing» (por aprobar, cambios, por subir)
   window.Facturacion?.pintarInicio(); // bloque «Facturación» (sin respuesta, borradores, por facturar)

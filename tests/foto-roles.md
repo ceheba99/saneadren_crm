@@ -216,6 +216,8 @@ Dirección la revisa y la aprueba. Si un cambio altera lo que ve un rol, la prue
 | Subir el XML de la factura a un gasto que registró Tomás (el sistema llena el IVA) | ✔ | ✔ | — | — | ✔ | ✔ | — | — |
 | Corregir a mano el IVA de ese gasto (botón «IVA») | ✔ | ✔ | — | — | — | ✔ | — | — |
 | Agregar o quitar opciones en la lista de un servicio (p. ej. 4M3, 8M3 para [VOLUMEN]) | ✔ | — | — | — | — | — | — | — |
+| Entregar un anticipo por comprobar a una persona del personal (y cerrarlo o cancelarlo) | ✔ | ✔ | — | — | — | — | — | — |
+| Ver los anticipos por comprobar de otras personas (el de Ernesto Obsidiana) | ✔ | ✔ | — | — | — | — | — | — |
 
 | Permiso | Dirección | Gerente | Ventas | Atención | Técnico | Costos y compras | Marketing | Gerente de marketing |
 |---|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|
@@ -326,6 +328,8 @@ Dirección la revisa y la aprueba. Si un cambio altera lo que ve un rol, la prue
 - **2026-11-03** · Cargar de golpe los datos fiscales de los clientes desde el CSV de factura.com (revisar qué cliente del CRM es cada uno y aplicar): solo Dirección. Nunca crea clientes del CRM ni sobrescribe datos fiscales ya capturados.
 - **2026-11-03** · Descargar en Excel la lista de facturas y complementos (con los filtros de la pantalla «Facturas»): Dirección, el Gerente y quien tenga «Timbrar facturas» (quien factura); los demás roles no. Es lo mismo que ya ven en la lista.
 - **2026-11-03** · Ver la revisión «¿está lista la facturación para producción?» (qué falta en llaves, series, claves del SAT y respaldos, sin mostrar nunca una llave): solo Dirección, como el resto de la configuración de facturación.
+- **2026-11-11** · Anticipos por comprobar: los entregan, cierran y cancelan Dirección y quien mueve dinero y ya ve al personal (el Gerente). Compras mueve dinero pero no ve al personal (regla del 2026-10-19): por ahora no; los demás roles tampoco.
+- **2026-11-11** · Anticipos por comprobar: Dirección, el Gerente y quien tiene «Contabilidad del mes» ven todos los de su sucursal; cada persona ve solo los suyos (los comprueba con sus gastos, aunque no tenga orden de servicio).
 - **2026-10-28** · Una orden con factura real ya timbrada: su folio, fecha, total y método de pago salen de la factura y nadie los cambia a mano (ni Dirección); los días de crédito sí.
 - **2026-10-27** · Banco de ideas: las proponen, votan y comentan Marketing, Gerente de marketing y Dirección; las aprueban o descartan solo Dirección y el Gerente de marketing. Los demás roles no ven las ideas.
 - **2026-10-27** · Biblioteca de marketing (logos, fotos, plantillas): la ven y usan Marketing, Gerente de marketing y Dirección; los demás roles no.
