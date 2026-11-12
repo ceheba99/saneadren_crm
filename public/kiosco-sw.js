@@ -12,10 +12,18 @@
 //  · Sin copia y sin red: una página mínima que se reintenta sola cada 5 s (nunca una pantalla en blanco).
 //  · Lo demás que usa el kiosco (logo, cara, prueba de vida, impresión): primero lo guardado y se actualiza por detrás.
 //  · La API (/api/…) nunca pasa por aquí.
+//
+// 2026-11-12 (Dirección: «otra vez se puso en blanco al desbloquear y tuve que reiniciar la app»; en Logs no quedó nada):
+//  · Tampoco se espera sin límite al almacén de la caché: si tarda (tableta saliendo del bloqueo), se sigue sin él.
+//  · «/kiosco?copia=1» (lo usa la página al reiniciarse sola tras el bloqueo): la copia sale de inmediato, sin esperar
+//    a la red; la nueva se baja por detrás.
+//  · Bitácora de las últimas aperturas (cuándo se pidió la página, cuánto tardó y de dónde salió): la página la lee al
+//    arrancar y la manda a los Logs del sistema, para saber qué pasó si alguien tuvo que reiniciar la app.
 const CACHE = 'saneadren-kiosco-v4';
 const PAGINA = '/kiosco';
 const PAGINAS = ['/kiosco', '/kiosco/', '/kiosco.html'];
 const ESPERA_CON_COPIA_MS = 2500, ESPERA_SIN_COPIA_MS = 15000, LIMITE_RED_MS = 20000, LIMITE_ARCHIVO_MS = 60000;
+const LIMITE_CACHE_MS = 1500, BITACORA = '/kiosco-bitacora';
 const ESTATICOS = /^\/(logo-saneadren\.png|kiosco-icono-\d+\.png|kiosco\.webmanifest|imprimir-documentos\.js|importes\.js|orden-servicio-pdf\.js|membrete-orden-servicio\.png|vendor\/.+)$/;
 // Encabezados de la página que se conservan en la copia (permiso de cámara y WebAssembly del kiosco, y los de seguridad).
 const ENCABEZADOS = ['content-type', 'content-security-policy', 'permissions-policy', 'referrer-policy', 'x-frame-options', 'x-content-type-options', 'cross-origin-opener-policy', 'strict-transport-security'];
@@ -40,8 +48,11 @@ async function paginaDeRed() {
     if (!r.ok || r.redirected || !/text\/html/i.test(r.headers.get('content-type') || '')) return null;
     const texto = await r.text();
     if (!esPagina(texto)) return null;
-    const cache = await caches.open(CACHE), antes = await cache.match(PAGINA), textoAntes = antes ? await antes.text() : null;
-    await cache.put(PAGINA, respuestaPagina(texto, r));
+    // Guardarla tampoco espera sin límite: si el almacén no contesta, la página se entrega igual.
+    const cache = await conLimite(caches.open(CACHE), LIMITE_CACHE_MS);
+    if (!cache) return { texto, origen: r, cambio: false };
+    const antes = await conLimite(cache.match(PAGINA), LIMITE_CACHE_MS), textoAntes = antes ? await antes.text() : null;
+    await conLimite(cache.put(PAGINA, respuestaPagina(texto, r)), LIMITE_CACHE_MS);
     return { texto, origen: r, cambio: textoAntes !== null && textoAntes !== texto };
   } catch { return null; }
 }
@@ -56,21 +67,38 @@ div{max-width:520px;padding:24px}h1{font-size:1.6rem}p{color:#4b5563;font-size:1
 <body><div><h1>Reloj checador</h1><p>Conectando con el servidor… Se reintenta solo cada 5 segundos.</p><p id="n"></p><button type="button" onclick="location.replace('/kiosco')">Reintentar ahora</button></div>
 <script>var s=5,n=document.getElementById('n');setInterval(function(){s--;n.textContent='Siguiente intento en '+Math.max(s,0)+' s';if(s<=0)location.replace('/kiosco');},1000);</script></body></html>`;
 
+// Bitácora: las últimas 6 aperturas de la página. Se escribe por detrás, una a la vez, y nunca estorba a la respuesta.
+let turno = Promise.resolve();
+function bitacora(x) {
+  turno = conLimite(turno.then(async () => {
+    try {
+      const c = await caches.open(CACHE), a = await c.match(BITACORA), l = (a ? await a.json() : []).filter(y => y.t !== x.t);
+      l.push(x);
+      await c.put(BITACORA, new Response(JSON.stringify(l.slice(-6)), { headers: { 'content-type': 'application/json' } }));
+    } catch { /* sin bitácora */ }
+  }), 3000);
+  return turno;
+}
 async function pagina(e) {
-  const cache = await caches.open(CACHE), guardada = await cache.match(PAGINA);
+  const t = Date.now(), rapido = new URL(e.request.url).searchParams.has('copia');
+  const detras = p => { try { e.waitUntil(p); } catch { /* la bitácora nunca estorba a la respuesta */ } };
+  detras(bitacora({ t, ms: null, de: 'sin respuesta' }));
+  const fin = (de, r) => { detras(bitacora({ t, ms: Date.now() - t, de })); return r; };
+  const cache = await conLimite(caches.open(CACHE), LIMITE_CACHE_MS), guardada = cache ? await conLimite(cache.match(PAGINA), LIMITE_CACHE_MS) : null;
   const red = paginaDeRed();
-  const r = await conLimite(red, guardada ? ESPERA_CON_COPIA_MS : ESPERA_SIN_COPIA_MS);
-  if (r) return respuestaPagina(r.texto, r.origen);
+  const r = await conLimite(red, guardada ? (rapido ? 0 : ESPERA_CON_COPIA_MS) : ESPERA_SIN_COPIA_MS);
+  if (r) return fin('red', respuestaPagina(r.texto, r.origen));
   if (guardada) {
     // La red tardó o falló: se abre la copia. Si la nueva llega después y es distinta, la página se actualiza sola.
     e.waitUntil(red.then(n => (n && n.cambio ? avisar('version-nueva') : null)));
-    return guardada;
+    return fin('copia', guardada);
   }
-  return new Response(RESPALDO, { status: 200, headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' } });
+  return fin('respaldo', new Response(RESPALDO, { status: 200, headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' } }));
 }
 async function estatico(e) {
-  const cache = await caches.open(CACHE), llave = e.request.url, guardado = await cache.match(llave);
-  const red = pedir(e.request.url, LIMITE_ARCHIVO_MS, { credentials: 'same-origin' }).then(async r => { if (r.ok && !r.redirected) await cache.put(llave, r.clone()); return r; });
+  const cache = await conLimite(caches.open(CACHE), LIMITE_CACHE_MS), llave = e.request.url, guardado = cache ? await conLimite(cache.match(llave), LIMITE_CACHE_MS) : null;
+  // Se guarda por detrás: entregar el archivo no espera a que termine de escribirse en la caché.
+  const red = pedir(e.request.url, LIMITE_ARCHIVO_MS, { credentials: 'same-origin' }).then(r => { if (cache && r.ok && !r.redirected) { const p = cache.put(llave, r.clone()).catch(() => {}); try { e.waitUntil(p); } catch { /* se guarda igual */ } } return r; });
   if (guardado) { e.waitUntil(red.catch(() => {})); return guardado; }
   return red;
 }
