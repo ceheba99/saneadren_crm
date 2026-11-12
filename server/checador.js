@@ -632,20 +632,50 @@ module.exports = function checador(app, db, h) {
   // Checada que el kiosco guardó SIN CONEXIÓN y sube al volver internet (una por petición). El PIN se revisa aquí, con
   // los mismos topes. La hora = ahora del servidor − el tiempo que pasó según el kiosco («edad»): con su reloj interno
   // si la página no se recargó (confiable), o con la hora de la tableta si se recargó (estimada). Siempre «por revisar».
+  // Auditoría del checador (2026-11-12): lo que se rechaza ya no desaparece. Queda en «Intentos fallidos» (de quién era
+  // el código, qué botón, la hora en que se marcó según la tableta y su foto) y en la bitácora de la persona, para que
+  // RH la registre a mano si era buena. Con el PIN BLOQUEADO no se descarta: la tableta la vuelve a subir después (antes
+  // una checada buena se borraba si subía durante el bloqueo). Si la tableta repite una ya rechazada (no le llegó la
+  // respuesta), recibe lo mismo sin anotarla otra vez ni contar otro fallo de PIN.
+  const rechazadasSinConexion = new Map();
+  setInterval(() => { const t = Date.now(); for (const [k, v] of rechazadasSinConexion) if (v.expira <= t) rechazadasSinConexion.delete(k); }, 60 * 1000).unref();
+  function rechazarSinConexion(req, res, { uid, tipo, a, status, error }) {
+    const d = req.kiosco, b = req.body || {}, cod = /^\d{4}$/.test(String(b.codigo ?? '')) ? String(b.codigo) : null;
+    const quien = cod ? db.prepare('SELECT id, nombre FROM main.personal WHERE codigo_checador = ?').get(cod) : null;
+    const cuando = a || ahoraMexico(), detalle = `${TIPOS[tipo]} guardada sin internet${a ? '' : ' (hora desconocida)'} · ${error}`.slice(0, 200);
+    const id = Number(db.prepare('INSERT INTO main.checador_intentos (dispositivo_id, personal_id, codigo, motivo, ip, momento_utc, fecha, hora, detalle) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+      .run(d.id, quien?.id ?? null, cod, 'Checada sin conexión rechazada', req.ipCliente || null, cuando.utc, cuando.fecha, cuando.hora, detalle).lastInsertRowid);
+    const foto = fotoDe(b.foto);
+    if (foto) {
+      try {
+        const archivo = path.join(cuando.fecha.slice(0, 7), `intento-${id}-${crypto.randomBytes(8).toString('hex')}.jpg.cifrado`);
+        fs.mkdirSync(path.join(DIR_FOTOS, cuando.fecha.slice(0, 7)), { recursive: true, mode: 0o700 });
+        C.escribirSeguro(path.join(DIR_FOTOS, archivo), C.cifrarArchivo(foto, contextoIntento(id)));
+        db.prepare('UPDATE main.checador_intentos SET foto_archivo = ? WHERE id = ?').run(archivo, id);
+      } catch (e) { console.error('[checador] foto de la checada sin conexión rechazada:', e.message); }
+    }
+    audit(null, quien?.id ?? null, 'checada sin conexión rechazada', `${quien ? quien.nombre : 'Código ' + (cod || 'inválido')}: ${TIPOS[tipo]}${a ? ` del ${cuando.fecha} a las ${cuando.hora.slice(0, 5)}` : ''}, guardada sin internet en el kiosco «${d.nombre}» · ${error} (queda en «Intentos fallidos»${foto ? ', con su foto' : ''})`);
+    const cuerpo = { error, descartar: true };
+    rechazadasSinConexion.set(d.id + ':' + uid, { status, cuerpo, expira: Date.now() + 30 * 60 * 1000 });
+    return res.status(status).json(cuerpo);
+  }
   app.post('/api/publico/kiosco/sin-conexion', kiosco, h((req, res) => {
     const b = req.body || {}, d = req.kiosco;
     const uid = String(b.uid || ''), tipo = String(b.tipo || ''), edad = Number(b.edad_ms);
     if (!/^[A-Za-z0-9_-]{16,40}$/.test(uid) || !TIPOS[tipo]) return res.status(400).json({ error: 'Checada guardada inválida', descartar: true });
-    if (!Number.isFinite(edad) || edad < 0 || edad > MAX_SIN_CONEXION_MS) return res.status(400).json({ error: 'La checada guardada es de hace más de 7 días o su hora no es válida: regístrala a mano con motivo', descartar: true });
+    const ya = rechazadasSinConexion.get(d.id + ':' + uid);
+    if (ya && ya.expira > Date.now()) return res.status(ya.status).json(ya.cuerpo);
+    if (!Number.isFinite(edad) || edad < 0 || edad > MAX_SIN_CONEXION_MS) return rechazarSinConexion(req, res, { uid, tipo, a: null, status: 400, error: 'La checada guardada es de hace más de 7 días o su hora no es válida: regístrala a mano con motivo' });
+    const a = ahoraMexico(new Date(Date.now() - edad)), monotonica = b.monotonica === true;
     const v = verificar(d, String(b.codigo ?? ''), String(b.pin ?? ''));
     if (!v.p) {
-      if (v.status !== 429) audit(null, null, 'checada sin conexión rechazada', `Kiosco «${d.nombre}»: ${v.error}`);
-      return res.status(v.status).json({ error: v.error, descartar: v.status !== 429 });
+      // Kiosco en pausa (429) o PIN bloqueado (423): no se descarta, la tableta la sube después.
+      if (v.status === 429 || v.status === 423) return res.status(v.status).json({ error: v.error, descartar: false });
+      return rechazarSinConexion(req, res, { uid, tipo, a, status: v.status, error: v.error });
     }
     const p = v.p, previa = db.prepare('SELECT id, tipo, hora FROM main.checadas WHERE uid_kiosco = ?').get(uid);
     if (previa) return res.json({ id: previa.id, nombre: primerNombre(p.nombre), tipo: TIPOS[previa.tipo], hora: previa.hora.slice(0, 5), repetida: true });
-    if (p.pin_temporal) { audit(null, p.id, 'checada sin conexión rechazada', `${p.nombre}: tenía PIN temporal (debe elegir su PIN con internet)`); return res.status(409).json({ error: 'Debe elegir su PIN con internet', descartar: true }); }
-    const a = ahoraMexico(new Date(Date.now() - edad)), monotonica = b.monotonica === true;
+    if (p.pin_temporal) return rechazarSinConexion(req, res, { uid, tipo, a, status: 409, error: 'Tenía PIN temporal: debe elegir su PIN con internet' });
     // La misma checada ya está (2026-11-12): la tableta la guardó «sin conexión» porque no le llegó la respuesta, pero el
     // servidor sí la había recibido. Misma persona y mismo botón a menos de 2 minutos: no se duplica.
     const cerca = db.prepare("SELECT id, hora FROM main.checadas WHERE personal_id = ? AND tipo = ? AND estado <> 'anulada' AND momento_utc BETWEEN ? AND ? ORDER BY id DESC LIMIT 1")

@@ -1209,14 +1209,14 @@
       if (n >= 500) return error('Este kiosco ya tiene 500 checadas sin subir. Avisa al gerente: hay que revisar el internet.');
       await cola('readwrite', s => s.put({ uid: uid(), codigo: x.codigo, pin: x.pin, tipo: x.tipo, foto: x.foto, t0: Date.now(), p0: performance.now(), sesion: SESION }));
     } catch { return error('No se pudo guardar en este kiosco. Avisa al gerente.'); }
-    listo('guardada', (TIPOS[x.tipo] || 'Checada') + ' guardada', 'Sin conexión: se subirá sola al volver internet y tu gerente la revisará.');
+    listo('guardada', (TIPOS[x.tipo] || 'Checada') + ' guardada', 'Sin conexión: se subirá sola al volver internet y tu gerente la revisará. Ahora no se pudo comprobar tu PIN: si lo tecleaste mal, no contará (avisa a tu gerente).');
     contarPendientes();
   }
   let rechazadas = 0, subiendo = false;
   async function contarPendientes() {
     let n = 0; try { n = await cola('readonly', s => s.count()); } catch { /* sin IndexedDB */ }
     $('pendientes').dataset.pendientes = String(!!(n || rechazadas));
-    $('pendientes').textContent = (n ? `${n} checada(s) por subir` : 'Sin checadas pendientes') + (rechazadas ? `${n ? ' · ' : ''}${rechazadas} no se pudieron subir (PIN o código incorrecto): avisa al gerente` : '');
+    $('pendientes').textContent = (n ? `${n} checada(s) por subir` : 'Sin checadas pendientes') + (rechazadas ? `${n ? ' · ' : ''}${rechazadas} no se aceptaron al subir: avisa al gerente (las ve en Asistencia, «Intentos fallidos»)` : '');
   }
   async function subirPendientes() {
     if (subiendo || !registro?.token) return; subiendo = true;
