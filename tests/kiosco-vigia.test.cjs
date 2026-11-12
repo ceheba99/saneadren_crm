@@ -14,7 +14,8 @@ function armar({ inicio = '09:00', kioscos = [{ id: 1, nombre: 'Entrada', sucurs
   let t = a(inicio); const avisos = [], estado = { kioscos };
   const v = vigia({ kioscos: () => estado.kioscos, ventanaDe, ahoraMexico, avisar: (tipo, k) => avisos.push([tipo, k]), ahora: () => t });
   // Pasa el tiempo minuto a minuto; «senal» dice si el kiosco sigue hablando.
-  const pasar = (min, senal = false) => { for (let i = 0; i < min; i++) { t += MIN; if (senal) v.senal(1); v.revisar(); } };
+  // Pasa el tiempo minuto a minuto; «senal» dice si el kiosco sigue hablando (true, o lo que reporta de sí mismo).
+  const pasar = (min, senal = false) => { for (let i = 0; i < min; i++) { t += MIN; if (senal) { v.senal(1); if (typeof senal === 'object') v.reporte(1, senal); } v.revisar(); } };
   return { v, avisos, estado, pasar, ir: (hhmm, dia) => { t = a(hhmm, dia); } };
 }
 
@@ -90,4 +91,37 @@ test('horario de trabajo: de 15 min antes de la primera entrada a la última sal
 test('correos: Dirección más los de CORREO_AVISOS_CHECADOR, sin repetir y sin inválidos', () => {
   assert.deepEqual(correosDe(['Dir@saneadren.com.mx', null], ' persona@gmail.com, dir@saneadren.com.mx ; no-es-correo'), ['dir@saneadren.com.mx', 'persona@gmail.com']);
   assert.deepEqual(correosDe([], undefined), []);
+});
+
+// 2026-11-12 (blindaje): avisar ANTES de que falle.
+test('atención: batería en 20 % o menos y sin cargador → un aviso; se quita al conectarla', () => {
+  const x = armar(); x.pasar(10, { bateria: 45, cargando: false, camara: true });
+  assert.deepEqual(x.avisos, []);
+  x.pasar(3, { bateria: 20, cargando: false, camara: true });
+  assert.deepEqual(x.avisos.map(y => [y[0], y[1].bateria, y[1].nombre]), [['bateria', 20, 'Entrada']]);
+  x.pasar(30, { bateria: 12, cargando: false, camara: true });
+  assert.equal(x.avisos.length, 1, 'un solo aviso'); assert.equal(x.v.atencion().length, 1, 'sigue en Inicio');
+  x.pasar(1, { bateria: 12, cargando: true, camara: true });
+  assert.deepEqual(x.v.atencion(), [], 'al conectarla se quita');
+  x.pasar(5, { bateria: 15, cargando: false, camara: true });
+  assert.equal(x.avisos.length, 2, 'si la vuelven a desconectar con poca pila, avisa otra vez');
+});
+test('atención: con cargador, sin lectura de batería o fuera de horario no avisa', () => {
+  let x = armar(); x.pasar(30, { bateria: 5, cargando: true, camara: true }); assert.deepEqual(x.avisos, []);
+  x = armar(); x.pasar(30, { bateria: null, cargando: null, camara: true }); assert.deepEqual(x.avisos, []);
+  x = armar({ inicio: '20:00' }); x.pasar(30, { bateria: 10, cargando: false, camara: true }); assert.deepEqual(x.avisos, [], 'de noche no manda correo');
+  x.ir('08:14', 13); x.pasar(2, { bateria: 9, cargando: false, camara: true });
+  assert.deepEqual(x.avisos.map(y => y[0]), ['bateria'], 'pero al empezar el día sí');
+});
+test('atención: cámara fallando 3 minutos seguidos → un aviso; un tropiezo de un minuto no', () => {
+  const x = armar(); x.pasar(2, { camara: false }); x.pasar(1, { camara: true }); x.pasar(2, { camara: false });
+  assert.deepEqual(x.avisos, [], 'tropiezos sueltos no avisan');
+  x.pasar(1, { camara: false });
+  assert.deepEqual(x.avisos.map(y => y[0]), ['camara']);
+  x.pasar(20, { camara: false }); assert.equal(x.avisos.length, 1);
+  x.pasar(1, { camara: true }); assert.deepEqual(x.v.atencion(), []);
+});
+test('atención: si el kiosco además dejó de responder, manda ese aviso y no otro encima', () => {
+  const x = armar(); x.pasar(5, { bateria: 25, cargando: false, camara: true }); x.pasar(10);
+  assert.deepEqual(x.avisos.map(y => y[0]), ['sin_respuesta']);
 });

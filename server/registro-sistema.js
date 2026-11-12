@@ -30,6 +30,7 @@ const EVENTOS = {
   whatsapp_fallo: ['servicio', 'aviso', 'WhatsApp no se envió'],
   kiosco_recuperado: ['servicio', 'aviso', 'El reloj checador se recuperó solo'],
   kiosco_sin_respuesta: ['servicio', 'grave', 'El reloj checador no responde'],
+  kiosco_atencion: ['servicio', 'aviso', 'El reloj checador necesita atención'],
   kiosco_volvio: ['servicio', 'info', 'El reloj checador ya responde'],
   inicio: ['servicio', 'info', 'Sistema iniciado'],
   descarga: ['seguridad', 'aviso', 'Descargó un respaldo']
