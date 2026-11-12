@@ -50,6 +50,7 @@ let MIERCOLES = sumar(HOY, -1); while (new Date(MIERCOLES + 'T12:00:00Z').getUTC
     U[nombre.split(' ')[0]] = exigir(await pedir('POST', '/usuarios', A, { nombre, password: CLAVE, rol, sucursales: [s] }), 'crear ' + nombre);
     T[nombre.split(' ')[0]] = exigir(await pedir('POST', '/login', null, { nombre, password: CLAVE }), 'entrar ' + nombre).token;
   }
+  require('./ligar-fichas.cjs')(DB, ['Gema Gerente', 'Gus GerenteMx']); // etapa 6: quien edita personal tiene su ficha ligada
   const alta = async (nombre, puesto) => exigir(await pedir('POST', '/personal', T.Gema, { nombre, puesto }), 'alta de ' + nombre);
   const juan = await alta('Juan Pérez Operador', 'Operador'), ana = await alta('Ana López Admin', 'Administración'), beto = await alta('Beto Ruiz Técnico', 'Técnico');
   const pinDe = {};
@@ -94,11 +95,13 @@ let MIERCOLES = sumar(HOY, -1); while (new Date(MIERCOLES + 'T12:00:00Z').getUTC
   revisa(sF3 === 200, 'Dirección (todas las sucursales) sí los agrega', sF3);
   exigir(await pedir('POST', '/usuarios', A, { nombre: 'Rita RH', password: CLAVE, rol: 'gerente', sucursales: [qro.id, cdmx.id] }), 'crear RH de la empresa');
   const R = exigir(await pedir('POST', '/login', null, { nombre: 'Rita RH', password: CLAVE }), 'entrar RH').token;
+  require('./ligar-fichas.cjs')(DB, ['Rita RH']);
   const [sF4] = await pedir('POST', '/asistencia/festivos', R, { fecha: sumar(HOY, 42), nombre: 'Día de la empresa' });
   revisa(sF4 === 200 && (await pedir('GET', '/asistencia/festivos', R))[1].puede.editar === true, 'RH que ve todas las sucursales sí los agrega', sF4);
   revisa((await pedir('GET', '/asistencia/festivos', T.Gema))[1].puede.editar === false, 'A la gerente de una sola sucursal la pantalla no le ofrece cambiarlos');
 
   console.log('4. Nadie se quita a sí mismo del checador');
+  require('./ligar-fichas.cjs').soltar(DB, 'Gema Gerente'); // su ficha de verdad sustituye a la de prueba
   const yo = exigir(await pedir('POST', '/personal', A, { nombre: 'Gema Gerente Ficha', puesto: 'Administración', usuario_id: U.Gema.id, sucursal_id: qro.id }), 'ficha de Gema');
   exigir(await pedir('POST', '/asistencia/personal/' + yo.id + '/pin', A), 'alta de Gema en el checador');
   const [sNo, jNo] = await pedir('PUT', '/asistencia/personal/' + yo.id, T.Gema, { checa: false });

@@ -40,6 +40,7 @@ const LUN = sumar(sumar(HOY, -7), -(dow(sumar(HOY, -7)) - 1)), D = k => sumar(LU
     exigir(await pedir('POST', '/usuarios', A, { nombre, password: CLAVE, rol, sucursales: [s] }), 'crear ' + nombre);
     T[nombre.split(' ')[0]] = exigir(await pedir('POST', '/login', null, { nombre, password: CLAVE }), 'entrar ' + nombre).token;
   }
+  require('./ligar-fichas.cjs')(DB, ['Gema Gerente', 'Gus GerenteMx']); // etapa 6: quien edita personal tiene su ficha ligada
   const juan = exigir(await pedir('POST', '/personal', T.Gema, { nombre: 'Juan Pérez Operador', puesto: 'Operador', fecha_ingreso: sumar(HOY, -400) }), 'alta de Juan');
   exigir(await pedir('POST', '/asistencia/personal/' + juan.id + '/pin', T.Gema), 'alta en el checador');
 

@@ -91,6 +91,7 @@ const conBase = fn => { const d = new DatabaseSync(DB); try { d.exec('PRAGMA bus
     [s, j] = await pedir('POST', '/usuarios', A, { nombre, password: CLAVE_USUARIOS, rol: r2, sucursales: [suc] }); if (s !== 201) throw new Error(nombre + ': ' + JSON.stringify(j));
     const k = nombre.split(' ')[0]; ID[k] = j.id; T[k] = (await pedir('POST', '/login', null, { nombre, password: CLAVE_USUARIOS }))[1].token;
   }
+  require('./ligar-fichas.cjs')(DB, ['Monica Gerente', 'Sergio Supervisor', 'Rita Humanos', 'Gerardo Cdmx', 'Tomas Temporal']); // etapa 6: quien edita personal tiene su ficha ligada
   const { Monica: M, Sergio: S, Carla: CC, Rita: RHt, Laura: LV, Raul: TEC, Celia: CO, Ana: AT, Gerardo: G, Tomas: TT } = T;
 
   console.log('1. Cifrado en reposo');
@@ -203,7 +204,7 @@ const conBase = fn => { const d = new DatabaseSync(DB); try { d.exec('PRAGMA bus
   for (const id of ['1 OR 1=1', '-1', '0x1', '1;DROP TABLE personal', '../' + pA.id, '%00', '9e999']) {
     [s, , texto] = await pedir('GET', '/personal/' + encodeURIComponent(id), CC); revisa((s === 404 || s === 400) && !encontrados(texto).length, `número de persona raro «${id}» → ${s}`);
   }
-  revisa(conBase(d => d.prepare('SELECT COUNT(*) n FROM personal').get().n) === 3, 'la tabla de personal sigue intacta');
+  revisa(conBase(d => d.prepare("SELECT COUNT(*) n FROM personal WHERE nombre NOT LIKE 'Ficha propia %'").get().n) === 3, 'la tabla de personal sigue intacta');
   for (const [b, nombre, que] of [[Buffer.from('<html><script>alert(1)</script></html>'), 'ine.pdf', 'HTML disfrazado de PDF'], [Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" onload="alert(1)"/>'), 'foto.png', 'SVG con código'],
     [Buffer.from('MZ\x90\x00 ejecutable'), 'nomina.pdf', 'ejecutable'], [Buffer.alloc(10 * 1024 * 1024 + 10, 0x25), 'grande.pdf', 'más de 10 MB']]) {
     [s] = await subir('/personal/' + pA.id + '/documentos', M2, b, { 'X-Tipo': 'otro', 'X-Nombre': nombre }); revisa(s === 400 || s === 413, `se rechaza: ${que} (${s})`);

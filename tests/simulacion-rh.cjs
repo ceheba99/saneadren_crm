@@ -35,6 +35,7 @@ const sumar = (f, k) => { const d = new Date(f + 'T12:00:00Z'); d.setUTCDate(d.g
     exigir(await pedir('POST', '/usuarios', A, { nombre, password: CLAVE, rol, sucursales: [s] }), 'crear ' + nombre);
     T[nombre.split(' ')[0]] = exigir(await pedir('POST', '/login', null, { nombre, password: CLAVE }), 'entrar ' + nombre).token;
   }
+  require('./ligar-fichas.cjs')(DB, ['Gema Gerente', 'Gus GerenteMx']); // etapa 6: quien edita personal tiene su ficha ligada
 
   console.log('1. Número de empleado');
   const p1 = exigir(await pedir('POST', '/personal', T.Gema, { nombre: 'Ana Primera', puesto: 'Administración' }), 'alta 1');

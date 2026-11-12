@@ -47,6 +47,7 @@ const archivos = d => (fs.existsSync(d) ? fs.readdirSync(d, { withFileTypes: tru
     exigir(await pedir('POST', '/usuarios', A, { nombre, password: CLAVE, rol, sucursales: [s] }), 'crear ' + nombre);
     T[nombre.split(' ')[0]] = exigir(await pedir('POST', '/login', null, { nombre, password: CLAVE }), 'entrar ' + nombre).token;
   }
+  require('./ligar-fichas.cjs')(DB, ['Gema Gerente', 'Gus GerenteMx']); // etapa 6: quien edita personal tiene su ficha ligada
   const juan = exigir(await pedir('POST', '/personal', T.Gema, { nombre: 'Juan Pérez Técnico', puesto: 'Técnico', contacto_emergencia: 'María Pérez', tel_emergencia: '442 111 2233' }), 'alta de Juan');
   const ana = exigir(await pedir('POST', '/personal', T.Gema, { nombre: 'Ana López', puesto: 'Administración' }), 'alta de Ana');
   for (const p of [juan, ana]) exigir(await pedir('POST', '/asistencia/personal/' + p.id + '/pin', T.Gema), 'checador');

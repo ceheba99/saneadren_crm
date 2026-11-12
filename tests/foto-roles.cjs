@@ -136,6 +136,8 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
   // Personal: un empleado con datos sensibles.
   const CLABE = '072180001234567898'.slice(0, 17); const conDigito = p17 => { const w = [3, 7, 1]; let s = 0; for (let i = 0; i < 17; i++) s += (Number(p17[i]) * w[i % 3]) % 10; return p17 + ((10 - (s % 10)) % 10); };
   const clabe = conDigito(CLABE), salario = 23456.78;
+  // Etapa 6 (2026-11-12): quien no tiene su ficha ligada no captura sueldos; Dirección liga la de Gema antes.
+  exigir(await pedir('POST', '/personal', A, { nombre: 'Gema Gerente', puesto: 'Administración', sucursal_id: qro.id, usuario_id: ID.Gema }), 'ficha de Gema');
   const EMP = exigir(await pedir('POST', '/personal', T.Gema, { nombre: 'Ernesto Obsidiana', puesto: 'Operador', telefono: '442 987 6543', fecha_ingreso: dia(-200), clabe, salario, salario_periodo: 'mensual' }), 'alta de personal');
   // Reloj checador (2026-11-03): una checada de ayer agregada a mano, con su motivo marcado.
   exigir(await pedir('POST', '/asistencia/checadas', A, { personal_id: EMP.id, tipo: 'entrada', fecha: dia(-1), hora: '08:31', motivo: 'Checada Turmalina' }), 'checada de Obsidiana');
@@ -288,6 +290,10 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
     ['marcaFestivo', 'Marcar o quitar días festivos (valen para todas las sucursales)'],
     ['autorizaExtra', 'Autorizar el tiempo extra de una persona'],
     ['corrigeSuyo', 'Corregir su PROPIA asistencia (agregarse una checada o autorizarse su tiempo extra)'],
+    ['cambiaSuSueldo', 'Cambiar su PROPIO sueldo o datos de pago, o desligarse de su ficha'],
+    ['pinSuyo', 'Darse a sí mismo el PIN del checador'],
+    ['reiniciaPin', 'Darle un PIN nuevo a quien ya tiene uno (reiniciar su PIN)'],
+    ['mandaEnlace', 'Mandar a una persona el enlace para checar desde su celular'],
     ['precioExtra', 'Ponerle precio a la hora de cada puesto (para pagar el tiempo extra)'],
     ['dineroExtra', 'Ver cuánto dinero sale por tiempo extra (en la semana y en el Excel de nómina)'],
     ['cambiaCredito', 'Cambiar los días de crédito y los datos de factura de una orden'],
@@ -383,6 +389,11 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
     VE[rol].cambiaCredito = ok(await pedir('PUT', '/leads/' + O1.id + '/facturacion', t, { dias_credito: 15 }));
     VE[rol].editaFolioReal = ok(await pedir('PUT', '/leads/' + OP.id + '/facturacion', t, { factura_folio: 'X-' + rol + '-9', factura_total: '1.00' }));
     VE[rol].daPin = ok(await pedir('POST', '/asistencia/personal/' + EMP.id + '/desbloquear', t));
+    { // Etapa 6 (2026-11-12): un PIN nuevo a quien ya tiene uno (una persona aparte, para no tocar el PIN de Obsidiana).
+      const otra = exigir(await pedir('POST', '/personal', A, { nombre: 'Persona PIN ' + rol, puesto: 'Ayudante', sucursal_id: qro.id }), 'persona con PIN');
+      exigir(await pedir('POST', '/asistencia/personal/' + otra.id + '/pin', A), 'PIN de la persona');
+      VE[rol].reiniciaPin = ok(await pedir('POST', '/asistencia/personal/' + otra.id + '/pin', t));
+      VE[rol].mandaEnlace = ok(await pedir('POST', '/asistencia/personal/' + otra.id + '/celular', t)); }
     VE[rol].registraKiosco = ok(await pedir('POST', '/asistencia/dispositivos', t, { nombre: 'Kiosco de ' + rol, sucursal_id: qro.id }));
     { const k = exigir(await pedir('POST', '/asistencia/dispositivos', A, { nombre: 'Kiosco a eliminar ' + rol, sucursal_id: qro.id }), 'kiosco a eliminar'); VE[rol].eliminaKiosco = ok(await pedir('DELETE', '/asistencia/dispositivos/' + k.id, t)); }
     VE[rol].corrigeChecada = ok(await pedir('POST', '/asistencia/checadas', t, { personal_id: EMP.id, tipo: 'salida', fecha: dia(-2), hora: '18:30', motivo: 'Prueba de ' + rol }));
@@ -392,7 +403,10 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
       let pid = d.prepare('SELECT id FROM personal WHERE usuario_id = ?').get(uid)?.id; d.close();
       if (!pid) pid = exigir(await pedir('POST', '/personal', A, { nombre: 'Ficha propia ' + rol, puesto: 'Otro', sucursal_id: qro.id, usuario_id: uid }), 'ficha propia de ' + rol).id;
       VE[rol].corrigeSuyo = ok(await pedir('POST', '/asistencia/checadas', t, { personal_id: pid, tipo: 'salida', fecha: dia(-3), hora: '18:30', motivo: 'Me corrijo yo' }))
-        || ok(await pedir('POST', '/asistencia/extra', t, { personal_id: pid, fecha: dia(-3), minutos: 0 })); }
+        || ok(await pedir('POST', '/asistencia/extra', t, { personal_id: pid, fecha: dia(-3), minutos: 0 }));
+      // Etapa 6 (2026-11-12): subirse el sueldo o desligarse de su ficha; darse su propio PIN.
+      VE[rol].cambiaSuSueldo = ok(await pedir('PUT', '/personal/' + pid, t, { salario: 34567.89 })) || ok(await pedir('PUT', '/personal/' + pid, t, { usuario_id: null }));
+      VE[rol].pinSuyo = ok(await pedir('POST', '/asistencia/personal/' + pid + '/pin', t)); }
     { const hor = (await pedir('GET', '/asistencia/horarios', A))[1].horarios.find(x => x.sucursal_id === qro.id);
       VE[rol].cambiaHorario = ok(await pedir('PUT', '/asistencia/horarios/' + hor.id, t, { dias: hor.vigente.dias, tolerancia_min: hor.vigente.tolerancia_min, comida_min: hor.vigente.comida_min })); }
     VE[rol].marcaFestivo = ok(await pedir('POST', '/asistencia/festivos', t, { fecha: dia(60), nombre: 'Festivo de prueba ' + rol, activo: false }));
@@ -578,6 +592,9 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
       admin: { reglasExtra: 1 }, ...Object.fromEntries(['gerente', 'ventas', 'atencion', 'tecnico', 'costos', 'marketing', 'marketing_gerente'].map(r => [r, { reglasExtra: 0 }])) }],
     ['2026-11-11', 'Descargar la nómina (la semana con horas trabajadas, retardos, faltas y tiempo extra de cada persona, con el pago del tiempo extra, y su Excel): es un permiso aparte, «Descargar la nómina», que Dirección puede dar a cualquier rol en Roles y permisos. Quien solo tiene ese permiso ve únicamente esa pantalla: nada más de RH (fichas, checadas, fotos, intentos, horarios, precios, kioscos). De fábrica lo tienen Dirección y el Gerente; los demás roles no.', {
       admin: { 'perm:asistencia.nomina': 1 }, gerente: { 'perm:asistencia.nomina': 1 }, ...Object.fromEntries(['ventas', 'atencion', 'tecnico', 'costos', 'marketing', 'marketing_gerente'].map(r => [r, { 'perm:asistencia.nomina': 0 }])) }],
+    ['2026-11-12', 'Personal y checador (etapa 6 de la auditoría): nadie cambia su propio sueldo o datos de pago, ni la cuenta ligada a su ficha, ni liga su propio usuario a una ficha; tampoco se da su propio PIN, enlace del celular o código de la cara. Quien no tiene su ficha ligada no cambia sueldos ni datos de pago ni da PIN, enlaces o códigos de cara, hasta que Dirección o RH la liguen. La primera alta en el checador la da quien edita el personal; reiniciar un PIN que ya existe, mandar el enlace del celular y dar el código de la cara, solo quien además corrige la asistencia (Dirección y el Gerente, de su sucursal). Dirección sí puede todo, también sobre sí misma.', {
+      admin: { cambiaSuSueldo: 1, pinSuyo: 1, reiniciaPin: 1, mandaEnlace: 1 }, gerente: { cambiaSuSueldo: 0, pinSuyo: 0, reiniciaPin: 1, mandaEnlace: 1 },
+      ...Object.fromEntries(['ventas', 'atencion', 'tecnico', 'costos', 'marketing', 'marketing_gerente'].map(r => [r, { cambiaSuSueldo: 0, pinSuyo: 0, reiniciaPin: 0, mandaEnlace: 0 }])) }],
     ['2026-11-11', 'Eliminar un kiosco de la lista de kioscos del reloj checador: solo Dirección (ni el Gerente, que sí registra y da de baja kioscos). Las checadas e intentos que hizo ese kiosco se conservan.', {
       admin: { eliminaKiosco: 1 }, ...Object.fromEntries(['gerente', 'ventas', 'atencion', 'tecnico', 'costos', 'marketing', 'marketing_gerente'].map(r => [r, { eliminaKiosco: 0 }])) }],
     ['2026-11-11', 'Avisos (comunicados): los publica quien tenga el permiso «Publicar avisos» (Dirección siempre; los demás roles no, hasta que Dirección se lo dé en Roles y permisos). Se mandan a personas elegidas (personal y usuarios del sistema), que lo ven en el reloj checador, en su celular o en el Inicio del CRM hasta que tocan «Enterado»; también por correo y WhatsApp si se elige. Un aviso no se borra: se retira y queda quién lo leyó y cuándo.', {

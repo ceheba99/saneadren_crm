@@ -777,6 +777,12 @@ module.exports = function checador(app, db, h) {
     const p = persona(req.params.id);
     if (!p) return res.status(404).json({ error: 'Persona no encontrada' });
     if (!p.activo) return res.status(409).json({ error: 'Está dada de baja: no puede checar' });
+    // Etapa 6 (FLW-H08, SEC-04; regla aprobada por Dirección el 2026-11-12): la primera alta sigue con «Editar personal»;
+    // reiniciar un PIN que ya existe pide «Corregir asistencia» (con el PIN nuevo se podía checar por otra persona).
+    // Nunca para uno mismo, y sin ficha ligada tampoco. Dirección sí.
+    if (p.pin_hash && !puede(req, 'asistencia.corregir')) return negar(res, 'Reiniciar el PIN de alguien que ya tiene uno lo hace quien corrige la asistencia (tu gerente o Dirección). Si solo lo bloqueó, usa «Desbloquear».');
+    if (app.locals.personal.esPropio(req, res, p.id, 'dar el PIN del checador')) return;
+    if (app.locals.personal.sinFichaLigada(req, res, 'dar PINes del checador')) return;
     res.json({ ...altaChecador(req, p), aviso: 'Anota el PIN y dáselo a la persona: no se vuelve a mostrar. En su primera checada elegirá el suyo.' });
   }));
   app.post('/api/asistencia/personal/:id/desbloquear', h((req, res) => {
@@ -789,10 +795,12 @@ module.exports = function checador(app, db, h) {
   }));
   // Enlace de un solo uso (24 h) para ligar el celular de la persona. Se muestra una vez; la base guarda solo su hash.
   app.post('/api/asistencia/personal/:id/celular', h((req, res) => {
-    if (!puede(req, 'personal.editar')) return negar(res, 'No tienes permiso para ligar celulares');
+    // Etapa 6 (SEC-04): con el enlace se liga cualquier teléfono como si fuera el de la persona; lo da quien corrige la asistencia.
+    if (!puede(req, 'personal.editar') || !puede(req, 'asistencia.corregir')) return negar(res, 'El enlace para checar desde el celular lo manda quien corrige la asistencia (tu gerente o Dirección)');
     const p = persona(req.params.id);
     if (!p) return res.status(404).json({ error: 'Persona no encontrada' });
     if (app.locals.personal.esPropio(req, res, p.id, 'mandar el enlace para checar desde el celular')) return;
+    if (app.locals.personal.sinFichaLigada(req, res, 'mandar enlaces del celular')) return;
     if (!p.activo || !p.codigo_checador) return res.status(409).json({ error: 'Primero dala de alta en el reloj checador (código y PIN)' });
     const token = nuevoToken();
     db.transaction(() => {
