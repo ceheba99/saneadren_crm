@@ -2363,3 +2363,8 @@ tr.logs-aviso td{background:#fffaf0;}
 .nm-avisos{margin:4px 0 0;padding:0;list-style:none;font-size:.78rem;color:var(--amarillo-texto);}
 .nm-pago{background:var(--blanco);border:1px solid var(--gris-200);border-radius:var(--radio);padding:14px;margin:14px 0;display:grid;gap:10px;}
 .nm-pago h3{margin:0;font-size:1rem;}
+.nm-tabla{min-width:1100px;}
+.nm-gris{color:var(--texto-sec);}
+.nm-reglas{margin:14px 0;background:var(--blanco);border:1px solid var(--gris-200);border-radius:var(--radio);padding:10px 14px;}
+.nm-reglas > summary{cursor:pointer;font-weight:600;padding:4px 0;}
+.nm-reglas-lista{margin:8px 0;padding-left:18px;display:grid;gap:4px;}

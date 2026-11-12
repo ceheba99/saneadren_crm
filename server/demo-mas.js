@@ -247,6 +247,9 @@ module.exports = async function masEjemplos(x) {
       await pedir('PUT', '/personal/' + id, A, { version: p.version, sueldo_imss_semanal: imss, bono_semanal: bono });
     }
     const netos = async nom => { for (const l of nom.lineas) if (l.sueldo_imss > 0) await pedir('PUT', '/nomina/lineas/' + l.id, A, { neto_imss: Math.round(l.sueldo_imss * 0.88 * 100) / 100 }); };
+    // Bono de puntualidad (por puesto): Operador y Técnico $250 sin retardos ni faltas; Ayudante $150 con un retardo permitido.
+    for (const [puesto, monto, ret] of [['Operador', 250, 0], ['Técnico', 250, 0], ['Ayudante', 150, 1]])
+      await pedir('POST', '/nomina/reglas-puntualidad', A, { sucursal_id: qroId, puesto, monto, max_retardos: ret, max_faltas: 0, desde: dia(-60) });
     // Hace dos semanas (Querétaro): preparada, con un descuento por falta que decidió RH, cerrada y pagada por Santander.
     const vieja = await pedir('POST', '/nomina/preparar', A, { desde: dia(-14), sucursal_id: qroId });
     await netos(vieja);

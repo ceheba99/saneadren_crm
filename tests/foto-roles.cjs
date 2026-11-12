@@ -317,6 +317,7 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
     ['editaListaServ', 'Agregar o quitar opciones en la lista de un servicio (p. ej. 4M3, 8M3 para [VOLUMEN])'],
     ['preparaNomina', 'Ver y preparar la nómina semanal (los dos sueldos de cada persona, descuentos y neto del IMSS)'],
     ['pagaNomina', 'Pagar la nómina y bajar la lista para el banco (con la CLABE de cada persona)'],
+    ['reglaPuntualidad', 'Poner o cambiar las reglas del bono de puntualidad (monto por puesto, retardos y faltas permitidos)'],
     ['entregaAnticipo', 'Entregar un anticipo por comprobar a una persona del personal (y cerrarlo o cancelarlo)'],
     ['veAnticipoAjeno', 'Ver los anticipos por comprobar de otras personas (el de Ernesto Obsidiana)'],
   ];
@@ -414,6 +415,7 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
     VE[rol].veContabilidad = ok(await pedir('GET', '/contabilidad/resumen?mes=' + HOY.slice(0, 7), t));
     VE[rol].preparaNomina = ok(await pedir('GET', '/nomina?desde=' + dia(-7) + '&sucursal=' + qro.id, t));
     VE[rol].pagaNomina = ok(await pedir('GET', '/nomina/' + NOM.id + '/lista-banco', t));
+    VE[rol].reglaPuntualidad = ok(await pedir('POST', '/nomina/reglas-puntualidad', t, { sucursal_id: qro.id, puesto: 'Operador', monto: 150, max_retardos: 0, max_faltas: 0, desde: dia(1) }));
     { const [st, a] = await pedir('POST', '/anticipos', t, { personal_id: EMP.id, monto: 10, metodo: 'efectivo', motivo: 'Prueba de ' + rol, forzar: true });
       VE[rol].entregaAnticipo = st === 201 && ok(await pedir('POST', '/anticipos/' + a.id + '/cancelar', t, { motivo: 'Prueba de la foto de roles' }));
       const [sl, l] = await pedir('GET', '/anticipos?estado=todos', t); VE[rol].veAnticipoAjeno = sl === 200 && (l.anticipos || []).some(x => x.id === ANT_OBS.id); }
@@ -592,6 +594,8 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
       admin: { preparaNomina: 1 }, gerente: { preparaNomina: 1 }, ...Object.fromEntries(['costos', 'ventas', 'atencion', 'tecnico', 'marketing', 'marketing_gerente'].map(r => [r, { preparaNomina: 0 }])) }],
     ['2026-11-11', 'Pagar la nómina y bajar la lista para el banco con la CLABE de cada persona: quien prepara la nómina y además mueve dinero (Dirección y el Gerente). Compras mueve dinero pero no ve sueldos: no.', {
       admin: { pagaNomina: 1 }, gerente: { pagaNomina: 1 }, ...Object.fromEntries(['costos', 'ventas', 'atencion', 'tecnico', 'marketing', 'marketing_gerente'].map(r => [r, { pagaNomina: 0 }])) }],
+    ['2026-11-11', 'Bono de puntualidad: sus reglas (monto por puesto y sucursal, retardos y faltas permitidos; vacaciones, incapacidades y permisos se respetan) las ponen quienes preparan la nómina: Dirección y el Gerente. Los demás roles no.', {
+      admin: { reglaPuntualidad: 1 }, gerente: { reglaPuntualidad: 1 }, ...Object.fromEntries(['costos', 'ventas', 'atencion', 'tecnico', 'marketing', 'marketing_gerente'].map(r => [r, { reglaPuntualidad: 0 }])) }],
     ['2026-11-11', 'Anticipos por comprobar: los entregan, cierran y cancelan Dirección y quien mueve dinero y ya ve al personal (el Gerente). Compras mueve dinero pero no ve al personal (regla del 2026-10-19): por ahora no; los demás roles tampoco.', {
       admin: { entregaAnticipo: 1 }, gerente: { entregaAnticipo: 1 }, ...Object.fromEntries(['costos', 'ventas', 'atencion', 'tecnico', 'marketing', 'marketing_gerente'].map(r => [r, { entregaAnticipo: 0 }])) }],
     ['2026-11-11', 'Anticipos por comprobar: Dirección, el Gerente y quien tiene «Contabilidad del mes» ven todos los de su sucursal; cada persona ve solo los suyos (los comprueba con sus gastos, aunque no tenga orden de servicio).', {

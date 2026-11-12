@@ -14,7 +14,30 @@ const Nomina = (() => {
     if (!res.ok) throw Object.assign(new Error(j.error || 'No se pudo completar'), { status: res.status, codigo: j.codigo, datos: j });
     return j;
   }
-  let D = null, DESDE = null, SUC = null, listo = false;
+  let D = null, DESDE = null, SUC = null, listo = false, REGLAS_ABIERTAS = false;
+  // Bono de puntualidad de una persona: lo que calculó la regla de su puesto, y quitarlo o regresarlo (con motivo).
+  function puntualidadCelda(l, edita) {
+    if (!l.puntualidad_razon && !l.puntualidad_calculada) return '<small>—</small>';
+    const quitar = edita && l.puntualidad_calculada > 0 ? `<br><button type="button" class="enlace" data-nm="${l.puntualidad_quitada ? 'regresar-pu' : 'quitar-pu'}" data-linea="${Number(l.id)}">${l.puntualidad_quitada ? 'Regresar' : 'Quitar'}</button>` : '';
+    const nota = l.puntualidad_quitada ? 'Quitado: ' + l.puntualidad_motivo : l.puntualidad_razon;
+    return `${l.puntualidad_quitada ? '<s>' + esc(dinero(l.puntualidad_calculada)) + '</s>' : esc(dinero(l.puntualidad))}<br><small class="${l.puntualidad > 0 ? '' : 'nm-gris'}">${esc(nota)}</small>${quitar}`;
+  }
+  async function pintarReglas() {
+    const cont = $('nm-reglas-cuerpo'); if (!cont) return;
+    let r; try { r = await pedir('/nomina/reglas-puntualidad?sucursal=' + Number(D.sucursal_id)); } catch (err) { cont.innerHTML = `<div class="aviso-error-carga" role="alert"><p>No se pudo cargar: ${esc(err.message)}</p></div>`; return; }
+    const txt = g => !g ? 'Sin bono' : g.monto > 0 ? `${dinero(g.monto)} por semana · hasta ${g.max_retardos} retardo(s) y ${g.max_faltas} falta(s)${g.max_retardo_min != null ? ` · máximo ${g.max_retardo_min} min de retardo` : ''} · desde ${fecha(g.desde)}` : `Sin bono desde ${fecha(g.desde)}`;
+    const con = r.vigentes.filter(v => v.regla || v.proxima);
+    cont.innerHTML = `<p class="ayuda">Por puesto, en esta sucursal. Vacaciones, incapacidades y permisos se respetan (no cuentan como falta). Solo aplica a quien checa. Un cambio es una regla nueva desde una fecha; las semanas ya cerradas no cambian.</p>
+      ${con.length ? `<ul class="nm-reglas-lista">${con.map(v => `<li><b>${esc(v.puesto)}</b>: ${esc(txt(v.regla))}${v.proxima ? ` <small>(cambia el ${esc(fecha(v.proxima.desde))}: ${esc(txt(v.proxima))})</small>` : ''}</li>`).join('')}</ul>` : '<p class="util-45">Todavía no hay reglas: nadie recibe bono de puntualidad.</p>'}
+      <div class="nm-pago"><h3>Poner o cambiar una regla</h3><div class="form-grid-2">
+        <div class="campo"><label for="nm-r-puesto">Puesto (obligatorio)</label><select id="nm-r-puesto">${r.puestos.map(p => `<option value="${esc(p)}">${esc(p)}</option>`).join('')}</select></div>
+        <div class="campo"><label for="nm-r-monto">Bono por semana (obligatorio; 0 = sin bono)</label><input id="nm-r-monto" inputmode="decimal" placeholder="Ej. 200"></div>
+        <div class="campo"><label for="nm-r-ret">Retardos permitidos en la semana</label><input id="nm-r-ret" type="number" min="0" max="7" value="0"></div>
+        <div class="campo"><label for="nm-r-fal">Faltas permitidas en la semana</label><input id="nm-r-fal" type="number" min="0" max="7" value="0"></div>
+        <div class="campo"><label for="nm-r-min">Minutos de retardo máximos (opcional)</label><input id="nm-r-min" type="number" min="0" max="600" placeholder="Sin límite"></div>
+        <div class="campo"><label for="nm-r-desde">Aplica desde (obligatorio)</label><input id="nm-r-desde" type="date" value="${esc(D.desde)}"></div>
+      </div><button type="button" class="btn btn-primario" data-nm="guardar-regla">Guardar regla</button></div>`;
+  }
 
   async function cargar(opciones = {}) {
     if (!listo) iniciar();
@@ -30,7 +53,7 @@ const Nomina = (() => {
     $('nm-sucursal').hidden = D.sucursales.length < 2;
     $('nm-semana').textContent = `Semana del ${fecha(D.desde)} al ${fecha(D.hasta)}`;
     $('nm-siguiente').disabled = D.siguiente > hoy();
-    pintar();
+    pintar(); pintarReglas();
   }
   function iniciar() {
     listo = true;
@@ -41,6 +64,7 @@ const Nomina = (() => {
     $('nm-excel').addEventListener('click', e => conBoton(e.currentTarget, excel));
     $('nm-cuerpo').addEventListener('change', guardarCampo);
     $('nm-cuerpo').addEventListener('click', accion);
+    $('nm-cuerpo').addEventListener('toggle', e => { if (e.target.id === 'nm-reglas') REGLAS_ABIERTAS = e.target.open; }, true);
   }
 
   function pintar() {
@@ -54,6 +78,7 @@ const Nomina = (() => {
       <td class="nm-d">${l.sueldo_imss > 0 ? num(l, 'neto_imss', 'Neto del IMSS') : '—'}${l.falta_neto && !edita ? '<br><small class="rojo">falta</small>' : ''}</td>
       <td class="nm-d">${esc(dinero(l.bono))}</td>
       <td class="nm-d">${esc(dinero(l.extra))}${l.extra_min ? `<br><small>${Math.round(l.extra_min / 6) / 10} h</small>` : ''}${l.sin_precio_extra ? '<br><small class="rojo">puesto sin precio por hora</small>' : ''}</td>
+      <td class="nm-d">${puntualidadCelda(l, edita)}</td>
       <td class="nm-d">${num(l, 'otros', 'Otros pagos')}${nota(l, 'otros_nota', 'Motivo de otros pagos')}</td>
       <td class="nm-d">${num(l, 'descuento', 'Descuento')}${nota(l, 'descuento_nota', 'Motivo del descuento')}</td>
       <td class="nm-d"><b>${esc(dinero(l.total))}</b></td></tr>`).join('');
@@ -83,15 +108,17 @@ const Nomina = (() => {
         <div class="tarjeta-dinero"><small>Sueldos IMSS (bruto)</small><b>${esc(dinero(t.sueldo_imss))}</b>${d.sin_neto ? `<span class="rojo">${Number(d.sin_neto)} sin neto del contador</span>` : ''}</div>
         <div class="tarjeta-dinero"><small>Bonos</small><b>${esc(dinero(t.bono))}</b></div>
         <div class="tarjeta-dinero"><small>Tiempo extra</small><b>${esc(dinero(t.extra))}</b></div>
+        <div class="tarjeta-dinero"><small>Bono de puntualidad</small><b>${esc(dinero(t.puntualidad))}</b></div>
         <div class="tarjeta-dinero ${t.faltas ? 'aviso' : ''}"><small>Faltas / retardos</small><b>${Number(t.faltas)} / ${Number(t.retardos)}</b><span>se reportan; RH decide</span></div>
         ${d.pendientes ? `<div class="tarjeta-dinero alerta"><small>Con pendientes</small><b>${Number(d.pendientes)}</b><span>resolver en Asistencia o Personal</span></div>` : ''}
       </div>
       ${acciones.length ? `<div class="nm-acciones">${acciones.join('')}</div>` : ''}
-      ${d.lineas.length ? `<div class="nm-tabla-caja"><table class="nm-tabla"><thead><tr><th>Persona</th><th>Días / faltas / retardos</th><th>Sueldo IMSS</th><th>Neto IMSS</th><th>Bono</th><th>Tiempo extra</th><th>Otros pagos</th><th>Descuento</th><th>Total</th></tr></thead>
-        <tbody>${filas}</tbody><tfoot><tr><td>Total</td><td></td><td class="nm-d">${esc(dinero(t.sueldo_imss))}</td><td></td><td class="nm-d">${esc(dinero(t.bono))}</td><td class="nm-d">${esc(dinero(t.extra))}</td><td class="nm-d">${esc(dinero(t.otros))}</td><td class="nm-d">${esc(dinero(t.descuento))}</td><td class="nm-d"><b>${esc(dinero(t.total))}</b></td></tr></tfoot></table></div>`
+      ${d.lineas.length ? `<div class="nm-tabla-caja"><table class="nm-tabla"><thead><tr><th>Persona</th><th>Días / faltas / retardos</th><th>Sueldo IMSS</th><th>Neto IMSS</th><th>Bono</th><th>Tiempo extra</th><th>Puntualidad</th><th>Otros pagos</th><th>Descuento</th><th>Total</th></tr></thead>
+        <tbody>${filas}</tbody><tfoot><tr><td>Total</td><td></td><td class="nm-d">${esc(dinero(t.sueldo_imss))}</td><td></td><td class="nm-d">${esc(dinero(t.bono))}</td><td class="nm-d">${esc(dinero(t.extra))}</td><td class="nm-d">${esc(dinero(t.puntualidad))}</td><td class="nm-d">${esc(dinero(t.otros))}</td><td class="nm-d">${esc(dinero(t.descuento))}</td><td class="nm-d"><b>${esc(dinero(t.total))}</b></td></tr></tfoot></table></div>`
         : '<p class="util-45">Nadie entra en esta nómina: nadie de la sucursal checa ni tiene sueldo semanal en su ficha.</p>'}
       ${pago}
-      <p class="ayuda">Total = neto del IMSS (o el sueldo IMSS mientras el contador no lo da) + bono + tiempo extra + otros − descuento. El ISR y el IMSS los calcula el contador. La lista para el banco es genérica; el formato exacto de Santander y Banorte se ajusta con una muestra vacía de su portal.</p>`;
+      <details class="nm-reglas" id="nm-reglas"${REGLAS_ABIERTAS ? ' open' : ''}><summary>🏅 Reglas del bono de puntualidad</summary><div id="nm-reglas-cuerpo"><p class="ayuda">Cargando…</p></div></details>
+      <p class="ayuda">Total = neto del IMSS (o el sueldo IMSS mientras el contador no lo da) + bono + tiempo extra + puntualidad + otros − descuento. El ISR y el IMSS los calcula el contador. La lista para el banco es genérica; el formato exacto de Santander y Banorte se ajusta con una muestra vacía de su portal.</p>`;
   }
 
   async function guardarCampo(e) {
@@ -116,6 +143,18 @@ const Nomina = (() => {
   async function accion(e) {
     const b = e.target.closest('[data-nm]'); if (!b) return;
     const a = b.dataset.nm;
+    if (a === 'guardar-regla') return conBoton(b, async () => {
+      const monto = $('nm-r-monto').value.trim().replace(/[$,\s]/g, '');
+      if (monto === '') { toast('Escribe el bono por semana (0 = sin bono)'); $('nm-r-monto').focus(); return; }
+      await pedir('/nomina/reglas-puntualidad', { method: 'POST', body: JSON.stringify({ sucursal_id: D.sucursal_id, puesto: $('nm-r-puesto').value, monto, max_retardos: $('nm-r-ret').value, max_faltas: $('nm-r-fal').value, max_retardo_min: $('nm-r-min').value, desde: $('nm-r-desde').value }) });
+      toast('Regla guardada'); REGLAS_ABIERTAS = true; cargar();
+    });
+    if (a === 'quitar-pu') {
+      const motivo = await solicitarDialogo({ titulo: 'Quitar bono de puntualidad', mensaje: 'Solo a esta persona y en esta semana. Queda anotado el motivo.', aceptar: 'Quitar', campo: { tipo: 'text', etiqueta: 'Motivo', requerido: 'Escribe el motivo (mínimo 5 letras)' } });
+      if (!motivo) return;
+      return conBoton(b, async () => { await pedir('/nomina/lineas/' + Number(b.dataset.linea), { method: 'PUT', body: JSON.stringify({ quitar_puntualidad: true, puntualidad_motivo: motivo }) }); toast('Bono quitado'); cargar(); });
+    }
+    if (a === 'regresar-pu') return conBoton(b, async () => { await pedir('/nomina/lineas/' + Number(b.dataset.linea), { method: 'PUT', body: JSON.stringify({ quitar_puntualidad: false }) }); toast('Bono regresado'); cargar(); });
     if (a === 'preparar') return conBoton(b, async () => { await pedir('/nomina/preparar', { method: 'POST', body: JSON.stringify({ desde: D.desde, sucursal_id: D.sucursal_id }) }); toast('Nómina preparada'); cargar(); });
     if (a === 'actualizar') return conBoton(b, async () => { await pedir('/nomina/' + D.id + '/actualizar', { method: 'POST', body: '{}' }); toast('Datos al día'); cargar(); });
     if (a === 'cerrar') return conBoton(b, async () => {
@@ -152,11 +191,11 @@ const Nomina = (() => {
   async function excel() {
     if (!D?.lineas?.length) { toast('No hay nadie en esta nómina'); return; }
     const ExcelJS = await Finanzas.cargarExcelJS(), wb = new ExcelJS.Workbook(), ws = wb.addWorksheet('Nómina');
-    ws.columns = [['No. empleado', 12], ['Nombre', 30], ['Puesto', 16], ['Días trabajados', 10], ['Faltas', 8], ['Retardos', 9], ['Sueldo IMSS', 14], ['Neto IMSS', 14], ['Bono', 12], ['Horas extra', 10], ['Tiempo extra', 13], ['Otros pagos', 13], ['Motivo otros', 24], ['Descuento', 12], ['Motivo descuento', 24], ['Total', 14], ['Pendientes', 40]]
-      .map(([header, width], i) => ({ header, width, key: 'c' + i, style: [6, 7, 8, 10, 11, 13, 15].includes(i) ? { numFmt: '"$"#,##0.00' } : {} }));
+    ws.columns = [['No. empleado', 12], ['Nombre', 30], ['Puesto', 16], ['Días trabajados', 10], ['Faltas', 8], ['Retardos', 9], ['Sueldo IMSS', 14], ['Neto IMSS', 14], ['Bono', 12], ['Horas extra', 10], ['Tiempo extra', 13], ['Bono puntualidad', 14], ['Otros pagos', 13], ['Motivo otros', 24], ['Descuento', 12], ['Motivo descuento', 24], ['Total', 14], ['Pendientes', 40]]
+      .map(([header, width], i) => ({ header, width, key: 'c' + i, style: [6, 7, 8, 10, 11, 12, 14, 16].includes(i) ? { numFmt: '"$"#,##0.00' } : {} }));
     ws.getRow(1).font = { bold: true };
-    for (const l of D.lineas) ws.addRow([l.numero_empleado, l.nombre, l.puesto, l.dias_trabajados, l.faltas, l.retardos, l.sueldo_imss, l.neto_imss, l.bono, Math.round(l.extra_min / 6) / 10, l.extra, l.otros, l.otros_nota, l.descuento, l.descuento_nota, l.total, l.pendientes.join('; ')]);
-    const t = D.totales, fila = ws.addRow(['', 'TOTAL', '', '', t.faltas, t.retardos, t.sueldo_imss, '', t.bono, '', t.extra, t.otros, '', t.descuento, '', t.total, '']);
+    for (const l of D.lineas) ws.addRow([l.numero_empleado, l.nombre, l.puesto, l.dias_trabajados, l.faltas, l.retardos, l.sueldo_imss, l.neto_imss, l.bono, Math.round(l.extra_min / 6) / 10, l.extra, l.puntualidad, l.otros, l.otros_nota, l.descuento, l.descuento_nota, l.total, l.pendientes.join('; ')]);
+    const t = D.totales, fila = ws.addRow(['', 'TOTAL', '', '', t.faltas, t.retardos, t.sueldo_imss, '', t.bono, '', t.extra, t.puntualidad, t.otros, '', t.descuento, '', t.total, '']);
     fila.font = { bold: true };
     ws.addRow([]); ws.addRow(['', `Semana del ${fecha(D.desde)} al ${fecha(D.hasta)} · ${D.sucursal} · ${ESTADO[D.estado]?.[1] || D.estado}`]); // sin HTML: es una celda de Excel
     ws.addRow(['', 'El neto del IMSS (ISR e IMSS) lo calcula el contador. Las faltas se reportan; el descuento lo decide RH.']);

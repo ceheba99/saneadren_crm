@@ -125,7 +125,7 @@ function revisar(db, { dirArchivos } = {}) {
   if (existe(db, 'nominas') && existe(db, 'nomina_lineas')) {
     const nom = db.prepare("SELECT * FROM nominas").all();
     const lineasDe = id => db.prepare('SELECT * FROM nomina_lineas WHERE nomina_id = ?').all(id);
-    const totalL = l => (l.neto_imss_cent ?? l.sueldo_imss_cent) + l.bono_cent + l.extra_cent + l.otros_cent - l.descuento_cent;
+    const totalL = l => (l.neto_imss_cent ?? l.sueldo_imss_cent) + l.bono_cent + l.extra_cent + (l.puntualidad_quitada ? 0 : l.puntualidad_cent || 0) + l.otros_cent - l.descuento_cent;
     const refN = n => `Nómina ${dma(n.desde)}–${dma(n.hasta)} (sucursal ${n.sucursal_id})`;
     chequeo('Nómina', 'Línea de nómina con total negativo', 'error', () => nom.flatMap(n => lineasDe(n.id).filter(l => totalL(l) < 0).map(l => ({ ref: refN(n), detalle: l.nombre }))));
     chequeo('Nómina', 'Nómina pagada cuyo gasto no cuadra o ya no tiene su pago', 'error', () => nom.filter(n => n.estado === 'pagada').map(n => {
