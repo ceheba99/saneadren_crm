@@ -405,6 +405,14 @@ const Facturacion = (() => {
       toast(r.ok ? (r.j.estado === 'cancelada' ? 'Factura cancelada ante el SAT' : r.j.mensaje || 'Cancelación en proceso') : (r.j.error || 'No se pudo')); // sin HTML
       return recargar();
     }
+    const rev = e.target.closest('[data-fx-revisada]');
+    if (rev) {
+      if (!await solicitarDialogo({ titulo: 'Dar por revisada', aceptar: 'Sí, ya la revisé', mensaje: `${f.revisar}.\n\n¿Ya revisaste esta diferencia contra el XML? El aviso de Inicio deja de salir; la nota y el total calculado se conservan.` })) return null;
+      rev.disabled = true;
+      const r = await pedirCompleto('/facturas/' + Number(f.id) + '/revisada', {}, 'POST');
+      toast(r.ok ? 'Marcada como revisada' : (r.j.error || 'No se pudo')); // sin HTML
+      return recargar();
+    }
     const est = e.target.closest('[data-fx-estatus]');
     if (est) {
       est.disabled = true;
@@ -423,6 +431,7 @@ const Facturacion = (() => {
       <div>${f.tipo_documento === 'pago' ? 'Complemento de pago ' : ''}<b>${esc(f.serie || '')}${f.folio ? '-' + esc(f.folio) : (f.serie ? '' : 'Sin folio')}</b> ${prueba} <span class="${clase}">${esc(txt)}</span>${f.tipo_documento === 'pago' ? '' : ' · ' + pesos(f.total)}
         <small>${esc(f.receptor_razon_social)} · ${esc(f.receptor_rfc)} · ${esc(f.forma_pago || '')} ${esc(f.metodo_pago || '')}${f.uuid ? ' · Folio fiscal ' + esc(f.uuid) : ''}${f.fecha_timbrado ? ' · ' + esc(String(f.fecha_timbrado).replace('T', ' ').slice(0, 16)) : ''}</small>
         ${f.error && f.estatus !== 'timbrada' ? `<small class="fx-mal">${esc(f.error)}</small>` : ''}
+        ${f.revisar ? `<small class="fx-mal">Revisar: ${esc(f.revisar)}</small>` : ''}
         ${f.motivo_cancelacion ? `<small>Motivo de cancelación ${esc(f.motivo_cancelacion)}${f.cancelacion_estado ? ' · SAT: ' + esc(f.cancelacion_estado) : ''}</small>` : ''}
         ${f.sustituta ? `<small class="fx-mal">Ya se timbró ${f.tipo_documento === 'pago' ? 'el complemento que lo corrige' : 'la que la sustituye'} (${esc(f.sustituta.serie || '')}-${esc(f.sustituta.folio || '')}): falta cancelar ${f.tipo_documento === 'pago' ? 'este' : 'esta'} con el motivo 01</small>` : ''}
         ${f.sustituye_a ? `<small>${f.tipo_documento === 'pago' ? 'Corrige a otro complemento de este pago' : 'Sustituye a otra factura de esta orden'} (motivo 01)</small>` : ''}
@@ -434,6 +443,7 @@ const Facturacion = (() => {
         ${f.estatus === 'timbrada' ? `<button type="button" class="btn btn-outline" data-fx-cancelar>${f.sustituta ? 'Cancelar (motivo 01)' : 'Cancelar'}</button>` : ''}
         ${f.estatus === 'cancelacion_solicitada' && f.entorno !== 'demo' ? '<button type="button" class="btn btn-secundario" data-fx-estatus>Consultar estatus</button><button type="button" class="btn btn-outline" data-fx-reintentar>Volver a pedir la cancelación</button>' : ''}
         ${f.tiene_acuse ? '<button type="button" class="btn btn-outline" data-fx-bajar="acuse">Acuse</button>' : ''}
+        ${f.revisar ? '<button type="button" class="btn btn-outline" data-fx-revisada>Ya la revisé</button>' : ''}
         ${lista && f.puede_reenviar ? '<button type="button" class="btn btn-outline" data-fx-reenviar>✉️ Reenviar</button>' : ''}
         ${lista && f.puede_descartar ? '<button type="button" class="btn btn-outline solo-general" data-fx-descartar>Descartar borrador</button>' : ''}
         ${lista && f.lead_id ? `<button type="button" class="btn btn-outline" data-fx-orden="${Number(f.lead_id)}">Abrir ${esc(f.folio_orden || 'orden')}</button>` : ''}
@@ -565,7 +575,7 @@ const Facturacion = (() => {
     const comp = e.target.closest('[data-fx-comp]'); if (comp) return abrirComplemento(comp.dataset.fxComp, null, comp.dataset.fxCompSust);
     if (e.target.closest('[data-fx-sin-sustituir]')) { ORD.opciones = { ...ORD.opciones, sustituye_a: undefined }; return cargarOrden({ id: ORD.id, estatus: 'ganado' }, ORD.opciones); }
     const tarjetaOrden = e.target.closest('[data-fx-factura]');
-    if (tarjetaOrden && e.target.closest('[data-fx-cancelar],[data-fx-estatus],[data-fx-reintentar]')) { const f = ORD.facturas.find(x => x.id === Number(tarjetaOrden.dataset.fxFactura)); if (f) return accionTarjeta(e, f, true, () => cargarOrden({ id: ORD.id, estatus: 'ganado' }, ORD.opciones)); }
+    if (tarjetaOrden && e.target.closest('[data-fx-cancelar],[data-fx-estatus],[data-fx-reintentar],[data-fx-revisada]')) { const f = ORD.facturas.find(x => x.id === Number(tarjetaOrden.dataset.fxFactura)); if (f) return accionTarjeta(e, f, true, () => cargarOrden({ id: ORD.id, estatus: 'ganado' }, ORD.opciones)); }
     const ver = e.target.closest('[data-fx-verificar]');
     if (ver) {
       ver.disabled = true;
@@ -656,7 +666,7 @@ const Facturacion = (() => {
     const bajar = e.target.closest('[data-fx-bajar]'); if (bajar) return bajarArchivo(bajar, fid, bajar.dataset.fxBajar);
     const orden = e.target.closest('[data-fx-orden]'); if (orden) return abrirFicha(Number(orden.dataset.fxOrden));
     const fl = LISTA_F.find(x => x.id === fid);
-    if (fl && e.target.closest('[data-fx-cancelar],[data-fx-estatus],[data-fx-reintentar]')) return accionTarjeta(e, fl, false, cargarLista);
+    if (fl && e.target.closest('[data-fx-cancelar],[data-fx-estatus],[data-fx-reintentar],[data-fx-revisada]')) return accionTarjeta(e, fl, false, cargarLista);
     const ver = e.target.closest('[data-fx-verificar]');
     if (ver) { ver.disabled = true; const r = await pedirCompleto('/facturas/' + fid + '/verificar', {}, 'POST'); toast(r.ok ? (r.j.mensaje || (r.j.estado === 'timbrada' ? 'Sí quedó timbrada' : 'Estado: ' + r.j.estado)) : (r.j.error || 'No se pudo verificar')); return cargarLista(); }
     const reenviar = e.target.closest('[data-fx-reenviar]');
@@ -672,7 +682,7 @@ const Facturacion = (() => {
   });
 
   // ---------- Bloque «Facturación» de Inicio ----------
-  const TAG_FX = { complemento_pendiente: '💳 Complemento de pago', timbrando: '⏳ Sin respuesta', borrador_error: '📝 Borrador', pendiente: '⚠️ No se timbró', por_facturar: '🧾 Por facturar', sin_cancelar: '⚠️ Sin cancelar', cancelacion_solicitada: '⏳ Cancelación' };
+  const TAG_FX = { complemento_pendiente: '💳 Complemento de pago', timbrando: '⏳ Sin respuesta', borrador_error: '📝 Borrador', pendiente: '⚠️ No se timbró', por_facturar: '🧾 Por facturar', sin_cancelar: '⚠️ Sin cancelar', cancelacion_solicitada: '⏳ Cancelación', revisar: '🔎 Revisar total' };
   async function pintarInicio() {
     const cont = $('inicio-facturacion'); if (!cont || (typeof Permisos !== 'undefined' && !Permisos.puede('facturacion.timbrar'))) return;
     let r;

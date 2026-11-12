@@ -143,6 +143,8 @@ async function consultarEstatus(db, cliente, f, ctx = {}) {
   const noCancelable = /^vigente$/i.test(estado) && /no cancelable/i.test(es) && !sat;
   if (/rechaz/i.test(sat) || noCancelable) {
     const mensaje = noCancelable ? 'El SAT dice que esta factura no se puede cancelar (por ejemplo, porque tiene documentos relacionados): sigue vigente' : 'El cliente rechazó la cancelación: la factura sigue vigente';
+    // Etapa 5 (M-24): «acuse: null» solo vacía el de la solicitud en curso; el acuse ya quedó guardado en facturas_acuses (la base lo copia al
+    // llegar y no deja borrarlo) y se sigue bajando con el botón «Acuse».
     db.transaction(() => {
       log(db, f, 'cancelar', 'error', `${mensaje} (se había pedido con motivo ${f.motivo_cancelacion} el ${f.cancelacion_solicitada_at || '—'})`, ctx.usuario?.id);
       actualizar(db, f.id, { estatus: 'timbrada', motivo_cancelacion: null, folio_sustituto: null, cancelacion_solicitada_at: null, acuse: null, cancelacion_estado: texto, cancelacion_revisada_at: horaMexico().replace('T', ' '), error_json: errorTexto(new ErrorFactura('api', mensaje)) });
@@ -202,6 +204,9 @@ async function cancelar(db, f, op, ctx) {
   if (anidada.response === 'error' || (codigo && !['201', '202'].includes(codigo))) {
     const mensaje = codigo && !['201', '202'].includes(codigo) ? (CODIGOS_ACUSE[codigo] || `El SAT no aceptó la solicitud de cancelación (código ${codigo})`) : 'factura.com no pudo pedir la cancelación';
     db.transaction(() => {
+      // Etapa 5 (M-24): el acuse del «no» del SAT (205, 203…) también se guarda, aparte (no es el de una cancelación en curso).
+      if (esAcuse(acuse) && !db.prepare('SELECT 1 FROM main.facturas_acuses WHERE factura_id = ? AND acuse = ?').get(f.id, acuse))
+        db.prepare('INSERT INTO main.facturas_acuses (factura_id, acuse, motivo) VALUES (?, ?, ?)').run(f.id, acuse, motivo);
       actualizar(db, f.id, { estatus: 'timbrada', motivo_cancelacion: null, folio_sustituto: null, cancelacion_solicitada_at: null, error_json: errorTexto(new ErrorFactura('api', mensaje)) });
       log(db, f, 'cancelar', 'error', mensaje, ctx.usuario?.id);
     })();

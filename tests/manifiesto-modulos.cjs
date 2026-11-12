@@ -193,7 +193,7 @@ module.exports = {
     facturacion: {
       nombre: 'Facturación CFDI 4.0 con factura.com: configuración en Ajustes, datos fiscales en la ficha del cliente, timbrado PUE o PPD en la ficha de la orden (F3, F6), complemento de pago de cada cobro de una factura PPD (F6) y pantalla «Facturas» con reenvío y avisos (F4), y carga de clientes desde el CSV de factura.com (Ajustes, solo Dirección)',
       vistas: ['facturas'], // además, la configuración vive en Ajustes (pantalla «usuarios», panel «Facturación», solo Dirección) y el timbrado en la ficha de la orden
-      tablas: ['clientes_fiscales', 'facturas', 'facturas_log', 'factura_ventas', 'factura_cobros', 'series_factura', 'sat_catalogos'],
+      tablas: ['clientes_fiscales', 'facturas', 'facturas_log', 'facturas_acuses', 'factura_ventas', 'factura_cobros', 'series_factura', 'sat_catalogos'],
       rutas: [/^\/api\/facturacion(\/|$)/],
       pendientes: 'facturas sin respuesta de factura.com, borradores por corregir, rechazadas, órdenes realizadas con IVA de los últimos 60 días sin factura y pagos de facturas PPD sin complemento de pago (F6)',
       inicio: ['inicio-facturacion'],

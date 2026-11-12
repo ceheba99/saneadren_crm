@@ -197,7 +197,7 @@ test('El acuse con un código distinto de 201/202 es un «no»: la factura sigue
   assert.equal(r.estado, 'timbrada'); assert.match(r.mensaje, /todavía no tiene registrada esta factura \(código 205\).*espera unos minutos/); assert.equal(fila(db, f.id).motivo_cancelacion, null);
 });
 
-test('«No cancelable» y el rechazo del cliente regresan a vigente y limpian la solicitud (el acuse viejo no se queda)', async () => {
+test('«No cancelable» y el rechazo del cliente regresan a vigente y limpian la solicitud (el acuse se conserva aparte: etapa 5, M-24)', async () => {
   for (const data of [{ Estado: 'Vigente', EsCancelable: 'No Cancelable', EstatusCancelacion: [] }, { Estado: 'Vigente', EsCancelable: 'Cancelable con aceptación', EstatusCancelacion: 'Solicitud rechazada' }]) {
     const db = base();
     const sim = simulado({ ...archivos, 'POST /v4/cfdi40/create': exito(U[0], 1), 'POST /v4/cfdi40/*/cancel': () => ({ json: { response: 'success', respuestaapi: { acuse: ACUSE } } }), 'GET /v4/cfdi40/*/cancel_status': () => ({ json: { response: 'success', data } }) });
@@ -206,6 +206,7 @@ test('«No cancelable» y el rechazo del cliente regresan a vigente y limpian la
     const x = fila(db, f.id);
     assert.equal(r.estado, 'timbrada'); assert.equal(x.estatus, 'timbrada');
     assert.deepEqual([x.motivo_cancelacion, x.folio_sustituto, x.cancelacion_solicitada_at, x.acuse], [null, null, null, null]);
+    assert.deepEqual(db.prepare('SELECT acuse FROM facturas_acuses WHERE factura_id = ?').all(f.id).map(a => a.acuse), [ACUSE], 'el acuse nunca se borra');
     assert.ok(db.prepare("SELECT mensaje FROM facturas_log WHERE accion = 'cancelar' AND resultado = 'error'").get().mensaje.includes('motivo 02'), 'lo que se pidió queda en la bitácora técnica');
   }
 });
