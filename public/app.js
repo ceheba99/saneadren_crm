@@ -119,8 +119,37 @@ async function api(path, opts) {
     err.status = res.status;
     throw err;
   }
+  if (res.ok && (metodoDe(opts) !== 'GET')) avisosAlDia();
   return res;
 }
+const metodoDe = opts => String(opts?.method || 'GET').toUpperCase();
+// Notificaciones al día (2026-11-11, Dirección: «después de cumplir lo que dice la notificación, para quitarse hay que
+// recargar toda la página»). Inicio solo se volvía a pedir al entrar desde el menú: si la orden, la ficha o la
+// factura se resolvían en una ventana encima de Inicio (o en otra pestaña), el aviso seguía ahí. Ahora, tras cualquier
+// cambio guardado (POST/PUT/DELETE que salió bien) se vuelven a pedir los avisos de la pantalla que se está viendo
+// (Inicio o Inicio de RH) y el contador del menú; también al regresar a la pestaña. Se juntan los cambios seguidos en
+// una sola recarga y nunca hay dos recargas al mismo tiempo.
+const avisosAlDia = (() => {
+  let espera = null, corriendo = false, otraVez = false;
+  const visible = id => document.getElementById(id)?.classList.contains('activa');
+  async function refrescar() {
+    if (corriendo) { otraVez = true; return; }
+    corriendo = true;
+    try {
+      if (!USUARIO_ACTUAL?.token) return;
+      if (visible('vista-inicio')) await cargarInicio(true);
+      else if (visible('vista-rh') && typeof RH !== 'undefined') await RH.cargar();
+      await actualizarBadgePendientes().catch(() => {});
+    } catch { /* sin conexión: se vuelve a intentar con el siguiente cambio o al minuto */ }
+    finally {
+      corriendo = false;
+      if (otraVez) { otraVez = false; programar(); }
+    }
+  }
+  function programar(ms = 700) { clearTimeout(espera); espera = setTimeout(refrescar, ms); }
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') programar(300); });
+  return programar;
+})();
 function fechaCorta(iso) {
   if (!iso) return '';
   const d = new Date(iso.replace(' ', 'T'));
@@ -498,9 +527,10 @@ function avisoCarga(vista, err, reintentar) {
   caja.innerHTML = `<p>${escaparHtml('No se pudo actualizar: ' + err.message + ' Lo que ves abajo puede no estar al día.')}</p><button type="button" class="btn btn-outline">Reintentar</button>`;
   caja.querySelector('button').onclick = reintentar;
 }
-async function cargarInicio() {
+// «silencioso»: al refrescar tras un cambio, lo de antes se queda en pantalla hasta que llega lo nuevo (sin parpadeo).
+async function cargarInicio(silencioso = false) {
   const listas = ['inicio-cotizaciones', 'inicio-concluir', 'inicio-recompras'];
-  estadoCarga(listas, 'cargando');
+  if (silencioso !== true) estadoCarga(listas, 'cargando');
   let alertas, recompras, abiertas, ordenes;
   try {
     [alertas, recompras, abiertas, ordenes] = await Promise.all([

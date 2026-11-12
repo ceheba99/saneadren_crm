@@ -27,7 +27,7 @@ test('sesiones sobreviven al reinicio, conservan vencimiento y se revocan', () =
 function cliente(fetch) {
   const elements = new Map();
   const context = vm.createContext({ fetch, console, localStorage: { removeItem() {}, setItem() {} },
-    document: { getElementById(id) { if (!elements.has(id)) elements.set(id, {style:{},classList:{add(){}}}); return elements.get(id); } },
+    document: { addEventListener(){}, getElementById(id) { if (!elements.has(id)) elements.set(id, {style:{},classList:{add(){},contains(){return false;}}}); return elements.get(id); } },
     window:{addEventListener(){}}, setTimeout(){}, clearInterval(){} });
   const src = fs.readFileSync(path.join(__dirname,'../public/app.js'),'utf8');
   vm.runInContext(src.slice(0,src.indexOf('function fechaCorta')),context);

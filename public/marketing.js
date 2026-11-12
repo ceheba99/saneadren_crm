@@ -356,7 +356,7 @@ const Marketing = (() => {
   // ---------- Bloque de Inicio ----------
   async function pintarInicio() {
     const cont = $('inicio-marketing'); if (!cont || !Permisos.puede('marketing.ver')) return;
-    cont.innerHTML = '<p class="util-45" role="status">Cargando…</p>';
+    if (!cont.innerHTML.trim()) cont.innerHTML = '<p class="util-45" role="status">Cargando…</p>'; // al refrescar, lo de antes se queda hasta que llega lo nuevo
     let l; try { l = await pedir('/pendientes'); } catch (e) { cont.innerHTML = `<div class="aviso-error-carga" role="alert"><p>${esc(e.message)}</p></div>`; return; }
     const hoy = hoyTxt(), MOT = { aprobar: ['alerta', '✅ Por aprobar'], cambios: ['rojo', '↩️ Te pidieron cambios'], publicar: ['rojo', '🚀 Ya toca subirla'], enviar: ['alerta', '📨 Falta enviarla a revisión'], tarea: ['alerta', '📋 Tarea por terminar'] };
     cont.innerHTML = l.length ? l.map(p => {
