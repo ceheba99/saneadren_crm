@@ -297,7 +297,7 @@ const Personal = (() => {
       const r = await api('/asistencia/dispositivos'), lista = await r.json().catch(() => []);
       if (!r.ok) throw new Error(lista.error || 'No se pudieron cargar los kioscos');
       const aqui = kioscoAqui()?.id;
-      cont.innerHTML = lista.length ? '<ul class="pe-ordenes">' + lista.map(k => `<li><b>${esc(k.nombre)}</b> · ${esc(k.sucursal || '')}${k.id === aqui && k.activo ? ' · <b>este dispositivo</b> · <a href="/kiosco">Abrir el kiosco</a>' : ''} <small>${k.activo ? 'registrado por ' + esc(k.registrado_por_nombre || '') + (k.ultimo_uso ? ' · último uso ' + esc(k.ultimo_uso) : '') : 'dado de baja por ' + esc(k.revocado_por || '')}</small>${k.activo && k.red_cambiada ? ` <span class="as-rojo">⚠️ Su última checada llegó desde otra red.</span> <button type="button" class="btn btn-outline" data-pe-kiosco-red="${Number(k.id)}" title="Si cambió el internet de la oficina">Es la nueva red de la oficina</button>` : ''}${k.activo ? ` <button type="button" class="btn btn-outline" data-pe-kiosco-baja="${Number(k.id)}">Dar de baja</button>` : ''}</li>`).join('') + '</ul>'
+      cont.innerHTML = lista.length ? '<ul class="pe-ordenes">' + lista.map(k => `<li><b>${esc(k.nombre)}</b> · ${esc(k.sucursal || '')}${k.id === aqui && k.activo ? ' · <b>este dispositivo</b> · <a href="/kiosco">Abrir el kiosco</a>' : ''} <small>${k.activo ? 'registrado por ' + esc(k.registrado_por_nombre || '') + (k.ultimo_uso ? ' · último uso ' + esc(k.ultimo_uso) : '') : 'dado de baja por ' + esc(k.revocado_por || '')}</small>${k.activo && k.red_cambiada ? ` <span class="as-rojo">⚠️ Su última checada llegó desde otra red.</span> <button type="button" class="btn btn-outline" data-pe-kiosco-red="${Number(k.id)}" title="Si cambió el internet de la oficina">Es la nueva red de la oficina</button>` : ''}${k.activo ? ` <button type="button" class="btn btn-outline" data-pe-kiosco-baja="${Number(k.id)}">Dar de baja</button>` : ''}${Permisos.direccion() ? ` <button type="button" class="btn btn-peligro" data-pe-kiosco-eliminar="${Number(k.id)}" data-nombre="${esc(k.nombre)}">Eliminar</button>` : ''}</li>`).join('') + '</ul>'
         : '<p class="ayuda">Todavía no hay kioscos registrados.</p>';
     } catch (err) { cont.innerHTML = `<p class="aviso-error-carga" role="alert">${esc(err.message)}</p>`; }
   }
@@ -323,6 +323,12 @@ const Personal = (() => {
   async function bajaKiosco(id) {
     if (!await solicitarDialogo({ titulo: 'Dar de baja el kiosco', mensaje: 'Ese dispositivo ya no podrá registrar checadas. Las checadas que ya hizo se conservan.', aceptar: 'Dar de baja' })) return;
     try { const r = await api('/asistencia/dispositivos/' + Number(id) + '/revocar', { method: 'POST' }); const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.error || 'No se pudo'); if (kioscoAqui()?.id === Number(id)) { try { localStorage.removeItem(LLAVE_KIOSCO); } catch { /* */ } } cargarKioscos(); }
+    catch (err) { toast(err.message); }
+  }
+  // Eliminar de la lista (solo Dirección). Las checadas e intentos que hizo se conservan.
+  async function eliminarKiosco(id, nombre) {
+    if (!await solicitarDialogo({ titulo: 'Eliminar el kiosco «' + nombre + '»', mensaje: 'Deja de salir en la lista y ese dispositivo ya no podrá checar. Las checadas e intentos que ya hizo se conservan. No se puede deshacer: para volver a usarlo hay que registrarlo de nuevo.', aceptar: 'Eliminar' })) return;
+    try { const r = await api('/asistencia/dispositivos/' + Number(id), { method: 'DELETE' }); const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.error || 'No se pudo eliminar'); if (kioscoAqui()?.id === Number(id)) { try { localStorage.removeItem(LLAVE_KIOSCO); } catch { /* */ } } toast('Kiosco eliminado'); cargarKioscos(); }
     catch (err) { toast(err.message); }
   }
   function aviso() { const a = $('pe-aviso'); if (a) a.textContent = actual?.nuevo ? 'Nueva · aún no guardada' : pendiente() ? 'Cambios sin guardar' : ''; }
@@ -400,7 +406,7 @@ const Personal = (() => {
   ['pe-f-puesto', 'pe-f-estado', 'pe-f-alertas'].forEach(id => { $(id).onchange = cargar; });
   $('pe-buscar').oninput = debounce(cargar, 350);
   $('pe-kiosco-registrar').onclick = registrarKiosco;
-  $('pe-kioscos-lista').onclick = e => { const b = e.target.closest('[data-pe-kiosco-baja]'); if (b) bajaKiosco(b.dataset.peKioscoBaja); const r = e.target.closest('[data-pe-kiosco-red]'); if (r) redKiosco(r.dataset.peKioscoRed); };
+  $('pe-kioscos-lista').onclick = e => { const b = e.target.closest('[data-pe-kiosco-baja]'); if (b) bajaKiosco(b.dataset.peKioscoBaja); const r = e.target.closest('[data-pe-kiosco-red]'); if (r) redKiosco(r.dataset.peKioscoRed); const x = e.target.closest('[data-pe-kiosco-eliminar]'); if (x) eliminarKiosco(x.dataset.peKioscoEliminar, x.dataset.nombre); };
   $('pe-cerrar').onclick = async () => { if (!ocupado && await permitirSalida()) $('overlay-personal').classList.remove('mostrar'); };
   $('pe-cuerpo').addEventListener('input', aviso);
   $('pe-cuerpo').addEventListener('change', e => { if (e.target.id === 'pe-foto-archivo') { subirFotoCred(e.target.files[0]); e.target.value = ''; return; } aviso(e); });

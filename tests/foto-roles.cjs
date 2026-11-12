@@ -280,6 +280,7 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
     ['capturaRes', 'Capturar los resultados (alcance, me gusta…) de una publicación ya publicada'],
     ['daPin', 'Dar de alta a una persona en el reloj checador (código y PIN temporal) o desbloquear su PIN'],
     ['registraKiosco', 'Registrar una tableta o computadora como kiosco del reloj checador'],
+    ['eliminaKiosco', 'Eliminar un kiosco de la lista de kioscos del reloj checador'],
     ['corrigeChecada', 'Agregar a mano una checada olvidada (con motivo)'],
     ['cambiaHorario', 'Cambiar un horario (entrada, salida, tolerancia o comida)'],
     ['marcaFestivo', 'Marcar o quitar días festivos (valen para todas las sucursales)'],
@@ -361,6 +362,7 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
     VE[rol].editaFolioReal = ok(await pedir('PUT', '/leads/' + OP.id + '/facturacion', t, { factura_folio: 'X-' + rol + '-9', factura_total: '1.00' }));
     VE[rol].daPin = ok(await pedir('POST', '/asistencia/personal/' + EMP.id + '/desbloquear', t));
     VE[rol].registraKiosco = ok(await pedir('POST', '/asistencia/dispositivos', t, { nombre: 'Kiosco de ' + rol, sucursal_id: qro.id }));
+    { const k = exigir(await pedir('POST', '/asistencia/dispositivos', A, { nombre: 'Kiosco a eliminar ' + rol, sucursal_id: qro.id }), 'kiosco a eliminar'); VE[rol].eliminaKiosco = ok(await pedir('DELETE', '/asistencia/dispositivos/' + k.id, t)); }
     VE[rol].corrigeChecada = ok(await pedir('POST', '/asistencia/checadas', t, { personal_id: EMP.id, tipo: 'salida', fecha: dia(-2), hora: '18:30', motivo: 'Prueba de ' + rol }));
     { // Su propia ficha (ligada a su cuenta): intenta agregarse una checada y autorizarse el tiempo extra.
       const uid = (await pedir('GET', '/permisos/mios', t))[1].usuario_id;
@@ -538,6 +540,8 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
       admin: { reglasExtra: 1 }, ...Object.fromEntries(['gerente', 'ventas', 'atencion', 'tecnico', 'costos', 'marketing', 'marketing_gerente'].map(r => [r, { reglasExtra: 0 }])) }],
     ['2026-11-11', 'Descargar la nómina (la semana con horas trabajadas, retardos, faltas y tiempo extra de cada persona, con el pago del tiempo extra, y su Excel): es un permiso aparte, «Descargar la nómina», que Dirección puede dar a cualquier rol en Roles y permisos. Quien solo tiene ese permiso ve únicamente esa pantalla: nada más de RH (fichas, checadas, fotos, intentos, horarios, precios, kioscos). De fábrica lo tienen Dirección y el Gerente; los demás roles no.', {
       admin: { 'perm:asistencia.nomina': 1 }, gerente: { 'perm:asistencia.nomina': 1 }, ...Object.fromEntries(['ventas', 'atencion', 'tecnico', 'costos', 'marketing', 'marketing_gerente'].map(r => [r, { 'perm:asistencia.nomina': 0 }])) }],
+    ['2026-11-11', 'Eliminar un kiosco de la lista de kioscos del reloj checador: solo Dirección (ni el Gerente, que sí registra y da de baja kioscos). Las checadas e intentos que hizo ese kiosco se conservan.', {
+      admin: { eliminaKiosco: 1 }, ...Object.fromEntries(['gerente', 'ventas', 'atencion', 'tecnico', 'costos', 'marketing', 'marketing_gerente'].map(r => [r, { eliminaKiosco: 0 }])) }],
     ['2026-11-11', 'Avisos (comunicados): los publica quien tenga el permiso «Publicar avisos» (Dirección siempre; los demás roles no, hasta que Dirección se lo dé en Roles y permisos). Se mandan a personas elegidas (personal y usuarios del sistema), que lo ven en el reloj checador, en su celular o en el Inicio del CRM hasta que tocan «Enterado»; también por correo y WhatsApp si se elige. Un aviso no se borra: se retira y queda quién lo leyó y cuándo.', {
       admin: { 'perm:avisos.publicar': 1 }, ...Object.fromEntries(['gerente', 'ventas', 'atencion', 'tecnico', 'costos', 'marketing', 'marketing_gerente'].map(r => [r, { 'perm:avisos.publicar': 0 }])) }],
     ['2026-11-05', 'Listas de los servicios (las opciones que se eligen para la parte que cambia de la descripción, p. ej. [VOLUMEN]: 4M3, 8M3… o [SUCURSAL] de KFC): las agregan o quitan solo Dirección; ningún otro rol, ni el Gerente. Quienes cotizan solo eligen de la lista. Quitar no borra: queda en la bitácora.', {

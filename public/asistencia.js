@@ -79,13 +79,24 @@ const Asistencia = (() => {
     }
     $('as-cuerpo').innerHTML = h + '</tbody></table></div><p class="ayuda">Pulsa el nombre de una persona para ver sus checadas, fotos y su semana.</p>' + seccionIntentos();
   }
-  // Intentos fallidos del día en los kioscos (código o PIN malo, PIN bloqueado), con su foto.
+  // Intentos fallidos en los kioscos (código o PIN malo, PIN bloqueado, cara que no coincidió), con su foto.
+  // 2026-11-11 (Dirección: «mejor como tabla»): una fila por intento. «persona»: con la columna «Código / de quién»
+  // (en el día de todos); «foto»: el atributo del botón de la foto (cada pantalla abre la foto en su lugar).
+  function tablaIntentos(l, { persona = true, foto = 'data-as-intento-foto' } = {}) {
+    return `<div class="tabla-scroll"><table class="tabla-resumen as-tabla as-intentos"><thead><tr><th>Hora</th><th>Qué pasó</th>${persona ? '<th>Código · de quién</th>' : ''}<th>Kiosco</th><th>Detalle</th><th>Foto</th></tr></thead><tbody>
+      ${l.map(i => `<tr><td data-et="Hora"><div><b>${esc(i.hora)}</b></div></td>
+        <td data-et="Qué pasó"><div><span class="${i.es_cara ? 'ac-cara-mal' : ''}">${esc(i.motivo)}</span>${i.es_cara && i.revisado_por_nombre ? `<small class="pe-cuenta">✔ Revisado por ${esc(i.revisado_por_nombre)}</small>` : ''}</div></td>
+        ${persona ? `<td data-et="Código"><div>${esc(i.codigo || '—')}<small>${i.persona ? `<button type="button" class="btn-link" data-as-abrir="${Number(i.personal_id)}">${esc(i.persona)}</button>` : 'No es de nadie'}</small></div></td>` : ''}
+        <td data-et="Kiosco"><div>${esc(i.kiosco || '—')}</div></td>
+        <td data-et="Detalle"><div>${i.detalle ? `<small class="pe-cuenta">${esc(i.detalle)}</small>` : '—'}</div></td>
+        <td data-et="Foto"><div>${i.tiene_foto ? `<button type="button" class="btn-link" ${foto}="${Number(i.id)}">📷 Ver foto</button>` : esc(i.foto_borrada ? 'Borrada (plazo cumplido)' : 'Sin foto')}</div></td></tr>`).join('')}
+      </tbody></table></div>`;
+  }
   function seccionIntentos() {
     const l = datos.intentos || [];
     if (!l.length) return '';
-    return `<div class="modal-section"><h3 class="pe-sub">⚠️ Intentos fallidos en el kiosco (${esc(l.length)})</h3><p class="ayuda">El kiosco toma foto cuando alguien se equivoca de código o PIN: sirve para ver si alguien prueba el código de otra persona.</p>
-      <ul class="pe-ordenes">${l.map(i => `<li><b>${esc(i.hora)}</b> · <span class="${i.es_cara ? 'ac-cara-mal' : ''}">${esc(i.motivo)}</span>${i.es_cara && i.revisado_por_nombre ? ` <small class="pe-cuenta">revisado por ${esc(i.revisado_por_nombre)}</small>` : ''}${i.detalle ? ` <small class="pe-cuenta">(${esc(i.detalle)})</small>` : ''} · código ${esc(i.codigo || '—')}${i.persona ? ` (de <button type="button" class="btn-link" data-as-abrir="${Number(i.personal_id)}">${esc(i.persona)}</button>)` : ' (no es de nadie)'} · ${esc(i.kiosco || '')}
-        ${i.tiene_foto ? ` <button type="button" class="btn-link" data-as-intento-foto="${Number(i.id)}">📷 Foto</button>` : esc(i.foto_borrada ? ' · foto borrada (plazo cumplido)' : ' · sin foto')}</li>`).join('')}</ul><div id="as-intento-foto"></div></div>`;
+    return `<div class="modal-section"><h3 class="pe-sub">⚠️ Intentos fallidos en el kiosco (${esc(l.length)})</h3><p class="ayuda">El kiosco toma foto cuando alguien se equivoca de código o PIN, o cuando su cara no coincide: sirve para ver si alguien prueba el código de otra persona. Pulsa el nombre para ver sus checadas.</p>
+      ${tablaIntentos(l)}<div id="as-intento-foto"></div></div>`;
   }
   const revisar = c => c.estado === 'por_revisar', vigente = c => c.estado !== 'anulada';
   // Ubicación de una checada desde el celular: enlace al mapa (se abre solo si quien revisa lo pulsa).
@@ -150,8 +161,7 @@ const Asistencia = (() => {
       : '<p class="ayuda">No checó este día.</p>';
     if (ints.length) {
       const sinRevisar = ints.filter(i => i.es_cara && !i.revisado_at).length;
-      h += `<h4 class="pe-sub2">⚠️ Intentos fallidos en el kiosco (${esc(ints.length)})</h4><ul class="pe-ordenes">${ints.map(i => `<li><b>${esc(i.hora)}</b> · <span class="${i.es_cara ? 'ac-cara-mal' : ''}">${esc(i.motivo)}</span>${i.detalle ? ` <small class="pe-cuenta">(${esc(i.detalle)})</small>` : ''} · ${esc(i.kiosco || '')}
-        ${i.tiene_foto ? ` <button type="button" class="btn-link" data-ac-intento-foto="${Number(i.id)}">📷 Foto</button>` : esc(i.foto_borrada ? ' · foto borrada (plazo cumplido)' : ' · sin foto')}${i.es_cara && i.revisado_por_nombre ? ` <small class="pe-cuenta">revisado por ${esc(i.revisado_por_nombre)}</small>` : ''}</li>`).join('')}</ul>
+      h += `<h4 class="pe-sub2">⚠️ Intentos fallidos en el kiosco (${esc(ints.length)})</h4>${tablaIntentos(ints, { persona: false, foto: 'data-ac-intento-foto' })}
         ${sinRevisar && p.corregir ? `<div class="btn-group"><button type="button" class="btn btn-secundario" id="ac-revisado">✔ Ya lo revisé (quitar el aviso de Inicio)</button></div>` : ''}`;
     }
     h += '<div id="ac-foto"></div>';
