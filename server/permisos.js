@@ -41,6 +41,8 @@ const CATALOGO = [
   ['reportes.panorama', 'Reportes', 'Panorama general', 'Ventas, cobranza, gastos y utilidad de la empresa', ['gerente']],
   // Módulo contable F1 (2026-11-11): para el rol «Contador» que crea Dirección. Solo consulta y descarga; no cambia nada.
   ['contabilidad.ver', 'Reportes', 'Contabilidad del mes', 'Resumen de ingresos, egresos e IVA del mes y descarga del Excel y los XML (facturas emitidas y de gastos) para el contador. Solo consulta', ['gerente']],
+  // Editar Contabilidad (2026-11-12, Dirección): cerrar un mes ya terminado. Ya cerrado, solo Dirección cambia lo de ese mes.
+  ['contabilidad.cerrar', 'Reportes', 'Cerrar el mes de contabilidad', 'Cerrar un mes ya terminado de su sucursal: después, solo Dirección registra, corrige o cancela cobros, pagos y anticipos con fecha de ese mes, y cambia su saldo inicial del banco. Reabrirlo es solo de Dirección. Dáselo al rol «Contador»', []],
   ['catalogos.editar', 'Catálogos', 'Catálogos compartidos', 'Canales, tipos de cliente, centros de costo, unidades, categorías de gasto y descripción y orden de los servicios (los usan todas las sucursales)', ['gerente', 'costos']],
   ['personal.ver', 'Personal', 'Ver personal', 'Lista y fichas del personal de su sucursal (sin datos de pago ni expediente)', ['gerente']],
   ['personal.editar', 'Personal', 'Editar personal', 'Altas, cambios, bajas, vacaciones e incidencias', ['gerente']],
@@ -118,6 +120,7 @@ const REALES = new Set(CATALOGO.map(p => p.clave));
 const DEPENDE = {
   'dinero.mover': ['cxp.ver', 'gastos.registrar'],
   'cobros.confirmar': ['cxc.ver'],
+  'contabilidad.cerrar': ['contabilidad.ver'], // cierra el mes quien ve la contabilidad
   'cobranza.factura': ['cxc.ver'], // crédito y datos de factura: solo quien ve la cobranza
   'facturacion.fiscales': ['contactos.ver'], // los datos fiscales cuelgan de un cliente: hay que poder verlo
   'facturacion.timbrar': ['cxc.ver', 'facturacion.fiscales'], // factura lo que cobra: ve la cobranza y elige los datos fiscales del cliente
@@ -295,10 +298,11 @@ module.exports = function crearPermisos(db, app, h) {
   function prepararAlcance(req, a) {
     const u = req.usuarioSesion; if (!u || !a) return;
     a.usuarioId = u.id; // quién pide (también Dirección: así queda quién capturó lo que registra)
+    a.direccion = direccion(req); // para el candado del mes cerrado (server/contabilidad-cierres.js); «ver como» otro rol no cuenta
     const real = u.rol_real || u.rol;
     let rol = real;
     if (real === 'admin') { const v = req.get('X-Ver-Como'); if (!v || v === 'admin' || !rolValido(v)) return; rol = v; }
-    a.usuarioId = u.id; a.niveles = nivelesDe(rol); a.gastosOrden = tieneRol(rol, 'gastos.ver_orden'); a.editarOtros = tieneRol(rol, 'ventas.editar_otros');
+    a.direccion = false; a.usuarioId = u.id; a.niveles = nivelesDe(rol); a.gastosOrden = tieneRol(rol, 'gastos.ver_orden'); a.editarOtros = tieneRol(rol, 'ventas.editar_otros');
   }
   // ¿Puede editar este contacto, cotización u orden? (2026-10-26) Dirección siempre; los demás, si su rol edita esa área
   // y es suyo (lo capturó o está a su nombre), o si tiene «Editar lo de otros» (Gerente). Ver una orden no basta.
