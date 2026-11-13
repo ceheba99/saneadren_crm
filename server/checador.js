@@ -470,7 +470,7 @@ module.exports = function checador(app, db, h) {
     // La tableta dice cómo está (batería, cargador, cámara): el vigía avisa antes de que falle (kiosco-vigia.js).
     const q = req.query, b = /^\d{1,3}$/.test(String(q.b ?? '')) ? Number(q.b) : null, si = v => (v === '1' ? true : v === '0' ? false : null);
     vigiaKioscos.reporte(req.kiosco.id, { bateria: b, cargando: si(q.c), camara: si(q.cam) });
-    res.json({ nombre: req.kiosco.nombre, sucursal: req.kiosco.sucursal, fecha: a.fecha, hora: a.hora.slice(0, 5), utc: a.utc, tipos: TIPOS });
+    res.json({ nombre: req.kiosco.nombre, sucursal: req.kiosco.sucursal, fecha: a.fecha, hora: a.hora.slice(0, 5), utc: a.utc, tipos: TIPOS, llave_cola: llaveColaPublica() });
   }));
   // Revisa código y PIN con todos los topes. Regresa { p } o { status, error } (el error ya va listo para la pantalla).
   function verificar(d, codigo, pin) {
@@ -637,6 +637,24 @@ module.exports = function checador(app, db, h) {
   // RH la registre a mano si era buena. Con el PIN BLOQUEADO no se descarta: la tableta la vuelve a subir después (antes
   // una checada buena se borraba si subía durante el bloqueo). Si la tableta repite una ya rechazada (no le llegó la
   // respuesta), recibe lo mismo sin anotarla otra vez ni contar otro fallo de PIN.
+  // Candado de la cola sin conexión (2026-11-12, auditoría): la tableta ya no guarda el PIN en claro mientras la checada
+  // espera a subir. Lo cierra con una llave PÚBLICA que le da el servidor (ECDH P-256 + AES-256-GCM); solo el servidor
+  // lo abre, con la llave privada que sale de CLAVE_CIFRADO (no se guarda en ningún lado). Quien lea el almacenamiento
+  // de la tableta no puede sacar los PIN ni las caras guardadas. Si cambia CLAVE_CIFRADO, lo guardado con la llave
+  // anterior ya no se abre (los PIN tampoco sirven ya): queda en «Intentos fallidos».
+  const llaveCola = () => { const e = crypto.createECDH('prime256v1'); e.setPrivateKey(Buffer.from(C.huella(Buffer.from('checador-cola-sin-conexion:v1')).slice(3), 'hex')); return e; };
+  const llaveColaPublica = () => { try { return llaveCola().getPublicKey().toString('base64'); } catch { return null; } };
+  function abrirSecreto(uid, s) {
+    try {
+      const e = Buffer.from(String(s?.e || ''), 'base64'), iv = Buffer.from(String(s?.iv || ''), 'base64'), c = Buffer.from(String(s?.c || ''), 'base64');
+      if (e.length !== 65 || iv.length !== 12 || c.length < 17 || c.length > 200000) return null;
+      const llave = crypto.createHash('sha256').update(Buffer.concat([llaveCola().computeSecret(e), e])).digest();
+      const d = crypto.createDecipheriv('aes-256-gcm', llave, iv);
+      d.setAAD(Buffer.from(uid)); d.setAuthTag(c.subarray(c.length - 16));
+      const j = JSON.parse(Buffer.concat([d.update(c.subarray(0, c.length - 16)), d.final()]).toString('utf8'));
+      return j && typeof j === 'object' ? j : null;
+    } catch { return null; }
+  }
   const rechazadasSinConexion = new Map();
   setInterval(() => { const t = Date.now(); for (const [k, v] of rechazadasSinConexion) if (v.expira <= t) rechazadasSinConexion.delete(k); }, 60 * 1000).unref();
   function rechazarSinConexion(req, res, { uid, tipo, a, status, error }) {
@@ -667,13 +685,34 @@ module.exports = function checador(app, db, h) {
     if (ya && ya.expira > Date.now()) return res.status(ya.status).json(ya.cuerpo);
     if (!Number.isFinite(edad) || edad < 0 || edad > MAX_SIN_CONEXION_MS) return rechazarSinConexion(req, res, { uid, tipo, a: null, status: 400, error: 'La checada guardada es de hace más de 7 días o su hora no es válida: regístrala a mano con motivo' });
     const a = ahoraMexico(new Date(Date.now() - edad)), monotonica = b.monotonica === true;
-    const v = verificar(d, String(b.codigo ?? ''), String(b.pin ?? ''));
-    if (!v.p) {
-      // Kiosco en pausa (429) o PIN bloqueado (423): no se descarta, la tableta la sube después.
-      if (v.status === 429 || v.status === 423) return res.status(v.status).json({ error: v.error, descartar: false });
-      return rechazarSinConexion(req, res, { uid, tipo, a, status: v.status, error: v.error });
+    // El PIN (o la cara de quien entra con ella) llega cerrado con el candado de la cola; las tabletas con la versión
+    // anterior todavía lo mandan en claro.
+    let pin = String(b.pin ?? ''), rostro = null;
+    if (b.secreto) {
+      const s = abrirSecreto(uid, b.secreto);
+      if (!s) return rechazarSinConexion(req, res, { uid, tipo, a, status: 409, error: 'No se pudo abrir lo que guardó la tableta (cambió la clave de seguridad del sistema): regístrala a mano con motivo' });
+      pin = String(s.pin ?? ''); rostro = s.rostro && typeof s.rostro === 'object' ? s.rostro : null;
     }
-    const p = v.p, previa = db.prepare('SELECT id, tipo, hora FROM main.checadas WHERE uid_kiosco = ?').get(uid);
+    let p = null, bio = null;
+    if (!pin && rostro) {
+      // Entró con la cara y no había internet (2026-11-12): la tableta guardó su cara (cerrada) y se compara aquí, al
+      // subir, contra su registro. Si no coincide o no pasó la prueba de vida, no se guarda: queda en «Intentos fallidos».
+      p = conCara(String(b.codigo ?? ''));
+      if (!p) return rechazarSinConexion(req, res, { uid, tipo, a, status: 409, error: 'Entró con la cara sin internet, pero no tiene la cara registrada (o ya no checa)' });
+      const repetida = db.prepare('SELECT id, tipo, hora FROM main.checadas WHERE uid_kiosco = ?').get(uid);
+      if (repetida) return res.json({ id: repetida.id, nombre: primerNombre(p.nombre), tipo: TIPOS[repetida.tipo], hora: repetida.hora.slice(0, 5), repetida: true });
+      bio = app.locals.biometria.evaluar(p.id, rostro);
+      if (bio?.resultado !== 'coincide') return rechazarSinConexion(req, res, { uid, tipo, a, status: 401, error: 'Entró con la cara sin internet y ' + ({ no_coincide: 'la cara no coincide', no_vivo: 'no pasó la prueba de vida (parece foto o pantalla)', sin_rostro: 'no se vio la cara' }[bio?.resultado] || 'no se pudo comprobar') });
+    } else {
+      const v = verificar(d, String(b.codigo ?? ''), pin);
+      if (!v.p) {
+        // Kiosco en pausa (429) o PIN bloqueado (423): no se descarta, la tableta la sube después.
+        if (v.status === 429 || v.status === 423) return res.status(v.status).json({ error: v.error, descartar: false });
+        return rechazarSinConexion(req, res, { uid, tipo, a, status: v.status, error: v.error });
+      }
+      p = v.p;
+    }
+    const previa = db.prepare('SELECT id, tipo, hora FROM main.checadas WHERE uid_kiosco = ?').get(uid);
     if (previa) return res.json({ id: previa.id, nombre: primerNombre(p.nombre), tipo: TIPOS[previa.tipo], hora: previa.hora.slice(0, 5), repetida: true });
     if (p.pin_temporal) return rechazarSinConexion(req, res, { uid, tipo, a, status: 409, error: 'Tenía PIN temporal: debe elegir su PIN con internet' });
     // La misma checada ya está (2026-11-12): la tableta la guardó «sin conexión» porque no le llegó la respuesta, pero el
@@ -682,7 +721,7 @@ module.exports = function checador(app, db, h) {
       .get(p.id, tipo, new Date(Date.parse(a.utc) - DUPLICADO_MS).toISOString(), new Date(Date.parse(a.utc) + DUPLICADO_MS).toISOString());
     if (cerca) return res.json({ id: cerca.id, nombre: primerNombre(p.nombre), tipo: TIPOS[tipo], hora: cerca.hora.slice(0, 5), repetida: true });
     const hd = typeof b.hora_dispositivo === 'string' && /^\d{4}-\d{2}-\d{2}T[\d:.]+Z$/.test(b.hora_dispositivo) ? b.hora_dispositivo : null;
-    const id = guardarChecada({ p, d, tipo, a, foto: fotoDe(b.foto), uid, ip: req.ipCliente || null,
+    const id = guardarChecada({ p, d, tipo, a, foto: fotoDe(b.foto), uid, ip: req.ipCliente || null, bio,
       sinConexion: { horaDispositivo: hd, nota: 'Sin conexión: hora ' + (monotonica ? 'calculada con el reloj interno del kiosco' : 'estimada con el reloj de la tableta (el kiosco se reinició)') } });
     res.status(201).json({ id, nombre: primerNombre(p.nombre), tipo: TIPOS[tipo], hora: a.hora.slice(0, 5) });
   }));
