@@ -20,14 +20,14 @@ const Compras = (() => {
   // ---------- Lista ----------
   async function cargar() {
     const turno = ++consulta, cont = $('oc-lista');
-    cont.innerHTML = '<p class="util-45" role="status">Cargando…</p>';
+    Repintado.cargando(cont, 'oc|' + $('oc-filtro').value);
     try {
       const q = new URLSearchParams({ estado: $('oc-filtro').value, q: $('oc-buscar').value.trim() });
       const [lista] = await Promise.all([pedir('/compras/ordenes?' + q), catalogos()]);
       if (turno !== consulta) return;
       LISTA = lista;
-    } catch (err) { cont.innerHTML = '<div class="aviso-error-carga" role="alert"><p>No se pudo cargar: ' + esc(err.message) + '</p></div>'; return; }
-    if (!LISTA.length) { cont.innerHTML = '<p class="util-45">No hay órdenes de compra con este filtro. Usa «+ Nueva orden de compra».</p>'; return; }
+    } catch (err) { Repintado.falla(cont, err, cargar, '<div class="aviso-error-carga" role="alert"><p>No se pudo cargar: ' + esc(err.message) + '</p></div>'); return; }
+    if (!LISTA.length) { Repintado.pintar(cont, '<p class="util-45">No hay órdenes de compra con este filtro. Usa «+ Nueva orden de compra».</p>'); return; }
     const filas = LISTA.map(o => {
       const [txt, cl] = ESTADOS[o.estado];
       const pago = o.estado === 'autorizada' ? (o.saldo > 0 ? (o.pagado > 0 ? 'Pagado ' + dinero(o.pagado) + ' · falta ' + dinero(o.saldo) : 'Pendiente de pago') : 'Pagada ✓') : '—';
@@ -44,8 +44,8 @@ const Compras = (() => {
     const porAutorizar = LISTA.filter(o => o.estado === 'borrador');
     const aviso = porAutorizar.length ? '<p class="cuentas-aviso oc-por-autorizar">' + porAutorizar.length + (porAutorizar.length === 1 ? ' orden está' : ' órdenes están') + ' por autorizar (' + dinero(porAutorizar.reduce((t, o) => t + o.total, 0)) + '). '
       + (esAdmin() ? 'Al autorizarlas se vuelven deuda: pasan a Cuentas por pagar como factura pendiente del proveedor.' : 'Las autoriza un administrador; hasta entonces no son deuda.') + '</p>' : '';
-    cont.innerHTML = aviso + '<div class="tabla-scroll tabla-dinero-caja"><table class="tabla-resumen tabla-dinero"><thead><tr><th>Estado</th><th>Folio</th><th>Fecha</th><th>Proveedor</th><th>Centro de costos</th><th>Concepto</th><th class="st-num">Total</th><th>¿Autorizada?</th><th>Pago</th><th></th></tr></thead><tbody>'
-      + filas + '</tbody><tfoot><tr><td colspan="6"><b>Totales · ' + LISTA.length + '</b> <small class="util-45">(sin canceladas)</small></td><td class="st-num"><b>' + dinero(total) + '</b></td><td colspan="3"></td></tr></tfoot></table></div>';
+    Repintado.pintar(cont, aviso + '<div class="tabla-scroll tabla-dinero-caja"><table class="tabla-resumen tabla-dinero"><thead><tr><th>Estado</th><th>Folio</th><th>Fecha</th><th>Proveedor</th><th>Centro de costos</th><th>Concepto</th><th class="st-num">Total</th><th>¿Autorizada?</th><th>Pago</th><th></th></tr></thead><tbody>'
+      + filas + '</tbody><tfoot><tr><td colspan="6"><b>Totales · ' + LISTA.length + '</b> <small class="util-45">(sin canceladas)</small></td><td class="st-num"><b>' + dinero(total) + '</b></td><td colspan="3"></td></tr></tfoot></table></div>');
   }
 
   // ---------- Ventana: captura / consulta ----------
@@ -316,8 +316,8 @@ const Compras = (() => {
   async function pintarExpediente(id) {
     const cont = $('oc-expediente');
     cont.hidden = false;
-    cont.innerHTML = '<p class="util-45" role="status">Cargando expediente…</p>';
-    try { EXPEDIENTE = await pedir('/compras/ordenes/' + Number(id) + '/expediente'); } catch (err) { cont.innerHTML = '<p class="aviso-error-carga">' + esc(err.message) + '</p>'; return; }
+    Repintado.cargando(cont, 'exp|' + id, '<p class="util-45" role="status">Cargando expediente…</p>');
+    try { EXPEDIENTE = await pedir('/compras/ordenes/' + Number(id) + '/expediente'); } catch (err) { Repintado.falla(cont, err, () => pintarExpediente(id), '<p class="aviso-error-carga">' + esc(err.message) + '</p>'); return; }
     const e = EXPEDIENTE, vivos = e.documentos.filter(d => !d.eliminado), quitados = e.documentos.filter(d => d.eliminado);
     const tipos = Object.entries(e.tipos);
     const lista = '<ul class="oc-exp-lista">' + e.lista.map(x => '<li class="' + (x.listo ? 'listo' : x.opcional ? 'opcional' : 'falta') + '"><span aria-hidden="true">' + (x.listo ? '✔' : x.opcional ? '○' : '•') + '</span> ' + esc(x.texto)
@@ -341,12 +341,12 @@ const Compras = (() => {
     const cuenta = c ? '<div class="oc-exp-cxp"><div><span class="etiqueta-mini">Cuenta por pagar</span><b>' + dinero(c.total) + '</b></div><div><span class="etiqueta-mini">Pagado</span><b>' + dinero(c.pagado) + '</b></div><div><span class="etiqueta-mini">Saldo</span><b class="' + (c.saldo > 0 ? 'cg-pendiente' : 'oc-deuda si') + '">' + (c.cancelada ? 'cancelada' : dinero(c.saldo)) + '</b></div><div><span class="etiqueta-mini">Crédito</span><b>' + esc(c.dias_credito == null ? '—' : c.dias_credito ? c.dias_credito + ' días' : 'De contado') + '</b></div><div><span class="etiqueta-mini">Vence</span><b>' + esc(fechaTxt(c.vence)) + '</b></div><div><span class="etiqueta-mini">Factura</span><b>' + esc(c.factura_folio || '—') + '</b></div></div>'
       + (c.pagos.length ? '<div class="tabla-scroll"><table class="tabla-resumen"><thead><tr><th>Fecha</th><th>Método</th><th>Referencia</th><th class="st-num">Monto</th></tr></thead><tbody>' + c.pagos.map(p => '<tr class="' + (p.cancelado ? 'fila-cancelada' : '') + '"><td>' + esc(fechaTxt(p.fecha)) + '</td><td>' + esc(p.metodo) + '</td><td>' + esc(p.referencia || '') + (p.cancelado ? ' <small>cancelado: ' + esc(p.motivo_cancelacion || '') + '</small>' : '') + '</td><td class="st-num">' + dinero(p.monto) + '</td></tr>').join('') + '</tbody></table></div>' : '<p class="util-45">Sin pagos todavía (se registran en Cuentas por pagar).</p>')
       : '<p class="util-45">Todavía no es deuda: al autorizarla pasa a Cuentas por pagar.</p>';
-    cont.innerHTML = '<div class="oc-exp-cab"><div class="seccion-tit">📁 Expediente de la orden</div><button type="button" class="btn btn-primario btn-chico" id="oc-exp-zip">📦 Descargar expediente completo (ZIP)</button></div>'
+    Repintado.pintar(cont, '<div class="oc-exp-cab"><div class="seccion-tit">📁 Expediente de la orden</div><button type="button" class="btn btn-primario btn-chico" id="oc-exp-zip">📦 Descargar expediente completo (ZIP)</button></div>'
       + lista + recepcionHTML(e.orden)
       + '<div class="oc-exp-bloque apartado"><div class="seccion-sub">Documentos</div>' + docs + subir
       + (quitados.length ? '<details class="oc-exp-quitados"><summary>' + quitados.length + ' documento(s) quitado(s)</summary><ul>' + quitados.map(d => '<li>' + esc(d.tipo_nombre) + ': «' + esc(d.nombre) + '» · quitado por ' + esc(d.eliminado_por || '') + ' el ' + esc(fechaTxt(String(d.eliminado_at || '').slice(0, 10))) + ' · ' + esc(d.motivo_eliminado || '') + '</li>').join('') + '</ul></details>' : '') + '</div>'
       + '<div class="oc-exp-bloque apartado"><div class="seccion-sub">Pagos</div>' + cuenta + '</div>'
-      + '<div class="oc-exp-bloque apartado"><div class="seccion-sub">Historial de la orden</div>' + (e.historial.length ? Bitacora.tabla(e.historial, false) : '<p class="util-45">Sin movimientos.</p>') + '</div>';
+      + '<div class="oc-exp-bloque apartado"><div class="seccion-sub">Historial de la orden</div>' + (e.historial.length ? Bitacora.tabla(e.historial, false) : '<p class="util-45">Sin movimientos.</p>') + '</div>');
     prepararFirma();
   }
   // Subir: el archivo va tal cual (sin convertirlo), con su tipo y nombre en encabezados.
@@ -755,12 +755,12 @@ const Compras = (() => {
     const cont = $('inicio-compras'); if (!cont || !Permisos.puede('compras.ver')) return;
     if (!cont.innerHTML.trim()) cont.innerHTML = '<p class="util-45" role="status">Cargando…</p>'; // al refrescar, lo de antes se queda hasta que llega lo nuevo
     let avisos;
-    try { avisos = await api('/compras/avisos').then(json); } catch (e) { if (e.status !== 401) cont.innerHTML = `<div class="aviso-error-carga" role="alert"><p>${esc(e.message)}</p><button type="button" class="btn btn-outline" data-co-inicio-reintentar="1">Reintentar</button></div>`; return; }
-    cont.innerHTML = avisos.length ? avisos.map(a => `<div class="fila-alerta ${a.nivel === 'rojo' ? 'vencido' : a.nivel === 'azul' ? 'tipo-alerta' : 'tipo-recompra'}">
+    try { avisos = await api('/compras/avisos').then(json); } catch (e) { if (e.status !== 401) Repintado.falla(cont, e, pintarInicio, `<div class="aviso-error-carga" role="alert"><p>${esc(e.message)}</p><button type="button" class="btn btn-outline" data-co-inicio-reintentar="1">Reintentar</button></div>`); return; }
+    Repintado.pintar(cont, avisos.length ? avisos.map(a => `<div class="fila-alerta ${a.nivel === 'rojo' ? 'vencido' : a.nivel === 'azul' ? 'tipo-alerta' : 'tipo-recompra'}">
         <div class="info"><span class="tipo-tag ${a.nivel === 'rojo' ? 'rojo' : a.nivel === 'azul' ? 'alerta' : 'recompra'}">${esc(TAG_INICIO[a.tipo] || a.tipo)}</span>
           <div><b>${esc(a.folio || '')}</b> · ${esc(a.nombre || '')}</div><div class="txt">${esc(a.texto)}</div>${a.fecha ? `<div class="fecha">${esc(String(a.fecha).split('-').reverse().join('/'))}</div>` : ''}</div>
         <div class="util-46">${a.oc_id ? `<button type="button" class="btn btn-outline" data-co-inicio-oc="${Number(a.oc_id)}">Abrir orden de compra</button>` : `<button type="button" class="btn btn-outline" data-co-inicio-sol="${Number(a.solicitud_id)}">Abrir solicitud</button>`}</div></div>`).join('')
-      : '<p class="util-45">Nada pendiente en compras. 🎉</p>';
+      : '<p class="util-45">Nada pendiente en compras. 🎉</p>');
   }
   $('inicio-compras')?.addEventListener('click', e => {
     const b = e.target.closest('button'); if (!b) return;

@@ -35,12 +35,13 @@ const ClientesCarga = (() => {
   }
   async function pintarCargas() {
     const cont = $('cc-cargas');
-    let j; try { j = await pedir('/clientes-carga'); } catch (e) { cont.innerHTML = '<p class="aviso-error-carga">' + esc(e.message) + '</p>'; return; }
-    cont.innerHTML = j.cargas.length ? `<div class="tabla-scroll"><table class="tabla-resumen bit-tabla cc-tabla"><thead><tr><th>Carga</th><th>Fecha</th><th>Quién</th><th>Archivo</th><th>Clientes</th><th></th></tr></thead><tbody>
+    let j; try { j = await pedir('/clientes-carga'); } catch (e) { Repintado.falla(cont, e, pintarCargas, '<p class="aviso-error-carga">' + esc(e.message) + '</p>'); return; }
+    const detalleAntes = abierta ? ($('cc-detalle-' + abierta)?.innerHTML || '') : ''; // el detalle abierto se queda mientras llega el nuevo
+    Repintado.pintar(cont, j.cargas.length ? `<div class="tabla-scroll"><table class="tabla-resumen bit-tabla cc-tabla"><thead><tr><th>Carga</th><th>Fecha</th><th>Quién</th><th>Archivo</th><th>Clientes</th><th></th></tr></thead><tbody>
       ${j.cargas.map(k => `<tr><td>#${esc(k.id)}</td><td>${esc(fecha(k.fecha))}</td><td>${esc(k.usuario || '')}</td><td>${esc(k.archivo || '')}</td><td>${esc(k.quedan)} de ${esc(k.creados)}${k.omitidos ? ` <small>(${esc(k.omitidos)} omitidos)</small>` : ''}</td>
         <td class="cc-acciones"><button type="button" class="btn btn-outline btn-chico" data-cc-ver="${esc(k.id)}">${abierta === k.id ? 'Ocultar' : 'Ver clientes'}</button>${k.quedan ? ` <button type="button" class="btn btn-outline btn-chico" data-cc-deshacer="${esc(k.id)}">Deshacer carga</button>` : ''}</td></tr>
-        ${abierta === k.id ? `<tr><td colspan="6" id="cc-detalle-${esc(k.id)}"><p class="util-45">Cargando…</p></td></tr>` : ''}`).join('')}</tbody></table></div>`
-      : '<p class="util-45">Todavía no hay cargas.</p>';
+        ${abierta === k.id ? `<tr><td colspan="6" id="cc-detalle-${esc(k.id)}">${detalleAntes && !/Cargando/.test(detalleAntes) ? detalleAntes : '<p class="util-45">Cargando…</p>'}</td></tr>` : ''}`).join('')}</tbody></table></div>`
+      : '<p class="util-45">Todavía no hay cargas.</p>');
     if (abierta) pintarDetalle(abierta);
   }
   const tablaClientes = lista => lista.length ? `<div class="tabla-scroll"><table class="tabla-resumen bit-tabla cc-tabla"><thead><tr><th>ID</th><th>Nombre</th><th>Empresa</th><th>Teléfono</th><th></th></tr></thead><tbody>

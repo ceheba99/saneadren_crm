@@ -49,7 +49,7 @@ const RevisionMk = (() => {
   async function abrir() {
     try {
       CAT = await Marketing.catalogos();
-      $('ap-lista').innerHTML = '<p class="util-45" role="status">Cargando…</p>'; abrirVentana('overlay-aprobar-mk');
+      Repintado.cargando($('ap-lista'), '', undefined, true); abrirVentana('overlay-aprobar-mk');
       const ids = (await enRevision()).sort((a, b) => (a.fecha + (a.hora || '')).localeCompare(b.fecha + (b.hora || ''))).map(p => p.id);
       LISTA = await Promise.all(ids.map(id => pedir('/publicaciones/' + id)));
       $('ap-lista').innerHTML = LISTA.map(tarjeta).join(''); resumen(); imagenesEn($('ap-lista'));

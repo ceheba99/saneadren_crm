@@ -243,7 +243,7 @@ const Facturacion = (() => {
   async function cargarCliente(id) {
     const cont = $('fc-fiscales'); if (!cont) return;
     if (typeof Permisos !== 'undefined' && !Permisos.puede('facturacion.fiscales')) { cont.innerHTML = ''; FIS = null; return; }
-    cont.innerHTML = '<p class="util-45" role="status">Cargando…</p>';
+    Repintado.cargando(cont, 'fis|' + id);
     try { FIS = { clienteId: Number(id), nuevo: false, ...(await pedir('/clientes/' + Number(id))) }; pintarFiscales(); }
     catch (e) { FIS = null; cont.innerHTML = `<p class="aviso-error-carga" role="alert">${esc(e.message)}</p>`; }
   }
@@ -334,7 +334,7 @@ const Facturacion = (() => {
     const q = new URLSearchParams(Object.entries(opciones).filter(([, v]) => v !== undefined && v !== '' && v !== null)).toString();
     const r = await pedirCompleto('/ordenes/' + id + (q ? '?' + q : ''));
     if (turno !== TURNO) return;
-    if (!r.ok) { cont.innerHTML = `<p class="aviso-error-carga" role="alert">${esc(r.j.error || 'No se pudo cargar la factura')}</p>`; return; }
+    if (!r.ok) { Repintado.falla(cont, new Error(r.j.error || 'No se pudo cargar la factura'), () => cargarOrden(lead, opciones), `<p class="aviso-error-carga" role="alert">${esc(r.j.error || 'No se pudo cargar la factura')}</p>`); return; }
     ORD = { id, opciones: { ...opciones }, ...r.j, extra: ORD?.id === id ? ORD.extra : null };
     pintarOrden();
   }
@@ -490,7 +490,7 @@ const Facturacion = (() => {
         <button type="button" class="btn btn-primario" data-fx-timbrar ${p.errores.length ? 'disabled' : ''}>🧾 Timbrar factura${o.prueba ? ' de prueba' : ''}</button>
       </div>`;
     }
-    cont.innerHTML = banda + lista + pagosPpd() + form;
+    Repintado.pintar(cont, banda + lista + pagosPpd() + form);
   }
   // ---------- Complementos de pago de la factura PPD (F6, 2026-11-03) ----------
   // Los pagos confirmados de la factura PPD, con su complemento. Nada se timbra solo: «Timbrar complemento» abre el resumen y se confirma.
@@ -626,13 +626,13 @@ const Facturacion = (() => {
     const turno = ++TURNO_LISTA;
     let r;
     try { r = await pedir('/facturas' + (q ? '?' + q : '')); }
-    catch (e) { if (turno === TURNO_LISTA) cont.innerHTML = `<p class="aviso-error-carga" role="alert">${esc(e.message)}</p>`; return; }
+    catch (e) { if (turno === TURNO_LISTA) Repintado.falla(cont, e, () => cargarLista(), `<p class="aviso-error-carga" role="alert">${esc(e.message)}</p>`); return; }
     if (turno !== TURNO_LISTA) return; // llegó una búsqueda más nueva
     if (!LISTA_OK) { $('fx-l-sucursal').innerHTML = '<option value="">Todas las sucursales</option>' + r.sucursales.map(x => `<option value="${Number(x.id)}">${esc(x.nombre)}</option>`).join(''); LISTA_OK = true; }
     $('fx-lista-entorno').textContent = r.entorno === 'prod' ? 'Conexión en PRODUCCIÓN: las facturas nuevas tienen validez fiscal.' : r.entorno === 'demo' ? 'Demo: las facturas se simulan.' : 'Conexión de PRUEBAS (sandbox): las facturas nuevas no tienen validez fiscal.';
     $('fx-l-resumen').textContent = r.total ? `${r.total} factura(s)${r.truncado ? ' (se muestran las 200 más recientes: afina la búsqueda)' : ''}` : '';
     LISTA_F = r.facturas;
-    cont.innerHTML = r.facturas.length ? r.facturas.map(x => tarjetaFactura(x, true)).join('') : '<p class="util-45">No hay facturas con esos filtros.</p>';
+    Repintado.pintar(cont, r.facturas.length ? r.facturas.map(x => tarjetaFactura(x, true)).join('') : '<p class="util-45">No hay facturas con esos filtros.</p>');
   }
   let TURNO_LISTA = 0;
   for (const id of ['fx-l-estatus', 'fx-l-entorno', 'fx-l-sucursal', 'fx-l-desde', 'fx-l-hasta']) $(id)?.addEventListener('change', cargarLista);
@@ -686,14 +686,14 @@ const Facturacion = (() => {
   async function pintarInicio() {
     const cont = $('inicio-facturacion'); if (!cont || (typeof Permisos !== 'undefined' && !Permisos.puede('facturacion.timbrar'))) return;
     let r;
-    try { r = await pedir('/avisos'); } catch (e) { cont.innerHTML = `<div class="aviso-error-carga" role="alert"><p>${esc(e.message)}</p></div>`; return; }
+    try { r = await pedir('/avisos'); } catch (e) { Repintado.falla(cont, e, pintarInicio, `<div class="aviso-error-carga" role="alert"><p>${esc(e.message)}</p></div>`); return; }
     const clase = n => (n === 'rojo' ? 'vencido' : n === 'azul' ? 'tipo-alerta' : 'tipo-recompra'), tag = n => (n === 'rojo' ? 'rojo' : n === 'azul' ? 'alerta' : 'recompra');
-    cont.innerHTML = r.avisos.length ? r.avisos.map(a => `<div class="fila-alerta ${clase(a.nivel)}">
+    Repintado.pintar(cont, r.avisos.length ? r.avisos.map(a => `<div class="fila-alerta ${clase(a.nivel)}">
         <div class="info"><span class="tipo-tag ${tag(a.nivel)}">${esc(TAG_FX[a.tipo] || a.tipo)}</span>
           <div><b>${esc(a.folio || '')}</b> · ${esc(a.nombre || '')}</div><div class="txt">${esc(a.texto)}</div>${a.fecha ? `<div class="fecha">${a.tipo === 'complemento_pendiente' ? 'Pago del' : 'Realizada el'} ${esc(String(a.fecha).split('-').reverse().join('/'))}</div>` : ''}</div>
         <div class="util-46"><button type="button" class="btn btn-outline" data-fx-inicio-orden="${Number(a.lead_id)}">Abrir orden</button></div></div>`).join('') + (r.por_facturar_total > 15 ? `<p class="ayuda">Y ${Number(r.por_facturar_total) - 15} orden(es) más por facturar.</p>` : '')
         + (r.por_facturar_viejas ? `<p class="ayuda">⚠ Además, ${Number(r.por_facturar_viejas)} orden(es) realizadas hace más de 60 días siguen sin factura.</p>` : '')
-      : '<p class="util-45">Nada pendiente de facturar. 🎉</p>';
+      : '<p class="util-45">Nada pendiente de facturar. 🎉</p>');
   }
   $('inicio-facturacion')?.addEventListener('click', e => { const b = e.target.closest('[data-fx-inicio-orden]'); if (b) abrirFicha(Number(b.dataset.fxInicioOrden)); });
 

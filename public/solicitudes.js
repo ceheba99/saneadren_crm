@@ -18,17 +18,17 @@ const Solicitudes = (() => {
   // ---------- Lista ----------
   async function cargar() {
     const turno = ++consulta, cont = $('sol-lista');
-    cont.innerHTML = '<p class="util-45" role="status">Cargando…</p>';
+    Repintado.cargando(cont, 'sol|' + $('sol-filtro').value);
     try {
       const q = new URLSearchParams({ estado: $('sol-filtro').value, q: $('sol-buscar').value.trim() });
       const lista = await pedir('/compras/solicitudes?' + q);
       if (turno !== consulta) return;
       LISTA = lista;
-    } catch (err) { cont.innerHTML = '<div class="aviso-error-carga" role="alert"><p>No se pudo cargar: ' + esc(err.message) + '</p></div>'; return; }
+    } catch (err) { Repintado.falla(cont, err, cargar, '<div class="aviso-error-carga" role="alert"><p>No se pudo cargar: ' + esc(err.message) + '</p></div>'); return; }
     const porAprobar = LISTA.filter(s => s.estado === 'por_aprobar').length;
     const aviso = esCostos() && porAprobar ? '<p class="cuentas-aviso">' + porAprobar + (porAprobar === 1 ? ' solicitud espera' : ' solicitudes esperan') + ' tu aprobación.</p>' : '';
-    if (!LISTA.length) { cont.innerHTML = aviso + '<p class="util-45">No hay solicitudes con este filtro. Usa «+ Nueva solicitud» para pedir lo que se necesita comprar.</p>'; return; }
-    cont.innerHTML = aviso + '<div class="tabla-scroll"><table class="tabla-resumen sol-tabla"><thead><tr><th>Estado</th><th>Folio</th><th>Fecha</th><th>Qué se necesita</th><th>Área</th><th>Pidió</th><th>Cotizaciones</th><th>Orden de compra</th><th></th></tr></thead><tbody>'
+    if (!LISTA.length) { Repintado.pintar(cont, aviso + '<p class="util-45">No hay solicitudes con este filtro. Usa «+ Nueva solicitud» para pedir lo que se necesita comprar.</p>'); return; }
+    Repintado.pintar(cont, aviso + '<div class="tabla-scroll"><table class="tabla-resumen sol-tabla"><thead><tr><th>Estado</th><th>Folio</th><th>Fecha</th><th>Qué se necesita</th><th>Área</th><th>Pidió</th><th>Cotizaciones</th><th>Orden de compra</th><th></th></tr></thead><tbody>'
       + LISTA.map(s => {
         const [txt, cl] = ESTADOS[s.estado];
         const cot = ['por_aprobar', 'rechazada', 'cancelada'].includes(s.estado) && !s.cotizaciones_count ? '—'
@@ -36,7 +36,7 @@ const Solicitudes = (() => {
         return '<tr class="' + (['rechazada', 'cancelada'].includes(s.estado) ? 'fila-cancelada' : '') + '"><td><span class="estado-cxc ' + cl + '">' + esc(txt) + '</span></td><td><b>' + esc(s.folio) + '</b></td><td>' + esc(fechaTxt(s.created_at)) + '</td>'
           + '<td>' + (s.urgente ? '<span class="sol-urgente">URGENTE</span> ' : '') + esc(s.que) + '</td><td>' + esc(s.centro_nombre) + '</td><td>' + esc(s.solicitante_nombre) + '</td><td>' + cot + '</td><td>' + esc(s.oc_folio || '—') + '</td>'
           + '<td class="celda-acciones"><button type="button" class="btn btn-outline btn-chico" data-sol-abrir="' + Number(s.id) + '">Abrir</button></td></tr>';
-      }).join('') + '</tbody></table></div>';
+      }).join('') + '</tbody></table></div>');
   }
 
   // ---------- Ventana ----------
