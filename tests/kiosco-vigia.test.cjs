@@ -4,7 +4,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { DatabaseSync } = require('node:sqlite');
-const { vigia, ventana, correosDe } = require('../server/kiosco-vigia');
+const { vigia, ventana, correosDe, telefonosDe, textoWhatsapp } = require('../server/kiosco-vigia');
 const { ahoraMexico } = require('../server/fechas');
 
 const MIN = 60000;
@@ -143,4 +143,20 @@ test('sin respuesta: el aviso lleva lo último que dijo la tableta', () => {
   const x = armar(); x.pasar(3, { bateria: 9, cargando: false, camara: true, pantalla: true });
   assert.equal(x.v.estadoTexto(1), 'batería 9 % sin cargador, cámara bien, pantalla fija');
   assert.equal(x.v.estadoTexto(999), '');
+});
+
+// 2026-11-13 (Dirección): los avisos del reloj llegan también por WhatsApp a los números de WHATSAPP_AVISOS_CHECADOR.
+test('WhatsApp: números de México de 10 dígitos, sin repetir; acepta +52, 52 y 521', () => {
+  assert.deepEqual(telefonosDe('442 347 3691, +52 1 442 347 3691; 5512345678 / 123'), ['4423473691', '5512345678']);
+  assert.deepEqual(telefonosDe('+1 415 555 0100, 52 55 1234 5678'), ['5512345678'], 'otro país no');
+  assert.deepEqual(telefonosDe(undefined), []); assert.deepEqual(telefonosDe(''), []);
+});
+test('WhatsApp: el texto de cada aviso dice qué reloj, qué pasó y qué hacer', () => {
+  const k = { nombre: 'Entrada', sucursal: 'Querétaro', desde: 'las 14:13', volvio: '14:19', ultimo: 'batería 92 % cargando' };
+  let [t1, t2] = textoWhatsapp('sin_respuesta', k);
+  assert.match(t1, /no responde/); assert.match(t2, /Entrada.*Querétaro/); assert.match(t2, /14:13/); assert.match(t2, /92 %/);
+  [t1, t2] = textoWhatsapp('volvio', k); assert.match(t1, /ya responde/); assert.match(t2, /14:19/);
+  [t1, t2] = textoWhatsapp('bateria', { ...k, bateria: 12 }); assert.match(t1, /atención/); assert.match(t2, /12 %/);
+  [t1, t2] = textoWhatsapp('pantalla', k); assert.match(t2, /pantalla/);
+  assert.ok(t1.length <= 120 && t2.length <= 900 && !/[\r\n\t]/.test(t1 + t2), 'cabe en la plantilla y va en una línea');
 });

@@ -94,4 +94,24 @@ function correosDe(...listas) {
   }
   return r;
 }
-module.exports = { vigia, ventana, correosDe };
+// Avisos por WhatsApp (2026-11-13, Dirección): celulares de México de la variable WHATSAPP_AVISOS_CHECADOR (separados por
+// coma). Acepta «4421234567», «+52 442 123 4567» o «521…»; regresa los 10 dígitos, sin repetir. Otro país no.
+function telefonosDe(lista) {
+  const vistos = new Set();
+  for (const x of String(lista || '').split(/[,;/]+/)) {
+    const d = x.replace(/\D/g, ''), n = d.length === 10 ? d : /^521?\d{10}$/.test(d) ? d.slice(-10) : null;
+    if (n) vistos.add(n);
+  }
+  return [...vistos];
+}
+// Título y texto del aviso para la plantilla de WhatsApp (título hasta 120 letras; todo en una sola línea).
+function textoWhatsapp(tipo, k) {
+  const reloj = `«${k.nombre}»${k.sucursal ? ' (' + k.sucursal + ')' : ''}`;
+  const r = tipo === 'sin_respuesta' ? ['Reloj checador: no responde', `El reloj ${reloj} no da señal desde ${k.desde || 'hace más de 5 minutos'}${k.ultimo ? ' (lo último que reportó: ' + k.ultimo + ')' : ''}. Revisa que la tableta esté prendida, desbloqueada, con internet y con el checador abierto.`]
+    : tipo === 'volvio' ? ['Reloj checador: ya responde', `El reloj ${reloj} volvió a dar señal a las ${k.volvio}. No había respondido desde ${k.desde || 'antes'}. En Logs verás la causa («estuvo sin señal»).`]
+    : tipo === 'bateria' ? ['Reloj checador: necesita atención', `El reloj ${reloj} tiene ${k.bateria} % de batería y no está cargando. Conéctalo para que no se apague.`]
+    : tipo === 'camara' ? ['Reloj checador: necesita atención', `La cámara del reloj ${reloj} no funciona: las checadas quedan sin foto y por revisar. Cierra y abre el checador, o reinicia la tableta.`]
+    : ['Reloj checador: necesita atención', `El reloj ${reloj} no puede mantener la pantalla encendida y se va a bloquear. Conéctalo al cargador y apaga el ahorro de energía.`];
+  return [r[0].slice(0, 120), r[1].replace(/[\r\n\t]+/g, ' ').slice(0, 900)];
+}
+module.exports = { vigia, ventana, correosDe, telefonosDe, textoWhatsapp };

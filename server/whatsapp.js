@@ -133,11 +133,12 @@ module.exports = function whatsapp(app, db, h) {
   // Avisos (2026-11-11, server/avisos.js): fuera de la ventana de 24 h Meta solo deja mandar PLANTILLAS aprobadas.
   // Variables: WHATSAPP_PLANTILLA_AVISO (nombre de la plantilla en Meta, con {{1}} = título y {{2}} = texto en el
   // cuerpo) y WHATSAPP_PLANTILLA_IDIOMA (por omisión es_MX). Los valores van en una sola línea (sin saltos ni tabs).
-  const plantillaLista = () => configurado() && !!process.env.WHATSAPP_PLANTILLA_AVISO;
+  // «nombre»: otra plantilla aprobada (p. ej. WHATSAPP_PLANTILLA_ALERTA para las alertas del reloj checador, 2026-11-13).
+  const plantillaLista = (nombre = process.env.WHATSAPP_PLANTILLA_AVISO) => configurado() && !!nombre;
   const enLinea = (t, max) => String(t || '').replace(/[\r\n\t]+/g, ' · ').replace(/ {4,}/g, '   ').trim().slice(0, max);
-  function plantilla(para, valores) {
-    if (!plantillaLista()) return Promise.resolve(false);
-    return enviar(para, { type: 'template', template: { name: process.env.WHATSAPP_PLANTILLA_AVISO, language: { code: process.env.WHATSAPP_PLANTILLA_IDIOMA || 'es_MX' },
+  function plantilla(para, valores, nombre = process.env.WHATSAPP_PLANTILLA_AVISO) {
+    if (!plantillaLista(nombre)) return Promise.resolve(false);
+    return enviar(para, { type: 'template', template: { name: nombre, language: { code: process.env.WHATSAPP_PLANTILLA_IDIOMA || 'es_MX' },
       components: [{ type: 'body', parameters: valores.map((v, i) => ({ type: 'text', text: enLinea(v, i ? 900 : 120) || '—' })) }] } });
   }
   app.locals.whatsapp = { plantilla, plantillaLista };
