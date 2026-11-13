@@ -191,6 +191,11 @@ function migrar(db) {
   agregar('cuentas_por_pagar', 'import_huella', 'TEXT');
   // TIPO DE GASTO del Excel CXP (2026-11-12): cada cuánto se repite o a qué plazo es (public/cxp-excel.js). NULL = sin indicar.
   agregar('cuentas_por_pagar', 'tipo_gasto', 'TEXT');
+  // A qué corresponde (2026-11-13): solicitud de compra, orden de compra (gasto EXTRA de esa compra: flete, diferencia…;
+  // la orden ya trae su propia cuenta por pagar) y centro de costos (el catálogo de compras). NULL = sin indicar.
+  agregar('cuentas_por_pagar', 'solicitud_id', 'INTEGER');
+  agregar('cuentas_por_pagar', 'oc_id', 'INTEGER');
+  agregar('cuentas_por_pagar', 'centro_id', 'INTEGER');
   agregar('leads', 'import_huella', 'TEXT');
   db.exec('CREATE INDEX IF NOT EXISTS idx_cxp_import_huella ON cuentas_por_pagar(import_huella)');
   db.exec('CREATE INDEX IF NOT EXISTS idx_leads_import_huella ON leads(import_huella)');
@@ -725,6 +730,22 @@ module.exports = function finanzas(app, db, h, unicos) {
       || (alcance.nivel('cxp') >= 2 || alcance.nivel('ordenes_compra') >= 2 ? db.prepare("SELECT * FROM main.leads WHERE id = ? AND estatus = 'ganado' AND en_alcance(sucursal_id)").get(n) : null) || null;
   }
   // Órdenes para elegir al registrar un gasto: solo folio, cliente, servicio, fecha, unidad y lugar (sin montos).
+  // Solicitudes y órdenes de compra para ligar un gasto (2026-11-13), con los centros de costos. Solo quien registra gastos
+  // sin orden de servicio (quien paga): a los demás sus costos van siempre ligados a una orden de servicio.
+  const folioSolDe = s => require('./solicitudes').folioSol(s);
+  const folioOCDe = o => require('./sucursales').folio('OC', 'ordenes_compra', o.id, o.created_at);
+  app.get('/api/finanzas/compras-para-gasto', h((req, res) => {
+    if (!puedePagar(req, res)) return;
+    const hay = t => tablaExiste(t);
+    const solicitudes = hay('solicitudes_compra') ? db.prepare(`SELECT s.id, s.created_at, s.que, s.para_que, s.estado, s.equipo, s.centro_id, s.oc_id, s.solicitante_nombre, c.nombre AS centro_nombre
+      FROM solicitudes_compra s LEFT JOIN main.centros_costo c ON c.id = s.centro_id WHERE s.estado NOT IN ('rechazada', 'cancelada') ORDER BY s.id DESC LIMIT 500`).all().map(s => ({ ...s, folio: folioSolDe(s) })) : [];
+    const ordenes = hay('ordenes_compra') ? db.prepare(`SELECT o.id, o.created_at, o.fecha, o.estado, o.total_cent, o.cxp_id, o.centro_id, o.solicitud_id, p.nombre AS proveedor_nombre, c.nombre AS centro_nombre,
+        (SELECT concepto FROM main.cuentas_por_pagar x WHERE x.id = o.cxp_id) AS cxp_concepto
+      FROM ordenes_compra o JOIN main.proveedores p ON p.id = o.proveedor_id LEFT JOIN main.centros_costo c ON c.id = o.centro_id WHERE o.estado <> 'cancelada' ORDER BY o.id DESC LIMIT 500`).all()
+      .map(({ total_cent, ...o }) => ({ ...o, total: aPesos(total_cent), folio: folioOCDe(o) })) : [];
+    const centros = hay('centros_costo') ? db.prepare('SELECT id, nombre, activo FROM main.centros_costo ORDER BY activo DESC, orden, nombre').all() : [];
+    res.json({ solicitudes, ordenes, centros });
+  }));
   app.get('/api/finanzas/ordenes-para-gasto', h((req, res) => {
     if (!P.puede(req, 'gastos.registrar') && !P.puede(req, 'compras.ver')) return res.status(403).json({ error: 'No tienes permiso para esta acción' });
     const todas = alcance.nivel('cxp') >= 2 || alcance.nivel('ordenes_compra') >= 2;
@@ -733,6 +754,23 @@ module.exports = function finanzas(app, db, h, unicos) {
       WHERE l.estatus = 'ganado'${todas ? ' AND en_alcance(l.sucursal_id)' : ''} ORDER BY l.fecha_servicio DESC, l.id DESC`).all());
   }));
   module.exports.ordenParaLigar = ordenParaLigar;
+  // Solicitud u orden de compra y centro de costos de un gasto (2026-11-13). Solo una de las dos ligas de compra; el centro, si
+  // no se elige, se toma de la solicitud o la orden. Ligar a compras es de quien paga (los demás ligan a una orden de servicio).
+  function ligaDeCompra(req, b) {
+    const sol = Number(b.solicitud_id) || null, oc = Number(b.oc_id) || null, cen = Number(b.centro_id) || null;
+    if (!sol && !oc && !cen) return {};
+    if ((sol || oc) && !P.puede(req, 'dinero.mover')) return { status: 403, error: 'Ligar un gasto a una solicitud u orden de compra lo hace quien paga cuentas por pagar' };
+    if (sol && oc) return { error: 'Liga el gasto a la solicitud O a la orden de compra, no a las dos' };
+    const r = {};
+    if (sol) { r.solicitud = tablaExiste('solicitudes_compra') ? db.prepare("SELECT * FROM solicitudes_compra WHERE id = ? AND estado NOT IN ('rechazada', 'cancelada')").get(sol) : null; if (!r.solicitud) return { error: 'La solicitud de compra no existe o está cancelada' }; }
+    if (oc) { r.oc = tablaExiste('ordenes_compra') ? db.prepare("SELECT * FROM ordenes_compra WHERE id = ? AND estado <> 'cancelada'").get(oc) : null; if (!r.oc) return { error: 'La orden de compra no existe o está cancelada' }; }
+    const centroId = cen || r.oc?.centro_id || r.solicitud?.centro_id || null;
+    if (centroId) {
+      r.centro = tablaExiste('centros_costo') ? db.prepare('SELECT * FROM main.centros_costo WHERE id = ?').get(centroId) : null;
+      if (!r.centro || (cen && !r.centro.activo)) return { error: 'Elige un centro de costos vigente' };
+    }
+    return r;
+  }
   // IVA capturado por la persona: 0 o un monto menor que el total; solo una factura lleva IVA acreditable.
   function ivaCapturado(valor, totalCent, x) {
     if (valor === undefined || valor === null || valor === '') return { cent: null };
@@ -741,6 +779,14 @@ module.exports = function finanzas(app, db, h, unicos) {
     if (cent >= totalCent) return { error: 'El IVA debe ser menor que el total' };
     if (cent > 0 && !esFactura(x)) return { error: 'Solo una factura (CFDI) trae IVA que se pueda acreditar: en otro comprobante déjalo vacío o en 0' };
     return { cent };
+  }
+  // Folio de la solicitud u orden de compra ligada y nombre del centro de costos (para la lista y la descarga).
+  function ligasCompra(x) {
+    if (!x.solicitud_id && !x.oc_id && !x.centro_id) return { compra_folio: null, centro_nombre: null };
+    const s = x.solicitud_id && tablaExiste('solicitudes_compra') ? db.prepare('SELECT id, created_at FROM main.solicitudes_compra WHERE id = ?').get(x.solicitud_id) : null;
+    const o = x.oc_id && tablaExiste('ordenes_compra') ? db.prepare('SELECT id, created_at FROM main.ordenes_compra WHERE id = ?').get(x.oc_id) : null;
+    const c = x.centro_id && tablaExiste('centros_costo') ? db.prepare('SELECT nombre FROM main.centros_costo WHERE id = ?').get(x.centro_id) : null;
+    return { compra_folio: o ? folioOCDe(o) : s ? folioSolDe(s) : null, centro_nombre: c?.nombre || null };
   }
   function cuentasPorPagar() {
     const hoy = hoyMexico();
@@ -753,9 +799,9 @@ module.exports = function finanzas(app, db, h, unicos) {
       .map(({ de_orden_compra, ...x }) => {
         const saldo = x.total_cent - x.pagado_cent;
         const iva = ivaDeGasto(x);
-        return { ...x, orden_folio: x.lead_id ? folioOS(x.lead_id, x.lead_created_at) : null, categoria_nombre: CATEGORIAS[x.categoria] || x.categoria, tipo_gasto_nombre: CxpExcel.tipoGastoTexto(x.tipo_gasto), total: aPesos(x.total_cent), pagado: aPesos(x.pagado_cent),
+        return { ...x, orden_folio: x.lead_id ? folioOS(x.lead_id, x.lead_created_at) : null, ...ligasCompra(x), categoria_nombre: CATEGORIAS[x.categoria] || x.categoria, tipo_gasto_nombre: CxpExcel.tipoGastoTexto(x.tipo_gasto), total: aPesos(x.total_cent), pagado: aPesos(x.pagado_cent),
           iva: aPesos(iva.iva_cent), iva_estimado: iva.estimado, es_factura: esFactura(x), xml: xmls.get(x.id) || null,
-          repetible: !x.lead_id && !de_orden_compra, // «Repetir» solo en gastos fijos (FLW-H07)
+          repetible: !x.lead_id && !de_orden_compra && !x.oc_id && !x.solicitud_id, // «Repetir» solo en gastos fijos (FLW-H07), no en gastos de compras
           saldo: aPesos(Math.max(saldo, 0)), vencida: saldo > 0 && x.fecha_vencimiento < hoy, dias_para_vencer: diasEntre(hoy, x.fecha_vencimiento) };
       });
   }
@@ -775,7 +821,7 @@ module.exports = function finanzas(app, db, h, unicos) {
       cuentas: cuentas.map(x => ({ id: x.id, sucursal: app.locals.sucursales?.claveDe(x.sucursal_id) || '', proveedor: x.proveedor_nombre, beneficiario: x.beneficiario || x.proveedor_nombre, concepto: x.concepto, fecha_documento: x.fecha_documento,
         fecha_vencimiento: x.fecha_vencimiento, capturo: x.capturo, factura_folio: x.factura_folio, tipo_comprobante: x.tipo_comprobante, metodo_sat: x.metodo_sat,
         total: aPesos(x.total_cent), clabe: veClabe(req) ? x.clabe : null, banco: veClabe(req) ? x.banco : null, dias_credito: x.dias_credito, categoria: CATEGORIAS[x.categoria] || x.categoria, es_gasto: !CATEGORIAS_NO_GASTO.has(x.categoria), tipo_gasto: x.tipo_gasto || null,
-        notas: x.notas, cancelada: !!x.cancelada, motivo_cancelacion: x.motivo_cancelacion, orden_folio: x.lead_id ? folioOS(x.lead_id, x.lead_created_at) : null, equipo: x.equipo })),
+        notas: x.notas, cancelada: !!x.cancelada, motivo_cancelacion: x.motivo_cancelacion, orden_folio: x.lead_id ? folioOS(x.lead_id, x.lead_created_at) : null, equipo: x.equipo, ...ligasCompra(x) })),
       pagos: pagos.map(g => ({ id: g.id, cxp_id: g.cxp_id, fecha: g.fecha, monto: aPesos(g.monto_cent), metodo: g.metodo, referencia: g.referencia, cuenta_origen: g.cuenta_origen,
         registro: g.registro, cancelado: !!g.cancelado, motivo_cancelacion: g.motivo_cancelacion })) });
   }));
@@ -1254,6 +1300,14 @@ module.exports = function finanzas(app, db, h, unicos) {
     if (beneficiario && !conSentido(beneficiario, 3)) return res.status(400).json({ error: 'Escribe a quién se le paga' });
     const tipoGasto = tipoGastoDe(b.tipo_gasto);
     if (tipoGasto === undefined) return res.status(400).json({ error: 'Elige el tipo de gasto de la lista (semanal, mensual, único…) o déjalo sin indicar' });
+    // ¿A qué corresponde? Solicitud u orden de compra (solo quien paga) y centro de costos (2026-11-13).
+    const ligaCompra = ligaDeCompra(req, b);
+    if (ligaCompra.error) return res.status(ligaCompra.status || 400).json({ error: ligaCompra.error });
+    // Orden de compra con su propia cuenta por pagar: este gasto se suma APARTE (flete, diferencia…). Se confirma una vez.
+    if (ligaCompra.oc?.cxp_id && !b.forzar) {
+      const deuda = db.prepare('SELECT total_cent, cancelada FROM main.cuentas_por_pagar WHERE id = ?').get(ligaCompra.oc.cxp_id);
+      if (deuda && !deuda.cancelada) return res.status(409).json({ codigo: 'POSIBLE_DUPLICADO', error: `La ${folioOCDe(ligaCompra.oc)} ya tiene su cuenta por pagar de ${fmt(deuda.total_cent)}. Si es la misma factura, no la registres otra vez: sube el XML en esa cuenta. ¿Es un gasto EXTRA de esa compra (flete, envío, diferencia de precio)?` });
+    }
     // IVA de la factura (opcional): vacío = no se capturó (Resultados lo estima al 16 %).
     // Con XML en pesos, el IVA es el trasladado de la factura (el IEPS se queda en el gasto); en otra moneda se captura a mano.
     const iva = xml?.ivaCent != null ? { cent: xml.ivaCent } : ivaCapturado(b.iva, total, { tipo_comprobante: tipoComp, factura_folio: folioFactura });
@@ -1277,6 +1331,8 @@ module.exports = function finanzas(app, db, h, unicos) {
       if (xml) XML.guardar(req, Number(info.lastInsertRowid), Buffer.from(b.xml, 'utf8'), texto(b.xml_nombre, 120) || 'factura.xml', xml);
       app.locals.sucursales.asignar('cuentas_por_pagar', Number(info.lastInsertRowid), leadId ? app.locals.sucursales.de('leads', leadId) : ant ? ant.anticipo.sucursal_id : prog ? prog.programado.sucursal_id ?? undefined : cred ? cred.credito.sucursal_id ?? undefined : undefined);
       if (prog) app.locals.gastosProgramados.marcar(req, prog.programado.id, b.programado_periodo, Number(info.lastInsertRowid));
+      if (ligaCompra.solicitud || ligaCompra.oc || ligaCompra.centro) db.prepare('UPDATE main.cuentas_por_pagar SET solicitud_id = ?, oc_id = ?, centro_id = ? WHERE id = ?')
+        .run(ligaCompra.solicitud?.id ?? null, ligaCompra.oc?.id ?? null, ligaCompra.centro?.id ?? null, Number(info.lastInsertRowid));
       if (cred) app.locals.creditos.marcarAbono(Number(info.lastInsertRowid), cred.credito.id, total);
       if (ant) {
         // Con el anticipo se paga lo que alcance (un pago con vía «anticipo»: no es otra salida del banco). Lo que pase del
@@ -1405,6 +1461,7 @@ module.exports = function finanzas(app, db, h, unicos) {
   const motivoNoRepetir = x => {
     const oc = tablaExiste('ordenes_compra') && db.prepare('SELECT id, created_at FROM main.ordenes_compra WHERE cxp_id = ? LIMIT 1').get(x.id);
     if (oc) return `Esta cuenta es de la orden de compra ${folioOCx(oc)}: no se repite. Si se vuelve a comprar, haz una nueva solicitud u orden de compra.`;
+    if (x.oc_id || x.solicitud_id) return 'Es un gasto de una compra (solicitud u orden de compra): no se repite. Si se vuelve a comprar, haz una nueva solicitud u orden de compra.';
     if (x.lead_id) return `Es un costo de la orden de servicio ${folioOS(x.lead_id, db.prepare('SELECT created_at FROM main.leads WHERE id = ?').get(x.lead_id)?.created_at)}: no se repite. Cada servicio registra sus propios costos.`;
     return null;
   };
