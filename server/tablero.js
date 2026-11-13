@@ -195,7 +195,7 @@ module.exports = function tablero(app, db, h, finanzas) {
     const domingo = sumarDias(hoy, (7 - new Date(hoy + 'T00:00:00Z').getUTCDay()) % 7);
     // Días promedio de cobro: de que se hizo el servicio a su último pago, en órdenes liquidadas en el periodo.
     const dso = uno(`SELECT AVG(julianday(u.ultimo) - julianday(COALESCE(l.fecha_realizado, l.fecha_servicio))) d, COUNT(*) n FROM leads l
-      JOIN (SELECT lead_id, MAX(fecha) ultimo, SUM(monto_cent) cobrado FROM cobros WHERE cancelado = 0 GROUP BY lead_id) u ON u.lead_id = l.id
+      JOIN (SELECT lead_id, MAX(fecha) ultimo, SUM(monto_cent) cobrado FROM cobros WHERE cancelado = 0 AND confirmado = 1 AND tipo <> 'ajuste' GROUP BY lead_id) u ON u.lead_id = l.id
       WHERE l.estatus = 'ganado' AND u.ultimo BETWEEN ? AND ? AND u.cobrado >= COALESCE(l.factura_total_cent, CAST(ROUND(COALESCE(l.valor, 0) * 100) AS INTEGER) + COALESCE(l.iva_cent, 0))
         AND COALESCE(l.fecha_realizado, l.fecha_servicio) IS NOT NULL`, desde, hasta);
     const abiertas = uno("SELECT COUNT(*) n, COALESCE(SUM(valor), 0) v FROM leads WHERE estatus = 'abierto'");

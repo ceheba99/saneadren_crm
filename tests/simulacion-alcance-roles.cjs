@@ -240,7 +240,7 @@ const RANGO = 'desde=2020-01-01&hasta=' + dia(60);
   [s, j] = await pedir('GET', '/leads', L, undefined, { 'X-Sucursal': String(qro.id) }); revisa(!j.some(x => x.id === L5.id), 'si elige Querétaro en el selector, solo las de Querétaro', j.map(x => x.id));
   [s, j] = await nivel('ventas', VENTAS(1)); revisa(s === 200, 'y la regresa a «lo suyo»');
   [s, j] = await pedir('GET', '/leads', L); revisa(!j.some(x => x.id === L3.id || x.id === L5.id), 'al instante deja de verlas');
-  [s, j] = await nivel('ventas', { cxc: 0 }); revisa(s === 400 && /necesita/.test(j.error), 'no se le quita la cobranza a ventas mientras pueda confirmar cobros', j);
+  [s, j] = await nivel('atencion', { cxc: 0 }); revisa(s === 400 && /necesita/.test(j.error), 'no se le quita la cobranza a atención mientras pueda confirmar cobros', j);
   [s, j] = await nivel('costos', { solicitudes: 1 }); revisa(s === 400, 'ni «lo suyo» en solicitudes a quien gestiona compras (necesita toda su sucursal)', j);
   // Quién edita (2026-10-26): Ana ve toda la sucursal, pero solo edita lo que ella hace; el gerente, todo.
   [s, j] = await pedir('PUT', '/leads/' + L3.id, N, { version: (await pedir('GET', '/leads/' + L3.id, N))[1].version, observaciones: 'Intento de Ana' });

@@ -24,7 +24,7 @@ const CATALOGO = [
   ['generador.cargar', 'Cotizaciones y órdenes', 'Cargar el generador', 'Subir el Excel del generador de órdenes', ['gerente', 'atencion', 'ventas']],
   ['ordenes.importe_ganada', 'Cotizaciones y órdenes', 'Cambiar importe o IVA de una orden', 'Modificar el importe o el IVA cuando la cotización ya es orden de servicio, y regresar una orden a cotización', ['gerente', 'atencion']],
   ['cobros.registrar', 'Cuentas por cobrar', 'Registrar cobros', 'Anotar pagos que hizo un cliente', TODOS.filter(r => r !== 'costos')],
-  ['cobros.confirmar', 'Cuentas por cobrar', 'Confirmar cobros', 'Revisar y confirmar cobros que están «por confirmar»', TODOS.filter(r => r !== 'tecnico')],
+  ['cobros.confirmar', 'Cuentas por cobrar', 'Confirmar cobros', 'Revisar y confirmar cobros que están «por confirmar» (que el dinero sí llegó)', ['gerente', 'atencion']], // 2026-11-13: era todos menos técnico
   ['cobros.directo', 'Cuentas por cobrar', 'Sus cobros entran ya confirmados', 'Si no lo tiene, lo que registra queda «por confirmar» para que otra persona lo revise', ['gerente', 'atencion']],
   ['cobranza.factura', 'Cuentas por cobrar', 'Crédito y datos de factura', 'Cambiar días de crédito y datos de facturación', ['gerente']], // 2026-11-05: era TODOS
   ['cobros.ajustes', 'Cuentas por cobrar', 'Ajustes, descuentos y revisión inicial', '', ['gerente']],
@@ -202,6 +202,13 @@ module.exports = function crearPermisos(db, app, h) {
       db.prepare("DELETE FROM rol_permisos WHERE permiso = 'cobranza.factura' AND rol IN ('ventas', 'atencion', 'tecnico', 'costos')").run();
       marcar('ajuste:credito-solo-gerente'); sembroAlgo = true;
     } else if (!ya.has('ajuste:credito-solo-gerente')) marcar('ajuste:credito-solo-gerente');
+    // Ajuste único (Dirección, 2026-11-13, auditoría CxC): confirmar que el dinero llegó lo hacen solo Gerente y Atención
+    // (antes también Ventas y Costos: un vendedor confirmaba los cobros de sus propias órdenes). Si Dirección se lo
+    // vuelve a dar a un rol, se respeta.
+    if (!ya.has('ajuste:confirmar-cobros') && ya.has('cobros.confirmar')) {
+      db.prepare("DELETE FROM rol_permisos WHERE permiso = 'cobros.confirmar' AND rol IN ('ventas', 'tecnico', 'costos')").run();
+      marcar('ajuste:confirmar-cobros'); sembroAlgo = true;
+    } else if (!ya.has('ajuste:confirmar-cobros')) marcar('ajuste:confirmar-cobros');
     for (const p of CATALOGO) {
       if (ya.has(p.clave)) continue;
       p.roles.filter(r => roles.has(r)).forEach(r => dar.run(r, p.clave));
