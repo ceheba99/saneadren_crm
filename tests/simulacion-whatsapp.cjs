@@ -178,6 +178,12 @@ const ultimo = () => enviados[enviados.length - 1];
   await webhook([ub(20.6, -100.4)]);
   c = deRosa('comida_sale');
   revisa(c && c.estado === 'por_revisar' && /km de la zona «Obra Celaya»/.test(c.observaciones) && c.foto_archivo, 'Fuera de su zona → por revisar, con la distancia', c);
+  const avisoZona = async t => { const r = (await pedir('GET', '/personal/avisos', t))[1]; return (Array.isArray(r) ? r : []).filter(x => x.tipo === 'whatsapp_ubicacion' && x.persona_id === rosa.id); };
+  let av = await avisoZona(T.Gema);
+  revisa(av.length === 1 && /Salida a comer .* por WhatsApp: a .*km de la zona «Obra Celaya»/.test(av[0].texto) && av[0].nivel === 'rojo', 'Fuera de zona: aviso rojo en Inicio para quien corrige la asistencia', av);
+  revisa(!(await avisoZona(T.Gus)).length && !(await avisoZona(T.Valeria)).length, 'No le sale al gerente de otra sucursal ni a Ventas');
+  conBase(d => d.prepare("UPDATE checadas SET estado = 'valida' WHERE id = ?").run(c.id));
+  revisa(!(await avisoZona(T.Gema)).length, 'Al aceptarla, el aviso se quita');
   // c) Lugar elegido en el mapa + foto reenviada + no termina → a los «5 min» se guarda por revisar.
   await webhook([elige(ROSA, 'comida_regresa')]);
   await webhook([ub(20.5236, -100.8122, { name: 'Oxxo', address: 'Calle 1' })]);

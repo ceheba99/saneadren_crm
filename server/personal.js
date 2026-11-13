@@ -314,6 +314,15 @@ module.exports = function personal(app, db, h) {
       if (c.checadas) partes.push(`${c.checadas} checada(s) por revisar`);
       avisos.push({ tipo: 'cara', nivel: 'rojo', persona_id: c.personal_id, nombre: c.nombre, fecha: c.fecha, intentos: c.intentos, checadas: c.checadas, texto: partes.join(' · ') });
     }
+    // Checada por WhatsApp con problema de ubicación (fuera de su zona, no la mandó, lugar elegido en el mapa, sin zonas)
+    // (Dirección, 2026-11-13): para quien corrige la asistencia de esa sucursal, hasta que la acepte o anule.
+    if (P.puede(req, 'asistencia.corregir')) {
+      const TIPOS_CH = app.locals.checador?.TIPOS || {};
+      for (const c of db.prepare(`SELECT c.personal_id, c.tipo, c.fecha, c.hora, c.alerta_ubicacion, p.nombre FROM checadas c JOIN personal p ON p.id = c.personal_id
+        WHERE c.origen = 'whatsapp' AND c.estado = 'por_revisar' AND c.alerta_ubicacion IS NOT NULL AND c.fecha >= ? ORDER BY c.momento_utc DESC LIMIT 50`).all(en(-14)))
+        avisos.push({ tipo: 'whatsapp_ubicacion', nivel: 'rojo', persona_id: c.personal_id, nombre: c.nombre, fecha: c.fecha,
+          texto: `${TIPOS_CH[c.tipo] || c.tipo} de las ${String(c.hora).slice(0, 5)} por WhatsApp: ${c.alerta_ubicacion}. Acéptala o anúlala en sus checadas.` });
+    }
     // El reloj checador no responde (2026-11-12, kiosco-vigia.js): para quien maneja los kioscos, de sus sucursales.
     if (P.puede(req, 'asistencia.kioscos')) {
       const mios = new Set(db.prepare("SELECT id FROM checador_dispositivos WHERE tipo = 'kiosco'").all().map(k => k.id));

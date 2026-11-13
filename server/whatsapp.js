@@ -67,6 +67,8 @@ function migrar(db) {
   const cols = db.prepare('PRAGMA table_info(personal)').all().map(c => c.name);
   if (!cols.includes('checa_whatsapp')) db.exec('ALTER TABLE personal ADD COLUMN checa_whatsapp INTEGER NOT NULL DEFAULT 0');
   if (!cols.includes('whatsapp_pide')) db.exec("ALTER TABLE personal ADD COLUMN whatsapp_pide TEXT NOT NULL DEFAULT 'ambas'");
+  // Problema con la ubicación de una checada por WhatsApp (fuera de zona, no la mandó…): sale en Inicio hasta revisarla.
+  if (!db.prepare('PRAGMA table_info(checadas)').all().some(c => c.name === 'alerta_ubicacion')) db.exec('ALTER TABLE checadas ADD COLUMN alerta_ubicacion TEXT');
   // Zonas donde se puede checar por WhatsApp (punto + radio) y a quién aplica cada una. Checada en espera de su foto o
   // ubicación (una por persona; dura 5 min): sin la foto, solo el número que da Meta para bajarla.
   db.exec(`
@@ -280,20 +282,21 @@ module.exports = function whatsapp(app, db, h) {
     if (!db.prepare('DELETE FROM main.whatsapp_pendientes WHERE id = ?').run(pend.id).changes) return null;
     const p = db.prepare('SELECT * FROM main.personal WHERE id = ?').get(pend.personal_id);
     if (!p) return null;
-    const revisar = [], avisos = [];
+    const revisar = [], avisos = [], alerta = [];
     let distancia = null, foto = null;
+    const ubic = t => { revisar.push(t); alerta.push(t); };
     if (pideUbic(pend.pide)) {
-      if (pend.lat == null) revisar.push('no mandó su ubicación');
+      if (pend.lat == null) ubic('no mandó su ubicación');
       else {
-        if (pend.ubic_elegida) revisar.push('ubicación elegida en el mapa (no la actual)');
+        if (pend.ubic_elegida) ubic('ubicación elegida en el mapa (no la actual)');
         const zonas = db.prepare('SELECT z.* FROM main.checador_zonas z JOIN main.checador_zonas_personal zp ON zp.zona_id = z.id WHERE zp.personal_id = ? AND z.activo = 1').all(p.id);
-        if (!zonas.length) revisar.push('no tiene zonas asignadas para comparar su ubicación');
+        if (!zonas.length) ubic('no tiene zonas asignadas para comparar su ubicación');
         else {
           const punto = { lat: pend.lat, lon: pend.lon };
           const cerca = zonas.map(z => ({ z, d: distanciaM(z, punto) })).sort((x, y) => (x.d - x.z.radio_m) - (y.d - y.z.radio_m))[0];
           distancia = cerca.d;
           if (cerca.d <= cerca.z.radio_m) avisos.push(`en la zona «${cerca.z.nombre}»`);
-          else revisar.push(`a ${distanciaTexto(cerca.d)} de la zona «${cerca.z.nombre}» (radio ${cerca.z.radio_m} m)`);
+          else ubic(`a ${distanciaTexto(cerca.d)} de la zona «${cerca.z.nombre}» (radio ${cerca.z.radio_m} m)`);
         }
       }
     }
@@ -304,20 +307,20 @@ module.exports = function whatsapp(app, db, h) {
         catch (e) { revisar.push('no se pudo bajar su foto de WhatsApp'); app.locals.registro?.servicio('whatsapp_fallo', 'No se pudo bajar la foto de una checada: ' + String(e.message).slice(0, 200)); }
       }
     }
-    const id = guardar({ p, de: pend.de, tipo: pend.tipo, momento: pend.momento_ms, notaHora: pend.nota_hora, pide: pend.pide, revisar, avisos, lat: pend.lat, lon: pend.lon, distancia, foto });
+    const id = guardar({ p, de: pend.de, tipo: pend.tipo, momento: pend.momento_ms, notaHora: pend.nota_hora, pide: pend.pide, revisar, avisos, alerta, lat: pend.lat, lon: pend.lon, distancia, foto });
     await confirmar(pend.de, pend.tipo, pend.momento_ms, revisar, motivo);
     return id;
   }
 
   // Inserta la checada (con foto cifrada si llegó). Vale si llegó todo lo pedido y está en su zona; si no, por revisar.
-  function guardar({ p, de, tipo, momento, notaHora, pide, revisar, avisos, lat, lon, distancia, foto }) {
+  function guardar({ p, de, tipo, momento, notaHora, pide, revisar, avisos, alerta = [], lat, lon, distancia, foto }) {
     const a = ahoraMexico(new Date(momento));
     const notas = [...revisar, `por WhatsApp desde el ***${de.slice(-4)}`, ...(notaHora ? [notaHora] : []), ...avisos];
     const obs = notas.join(' · ').replace(/^./, c => c.toUpperCase()).slice(0, 500);
     const estado = revisar.length ? 'por_revisar' : 'valida';
     const id = db.transaction(() => {
-      const nuevo = Number(db.prepare(`INSERT INTO main.checadas (personal_id, tipo, momento_utc, fecha, hora, origen, sucursal_id, estado, observaciones, lat, lon, distancia_m)
-        VALUES (?, ?, ?, ?, ?, 'whatsapp', ?, ?, ?, ?, ?, ?)`).run(p.id, tipo, a.utc, a.fecha, a.hora, p.sucursal_id, estado, obs, lat ?? null, lon ?? null, distancia).lastInsertRowid);
+      const nuevo = Number(db.prepare(`INSERT INTO main.checadas (personal_id, tipo, momento_utc, fecha, hora, origen, sucursal_id, estado, observaciones, lat, lon, distancia_m, alerta_ubicacion)
+        VALUES (?, ?, ?, ?, ?, 'whatsapp', ?, ?, ?, ?, ?, ?, ?)`).run(p.id, tipo, a.utc, a.fecha, a.hora, p.sucursal_id, estado, obs, lat ?? null, lon ?? null, distancia, alerta.length ? alerta.join('; ').slice(0, 300) : null).lastInsertRowid);
       if (foto) app.locals.checador.guardarFoto(nuevo, foto, a.fecha);
       return nuevo;
     })();
