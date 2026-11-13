@@ -849,7 +849,7 @@ module.exports = function checador(app, db, h) {
       // 2026-11-13: cada renglón dice además cómo estaba la tableta (app o navegador, batería, cámara, pantalla) y lleva
       // la red y el equipo, para que se entienda solo (server/registro-guias.js arma la explicación al leerlo).
       const tableta = [/SaneadrenChecador/.test(req.get('user-agent') || '') ? 'app propia' : 'navegador', vigiaKioscos.estadoTexto(req.kiosco.id)].filter(Boolean).join(', ');
-      c.n++; app.locals.registro?.anotar(req, m.startsWith('Velocidad') ? 'kiosco_velocidad' : 'kiosco_recuperado', { detalle: `Kiosco «${req.kiosco.nombre}»${req.kiosco.sucursal ? ' (' + req.kiosco.sucursal + ')' : ''}: ${m}${cuando ? ' · ' + cuando : ''} · tableta: ${tableta}` });
+      c.n++; app.locals.registro?.anotar(req, m.startsWith('Velocidad') ? 'kiosco_velocidad' : m.startsWith('Hueco sin señal') ? 'kiosco_hueco' : 'kiosco_recuperado', { detalle: `Kiosco «${req.kiosco.nombre}»${req.kiosco.sucursal ? ' (' + req.kiosco.sucursal + ')' : ''}: ${m}${cuando ? ' · ' + cuando : ''} · tableta: ${tableta}` });
     }
     res.json({ ok: true });
   }));

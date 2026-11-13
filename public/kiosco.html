@@ -491,13 +491,51 @@
     if (b && typeof b.level === 'number' && b.level >= 0 && b.level <= 1) p.push('b=' + Math.round(b.level * 100), 'c=' + (b.charging === true ? 1 : 0));
     return '?' + p.join('&');
   }
+  // ---------- Huecos sin señal (2026-11-13) ----------
+  // El servidor avisa «el reloj checador no responde» cuando la tableta calla más de 5 min, pero desde allá no se sabe
+  // por qué. La tableta lleva la cuenta de cada intento fallido de dar señal (sin internet, sin respuesta a tiempo, error
+  // del servidor, respuesta ajena) y de si su propio reloj se detuvo o la pantalla estuvo oculta. Al volver, si el
+  // hueco pasó de 3 min, manda un renglón a los Logs con lo que pasó (server/registro-guias.js lo explica).
+  const Hueco = (() => {
+    const LIMITE = 3 * 60000, DETENIDA = 2.5 * 60000;
+    const fmt = new Intl.DateTimeFormat('es-MX', { timeZone: 'America/Mexico_City', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
+    const hora = x => fmt.format(new Date(x)), min = ms => Math.max(1, Math.round(ms / 60000)) + ' min';
+    let ok = Date.now(), tic = Date.now(), maxTic = 0, n = {}, codigos = [], oculta = 0, ocultaDesde = 0;
+    const limpiar = x => { ok = x; tic = x; maxTic = 0; n = { red: 0, tiempo: 0, servidor: 0, ajena: 0 }; codigos = []; oculta = 0; };
+    limpiar(Date.now());
+    return {
+      // Cada vuelta del reloj de la página (cada minuto): si tardó mucho más, la página estuvo detenida.
+      tic() { const x = Date.now(); maxTic = Math.max(maxTic, x - tic); tic = x; },
+      oculta(si) { const x = Date.now(); if (si) { if (!ocultaDesde) ocultaDesde = x; } else if (ocultaDesde) { oculta += x - ocultaDesde; ocultaDesde = 0; } },
+      fallo(tipo, codigo) { n[tipo in n ? tipo : 'red']++; if (tipo === 'servidor' && codigo && !codigos.includes(codigo)) codigos.push(codigo); },
+      // La señal volvió: el renglón del hueco (o null si fue corto).
+      volvio() {
+        const x = Date.now(); this.tic();
+        const hueco = x - ok, intentos = n.red + n.tiempo + n.servidor + n.ajena, oc = oculta + (ocultaDesde ? x - ocultaDesde : 0);
+        let texto = null;
+        if (hueco > LIMITE) {
+          const p = [`Hueco sin señal de ${min(hueco)} (de ${hora(ok)} a ${hora(x)})`, `${intentos} intentos fallidos de dar señal`];
+          if (n.red) p.push(`${n.red} sin internet en la tableta`);
+          if (n.tiempo) p.push(`${n.tiempo} sin respuesta a tiempo`);
+          if (n.servidor) p.push(`${n.servidor} con error del servidor${codigos.length ? ' (' + codigos.join(', ') + ')' : ''}`);
+          if (n.ajena) p.push(`${n.ajena} con respuesta ajena al sistema`);
+          if (maxTic > DETENIDA) p.push(`la página estuvo detenida ${min(maxTic)} seguidos`);
+          if (oc > 30000) p.push(`pantalla oculta ${min(oc)}`);
+          texto = p.join('; ');
+        }
+        limpiar(x);
+        return texto;
+      },
+    };
+  })();
+  // ---------- Fin de huecos sin señal ----------
   async function conectar() {
     try {
       const r = await api('estado' + estadoTableta());
       // Solo el servidor del checador puede decir «este kiosco no está registrado» (2026-11-12): cualquier otro 401 es un
       // problema de la red y cuenta como sin conexión (antes dejaba la tableta en «no es un kiosco» hasta reiniciarla).
       if (r.status === 401 && r.j.codigo === 'KIOSCO_NO_REGISTRADO') { noRegistrado(); return false; }
-      if (!r.ok) throw new Error('servidor');
+      if (!r.ok) throw Object.assign(new Error('servidor'), { status: r.status });
       const hora = Date.parse(r.j.utc);
       if (!Number.isFinite(hora)) throw new Error('servidor'); // sin hora válida no es el servidor del checador
       conexionConfirmada = true;
@@ -506,8 +544,15 @@
       if (typeof r.j.llave_cola === 'string' && r.j.llave_cola) { try { localStorage.setItem(LLAVE_COLA, r.j.llave_cola); } catch { /* sin almacenamiento */ } }
       $('kiosco-nombre').textContent = r.j.nombre + (r.j.sucursal ? ' · ' + r.j.sucursal : '');
       sinConexion = false; avisos();
+      const hueco = Hueco.volvio();
+      if (hueco) { window.__kiosco.anotar(hueco); mandarDiagnostico(); }
       return true;
-    } catch { if (!sinConexion) { sinConexion = true; avisos(); } return true; }
+    } catch (e) {
+      // Por qué no se pudo dar señal (para el renglón del hueco): sin internet, sin respuesta a tiempo, error del servidor o respuesta ajena.
+      Hueco.fallo(navigator.onLine === false ? 'red' : e?.name === 'AbortError' ? 'tiempo' : e?.status ? 'servidor' : /ajena|ilegible/.test(e?.message || '') ? 'ajena' : 'red', e?.status);
+      if (!sinConexion) { sinConexion = true; avisos(); }
+      return true;
+    }
   }
   // Dado de baja: deja de preguntar al servidor (auditoría 2026-11-05: una tableta vieja que pregunta cada minuto gasta
   // los intentos de la conexión de la oficina).
@@ -1473,7 +1518,9 @@
       }
       setTimeout(velocidadAlAbrir, hayCaras ? 5000 : 35000);
     }, 5000);
+    document.addEventListener('visibilitychange', () => Hueco.oculta(document.visibilityState !== 'visible'));
     setInterval(async () => {
+      Hueco.tic();
       if (document.visibilityState !== 'visible' || deBaja) return;
       despierta(); // el sistema puede soltar «pantalla encendida» (p. ej. con poca batería): se vuelve a pedir cada minuto
       // La cámara falló y nadie está checando: se prueba sola otra vez (si ya sirve, el aviso se quita sin que nadie lo toque).

@@ -300,8 +300,12 @@ const archivosDe = d => fs.readdirSync(d, { withFileTypes: true }).flatMap(e => 
   revisa(!!fv?.guia && /servidor tard[oó] 2500 ms/i.test(fv.guia.lectura.join(' ')), 'Y la lectura dice qué número está fuera de lo normal', fv?.guia?.lectura);
   revisa(!!logV.sistema && /Node\.js/.test(logV.sistema.descripcion) && !!logV.sistema.version, 'Los Logs traen la ficha del sistema (qué es y qué versión) para el reporte', logV.sistema);
   revisa((logV.filas || []).every(x => x.guia), 'Todos los renglones traen su explicación');
+  // 2026-11-13: al volver de un hueco, la tableta manda qué pasó; queda como «El reloj checador estuvo sin señal».
+  await kio(KQ, 'POST', 'diagnostico', { eventos: [{ m: 'Hueco sin señal de 6 min (de 14:13 a 14:19); 6 intentos fallidos de dar señal; 6 sin internet en la tableta' }] });
+  const fh = (((await pedir('GET', '/registro-sistema?q=Hueco', A))[1]).filas || []).find(x => x.evento === 'kiosco_hueco');
+  revisa(!!fh && /Wi-Fi/.test(fh.guia?.lectura.join(' ') || ''), 'El renglón del hueco llega como «estuvo sin señal» y su lectura dice la causa', fh);
   for (let i = 0; i < 5; i++) await kio(KQ, 'POST', 'diagnostico', { eventos: Array.from({ length: 10 }, (_, k) => ({ m: 'prueba ' + i + '-' + k })) });
-  revisa(((await pedir('GET', '/registro-sistema?q=Kiosco', A))[1].filas || []).length <= 32, 'Tope de 30 diagnósticos por kiosco por hora');
+  revisa(((await pedir('GET', '/registro-sistema?q=Kiosco', A))[1].filas || []).length <= 33, 'Tope de 30 diagnósticos por kiosco por hora');
 
   // Blindaje (2026-11-12): red inestable al checar. La tableta repite la checada con el mismo permiso si no le llegó la
   // respuesta, y si sigue sin red la guarda «sin conexión»: en ningún caso debe quedar dos veces.
