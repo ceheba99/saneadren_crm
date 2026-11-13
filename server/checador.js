@@ -348,7 +348,9 @@ module.exports = function checador(app, db, h) {
     const u = ultimaDe(personaId, a.fecha);
     if (!u && a.hora < '12:00') {
       const ayer = ultimaDe(personaId, new Date(Date.parse(a.fecha + 'T12:00:00Z') - 864e5).toISOString().slice(0, 10));
-      if (ayer?.tipo === 'extra_inicia') return 'extra_termina';
+      // Solo si todavía falta más de 1 h para su entrada (auditoría 13-nov, G3): a la hora de llegar lo que toca es la
+      // «Entrada»; si se le sugería «Fin», se contaba toda la noche como tiempo extra y el día salía como falta.
+      if (ayer?.tipo === 'extra_inicia' && (app.locals.asistencia?.antesDeEntrada?.(personaId, a.fecha, a.hora) ?? true)) return 'extra_termina';
       // Salida de madrugada (2026-11-12): antes de las 06:00, si ayer entró y no ha salido, se sugiere «Salida».
       if (a.hora < '06:00' && ['entrada', 'comida_regresa'].includes(ayer?.tipo)) return 'salida';
     }

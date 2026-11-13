@@ -286,7 +286,20 @@ const LUN = sumar(sumar(HOY, -7), -(dow(sumar(HOY, -7)) - 1)), D = k => sumar(LU
     revisa(d.extra_min === 60 && d.salida === '19:00', 'RH agrega la salida real más tarde (sin otra entrada): vale la última salida, como antes', d);
     await marca(sumar(L2, 5), [['entrada', '09:00'], ['entrada', '09:05'], ['salida', '13:00']]);
     d = await dt(sumar(L2, 5));
-    revisa(d.extra_min === 240 && d.notas.some(x => /dos veces/.test(x)), '«Entrada» repetida sin salida en medio: se toma la primera y se avisa', d); }
+    revisa(d.extra_min === 240 && d.notas.some(x => /dos veces/.test(x)), '«Entrada» repetida sin salida en medio: se toma la primera y se avisa', d);
+    // G3: anoche olvidó el «Fin»; a la mañana marca «Fin» al llegar (el kiosco se lo sugería): no son 13 h de extra.
+    const L3 = sumar(L, 14);
+    await marca(L3, [['entrada', '08:30'], ['salida', '18:00'], ['extra_inicia', '19:00']]);
+    await marca(sumar(L3, 1), [['extra_termina', '08:25'], ['salida', '18:00']]);
+    const g1 = await dt(L3), g2 = await dt(sumar(L3, 1));
+    revisa(g1.extra_min === 0 && g1.notas.includes('Inició tiempo extra y no marcó el fin'), 'G3: un «Fin» a la hora de llegar no cierra lo de anoche (antes: 13 h de extra); queda «sin fin» para que RH ponga la hora real', g1);
+    revisa(!g2.falta && g2.entrada === '08:25' && g2.trabajado_min === 575 && g2.notas.some(x => /Fin de tiempo extra» al llegar/.test(x)), 'y ese «Fin» cuenta como su entrada: el día no sale como falta', g2);
+    // B3: pasada la medianoche marcó «Salida» y luego «Fin»: el extra de anoche sí cuenta.
+    await marca(sumar(L3, 2), [['entrada', '08:30'], ['salida', '18:00'], ['extra_inicia', '19:00']]);
+    await marca(sumar(L3, 3), [['salida', '01:30'], ['extra_termina', '01:31'], ['entrada', '08:30'], ['salida', '18:00']]);
+    const b1 = await dt(sumar(L3, 2)), b2 = await dt(sumar(L3, 3));
+    revisa(b1.extra_min === 391 && !b1.notas.includes('Inició tiempo extra y no marcó el fin'), 'B3: «Salida» 01:30 y «Fin» 01:31: de 19:00 a 01:31 son 6 h 31 min el día en que empezó (antes 0)', b1);
+    revisa(b2.extra_min === 0 && b2.trabajado_min === 570 && b2.salida === '18:00', 'y al día siguiente esa «Salida» de madrugada no se cuenta como suya', b2); }
 
   console.log('9. Solo «Descargar la nómina» (2026-11-11)');
   const rolN = exigir(await pedir('POST', '/roles', A, { nombre: 'Solo nómina' }), 'crear rol');
