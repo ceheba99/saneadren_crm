@@ -689,7 +689,7 @@ const Finanzas = (() => {
     $('gasto-categoria').innerHTML = opts; $('prov-categoria').innerHTML = opts;
   }
   // FOLIO FACTURA y METODO DE PAGO con las palabras del Excel (igual que la descarga): sin folio, el tipo de comprobante.
-  const folioExcel = x => x.factura_folio || (x.tipo_comprobante && x.tipo_comprobante !== 'factura' ? (Object.fromEntries(COMPROBANTES)[x.tipo_comprobante] || '').toUpperCase() : '');
+  const folioExcel = x => CxpExcel.folioExcel(x);
   const metodoExcelDe = x => CxpExcel.metodoExcel(x, x.ultimo_pago ? String(x.ultimo_pago).split('|')[1] : null);
   // Buscador de Cuentas por pagar (2026-11-13): busca en todo lo que se ve en el renglón (las columnas del Excel y las del
   // sistema), sin acentos ni mayúsculas; con varias palabras, deben estar todas (p. ej. «morlet parcial»).
@@ -1101,36 +1101,45 @@ const Finanzas = (() => {
   async function descargarFormatoCxp() {
     let ExcelJS; try { ExcelJS = await cargarExcelJS(); } catch (err) { toast(err.message); return; }
     const d = await api('/finanzas/cxp/formato-excel').then(json);
-    const COMP = d.comprobantes, VIA = Object.fromEntries(METODOS_PROV);
-    const pagosDe = id => d.pagos.filter(g => g.cxp_id === id && !g.cancelado);
-    const fecha = f => (f ? new Date(f + 'T12:00:00') : null);
+    const VIA = Object.fromEntries(METODOS_PROV);
+    // Fecha exacta (medianoche UTC = el día justo en Excel, sin hora): así =F+P y los filtros por fecha cuadran.
+    const fecha = f => { if (!f) return null; const [a, m, dd] = String(f).slice(0, 10).split('-').map(Number); return new Date(Date.UTC(a, m - 1, dd)); };
+    // Hoja «CXP <año>» igual al Excel «CUENTAS POR PAGAR QRO» (fase 3): mismas 20 columnas, colores, anchos, formatos,
+    // fórmulas y listas desplegables. Los renglones los arma public/cxp-excel.js (probado en tests/cxp-excel.test.cjs).
+    // Varios pagos: como en el Excel, PAGADO es una suma (=a+b+c); el detalle con fechas está en la hoja PAGOS.
+    const varias = Sucursales.varias(), anio = hoy().slice(0, 4);
+    const COLS = [...CxpExcel.COLUMNAS_CXP, ...(varias ? [['SUCURSAL', 10, 'FFB4C6E7']] : [])];
+    const filas = CxpExcel.renglonesCxp(d, { conSucursal: varias });
     const wb = new ExcelJS.Workbook(); wb.creator = 'Saneadren CRM';
-    const ws = wb.addWorksheet('CXP ' + hoy().slice(0, 4), { views: [{ state: 'frozen', ySplit: 2 }] });
-    const COLS = [['FECHA VENCIMIENTO', 13], ['PROVEEDOR', 34], ['BENEFICIARIO', 34], ['DESCRIPCION', 44], ['FECHA FACTURA/SOLICITUD', 13], ['capturo', 12], ['FOLIO FACTURA', 16],
-      ['METODO DE PAGO', 18], ['MONTO TOTAL FACTURA', 16], ['PENDIENTE', 14], ['ANTICIPO', 13], ['PAGADO', 16], ['CUENTA BANCARIA', 22], ['BANCO', 14], ['DIAS DE CREDITO', 9],
-      ['CONCEPTO DE GASTO ', 30], ['STATUS', 12], ['FECHA DE PAGO', 13], ['OBSERVACIONES', 40], ...(Sucursales.varias() ? [['SUCURSAL', 10]] : [])];
+    const ws = wb.addWorksheet('CXP ' + anio, { views: [{ state: 'frozen', ySplit: 2 }] });
     ws.columns = COLS.map(([, w]) => ({ width: w }));
-    ws.mergeCells(Sucursales.varias() ? 'A1:T1' : 'A1:S1'); ws.getCell('A1').value = 'Cuentas por pagar ' + hoy().slice(0, 4); ws.getCell('A1').font = { bold: true, size: 14 };
+    ws.mergeCells('D1:E1'); ws.getCell('D1').value = 'Cuentas por pagar ' + anio; ws.getCell('D1').font = { size: 36 };
+    ws.getRow(1).height = 50.25; ws.getRow(2).height = 48;
     ws.getRow(2).values = COLS.map(([t]) => t);
-    ws.getRow(2).eachCell(c => { c.font = { bold: true }; c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF6B103' } }; c.alignment = { wrapText: true, vertical: 'middle' }; });
-    let n = 3;
-    for (const x of d.cuentas.filter(c => !c.cancelada)) {
-      const pg = pagosDe(x.id), pagado = pg.reduce((t, g) => t + g.monto, 0), anticipo = pg.filter(g => g.fecha < x.fecha_documento).reduce((t, g) => t + g.monto, 0);
-      const status = pagado <= 0 ? 'PENDIENTE' : pagado + 0.005 < x.total ? 'PARCIAL' : 'PAGADO';
-      const metodo = x.tipo_comprobante === 'factura' ? (x.metodo_sat || 'FACTURA') : (COMP[x.tipo_comprobante] || '').toUpperCase();
-      const folio = x.factura_folio || (x.tipo_comprobante && x.tipo_comprobante !== 'factura' ? (COMP[x.tipo_comprobante] || '').toUpperCase() : '');
-      const ultimo = pg.length ? pg[pg.length - 1] : null;
-      const r = ws.getRow(n);
-      r.values = [fecha(x.fecha_vencimiento), x.proveedor, x.beneficiario, x.concepto, fecha(x.fecha_documento), (x.capturo || '').toUpperCase(), folio, metodo, x.total,
-        { formula: 'I' + n + '-L' + n, result: Math.round((x.total - pagado) * 100) / 100 }, anticipo || null,
-        // Varios pagos: como en el Excel, una suma con cada pago (=a+b+c); el detalle con fechas está en la hoja PAGOS.
-        pg.length > 1 ? { formula: pg.map(g => g.monto).join('+'), result: pagado } : (pg.length ? pagado : null),
-        x.clabe || '', x.banco || '', x.dias_credito ?? '', (x.categoria || '').toUpperCase(), status, ultimo ? fecha(ultimo.fecha) : null,
-        [x.notas, x.orden_folio ? 'Orden ' + x.orden_folio : '', x.tipo_comprobante === 'informativo' ? 'INFORMATIVO: no se suma' : '', !x.es_gasto ? 'No cuenta como gasto' : ''].filter(Boolean).join(' · ')];
-      if (Sucursales.varias()) r.getCell(20).value = x.sucursal || '';
-      [1, 5, 18].forEach(i => { r.getCell(i).numFmt = 'dd/mm/yyyy'; });
-      [9, 10, 11, 12].forEach(i => { r.getCell(i).numFmt = '"$"#,##0.00'; });
-      n++;
+    COLS.forEach(([, , color], i) => {
+      const c = ws.getRow(2).getCell(i + 1);
+      c.font = { bold: true, size: i === 16 ? 9 : 10 }; c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: color } }; c.alignment = { wrapText: true, vertical: 'middle' };
+    });
+    const aFecha = v => (v && typeof v === 'object' && 'formula' in v ? { ...v, result: fecha(v.result) } : fecha(v));
+    filas.forEach((valores, i) => {
+      const r = ws.getRow(i + 3);
+      r.values = valores.map((v, c) => (CxpExcel.COL_FECHAS.includes(c) ? aFecha(v) : v));
+      COLS.forEach(([, , , fmt], c) => { if (fmt) r.getCell(c + 1).numFmt = fmt; });
+    });
+    const ultima = filas.length + 2, hasta = ultima + 300; // listas desplegables también en renglones vacíos, para seguir capturando
+    ws.autoFilter = { from: { row: 2, column: 1 }, to: { row: Math.max(ultima, 2), column: COLS.length } };
+    // Hoja LISTA con las columnas de la del Excel (proveedor, beneficiario, concepto, método, días, status, tipo de gasto).
+    const lw = wb.addWorksheet('LISTA');
+    const listas = CxpExcel.listasCxp(d, Object.values(d.categorias));
+    listas.forEach(([t, vals], i) => {
+      lw.getColumn(i + 1).width = 34; lw.getCell(1, i + 1).value = t; lw.getCell(1, i + 1).font = { bold: true };
+      vals.forEach((v, j) => { lw.getCell(j + 2, i + 1).value = v; });
+    });
+    for (const [col, origen] of CxpExcel.VALIDACIONES_CXP) {
+      const n = Math.max(listas['ABCDEFG'.indexOf(origen)][1].length + 1, 2);
+      const regla = { type: 'list', allowBlank: true, showErrorMessage: false, formulae: ['LISTA!$' + origen + '$2:$' + origen + '$' + n] };
+      if (ws.dataValidations && typeof ws.dataValidations.add === 'function') ws.dataValidations.add(col + '3:' + col + hasta, regla);
+      else for (let k = 3; k <= hasta; k++) ws.getCell(col + k).dataValidation = regla;
     }
     const pw = wb.addWorksheet('PAGOS', { views: [{ state: 'frozen', ySplit: 1 }] });
     pw.columns = [{ header: 'FECHA DE PAGO', width: 13 }, { header: 'PROVEEDOR', width: 34 }, { header: 'BENEFICIARIO', width: 34 }, { header: 'DESCRIPCION', width: 40 }, { header: 'MONTO', width: 14 },
@@ -1141,10 +1150,6 @@ const Finanzas = (() => {
       const r = pw.addRow([fecha(g.fecha), x.proveedor, x.beneficiario, x.concepto, g.monto, VIA[g.metodo] || g.metodo, g.cuenta_origen || '', g.referencia || '', g.registro || '', g.cancelado ? 'CANCELADO: ' + (g.motivo_cancelacion || '') : 'Vigente']);
       r.getCell(1).numFmt = 'dd/mm/yyyy'; r.getCell(5).numFmt = '"$"#,##0.00';
     }
-    const lw = wb.addWorksheet('LISTA');
-    const listas = [['PROVEEDOR', [...new Set(d.cuentas.map(c => c.proveedor))].sort()], ['BENEFICIARIO', [...new Set(d.cuentas.map(c => c.beneficiario))].sort()],
-      ['CONCEPTO DE GASTO', Object.values(d.categorias)], ['TIPO DE COMPROBANTE', Object.values(COMP)], ['VIA DE PAGO', METODOS_PROV.map(([, t]) => t)], ['STATUS', ['PENDIENTE', 'PARCIAL', 'PAGADO']]];
-    listas.forEach(([t, vals], i) => { const col = lw.getColumn(i + 1); col.width = 34; lw.getCell(1, i + 1).value = t; lw.getCell(1, i + 1).font = { bold: true }; vals.forEach((v, j) => { lw.getCell(j + 2, i + 1).value = v; }); });
     saveAs(new Blob([await wb.xlsx.writeBuffer()], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), 'CUENTAS_POR_PAGAR_' + hoy() + '.xlsx');
     toast('Descargado con el formato CXP');
   }
