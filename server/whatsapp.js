@@ -5,7 +5,11 @@
 //    WhatsApp a la vista de cualquiera).
 //  · Cómo: escribe cualquier cosa → el bot responde con un menú (lista) de qué registrar → elige → queda la checada.
 //  · Validez: sin foto ni ubicación (así lo dice el aviso de privacidad), cada checada queda «POR REVISAR» y la acepta
-//    RH o el supervisor. Hora: la del mensaje según WhatsApp si llegó hace menos de 15 min; si no, la del servidor.
+//    RH o el supervisor. Hora: la del mensaje según WhatsApp (la pone Meta y viene firmada), aunque llegue tarde por la
+//    señal (2026-11-13, Dirección: que no le cuente retardo por culpa de la red); si llegó con más de 15 min de retraso
+//    se anota en la checada. Solo si la hora no es válida o viene del futuro se usa la del servidor.
+//  · Solo números de México (52 / 521 + 10 dígitos) y solo mensajes dirigidos al número de la empresa configurado
+//    (WHATSAPP_PHONE_ID): si en la app de Meta hay otro número conectado (p. ej. el de prueba), sus mensajes se ignoran.
 //  · Seguridad: el webhook comprueba la firma X-Hub-Signature-256 (HMAC SHA-256 del cuerpo con el App Secret); cada
 //    mensaje se procesa una sola vez (Meta reintenta hasta 36 h); tope de mensajes por número. Sin configurar (faltan
 //    variables), el webhook no acepta nada.
@@ -21,6 +25,10 @@ const ult10 = v => String(v || '').replace(/\D/g, '').slice(-10);
 // Números de México: WhatsApp los manda como 521 + 10 dígitos (el «1» de celulares de antes), pero hay que contestarles
 // a 52 + 10 dígitos; si no, Meta rechaza el envío (p. ej. «el número no está en la lista autorizada» del número de prueba).
 const destino = de => (/^521\d{10}$/.test(de) ? '52' + de.slice(3) : de);
+// Solo celulares de México: sin esto, un número de otro país con los mismos 10 últimos dígitos (p. ej. +1 442…) pasaría
+// como el de la ficha.
+const esMexico = de => /^521?\d{10}$/.test(de);
+const retrasoTexto = s => (s < 3600 ? `${Math.round(s / 60)} min` : `${Math.floor(s / 3600)} h ${Math.round((s % 3600) / 60)} min`);
 const MENSAJES_TOPE = 30, VENTANA_MS = 10 * 60 * 1000, DUPLICADO_MS = 2 * 60 * 1000, RETRASO_MAX_S = 15 * 60;
 const config = () => ({
   token: process.env.WHATSAPP_TOKEN || '', telefonoId: process.env.WHATSAPP_PHONE_ID || '',
@@ -109,7 +117,9 @@ module.exports = function whatsapp(app, db, h) {
     if (firma.length !== esperada.length || !crypto.timingSafeEqual(Buffer.from(firma), Buffer.from(esperada))) return res.sendStatus(401);
     let datos; try { datos = JSON.parse(crudo.toString('utf8')); } catch { return res.sendStatus(400); }
     res.sendStatus(200); // Meta solo necesita el 200; lo demás se hace después
-    const mensajes = (datos?.entry || []).flatMap(e => (e?.changes || []).flatMap(c => (c?.field === 'messages' ? c?.value?.messages || [] : [])));
+    // Solo lo que llegó al número de la empresa configurado (otro número de la misma app de Meta no cuenta).
+    const propio = String(config().telefonoId);
+    const mensajes = (datos?.entry || []).flatMap(e => (e?.changes || []).flatMap(c => (c?.field === 'messages' && String(c?.value?.metadata?.phone_number_id || '') === propio ? c?.value?.messages || [] : [])));
     for (const m of mensajes.slice(0, 20)) await procesar(m).catch(e => console.error('[whatsapp] error al procesar:', e.message));
   }));
 
@@ -121,22 +131,26 @@ module.exports = function whatsapp(app, db, h) {
     const t = Date.now(); let r = porNumero.get(de);
     if (!r || r.reinicia <= t) { r = { n: 0, reinicia: t + VENTANA_MS }; porNumero.set(de, r); }
     if (++r.n > MENSAJES_TOPE) return marcar('demasiados mensajes');
-    const gente = db.prepare("SELECT * FROM main.personal WHERE activo = 1 AND checa = 1 AND checa_whatsapp = 1 AND codigo_checador IS NOT NULL AND telefono IS NOT NULL AND telefono <> ''").all().filter(p => ult10(p.telefono) === ult10(de));
+    const gente = !esMexico(de) ? [] : db.prepare("SELECT * FROM main.personal WHERE activo = 1 AND checa = 1 AND checa_whatsapp = 1 AND codigo_checador IS NOT NULL AND telefono IS NOT NULL AND telefono <> ''").all().filter(p => ult10(p.telefono) === ult10(de));
     if (gente.length !== 1) {
-      marcar(gente.length ? 'número repetido en varias fichas' : 'número no autorizado');
+      marcar(gente.length ? 'número repetido en varias fichas' : esMexico(de) ? 'número no autorizado' : 'número de otro país');
       if (r.n <= 3) await texto(de, gente.length ? 'Este número está en la ficha de más de una persona. Pide a Recursos Humanos que lo corrija.' : 'Este número no está autorizado para checar por WhatsApp. Si eres de Saneadren, pide a Recursos Humanos que lo active en tu ficha.');
       return;
     }
     const p = gente[0], elegido = m?.type === 'interactive' && m?.interactive?.type === 'list_reply' ? String(m.interactive.list_reply?.id || '') : '';
     const tipo = /^checar:([a-z_]+)$/.exec(elegido)?.[1];
     if (!tipo || !TIPOS[tipo]) { marcar('menú', p.id); return menu(de, p); }
-    // Hora: la del mensaje (WhatsApp la pone al recibirlo) si es reciente; si no, la del servidor.
-    const ts = Number(m.timestamp) * 1000, ahora = Date.now(), reciente = Number.isFinite(ts) && ts <= ahora + 60000 && ahora - ts <= RETRASO_MAX_S * 1000;
-    const a = ahoraMexico(reciente ? new Date(Math.min(ts, ahora)) : new Date());
-    const previa = db.prepare("SELECT id, hora FROM main.checadas WHERE personal_id = ? AND tipo = ? AND estado <> 'anulada' AND momento_utc >= ? ORDER BY id DESC LIMIT 1")
-      .get(p.id, tipo, new Date(ahora - DUPLICADO_MS).toISOString());
+    // Hora: la del mensaje (WhatsApp la pone al recibirlo y viene firmada), aunque llegue tarde; la del servidor solo si
+    // la del mensaje no sirve (no es número o viene del futuro).
+    const ts = Number(m.timestamp) * 1000, ahora = Date.now(), valida = Number.isFinite(ts) && ts > 0 && ts <= ahora + 60000;
+    const momento = valida ? Math.min(ts, ahora) : ahora, retrasoS = Math.round((ahora - momento) / 1000);
+    const a = ahoraMexico(new Date(momento));
+    // Repetida: el mismo tipo dentro de ±2 min de la hora del mensaje (como las checadas sin conexión del kiosco).
+    const previa = db.prepare("SELECT id, hora FROM main.checadas WHERE personal_id = ? AND tipo = ? AND estado <> 'anulada' AND momento_utc BETWEEN ? AND ? ORDER BY id DESC LIMIT 1")
+      .get(p.id, tipo, new Date(momento - DUPLICADO_MS).toISOString(), new Date(momento + DUPLICADO_MS).toISOString());
     if (previa) { marcar('repetida', p.id, previa.id); return texto(de, `✔ Tu ${TIPOS[tipo].toLowerCase()} ya estaba registrada a las ${previa.hora.slice(0, 5)}.`); }
-    const nota = `Por WhatsApp desde el ***${de.slice(-4)} (sin foto ni ubicación)${reciente ? '' : ' · llegó tarde: hora del servidor'}`;
+    const nota = `Por WhatsApp desde el ***${de.slice(-4)} (sin foto ni ubicación)`
+      + (!valida ? ' · la hora del mensaje no era válida: hora del servidor' : retrasoS > RETRASO_MAX_S ? ` · llegó con ${retrasoTexto(retrasoS)} de retraso (se usó la hora en que lo mandó)` : '');
     const id = Number(db.prepare(`INSERT INTO main.checadas (personal_id, tipo, momento_utc, fecha, hora, origen, sucursal_id, estado, observaciones)
       VALUES (?, ?, ?, ?, ?, 'whatsapp', ?, 'por_revisar', ?)`).run(p.id, tipo, a.utc, a.fecha, a.hora, p.sucursal_id, nota).lastInsertRowid);
     marcar('checada', p.id, id);
