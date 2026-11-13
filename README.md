@@ -113,7 +113,7 @@ El correo de saneadren.com.mx está en **Google Workspace**. Copia `.env.example
 | `SMTP_HOST` | `smtp.office365.com` / `smtp.gmail.com` | Servidor de correo de saneadren.com.mx. |
 | `SMTP_PORT` | `587` (STARTTLS) o `465` (TLS) | |
 | `SMTP_USER` / `SMTP_PASS` | `servicios@saneadren.com.mx` / contraseña de aplicación | Cuenta que envía los correos. |
-| `CORREO_REMITENTE` | `Saneadren CRM <servicios@saneadren.com.mx>` | Remitente visible. |
+| `CORREO_REMITENTE` | `Saneadren ERP <servicios@saneadren.com.mx>` | Remitente visible. |
 | `DOMINIO_CORREO` | `saneadren.com.mx` | Único dominio que puede registrarse (valor por defecto). |
 | `USUARIO_PRUEBA_NOMBRE` / `USUARIO_PRUEBA_PASSWORD` | `Karla` / (la contraseña) | Opcional: usuario de pruebas que se crea solo al arrancar (útil en Render sin disco, donde la base se borra en cada despliegue). `USUARIO_PRUEBA_ROL` (ventas por defecto) y `USUARIO_PRUEBA_CORREO` son opcionales. |
 | `USUARIO_2_PASSWORD` | (la contraseña) | Opcional: crea a **Luis Perea** al arrancar. `USUARIO_2_NOMBRE` (Luis Perea por defecto), `USUARIO_2_ROL` (ventas por defecto) y `USUARIO_2_CORREO` son opcionales. |
