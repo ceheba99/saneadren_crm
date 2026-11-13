@@ -1037,6 +1037,10 @@ header.app nav.menu-principal .menu-sub .menu-item:focus-visible{outline:3px sol
 .tabla-dinero tbody tr:nth-child(even) .celda-acciones{background:#fafbfc;}
 .tabla-dinero .estado-cxc{margin-left:0;white-space:nowrap;}
 .acciones-fila{display:flex;gap:4px;justify-content:flex-end;}
+/* Cuentas por pagar: la columna de botones mide 190 px (como en Cuentas por cobrar); si sus botones no caben, bajan a otro renglón en vez de tapar las celdas de al lado. */
+#pagar-lista .tabla-dinero td.celda-acciones{white-space:normal;}
+#pagar-lista .tabla-dinero td.celda-acciones .acciones-fila{flex-wrap:wrap;row-gap:4px;}
+#pagar-lista .tabla-dinero td.celda-acciones .acciones-fila .btn{white-space:nowrap;}
 .btn-chico{padding:4px 9px;font-size:12px;min-height:0;}
 .tabla-dinero .rojo{color:var(--rojo);}
 button.enlace{background:none;border:0;padding:0;color:var(--azul-600);text-decoration:underline;cursor:pointer;font:inherit;}

@@ -973,7 +973,14 @@ module.exports = function finanzas(app, db, h, unicos) {
     // Costos con terceros de una orden de servicio (sección de la ficha de la orden).
     if (req.query.lead_id) lista = lista.filter(x => x.lead_id === Number(req.query.lead_id));
     lista.sort((a, b) => a.fecha_vencimiento.localeCompare(b.fecha_vencimiento) || a.id - b.id);
-    res.json(lista);
+    // Columnas del Excel CXP (fase 2, 2026-11-12): quién capturó, ANTICIPO (lo pagado antes de la fecha de la factura, la
+    // misma regla de la descarga) y, solo para quien paga, CUENTA BANCARIA y BANCO del proveedor.
+    const nombres = new Map(db.prepare('SELECT id, nombre FROM usuarios').all().map(u => [u.id, u.nombre]));
+    const anticipos = new Map(db.prepare(`SELECT g.cxp_id, SUM(g.monto_cent) s FROM pagos_proveedor g JOIN cuentas_por_pagar x ON x.id = g.cxp_id
+      WHERE g.cancelado = 0 AND g.fecha < x.fecha_documento GROUP BY g.cxp_id`).all().map(r => [r.cxp_id, r.s]));
+    const banco = veClabe(req) ? new Map(db.prepare('SELECT id, clabe, banco FROM proveedores').all().map(p => [p.id, p])) : null;
+    res.json(lista.map(x => ({ ...x, capturo: nombres.get(x.registrado_por) || null, anticipo: aPesos(anticipos.get(x.id) || 0),
+      ...(banco ? { clabe: banco.get(x.proveedor_id)?.clabe || null, banco: banco.get(x.proveedor_id)?.banco || null } : {}) })));
   }));
 
   // ===================== Calendario =====================

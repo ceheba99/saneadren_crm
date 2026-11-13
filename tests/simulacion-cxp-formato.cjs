@@ -110,6 +110,36 @@ const HOY = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Mexico_City' }
   [s, j] = await pedir('POST', '/finanzas/cxp/' + renta.id + '/cancelar', A, { motivo: 'Prueba de cancelación de renta' });
   [s] = await pedir('POST', '/finanzas/cxp/' + renta.id + '/datos', C, { tipo_gasto: 'unico' }); revisa(s === 404, 'una cuenta cancelada ya no se edita');
 
+  console.log('8. La tabla con las columnas del Excel (fase 2)');
+  const masDias = d => { const f = new Date(HOY + 'T12:00:00Z'); f.setUTCDate(f.getUTCDate() + d); return f.toISOString().slice(0, 10); };
+  // Se paga una parte HOY de una factura con fecha de dentro de 10 días: eso es ANTICIPO (pagado antes de la fecha de la factura).
+  [s, j] = await pedir('POST', '/finanzas/cxp', C, { proveedor_id: morlet.id, categoria: 'herramientas', concepto: 'Lote de herramientas para taller', total: 48006, fecha_documento: masDias(10), dias_credito: 15, tipo_comprobante: 'pagadora', tipo_gasto: 'unico' });
+  const lote = j; revisa(s === 201, 'factura de pagadora con fecha de dentro de 10 días', [s, j.error]);
+  [s, j] = await pedir('POST', '/finanzas/cxp/' + lote.id + '/pagos', C, { monto: 8000, metodo: 'transferencia', fecha: HOY, cuenta_origen: 'Santander empresa' }); revisa(s === 201, 'se paga una parte antes de la fecha de la factura', [s, j.error]);
+  [s, j] = await pedir('GET', '/finanzas/cxp?vista=todas', C);
+  let t = (j || []).find(x => x.id === lote.id);
+  revisa(t?.capturo === 'Letty Pagos' && t?.anticipo === 8000 && t?.pagado === 8000 && t?.saldo === 40006, 'cada renglón trae quién capturó, ANTICIPO, PAGADO y PENDIENTE', t && { capturo: t.capturo, anticipo: t.anticipo, pagado: t.pagado, saldo: t.saldo });
+  revisa(t?.clabe === '014680655039528945' && t?.banco === 'Santander', 'quien paga ve CUENTA BANCARIA y BANCO del proveedor', t && [t.clabe, t.banco]);
+  revisa(t && t.total_cent === 4800600 && t.pagado_cent === 800000, 'trae los montos en centavos para sacar el STATUS sin redondeos', t && [t.total_cent, t.pagado_cent]);
+  const t1 = (j || []).find(x => x.id === cx1.id);
+  revisa(t1?.anticipo === 0, 'lo pagado el mismo día de la factura (o después) no es anticipo', t1?.anticipo);
+  // Alguien que ve las cuentas por pagar pero no paga: sin CLABE ni banco.
+  await pedir('POST', '/usuarios', A, { nombre: 'Tito Tecnico', correo: 'tito.fmt@saneadren.com.mx', password: 'Saneadren-Tecnico-Fmt-26', rol: 'tecnico' });
+  const T = (await pedir('POST', '/login', null, { nombre: 'tito.fmt@saneadren.com.mx', password: 'Saneadren-Tecnico-Fmt-26' }))[1].token;
+  for (const [tok, quien] of [[V, 'ventas'], [T, 'técnico']]) {
+    [s, j] = await pedir('GET', '/finanzas/cxp?vista=todas', tok);
+    revisa(s !== 200 || (Array.isArray(j) && j.every(x => !('clabe' in x) && !('banco' in x)) && !JSON.stringify(j).includes('014680655039528945')), quien + ': si ve cuentas por pagar, no le llegan CLABE ni banco', s);
+  }
+  // STATUS y METODO DE PAGO salen de los datos, con la misma regla que la descarga (public/cxp-excel.js).
+  const X = require('../public/cxp-excel.js');
+  [s, j] = await pedir('GET', '/finanzas/cxp?vista=todas', C);
+  t = j.find(x => x.id === lote.id);
+  const via = r => (r.ultimo_pago ? r.ultimo_pago.split('|')[1] : null);
+  revisa(X.statusDe(t.total_cent, t.pagado_cent) === 'PARCIAL' && X.metodoExcel(t, via(t)) === 'PAGADORA', 'el lote sale PARCIAL y PAGADORA');
+  const lay = j.find(x => x.concepto === 'Prueba layout'), ppd = j.find(x => x.id === cx1.id), ren = j.find(x => x.concepto === 'Caseta de vigilancia');
+  revisa(X.statusDe(lay.total_cent, lay.pagado_cent) === 'PAGADO' && X.statusDe(ren.total_cent, ren.pagado_cent) === 'PENDIENTE' && X.statusDe(ppd.total_cent, ppd.pagado_cent) === 'PARCIAL', 'PAGADO, PENDIENTE y PARCIAL según lo pagado', [lay.pagado, ren.pagado, ppd.pagado]);
+  revisa(X.metodoExcel(ppd, via(ppd)) === 'PPD' && X.metodoExcel(ren, via(ren)) === 'SIN FACTURA', 'factura PPD → PPD; recibo sin pagar → SIN FACTURA');
+
   { const [si, ri] = await pedir('GET', '/admin/integridad', A); const m = (ri.resultados || []).filter(r => r.gravedad === 'error' && r.total); revisa(si === 200 && ri.errores === 0, 'al terminar, la revisión de integridad no encuentra errores en los datos', m.map(r => r.titulo)); }
   revisa(!/uncaughtException|Error no manejado|TypeError|SqliteError|RangeError|ReferenceError/.test(salida), 'el servidor no registró errores internos', salida.split('\n').filter(l => /Error/.test(l)).slice(0, 6));
   console.log(`\n${n - malos.length}/${n} correctas`);
