@@ -68,9 +68,11 @@ const Finanzas = (() => {
     b.parentElement.querySelectorAll('.metodo').forEach(x => { x.classList.toggle('activo', x === b); x.setAttribute('aria-pressed', String(x === b)); });
   });
   const metodoElegido = contId => $(contId).querySelector('.metodo.activo')?.dataset.metodo;
-  for (const id of ['overlay-cobro', 'overlay-gasto', 'overlay-pago-prov']) {
+  for (const id of ['overlay-cobro', 'overlay-gasto', 'overlay-pago-prov', 'overlay-cxp-datos']) {
     $(id).querySelector('.close-btn').addEventListener('click', () => $(id).classList.remove('mostrar'));
   }
+  // Tipo de gasto del Excel CXP (public/cxp-excel.js): vacío = sin indicar.
+  const opcionesTipoGasto = () => '<option value="">Sin indicar</option>' + CxpExcel.TIPOS_GASTO.map(([v, t]) => '<option value="' + esc(v) + '">' + esc(t) + '</option>').join('');
   const conBoton = async (btn, fn) => { if (btn.disabled) return; btn.disabled = true; try { await fn(); } catch (err) { toast('No se pudo guardar: ' + err.message); } finally { btn.disabled = false; } };
   async function pedirMotivo(titulo) {
     return solicitarDialogo({ titulo, mensaje: 'Queda registrado quién lo canceló, cuándo y por qué. No se puede deshacer.', aceptar: 'Cancelar el registro', campo: { tipo: 'text', etiqueta: 'Motivo' } });
@@ -701,6 +703,7 @@ const Finanzas = (() => {
       { k: 'proveedor', t: 'Proveedor', fija: true, v: x => '<button type="button" class="enlace enlace-fuerte" data-prov-cuenta="' + Number(x.proveedor_id) + '" title="Ver la ficha del proveedor">' + esc(x.proveedor_nombre) + '</button>', s: x => String(x.proveedor_nombre).toLowerCase() },
       { k: 'categoria', t: 'Categoría', v: x => esc(x.categoria_nombre), s: x => x.categoria_nombre },
       { k: 'concepto', t: 'Concepto', v: x => esc(x.concepto), s: x => x.concepto },
+      { k: 'tipo_gasto', t: 'Tipo de gasto', v: x => esc(x.tipo_gasto_nombre || '—'), s: x => x.tipo_gasto_nombre || '' },
       { k: 'factura', t: 'Factura', v: x => esc(x.factura_folio || '—'), s: x => x.factura_folio || '' },
       { k: 'fecha', t: 'Fecha', v: x => esc(fechaTxt(x.fecha_documento)), s: x => x.fecha_documento },
       { k: 'vence', t: 'Vence', v: x => esc(fechaTxt(x.fecha_vencimiento)), s: x => x.fecha_vencimiento },
@@ -716,6 +719,7 @@ const Finanzas = (() => {
       { k: 'acciones', t: '', fija: true, sinOrden: true, clase: 'celda-acciones', v: x => '<div class="acciones-fila">' + (x.saldo > 0 ? '<button type="button" class="btn btn-primario btn-chico perm-dinero-mover" data-pagar-cxp="' + Number(x.id) + '">Pagar</button>' : '')
         + '<button type="button" class="btn btn-outline btn-chico" data-detalle-cxp="' + Number(x.id) + '" title="Pagos y XML de la factura">Pagos' + (x.xml ? ' · XML' : '') + '</button>'
         + (x.es_factura ? '<button type="button" class="btn btn-outline btn-chico perm-dinero-mover" data-iva-cxp="' + Number(x.id) + '" title="Capturar o corregir el IVA de la factura">IVA</button>' : '')
+        + '<button type="button" class="btn btn-outline btn-chico perm-dinero-mover" data-datos-cxp="' + Number(x.id) + '" title="Cambiar el tipo de gasto y las observaciones (no toca montos)">Editar</button>'
         + (x.repetible ? '<button type="button" class="btn btn-outline btn-chico perm-dinero-mover" data-repetir-cxp="' + Number(x.id) + '" title="Gasto fijo: copiarlo al mes siguiente, por pagar">🔁 Repetir</button>' : '')
         + (x.pagado === 0 ? '<button type="button" class="btn btn-outline btn-chico perm-dinero-mover" data-cancelar-cxp="' + Number(x.id) + '">Cancelar</button>' : '') + '</div>' },
     ];
@@ -744,7 +748,8 @@ const Finanzas = (() => {
     const btn = e.target.closest('button'); if (!btn) return;
     if (btn.dataset.abrirOrdenCxp) return abrirFicha(Number(btn.dataset.abrirOrdenCxp));
     if (btn.dataset.provCuenta) return abrirCuentaProveedor(Number(btn.dataset.provCuenta));
-    const id = Number(btn.dataset.pagarCxp || btn.dataset.detalleCxp || btn.dataset.cancelarCxp || btn.dataset.ivaCxp || btn.dataset.repetirCxp);
+    const id = Number(btn.dataset.pagarCxp || btn.dataset.detalleCxp || btn.dataset.cancelarCxp || btn.dataset.ivaCxp || btn.dataset.repetirCxp || btn.dataset.datosCxp);
+    if (btn.dataset.datosCxp) return abrirDatosCxp(id);
     if (btn.dataset.repetirCxp) {
       const x = CXP.find(c => c.id === id); if (!x) return;
       if (!await solicitarDialogo({ titulo: 'Repetir el próximo mes', mensaje: `Se crea «${x.concepto}» de ${x.proveedor_nombre} por ${formatoMoneda(x.total)} con fecha del mes siguiente, por pagar (sin folio ni XML: agrégalos cuando llegue la factura).`, aceptar: 'Repetir' })) return;
@@ -762,6 +767,24 @@ const Finanzas = (() => {
     }
     abrirPagoProveedor(id, !!btn.dataset.pagarCxp);
   });
+  // Tipo de gasto y observaciones de un gasto ya registrado (sin tocar montos): solo quien paga (el servidor lo revisa).
+  let CXP_DATOS = null;
+  function abrirDatosCxp(id) {
+    const x = CXP.find(c => c.id === id); if (!x) return;
+    CXP_DATOS = id;
+    $('cxp-datos-info').textContent = `${x.proveedor_nombre} · «${x.concepto}» · ${formatoMoneda(x.total)}`;
+    $('cxp-datos-tipo').innerHTML = opcionesTipoGasto(); $('cxp-datos-tipo').value = x.tipo_gasto || '';
+    $('cxp-datos-notas').value = x.notas || '';
+    abrirVentana('overlay-cxp-datos'); $('cxp-datos-tipo').focus();
+  }
+  $('cxp-datos-guardar').addEventListener('click', e => conBoton(e.currentTarget, async () => {
+    if (!CXP_DATOS) return;
+    const r = await enviar('/finanzas/cxp/' + CXP_DATOS + '/datos', 'POST', { tipo_gasto: $('cxp-datos-tipo').value || null, notas: $('cxp-datos-notas').value });
+    if (!r) return;
+    $('overlay-cxp-datos').classList.remove('mostrar'); CXP_DATOS = null;
+    toast(r.sin_cambios ? 'No había nada que cambiar' : 'Guardado');
+    cargar({ pestana: 'pagar' });
+  }));
   async function abrirPagoProveedor(id, paraPagar) {
     let x = CXP.find(c => c.id === id);
     const enFicha = (CUENTA_PROV_DATOS?.cuentas || []).find(c => c.id === id);
@@ -912,6 +935,7 @@ const Finanzas = (() => {
     $('gasto-credito').value = ''; $('gasto-credito').disabled = false; $('gasto-credito-ayuda').textContent = '';
     $('gasto-comprobante').innerHTML = '<option value="">Selecciona…</option>' + COMPROBANTES.map(([v, t]) => '<option value="' + v + '">' + esc(t) + '</option>').join('');
     $('gasto-sat').value = ''; $('gasto-sat-wrap').hidden = true; $('gasto-beneficiario').value = '';
+    $('gasto-tipo-gasto').innerHTML = opcionesTipoGasto(); $('gasto-tipo-gasto').value = prellenado['gasto-tipo-gasto'] || ''; $('gasto-notas').value = prellenado['gasto-notas'] || '';
     $('gasto-iva').value = ''; delete $('gasto-iva').dataset.editado; $('gasto-iva-wrap').hidden = true;
     quitarXmlGasto();
     $('gasto-beneficiarios').innerHTML = PROVEEDORES.filter(p => p.activo).map(p => '<option value="' + esc(p.nombre) + '"></option>').join('');
@@ -1023,6 +1047,7 @@ const Finanzas = (() => {
       proveedor_id: Number($('gasto-proveedor').value) || null, categoria: $('gasto-categoria').value, concepto: $('gasto-concepto').value,
       total: $('gasto-total').value.trim(), fecha_documento: $('gasto-fecha').value, dias_credito: Number(credito),
       tipo_comprobante: $('gasto-comprobante').value, metodo_sat: $('gasto-sat').value || null, beneficiario: $('gasto-beneficiario').value.trim() || null,
+      tipo_gasto: $('gasto-tipo-gasto').value || null, notas: $('gasto-notas').value.trim() || null,
       iva: $('gasto-comprobante').value === 'factura' && !GASTO_XML ? ($('gasto-iva').value.trim() || null) : null,
       xml: GASTO_XML?.texto || null, xml_nombre: GASTO_XML?.nombre || null,
       factura_folio: $('gasto-folio').value, lead_id: leadId, equipo: $('gasto-equipo').value,

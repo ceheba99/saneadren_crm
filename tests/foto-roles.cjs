@@ -322,6 +322,7 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
     ['cargaAds', 'Cargar el reporte de llamadas de Google Ads (CSV) y verlo cruzado con los contactos'],
     ['subeXmlGasto', 'Subir el XML de la factura a un gasto que registró Tomás (el sistema llena el IVA)'],
     ['corrigeIvaGasto', 'Corregir a mano el IVA de ese gasto (botón «IVA»)'],
+    ['editaDatosGasto', 'Cambiar después el «Tipo de gasto» y las «Observaciones» de ese gasto (sin tocar montos)'],
     ['editaListaServ', 'Agregar o quitar opciones en la lista de un servicio (p. ej. 4M3, 8M3 para [VOLUMEN])'],
     ['preparaNomina', 'Ver y preparar la nómina semanal (los dos sueldos de cada persona, descuentos y neto del IMSS)'],
     ['pagaNomina', 'Pagar la nómina y bajar la lista para el banco (con la CLABE de cada persona)'],
@@ -495,7 +496,8 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
     { const g = exigir(await pedir('POST', '/finanzas/cxp', T.Tomas, { proveedor_id: prov.id, categoria: 'combustible', concepto: 'Gasolina ' + rol, total: 1160, tipo_comprobante: 'factura', fecha_documento: HOY, lead_id: O1.id, dias_credito: 0 }), 'gasto para el XML');
       const r = await fetch(URL + '/finanzas/cxp/' + g.id + '/xml', { method: 'POST', headers: { 'Content-Type': 'application/octet-stream', Authorization: 'Bearer ' + t, 'X-Nombre': 'factura.xml' }, body: cfdi({ total: '1160.00', traslados: [['002', '160.00']] }) });
       VE[rol].subeXmlGasto = r.status === 201;
-      VE[rol].corrigeIvaGasto = ok(await pedir('POST', '/finanzas/cxp/' + g.id + '/iva', t, { iva: 160 })); }
+      VE[rol].corrigeIvaGasto = ok(await pedir('POST', '/finanzas/cxp/' + g.id + '/iva', t, { iva: 160 }));
+      VE[rol].editaDatosGasto = ok(await pedir('POST', '/finanzas/cxp/' + g.id + '/datos', t, { tipo_gasto: 'mensual', notas: 'Revisado por ' + rol })); }
     { // Listas de los servicios (2026-11-05): agregar una opción, o quitar una que agrega Dirección en cada vuelta.
       const base = '/servicios/' + SERV.id + '/listas', otra = exigir(await pedir('POST', base, A, { marca: 'VOLUMEN', valor: 'POR QUITAR ' + rol }), 'opción por quitar');
       VE[rol].editaListaServ = ok(await pedir('POST', base, t, { marca: 'VOLUMEN', valor: 'NUEVA ' + rol })) || ok(await pedir('POST', base + '/' + otra.id + '/desactivar', t, {})); }
@@ -595,6 +597,9 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
     ['2026-11-03', 'Pestaña RH (junta Personal, asistencia, horarios, kioscos, nómina y aviso de privacidad): la ve quien ve el personal (Gerente y Dirección); cargar trabajadores en lote desde la plantilla, solo quien edita el personal (Gerente y Dirección). Los demás roles no.', {
       admin: { veRH: 1, importaPersonal: 1 }, gerente: { veRH: 1, importaPersonal: 1 },
       ...Object.fromEntries(['ventas', 'atencion', 'tecnico', 'costos', 'marketing', 'marketing_gerente'].map(r => [r, { veRH: 0, importaPersonal: 0 }])) }],
+    ['2026-11-12', 'Cuentas por pagar como el Excel: cambiar después el «Tipo de gasto» y las «Observaciones» de un gasto ya registrado (sin tocar montos, proveedor ni fechas) lo hace solo quien paga cuentas por pagar (Dirección, Gerente y Compras), como el IVA. Los demás roles no.', {
+      admin: { editaDatosGasto: 1 }, gerente: { editaDatosGasto: 1 }, costos: { editaDatosGasto: 1 },
+      ...Object.fromEntries(['ventas', 'atencion', 'tecnico', 'marketing', 'marketing_gerente'].map(r => [r, { editaDatosGasto: 0 }])) }],
     ['2026-11-04', 'Gastos con factura: subir el XML a un gasto ya registrado (el sistema llena solo el IVA) lo hacen quien registró el gasto y quien paga cuentas por pagar (Dirección, Gerente y Compras). Corregir el IVA a mano, solo quien paga (como antes). Los demás roles no.', {
       admin: { subeXmlGasto: 1, corrigeIvaGasto: 1 }, gerente: { subeXmlGasto: 1, corrigeIvaGasto: 1 }, costos: { subeXmlGasto: 1, corrigeIvaGasto: 1 }, tecnico: { subeXmlGasto: 1, corrigeIvaGasto: 0 },
       ...Object.fromEntries(['ventas', 'atencion', 'marketing', 'marketing_gerente'].map(r => [r, { subeXmlGasto: 0, corrigeIvaGasto: 0 }])) }],

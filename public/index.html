@@ -1478,7 +1478,10 @@
       <p class="cuentas-aviso" id="gasto-anticipo-info" role="status" hidden></p>
       <p class="cuentas-aviso noperm-dinero-mover" id="gasto-aviso-orden">Aquí se registran los <b>costos de un servicio</b> (pipas, tiros, casetas…): elige la orden de servicio. Las compras van por <b>Solicitudes de compra</b>.</p>
       <div class="campo"><label for="gasto-proveedor">Proveedor (obligatorio)</label><select id="gasto-proveedor"></select><small class="ayuda">¿No está? Agrégalo en la pestaña Proveedores.</small></div>
-      <div class="campo"><label for="gasto-categoria">Categoría (obligatorio)</label><select id="gasto-categoria"></select></div>
+      <div class="form-grid-2">
+        <div class="campo"><label for="gasto-categoria">Categoría (obligatorio)</label><select id="gasto-categoria"></select></div>
+        <div class="campo"><label for="gasto-tipo-gasto">Tipo de gasto (opcional)</label><select id="gasto-tipo-gasto"></select><small class="ayuda">Cada cuánto se repite o a qué plazo es: semanal, mensual, único…</small></div>
+      </div>
       <!-- Orden de servicio relacionada: se busca por folio, número, cliente, servicio o unidad y se muestra su información. -->
       <div class="campo gasto-orden-campo"><label for="gasto-orden">Orden de servicio relacionada (opcional)</label>
         <input id="gasto-orden" type="search" maxlength="80" autocomplete="off" placeholder="Folio OS, número, cliente, servicio o unidad" role="combobox" aria-expanded="false" aria-controls="gasto-orden-sugerencias">
@@ -1494,6 +1497,7 @@
       </div>
       <div class="campo" id="gasto-iva-wrap" hidden><label for="gasto-iva">IVA de la factura (MXN, opcional)</label><input id="gasto-iva" type="text" inputmode="decimal" autocomplete="off"><small class="ayuda" id="gasto-iva-ayuda">Se propone el 16 % incluido en el total; corrígelo con el que trae la factura (0 si es tasa 0 o exenta). Con él, Resultados calcula la utilidad sin IVA.</small></div>
       <div class="campo"><label for="gasto-beneficiario">¿A quién se le paga? (opcional, si no es el proveedor)</label><input id="gasto-beneficiario" maxlength="120" list="gasto-beneficiarios" placeholder="Vacío = al mismo proveedor (ej. reembolso a quien pagó con su tarjeta)"><datalist id="gasto-beneficiarios"></datalist></div>
+      <div class="campo"><label for="gasto-notas">Observaciones (opcional)</label><textarea id="gasto-notas" maxlength="1000" rows="2" placeholder="Lo que quieras anotar de este gasto"></textarea></div>
       <div class="form-grid-2">
         <div class="campo"><label for="gasto-fecha">Fecha de la factura o gasto (obligatorio)</label><input id="gasto-fecha" type="date"></div>
         <div class="campo"><label for="gasto-credito">Días de crédito (obligatorio)</label><input id="gasto-credito" type="number" min="0" max="365" step="1" inputmode="numeric" placeholder="0 = de contado"><small class="ayuda" id="gasto-credito-ayuda"></small></div>
@@ -1575,6 +1579,18 @@
 <input type="file" id="importar-archivo" accept=".xlsx,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv" hidden>
 
 <!-- ====== OVERLAY: PAGAR A PROVEEDOR ====== -->
+<div class="overlay" id="overlay-cxp-datos">
+  <div class="modal">
+    <div class="modal-header"><h2>Tipo de gasto y observaciones</h2><button class="close-btn" type="button">✕</button></div>
+    <div class="modal-body">
+      <p class="ayuda" id="cxp-datos-info"></p>
+      <div class="campo"><label for="cxp-datos-tipo">Tipo de gasto</label><select id="cxp-datos-tipo"></select></div>
+      <div class="campo"><label for="cxp-datos-notas">Observaciones</label><textarea id="cxp-datos-notas" maxlength="1000" rows="4"></textarea></div>
+      <p class="ayuda">Aquí no cambian montos, proveedor, fechas ni pagos. Queda en el historial quién lo cambió.</p>
+      <div class="btn-group"><button type="button" class="btn btn-primario" id="cxp-datos-guardar">Guardar</button></div>
+    </div>
+  </div>
+</div>
 <div class="overlay" id="overlay-pago-prov">
   <div class="modal modal-dinero">
     <div class="modal-header"><h2>Pagar a proveedor</h2><button class="close-btn" type="button">✕</button></div>
@@ -1935,7 +1951,8 @@
 <script src="flujo.js?v=con1"></script>
 <script src="cuentas.js?v=rev1"></script>
 <script src="cuentas-banco.js?v=fb1"></script>
-<script src="finanzas.js?v=fb1"></script>
+<script src="cxp-excel.js?v=cx1"></script>
+<script src="finanzas.js?v=cx1"></script>
 <script src="calendario.js?v=esp1"></script>
 <script src="tareas.js?v=tg1"></script>
 <script src="tablero.js?v=dir1"></script>

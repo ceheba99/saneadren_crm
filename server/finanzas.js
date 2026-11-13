@@ -14,6 +14,7 @@
 const { hoyMexico } = require('./fechas');
 const alcance = require('./alcance');
 const Importes = require('../public/importes.js');
+const CxpExcel = require('../public/cxp-excel.js'); // tipo de gasto, status y método de pago con las palabras del Excel CXP
 
 const METODOS = ['transferencia', 'efectivo', 'deposito', 'cheque', 'tarjeta', 'otro'];
 // A proveedores y terceros también se les paga por nómina (p. ej. "Nómina semana 40").
@@ -188,6 +189,8 @@ function migrar(db) {
   // Huella del renglón de Excel importado (auditoría A-02): subir otra vez el mismo archivo no duplica gastos ni cobros.
   // En órdenes es la misma columna de la carga del Generador (las huellas no chocan: cada carga arma la suya distinta).
   agregar('cuentas_por_pagar', 'import_huella', 'TEXT');
+  // TIPO DE GASTO del Excel CXP (2026-11-12): cada cuánto se repite o a qué plazo es (public/cxp-excel.js). NULL = sin indicar.
+  agregar('cuentas_por_pagar', 'tipo_gasto', 'TEXT');
   agregar('leads', 'import_huella', 'TEXT');
   db.exec('CREATE INDEX IF NOT EXISTS idx_cxp_import_huella ON cuentas_por_pagar(import_huella)');
   db.exec('CREATE INDEX IF NOT EXISTS idx_leads_import_huella ON leads(import_huella)');
@@ -750,7 +753,7 @@ module.exports = function finanzas(app, db, h, unicos) {
       .map(({ de_orden_compra, ...x }) => {
         const saldo = x.total_cent - x.pagado_cent;
         const iva = ivaDeGasto(x);
-        return { ...x, orden_folio: x.lead_id ? folioOS(x.lead_id, x.lead_created_at) : null, categoria_nombre: CATEGORIAS[x.categoria] || x.categoria, total: aPesos(x.total_cent), pagado: aPesos(x.pagado_cent),
+        return { ...x, orden_folio: x.lead_id ? folioOS(x.lead_id, x.lead_created_at) : null, categoria_nombre: CATEGORIAS[x.categoria] || x.categoria, tipo_gasto_nombre: CxpExcel.tipoGastoTexto(x.tipo_gasto), total: aPesos(x.total_cent), pagado: aPesos(x.pagado_cent),
           iva: aPesos(iva.iva_cent), iva_estimado: iva.estimado, es_factura: esFactura(x), xml: xmls.get(x.id) || null,
           repetible: !x.lead_id && !de_orden_compra, // «Repetir» solo en gastos fijos (FLW-H07)
           saldo: aPesos(Math.max(saldo, 0)), vencida: saldo > 0 && x.fecha_vencimiento < hoy, dias_para_vencer: diasEntre(hoy, x.fecha_vencimiento) };
@@ -771,7 +774,7 @@ module.exports = function finanzas(app, db, h, unicos) {
     res.json({ comprobantes: COMPROBANTES, categorias: CATEGORIAS, no_gasto: [...CATEGORIAS_NO_GASTO],
       cuentas: cuentas.map(x => ({ id: x.id, sucursal: app.locals.sucursales?.claveDe(x.sucursal_id) || '', proveedor: x.proveedor_nombre, beneficiario: x.beneficiario || x.proveedor_nombre, concepto: x.concepto, fecha_documento: x.fecha_documento,
         fecha_vencimiento: x.fecha_vencimiento, capturo: x.capturo, factura_folio: x.factura_folio, tipo_comprobante: x.tipo_comprobante, metodo_sat: x.metodo_sat,
-        total: aPesos(x.total_cent), clabe: veClabe(req) ? x.clabe : null, banco: veClabe(req) ? x.banco : null, dias_credito: x.dias_credito, categoria: CATEGORIAS[x.categoria] || x.categoria, es_gasto: !CATEGORIAS_NO_GASTO.has(x.categoria),
+        total: aPesos(x.total_cent), clabe: veClabe(req) ? x.clabe : null, banco: veClabe(req) ? x.banco : null, dias_credito: x.dias_credito, categoria: CATEGORIAS[x.categoria] || x.categoria, es_gasto: !CATEGORIAS_NO_GASTO.has(x.categoria), tipo_gasto: x.tipo_gasto || null,
         notas: x.notas, cancelada: !!x.cancelada, motivo_cancelacion: x.motivo_cancelacion, orden_folio: x.lead_id ? folioOS(x.lead_id, x.lead_created_at) : null, equipo: x.equipo })),
       pagos: pagos.map(g => ({ id: g.id, cxp_id: g.cxp_id, fecha: g.fecha, monto: aPesos(g.monto_cent), metodo: g.metodo, referencia: g.referencia, cuenta_origen: g.cuenta_origen,
         registro: g.registro, cancelado: !!g.cancelado, motivo_cancelacion: g.motivo_cancelacion })) });
@@ -1234,6 +1237,8 @@ module.exports = function finanzas(app, db, h, unicos) {
     if (metodoSat && (!['PUE', 'PPD'].includes(metodoSat) || tipoComp !== 'factura')) return res.status(400).json({ error: 'El método del SAT (PUE o PPD) solo aplica a facturas' });
     const beneficiario = texto(b.beneficiario, 120);
     if (beneficiario && !conSentido(beneficiario, 3)) return res.status(400).json({ error: 'Escribe a quién se le paga' });
+    const tipoGasto = tipoGastoDe(b.tipo_gasto);
+    if (tipoGasto === undefined) return res.status(400).json({ error: 'Elige el tipo de gasto de la lista (semanal, mensual, único…) o déjalo sin indicar' });
     // IVA de la factura (opcional): vacío = no se capturó (Resultados lo estima al 16 %).
     // Con XML en pesos, el IVA es el trasladado de la factura (el IEPS se queda en el gasto); en otra moneda se captura a mano.
     const iva = xml?.ivaCent != null ? { cent: xml.ivaCent } : ivaCapturado(b.iva, total, { tipo_comprobante: tipoComp, factura_folio: folioFactura });
@@ -1251,9 +1256,9 @@ module.exports = function finanzas(app, db, h, unicos) {
     const ctaPago = b.ya_pagado && !ant && P.puede(req, 'dinero.mover') ? (app.locals.folios?.resolver(leadId ? app.locals.sucursales.de('leads', leadId) : req.alcanceSuc?.alta, b.cuenta_id, { requerida: true }) || {}) : {};
     if (ctaPago.error) return res.status(400).json(ctaPago);
     const id = db.transaction(() => {
-      const info = db.prepare(`INSERT INTO main.cuentas_por_pagar (proveedor_id, categoria, concepto, factura_folio, fecha_documento, fecha_vencimiento, total_cent, lead_id, equipo, notas, registrado_por, dias_credito, beneficiario, tipo_comprobante, metodo_sat, iva_cent, iva_origen)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(prov.id, categoria, concepto, xml ? folioFactura : texto(b.factura_folio, 60), fecha, vence, total, leadId, texto(b.equipo, 200), texto(b.notas, 1000), req.usuarioSesion.id, dias,
-        beneficiario && unicos.clave(beneficiario) !== unicos.clave(prov.nombre) ? beneficiario : null, tipoComp, metodoSat, iva.cent, xml?.ivaCent != null ? 'xml' : iva.cent != null ? 'manual' : null);
+      const info = db.prepare(`INSERT INTO main.cuentas_por_pagar (proveedor_id, categoria, concepto, factura_folio, fecha_documento, fecha_vencimiento, total_cent, lead_id, equipo, notas, registrado_por, dias_credito, beneficiario, tipo_comprobante, metodo_sat, iva_cent, iva_origen, tipo_gasto)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(prov.id, categoria, concepto, xml ? folioFactura : texto(b.factura_folio, 60), fecha, vence, total, leadId, texto(b.equipo, 200), texto(b.notas, 1000), req.usuarioSesion.id, dias,
+        beneficiario && unicos.clave(beneficiario) !== unicos.clave(prov.nombre) ? beneficiario : null, tipoComp, metodoSat, iva.cent, xml?.ivaCent != null ? 'xml' : iva.cent != null ? 'manual' : null, tipoGasto);
       if (xml) XML.guardar(req, Number(info.lastInsertRowid), Buffer.from(b.xml, 'utf8'), texto(b.xml_nombre, 120) || 'factura.xml', xml);
       app.locals.sucursales.asignar('cuentas_por_pagar', Number(info.lastInsertRowid), leadId ? app.locals.sucursales.de('leads', leadId) : ant ? ant.anticipo.sucursal_id : undefined);
       if (ant) {
@@ -1279,6 +1284,32 @@ module.exports = function finanzas(app, db, h, unicos) {
       return info.lastInsertRowid;
     })();
     res.status(201).json({ id, por_reembolsar: !!b.ya_pagado && !P.puede(req, 'dinero.mover'), ...(ant ? { anticipo: { usado: aPesos(ant.usado), por_reembolsar: aPesos(ant.falta) } } : {}), ...(xml ? { avisos: xml.avisos, iva: xml.ivaCent != null ? aPesos(xml.ivaCent) : null } : {}) });
+  }));
+
+  // Tipo de gasto capturado: vacío = sin indicar (null); una clave de la lista; cualquier otra cosa = undefined (error).
+  function tipoGastoDe(v) {
+    if (v === undefined || v === null || String(v).trim() === '') return null;
+    return CxpExcel.esTipoGasto(String(v)) ? String(v) : undefined;
+  }
+  // Datos que no son de dinero de un gasto ya registrado (2026-11-12): tipo de gasto y observaciones. No cambia montos,
+  // proveedor, fechas ni pagos. Solo quien paga cuentas por pagar (como el IVA); queda en el historial con el antes y después.
+  app.post('/api/finanzas/cxp/:id/datos', h((req, res) => {
+    if (!puedePagar(req, res)) return;
+    const x = db.prepare('SELECT * FROM cuentas_por_pagar WHERE id = ? AND cancelada = 0').get(Number(req.params.id) || 0);
+    if (!x) return res.status(404).json({ error: 'Cuenta por pagar no encontrada' });
+    const b = req.body || {};
+    const tipoGasto = b.tipo_gasto === undefined ? x.tipo_gasto : tipoGastoDe(b.tipo_gasto);
+    if (tipoGasto === undefined) return res.status(400).json({ error: 'Elige el tipo de gasto de la lista (semanal, mensual, único…) o déjalo sin indicar' });
+    if (b.notas !== undefined && b.notas !== null && typeof b.notas !== 'string') return res.status(400).json({ error: 'Las observaciones deben ser texto' });
+    if (typeof b.notas === 'string' && b.notas.trim().length > 1000) return res.status(400).json({ error: 'Las observaciones son muy largas (máximo 1000 letras)' });
+    const notas = b.notas === undefined ? x.notas : texto(b.notas, 1000);
+    if ((tipoGasto ?? null) === (x.tipo_gasto ?? null) && (notas ?? null) === (x.notas ?? null)) return res.json({ ok: true, sin_cambios: true });
+    db.prepare("UPDATE main.cuentas_por_pagar SET tipo_gasto = ?, notas = ?, updated_at = datetime('now','localtime') WHERE id = ?").run(tipoGasto ?? null, notas ?? null, x.id);
+    const cambios = [];
+    if ((tipoGasto ?? null) !== (x.tipo_gasto ?? null)) cambios.push(`tipo de gasto: ${CxpExcel.tipoGastoTexto(x.tipo_gasto) || 'sin indicar'} → ${CxpExcel.tipoGastoTexto(tipoGasto) || 'sin indicar'}`);
+    if ((notas ?? null) !== (x.notas ?? null)) cambios.push(`observaciones: «${x.notas || ''}» → «${notas || ''}»`);
+    app.locals.auditoria?.registrar(req, 'cuenta_por_pagar', x.id, 'datos', `«${x.concepto}»: ${cambios.join('; ')}`);
+    res.json({ ok: true, tipo_gasto: tipoGasto ?? null, tipo_gasto_nombre: CxpExcel.tipoGastoTexto(tipoGasto), notas: notas ?? null });
   }));
 
   // Capturar o corregir el IVA de un gasto ya registrado (los viejos no lo traen): cambia la utilidad de Resultados.
@@ -1374,8 +1405,8 @@ module.exports = function finanzas(app, db, h, unicos) {
     if (!req.body?.forzar && db.prepare('SELECT 1 FROM cuentas_por_pagar WHERE proveedor_id = ? AND concepto = ? AND fecha_documento = ? AND cancelada = 0').get(x.proveedor_id, x.concepto, fecha))
       return res.status(409).json({ error: `Ya existe «${x.concepto}» de ese proveedor con fecha ${fecha.split('-').reverse().join('/')}. ¿Lo repites de todos modos?`, codigo: 'POSIBLE_DUPLICADO' });
     const id = db.transaction(() => {
-      const info = db.prepare(`INSERT INTO main.cuentas_por_pagar (proveedor_id, categoria, concepto, fecha_documento, fecha_vencimiento, total_cent, equipo, notas, registrado_por, dias_credito, beneficiario, tipo_comprobante, metodo_sat)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(x.proveedor_id, x.categoria, x.concepto, fecha, vence, x.total_cent, x.equipo, 'Repetido del gasto del ' + x.fecha_documento.split('-').reverse().join('/'), req.usuarioSesion.id, x.dias_credito, x.beneficiario, x.tipo_comprobante, x.metodo_sat);
+      const info = db.prepare(`INSERT INTO main.cuentas_por_pagar (proveedor_id, categoria, concepto, fecha_documento, fecha_vencimiento, total_cent, equipo, notas, registrado_por, dias_credito, beneficiario, tipo_comprobante, metodo_sat, tipo_gasto)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(x.proveedor_id, x.categoria, x.concepto, fecha, vence, x.total_cent, x.equipo, 'Repetido del gasto del ' + x.fecha_documento.split('-').reverse().join('/'), req.usuarioSesion.id, x.dias_credito, x.beneficiario, x.tipo_comprobante, x.metodo_sat, x.tipo_gasto ?? null);
       app.locals.sucursales.asignar('cuentas_por_pagar', Number(info.lastInsertRowid), x.sucursal_id);
       app.locals.auditoria?.registrar(req, 'cuenta_por_pagar', Number(info.lastInsertRowid), 'creada', `Repetido de #${x.id} · «${x.concepto}» · ${fmt(x.total_cent)} · ${fecha}`);
       return Number(info.lastInsertRowid);
