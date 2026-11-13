@@ -97,8 +97,12 @@ async function pagina(e) {
 }
 async function estatico(e) {
   const cache = await conLimite(caches.open(CACHE), LIMITE_CACHE_MS), llave = e.request.url, guardado = cache ? await conLimite(cache.match(llave), LIMITE_CACHE_MS) : null;
+  // 2026-11-13 (la tableta iba lenta): lo ya guardado se volvía a bajar y a escribir en la caché en cada apertura
+  // (22 MB entre el reconocimiento facial y la prueba de vida). Ahora solo se le pregunta al servidor si cambió
+  // (If-None-Match con su ETag): si no cambió contesta 304, sin mandar el archivo, y no se escribe nada.
+  const etag = guardado ? guardado.headers.get('etag') : null;
   // Se guarda por detrás: entregar el archivo no espera a que termine de escribirse en la caché.
-  const red = pedir(e.request.url, LIMITE_ARCHIVO_MS, { credentials: 'same-origin' }).then(r => { if (cache && r.ok && !r.redirected) { const p = cache.put(llave, r.clone()).catch(() => {}); try { e.waitUntil(p); } catch { /* se guarda igual */ } } return r; });
+  const red = pedir(e.request.url, LIMITE_ARCHIVO_MS, { credentials: 'same-origin', ...(etag ? { headers: { 'If-None-Match': etag } } : {}) }).then(r => { if (cache && r.ok && !r.redirected) { const p = cache.put(llave, r.clone()).catch(() => {}); try { e.waitUntil(p); } catch { /* se guarda igual */ } } return r; });
   if (guardado) { e.waitUntil(red.catch(() => {})); return guardado; }
   return red;
 }

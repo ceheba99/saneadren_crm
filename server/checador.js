@@ -470,7 +470,9 @@ module.exports = function checador(app, db, h) {
     // La tableta dice cómo está (batería, cargador, cámara): el vigía avisa antes de que falle (kiosco-vigia.js).
     const q = req.query, b = /^\d{1,3}$/.test(String(q.b ?? '')) ? Number(q.b) : null, si = v => (v === '1' ? true : v === '0' ? false : null);
     vigiaKioscos.reporte(req.kiosco.id, { bateria: b, cargando: si(q.c), camara: si(q.cam), pantalla: si(q.pan) });
-    res.json({ nombre: req.kiosco.nombre, sucursal: req.kiosco.sucursal, fecha: a.fecha, hora: a.hora.slice(0, 5), utc: a.utc, tipos: TIPOS, llave_cola: llaveColaPublica() });
+    res.json({ nombre: req.kiosco.nombre, sucursal: req.kiosco.sucursal, fecha: a.fecha, hora: a.hora.slice(0, 5), utc: a.utc, tipos: TIPOS, llave_cola: llaveColaPublica(),
+      // ¿Alguien de esta sucursal entra con la cara? Si nadie, la tableta no carga el reconocimiento facial (22 MB) al abrir.
+      caras: !!db.prepare('SELECT 1 FROM main.rostros r JOIN main.personal p ON p.id = r.personal_id WHERE p.activo = 1 AND p.sucursal_id = ? LIMIT 1').get(req.kiosco.sucursal_id) });
   }));
   // Revisa código y PIN con todos los topes. Regresa { p } o { status, error } (el error ya va listo para la pantalla).
   function verificar(d, codigo, pin) {
@@ -843,7 +845,8 @@ module.exports = function checador(app, db, h) {
       if (c.n >= 30) break;
       const m = String(x?.m || '').replace(/\s+/g, ' ').replace(/[^\p{L}\p{N} .,:;()«»\-_/]/gu, '').slice(0, 160), cuando = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(String(x?.t || '')) ? String(x.t).slice(0, 16).replace('T', ' ') + ' UTC' : '';
       if (!m) continue;
-      c.n++; app.locals.registro?.servicio('kiosco_recuperado', `Kiosco «${req.kiosco.nombre}»${req.kiosco.sucursal ? ' (' + req.kiosco.sucursal + ')' : ''}: ${m}${cuando ? ' · ' + cuando : ''}`);
+      // «Velocidad…»: lo que tardó la tableta en abrir y en checar (2026-11-13), en su propio renglón de los Logs.
+      c.n++; app.locals.registro?.servicio(m.startsWith('Velocidad') ? 'kiosco_velocidad' : 'kiosco_recuperado', `Kiosco «${req.kiosco.nombre}»${req.kiosco.sucursal ? ' (' + req.kiosco.sucursal + ')' : ''}: ${m}${cuando ? ' · ' + cuando : ''}`);
     }
     res.json({ ok: true });
   }));

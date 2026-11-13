@@ -7,7 +7,7 @@ const Logs = (() => {
     bloqueado: ['🔴', 'Bloqueado por intentos'], rechazado: ['🟠', 'Intentó entrar estando bloqueado'],
     olvido: ['🔑', 'Pidió restablecer su contraseña'], restablecio: ['🔑', 'Restableció su contraseña'], error: ['⛔', 'Error del servidor'],
     pantalla: ['⚠️', 'Error en pantalla'], correo_fallo: ['📧', 'Correo que no salió'], respaldo_ok: ['💾', 'Respaldo automático hecho'],
-    respaldo_fallo: ['💾', 'Respaldo automático falló'], whatsapp_fallo: ['💬', 'WhatsApp no se envió'], kiosco_recuperado: ['🕒', 'El reloj checador se recuperó solo'], kiosco_sin_respuesta: ['🚨', 'El reloj checador no responde'], kiosco_volvio: ['✅', 'El reloj checador ya responde'], kiosco_atencion: ['🔋', 'El reloj checador necesita atención'], inicio: ['🔄', 'Sistema iniciado (actualización o reinicio)'],
+    respaldo_fallo: ['💾', 'Respaldo automático falló'], whatsapp_fallo: ['💬', 'WhatsApp no se envió'], kiosco_recuperado: ['🕒', 'El reloj checador se recuperó solo'], kiosco_velocidad: ['⏱️', 'Velocidad del reloj checador'], kiosco_sin_respuesta: ['🚨', 'El reloj checador no responde'], kiosco_volvio: ['✅', 'El reloj checador ya responde'], kiosco_atencion: ['🔋', 'El reloj checador necesita atención'], inicio: ['🔄', 'Sistema iniciado (actualización o reinicio)'],
     descarga: ['⬇️', 'Descargó un respaldo'], factura_ok: ['🧾', 'Facturación'], factura_error: ['🧾', 'Facturación: error']
   };
   const fechaHora = f => { const [d, h] = String(f || '').split(' '); return (d || '').split('-').reverse().join('/') + (h ? ' ' + h.slice(0, 5) : ''); };
