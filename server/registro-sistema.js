@@ -12,7 +12,7 @@
 // (así, si alguien escribe su contraseña en la casilla del usuario, no queda en el registro). Se guarda 180 días.
 const { explicar } = require('./registro-guias');
 const DIAS_GUARDA = 180, MAX_FILAS = 100000;
-// Ficha del sistema para «Copiar para una IA»: qué es, qué versión corre y de qué commit (si se desplegó con Git).
+// Ficha del sistema para «Copiar reporte»: qué es, qué versión corre y de qué commit (si se desplegó con Git).
 function fichaSistema() {
   const fs = require('fs'), path = require('path'), raiz = path.join(__dirname, '..');
   let commit = null;

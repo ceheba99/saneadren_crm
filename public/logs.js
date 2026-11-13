@@ -20,7 +20,7 @@ const Logs = (() => {
   const lista = (titulo, l) => (l && l.length ? '<p class="logs-guia-titulo"><b>' + esc(titulo) + '</b></p><ul>' + l.map(x => '<li>' + esc(x) + '</li>').join('') + '</ul>' : '');
   const guia = g => '<details class="logs-guia"><summary>¿Qué significa y qué hago?</summary><p>' + esc(g.que) + '</p>'
     + lista('Lo que dicen los datos de este renglón', g.lectura) + lista('Causas probables', g.causas) + lista('Qué hacer', g.hacer) + lista('Dónde está en el código', g.codigo) + '</details>';
-  // «Copiar para una IA»: un reporte que se entiende sin conocer el sistema (qué es, qué pasó, qué significa, dónde está
+  // «Copiar reporte»: un reporte que se entiende sin conocer el sistema (qué es, qué pasó, qué significa, dónde está
   // en el código y qué más pasó cerca). Para pegarlo en cualquier asistente o mandarlo a soporte.
   function reporte(r) {
     const [, texto] = EVENTO[r.evento] || ['', r.evento], g = r.guia, s = sistema || {};
@@ -39,7 +39,7 @@ const Logs = (() => {
   async function copiar(id) {
     const r = filas.find(x => String(x.id) === String(id) && x.tipo !== 'facturacion') || filas.find(x => String(x.id) === String(id));
     if (!r) return;
-    try { await navigator.clipboard.writeText(reporte(r)); toast('Reporte copiado: pégalo en tu asistente de IA o mándalo a soporte'); }
+    try { await navigator.clipboard.writeText(reporte(r)); toast('Reporte copiado: listo para mandarlo a soporte'); }
     catch { toast('No se pudo copiar en este navegador'); }
   }
 
@@ -48,7 +48,7 @@ const Logs = (() => {
     const [icono, texto] = EVENTO[r.evento] || ['•', r.evento];
     return '<tr class="logs-' + esc(r.nivel) + '"><td class="st-fecha">' + esc(fechaHora(r.fecha)) + '</td>'
       + '<td><span aria-hidden="true">' + icono + '</span> <b>' + esc(texto) + '</b>' + (r.detalle ? '<div class="bit-detalle">' + esc(r.detalle) + '</div>' : '') + (r.guia ? guia(r.guia) : '')
-      + '<div><button type="button" class="btn btn-outline btn-chico" data-logs-copiar="' + esc(r.id) + '">📋 Copiar para una IA</button></div></td>'
+      + '<div><button type="button" class="btn btn-outline btn-chico" data-logs-copiar="' + esc(r.id) + '">📋 Copiar reporte</button></div></td>'
       + '<td>' + esc(r.usuario || '—') + '</td><td><code>' + esc(r.ip || '') + '</code></td><td>' + esc(r.equipo || '') + '</td></tr>';
   };
   function pintarLista(hayMas) {

@@ -1,8 +1,8 @@
 // GUÍAS DE LOS LOGS (2026-11-13, pedido de Dirección: que cada renglón se entienda sin conocer el sistema, también al
-// pasarlo a un asistente de IA o a soporte). Cada renglón de los Logs se explica solo:
+// mandarlo a soporte). Cada renglón de los Logs se explica solo:
 //  · qué significa, en simple; · causas probables; · qué hacer, paso a paso; · dónde está en el código (archivo y parte);
 //  · «lectura»: lo que dicen LOS DATOS de ese renglón en particular (p. ej. qué número de la velocidad está fuera de lo normal).
-// La pantalla (public/logs.js) lo muestra en «¿Qué significa y qué hago?» y lo incluye en «Copiar para una IA».
+// La pantalla (public/logs.js) lo muestra en «¿Qué significa y qué hago?» y lo incluye en «Copiar reporte».
 // Todos los tipos de renglón tienen guía (2026-11-13); un evento nuevo de los Logs debe traer la suya aquí.
 const num = (t, re) => { const m = String(t || '').match(re); return m ? Number(m[1]) : null; };
 
@@ -36,7 +36,7 @@ function velocidad(d) {
     causas: ['Servidor lento (más de 800 ms): Wi-Fi débil donde está la tableta, internet de la oficina saturado o el sistema reiniciándose.', 'Pantalla trabada o «abrir» alto: tableta con poca memoria, muchas apps abiertas, ahorro de energía prendido, o el reconocimiento facial cargándose.',
       'Pasos lentos al checar con «servidor» normal: el Wi-Fi se corta por momentos.'],
     hacer: ['Compara varios renglones de «Velocidad»: uno solo malo puede ser casualidad; si se repite, es real.', 'Si lo alto es «servidor» o los pasos al checar: acerca la tableta al módem o revisa el internet.',
-      'Si lo alto es «trabada», «abrir» o «cara»: reinicia la tableta, cierra otras apps, apaga el ahorro de energía y déjala conectada al cargador.', 'Si sigue igual, copia este renglón con «Copiar para una IA» y mándalo a quien da soporte.'],
+      'Si lo alto es «trabada», «abrir» o «cara»: reinicia la tableta, cierra otras apps, apaga el ahorro de energía y déjala conectada al cargador.', 'Si sigue igual, copia este renglón con «Copiar reporte» y mándalo a quien da soporte.'],
     codigo, lectura };
 }
 
@@ -58,7 +58,7 @@ function recuperado(d) {
   return { que: 'La pantalla del reloj checador tuvo un tropiezo y se compuso sola (se recargó o volvió a arrancar). La gente pudo seguir checando; queda anotado para saber qué pasó y cada cuánto.',
     causas: ['La tableta se bloqueó o se apagó la pantalla y al volver la página se reinició.', 'Poca memoria: el sistema operativo descartó la página.', 'El internet tardó al abrir y la página no alcanzó a cargar.', 'Un error del programa al iniciar (raro; el renglón trae el texto del error).'],
     hacer: ['Si pasa una o dos veces al día, no hay que hacer nada.', 'Si pasa muchas veces: revisa que la tableta esté conectada al cargador, sin ahorro de energía y con «Pantalla activa» encendida (Ajustes → Opciones de desarrollador).',
-      'Si dice «error al iniciar», copia el renglón con «Copiar para una IA» y mándalo a soporte: es un defecto por corregir.'],
+      'Si dice «error al iniciar», copia el renglón con «Copiar reporte» y mándalo a soporte: es un defecto por corregir.'],
     codigo: ['public/kiosco.html → primer bloque <script> («vigilante» y «caja negra»: funciones recuperar, K.anotar y el arranque que arma el texto «Reinicio (…)»)', 'public/kiosco.html → función revivir (qué hace al volver de un bloqueo)',
       'public/kiosco-sw.js → caché que abre la página sin internet', 'server/checador.js → ruta POST /api/publico/kiosco/diagnostico'], lectura };
 }
