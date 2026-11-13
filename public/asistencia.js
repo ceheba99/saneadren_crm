@@ -328,6 +328,7 @@ const Asistencia = (() => {
     if (puede.precios) h += '<div class="modal-section" id="as-precios"><p class="ayuda" role="status">Cargando precios…</p></div>';
     h += seccionUbicaciones() + seccionZonas();
     $('as-cuerpo').innerHTML = h;
+    iniciarMapaZona();
     if (puede.precios) cargarPrecios();
   }
 
@@ -427,10 +428,16 @@ const Asistencia = (() => {
   function seccionZonas() {
     const z = datos.zonas;
     if (!z) return '';
-    const form = x => `<span class="filtros as-form"><input id="as-z-nombre" maxlength="60" value="${esc(x?.nombre || '')}" placeholder="Nombre (p. ej. Obra Celaya)" aria-label="Nombre de la zona">
-      <input id="as-z-ubic" value="${esc(x ? x.lat + ', ' + x.lon : '')}" placeholder="20.5888, -100.3899 o enlace de Google Maps" aria-label="Ubicación de la zona">
-      <input type="number" id="as-z-radio" class="as-num" min="50" max="20000" value="${esc(x?.radio_m || z.radio_omision)}" aria-label="Radio en metros"> m
-      <button type="button" class="btn btn-secundario" id="as-z-guardar" data-id="${x ? Number(x.id) : ''}">Guardar</button>${x ? '<button type="button" class="btn btn-outline" id="as-z-cancelar">Cancelar</button>' : ''}</span>`;
+    const form = x => `<div class="as-zona-form">
+      <div class="filtros as-form"><input id="as-z-nombre" maxlength="60" value="${esc(x?.nombre || '')}" placeholder="Nombre (p. ej. Obra Celaya)" aria-label="Nombre de la zona"></div>
+      <div class="filtros as-form"><input id="as-z-buscar" maxlength="200" placeholder="Buscar dirección (p. ej. Av. Constituyentes 100, Querétaro)" aria-label="Buscar dirección"><button type="button" class="btn btn-outline" id="as-z-buscar-btn">🔎 Buscar</button></div>
+      <div id="as-z-resultados" aria-live="polite"></div>
+      <div id="as-z-mapa" style="height:340px;width:100%;border-radius:8px;margin:8px 0" role="application" aria-label="Mapa: toca para poner el punto de la zona"></div>
+      <p class="ayuda">Toca el mapa para poner el punto (o arrastra el pin). El círculo azul es el área donde vale la checada; las zonas grises son las que ya existen.</p>
+      <div class="filtros as-form"><label>Radio <input type="range" id="as-z-rango" min="50" max="5000" step="50" value="${esc(Math.min(5000, x?.radio_m || z.radio_omision))}" aria-label="Radio (deslizar)"></label>
+        <input type="number" id="as-z-radio" class="as-num" min="50" max="20000" value="${esc(x?.radio_m || z.radio_omision)}" aria-label="Radio en metros"> m</div>
+      <div class="filtros as-form"><label>Coordenadas <input id="as-z-ubic" value="${esc(x ? x.lat + ', ' + x.lon : '')}" placeholder="20.5888, -100.3899 o enlace de Google Maps" aria-label="Ubicación de la zona"></label>
+      <button type="button" class="btn btn-secundario" id="as-z-guardar" data-id="${x ? Number(x.id) : ''}">Guardar zona</button>${x ? '<button type="button" class="btn btn-outline" id="as-z-cancelar">Cancelar</button>' : ''}</div></div>`;
     let h = `<div class="modal-section"><h3 class="pe-sub">💬 Zonas para checar por WhatsApp</h3>
       <p class="ayuda">Lugares donde el personal puede checar por WhatsApp. Si su ubicación cae fuera de sus zonas, la checada queda «por revisar». A quién aplica cada zona se elige en su ficha (Personal → Reloj checador).${z.editar ? ' Para sacar la ubicación: en Google Maps mantén presionado el punto y copia los números (p. ej. «20.5888, -100.3899»), o pega el enlace largo.' : ''}</p>`;
     h += z.zonas.length ? `<ul class="pe-ordenes">${z.zonas.map(x => `<li${x.activo ? '' : ' class="pe-baja"'}><b>${esc(x.nombre)}</b>${x.activo ? '' : ' (desactivada)'}: ${esc(x.lat)}, ${esc(x.lon)} · radio ${esc(x.radio_m)} m · ${esc(x.personas)} persona(s)
@@ -439,6 +446,61 @@ const Asistencia = (() => {
         ${zonaEditando === x.id ? '<br>' + form(x) : ''}</li>`).join('')}</ul>` : '<p class="ayuda">Aún no hay zonas.</p>';
     if (z.editar) h += zonaEditando === 'nueva' ? `<p><b>Zona nueva:</b></p>${form(null)}<button type="button" class="btn btn-outline" id="as-z-cancelar">Cancelar</button>` : '<button type="button" class="btn btn-secundario" data-as-zona-nueva="1">+ Nueva zona</button>';
     return h + '</div>';
+  }
+  // Mapa de la zona (Leaflet alojado en /vendor/leaflet + imágenes de OpenStreetMap). Se carga solo al abrir el formulario.
+  let leafletListo = null, mapaZona = null, ponerZona = null;
+  function cargarLeaflet() {
+    if (window.L) return Promise.resolve();
+    if (!leafletListo) leafletListo = new Promise((ok, mal) => {
+      const css = document.createElement('link'); css.rel = 'stylesheet'; css.href = '/vendor/leaflet/leaflet.css'; document.head.appendChild(css);
+      const js = document.createElement('script'); js.src = '/vendor/leaflet/leaflet.js'; js.onload = () => ok(); js.onerror = () => { leafletListo = null; mal(new Error('No se pudo cargar el mapa')); };
+      document.head.appendChild(js);
+    });
+    return leafletListo;
+  }
+  const coordsDe = v => { const m = String(v || '').match(/^\s*(-?\d{1,2}(?:\.\d+)?)\s*,\s*(-?\d{1,3}(?:\.\d+)?)\s*$/); return m ? [Number(m[1]), Number(m[2])] : null; };
+  async function iniciarMapaZona() {
+    if (mapaZona) { mapaZona.remove(); mapaZona = null; ponerZona = null; }
+    if (!$('as-z-mapa')) return;
+    try { await cargarLeaflet(); } catch (e) { if ($('as-z-mapa')) $('as-z-mapa').outerHTML = `<p class="aviso-error-carga" role="alert">${esc(e.message)}: pega las coordenadas abajo.</p>`; return; }
+    const div = $('as-z-mapa'); if (!div || mapaZona) return;
+    const L = window.L, z = datos.zonas, propia = zonaEditando === 'nueva' ? null : zonaEditando;
+    const inicial = coordsDe($('as-z-ubic').value);
+    const mapa = mapaZona = L.map(div).setView(inicial || [z.centro.lat, z.centro.lon], inicial ? 16 : 12);
+    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, referrerPolicy: 'strict-origin-when-cross-origin',
+      attribution: '© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap</a>' }).addTo(mapa);
+    for (const o of z.zonas) if (o.activo && o.id !== propia) L.circle([o.lat, o.lon], { radius: o.radio_m, color: '#888', weight: 1, fillOpacity: 0.08 }).bindTooltip(o.nombre).addTo(mapa);
+    let pin = null, circulo = null;
+    const radio = () => Math.max(50, Number($('as-z-radio')?.value) || z.radio_omision);
+    ponerZona = (lat, lon, mover) => {
+      lat = Math.round(lat * 1e6) / 1e6; lon = Math.round(lon * 1e6) / 1e6;
+      if ($('as-z-ubic')) $('as-z-ubic').value = lat + ', ' + lon;
+      if (!pin) {
+        pin = L.marker([lat, lon], { draggable: true, title: 'Punto de la zona' }).addTo(mapa);
+        pin.on('dragend', () => { const q = pin.getLatLng(); ponerZona(q.lat, q.lng, false); });
+        circulo = L.circle([lat, lon], { radius: radio(), color: '#1a73e8' }).addTo(mapa);
+      } else { pin.setLatLng([lat, lon]); circulo.setLatLng([lat, lon]); }
+      if (mover) mapa.fitBounds(circulo.getBounds(), { maxZoom: 17 });
+    };
+    if (inicial) ponerZona(inicial[0], inicial[1], false);
+    mapa.on('click', e => ponerZona(e.latlng.lat, e.latlng.lng, false));
+    const radioA = v => { const n = Number(v); if (!(n >= 50)) return; $('as-z-radio').value = n; $('as-z-rango').value = Math.min(5000, n); if (circulo) circulo.setRadius(n); };
+    $('as-z-rango').oninput = e => radioA(e.target.value);
+    $('as-z-radio').oninput = e => radioA(e.target.value);
+    $('as-z-ubic').onchange = () => { const v = coordsDe($('as-z-ubic').value); if (v) ponerZona(v[0], v[1], true); };
+    $('as-z-buscar').onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); buscarDireccion(); } };
+    setTimeout(() => mapa.invalidateSize(), 60);
+  }
+  async function buscarDireccion() {
+    const q = $('as-z-buscar')?.value.trim(), cont = $('as-z-resultados');
+    if (!q || !cont) return;
+    cont.innerHTML = '<p class="ayuda" role="status">Buscando…</p>';
+    try {
+      const r = await pedir('/whatsapp/buscar?q=' + encodeURIComponent(q));
+      if (!$('as-z-resultados')) return;
+      cont.innerHTML = r.resultados.length ? '<ul class="pe-ordenes">' + r.resultados.map(x => `<li><button type="button" class="btn-link" data-as-z-ir="${esc(x.lat + ',' + x.lon)}">📍 ${esc(x.nombre)}</button></li>`).join('') + '</ul>'
+        : '<p class="ayuda">No se encontró. Prueba con calle, número y ciudad, o mueve el mapa a mano.</p>';
+    } catch (e) { cont.innerHTML = `<p class="aviso-error-carga" role="alert">${esc(e.message)}</p>`; }
   }
   $('as-cuerpo').addEventListener('change', e => {
     if (e.target.id === 'as-fecha' && e.target.value) { fecha = e.target.value; cargar(); }
@@ -464,6 +526,8 @@ const Asistencia = (() => {
     else if (d.asZonaNueva) { zonaEditando = 'nueva'; pintarHorarios(); }
     else if (d.asZonaEditar) { zonaEditando = Number(d.asZonaEditar); pintarHorarios(); }
     else if (b.id === 'as-z-cancelar') { zonaEditando = null; pintarHorarios(); }
+    else if (b.id === 'as-z-buscar-btn') buscarDireccion();
+    else if (d.asZIr) { const [la, lo] = d.asZIr.split(',').map(Number); if (ponerZona) ponerZona(la, lo, true); else $('as-z-ubic').value = la + ', ' + lo; $('as-z-resultados').innerHTML = ''; }
     else if (b.id === 'as-z-guardar') {
       const id = b.dataset.id, cuerpo = { nombre: $('as-z-nombre').value, ubicacion: $('as-z-ubic').value, radio_m: $('as-z-radio').value === '' ? null : Number($('as-z-radio').value) };
       b.disabled = true;

@@ -428,8 +428,35 @@ module.exports = function whatsapp(app, db, h) {
   };
   app.get('/api/asistencia/whatsapp/zonas', h((req, res) => {
     if (!puede(req, 'personal.ver') && !puede(req, 'asistencia.ver')) return res.status(403).json({ error: 'No tienes permiso' });
-    res.json({ editar: puede(req, 'personal.editar'), radio_omision: RADIO_ZONA_M,
+    const centro = db.prepare('SELECT lat, lon FROM main.sucursales WHERE activo = 1 AND lat IS NOT NULL ORDER BY id LIMIT 1').get();
+    res.json({ editar: puede(req, 'personal.editar'), radio_omision: RADIO_ZONA_M, centro: centro || { lat: 20.5888, lon: -100.3899 },
       zonas: db.prepare('SELECT z.id, z.nombre, z.lat, z.lon, z.radio_m, z.activo, (SELECT COUNT(*) FROM main.checador_zonas_personal zp JOIN main.personal p ON p.id = zp.personal_id WHERE zp.zona_id = z.id AND p.activo = 1) AS personas FROM main.checador_zonas z ORDER BY z.activo DESC, z.nombre').all().map(z => ({ ...z, activo: !!z.activo })) });
+  }));
+  // Buscar una dirección para el mapa de zonas (Nominatim de OpenStreetMap, gratis). Pasa por el servidor para mandar
+  // un User-Agent propio y respetar su regla de máximo 1 búsqueda por segundo; solo México, hasta 5 resultados.
+  let ultimaBusqueda = 0;
+  const busquedas = new Map();
+  app.get('/api/asistencia/whatsapp/buscar', h(async (req, res) => {
+    if (!puede(req, 'personal.editar')) return res.status(403).json({ error: 'No tienes permiso' });
+    const q = String(req.query.q || '').trim().replace(/\s+/g, ' ');
+    if (q.length < 4 || q.length > 200) return res.status(400).json({ error: 'Escribe la dirección (al menos 4 letras)' });
+    const clave = q.toLowerCase();
+    if (busquedas.has(clave)) return res.json({ resultados: busquedas.get(clave) });
+    const espera = ultimaBusqueda + 1100 - Date.now();
+    if (espera > 0) await new Promise(ok => setTimeout(ok, espera));
+    ultimaBusqueda = Date.now();
+    let r;
+    try {
+      r = await fetch('https://nominatim.openstreetmap.org/search?' + new URLSearchParams({ q, format: 'jsonv2', countrycodes: 'mx', limit: '5', 'accept-language': 'es' }),
+        { headers: { 'User-Agent': 'ERP-checador-zonas/1.0 (servidor propio)' }, signal: AbortSignal.timeout(10000) });
+    } catch { return res.status(502).json({ error: 'No se pudo buscar ahora (sin conexión con OpenStreetMap). Mueve el mapa a mano.' }); }
+    if (!r.ok) return res.status(502).json({ error: 'OpenStreetMap no contestó la búsqueda. Intenta en un momento o mueve el mapa a mano.' });
+    const lista = (await r.json().catch(() => [])) || [];
+    const resultados = (Array.isArray(lista) ? lista : []).slice(0, 5).map(x => ({ nombre: String(x.display_name || '').slice(0, 200), lat: Math.round(Number(x.lat) * 1e6) / 1e6, lon: Math.round(Number(x.lon) * 1e6) / 1e6 }))
+      .filter(x => Number.isFinite(x.lat) && Number.isFinite(x.lon));
+    if (busquedas.size > 200) busquedas.clear();
+    busquedas.set(clave, resultados);
+    res.json({ resultados });
   }));
   app.post('/api/asistencia/whatsapp/zonas', h((req, res) => {
     if (!puede(req, 'personal.editar')) return res.status(403).json({ error: 'No tienes permiso para dar de alta zonas' });
