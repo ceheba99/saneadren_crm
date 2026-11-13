@@ -19,9 +19,9 @@ const Anticipos = (() => {
 
   async function cargar() {
     const cont = $('anticipos-panel'); if (!cont) return;
-    cont.innerHTML = '<p class="ayuda">Cargando anticipos…</p>';
+    Repintado.cargando(cont, FILTRO, '<p class="ayuda">Cargando anticipos…</p>');
     try { DATOS = await pedir('/anticipos?estado=' + FILTRO); }
-    catch (err) { if (err.status !== 401) cont.innerHTML = `<div class="aviso-error-carga" role="alert"><p>No se pudo cargar: ${esc(err.message)}</p><button type="button" class="btn btn-outline" data-ant="recargar">Reintentar</button></div>`; return; }
+    catch (err) { if (err.status !== 401) Repintado.falla(cont, err, cargar, `<div class="aviso-error-carga" role="alert"><p>No se pudo cargar: ${esc(err.message)}</p><button type="button" class="btn btn-outline" data-ant="recargar">Reintentar</button></div>`); return; }
     pintar();
   }
 
@@ -85,14 +85,14 @@ const Anticipos = (() => {
   function pintar() {
     const cont = $('anticipos-panel'), d = DATOS;
     const abiertos = d.anticipos.filter(a => a.estado === 'abierto'), porComprobar = abiertos.reduce((t, a) => t + a.saldo, 0);
-    cont.innerHTML = `
+    Repintado.pintar(cont, `
       <p class="ayuda">Dinero que se entrega antes del gasto (casetas, diésel, viáticos, una compra en campo). Se comprueba con sus tickets o facturas: cada uno es un gasto que se paga con el anticipo. Lo que sobre se regresa; si los gastos pasan del anticipo, la diferencia se le reembolsa. Pasados ${Number(d.dias_aviso)} días sin cerrarse, avisa en Inicio a quien lo entregó.</p>
       ${d.puede_entregar ? formEntregar() : ''}
       <div class="pendientes-filtros" role="group" aria-label="Mostrar anticipos">
         ${[['abiertos', 'Abiertos'], ['cerrados', 'Cerrados y cancelados'], ['todos', 'Todos']].map(([v, t]) => `<button type="button" class="${FILTRO === v ? 'activo' : ''}" data-ant-filtro="${v}">${t}</button>`).join('')}
       </div>
       ${FILTRO !== 'cerrados' && abiertos.length ? `<p class="ant-total">${abiertos.length} ${abiertos.length === 1 ? 'anticipo abierto' : 'anticipos abiertos'} · <b>${dinero(porComprobar)}</b> por comprobar</p>` : ''}
-      ${d.anticipos.length ? `<div class="ant-lista">${d.anticipos.map(tarjeta).join('')}</div>` : `<p class="util-45">${FILTRO === 'abiertos' ? 'No hay anticipos abiertos.' : 'No hay anticipos.'}</p>`}`;
+      ${d.anticipos.length ? `<div class="ant-lista">${d.anticipos.map(tarjeta).join('')}</div>` : `<p class="util-45">${FILTRO === 'abiertos' ? 'No hay anticipos abiertos.' : 'No hay anticipos.'}</p>`}`);
   }
 
   document.addEventListener('click', async e => {

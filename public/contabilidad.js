@@ -56,10 +56,10 @@ const Contabilidad = (() => {
     if (!$('vista-contabilidad')) return;
     if (!listo) preparar();
     const turno = ++consulta, cont = $('ct-resumen');
-    cont.innerHTML = '<p class="util-45" role="status">Cargando…</p>';
+    Repintado.cargando(cont, consultaDe().toString());
     let d;
     try { const res = await api('/contabilidad/excel?' + consultaDe()); d = await res.json(); if (!res.ok) throw new Error(d.error); }
-    catch (e) { if (turno === consulta) cont.innerHTML = '<p class="aviso-error-carga">' + esc(e.message) + '</p>'; return; }
+    catch (e) { if (turno === consulta) Repintado.falla(cont, e, cargar, '<p class="aviso-error-carga">' + esc(e.message) + '</p>'); return; }
     if (turno !== consulta) return;
     DATOS = d;
     pintar();
@@ -67,8 +67,8 @@ const Contabilidad = (() => {
   function pintar() {
     const d = DATOS, n = k => (d[k] || []).length;
     const pestanas = [['resumen', 'Resumen'], ...Object.entries(TABLAS).map(([k, t]) => [k, `${t.titulo} (${n(k)})`]), ...(window.Conciliacion ? [['conciliacion', 'Conciliación bancaria']] : [])];
-    $('ct-resumen').innerHTML = `${cierreHtml(d.cierre)}<div class="ct-pestanas" role="tablist">${pestanas.map(([k, t]) => `<button type="button" role="tab" class="ct-pestana${k === PESTANA ? ' activa' : ''}" aria-selected="${k === PESTANA}" data-ct-pestana="${esc(k)}">${esc(t)}</button>`).join('')}</div>
-      <div id="ct-contenido">${PESTANA === 'resumen' ? resumenHtml(d.resumen) : PESTANA === 'conciliacion' ? '<div id="cc-cuerpo"></div>' : tablaHtml(PESTANA)}</div>`;
+    Repintado.pintar($('ct-resumen'), `${cierreHtml(d.cierre)}<div class="ct-pestanas" role="tablist">${pestanas.map(([k, t]) => `<button type="button" role="tab" class="ct-pestana${k === PESTANA ? ' activa' : ''}" aria-selected="${k === PESTANA}" data-ct-pestana="${esc(k)}">${esc(t)}</button>`).join('')}</div>
+      <div id="ct-contenido">${PESTANA === 'resumen' ? resumenHtml(d.resumen) : PESTANA === 'conciliacion' ? '<div id="cc-cuerpo"></div>' : tablaHtml(PESTANA)}</div>`);
     // Conciliación bancaria (F4): la dibuja public/conciliacion.js con el mes elegido.
     if (PESTANA === 'conciliacion') window.Conciliacion.pintar($('cc-cuerpo'), $('ct-mes').value);
   }
@@ -320,7 +320,7 @@ const Contabilidad = (() => {
   // Vuelve a pintar la tabla sin perder dónde estaba escribiendo la persona.
   function repintar(k) {
     const a = document.activeElement, id = a?.id, filtro = a?.dataset?.ctFiltro, pos = a && 'selectionStart' in a ? a.selectionStart : null;
-    $('ct-contenido').innerHTML = tablaHtml(k);
+    Repintado.pintar($('ct-contenido'), tablaHtml(k));
     const n = id ? $(id) : filtro ? $('ct-contenido').querySelector(`[data-ct-filtro="${CSS.escape(filtro)}"]`) : null;
     if (n) { n.focus(); if (pos != null && n.setSelectionRange) try { n.setSelectionRange(pos, pos); } catch { /* select */ } }
   }

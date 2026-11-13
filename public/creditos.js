@@ -19,9 +19,9 @@ const Creditos = (() => {
 
   async function cargar() {
     const cont = $('cr-panel'); if (!cont) return;
-    cont.innerHTML = '<p class="ayuda">Cargando créditos…</p>';
+    Repintado.cargando(cont, '', '<p class="ayuda">Cargando créditos…</p>');
     try { DATOS = await pedir('/creditos'); }
-    catch (err) { if (err.status !== 401) cont.innerHTML = `<div class="aviso-error-carga" role="alert"><p>No se pudo cargar: ${esc(err.message)}</p><button type="button" class="btn btn-outline" data-cr="recargar">Reintentar</button></div>`; return; }
+    catch (err) { if (err.status !== 401) Repintado.falla(cont, err, cargar, `<div class="aviso-error-carga" role="alert"><p>No se pudo cargar: ${esc(err.message)}</p><button type="button" class="btn btn-outline" data-cr="recargar">Reintentar</button></div>`); return; }
     pintar();
   }
   const estadoTxt = c => (c.estado === 'vigente' ? '' : c.estado === 'liquidado' ? ' · liquidado' : ' · cancelado');
@@ -37,10 +37,10 @@ const Creditos = (() => {
         <div class="montos"><b>${esc(dinero(r.saldo_capital))}</b><small>saldo de capital${r.saldo_capital_estimado ? ' (estimado)' : ''}</small></div>
         <div class="btn-group"><button type="button" class="btn btn-primario" data-cr="ficha" data-id="${Number(c.id)}">Ver crédito</button></div>
       </div>`; }).join('') : `<p class="util-45">${DATOS.creditos.length ? 'No hay créditos vigentes.' : 'Aún no hay créditos. Da de alta el primero con «+ Nuevo crédito».'}</p>`;
-    $('cr-panel').innerHTML = `
+    Repintado.pintar($('cr-panel'), `
       <div class="prov-cabecera"><div><h2>Créditos</h2><p class="ayuda">Bancos, financieras, automotriz, terreno… Sus mensualidades salen en «Facturas y gastos» y se pagan como cualquier cuenta por pagar.</p></div>
         <button type="button" class="btn btn-primario" data-cr="nuevo">+ Nuevo crédito</button></div>
-      <label class="cc-check"><input type="checkbox" data-cr="todos"${VER_TODOS ? ' checked' : ''}> Mostrar también liquidados y cancelados</label>${filas}`;
+      <label class="cc-check"><input type="checkbox" data-cr="todos"${VER_TODOS ? ' checked' : ''}> Mostrar también liquidados y cancelados</label>${filas}`);
   }
 
   // ---------- Alta y edición ----------

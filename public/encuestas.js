@@ -28,23 +28,23 @@ const Encuestas = (() => {
   async function pintarOrden(lead) {
     const sec = $('seccion-encuesta'), cont = $('encuesta-orden');
     if (!lead || lead.estatus !== 'ganado') { sec.hidden = true; return; }
-    sec.hidden = false; cont.innerHTML = '<p class="util-45" role="status">Cargando…</p>';
-    let j; try { j = await datos(lead.id, true); } catch (err) { cont.innerHTML = '<p class="aviso-error-carga" role="alert">' + esc(err.message) + '</p>'; return; }
+    sec.hidden = false; Repintado.cargando(cont, 'enc|' + lead.id);
+    let j; try { j = await datos(lead.id, true); } catch (err) { Repintado.falla(cont, err, () => pintarOrden(lead), '<p class="aviso-error-carga" role="alert">' + esc(err.message) + '</p>'); return; }
     if (LEAD_ACTUAL?.id !== lead.id) return;
     const anterior = lead.encuesta_calificacion ? '<p class="ayuda">Calificación capturada a mano antes de la encuesta propia: ' + Number(lead.encuesta_calificacion) + ' de 4' + (lead.encuesta_comentario ? ' · «' + esc(lead.encuesta_comentario) + '»' : '') + '</p>' : '';
     const r = j.respuesta;
     if (!r) {
       const wa = 'https://wa.me/?text=' + encodeURIComponent('Gracias por su preferencia. ¿Nos ayuda a calificar el servicio? Le toma menos de 2 minutos: ' + j.url);
-      cont.innerHTML = '<p class="ayuda">Todavía no la contesta. El cliente la abre con el QR de su orden impresa, o mándale el enlace:</p>'
+      Repintado.pintar(cont, '<p class="ayuda">Todavía no la contesta. El cliente la abre con el QR de su orden impresa, o mándale el enlace:</p>'
         + '<div class="encuesta-enlace"><input readonly value="' + esc(j.url) + '" aria-label="Enlace de la encuesta" onclick="this.select()">'
         + '<button type="button" class="btn btn-outline btn-chico" data-encuesta-copiar data-sl-libre>Copiar</button>'
-        + '<a class="btn btn-outline btn-chico" href="' + esc(wa) + '" target="_blank" rel="noopener">WhatsApp</a></div>' + anterior;
+        + '<a class="btn btn-outline btn-chico" href="' + esc(wa) + '" target="_blank" rel="noopener">WhatsApp</a></div>' + anterior);
       return;
     }
     const nombre = (lista, k) => (lista.find(([c]) => c === k) || [, k])[1];
     const aspectos = j.preguntas.aspectos.map(m => '<tr class="enc-modulo"><th colspan="2">' + esc(m.titulo) + '</th></tr>'
       + m.items.map(i => '<tr><td>' + esc(i.texto) + '</td><td class="st-num"><b>' + esc(estrellas(r.aspectos[i.clave])) + '</b></td></tr>').join('')).join('');
-    cont.innerHTML = '<div class="cobranza-resumen">'
+    Repintado.pintar(cont, '<div class="cobranza-resumen">'
       + '<div><small>Promedio</small><b>' + (r.promedio == null ? '—' : r.promedio + ' de 5') + '</b></div>'
       + '<div><small>Recomendaría</small><b>' + Number(r.nps) + ' / 10</b></div>'
       + '<div><small>Contestó</small><b>' + esc(fechaCorta(r.respondida_at)) + '</b></div></div>'
@@ -52,7 +52,7 @@ const Encuestas = (() => {
       + '<p class="ayuda">' + (r.contacto ? 'Contestó: <b>' + esc(r.contacto) + '</b> · ' : '') + 'Facturación y manifiestos: <b>' + esc(nombre(j.preguntas.facturacion, r.facturacion)) + '</b> · Mantenimiento preventivo: <b>' + esc(nombre(j.preguntas.preventivo, r.preventivo)) + '</b></p>'
       + (r.mejorar ? '<p class="ayuda">💬 Qué mejorar: «' + esc(r.mejorar) + '»</p>' : '')
       + (r.reconocimiento || r.reconocido ? '<p class="ayuda">👏 Reconoce' + (r.reconocido ? ' a <b>' + esc(r.reconocido) + '</b>' : '') + (r.reconocimiento ? ': «' + esc(r.reconocimiento) + '»' : '') + '</p>' : '')
-      + '<details class="enc-detalle"><summary>Ver todas las calificaciones</summary><div class="tabla-scroll"><table class="tabla-resumen enc-tabla"><tbody>' + aspectos + '</tbody></table></div></details>' + anterior;
+      + '<details class="enc-detalle"><summary>Ver todas las calificaciones</summary><div class="tabla-scroll"><table class="tabla-resumen enc-tabla"><tbody>' + aspectos + '</tbody></table></div></details>' + anterior);
   }
   document.addEventListener('click', async e => {
     const b = e.target.closest('[data-encuesta-copiar]'); if (!b) return;

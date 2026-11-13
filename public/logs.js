@@ -52,11 +52,11 @@ const Logs = (() => {
       + '<td>' + esc(r.usuario || '—') + '</td><td><code>' + esc(r.ip || '') + '</code></td><td>' + esc(r.equipo || '') + '</td></tr>';
   };
   function pintarLista(hayMas) {
-    $('logs-lista').innerHTML = filas.length
+    Repintado.pintar($('logs-lista'), filas.length
       ? '<div class="tabla-scroll"><table class="tabla-resumen bit-tabla"><thead><tr><th>Fecha</th><th>Qué pasó</th><th>Usuario</th><th>IP</th><th>Equipo</th></tr></thead><tbody>'
         + filas.map(renglon).join('') + '</tbody></table></div>'
         + (hayMas ? '<button type="button" class="btn btn-secundario" id="logs-mas">Ver más antiguos</button>' : '')
-      : '<p class="util-45">Sin registros con estos filtros.</p>';
+      : '<p class="util-45">Sin registros con estos filtros.</p>');
   }
 
   async function cargar(mas) {
@@ -66,10 +66,10 @@ const Logs = (() => {
     const q = new URLSearchParams();
     for (const [k, id] of [['tipo', 'logs-tipo'], ['desde', 'logs-desde'], ['hasta', 'logs-hasta'], ['q', 'logs-buscar']]) if ($(id).value.trim()) q.set(k, $(id).value.trim());
     if (mas && filas.length) q.set('antes_de', filas[filas.length - 1].id);
-    else $('logs-lista').innerHTML = '<p class="util-45" role="status">Cargando…</p>';
+    else Repintado.cargando($('logs-lista'), [$('logs-tipo').value, $('logs-desde').value, $('logs-hasta').value].join('|'));
     let j;
     try { const r = await api('/registro-sistema?' + q); j = await r.json(); if (!r.ok) throw new Error(j.error); }
-    catch (err) { if (turno === consulta) $('logs-lista').innerHTML = '<p class="aviso-error-carga">No se pudieron cargar los logs: ' + esc(err.message) + '</p>'; return; }
+    catch (err) { if (turno === consulta) Repintado.falla($('logs-lista'), err, () => cargar(), '<p class="aviso-error-carga">No se pudieron cargar los logs: ' + esc(err.message) + '</p>'); return; }
     if (turno !== consulta) return;
     filas = mas ? filas.concat(j.filas) : j.filas; sistema = j.sistema || sistema;
     const s = j.resumen;

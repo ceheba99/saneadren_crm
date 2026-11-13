@@ -34,9 +34,9 @@ const Roles = (() => {
   async function cargar() {
     const cont = $('roles-permisos');
     if (!cont || !Permisos.datos.direccion) return;
-    cont.innerHTML = '<p class="util-45" role="status">Cargando…</p>';
+    Repintado.cargando(cont, '');
     try { DATOS = await api('/permisos').then(r => r.ok ? r.json() : Promise.reject(new Error('No se pudo cargar'))); }
-    catch (e) { cont.innerHTML = '<p class="aviso-error-carga" role="alert">' + esc(e.message) + '</p>'; return; }
+    catch (e) { Repintado.falla(cont, e, cargar, '<p class="aviso-error-carga" role="alert">' + esc(e.message) + '</p>'); return; }
     cambios.clear();
     pintar();
   }
@@ -76,7 +76,7 @@ const Roles = (() => {
         }).join('') + '</tr>';
     }
     const n = pendientes().length;
-    cont.innerHTML = '<div class="rp-nuevo form-grid">'
+    Repintado.pintar(cont, '<div class="rp-nuevo form-grid">'
       + '<div class="campo"><label for="rp-nuevo-nombre">Rol nuevo</label><input id="rp-nuevo-nombre" maxlength="40" placeholder="Ej. Contador, Cobranza"></div>'
       + '<div class="campo"><label for="rp-nuevo-copia">Empieza con los permisos de</label><select id="rp-nuevo-copia"><option value="">Ninguno (sin permisos)</option>'
       + roles.filter(r => r.editable).map(r => '<option value="' + esc(r.clave) + '">' + esc(r.nombre) + '</option>').join('') + '</select></div>'
@@ -85,7 +85,7 @@ const Roles = (() => {
       + '<div class="tabla-scroll rp-tabla-caja" tabindex="0" role="region" aria-label="Matriz de roles y permisos" aria-describedby="rp-guia"><table class="rp-tabla"><thead><tr><th scope="col" class="rp-permiso">Permiso</th>' + cab + '</tr></thead><tbody>' + filas + '</tbody></table></div>'
       + '<p class="ayuda">«Lo suyo» se aplica en todo el sistema (listas, Inicio, calendario, buscador, reportes y Excel). «Toda la empresa» ve todas las sucursales con el selector en «Todas». Sin ✎ Edita, esa área es solo de consulta; con ✎, en contactos, cotizaciones y órdenes cada quien edita solo lo que capturó o tiene a su nombre (lo de otros, con «Editar lo de otros»). Borrar solo lo hace Dirección. El gerente además nunca hace lo que afecta a todas las sucursales (sucursales, catálogos, bitácora completa, respaldo). Los cambios aplican de inmediato a cada persona con ese rol (la pantalla se actualiza al recargarla).</p>'
       + '<div class="btn-group"><button type="button" class="btn btn-primario" id="rp-guardar"' + (n ? '' : ' disabled') + '>' + (n ? 'Guardar cambios (' + n + (n === 1 ? ' rol' : ' roles') + ')' : 'Sin cambios') + '</button>'
-      + (n ? '<button type="button" class="btn btn-outline" id="rp-descartar">Descartar</button>' : '') + '</div>';
+      + (n ? '<button type="button" class="btn btn-outline" id="rp-descartar">Descartar</button>' : '') + '</div>');
     // En vista: las casillas no se tocan por accidente; «✏️ Editar» las abre y al guardar vuelve a la vista (2026-10-26).
     if (!n) SoloLectura.poner(cont, true, { que: 'roles y permisos' });
   }

@@ -22,9 +22,9 @@ const Tareas = (() => {
   async function cargar() {
     if (!listo) iniciar();
     const cont = $('tg-cuerpo');
-    cont.innerHTML = '<p class="ayuda" role="status">Cargando tareas…</p>';
+    Repintado.cargando(cont, [PEST, ESTADO, FILTRO_P, FILTRO_U].join('|'), '<p class="ayuda" role="status">Cargando tareas…</p>');
     try { D = await pedir('/tareas?' + new URLSearchParams({ vista: PEST === 'mias' ? 'mias' : 'equipo', estado: ESTADO, ...(FILTRO_P ? { proyecto: FILTRO_P } : {}), ...(FILTRO_U ? { persona: FILTRO_U } : {}) })); }
-    catch (err) { if (err.status !== 401) cont.innerHTML = `<div class="aviso-error-carga" role="alert"><p>No se pudieron cargar: ${esc(err.message)}</p></div>`; return; }
+    catch (err) { if (err.status !== 401) Repintado.falla(cont, err, cargar, `<div class="aviso-error-carga" role="alert"><p>No se pudieron cargar: ${esc(err.message)}</p></div>`); return; }
     if (!D.puede_asignar) PEST = 'mias';
     pintar();
   }
@@ -78,7 +78,9 @@ const Tareas = (() => {
       ${d.puede_asignar ? '<button type="button" class="btn btn-primario" data-tg="nueva">+ Nueva tarea</button><button type="button" class="btn btn-outline" data-tg="nuevo-proyecto">+ Nuevo proyecto</button>' : ''}</div>`;
     const resumen = (() => { const ts = d.tareas, venc = ts.filter(t => t.vencida).length, rev = ts.filter(t => t.estado === 'por_revisar').length;
       return `<p class="tg-resumen">${ts.length} ${ts.length === 1 ? 'tarea' : 'tareas'}${venc ? ` · <b class="rojo">${venc} vencida(s)</b>` : ''}${rev ? ` · ${rev} por revisar` : ''}</p>`; })();
-    $('tg-cuerpo').innerHTML = pestanas + filtros + (FORM ? formulario() : '') + (ABIERTA ? '<div id="tg-detalle"></div>' : '') + resumen + gantt(d.tareas);
+    // El detalle abierto se queda tal cual mientras llega el nuevo (si no, la pantalla se encogía y el scroll brincaba).
+    const detAntes = ABIERTA && $('tg-detalle')?.dataset.tarea === String(ABIERTA) && $('tg-detalle').dataset.rpEstado === 'listo' ? $('tg-detalle').innerHTML : '';
+    Repintado.pintar($('tg-cuerpo'), pestanas + filtros + (FORM ? formulario() : '') + (ABIERTA ? `<div id="tg-detalle" data-tarea="${Number(ABIERTA)}"${detAntes ? ' data-rp-estado="listo" data-rp-clave="tg|' + Number(ABIERTA) + '"' : ''}>${detAntes}</div>` : '') + resumen + gantt(d.tareas));
     if (ABIERTA) abrir(ABIERTA, true);
   }
 
@@ -108,8 +110,9 @@ const Tareas = (() => {
   async function abrir(id, sinScroll) {
     ABIERTA = id;
     let cont = $('tg-detalle'); if (!cont) { pintar(); return; }
-    cont.innerHTML = '<p class="ayuda">Cargando…</p>';
-    let t; try { t = await pedir('/tareas/' + id); } catch (err) { cont.innerHTML = `<p class="aviso-error-carga">${esc(err.message)}</p>`; return; }
+    cont.dataset.tarea = String(id);
+    Repintado.cargando(cont, 'tg|' + id);
+    let t; try { t = await pedir('/tareas/' + id); } catch (err) { Repintado.falla(cont, err, () => abrir(id, sinScroll), `<p class="aviso-error-carga">${esc(err.message)}</p>`); return; }
     const abierta = ['pendiente', 'en_proceso'].includes(t.estado);
     const hist = t.historial.map(h => `<li><small>${esc(fecha(h.fecha))} ${esc(h.fecha.slice(11, 16))} · ${esc(h.quien)}</small><br>${h.archivo ? `<button type="button" class="enlace" data-tg="archivo" data-id="${Number(h.id)}">📎 ${esc(h.archivo.nombre)}</button>` : esc(h.texto)}</li>`).join('');
     const notas = (t.vencida ? ' · vencida' : '') + (t.depende ? ' · depende de «' + t.depende.titulo + '» (' + (D.estados[t.depende.estado] || t.depende.estado) + ')' : '');
@@ -119,7 +122,7 @@ const Tareas = (() => {
       + (t.estado !== 'cancelada' ? '<label class="btn btn-outline btn-chico">📎 Adjuntar<input type="file" id="tg-archivo" data-id="' + tid + '" accept=".pdf,.jpg,.jpeg,.png" hidden></label>' : '')
       + '<button type="button" class="btn btn-outline btn-chico" data-tg="comentar" data-id="' + tid + '">💬 Comentar</button>'
       + (t.puede_mandar && !['terminada', 'cancelada'].includes(t.estado) ? '<button type="button" class="btn btn-outline btn-chico" data-tg="editar" data-id="' + tid + '">Cambiar</button><button type="button" class="enlace" data-tg="cancelar" data-id="' + tid + '">Cancelar tarea</button>' : '');
-    cont.innerHTML = `<article class="ant-tarjeta tg-det${t.vencida ? ' ant-vencido' : ''}">
+    Repintado.pintar(cont, `<article class="ant-tarjeta tg-det${t.vencida ? ' ant-vencido' : ''}">
       <header><div><h3>${t.es_hito ? '◆ ' : ''}${esc(t.titulo)}</h3><p class="ayuda">${esc(t.proyecto || 'Sin proyecto')} · de ${esc(t.asigno)} para ${esc(t.asignado)} · ${esc(fecha(t.inicio))} a ${esc(fecha(t.fin))} · prioridad ${esc((D.prioridades[t.prioridad] || '').toLowerCase())}${esc(notas)}</p></div>
         <div><span class="estado-cxc ${t.vencida ? 'vencida' : t.estado === 'terminada' ? 'pagada' : 'parcial'}">${esc(D.estados[t.estado] || t.estado)} · ${Number(t.avance)} %</span> <button type="button" class="enlace" data-tg="cerrar-detalle">Cerrar ✕</button></div></header>
       ${t.descripcion ? `<p class="tg-desc">${esc(t.descripcion)}</p>` : ''}
@@ -127,7 +130,7 @@ const Tareas = (() => {
         <input id="tg-avance-c" maxlength="2000" placeholder="¿Qué se hizo? (opcional)"><button type="button" class="btn btn-secundario btn-chico" data-tg="avance" data-id="${Number(t.id)}">Guardar avance</button></div>` : ''}
       <div class="ant-acciones">${botones}
       </div>
-      <h4>Historial</h4><ul class="tg-hist">${hist}</ul></article>`;
+      <h4>Historial</h4><ul class="tg-hist">${hist}</ul></article>`);
     $('tg-avance')?.addEventListener('input', e => { $('tg-avance-v').textContent = e.target.value + ' %'; });
     if (!sinScroll) cont.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }

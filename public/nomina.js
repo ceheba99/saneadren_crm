@@ -24,10 +24,10 @@ const Nomina = (() => {
   }
   async function pintarReglas() {
     const cont = $('nm-reglas-cuerpo'); if (!cont) return;
-    let r; try { r = await pedir('/nomina/reglas-puntualidad?sucursal=' + Number(D.sucursal_id)); } catch (err) { cont.innerHTML = `<div class="aviso-error-carga" role="alert"><p>No se pudo cargar: ${esc(err.message)}</p></div>`; return; }
+    let r; try { r = await pedir('/nomina/reglas-puntualidad?sucursal=' + Number(D.sucursal_id)); } catch (err) { Repintado.falla(cont, err, pintarReglas, `<div class="aviso-error-carga" role="alert"><p>No se pudo cargar: ${esc(err.message)}</p></div>`); return; }
     const txt = g => !g ? 'Sin bono' : g.monto > 0 ? `${dinero(g.monto)} por semana · hasta ${g.max_retardos} retardo(s) y ${g.max_faltas} falta(s)${g.max_retardo_min != null ? ` · máximo ${g.max_retardo_min} min de retardo` : ''} · desde ${fecha(g.desde)}` : `Sin bono desde ${fecha(g.desde)}`;
     const con = r.vigentes.filter(v => v.regla || v.proxima);
-    cont.innerHTML = `<p class="ayuda">Por puesto, en esta sucursal. Vacaciones, incapacidades y permisos se respetan (no cuentan como falta). Solo aplica a quien checa. Un cambio es una regla nueva desde una fecha; las semanas ya cerradas no cambian.</p>
+    Repintado.pintar(cont, `<p class="ayuda">Por puesto, en esta sucursal. Vacaciones, incapacidades y permisos se respetan (no cuentan como falta). Solo aplica a quien checa. Un cambio es una regla nueva desde una fecha; las semanas ya cerradas no cambian.</p>
       ${con.length ? `<ul class="nm-reglas-lista">${con.map(v => `<li><b>${esc(v.puesto)}</b>: ${esc(txt(v.regla))}${v.proxima ? ` <small>(cambia el ${esc(fecha(v.proxima.desde))}: ${esc(txt(v.proxima))})</small>` : ''}</li>`).join('')}</ul>` : '<p class="util-45">Todavía no hay reglas: nadie recibe bono de puntualidad.</p>'}
       <div class="nm-pago"><h3>Poner o cambiar una regla</h3><div class="form-grid-2">
         <div class="campo"><label for="nm-r-puesto">Puesto (obligatorio)</label><select id="nm-r-puesto">${r.puestos.map(p => `<option value="${esc(p)}">${esc(p)}</option>`).join('')}</select></div>
@@ -36,7 +36,7 @@ const Nomina = (() => {
         <div class="campo"><label for="nm-r-fal">Faltas permitidas en la semana</label><input id="nm-r-fal" type="number" min="0" max="7" value="0"></div>
         <div class="campo"><label for="nm-r-min">Minutos de retardo máximos (opcional)</label><input id="nm-r-min" type="number" min="0" max="600" placeholder="Sin límite"></div>
         <div class="campo"><label for="nm-r-desde">Aplica desde (obligatorio)</label><input id="nm-r-desde" type="date" value="${esc(D.desde)}"></div>
-      </div><button type="button" class="btn btn-primario" data-nm="guardar-regla">Guardar regla</button></div>`;
+      </div><button type="button" class="btn btn-primario" data-nm="guardar-regla">Guardar regla</button></div>`);
   }
 
   async function cargar(opciones = {}) {
@@ -44,9 +44,9 @@ const Nomina = (() => {
     if (opciones.desde) DESDE = opciones.desde;
     if (opciones.sucursal) SUC = opciones.sucursal;
     const cont = $('nm-cuerpo');
-    cont.innerHTML = '<p class="ayuda">Cargando nómina…</p>';
+    Repintado.cargando(cont, (DESDE || D?.desde || '') + '|' + (SUC || D?.sucursal_id || ''), '<p class="ayuda">Cargando nómina…</p>');
     try { D = await pedir('/nomina?desde=' + encodeURIComponent(DESDE || '') + (SUC ? '&sucursal=' + Number(SUC) : '')); }
-    catch (err) { if (err.status !== 401) cont.innerHTML = `<div class="aviso-error-carga" role="alert"><p>No se pudo cargar: ${esc(err.message)}</p></div>`; return; }
+    catch (err) { if (err.status !== 401) Repintado.falla(cont, err, cargar, `<div class="aviso-error-carga" role="alert"><p>No se pudo cargar: ${esc(err.message)}</p></div>`); return; }
     if (!DESDE) { DESDE = D.vencida; if (D.desde !== D.vencida) return cargar(); }
     DESDE = D.desde; SUC = D.sucursal_id;
     $('nm-sucursal').innerHTML = D.sucursales.map(s => `<option value="${Number(s.id)}"${s.id === D.sucursal_id ? ' selected' : ''}>${esc(s.nombre)}</option>`).join('');
@@ -98,7 +98,8 @@ const Nomina = (() => {
         </div>
         <button type="button" class="btn btn-primario" data-nm="pagar">Registrar pago de ${esc(dinero(t.total))}</button></div>` : '';
     const pagoTxt = d.estado === 'pagada' ? '<span class="ayuda">Pagó ' + esc(d.pago) + ' el ' + esc(fecha(d.fecha_pago)) + ' desde ' + esc(d.cuenta_origen) + '</span>' : '';
-    $('nm-cuerpo').innerHTML = `
+    const reglasAntes = $('nm-reglas-cuerpo')?.innerHTML || ''; // las reglas ya cargadas se quedan mientras llegan las nuevas
+    Repintado.pintar($('nm-cuerpo'), `
       <div class="nm-cabeza"><span class="estado-cxc ${clase}">${esc(txt)}</span>
         ${d.estado === 'sin_preparar' ? '<span class="ayuda">Es la propuesta con lo que hay hoy: al prepararla se guarda y ya se puede capturar.</span>' : ''}
         ${d.cerro ? `<span class="ayuda">Cerró ${esc(d.cerro)} el ${esc(fecha(d.cerrada_at))}${d.forzada_motivo ? ' · ' + esc(d.forzada_motivo) : ''}</span>` : ''}
@@ -117,8 +118,8 @@ const Nomina = (() => {
         <tbody>${filas}</tbody><tfoot><tr><td>Total</td><td></td><td class="nm-d">${esc(dinero(t.sueldo_imss))}</td><td></td><td class="nm-d">${esc(dinero(t.bono))}</td><td class="nm-d">${esc(dinero(t.extra))}</td><td class="nm-d">${esc(dinero(t.puntualidad))}</td><td class="nm-d">${esc(dinero(t.otros))}</td><td class="nm-d">${esc(dinero(t.descuento))}</td><td class="nm-d"><b>${esc(dinero(t.total))}</b></td></tr></tfoot></table></div>`
         : '<p class="util-45">Nadie entra en esta nómina: nadie de la sucursal checa ni tiene sueldo semanal en su ficha.</p>'}
       ${pago}
-      <details class="nm-reglas" id="nm-reglas"${REGLAS_ABIERTAS ? ' open' : ''}><summary>🏅 Reglas del bono de puntualidad</summary><div id="nm-reglas-cuerpo"><p class="ayuda">Cargando…</p></div></details>
-      <p class="ayuda">Total = neto del IMSS (o el sueldo IMSS mientras el contador no lo da) + bono + tiempo extra + puntualidad + otros − descuento. El ISR y el IMSS los calcula el contador. La lista para el banco es genérica; el formato exacto de Santander y Banorte se ajusta con una muestra vacía de su portal.</p>`;
+      <details class="nm-reglas" id="nm-reglas"${REGLAS_ABIERTAS ? ' open' : ''}><summary>🏅 Reglas del bono de puntualidad</summary><div id="nm-reglas-cuerpo">${reglasAntes || '<p class="ayuda">Cargando…</p>'}</div></details>
+      <p class="ayuda">Total = neto del IMSS (o el sueldo IMSS mientras el contador no lo da) + bono + tiempo extra + puntualidad + otros − descuento. El ISR y el IMSS los calcula el contador. La lista para el banco es genérica; el formato exacto de Santander y Banorte se ajusta con una muestra vacía de su portal.</p>`);
   }
 
   async function guardarCampo(e) {

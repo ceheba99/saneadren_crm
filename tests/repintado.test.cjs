@@ -5,15 +5,9 @@
 const test = require('node:test'); const assert = require('node:assert'); const fs = require('fs'); const path = require('path');
 const PUBLIC = path.join(__dirname, '..', 'public');
 const EXCEPCIONES = [
-  // { archivo: 'x.js', trozo: '…', porque: '…' },
-  // Pendientes de la segunda y tercera parte de este trabajo (se van quitando conforme se revisa cada pantalla):
-  ...[
-    ['anticipos.js', 'Cargando anticipos'], ['avisos.js', 'c.innerHTML'], ['bitacora.js', 'cont.innerHTML'], ['compras.js', 'Cargando expediente'], ['compras.js', "cont.innerHTML = '<p class=\"util-45\" role=\"status\">Cargando…</p>';\n"],
-    ['conciliacion.js', 'cont.innerHTML'], ['contabilidad.js', 'cont.innerHTML'], ['creditos.js', 'Cargando créditos'], ['encuestas.js', 'cont.innerHTML'],
-    ['facturacion.js', 'cont.innerHTML = \'<p class="util-45" role="status">Cargando…</p>\';\n'], ['finanzas.js', 'Cargando'], ['gastos-programados.js', 'Cargando gastos'],
-    ['logs.js', 'logs-lista'], ['marketing-revision.js', 'ap-lista'], ['nomina.js', 'Cargando nómina'], ['roles.js', 'cont.innerHTML'], ['solicitudes.js', 'cont.innerHTML'], ['tareas.js', 'cont.innerHTML'],
-    ['clientes-carga.js', 'cc-detalle'], ['calendario.js', 'cal-estado'], ['app.js', "resumen.textContent = 'Cargando…'"], ['nomina.js', 'nm-reglas-cuerpo'],
-  ].map(([archivo, trozo]) => ({ archivo, trozo, porque: 'PENDIENTE: se corrige en la siguiente parte del trabajo', pendiente: true })),
+  // Una sola línea de texto de estado: no es el contenido de la pantalla y no cambia su altura, así que no hay nada que se encoja ni que brinque.
+  { archivo: 'app.js', trozo: "resumen.textContent = 'Cargando…'", porque: 'resumen de una línea del Generador (la tabla de abajo no se borra)' },
+  { archivo: 'calendario.js', trozo: "$('cal-estado').textContent = 'Cargando…'", porque: 'texto de estado de una línea; el calendario de abajo se queda hasta que llega lo nuevo' },
 ];
 const lineas = f => fs.readFileSync(path.join(PUBLIC, f), 'utf8').split('\n');
 const archivos = fs.readdirSync(PUBLIC).filter(f => f.endsWith('.js'));

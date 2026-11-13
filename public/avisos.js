@@ -30,13 +30,13 @@ const Avisos = (() => {
   let personas = [], canales = {}, elegidos = new Set();
   async function cargar() {
     const c = $('av-cuerpo');
-    c.innerHTML = '<p class="ayuda" role="status">Cargando…</p>';
-    let l; try { l = await pedir('/avisos'); } catch (e) { c.innerHTML = `<p class="aviso-error-carga" role="alert">${esc(e.message)}</p>`; return; }
-    c.innerHTML = `<div class="filtros"><button type="button" class="btn btn-primario" id="av-nuevo">📢 Nuevo aviso</button></div>
+    Repintado.cargando(c, '', '<p class="ayuda" role="status">Cargando…</p>');
+    let l; try { l = await pedir('/avisos'); } catch (e) { Repintado.falla(c, e, cargar, `<p class="aviso-error-carga" role="alert">${esc(e.message)}</p>`); return; }
+    Repintado.pintar(c, `<div class="filtros"><button type="button" class="btn btn-primario" id="av-nuevo">📢 Nuevo aviso</button></div>
       ${l.avisos.length ? `<div class="tabla-scroll"><table class="tabla-resumen"><thead><tr><th>Publicado</th><th>Aviso</th><th>Leído</th><th>Por</th><th>Estado</th><th></th></tr></thead><tbody>
       ${l.avisos.map(a => `<tr><td>${esc(fecha(a.created_at))}</td><td><b>${a.urgente ? '⚠️ ' : ''}${esc(a.titulo)}</b></td><td><b>${esc(a.leidos)}</b> de ${esc(a.total)}</td><td>${esc(a.creado_por_nombre || '')}</td>
         <td>${a.retirado_at ? 'Retirado' : a.vigente ? 'Vigente' + (a.vence ? ' hasta ' + esc(fecha(a.vence)) : '') : 'Venció'}</td><td><button type="button" class="btn-link" data-av-ver="${Number(a.id)}">Ver quién lo leyó</button></td></tr>`).join('')}
-      </tbody></table></div>` : '<p class="ayuda">Todavía no hay avisos publicados.</p>'}`;
+      </tbody></table></div>` : '<p class="ayuda">Todavía no hay avisos publicados.</p>'}`);
   }
   async function nuevo() {
     let d; try { d = await pedir('/avisos/destinatarios'); } catch (e) { toast(e.message); return; }
