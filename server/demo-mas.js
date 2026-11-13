@@ -212,6 +212,32 @@ module.exports = async function masEjemplos(x) {
     await anticipo(A, { personal_id: PER.luis, monto: 1200, metodo: 'efectivo', cuenta_origen: 'Caja chica', fecha: dia(-1), motivo: 'Material menudo de campo (cinta, tornillería)' });
   }
 
+  // ===== Gastos programados (Cuentas por pagar fase 4, 2026-11-13): luz bimestral por avisar, renta fija con el mes pasado registrado y uno omitido =====
+  {
+    const [ah, mh] = HOY.split('-').map(Number), per = k => { const t = ah * 12 + mh - 1 + k; return `${Math.floor(t / 12)}-${String((t % 12) + 1).padStart(2, '0')}`; };
+    const cfe = prov.cfe, casero = prov.renta; // los proveedores del demo (server/demo.js)
+    const desde = per(-2) + '-01';
+    // Luz: llega en el mes de hoy (y cada dos meses) el día 1 → ya toca y falta registrarla.
+    const meses = [0, 2, 4, 6, 8, 10].map(k => ((mh - 1 + k) % 12) + 1);
+    await pedir('POST', '/gastos-programados', A, { nombre: 'Luz oficina Querétaro (ejemplo)', proveedor_id: cfe.id, categoria: 'servicios_oficina', meses, dia: 1, aviso_dias: 5, tipo_gasto: 'bimestral', tipo_comprobante: 'recibo', desde });
+    // Renta: fija, cada mes el día 1; la del mes pasado ya se registró desde el aviso y la de hace dos meses se marcó «no llegó».
+    const renta = await pedir('POST', '/gastos-programados', A, { nombre: 'Renta bodega (ejemplo)', proveedor_id: casero.id, categoria: 'renta_inmuebles', meses: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], dia: 1, aviso_dias: 3, monto: 12000, tipo_gasto: 'mensual', tipo_comprobante: 'recibo', desde });
+    await pedir('POST', '/finanzas/cxp', A, { proveedor_id: casero.id, categoria: 'renta_inmuebles', concepto: 'Renta bodega ' + per(-1), total: 12000, fecha_documento: per(-1) + '-01', dias_credito: 0,
+      tipo_comprobante: 'recibo', tipo_gasto: 'mensual', programado_id: renta.id, programado_periodo: per(-1) });
+    await pedir('POST', '/gastos-programados/' + renta.id + '/omitir', A, { periodo: per(-2), motivo: 'Se pagó junto con el mes siguiente (ejemplo)' });
+  }
+
+  // ===== Créditos (Cuentas por pagar fase 5, 2026-11-13): un crédito PyME de ejemplo con 6 pagadas antes del sistema y 3 mensualidades de su corrida =====
+  {
+    const { fechaMensualidad } = require('./creditos');
+    const [ah, mh] = HOY.split('-').map(Number), t = ah * 12 + mh - 1 - 6, primera = `${Math.floor(t / 12)}-${String((t % 12) + 1).padStart(2, '0')}-15`;
+    const cr = await pedir('POST', '/creditos', A, { nombre: 'Crédito PyME (ejemplo)', proveedor_id: prov.banorte.id, tipo: 'pyme_simple', numero: 'EJEMPLO-0001', fecha_contrato: primera,
+      monto: 350000, total_pagar: 432000, apertura: 3500, tasa_anual: 14.25, plazo_meses: 36, mensualidad: 12000, fecha_primer_pago: primera, cuenta_cargo: 'Cuenta de ejemplo', domiciliado: true,
+      pagadas_antes: 6, saldo_inicial: 297500.4, notas: 'Ejemplo: capturado a partir de la mensualidad 7' });
+    const fila = (n, capital, interes) => { const iva = Math.round(interes * 16) / 100; return [n, fechaMensualidad(primera, n).split('-').reverse().join('/'), capital, interes, iva, (capital + interes + iva).toFixed(2)].join('\t'); };
+    await pedir('POST', '/creditos/' + cr.id + '/programar', A, { modo: 'corrida', corrida: ['MENSUALIDAD\tFECHA PAGO\tCAPITAL\tINTERESES\tIVA\tTOTAL', fila(7, 8350.2, 3170.55), fila(8, 8449.35, 3071.4), fila(9, 8549.68, 2971.07)].join('\n') });
+  }
+
   // ===== Asistencia: 4 semanas de checadas en el kiosco (con retardos, tiempo extra y olvidos) =====
   const insChecada = db.prepare(`INSERT INTO main.checadas (personal_id, tipo, momento_utc, fecha, hora, origen, sucursal_id, estado, biometria) VALUES (?, ?, ?, ?, ?, 'kiosco', ?, 'valida', 'coincide')`);
   const checar = (pid, suc, fecha, tipo, hora) => insChecada.run(pid, tipo, new Date(`${fecha}T${hora}:00-06:00`).toISOString(), fecha, hora + ':00', suc);

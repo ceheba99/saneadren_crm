@@ -176,8 +176,8 @@ function cambiarVista(v, opciones) {
   if (v === 'prospeccion' && !Permisos.puede('prospeccion.ver')) v = 'inicio';
   if (v === 'marketing' && !Permisos.puede('marketing.ver')) v = 'inicio';
   if (v === 'facturas' && !Permisos.puede('facturacion.timbrar')) v = 'inicio';
-  if ((v === 'cobrar' || (v === 'cuentas' && !['pagar', 'proveedores', 'anticipos'].includes(opciones?.pestana))) && !Permisos.puede('cxc.ver')) v = 'inicio';
-  if ((v === 'pagar' || (v === 'cuentas' && ['pagar', 'proveedores', 'anticipos'].includes(opciones?.pestana))) && !Permisos.puede('cxp.ver')) v = 'inicio';
+  if ((v === 'cobrar' || (v === 'cuentas' && !['pagar', 'proveedores', 'anticipos', 'programados', 'creditos'].includes(opciones?.pestana))) && !Permisos.puede('cxc.ver')) v = 'inicio';
+  if ((v === 'pagar' || (v === 'cuentas' && ['pagar', 'proveedores', 'anticipos', 'programados', 'creditos'].includes(opciones?.pestana))) && !Permisos.puede('cxp.ver')) v = 'inicio';
   if (v === 'contabilidad' && !Permisos.puede('contabilidad.ver') && !Permisos.direccion()) v = 'inicio';
   if (v === 'nomina' && !Permisos.puede('nomina.preparar') && !Permisos.direccion()) v = 'inicio';
   if (v === 'avisos' && !Permisos.puede('avisos.publicar') && !Permisos.direccion()) v = 'inicio';
@@ -185,7 +185,7 @@ function cambiarVista(v, opciones) {
   // «Proveedores» (menú Finanzas) es la pestaña de Cuentas por pagar.
   if (v === 'proveedores') { opciones = { ...opciones, pestana: 'proveedores' }; v = Permisos.puede('cxp.ver') ? 'pagar' : 'inicio'; }
   // Cuentas por cobrar y por pagar son dos secciones del menú Finanzas que usan la misma pantalla.
-  if (v === 'cuentas') v = ['pagar', 'proveedores', 'anticipos'].includes(opciones?.pestana) ? 'pagar' : 'cobrar';
+  if (v === 'cuentas') v = ['pagar', 'proveedores', 'anticipos', 'programados', 'creditos'].includes(opciones?.pestana) ? 'pagar' : 'cobrar';
   const seccionCuentas = ['cobrar', 'pagar'].includes(v) ? v : null;
   document.querySelectorAll('.vista').forEach(s => s.classList.remove('activa'));
   document.getElementById('vista-' + (seccionCuentas ? 'cuentas' : v)).classList.add('activa');
@@ -585,6 +585,7 @@ async function cargarInicio(silencioso = false) {
   if (typeof Personal !== 'undefined') Personal.pintarInicio(); // bloque «Personal» (licencias, contratos, ausencias, órdenes sin responsable)
   if (typeof Compras !== 'undefined') Compras.pintarInicio(); // bloque «Compras» (aprobar, cotizar, autorizar, recibir)
   window.Anticipos?.pintarInicio();
+  window.GastosProgramados?.pintarInicio(); // bloque «Gastos programados» (luz, renta… que ya tocan y faltan registrar)
   window.Nomina?.pintarInicio();
   window.Tareas?.pintarInicio(); // «Mis tareas» hasta arriba de Inicio (y lo del equipo por revisar o vencido) // bloque «Nómina» (semana por cerrar; cerradas sin pagar) // bloque «Anticipos» (por comprobar los suyos; los que entregó y pasan de 7 días)
   if (typeof Prospeccion !== 'undefined') Prospeccion.pintarInicio(); // bloque «Prospección» (a quién llamar hoy)
@@ -2756,16 +2757,16 @@ function renderGraficosComerciales(d){
 // Errores del navegador → logs del sistema (Ajustes, solo Dirección los ve). Solo con sesión; si el aviso falla, se ignora.
 (() => {
   let enviando = 0;
-  const avisar = (mensaje, archivo) => {
+  const avisar = (mensaje, archivo, pila) => {
     if (!USUARIO_ACTUAL?.token || !mensaje || /^Script error\.?$/.test(mensaje) || enviando > 3) return;
     enviando++;
     const vista = document.querySelector('.vista.activa')?.id?.replace(/^vista-/, '') || '';
-    api('/registro-sistema/pantalla', { method: 'POST', body: JSON.stringify({ mensaje: String(mensaje).slice(0, 300), vista, archivo }) })
+    api('/registro-sistema/pantalla', { method: 'POST', body: JSON.stringify({ mensaje: String(mensaje).slice(0, 300), vista, archivo, pila: String(pila || '').slice(0, 2000) }) })
       .catch(() => {}).finally(() => { enviando--; });
   };
-  window.addEventListener('error', e => avisar(e.message, e.filename ? String(e.filename).split('/').pop().split('?')[0] + ':' + e.lineno : ''));
+  window.addEventListener('error', e => avisar(e.message, e.filename ? String(e.filename).split('/').pop().split('?')[0] + ':' + e.lineno : '', e.error?.stack));
   // Las respuestas del servidor con error (permiso, datos inválidos…) ya traen su mensaje y las graves se anotan allá: aquí solo fallas del código.
   if (PAGINA_INCOMPLETA) window.addEventListener('load', () => avisar('Página incompleta tras recargar: ' + (document.querySelector('script[src*="orden-servicio-pdf"]')
     ? 'orden-servicio-pdf.js no cargó en este navegador' : 'el navegador sigue usando la página principal vieja'), ''));
-  window.addEventListener('unhandledrejection', e => { const r = e.reason; if (r?.status || r?.name === 'AbortError') return; avisar(r?.message || String(r || ''), ''); });
+  window.addEventListener('unhandledrejection', e => { const r = e.reason; if (r?.status || r?.name === 'AbortError') return; avisar(r?.message || String(r || ''), '', r?.stack); });
 })();

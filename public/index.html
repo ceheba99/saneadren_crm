@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Saneadren · Cotizaciones y Servicios</title>
-<link rel="stylesheet" href="styles.css?v=cx3">
+<link rel="stylesheet" href="styles.css?v=cr2">
 <link rel="stylesheet" href="servicios-tabla.css">
 <link rel="stylesheet" href="flujo.css?v=ap1">
 <link rel="stylesheet" href="interfaz.css?v=ap2">
@@ -116,6 +116,12 @@
       <h3>💵 Anticipos</h3>
       <p class="ayuda">Anticipos por comprobar: los tuyos con algo pendiente y, si tú los entregaste, los que pasan de 7 días sin cerrarse.</p>
       <div id="inicio-anticipos" class="inicio-lista"></div>
+    </div>
+
+    <div class="inicio-bloque inicio-bloque-programados perm-dinero-mover" data-titulo-corto="Programados">
+      <h3>🗓️ Gastos programados</h3>
+      <p class="ayuda">Luz, agua, renta… que ya tocan y falta registrar. Tócalo para registrarlo con su recibo.</p>
+      <div id="inicio-programados" class="inicio-lista"></div>
     </div>
 
     <div class="inicio-bloque inicio-bloque-compras perm-compras-ver" data-titulo-corto="Compras">
@@ -907,6 +913,8 @@
       <button type="button" role="tab" data-pestana="pagar">Facturas y gastos</button>
       <button type="button" role="tab" data-pestana="proveedores">Proveedores</button>
       <button type="button" role="tab" data-pestana="anticipos">Anticipos</button>
+      <button type="button" role="tab" data-pestana="programados" class="perm-dinero-mover">Programados</button>
+      <button type="button" role="tab" data-pestana="creditos" class="perm-dinero-mover">Créditos</button>
     </div>
 
     <div class="cuentas-panel" data-panel="cobrar">
@@ -971,6 +979,14 @@
       <div id="pagar-lista"></div>
     </div>
 
+    <!-- Créditos (Cuentas por pagar fase 5, 2026-11-13): public/creditos.js -->
+    <div class="cuentas-panel" data-panel="creditos" hidden>
+      <div id="cr-panel"></div>
+    </div>
+    <!-- Gastos programados (Cuentas por pagar fase 4, 2026-11-13): public/gastos-programados.js -->
+    <div class="cuentas-panel" data-panel="programados" hidden>
+      <div id="gp-panel"></div>
+    </div>
     <!-- Anticipos por comprobar (módulo contable F2, 2026-11-11): public/anticipos.js -->
     <div class="cuentas-panel" data-panel="anticipos" hidden>
       <div id="anticipos-panel"></div>
@@ -1580,6 +1596,80 @@
 <input type="file" id="importar-archivo" accept=".xlsx,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv" hidden>
 
 <!-- ====== OVERLAY: PAGAR A PROVEEDOR ====== -->
+<div class="overlay" id="overlay-credito">
+  <div class="modal modal-dinero">
+    <div class="modal-header"><h2 id="cr-form-titulo">Nuevo crédito</h2><button class="close-btn" type="button">✕</button></div>
+    <div class="modal-body">
+      <div class="campo"><label for="cr-nombre">Nombre (obligatorio)</label><input id="cr-nombre" maxlength="100" placeholder="Ej. Crédito PyME, Camioneta de reparto, Terreno"></div>
+      <div class="form-grid-2">
+        <div class="campo"><label for="cr-proveedor">Banco o financiera (obligatorio)</label><select id="cr-proveedor"></select><small class="ayuda">¿No está? Agrégalo en la pestaña Proveedores.</small></div>
+        <div class="campo"><label for="cr-tipo">Tipo de crédito</label><select id="cr-tipo"></select></div>
+        <div class="campo"><label for="cr-numero">Número de crédito o contrato</label><input id="cr-numero" maxlength="60"></div>
+        <div class="campo"><label for="cr-fecha-contrato">Fecha del contrato</label><input id="cr-fecha-contrato" type="date"></div>
+        <div class="campo"><label for="cr-monto">Monto del crédito (obligatorio)</label><input id="cr-monto" type="text" inputmode="decimal" autocomplete="off"></div>
+        <div class="campo"><label for="cr-total">Monto total a pagar</label><input id="cr-total" type="text" inputmode="decimal" autocomplete="off"></div>
+        <div class="campo"><label for="cr-tasa">Tasa de interés anual (%)</label><input id="cr-tasa" type="text" inputmode="decimal" placeholder="Ej. 14.25"></div>
+        <div class="campo"><label for="cr-mensualidad">Mensualidad</label><input id="cr-mensualidad" type="text" inputmode="decimal" autocomplete="off"></div>
+        <div class="campo"><label for="cr-plazo">Plazo en meses (obligatorio)</label><input id="cr-plazo" type="number" min="1" max="600" step="1" inputmode="numeric" placeholder="Ej. 36"></div>
+        <div class="campo"><label for="cr-primer-pago">Fecha de la primera mensualidad (obligatorio)</label><input id="cr-primer-pago" type="date"></div>
+        <div class="campo"><label for="cr-fecha-fin">Fecha de fin</label><input id="cr-fecha-fin" type="date"></div>
+        <div class="campo"><label for="cr-cuenta">Cuenta de cargo</label><input id="cr-cuenta" maxlength="80" placeholder="Banco y cuenta de donde se cobra"></div>
+      </div>
+      <label class="diseno-campo-checkbox"><input type="checkbox" id="cr-domiciliado" checked> El banco lo cobra solo (domiciliado)</label>
+      <details><summary>Comisiones, unidad y saldo inicial (opcional)</summary>
+        <div class="form-grid-2">
+          <div class="campo"><label for="cr-apertura">Comisión por apertura</label><input id="cr-apertura" type="text" inputmode="decimal" autocomplete="off"></div>
+          <div class="campo"><label for="cr-comisiones">Otras comisiones</label><input id="cr-comisiones" type="text" inputmode="decimal" autocomplete="off"></div>
+          <div class="campo"><label for="cr-enganche">Enganche o anticipo</label><input id="cr-enganche" type="text" inputmode="decimal" autocomplete="off"></div>
+          <div class="campo"><label for="cr-categoria">Categoría de las mensualidades</label><select id="cr-categoria"></select></div>
+          <div class="campo"><label for="cr-unidad">Unidad (si es automotriz)</label><input id="cr-unidad" maxlength="120" placeholder="Ej. Camioneta, placas, número económico"></div>
+          <div class="campo"><label for="cr-factura">Factura de la unidad</label><input id="cr-factura" maxlength="60"></div>
+          <div class="campo"><label for="cr-pagadas">Mensualidades pagadas antes del sistema</label><input id="cr-pagadas" type="number" min="0" max="599" step="1" inputmode="numeric"><small class="ayuda">No se vuelven a programar.</small></div>
+          <div class="campo"><label for="cr-saldo-inicial">Saldo de capital al empezar en el sistema</label><input id="cr-saldo-inicial" type="text" inputmode="decimal" autocomplete="off"><small class="ayuda">Vacío = el monto del crédito.</small></div>
+        </div>
+        <div class="campo"><label for="cr-notas">Observaciones</label><textarea id="cr-notas" maxlength="1000" rows="2"></textarea></div>
+      </details>
+      <div class="btn-group"><button type="button" class="btn btn-primario" data-cr="guardar">Guardar</button></div>
+    </div>
+  </div>
+</div>
+<div class="overlay" id="overlay-credito-ficha">
+  <div class="modal modal-cuenta-cliente">
+    <div class="modal-header"><h2 id="cr-ficha-titulo">Crédito</h2><button class="close-btn" type="button">✕</button></div>
+    <div class="modal-body" id="cr-ficha-cuerpo"></div>
+  </div>
+</div>
+<div class="overlay" id="overlay-gprog">
+  <div class="modal modal-dinero">
+    <div class="modal-header"><h2 id="gp-form-titulo">Nuevo gasto programado</h2><button class="close-btn" type="button">✕</button></div>
+    <div class="modal-body">
+      <div class="campo"><label for="gp-nombre">Nombre (obligatorio)</label><input id="gp-nombre" maxlength="80" placeholder="Ej. Luz Cancún, Luz casa de Miguel, Renta oficina"></div>
+      <div class="form-grid-2">
+        <div class="campo"><label for="gp-proveedor">Proveedor (obligatorio)</label><select id="gp-proveedor"></select><small class="ayuda">¿No está? Agrégalo en la pestaña Proveedores.</small></div>
+        <div class="campo"><label for="gp-categoria">Categoría (obligatorio)</label><select id="gp-categoria"></select></div>
+      </div>
+      <fieldset class="campo gp-meses-campo"><legend>¿En qué meses llega? (obligatorio)</legend>
+        <div class="btn-group"><button type="button" class="btn btn-outline btn-chico" data-gp="meses" data-cuales="todos">Todos</button><button type="button" class="btn btn-outline btn-chico" data-gp="meses" data-cuales="nones">Bimestral: ene, mar, may…</button><button type="button" class="btn btn-outline btn-chico" data-gp="meses" data-cuales="pares">Bimestral: feb, abr, jun…</button><button type="button" class="btn btn-outline btn-chico" data-gp="meses" data-cuales="ninguno">Ninguno</button></div>
+        <div id="gp-meses" class="gp-meses"></div>
+      </fieldset>
+      <div class="form-grid-2">
+        <div class="campo"><label for="gp-dia">Día del mes en que llega o vence (obligatorio)</label><input id="gp-dia" type="number" min="1" max="31" step="1" inputmode="numeric" placeholder="Ej. 10"></div>
+        <div class="campo"><label for="gp-aviso">Avisar con cuántos días antes</label><input id="gp-aviso" type="number" min="0" max="30" step="1" inputmode="numeric" placeholder="5"></div>
+        <div class="campo"><label for="gp-monto">Monto fijo (opcional)</label><input id="gp-monto" type="text" inputmode="decimal" autocomplete="off" placeholder="Vacío si cambia cada recibo"></div>
+        <div class="campo"><label for="gp-tipo-gasto">Tipo de gasto</label><select id="gp-tipo-gasto"></select></div>
+        <div class="campo"><label for="gp-comprobante">Tipo de comprobante</label><select id="gp-comprobante"></select></div>
+        <div class="campo"><label for="gp-credito">Días de crédito</label><input id="gp-credito" type="number" min="0" max="365" step="1" inputmode="numeric" placeholder="0 = de contado"></div>
+      </div>
+      <details><summary>Más datos (opcional)</summary>
+        <div class="campo"><label for="gp-concepto">Concepto del gasto</label><input id="gp-concepto" maxlength="200" placeholder="Vacío = el nombre; se le agrega el mes (ej. Luz Cancún noviembre 2026)"></div>
+        <div class="campo"><label for="gp-beneficiario">¿A quién se le paga? (si no es el proveedor)</label><input id="gp-beneficiario" maxlength="120"></div>
+        <div class="campo"><label for="gp-desde">Avisar a partir de</label><input id="gp-desde" type="date"><small class="ayuda">Vacío = desde este mes (no avisa de meses anteriores).</small></div>
+        <div class="campo"><label for="gp-notas">Observaciones</label><textarea id="gp-notas" maxlength="1000" rows="2"></textarea></div>
+      </details>
+      <div class="btn-group"><button type="button" class="btn btn-primario" data-gp="guardar">Guardar</button></div>
+    </div>
+  </div>
+</div>
 <div class="overlay" id="overlay-cxp-datos">
   <div class="modal modal-dinero">
     <div class="modal-header"><h2>Tipo de gasto y observaciones</h2><button class="close-btn" type="button">✕</button></div>
@@ -1953,7 +2043,7 @@
 <script src="cuentas.js?v=rev1"></script>
 <script src="cuentas-banco.js?v=fb1"></script>
 <script src="cxp-excel.js?v=cx4"></script>
-<script src="finanzas.js?v=cx4"></script>
+<script src="finanzas.js?v=cr1"></script>
 <script src="calendario.js?v=esp1"></script>
 <script src="tareas.js?v=tg1"></script>
 <script src="tablero.js?v=dir1"></script>
@@ -1966,15 +2056,17 @@
 <script src="sucursales.js?v=perm4"></script>
 <script src="facturacion.js?v=fx11"></script>
 <script src="encuestas.js?v=enc1"></script>
-<script src="app.js?v=pag1"></script>
+<script src="app.js?v=cr1"></script>
 <script src="listas-servicio.js?v=ls1"></script>
 <script src="personal.js?v=kio2"></script>
 <script src="asistencia.js?v=nomina1"></script>
 <script src="rh.js?v=reglas1"></script>
 <script src="clientes-carga.js?v=cc1"></script>
 <script src="conciliacion.js?v=ap3"></script>
-<script src="contabilidad.js?v=ap2"></script>
+<script src="contabilidad.js?v=ap3"></script>
 <script src="anticipos.js?v=an1"></script>
+<script src="gastos-programados.js?v=gp1"></script>
+<script src="creditos.js?v=cr1"></script>
 <script src="nomina.js?v=pu1"></script>
 <script src="avisos.js?v=1"></script>
 <script src="buscador.js?v=suc1"></script>

@@ -323,6 +323,10 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
     ['subeXmlGasto', 'Subir el XML de la factura a un gasto que registró Tomás (el sistema llena el IVA)'],
     ['corrigeIvaGasto', 'Corregir a mano el IVA de ese gasto (botón «IVA»)'],
     ['editaDatosGasto', 'Cambiar después el «Tipo de gasto» y las «Observaciones» de ese gasto (sin tocar montos)'],
+    ['veProgramados', 'Ver los gastos programados (luz, agua, renta…) y cuáles faltan por registrar'],
+    ['altaProgramado', 'Dar de alta un gasto programado (p. ej. «Luz Cancún», en qué meses avisa)'],
+    ['veCreditos', 'Ver los créditos (bancos, financieras, automotriz) con sus mensualidades y saldo'],
+    ['altaCredito', 'Dar de alta un crédito y programar sus mensualidades'],
     ['editaListaServ', 'Agregar o quitar opciones en la lista de un servicio (p. ej. 4M3, 8M3 para [VOLUMEN])'],
     ['preparaNomina', 'Ver y preparar la nómina semanal (los dos sueldos de cada persona, descuentos y neto del IMSS)'],
     ['pagaNomina', 'Pagar la nómina y bajar la lista para el banco (con la CLABE de cada persona)'],
@@ -498,6 +502,15 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
       VE[rol].subeXmlGasto = r.status === 201;
       VE[rol].corrigeIvaGasto = ok(await pedir('POST', '/finanzas/cxp/' + g.id + '/iva', t, { iva: 160 }));
       VE[rol].editaDatosGasto = ok(await pedir('POST', '/finanzas/cxp/' + g.id + '/datos', t, { tipo_gasto: 'mensual', notas: 'Revisado por ' + rol })); }
+    { // Gastos programados (fase 4, 2026-11-13): cada rol intenta verlos y dar de alta uno.
+      const [sv, jv] = await pedir('GET', '/gastos-programados', t);
+      VE[rol].veProgramados = sv === 200 && Array.isArray(jv.programados);
+      VE[rol].altaProgramado = ok(await pedir('POST', '/gastos-programados', t, { nombre: 'Luz ' + rol, proveedor_id: prov.id, categoria: 'otro', meses: [1, 3, 5, 7, 9, 11], dia: 10, tipo_gasto: 'bimestral' })); }
+    { // Créditos (fase 5, 2026-11-13): cada rol intenta verlos y dar de alta uno con 2 mensualidades.
+      const [sv, jv] = await pedir('GET', '/creditos', t);
+      VE[rol].veCreditos = sv === 200 && Array.isArray(jv.creditos);
+      const rc = await pedir('POST', '/creditos', t, { nombre: 'Crédito ' + rol, proveedor_id: prov.id, tipo: 'pyme_simple', monto: 100000, plazo_meses: 12, mensualidad: 9000, fecha_primer_pago: HOY });
+      VE[rol].altaCredito = ok(rc) && ok(await pedir('POST', '/creditos/' + rc[1].id + '/programar', t, { modo: 'iguales', cuantas: 2 })); }
     { // Listas de los servicios (2026-11-05): agregar una opción, o quitar una que agrega Dirección en cada vuelta.
       const base = '/servicios/' + SERV.id + '/listas', otra = exigir(await pedir('POST', base, A, { marca: 'VOLUMEN', valor: 'POR QUITAR ' + rol }), 'opción por quitar');
       VE[rol].editaListaServ = ok(await pedir('POST', base, t, { marca: 'VOLUMEN', valor: 'NUEVA ' + rol })) || ok(await pedir('POST', base + '/' + otra.id + '/desactivar', t, {})); }
@@ -597,6 +610,12 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
     ['2026-11-03', 'Pestaña RH (junta Personal, asistencia, horarios, kioscos, nómina y aviso de privacidad): la ve quien ve el personal (Gerente y Dirección); cargar trabajadores en lote desde la plantilla, solo quien edita el personal (Gerente y Dirección). Los demás roles no.', {
       admin: { veRH: 1, importaPersonal: 1 }, gerente: { veRH: 1, importaPersonal: 1 },
       ...Object.fromEntries(['ventas', 'atencion', 'tecnico', 'costos', 'marketing', 'marketing_gerente'].map(r => [r, { veRH: 0, importaPersonal: 0 }])) }],
+    ['2026-11-13', 'Créditos (bancos, financieras, automotriz, terreno): verlos, darlos de alta con todos sus datos, programar sus mensualidades (iguales o pegando la corrida del banco), registrar abonos, reprogramar y marcarlos liquidados, solo quien paga cuentas por pagar (Dirección, Gerente y Compras). Las mensualidades se pagan en Cuentas por pagar como cualquier gasto. Los demás roles no.', {
+      admin: { veCreditos: 1, altaCredito: 1 }, gerente: { veCreditos: 1, altaCredito: 1 }, costos: { veCreditos: 1, altaCredito: 1 },
+      ...Object.fromEntries(['ventas', 'atencion', 'tecnico', 'marketing', 'marketing_gerente'].map(r => [r, { veCreditos: 0, altaCredito: 0 }])) }],
+    ['2026-11-13', 'Gastos programados (luz, agua, renta, internet…): verlos, darlos de alta y editarlos, marcar un mes como «no llegó» y registrar el gasto desde el aviso, solo quien paga cuentas por pagar (Dirección, Gerente y Compras). Los demás roles no.', {
+      admin: { veProgramados: 1, altaProgramado: 1 }, gerente: { veProgramados: 1, altaProgramado: 1 }, costos: { veProgramados: 1, altaProgramado: 1 },
+      ...Object.fromEntries(['ventas', 'atencion', 'tecnico', 'marketing', 'marketing_gerente'].map(r => [r, { veProgramados: 0, altaProgramado: 0 }])) }],
     ['2026-11-12', 'Cuentas por pagar como el Excel: cambiar después el «Tipo de gasto» y las «Observaciones» de un gasto ya registrado (sin tocar montos, proveedor ni fechas) lo hace solo quien paga cuentas por pagar (Dirección, Gerente y Compras), como el IVA. Los demás roles no.', {
       admin: { editaDatosGasto: 1 }, gerente: { editaDatosGasto: 1 }, costos: { editaDatosGasto: 1 },
       ...Object.fromEntries(['ventas', 'atencion', 'tecnico', 'marketing', 'marketing_gerente'].map(r => [r, { editaDatosGasto: 0 }])) }],

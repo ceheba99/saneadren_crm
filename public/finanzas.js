@@ -229,7 +229,7 @@ const Finanzas = (() => {
     PESTANA = p;
     document.querySelectorAll('[data-pestana]').forEach(b => { b.classList.toggle('activo', b.dataset.pestana === p); b.setAttribute('aria-selected', String(b.dataset.pestana === p)); });
     document.querySelectorAll('.cuentas-panel').forEach(x => { x.hidden = x.dataset.panel !== p; });
-    if (p === 'cobrar') cargarCobrar(); else if (p === 'pagar') cargarPagar(); else if (p === 'anticipos') window.Anticipos?.cargar(); else cargarProveedores();
+    if (p === 'cobrar') cargarCobrar(); else if (p === 'pagar') cargarPagar(); else if (p === 'anticipos') window.Anticipos?.cargar(); else if (p === 'programados') window.GastosProgramados?.cargar(); else if (p === 'creditos') window.Creditos?.cargar(); else cargarProveedores();
   }
   document.querySelectorAll('[data-filtro-cobro]').forEach(b => b.addEventListener('click', () => {
     FILTRO = b.dataset.filtroCobro;
@@ -956,7 +956,7 @@ const Finanzas = (() => {
   });
 
   // GASTO_ALGUARDAR: qué refrescar después de guardar (la ficha de la orden o la vista de Cuentas por pagar).
-  let GASTO_ALGUARDAR = null, GASTO_ANTICIPO = null;
+  let GASTO_ALGUARDAR = null, GASTO_ANTICIPO = null, GASTO_PROGRAMADO = null, GASTO_CREDITO = null;
   // prellenado.anticipo = { id, persona, saldo }: el gasto comprueba ese anticipo (public/anticipos.js) y se paga con él.
   async function nuevoGasto(prellenado = {}, alGuardar = null) {
     try { await catalogosPagos(); } catch (err) { toast('No se pudo cargar: ' + err.message); return; }
@@ -983,6 +983,29 @@ const Finanzas = (() => {
     cargarOrdenesGasto().then(() => { if (prellenado['gasto-orden']) elegirOrdenGasto(buscarOrdenesGasto(prellenado['gasto-orden'])[0], false); });
     pintarMetodos('gasto-metodos', 'efectivo', METODOS_PROV);
     if (GASTO_ANTICIPO) { $('gasto-credito').value = '0'; $('gasto-credito').disabled = true; }
+    // Desde el aviso de un gasto programado (public/gastos-programados.js, fase 4): todo viene llenado; falta lo del recibo.
+    GASTO_PROGRAMADO = prellenado.programado || null;
+    if (GASTO_PROGRAMADO) {
+      const g = GASTO_PROGRAMADO;
+      llenarProveedoresGasto(g.proveedor_id);
+      if (g.categoria) $('gasto-categoria').value = g.categoria;
+      $('gasto-comprobante').value = g.tipo_comprobante || ''; $('gasto-comprobante').dispatchEvent(new Event('change'));
+      $('gasto-fecha').value = g.fecha; $('gasto-credito').value = String(g.dias_credito ?? 0); recalcularVence();
+      $('gasto-beneficiario').value = g.beneficiario || '';
+      $('gasto-anticipo-info').hidden = false; $('gasto-aviso-orden').hidden = true;
+      $('gasto-anticipo-info').textContent = `Gasto programado «${g.nombre}» de ${g.periodo_txt}. Revisa los datos y escribe ${g.monto ? 'si cambió el monto' : 'el total del recibo'} (o sube su XML). Al guardar, ese mes queda registrado.`;
+    }
+    // Abono extra a un crédito (public/creditos.js, fase 5): banco y categoría del crédito; todo el abono es capital.
+    GASTO_CREDITO = prellenado.credito || null;
+    if (GASTO_CREDITO) {
+      const c = GASTO_CREDITO;
+      llenarProveedoresGasto(c.proveedor_id);
+      if (c.categoria) $('gasto-categoria').value = c.categoria;
+      $('gasto-comprobante').value = 'estado_cuenta'; $('gasto-comprobante').dispatchEvent(new Event('change'));
+      $('gasto-credito').value = '0'; recalcularVence();
+      $('gasto-anticipo-info').hidden = false; $('gasto-aviso-orden').hidden = true;
+      $('gasto-anticipo-info').textContent = `Abono extra al crédito «${c.nombre}». Escribe el monto del abono (todo cuenta como capital). Si ya lo pagaste, marca «Ya lo pagué». Si el banco cambió la mensualidad o el plazo, después usa «Reprogramar» en el crédito.`;
+    }
     GASTO_ALGUARDAR = alGuardar;
     abrirVentana('overlay-gasto');
     if (!PROVEEDORES.some(p => p.activo)) toast('Elige "+ Nuevo proveedor…" para agregar a quien realizó el servicio');
@@ -1088,12 +1111,12 @@ const Finanzas = (() => {
       iva: $('gasto-comprobante').value === 'factura' && !GASTO_XML ? ($('gasto-iva').value.trim() || null) : null,
       xml: GASTO_XML?.texto || null, xml_nombre: GASTO_XML?.nombre || null,
       factura_folio: $('gasto-folio').value, lead_id: leadId, equipo: $('gasto-equipo').value,
-      ya_pagado: pagado, metodo: metodoElegido('gasto-metodos'), anticipo_id: GASTO_ANTICIPO?.id || null,
+      ya_pagado: pagado, metodo: metodoElegido('gasto-metodos'), anticipo_id: GASTO_ANTICIPO?.id || null, programado_id: GASTO_PROGRAMADO?.id || null, programado_periodo: GASTO_PROGRAMADO?.periodo || null, credito_id: GASTO_CREDITO?.id || null,
       fecha_pago: pagado ? $('gasto-fecha-pago').value : null, referencia: pagado ? $('gasto-referencia').value : null, cuenta_id: pagado ? CuentasBanco.valor('gasto-cuenta') : undefined });
     if (!r) return;
     $('overlay-gasto').classList.remove('mostrar');
     toast(r.anticipo ? (r.anticipo.por_reembolsar > 0 ? `Gasto comprobado: ${formatoMoneda(r.anticipo.usado)} con el anticipo y ${formatoMoneda(r.anticipo.por_reembolsar)} por reembolsar` : 'Gasto comprobado con el anticipo') : pagado ? 'Gasto registrado como pagado' : 'Cuenta por pagar registrada');
-    GASTO_ANTICIPO = null;
+    GASTO_ANTICIPO = null; GASTO_PROGRAMADO = null; GASTO_CREDITO = null;
     const alGuardar = GASTO_ALGUARDAR; GASTO_ALGUARDAR = null;
     if (alGuardar) await alGuardar(); else cargar({ pestana: 'pagar' });
   }));
