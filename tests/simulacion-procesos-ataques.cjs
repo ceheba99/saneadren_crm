@@ -236,7 +236,7 @@ const dia = k => { const x = new Date(HOY + 'T12:00:00Z'); x.setUTCDate(x.getUTC
   [s] = await pedir('PUT', '/leads/' + L1.id, L, { direccion: 'Calle nueva 10', version: await v(L, L1.id) }); revisa(s === 200, 'Laura edita su cotización');
   [s] = await pedir('PUT', '/clientes/' + cZafiro.id, L, { nombre: 'Lic. Zafiro Uno Martínez' }); revisa(s === 200, 'Laura corrige los datos de su cliente');
   [s] = await pedir('POST', '/leads/' + L2.id + '/cobros', L, { monto: 10, metodo: 'efectivo', referencia: 'legit' }); revisa(s === 201, 'Laura cobra en su orden');
-  [s] = await pedir('POST', '/finanzas/cobros/' + kRaul + '/confirmar', L); revisa(s === 200, 'Laura confirma el cobro que registró Raúl en su orden (otra persona)');
+  [s] = await pedir('POST', '/finanzas/cobros/' + kRaul + '/confirmar', L); revisa(s === 403, 'Laura (ventas) ya no confirma cobros, ni en su orden: lo hacen Gerente y Atención (2026-11-13)');
   [s] = await pedir('POST', '/leads/' + L3.id + '/cobros', C, { monto: 10, metodo: 'efectivo', referencia: 'carla' }); revisa(s === 201, 'Carla (cobranza) cobra en cualquier orden de la sucursal');
   [s] = await pedir('PUT', '/leads/' + L3.id + '/facturacion', C, { dias_credito: 30 }); revisa(s === 200, 'Carla captura crédito y factura');
   [s] = await pedir('POST', '/leads/' + L3.id + '/historial', C, { tipo: 'observacion', texto: 'Prometió pagar el viernes' }); revisa(s === 200 || s === 201, 'Carla anota el seguimiento de cobranza en la orden', s);

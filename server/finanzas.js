@@ -284,6 +284,7 @@ const SQL_CUENTA = `
     COALESCE(l.factura_total_cent, ${SQL_TOTAL_ORDEN}) AS total_cent,
     (SELECT COALESCE(SUM(monto_cent), 0) FROM main.cobros k WHERE k.lead_id = l.id AND k.cancelado = 0) AS cobrado_cent,
     (SELECT COALESCE(SUM(monto_cent), 0) FROM main.cobros k WHERE k.lead_id = l.id AND k.cancelado = 0 AND k.tipo <> 'ajuste') AS pagado_real_cent,
+    (SELECT COALESCE(SUM(monto_cent), 0) FROM main.cobros k WHERE k.lead_id = l.id AND k.cancelado = 0 AND k.confirmado = 1 AND k.tipo <> 'ajuste') AS pagado_real_conf_cent,
     (SELECT COUNT(*) FROM main.cobros k WHERE k.lead_id = l.id AND k.cancelado = 0 AND k.confirmado = 0) AS por_confirmar,
     (SELECT COALESCE(SUM(monto_cent), 0) FROM main.cobros k WHERE k.lead_id = l.id AND k.cancelado = 0 AND k.confirmado = 0) AS por_confirmar_cent
   FROM leads l
@@ -299,13 +300,16 @@ function describirCuenta(f, hoy) {
   const porConfirmar = f.por_confirmar_cent || 0, confirmado = f.cobrado_cent - porConfirmar;
   const sinReportar = noRealizado ? 0 : f.total_cent - f.cobrado_cent;
   const saldo = noRealizado ? 0 : f.total_cent - confirmado;
-  const aFavor = noRealizado ? (f.pagado_real_cent ?? f.cobrado_cent) : Math.max(0, f.cobrado_cent - f.total_cent);
+  // A favor (Dirección, 2026-11-13): solo dinero CONFIRMADO. Dos motivos distintos: el servicio no se realizó y ya había
+  // pagado (anticipo), o se realizó y pagó de más que el total (p. ej. el CFDI salió menor que lo cobrado).
+  const aFavor = noRealizado ? (f.pagado_real_conf_cent ?? f.pagado_real_cent ?? confirmado) : Math.max(0, confirmado - f.total_cent);
+  const aFavorMotivo = aFavor > 0 ? (noRealizado ? 'no_realizado' : 'pago_de_mas') : null;
   // El crédito corre desde la factura; sin factura, desde que se realizó el servicio (o su fecha acordada).
   const base = f.factura_fecha || f.fecha_realizado || f.fecha_servicio || String(f.created_at).slice(0, 10);
   const realizado = f.ejecucion === 'realizado';
   const vence = sumarDias(base, f.dias_credito || 0);
   const diasVencido = diasEntre(vence, hoy);
-  let estado = noRealizado ? (aFavor > 0 ? 'a_favor' : 'cancelada') : saldo <= 0 ? 'pagada' : sinReportar <= 0 ? 'por_confirmar' : f.cobrado_cent > 0 ? 'parcial' : 'pendiente';
+  let estado = noRealizado ? (aFavor > 0 ? 'a_favor' : porConfirmar > 0 ? 'por_confirmar' : 'cancelada') : saldo <= 0 ? 'pagada' : sinReportar <= 0 ? 'por_confirmar' : f.cobrado_cent > 0 ? 'parcial' : 'pendiente';
   // Se debe cuando el servicio se marca realizado o cuando se factura (hay servicios sin factura: basta con concluirlo).
   // Mientras tanto no cuenta como «te deben» (decisión del dueño, 2026-10-21): si su fecha es futura está «programada»
   // (por realizar); si ya pasó, «por concluir», para que se marque y no se olvide cobrarla.
@@ -319,7 +323,7 @@ function describirCuenta(f, hoy) {
     telefono: f.telefono, rfc: f.rfc, servicio_nombre: f.servicio_nombre, created_at: f.created_at, fecha_servicio: f.fecha_servicio,
     dias_credito: f.dias_credito || 0, factura_folio: f.factura_folio, factura_fecha: f.factura_fecha, factura_metodo: f.factura_metodo || null,
     factura_total: f.factura_total_cent == null ? null : aPesos(f.factura_total_cent),
-    total: aPesos(f.total_cent), cobrado: aPesos(confirmado), cobrado_por_confirmar: aPesos(porConfirmar), saldo: aPesos(Math.max(saldo, 0)), sin_reportar: aPesos(Math.max(sinReportar, 0)), a_favor: aPesos(aFavor),
+    total: aPesos(f.total_cent), cobrado: aPesos(confirmado), cobrado_por_confirmar: aPesos(porConfirmar), saldo: aPesos(Math.max(saldo, 0)), sin_reportar: aPesos(Math.max(sinReportar, 0)), a_favor: aPesos(aFavor), a_favor_motivo: aFavorMotivo,
     vence, dias_vencido: sinReportar > 0 && !programada ? diasVencido : 0, estado, vencida, programada, por_concluir: porConcluir, tramo: programada ? null : tramo,
     por_confirmar: f.por_confirmar, por_revisar: !!f.cobranza_por_revisar,
     ejecucion: f.ejecucion || null, realizado_por: f.realizado_por || null, fecha_realizado: f.fecha_realizado || null,
@@ -398,16 +402,21 @@ module.exports = function finanzas(app, db, h, unicos) {
     if (!veCxc && !veCxp) return res.status(403).json({ error: 'No tienes permiso para esta sección' });
     const hoy = hoyMexico(), mes = hoy.slice(0, 7), r = {};
     if (veCxc) {
-      const conSaldo = cartera().filter(c => c.saldo > 0);
+      const todas = cartera(); // una sola lectura: las tarjetas salen de la misma foto
+      const conSaldo = todas.filter(c => c.saldo > 0);
       const cuentas = conSaldo.filter(c => !c.programada);
       const suma = arr => Math.round(arr.reduce((t, c) => t + c.saldo * 100, 0)) / 100;
       Object.assign(r, {
         por_cobrar: suma(cuentas), vencido: suma(cuentas.filter(c => c.vencida)),
         programado: suma(conSaldo.filter(c => c.programada && !c.por_concluir)), ordenes_programadas: conSaldo.filter(c => c.programada && !c.por_concluir).length,
         por_concluir: suma(conSaldo.filter(c => c.por_concluir)), ordenes_por_concluir: conSaldo.filter(c => c.por_concluir).length,
-        a_favor: suma(cartera().map(c => ({ saldo: c.a_favor || 0 }))), ordenes_a_favor: cartera().filter(c => c.a_favor > 0).length,
+        // A favor, separado por motivo (Dirección, 2026-11-13). Solo dinero confirmado.
+        a_favor: suma(todas.filter(c => c.a_favor_motivo === 'no_realizado').map(c => ({ saldo: c.a_favor }))), ordenes_a_favor: todas.filter(c => c.a_favor_motivo === 'no_realizado').length,
+        pago_de_mas: suma(todas.filter(c => c.a_favor_motivo === 'pago_de_mas').map(c => ({ saldo: c.a_favor }))), ordenes_pago_de_mas: todas.filter(c => c.a_favor_motivo === 'pago_de_mas').length,
         cuentas_con_saldo: cuentas.length, clientes_con_vencido: new Set(cuentas.filter(c => c.vencida).map(c => c.cliente_id)).size,
-        cobrado_mes: aPesos(db.prepare("SELECT COALESCE(SUM(monto_cent), 0) t FROM cobros WHERE cancelado = 0 AND tipo <> 'ajuste' AND substr(fecha, 1, 7) = ?").get(mes).t),
+        // Solo lo CONFIRMADO (Dirección, 2026-11-13): igual que el Tablero y el correo mensual. Lo reportado sin confirmar
+        // va en «Por confirmar».
+        cobrado_mes: aPesos(db.prepare("SELECT COALESCE(SUM(monto_cent), 0) t FROM cobros WHERE cancelado = 0 AND confirmado = 1 AND tipo <> 'ajuste' AND substr(fecha, 1, 7) = ?").get(mes).t),
         por_revisar: db.prepare("SELECT COUNT(*) n FROM leads WHERE estatus = 'ganado' AND cobranza_por_revisar = 1").get().n,
       });
       const pc = db.prepare('SELECT COUNT(*) n, COALESCE(SUM(monto_cent), 0) t FROM cobros WHERE cancelado = 0 AND confirmado = 0').get();
@@ -540,8 +549,9 @@ module.exports = function finanzas(app, db, h, unicos) {
     const cta = app.locals.folios?.resolver(db.prepare('SELECT sucursal_id FROM main.leads WHERE id = ?').get(c.lead_id)?.sucursal_id, req.body?.cuenta_id ?? c.cuenta_id, { requerida: true }) || {};
     if (cta.error) return res.status(400).json(cta);
     db.transaction(() => {
-      db.prepare("UPDATE main.cobros SET confirmado = 1, confirmado_por = ?, confirmado_at = datetime('now','localtime'), cuenta_id = ? WHERE id = ?").run(req.usuarioSesion.id, cta.id ?? null, c.id);
-      bitacora(c.lead_id, `Pago de ${fmt(c.monto_cent)} (${c.fecha}) confirmado por ${req.usuarioSesion.nombre}.`, req, 'cxc');
+      // «AND confirmado = 0»: si dos personas confirman a la vez, solo la primera escribe (sin doble nota en la bitácora).
+      const info = db.prepare("UPDATE main.cobros SET confirmado = 1, confirmado_por = ?, confirmado_at = datetime('now','localtime'), cuenta_id = ? WHERE id = ? AND confirmado = 0 AND cancelado = 0").run(req.usuarioSesion.id, cta.id ?? null, c.id);
+      if (info.changes) bitacora(c.lead_id, `Pago de ${fmt(c.monto_cent)} (${c.fecha}) confirmado por ${req.usuarioSesion.nombre}.`, req, 'cxc');
     })();
     res.json({ ok: true });
   }));
@@ -658,10 +668,12 @@ module.exports = function finanzas(app, db, h, unicos) {
           l.created_at AS lead_created_at, u.nombre AS registrado_por_nombre
         FROM cobros k JOIN leads l ON l.id = k.lead_id LEFT JOIN usuarios u ON u.id = k.registrado_por WHERE l.cliente_id = ? ORDER BY k.fecha DESC, k.id DESC`).all(cli.id)
         .map(k => ({ ...k, monto: aPesos(k.monto_cent), folio: folioOS(k.lead_id, k.lead_created_at) }));
-      const vivas = cobros.filter(k => !k.cancelado && k.tipo !== 'ajuste');
+      // «Pagado» con la misma regla que el saldo: solo lo confirmado; lo reportado sin confirmar, aparte (2026-11-13).
+      const enCartera = new Set(activas.map(x => x.lead_id));
+      const vivas = cobros.filter(k => !k.cancelado && k.tipo !== 'ajuste' && enCartera.has(k.lead_id));
       return res.json({ ...r, cliente: c, saldo: suma(activas.filter(x => x.saldo > 0 && !x.programada)), vencido: suma(vencidas),
         programado: suma(activas.filter(x => x.saldo > 0 && x.programada && !x.por_concluir)), por_concluir: suma(activas.filter(x => x.saldo > 0 && x.por_concluir)), a_favor: Math.round(activas.reduce((t, x) => t + (x.a_favor || 0) * 100, 0)) / 100,
-        total: Math.round(activas.reduce((t, x) => t + x.total * 100, 0)) / 100, pagado: aPesos(vivas.reduce((t, k) => t + k.monto_cent, 0)),
+        total: Math.round(activas.reduce((t, x) => t + x.total * 100, 0)) / 100, pagado: aPesos(vivas.filter(k => k.confirmado).reduce((t, k) => t + k.monto_cent, 0)), por_confirmar: aPesos(vivas.filter(k => !k.confirmado).reduce((t, k) => t + k.monto_cent, 0)),
         ordenes: activas, cobros });
     }
     res.json({ ...r, saldo: suma(activas.filter(c => c.saldo > 0 && !c.programada)), vencido: suma(vencidas),
@@ -675,7 +687,7 @@ module.exports = function finanzas(app, db, h, unicos) {
     const hoy = hoyMexico();
     const desde = req.query.desde || hoy.slice(0, 8) + '01', hasta = req.query.hasta || hoy;
     if (!fechaValida(desde) || !fechaValida(hasta) || desde > hasta) return res.status(400).json({ error: 'Revisa el rango de fechas' });
-    const c = db.prepare("SELECT COUNT(*) n, COALESCE(SUM(monto_cent), 0) t FROM cobros WHERE cancelado = 0 AND tipo <> 'ajuste' AND fecha BETWEEN ? AND ?").get(desde, hasta);
+    const c = db.prepare("SELECT COUNT(*) n, COALESCE(SUM(monto_cent), 0) t FROM cobros WHERE cancelado = 0 AND confirmado = 1 AND tipo <> 'ajuste' AND fecha BETWEEN ? AND ?").get(desde, hasta); // solo confirmado (2026-11-13)
     const r = { desde, hasta, cobrado: aPesos(c.t), cobros_n: c.n };
     {
       r.pagado = aPesos(db.prepare('SELECT COALESCE(SUM(monto_cent), 0) t FROM pagos_proveedor WHERE cancelado = 0 AND fecha BETWEEN ? AND ?').get(desde, hasta).t);
@@ -703,7 +715,8 @@ module.exports = function finanzas(app, db, h, unicos) {
       for (const id of cobradas) {
         const c = cuentaDeOrden(id);
         if (!c || !c.por_revisar) continue;
-        const saldo = Math.round(c.saldo * 100);
+        // Lo que el cliente no ha reportado: lo «por confirmar» se confirma aparte (si no, al confirmarlo quedaría a su favor).
+        const saldo = Math.round(c.sin_reportar * 100);
         if (saldo > 0) {
           db.prepare(`INSERT INTO main.cobros (lead_id, fecha, monto_cent, tipo, metodo, notas, confirmado, confirmado_por, confirmado_at, registrado_por)
             VALUES (?, ?, ?, 'ajuste', 'otro', 'Saldo inicial: ya estaba cobrada al instalar el módulo', 1, ?, datetime('now','localtime'), ?)`)
@@ -714,6 +727,8 @@ module.exports = function finanzas(app, db, h, unicos) {
         n++;
       }
       for (const id of pendientes) {
+        // Solo órdenes que quien revisa ve (vista leads, con su sucursal y alcance), igual que las «cobradas».
+        if (!db.prepare('SELECT 1 FROM leads WHERE id = ?').get(id)) continue;
         const info = db.prepare('UPDATE main.leads SET cobranza_por_revisar = 0 WHERE id = ? AND cobranza_por_revisar = 1').run(id);
         if (info.changes) { bitacora(id, 'Revisión inicial de cobranza: sigue pendiente de cobro.', req, 'cxc'); n++; }
       }

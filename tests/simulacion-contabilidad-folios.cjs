@@ -40,8 +40,8 @@ const [ay, am] = MES.split('-').map(Number), MP = am === 1 ? `${ay - 1}-12` : `$
   const STD = await cuentaN('Santander operación', 'Santander', 'std'), BNT = await cuentaN('Banorte pagos', 'Banorte', 'BNT'), PAG = await cuentaN('Pagadora', 'Pagadora', 'PAG'), CAJ = await cuentaN('Caja', 'Caja (efectivo)', 'CAJ');
   revisa((await pedir('POST', '/conciliacion/cuentas', A, { nombre: 'Otra Santander', banco: 'Santander', sucursal_id: qro.id, clave_folio: 'STD' }))[0] === 409, 'La clave STD no se repite en otra cuenta');
   revisa((await pedir('POST', '/conciliacion/cuentas', A, { nombre: 'Rara', banco: 'Otro', sucursal_id: qro.id, clave_folio: 'S T D' }))[0] === 400, 'Una clave con espacios se rechaza');
-  let [s, r] = await pedir('GET', '/cuentas-banco', V);
-  revisa(s === 200 && r.requiere === true && r.cuentas.find(c => c.id === STD)?.clave_folio === 'STD', 'Quien confirma cobros (Ventas) ve las cuentas para elegir; la clave se guarda en mayúsculas', r);
+  let [s, r] = await pedir('GET', '/cuentas-banco', AT); // 2026-11-13: confirman cobros Gerente y Atención (Ventas ya no)
+  revisa(s === 200 && r.requiere === true && r.cuentas.find(c => c.id === STD)?.clave_folio === 'STD', 'Quien confirma cobros (Atención) ve las cuentas para elegir; la clave se guarda en mayúsculas', r);
   revisa((await pedir('GET', '/cuentas-banco', T))[0] === 403, 'El técnico (no confirma ni paga) no las ve');
   revisa((await pedir('POST', `/cuentas-banco/${STD}/clave`, V, { clave: 'SAN' }))[0] === 403, 'Ventas no cambia la clave');
 

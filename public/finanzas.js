@@ -87,13 +87,16 @@ const Finanzas = (() => {
     const c = r.cuenta || { ...r.orden, saldo: null };
     COBRO = { leadId: Number(leadId), despues };
     $('cobro-titulo').textContent = 'Registrar pago · ' + folioOS(c);
-    $('cobro-info').textContent = r.cuenta ? `${c.cliente_nombre || 'Cliente'} · Total ${formatoMoneda(c.total)} · Saldo ${formatoMoneda(c.saldo)}` : (c.cliente_nombre || 'Cliente'); // sin HTML
-    $('cobro-monto').value = c.saldo > 0 ? c.saldo.toFixed(2) : '';
+    // Se cobra lo que el cliente no ha reportado (el servidor rechaza más): lo «por confirmar» ya cuenta (auditoría 2026-11-13).
+    const falta = c.saldo === null ? null : (c.sin_reportar ?? c.saldo);
+    const enRevision = c.saldo !== null && c.cobrado_por_confirmar > 0 ? ` · ${formatoMoneda(c.cobrado_por_confirmar)} por confirmar` : '';
+    $('cobro-info').textContent = r.cuenta ? `${c.cliente_nombre || 'Cliente'} · Total ${formatoMoneda(c.total)} · Falta por cobrar ${formatoMoneda(falta)}${enRevision}` : (c.cliente_nombre || 'Cliente'); // sin HTML
+    $('cobro-monto').value = falta > 0 ? falta.toFixed(2) : '';
     pintarMetodos('cobro-metodos', 'transferencia');
     $('cobro-fecha').value = hoy(); $('cobro-fecha').max = hoy();
     $('cobro-tipo').value = ''; $('cobro-referencia').value = ''; $('cobro-notas').value = '';
-    const pagada = c.saldo !== null && c.saldo <= 0;
-    $('cobro-aviso').textContent = pagada ? 'Esta orden ya está pagada.'
+    const pagada = falta !== null && falta <= 0;
+    $('cobro-aviso').textContent = pagada ? (c.saldo > 0 ? 'El cliente ya reportó todo el pago: falta que alguien lo confirme en «Pagos por confirmar».' : 'Esta orden ya está pagada.')
       : (cobroQuedaConfirmado() ? '' : 'Quedará "por confirmar" hasta que alguien verifique que el dinero llegó.');
     $('cobro-guardar').disabled = pagada;
     abrirVentana('overlay-cobro');
@@ -165,7 +168,7 @@ const Finanzas = (() => {
         ${c.ejecucion === 'no_realizado' ? `<div><small>A favor del cliente</small><b>${formatoMoneda(c.a_favor || 0)}</b></div>` : `<div><small>Vence</small><b>${esc(fechaTxt(c.vence))}</b></div>`}
       </div>
       ${desgloseIva(c)}
-      ${c.ejecucion === 'no_realizado' ? '' : `<button type="button" class="btn btn-primario" data-cobranza="registrar" ${c.saldo <= 0 ? 'disabled' : ''}>💵 Registrar pago</button>`}
+      ${c.ejecucion === 'no_realizado' ? '' : `<button type="button" class="btn btn-primario" data-cobranza="registrar" ${(c.sin_reportar ?? c.saldo) <= 0 ? 'disabled' : ''}>💵 Registrar pago</button>`}
       ${fact}
       <div class="pagos-lista">${pagos}</div>`;
     const factZona = cont.querySelector('.cobranza-facturacion'); // crédito y factura: en vista; «Editar» lo abre (2026-10-26)
@@ -282,6 +285,7 @@ const Finanzas = (() => {
       + (r.por_concluir > 0 ? t('Por concluir', formatoMoneda(r.por_concluir), `${plural(r.ordenes_por_concluir, 'servicio con fecha pasada', 'servicios con fecha pasada')}: márcalos realizados para cobrarlos`, 'aviso', 'por_concluir') : '')
       + (r.programado > 0 ? t('Por realizar', formatoMoneda(r.programado), `${plural(r.ordenes_programadas, 'servicio programado', 'servicios programados')} · aún no se cobran`, '', 'por_realizar') : '')
       + (r.a_favor > 0 ? t('A favor de clientes', formatoMoneda(r.a_favor), `${plural(r.ordenes_a_favor, 'servicio no realizado', 'servicios no realizados')} con pago · devolver o aplicar`, 'aviso', 'a_favor') : '')
+      + (r.pago_de_mas > 0 ? t('Pagaron de más', formatoMoneda(r.pago_de_mas), `${plural(r.ordenes_pago_de_mas, 'orden', 'órdenes')} con cobro mayor al total · devolver o aplicar`, 'aviso', 'pago_de_mas') : '')
       + t('Cobrado este mes', formatoMoneda(r.cobrado_mes), `En ${esc(mesActual)}`, 'bueno', 'cobrado_mes')
       + (r.por_confirmar ? t('Por confirmar', formatoMoneda(r.por_confirmar.monto), nConfirmar ? plural(nConfirmar, 'pago esperando confirmación', 'pagos esperando confirmación') : 'Nada pendiente', nConfirmar ? 'aviso' : 'tranquila', 'por_confirmar') : '');
     Ayuda.cerrar(cont);
@@ -297,7 +301,8 @@ const Finanzas = (() => {
     const cont = $('cuentas-revision');
     if (!esAdmin() || !RESUMEN?.por_revisar) { cont.hidden = true; return; }
     cont.hidden = false;
-    cont.innerHTML = `<p><b>Revisión inicial:</b> ${Number(RESUMEN.por_revisar)} órdenes anteriores al módulo todavía no cuentan en la cartera. Indica cuáles ya se cobraron para que los saldos sean reales.</p><button type="button" class="btn btn-secundario" data-revision="abrir">Revisar ahora</button><div id="revision-lista"></div>`;
+    const n = Number(RESUMEN.por_revisar);
+    cont.innerHTML = `<p><b>Revisión inicial:</b> ${n} ${n === 1 ? 'orden anterior al módulo todavía no cuenta' : 'órdenes anteriores al módulo todavía no cuentan'} en la cartera. Indica cuáles ya se cobraron para que los saldos sean reales.</p><button type="button" class="btn btn-secundario" data-revision="abrir">Revisar ahora</button><div id="revision-lista"></div>`;
   }
   $('cuentas-revision').addEventListener('click', async e => {
     const btn = e.target.closest('button'); if (!btn) return;
@@ -305,19 +310,28 @@ const Finanzas = (() => {
       const lista = await api('/finanzas/revision-inicial').then(json).catch(err => { toast(err.message); return []; });
       $('revision-lista').innerHTML = `<div class="revision-tabla">${lista.map(c => `
         <label class="revision-fila"><span><b>${esc(folioOS(c))}</b> · ${esc(c.cliente_nombre)} · ${esc(c.servicio_nombre || '')} · ${esc(fechaTxt(c.fecha_servicio))} · ${formatoMoneda(c.total)}</span>
-          <select data-revision-lead="${Number(c.lead_id)}"><option value="cobrada">Ya está cobrada</option><option value="pendiente">Sigue pendiente de cobro</option></select></label>`).join('')}</div>
+          <select data-revision-lead="${Number(c.lead_id)}" data-revision-monto="${Number(c.sin_reportar) || 0}"><option value="">— Elige —</option><option value="cobrada">Ya está cobrada</option><option value="pendiente">Sigue pendiente de cobro</option></select></label>`).join('')}</div>
         <button type="button" class="btn btn-primario" data-revision="guardar">Guardar revisión</button>`;
     }
     if (btn.dataset.revision === 'guardar') conBoton(btn, async () => {
-      const cobradas = [], pendientes = [];
-      document.querySelectorAll('[data-revision-lead]').forEach(s => (s.value === 'cobrada' ? cobradas : pendientes).push(Number(s.dataset.revisionLead)));
+      // Nada viene elegido (auditoría 2026-11-13): se guarda solo lo que se eligió y antes se muestra cuánto se dará por cobrado.
+      const cobradas = [], pendientes = []; let monto = 0;
+      document.querySelectorAll('[data-revision-lead]').forEach(s => {
+        if (s.value === 'cobrada') { cobradas.push(Number(s.dataset.revisionLead)); monto += Number(s.dataset.revisionMonto) || 0; }
+        else if (s.value === 'pendiente') pendientes.push(Number(s.dataset.revisionLead));
+      });
+      if (!cobradas.length && !pendientes.length) { toast('Elige en cada orden si ya está cobrada o sigue pendiente'); return; }
+      const ord = k => `${k} ${k === 1 ? 'orden' : 'órdenes'}`;
+      if (!confirm(`Vas a guardar:\n· ${ord(cobradas.length)} como YA COBRADA (se registra un ajuste por ${formatoMoneda(monto)})\n· ${ord(pendientes.length)} como pendiente de cobro\n\n¿Continuar?`)) return;
       const r = await json(await api('/finanzas/revision-inicial', { method: 'POST', body: JSON.stringify({ cobradas, pendientes }) }));
-      toast(`Revisión guardada: ${r.revisadas} órdenes`); await cargar();
+      toast(`Revisión guardada: ${ord(Number(r.revisadas) || 0)}`); await cargar();
     });
   });
   async function pintarPorConfirmar() {
     const cont = $('cuentas-por-confirmar');
-    const lista = await api('/finanzas/por-confirmar').then(json).catch(() => []);
+    let lista = [];
+    try { const resp = await api('/finanzas/por-confirmar'); if (resp.status !== 403) lista = await json(resp); }
+    catch (err) { cont.innerHTML = `<div class="aviso-error-carga" role="alert"><p>No se pudieron cargar los pagos por confirmar: ${esc(err.message)}</p></div>`; return; }
     cont.innerHTML = lista.length ? `<div class="inicio-bloque inicio-bloque-aviso"><h3>Pagos por confirmar</h3><p class="ayuda">Los registraron vendedores o técnicos. Confírmalos cuando verifiques que el dinero llegó.</p>
       ${lista.map(k => `<div class="pago-fila"><div><b>${formatoMoneda(k.monto)}</b> · ${esc(NOMBRE_METODO[k.metodo] || k.metodo)} · ${esc(fechaTxt(k.fecha))}<small>${esc(k.cliente_nombre)} · ${esc(folioOrdenServicio({ id: k.lead_id, created_at: k.lead_created_at }))} · registró ${esc(k.registrado_por_nombre || '—')}</small></div>
         <div class="btn-group">${k.registrado_por !== USUARIO_ACTUAL?.id || cobroQuedaConfirmado() ? `<button type="button" class="btn btn-outline" data-confirmar="${Number(k.id)}">Confirmar</button>` : '<span class="ayuda">Lo registraste tú: lo confirma otra persona</span>'}<button type="button" class="btn btn-outline perm-dinero-mover" data-cancelar="${Number(k.id)}">Cancelar</button></div></div>`).join('')}</div>` : '';
@@ -482,7 +496,7 @@ const Finanzas = (() => {
     { k: 'acciones', t: '', fija: true, sinOrden: true, clase: 'celda-acciones', v: c => accionesOrden(c) },
   ];
   const accionesOrden = c => '<div class="acciones-fila">' + waOrdenCorto(c)
-    + (c.saldo > 0 && c.ejecucion !== 'no_realizado' ? '<button type="button" class="btn btn-primario btn-chico" data-pagar-orden="' + Number(c.lead_id) + '" title="Registrar pago">💵 Pagar</button>' : '')
+    + ((c.sin_reportar ?? c.saldo) > 0 && c.ejecucion !== 'no_realizado' ? '<button type="button" class="btn btn-primario btn-chico" data-pagar-orden="' + Number(c.lead_id) + '" title="Registrar pago">💵 Pagar</button>' : '')
     + '<button type="button" class="btn btn-outline btn-chico" data-abrir-orden="' + Number(c.lead_id) + '" title="Abrir la orden">Abrir</button></div>';
   // WhatsApp de una orden, solo con el ícono (para la tabla).
   const waOrdenCorto = c => waOrden(c).replace('💬 Recordar por WhatsApp', '💬').replace('class="btn btn-outline btn-whatsapp"', 'class="btn btn-outline btn-whatsapp btn-chico" title="Recordar por WhatsApp"');
@@ -505,7 +519,7 @@ const Finanzas = (() => {
         <div class="montos"><b>${formatoMoneda(c.saldo)}</b><small>de ${formatoMoneda(c.total)}</small></div>
         <div class="btn-group">
           ${waOrden(c)}
-          ${c.saldo > 0 ? `<button type="button" class="btn btn-primario" data-pagar-orden="${Number(c.lead_id)}">Registrar pago</button>` : ''}
+          ${(c.sin_reportar ?? c.saldo) > 0 ? `<button type="button" class="btn btn-primario" data-pagar-orden="${Number(c.lead_id)}">Registrar pago</button>` : ''}
           <button type="button" class="btn btn-outline" data-abrir-orden="${Number(c.lead_id)}">Abrir orden</button>
         </div></div>`).join('');
   }
@@ -560,7 +574,7 @@ const Finanzas = (() => {
       + '<td>' + esc(c.servicio_nombre || '—') + '<small class="celda-sub">' + esc(ejecucionCorta(c)) + '</small></td>'
       + '<td class="st-num">' + formatoMoneda(c.total) + '</td><td class="st-num">' + formatoMoneda(c.cobrado) + '</td><td class="st-num"><b>' + formatoMoneda(c.saldo) + '</b></td>'
       + '<td>' + (c.programada ? '—' : esc(fechaTxt(c.vence))) + '</td><td class="st-num">' + diasCobro(c) + '</td><td>' + etiquetaEstado(c) + '</td>'
-      + '<td class="celda-acciones"><div class="acciones-fila">' + (c.saldo > 0 && c.ejecucion !== 'no_realizado' ? '<button type="button" class="btn btn-primario btn-chico" data-cc-pagar="' + Number(c.lead_id) + '">Registrar pago</button>' : '')
+      + '<td class="celda-acciones"><div class="acciones-fila">' + ((c.sin_reportar ?? c.saldo) > 0 && c.ejecucion !== 'no_realizado' ? '<button type="button" class="btn btn-primario btn-chico" data-cc-pagar="' + Number(c.lead_id) + '">Registrar pago</button>' : '')
       + '<button type="button" class="btn btn-outline btn-chico" data-cc-abrir="' + Number(c.lead_id) + '">Abrir</button></div></td></tr>';
     const TIPO = { pago: 'Pago', anticipo: 'Anticipo', ajuste: 'Descuento / ajuste' };
     const filaPago = k => '<tr class="' + (k.cancelado ? 'fila-cancelada' : '') + '"><td>' + esc(fechaTxt(k.fecha)) + '</td><td><b>' + esc(k.folio) + '</b></td>'
@@ -573,7 +587,7 @@ const Finanzas = (() => {
       '<p class="cc-aviso">👤 Estás viendo el <b>estado de cuenta completo</b> de este cliente: todas sus órdenes y todos sus pagos. Cierra esta ventana para volver a la lista general.</p>'
       + '<div class="cc-tarjetas" data-ayuda-zona>' + t('Debe hoy', formatoMoneda(r.saldo), r.saldo > 0 ? 'aviso' : '', 'debe_hoy') + t('Vencido', formatoMoneda(r.vencido), r.vencido > 0 ? 'alerta' : '', 'vencido')
       + t('Por realizar', formatoMoneda(r.programado), '', 'por_realizar') + (r.por_concluir > 0 ? t('Por concluir', formatoMoneda(r.por_concluir), '', 'por_concluir') : '') + (r.a_favor > 0 ? t('A favor del cliente', formatoMoneda(r.a_favor), 'favor', 'a_favor') : '')
-      + t('Pagado en total', formatoMoneda(r.pagado), '', 'pagado_total') + '<div class="cc-tarjeta"><small>Crédito</small><b>' + Number(r.dias_credito) + ' días</b>' + (puedeEditarFactura() ? '<button type="button" class="enlace" data-cc-credito>Cambiar</button>' : '') + '</div></div>'
+      + t('Pagado (confirmado)', formatoMoneda(r.pagado), '', 'pagado_total') + (r.por_confirmar > 0 ? t('Por confirmar', formatoMoneda(r.por_confirmar), 'aviso', 'por_confirmar') : '') + '<div class="cc-tarjeta"><small>Crédito</small><b>' + Number(r.dias_credito) + ' días</b>' + (puedeEditarFactura() ? '<button type="button" class="enlace" data-cc-credito>Cambiar</button>' : '') + '</div></div>'
       + '<div class="btn-group cc-acciones">' + wa + '<button type="button" class="btn btn-outline" data-cc-ficha>Abrir ficha del contacto</button></div>'
       + '<div class="cc-seccion apartado"><div class="cc-seccion-cab"><h3>Órdenes de servicio</h3><label class="cc-check"><input type="checkbox" data-cc-pagadas' + (VER_PAGADAS ? ' checked' : '') + '> Mostrar también las pagadas</label></div>'
       + (ordenes.length ? '<div class="tabla-scroll tabla-dinero-caja"><table class="tabla-resumen tabla-dinero"><thead><tr><th>OS</th><th>Factura</th><th>Servicio</th><th class="st-num">Total</th><th class="st-num">A/C</th><th class="st-num">Saldo</th><th>Vence</th><th class="st-num">Días</th><th>Status</th><th></th></tr></thead><tbody>'
