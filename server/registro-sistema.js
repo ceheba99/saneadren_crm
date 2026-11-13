@@ -54,6 +54,30 @@ const EVENTOS = {
   inicio: ['servicio', 'info', 'Sistema iniciado'],
   descarga: ['seguridad', 'aviso', 'Descargó un respaldo']
 };
+// «Dónde está en el código» (2026-11-13): de la pila de un error, hasta 3 lugares que son del sistema, como
+// «en server/finanzas.js:123 (calcular) ← server/index.js:140». Sin la ruta del servidor ni librerías (node_modules,
+// vendor). navegador = true: la pila viene de una pantalla (direcciones https://…/archivo.js) → «public/archivo.js».
+function lugares(pila, navegador = false) {
+  const out = [];
+  for (const linea of String(pila || '').slice(0, 4000).split('\n')) {
+    const m = linea.match(/^\s*(?:at\s+(?:(.*?)\s+\()?|([^@\s]*)@)(.+?):(\d+)(?::\d+)?\)?\s*$/);
+    if (!m) continue;
+    const fn = String(m[1] || m[2] || '').replace(/^(async |new )/, '').replace(/[^\w.$<> -]/g, '').slice(0, 40);
+    let ruta = m[3].split('?')[0].split('#')[0], archivo = null;
+    if (navegador) {
+      try { ruta = new URL(ruta).pathname; } catch { continue; }
+      if (ruta.startsWith('/vendor/')) continue;
+      archivo = ruta === '/' || ruta === '/index.html' ? 'public/index.html' : ruta === '/kiosco' ? 'public/kiosco.html' : ruta === '/checar' ? 'public/checar.html' : /^\/[\w./-]+\.(m?js|html)$/.test(ruta) ? 'public' + ruta : null;
+    } else if (!ruta.includes('node_modules')) {
+      const i = Math.max(ruta.lastIndexOf('/server/'), ruta.lastIndexOf('/public/'));
+      archivo = i >= 0 ? ruta.slice(i + 1) : null;
+    }
+    if (!archivo || !/^[\w./-]+$/.test(archivo)) continue;
+    out.push(archivo + ':' + m[4] + (fn && fn !== '<anonymous>' && !/^Layer\./.test(fn) ? ' (' + fn + ')' : ''));
+    if (out.length >= 3) break;
+  }
+  return out.length ? 'en ' + out.join(' ← ') : '';
+}
 // Correo a medias: «ma•••@saneadren.com.mx» (se reconoce sin quedar completo en el registro).
 const tapar = c => String(c || '').replace(/^([^@]{1,2})[^@]*@/, '$1•••@').slice(0, 120);
 const ACCION_FACTURA = { timbrar: 'Timbrar', cancelar: 'Cancelar', reenviar: 'Reenviar por correo', descartar: 'Descartar borrador', verificar: 'Verificar',
@@ -118,7 +142,8 @@ module.exports = function registroSistema(app, db, h) {
   // Errores: ruta sin parámetros (?…) y el mensaje recortado; sin el cuerpo de la petición.
   function error(req, err) {
     const ruta = req ? `${req.method} ${String(req.originalUrl || '').split('?')[0]}`.slice(0, 160) : 'servidor';
-    anotar(req, 'error', { detalle: `${ruta} · ${String(err?.message || err).replace(/\s+/g, ' ').slice(0, 300)}` });
+    const donde = lugares(err?.stack);
+    anotar(req, 'error', { detalle: `${ruta} · ${String(err?.message || err).replace(/\s+/g, ' ').slice(0, 300)}${donde ? ' · ' + donde : ''}` });
   }
 
   app.post('/api/registro-sistema/pantalla', h((req, res) => {
@@ -128,7 +153,8 @@ module.exports = function registroSistema(app, db, h) {
     if (c.n >= 20 || (c.vistos.get(msj) || 0) > t) return res.json({ ok: true, anotado: false });
     c.n++; c.vistos.set(msj, t + 600000);
     const donde = [req.body?.vista, req.body?.archivo].map(x => String(x || '').replace(/[^\w.:/ -]/g, '').slice(0, 80)).filter(Boolean).join(' · ');
-    anotar(req, 'pantalla', { detalle: (donde ? donde + ' · ' : '') + msj });
+    const pila = lugares(req.body?.pila, true);
+    anotar(req, 'pantalla', { detalle: (donde ? donde + ' · ' : '') + msj + (pila ? ' · ' + pila : '') });
     res.json({ ok: true, anotado: true });
   }));
 
@@ -189,3 +215,5 @@ module.exports = function registroSistema(app, db, h) {
   return { anotar, error, quien, servicio, tapar };
 };
 module.exports.equipo = equipo;
+module.exports.EVENTOS = EVENTOS;
+module.exports.lugares = lugares;

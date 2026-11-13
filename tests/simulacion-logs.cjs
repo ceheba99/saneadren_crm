@@ -83,6 +83,11 @@ const filas = () => { const d = new DatabaseSync(DB); try { return d.prepare('SE
   const e = mem.prepare('SELECT * FROM registro_sistema ORDER BY id').all();
   revisa(e[0].tipo === 'error' && e[0].nivel === 'grave' && e[0].detalle === 'POST /api/leads/5 · no such column: x' && e[0].usuario === 'admin', 'Un error queda con la ruta (sin lo que va después de «?») y el mensaje', e[0]);
   revisa(e[1].detalle === 'servidor · fallo sin petición', 'También los errores sin petición', e[1]);
+  // 2026-11-13: dice en qué archivo, línea y función del sistema pasó (solo archivos del sistema, sin rutas del servidor).
+  const conPila = new Error('boom'); conPila.stack = 'Error: boom\n    at calcular (/var/www/vhosts/x/httpdocs/server/finanzas.js:123:9)\n    at Layer.handle (/var/www/vhosts/x/httpdocs/node_modules/express/lib/router/layer.js:95:5)\n    at /var/www/vhosts/x/httpdocs/server/index.js:140:7';
+  r.error({ method: 'GET', originalUrl: '/api/finanzas', usuarioSesion: { id: 1, nombre: 'admin' }, get: () => UA }, conPila);
+  const e2 = mem.prepare('SELECT detalle FROM registro_sistema ORDER BY id DESC LIMIT 1').get().detalle;
+  revisa(e2 === 'GET /api/finanzas · boom · en server/finanzas.js:123 (calcular) ← server/index.js:140', 'El error dice en qué archivo, línea y función del sistema pasó (sin la ruta del servidor ni librerías)', e2);
   revisa(reg.equipo('Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1') === 'Safari · iPhone'
     && reg.equipo('curl/8.4.0') === 'Programa' && reg.equipo('') === '', 'El equipo se reconoce sin guardar la cadena completa');
 
@@ -99,13 +104,16 @@ const filas = () => { const d = new DatabaseSync(DB); try { return d.prepare('SE
   revisa((await pedir('POST', '/registro-sistema/pantalla', null, { mensaje: 'x' }))[0] === 401, 'Sin sesión no se aceptan');
   u = filas().filter(r => r.evento === 'pantalla');
   revisa(u.length === 1 && u[0].usuario === 'Gema Gerente' && u[0].detalle === 'asistencia · asistencia.js:120 · TypeError: x is undefined', 'El error de pantalla dice dónde y a quién le pasó', u);
+  [s, j] = await pedir('POST', '/registro-sistema/pantalla', G2, { mensaje: 'TypeError: y is null', vista: 'finanzas', archivo: 'finanzas.js:88', pila: 'TypeError: y is null\n    at pintar (https://sistema.saneadren.com.mx/finanzas.js?v=cx3:88:12)\n    at https://sistema.saneadren.com.mx/vendor/pdfjs/pdf.min.mjs:1:5\ncargar@https://sistema.saneadren.com.mx/app.js:2764:5' });
+  u = filas().filter(r => r.evento === 'pantalla').pop();
+  revisa(s === 200 && /· en public\/finanzas\.js:88 \(pintar\) ← public\/app\.js:2764 \(cargar\)$/.test(u.detalle), 'El error de pantalla dice en qué archivo, línea y función pasó', u.detalle);
   const bk = await fetch(URLB + '/api/admin/backup', { headers: { Authorization: 'Bearer ' + A } }); await bk.arrayBuffer();
   u = filas().at(-1);
   revisa(bk.status === 200 && u.evento === 'descarga' && u.usuario === 'admin' && u.tipo === 'seguridad', 'Descargar el respaldo de la base queda registrado', u);
   { const d = new DatabaseSync(DB); d.prepare("INSERT INTO facturas_log (accion, resultado, http_status, mensaje, usuario_id) VALUES ('timbrar', 'error', 200, 'El RFC del receptor no existe', 1)").run(); d.close(); }
   [s, j] = await pedir('GET', '/registro-sistema?tipo=facturacion', A);
   revisa(s === 200 && j.filas.length === 1 && j.filas[0].nivel === 'grave' && j.filas[0].detalle === 'Timbrar · HTTP 200 · El RFC del receptor no existe' && j.filas[0].usuario === 'admin', 'Facturación: se ven los movimientos con factura.com', j.filas);
-  revisa(j.resumen.facturas_error === 1 && j.resumen.servicios >= 1 && j.resumen.errores === 1, 'El resumen cuenta errores de facturación, de servicios y de pantalla', j.resumen);
+  revisa(j.resumen.facturas_error === 1 && j.resumen.servicios >= 1 && j.resumen.errores === 2, 'El resumen cuenta errores de facturación, de servicios y de pantalla (los dos de pantalla)', j.resumen);
   revisa((await pedir('GET', '/registro-sistema?tipo=facturacion', G2))[0] === 403, 'El Gerente tampoco ve la facturación de los logs');
 
   console.log('5. Respaldo automático');

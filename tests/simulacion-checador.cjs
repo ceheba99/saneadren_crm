@@ -299,7 +299,7 @@ const archivosDe = d => fs.readdirSync(d, { withFileTypes: true }).flatMap(e => 
   revisa(!!fv && /tableta: .*bater[ií]a 80 %.*cargando.*c[aá]mara bien.*pantalla fija/.test(fv.detalle) && !!fv.ip, 'El renglón de velocidad dice cómo estaba la tableta (batería, cargador, cámara, pantalla) y desde qué red', fv);
   revisa(!!fv?.guia && /servidor tard[oó] 2500 ms/i.test(fv.guia.lectura.join(' ')), 'Y la lectura dice qué número está fuera de lo normal', fv?.guia?.lectura);
   revisa(!!logV.sistema && /Node\.js/.test(logV.sistema.descripcion) && !!logV.sistema.version, 'Los Logs traen la ficha del sistema (qué es y qué versión) para el reporte', logV.sistema);
-  revisa(!(logV.filas || []).some(x => x.evento === 'entro' && x.guia), 'Los renglones que aún no tienen guía no inventan una');
+  revisa((logV.filas || []).every(x => x.guia), 'Todos los renglones traen su explicación');
   for (let i = 0; i < 5; i++) await kio(KQ, 'POST', 'diagnostico', { eventos: Array.from({ length: 10 }, (_, k) => ({ m: 'prueba ' + i + '-' + k })) });
   revisa(((await pedir('GET', '/registro-sistema?q=Kiosco', A))[1].filas || []).length <= 32, 'Tope de 30 diagnósticos por kiosco por hora');
 
