@@ -1,4 +1,4 @@
-// Guías de los Logs (2026-11-13, pedido de Dirección: que el log se entienda solo, también para un asistente de IA sin
+// Guías de los Logs (2026-11-13, pedido de Dirección: que el log se entienda solo, también para soporte sin
 // contexto): cada renglón del reloj checador trae qué significa, causas probables, qué hacer y dónde está en el código.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
@@ -13,7 +13,7 @@ test('todos los eventos del reloj tienen guía completa', () => {
     assert.ok(g.codigo.every(c => /^(server|public|android-checador)\//.test(c)), 'el código se cita por archivo: ' + g.codigo);
   }
 });
-test('un evento sin guía no inventa nada', () => { assert.equal(explicar(fila('entro', 'x')), null); assert.equal(explicar(null), null); });
+test('un evento sin guía no inventa nada', () => { assert.equal(explicar(fila('evento_que_no_existe', 'x')), null); assert.equal(explicar(null), null); });
 test('velocidad: servidor lento → la lectura apunta al internet o al servidor, no a la tableta', () => {
   const g = explicar(fila('kiosco_velocidad', 'Kiosco «Entrada» (Querétaro): Velocidad (app, 8 nucleos, 4 GB): abrir 1.2 s; servidor 2400 ms; sin caras registradas; trabada 0.3 s (peor 0.2 s)'));
   assert.match(g.lectura.join(' '), /servidor tard[oó] 2400 ms/i); assert.match(g.lectura.join(' '), /internet/i);
@@ -43,4 +43,31 @@ test('necesita atención: batería, cámara y pantalla tienen pasos distintos', 
   assert.match(explicar(fila('kiosco_atencion', 'Kiosco «Entrada»: batería en 12 % y sin cargador: conéctala')).hacer.join(' '), /cargador/i);
   assert.match(explicar(fila('kiosco_atencion', 'Kiosco «Entrada»: la cámara no está funcionando')).hacer.join(' '), /cámara/i);
   assert.match(explicar(fila('kiosco_atencion', 'Kiosco «Entrada»: no puede mantener la pantalla encendida')).hacer.join(' '), /Pantalla activa|ahorro de energía/i);
+});
+
+// 2026-11-13: TODOS los tipos de renglón de los Logs se explican, y cada guía apunta a archivos que existen.
+test('cada tipo de renglón de los Logs tiene guía, y su código apunta a archivos que existen', () => {
+  const fs = require('node:fs'), path = require('node:path');
+  const eventos = [...Object.keys(require('../server/registro-sistema.js').EVENTOS), 'factura_ok', 'factura_error'];
+  for (const e of eventos) {
+    const g = explicar(fila(e, 'algo'));
+    assert.ok(g && g.que.length > 20 && g.causas.length && g.hacer.length && g.codigo.length, 'sin guía: ' + e);
+    for (const c of g.codigo) assert.ok(fs.existsSync(path.join(__dirname, '..', c.split(/ → |:\d/)[0].trim())), `${e}: no existe ${c}`);
+  }
+});
+test('error del servidor: la lectura dice en qué archivo y línea pasó', () => {
+  const g = explicar(fila('error', 'POST /api/leads/5 · no such column: x · en server/finanzas.js:123 (calcular) ← server/index.js:140'));
+  const t = g.lectura.join(' ');
+  assert.match(t, /server\/finanzas\.js:123/); assert.match(t, /calcular/); assert.match(t, /POST \/api\/leads\/5/); assert.match(t, /columna/i);
+  assert.ok(g.codigo.some(c => /server\/finanzas\.js/.test(c)), 'el archivo del error va primero en «dónde está»');
+});
+test('error en pantalla: la lectura dice en qué archivo y línea pasó', () => {
+  const g = explicar(fila('pantalla', 'asistencia · asistencia.js:88 · TypeError: x is undefined · en public/asistencia.js:88 (pintar) ← public/app.js:2764'));
+  assert.match(g.lectura.join(' '), /public\/asistencia\.js:88/); assert.match(g.lectura.join(' '), /pantalla «asistencia»/);
+  assert.ok(g.codigo.some(c => /public\/asistencia\.js/.test(c)));
+});
+test('correo, WhatsApp y respaldo: la lectura reconoce la causa más común', () => {
+  assert.match(explicar(fila('correo_fallo', 'vi•••@saneadren.com.mx · «Hola» · Invalid login: 535 Authentication failed')).lectura.join(' '), /contraseña del correo/i);
+  assert.match(explicar(fila('whatsapp_fallo', 'Meta rechazó el envío (HTTP 401, código 190): Error validating access token')).lectura.join(' '), /token/i);
+  assert.match(explicar(fila('respaldo_fallo', 'ENOSPC: no space left on device')).lectura.join(' '), /disco/i);
 });

@@ -2757,16 +2757,16 @@ function renderGraficosComerciales(d){
 // Errores del navegador → logs del sistema (Ajustes, solo Dirección los ve). Solo con sesión; si el aviso falla, se ignora.
 (() => {
   let enviando = 0;
-  const avisar = (mensaje, archivo) => {
+  const avisar = (mensaje, archivo, pila) => {
     if (!USUARIO_ACTUAL?.token || !mensaje || /^Script error\.?$/.test(mensaje) || enviando > 3) return;
     enviando++;
     const vista = document.querySelector('.vista.activa')?.id?.replace(/^vista-/, '') || '';
-    api('/registro-sistema/pantalla', { method: 'POST', body: JSON.stringify({ mensaje: String(mensaje).slice(0, 300), vista, archivo }) })
+    api('/registro-sistema/pantalla', { method: 'POST', body: JSON.stringify({ mensaje: String(mensaje).slice(0, 300), vista, archivo, pila: String(pila || '').slice(0, 2000) }) })
       .catch(() => {}).finally(() => { enviando--; });
   };
-  window.addEventListener('error', e => avisar(e.message, e.filename ? String(e.filename).split('/').pop().split('?')[0] + ':' + e.lineno : ''));
+  window.addEventListener('error', e => avisar(e.message, e.filename ? String(e.filename).split('/').pop().split('?')[0] + ':' + e.lineno : '', e.error?.stack));
   // Las respuestas del servidor con error (permiso, datos inválidos…) ya traen su mensaje y las graves se anotan allá: aquí solo fallas del código.
   if (PAGINA_INCOMPLETA) window.addEventListener('load', () => avisar('Página incompleta tras recargar: ' + (document.querySelector('script[src*="orden-servicio-pdf"]')
     ? 'orden-servicio-pdf.js no cargó en este navegador' : 'el navegador sigue usando la página principal vieja'), ''));
-  window.addEventListener('unhandledrejection', e => { const r = e.reason; if (r?.status || r?.name === 'AbortError') return; avisar(r?.message || String(r || ''), ''); });
+  window.addEventListener('unhandledrejection', e => { const r = e.reason; if (r?.status || r?.name === 'AbortError') return; avisar(r?.message || String(r || ''), '', r?.stack); });
 })();

@@ -1,9 +1,9 @@
 // GUÍAS DE LOS LOGS (2026-11-13, pedido de Dirección: que cada renglón se entienda sin conocer el sistema, también al
-// pasarlo a un asistente de IA o a soporte). Cada renglón de los Logs se explica solo:
+// mandarlo a soporte). Cada renglón de los Logs se explica solo:
 //  · qué significa, en simple; · causas probables; · qué hacer, paso a paso; · dónde está en el código (archivo y parte);
 //  · «lectura»: lo que dicen LOS DATOS de ese renglón en particular (p. ej. qué número de la velocidad está fuera de lo normal).
-// La pantalla (public/logs.js) lo muestra en «¿Qué significa y qué hago?» y lo incluye en «Copiar para una IA».
-// Se empezó por el reloj checador; los demás eventos se irán agregando aquí mismo (uno por función).
+// La pantalla (public/logs.js) lo muestra en «¿Qué significa y qué hago?» y lo incluye en «Copiar reporte».
+// Todos los tipos de renglón tienen guía (2026-11-13); un evento nuevo de los Logs debe traer la suya aquí.
 const num = (t, re) => { const m = String(t || '').match(re); return m ? Number(m[1]) : null; };
 
 // Límites de lo «normal» en la tableta (medidos con el checador en una tableta de gama media; se ajustan aquí).
@@ -36,7 +36,7 @@ function velocidad(d) {
     causas: ['Servidor lento (más de 800 ms): Wi-Fi débil donde está la tableta, internet de la oficina saturado o el sistema reiniciándose.', 'Pantalla trabada o «abrir» alto: tableta con poca memoria, muchas apps abiertas, ahorro de energía prendido, o el reconocimiento facial cargándose.',
       'Pasos lentos al checar con «servidor» normal: el Wi-Fi se corta por momentos.'],
     hacer: ['Compara varios renglones de «Velocidad»: uno solo malo puede ser casualidad; si se repite, es real.', 'Si lo alto es «servidor» o los pasos al checar: acerca la tableta al módem o revisa el internet.',
-      'Si lo alto es «trabada», «abrir» o «cara»: reinicia la tableta, cierra otras apps, apaga el ahorro de energía y déjala conectada al cargador.', 'Si sigue igual, copia este renglón con «Copiar para una IA» y mándalo a quien da soporte.'],
+      'Si lo alto es «trabada», «abrir» o «cara»: reinicia la tableta, cierra otras apps, apaga el ahorro de energía y déjala conectada al cargador.', 'Si sigue igual, copia este renglón con «Copiar reporte» y mándalo a quien da soporte.'],
     codigo, lectura };
 }
 
@@ -58,7 +58,7 @@ function recuperado(d) {
   return { que: 'La pantalla del reloj checador tuvo un tropiezo y se compuso sola (se recargó o volvió a arrancar). La gente pudo seguir checando; queda anotado para saber qué pasó y cada cuánto.',
     causas: ['La tableta se bloqueó o se apagó la pantalla y al volver la página se reinició.', 'Poca memoria: el sistema operativo descartó la página.', 'El internet tardó al abrir y la página no alcanzó a cargar.', 'Un error del programa al iniciar (raro; el renglón trae el texto del error).'],
     hacer: ['Si pasa una o dos veces al día, no hay que hacer nada.', 'Si pasa muchas veces: revisa que la tableta esté conectada al cargador, sin ahorro de energía y con «Pantalla activa» encendida (Ajustes → Opciones de desarrollador).',
-      'Si dice «error al iniciar», copia el renglón con «Copiar para una IA» y mándalo a soporte: es un defecto por corregir.'],
+      'Si dice «error al iniciar», copia el renglón con «Copiar reporte» y mándalo a soporte: es un defecto por corregir.'],
     codigo: ['public/kiosco.html → primer bloque <script> («vigilante» y «caja negra»: funciones recuperar, K.anotar y el arranque que arma el texto «Reinicio (…)»)', 'public/kiosco.html → función revivir (qué hace al volver de un bloqueo)',
       'public/kiosco-sw.js → caché que abre la página sin internet', 'server/checador.js → ruta POST /api/publico/kiosco/diagnostico'], lectura };
 }
@@ -93,6 +93,120 @@ const GUIAS = {
     causas: ['Regresó el internet, alguien desbloqueó o prendió la tableta, o volvió a abrir la app.'], hacer: ['Nada. Si se cae seguido, revisa el renglón anterior «El reloj checador no responde» para ver la causa.'],
     codigo: ['server/kiosco-vigia.js → función senal (la primera señal después de una caída)', 'server/checador.js → avisarKiosco'], lectura: [] }),
 };
+// ---------- Los demás renglones de los Logs (2026-11-13) ----------
+const LOGIN = 'server/index.js → ruta POST /api/login (y limitarLogin, registrarLoginFallido, limitarLoginPorIp: los topes de intentos)';
+const g = (que, causas, hacer, codigo, lectura = []) => ({ que, causas, hacer, codigo, lectura });
+// Del detalle de un error: ruta, mensaje y los lugares del código («en archivo:línea (función) ← …»).
+function partesError(d) {
+  const t = String(d || ''), en = t.match(/ · en (.+)$/), cuerpo = en ? t.slice(0, en.index) : t;
+  const lugares = en ? en[1].split(' ← ').map(x => x.trim()) : [];
+  return { cuerpo, lugares, archivos: lugares.map(x => x.split(':')[0]) };
+}
+// Lo que suele querer decir un mensaje de error de JavaScript o de la base de datos, en simple.
+function traducir(m) {
+  const t = String(m || '');
+  const r = [];
+  if (/no such column/i.test(t)) r.push('«no such column»: el programa pidió a la base de datos una columna que no existe. Suele pasar si una actualización quedó a medias (falta reiniciar) o por un error del programa.');
+  if (/no such table/i.test(t)) r.push('«no such table»: falta una tabla en la base de datos. Suele pasar cuando la actualización no terminó de arrancar.');
+  if (/SQLITE_BUSY|database is locked/i.test(t)) r.push('«database is locked»: la base de datos estaba ocupada por otra operación al mismo tiempo. Si es raro, no pasa nada.');
+  if (/is not defined/i.test(t)) r.push('«… is not defined»: el programa usó algo que no existe. Es un defecto del código.');
+  if (/is not a function/i.test(t)) r.push('«… is not a function»: el programa intentó usar como función algo que no lo es. Es un defecto del código.');
+  if (/Cannot read propert|of undefined|of null|is null|is undefined/i.test(t)) r.push('«… of undefined / is null»: el programa esperaba un dato que no llegó (vacío). Es un defecto del código o un dato incompleto.');
+  if (/JSON/i.test(t)) r.push('Error con JSON: llegó un dato con un formato que no se pudo leer.');
+  if (/ENOSPC/i.test(t)) r.push('«ENOSPC»: el disco del servidor está lleno.');
+  if (/EACCES|EPERM/i.test(t)) r.push('«EACCES / EPERM»: el servidor no tiene permiso de escribir o leer un archivo o carpeta.');
+  if (/ECONNREFUSED|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|fetch failed/i.test(t)) r.push('Error de conexión: el servidor no pudo comunicarse con otro servicio (internet o el servicio estaba caído).');
+  return r;
+}
+function guiaError(d, pantalla) {
+  const { cuerpo, lugares, archivos } = partesError(d), lectura = [];
+  if (pantalla) {
+    const [vista, archivo, ...resto] = cuerpo.split(' · ');
+    if (vista) lectura.push(`Pasó en la pantalla «${vista}»${archivo && /:\d+$/.test(archivo) ? `, en ${archivo}` : ''}.`);
+    lectura.push(...traducir(resto.join(' · ') || cuerpo));
+  } else {
+    const [ruta, ...msj] = cuerpo.split(' · ');
+    if (/^(GET|POST|PUT|PATCH|DELETE) /.test(ruta)) lectura.push(`Pasó al atender la petición «${ruta}» (la dirección dice qué parte del sistema se estaba usando).`);
+    else if (ruta === 'servidor') lectura.push('Pasó fuera de una petición (una tarea automática del servidor).');
+    lectura.push(...traducir(msj.join(' · ')));
+  }
+  if (lugares.length) lectura.push(`Dónde pasó en el código: ${lugares.join(' ← ')} (el primero es donde ocurrió; los que siguen, desde dónde se llamó).`);
+  else lectura.push('El renglón no trae el lugar exacto del código (errores anotados antes del 13-nov o de una parte del sistema que no lo manda).');
+  return g(pantalla
+    ? 'A una persona le falló algo en su pantalla del sistema (un error del programa en su navegador). Puede que algo no se haya mostrado o un botón no haya respondido. Solo se anota; no cambia datos.'
+    : 'El servidor tuvo un error al atender una petición: a la persona le salió «Error interno del servidor» y lo que estaba haciendo NO se guardó. El sistema sigue funcionando.',
+    pantalla ? ['Un defecto en el código de esa pantalla.', 'Un dato con un formato inesperado.', 'Una versión vieja de la pantalla guardada en el navegador después de una actualización (se arregla recargando).']
+      : ['Un defecto del código.', 'Un dato que la base de datos no aceptó.', 'Una actualización que quedó a medias (falta reiniciar la app en Plesk).'],
+    ['Si pasó una sola vez y la persona pudo continuar, solo vigila que no se repita.', pantalla ? 'Pide a la persona que recargue la página (o cierre sesión y vuelva a entrar).' : 'Pide a la persona que lo intente otra vez; si vuelve a fallar, es un defecto.',
+      'Si se repite, toca «Copiar reporte» y mándalo a soporte: trae el archivo y la línea donde pasó.'],
+    [...new Set(archivos), ...(pantalla ? ['public/app.js → bloque «Errores del navegador → logs» (manda el error y su pila)', 'server/registro-sistema.js → ruta POST /api/registro-sistema/pantalla y función lugares']
+      : ['server/index.js → función h (envuelve cada ruta y anota el error) y la «red de seguridad final» (app.use al final)', 'server/registro-sistema.js → funciones error y lugares'])], lectura);
+}
+function guiaCorreo(d) {
+  const lectura = [];
+  if (/535|Invalid login|auth|credentials|EAUTH/i.test(d)) lectura.push('El servidor de correo rechazó el usuario o la contraseña: la contraseña del correo (SMTP_PASS en Plesk) está mal o venció.');
+  else if (/ECONNREFUSED|ETIMEDOUT|ENOTFOUND|ESOCKET|EDNS/i.test(d)) lectura.push('No se pudo conectar con el servidor de correo: dirección o puerto mal puestos (SMTP_HOST, SMTP_PORT) o el servicio de correo estaba caído.');
+  else if (/550|551|552|553|recipient|mailbox/i.test(d)) lectura.push('El correo del destinatario no existe o rechazó el mensaje.');
+  else if (/SMTP_|no está configurado|sin configurar/i.test(d)) lectura.push('El correo del sistema no está configurado en Plesk (faltan variables SMTP_…).');
+  return g('Un correo que el sistema debía mandar no salió (avisos, restablecer contraseña, reportes). El destinatario no lo recibió.',
+    ['Contraseña del correo equivocada o vencida.', 'Datos del servidor de correo mal puestos en Plesk.', 'El correo del destinatario no existe.'],
+    ['Lee el motivo al final del renglón.', 'Si es la contraseña: en Plesk → Node.js → variables, revisa SMTP_PASS (la contraseña del correo que manda el sistema) y reinicia la app.', 'Puedes probar el correo con la herramienta «probar-correo» del sistema.'],
+    ['server/correo.js → función enviar (y verificarConexion)', 'server/index.js → require(\'./correo\').alFallar (anota el renglón)', 'herramientas/probar-correo.js → prueba de envío'], lectura);
+}
+function guiaWhatsapp(d) {
+  const lectura = [], c = (String(d).match(/código (\d+)/) || [])[1];
+  const codigos = { 190: 'el token de Meta venció o es inválido: hay que poner uno nuevo (WHATSAPP_TOKEN en Plesk).', 131030: 'el número no está autorizado (en modo de prueba de Meta solo se puede mandar a números dados de alta).',
+    131047: 'pasaron más de 24 h desde el último mensaje de esa persona: fuera de esa ventana Meta solo deja mandar plantillas aprobadas.', 132000: 'la plantilla no coincide con la aprobada en Meta (número de datos).', 132001: 'la plantilla no existe o no está aprobada en Meta.',
+    100: 'algún dato del envío es inválido (número o plantilla).', 368: 'Meta bloqueó temporalmente la cuenta por políticas.' };
+  if (c && codigos[c]) lectura.push(`Código ${c}: ${codigos[c]}`);
+  else if (/conectar/i.test(d)) lectura.push('No hubo conexión con Meta (internet del servidor o Meta caído).');
+  return g('Un mensaje de WhatsApp que el sistema debía mandar no salió: Meta (la empresa de WhatsApp) lo rechazó o no se pudo conectar.',
+    ['Token de Meta vencido.', 'Número no autorizado o fuera de la ventana de 24 horas.', 'Plantilla no aprobada.'], ['Lee el código de Meta en el renglón (abajo dice qué significa).', 'Los ajustes de WhatsApp están en el panel de Meta y en las variables WHATSAPP_… de Plesk.'],
+    ['server/whatsapp.js → función enviar (anota el rechazo con el código de Meta) y plantilla'], lectura);
+}
+function guiaRespaldo(d, ok) {
+  const lectura = ok ? [] : traducir(d);
+  return ok ? g('El sistema hizo su copia diaria automática de la base de datos. Es una buena noticia: no hay que hacer nada.', ['Se hace solo una vez al día.'], ['Nada. Recuerda que esta copia queda en el mismo servidor: de vez en cuando baja un respaldo completo a otro lugar.'], ['server/respaldos.js → función hacer (copia diaria y cuántas se conservan)'])
+    : g('La copia diaria automática de la base de datos NO se pudo hacer. Mientras siga así, no hay respaldo nuevo.', ['Disco del servidor lleno.', 'Permisos de la carpeta de respaldos.', 'La base de datos estaba ocupada.'],
+      ['Lee el motivo en el renglón.', 'Baja hoy un respaldo completo desde Ajustes, por si acaso.', 'Si es disco lleno, libera espacio en Plesk.', 'Si se repite, «Copiar reporte» y a soporte.'], ['server/respaldos.js → función hacer'], lectura);
+}
+function guiaFactura(d, error) {
+  const lectura = [], http = (String(d).match(/HTTP (\d+)/) || [])[1];
+  if (/pruebas/.test(d)) lectura.push('Fue en el ambiente de PRUEBAS de factura.com (sandbox): no tiene validez fiscal.');
+  if (error && http === '401') lectura.push('HTTP 401: las llaves de factura.com (F-Api-Key / F-Secret-Key en Plesk) están mal o no corresponden al ambiente.');
+  if (error && http && http.startsWith('5')) lectura.push(`HTTP ${http}: factura.com tuvo una falla de su lado; se puede reintentar más tarde.`);
+  if (error && http === '200') lectura.push('HTTP 200 con error: factura.com contestó pero rechazó la factura por un dato (el mensaje dice cuál, p. ej. RFC, régimen o código postal).');
+  return error ? g('Una operación con factura.com (timbrar, cancelar, descargar, enviar) falló. La factura NO quedó como se pidió.', ['Un dato fiscal del cliente o del concepto está mal (RFC, régimen, uso de CFDI, código postal).', 'Llaves de factura.com mal puestas.', 'factura.com caído.'],
+    ['Lee el mensaje de factura.com al final del renglón: casi siempre dice qué dato corregir.', 'Corrige el dato en la ficha del cliente o del servicio y vuelve a intentar.', 'Si dice algo de llaves o 401, revisa las variables de factura.com en Plesk.'],
+    ['server/facturacion-rutas.js → rutas de facturación (anotan en facturas_log)', 'server/facturacion-timbrado.js → timbrado', 'server/facturacom.js → función pedir (la conexión con factura.com)', 'server/facturacion-validaciones.js → revisiones antes de timbrar'], lectura)
+    : g('Una operación con factura.com salió bien (timbrar, descargar, enviar, cancelar…). Es informativo.', ['Alguien hizo una operación de facturación.'], ['Nada.'], ['server/facturacion-rutas.js → rutas de facturación', 'server/facturacom.js → conexión con factura.com'], lectura);
+}
+const accesos = {
+  entro: () => g('Alguien entró al sistema con su usuario y contraseña. Es informativo.', ['Un inicio de sesión normal.'], ['Nada. Si no reconoces la red (IP) o el equipo, cambia la contraseña de ese usuario.'], [LOGIN]),
+  salio: () => g('Alguien cerró su sesión. Es informativo.', ['Tocó «Salir».'], ['Nada.'], ['server/index.js → ruta POST /api/logout']),
+  fallo: () => g('Alguien escribió mal la contraseña de un usuario que sí existe.', ['Se equivocó al teclear.', 'Alguien intenta adivinar la contraseña de otro.'], ['Si son pocos, nada.', 'Si son muchos del mismo usuario o de una red que no conoces, cambia esa contraseña y revisa los bloqueos.'], [LOGIN]),
+  desconocido: () => g('Alguien intentó entrar con un usuario o correo que no existe en el sistema (por seguridad no se guarda lo que escribió).', ['Se equivocó al escribir su usuario.', 'Alguien prueba usuarios al azar.'], ['Si son muchos desde la misma red, es alguien probando: el sistema bloquea solo esa red.'], [LOGIN]),
+  bloqueado: () => g('Un usuario o una red quedó bloqueado por muchos intentos fallidos. Mientras dure, no puede entrar ni con la contraseña correcta.', ['Muchas contraseñas equivocadas seguidas.', 'Alguien intentando adivinar.'], ['Si es alguien de la empresa, espera a que se desbloquee o asígnale una contraseña nueva en Ajustes → Usuarios.', 'Si no lo reconoces, déjalo bloqueado y cambia la contraseña de ese usuario.'], [LOGIN]),
+  rechazado: () => g('Alguien siguió intentando entrar mientras estaba bloqueado.', ['La persona no sabía que estaba bloqueada.', 'Un intento de adivinar contraseñas.'], ['Igual que «Bloqueado por intentos».'], ['server/index.js → función anotarRechazo y limitarLogin']),
+  olvido: () => g('Alguien pidió restablecer su contraseña con «¿Olvidaste tu contraseña?»: se le mandó un correo con un enlace.', ['La persona olvidó su contraseña.', 'Alguien escribió el correo de otra persona.'], ['Nada. Si no lo pidió el dueño del correo, el enlace caduca solo y su contraseña no cambia.'], ['server/cuentas.js → ruta POST /api/olvide-password']),
+  restablecio: () => g('Alguien cambió su contraseña con el enlace del correo de «¿Olvidaste tu contraseña?».', ['La persona recuperó su acceso.'], ['Nada. Si el dueño no lo hizo, desactiva el usuario y revisa su correo.'], ['server/cuentas.js → ruta POST /api/restablecer-password']),
+};
+Object.assign(GUIAS, accesos, {
+  error: f => guiaError(f.detalle, false),
+  pantalla: f => guiaError(f.detalle, true),
+  correo_fallo: f => guiaCorreo(f.detalle || ''),
+  whatsapp_fallo: f => guiaWhatsapp(f.detalle || ''),
+  respaldo_ok: f => guiaRespaldo(f.detalle || '', true),
+  respaldo_fallo: f => guiaRespaldo(f.detalle || '', false),
+  factura_ok: f => guiaFactura(f.detalle || '', false),
+  factura_error: f => guiaFactura(f.detalle || '', true),
+  inicio: () => g('El sistema arrancó: pasa después de cada actualización (al fusionar un cambio) o cuando se reinicia la app en Plesk. Es informativo.',
+    ['Una actualización o un reinicio en Plesk.', 'Si nadie actualizó ni reinició: el servidor se cayó y Plesk lo volvió a levantar.'],
+    ['Nada, si coincide con una actualización.', 'Si aparecen varios seguidos sin que nadie actualice, revisa los «Error del servidor» justo antes: el sistema se está cayendo.'],
+    ['server/index.js → app.listen al final (anota la versión, Node y el ambiente de facturación)']),
+  descarga: () => g('Alguien bajó un respaldo: la base de datos completa (o con archivos) salió del servidor. Solo Dirección puede hacerlo.', ['Un respaldo hecho a propósito.'], ['Si no lo hiciste tú, cambia tu contraseña de inmediato: ese archivo trae toda la información de la empresa.'],
+    ['server/index.js → ruta GET /api/admin/backup', 'server/respaldo-completo.js → ruta GET /descargas/respaldo-completo']),
+});
 // La guía de un renglón de los Logs, o null si ese evento todavía no tiene.
 function explicar(fila) {
   const g = fila && GUIAS[fila.evento];
