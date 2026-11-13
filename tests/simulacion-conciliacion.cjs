@@ -120,6 +120,57 @@ const dma = f => f.split('-').reverse().join('/');
     revisa(s === 422 && r.codigo === 'FORMATO_DESCONOCIDO', 'Un archivo de otro formato no se adivina: la pantalla pregunta las columnas', r);
     revisa((await pedir('POST', '/conciliacion/cargar', V, { cuenta_id: ctaB.id, crudo: bnt }))[0] === 403, 'Ventas tampoco sube un archivo reconocido'); }
 
+  console.log('2c. Traspasos entre cuentas propias y propuesta de gasto');
+  { const cuentas = (await pedir('GET', '/conciliacion?mes=' + MES, C))[1].cuentas, ctaS = cuentas.find(c => c.nombre === 'Santander cheques'), ctaB = cuentas.find(c => c.nombre === 'Banorte cheques');
+    const ver = async (c, f) => (await pedir('GET', `/conciliacion?cuenta=${c.id}&mes=${f.slice(0, 7)}`, C))[1];
+    // El SPEI de 500,000 que salió de Banorte (arriba) llega a Santander con la MISMA clave de rastreo: se ligan solos.
+    const d8 = n => dia(n).split('-').reverse().join('');
+    const enc = ['Cuenta', 'Fecha', 'Hora', 'Sucursal', 'Descripcion', 'Cargo/Abono', ' Importe ', ' Saldo ', 'Referencia', 'Concepto', 'Banco Participante', 'Clabe Beneficiario', 'Nombre Beneficiario', 'Cta Ordenante', 'Nombre Ordenante', 'Codigo Devolucion', 'Causa Devolucion', 'RFC Beneficiario', 'RFC Ordenante', 'Clave de Rastreo', 'Descripcion Larga'];
+    const std2 = [enc,
+      ["'65500005678", `'${d8(-5)}'`, '16:23', "'7465'", 'ABONO TRANSFERENCIA SPEI', '+', '500,000.00', '555,139.04', '4600184', 'TRASPASO', 'BANORTE', "'BANORTE 680655000000000'", '', "'072680010000000001'", 'DEL CLIENTE SANEADREN SA DE CV', '', '', 'SAN1211168C3', 'SAN1211168C3', '8846APR2202610165900007009', 'ABONO TRANSFERENCIA SPEI'],
+      ["'65500005678", `'${d8(-4)}'`, '10:00', "'0981'", 'ABONO TRANSFERENCIA ENLACE', '+', '30,187.36', '585,326.40', '184065A531', 'TRASPASO KFC', '', '', '', "'01418065500000000001'", 'SANEADREN SA DE CV', '', '', '', 'SAN1211168C3', '', 'ABONO TRANSFERENCIA ENLACE'],
+      ["'65500005678", `'${d8(-4)}'`, '13:51', "'0981'", 'CGO IMPTO FED TRANSF ELECT', '-', '15,675.00', '569,651.40', '500488Z071', "'04266Z5L510051220495", '', '', '', '', '', '', '', '', '', '', 'CGO IMPTO FED TRANSF ELECT'],
+      ["'65500005678", `'${d8(-3)}'`, '13:57', "'0981'", 'CGO IMPTO FED TRANSF ELECT', '-', '15,590.00', '554,061.40', '530635Z298', "'04266Z5N200051220480", '', '', '', '', '', '', '', '', '', '', 'CGO IMPTO FED TRANSF ELECT']];
+    [s, r] = await pedir('POST', '/conciliacion/cargar', C, { cuenta_id: ctaS.id, crudo: std2, archivo: 'MovimientosCheque-2.csv' });
+    revisa(s === 201 && r.nuevos === 4 && r.traspasos === 1, 'Al subir Santander, el traspaso que viene de Banorte (misma clave de rastreo) se liga solo', r);
+    let vS = await ver(ctaS, dia(-5)), vB = await ver(ctaB, dia(-5));
+    revisa(vS.traspasos.length === 1 && vS.traspasos[0].abono === 500000 && vS.traspasos[0].traspaso.con_pareja && vS.traspasos[0].traspaso.auto && /Traspaso de Banorte cheques/.test(vS.traspasos[0].traspaso.texto), 'En Santander queda como «Traspaso de Banorte cheques»', vS.traspasos);
+    revisa(vB.traspasos.length === 1 && vB.traspasos[0].cargo === 500000 && /Traspaso a Santander cheques/.test(vB.traspasos[0].traspaso.texto) && !vB.banco_sin_crm.some(b => b.cargo === 500000), 'En Banorte queda como «Traspaso a Santander cheques» y ya no está pendiente', vB.traspasos);
+    // En el Flujo de banco: un egreso en Banorte y un ingreso en Santander, con folio, sin contar como gasto.
+    { const fl = async c => (await pedir('GET', `/contabilidad/flujo?mes=${dia(-5).slice(0, 7)}&sucursal=${qro.id}&cuenta=${c.id}`, C))[1].flujo.filter(f => /^Traspaso (a|de) /.test(f.concepto_banco));
+      const fS = await fl(ctaS), fB = await fl(ctaB);
+      revisa(fS.length === 1 && fS[0].ingreso === 500000 && fS[0].egreso === 0 && fS[0].por_comprobar === 0 && fB.length === 1 && fB[0].egreso === 500000 && fB[0].por_comprobar === 0, 'El Flujo de banco de cada cuenta trae su lado del traspaso, sin nada por comprobar', [fS, fB]);
+      const g = (await pedir('GET', '/contabilidad/resumen?mes=' + dia(-5).slice(0, 7), C))[1];
+      revisa(g.egresos.gastos_total < 100000, 'El traspaso no cuenta como gasto del mes', g.egresos);
+      const idMov = Number(fS[0].ref.split(':')[1]);
+      [s, r] = await pedir('POST', '/contabilidad/flujo/movimientos/' + idMov + '/cancelar', C, { motivo: 'Probar que no se cancela aquí' });
+      revisa(s === 409 && /conciliación/.test(r.error), 'Ese traspaso no se cancela desde el Flujo: se suelta en la conciliación', r); }
+    // A mano: los intereses de 30,187.36 que salieron de Banorte NO son traspaso del abono de 30,187.36 de Santander (sin rastreo): no se ligan solos…
+    const bInt = vB.banco_sin_crm.find(b => b.cargo === 30187.36), sAb = (await ver(ctaS, dia(-4))).banco_sin_crm.find(b => b.abono === 30187.36);
+    revisa(!!bInt && !!sAb, 'Mismo monto en dos cuentas pero sin clave de rastreo: no se liga solo', [bInt, sAb]);
+    r = (await pedir('GET', '/conciliacion/movimientos/' + sAb.id + '/candidatos', C))[1];
+    revisa(r.traspasos.length === 1 && r.traspasos[0].id === bInt.id && r.traspasos[0].cuenta === 'Banorte cheques', '…pero al pedir «Traspaso» sí se ofrece como posible pareja', r.traspasos);
+    revisa((await pedir('POST', '/conciliacion/movimientos/' + sAb.id + '/traspaso', V, { con: bInt.id }))[0] === 403, 'Ventas no liga traspasos');
+    revisa((await pedir('POST', '/conciliacion/movimientos/' + sAb.id + '/traspaso', C, { con: sAb.id }))[0] === 400, 'Un movimiento no es traspaso de sí mismo');
+    [s, r] = await pedir('POST', '/conciliacion/movimientos/' + sAb.id + '/traspaso', C, { con: bInt.id });
+    revisa(s === 201 && (await ver(ctaB, dia(-4))).traspasos.some(b => b.id === bInt.id && !b.traspaso.auto), 'El Contador liga a mano la pareja', r);
+    revisa((await pedir('POST', '/conciliacion/movimientos/' + bInt.id + '/no-aplica', C, { motivo: 'ya es traspaso' }))[0] === 409, 'Lo ligado como traspaso ya no se marca «no aplica»');
+    [s, r] = await pedir('POST', '/conciliacion/movimientos/' + bInt.id + '/soltar', C, {});
+    vS = await ver(ctaS, dia(-4)); vB = await ver(ctaB, dia(-4));
+    revisa(s === 200 && vS.banco_sin_crm.some(b => b.id === sAb.id) && vB.banco_sin_crm.some(b => b.id === bInt.id), 'Soltar un lado suelta los dos: vuelven a quedar pendientes', [vS.traspasos, vB.traspasos]);
+    { const { DatabaseSync } = require('node:sqlite'), d = new DatabaseSync(DB), m = d.prepare("SELECT cancelado, motivo_cancelacion FROM flujo_movimientos WHERE monto_cent = 3018736").all(); d.close();
+      revisa(m.length === 2 && m.every(x => x.cancelado === 1 && /soltó/.test(x.motivo_cancelacion)), 'Sus movimientos del flujo quedan cancelados con motivo (no se borran)', m); }
+    // Solo este lado: el abono viene de otra cuenta de la empresa que no está dada de alta.
+    [s, r] = await pedir('POST', '/conciliacion/movimientos/' + sAb.id + '/traspaso', C, { con: null });
+    revisa(s === 201 && (await ver(ctaS, dia(-4))).traspasos.some(b => b.id === sAb.id && !b.traspaso.con_pareja), 'Traspaso de una cuenta que no está aquí: se marca solo este lado', r);
+    // Propuesta: el primer «CGO IMPTO FED» se registra como gasto del SAT; el segundo ya viene propuesto.
+    const sat = exigir(await pedir('POST', '/finanzas/proveedores', A, { nombre: 'SAT (ejemplo)', categoria: 'impuestos', dias_credito: 0 }), 'proveedor SAT');
+    const imp = (await ver(ctaS, dia(-4))).banco_sin_crm.filter(b => /CGO IMPTO FED/.test(b.concepto)).concat((await ver(ctaS, dia(-3))).banco_sin_crm.filter(b => /CGO IMPTO FED/.test(b.concepto))).filter((b, i, a) => a.findIndex(x => x.id === b.id) === i);
+    revisa(imp.length === 2 && (await pedir('GET', '/conciliacion/movimientos/' + imp[0].id + '/candidatos', A))[1].propuesta === null, 'Sin historia no hay propuesta', imp);
+    exigir(await pedir('POST', '/conciliacion/movimientos/' + imp[0].id + '/gasto', A, { proveedor_id: sat.id, categoria: 'impuestos', concepto: 'Impuestos federales' }), 'gasto SAT');
+    r = (await pedir('GET', '/conciliacion/movimientos/' + imp[1].id + '/candidatos', A))[1].propuesta;
+    revisa(r && r.proveedor_id === sat.id && r.categoria === 'impuestos' && r.concepto === 'Impuestos federales' && r.veces === 1, 'El siguiente cargo igual ya propone proveedor, categoría y concepto', r); }
+
   console.log('3. A mano');
   if (dep) {
     const cand = exigir(await pedir('GET', '/conciliacion/movimientos/' + dep.id + '/candidatos', C), 'candidatos').candidatos;
