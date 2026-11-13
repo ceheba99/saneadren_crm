@@ -111,6 +111,8 @@ const ultimo = () => enviados[enviados.length - 1];
   const nO = enviados.length;
   await webhook([elige(JUAN, 'comida_sale')], { telefonoId: '999999999999999' });
   revisa(!conBase(d => d.prepare("SELECT 1 FROM checadas WHERE personal_id = ? AND tipo = 'comida_sale'").get(juan.id)) && enviados.length === nO, 'Un mensaje a otro número de la app de Meta se ignora');
+  const logs = conBase(d => { const t = d.prepare("SELECT name FROM sqlite_master WHERE type='table' AND sql LIKE '%evento%' AND sql LIKE '%detalle%'").all().map(x => x.name); return t.flatMap(n => d.prepare(`SELECT * FROM ${n} WHERE evento = 'whatsapp_rechazado'`).all()); });
+  revisa(logs.some(l => /firma/i.test(l.detalle)) && logs.some(l => /WHATSAPP_PHONE_ID/.test(l.detalle)), 'Firma mala y mensaje a otro número quedan en Logs (para saber por qué no contesta)', logs);
   const hace1h = Math.floor(Date.now() / 1000) - 3600;
   await webhook([elige(JUAN, 'comida_sale', hace1h)]);
   ch = conBase(d => d.prepare("SELECT * FROM checadas WHERE personal_id = ? AND tipo = 'comida_sale'").get(juan.id));

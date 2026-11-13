@@ -109,17 +109,29 @@ module.exports = function whatsapp(app, db, h) {
     res.sendStatus(401);
   }));
   const porNumero = new Map();
+  // Logs (2026-11-13): por qué no contesta el bot. Una vez cada 10 min por motivo, para no llenar el registro.
+  const ultimoRechazo = new Map();
+  const anotarRechazo = (motivo, detalle) => {
+    const t = Date.now(); if ((ultimoRechazo.get(motivo) || 0) > t - VENTANA_MS) return;
+    ultimoRechazo.set(motivo, t); console.error('[whatsapp] ' + detalle); app.locals.registro?.servicio('whatsapp_rechazado', detalle);
+  };
   setInterval(() => { const t = Date.now(); for (const [k, v] of porNumero) if (v.reinicia <= t) porNumero.delete(k); }, VENTANA_MS).unref();
   app.post('/api/publico/whatsapp', h(async (req, res) => {
     if (!configurado()) return res.sendStatus(401);
     const crudo = Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0), firma = String(req.get('x-hub-signature-256') || '');
     const esperada = 'sha256=' + crypto.createHmac('sha256', config().secreto).update(crudo).digest('hex');
-    if (firma.length !== esperada.length || !crypto.timingSafeEqual(Buffer.from(firma), Buffer.from(esperada))) return res.sendStatus(401);
+    if (firma.length !== esperada.length || !crypto.timingSafeEqual(Buffer.from(firma), Buffer.from(esperada))) {
+      anotarRechazo('firma', `Firma ${firma ? 'que no coincide' : 'ausente'}: revisa WHATSAPP_APP_SECRET`);
+      return res.sendStatus(401);
+    }
     let datos; try { datos = JSON.parse(crudo.toString('utf8')); } catch { return res.sendStatus(400); }
     res.sendStatus(200); // Meta solo necesita el 200; lo demás se hace después
     // Solo lo que llegó al número de la empresa configurado (otro número de la misma app de Meta no cuenta).
     const propio = String(config().telefonoId);
-    const mensajes = (datos?.entry || []).flatMap(e => (e?.changes || []).flatMap(c => (c?.field === 'messages' && String(c?.value?.metadata?.phone_number_id || '') === propio ? c?.value?.messages || [] : [])));
+    const cambios = (datos?.entry || []).flatMap(e => (e?.changes || []).filter(c => c?.field === 'messages' && (c?.value?.messages || []).length));
+    const ajenos = cambios.filter(c => String(c?.value?.metadata?.phone_number_id || '') !== propio);
+    if (ajenos.length) anotarRechazo('numero', `Mensaje a otro número de Meta (Phone ID terminado en …${String(ajenos[0]?.value?.metadata?.phone_number_id || '').slice(-4)}): revisa WHATSAPP_PHONE_ID`);
+    const mensajes = cambios.filter(c => !ajenos.includes(c)).flatMap(c => c.value.messages);
     for (const m of mensajes.slice(0, 20)) await procesar(m).catch(e => console.error('[whatsapp] error al procesar:', e.message));
   }));
 

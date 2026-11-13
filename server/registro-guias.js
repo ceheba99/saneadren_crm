@@ -92,6 +92,16 @@ const GUIAS = {
   kiosco_volvio: () => ({ que: 'La tableta del reloj checador volvió a comunicarse con el sistema después de un rato sin dar señal. Ya se puede checar en ella.',
     causas: ['Regresó el internet, alguien desbloqueó o prendió la tableta, o volvió a abrir la app.'], hacer: ['Nada. Si se cae seguido, revisa el renglón anterior «El reloj checador no responde» para ver la causa.'],
     codigo: ['server/kiosco-vigia.js → función senal (la primera señal después de una caída)', 'server/checador.js → avisarKiosco'], lectura: [] }),
+  whatsapp_rechazado: f => {
+    const firma = /firma/i.test(f?.detalle || '');
+    return { que: firma ? 'Llegó un aviso de Meta (un mensaje de WhatsApp) pero su firma no coincide con la llave del sistema, así que se ignoró. Nadie recibe respuesta del bot mientras esto pase.'
+        : 'Llegó un mensaje de WhatsApp a un número que no es el configurado en el sistema (WHATSAPP_PHONE_ID), así que se ignoró.',
+      causas: firma ? ['WHATSAPP_APP_SECRET en Plesk no es la «Clave secreta de la app» de la misma app de Meta (o tiene espacios de más).', 'Alguien que no es Meta mandó algo al webhook (raro).']
+        : ['WHATSAPP_PHONE_ID en Plesk es de otro número (p. ej. el real) y el mensaje llegó al de prueba, o al revés.', 'Hay dos números conectados a la misma app de Meta.'],
+      hacer: firma ? ['En developers.facebook.com → tu app → Configuración de la app → Básica: copia la «Clave secreta de la app» y pégala en WHATSAPP_APP_SECRET de Plesk; reinicia la app Node.js.']
+        : ['En developers.facebook.com → tu app → WhatsApp → Configuración de la API: copia el «Identificador del número de teléfono» del número que vas a usar y ponlo en WHATSAPP_PHONE_ID de Plesk; reinicia la app Node.js.'],
+      codigo: ['server/whatsapp.js → POST /api/publico/whatsapp'], lectura: [] };
+  },
 };
 // ---------- Los demás renglones de los Logs (2026-11-13) ----------
 const LOGIN = 'server/index.js → ruta POST /api/login (y limitarLogin, registrarLoginFallido, limitarLoginPorIp: los topes de intentos)';
