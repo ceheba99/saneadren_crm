@@ -86,7 +86,7 @@ const Finanzas = (() => {
     // Sin ver la cobranza (r.solo_propios) no hay total ni saldo: se captura lo que pagó el cliente.
     const c = r.cuenta || { ...r.orden, saldo: null };
     COBRO = { leadId: Number(leadId), despues };
-    $('cobro-titulo').textContent = 'Registrar pago · ' + folioOS(c);
+    $('cobro-titulo').textContent = 'Registrar cobro · ' + folioOS(c);
     $('cobro-info').textContent = r.cuenta ? `${c.cliente_nombre || 'Cliente'} · Total ${formatoMoneda(c.total)} · Saldo ${formatoMoneda(c.saldo)}` : (c.cliente_nombre || 'Cliente'); // sin HTML
     $('cobro-monto').value = c.saldo > 0 ? c.saldo.toFixed(2) : '';
     pintarMetodos('cobro-metodos', 'transferencia');
@@ -165,7 +165,7 @@ const Finanzas = (() => {
         ${c.ejecucion === 'no_realizado' ? `<div><small>A favor del cliente</small><b>${formatoMoneda(c.a_favor || 0)}</b></div>` : `<div><small>Vence</small><b>${esc(fechaTxt(c.vence))}</b></div>`}
       </div>
       ${desgloseIva(c)}
-      ${c.ejecucion === 'no_realizado' ? '' : `<button type="button" class="btn btn-primario" data-cobranza="registrar" ${c.saldo <= 0 ? 'disabled' : ''}>💵 Registrar pago</button>`}
+      ${c.ejecucion === 'no_realizado' ? '' : `<button type="button" class="btn btn-primario" data-cobranza="registrar" ${c.saldo <= 0 ? 'disabled' : ''}>💵 Registrar cobro</button>`}
       ${fact}
       <div class="pagos-lista">${pagos}</div>`);
     const factZona = cont.querySelector('.cobranza-facturacion'); // crédito y factura: en vista; «Editar» lo abre (2026-10-26)
@@ -184,7 +184,7 @@ const Finanzas = (() => {
       </div>`).join('') : '<p class="util-45">No has registrado pagos en esta orden.</p>';
     const puede = r.puede_registrar && r.orden.ejecucion !== 'no_realizado';
     return `<p class="ayuda">Aquí anotas lo que te pagó el cliente; administración lo confirma. Solo ves los pagos que tú registraste.</p>
-      ${puede ? '<button type="button" class="btn btn-primario" data-cobranza="registrar">💵 Registrar pago</button>' : ''}
+      ${puede ? '<button type="button" class="btn btn-primario" data-cobranza="registrar">💵 Registrar cobro</button>' : ''}
       <h4 class="pagos-titulo">Pagos que registraste</h4>
       <div class="pagos-lista">${pagos}</div>`;
   }
@@ -482,12 +482,12 @@ const Finanzas = (() => {
     { k: 'acciones', t: '', fija: true, sinOrden: true, clase: 'celda-acciones', v: c => accionesOrden(c) },
   ];
   const accionesOrden = c => '<div class="acciones-fila">' + waOrdenCorto(c)
-    + (c.saldo > 0 && c.ejecucion !== 'no_realizado' ? '<button type="button" class="btn btn-primario btn-chico" data-pagar-orden="' + Number(c.lead_id) + '" title="Registrar pago">💵 Pagar</button>' : '')
+    + (c.saldo > 0 && c.ejecucion !== 'no_realizado' ? '<button type="button" class="btn btn-primario btn-chico" data-pagar-orden="' + Number(c.lead_id) + '" title="Registrar lo que pagó el cliente">💵 Registrar cobro</button>' : '')
     + '<button type="button" class="btn btn-outline btn-chico" data-abrir-orden="' + Number(c.lead_id) + '" title="Abrir la orden">Abrir</button></div>';
   // WhatsApp de una orden, solo con el ícono (para la tabla).
   const waOrdenCorto = c => waOrden(c).replace('💬 Recordar por WhatsApp', '💬').replace('class="btn btn-outline btn-whatsapp"', 'class="btn btn-outline btn-whatsapp btn-chico" title="Recordar por WhatsApp"');
   async function cargarLista() {
-    // Una sola lista: por orden (cada fila con su "Registrar pago").
+    // Una sola lista: por orden (cada fila con su "Registrar cobro").
     const cont = $('cobrar-lista'), vista = 'orden';
     Repintado.cargando(cont, 'cobrar|' + FILTRO);
     const params = new URLSearchParams({ vista, filtro: FILTRO, q: $('cobrar-buscar').value.trim() });
@@ -505,7 +505,7 @@ const Finanzas = (() => {
         <div class="montos"><b>${formatoMoneda(c.saldo)}</b><small>de ${formatoMoneda(c.total)}</small></div>
         <div class="btn-group">
           ${waOrden(c)}
-          ${c.saldo > 0 ? `<button type="button" class="btn btn-primario" data-pagar-orden="${Number(c.lead_id)}">Registrar pago</button>` : ''}
+          ${c.saldo > 0 ? `<button type="button" class="btn btn-primario" data-pagar-orden="${Number(c.lead_id)}">Registrar cobro</button>` : ''}
           <button type="button" class="btn btn-outline" data-abrir-orden="${Number(c.lead_id)}">Abrir orden</button>
         </div></div>`).join('');
   }
@@ -560,7 +560,7 @@ const Finanzas = (() => {
       + '<td>' + esc(c.servicio_nombre || '—') + '<small class="celda-sub">' + esc(ejecucionCorta(c)) + '</small></td>'
       + '<td class="st-num">' + formatoMoneda(c.total) + '</td><td class="st-num">' + formatoMoneda(c.cobrado) + '</td><td class="st-num"><b>' + formatoMoneda(c.saldo) + '</b></td>'
       + '<td>' + (c.programada ? '—' : esc(fechaTxt(c.vence))) + '</td><td class="st-num">' + diasCobro(c) + '</td><td>' + etiquetaEstado(c) + '</td>'
-      + '<td class="celda-acciones"><div class="acciones-fila">' + (c.saldo > 0 && c.ejecucion !== 'no_realizado' ? '<button type="button" class="btn btn-primario btn-chico" data-cc-pagar="' + Number(c.lead_id) + '">Registrar pago</button>' : '')
+      + '<td class="celda-acciones"><div class="acciones-fila">' + (c.saldo > 0 && c.ejecucion !== 'no_realizado' ? '<button type="button" class="btn btn-primario btn-chico" data-cc-pagar="' + Number(c.lead_id) + '">Registrar cobro</button>' : '')
       + '<button type="button" class="btn btn-outline btn-chico" data-cc-abrir="' + Number(c.lead_id) + '">Abrir</button></div></td></tr>';
     const TIPO = { pago: 'Pago', anticipo: 'Anticipo', ajuste: 'Descuento / ajuste' };
     const filaPago = k => '<tr class="' + (k.cancelado ? 'fila-cancelada' : '') + '"><td>' + esc(fechaTxt(k.fecha)) + '</td><td><b>' + esc(k.folio) + '</b></td>'
@@ -1355,7 +1355,7 @@ const Finanzas = (() => {
       return;
     }
     const ordenes = r.ordenes.map(c => `<div class="pago-fila"><div><b>${esc(c.folio)}</b> · ${esc(c.servicio_nombre || 'Servicio')} ${etiquetaEstado(c)}<small>Saldo ${formatoMoneda(c.saldo)} de ${formatoMoneda(c.total)}${c.programada ? '' : ' · vence ' + esc(fechaTxt(c.vence))}</small></div>
-      <div class="btn-group">${waOrden(c, cliente)}<button type="button" class="btn btn-outline" data-fc-pagar="${Number(c.lead_id)}">Registrar pago</button></div></div>`).join('');
+      <div class="btn-group">${waOrden(c, cliente)}<button type="button" class="btn btn-outline" data-fc-pagar="${Number(c.lead_id)}">Registrar cobro</button></div></div>`).join('');
     // Un solo mensaje con todo lo que debe el cliente (sin lo programado a futuro).
     const deudas = r.ordenes.filter(sePuedeRecordar);
     const waCliente = deudas.length > 1 ? botonWhatsApp(cliente.telefono, textoWhatsApp({ cliente_nombre: cliente.nombre, saldo: deudas.reduce((t, c) => t + c.saldo, 0), vencido: r.vencido,
