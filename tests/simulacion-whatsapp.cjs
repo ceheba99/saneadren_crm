@@ -4,7 +4,8 @@
 //  2. Quién: número no autorizado, no activado por RH, dado de baja o repetido en dos fichas → no checa (y se le avisa).
 //  3. Flujo: cualquier texto → menú (lista, máx. 10 filas, títulos ≤ 24); elegir → checada «por revisar», origen
 //     WhatsApp, sin foto ni ubicación, con aviso de confirmación; el mismo mensaje reenviado no duplica; doble toque no
-//     duplica; un mensaje viejo usa la hora del servidor; tope de mensajes por número.
+//     duplica; un mensaje que llega tarde usa la hora en que se mandó (y se anota el retraso); tope de mensajes por número;
+//     un número de otro país con los mismos 10 dígitos no checa; un mensaje a otro número de la app de Meta se ignora.
 //  4. Activar: solo quien edita el personal, de su sucursal, nunca para sí mismo; exige celular de 10 dígitos y alta en
 //     el checador; el mismo celular no puede estar en dos personas.
 // Uso: node tests/simulacion-whatsapp.cjs
@@ -28,9 +29,9 @@ const pedir = async (m, r, t, b) => {
 };
 let sec = 0;
 const msj = (de, extra, ts = Math.floor(Date.now() / 1000)) => ({ from: de, id: 'wamid.' + (++sec) + crypto.randomBytes(4).toString('hex'), timestamp: String(ts), ...extra });
-const cuerpoDe = mensajes => JSON.stringify({ object: 'whatsapp_business_account', entry: [{ id: '1', changes: [{ field: 'messages', value: { messaging_product: 'whatsapp', metadata: { phone_number_id: '106540352242922' }, messages: mensajes } }] }] });
-const webhook = async (mensajes, { firma = true, secreto = SECRETO } = {}) => {
-  const cuerpo = cuerpoDe(mensajes), f = 'sha256=' + crypto.createHmac('sha256', secreto).update(cuerpo).digest('hex');
+const cuerpoDe = (mensajes, telefonoId = '106540352242922') => JSON.stringify({ object: 'whatsapp_business_account', entry: [{ id: '1', changes: [{ field: 'messages', value: { messaging_product: 'whatsapp', metadata: { phone_number_id: telefonoId }, messages: mensajes } }] }] });
+const webhook = async (mensajes, { firma = true, secreto = SECRETO, telefonoId } = {}) => {
+  const cuerpo = cuerpoDe(mensajes, telefonoId), f = 'sha256=' + crypto.createHmac('sha256', secreto).update(cuerpo).digest('hex');
   const r = await fetch(URLB + '/api/publico/whatsapp', { method: 'POST', headers: { 'Content-Type': 'application/json', ...(firma ? { 'X-Hub-Signature-256': f } : {}) }, body: cuerpo });
   await espera(250); return r.status;
 };
@@ -102,9 +103,21 @@ const ultimo = () => enviados[enviados.length - 1];
   revisa(conBase(d => d.prepare("SELECT COUNT(*) n FROM checadas WHERE personal_id = ? AND origen = 'whatsapp'").get(juan.id).n) === 1, 'Si Meta reenvía el mismo mensaje, no se duplica');
   await webhook([elige(JUAN, 'entrada')]);
   revisa(conBase(d => d.prepare("SELECT COUNT(*) n FROM checadas WHERE personal_id = ? AND origen = 'whatsapp'").get(juan.id).n) === 1 && /ya estaba registrada/.test(ultimo().cuerpo.text?.body || ''), 'Doble toque: no se repite la checada');
-  await webhook([elige(JUAN, 'comida_sale', Math.floor(Date.now() / 1000) - 3600)]);
+  // Número de otro país con los mismos 10 últimos dígitos que Juan: no checa.
+  const nE = enviados.length;
+  await webhook([elige('14421234567', 'comida_sale')]);
+  revisa(!conBase(d => d.prepare("SELECT 1 FROM checadas WHERE personal_id = ? AND tipo = 'comida_sale'").get(juan.id)) && /no está autorizado/.test(enviados[nE]?.cuerpo?.text?.body || ''), 'Un número de otro país (+1) con los mismos 10 dígitos no checa como Juan', enviados[nE]);
+  // Mensaje que llegó a OTRO número de la misma app de Meta (p. ej. el de prueba): se ignora y no se contesta.
+  const nO = enviados.length;
+  await webhook([elige(JUAN, 'comida_sale')], { telefonoId: '999999999999999' });
+  revisa(!conBase(d => d.prepare("SELECT 1 FROM checadas WHERE personal_id = ? AND tipo = 'comida_sale'").get(juan.id)) && enviados.length === nO, 'Un mensaje a otro número de la app de Meta se ignora');
+  const hace1h = Math.floor(Date.now() / 1000) - 3600;
+  await webhook([elige(JUAN, 'comida_sale', hace1h)]);
   ch = conBase(d => d.prepare("SELECT * FROM checadas WHERE personal_id = ? AND tipo = 'comida_sale'").get(juan.id));
-  revisa(ch && /llegó tarde/.test(ch.observaciones) && Math.abs(Date.parse(ch.momento_utc) - Date.now()) < 120000, 'Un mensaje de hace 1 hora se registra con la hora del servidor (no la vieja) y se marca', ch);
+  revisa(ch && /llegó con 1 h 0 min de retraso/.test(ch.observaciones) && Math.abs(Date.parse(ch.momento_utc) - hace1h * 1000) < 2000, 'Un mensaje que llega 1 hora tarde se registra con la hora en que lo mandó y se anota el retraso', ch);
+  await webhook([elige(JUAN, 'comida_regresa', Math.floor(Date.now() / 1000) + 3600)]);
+  ch = conBase(d => d.prepare("SELECT * FROM checadas WHERE personal_id = ? AND tipo = 'comida_regresa'").get(juan.id));
+  revisa(ch && /no era válida/.test(ch.observaciones) && Math.abs(Date.parse(ch.momento_utc) - Date.now()) < 120000, 'Una hora del futuro no se cree: se usa la del servidor y se anota', ch);
   const [, dia] = await pedir('GET', '/asistencia/checadas?fecha=' + ch.fecha + '&personal_id=' + juan.id, T.Gema);
   revisa(dia.some(c => c.origen === 'whatsapp' && c.estado === 'por_revisar'), 'RH la ve por revisar en Asistencia');
   revisa(!conBase(d => JSON.stringify(d.prepare('SELECT * FROM whatsapp_mensajes').all())).includes('4421234567'), 'La bitácora de mensajes no guarda el número completo');
