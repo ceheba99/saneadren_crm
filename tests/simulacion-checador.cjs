@@ -325,6 +325,20 @@ const archivosDe = d => fs.readdirSync(d, { withFileTypes: true }).flatMap(e => 
       revisa((await kio(KQ, 'GET', 'estado' + q))[0] === 200, 'La señal del kiosco acepta su estado: ' + q);
     revisa((await kio(null, 'GET', 'estado?b=15&c=0'))[0] === 401, 'Sin token, la señal no se acepta'); }
 
+  // 2026-11-13 (pedido de Dirección): en la ficha, «Últimas checadas» es una tabla y desde ahí se acepta o se anula.
+  {
+    const [sf, fj] = await pedir('GET', '/asistencia/personal/' + juan.id, T.Gema);
+    const ul = fj.ultimas || [];
+    revisa(sf === 200 && ul.length > 0 && ul.some(c => c.kiosco) && ul.every(c => 'observaciones' in c && 'registrado_por_nombre' in c), 'Las últimas checadas de la ficha traen desde dónde se checó y sus notas', ul.slice(0, 2));
+    revisa(fj.puede?.corregir_checadas === true, 'La gerente puede aceptar o anular desde la ficha', fj.puede);
+    revisa((await pedir('GET', '/asistencia/personal/' + juan.id, T.Valeria))[1].puede?.corregir_checadas !== true, 'Quien no corrige la asistencia no ve esos botones');
+    const pr = ul.find(c => c.estado === 'por_revisar');
+    if (pr) {
+      revisa((await pedir('POST', '/asistencia/checadas/' + pr.id + '/aceptar', T.Gema, { motivo: 'Revisada desde la ficha' }))[0] === 200, 'Aceptar una checada por revisar (lo mismo que usa la ficha)');
+      const [, fj2] = await pedir('GET', '/asistencia/personal/' + juan.id, T.Gema);
+      revisa(fj2.ultimas.find(c => c.id === pr.id)?.estado === 'valida', 'La ficha ya la muestra válida');
+    }
+  }
   console.log(`\n${n - malos.length}/${n} correctas`);
   srv.kill(); fs.rmSync(dir, { recursive: true, force: true });
   process.exit(malos.length ? 1 : 0);

@@ -175,6 +175,19 @@ const Personal = (() => {
   // ---------- Reloj checador de la persona (server/checador.js) ----------
   // RH da el código y un PIN temporal (se ve una sola vez: aquí, hasta cerrar la ficha); nunca ve el PIN que elige la persona.
   const TIPOS_CHECADA = { entrada: 'Entrada', comida_sale: 'Salida a comer', comida_regresa: 'Regreso de comer', salida: 'Salida', extra_inicia: 'Inicio de tiempo extra', extra_termina: 'Fin de tiempo extra' };
+  // Aceptar o anular una checada desde la ficha (2026-11-13): pide el motivo y usa las mismas rutas que Asistencia.
+  async function corregirChecada(checadaId, que, personaId) {
+    const textos = { aceptar: ['Aceptar la checada', 'Quedará como válida y contará para la nómina. Queda en la bitácora con tu nombre.', 'Checada aceptada'],
+      anular: ['Anular la checada', 'No se borra: queda tachada y deja de contar. Queda en la bitácora con tu nombre.', 'Checada anulada'] }[que];
+    const m = await solicitarDialogo({ titulo: textos[0], mensaje: textos[1], aceptar: 'Guardar', campo: { etiqueta: 'Motivo (obligatorio)', requerido: 'Escribe el motivo' } });
+    if (m === null) return;
+    if (m.trim().length < 4) { toast('El motivo debe tener al menos 4 letras'); return; }
+    try {
+      const r = await api('/asistencia/checadas/' + Number(checadaId) + '/' + que, { method: 'POST', body: JSON.stringify({ motivo: m.trim() }) });
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || 'No se pudo');
+      toast(textos[2]); pintarChecador(Number(personaId));
+    } catch (err) { toast(err.message); }
+  }
   async function pintarChecador(id, pinNuevo) {
     if (!$('pe-checador')) return;
     let e;
@@ -215,7 +228,22 @@ const Personal = (() => {
       if (e.checa_whatsapp) h += `<div id="pe-wa-config"><p class="ayuda" role="status">Cargando…</p></div>`;
       if (e.puede?.editar && actual.activo) h += `<div class="btn-group"><button type="button" class="btn btn-outline" data-pe-whatsapp="${Number(id)}" data-activo="${e.checa_whatsapp ? '' : '1'}">${esc(e.checa_whatsapp ? 'Quitar WhatsApp' : 'Permitir checar por WhatsApp')}</button></div>`;
     }
-    if (e.ultimas?.length) h += '<h4 class="pe-sub2">Últimas checadas</h4><ul class="pe-ordenes">' + e.ultimas.map(c => `<li>${esc(fecha(c.fecha))} ${esc(String(c.hora).slice(0, 5))} · ${esc(TIPOS_CHECADA[c.tipo] || c.tipo)}${esc(c.origen === 'manual' ? ' (a mano)' : c.origen === 'celular' ? ' (celular)' : '')}${esc(c.sin_conexion ? ' (sin conexión)' : '')}${esc(c.estado === 'anulada' ? ' (anulada)' : c.estado === 'por_revisar' ? ' (por revisar)' : '')}${c.tiene_foto && e.puede?.ver ? ` <button type="button" class="btn-link" data-pe-foto="${Number(c.id)}">📷 Ver foto</button>` : ''}${esc(c.foto_borrada ? ' (foto borrada a los ' + e.dias_fotos + ' días)' : '')}</li>`).join('') + '</ul><div id="pe-foto-checada"></div>';
+    // Últimas checadas en tabla (2026-11-13, Dirección): desde aquí se acepta o se anula, con motivo, como en Asistencia.
+    if (e.ultimas?.length) {
+      const corr = !!e.puede?.corregir_checadas, BIO = { coincide: 'Coincide', no_coincide: 'No coincide', no_vivo: 'Parece foto', sin_rostro: 'No se vio' };
+      const donde = c => (c.origen === 'manual' ? 'A mano, por ' + (c.registrado_por_nombre || 'RH') : c.origen === 'celular' ? 'Su celular' : c.origen === 'whatsapp' ? 'WhatsApp' : c.kiosco ? 'Kiosco «' + c.kiosco + '»' : c.origen || '');
+      const boton = (que, c, texto) => '<button type="button" class="btn-link" data-pe-ch-' + que + '="' + Number(c.id) + '" data-persona="' + Number(id) + '">' + esc(texto) + '</button>';
+      const acciones = c => (c.estado === 'por_revisar' ? boton('aceptar', c, 'Aceptar') + ' ' : '') + (c.estado !== 'anulada' ? boton('anular', c, 'Anular') : '');
+      const estadoTxt = c => (c.estado === 'anulada' ? 'Anulada' : c.estado === 'por_revisar' ? '⚠️ Por revisar' : '✔ Válida');
+      h += '<h4 class="pe-sub2">Últimas checadas</h4><div class="tabla-scroll"><table class="tabla-resumen as-tabla pe-checadas"><thead><tr><th>Fecha</th><th>Hora</th><th>Qué marcó</th><th>Desde dónde</th><th>Estado</th><th>Notas</th><th>Foto</th>' + (corr ? '<th></th>' : '') + '</tr></thead><tbody>'
+        + e.ultimas.map(c => `<tr class="${c.estado === 'anulada' ? 'pe-baja' : ''}"><td>${esc(fecha(c.fecha))}</td><td><b>${esc(String(c.hora).slice(0, 5))}</b></td><td>${esc(TIPOS_CHECADA[c.tipo] || c.tipo)}</td>
+          <td>${esc(donde(c))}${c.lat != null ? ` <a class="btn-link" target="_blank" rel="noopener noreferrer" href="${esc('https://www.google.com/maps?q=' + Number(c.lat) + ',' + Number(c.lon))}">📍 Mapa</a>` : ''}</td>
+          <td class="${c.estado === 'por_revisar' ? 'as-rojo' : ''}">${esc(estadoTxt(c))}</td>
+          <td>${esc([c.sin_conexion ? 'Sin conexión' : '', c.biometria && BIO[c.biometria] ? 'Cara: ' + BIO[c.biometria] : '', c.observaciones || ''].filter(Boolean).join(' · '))}</td>
+          <td>${c.tiene_foto && e.puede?.ver ? `<button type="button" class="btn-link" data-pe-foto="${Number(c.id)}">📷 Ver</button>` : esc(c.foto_borrada ? 'Borrada (' + e.dias_fotos + ' días)' : '—')}</td>
+          ${corr ? '<td>' + acciones(c) + '</td>' : ''}</tr>`).join('')
+        + '</tbody></table></div><div id="pe-foto-checada"></div>';
+    }
     // Etapa 6 (FLW-H08): la primera alta, quien edita el personal; un PIN nuevo a quien ya tiene uno, quien corrige la asistencia.
     if (e.puede?.editar && actual.activo && (e.puede?.corregir || !e.tiene_pin || e.bloqueado)) h += `<div class="btn-group">${e.puede?.corregir || !e.tiene_pin ? `<button type="button" class="btn btn-secundario" data-pe-pin="${Number(id)}" data-pe-pin-hay="${e.codigo ? 1 : ''}">${e.codigo ? 'Dar un PIN temporal nuevo' : 'Dar de alta en el checador'}</button>` : ''}${e.bloqueado ? `<button type="button" class="btn btn-outline" data-pe-desbloquear="${Number(id)}">Desbloquear PIN</button>` : ''}</div>`;
     cont.innerHTML = h;
@@ -457,6 +485,8 @@ const Personal = (() => {
     else if (t.dataset.pePin) darPin(t.dataset.pePin, !!t.dataset.pePinHay);
     else if (t.dataset.peDesbloquear) desbloquearPin(t.dataset.peDesbloquear);
     else if (t.dataset.peFoto) verFoto(t.dataset.peFoto);
+    else if (t.dataset.peChAceptar) corregirChecada(t.dataset.peChAceptar, 'aceptar', t.dataset.persona);
+    else if (t.dataset.peChAnular) corregirChecada(t.dataset.peChAnular, 'anular', t.dataset.persona);
     else if (t.dataset.peHorario) asignarHorario(t.dataset.peHorario);
     else if (t.dataset.peCelular) enlaceCelular(t.dataset.peCelular);
     else if (t.dataset.peCelularQuitar) quitarCelular(t.dataset.peCelularQuitar);

@@ -884,9 +884,14 @@ module.exports = function checador(app, db, h) {
     const p = persona(req.params.id);
     if (!p) return res.status(404).json({ error: 'Persona no encontrada' });
     const cel = db.prepare("SELECT id, created_at, ultimo_uso FROM main.checador_dispositivos WHERE tipo = 'celular' AND personal_id = ? AND activo = 1 ORDER BY id DESC LIMIT 1").get(p.id) || null;
-    const ultimas = puede(req, 'asistencia.ver') ? db.prepare('SELECT id, tipo, fecha, hora, origen, estado, observaciones, sin_conexion, foto_archivo IS NOT NULL AS tiene_foto, foto_borrada_at IS NOT NULL AS foto_borrada, lat, lon, precision_m FROM checadas WHERE personal_id = ? ORDER BY momento_utc DESC, id DESC LIMIT 10').all(p.id) : [];
+    // 2026-11-13 (Dirección): en la ficha es una tabla, con desde dónde se checó, y se acepta o anula desde ahí.
+    const ultimas = puede(req, 'asistencia.ver') ? db.prepare(`SELECT c.id, c.tipo, c.fecha, c.hora, c.origen, c.estado, c.observaciones, c.sin_conexion, c.foto_archivo IS NOT NULL AS tiene_foto, c.foto_borrada_at IS NOT NULL AS foto_borrada,
+      c.lat, c.lon, c.precision_m, c.biometria, c.registrado_por_nombre, d.nombre AS kiosco FROM checadas c LEFT JOIN main.checador_dispositivos d ON d.id = c.dispositivo_id
+      WHERE c.personal_id = ? ORDER BY c.momento_utc DESC, c.id DESC LIMIT 15`).all(p.id) : [];
+    // Nadie acepta ni anula sus propias checadas (salvo Dirección), igual que en Asistencia.
+    const propia = !P.direccion(req) && p.usuario_id != null && p.usuario_id === req.usuarioSesion?.id;
     const avisoFirmado = !!db.prepare("SELECT 1 FROM main.documentos_personal WHERE personal_id = ? AND tipo = 'privacidad' AND eliminado = 0").get(p.id);
-    res.json({ ...estadoDe(p), biometria: app.locals.biometria?.estado(p.id) || null, celular: cel, aviso_firmado: avisoFirmado, dias_fotos: DIAS_FOTOS, ultimas, puede: { editar: puede(req, 'personal.editar'), corregir: puede(req, 'asistencia.corregir'), ver: puede(req, 'asistencia.ver') } });
+    res.json({ ...estadoDe(p), biometria: app.locals.biometria?.estado(p.id) || null, celular: cel, aviso_firmado: avisoFirmado, dias_fotos: DIAS_FOTOS, ultimas, puede: { editar: puede(req, 'personal.editar'), corregir: puede(req, 'asistencia.corregir'), ver: puede(req, 'asistencia.ver'), corregir_checadas: puede(req, 'asistencia.corregir') && puede(req, 'asistencia.ver') && !propia } });
   }));
   // Genera (o vuelve a generar) su código y un PIN temporal. El PIN se muestra UNA vez; la base guarda solo su hash.
   // Código (si no tiene) y PIN temporal nuevo. Regresa { codigo, pin }: el PIN solo existe en esta respuesta.
