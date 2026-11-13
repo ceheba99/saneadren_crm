@@ -688,6 +688,9 @@ const Finanzas = (() => {
     const opts = CATEGORIAS.map(c => `<option value="${esc(c.clave)}">${esc(c.nombre)}</option>`).join('');
     $('gasto-categoria').innerHTML = opts; $('prov-categoria').innerHTML = opts;
   }
+  // FOLIO FACTURA y METODO DE PAGO con las palabras del Excel (igual que la descarga): sin folio, el tipo de comprobante.
+  const folioExcel = x => x.factura_folio || (x.tipo_comprobante && x.tipo_comprobante !== 'factura' ? (Object.fromEntries(COMPROBANTES)[x.tipo_comprobante] || '').toUpperCase() : '');
+  const metodoExcelDe = x => CxpExcel.metodoExcel(x, x.ultimo_pago ? String(x.ultimo_pago).split('|')[1] : null);
   async function cargarPagar() {
     const cont = $('pagar-lista');
     cont.innerHTML = '<p class="util-45" role="status">Cargando…</p>';
@@ -698,24 +701,37 @@ const Finanzas = (() => {
       ['Próxima semana', x => x.saldo > 0 && x.fecha_vencimiento > domingo && x.fecha_vencimiento <= domingoSig], ['Después', x => x.saldo > 0 && x.fecha_vencimiento > domingoSig], ['Pagadas', x => x.saldo <= 0]];
     const cuando = x => (grupos.find(([, f]) => f(x)) || ['Pagadas'])[0];
     const COLS_PAGAR = [
-      { k: 'cuando', t: 'Cuándo', fija: true, v: x => { const g = cuando(x); const cl = g === 'Vencidas' ? 'vencida' : g === 'Pagadas' ? 'pagada' : g === 'Esta semana' ? 'parcial' : 'programada';
+      // Mismo orden y nombres que la hoja «CXP 2026» del Excel (fase 2, 2026-11-12); las del sistema van al final.
+      { k: 'vence', t: 'FECHA VENCIMIENTO', v: x => esc(fechaTxt(x.fecha_vencimiento)), s: x => x.fecha_vencimiento },
+      { k: 'tipo_gasto', t: 'TIPO DE GASTO', v: x => esc(x.tipo_gasto_nombre || '—'), s: x => x.tipo_gasto_nombre || '' },
+      { k: 'proveedor', t: 'PROVEEDOR', fija: true, v: x => '<button type="button" class="enlace enlace-fuerte" data-prov-cuenta="' + Number(x.proveedor_id) + '" title="Ver la ficha del proveedor">' + esc(x.proveedor_nombre) + '</button>', s: x => String(x.proveedor_nombre).toLowerCase() },
+      { k: 'beneficiario', t: 'BENEFICIARIO', v: x => esc(x.beneficiario || x.proveedor_nombre), s: x => String(x.beneficiario || x.proveedor_nombre).toLowerCase() },
+      { k: 'concepto', t: 'DESCRIPCION', v: x => esc(x.concepto), s: x => x.concepto },
+      { k: 'fecha', t: 'FECHA FACTURA/SOLICITUD', v: x => esc(fechaTxt(x.fecha_documento)), s: x => x.fecha_documento },
+      { k: 'capturo', t: 'CAPTURO', v: x => esc(CxpExcel.capturoCorto(x.capturo) || '—'), s: x => CxpExcel.capturoCorto(x.capturo) },
+      { k: 'factura', t: 'FOLIO FACTURA', v: x => esc(folioExcel(x) || '—'), s: x => folioExcel(x) },
+      { k: 'metodo', t: 'METODO DE PAGO', v: x => esc(metodoExcelDe(x) || '—'), s: x => metodoExcelDe(x) },
+      { k: 'total', t: 'MONTO TOTAL FACTURA', n: true, v: x => formatoMoneda(x.total), s: x => x.total, sum: x => x.total },
+      { k: 'saldo', t: 'PENDIENTE', n: true, fija: true, v: x => '<b>' + formatoMoneda(x.saldo) + '</b>', s: x => x.saldo, sum: x => x.saldo },
+      { k: 'anticipo', t: 'ANTICIPO', n: true, v: x => (x.anticipo ? formatoMoneda(x.anticipo) : '—'), s: x => x.anticipo || 0, sum: x => x.anticipo || 0 },
+      { k: 'pagado', t: 'PAGADO', n: true, v: x => formatoMoneda(x.pagado), s: x => x.pagado, sum: x => x.pagado },
+      ...(Permisos.puede('dinero.mover') ? [ // CLABE y banco solo para quien paga (decisión 2026-10-22); a los demás el servidor no los manda
+        { k: 'clabe', t: 'CUENTA BANCARIA', v: x => esc(x.clabe || '—'), s: x => x.clabe || '' },
+        { k: 'banco', t: 'BANCO', v: x => esc(x.banco || '—'), s: x => x.banco || '' }] : []),
+      { k: 'dias_credito', t: 'DIAS DE CREDITO', n: true, v: x => esc(x.dias_credito ?? '—'), s: x => x.dias_credito ?? -1 },
+      { k: 'categoria', t: 'CONCEPTO DE GASTO', v: x => esc(x.categoria_nombre), s: x => x.categoria_nombre },
+      // STATUS: nunca se escribe; sale de lo pagado contra el total (public/cxp-excel.js).
+      { k: 'status', t: 'STATUS', v: x => { const st = CxpExcel.statusDe(x.total_cent, x.pagado_cent); return '<span class="estado-cxc ' + (st === 'PAGADO' ? 'pagada' : st === 'PARCIAL' ? 'parcial' : 'programada') + '">' + esc(st) + '</span>'; }, s: x => CxpExcel.STATUS.indexOf(CxpExcel.statusDe(x.total_cent, x.pagado_cent)) },
+      { k: 'fecha_pago', t: 'FECHA DE PAGO', v: x => esc(x.ultimo_pago ? fechaTxt(String(x.ultimo_pago).split('|')[0]) : '—'), s: x => x.ultimo_pago || '' },
+      { k: 'notas', t: 'OBSERVACIONES', clase: 'celda-notas', v: x => esc(x.notas || ''), s: x => x.notas || '' },
+      // Del sistema (no están en el Excel).
+      { k: 'cuando', t: 'Cuándo', v: x => { const g = cuando(x); const cl = g === 'Vencidas' ? 'vencida' : g === 'Pagadas' ? 'pagada' : g === 'Esta semana' ? 'parcial' : 'programada';
         return '<span class="estado-cxc ' + cl + '">' + esc(g === 'Vencidas' ? 'Vencida hace ' + Number(-x.dias_para_vencer) + ' d' : g === 'Pagadas' ? 'Pagada ✓' : g) + '</span>'; }, s: x => (x.saldo > 0 ? x.fecha_vencimiento : '9999') },
-      { k: 'proveedor', t: 'Proveedor', fija: true, v: x => '<button type="button" class="enlace enlace-fuerte" data-prov-cuenta="' + Number(x.proveedor_id) + '" title="Ver la ficha del proveedor">' + esc(x.proveedor_nombre) + '</button>', s: x => String(x.proveedor_nombre).toLowerCase() },
-      { k: 'categoria', t: 'Categoría', v: x => esc(x.categoria_nombre), s: x => x.categoria_nombre },
-      { k: 'concepto', t: 'Concepto', v: x => esc(x.concepto), s: x => x.concepto },
-      { k: 'tipo_gasto', t: 'Tipo de gasto', v: x => esc(x.tipo_gasto_nombre || '—'), s: x => x.tipo_gasto_nombre || '' },
-      { k: 'factura', t: 'Factura', v: x => esc(x.factura_folio || '—'), s: x => x.factura_folio || '' },
-      { k: 'fecha', t: 'Fecha', v: x => esc(fechaTxt(x.fecha_documento)), s: x => x.fecha_documento },
-      { k: 'vence', t: 'Vence', v: x => esc(fechaTxt(x.fecha_vencimiento)), s: x => x.fecha_vencimiento },
       { k: 'dias', t: 'Días', n: true, v: x => (x.saldo <= 0 ? '—' : x.dias_para_vencer < 0 ? '<b class="rojo">' + Number(-x.dias_para_vencer) + ' vencida</b>' : x.dias_para_vencer === 0 ? 'Hoy' : 'en ' + Number(x.dias_para_vencer) + ' d'), s: x => (x.saldo > 0 ? x.dias_para_vencer : 99999) },
       { k: 'orden', t: 'Orden', v: x => (x.lead_id ? '<button type="button" class="enlace" data-abrir-orden-cxp="' + Number(x.lead_id) + '">' + esc(x.orden_folio) + '</button>' : '—'), s: x => x.orden_folio || '' },
       { k: 'equipo', t: 'Unidad', v: x => esc(x.equipo || '—'), s: x => x.equipo || '' },
-      { k: 'total', t: 'Total', n: true, v: x => formatoMoneda(x.total), s: x => x.total, sum: x => x.total },
       { k: 'iva', t: 'IVA', n: true, v: x => (x.es_factura ? formatoMoneda(x.iva) + (x.iva_estimado ? '<small class="celda-sub">estimado 16 %</small>' : x.xml && x.iva_origen === 'xml' ? '<small class="celda-sub">del XML' + (x.xml.ieps ? ' · IEPS ' + formatoMoneda(x.xml.ieps) + ' en el gasto' : '') + '</small>' : '') : '—'), s: x => x.iva, sum: x => x.iva },
-      { k: 'pagado', t: 'Pagado', n: true, v: x => formatoMoneda(x.pagado), s: x => x.pagado, sum: x => x.pagado },
-      { k: 'saldo', t: 'Saldo', n: true, fija: true, v: x => '<b>' + formatoMoneda(x.saldo) + '</b>', s: x => x.saldo, sum: x => x.saldo },
-      { k: 'ultimo_pago', t: 'Último pago', v: x => esc(ultimoPagoTxt(x.ultimo_pago)), s: x => x.ultimo_pago || '' },
-      { k: 'notas', t: 'Notas', clase: 'celda-notas', v: x => esc(x.notas || ''), s: x => x.notas || '' },
+      { k: 'ultimo_pago', t: 'Último pago (vía y referencia)', v: x => esc(ultimoPagoTxt(x.ultimo_pago)), s: x => x.ultimo_pago || '' },
       { k: 'acciones', t: '', fija: true, sinOrden: true, clase: 'celda-acciones', v: x => '<div class="acciones-fila">' + (x.saldo > 0 ? '<button type="button" class="btn btn-primario btn-chico perm-dinero-mover" data-pagar-cxp="' + Number(x.id) + '">Pagar</button>' : '')
         + '<button type="button" class="btn btn-outline btn-chico" data-detalle-cxp="' + Number(x.id) + '" title="Pagos y XML de la factura">Pagos' + (x.xml ? ' · XML' : '') + '</button>'
         + (x.es_factura ? '<button type="button" class="btn btn-outline btn-chico perm-dinero-mover" data-iva-cxp="' + Number(x.id) + '" title="Capturar o corregir el IVA de la factura">IVA</button>' : '')
@@ -724,8 +740,11 @@ const Finanzas = (() => {
         + (x.pagado === 0 ? '<button type="button" class="btn btn-outline btn-chico perm-dinero-mover" data-cancelar-cxp="' + Number(x.id) + '">Cancelar</button>' : '') + '</div>' },
     ];
     if (!CXP.length) { cont.innerHTML = '<p class="util-45">No hay cuentas por pagar. 🎉</p>'; return; }
+    // La tabla cambió al orden del Excel (fase 2): una sola vez se regresan las columnas a las de fábrica, para que nadie
+    // se quede sin ver las nuevas por lo que había ocultado antes.
+    if (leerPref('tabla-pagar-excel', 0) !== 1) { guardarPref('tabla-ocultas-pagar', ['dias', 'orden', 'equipo', 'iva', 'ultimo_pago']); guardarPref('tabla-pagar-excel', 1); }
     TABLAS.pagar = { ...TABLAS.pagar, contenedor: 'pagar-lista', orden: TABLAS.pagar?.orden || { k: 'vence', dir: 1 } };
-    cont.innerHTML = vistaDinero('pagar', { columnas: COLS_PAGAR, filas: CXP, claseFila: x => (cuando(x) === 'Vencidas' ? 'fila-vencida' : ''), tarjetas: () => tarjetasPagar(), ocultasDef: ['fecha', 'equipo', 'notas'] });
+    cont.innerHTML = vistaDinero('pagar', { columnas: COLS_PAGAR, filas: CXP, claseFila: x => (cuando(x) === 'Vencidas' ? 'fila-vencida' : ''), tarjetas: () => tarjetasPagar(), ocultasDef: ['dias', 'orden', 'equipo', 'iva', 'ultimo_pago'] });
     function tarjetasPagar() {
     const html = grupos.map(([titulo, f]) => {
       const items = CXP.filter(f);
