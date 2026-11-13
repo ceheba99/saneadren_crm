@@ -310,7 +310,8 @@
   const SESION = Math.random().toString(36).slice(2) + Date.now().toString(36); // para saber si la página se recargó
   // Los botones (los manda el servidor; estos sirven si el kiosco arranca sin conexión).
   let TIPOS = { entrada: 'Entrada', comida_sale: 'Salida a comer', comida_regresa: 'Regreso de comer', salida: 'Salida', extra_inicia: 'Inicio de tiempo extra', extra_termina: 'Fin de tiempo extra' };
-  let registro = null, desfase = 0, estado = {}, temporizador = null, sinConexion = false, conexionConfirmada = false, camaraLista = false, camaraMotivo = '', camaraFallo = false, pantallaFija = null;
+  let registro = null, desfase = 0, estado = {}, temporizador = null, sinConexion = false, conexionConfirmada = false, camaraLista = false, camaraMotivo = '', camaraFallo = false, pantallaFija = null, hayCaras = true;
+  try { hayCaras = localStorage.getItem('saneadren_kiosco_caras') !== '0'; } catch { hayCaras = true; }
   try { registro = JSON.parse(localStorage.getItem(LLAVE) || 'null'); } catch { registro = null; }
 
   // ---------- Utilidades de pantalla (solo textContent: nada del servidor se interpreta como HTML) ----------
@@ -443,8 +444,35 @@
   // contestar nunca, y sin límite el kiosco se quedaba esperando (pantalla vacía o «Registrando…» para siempre). Si se
   // agota, cuenta como «sin conexión»: cada paso ya sabe qué hacer en ese caso (guardar la checada aquí, avisar…).
   const LIMITES = { checar: 12000, 'sin-conexion': 25000, 'rostro-registrar': 20000 };
+  // ---------- Velocidad (2026-11-13, «está un poco lenta») ----------
+  // La tableta mide lo que de verdad tarda (abrir, contestar el servidor, cargar el reconocimiento, cada paso al checar
+  // y cuánto se traba la pantalla) y lo manda a los Logs del sistema («Velocidad del reloj checador»): al abrir, como
+  // máximo cada 30 minutos, y al checar, como máximo cada hora. Solo números; nada de personas.
+  const tiempos = {}, trabada = { total: 0, peor: 0 };
+  try { new PerformanceObserver(l => { for (const x of l.getEntries()) { trabada.total += x.duration; trabada.peor = Math.max(trabada.peor, x.duration); } }).observe({ entryTypes: ['longtask'] }); } catch { /* el navegador no lo mide */ }
+  const seg = ms => (ms / 1000).toFixed(1) + ' s';
+  function reportarVelocidad(clase, cadaMs, texto) {
+    try {
+      const k = 'saneadren_kiosco_vel_' + clase, antes = Number(localStorage.getItem(k)) || 0;
+      if (Date.now() - antes < cadaMs) return;
+      localStorage.setItem(k, String(Date.now()));
+      window.__kiosco.anotar(texto); mandarDiagnostico();
+    } catch { /* sin almacenamiento */ }
+  }
+  function velocidadAlAbrir() {
+    const equipo = [/SaneadrenChecador/.test(navigator.userAgent) ? 'app' : 'navegador', navigator.hardwareConcurrency ? navigator.hardwareConcurrency + ' nucleos' : '', navigator.deviceMemory ? navigator.deviceMemory + ' GB' : ''].filter(Boolean).join(', ');
+    const p = [tiempos.abrir != null ? 'abrir ' + seg(tiempos.abrir) : '', tiempos.estado != null ? 'servidor ' + Math.round(tiempos.estado) + ' ms' : 'sin servidor',
+      tiempos.cara != null ? 'cara ' + seg(tiempos.cara) : hayCaras ? 'cara sin cargar' : 'sin caras registradas', tiempos.vida != null ? 'vida ' + seg(tiempos.vida) : '',
+      'trabada ' + seg(trabada.total) + ' (peor ' + seg(trabada.peor) + ')'].filter(Boolean);
+    reportarVelocidad('abrir', 30 * 60000, 'Velocidad (' + equipo + '): ' + p.join('; '));
+  }
+  function velocidadAlChecar() {
+    const p = [tiempos['rostro-previo'] != null ? 'codigo a PIN ' + seg(tiempos['rostro-previo']) : '', tiempos.identificar != null ? 'PIN a botones ' + seg(tiempos.identificar) : '', tiempos.checar != null ? 'registrar ' + seg(tiempos.checar) : '',
+      'trabada ' + seg(trabada.total) + ' desde que abrio'].filter(Boolean);
+    reportarVelocidad('checar', 60 * 60000, 'Velocidad al checar: ' + p.join('; '));
+  }
   async function api(ruta, cuerpo) {
-    const corte = new AbortController(), t = setTimeout(() => corte.abort(), LIMITES[ruta.split('?')[0]] || 12000);
+    const corte = new AbortController(), t = setTimeout(() => corte.abort(), LIMITES[ruta.split('?')[0]] || 12000), t0 = performance.now();
     try {
       const r = await fetch('/api/publico/kiosco/' + ruta, { method: cuerpo ? 'POST' : 'GET', headers: { 'Content-Type': 'application/json', 'X-Kiosco': registro?.token || '' }, body: cuerpo ? JSON.stringify(cuerpo) : undefined, cache: 'no-store', signal: corte.signal });
       // Solo vale una respuesta del servidor del checador (JSON). El portal del Wi-Fi, una página de error de la red o
@@ -452,6 +480,7 @@
       if (!/application\/json/i.test(r.headers.get('content-type') || '')) throw new Error('respuesta ajena al checador');
       const j = await r.json().catch(() => null);
       if (!j || typeof j !== 'object') throw new Error('respuesta ilegible');
+      tiempos[ruta.split('?')[0]] = performance.now() - t0;
       return { status: r.status, ok: r.ok, j };
     } finally { clearTimeout(t); }
   }
@@ -473,6 +502,7 @@
       if (!Number.isFinite(hora)) throw new Error('servidor'); // sin hora válida no es el servidor del checador
       conexionConfirmada = true;
       TIPOS = r.j.tipos || TIPOS; desfase = hora - Date.now();
+      if (typeof r.j.caras === 'boolean') { hayCaras = r.j.caras; try { localStorage.setItem('saneadren_kiosco_caras', hayCaras ? '1' : '0'); } catch { /* sin almacenamiento */ } }
       if (typeof r.j.llave_cola === 'string' && r.j.llave_cola) { try { localStorage.setItem(LLAVE_COLA, r.j.llave_cola); } catch { /* sin almacenamiento */ } }
       $('kiosco-nombre').textContent = r.j.nombre + (r.j.sucursal ? ' · ' + r.j.sucursal : '');
       sinConexion = false; avisos();
@@ -1195,6 +1225,7 @@
       try { const n = await api('identificar', datos.respaldo); if (n.ok && n.j.ticket && !n.j.cambiar_pin) r = await api('checar', { ...cuerpo, ticket: n.j.ticket }); } catch { /* se queda con la respuesta anterior */ }
     }
     if (!r.ok) return error(r.j.error || 'No se pudo registrar');
+    setTimeout(velocidadAlChecar, 3000);
     listo('ok', `${r.j.tipo} · ${r.j.hora}`, r.j.repetida ? 'Ya estaba registrada hace un momento.' : r.j.por_revisar ? `Gracias, ${r.j.nombre}. No se reconoció tu cara: tu gerente la revisará.` : r.j.sin_foto ? `Gracias, ${r.j.nombre}. Sin foto: tu gerente la revisará.` : `Gracias, ${r.j.nombre}.`, r.j.servicios, r.j.avisos);
   }
   // servicios: si la persona tiene órdenes asignadas, se muestran abajo y la pantalla espera más (30 s o «Listo»).
@@ -1425,14 +1456,23 @@
     if (!registro?.token) { noRegistrado(); window.__kiosco.listo = true; return; }
     // Primero la pantalla (2026-11-11): el teclado sale de inmediato y el servidor se consulta por detrás. Antes se
     // esperaba al servidor sin límite y, si la red no contestaba, la pantalla se quedaba vacía.
-    avisos(); inicio(); window.__kiosco.listo = true; despierta(); contarPendientes();
+    avisos(); inicio(); window.__kiosco.listo = true; tiempos.abrir = performance.now(); despierta(); contarPendientes();
     // Que el navegador no borre por su cuenta lo guardado aquí (el registro del kiosco y las checadas sin subir).
     try { navigator.storage?.persist?.().catch(() => {}); } catch { /* no disponible */ }
     ultimaConexion = Date.now();
     if (!await conectar()) return;
     // Al abrir se pide la cámara una vez (para que el permiso quede dado) y se apaga hasta que alguien cheque.
     iniciarCamara().then(() => { if (estado.esCodigo) soltarCamara(); }); subirPendientes(); mandarDiagnostico();
-    setTimeout(() => { cargarFaceApi().catch(() => {}); cargarAntispoof().catch(() => {}); }, 5000); // reconocimiento y prueba de vida, listos en segundo plano
+    // Reconocimiento y prueba de vida, listos en segundo plano. 2026-11-13: solo si alguien de la sucursal entra con la
+    // cara (si nadie, son 22 MB y varios segundos de procesador que la tableta gastaba en cada apertura para nada; se
+    // cargan igual, en el momento, si alguien registra su cara), y uno después del otro para no trabar la pantalla.
+    setTimeout(async () => {
+      if (hayCaras) {
+        let t0 = performance.now(); try { await cargarFaceApi(); tiempos.cara = performance.now() - t0; } catch { /* se reintenta al usarla */ }
+        t0 = performance.now(); try { await cargarAntispoof(); tiempos.vida = performance.now() - t0; } catch { /* se reintenta al usarla */ }
+      }
+      setTimeout(velocidadAlAbrir, hayCaras ? 5000 : 35000);
+    }, 5000);
     setInterval(async () => {
       if (document.visibilityState !== 'visible' || deBaja) return;
       despierta(); // el sistema puede soltar «pantalla encendida» (p. ej. con poca batería): se vuelve a pedir cada minuto

@@ -32,7 +32,7 @@ function sw(red, cachesIniciales = {}, { almacenColgado = false } = {}) {
   const eventos = {}, mensajes = [], estado = { red, pedidas: [] };
   const self = { location: { origin: 'https://sistema.test' }, addEventListener: (k, fn) => { eventos[k] = fn; }, skipWaiting: async () => {},
     clients: { claim: async () => {}, matchAll: async () => [{ postMessage: m => mensajes.push(m) }] } };
-  const fetchFalso = (url, o = {}) => { estado.pedidas.push(String(url)); return new Promise((ok, mal) => { o.signal?.addEventListener('abort', () => mal(new Error('abortada'))); Promise.resolve().then(() => estado.red(String(url))).then(ok, mal); }); };
+  const fetchFalso = (url, o = {}) => { estado.pedidas.push(String(url)); return new Promise((ok, mal) => { o.signal?.addEventListener('abort', () => mal(new Error('abortada'))); Promise.resolve().then(() => estado.red(String(url), o)).then(ok, mal); }); };
   vm.runInContext(SW, vm.createContext({ self, caches, fetch: fetchFalso, Response, Headers, URL, AbortController, setTimeout, clearTimeout, Promise }));
   // Dispara un evento y regresa lo que respondió (o undefined si no lo tocó) y lo que dejó trabajando por detrás.
   const pedir = async (ruta, opciones = {}) => {
@@ -324,3 +324,21 @@ test('blindaje: la pantalla encendida se vuelve a pedir sola, lo guardado se pro
   assert.match(HTML, /if \(camaraFallo && estado\.esCodigo\) iniciarCamara\(\)/, 'la cámara se prueba sola otra vez');
 });
 
+
+// 2026-11-13 (la tableta iba lenta): los archivos grandes ya guardados (reconocimiento facial, prueba de vida: 22 MB) se
+// volvían a bajar y a escribir en la caché en CADA apertura. Ahora solo se pregunta si cambiaron (ETag).
+test('caché: un archivo guardado que no cambió no se vuelve a bajar ni a escribir', async () => {
+  const U = 'https://sistema.test/vendor/ort/ort-wasm-simd-threaded.wasm', viejo = new Response('guardado', { status: 200, headers: { etag: 'W/"a1"' } });
+  const vistos = [], s = sw((url, o) => { vistos.push(o.headers?.['If-None-Match'] || null); return new Response(null, { status: 304 }); }, { 'saneadren-kiosco-v4': { [U]: viejo } });
+  const x = await s.pedir('/vendor/ort/ort-wasm-simd-threaded.wasm', { mode: 'no-cors' }); await x.detras();
+  assert.equal(x.texto, 'guardado');
+  assert.deepEqual(vistos, ['W/"a1"'], 'pregunta al servidor solo si cambió');
+  assert.equal(s.almacenes.get('saneadren-kiosco-v4').get(U), viejo, 'no se reescribió');
+});
+test('caché: si el archivo guardado sí cambió, se guarda el nuevo para la próxima vez', async () => {
+  const U = 'https://sistema.test/vendor/face-api/face-api.js';
+  const s = sw(() => new Response('nuevo', { status: 200, headers: { etag: 'W/"b2"' } }), { 'saneadren-kiosco-v4': { [U]: new Response('guardado', { status: 200, headers: { etag: 'W/"a1"' } }) } });
+  const x = await s.pedir('/vendor/face-api/face-api.js', { mode: 'no-cors' }); await x.detras();
+  assert.equal(x.texto, 'guardado', 'esta vez entrega lo guardado, sin esperar');
+  assert.equal(await s.almacenes.get('saneadren-kiosco-v4').get(U).clone().text(), 'nuevo');
+});
