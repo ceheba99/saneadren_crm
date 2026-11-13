@@ -252,6 +252,42 @@ const LUN = sumar(sumar(HOY, -7), -(dow(sumar(HOY, -7)) - 1)), D = k => sumar(LU
   const z3 = await diaA(Z3);
   revisa(!z3.falta && z3.entrada === '09:15' && z3.retardo_min === 45 && z3.extra_min === 0 && !z3.notas.includes('Inició tiempo extra y no marcó el fin'), 'Apretado tarde: cuenta como entrada con retardo, sin tiempo extra', z3);
 
+  console.log('8d. Tramos de trabajo: cada «Entrada» con su «Salida» (auditoría 13-nov)');
+  { // Administrativo 8:30–18:00 L-V, reglas de arranque (cuenta desde el primer minuto, minuto a minuto, descanso todo extra).
+    const toño = exigir(await pedir('POST', '/personal', T.Gema, { nombre: 'Toño Tramos', puesto: 'Operador', fecha_ingreso: sumar(HOY, -400) }), 'alta de Toño');
+    exigir(await pedir('PUT', '/asistencia/personal/' + toño.id + '/horario', T.Gema, { horario_id: adm.id, desde: sumar(HOY, -90) }), 'horario de Toño');
+    let L = sumar(HOY, -42); while (dow(L) !== 1) L = sumar(L, -1);
+    const marca = async (f, lista) => { for (const [tipo, hora] of lista) exigir(await pedir('POST', '/asistencia/checadas', A, { personal_id: toño.id, tipo, fecha: f, hora, motivo: 'Prueba de tramos' }), 'checada de Toño'); };
+    const dt = async f => (await pedir('GET', '/asistencia/dia?fecha=' + f, A))[1].filas.find(x => x.personal_id === toño.id);
+    await marca(L, [['entrada', '08:30'], ['salida', '18:00'], ['entrada', '20:00'], ['salida', '22:00']]);
+    let d = await dt(L);
+    revisa(d.extra_min === 120 && d.trabajado_min === 570 + 120 && d.extra_detalle.piezas.some(z => z.cuenta && z.desde === '20:00' && /Regresó/.test(z.motivo)), 'G5: regresa por una emergencia de 20:00 a 22:00: 2 h de extra, no 4 (las 2 h en su casa no cuentan)', d);
+    await marca(sumar(L, 1), [['entrada', '08:30'], ['salida', '18:00'], ['entrada', '23:00']]); await marca(sumar(L, 2), [['salida', '02:00']]);
+    d = await dt(sumar(L, 1));
+    revisa(d.extra_min === 180 && !d.notas.includes('Sin salida'), 'M3: jornada normal y emergencia de 23:00 a 02:00: 3 h de extra el día en que empezó (antes 0 sin aviso)', d);
+    revisa((await dt(sumar(L, 2))).extra_min === 0, 'y el día siguiente no la vuelve a contar');
+    await marca(sumar(L, 3), [['entrada', '19:00'], ['salida', '21:00']]);
+    d = await dt(sumar(L, 3));
+    revisa(d.extra_min === 120 && d.trabajado_min === 120, 'G1: entra a las 19:00 (después de su hora de salida) y sale a las 21:00: 2 h de extra, no 3', d);
+    await marca(sumar(L, 4), [['entrada', '08:30'], ['comida_sale', '18:30'], ['comida_regresa', '19:30'], ['salida', '21:00']]);
+    d = await dt(sumar(L, 4));
+    revisa(d.extra_min === 120 && d.notas.some(x => /Se le restó 1 h de comida/.test(x)), 'M4: la comida que tomó dentro de su tiempo extra se resta (2 h, no 3)', d);
+    await marca(sumar(L, 5), [['entrada', '08:00'], ['salida', '10:00'], ['entrada', '16:00'], ['salida', '18:00']]);
+    d = await dt(sumar(L, 5));
+    revisa(d.extra_min === 240 && d.trabajado_min === 240, 'G4: dos ratos en su sábado de descanso (8–10 y 16–18): 4 h de extra, no 10', d);
+    const L2 = sumar(L, 7);
+    await marca(L2, [['entrada', '20:00']]);
+    for (const k of [1, 2]) await marca(sumar(L2, k), [['salida', '02:00'], ['entrada', '20:00']]);
+    await marca(sumar(L2, 3), [['salida', '02:00']]);
+    const noches = []; for (const k of [0, 1, 2]) noches.push((await dt(sumar(L2, k))).extra_min);
+    revisa(noches.every(x => x === 360), 'G2: tres noches seguidas de 20:00 a 02:00: 6 h cada noche (antes la 3ª salía en 0)', noches);
+    await marca(sumar(L2, 4), [['entrada', '08:30'], ['salida', '18:00'], ['salida', '19:00']]);
+    d = await dt(sumar(L2, 4));
+    revisa(d.extra_min === 60 && d.salida === '19:00', 'RH agrega la salida real más tarde (sin otra entrada): vale la última salida, como antes', d);
+    await marca(sumar(L2, 5), [['entrada', '09:00'], ['entrada', '09:05'], ['salida', '13:00']]);
+    d = await dt(sumar(L2, 5));
+    revisa(d.extra_min === 240 && d.notas.some(x => /dos veces/.test(x)), '«Entrada» repetida sin salida en medio: se toma la primera y se avisa', d); }
+
   console.log('9. Solo «Descargar la nómina» (2026-11-11)');
   const rolN = exigir(await pedir('POST', '/roles', A, { nombre: 'Solo nómina' }), 'crear rol');
   exigir(await pedir('PUT', '/roles/' + rolN.clave + '/permisos', A, { permisos: ['asistencia.nomina'], alcances: {} }), 'permisos del rol');
