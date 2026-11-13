@@ -117,7 +117,7 @@ module.exports = function nomina(app, db, h) {
       if (!a && !imss && !bono) continue; // ni checa ni tiene sueldo semanal: no entra
       const t = a?.totales || {};
       const pend = a ? [t.extra_sin_autorizar_min ? `${t.extra_sin_autorizar_min} min de tiempo extra sin autorizar` : '', t.por_revisar ? `${t.por_revisar} checada(s) por revisar` : '',
-        t.sin_salida ? `${t.sin_salida} día(s) sin salida` : '', t.extra_sin_fin ? `${t.extra_sin_fin} tiempo extra sin fin` : '',
+        t.sin_salida ? `${t.sin_salida} día(s) sin salida` : '', t.sin_entrada ? `${t.sin_entrada} día(s) con salida y sin entrada` : '', t.extra_sin_fin ? `${t.extra_sin_fin} tiempo extra sin fin` : '',
         // Auditoría del checador 13-nov: M1 (el extra cambió después de autorizarlo: se pagaría lo viejo sin aviso) y G7
         // (extra autorizado y el puesto sin precio de la hora: salía en $0 y la nómina se cerraba igual).
         t.extra_autorizacion_vieja ? `${t.extra_autorizacion_vieja} día(s) con tiempo extra que cambió después de autorizarlo (vuelve a autorizarlo en Asistencia)` : '',
