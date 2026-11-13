@@ -47,7 +47,7 @@ module.exports = {
     contabilidad: {
       nombre: 'Contabilidad del mes para el contador (módulo contable F1, 2026-11-11): resumen de ingresos, egresos e IVA, pendientes de comprobar y descarga de Excel y XML; desde 2026-11-12, cerrar el mes (solo Dirección cambia lo de un mes cerrado) y el saldo inicial del banco guardado en el sistema',
       vistas: ['contabilidad'],
-      tablas: ['contabilidad_cierres', 'flujo_saldos_iniciales', 'flujo_correcciones'], // lo demás lo lee de facturas, cobros, cuentas por pagar y pagos
+      tablas: ['contabilidad_cierres', 'flujo_saldos_iniciales', 'flujo_correcciones', 'flujo_movimientos', 'flujo_desglose'], // lo demás lo lee de facturas, cobros, cuentas por pagar y pagos
       rutas: [/^\/api\/contabilidad\//],
       pendientes: null, pendientesRazon: 'los pendientes de comprobar se ven en su propia pantalla, al revisar el mes',
       inicio: [],

@@ -2304,6 +2304,17 @@ tr.logs-aviso td{background:#fffaf0;}
 .ct-edit.ct-cambiada{border-color:var(--amarillo);background:#fff3c4;}
 .ct-tabla td.ct-corregida{background:#fff8e6 !important;}
 .ct-marca-corr{color:#b07a00;font-size:11px;margin-left:3px;}
+/* Desglose y movimientos propios del flujo de banco (parte 4, 2026-11-12). */
+.ct-tabla tbody tr.ct-hijo td{background:#f7f9fc;color:var(--texto-sec);font-size:12px;}
+.ct-tabla tbody tr.ct-manual td:first-child{box-shadow:inset 3px 0 0 var(--amarillo);}
+.ct-tabla td.ct-acciones,.ct-tabla th.ct-acciones{white-space:nowrap;}
+.ct-mov{display:flex;flex-wrap:wrap;gap:8px 12px;align-items:flex-end;background:#fffdf5;border:1px solid var(--amarillo);border-radius:6px;padding:10px 12px;margin:8px 0;}
+.ct-mov > b{flex-basis:100%;}
+.ct-mov label{display:flex;flex-direction:column;gap:2px;font-size:12px;font-weight:600;min-width:0;}
+.ct-mov input,.ct-mov select{font:inherit;font-size:13px;padding:4px 6px;border:1px solid var(--gris-200);border-radius:4px;min-width:0;}
+.ct-mov .ct-mov-ancho{flex:1 1 240px;}
+.ct-mov-botones{display:flex;gap:6px;}
+.ct-mov small{flex-basis:100%;}
 /* Tiempo extra a detalle en la ventana de checadas (2026-11-11). */
 .ac-extra{margin:12px 0;padding:8px 12px;border:1px solid #dbe1e7;border-radius:8px;background:#f8fafc;}
 .ac-extra summary{cursor:pointer;}
