@@ -137,3 +137,10 @@ test('atención: la tableta no puede mantener la pantalla encendida 3 minutos �
   x.pasar(1, { camara: true, pantalla: true }); assert.deepEqual(x.v.atencion(), [], 'se quita cuando la pantalla ya queda fija');
   const y = armar(); y.pasar(30, { camara: true, pantalla: null }); assert.deepEqual(y.avisos, [], 'si la tableta no sabe decirlo, no avisa');
 });
+
+// 2026-11-13: el renglón «no responde» dice lo último que la tableta reportó (p. ej. se quedó sin batería).
+test('sin respuesta: el aviso lleva lo último que dijo la tableta', () => {
+  const x = armar(); x.pasar(3, { bateria: 9, cargando: false, camara: true, pantalla: true });
+  assert.equal(x.v.estadoTexto(1), 'batería 9 % sin cargador, cámara bien, pantalla fija');
+  assert.equal(x.v.estadoTexto(999), '');
+});

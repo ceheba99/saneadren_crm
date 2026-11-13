@@ -48,7 +48,7 @@ function vigia({ kioscos, ventanaDe, ahoraMexico, avisar, ahora = Date.now, limi
     e.cargando = typeof r.cargando === 'boolean' ? r.cargando : null;
     e.camMal = r.camara === false ? e.camMal + 1 : 0;
     // «pantalla»: false = la tableta pidió mantener la pantalla encendida y el sistema no la deja (ahorro de energía…).
-    e.panMal = r.pantalla === false ? (e.panMal || 0) + 1 : 0;
+    e.panMal = r.pantalla === false ? (e.panMal || 0) + 1 : 0; e.pantalla = typeof r.pantalla === 'boolean' ? r.pantalla : null;
     estados.set(id, e);
   }
   function revisar() {
@@ -60,7 +60,7 @@ function vigia({ kioscos, ventanaDe, ahoraMexico, avisar, ahora = Date.now, limi
       const ultima = senales.get(k.id) ?? null;
       if (!caidos.has(k.id) && enHorario && t - (ultima ?? arranque) > limiteMs) {
         const u = ultima === null ? null : ahoraMexico(new Date(ultima));
-        const c = { ...base, desde: !u ? null : u.fecha === m.fecha ? 'las ' + u.hora.slice(0, 5) : 'el ' + u.fecha.split('-').reverse().join('/') + ' a las ' + u.hora.slice(0, 5) };
+        const c = { ...base, ...(estadoTexto(k.id) ? { ultimo: estadoTexto(k.id) } : {}), desde: !u ? null : u.fecha === m.fecha ? 'las ' + u.hora.slice(0, 5) : 'el ' + u.fecha.split('-').reverse().join('/') + ' a las ' + u.hora.slice(0, 5) };
         caidos.set(k.id, c); avisa('sin_respuesta', c);
       }
       const e = estados.get(k.id);
@@ -76,7 +76,13 @@ function vigia({ kioscos, ventanaDe, ahoraMexico, avisar, ahora = Date.now, limi
     for (const id of [...caidos.keys()]) if (!vigilados.has(id)) caidos.delete(id); // lo dieron de baja o lo eliminaron
     for (const [llave, c] of [...atencion]) if (!vigilados.has(c.id)) atencion.delete(llave);
   }
-  return { senal, reporte, revisar, caidos: () => [...caidos.values()], atencion: () => [...atencion.values()] };
+  // Lo último que la tableta dijo de sí misma, en una frase para los Logs («batería 80 % cargando, cámara bien, pantalla fija»).
+  function estadoTexto(id) {
+    const e = estados.get(id); if (!e) return '';
+    return [e.bateria != null ? 'batería ' + e.bateria + ' %' + (e.cargando === true ? ' cargando' : e.cargando === false ? ' sin cargador' : '') : '', e.camMal ? 'cámara fallando' : 'cámara bien',
+      e.panMal ? 'pantalla se puede apagar sola' : e.pantalla === true ? 'pantalla fija' : ''].filter(Boolean).join(', ');
+  }
+  return { senal, reporte, revisar, estadoTexto, caidos: () => [...caidos.values()], atencion: () => [...atencion.values()] };
 }
 
 // Correos de la variable CORREO_AVISOS_CHECADOR (separados por coma), más los que se le pasen; sin repetir ni inválidos.

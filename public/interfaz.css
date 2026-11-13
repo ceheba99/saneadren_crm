@@ -1849,3 +1849,10 @@
     .apartado { padding: 14px; }
   }
 }
+
+/* Logs: explicación de cada renglón (2026-11-13) */
+.logs-guia { margin: 6px 0; font-size: 13px; }
+.logs-guia summary { cursor: pointer; color: var(--azul-600, #1f5f80); font-weight: 600; }
+.logs-guia p { margin: 6px 0; }
+.logs-guia ul { margin: 2px 0 6px 18px; padding: 0; }
+.logs-guia-titulo { margin-top: 8px; }
