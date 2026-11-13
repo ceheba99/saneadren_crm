@@ -326,4 +326,43 @@ module.exports = async function masEjemplos(x) {
     await tarea({ titulo: 'Contratar dos operadores', asignado_a: idDe('gerente_cdmx'), inicio: dia(-3), fin: dia(14), prioridad: 'alta', proyecto_id: pc.id });
     await tarea({ titulo: 'Visitar 10 plazas comerciales', asignado_a: idDe('ventas_cdmx'), inicio: dia(0), fin: dia(20), prioridad: 'media', proyecto_id: pc.id });
   }
+
+  // ===== Reembolsos de gastos pagados por una persona (2026-11-13; ejemplos pedidos por Dirección, con los nombres que dio) =====
+  // Tres casos para ver en Contabilidad › Flujo de banco cómo queda cada uno. En los tres la empresa hace UNA transferencia
+  // a la persona y el pago se desglosa en sus 10 gastos. Importes, proveedores y folios son inventados.
+  //  1. Luis Ángel Perea: 10 gastos de $1,000 SIN factura → todo «no deducible».
+  //  2. Miguel Ángel Perea: 10 pagos al MISMO proveedor, que dio una sola factura real por el total → todo deducible; la
+  //     misma factura aparece en los 10 renglones.
+  //  3. Evelyn Perea: 10 gastos, 6 con la factura de cada comercio y 4 sin factura → parte deducible y parte no.
+  {
+    const menores = await pedir('POST', '/finanzas/proveedores', A, { nombre: 'Gastos menores pagados por el personal (ejemplo)', categoria: 'casetas_viaticos', dias_credito: 0 });
+    const torno = await pedir('POST', '/finanzas/proveedores', A, { nombre: 'Torno Industrial Zavala Hermanos (ejemplo)', categoria: 'refacciones', dias_credito: 0, rfc: 'RPB150302AB1' });
+    // El pago (una transferencia a la persona) y sus 10 renglones de desglose; cada renglón: [a quién se le compró, qué, factura o '', deducible, no deducible].
+    const reembolso = async (persona, fecha, proveedor, gasto, renglones) => {
+      const c = await pedir('POST', '/finanzas/cxp', A, { proveedor_id: proveedor.id, beneficiario: 'Reembolso a ' + persona, fecha_documento: fecha, dias_credito: 0, ya_pagado: true, metodo: 'transferencia',
+        cuenta_origen: 'Santander empresa', fecha_pago: fecha, referencia: 'SPEI reembolso', ...gasto });
+      const pago = (await pedir('GET', '/finanzas/cxp/' + c.id + '/pagos', A))[0], mes = fecha.slice(0, 7);
+      for (const [tercero, concepto, cfdi, deducible, noDeducible] of renglones) {
+        const d = await pedir('POST', '/contabilidad/flujo/desglose', A, { mes, ref: 'pago:' + pago.id });
+        await pedir('POST', '/contabilidad/flujo/correcciones', A, { mes, cambios: [{ ref: d.ref, campo: 'cfdi_monto', valor: String(deducible) }, { ref: d.ref, campo: 'no_deducible', valor: String(noDeducible) },
+          { ref: d.ref, campo: 'tercero', valor: tercero }, { ref: d.ref, campo: 'concepto', valor: concepto }, { ref: d.ref, campo: 'cfdi', valor: cfdi || 'NO APLICA' }, { ref: d.ref, campo: 'metodo', valor: cfdi ? 'PUE' : 'NO APLICA' },
+          { ref: d.ref, campo: 'cuenta_abono', valor: persona.toUpperCase() }] });
+      }
+    };
+    // 1. Luis Ángel Perea: nada trae factura.
+    await reembolso('Luis Ángel Perea', dia(-4), menores, { categoria: 'casetas_viaticos', concepto: 'Reembolso de 10 gastos de campo sin factura', total: 10000, tipo_comprobante: 'sin_factura',
+      notas: 'Caso 1 de ejemplo: los pagó Luis Ángel de su bolsa y ninguno trae factura. Se le regresa el dinero y todo queda como no deducible.' },
+      ['Taquería de la carretera', 'Tienda de abarrotes', 'Vulcanizadora del camino', 'Lavado de la unidad', 'Estacionamiento público', 'Ferretería de pueblo', 'Propina a maniobristas', 'Agua y hielo', 'Papelería', 'Cerrajero']
+        .map((t, i) => [t + ' (ejemplo)', 'Gasto de campo ' + (i + 1) + ' sin factura', '', 0, 1000]));
+    // 2. Miguel Ángel Perea: una sola factura real del proveedor que cobró los 10 pagos.
+    await reembolso('Miguel Ángel Perea', dia(-3), torno, { categoria: 'refacciones', concepto: 'Piezas torneadas recogidas en 10 visitas (una sola factura)', total: 11600, iva: 1600, tipo_comprobante: 'factura', factura_folio: 'RP-2210', metodo_sat: 'PUE',
+      notas: 'Caso 2 de ejemplo: Miguel Ángel pagó 10 veces $1,160 con el mismo proveedor y él dio UNA factura por $11,600 a nombre de la empresa. La factura es de quien vendió: es deducible.' },
+      Array.from({ length: 10 }, (_, i) => ['Torno Industrial Zavala Hermanos (ejemplo)', 'Visita ' + (i + 1) + ': pieza torneada', 'RP-2210', 1160, 0]));
+    // 3. Evelyn Perea: seis gastos con la factura de cada comercio y cuatro sin factura.
+    await reembolso('Evelyn Perea', dia(-2), menores, { categoria: 'servicios_oficina', concepto: 'Reembolso de 10 gastos de oficina (6 con factura, 4 sin)', total: 10000, tipo_comprobante: 'otro',
+      notas: 'Caso 3 de ejemplo: de los 10 gastos de Evelyn, 6 traen la factura del comercio donde se compró (deducibles) y 4 no traen (no deducibles).' },
+      [['Papelería Central (ejemplo)', 'Hojas y tóner', 'PC-881', 1000, 0], ['Gasolinera El Marqués (ejemplo)', 'Gasolina del auto utilitario', 'GM-40211', 1000, 0], ['Ferretería San José (ejemplo)', 'Candados y cadena', 'FSJ-1290', 1000, 0],
+        ['Mensajería Rápida (ejemplo)', 'Envío de documentos', 'MR-7745', 1000, 0], ['Farmacia del Centro (ejemplo)', 'Botiquín de oficina', 'FC-3302', 1000, 0], ['Cafetería La Esquina (ejemplo)', 'Coffee break de capacitación', 'CE-118', 1000, 0],
+        ['Tianguis', 'Fruta para la oficina', '', 0, 1000], ['Taxi', 'Traslado al banco', '', 0, 1000], ['Puesto de llaves', 'Copias de llaves', '', 0, 1000], ['Propina', 'Propina a repartidor', '', 0, 1000]]);
+  }
 };
