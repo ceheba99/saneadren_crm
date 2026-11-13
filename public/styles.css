@@ -2483,3 +2483,9 @@ tr.logs-aviso td{background:#fffaf0;}
 .gp-meses{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:6px;margin-top:8px;}
 .gp-mes{display:flex;align-items:center;gap:4px;font-size:14px;}
 @media(max-width:600px){.gp-meses{grid-template-columns:repeat(4,minmax(0,1fr));}}
+/* Créditos: el recuadro para programar mensualidades (iguales o pegando la corrida). */
+.cr-programar{border:1px solid var(--gris-200);border-radius:10px;padding:12px;margin:8px 0 14px;background:var(--blanco);}
+.cr-programar .segmentado{margin-bottom:10px;}
+.cr-programar textarea{width:100%;font-family:ui-monospace,Menlo,monospace;font-size:13px;}
+#cr-ficha-cuerpo{padding:16px 20px 20px;}
+@media(max-width:600px){#cr-ficha-cuerpo{padding:12px;}}
