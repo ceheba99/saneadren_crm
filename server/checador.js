@@ -1194,8 +1194,11 @@ module.exports = function checador(app, db, h) {
     res.json({ ok: true });
   }));
 
-  return { TIPOS, altaChecador, intentosDe, avisosCara, kioscosCaidos: () => vigiaKioscos.caidos(), kioscosAtencion: () => vigiaKioscos.atencion() };
+  // guardarFoto: también la usa checar por WhatsApp (server/whatsapp.js) para la selfie.
+  return { TIPOS, altaChecador, intentosDe, avisosCara, guardarFoto, kioscosCaidos: () => vigiaKioscos.caidos(), kioscosAtencion: () => vigiaKioscos.atencion() };
 };
 module.exports.pinDebil = pinDebil;
 module.exports.TIPOS = TIPOS;
+module.exports.distanciaM = distanciaM;
+module.exports.distanciaTexto = distanciaTexto;
 module.exports.SIGUIENTE = SIGUIENTE;

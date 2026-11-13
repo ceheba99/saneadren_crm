@@ -168,6 +168,13 @@ function guiaWhatsapp(d) {
   const codigos = { 190: 'el token de Meta venció o es inválido: hay que poner uno nuevo (WHATSAPP_TOKEN en Plesk).', 131030: 'el número no está autorizado (en modo de prueba de Meta solo se puede mandar a números dados de alta).',
     131047: 'pasaron más de 24 h desde el último mensaje de esa persona: fuera de esa ventana Meta solo deja mandar plantillas aprobadas.', 132000: 'la plantilla no coincide con la aprobada en Meta (número de datos).', 132001: 'la plantilla no existe o no está aprobada en Meta.',
     100: 'algún dato del envío es inválido (número o plantilla).', 368: 'Meta bloqueó temporalmente la cuenta por políticas.' };
+  if (/bajar la foto/i.test(d)) {
+    // 2026-11-13: la selfie de una checada por WhatsApp no se pudo bajar de Meta (la checada se guardó «por revisar»).
+    return g('La selfie de una checada por WhatsApp no se pudo bajar de Meta. La checada sí se guardó, pero quedó «por revisar» y sin foto.',
+      ['Token de Meta vencido o sin el permiso whatsapp_business_messaging.', 'Meta tardó o no respondió.', 'La foto no era JPEG o pesaba más de 5 MB.', 'Meta mandó la foto desde un servidor que el sistema no reconoce (el renglón dice cuál).'],
+      ['Revisa la checada en Asistencia y acéptala o anúlala.', 'Si se repite: revisa WHATSAPP_TOKEN en Plesk.', 'Si el renglón dice «no es de Meta: <servidor>», copia el reporte para soporte: hay que agregar ese servidor en la lista HOSTS_META.'],
+      ['server/whatsapp.js → función bajarFoto y finalizar'], []);
+  }
   if (c && codigos[c]) lectura.push(`Código ${c}: ${codigos[c]}`);
   else if (/conectar/i.test(d)) lectura.push('No hubo conexión con Meta (internet del servidor o Meta caído).');
   return g('Un mensaje de WhatsApp que el sistema debía mandar no salió: Meta (la empresa de WhatsApp) lo rechazó o no se pudo conectar.',
