@@ -239,6 +239,7 @@ require('./facturacion-db')(db); // Facturación CFDI 4.0 con factura.com (2026-
 require('./facturacion-rutas')(app, db, h, { direccion: permisos.direccion, puede: permisos.puede, verCliente: id => app.locals.sucursales.verCliente(id), auditar: (...a) => app.locals.auditoria?.registrar(...a) }); // Pantalla «Facturación» de Ajustes: solo Dirección
 require('./marketing-control')(app, db, h); // Marketing: presupuesto, gastos, resultados, plan y tablero (2026-10-27)
 require('./marketing-google-ads')(app, db, h); // Marketing: llamadas de Google Ads cruzadas con los contactos (2026-11-04)
+require('./listas')(app, db, h, { permisos, audit }); // «Listas desplegables» (2026-11-13): todas las listas del sistema; las fijas sin cálculos, editables por Dirección
 // Versión DEMO con datos de ejemplo: solo con MODO_DEMO=1 y en una base vacía (nunca en el sistema real).
 const demo = require('./demo')(app, db, { sesiones, PORT, SESSION_TTL_MS });
 

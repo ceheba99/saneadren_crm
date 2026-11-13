@@ -650,3 +650,5 @@ module.exports = function personal(app, db, h) {
 };
 module.exports.diasLFT = diasLFT;
 module.exports.clabeValida = clabeValida;
+// Listas que Dirección edita en «Listas desplegables» (server/listas.js las cambia aquí mismo, sin copiarlas).
+Object.assign(module.exports, { PUESTOS, CONTRATOS, LICENCIAS, DOCUMENTOS });

@@ -407,3 +407,5 @@ module.exports = function marketingControl(app, db, h) {
   // Catálogos de esta parte (rubros, estados).
   app.get('/api/marketing/control', h((req, res) => res.json({ rubros: RUBROS, estados_presupuesto: ESTADOS_PRESUP, puede: { dinero: dinero(req), aprobar_presupuesto: direccion(req), editar: editar(req) } })));
 };
+// Lista que Dirección edita en «Listas desplegables» (server/listas.js la cambia aquí mismo, sin copiarla).
+module.exports.RUBROS = RUBROS;

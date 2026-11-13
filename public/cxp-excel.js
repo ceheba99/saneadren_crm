@@ -14,6 +14,13 @@
     ['4_meses', '4 meses', '4 MESES'], ['24_meses', '24 meses', '24 MESES'], ['36_meses', '36 meses', '36 MESES'], ['48_meses', '48 meses', '48 MESES'],
     ['variable', 'Variable', 'VARIABLE'], ['unico', 'Único', 'UNICO']];
   const TIPO = Object.fromEntries(TIPOS_GASTO.map(([k, t, e]) => [k, { texto: t, excel: e }]));
+  // Dirección cambia esta lista en «Listas desplegables» (server/listas.js y public/listas.js): se reemplaza aquí mismo
+  // para que el servidor, la pantalla y el Excel usen la misma. lista: [[clave, como se ve, como va en el Excel], …].
+  function ponerTiposGasto(lista) {
+    TIPOS_GASTO.splice(0, TIPOS_GASTO.length, ...lista.map(x => x.slice(0, 3)));
+    for (const k of Object.keys(TIPO)) delete TIPO[k];
+    for (const [k, t, e] of TIPOS_GASTO) TIPO[k] = { texto: t, excel: e };
+  }
   const esTipoGasto = k => Object.prototype.hasOwnProperty.call(TIPO, k);
   const tipoGastoTexto = k => (esTipoGasto(k) ? TIPO[k].texto : '');
   const tipoGastoExcel = k => (esTipoGasto(k) ? TIPO[k].excel : '');
@@ -101,6 +108,6 @@
       style: { fill: { type: 'pattern', pattern: 'solid', bgColor: { argb: COLOR_VACIA } } } }] };
   }
 
-  return { TIPOS_GASTO, esTipoGasto, tipoGastoTexto, tipoGastoExcel, STATUS, statusDe, METODOS_EXCEL, metodoExcel, capturoCorto, folioExcel,
+  return { TIPOS_GASTO, ponerTiposGasto, esTipoGasto, tipoGastoTexto, tipoGastoExcel, STATUS, statusDe, METODOS_EXCEL, metodoExcel, capturoCorto, folioExcel,
     COLUMNAS_CXP, COL_FECHAS, renglonesCxp, listasCxp, VALIDACIONES_CXP, COLOR_VACIA, sombreadoVacias };
 });

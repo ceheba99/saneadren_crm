@@ -209,7 +209,7 @@ function cambiarVista(v, opciones) {
   if (v === 'compras') Compras.cargar();
   if (v === 'solicitudes') Solicitudes.cargar();
   if (v === 'bitacora') Bitacora.cargar();
-  if (v === 'usuarios') { cargarUsuarios(); window.Facturacion?.cargar(); window.Logs?.cargar(); window.ClientesCarga?.cargar(); }
+  if (v === 'usuarios') { cargarUsuarios(); window.Facturacion?.cargar(); window.Logs?.cargar(); window.ClientesCarga?.cargar(); window.Listas?.admin(); }
   if (seccionCuentas) Finanzas.cargar({ ...opciones, seccion: seccionCuentas });
   if (v === 'catalogos') { cargarTiposCliente(); cargarCatalogoServicios(); cargarCanalesCatalogo(); }
 }
@@ -2694,6 +2694,7 @@ async function iniciarApp() {
   if (!USUARIO_ACTUAL) return; // la sesión expiró mientras cargaba: ya se pidió volver a entrar
   mostrarUsuarioEnHeader();
   await Sucursales.cargar();
+  window.Listas?.cargar(); // opciones ocultas por Dirección en «Listas desplegables»
   // Si otra persona inicia sesión en el mismo navegador, no debe quedar a la vista lo del usuario anterior.
   for (const id of ['cuentas-tarjetas', 'cobrar-lista', 'pagar-lista', 'prov-lista', 'cuentas-por-confirmar', 'fc-cobranza', 'inicio-dinero']) { const el = document.getElementById(id); if (el) el.innerHTML = ''; }
   cambiarVista('inicio'); // también carga Inicio
