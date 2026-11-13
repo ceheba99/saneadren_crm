@@ -211,13 +211,40 @@ const Personal = (() => {
         if (bio.consentimiento && e.puede?.editar && actual.activo && (e.puede?.corregir || bio.registrado)) h += `<div class="btn-group">${e.puede?.corregir ? `<button type="button" class="btn btn-secundario" data-pe-bio-codigo="${Number(id)}">${esc(bio.registrado ? 'Volver a registrar su cara' : 'Código para registrar su cara')}</button>` : ''}${bio.registrado ? `<button type="button" class="btn btn-outline" data-pe-bio-borrar="${Number(id)}">Borrar su registro</button>` : ''}</div><div id="pe-bio-codigo"></div>`;
       }
       // Checar por WhatsApp (foráneos, server/whatsapp.js): respaldo del celular; desde el número de su ficha, queda por revisar.
-      h += `<p>💬 Checar por WhatsApp: <b>${esc(e.checa_whatsapp ? 'activado' : 'no')}</b>${e.checa_whatsapp ? ` <small>(desde el celular de su ficha: ${esc(actual.telefono || 'sin teléfono')}; cada checada queda por revisar)</small>` : ''}</p>`;
+      h += `<p>💬 Checar por WhatsApp: <b>${esc(e.checa_whatsapp ? 'activado' : 'no')}</b>${e.checa_whatsapp ? ` <small>(desde el celular de su ficha: ${esc(actual.telefono || 'sin teléfono')})</small>` : ''}</p>`;
+      if (e.checa_whatsapp) h += `<div id="pe-wa-config"><p class="ayuda" role="status">Cargando…</p></div>`;
       if (e.puede?.editar && actual.activo) h += `<div class="btn-group"><button type="button" class="btn btn-outline" data-pe-whatsapp="${Number(id)}" data-activo="${e.checa_whatsapp ? '' : '1'}">${esc(e.checa_whatsapp ? 'Quitar WhatsApp' : 'Permitir checar por WhatsApp')}</button></div>`;
     }
     if (e.ultimas?.length) h += '<h4 class="pe-sub2">Últimas checadas</h4><ul class="pe-ordenes">' + e.ultimas.map(c => `<li>${esc(fecha(c.fecha))} ${esc(String(c.hora).slice(0, 5))} · ${esc(TIPOS_CHECADA[c.tipo] || c.tipo)}${esc(c.origen === 'manual' ? ' (a mano)' : c.origen === 'celular' ? ' (celular)' : '')}${esc(c.sin_conexion ? ' (sin conexión)' : '')}${esc(c.estado === 'anulada' ? ' (anulada)' : c.estado === 'por_revisar' ? ' (por revisar)' : '')}${c.tiene_foto && e.puede?.ver ? ` <button type="button" class="btn-link" data-pe-foto="${Number(c.id)}">📷 Ver foto</button>` : ''}${esc(c.foto_borrada ? ' (foto borrada a los ' + e.dias_fotos + ' días)' : '')}</li>`).join('') + '</ul><div id="pe-foto-checada"></div>';
     // Etapa 6 (FLW-H08): la primera alta, quien edita el personal; un PIN nuevo a quien ya tiene uno, quien corrige la asistencia.
     if (e.puede?.editar && actual.activo && (e.puede?.corregir || !e.tiene_pin || e.bloqueado)) h += `<div class="btn-group">${e.puede?.corregir || !e.tiene_pin ? `<button type="button" class="btn btn-secundario" data-pe-pin="${Number(id)}" data-pe-pin-hay="${e.codigo ? 1 : ''}">${e.codigo ? 'Dar un PIN temporal nuevo' : 'Dar de alta en el checador'}</button>` : ''}${e.bloqueado ? `<button type="button" class="btn btn-outline" data-pe-desbloquear="${Number(id)}">Desbloquear PIN</button>` : ''}</div>`;
     cont.innerHTML = h;
+    if (e.checa_whatsapp) pintarWhatsapp(Number(id));
+  }
+  // Qué le pide el bot de WhatsApp (foto, ubicación) y en qué zonas puede checar (server/whatsapp.js, 2026-11-13).
+  async function pintarWhatsapp(id) {
+    let w;
+    try { const r = await api('/asistencia/personal/' + Number(id) + '/whatsapp'); w = await r.json().catch(() => ({})); if (!r.ok) throw new Error(w.error || 'No se pudo cargar'); }
+    catch (err) { if ($('pe-wa-config')) $('pe-wa-config').innerHTML = `<p class="aviso-error-carga" role="alert">${esc(err.message)}</p>`; return; }
+    const cont = $('pe-wa-config');
+    if (!cont || actual?.id !== Number(id)) return;
+    const puede = w.editar && actual.activo, dis = puede ? '' : ' disabled';
+    const usaUbic = w.pide === 'ambas' || w.pide === 'ubicacion';
+    let h = `<p class="ayuda">Al checar, el bot le pide lo que elijas aquí y tiene 5 minutos para mandarlo. Si falta algo, o su ubicación está fuera de sus zonas, la checada queda «por revisar». Con todo y dentro de su zona, vale.</p>
+      <div class="filtros"><label>Qué le pide <select id="pe-wa-pide"${dis}>${Object.entries(w.opciones).map(([k, v]) => `<option value="${esc(k)}"${k === w.pide ? ' selected' : ''}>${esc(v)}</option>`).join('')}</select></label></div>`;
+    h += `<fieldset class="pe-wa-zonas"><legend>Zonas donde puede checar${usaUbic ? '' : ' <small>(solo cuentan si se le pide ubicación)</small>'}</legend>`;
+    h += w.zonas.length ? w.zonas.map(z => `<label class="pe-check"><input type="checkbox" data-pe-wa-zona="${Number(z.id)}"${z.asignada ? ' checked' : ''}${dis}> ${esc(z.nombre)} <small>(radio ${esc(z.radio_m)} m${z.activo ? '' : ', desactivada'})</small></label>`).join('<br>')
+      : '<p class="ayuda">Aún no hay zonas. Dalas de alta en <b>RH → Asistencia → Horarios → Zonas para checar por WhatsApp</b>.</p>';
+    h += '</fieldset>';
+    if (puede) h += `<div class="btn-group"><button type="button" class="btn btn-secundario" data-pe-wa-guardar="${Number(id)}">Guardar cómo checa por WhatsApp</button></div>`;
+    cont.innerHTML = h;
+  }
+  async function guardarWhatsapp(id, b) {
+    const zonas = [...document.querySelectorAll('[data-pe-wa-zona]')].filter(x => x.checked).map(x => Number(x.dataset.peWaZona));
+    b.disabled = true;
+    try { const r = await api('/asistencia/personal/' + Number(id) + '/whatsapp/config', { method: 'PUT', body: JSON.stringify({ pide: $('pe-wa-pide').value, zonas }) }); const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.error || 'No se pudo guardar');
+      toast(j.aviso || 'Guardado'); pintarWhatsapp(Number(id)); }
+    catch (err) { toast(err.message); b.disabled = false; }
   }
   // La foto se pide con la sesión y se muestra aquí mismo (no queda en la memoria del navegador al cerrar la ficha).
   async function verFoto(id) {
@@ -269,7 +296,7 @@ const Personal = (() => {
     catch (err) { toast(err.message); }
   }
   async function cambiarWhatsapp(id, activo) {
-    if (activo && !await solicitarDialogo({ titulo: 'Checar por WhatsApp', mensaje: `Podrá checar mandando un mensaje al WhatsApp de la empresa desde el celular de su ficha (${actual.telefono || 'sin teléfono'}). Sin foto ni ubicación: cada checada quedará «por revisar». Úsalo para foráneos que no puedan usar el enlace del celular.`, aceptar: 'Permitir' })) return;
+    if (activo && !await solicitarDialogo({ titulo: 'Checar por WhatsApp', mensaje: `Podrá checar mandando un mensaje al WhatsApp de la empresa desde el celular de su ficha (${actual.telefono || 'sin teléfono'}). Por omisión el bot le pedirá foto y ubicación (lo puedes cambiar después, junto con sus zonas). Úsalo para foráneos que no puedan usar el enlace del celular.`, aceptar: 'Permitir' })) return;
     try { const r = await api('/asistencia/personal/' + Number(id) + '/whatsapp', { method: 'PUT', body: JSON.stringify({ activo }) }); const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.error || 'No se pudo');
       toast(activo ? (j.configurado ? 'Listo: ya puede checar por WhatsApp' : 'Activado. Ojo: el WhatsApp de la empresa todavía no está conectado al sistema') : 'Ya no checa por WhatsApp'); pintarChecador(Number(id)); }
     catch (err) { toast(err.message); }
@@ -434,6 +461,7 @@ const Personal = (() => {
     else if (t.dataset.peCelular) enlaceCelular(t.dataset.peCelular);
     else if (t.dataset.peCelularQuitar) quitarCelular(t.dataset.peCelularQuitar);
     else if (t.dataset.peWhatsapp) cambiarWhatsapp(t.dataset.peWhatsapp, !!t.dataset.activo);
+    else if (t.dataset.peWaGuardar) guardarWhatsapp(t.dataset.peWaGuardar, t);
     else if (t.dataset.peBioCodigo) codigoBiometria(t.dataset.peBioCodigo);
     else if (t.dataset.peBioBorrar) borrarBiometria(t.dataset.peBioBorrar);
     else if (t.dataset.peBioConsent) consentimientoBiometria(t.dataset.peBioConsent, !!t.dataset.firmado);

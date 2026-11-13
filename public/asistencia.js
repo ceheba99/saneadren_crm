@@ -45,7 +45,7 @@ const Asistencia = (() => {
       if (pestana === 'dia') r = await pedir('/dia?fecha=' + encodeURIComponent(fecha));
       else if (pestana === 'semana') r = await pedir(semana ? '/semana?desde=' + encodeURIComponent(semana) : '/semana?vencida=1');
       else if (pestana === 'reglas') r = await pedir('/reglas-extra');
-      else if (pestana === 'horarios') { r = await pedir('/horarios'); r.ubicaciones = await pedir('/sucursales').catch(() => null); }
+      else if (pestana === 'horarios') { r = await pedir('/horarios'); r.ubicaciones = await pedir('/sucursales').catch(() => null); r.zonas = await pedir('/whatsapp/zonas').catch(() => null); }
       else r = await pedir('/festivos?anio=' + encodeURIComponent(anio));
       if (turno !== consulta) return;
       datos = r;
@@ -326,7 +326,7 @@ const Asistencia = (() => {
       h += '</div>';
     }
     if (puede.precios) h += '<div class="modal-section" id="as-precios"><p class="ayuda" role="status">Cargando precios…</p></div>';
-    h += seccionUbicaciones();
+    h += seccionUbicaciones() + seccionZonas();
     $('as-cuerpo').innerHTML = h;
     if (puede.precios) cargarPrecios();
   }
@@ -422,6 +422,24 @@ const Asistencia = (() => {
       <ul class="pe-ordenes">${u.sucursales.map(s => `<li><b>${esc(s.nombre)}</b>: ${s.lat == null ? '<span class="as-rojo">sin ubicación</span>' : `${esc(s.lat)}, ${esc(s.lon)} · radio ${esc(s.radio_m || u.radio_omision)} m <a class="btn-link" target="_blank" rel="noopener noreferrer" href="${esc('https://www.google.com/maps?q=' + Number(s.lat) + ',' + Number(s.lon))}">📍 Mapa</a>`}
         ${u.editar ? `<span class="filtros as-form"><input id="as-u-${Number(s.id)}" value="${esc(s.lat == null ? '' : s.lat + ', ' + s.lon)}" placeholder="20.5888, -100.3899" aria-label="Ubicación de ${esc(s.nombre)}"><input type="number" id="as-r-${Number(s.id)}" class="as-num" min="100" max="20000" value="${esc(s.radio_m || u.radio_omision)}" aria-label="Radio en metros"> m <button type="button" class="btn btn-secundario" data-as-ubicacion="${Number(s.id)}">Guardar</button></span>` : ''}</li>`).join('')}</ul></div>`;
   }
+  // Zonas para checar por WhatsApp (server/whatsapp.js, 2026-11-13): punto + radio; en la ficha se elige a quién aplica.
+  let zonaEditando = null;
+  function seccionZonas() {
+    const z = datos.zonas;
+    if (!z) return '';
+    const form = x => `<span class="filtros as-form"><input id="as-z-nombre" maxlength="60" value="${esc(x?.nombre || '')}" placeholder="Nombre (p. ej. Obra Celaya)" aria-label="Nombre de la zona">
+      <input id="as-z-ubic" value="${esc(x ? x.lat + ', ' + x.lon : '')}" placeholder="20.5888, -100.3899 o enlace de Google Maps" aria-label="Ubicación de la zona">
+      <input type="number" id="as-z-radio" class="as-num" min="50" max="20000" value="${esc(x?.radio_m || z.radio_omision)}" aria-label="Radio en metros"> m
+      <button type="button" class="btn btn-secundario" id="as-z-guardar" data-id="${x ? Number(x.id) : ''}">Guardar</button>${x ? '<button type="button" class="btn btn-outline" id="as-z-cancelar">Cancelar</button>' : ''}</span>`;
+    let h = `<div class="modal-section"><h3 class="pe-sub">💬 Zonas para checar por WhatsApp</h3>
+      <p class="ayuda">Lugares donde el personal puede checar por WhatsApp. Si su ubicación cae fuera de sus zonas, la checada queda «por revisar». A quién aplica cada zona se elige en su ficha (Personal → Reloj checador).${z.editar ? ' Para sacar la ubicación: en Google Maps mantén presionado el punto y copia los números (p. ej. «20.5888, -100.3899»), o pega el enlace largo.' : ''}</p>`;
+    h += z.zonas.length ? `<ul class="pe-ordenes">${z.zonas.map(x => `<li${x.activo ? '' : ' class="pe-baja"'}><b>${esc(x.nombre)}</b>${x.activo ? '' : ' (desactivada)'}: ${esc(x.lat)}, ${esc(x.lon)} · radio ${esc(x.radio_m)} m · ${esc(x.personas)} persona(s)
+        <a class="btn-link" target="_blank" rel="noopener noreferrer" href="${esc('https://www.google.com/maps?q=' + Number(x.lat) + ',' + Number(x.lon))}">📍 Mapa</a>
+        ${z.editar ? `<button type="button" class="btn-link" data-as-zona-editar="${Number(x.id)}">Cambiar</button> <button type="button" class="btn-link" data-as-zona-activo="${Number(x.id)}" data-activo="${x.activo ? '' : '1'}">${x.activo ? 'Desactivar' : 'Activar'}</button>` : ''}
+        ${zonaEditando === x.id ? '<br>' + form(x) : ''}</li>`).join('')}</ul>` : '<p class="ayuda">Aún no hay zonas.</p>';
+    if (z.editar) h += zonaEditando === 'nueva' ? `<p><b>Zona nueva:</b></p>${form(null)}<button type="button" class="btn btn-outline" id="as-z-cancelar">Cancelar</button>` : '<button type="button" class="btn btn-secundario" data-as-zona-nueva="1">+ Nueva zona</button>';
+    return h + '</div>';
+  }
   $('as-cuerpo').addEventListener('change', e => {
     if (e.target.id === 'as-fecha' && e.target.value) { fecha = e.target.value; cargar(); }
     else if (e.target.id === 'as-semana' && e.target.value) { semana = e.target.value; cargar(); }
@@ -441,6 +459,19 @@ const Asistencia = (() => {
     else if (d.asUbicacion) {
       const id = Number(d.asUbicacion);
       try { await pedir('/sucursales/' + id + '/ubicacion', { method: 'PUT', body: JSON.stringify({ ubicacion: $('as-u-' + id).value, radio_m: $('as-r-' + id).value === '' ? null : Number($('as-r-' + id).value) }) }); toast('Ubicación guardada'); await cargar(); }
+      catch (err) { toast(err.message); }
+    }
+    else if (d.asZonaNueva) { zonaEditando = 'nueva'; pintarHorarios(); }
+    else if (d.asZonaEditar) { zonaEditando = Number(d.asZonaEditar); pintarHorarios(); }
+    else if (b.id === 'as-z-cancelar') { zonaEditando = null; pintarHorarios(); }
+    else if (b.id === 'as-z-guardar') {
+      const id = b.dataset.id, cuerpo = { nombre: $('as-z-nombre').value, ubicacion: $('as-z-ubic').value, radio_m: $('as-z-radio').value === '' ? null : Number($('as-z-radio').value) };
+      b.disabled = true;
+      try { await pedir(id ? '/whatsapp/zonas/' + Number(id) : '/whatsapp/zonas', { method: id ? 'PUT' : 'POST', body: JSON.stringify(cuerpo) }); toast('Zona guardada'); zonaEditando = null; await cargar(); }
+      catch (err) { toast(err.message); b.disabled = false; }
+    }
+    else if (d.asZonaActivo) {
+      try { await pedir('/whatsapp/zonas/' + Number(d.asZonaActivo), { method: 'PUT', body: JSON.stringify({ activo: !!d.activo }) }); toast(d.activo ? 'Zona activada' : 'Zona desactivada'); await cargar(); }
       catch (err) { toast(err.message); }
     }
     else if (b.id === 'as-excel') excelNomina(b);

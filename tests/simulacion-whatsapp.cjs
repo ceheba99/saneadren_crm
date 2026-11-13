@@ -20,7 +20,16 @@ const PUERTO = String(9950 + Math.floor(Math.random() * 40)), URLB = 'http://loc
 const SECRETO = crypto.randomBytes(16).toString('hex'), VERIF = 'frase-' + crypto.randomBytes(6).toString('hex');
 // Meta falso: guarda lo que el bot envía.
 const enviados = [];
-const meta = http.createServer((req, res) => { let b = ''; req.on('data', d => b += d); req.on('end', () => { try { enviados.push({ url: req.url, auth: req.headers.authorization, cuerpo: JSON.parse(b) }); } catch { /* */ } res.writeHead(200, { 'Content-Type': 'application/json' }); res.end('{"messages":[{"id":"wamid.salida"}]}'); }); });
+// Fotos (2026-11-13): GET /v27.0/MEDIA_OK da la dirección de la foto; /descarga/foto.jpg la entrega (con el token).
+const JPEG = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(3000, 7)]);
+const meta = http.createServer((req, res) => { let b = ''; req.on('data', d => b += d); req.on('end', () => {
+  if (req.method === 'GET') {
+    const bueno = req.headers.authorization === 'Bearer token-de-prueba';
+    if (/^\/v27\.0\/MEDIA_OK\?/.test(req.url) && bueno) { res.writeHead(200, { 'Content-Type': 'application/json' }); return res.end(JSON.stringify({ url: 'http://localhost:' + meta.address().port + '/descarga/foto.jpg', mime_type: 'image/jpeg', file_size: JPEG.length })); }
+    if (req.url === '/descarga/foto.jpg' && bueno) { res.writeHead(200, { 'Content-Type': 'image/jpeg' }); return res.end(JPEG); }
+    res.writeHead(404); return res.end('{}');
+  }
+  try { enviados.push({ url: req.url, auth: req.headers.authorization, cuerpo: JSON.parse(b) }); } catch { /* */ } res.writeHead(200, { 'Content-Type': 'application/json' }); res.end('{"messages":[{"id":"wamid.salida"}]}'); }); });
 let srv, salida = '';
 const espera = ms => new Promise(r => setTimeout(r, ms));
 const pedir = async (m, r, t, b) => {
@@ -46,7 +55,7 @@ const ultimo = () => enviados[enviados.length - 1];
 (async () => {
   await new Promise(ok => meta.listen(0, ok));
   const env = { ...process.env, MODO_DEMO: '', PORT: PUERTO, DB_PATH: DB, APP_URL: URLB, ADMIN_USUARIO: 'admin', ADMIN_CORREO: ADMIN.correo, ADMIN_PASSWORD: ADMIN.password, SMTP_HOST: '', CLAVE_CIFRADO: crypto.randomBytes(32).toString('hex'),
-    WHATSAPP_TOKEN: 'token-de-prueba', WHATSAPP_PHONE_ID: '106540352242922', WHATSAPP_VERIFY_TOKEN: VERIF, WHATSAPP_APP_SECRET: SECRETO, WHATSAPP_API_URL: 'http://localhost:' + meta.address().port + '/v27.0' };
+    WHATSAPP_TOKEN: 'token-de-prueba', WHATSAPP_PHONE_ID: '106540352242922', WHATSAPP_VERIFY_TOKEN: VERIF, WHATSAPP_APP_SECRET: SECRETO, WHATSAPP_API_URL: 'http://localhost:' + meta.address().port + '/v27.0', WHATSAPP_ESPERA_MS: '3000', WHATSAPP_REVISAR_MS: '400' };
   srv = spawn(process.execPath, [path.join(__dirname, '..', 'server', 'index.js')], { env });
   srv.stdout.on('data', d => salida += d); srv.stderr.on('data', d => salida += d);
   for (let i = 0; i < 160 && !/corriendo/.test(salida); i++) await espera(100);
@@ -78,6 +87,9 @@ const ultimo = () => enviados[enviados.length - 1];
   revisa((await pedir('PUT', '/asistencia/personal/' + juan.id + '/whatsapp', T.Gus, { activo: true }))[0] === 404, 'El gerente de CDMX no activa a alguien de Querétaro');
   revisa((await pedir('PUT', '/asistencia/personal/' + sinTel.id + '/whatsapp', T.Gema, { activo: true }))[0] === 409, 'Sin celular de 10 dígitos no se activa');
   exigir(await pedir('PUT', '/asistencia/personal/' + juan.id + '/whatsapp', T.Gema, { activo: true }), 'activar a Juan');
+  // Juan checa «sin nada» (como antes del 13-nov): en la sección 4 se prueba la foto y la ubicación con Rosa.
+  revisa((await pedir('PUT', '/asistencia/personal/' + juan.id + '/whatsapp/config', T.Valeria, { pide: 'nada', zonas: [] }))[0] === 403, 'Ventas no cambia qué pide el bot');
+  exigir(await pedir('PUT', '/asistencia/personal/' + juan.id + '/whatsapp/config', T.Gema, { pide: 'nada', zonas: [] }), 'Juan sin foto ni ubicación');
   exigir(await pedir('PUT', '/personal/' + beto.id, T.Gema, { telefono: '4421234567', version: conBase(d => d.prepare('SELECT version FROM personal WHERE id = ?').get(beto.id).version) }), 'poner a Beto el número de Juan');
   revisa((await pedir('PUT', '/asistencia/personal/' + beto.id + '/whatsapp', T.Gema, { activo: true }))[0] === 409, 'El mismo celular no se activa en dos personas');
   require('./ligar-fichas.cjs').soltar(DB, 'Gema Gerente'); // su ficha de verdad sustituye a la de prueba
@@ -97,7 +109,7 @@ const ultimo = () => enviados[enviados.length - 1];
   const m1 = elige(JUAN, 'entrada');
   await webhook([m1]);
   let ch = conBase(d => d.prepare("SELECT * FROM checadas WHERE personal_id = ? AND origen = 'whatsapp'").all(juan.id));
-  revisa(ch.length === 1 && ch[0].estado === 'por_revisar' && ch[0].tipo === 'entrada' && /sin foto ni ubicación/.test(ch[0].observaciones) && ch[0].lat === null && ch[0].foto_archivo === null, 'Elegir «Entrada» → checada por WhatsApp, por revisar, sin foto ni ubicación', ch[0]);
+  revisa(ch.length === 1 && ch[0].estado === 'por_revisar' && ch[0].tipo === 'entrada' && /sin foto ni ubicación/i.test(ch[0].observaciones) && ch[0].lat === null && ch[0].foto_archivo === null, 'Elegir «Entrada» → checada por WhatsApp, por revisar, sin foto ni ubicación', ch[0]);
   revisa(/Entrada registrada a las/.test(ultimo().cuerpo.text?.body || '') && /por revisar/.test(ultimo().cuerpo.text.body), 'Le confirma la hora y que queda por revisar', ultimo().cuerpo);
   await webhook([m1]);
   revisa(conBase(d => d.prepare("SELECT COUNT(*) n FROM checadas WHERE personal_id = ? AND origen = 'whatsapp'").get(juan.id).n) === 1, 'Si Meta reenvía el mismo mensaje, no se duplica');
@@ -133,6 +145,61 @@ const ultimo = () => enviados[enviados.length - 1];
   const n0 = enviados.length;
   for (let i = 0; i < 35; i++) await webhook([texto(BETO, 'spam ' + i)]);
   revisa(enviados.length - n0 <= 3, 'Un número que manda mensajes sin parar recibe a lo más 3 respuestas', enviados.length - n0);
+
+  console.log('4. Foto y ubicación (zonas)');
+  const rosa = await alta('Rosa Foránea', '442 555 0001'), ROSA = '5214425550001';
+  exigir(await pedir('PUT', '/asistencia/personal/' + rosa.id + '/whatsapp', T.Gema, { activo: true }), 'activar a Rosa');
+  revisa((await pedir('POST', '/asistencia/whatsapp/zonas', T.Valeria, { nombre: 'X', ubicacion: '20.5, -100.8' }))[0] === 403, 'Ventas no da de alta zonas');
+  revisa((await pedir('POST', '/asistencia/whatsapp/zonas', T.Gema, { nombre: 'Mala', ubicacion: 'https://maps.app.goo.gl/abc' }))[0] === 400, 'Enlace corto de Maps: se pide el largo');
+  const obra = exigir(await pedir('POST', '/asistencia/whatsapp/zonas', T.Gema, { nombre: 'Obra Celaya', ubicacion: 'https://www.google.com/maps/place/Obra/@20.52,-100.81,17z/data=!3m1!4b1!3d20.5234!4d-100.8123', radio_m: 300 }), 'zona');
+  const z = exigir(await pedir('GET', '/asistencia/whatsapp/zonas', T.Gema), 'ver zonas').zonas.find(x => x.id === obra.id);
+  revisa(z && z.lat === 20.5234 && z.lon === -100.8123 && z.radio_m === 300, 'Zona desde enlace largo de Google Maps (toma el punto exacto !3d/!4d)', z);
+  revisa((await pedir('PUT', '/asistencia/personal/' + gemaFicha.id + '/whatsapp/config', T.Gema, { pide: 'nada', zonas: [] }))[0] === 403, 'Gema no cambia su propia forma de checar');
+  const cfg0 = exigir(await pedir('GET', '/asistencia/personal/' + rosa.id + '/whatsapp', T.Gema), 'config Rosa');
+  revisa(cfg0.pide === 'ambas' && cfg0.zonas.some(x => x.id === obra.id && !x.asignada), 'Por omisión pide foto y ubicación; la zona aún no es suya', cfg0);
+  exigir(await pedir('PUT', '/asistencia/personal/' + rosa.id + '/whatsapp/config', T.Gema, { pide: 'ambas', zonas: [obra.id] }), 'zona a Rosa');
+  const ub = (lat, lon, extra = {}) => msj(ROSA, { type: 'location', location: { latitude: lat, longitude: lon, ...extra } });
+  const img = (id, extra = {}) => msj(ROSA, { type: 'image', image: { id, mime_type: 'image/jpeg' }, ...extra });
+  const deRosa = tipo => conBase(d => d.prepare('SELECT * FROM checadas WHERE personal_id = ? AND tipo = ?').get(rosa.id, tipo));
+  // a) Todo bien: ubicación dentro de la zona + selfie → vale, con foto.
+  await webhook([elige(ROSA, 'entrada')]);
+  revisa(ultimo().cuerpo.type === 'interactive' && ultimo().cuerpo.interactive.type === 'location_request_message' && ultimo().cuerpo.interactive.action.name === 'send_location' && !deRosa('entrada'), 'Al elegir, pide la ubicación con el botón de WhatsApp (todavía no guarda)', ultimo().cuerpo);
+  await webhook([ub(20.5240, -100.8120)]);
+  revisa(/selfie/.test(ultimo().cuerpo.text?.body || ''), 'Con la ubicación, pide la selfie', ultimo().cuerpo);
+  await webhook([img('MEDIA_OK')]);
+  let c = deRosa('entrada');
+  revisa(c && c.estado === 'valida' && c.foto_archivo && c.lat === 20.524 && c.distancia_m < 300 && /zona «Obra Celaya»/.test(c.observaciones) && /Gracias/.test(ultimo().cuerpo.text?.body || ''), 'Foto + ubicación dentro de su zona → checada válida, con foto cifrada', c);
+  const [, diaR] = await pedir('GET', '/asistencia/checadas?fecha=' + c.fecha + '&personal_id=' + rosa.id, T.Gema);
+  revisa(diaR.some(x => x.origen === 'whatsapp' && x.tiene_foto && x.lat != null), 'RH la ve en Asistencia con foto y mapa');
+  // b) Foto primero y ubicación lejos → por revisar.
+  await webhook([elige(ROSA, 'comida_sale')]);
+  await webhook([img('MEDIA_OK')]);
+  revisa(ultimo().cuerpo.interactive?.type === 'location_request_message', 'Si manda la foto primero, le vuelve a pedir la ubicación', ultimo().cuerpo);
+  await webhook([ub(20.6, -100.4)]);
+  c = deRosa('comida_sale');
+  revisa(c && c.estado === 'por_revisar' && /km de la zona «Obra Celaya»/.test(c.observaciones) && c.foto_archivo, 'Fuera de su zona → por revisar, con la distancia', c);
+  // c) Lugar elegido en el mapa + foto reenviada + no termina → a los «5 min» se guarda por revisar.
+  await webhook([elige(ROSA, 'comida_regresa')]);
+  await webhook([ub(20.5236, -100.8122, { name: 'Oxxo', address: 'Calle 1' })]);
+  await webhook([img('MEDIA_OK', { context: { forwarded: true } })]);
+  revisa(/reenviadas/.test(ultimo().cuerpo.text?.body || '') && !deRosa('comida_regresa'), 'Foto reenviada: no se acepta');
+  await espera(4500);
+  c = deRosa('comida_regresa');
+  revisa(c && c.estado === 'por_revisar' && /no mandó foto/i.test(c.observaciones) && /elegida en el mapa/.test(c.observaciones) && /Se acabó el tiempo/.test(ultimo().cuerpo.text?.body || ''), 'Sin foto a tiempo y lugar elegido en el mapa → se guarda sola, por revisar, y se le avisa', c);
+  // d) Elige otra cosa sin terminar: la anterior se guarda; foto que Meta no entrega → por revisar.
+  await webhook([elige(ROSA, 'salida')]);
+  await webhook([elige(ROSA, 'extra_inicia')]);
+  c = deRosa('salida');
+  revisa(c && c.estado === 'por_revisar' && /no mandó su ubicación/i.test(c.observaciones), 'Eligió otra opción: la anterior no se pierde (por revisar)', c);
+  await webhook([ub(20.5240, -100.8120)]); await webhook([img('MEDIA_MALA')]);
+  c = deRosa('extra_inicia');
+  revisa(c && c.estado === 'por_revisar' && /no se pudo bajar su foto/i.test(c.observaciones) && !c.foto_archivo, 'Foto que no se puede bajar → por revisar (y queda en Logs)', c);
+  // e) Sin zonas asignadas → por revisar.
+  exigir(await pedir('PUT', '/asistencia/personal/' + rosa.id + '/whatsapp/config', T.Gema, { pide: 'ubicacion', zonas: [] }), 'Rosa sin zonas');
+  await webhook([elige(ROSA, 'extra_termina')]); await webhook([ub(20.5240, -100.8120)]);
+  c = deRosa('extra_termina');
+  revisa(c && c.estado === 'por_revisar' && /no tiene zonas/i.test(c.observaciones) && !c.foto_archivo, 'Solo ubicación y sin zonas → por revisar sin pedir foto', c);
+  revisa(!conBase(d => d.prepare('SELECT COUNT(*) n FROM whatsapp_pendientes').get().n), 'No quedan checadas en espera');
 
   console.log(`\n${n - malos.length}/${n} correctas`);
   srv.kill(); meta.close(); fs.rmSync(dir, { recursive: true, force: true });
