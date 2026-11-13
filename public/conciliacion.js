@@ -2,6 +2,8 @@
    Pestaña «Conciliación» de Contabilidad: cuentas de banco, subir el estado de cuenta (Excel o CSV del portal; la persona
    elige qué columna es cada cosa y se recuerda por cuenta), y las listas de conciliados, lo del banco que no está en el
    CRM y lo del CRM que no está en el banco. El servidor empareja; aquí solo se manda lo que se elige.
+   2026-11-13: el archivo de Santander («MovimientosCheque») y el de Banorte («Cuentas de Cheques») se reconocen solos
+   (server/formatos-banco.js): se enseña lo que se leyó y se sube sin elegir columnas. Otro formato: como antes.
    Todo dato se escapa con escaparHtml y los botones usan data-*, sin onclick en línea. */
 const Conciliacion = (() => {
   const $ = id => document.getElementById(id), esc = t => escaparHtml(t);
@@ -48,7 +50,7 @@ const Conciliacion = (() => {
       <div class="tarjeta-dinero ${t.crm_sin_banco ? 'aviso' : ''}"><small>En el CRM, no en el banco</small><b>${Number(t.crm_sin_banco)}</b></div>
       ${t.saldo_final_banco != null ? `<div class="tarjeta-dinero"><small>Saldo del banco</small><b>${esc(dinero(t.saldo_final_banco))}</b><span>al ${esc(fecha(t.saldo_fecha))}</span></div>` : ''}</div>`;
     const monto = b => (b.cargo ? `<span class="rojo">−${esc(dinero(b.cargo))}</span>` : `+${esc(dinero(b.abono))}`);
-    const sinCrm = d.banco_sin_crm.map(b => `<tr><td>${esc(fecha(b.fecha))}</td><td>${esc(b.concepto)}${b.referencia ? `<br><small>ref. ${esc(b.referencia)}</small>` : ''}</td><td class="nm-d">${monto(b)}</td>
+    const sinCrm = d.banco_sin_crm.map(b => `<tr><td>${esc(fecha(b.fecha))}</td><td>${esc(b.concepto)}${b.contraparte ? `<br><b>${esc(b.contraparte)}</b>${b.contraparte_rfc ? ' · ' + esc(b.contraparte_rfc) : ''}` : b.contraparte_rfc ? `<br>RFC ${esc(b.contraparte_rfc)}` : ''}${b.referencia ? `<br><small>ref. ${esc(b.referencia)}</small>` : ''}${b.rastreo ? `<br><small>rastreo ${esc(b.rastreo)}</small>` : ''}${b.detalle ? `<br><small title="${esc(b.detalle)}">${esc(b.detalle.slice(0, 140))}${b.detalle.length > 140 ? '…' : ''}</small>` : ''}</td><td class="nm-d">${monto(b)}</td>
       <td><div class="cc-acciones"><button type="button" class="btn btn-outline btn-chico" data-cc="candidatos" data-id="${Number(b.id)}">Emparejar</button>
         ${b.cargo && d.puede_gasto ? `<button type="button" class="btn btn-outline btn-chico" data-cc="gasto" data-id="${Number(b.id)}">Registrar gasto</button>` : ''}
         <button type="button" class="enlace" data-cc="no-aplica" data-id="${Number(b.id)}">No aplica</button></div>
@@ -84,6 +86,30 @@ const Conciliacion = (() => {
     const texto = await f.text(), lineas = texto.replace(/^﻿/, '').split(/\r?\n/).filter(l => l.trim());
     const sep = [',', ';', '\t', '|'].map(s => [s, (lineas[0].match(new RegExp('\\' + s, 'g')) || []).length]).sort((a, b) => b[1] - a[1])[0][0];
     return lineas.map(l => { const r = []; let cur = '', q = false; for (let i = 0; i < l.length; i++) { const ch = l[i]; if (ch === '"') { if (q && l[i + 1] === '"') { cur += '"'; i++; } else q = !q; } else if (ch === sep && !q) { r.push(cur.trim()); cur = ''; } else cur += ch; } r.push(cur.trim()); return r; });
+  }
+  // Formato reconocido por el servidor: lo que se leyó (sin guardar nada todavía) y el botón para subirlo.
+  async function reconocido(filas, nombre) {
+    let r;
+    try { r = await pedir('/conciliacion/cargar', { method: 'POST', body: JSON.stringify({ cuenta_id: CUENTA, crudo: filas, archivo: nombre, previa: true }) }); }
+    catch (err) { if (err.datos?.codigo === 'FORMATO_DESCONOCIDO' || err.status === 413) return false; toast(err.message + (err.datos?.errores ? ': ' + err.datos.errores.slice(0, 3).join(' · ') : '')); return true; }
+    ARCHIVO = { filas, nombre, crudo: true };
+    $('cc-mapeo').innerHTML = `<div class="nm-pago"><h3>Archivo de ${esc(r.formato.banco)} ${esc(r.formato.cuenta)} · ${esc(nombre)}</h3>
+      <p class="ayuda">Reconocí el formato: no hay que elegir columnas.</p>
+      <div class="logs-tarjetas"><div class="tarjeta-dinero"><small>Movimientos leídos</small><b>${Number(r.leidos)}</b><span>del ${esc(fecha(r.desde))} al ${esc(fecha(r.hasta))}</span></div>
+        <div class="tarjeta-dinero"><small>Nuevos</small><b>${Number(r.nuevos)}</b><span>${Number(r.leidos - r.nuevos)} ya estaban subidos</span></div>
+        <div class="tarjeta-dinero"><small>Abonos (entró)</small><b>${esc(dinero(r.abonos))}</b></div><div class="tarjeta-dinero"><small>Cargos (salió)</small><b>${esc(dinero(r.cargos))}</b></div>
+        ${r.saldo_final != null ? `<div class="tarjeta-dinero"><small>Saldo al final del archivo</small><b>${esc(dinero(r.saldo_final))}</b></div>` : ''}</div>
+      <p class="ayuda">Compara los totales con los del portal del banco antes de subir. ${Number(r.con_nombre)} movimiento(s) traen el nombre de quien pagó o cobró.</p>
+      <button type="button" class="btn btn-primario" data-cc="subir-crudo"${r.nuevos ? '' : ' disabled'}>Subir ${Number(r.nuevos)} movimiento(s) nuevo(s)</button> <button type="button" class="btn btn-outline" data-cc="cancelar-mapeo">Cancelar</button></div>`;
+    return true;
+  }
+  async function subirCrudo(boton) {
+    boton.disabled = true;
+    try {
+      const r = await pedir('/conciliacion/cargar', { method: 'POST', body: JSON.stringify({ cuenta_id: CUENTA, crudo: ARCHIVO.filas, archivo: ARCHIVO.nombre }) });
+      toast(`${r.nuevos} movimiento(s) nuevo(s)${r.repetidos ? `, ${r.repetidos} ya estaban` : ''}; ${r.emparejados} emparejado(s) solos`);
+      ARCHIVO = null; recargarAhora();
+    } catch (err) { toast(err.message); boton.disabled = false; }
   }
   function mapeo(filas, nombre) {
     // Encabezado: la primera fila (entre las 15 primeras) que tiene una «fecha» y un «saldo/cargo/abono/importe» escritos.
@@ -133,7 +159,7 @@ const Conciliacion = (() => {
     if (e.target.id === 'cc-cuenta') { CUENTA = Number(e.target.value); return recargarAhora(); }
     if (e.target.id === 'cc-archivo') {
       const f = e.target.files[0]; if (!f) return;
-      try { const filas = await leerArchivo(f); if (!filas.length) throw new Error('El archivo está vacío'); mapeo(filas, f.name); }
+      try { const filas = await leerArchivo(f); if (!filas.length) throw new Error('El archivo está vacío'); if (!await reconocido(filas, f.name)) mapeo(filas, f.name); }
       catch (err) { toast('No se pudo leer el archivo: ' + err.message); }
       e.target.value = '';
     }
@@ -151,6 +177,7 @@ const Conciliacion = (() => {
       if (!clave) throw new Error('No se cambió la clave'); await pedir('/cuentas-banco/' + Number(CUENTA) + '/clave', { method: 'POST', body: JSON.stringify({ clave }) }); }, 'Clave guardada');
     if (a === 'emparejar') return hacer(async () => { const r = await pedir('/conciliacion/cuentas/' + CUENTA + '/emparejar', { method: 'POST', body: '{}' }); toast(`${r.emparejados} emparejado(s)`); });
     if (a === 'subir') return subir(b);
+    if (a === 'subir-crudo') return subirCrudo(b);
     if (a === 'cancelar-mapeo') { ARCHIVO = null; $('cc-mapeo').innerHTML = ''; return; }
     if (a === 'soltar') return hacer(() => pedir('/conciliacion/movimientos/' + id + '/soltar', { method: 'POST', body: '{}' }), 'Listo');
     if (a === 'no-aplica') {

@@ -55,6 +55,11 @@ module.exports = function conciliacion(app, db, h) {
       BEGIN SELECT RAISE(ABORT, 'Un movimiento del banco no se cambia: viene del estado de cuenta'); END`);
     t('movimientos_banco_sin_borrar', `BEFORE DELETE ON movimientos_banco BEGIN SELECT RAISE(ABORT, 'Los movimientos del banco no se borran'); END`); }
 
+  // 2026-11-13 (formatos reales de Santander y Banorte, server/formatos-banco.js): lo que el banco dice de cada movimiento
+  // además del concepto —quién está del otro lado, su RFC, la clave de rastreo, la hora y el detalle largo—, para requisitar.
+  { const hay = new Set(db.prepare('PRAGMA table_info(movimientos_banco)').all().map(c => c.name));
+    for (const c of ['hora', 'contraparte', 'contraparte_rfc', 'rastreo', 'detalle']) if (!hay.has(c)) db.exec(`ALTER TABLE movimientos_banco ADD COLUMN ${c} TEXT`); }
+
   const puede = req => P.direccion(req) || P.puede(req, 'contabilidad.ver');
   const negar = res => res.status(403).json({ error: 'La conciliación bancaria la hacen Dirección y quien tiene «Contabilidad del mes»' });
   const enAlcance = s => !!db.prepare('SELECT en_alcance(?) v').get(s).v;
@@ -113,6 +118,7 @@ module.exports = function conciliacion(app, db, h) {
   }
 
   const fila = (b, crmPorClave) => ({ id: b.id, fecha: b.fecha, concepto: b.concepto || '', referencia: b.referencia || '', cargo: pesos(b.cargo_cent), abono: pesos(b.abono_cent), saldo: b.saldo_cent == null ? null : pesos(b.saldo_cent),
+    hora: b.hora || '', contraparte: b.contraparte || '', contraparte_rfc: b.contraparte_rfc || '', rastreo: b.rastreo || '', detalle: b.detalle || '',
     conciliado: b.conciliado_id ? { tipo: b.conciliado_tipo, id: b.conciliado_id, auto: !!b.conciliado_auto, texto: crmPorClave?.get(b.conciliado_tipo + ':' + b.conciliado_id)?.texto || `${b.conciliado_tipo} #${b.conciliado_id}`,
       fecha: crmPorClave?.get(b.conciliado_tipo + ':' + b.conciliado_id)?.fecha || '' } : null,
     no_aplica: !!b.no_aplica, no_aplica_motivo: b.no_aplica_motivo || '' });
@@ -167,6 +173,11 @@ module.exports = function conciliacion(app, db, h) {
     const t = String(v ?? '').trim();
     let m = t.match(/^(\d{4})-(\d{2})-(\d{2})/); if (m) return `${m[1]}-${m[2]}-${m[3]}`;
     m = t.match(/^(\d{1,2})[/.-](\d{1,2})[/.-](\d{2,4})$/); if (m) { const y = m[3].length === 2 ? '20' + m[3] : m[3]; return `${y}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`; }
+    // Ocho números pegados (Santander: 01102026 = 1 de octubre de 2026): día-mes-año; si así no es una fecha de este
+    // siglo, año-mes-día (20261001).
+    m = t.replace(/^'+|'+$/g, '').match(/^(\d{8})$/);
+    if (m) { const x = m[1], dma = `${x.slice(4)}-${x.slice(2, 4)}-${x.slice(0, 2)}`, amd = `${x.slice(0, 4)}-${x.slice(4, 6)}-${x.slice(6)}`;
+      const sirve = f => fechaValida(f) && f >= '2000-01-01' && f <= '2099-12-31'; return sirve(dma) ? dma : sirve(amd) ? amd : null; }
     return null;
   };
   const montoDeTexto = v => {
@@ -180,6 +191,18 @@ module.exports = function conciliacion(app, db, h) {
     if (!puede(req)) return negar(res);
     const b = req.body || {}, c = cuentaDe(req, b.cuenta_id);
     if (!c) return res.status(404).json({ error: 'Elige la cuenta de banco' });
+    // El archivo tal como se bajó del banco («crudo»): si es de un formato conocido (Santander, Banorte) se acomoda solo.
+    let formato = null;
+    if (Array.isArray(b.crudo)) {
+      if (b.crudo.length > 5200) return res.status(400).json({ error: 'Son demasiados renglones (máximo 5,000 por archivo)' });
+      const r = require('./formatos-banco').reconocer(b.crudo);
+      if (!r) return res.status(422).json({ error: 'No reconozco el formato de ese archivo: elige qué columna es cada cosa', codigo: 'FORMATO_DESCONOCIDO' });
+      if (r.errores.length) return res.status(400).json({ error: `El archivo de ${r.banco} tiene ${r.errores.length} renglón(es) con problemas; no se guardó nada`, errores: r.errores.slice(0, 30) });
+      // Que no se suba el archivo de una cuenta en otra: se compara con los últimos 4 dígitos de la cuenta.
+      const term = String(c.terminacion || '').replace(/\D/g, '');
+      if (term && r.cuenta && !r.cuenta.endsWith(term)) return res.status(400).json({ error: `Ese archivo es de la cuenta ••${r.cuenta.slice(-4)} y estás en «${c.nombre}» (••${term}). Cambia de cuenta arriba y súbelo ahí.`, codigo: 'OTRA_CUENTA' });
+      formato = { banco: r.banco, cuenta: r.cuenta ? '••' + r.cuenta.slice(-4) : '' }; b.filas = r.filas;
+    }
     if (!Array.isArray(b.filas) || !b.filas.length) return res.status(400).json({ error: 'El archivo no trae movimientos' });
     if (b.filas.length > 5000) return res.status(400).json({ error: 'Son demasiados renglones (máximo 5,000 por archivo)' });
     const hoy = hoyMexico(), errores = [], listos = [], vistos = new Map();
@@ -195,18 +218,25 @@ module.exports = function conciliacion(app, db, h) {
       const saldo = f.saldo === undefined || f.saldo === null || String(f.saldo).trim() === '' ? null : montoDeTexto(f.saldo);
       const concepto = texto(String(f.concepto ?? ''), 300), referencia = texto(String(f.referencia ?? ''), 120);
       const base = [fecha, cargo, abono, norm(concepto), norm(referencia)].join('|'), k = (vistos.get(base) || 0) + 1; vistos.set(base, k);
-      listos.push({ fecha, cargo, abono, saldo: saldo == null ? null : saldo, concepto, referencia, huella: require('crypto').createHash('sha256').update(base + '#' + k).digest('hex').slice(0, 32) });
+      listos.push({ fecha, cargo, abono, saldo: saldo == null ? null : saldo, concepto, referencia, hora: /^\d{2}:\d{2}/.test(String(f.hora || '')) ? String(f.hora).slice(0, 5) : null,
+        contraparte: texto(String(f.contraparte ?? ''), 160), contraparte_rfc: /^[A-ZÑ&]{3,4}\d{6}[A-Z0-9]{3}$/.test(String(f.contraparte_rfc || '')) ? f.contraparte_rfc : null,
+        rastreo: texto(String(f.rastreo ?? ''), 60), detalle: texto(String(f.detalle ?? ''), 600), huella: require('crypto').createHash('sha256').update(base + '#' + k).digest('hex').slice(0, 32) });
     });
     if (errores.length) return res.status(400).json({ error: `El archivo tiene ${errores.length} renglón(es) con problemas; no se guardó nada`, errores: errores.slice(0, 30) });
-    const ins = db.prepare('INSERT OR IGNORE INTO main.movimientos_banco (cuenta_id, fecha, concepto, referencia, cargo_cent, abono_cent, saldo_cent, huella, archivo, subido_por) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+    // Vista previa (la pantalla la enseña antes de subir un formato reconocido): qué se leyó, sin guardar nada.
+    if (b.previa) { const yaEsta = db.prepare('SELECT 1 FROM main.movimientos_banco WHERE cuenta_id = ? AND huella = ?');
+      return res.json({ previa: true, formato, leidos: listos.length, nuevos: listos.filter(f => !yaEsta.get(c.id, f.huella)).length, desde: listos.reduce((m, f) => (f.fecha < m ? f.fecha : m), listos[0].fecha),
+        hasta: listos.reduce((m, f) => (f.fecha > m ? f.fecha : m), listos[0].fecha), cargos: pesos(listos.reduce((t, f) => t + f.cargo, 0)), abonos: pesos(listos.reduce((t, f) => t + f.abono, 0)),
+        con_nombre: listos.filter(f => f.contraparte).length, saldo_final: (() => { const u = listos.filter(f => f.saldo != null).at(-1); return u ? pesos(u.saldo) : null; })() }); }
+    const ins = db.prepare('INSERT OR IGNORE INTO main.movimientos_banco (cuenta_id, fecha, concepto, referencia, cargo_cent, abono_cent, saldo_cent, huella, archivo, subido_por, hora, contraparte, contraparte_rfc, rastreo, detalle) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
     let nuevos = 0;
     db.transaction(() => {
-      for (const f of listos) nuevos += ins.run(c.id, f.fecha, f.concepto, f.referencia, f.cargo, f.abono, f.saldo, f.huella, texto(b.archivo, 120), yo(req)).changes;
+      for (const f of listos) nuevos += ins.run(c.id, f.fecha, f.concepto, f.referencia, f.cargo, f.abono, f.saldo, f.huella, texto(b.archivo, 120), yo(req), f.hora, f.contraparte, f.contraparte_rfc, f.rastreo, f.detalle).changes;
       if (b.columnas && typeof b.columnas === 'object') db.prepare('UPDATE main.cuentas_banco SET columnas = ? WHERE id = ?').run(JSON.stringify(b.columnas).slice(0, 2000), c.id);
     })();
     const emparejados = emparejarSolos(c);
-    app.locals.auditoria?.registrar(req, 'conciliacion', c.id, 'estado de cuenta', `${c.nombre}: ${nuevos} movimiento(s) nuevo(s) de ${listos.length}; ${emparejados} emparejado(s) solos`);
-    res.status(201).json({ leidos: listos.length, nuevos, repetidos: listos.length - nuevos, emparejados });
+    app.locals.auditoria?.registrar(req, 'conciliacion', c.id, 'estado de cuenta', `${c.nombre}${formato ? ' (formato ' + formato.banco + ')' : ''}: ${nuevos} movimiento(s) nuevo(s) de ${listos.length}; ${emparejados} emparejado(s) solos`);
+    res.status(201).json({ leidos: listos.length, nuevos, repetidos: listos.length - nuevos, emparejados, formato });
   }));
 
   // ---------- Emparejar solos (otra vez: p. ej. después de registrar un cobro que faltaba) ----------
