@@ -121,6 +121,14 @@ function revisar(db, { dirArchivos } = {}) {
       .map(a => ({ ref: refA(a), detalle: `${pesos(a.monto_cent - conAnt(a.id))} por comprobar: comprueba los gastos y ciérralo` })));
   }
 
+  // ---------- Gastos ligados a compras y centro de costos (2026-11-13) ----------
+  {
+    const idsDe = t => (existe(db, t) ? new Set(db.prepare(`SELECT id FROM ${t}`).all().map(r => r.id)) : new Set());
+    const sols = idsDe('solicitudes_compra'), ocs = idsDe('ordenes_compra'), centros = idsDe('centros_costo');
+    chequeo('Cuentas por pagar', 'Gasto ligado a una solicitud, orden de compra o centro de costos que no existe', 'error', () => cxp.filter(x => !x.cancelada && ((x.solicitud_id && !sols.has(x.solicitud_id)) || (x.oc_id && !ocs.has(x.oc_id)) || (x.centro_id && !centros.has(x.centro_id))))
+      .map(x => ({ ref: refCxp(x), detalle: [x.solicitud_id && !sols.has(x.solicitud_id) ? 'solicitud #' + x.solicitud_id : '', x.oc_id && !ocs.has(x.oc_id) ? 'orden de compra #' + x.oc_id : '', x.centro_id && !centros.has(x.centro_id) ? 'centro #' + x.centro_id : ''].filter(Boolean).join(', ') })));
+  }
+
   // ---------- Gastos programados (Cuentas por pagar fase 4, 2026-11-13) ----------
   if (existe(db, 'gastos_programados') && existe(db, 'gastos_programados_periodos')) {
     const gp = db.prepare('SELECT g.*, p.nombre AS proveedor, p.activo AS prov_activo FROM gastos_programados g LEFT JOIN proveedores p ON p.id = g.proveedor_id').all();

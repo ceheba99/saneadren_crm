@@ -265,18 +265,25 @@ const Finanzas = (() => {
     const cont = $('cuentas-tarjetas');
     try { RESUMEN = await api('/finanzas/resumen').then(json); } catch (err) { cont.innerHTML = `<div class="aviso-error-carga" role="alert"><p>No se pudo cargar el resumen: ${esc(err.message)}</p></div>`; return; }
     // Cada tarjeta lleva «?»: la explicación sale debajo de las tarjetas (public/ayuda.js).
-    const r = RESUMEN, t = (titulo, valor, detalle, clase = '', ayuda = '') => `<div class="tarjeta-dinero ${clase}"><small>${titulo}${Ayuda.boton(ayuda)}</small><b>${valor}</b>${detalle ? `<span>${detalle}</span>` : ''}</div>`;
+    // «tipo-<clave>» da a cada tarjeta su color (interfaz.css, «Tarjetas de cuentas»); «extra» es HTML ya armado aquí.
+    const r = RESUMEN, t = (titulo, valor, detalle, clase = '', ayuda = '', extra = '') => `<div class="tarjeta-dinero ${clase}${ayuda ? ' tipo-' + ayuda : ''}"><small>${titulo}${Ayuda.boton(ayuda)}</small><b>${valor}</b>${extra}${detalle ? `<span>${detalle}</span>` : ''}</div>`;
+    const plural = (n, uno, varios) => `${Number(n) || 0} ${Number(n) === 1 ? uno : varios}`;
+    // Qué parte de lo que te deben ya está vencida: barra fina dentro de la tarjeta «Vencido».
+    const pctVencido = r.por_cobrar > 0 ? Math.min(100, Math.round((Number(r.vencido) || 0) * 100 / r.por_cobrar)) : 0;
+    const barraVencido = r.vencido > 0 ? `<i class="tarjeta-barra" role="img" aria-label="${pctVencido}% de lo que te deben"><i style="width:${pctVencido}%"></i></i>` : '';
+    const mesActual = new Date().toLocaleDateString('es-MX', { month: 'long', timeZone: 'America/Mexico_City' });
+    const nConfirmar = Number(r.por_confirmar?.cantidad) || 0;
     cont.innerHTML = SECCION === 'pagar'
-      ? (r.pagar_semana !== undefined ? t('Pagar esta semana', formatoMoneda(r.pagar_semana), `${Number(r.facturas_semana)} facturas (incluye vencidas)`, r.pagar_semana > 0 ? 'aviso' : '', 'pagar_semana') : '')
+      ? (r.pagar_semana !== undefined ? t('Pagar esta semana', formatoMoneda(r.pagar_semana), plural(r.facturas_semana, 'factura (incluye vencidas)', 'facturas (incluye vencidas)'), r.pagar_semana > 0 ? 'aviso' : '', 'pagar_semana') : '')
         + (r.por_pagar !== undefined ? t('Total por pagar', formatoMoneda(r.por_pagar), '', '', 'por_pagar') : '')
-        + (r.pagado_mes !== undefined ? t('Pagado este mes', formatoMoneda(r.pagado_mes), '', '', 'pagado_mes') : '')
-      : t('Te deben', formatoMoneda(r.por_cobrar), `${Number(r.cuentas_con_saldo)} ${Number(r.cuentas_con_saldo) === 1 ? 'orden' : 'órdenes'} por cobrar`, '', 'te_deben')
-      + t('Vencido', formatoMoneda(r.vencido), `${Number(r.clientes_con_vencido)} ${Number(r.clientes_con_vencido) === 1 ? 'cliente' : 'clientes'}`, r.vencido > 0 ? 'alerta' : '', 'vencido')
-      + (r.por_concluir > 0 ? t('Por concluir', formatoMoneda(r.por_concluir), `${Number(r.ordenes_por_concluir)} ${Number(r.ordenes_por_concluir) === 1 ? 'servicio con fecha pasada' : 'servicios con fecha pasada'}: márcalos realizados para cobrarlos`, 'aviso', 'por_concluir') : '')
-      + (r.programado > 0 ? t('Por realizar', formatoMoneda(r.programado), `${Number(r.ordenes_programadas)} ${Number(r.ordenes_programadas) === 1 ? 'servicio programado' : 'servicios programados'} (aún no se cobran)`, '', 'por_realizar') : '')
-      + (r.a_favor > 0 ? t('A favor de clientes', formatoMoneda(r.a_favor), `${Number(r.ordenes_a_favor)} ${Number(r.ordenes_a_favor) === 1 ? 'servicio no realizado' : 'servicios no realizados'} con pago (devolver o aplicar)`, 'aviso', 'a_favor') : '')
-      + t('Cobrado este mes', formatoMoneda(r.cobrado_mes), '', '', 'cobrado_mes')
-      + (r.por_confirmar ? t('Por confirmar', formatoMoneda(r.por_confirmar.monto), `${Number(r.por_confirmar.cantidad)} pagos`, r.por_confirmar.cantidad ? 'aviso' : '', 'por_confirmar') : '');
+        + (r.pagado_mes !== undefined ? t('Pagado este mes', formatoMoneda(r.pagado_mes), `En ${esc(mesActual)}`, '', 'pagado_mes') : '')
+      : t('Te deben', formatoMoneda(r.por_cobrar), plural(r.cuentas_con_saldo, 'orden por cobrar', 'órdenes por cobrar'), 'principal', 'te_deben')
+      + t('Vencido', formatoMoneda(r.vencido), r.vencido > 0 ? `${pctVencido}% del total · ${plural(r.clientes_con_vencido, 'cliente', 'clientes')}` : 'Nada vencido', r.vencido > 0 ? 'alerta' : 'tranquila', 'vencido', barraVencido)
+      + (r.por_concluir > 0 ? t('Por concluir', formatoMoneda(r.por_concluir), `${plural(r.ordenes_por_concluir, 'servicio con fecha pasada', 'servicios con fecha pasada')}: márcalos realizados para cobrarlos`, 'aviso', 'por_concluir') : '')
+      + (r.programado > 0 ? t('Por realizar', formatoMoneda(r.programado), `${plural(r.ordenes_programadas, 'servicio programado', 'servicios programados')} · aún no se cobran`, '', 'por_realizar') : '')
+      + (r.a_favor > 0 ? t('A favor de clientes', formatoMoneda(r.a_favor), `${plural(r.ordenes_a_favor, 'servicio no realizado', 'servicios no realizados')} con pago · devolver o aplicar`, 'aviso', 'a_favor') : '')
+      + t('Cobrado este mes', formatoMoneda(r.cobrado_mes), `En ${esc(mesActual)}`, 'bueno', 'cobrado_mes')
+      + (r.por_confirmar ? t('Por confirmar', formatoMoneda(r.por_confirmar.monto), nConfirmar ? plural(nConfirmar, 'pago esperando confirmación', 'pagos esperando confirmación') : 'Nada pendiente', nConfirmar ? 'aviso' : 'tranquila', 'por_confirmar') : '');
     Ayuda.cerrar(cont);
     pintarRevision();
   }
@@ -695,7 +702,7 @@ const Finanzas = (() => {
   // sistema), sin acentos ni mayúsculas; con varias palabras, deben estar todas (p. ej. «morlet parcial»).
   const sinAcentosPagar = t => String(t ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
   const textoBusquedaPagar = x => sinAcentosPagar([x.proveedor_nombre, x.beneficiario, x.concepto, x.factura_folio, folioExcel(x), metodoExcelDe(x), x.categoria_nombre,
-    x.tipo_gasto_nombre, CxpExcel.statusDe(x.total_cent, x.pagado_cent), x.capturo, x.notas, x.orden_folio, x.equipo, fechaTxt(x.fecha_documento), fechaTxt(x.fecha_vencimiento),
+    x.tipo_gasto_nombre, CxpExcel.statusDe(x.total_cent, x.pagado_cent), x.capturo, x.notas, x.orden_folio, x.compra_folio, x.centro_nombre, x.equipo, fechaTxt(x.fecha_documento), fechaTxt(x.fecha_vencimiento),
     x.fecha_documento, x.fecha_vencimiento, x.total, Number(x.total).toFixed(2), formatoMoneda(x.total), x.saldo, Number(x.saldo).toFixed(2), formatoMoneda(x.saldo)].join(' '));
   const filtrarPagar = lista => {
     const palabras = sinAcentosPagar($('pagar-buscar').value).split(/\s+/).filter(Boolean);
@@ -742,6 +749,8 @@ const Finanzas = (() => {
         return '<span class="estado-cxc ' + cl + '">' + esc(g === 'Vencidas' ? 'Vencida hace ' + Number(-x.dias_para_vencer) + ' d' : g === 'Pagadas' ? 'Pagada ✓' : g) + '</span>'; }, s: x => (x.saldo > 0 ? x.fecha_vencimiento : '9999') },
       { k: 'dias', t: 'Días', n: true, v: x => (x.saldo <= 0 ? '—' : x.dias_para_vencer < 0 ? '<b class="rojo">' + Number(-x.dias_para_vencer) + ' vencida</b>' : x.dias_para_vencer === 0 ? 'Hoy' : 'en ' + Number(x.dias_para_vencer) + ' d'), s: x => (x.saldo > 0 ? x.dias_para_vencer : 99999) },
       { k: 'orden', t: 'Orden', v: x => (x.lead_id ? '<button type="button" class="enlace" data-abrir-orden-cxp="' + Number(x.lead_id) + '">' + esc(x.orden_folio) + '</button>' : '—'), s: x => x.orden_folio || '' },
+      { k: 'compra', t: 'Compra (SOL/OC)', v: x => esc(x.compra_folio || '—'), s: x => x.compra_folio || '' },
+      { k: 'centro', t: 'Centro de costos', v: x => esc(x.centro_nombre || '—'), s: x => x.centro_nombre || '' },
       { k: 'equipo', t: 'Unidad', v: x => esc(x.equipo || '—'), s: x => x.equipo || '' },
       { k: 'iva', t: 'IVA', n: true, v: x => (x.es_factura ? formatoMoneda(x.iva) + (x.iva_estimado ? '<small class="celda-sub">estimado 16 %</small>' : x.xml && x.iva_origen === 'xml' ? '<small class="celda-sub">del XML' + (x.xml.ieps ? ' · IEPS ' + formatoMoneda(x.xml.ieps) + ' en el gasto' : '') + '</small>' : '') : '—'), s: x => x.iva, sum: x => x.iva },
       { k: 'ultimo_pago', t: 'Último pago (vía y referencia)', v: x => esc(ultimoPagoTxt(x.ultimo_pago)), s: x => x.ultimo_pago || '' },
@@ -901,9 +910,38 @@ const Finanzas = (() => {
 
   // Nuevo gasto o factura
   // ---- Orden de servicio relacionada al gasto: búsqueda, vista previa y datos que se cargan ----
-  let ORDENES_GASTO = [];
+  let ORDENES_GASTO = [], COMPRAS_GASTO = { solicitudes: [], ordenes: [], centros: [] };
   async function cargarOrdenesGasto() {
     try { ORDENES_GASTO = await api('/finanzas/ordenes-para-gasto').then(json); } catch { ORDENES_GASTO = []; }
+  }
+  // Solicitudes y órdenes de compra + centros de costos (2026-11-13): solo para quien paga (registra gastos sin orden de servicio).
+  async function cargarComprasGasto() {
+    if (!Permisos.puede('dinero.mover')) { COMPRAS_GASTO = { solicitudes: [], ordenes: [], centros: [] }; return; }
+    try { COMPRAS_GASTO = await api('/finanzas/compras-para-gasto').then(json); } catch { COMPRAS_GASTO = { solicitudes: [], ordenes: [], centros: [] }; }
+    const actual = $('gasto-centro').value;
+    $('gasto-centro').innerHTML = '<option value="">Sin indicar</option>' + COMPRAS_GASTO.centros.filter(c => c.activo).map(c => `<option value="${Number(c.id)}">${esc(c.nombre)}</option>`).join('');
+    $('gasto-centro').value = actual;
+  }
+  const ESTADO_SOL = { por_aprobar: 'por aprobar', cotizando: 'cotizando', elegida: 'cotización elegida', con_orden: 'con orden de compra', recibida: 'recibida' };
+  function buscarComprasGasto(texto) {
+    const q = sinAcentosGasto(texto).trim(); if (!q) return [];
+    const palabras = q.split(/\s+/);
+    const sol = COMPRAS_GASTO.solicitudes.map(x => ({ ...x, tipo: 'sol', texto: [x.folio, x.que, x.para_que, x.equipo, x.centro_nombre, x.solicitante_nombre].join(' ') }));
+    const oc = COMPRAS_GASTO.ordenes.map(x => ({ ...x, tipo: 'oc', texto: [x.folio, x.proveedor_nombre, x.centro_nombre, x.cxp_concepto].join(' ') }));
+    return [...oc, ...sol].filter(x => { const t = sinAcentosGasto(x.texto); return palabras.every(p => t.includes(p)); }).slice(0, 6);
+  }
+  // Elige una solicitud u orden de compra: muestra sus datos y, si el centro de costos está vacío, toma el suyo.
+  function elegirCompraGasto(x) {
+    const info = $('gasto-orden-info'), campo = $('gasto-orden');
+    $('gasto-orden-sugerencias').hidden = true; campo.setAttribute('aria-expanded', 'false');
+    campo.value = x.folio; campo.dataset.leadId = ''; campo.dataset.compra = x.tipo + ':' + x.id;
+    info.hidden = false;
+    info.innerHTML = x.tipo === 'oc'
+      ? `<b>✓ ${esc(x.folio)}</b> · ${esc(x.proveedor_nombre)} · ${formatoMoneda(x.total)}<span>Orden de compra ${esc(x.estado)}${x.centro_nombre ? ' · centro ' + esc(x.centro_nombre) : ''}</span>`
+        + (x.cxp_id ? '<span class="rojo">Ya tiene su cuenta por pagar: aquí registra solo un gasto EXTRA de esa compra (flete, envío, diferencia). Si es la misma factura, sube el XML en esa cuenta.</span>' : '')
+      : `<b>✓ ${esc(x.folio)}</b> · ${esc(x.que)}<span>Solicitud ${esc(ESTADO_SOL[x.estado] || x.estado)}${x.centro_nombre ? ' · centro ' + esc(x.centro_nombre) : ''}${x.equipo ? ' · unidad ' + esc(x.equipo) : ''} · pidió ${esc(x.solicitante_nombre)}</span>`;
+    if (x.centro_id && !$('gasto-centro').value) $('gasto-centro').value = String(x.centro_id);
+    if (x.equipo && !$('gasto-equipo').value.trim()) $('gasto-equipo').value = x.equipo;
   }
   const sinAcentosGasto = t => String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
   // Busca por folio (OS-202610-0001), número (1), cliente, servicio, unidad, operador o ubicación.
@@ -919,16 +957,17 @@ const Finanzas = (() => {
   }
   const totalOrden = o => (Math.round((o.valor || 0) * 100) + (o.iva_cent || 0)) / 100;
   function pintarSugerenciasGasto() {
-    const caja = $('gasto-orden-sugerencias'), lista = buscarOrdenesGasto($('gasto-orden').value);
-    caja.hidden = !lista.length; $('gasto-orden').setAttribute('aria-expanded', String(!!lista.length));
-    caja.innerHTML = lista.map(o => `<button type="button" role="option" class="gasto-orden-opcion" data-orden-gasto="${Number(o.id)}"><b>${esc(folioOrdenServicio(o))}</b> · ${esc(o.empresa_contacto || o.nombre || 'Sin cliente')} · ${esc(o.servicio_nombre || 'Servicio')}<small>${esc(fechaTxt(o.fecha_servicio))}${o.equipo ? ' · Unidad ' + esc(o.equipo) : ''}${o.valor != null ? ' · ' + formatoMoneda(totalOrden(o)) : ''}</small></button>`).join('');
+    const caja = $('gasto-orden-sugerencias'), lista = buscarOrdenesGasto($('gasto-orden').value), compras = buscarComprasGasto($('gasto-orden').value);
+    caja.hidden = !lista.length && !compras.length; $('gasto-orden').setAttribute('aria-expanded', String(!caja.hidden));
+    caja.innerHTML = lista.map(o => `<button type="button" role="option" class="gasto-orden-opcion" data-orden-gasto="${Number(o.id)}"><b>${esc(folioOrdenServicio(o))}</b> · ${esc(o.empresa_contacto || o.nombre || 'Sin cliente')} · ${esc(o.servicio_nombre || 'Servicio')}<small>${esc(fechaTxt(o.fecha_servicio))}${o.equipo ? ' · Unidad ' + esc(o.equipo) : ''}${o.valor != null ? ' · ' + formatoMoneda(totalOrden(o)) : ''}</small></button>`).join('')
+      + compras.map(x => `<button type="button" role="option" class="gasto-orden-opcion" data-compra-gasto="${esc(x.tipo + ':' + x.id)}"><b>${esc(x.folio)}</b> · ${esc(x.tipo === 'oc' ? x.proveedor_nombre : x.que)}<small>${x.tipo === 'oc' ? 'Orden de compra · ' + formatoMoneda(x.total) : 'Solicitud de compra · ' + esc(ESTADO_SOL[x.estado] || x.estado)}${x.centro_nombre ? ' · ' + esc(x.centro_nombre) : ''}</small></button>`).join('');
   }
   // Muestra la información de la orden elegida y carga equipo y concepto si la orden los tiene.
   function elegirOrdenGasto(o, cargarDatos = true) {
     const info = $('gasto-orden-info'), campo = $('gasto-orden');
     $('gasto-orden-sugerencias').hidden = true; campo.setAttribute('aria-expanded', 'false');
     if (!o) { campo.dataset.leadId = ''; info.hidden = true; return; }
-    campo.value = folioOrdenServicio(o); campo.dataset.leadId = String(o.id);
+    campo.value = folioOrdenServicio(o); campo.dataset.leadId = String(o.id); campo.dataset.compra = '';
     info.hidden = false;
     info.innerHTML = `<b>✓ ${esc(folioOrdenServicio(o))}</b> · ${esc(o.empresa_contacto || o.nombre || 'Sin cliente')}
       <span>${esc(o.servicio_nombre || 'Servicio')} · servicio ${esc(fechaTxt(o.fecha_servicio))} · total ${formatoMoneda(totalOrden(o))}</span>
@@ -942,15 +981,17 @@ const Finanzas = (() => {
     $('gasto-concepto').placeholder = 'Concepto del gasto (ej. Renta de pipa 20 m³, diésel, disposición de lodos)';
     if (o.equipo) $('gasto-folio').closest('details').open = true;
   }
-  $('gasto-orden').addEventListener('input', () => { $('gasto-orden').dataset.leadId = ''; $('gasto-orden-info').hidden = true; pintarSugerenciasGasto(); });
+  $('gasto-orden').addEventListener('input', () => { $('gasto-orden').dataset.leadId = ''; $('gasto-orden').dataset.compra = ''; $('gasto-orden-info').hidden = true; pintarSugerenciasGasto(); });
   $('gasto-orden').addEventListener('focus', pintarSugerenciasGasto);
   $('gasto-orden').addEventListener('keydown', e => {
-    if (e.key === 'Enter') { const primera = buscarOrdenesGasto($('gasto-orden').value)[0]; if (primera) { e.preventDefault(); elegirOrdenGasto(primera); } }
+    if (e.key === 'Enter') { const primera = buscarOrdenesGasto($('gasto-orden').value)[0], compra = buscarComprasGasto($('gasto-orden').value)[0]; if (primera) { e.preventDefault(); elegirOrdenGasto(primera); } else if (compra) { e.preventDefault(); elegirCompraGasto(compra); } }
     if (e.key === 'Escape') { $('gasto-orden-sugerencias').hidden = true; $('gasto-orden').setAttribute('aria-expanded', 'false'); }
   });
   // Tocar fuera de la búsqueda cierra las sugerencias.
   document.addEventListener('click', e => { if (!e.target.closest('.gasto-orden-campo')) { $('gasto-orden-sugerencias').hidden = true; $('gasto-orden').setAttribute('aria-expanded', 'false'); } });
   $('gasto-orden-sugerencias').addEventListener('click', e => {
+    const c = e.target.closest('[data-compra-gasto]');
+    if (c) { const [tipo, id] = c.dataset.compraGasto.split(':'); const x = (tipo === 'oc' ? COMPRAS_GASTO.ordenes : COMPRAS_GASTO.solicitudes).find(y => y.id === Number(id)); if (x) elegirCompraGasto({ ...x, tipo }); return; }
     const b = e.target.closest('[data-orden-gasto]'); if (!b) return;
     elegirOrdenGasto(ORDENES_GASTO.find(o => o.id === Number(b.dataset.ordenGasto)));
   });
@@ -963,7 +1004,8 @@ const Finanzas = (() => {
     GASTO_ANTICIPO = prellenado.anticipo || null;
     llenarProveedoresGasto();
     // Quien no mueve dinero solo registra costos de una orden (las compras van por Solicitud de compra): ahí es obligatoria.
-    document.querySelector('label[for="gasto-orden"]').textContent = Permisos.puede('dinero.mover') || GASTO_ANTICIPO ? 'Orden de servicio relacionada (opcional)' : 'Orden de servicio relacionada (obligatorio)';
+    document.querySelector('label[for="gasto-orden"]').textContent = Permisos.puede('dinero.mover') ? '¿A qué corresponde? Orden de servicio, solicitud (SOL) u orden de compra (OC) (opcional)' : GASTO_ANTICIPO ? 'Orden de servicio relacionada (opcional)' : 'Orden de servicio relacionada (obligatorio)';
+    $('gasto-orden').placeholder = Permisos.puede('dinero.mover') ? 'Folio OS, SOL u OC, cliente, proveedor, servicio o unidad' : 'Folio OS, número, cliente, servicio o unidad';
     $('gasto-anticipo-info').hidden = !GASTO_ANTICIPO; $('gasto-aviso-orden').hidden = !!GASTO_ANTICIPO;
     if (GASTO_ANTICIPO) $('gasto-anticipo-info').textContent = `Comprueba el anticipo de ${GASTO_ANTICIPO.persona}: le quedan ${formatoMoneda(GASTO_ANTICIPO.saldo)} por comprobar. Este gasto se paga con el anticipo; si pasa de lo que queda, la diferencia se le reembolsa.`;
     $('gasto-pagado').closest('label').hidden = !!GASTO_ANTICIPO;
@@ -978,7 +1020,8 @@ const Finanzas = (() => {
     $('gasto-beneficiarios').innerHTML = PROVEEDORES.filter(p => p.activo).map(p => '<option value="' + esc(p.nombre) + '"></option>').join('');
     $('gasto-categoria').value = 'otro';
     $('gasto-folio').closest('details').open = !!prellenado['gasto-equipo'];
-    $('gasto-orden').dataset.leadId = ''; $('gasto-orden-sugerencias').hidden = true; $('gasto-orden-info').hidden = true;
+    $('gasto-orden').dataset.leadId = ''; $('gasto-orden').dataset.compra = ''; $('gasto-orden-sugerencias').hidden = true; $('gasto-orden-info').hidden = true;
+    $('gasto-centro').value = ''; cargarComprasGasto();
     delete $('gasto-equipo').dataset.autollenado; delete $('gasto-concepto').dataset.autollenado;
     cargarOrdenesGasto().then(() => { if (prellenado['gasto-orden']) elegirOrdenGasto(buscarOrdenesGasto(prellenado['gasto-orden'])[0], false); });
     pintarMetodos('gasto-metodos', 'efectivo', METODOS_PROV);
@@ -1097,7 +1140,8 @@ const Finanzas = (() => {
   $('gasto-guardar').addEventListener('click', e => conBoton(e.currentTarget, async () => {
     const orden = $('gasto-orden').value.trim();
     const leadId = orden ? Number($('gasto-orden').dataset.leadId) || null : null;
-    if (orden && !leadId) { toast('Elige la orden de servicio de la lista (o deja el campo vacío)'); $('gasto-orden').focus(); return; }
+    const [compraTipo, compraId] = String($('gasto-orden').dataset.compra || '').split(':');
+    if (orden && !leadId && !compraId) { toast('Elige de la lista la orden de servicio, solicitud u orden de compra (o deja el campo vacío)'); $('gasto-orden').focus(); return; }
     if (!leadId && !Permisos.puede('dinero.mover') && !GASTO_ANTICIPO) { toast('Elige la orden de servicio. Las compras se piden con una Solicitud de compra.'); $('gasto-orden').focus(); return; }
     if (!$('gasto-comprobante').value) { toast('Elige el tipo de comprobante (factura, recibo, sin factura…)'); $('gasto-comprobante').focus(); return; }
     const pagado = $('gasto-pagado').checked && !GASTO_ANTICIPO;
@@ -1111,6 +1155,7 @@ const Finanzas = (() => {
       iva: $('gasto-comprobante').value === 'factura' && !GASTO_XML ? ($('gasto-iva').value.trim() || null) : null,
       xml: GASTO_XML?.texto || null, xml_nombre: GASTO_XML?.nombre || null,
       factura_folio: $('gasto-folio').value, lead_id: leadId, equipo: $('gasto-equipo').value,
+      solicitud_id: compraTipo === 'sol' ? Number(compraId) : null, oc_id: compraTipo === 'oc' ? Number(compraId) : null, centro_id: Number($('gasto-centro').value) || null,
       ya_pagado: pagado, metodo: metodoElegido('gasto-metodos'), anticipo_id: GASTO_ANTICIPO?.id || null, programado_id: GASTO_PROGRAMADO?.id || null, programado_periodo: GASTO_PROGRAMADO?.periodo || null, credito_id: GASTO_CREDITO?.id || null,
       fecha_pago: pagado ? $('gasto-fecha-pago').value : null, referencia: pagado ? $('gasto-referencia').value : null, cuenta_id: pagado ? CuentasBanco.valor('gasto-cuenta') : undefined });
     if (!r) return;

@@ -78,7 +78,7 @@
       const dias = Number.isInteger(x.dias_credito) ? x.dias_credito : null;
       const vence = dias !== null && x.fecha_documento && sumarDias(x.fecha_documento, dias) === x.fecha_vencimiento ? { formula: `F${n}+P${n}`, result: x.fecha_vencimiento } : x.fecha_vencimiento || null;
       const pagado = pg.length > 1 ? { formula: pg.map(g => (cent(g.monto) / 100).toFixed(2).replace(/\.00$/, '')).join('+'), result: pagadoC / 100 } : pg.length ? pagadoC / 100 : null;
-      const obs = [x.notas, x.orden_folio ? 'Orden ' + x.orden_folio : '', x.tipo_comprobante === 'informativo' ? 'INFORMATIVO: no se suma' : '', x.es_gasto === false ? 'No cuenta como gasto' : ''].filter(Boolean).join(' · ');
+      const obs = [x.notas, x.orden_folio ? 'Orden ' + x.orden_folio : '', x.compra_folio ? 'Compra ' + x.compra_folio : '', x.centro_nombre ? 'Centro de costos: ' + x.centro_nombre : '', x.tipo_comprobante === 'informativo' ? 'INFORMATIVO: no se suma' : '', x.es_gasto === false ? 'No cuenta como gasto' : ''].filter(Boolean).join(' · ');
       const r = [vence, tipoGastoExcel(x.tipo_gasto), x.proveedor || '', x.beneficiario || x.proveedor || '', x.concepto || '', x.fecha_documento || null, capturoCorto(x.capturo),
         folioExcel(x), metodoExcel(x, ultimo?.metodo), totalC / 100, { formula: `J${n}-M${n}`, result: (totalC - pagadoC) / 100 }, anticipoC ? anticipoC / 100 : null, pagado,
         x.clabe || '', x.banco || '', dias ?? '', String(x.categoria || '').toLocaleUpperCase('es-MX'),
