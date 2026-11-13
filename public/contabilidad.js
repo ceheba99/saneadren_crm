@@ -220,7 +220,7 @@ const Contabilidad = (() => {
   const sinPendientes = () => { if (!PEND.size) return true; toast('Primero guarda tus cambios (o bloquea la edición para descartarlos)'); return false; };
   async function desglosar(ref) {
     if (!sinPendientes()) return;
-    try { const r = await pedir('/contabilidad/flujo/desglose', { method: 'POST', body: JSON.stringify({ mes: $('ct-mes').value, ref }) }); toast(`Renglón agregado con ${dinero(r.monto_cfdi)}: ajusta su monto, factura y unidad`); await cargar(); }
+    try { const r = await pedir('/contabilidad/flujo/desglose', { method: 'POST', body: JSON.stringify({ mes: $('ct-mes').value, ref }) }); ABIERTOS.add(ref); toast(`Renglón agregado con ${dinero(r.monto_cfdi)}: ajusta su monto, factura y unidad`); await cargar(); }
     catch (e) { toast(e.message); }
   }
   async function quitarDesglose(id) {
@@ -280,31 +280,40 @@ const Contabilidad = (() => {
     return !!ok;
   }
 
+  // Pagos desglosados (varias facturas en un solo movimiento): sus renglones ↳ se pliegan bajo el pago.
+  // Plegados de inicio; con buscador o filtros se ven todos para no esconder lo que se busca.
+  const ABIERTOS = new Set(); // ref del pago → desplegado
   function tablaHtml(k) {
-    const t = TABLAS[k], e = estadoDe(k), filas = filasDe(k), total = baseDe(k).length;
-    const celda = (f, col) => {
-      const [c, , , tp] = col;
-      if (k === 'flujo' && editable(f, c)) return `<td class="ct-celda-edit">${celdaEditable(f, c, tp)}</td>`;
+    const t = TABLAS[k], e = estadoDe(k), todas = filasDe(k), total = baseDe(k).length;
+    const hayFiltros = e.q.trim() || e.rapido || Object.values(e.col).some(v => String(v).trim());
+    const hijos = new Map(); if (k === 'flujo') for (const f of baseDe(k)) if (f.es_desglose) hijos.set(f.padre, (hijos.get(f.padre) || 0) + 1);
+    const plegable = k === 'flujo' && !hayFiltros && hijos.size > 0;
+    const filas = plegable ? todas.filter(f => !f.es_desglose || ABIERTOS.has(f.padre)) : todas;
+    const flecha = f => { const n = plegable && !f.es_desglose ? hijos.get(f.ref) : 0; if (!n) return '';
+      const ab = ABIERTOS.has(f.ref); return `<button type="button" class="ct-plegar" data-ct-plegar="${esc(f.ref)}" aria-expanded="${ab}" title="${ab ? 'Plegar' : 'Desplegar'} las ${Number(n)} facturas de este pago">${ab ? '▾' : '▸'} ${Number(n)}</button>`; };
+    const celda = (f, col, i) => {
+      const [c, , , tp] = col, pre = i === 0 ? flecha(f) : '';
+      if (k === 'flujo' && editable(f, c)) return `<td class="ct-celda-edit">${pre}${celdaEditable(f, c, tp)}</td>`;
       const v = (f.es_desglose && c === 'marca_transf' ? '↳ ' : '') + textoDe(f[c], tp), corr = k === 'flujo' ? notaCorregida(f, c) : '', marca = corr ? ' <span class="ct-marca-corr" aria-hidden="true">✎</span>' : '';
-      if (tp === 's') return v ? `<td${corr}${corr ? ' class="ct-corregida"' : ''}><span class="estado-cxc ${esc(CHIP[f[c]] ?? 'por-confirmar')}">${esc(v)}</span>${marca}</td>` : `<td${corr}></td>`;
-      return `<td${corr} class="${tp === 'd' || tp === 'n' || tp === 'S' ? 'ct-num' : ''}${corr ? ' ct-corregida' : ''}">${esc(v)}${marca}</td>`;
+      if (tp === 's') return v ? `<td${corr}${corr ? ' class="ct-corregida"' : ''}>${pre}<span class="estado-cxc ${esc(CHIP[f[c]] ?? 'por-confirmar')}">${esc(v)}</span>${marca}</td>` : `<td${corr}>${pre}</td>`;
+      return `<td${corr} class="${tp === 'd' || tp === 'n' || tp === 'S' ? 'ct-num' : ''}${corr ? ' ct-corregida' : ''}">${pre}${esc(v)}${marca}</td>`;
     };
     const fl = k === 'flujo' ? flujoConSaldo() : null;
     // Los renglones del desglose no cuentan en los totales (ya están en la suma de su pago).
-    const totales = t.cols.map(([c, , , tp]) => (tp === 'd' ? dinero(filas.filter(f => !f.es_desglose).reduce((s, f) => s + Number(f[c] || 0), 0)) : tp === 'S' && fl ? dinero(fl.fin()) : ''));
+    const totales = t.cols.map(([c, , , tp]) => (tp === 'd' ? dinero(todas.filter(f => !f.es_desglose).reduce((s, f) => s + Number(f[c] || 0), 0)) : tp === 'S' && fl ? dinero(fl.fin()) : ''));
     const acciones = k === 'flujo' && EDITANDO;
     const cabeza = !fl ? '' : (() => { const ing = (DATOS.flujo || []).reduce((s, f) => s + Number(f.ingreso), 0), egr = (DATOS.flujo || []).reduce((s, f) => s + Number(f.egreso), 0), pc = (DATOS.flujo || []).filter(f => f.revisar).length;
       const escrito = (DATOS.saldos_iniciales || []).some(x => x.escrito);
       return `<div class="logs-tarjetas">${tarjeta('Saldo inicial', dinero(fl.ini), escrito ? 'escrito en el sistema' : 'calculado por el CRM')}${tarjeta('Ingresos (cobros y reintegros)', dinero(ing))}${tarjeta('Egresos (pagos y anticipos)', dinero(egr))}
         ${tarjeta('Saldo final', dinero(fl.fin()))}${tarjeta('Movimientos por revisar', String(pc), 'falta XML, complemento o comprobar', pc > 0)}</div>
         ${cuentaHtml()}${saldoHtml(fl)}${barraEdicion()}${EDITANDO ? movimientoHtml() : ''}`; })();
-    const hayFiltros = e.q.trim() || e.rapido || Object.values(e.col).some(v => String(v).trim());
+    const todosAbiertos = [...hijos.keys()].every(r => ABIERTOS.has(r));
     const rapidos = k === 'flujo' ? RAPIDOS.map(([id, txt]) => `<button type="button" class="btn btn-chico ${e.rapido === id ? '' : 'btn-outline'}" data-ct-rapido="${esc(id)}" aria-pressed="${e.rapido === id}">${esc(txt)}</button>`).join('') : '';
     return `${cabeza}<div class="filtros"><input type="search" id="ct-buscar" data-ct-tabla="${esc(k)}" value="${esc(e.q)}" placeholder="Buscar en toda la tabla…" aria-label="Buscar en la tabla">${rapidos}
-      ${hayFiltros ? '<button type="button" class="btn btn-outline btn-chico" id="ct-limpiar">✕ Limpiar filtros</button>' : ''}<span class="util-45">${Number(filas.length)} de ${Number(total)} renglón(es)</span></div>
+      ${hayFiltros ? '<button type="button" class="btn btn-outline btn-chico" id="ct-limpiar">✕ Limpiar filtros</button>' : ''}${plegable ? `<button type="button" class="btn btn-outline btn-chico" id="ct-plegar-todo">${todosAbiertos ? '▾ Plegar facturas' : '▸ Desplegar facturas'}</button>` : ''}<span class="util-45">${Number(todas.length)} de ${Number(total)} renglón(es)</span></div>
       ${total ? `<div class="tabla-scroll ct-tabla-scroll"><table class="tabla-resumen ct-tabla"><thead><tr>${acciones ? '<th class="ct-acciones">Acciones</th>' : ''}${t.cols.map(([c, titulo]) => `<th><button type="button" class="ct-orden" data-ct-orden="${esc(c)}">${esc(titulo)}${e.k === c ? (e.dir > 0 ? ' ▲' : ' ▼') : ''}</button></th>`).join('')}</tr>
         <tr class="ct-fila-filtros">${acciones ? '<th></th>' : ''}${t.cols.map(col => filtroHtml(k, col)).join('')}</tr></thead>
-        <tbody>${filas.length ? filas.map(f => `<tr class="${f.es_desglose ? 'ct-hijo' : ''}${f.manual ? ' ct-manual' : ''}${f.fantasma ? ' ct-fantasma' : ''}">${acciones ? `<td class="ct-acciones">${accionesHtml(f)}</td>` : ''}${t.cols.map(c => celda(f, c)).join('')}</tr>`).join('') : `<tr><td colspan="${t.cols.length + (acciones ? 1 : 0)}" class="util-45">Ningún renglón cumple los filtros.</td></tr>`}</tbody>
+        <tbody>${filas.length ? filas.map(f => `<tr class="${f.es_desglose ? 'ct-hijo' : ''}${f.manual ? ' ct-manual' : ''}${f.fantasma ? ' ct-fantasma' : ''}">${acciones ? `<td class="ct-acciones">${accionesHtml(f)}</td>` : ''}${t.cols.map((c, i) => celda(f, c, i)).join('')}</tr>`).join('') : `<tr><td colspan="${t.cols.length + (acciones ? 1 : 0)}" class="util-45">Ningún renglón cumple los filtros.</td></tr>`}</tbody>
         <tfoot><tr>${acciones ? '<td></td>' : ''}${totales.map((v, i) => `<td class="ct-num">${i === 0 ? 'TOTAL' : esc(v)}</td>`).join('')}</tr></tfoot></table></div>`
       : '<p class="util-45">No hay renglones este mes.</p>'}`;
   }
@@ -422,6 +431,8 @@ const Contabilidad = (() => {
       else if (b.id === 'ct-guardar-flujo') conBoton(b, guardarFlujo);
       else if (b.id === 'ct-bloquear-flujo') sePuedeDescartar().then(ok => { if (ok) { EDITANDO = false; MOV_ABIERTO = false; repintar('flujo'); } });
       else if (b.dataset.ctRapido) { const s = estadoDe(PESTANA); s.rapido = s.rapido === b.dataset.ctRapido ? '' : b.dataset.ctRapido; repintar(PESTANA); }
+      else if (b.dataset.ctPlegar) { const r = b.dataset.ctPlegar; if (ABIERTOS.has(r)) ABIERTOS.delete(r); else ABIERTOS.add(r); repintar(PESTANA); }
+      else if (b.id === 'ct-plegar-todo') { const refs = (DATOS.flujo || []).filter(f => f.es_desglose).map(f => f.padre), abrir = !refs.every(r => ABIERTOS.has(r)); refs.forEach(r => (abrir ? ABIERTOS.add(r) : ABIERTOS.delete(r))); repintar(PESTANA); }
       else if (b.id === 'ct-limpiar') { const s = estadoDe(PESTANA); s.q = ''; s.col = {}; s.rapido = ''; repintar(PESTANA); }
       else if (b.id === 'ct-saldo-guardar' || b.id === 'ct-saldo-crm') conBoton(b, () => guardarSaldo(b.id === 'ct-saldo-crm' ? null : $('ct-saldo-inicial').value));
       else if (b.id === 'ct-cerrar-mes') conBoton(b, cerrarMes);

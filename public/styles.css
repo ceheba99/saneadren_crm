@@ -2310,6 +2310,8 @@ tr.logs-aviso td{background:#fffaf0;}
 .ct-marca-corr{color:#b07a00;font-size:11px;margin-left:3px;}
 /* Desglose y movimientos propios del flujo de banco (parte 4, 2026-11-12). */
 .ct-tabla tbody tr.ct-hijo td{background:#f7f9fc;color:var(--texto-sec);font-size:12px;}
+.ct-plegar{border:1px solid var(--gris-200);background:#fff;border-radius:4px;font-size:11px;padding:1px 5px;margin-right:6px;cursor:pointer;white-space:nowrap;}
+.ct-plegar:hover{background:#eef3fb;}
 .ct-tabla tbody tr.ct-manual td:first-child{box-shadow:inset 3px 0 0 var(--amarillo);}
 .ct-tabla td.ct-acciones,.ct-tabla th.ct-acciones{white-space:nowrap;}
 .ct-mov{display:flex;flex-wrap:wrap;gap:8px 12px;align-items:flex-end;background:#fffdf5;border:1px solid var(--amarillo);border-radius:6px;padding:10px 12px;margin:8px 0;}
