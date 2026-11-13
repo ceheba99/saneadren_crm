@@ -62,6 +62,48 @@ function migrar(db) {
     CREATE INDEX IF NOT EXISTS idx_flujo_corr_ref ON flujo_correcciones(ref, campo, id);
     CREATE TRIGGER IF NOT EXISTS flujo_corr_fijas_upd BEFORE UPDATE ON flujo_correcciones BEGIN SELECT RAISE(ABORT, 'Las correcciones del flujo no se modifican'); END;
     CREATE TRIGGER IF NOT EXISTS flujo_corr_fijas_del BEFORE DELETE ON flujo_correcciones BEGIN SELECT RAISE(ABORT, 'Las correcciones del flujo no se borran'); END;`);
+  // Parte 4 (2026-11-12): movimientos que no pasaron por el sistema (traspasos, préstamos, comisiones…) y el desglose de
+  // un pago en varios renglones (una factura por unidad, o varias facturas en una transferencia). No se borran: un
+  // movimiento se cancela con motivo y un renglón del desglose se quita (queda con quién y cuándo).
+  db.exec(`CREATE TABLE IF NOT EXISTS flujo_movimientos (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      sucursal_id INTEGER NOT NULL REFERENCES sucursales(id),
+      cuenta_id INTEGER NOT NULL DEFAULT 0,
+      fecha TEXT NOT NULL CHECK(length(fecha) = 10 AND date(fecha, '+0 days') = fecha),
+      tipo TEXT NOT NULL CHECK(tipo IN ('ingreso', 'egreso')),
+      monto_cent INTEGER NOT NULL CHECK(typeof(monto_cent) = 'integer' AND monto_cent > 0),
+      categoria TEXT NOT NULL,
+      concepto TEXT NOT NULL CHECK(length(trim(concepto)) BETWEEN 3 AND 200),
+      referencia TEXT, observaciones TEXT,
+      creado_por INTEGER REFERENCES usuarios(id), creado_por_nombre TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+      cancelado INTEGER NOT NULL DEFAULT 0 CHECK(cancelado IN (0, 1)),
+      cancelado_por INTEGER REFERENCES usuarios(id), cancelado_at TEXT, motivo_cancelacion TEXT,
+      CHECK(cancelado = 0 OR (cancelado_por IS NOT NULL AND COALESCE(length(trim(motivo_cancelacion)), 0) >= 5))
+    );
+    CREATE INDEX IF NOT EXISTS idx_flujo_mov_fecha ON flujo_movimientos(sucursal_id, fecha);
+    CREATE TRIGGER IF NOT EXISTS flujo_mov_sin_borrar BEFORE DELETE ON flujo_movimientos BEGIN SELECT RAISE(ABORT, 'Los movimientos del flujo no se borran: se cancelan con motivo'); END;
+    CREATE TRIGGER IF NOT EXISTS flujo_mov_fijos BEFORE UPDATE ON flujo_movimientos WHEN NEW.fecha IS NOT OLD.fecha OR NEW.monto_cent IS NOT OLD.monto_cent OR NEW.tipo IS NOT OLD.tipo
+      OR NEW.sucursal_id IS NOT OLD.sucursal_id OR NEW.cuenta_id IS NOT OLD.cuenta_id OR NEW.categoria IS NOT OLD.categoria OR NEW.concepto IS NOT OLD.concepto OR (OLD.cancelado = 1 AND NEW.cancelado = 0)
+      BEGIN SELECT RAISE(ABORT, 'Un movimiento del flujo no se cambia: se cancela y se agrega de nuevo (los textos se corrigen en la tabla)'); END;
+    CREATE TABLE IF NOT EXISTS flujo_desglose (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      ref_padre TEXT NOT NULL CHECK(ref_padre GLOB '[a-z]*:[0-9]*'),
+      mes TEXT NOT NULL CHECK(length(mes) = 7),
+      sucursal_id INTEGER NOT NULL REFERENCES sucursales(id),
+      metodo TEXT, cfdi TEXT, tercero TEXT, concepto TEXT, observaciones TEXT,
+      cfdi_monto_cent INTEGER NOT NULL DEFAULT 0 CHECK(typeof(cfdi_monto_cent) = 'integer' AND cfdi_monto_cent >= 0),
+      no_deducible_cent INTEGER NOT NULL DEFAULT 0 CHECK(typeof(no_deducible_cent) = 'integer' AND no_deducible_cent >= 0),
+      cuenta_abono TEXT, proyecto TEXT, unidad TEXT, tipo_gasto TEXT,
+      creado_por INTEGER REFERENCES usuarios(id), usuario TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+      actualizado_por TEXT, updated_at TEXT,
+      anulado INTEGER NOT NULL DEFAULT 0 CHECK(anulado IN (0, 1)), anulado_por TEXT, anulado_at TEXT,
+      CHECK(anulado = 0 OR anulado_por IS NOT NULL)
+    );
+    CREATE INDEX IF NOT EXISTS idx_flujo_desglose_padre ON flujo_desglose(ref_padre, anulado);
+    CREATE TRIGGER IF NOT EXISTS flujo_desglose_sin_borrar BEFORE DELETE ON flujo_desglose BEGIN SELECT RAISE(ABORT, 'El desglose no se borra: el renglón se quita y queda en el historial'); END;
+    CREATE TRIGGER IF NOT EXISTS flujo_desglose_fijo BEFORE UPDATE ON flujo_desglose WHEN NEW.ref_padre IS NOT OLD.ref_padre OR NEW.mes IS NOT OLD.mes OR NEW.sucursal_id IS NOT OLD.sucursal_id OR (OLD.anulado = 1 AND NEW.anulado = 0)
+      BEGIN SELECT RAISE(ABORT, 'Un renglón del desglose no cambia de pago ni regresa después de quitarse'); END;`);
   // 2026-11-12 (formato del Excel «flujo banco»): un saldo por cuenta de banco (Conciliación › cuentas); 0 = «Sin cuenta».
   if (!db.prepare('PRAGMA table_info(flujo_saldos_iniciales)').all().some(c => c.name === 'cuenta_id')) db.exec('ALTER TABLE flujo_saldos_iniciales ADD COLUMN cuenta_id INTEGER NOT NULL DEFAULT 0');
   db.exec('CREATE INDEX IF NOT EXISTS idx_saldos_cuenta ON flujo_saldos_iniciales(sucursal_id, cuenta_id, mes, id)');
@@ -99,7 +141,12 @@ module.exports = function contabilidadCierres(app, db, h) {
       AND (mes_bloqueado(OLD.fecha, ${sucPago('OLD.cxp_id')}) OR mes_bloqueado(NEW.fecha, ${sucPago('NEW.cxp_id')}))`],
   ];
   // Correcciones a mano del flujo de un mes cerrado: solo Dirección (también en la base).
-  disparadores.push(['cierre_flujo_corr_ins', 'BEFORE INSERT ON main.flujo_correcciones', "mes_bloqueado(NEW.mes || '-01', NEW.sucursal_id)"]);
+  disparadores.push(['cierre_flujo_corr_ins', 'BEFORE INSERT ON main.flujo_correcciones', "mes_bloqueado(NEW.mes || '-01', NEW.sucursal_id)"],
+    // Movimientos propios y desglose (parte 4): agregar, quitar, cancelar o cambiar algo de un mes cerrado, solo Dirección.
+    ['cierre_flujo_mov_ins', 'BEFORE INSERT ON main.flujo_movimientos', 'mes_bloqueado(NEW.fecha, NEW.sucursal_id)'],
+    ['cierre_flujo_mov_upd', 'BEFORE UPDATE ON main.flujo_movimientos', 'mes_bloqueado(OLD.fecha, OLD.sucursal_id)'],
+    ['cierre_flujo_des_ins', 'BEFORE INSERT ON main.flujo_desglose', "mes_bloqueado(NEW.mes || '-01', NEW.sucursal_id)"],
+    ['cierre_flujo_des_upd', 'BEFORE UPDATE ON main.flujo_desglose', "mes_bloqueado(OLD.mes || '-01', OLD.sucursal_id)"]);
   if (tabla('anticipos')) disparadores.push(
     ['cierre_anticipos_ins', 'BEFORE INSERT ON main.anticipos', 'mes_bloqueado(NEW.fecha, NEW.sucursal_id)'],
     // La entrega (su fecha y monto, o cancelarlo) y el reintegro (lo que regresó) se revisan cada uno con su fecha: cerrar

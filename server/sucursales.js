@@ -20,7 +20,7 @@
 const alcance = require('./alcance');
 
 // Tablas con sucursal propia y tablas que la heredan de su registro (en orden: primero las de arriba).
-const CON_SUCURSAL = ['leads', 'cuentas_por_pagar', 'solicitudes_compra', 'ordenes_compra', 'establecimientos', 'historial_archivo', 'clientes', 'personal', 'facturas', 'checadas', 'checador_dispositivos', 'horarios', 'precios_hora_puesto', 'anticipos', 'nominas', 'reglas_puntualidad', 'cuentas_banco', 'proyectos_tareas', 'tareas', 'contabilidad_cierres', 'flujo_saldos_iniciales', 'flujo_correcciones'];
+const CON_SUCURSAL = ['leads', 'cuentas_por_pagar', 'solicitudes_compra', 'ordenes_compra', 'establecimientos', 'historial_archivo', 'clientes', 'personal', 'facturas', 'checadas', 'checador_dispositivos', 'horarios', 'precios_hora_puesto', 'anticipos', 'nominas', 'reglas_puntualidad', 'cuentas_banco', 'proyectos_tareas', 'tareas', 'contabilidad_cierres', 'flujo_saldos_iniciales', 'flujo_correcciones', 'flujo_movimientos', 'flujo_desglose'];
 const VISTAS = [
   ['leads', 've_lead(sucursal_id, responsable_id, tecnico_id, estatus, capturado_por)'],
   // Gastos: los de su sucursal o los que él registró; con «Ver los gastos de sus órdenes», también los de sus órdenes.
@@ -59,6 +59,8 @@ const VISTAS = [
   ['contabilidad_cierres', 'en_alcance(sucursal_id)'], // mes cerrado de Contabilidad (2026-11-12): el de sus sucursales
   ['flujo_saldos_iniciales', 'en_alcance(sucursal_id)'], // saldo inicial del banco por mes y sucursal (2026-11-12)
   ['flujo_correcciones', 'en_alcance(sucursal_id)'], // correcciones a mano del flujo de banco (2026-11-12)
+  ['flujo_movimientos', 'en_alcance(sucursal_id)'], // movimientos propios del flujo de banco (2026-11-12)
+  ['flujo_desglose', 'en_alcance(sucursal_id)'], // desglose de un pago del flujo de banco (2026-11-12)
   // Proyectos y tareas (2026-11-11): quién ve cuáles lo decide tareas.js (cada quien las suyas aunque sean de otra sucursal).
   ['proyectos_tareas', 'en_alcance(sucursal_id)'],
   ['tareas', 'en_alcance(sucursal_id)'],

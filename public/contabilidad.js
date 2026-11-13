@@ -35,7 +35,7 @@ const Contabilidad = (() => {
       ['metodo', 'VÍA', 14, 'v'], ['referencia', 'REFERENCIA', 20], ['cuenta', 'CUENTA DE SALIDA', 20]] },
   };
   const CHIP = { S: 'pagada', NA: '', DOMICILIADO: '', LAYOUT: '', CN01: 'pagada', PUE: 'pagada', 'PPD/CP': 'parcial', 'NO APLICA': '', FALTA: 'vencida', 'Pedirlo al proveedor': 'parcial',  PAGADO: 'pagada', PARCIAL: 'parcial', PENDIENTE: 'vencida', Confirmado: 'pagada', 'Por confirmar': 'por-confirmar', timbrada: 'pagada', cancelada: 'vencida', cancelacion_solicitada: 'parcial', Sí: 'pagada', Falta: 'vencida' };
-  const textoDe = (v, tipo) => (tipo === 'f' ? fecha(v) : tipo === 'v' ? VIA[v] || v || '' : tipo === 'c' ? COMP[v] || v || '' : tipo === 'd' || tipo === 'S' ? dinero(v) : String(v ?? ''));
+  const textoDe = (v, tipo) => (tipo === 'f' ? fecha(v) : tipo === 'v' ? VIA[v] || v || '' : tipo === 'c' ? COMP[v] || v || '' : tipo === 'd' || tipo === 'S' ? (v === null || v === undefined ? '' : dinero(v)) : String(v ?? '')); // sin monto (renglón del desglose): vacío
   let listo = false, consulta = 0, DATOS = null, PESTANA = 'resumen', CUENTA = ''; // CUENTA: '' todas, '0' sin cuenta, o el id
   const nombreCuenta = c => (c.id ? [c.nombre, c.banco, c.terminacion ? '••' + c.terminacion : ''].filter(Boolean).join(' · ') : 'Sin cuenta'); // texto plano: se escapa al pintarlo
   // Saldo inicial del banco (2026-11-12): se guarda en el sistema por mes y sucursal, con quién y cuándo; si nadie lo
@@ -43,7 +43,7 @@ const Contabilidad = (() => {
   // Filas del flujo con el saldo corrido desde el saldo inicial.
   function flujoConSaldo() {
     const ini = Number(DATOS.saldo_inicial || 0); let saldo = ini;
-    return { ini, filas: (DATOS.flujo || []).map(f => { saldo = Math.round((saldo + Number(f.ingreso) - Number(f.egreso)) * 100) / 100; return { ...f, saldo }; }), fin: () => saldo };
+    return { ini, filas: (DATOS.flujo || []).map(f => { if (f.es_desglose) return { ...f, saldo: null }; saldo = Math.round((saldo + Number(f.ingreso) - Number(f.egreso)) * 100) / 100; return { ...f, saldo }; }), fin: () => saldo };
   }
   const estado = {}; // por tabla: { q, k, dir }
   const conBoton = async (b, fn) => { if (b.disabled) return; b.disabled = true; try { await fn(); } finally { b.disabled = false; } };
@@ -175,7 +175,65 @@ const Contabilidad = (() => {
   const PEND = new Map(); // 'ref|campo' → valor (null = volver al del sistema)
   const CAMPO = { cuenta: 'cuenta_id' }; // columna en pantalla → campo que se guarda
   const MARCAS = ['S', 'FALTA', 'NA'], MARCAS_A = [...MARCAS, 'DOMICILIADO', 'LAYOUT'];
-  const editable = (f, c) => EDITANDO && f.editable && (DATOS.editables || []).includes(CAMPO[c] || c);
+  // Qué celda se edita: en un renglón del desglose, sus propias columnas; en un pago desglosado, su monto CFDI y no deducible
+  // salen de la suma (no se escriben).
+  const editable = (f, c) => { const campo = CAMPO[c] || c; if (!EDITANDO || !f.editable) return false;
+    if (f.es_desglose) return (DATOS.editables_desglose || []).includes(campo);
+    return (DATOS.editables || []).includes(campo) && !(f.desglosado && (campo === 'cfdi_monto' || campo === 'no_deducible')); };
+  // Acciones del renglón (solo editando): desglosar una salida, quitar un renglón del desglose o cancelar un movimiento propio.
+  function accionesHtml(f) {
+    if (!f.editable) return '';
+    if (f.es_desglose) return f.ref.startsWith('desglose:') ? `<button type="button" class="btn btn-outline btn-chico" data-ct-quitar="${esc(f.ref.split(':')[1])}" title="Quitar este renglón del desglose">✕ Quitar</button>` : '';
+    const b = [];
+    if (Number(f.egreso) > 0 && !f.ref.startsWith('anticipo:')) b.push(`<button type="button" class="btn btn-outline btn-chico" data-ct-desglosar="${esc(f.ref)}" title="Agregar un renglón debajo (otra factura o unidad)">➕ Desglosar</button>`);
+    if (f.manual) b.push(`<button type="button" class="btn btn-outline btn-chico" data-ct-cancelar-mov="${esc(f.ref.split(':')[1])}">Cancelar</button>`);
+    return b.join(' ');
+  }
+  // Formulario «Agregar movimiento»: lo que no pasó por el sistema (traspaso, préstamo, comisión…).
+  let MOV_ABIERTO = false;
+  function movimientoHtml() {
+    if (!MOV_ABIERTO) return '';
+    const hoy = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Mexico_City' }).format(new Date());
+    const cuentaSel = CUENTA === '' ? '0' : CUENTA;
+    const cats = Object.entries(DATOS.categorias_mov || {});
+    return `<form class="ct-mov" id="ct-mov-form"><b>➕ Agregar movimiento que no pasó por el sistema</b>
+      <label>Fecha <input type="date" id="ct-mov-fecha" value="${esc(hoy)}" max="${esc(hoy)}" required></label>
+      <label>Tipo <select id="ct-mov-tipo"><option value="egreso">Salió dinero</option><option value="ingreso">Entró dinero</option></select></label>
+      <label>Monto <input type="text" id="ct-mov-monto" inputmode="decimal" placeholder="0.00" required></label>
+      <label>Qué es <select id="ct-mov-categoria">${cats.map(([k, v]) => `<option value="${esc(k)}">${esc(v)}</option>`).join('')}</select></label>
+      <label class="ct-mov-ancho">Concepto (como lo trae el banco) <input type="text" id="ct-mov-concepto" maxlength="200" required></label>
+      <label>Referencia <input type="text" id="ct-mov-referencia" maxlength="120"></label>
+      <label>Cuenta de banco <select id="ct-mov-cuenta">${(DATOS.cuentas || []).map(c => `<option value="${Number(c.id)}"${String(c.id) === cuentaSel ? ' selected' : ''}>${esc(nombreCuenta(c))}</option>`).join('')}</select></label>
+      <label class="ct-mov-ancho">Observaciones <input type="text" id="ct-mov-obs" maxlength="300"></label>
+      <div class="ct-mov-botones"><button type="submit" class="btn btn-chico" id="ct-mov-guardar">Guardar movimiento</button><button type="button" class="btn btn-outline btn-chico" id="ct-mov-cerrar">Cerrar</button></div>
+      <small class="util-45">Cuenta en el saldo del banco, pero no en Resultados ni en el IVA. Un gasto real (por ejemplo una comisión con factura) mejor regístralo en Cuentas por pagar. No se borra: si se capturó mal, se cancela con motivo.</small></form>`;
+  }
+  async function agregarMovimiento() {
+    const v = id => $(id).value;
+    try {
+      await pedir('/contabilidad/flujo/movimientos', { method: 'POST', body: JSON.stringify({ sucursal: $('ct-sucursal').value || undefined, fecha: v('ct-mov-fecha'), tipo: v('ct-mov-tipo'), monto: v('ct-mov-monto'),
+        categoria: v('ct-mov-categoria'), concepto: v('ct-mov-concepto'), referencia: v('ct-mov-referencia'), cuenta: v('ct-mov-cuenta'), observaciones: v('ct-mov-obs') }) });
+      MOV_ABIERTO = false; toast('Movimiento agregado'); await cargar();
+    } catch (e) { toast(e.message); }
+  }
+  // Las acciones recargan la tabla: antes se guardan o descartan los cambios escritos.
+  const sinPendientes = () => { if (!PEND.size) return true; toast('Primero guarda tus cambios (o bloquea la edición para descartarlos)'); return false; };
+  async function desglosar(ref) {
+    if (!sinPendientes()) return;
+    try { const r = await pedir('/contabilidad/flujo/desglose', { method: 'POST', body: JSON.stringify({ mes: $('ct-mes').value, ref }) }); toast(`Renglón agregado con ${dinero(r.monto_cfdi)}: ajusta su monto, factura y unidad`); await cargar(); }
+    catch (e) { toast(e.message); }
+  }
+  async function quitarDesglose(id) {
+    if (!sinPendientes()) return;
+    if (!await solicitarDialogo({ titulo: 'Quitar renglón', mensaje: 'Se quita este renglón del desglose. Queda en la bitácora con tu nombre.', aceptar: 'Quitar' })) return;
+    try { await pedir('/contabilidad/flujo/desglose/' + Number(id) + '/quitar', { method: 'POST', body: '{}' }); toast('Renglón quitado'); await cargar(); } catch (e) { toast(e.message); }
+  }
+  async function cancelarMovimiento(id) {
+    if (!sinPendientes()) return;
+    const motivo = await solicitarDialogo({ titulo: 'Cancelar movimiento', mensaje: 'El movimiento deja de contar en el saldo. No se borra: queda con tu nombre y el motivo.', aceptar: 'Cancelar movimiento', campo: { tipo: 'text', etiqueta: 'Motivo', requerido: 'Escribe el motivo (mínimo 5 letras)' } });
+    if (!motivo) return;
+    try { await pedir('/contabilidad/flujo/movimientos/' + Number(id) + '/cancelar', { method: 'POST', body: JSON.stringify({ motivo }) }); toast('Movimiento cancelado'); await cargar(); } catch (e) { toast(e.message); }
+  }
   const valorSistema = (f, campo) => (f.corregido?.[campo] ? f.corregido[campo].sistema : f[campo]);
   const igual = (campo, a, b) => (campo === 'cfdi_monto' || campo === 'no_deducible' ? Math.abs(Number(String(a).replace(/[$,]/g, '') || 0) - Number(b || 0)) < 0.005 && String(a).trim() !== '' : String(a ?? '').trim() === String(b ?? '').trim());
   function anotar(ref, campo, valor) {
@@ -203,7 +261,8 @@ const Contabilidad = (() => {
     return `<div class="filtros ct-barra-edicion ct-editando"><b>✏️ Editando</b>
       <button type="button" class="btn btn-chico" id="ct-guardar-flujo"${PEND.size ? '' : ' disabled'}>💾 Guardar cambios (${PEND.size})</button>
       <button type="button" class="btn btn-outline btn-chico" id="ct-bloquear-flujo">🔒 Bloquear edición</button>
-      <small class="util-45">Corrige las celdas en blanco. Si dejas una como decía el sistema, vuelve a la original. El saldo, X comprobar, los importes y las fechas no se cambian aquí: se corrigen en el cobro o pago.${DATOS.es_direccion ? '' : ' Lo de un mes cerrado lo corrige solo Dirección.'}</small></div>`;
+      <button type="button" class="btn btn-outline btn-chico" id="ct-mov-abrir">➕ Agregar movimiento</button>
+      <small class="util-45">Corrige las celdas en blanco. Con «➕ Desglosar» repartes un pago en varias facturas o unidades. Si dejas una como decía el sistema, vuelve a la original. El saldo, X comprobar, los importes y las fechas no se cambian aquí: se corrigen en el cobro o pago.${DATOS.es_direccion ? '' : ' Lo de un mes cerrado lo corrige solo Dirección.'}</small></div>`;
   }
   async function guardarFlujo() {
     if (!PEND.size) return;
@@ -224,25 +283,27 @@ const Contabilidad = (() => {
     const celda = (f, col) => {
       const [c, , , tp] = col;
       if (k === 'flujo' && editable(f, c)) return `<td class="ct-celda-edit">${celdaEditable(f, c, tp)}</td>`;
-      const v = textoDe(f[c], tp), corr = k === 'flujo' ? notaCorregida(f, c) : '', marca = corr ? ' <span class="ct-marca-corr" aria-hidden="true">✎</span>' : '';
+      const v = (f.es_desglose && c === 'marca_transf' ? '↳ ' : '') + textoDe(f[c], tp), corr = k === 'flujo' ? notaCorregida(f, c) : '', marca = corr ? ' <span class="ct-marca-corr" aria-hidden="true">✎</span>' : '';
       if (tp === 's') return v ? `<td${corr}${corr ? ' class="ct-corregida"' : ''}><span class="estado-cxc ${esc(CHIP[f[c]] ?? 'por-confirmar')}">${esc(v)}</span>${marca}</td>` : `<td${corr}></td>`;
       return `<td${corr} class="${tp === 'd' || tp === 'n' || tp === 'S' ? 'ct-num' : ''}${corr ? ' ct-corregida' : ''}">${esc(v)}${marca}</td>`;
     };
     const fl = k === 'flujo' ? flujoConSaldo() : null;
-    const totales = t.cols.map(([c, , , tp]) => (tp === 'd' ? dinero(filas.reduce((s, f) => s + Number(f[c] || 0), 0)) : tp === 'S' && fl ? dinero(fl.fin()) : ''));
+    // Los renglones del desglose no cuentan en los totales (ya están en la suma de su pago).
+    const totales = t.cols.map(([c, , , tp]) => (tp === 'd' ? dinero(filas.filter(f => !f.es_desglose).reduce((s, f) => s + Number(f[c] || 0), 0)) : tp === 'S' && fl ? dinero(fl.fin()) : ''));
+    const acciones = k === 'flujo' && EDITANDO;
     const cabeza = !fl ? '' : (() => { const ing = (DATOS.flujo || []).reduce((s, f) => s + Number(f.ingreso), 0), egr = (DATOS.flujo || []).reduce((s, f) => s + Number(f.egreso), 0), pc = (DATOS.flujo || []).filter(f => f.revisar).length;
       const escrito = (DATOS.saldos_iniciales || []).some(x => x.escrito);
       return `<div class="logs-tarjetas">${tarjeta('Saldo inicial', dinero(fl.ini), escrito ? 'escrito en el sistema' : 'calculado por el CRM')}${tarjeta('Ingresos (cobros y reintegros)', dinero(ing))}${tarjeta('Egresos (pagos y anticipos)', dinero(egr))}
         ${tarjeta('Saldo final', dinero(fl.fin()))}${tarjeta('Movimientos por revisar', String(pc), 'falta XML, complemento o comprobar', pc > 0)}</div>
-        ${cuentaHtml()}${saldoHtml(fl)}${barraEdicion()}`; })();
+        ${cuentaHtml()}${saldoHtml(fl)}${barraEdicion()}${EDITANDO ? movimientoHtml() : ''}`; })();
     const hayFiltros = e.q.trim() || e.rapido || Object.values(e.col).some(v => String(v).trim());
     const rapidos = k === 'flujo' ? RAPIDOS.map(([id, txt]) => `<button type="button" class="btn btn-chico ${e.rapido === id ? '' : 'btn-outline'}" data-ct-rapido="${esc(id)}" aria-pressed="${e.rapido === id}">${esc(txt)}</button>`).join('') : '';
     return `${cabeza}<div class="filtros"><input type="search" id="ct-buscar" data-ct-tabla="${esc(k)}" value="${esc(e.q)}" placeholder="Buscar en toda la tabla…" aria-label="Buscar en la tabla">${rapidos}
       ${hayFiltros ? '<button type="button" class="btn btn-outline btn-chico" id="ct-limpiar">✕ Limpiar filtros</button>' : ''}<span class="util-45">${Number(filas.length)} de ${Number(total)} renglón(es)</span></div>
-      ${total ? `<div class="tabla-scroll ct-tabla-scroll"><table class="tabla-resumen ct-tabla"><thead><tr>${t.cols.map(([c, titulo]) => `<th><button type="button" class="ct-orden" data-ct-orden="${esc(c)}">${esc(titulo)}${e.k === c ? (e.dir > 0 ? ' ▲' : ' ▼') : ''}</button></th>`).join('')}</tr>
-        <tr class="ct-fila-filtros">${t.cols.map(col => filtroHtml(k, col)).join('')}</tr></thead>
-        <tbody>${filas.length ? filas.map(f => `<tr>${t.cols.map(c => celda(f, c)).join('')}</tr>`).join('') : `<tr><td colspan="${t.cols.length}" class="util-45">Ningún renglón cumple los filtros.</td></tr>`}</tbody>
-        <tfoot><tr>${totales.map((v, i) => `<td class="ct-num">${i === 0 ? 'TOTAL' : esc(v)}</td>`).join('')}</tr></tfoot></table></div>`
+      ${total ? `<div class="tabla-scroll ct-tabla-scroll"><table class="tabla-resumen ct-tabla"><thead><tr>${acciones ? '<th class="ct-acciones">Acciones</th>' : ''}${t.cols.map(([c, titulo]) => `<th><button type="button" class="ct-orden" data-ct-orden="${esc(c)}">${esc(titulo)}${e.k === c ? (e.dir > 0 ? ' ▲' : ' ▼') : ''}</button></th>`).join('')}</tr>
+        <tr class="ct-fila-filtros">${acciones ? '<th></th>' : ''}${t.cols.map(col => filtroHtml(k, col)).join('')}</tr></thead>
+        <tbody>${filas.length ? filas.map(f => `<tr class="${f.es_desglose ? 'ct-hijo' : ''}${f.manual ? ' ct-manual' : ''}">${acciones ? `<td class="ct-acciones">${accionesHtml(f)}</td>` : ''}${t.cols.map(c => celda(f, c)).join('')}</tr>`).join('') : `<tr><td colspan="${t.cols.length + (acciones ? 1 : 0)}" class="util-45">Ningún renglón cumple los filtros.</td></tr>`}</tbody>
+        <tfoot><tr>${acciones ? '<td></td>' : ''}${totales.map((v, i) => `<td class="ct-num">${i === 0 ? 'TOTAL' : esc(v)}</td>`).join('')}</tr></tfoot></table></div>`
       : '<p class="util-45">No hay renglones este mes.</p>'}`;
   }
   // Vuelve a pintar la tabla sin perder dónde estaba escribiendo la persona.
@@ -295,15 +356,18 @@ const Contabilidad = (() => {
     ws.getRow(1).font = { bold: true }; ws.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF6B103' } };
     const ini = Number(fd.saldo_inicial || 0); let saldo = ini;
     const inicio = ws.addRow({ concepto_banco: 'SALDO INICIAL', saldo: ini }); inicio.font = { bold: true };
+    // Los renglones del desglose van debajo de su pago, sin egreso, ingreso, saldo ni X comprobar (como en la hoja de Dirección).
+    const SIN_MONTO = new Set(['egreso', 'ingreso', 'saldo', 'por_comprobar']);
     for (const f of fd.flujo || []) {
-      saldo = Math.round((saldo + Number(f.ingreso) - Number(f.egreso)) * 100) / 100;
-      ws.addRow(Object.fromEntries(t.cols.map(([c, , , tp]) => [c, c === 'saldo' ? saldo : tp === 'f' ? (f[c] ? new Date(f[c].slice(0, 10) + 'T12:00:00Z') : null) : tp === 'd' ? Number(f[c] || 0) : tp === 'v' || tp === 'c' ? textoDe(f[c], tp) : f[c]])));
+      if (!f.es_desglose) saldo = Math.round((saldo + Number(f.ingreso) - Number(f.egreso)) * 100) / 100;
+      ws.addRow(Object.fromEntries(t.cols.map(([c, , , tp]) => [c, f.es_desglose && SIN_MONTO.has(c) ? null : c === 'saldo' ? saldo : tp === 'f' ? (f[c] ? new Date(f[c].slice(0, 10) + 'T12:00:00Z') : null) : tp === 'd' ? Number(f[c] || 0) : tp === 'v' || tp === 'c' ? textoDe(f[c], tp) : f[c]])));
     }
-    const n = (fd.flujo || []).length + 2, col = k => ws.getColumn(t.cols.findIndex(c => c[0] === k) + 1).letter;
+    const col = k => ws.getColumn(t.cols.findIndex(c => c[0] === k) + 1).letter, suma = k => (fd.flujo || []).filter(f => !f.es_desglose).reduce((s, f) => s + Number(f[k] || 0), 0);
     ws.addRow({});
+    // Totales sin contar dos veces el desglose (su monto ya está en la suma de su pago).
     const tot = ws.addRow({ concepto_banco: 'TOTAL' });
-    for (const k of ['egreso', 'ingreso', 'cfdi_monto', 'no_deducible', 'por_comprobar']) tot.getCell(col(k)).value = { formula: `SUM(${col(k)}3:${col(k)}${n})` };
-    tot.getCell(col('saldo')).value = { formula: `${col('saldo')}2+${col('ingreso')}${n + 2}-${col('egreso')}${n + 2}` };
+    for (const k of ['egreso', 'ingreso', 'cfdi_monto', 'no_deducible', 'por_comprobar']) tot.getCell(col(k)).value = Math.round(suma(k) * 100) / 100;
+    tot.getCell(col('saldo')).value = saldo;
     tot.font = { bold: true };
   }
   async function xml() {
@@ -347,8 +411,13 @@ const Contabilidad = (() => {
       const b = e.target.closest('button'); if (!b || !DATOS) return;
       if (b.dataset.ctPestana) { if (b.dataset.ctPestana === PESTANA) return; sePuedeDescartar().then(ok => { if (ok) { EDITANDO = false; PESTANA = b.dataset.ctPestana; pintar(); } }); }
       else if (b.id === 'ct-editar-flujo') { EDITANDO = true; repintar('flujo'); }
+      else if (b.id === 'ct-mov-abrir') { MOV_ABIERTO = !MOV_ABIERTO; repintar('flujo'); if (MOV_ABIERTO) $('ct-mov-monto')?.focus(); }
+      else if (b.id === 'ct-mov-cerrar') { MOV_ABIERTO = false; repintar('flujo'); }
+      else if (b.dataset.ctDesglosar) conBoton(b, () => desglosar(b.dataset.ctDesglosar));
+      else if (b.dataset.ctQuitar) conBoton(b, () => quitarDesglose(b.dataset.ctQuitar));
+      else if (b.dataset.ctCancelarMov) conBoton(b, () => cancelarMovimiento(b.dataset.ctCancelarMov));
       else if (b.id === 'ct-guardar-flujo') conBoton(b, guardarFlujo);
-      else if (b.id === 'ct-bloquear-flujo') sePuedeDescartar().then(ok => { if (ok) { EDITANDO = false; repintar('flujo'); } });
+      else if (b.id === 'ct-bloquear-flujo') sePuedeDescartar().then(ok => { if (ok) { EDITANDO = false; MOV_ABIERTO = false; repintar('flujo'); } });
       else if (b.dataset.ctRapido) { const s = estadoDe(PESTANA); s.rapido = s.rapido === b.dataset.ctRapido ? '' : b.dataset.ctRapido; repintar(PESTANA); }
       else if (b.id === 'ct-limpiar') { const s = estadoDe(PESTANA); s.q = ''; s.col = {}; s.rapido = ''; repintar(PESTANA); }
       else if (b.id === 'ct-saldo-guardar' || b.id === 'ct-saldo-crm') conBoton(b, () => guardarSaldo(b.id === 'ct-saldo-crm' ? null : $('ct-saldo-inicial').value));
@@ -357,6 +426,7 @@ const Contabilidad = (() => {
       else if (b.dataset.ctOrden) { const s = estadoDe(PESTANA); s.dir = s.k === b.dataset.ctOrden ? -s.dir : 1; s.k = b.dataset.ctOrden; repintar(PESTANA); }
     });
     let espera;
+    $('ct-resumen').addEventListener('submit', e => { if (e.target.id === 'ct-mov-form') { e.preventDefault(); const b = $('ct-mov-guardar'); conBoton(b, agregarMovimiento); } });
     $('ct-resumen').addEventListener('change', async e => {
       if (e.target.id === 'ct-cuenta') { const v = e.target.value; if (!await sePuedeDescartar()) { e.target.value = CUENTA; return; } CUENTA = v; cargar(); }
       else if (e.target.tagName === 'SELECT' && e.target.dataset.ctFiltro) { estadoDe(PESTANA).col[e.target.dataset.ctFiltro] = e.target.value; repintar(PESTANA); }
