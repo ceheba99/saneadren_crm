@@ -691,11 +691,24 @@ const Finanzas = (() => {
   // FOLIO FACTURA y METODO DE PAGO con las palabras del Excel (igual que la descarga): sin folio, el tipo de comprobante.
   const folioExcel = x => x.factura_folio || (x.tipo_comprobante && x.tipo_comprobante !== 'factura' ? (Object.fromEntries(COMPROBANTES)[x.tipo_comprobante] || '').toUpperCase() : '');
   const metodoExcelDe = x => CxpExcel.metodoExcel(x, x.ultimo_pago ? String(x.ultimo_pago).split('|')[1] : null);
-  async function cargarPagar() {
+  // Buscador de Cuentas por pagar (2026-11-13): busca en todo lo que se ve en el renglón (las columnas del Excel y las del
+  // sistema), sin acentos ni mayúsculas; con varias palabras, deben estar todas (p. ej. «morlet parcial»).
+  const sinAcentosPagar = t => String(t ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  const textoBusquedaPagar = x => sinAcentosPagar([x.proveedor_nombre, x.beneficiario, x.concepto, x.factura_folio, folioExcel(x), metodoExcelDe(x), x.categoria_nombre,
+    x.tipo_gasto_nombre, CxpExcel.statusDe(x.total_cent, x.pagado_cent), x.capturo, x.notas, x.orden_folio, x.equipo, fechaTxt(x.fecha_documento), fechaTxt(x.fecha_vencimiento),
+    x.fecha_documento, x.fecha_vencimiento, x.total, Number(x.total).toFixed(2), formatoMoneda(x.total), x.saldo, Number(x.saldo).toFixed(2), formatoMoneda(x.saldo)].join(' '));
+  const filtrarPagar = lista => {
+    const palabras = sinAcentosPagar($('pagar-buscar').value).split(/\s+/).filter(Boolean);
+    return palabras.length ? lista.filter(x => { const t = textoBusquedaPagar(x); return palabras.every(p => t.includes(p)); }) : lista;
+  };
+  // opc.sinRecargar: solo se vuelve a pintar con lo ya cargado (al escribir en el buscador).
+  async function cargarPagar(opc = {}) {
     const cont = $('pagar-lista');
-    cont.innerHTML = '<p class="util-45" role="status">Cargando…</p>';
-    try { CXP = await api('/finanzas/cxp?vista=' + encodeURIComponent($('pagar-vista').value)).then(json); }
-    catch (err) { cont.innerHTML = `<div class="aviso-error-carga" role="alert"><p>No se pudo cargar: ${esc(err.message)}</p></div>`; return; }
+    if (!opc.sinRecargar) {
+      cont.innerHTML = '<p class="util-45" role="status">Cargando…</p>';
+      try { CXP = await api('/finanzas/cxp?vista=' + encodeURIComponent($('pagar-vista').value)).then(json); }
+      catch (err) { cont.innerHTML = `<div class="aviso-error-carga" role="alert"><p>No se pudo cargar: ${esc(err.message)}</p></div>`; return; }
+    }
     const h = hoy(), dow = new Date(h + 'T00:00:00Z').getUTCDay(), domingo = sumarDias(h, (7 - dow) % 7), domingoSig = sumarDias(domingo, 7);
     const grupos = [['Vencidas', x => x.saldo > 0 && x.fecha_vencimiento < h], ['Esta semana', x => x.saldo > 0 && x.fecha_vencimiento >= h && x.fecha_vencimiento <= domingo],
       ['Próxima semana', x => x.saldo > 0 && x.fecha_vencimiento > domingo && x.fecha_vencimiento <= domingoSig], ['Después', x => x.saldo > 0 && x.fecha_vencimiento > domingoSig], ['Pagadas', x => x.saldo <= 0]];
@@ -739,15 +752,18 @@ const Finanzas = (() => {
         + (x.repetible ? '<button type="button" class="btn btn-outline btn-chico perm-dinero-mover" data-repetir-cxp="' + Number(x.id) + '" title="Gasto fijo: copiarlo al mes siguiente, por pagar">🔁 Repetir</button>' : '')
         + (x.pagado === 0 ? '<button type="button" class="btn btn-outline btn-chico perm-dinero-mover" data-cancelar-cxp="' + Number(x.id) + '">Cancelar</button>' : '') + '</div>' },
     ];
+    const LISTA = filtrarPagar(CXP), buscando = !!$('pagar-buscar').value.trim();
+    $('pagar-buscar-info').textContent = buscando ? `${LISTA.length} de ${CXP.length}` : '';
     if (!CXP.length) { cont.innerHTML = '<p class="util-45">No hay cuentas por pagar. 🎉</p>'; return; }
+    if (!LISTA.length) { cont.innerHTML = '<p class="util-45">Ninguna cuenta coincide con «' + esc($('pagar-buscar').value.trim()) + '».' + ($('pagar-vista').value !== 'todas' ? ' Si ya está pagada, elige «Todas (incluye pagadas)».' : '') + '</p>'; return; }
     // La tabla cambió al orden del Excel (fase 2): una sola vez se regresan las columnas a las de fábrica, para que nadie
     // se quede sin ver las nuevas por lo que había ocultado antes.
     if (leerPref('tabla-pagar-excel', 0) !== 1) { guardarPref('tabla-ocultas-pagar', ['dias', 'orden', 'equipo', 'iva', 'ultimo_pago']); guardarPref('tabla-pagar-excel', 1); }
     TABLAS.pagar = { ...TABLAS.pagar, contenedor: 'pagar-lista', orden: TABLAS.pagar?.orden || { k: 'vence', dir: 1 } };
-    cont.innerHTML = vistaDinero('pagar', { columnas: COLS_PAGAR, filas: CXP, claseFila: x => (cuando(x) === 'Vencidas' ? 'fila-vencida' : ''), tarjetas: () => tarjetasPagar(), ocultasDef: ['dias', 'orden', 'equipo', 'iva', 'ultimo_pago'] });
+    cont.innerHTML = vistaDinero('pagar', { columnas: COLS_PAGAR, filas: LISTA, claseFila: x => (cuando(x) === 'Vencidas' ? 'fila-vencida' : ''), tarjetas: () => tarjetasPagar(), ocultasDef: ['dias', 'orden', 'equipo', 'iva', 'ultimo_pago'] });
     function tarjetasPagar() {
     const html = grupos.map(([titulo, f]) => {
-      const items = CXP.filter(f);
+      const items = LISTA.filter(f);
       if (!items.length) return '';
       const subtotal = items.reduce((t, x) => t + x.saldo, 0);
       return `<h3 class="grupo-pagos">${titulo} <small>${items.length} · ${formatoMoneda(subtotal)}</small></h3>` + items.map(x => `
@@ -762,7 +778,9 @@ const Finanzas = (() => {
     return html || '<p class="util-45">No hay cuentas por pagar. 🎉</p>';
     }
   }
-  $('pagar-vista').addEventListener('change', cargarPagar);
+  $('pagar-vista').addEventListener('change', () => cargarPagar());
+  let PAGAR_BUSCAR_T = null;
+  $('pagar-buscar').addEventListener('input', () => { clearTimeout(PAGAR_BUSCAR_T); PAGAR_BUSCAR_T = setTimeout(() => cargarPagar({ sinRecargar: true }), 150); });
   $('pagar-lista').addEventListener('click', async e => {
     const btn = e.target.closest('button'); if (!btn) return;
     if (btn.dataset.abrirOrdenCxp) return abrirFicha(Number(btn.dataset.abrirOrdenCxp));
