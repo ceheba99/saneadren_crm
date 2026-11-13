@@ -230,7 +230,7 @@
   function guardar(v) { try { sessionStorage.setItem(LLAVE, JSON.stringify(v)); } catch (e) { /* sin almacenamiento */ } }
   // Lo que pasó queda anotado para mandarlo al servidor (Logs del sistema) cuando haya conexión.
   K.anotar = function (motivo) {
-    try { var l = JSON.parse(localStorage.getItem(DIAG) || '[]'); l.push({ t: new Date().toISOString(), m: String(motivo).slice(0, 200) }); localStorage.setItem(DIAG, JSON.stringify(l.slice(-10))); } catch (e) { /* sin almacenamiento */ }
+    try { var l = JSON.parse(localStorage.getItem(DIAG) || '[]'); l.push({ t: new Date().toISOString(), m: String(motivo).slice(0, /^Velocidad/.test(String(motivo)) ? 320 : 200) }); localStorage.setItem(DIAG, JSON.stringify(l.slice(-10))); } catch (e) { /* sin almacenamiento */ }
   };
   // CAJA NEGRA (2026-11-12, Dirección: «otra vez se puso en blanco al desbloquear y tuve que reiniciar la app»; en los
   // Logs no quedó nada porque el vigilante solo anota lo que él mismo arregla). Cada 5 s se guarda una señal de vida
@@ -448,8 +448,12 @@
   // La tableta mide lo que de verdad tarda (abrir, contestar el servidor, cargar el reconocimiento, cada paso al checar
   // y cuánto se traba la pantalla) y lo manda a los Logs del sistema («Velocidad del reloj checador»): al abrir, como
   // máximo cada 30 minutos, y al checar, como máximo cada hora. Solo números; nada de personas.
-  const tiempos = {}, trabada = { total: 0, peor: 0 };
-  try { new PerformanceObserver(l => { for (const x of l.getEntries()) { trabada.total += x.duration; trabada.peor = Math.max(trabada.peor, x.duration); } }).observe({ entryTypes: ['longtask'] }); } catch { /* el navegador no lo mide */ }
+  // Desde el 2026-11-13 (código a PIN 4.0 s en la app): además del total, cuánto se trabó la pantalla DENTRO de cada
+  // paso (ventanas[paso] = [inicio, fin]; trabas = las últimas pausas), para saber si fue la tableta o el internet.
+  const tiempos = {}, trabada = { total: 0, peor: 0 }, trabas = [], ventanas = {};
+  try { new PerformanceObserver(l => { for (const x of l.getEntries()) { trabada.total += x.duration; trabada.peor = Math.max(trabada.peor, x.duration); trabas.push([x.startTime, x.startTime + x.duration]); if (trabas.length > 300) trabas.shift(); } }).observe({ entryTypes: ['longtask'] }); } catch { /* el navegador no lo mide */ }
+  const trabadaEn = paso => { const v = ventanas[paso]; if (!v) return 0; let ms = 0; for (const [a, b] of trabas) ms += Math.max(0, Math.min(b, v[1]) - Math.max(a, v[0])); return ms; };
+  const conTraba = paso => ' (trabada ' + seg(trabadaEn(paso)) + ')';
   const seg = ms => (ms / 1000).toFixed(1) + ' s';
   function reportarVelocidad(clase, cadaMs, texto) {
     try {
@@ -467,7 +471,9 @@
     reportarVelocidad('abrir', 30 * 60000, 'Velocidad (' + equipo + '): ' + p.join('; '));
   }
   function velocidadAlChecar() {
-    const p = [tiempos['rostro-previo'] != null ? 'codigo a PIN ' + seg(tiempos['rostro-previo']) : '', tiempos.identificar != null ? 'PIN a botones ' + seg(tiempos.identificar) : '', tiempos.checar != null ? 'registrar ' + seg(tiempos.checar) : '',
+    const p = [tiempos['codigo-pin'] != null ? 'codigo a PIN ' + seg(tiempos['codigo-pin']) + conTraba('codigo-pin') : '',
+      tiempos['rostro-previo'] != null && tiempos['codigo-pin'] != null && tiempos['rostro-previo'] > tiempos['codigo-pin'] + 100 ? 'consulta del codigo ' + seg(tiempos['rostro-previo']) + ' (no se espero)' : '', tiempos.identificar != null ? 'PIN a botones ' + seg(tiempos.identificar) + conTraba('identificar') : '',
+      tiempos.checar != null ? 'registrar ' + seg(tiempos.checar) + conTraba('checar') : '', tiempos.camara != null ? 'camara ' + seg(tiempos.camara) + conTraba('camara') : '',
       'trabada ' + seg(trabada.total) + ' desde que abrio'].filter(Boolean);
     reportarVelocidad('checar', 60 * 60000, 'Velocidad al checar: ' + p.join('; '));
   }
@@ -480,7 +486,7 @@
       if (!/application\/json/i.test(r.headers.get('content-type') || '')) throw new Error('respuesta ajena al checador');
       const j = await r.json().catch(() => null);
       if (!j || typeof j !== 'object') throw new Error('respuesta ilegible');
-      tiempos[ruta.split('?')[0]] = performance.now() - t0;
+      tiempos[ruta.split('?')[0]] = performance.now() - t0; ventanas[ruta.split('?')[0]] = [t0, performance.now()];
       return { status: r.status, ok: r.ok, j };
     } finally { clearTimeout(t); }
   }
@@ -577,6 +583,7 @@
     if (camaraLista) return Promise.resolve();
     if (pidiendo) return pidiendo;
     pidiendo = (async () => {
+      const t0 = performance.now();
       try {
         if (!navigator.mediaDevices?.getUserMedia) throw Object.assign(new Error(), { name: 'NotFoundError' });
         // Con la pantalla bloqueada o en ahorro de energía la cámara puede no contestar nunca: se espera 8 s como máximo
@@ -585,7 +592,7 @@
         let vencio = false;
         const s = await Promise.race([pedida, new Promise((_, mal) => setTimeout(() => { vencio = true; mal(Object.assign(new Error(), { name: 'TimeoutError' })); }, 8000))]);
         pedida.then(x => { if (vencio) x.getTracks().forEach(t => t.stop()); }).catch(() => {});
-        $('video').srcObject = s; await $('video').play().catch(() => {}); camaraLista = true; camaraMotivo = ''; camaraFallo = false;
+        $('video').srcObject = s; await $('video').play().catch(() => {}); camaraLista = true; tiempos.camara = performance.now() - t0; ventanas.camara = [t0, performance.now()]; camaraMotivo = ''; camaraFallo = false;
       } catch (e) { camaraLista = false; camaraMotivo = MOTIVOS[e?.name] || ''; camaraFallo = true; }
       pidiendo = null;
       avisos();
@@ -1038,12 +1045,16 @@
         el('button', { type: 'button', className: 'btn btn-chico', textContent: '🙂 Registrar mi cara (con RH)', onclick: registrarCara })));
   }
   // Después del código: con biométrico, primero la cara (si coincide, se salta el PIN); si no, el PIN.
+  // 2026-11-13 («código a PIN 4.0 s»): primero se pregunta y DESPUÉS se prende la cámara (en Android prenderla puede
+  // congelar la pantalla y retrasar la respuesta), y se espera 1.5 s como máximo (antes 4 s): si no contesta, decide lo
+  // que la tableta recuerda de ese código. Entrar con PIN teniendo cara no deja la checada por revisar.
   async function trasCodigo(codigo) {
     estado.esCodigo = false; estado.teclado = null;
-    iniciarCamara(); // se prende ya: lista para la cara o para la foto
-    let bio = false;
-    try { const r = await Promise.race([api('rostro-previo', { codigo }), new Promise((_, mal) => setTimeout(() => mal(new Error('lento')), 4000))]); bio = r.ok && r.j.biometria; }
-    catch { bio = !!recordado(codigo)?.cara; } // sin internet: quien entra con la cara la sigue usando (se comprueba al subir)
+    let bio = false; const t0 = performance.now();
+    try { const r = await Promise.race([api('rostro-previo', { codigo }), new Promise((_, mal) => setTimeout(() => mal(new Error('lento')), 1500))]); bio = r.ok && r.j.biometria; }
+    catch { bio = !!recordado(codigo)?.cara; } // sin internet o lento: quien entra con la cara la sigue usando (se comprueba al subir)
+    tiempos['codigo-pin'] = performance.now() - t0; ventanas['codigo-pin'] = [t0, performance.now()]; // lo que de verdad esperó la persona
+    iniciarCamara(); // lista para la cara o para la foto
     return bio ? caraPrimero(codigo) : pedirPin(codigo);
   }
   // Entrar con la cara (2026-11-09; con calma desde el 2026-11-11). Si coincide y es una cara real, se salta el PIN.

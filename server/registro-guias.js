@@ -17,8 +17,15 @@ function velocidad(d) {
   if (/al checar/.test(d)) {
     for (const [re, que] of [[/codigo a PIN ([\d.]+) s/, 'de escribir el código a pedir el PIN'], [/PIN a botones ([\d.]+) s/, 'de escribir el PIN a mostrar los botones'], [/registrar ([\d.]+) s/, 'de tocar el botón a quedar registrada']]) {
       const s = num(d, re);
-      if (s !== null && s > LIMITES.paso_s) lectura.push(`Paso lento: ${que} tardó ${s} s (lo normal es menos de ${LIMITES.paso_s} s). Ese paso es una consulta al servidor: casi siempre es el internet de la tableta.`);
+      if (s === null || s <= LIMITES.paso_s) continue;
+      const m = String(d).match(new RegExp(re.source + ' \\(trabada ([\\d.]+) s\\)')), t = m ? Number(m[2]) : null;
+      lectura.push(t !== null && t >= s / 2 ? `Paso lento: ${que} tardó ${s} s (lo normal es menos de ${LIMITES.paso_s} s) y ${t} s de eso la pantalla estuvo trabada: es la tableta (procesador, memoria o la cámara prendiéndose), no el internet.`
+        : `Paso lento: ${que} tardó ${s} s (lo normal es menos de ${LIMITES.paso_s} s). Ese paso es una consulta al servidor${t !== null ? ' y la pantalla casi no se trabó' : ''}: casi siempre es el internet de la tableta.`);
     }
+    const consulta = num(d, /consulta del codigo ([\d.]+) s/);
+    if (consulta !== null) lectura.push(`La consulta del código tardó ${consulta} s en contestar, pero la tableta no esperó: a los 1.5 s siguió con lo que recuerda de esa persona (cara o PIN). Si se repite, es el internet de la tableta.`);
+    const cam = num(d, /camara ([\d.]+) s/);
+    if (cam !== null && cam > 3) lectura.push(`Prender la cámara tardó ${cam} s (lo normal es menos de 3 s): la tableta está saturada o la cámara tarda en despertar.`);
     if (!lectura.length) lectura.push('Los tres pasos de la checada (código, PIN y registrar) están dentro de lo normal.');
   } else {
     const abrir = num(d, /abrir ([\d.]+) s/), srv = num(d, /servidor (\d+) ms/), cara = num(d, /cara ([\d.]+) s/), vida = num(d, /vida ([\d.]+) s/), trab = num(d, /trabada ([\d.]+) s/), peor = num(d, /peor ([\d.]+) s/);
@@ -32,7 +39,7 @@ function velocidad(d) {
     if (!lectura.length) lectura.push('Todos los tiempos están dentro de lo normal: la tableta, el internet y el servidor respondieron bien en esta medición.');
   }
   if (equipo) lectura.push(`Medido en ${equipo[1] === 'app' ? 'la app propia del checador' : 'un navegador (Chrome), no en la app'}${equipo[2] ? ', ' + equipo[2] + ' núcleos' : ''}${equipo[3] ? ', ' + equipo[3] + ' GB de memoria' : ''}.`);
-  return { que: 'La tableta del reloj checador midió cuánto tarda y lo mandó aquí. No es una falla: es un informe. «abrir» = segundos hasta que la pantalla quedó lista; «servidor» = milisegundos que tardó el sistema en contestarle; «cara» y «vida» = segundos en cargar el reconocimiento facial y la prueba de vida; «trabada» = segundos en que la pantalla no respondió al dedo.',
+  return { que: 'La tableta del reloj checador midió cuánto tarda y lo mandó aquí. No es una falla: es un informe. «abrir» = segundos hasta que la pantalla quedó lista; «servidor» = milisegundos que tardó el sistema en contestarle; «cara» y «vida» = segundos en cargar el reconocimiento facial y la prueba de vida; «trabada» = segundos en que la pantalla no respondió al dedo (junto a cada paso al checar: cuánto de ese paso estuvo trabada); «camara» = segundos en prender la cámara.',
     causas: ['Servidor lento (más de 800 ms): Wi-Fi débil donde está la tableta, internet de la oficina saturado o el sistema reiniciándose.', 'Pantalla trabada o «abrir» alto: tableta con poca memoria, muchas apps abiertas, ahorro de energía prendido, o el reconocimiento facial cargándose.',
       'Pasos lentos al checar con «servidor» normal: el Wi-Fi se corta por momentos.'],
     hacer: ['Compara varios renglones de «Velocidad»: uno solo malo puede ser casualidad; si se repite, es real.', 'Si lo alto es «servidor» o los pasos al checar: acerca la tableta al módem o revisa el internet.',
