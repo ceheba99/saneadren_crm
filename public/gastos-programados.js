@@ -21,9 +21,9 @@ const GastosProgramados = (() => {
 
   async function cargar() {
     const cont = $('gp-panel'); if (!cont) return;
-    cont.innerHTML = '<p class="ayuda">Cargando gastos programados…</p>';
+    Repintado.cargando(cont, '', '<p class="ayuda">Cargando gastos programados…</p>');
     try { DATOS = await pedir('/gastos-programados'); }
-    catch (err) { if (err.status !== 401) cont.innerHTML = `<div class="aviso-error-carga" role="alert"><p>No se pudo cargar: ${esc(err.message)}</p><button type="button" class="btn btn-outline" data-gp="recargar">Reintentar</button></div>`; return; }
+    catch (err) { if (err.status !== 401) Repintado.falla(cont, err, cargar, `<div class="aviso-error-carga" role="alert"><p>No se pudo cargar: ${esc(err.message)}</p><button type="button" class="btn btn-outline" data-gp="recargar">Reintentar</button></div>`); return; }
     pintar();
   }
 
@@ -45,12 +45,12 @@ const GastosProgramados = (() => {
         <div class="btn-group"><button type="button" class="btn btn-outline" data-gp="editar" data-id="${Number(p.id)}">Editar</button>
           <button type="button" class="btn btn-outline" data-gp="activo" data-id="${Number(p.id)}">${p.activo ? 'Desactivar' : 'Activar'}</button></div>
       </div>`).join('') : `<p class="util-45">${d.programados.length ? 'No hay gastos programados activos.' : 'Aún no hay gastos programados. Da de alta el primero (ej. «Luz Cancún») con «+ Nuevo gasto programado».'}</p>`;
-    cont.innerHTML = `
+    Repintado.pintar(cont, `
       <div class="prov-cabecera"><div><h2>Gastos programados</h2><p class="ayuda">Luz, agua, renta, internet… Se dan de alta una vez con los meses en que llegan; el sistema avisa cuando toca y tú solo capturas el monto del recibo.</p></div>
         <button type="button" class="btn btn-primario" data-gp="nuevo">+ Nuevo gasto programado</button></div>
       <h3 class="grupo-pagos">Por registrar <small>${d.pendientes.length}</small></h3>${pendientes}
       <h3 class="grupo-pagos">Dados de alta <small>${lista.length}</small></h3>
-      <label class="cc-check"><input type="checkbox" data-gp="inactivos"${VER_INACTIVOS ? ' checked' : ''}> Mostrar también los desactivados</label>${filas}`;
+      <label class="cc-check"><input type="checkbox" data-gp="inactivos"${VER_INACTIVOS ? ' checked' : ''}> Mostrar también los desactivados</label>${filas}`);
   }
 
   // ---------- Alta y edición (ventana) ----------

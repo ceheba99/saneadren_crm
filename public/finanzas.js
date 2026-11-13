@@ -128,12 +128,12 @@ const Finanzas = (() => {
     const sec = $('seccion-cobranza'), cont = $('cobranza-orden');
     if (!lead || lead.estatus !== 'ganado') { sec.hidden = true; ORDEN_ACTUAL = null; return; }
     sec.hidden = false; ORDEN_ACTUAL = lead.id;
-    cont.innerHTML = '<p class="util-45" role="status">Cargando…</p>';
+    Repintado.cargando(cont, 'orden|' + lead.id);
     let r;
     try { r = await api('/leads/' + Number(lead.id) + '/cobros').then(json); }
-    catch (err) { cont.innerHTML = `<div class="aviso-error-carga" role="alert"><p>No se pudo cargar la cobranza: ${esc(err.message)}</p></div>`; return; }
+    catch (err) { Repintado.falla(cont, err, () => pintarCobranzaOrden(lead), `<div class="aviso-error-carga" role="alert"><p>No se pudo cargar la cobranza: ${esc(err.message)}</p></div>`); return; }
     if (ORDEN_ACTUAL !== lead.id) return; // se abrió otra ficha mientras cargaba
-    if (r.solo_propios) { cont.innerHTML = cobranzaSoloPropios(r); return; }
+    if (r.solo_propios) { Repintado.pintar(cont, cobranzaSoloPropios(r)); return; }
     const c = r.cuenta;
     const fact = r.puede_editar_factura ? `
       <details class="cobranza-facturacion"><summary>Crédito y factura</summary>
@@ -155,7 +155,7 @@ const Finanzas = (() => {
         </div>
         ${r.puede_operar && !k.cancelado ? `<div class="btn-group">${!k.confirmado && (k.registrado_por !== USUARIO_ACTUAL?.id || cobroQuedaConfirmado()) ? `<button type="button" class="btn btn-outline" data-cobro-confirmar="${Number(k.id)}">Confirmar</button>` : ''}<button type="button" class="btn btn-outline perm-dinero-mover" data-cobro-cancelar="${Number(k.id)}">Cancelar</button></div>` : ''}
       </div>`).join('') : '<p class="util-45">Sin pagos registrados.</p>';
-    cont.innerHTML = `
+    Repintado.pintar(cont, `
       ${c.por_revisar ? '<p class="cuentas-aviso">Orden anterior al módulo de cuentas: está pendiente de la revisión inicial (Finanzas → Cuentas por cobrar).</p>' : ''}
       <div class="cobranza-resumen">
         <div>${etiquetaEstado(c)}</div>
@@ -167,7 +167,7 @@ const Finanzas = (() => {
       ${desgloseIva(c)}
       ${c.ejecucion === 'no_realizado' ? '' : `<button type="button" class="btn btn-primario" data-cobranza="registrar" ${c.saldo <= 0 ? 'disabled' : ''}>💵 Registrar pago</button>`}
       ${fact}
-      <div class="pagos-lista">${pagos}</div>`;
+      <div class="pagos-lista">${pagos}</div>`);
     const factZona = cont.querySelector('.cobranza-facturacion'); // crédito y factura: en vista; «Editar» lo abre (2026-10-26)
     if (factZona) SoloLectura.poner(factZona, true, { compacto: true, que: 'crédito y factura', barraEn: '.fact-barra' });
   }
@@ -263,7 +263,7 @@ const Finanzas = (() => {
   }
   async function pintarTarjetas() {
     const cont = $('cuentas-tarjetas');
-    try { RESUMEN = await api('/finanzas/resumen').then(json); } catch (err) { cont.innerHTML = `<div class="aviso-error-carga" role="alert"><p>No se pudo cargar el resumen: ${esc(err.message)}</p></div>`; return; }
+    try { RESUMEN = await api('/finanzas/resumen').then(json); } catch (err) { Repintado.falla(cont, err, pintarTarjetas, `<div class="aviso-error-carga" role="alert"><p>No se pudo cargar el resumen: ${esc(err.message)}</p></div>`); return; }
     // Cada tarjeta lleva «?»: la explicación sale debajo de las tarjetas (public/ayuda.js).
     // «tipo-<clave>» da a cada tarjeta su color (interfaz.css, «Tarjetas de cuentas»); «extra» es HTML ya armado aquí.
     const r = RESUMEN, t = (titulo, valor, detalle, clase = '', ayuda = '', extra = '') => `<div class="tarjeta-dinero ${clase}${ayuda ? ' tipo-' + ayuda : ''}"><small>${titulo}${Ayuda.boton(ayuda)}</small><b>${valor}</b>${extra}${detalle ? `<span>${detalle}</span>` : ''}</div>`;
@@ -273,7 +273,7 @@ const Finanzas = (() => {
     const barraVencido = r.vencido > 0 ? `<i class="tarjeta-barra" role="img" aria-label="${pctVencido}% de lo que te deben"><i style="width:${pctVencido}%"></i></i>` : '';
     const mesActual = new Date().toLocaleDateString('es-MX', { month: 'long', timeZone: 'America/Mexico_City' });
     const nConfirmar = Number(r.por_confirmar?.cantidad) || 0;
-    cont.innerHTML = SECCION === 'pagar'
+    Repintado.pintar(cont, SECCION === 'pagar'
       ? (r.pagar_semana !== undefined ? t('Pagar esta semana', formatoMoneda(r.pagar_semana), plural(r.facturas_semana, 'factura (incluye vencidas)', 'facturas (incluye vencidas)'), r.pagar_semana > 0 ? 'aviso' : '', 'pagar_semana') : '')
         + (r.por_pagar !== undefined ? t('Total por pagar', formatoMoneda(r.por_pagar), '', '', 'por_pagar') : '')
         + (r.pagado_mes !== undefined ? t('Pagado este mes', formatoMoneda(r.pagado_mes), `En ${esc(mesActual)}`, '', 'pagado_mes') : '')
@@ -283,7 +283,7 @@ const Finanzas = (() => {
       + (r.programado > 0 ? t('Por realizar', formatoMoneda(r.programado), `${plural(r.ordenes_programadas, 'servicio programado', 'servicios programados')} · aún no se cobran`, '', 'por_realizar') : '')
       + (r.a_favor > 0 ? t('A favor de clientes', formatoMoneda(r.a_favor), `${plural(r.ordenes_a_favor, 'servicio no realizado', 'servicios no realizados')} con pago · devolver o aplicar`, 'aviso', 'a_favor') : '')
       + t('Cobrado este mes', formatoMoneda(r.cobrado_mes), `En ${esc(mesActual)}`, 'bueno', 'cobrado_mes')
-      + (r.por_confirmar ? t('Por confirmar', formatoMoneda(r.por_confirmar.monto), nConfirmar ? plural(nConfirmar, 'pago esperando confirmación', 'pagos esperando confirmación') : 'Nada pendiente', nConfirmar ? 'aviso' : 'tranquila', 'por_confirmar') : '');
+      + (r.por_confirmar ? t('Por confirmar', formatoMoneda(r.por_confirmar.monto), nConfirmar ? plural(nConfirmar, 'pago esperando confirmación', 'pagos esperando confirmación') : 'Nada pendiente', nConfirmar ? 'aviso' : 'tranquila', 'por_confirmar') : ''));
     Ayuda.cerrar(cont);
     pintarRevision();
   }
@@ -297,7 +297,7 @@ const Finanzas = (() => {
     const cont = $('cuentas-revision');
     if (!esAdmin() || !RESUMEN?.por_revisar) { cont.hidden = true; return; }
     cont.hidden = false;
-    cont.innerHTML = `<p><b>Revisión inicial:</b> ${Number(RESUMEN.por_revisar)} órdenes anteriores al módulo todavía no cuentan en la cartera. Indica cuáles ya se cobraron para que los saldos sean reales.</p><button type="button" class="btn btn-secundario" data-revision="abrir">Revisar ahora</button><div id="revision-lista"></div>`;
+    Repintado.pintar(cont, `<p><b>Revisión inicial:</b> ${Number(RESUMEN.por_revisar)} órdenes anteriores al módulo todavía no cuentan en la cartera. Indica cuáles ya se cobraron para que los saldos sean reales.</p><button type="button" class="btn btn-secundario" data-revision="abrir">Revisar ahora</button><div id="revision-lista"></div>`);
   }
   $('cuentas-revision').addEventListener('click', async e => {
     const btn = e.target.closest('button'); if (!btn) return;
@@ -318,9 +318,9 @@ const Finanzas = (() => {
   async function pintarPorConfirmar() {
     const cont = $('cuentas-por-confirmar');
     const lista = await api('/finanzas/por-confirmar').then(json).catch(() => []);
-    cont.innerHTML = lista.length ? `<div class="inicio-bloque inicio-bloque-aviso"><h3>Pagos por confirmar</h3><p class="ayuda">Los registraron vendedores o técnicos. Confírmalos cuando verifiques que el dinero llegó.</p>
+    Repintado.pintar(cont, lista.length ? `<div class="inicio-bloque inicio-bloque-aviso"><h3>Pagos por confirmar</h3><p class="ayuda">Los registraron vendedores o técnicos. Confírmalos cuando verifiques que el dinero llegó.</p>
       ${lista.map(k => `<div class="pago-fila"><div><b>${formatoMoneda(k.monto)}</b> · ${esc(NOMBRE_METODO[k.metodo] || k.metodo)} · ${esc(fechaTxt(k.fecha))}<small>${esc(k.cliente_nombre)} · ${esc(folioOrdenServicio({ id: k.lead_id, created_at: k.lead_created_at }))} · registró ${esc(k.registrado_por_nombre || '—')}</small></div>
-        <div class="btn-group">${k.registrado_por !== USUARIO_ACTUAL?.id || cobroQuedaConfirmado() ? `<button type="button" class="btn btn-outline" data-confirmar="${Number(k.id)}">Confirmar</button>` : '<span class="ayuda">Lo registraste tú: lo confirma otra persona</span>'}<button type="button" class="btn btn-outline perm-dinero-mover" data-cancelar="${Number(k.id)}">Cancelar</button></div></div>`).join('')}</div>` : '';
+        <div class="btn-group">${k.registrado_por !== USUARIO_ACTUAL?.id || cobroQuedaConfirmado() ? `<button type="button" class="btn btn-outline" data-confirmar="${Number(k.id)}">Confirmar</button>` : '<span class="ayuda">Lo registraste tú: lo confirma otra persona</span>'}<button type="button" class="btn btn-outline perm-dinero-mover" data-cancelar="${Number(k.id)}">Cancelar</button></div></div>`).join('')}</div>` : '');
   }
   $('cuentas-por-confirmar').addEventListener('click', async e => {
     const btn = e.target.closest('button'); if (!btn) return;
@@ -416,7 +416,7 @@ const Finanzas = (() => {
   }
   function repintarTabla(id) {
     const t = TABLAS[id]; if (!t) return;
-    $(t.contenedor).innerHTML = vistaDinero(id, t);
+    Repintado.pintar($(t.contenedor), vistaDinero(id, t));
   }
   document.addEventListener('click', e => {
     const caja = e.target.closest('[data-tabla-barra], .tabla-dinero'); if (!caja) return;
@@ -489,14 +489,14 @@ const Finanzas = (() => {
   async function cargarLista() {
     // Una sola lista: por orden (cada fila con su "Registrar pago").
     const cont = $('cobrar-lista'), vista = 'orden';
-    cont.innerHTML = '<p class="util-45" role="status">Cargando…</p>';
+    Repintado.cargando(cont, 'cobrar|' + FILTRO);
     const params = new URLSearchParams({ vista, filtro: FILTRO, q: $('cobrar-buscar').value.trim() });
     try { CARTERA = await api('/finanzas/cartera?' + params).then(json); }
-    catch (err) { cont.innerHTML = `<div class="aviso-error-carga" role="alert"><p>No se pudo cargar: ${esc(err.message)}</p></div>`; return; }
-    if (!CARTERA.length) { cont.innerHTML = '<p class="util-45">No hay cuentas con este filtro. 🎉</p>'; return; }
+    catch (err) { Repintado.falla(cont, err, cargarLista, `<div class="aviso-error-carga" role="alert"><p>No se pudo cargar: ${esc(err.message)}</p></div>`); return; }
+    if (!CARTERA.length) { Repintado.pintar(cont, '<p class="util-45">No hay cuentas con este filtro. 🎉</p>'); return; }
     const id = 'cobrar';
     TABLAS[id] = { ...TABLAS[id], contenedor: 'cobrar-lista' };
-    cont.innerHTML = vistaDinero(id, { columnas: COLS_COBRAR, filas: CARTERA, claseFila: c => (c.vencida ? 'fila-vencida' : ''), tarjetas: tarjetasCobrar, ocultasDef: ['servicio', 'fecha_servicio', 'ejecucion', 'equipo', 'operador', 'proyecto', 'rfc', 'telefono', 'a_favor', 'pagos_n'] });
+    Repintado.pintar(cont, vistaDinero(id, { columnas: COLS_COBRAR, filas: CARTERA, claseFila: c => (c.vencida ? 'fila-vencida' : ''), tarjetas: tarjetasCobrar, ocultasDef: ['servicio', 'fecha_servicio', 'ejecucion', 'equipo', 'operador', 'proyecto', 'rfc', 'telefono', 'a_favor', 'pagos_n'] }));
   }
   function tarjetasCobrar() {
     return CARTERA.map(c => `<div class="fila-dinero${c.vencida ? ' vencida' : ''}">
@@ -540,14 +540,14 @@ const Finanzas = (() => {
   let CUENTA_CLIENTE = null, VER_PAGADAS = false;
   async function abrirCuentaCliente(id) {
     CUENTA_CLIENTE = id; VER_PAGADAS = false;
-    $('cc-cuerpo').innerHTML = '<p class="util-45" role="status">Cargando…</p>';
+    Repintado.cargando($('cc-cuerpo'), 'c' + id, undefined, true); // ventana recién abierta
     abrirVentana('overlay-cuenta-cliente');
     await pintarCuentaCliente();
   }
   async function pintarCuentaCliente() {
     const id = CUENTA_CLIENTE; let r;
     try { r = await api('/finanzas/clientes/' + Number(id) + '/estado-cuenta?completo=1').then(json); }
-    catch (err) { $('cc-cuerpo').innerHTML = '<div class="aviso-error-carga" role="alert"><p>No se pudo cargar: ' + esc(err.message) + '</p></div>'; return; }
+    catch (err) { Repintado.falla($('cc-cuerpo'), err, pintarCuentaCliente, '<div class="aviso-error-carga" role="alert"><p>No se pudo cargar: ' + esc(err.message) + '</p></div>'); return; }
     if (id !== CUENTA_CLIENTE) return;
     const cli = r.cliente || {};
     $('cc-titulo').textContent = folioCliente(cli.id) + ' · ' + (cli.empresa_contacto || cli.nombre || 'Cliente');
@@ -569,8 +569,7 @@ const Finanzas = (() => {
       + '<td>' + esc(k.registrado_por_nombre || '') + '</td></tr>';
     const vivos = r.cobros.filter(k => !k.cancelado);
     $('cc-sub').textContent = [cli.empresa_contacto, cli.telefono, cli.rfc ? 'RFC ' + cli.rfc : ''].filter(Boolean).join(' · ');
-    $('cc-cuerpo').innerHTML =
-      '<p class="cc-aviso">👤 Estás viendo el <b>estado de cuenta completo</b> de este cliente: todas sus órdenes y todos sus pagos. Cierra esta ventana para volver a la lista general.</p>'
+    Repintado.pintar($('cc-cuerpo'), '<p class="cc-aviso">👤 Estás viendo el <b>estado de cuenta completo</b> de este cliente: todas sus órdenes y todos sus pagos. Cierra esta ventana para volver a la lista general.</p>'
       + '<div class="cc-tarjetas" data-ayuda-zona>' + t('Debe hoy', formatoMoneda(r.saldo), r.saldo > 0 ? 'aviso' : '', 'debe_hoy') + t('Vencido', formatoMoneda(r.vencido), r.vencido > 0 ? 'alerta' : '', 'vencido')
       + t('Por realizar', formatoMoneda(r.programado), '', 'por_realizar') + (r.por_concluir > 0 ? t('Por concluir', formatoMoneda(r.por_concluir), '', 'por_concluir') : '') + (r.a_favor > 0 ? t('A favor del cliente', formatoMoneda(r.a_favor), 'favor', 'a_favor') : '')
       + t('Pagado en total', formatoMoneda(r.pagado), '', 'pagado_total') + '<div class="cc-tarjeta"><small>Crédito</small><b>' + Number(r.dias_credito) + ' días</b>' + (puedeEditarFactura() ? '<button type="button" class="enlace" data-cc-credito>Cambiar</button>' : '') + '</div></div>'
@@ -581,7 +580,7 @@ const Finanzas = (() => {
         : '<p class="util-45">' + (VER_PAGADAS ? 'Este cliente no tiene órdenes de servicio.' : 'No debe nada. 🎉 Marca «Mostrar también las pagadas» para ver su historial.') + '</p>')
       + '</div><div class="cc-seccion apartado"><div class="cc-seccion-cab"><h3>Pagos realizados</h3><span class="ayuda">' + vivos.length + ' ' + (vivos.length === 1 ? 'pago' : 'pagos') + '</span></div>'
       + (r.cobros.length ? '<div class="tabla-scroll tabla-dinero-caja"><table class="tabla-resumen tabla-dinero"><thead><tr><th>Fecha</th><th>OS</th><th class="st-num">Monto</th><th>Tipo</th><th>Método</th><th>CP / referencia</th><th>Estado</th><th>Registró</th></tr></thead><tbody>'
-        + r.cobros.map(filaPago).join('') + '</tbody></table></div>' : '<p class="util-45">Todavía no hay pagos registrados.</p>') + '</div>';
+        + r.cobros.map(filaPago).join('') + '</tbody></table></div>' : '<p class="util-45">Todavía no hay pagos registrados.</p>') + '</div>');
   }
   $('cobrar-lista').addEventListener('click', e => { const b = e.target.closest('[data-cliente-cuenta]'); if (b) abrirCuentaCliente(Number(b.dataset.clienteCuenta)); });
   $('cc-cuerpo').addEventListener('change', e => { if (e.target.closest('[data-cc-pagadas]')) { VER_PAGADAS = e.target.checked; pintarCuentaCliente(); } });
@@ -605,7 +604,7 @@ const Finanzas = (() => {
   async function abrirCuentaProveedor(id) {
     CUENTA_PROV = Number(id); PROV_VER_PAGADAS = false; CUENTA_PROV_DATOS = null;
     $('cp-titulo').textContent = 'Proveedor'; $('cp-sub').textContent = '';
-    $('cp-cuerpo').innerHTML = '<p class="util-45" role="status">Cargando…</p>';
+    Repintado.cargando($('cp-cuerpo'), 'p' + id, undefined, true); // ventana recién abierta
     abrirVentana('overlay-cuenta-proveedor');
     await pintarCuentaProveedor();
   }
@@ -616,7 +615,7 @@ const Finanzas = (() => {
   async function pintarCuentaProveedor() {
     const id = CUENTA_PROV; let r;
     try { r = await api('/finanzas/proveedores/' + id + '/estado-cuenta').then(json); }
-    catch (err) { $('cp-cuerpo').innerHTML = '<div class="aviso-error-carga" role="alert"><p>No se pudo cargar: ' + esc(err.message) + '</p></div>'; return; }
+    catch (err) { Repintado.falla($('cp-cuerpo'), err, pintarCuentaProveedor, '<div class="aviso-error-carga" role="alert"><p>No se pudo cargar: ' + esc(err.message) + '</p></div>'); return; }
     if (id !== CUENTA_PROV) return;
     CUENTA_PROV_DATOS = r;
     if (!CATEGORIAS.length) { try { await catalogosPagos(); } catch {} }
@@ -648,8 +647,7 @@ const Finanzas = (() => {
     const seccion = (titulo, extra, cuerpo) => '<div class="cc-seccion apartado"><div class="cc-seccion-cab"><h3>' + esc(titulo) + '</h3>' + extra + '</div>' + cuerpo + '</div>';
     const ganadas = r.cotizaciones.filter(c => c.gano).length;
     const vivos = r.pagos.filter(g => !g.cancelado);
-    $('cp-cuerpo').innerHTML =
-      '<p class="cc-aviso">🏭 Estás viendo la <b>ficha completa</b> de este proveedor: lo que se le debe, sus facturas, los pagos, sus órdenes de compra y sus cotizaciones. Cierra esta ventana para volver.</p>'
+    Repintado.pintar($('cp-cuerpo'), '<p class="cc-aviso">🏭 Estás viendo la <b>ficha completa</b> de este proveedor: lo que se le debe, sus facturas, los pagos, sus órdenes de compra y sus cotizaciones. Cierra esta ventana para volver.</p>'
       + '<div class="cc-tarjetas">' + t('Le debemos', formatoMoneda(r.debe), r.debe > 0 ? 'aviso' : '') + t('Vencido', formatoMoneda(r.vencido), r.vencido > 0 ? 'alerta' : '')
       + t('Vence en 7 días', formatoMoneda(r.esta_semana)) + t('Pagado en total', formatoMoneda(r.pagado)) + t('Comprado en total', formatoMoneda(r.comprado))
       + t('Crédito', Number(p.dias_credito) + ' días') + '</div>'
@@ -674,7 +672,7 @@ const Finanzas = (() => {
       + seccion('Cotizaciones que ha mandado', '<span class="ayuda">' + ganadas + ' de ' + r.cotizaciones.length + ' ganadas</span>',
         r.cotizaciones.length ? tabla(['Fecha', 'Solicitud', '$Monto', 'Entrega', 'Resultado'], r.cotizaciones.map(filaCot).join('')) : '<p class="util-45">No ha mandado cotizaciones en solicitudes de compra.</p>')
       + seccion('Historial de cambios a sus datos', '',
-        r.historial.length ? '<ul class="cp-historial">' + r.historial.map(h => '<li><b>' + esc(fechaTxt(String(h.fecha).slice(0, 10))) + ' ' + esc(String(h.fecha).slice(11, 16)) + '</b> · ' + esc(h.usuario || '—') + ' · ' + esc(h.accion) + (h.detalle ? '<small>' + esc(h.detalle) + '</small>' : '') + '</li>').join('') + '</ul>' : '<p class="util-45">Sin cambios registrados.</p>');
+        r.historial.length ? '<ul class="cp-historial">' + r.historial.map(h => '<li><b>' + esc(fechaTxt(String(h.fecha).slice(0, 10))) + ' ' + esc(String(h.fecha).slice(11, 16)) + '</b> · ' + esc(h.usuario || '—') + ' · ' + esc(h.accion) + (h.detalle ? '<small>' + esc(h.detalle) + '</small>' : '') + '</li>').join('') + '</ul>' : '<p class="util-45">Sin cambios registrados.</p>'));
   }
   $('cp-cuerpo').addEventListener('change', e => { if (e.target.closest('[data-cp-pagadas]')) { PROV_VER_PAGADAS = e.target.checked; pintarCuentaProveedor(); } });
   $('cp-cuerpo').addEventListener('click', async e => {
@@ -712,9 +710,9 @@ const Finanzas = (() => {
   async function cargarPagar(opc = {}) {
     const cont = $('pagar-lista');
     if (!opc.sinRecargar) {
-      cont.innerHTML = '<p class="util-45" role="status">Cargando…</p>';
+      Repintado.cargando(cont, 'pagar|' + $('pagar-vista').value);
       try { CXP = await api('/finanzas/cxp?vista=' + encodeURIComponent($('pagar-vista').value)).then(json); }
-      catch (err) { cont.innerHTML = `<div class="aviso-error-carga" role="alert"><p>No se pudo cargar: ${esc(err.message)}</p></div>`; return; }
+      catch (err) { Repintado.falla(cont, err, () => cargarPagar(), `<div class="aviso-error-carga" role="alert"><p>No se pudo cargar: ${esc(err.message)}</p></div>`); return; }
     }
     const h = hoy(), dow = new Date(h + 'T00:00:00Z').getUTCDay(), domingo = sumarDias(h, (7 - dow) % 7), domingoSig = sumarDias(domingo, 7);
     const grupos = [['Vencidas', x => x.saldo > 0 && x.fecha_vencimiento < h], ['Esta semana', x => x.saldo > 0 && x.fecha_vencimiento >= h && x.fecha_vencimiento <= domingo],
@@ -763,13 +761,13 @@ const Finanzas = (() => {
     ];
     const LISTA = filtrarPagar(CXP), buscando = !!$('pagar-buscar').value.trim();
     $('pagar-buscar-info').textContent = buscando ? `${LISTA.length} de ${CXP.length}` : '';
-    if (!CXP.length) { cont.innerHTML = '<p class="util-45">No hay cuentas por pagar. 🎉</p>'; return; }
-    if (!LISTA.length) { cont.innerHTML = '<p class="util-45">Ninguna cuenta coincide con «' + esc($('pagar-buscar').value.trim()) + '».' + ($('pagar-vista').value !== 'todas' ? ' Si ya está pagada, elige «Todas (incluye pagadas)».' : '') + '</p>'; return; }
+    if (!CXP.length) { Repintado.pintar(cont, '<p class="util-45">No hay cuentas por pagar. 🎉</p>'); return; }
+    if (!LISTA.length) { Repintado.pintar(cont, '<p class="util-45">Ninguna cuenta coincide con «' + esc($('pagar-buscar').value.trim()) + '».' + ($('pagar-vista').value !== 'todas' ? ' Si ya está pagada, elige «Todas (incluye pagadas)».' : '') + '</p>'); return; }
     // La tabla cambió al orden del Excel (fase 2): una sola vez se regresan las columnas a las de fábrica, para que nadie
     // se quede sin ver las nuevas por lo que había ocultado antes.
     if (leerPref('tabla-pagar-excel', 0) !== 1) { guardarPref('tabla-ocultas-pagar', ['dias', 'orden', 'equipo', 'iva', 'ultimo_pago']); guardarPref('tabla-pagar-excel', 1); }
     TABLAS.pagar = { ...TABLAS.pagar, contenedor: 'pagar-lista', orden: TABLAS.pagar?.orden || { k: 'vence', dir: 1 } };
-    cont.innerHTML = vistaDinero('pagar', { columnas: COLS_PAGAR, filas: LISTA, claseFila: x => (cuando(x) === 'Vencidas' ? 'fila-vencida' : ''), tarjetas: () => tarjetasPagar(), ocultasDef: ['dias', 'orden', 'equipo', 'iva', 'ultimo_pago'] });
+    Repintado.pintar(cont, vistaDinero('pagar', { columnas: COLS_PAGAR, filas: LISTA, claseFila: x => (cuando(x) === 'Vencidas' ? 'fila-vencida' : ''), tarjetas: () => tarjetasPagar(), ocultasDef: ['dias', 'orden', 'equipo', 'iva', 'ultimo_pago'] }));
     function tarjetasPagar() {
     const html = grupos.map(([titulo, f]) => {
       const items = LISTA.filter(f);
@@ -845,13 +843,13 @@ const Finanzas = (() => {
     [$('pagoprov-monto'), $('pagoprov-fecha'), $('pagoprov-referencia'), $('pagoprov-guardar')].forEach(el => { el.closest('.campo') ? (el.closest('.campo').hidden = !paraPagar) : (el.hidden = !paraPagar); });
     $('pagoprov-metodos').closest('.campo').hidden = !paraPagar;
     pintarXmlGasto(x);
-    $('pagoprov-historial').innerHTML = '<p class="util-45">Cargando pagos…</p>';
+    Repintado.cargando($('pagoprov-historial'), 'p' + id, '<p class="util-45">Cargando pagos…</p>', true); // ventana recién abierta
     abrirVentana('overlay-pago-prov');
     const pagos = await api('/finanzas/cxp/' + id + '/pagos').then(json).catch(() => []);
-    $('pagoprov-historial').innerHTML = pagos.length ? '<div class="seccion-tit">Pagos registrados</div>' + pagos.map(g => `
+    Repintado.pintar($('pagoprov-historial'), pagos.length ? '<div class="seccion-tit">Pagos registrados</div>' + pagos.map(g => `
       <div class="pago-fila${g.cancelado ? ' cancelado' : ''}"><div><b>${formatoMoneda(g.monto)}</b> · ${esc(NOMBRE_METODO[g.metodo] || g.metodo)} · ${esc(fechaTxt(g.fecha))}
         <small>${g.folio ? '<b>Folio ' + esc(g.folio) + '</b> · ' : ''}Registró ${esc(g.registrado_por_nombre || '—')}${g.referencia ? ' · Ref. ' + esc(g.referencia) : ''}</small>${g.cancelado ? `<small class="motivo">Cancelado: ${esc(g.motivo_cancelacion || '')}</small>` : ''}</div>
-        ${!g.cancelado ? `<button type="button" class="btn btn-outline perm-dinero-mover" data-cancelar-pagoprov="${Number(g.id)}">Cancelar</button>` : ''}</div>`).join('') : '<p class="util-45">Sin pagos registrados.</p>';
+        ${!g.cancelado ? `<button type="button" class="btn btn-outline perm-dinero-mover" data-cancelar-pagoprov="${Number(g.id)}">Cancelar</button>` : ''}</div>`).join('') : '<p class="util-45">Sin pagos registrados.</p>');
   }
   // XML de la factura del gasto: sus datos y descargarlo; si no tiene, lo sube quien registró el gasto o quien paga.
   function pintarXmlGasto(x) {
@@ -1253,13 +1251,13 @@ const Finanzas = (() => {
       && (!q || sinAcentos([p.nombre, p.razon_social, p.rfc, p.contacto, p.correo, p.que_vende, p.domicilio, cat[p.categoria] || p.categoria, p.notas].join(' ')).includes(q) || (digitos.length >= 4 && (String(p.telefono || '') + ' ' + String(p.telefono2 || '')).replace(/\D/g, '').includes(digitos))));
     const total = lista.reduce((t, p) => t + (p.saldo || 0), 0);
     $('prov-resumen').textContent = PROVEEDORES.length ? `${lista.length} de ${PROVEEDORES.length} proveedores` + (total > 0 ? ` · ${formatoMoneda(total)} por pagar` : '') : '';
-    cont.innerHTML = lista.length ? lista.map(p => `
+    Repintado.pintar(cont, lista.length ? lista.map(p => `
       <div class="fila-dinero${p.activo ? '' : ' inactivo'}"><div class="info"><button type="button" class="enlace enlace-fuerte" data-ficha-prov="${Number(p.id)}">${esc(p.nombre)}</button>${p.activo ? '' : ' · inactivo'}
         ${p.que_vende ? '<small>' + esc(p.que_vende) + '</small>' : ''}<small>${esc(cat[p.categoria] || p.categoria)} · crédito ${Number(p.dias_credito)} días${p.contacto ? ' · ' + esc(p.contacto) : ''}${p.telefono ? ' · ' + esc(p.telefono) : ''}${p.rfc ? ' · RFC ' + esc(p.rfc) : ''}</small></div>
         <div class="montos"><b>${formatoMoneda(p.saldo)}</b><small>por pagar</small></div>
         <div class="btn-group"><button type="button" class="btn btn-primario" data-ficha-prov="${Number(p.id)}">Ver ficha</button><button type="button" class="btn btn-outline perm-dinero-mover" data-editar-prov="${Number(p.id)}">Editar</button>
           <button type="button" class="btn btn-outline perm-dinero-mover" data-activo-prov="${Number(p.id)}">${p.activo ? 'Desactivar' : 'Activar'}</button></div></div>`).join('')
-      : `<p class="util-45">${PROVEEDORES.length ? 'Ningún proveedor coincide con la búsqueda.' : 'Aún no hay proveedores. Agrega el primero con «+ Agregar proveedor».'}</p>`;
+      : `<p class="util-45">${PROVEEDORES.length ? 'Ningún proveedor coincide con la búsqueda.' : 'Aún no hay proveedores. Agrega el primero con «+ Agregar proveedor».'}</p>`);
   }
   // Agregar o editar: en su propia ventana (2026-10-26), sin salir de la lista ni de la ficha del proveedor.
   const CAMPOS_PROV = { nombre: 'prov-nombre', rfc: 'prov-rfc', telefono: 'prov-telefono', telefono2: 'prov-telefono2', contacto: 'prov-contacto', correo: 'prov-correo',
@@ -1334,7 +1332,7 @@ const Finanzas = (() => {
     cont.dataset.resumenEstado = saldo ? estado : '';
     cont.dataset.resumen = saldo ? `${saldo} ${estado.toLowerCase()}` : 'Al corriente';
     cont.dataset.urgente = r.vencido > 0 ? '1' : '';
-    cont.innerHTML = html;
+    Repintado.pintar(cont, html);
   }
   $('inicio-dinero')?.addEventListener('click', e => {
     const b = e.target.closest('[data-inicio-dinero]'); if (!b) return;
@@ -1362,12 +1360,12 @@ const Finanzas = (() => {
     const deudas = r.ordenes.filter(sePuedeRecordar);
     const waCliente = deudas.length > 1 ? botonWhatsApp(cliente.telefono, textoWhatsApp({ cliente_nombre: cliente.nombre, saldo: deudas.reduce((t, c) => t + c.saldo, 0), vencido: r.vencido,
       folios: deudas.map(c => c.folio), proximo_vence: deudas.map(c => c.vence).sort()[0] })).replace('Recordar por WhatsApp', 'Recordar todo el saldo por WhatsApp') : '';
-    cont.innerHTML = `<div class="modal-section" data-plegable="estado-cuenta"><div class="seccion-tit">💰 Estado de cuenta</div>
+    Repintado.pintar(cont, `<div class="modal-section" data-plegable="estado-cuenta"><div class="seccion-tit">💰 Estado de cuenta</div>
       <div class="cobranza-resumen"><div><small>Saldo</small><b>${formatoMoneda(r.saldo)}</b></div><div><small>Vencido</small><b class="${r.vencido > 0 ? 'rojo' : ''}">${formatoMoneda(r.vencido)}</b></div>
         <div><small>Por realizar</small><b>${formatoMoneda(r.programado)}</b></div>${r.por_concluir > 0 ? `<div><small>Por concluir</small><b>${formatoMoneda(r.por_concluir)}</b></div>` : ''}<div><small>Crédito</small><b>${Number(r.dias_credito)} días</b>${puedeEditarFactura() ? '<button type="button" class="enlace" data-fc-credito>Cambiar</button>' : ''}</div></div>
       ${r.por_revisar_n ? `<p class="ayuda">${Number(r.por_revisar_n)} órdenes anteriores al módulo están pendientes de la revisión inicial.</p>` : ''}
       ${waCliente ? `<div class="btn-group">${waCliente}</div>` : ''}
-      <div class="pagos-lista">${ordenes || '<p class="util-45">Sin saldos pendientes. 🎉</p>'}</div></div>`;
+      <div class="pagos-lista">${ordenes || '<p class="util-45">Sin saldos pendientes. 🎉</p>'}</div></div>`);
     window.Plegables?.preparar(cont);
   }
   $('fc-cobranza')?.addEventListener('click', async e => {
@@ -1404,9 +1402,9 @@ const Finanzas = (() => {
     let r;
     try { r = await api('/finanzas/periodo?' + params).then(json); } catch (err) { cont.innerHTML = `<p class="ayuda">No se pudo cargar lo cobrado: ${esc(err.message)}</p>`; return; }
     const card = (v, l) => `<div class="res-card"><div class="res-num">${v}</div><div class="res-label">${l}</div></div>`;
-    cont.innerHTML = `<div class="res-grid">${card(formatoMoneda(r.cobrado), 'Cobrado en el periodo, con IVA (' + Number(r.cobros_n) + ' pagos, por fecha de pago)')}`
+    Repintado.pintar(cont, `<div class="res-grid">${card(formatoMoneda(r.cobrado), 'Cobrado en el periodo, con IVA (' + Number(r.cobros_n) + ' pagos, por fecha de pago)')}`
       + (r.pagado !== undefined ? card(formatoMoneda(r.pagado), 'Pagado a proveedores (con IVA)') + card(formatoMoneda(r.gasto_total), 'Gastos registrados, con IVA (por fecha de factura)') : '') + '</div>'
-      + (r.gasto_por_categoria?.length ? '<div class="res-section"><h3>Gasto por categoría</h3><div id="res-gasto-categoria" class="bar-chart"></div></div>' : '');
+      + (r.gasto_por_categoria?.length ? '<div class="res-section"><h3>Gasto por categoría</h3><div id="res-gasto-categoria" class="bar-chart"></div></div>' : ''));
     if (r.gasto_por_categoria?.length && typeof renderBarChart === 'function') renderBarChart('res-gasto-categoria', r.gasto_por_categoria, 'nombre', 'total', formatoMoneda);
   }
 
@@ -1860,17 +1858,17 @@ const Finanzas = (() => {
     sec.hidden = false; COSTOS_ORDEN = lead;
     // Quien no ve cuentas por pagar (p. ej. Atención) no recibe los gastos: se dice, sin pedirlos (antes: «No tienes permiso»).
     if (!puedeCartera('pagar')) { cont.innerHTML = '<p class="ayuda">Tu rol no ve las cuentas por pagar: los gastos de esta orden los revisa administración.</p>'; return; }
-    cont.innerHTML = '<p class="util-45" role="status">Cargando…</p>';
+    Repintado.cargando(cont, 'costos|' + lead.id);
     let lista;
     try { lista = await api('/finanzas/cxp?vista=todas&lead_id=' + Number(lead.id)).then(json); }
-    catch (err) { cont.innerHTML = `<p class="ayuda">No se pudieron cargar los gastos: ${esc(err.message)}</p>`; return; }
+    catch (err) { Repintado.falla(cont, err, () => pintarCostosOrden(lead), `<p class="ayuda">No se pudieron cargar los gastos: ${esc(err.message)}</p>`); return; }
     if (COSTOS_ORDEN?.id !== lead.id) return;
-    if (!lista.length) { cont.innerHTML = '<p class="util-45">Sin gastos registrados.</p>'; return; }
+    if (!lista.length) { Repintado.pintar(cont, '<p class="util-45">Sin gastos registrados.</p>'); return; }
     const estado = x => x.saldo <= 0 ? '<span class="estado-cxc pagada">Pagado</span>' : x.pagado > 0 ? '<span class="estado-cxc parcial">Pagado en parte</span>' : '<span class="estado-cxc pendiente">Pendiente de pago</span>';
     const via = x => { const u = (x.ultimo_pago || '').split('|'); return x.ultimo_pago ? ` · ${esc(NOMBRE_METODO[u[1]] || u[1])}${u[2] ? ' · ' + esc(u[2]) : ''} · ${esc(fechaTxt(u[0]))}` : ''; };
-    cont.innerHTML = '<div class="pagos-lista">' + lista.map(x => `<div class="pago-fila"><div><b>${formatoMoneda(x.total)}</b> · ${esc(x.proveedor_nombre)} · ${esc(x.concepto)} ${estado(x)}
+    Repintado.pintar(cont, '<div class="pagos-lista">' + lista.map(x => `<div class="pago-fila"><div><b>${formatoMoneda(x.total)}</b> · ${esc(x.proveedor_nombre)} · ${esc(x.concepto)} ${estado(x)}
         <small>${x.factura_folio ? 'Factura ' + esc(x.factura_folio) + ' · ' : ''}Pagado ${formatoMoneda(x.pagado)}${via(x)}</small></div></div>`).join('') + '</div>'
-      + `<p class="ayuda">Total de gastos de esta orden: ${formatoMoneda(lista.reduce((t, x) => t + x.total, 0))}. Los pagos se registran en Finanzas → Cuentas por pagar.</p>`;
+      + `<p class="ayuda">Total de gastos de esta orden: ${formatoMoneda(lista.reduce((t, x) => t + x.total, 0))}. Los pagos se registran en Finanzas → Cuentas por pagar.</p>`);
   }
   $('btn-costo-tercero').addEventListener('click', () => {
     const lead = COSTOS_ORDEN; if (!lead) return;

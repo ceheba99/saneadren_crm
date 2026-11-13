@@ -22,11 +22,11 @@ const Conciliacion = (() => {
 
   async function pintar(cont, mes) {
     MES = mes;
-    cont.innerHTML = '<p class="util-45" role="status">Cargando…</p>';
+    Repintado.cargando(cont, mes + '|' + (CUENTA || ''));
     try { D = await pedir('/conciliacion?mes=' + encodeURIComponent(mes) + (CUENTA ? '&cuenta=' + Number(CUENTA) : '')); }
-    catch (err) { cont.innerHTML = `<p class="aviso-error-carga">${esc(err.message)}</p>`; return; }
+    catch (err) { Repintado.falla(cont, err, () => pintar(cont, mes), `<p class="aviso-error-carga">${esc(err.message)}</p>`); return; }
     CUENTA = D.cuenta?.id || null;
-    cont.innerHTML = html();
+    Repintado.pintar(cont, html());
   }
 
   function html() {
