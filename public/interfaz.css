@@ -1856,3 +1856,39 @@
 .logs-guia p { margin: 6px 0; }
 .logs-guia ul { margin: 2px 0 6px 18px; padding: 0; }
 .logs-guia-titulo { margin-top: 8px; }
+
+/* Tarjetas de cuentas (por cobrar / por pagar), 2026-11-13: la cifra nunca se parte en dos renglones
+   (se achica con el ancho de la tarjeta), franja de color arriba según lo que significa y «Te deben» destacada. */
+@media screen {
+  #cuentas-tarjetas { grid-template-columns: repeat(auto-fit, minmax(205px, 1fr)); gap: 14px; }
+  #cuentas-tarjetas .tarjeta-dinero {
+    --acento: #c9d2d9;
+    position: relative; overflow: hidden; container-type: inline-size;
+    border: 1px solid #e1e6ea; border-radius: 12px; padding: 20px 18px 16px; gap: 6px;
+    background: #fff; box-shadow: 0 1px 2px rgb(20 38 48 / 4%), 0 4px 14px rgb(20 38 48 / 4%);
+  }
+  #cuentas-tarjetas .tarjeta-dinero::before { content: ""; position: absolute; inset: 0 0 auto 0; height: 4px; background: var(--acento); }
+  #cuentas-tarjetas .tarjeta-dinero small { min-height: 22px; color: #5d6b75; font-size: 11px; letter-spacing: .06em; }
+  #cuentas-tarjetas .tarjeta-dinero b {
+    font-size: 22px; font-size: clamp(17px, 11.5cqi, 30px);
+    white-space: nowrap; overflow-wrap: normal; line-height: 1.2; letter-spacing: -.02em;
+    font-variant-numeric: tabular-nums; color: var(--azul-950);
+  }
+  #cuentas-tarjetas .tarjeta-dinero span { color: #5d6b75; font-size: 12.5px; line-height: 1.45; }
+  #cuentas-tarjetas .tarjeta-dinero.principal { --acento: var(--azul-600); background: linear-gradient(180deg, #f2f7fa 0%, #fff 70%); border-color: #cfdde6; }
+  #cuentas-tarjetas .tarjeta-dinero.alerta { --acento: var(--rojo); }
+  #cuentas-tarjetas .tarjeta-dinero.alerta b { color: var(--rojo); }
+  #cuentas-tarjetas .tarjeta-dinero.aviso { --acento: var(--amarillo); }
+  #cuentas-tarjetas .tarjeta-dinero.bueno { --acento: var(--verde); }
+  #cuentas-tarjetas .tarjeta-dinero.bueno b { color: var(--verde); }
+  #cuentas-tarjetas .tarjeta-dinero.tranquila b { color: #8a969e; }
+  #cuentas-tarjetas .tarjeta-barra { display: block; height: 6px; border-radius: 3px; background: #f4dfdc; overflow: hidden; margin: 2px 0 2px; }
+  #cuentas-tarjetas .tarjeta-barra > i { display: block; height: 100%; border-radius: 3px; background: var(--rojo); }
+  @media (max-width: 600px) {
+    #cuentas-tarjetas { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+    #cuentas-tarjetas .tarjeta-dinero { padding: 16px 14px 14px; }
+    #cuentas-tarjetas .tarjeta-dinero.principal { grid-column: 1 / -1; }
+    #cuentas-tarjetas .tarjeta-dinero small { min-height: 30px; }
+  }
+  @media (max-width: 380px) { #cuentas-tarjetas { grid-template-columns: minmax(0, 1fr); } }
+}

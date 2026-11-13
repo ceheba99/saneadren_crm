@@ -265,18 +265,25 @@ const Finanzas = (() => {
     const cont = $('cuentas-tarjetas');
     try { RESUMEN = await api('/finanzas/resumen').then(json); } catch (err) { cont.innerHTML = `<div class="aviso-error-carga" role="alert"><p>No se pudo cargar el resumen: ${esc(err.message)}</p></div>`; return; }
     // Cada tarjeta lleva «?»: la explicación sale debajo de las tarjetas (public/ayuda.js).
-    const r = RESUMEN, t = (titulo, valor, detalle, clase = '', ayuda = '') => `<div class="tarjeta-dinero ${clase}"><small>${titulo}${Ayuda.boton(ayuda)}</small><b>${valor}</b>${detalle ? `<span>${detalle}</span>` : ''}</div>`;
+    // «tipo-<clave>» da a cada tarjeta su color (interfaz.css, «Tarjetas de cuentas»); «extra» es HTML ya armado aquí.
+    const r = RESUMEN, t = (titulo, valor, detalle, clase = '', ayuda = '', extra = '') => `<div class="tarjeta-dinero ${clase}${ayuda ? ' tipo-' + ayuda : ''}"><small>${titulo}${Ayuda.boton(ayuda)}</small><b>${valor}</b>${extra}${detalle ? `<span>${detalle}</span>` : ''}</div>`;
+    const plural = (n, uno, varios) => `${Number(n) || 0} ${Number(n) === 1 ? uno : varios}`;
+    // Qué parte de lo que te deben ya está vencida: barra fina dentro de la tarjeta «Vencido».
+    const pctVencido = r.por_cobrar > 0 ? Math.min(100, Math.round((Number(r.vencido) || 0) * 100 / r.por_cobrar)) : 0;
+    const barraVencido = r.vencido > 0 ? `<i class="tarjeta-barra" role="img" aria-label="${pctVencido}% de lo que te deben"><i style="width:${pctVencido}%"></i></i>` : '';
+    const mesActual = new Date().toLocaleDateString('es-MX', { month: 'long', timeZone: 'America/Mexico_City' });
+    const nConfirmar = Number(r.por_confirmar?.cantidad) || 0;
     cont.innerHTML = SECCION === 'pagar'
-      ? (r.pagar_semana !== undefined ? t('Pagar esta semana', formatoMoneda(r.pagar_semana), `${Number(r.facturas_semana)} facturas (incluye vencidas)`, r.pagar_semana > 0 ? 'aviso' : '', 'pagar_semana') : '')
+      ? (r.pagar_semana !== undefined ? t('Pagar esta semana', formatoMoneda(r.pagar_semana), plural(r.facturas_semana, 'factura (incluye vencidas)', 'facturas (incluye vencidas)'), r.pagar_semana > 0 ? 'aviso' : '', 'pagar_semana') : '')
         + (r.por_pagar !== undefined ? t('Total por pagar', formatoMoneda(r.por_pagar), '', '', 'por_pagar') : '')
-        + (r.pagado_mes !== undefined ? t('Pagado este mes', formatoMoneda(r.pagado_mes), '', '', 'pagado_mes') : '')
-      : t('Te deben', formatoMoneda(r.por_cobrar), `${Number(r.cuentas_con_saldo)} ${Number(r.cuentas_con_saldo) === 1 ? 'orden' : 'órdenes'} por cobrar`, '', 'te_deben')
-      + t('Vencido', formatoMoneda(r.vencido), `${Number(r.clientes_con_vencido)} ${Number(r.clientes_con_vencido) === 1 ? 'cliente' : 'clientes'}`, r.vencido > 0 ? 'alerta' : '', 'vencido')
-      + (r.por_concluir > 0 ? t('Por concluir', formatoMoneda(r.por_concluir), `${Number(r.ordenes_por_concluir)} ${Number(r.ordenes_por_concluir) === 1 ? 'servicio con fecha pasada' : 'servicios con fecha pasada'}: márcalos realizados para cobrarlos`, 'aviso', 'por_concluir') : '')
-      + (r.programado > 0 ? t('Por realizar', formatoMoneda(r.programado), `${Number(r.ordenes_programadas)} ${Number(r.ordenes_programadas) === 1 ? 'servicio programado' : 'servicios programados'} (aún no se cobran)`, '', 'por_realizar') : '')
-      + (r.a_favor > 0 ? t('A favor de clientes', formatoMoneda(r.a_favor), `${Number(r.ordenes_a_favor)} ${Number(r.ordenes_a_favor) === 1 ? 'servicio no realizado' : 'servicios no realizados'} con pago (devolver o aplicar)`, 'aviso', 'a_favor') : '')
-      + t('Cobrado este mes', formatoMoneda(r.cobrado_mes), '', '', 'cobrado_mes')
-      + (r.por_confirmar ? t('Por confirmar', formatoMoneda(r.por_confirmar.monto), `${Number(r.por_confirmar.cantidad)} pagos`, r.por_confirmar.cantidad ? 'aviso' : '', 'por_confirmar') : '');
+        + (r.pagado_mes !== undefined ? t('Pagado este mes', formatoMoneda(r.pagado_mes), `En ${esc(mesActual)}`, '', 'pagado_mes') : '')
+      : t('Te deben', formatoMoneda(r.por_cobrar), plural(r.cuentas_con_saldo, 'orden por cobrar', 'órdenes por cobrar'), 'principal', 'te_deben')
+      + t('Vencido', formatoMoneda(r.vencido), r.vencido > 0 ? `${pctVencido}% del total · ${plural(r.clientes_con_vencido, 'cliente', 'clientes')}` : 'Nada vencido', r.vencido > 0 ? 'alerta' : 'tranquila', 'vencido', barraVencido)
+      + (r.por_concluir > 0 ? t('Por concluir', formatoMoneda(r.por_concluir), `${plural(r.ordenes_por_concluir, 'servicio con fecha pasada', 'servicios con fecha pasada')}: márcalos realizados para cobrarlos`, 'aviso', 'por_concluir') : '')
+      + (r.programado > 0 ? t('Por realizar', formatoMoneda(r.programado), `${plural(r.ordenes_programadas, 'servicio programado', 'servicios programados')} · aún no se cobran`, '', 'por_realizar') : '')
+      + (r.a_favor > 0 ? t('A favor de clientes', formatoMoneda(r.a_favor), `${plural(r.ordenes_a_favor, 'servicio no realizado', 'servicios no realizados')} con pago · devolver o aplicar`, 'aviso', 'a_favor') : '')
+      + t('Cobrado este mes', formatoMoneda(r.cobrado_mes), `En ${esc(mesActual)}`, 'bueno', 'cobrado_mes')
+      + (r.por_confirmar ? t('Por confirmar', formatoMoneda(r.por_confirmar.monto), nConfirmar ? plural(nConfirmar, 'pago esperando confirmación', 'pagos esperando confirmación') : 'Nada pendiente', nConfirmar ? 'aviso' : 'tranquila', 'por_confirmar') : '');
     Ayuda.cerrar(cont);
     pintarRevision();
   }
