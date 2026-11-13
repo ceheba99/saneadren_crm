@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Saneadren · Cotizaciones y Servicios</title>
-<link rel="stylesheet" href="styles.css?v=cx3">
+<link rel="stylesheet" href="styles.css?v=gp1">
 <link rel="stylesheet" href="servicios-tabla.css">
 <link rel="stylesheet" href="flujo.css?v=ap1">
 <link rel="stylesheet" href="interfaz.css?v=ap2">
@@ -116,6 +116,12 @@
       <h3>💵 Anticipos</h3>
       <p class="ayuda">Anticipos por comprobar: los tuyos con algo pendiente y, si tú los entregaste, los que pasan de 7 días sin cerrarse.</p>
       <div id="inicio-anticipos" class="inicio-lista"></div>
+    </div>
+
+    <div class="inicio-bloque inicio-bloque-programados perm-dinero-mover" data-titulo-corto="Programados">
+      <h3>🗓️ Gastos programados</h3>
+      <p class="ayuda">Luz, agua, renta… que ya tocan y falta registrar. Tócalo para registrarlo con su recibo.</p>
+      <div id="inicio-programados" class="inicio-lista"></div>
     </div>
 
     <div class="inicio-bloque inicio-bloque-compras perm-compras-ver" data-titulo-corto="Compras">
@@ -907,6 +913,7 @@
       <button type="button" role="tab" data-pestana="pagar">Facturas y gastos</button>
       <button type="button" role="tab" data-pestana="proveedores">Proveedores</button>
       <button type="button" role="tab" data-pestana="anticipos">Anticipos</button>
+      <button type="button" role="tab" data-pestana="programados" class="perm-dinero-mover">Programados</button>
     </div>
 
     <div class="cuentas-panel" data-panel="cobrar">
@@ -971,6 +978,10 @@
       <div id="pagar-lista"></div>
     </div>
 
+    <!-- Gastos programados (Cuentas por pagar fase 4, 2026-11-13): public/gastos-programados.js -->
+    <div class="cuentas-panel" data-panel="programados" hidden>
+      <div id="gp-panel"></div>
+    </div>
     <!-- Anticipos por comprobar (módulo contable F2, 2026-11-11): public/anticipos.js -->
     <div class="cuentas-panel" data-panel="anticipos" hidden>
       <div id="anticipos-panel"></div>
@@ -1580,6 +1591,37 @@
 <input type="file" id="importar-archivo" accept=".xlsx,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv" hidden>
 
 <!-- ====== OVERLAY: PAGAR A PROVEEDOR ====== -->
+<div class="overlay" id="overlay-gprog">
+  <div class="modal modal-dinero">
+    <div class="modal-header"><h2 id="gp-form-titulo">Nuevo gasto programado</h2><button class="close-btn" type="button">✕</button></div>
+    <div class="modal-body">
+      <div class="campo"><label for="gp-nombre">Nombre (obligatorio)</label><input id="gp-nombre" maxlength="80" placeholder="Ej. Luz Cancún, Luz casa de Miguel, Renta oficina"></div>
+      <div class="form-grid-2">
+        <div class="campo"><label for="gp-proveedor">Proveedor (obligatorio)</label><select id="gp-proveedor"></select><small class="ayuda">¿No está? Agrégalo en la pestaña Proveedores.</small></div>
+        <div class="campo"><label for="gp-categoria">Categoría (obligatorio)</label><select id="gp-categoria"></select></div>
+      </div>
+      <fieldset class="campo gp-meses-campo"><legend>¿En qué meses llega? (obligatorio)</legend>
+        <div class="btn-group"><button type="button" class="btn btn-outline btn-chico" data-gp="meses" data-cuales="todos">Todos</button><button type="button" class="btn btn-outline btn-chico" data-gp="meses" data-cuales="nones">Bimestral: ene, mar, may…</button><button type="button" class="btn btn-outline btn-chico" data-gp="meses" data-cuales="pares">Bimestral: feb, abr, jun…</button><button type="button" class="btn btn-outline btn-chico" data-gp="meses" data-cuales="ninguno">Ninguno</button></div>
+        <div id="gp-meses" class="gp-meses"></div>
+      </fieldset>
+      <div class="form-grid-2">
+        <div class="campo"><label for="gp-dia">Día del mes en que llega o vence (obligatorio)</label><input id="gp-dia" type="number" min="1" max="31" step="1" inputmode="numeric" placeholder="Ej. 10"></div>
+        <div class="campo"><label for="gp-aviso">Avisar con cuántos días antes</label><input id="gp-aviso" type="number" min="0" max="30" step="1" inputmode="numeric" placeholder="5"></div>
+        <div class="campo"><label for="gp-monto">Monto fijo (opcional)</label><input id="gp-monto" type="text" inputmode="decimal" autocomplete="off" placeholder="Vacío si cambia cada recibo"></div>
+        <div class="campo"><label for="gp-tipo-gasto">Tipo de gasto</label><select id="gp-tipo-gasto"></select></div>
+        <div class="campo"><label for="gp-comprobante">Tipo de comprobante</label><select id="gp-comprobante"></select></div>
+        <div class="campo"><label for="gp-credito">Días de crédito</label><input id="gp-credito" type="number" min="0" max="365" step="1" inputmode="numeric" placeholder="0 = de contado"></div>
+      </div>
+      <details><summary>Más datos (opcional)</summary>
+        <div class="campo"><label for="gp-concepto">Concepto del gasto</label><input id="gp-concepto" maxlength="200" placeholder="Vacío = el nombre; se le agrega el mes (ej. Luz Cancún noviembre 2026)"></div>
+        <div class="campo"><label for="gp-beneficiario">¿A quién se le paga? (si no es el proveedor)</label><input id="gp-beneficiario" maxlength="120"></div>
+        <div class="campo"><label for="gp-desde">Avisar a partir de</label><input id="gp-desde" type="date"><small class="ayuda">Vacío = desde este mes (no avisa de meses anteriores).</small></div>
+        <div class="campo"><label for="gp-notas">Observaciones</label><textarea id="gp-notas" maxlength="1000" rows="2"></textarea></div>
+      </details>
+      <div class="btn-group"><button type="button" class="btn btn-primario" data-gp="guardar">Guardar</button></div>
+    </div>
+  </div>
+</div>
 <div class="overlay" id="overlay-cxp-datos">
   <div class="modal modal-dinero">
     <div class="modal-header"><h2>Tipo de gasto y observaciones</h2><button class="close-btn" type="button">✕</button></div>
@@ -1953,7 +1995,7 @@
 <script src="cuentas.js?v=rev1"></script>
 <script src="cuentas-banco.js?v=fb1"></script>
 <script src="cxp-excel.js?v=cx4"></script>
-<script src="finanzas.js?v=cx4"></script>
+<script src="finanzas.js?v=gp1"></script>
 <script src="calendario.js?v=esp1"></script>
 <script src="tareas.js?v=tg1"></script>
 <script src="tablero.js?v=dir1"></script>
@@ -1966,7 +2008,7 @@
 <script src="sucursales.js?v=perm4"></script>
 <script src="facturacion.js?v=fx11"></script>
 <script src="encuestas.js?v=enc1"></script>
-<script src="app.js?v=pag1"></script>
+<script src="app.js?v=gp1"></script>
 <script src="listas-servicio.js?v=ls1"></script>
 <script src="personal.js?v=kio2"></script>
 <script src="asistencia.js?v=nomina1"></script>
@@ -1975,6 +2017,7 @@
 <script src="conciliacion.js?v=ap2"></script>
 <script src="contabilidad.js?v=ap2"></script>
 <script src="anticipos.js?v=an1"></script>
+<script src="gastos-programados.js?v=gp1"></script>
 <script src="nomina.js?v=pu1"></script>
 <script src="avisos.js?v=1"></script>
 <script src="buscador.js?v=suc1"></script>

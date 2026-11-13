@@ -222,6 +222,7 @@ app.locals.personal = personalMod;
 app.locals.checador = require('./checador')(app, db, h);
 app.locals.asistencia = require('./asistencia')(app, db, h);
 require('./anticipos')(app, db, h);
+require('./gastos-programados')(app, db, h); // Gastos programados (Cuentas por pagar fase 4, 2026-11-13): después de Cuentas por pagar
 require('./nomina')(app, db, h);
 require('./contabilidad-cierres')(app, db, h); // Editar Contabilidad (2026-11-12): mes cerrado y saldo inicial del banco; después de cobros, pagos y anticipos
 require('./conciliacion')(app, db, h);

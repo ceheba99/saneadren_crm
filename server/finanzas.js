@@ -1195,6 +1195,10 @@ module.exports = function finanzas(app, db, h, unicos) {
     const ant = b.anticipo_id ? app.locals.anticipos.paraGasto(req, b.anticipo_id) : null;
     if (ant?.error) return res.status(ant.status).json({ error: ant.error });
     if (ant && b.ya_pagado) return res.status(400).json({ error: 'Este gasto se paga con el anticipo: no marques «ya lo pagué»' });
+    // Desde el aviso de un gasto programado (fase 4, 2026-11-13): el mes queda registrado con esta cuenta por pagar.
+    const prog = b.programado_id ? app.locals.gastosProgramados?.paraGasto(req, b.programado_id, b.programado_periodo) : null;
+    if (prog?.error) return res.status(prog.status).json({ error: prog.error });
+    if (prog && ant) return res.status(400).json({ error: 'Un gasto programado no se comprueba con un anticipo' });
     if (!ant && !permitido(req, res, 'gastos.registrar', 'No tienes permiso para esta acción')) return;
     // Sin orden de servicio es una COMPRA: va por Solicitud de compra (o la registra administración / costos).
     if (!ant && !b.lead_id && !P.puede(req, 'dinero.mover')) return res.status(403).json({ error: 'Las compras se piden con una Solicitud de compra. Aquí solo se registran costos de un servicio: elige la orden de servicio.' });
@@ -1267,7 +1271,8 @@ module.exports = function finanzas(app, db, h, unicos) {
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(prov.id, categoria, concepto, xml ? folioFactura : texto(b.factura_folio, 60), fecha, vence, total, leadId, texto(b.equipo, 200), texto(b.notas, 1000), req.usuarioSesion.id, dias,
         beneficiario && unicos.clave(beneficiario) !== unicos.clave(prov.nombre) ? beneficiario : null, tipoComp, metodoSat, iva.cent, xml?.ivaCent != null ? 'xml' : iva.cent != null ? 'manual' : null, tipoGasto);
       if (xml) XML.guardar(req, Number(info.lastInsertRowid), Buffer.from(b.xml, 'utf8'), texto(b.xml_nombre, 120) || 'factura.xml', xml);
-      app.locals.sucursales.asignar('cuentas_por_pagar', Number(info.lastInsertRowid), leadId ? app.locals.sucursales.de('leads', leadId) : ant ? ant.anticipo.sucursal_id : undefined);
+      app.locals.sucursales.asignar('cuentas_por_pagar', Number(info.lastInsertRowid), leadId ? app.locals.sucursales.de('leads', leadId) : ant ? ant.anticipo.sucursal_id : prog ? prog.programado.sucursal_id ?? undefined : undefined);
+      if (prog) app.locals.gastosProgramados.marcar(req, prog.programado.id, b.programado_periodo, Number(info.lastInsertRowid));
       if (ant) {
         // Con el anticipo se paga lo que alcance (un pago con vía «anticipo»: no es otra salida del banco). Lo que pase del
         // anticipo queda por pagar como reembolso a la persona, vence hoy (como los reembolsos de quien no mueve dinero).
@@ -1795,7 +1800,7 @@ module.exports = function finanzas(app, db, h, unicos) {
   };
 };
 module.exports.aCentavos = aCentavos;
-Object.assign(module.exports, { METODOS_PROV, fechaValida, texto, conSentido, aPesos }); // los usa anticipos.js
+Object.assign(module.exports, { METODOS_PROV, fechaValida, texto, conSentido, aPesos, categoriaActiva }); // los usan anticipos.js y gastos-programados.js
 module.exports.migrar = migrar;
 module.exports.folioOS = folioOS;
 module.exports.CATEGORIAS_NO_GASTO = CATEGORIAS_NO_GASTO;
