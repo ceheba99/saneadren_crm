@@ -44,7 +44,7 @@ const C = require('./cifrado');
 const { tipoReal } = require('./expediente-oc');
 const { hashToken, nuevoToken } = require('./seguridad');
 const { ahoraMexico } = require('./fechas');
-const { vigia, ventana, correosDe } = require('./kiosco-vigia');
+const { vigia, ventana, correosDe, telefonosDe, textoWhatsapp } = require('./kiosco-vigia');
 
 const TIPOS = { entrada: 'Entrada', comida_sale: 'Salida a comer', comida_regresa: 'Regreso de comer', salida: 'Salida', extra_inicia: 'Inicio de tiempo extra', extra_termina: 'Fin de tiempo extra' };
 const SIGUIENTE = { '': 'entrada', entrada: 'comida_sale', comida_sale: 'comida_regresa', comida_regresa: 'salida', salida: 'extra_inicia', extra_inicia: 'extra_termina', extra_termina: 'extra_inicia' };
@@ -315,7 +315,24 @@ module.exports = function checador(app, db, h) {
   // Queda en los Logs del sistema, sale en Inicio (personal.js, para quien tiene «Kioscos del checador», de sus
   // sucursales) y se manda por correo a Dirección (usuarios con rol admin) y a los correos de CORREO_AVISOS_CHECADOR.
   const textoKiosco = k => `Kiosco «${k.nombre}»${k.sucursal ? ' (' + k.sucursal + ')' : ''}`;
+  // También por WhatsApp (2026-11-13, Dirección) a los celulares de WHATSAPP_AVISOS_CHECADOR, con la plantilla de avisos
+  // propia (WHATSAPP_PLANTILLA_ALERTA: {{1}} = título, {{2}} = texto). Cada mensaje lo cobra Meta (≈ MX$0.16). Si falta la
+  // plantilla, queda una vez en los Logs para saber por qué no llegó.
+  let avisoSinPlantilla = false;
+  function porWhatsapp(tipo, k) {
+    const tels = telefonosDe(process.env.WHATSAPP_AVISOS_CHECADOR);
+    if (!tels.length) return;
+    const wa = app.locals.whatsapp;
+    const nombre = process.env.WHATSAPP_PLANTILLA_ALERTA;
+    if (!wa?.plantillaLista?.(nombre)) {
+      if (!avisoSinPlantilla) { avisoSinPlantilla = true; app.locals.registro?.servicio('whatsapp_fallo', 'Avisos del reloj checador por WhatsApp: no se mandaron porque falta la plantilla aprobada en Meta (variable WHATSAPP_PLANTILLA_ALERTA) o la conexión con WhatsApp (WHATSAPP_TOKEN / WHATSAPP_PHONE_ID). Llegan solo por correo.'); }
+      return;
+    }
+    const valores = textoWhatsapp(tipo, k);
+    for (const t of tels) wa.plantilla('52' + t, valores, nombre).catch(e => console.error('[kiosco] whatsapp:', e.message));
+  }
   function avisarKiosco(tipo, k) {
+    porWhatsapp(tipo, k);
     if (tipo === 'bateria' || tipo === 'camara' || tipo === 'pantalla') return avisarAtencion(tipo, k);
     const cayo = tipo === 'sin_respuesta';
     app.locals.registro?.servicio(cayo ? 'kiosco_sin_respuesta' : 'kiosco_volvio', cayo ? `${textoKiosco(k)}: sin señal desde ${k.desde || 'hace más de 5 minutos'}${k.ultimo ? '; lo último que reportó: ' + k.ultimo : ''}` : `${textoKiosco(k)}: volvió a dar señal a las ${k.volvio}`);
