@@ -525,6 +525,9 @@ module.exports = function contabilidad(app, db, h) {
     if (!puede(req)) return res.status(403).json({ error: 'Cancelan movimientos del flujo de banco Dirección, el Gerente y quien tenga «Contabilidad del mes»' });
     const m = db.prepare('SELECT * FROM main.flujo_movimientos WHERE id = ? AND cancelado = 0 AND en_alcance(sucursal_id)').get(Number(req.params.id) || 0);
     if (!m) return res.status(404).json({ error: 'No se encontró ese movimiento (o ya estaba cancelado)' });
+    // Un traspaso ligado en la conciliación bancaria se suelta allá (así el renglón del banco vuelve a quedar pendiente).
+    if (tabla('movimientos_banco') && db.prepare('PRAGMA table_info(movimientos_banco)').all().some(c => c.name === 'flujo_mov_id') && db.prepare('SELECT 1 FROM main.movimientos_banco WHERE flujo_mov_id = ?').get(m.id))
+      return res.status(409).json({ error: 'Este traspaso viene de la conciliación bancaria: suéltalo ahí (Conciliación bancaria › Traspasos entre cuentas propias › Soltar)' });
     const motivo = String(req.body?.motivo ?? '').trim().replace(/\s+/g, ' ').slice(0, 300);
     if (motivo.length < 5) return res.status(400).json({ error: 'Escribe por qué se cancela (mínimo 5 letras)' });
     if (app.locals.contabilidadCierres.cerrado(m.fecha.slice(0, 7), m.sucursal_id) && !P.direccion(req)) return res.status(409).json({ error: 'Ese mes ya está cerrado en Contabilidad: solo Dirección puede cancelarlo.', codigo: 'MES_CERRADO' });

@@ -45,7 +45,7 @@ const Conciliacion = (() => {
       ${d.cuenta.clave_folio ? `<span class="ayuda">Folios: <b>${esc(d.cuenta.clave_folio)}</b>-I / -E</span>` : '<button type="button" class="btn btn-outline" data-cc="clave-folio">🏷️ Poner clave de folio</button>'}</div>${nueva}<div id="cc-mapeo"></div>`;
     const tarjetas = `<div class="logs-tarjetas">
       <div class="tarjeta-dinero"><small>Movimientos del banco en el mes</small><b>${Number(t.movimientos)}</b><span>abonos ${esc(dinero(t.abonos))} · cargos ${esc(dinero(t.cargos))}</span></div>
-      <div class="tarjeta-dinero"><small>Conciliados</small><b>${Number(t.conciliados)}</b></div>
+      <div class="tarjeta-dinero"><small>Conciliados</small><b>${Number(t.conciliados)}</b>${t.traspasos ? `<span>más ${Number(t.traspasos)} traspaso(s) entre cuentas</span>` : ''}</div>
       <div class="tarjeta-dinero ${t.sin_crm ? 'alerta' : ''}"><small>En el banco, no en el CRM</small><b>${Number(t.sin_crm)}</b></div>
       <div class="tarjeta-dinero ${t.crm_sin_banco ? 'aviso' : ''}"><small>En el CRM, no en el banco</small><b>${Number(t.crm_sin_banco)}</b></div>
       ${t.saldo_final_banco != null ? `<div class="tarjeta-dinero"><small>Saldo del banco</small><b>${esc(dinero(t.saldo_final_banco))}</b><span>al ${esc(fecha(t.saldo_fecha))}</span></div>` : ''}</div>`;
@@ -53,17 +53,21 @@ const Conciliacion = (() => {
     const sinCrm = d.banco_sin_crm.map(b => `<tr><td>${esc(fecha(b.fecha))}</td><td>${esc(b.concepto)}${b.contraparte ? `<br><b>${esc(b.contraparte)}</b>${b.contraparte_rfc ? ' · ' + esc(b.contraparte_rfc) : ''}` : b.contraparte_rfc ? `<br>RFC ${esc(b.contraparte_rfc)}` : ''}${b.referencia ? `<br><small>ref. ${esc(b.referencia)}</small>` : ''}${b.rastreo ? `<br><small>rastreo ${esc(b.rastreo)}</small>` : ''}${b.detalle ? `<br><small title="${esc(b.detalle)}">${esc(b.detalle.slice(0, 140))}${b.detalle.length > 140 ? '…' : ''}</small>` : ''}</td><td class="nm-d">${monto(b)}</td>
       <td><div class="cc-acciones"><button type="button" class="btn btn-outline btn-chico" data-cc="candidatos" data-id="${Number(b.id)}">Emparejar</button>
         ${b.cargo && d.puede_gasto ? `<button type="button" class="btn btn-outline btn-chico" data-cc="gasto" data-id="${Number(b.id)}">Registrar gasto</button>` : ''}
+        <button type="button" class="btn btn-outline btn-chico" data-cc="traspaso" data-id="${Number(b.id)}" title="El dinero pasó entre dos cuentas de la empresa: no es gasto ni ingreso">Traspaso</button>
         <button type="button" class="enlace" data-cc="no-aplica" data-id="${Number(b.id)}">No aplica</button></div>
         <div id="cc-extra-${Number(b.id)}"></div></td></tr>`).join('');
     const conc = d.conciliados.map(b => `<tr><td>${esc(fecha(b.fecha))}</td><td>${esc(b.concepto)}</td><td class="nm-d">${monto(b)}</td><td><small>${esc(TIPO[b.conciliado.tipo] || b.conciliado.tipo)}${b.conciliado.fecha ? ' del ' + esc(fecha(b.conciliado.fecha)) : ''}: ${esc(b.conciliado.texto)} · ${b.conciliado.auto ? 'solo' : 'a mano'}</small>
+      <button type="button" class="enlace" data-cc="soltar" data-id="${Number(b.id)}">Soltar</button></td></tr>`).join('');
+    const tras = (d.traspasos || []).map(b => `<tr><td>${esc(fecha(b.fecha))}</td><td>${esc(b.concepto)}</td><td class="nm-d">${monto(b)}</td><td><small>${esc(b.traspaso.texto)} · ${b.traspaso.con_pareja ? 'ligado con el otro estado de cuenta' : 'solo este lado'} · ${b.traspaso.auto ? 'solo, por la clave de rastreo' : 'a mano'}</small>
       <button type="button" class="enlace" data-cc="soltar" data-id="${Number(b.id)}">Soltar</button></td></tr>`).join('');
     const noAp = d.no_aplica.map(b => `<tr><td>${esc(fecha(b.fecha))}</td><td>${esc(b.concepto)}</td><td class="nm-d">${monto(b)}</td><td><small>${esc(b.no_aplica_motivo)}</small> <button type="button" class="enlace" data-cc="soltar" data-id="${Number(b.id)}">Quitar</button></td></tr>`).join('');
     const crm = d.crm_sin_banco.map(m => `<tr><td>${esc(fecha(m.fecha))}</td><td>${esc(TIPO[m.tipo] || m.tipo)}: ${esc(m.texto)}${m.cuenta ? `<br><small>cuenta anotada: ${esc(m.cuenta)}</small>` : ''}</td><td class="nm-d">${m.dir === 'cargo' ? `<span class="rojo">−${esc(dinero(m.monto))}</span>` : '+' + esc(dinero(m.monto))}</td></tr>`).join('');
     const tablaDe = (titulo, ayuda, filas, cols) => `<section class="apartado"><h3 class="util-13">${titulo}</h3><p class="ayuda">${ayuda}</p>${filas ? `<div class="nm-tabla-caja"><table class="cc-tabla"><thead><tr>${cols.map(c => `<th>${c}</th>`).join('')}</tr></thead><tbody>${filas}</tbody></table></div>` : '<p class="util-45">Nada.</p>'}</section>`;
     return cab + tarjetas
-      + tablaDe('En el banco y no en el CRM', 'Empareja a mano con algo del CRM, regístralo como gasto (por ejemplo una comisión) o márcalo «no aplica» (por ejemplo un traspaso entre cuentas propias). Si es un cobro que nadie registró, regístralo en su orden de servicio y pulsa «Emparejar solos».', sinCrm, ['Fecha', 'Concepto del banco', 'Monto', ''])
+      + tablaDe('En el banco y no en el CRM', 'Empareja a mano con algo del CRM, regístralo como gasto (por ejemplo una comisión), márcalo como traspaso entre cuentas de la empresa o como «no aplica». Si es un cobro que nadie registró, regístralo en su orden de servicio y pulsa «Emparejar solos».', sinCrm, ['Fecha', 'Concepto del banco', 'Monto', ''])
       + tablaDe('En el CRM y no en el banco', 'Cobros confirmados, pagos y anticipos del mes (que no son en efectivo) que todavía no aparecen en este estado de cuenta. Puede que pasaran por otra cuenta o que aún no se reflejen.', crm, ['Fecha', 'Movimiento del CRM', 'Monto'])
       + tablaDe('Conciliados', 'Coinciden el banco y el CRM (misma dirección, mismo monto y hasta 3 días de diferencia, o emparejados a mano).', conc, ['Fecha', 'Concepto del banco', 'Monto', 'Con'])
+      + (tras ? tablaDe('Traspasos entre cuentas propias', 'El mismo dinero salió de una cuenta de la empresa y entró a otra: no es gasto ni ingreso. Cada lado queda en el Flujo de banco de su cuenta como «Traspaso entre cuentas».', tras, ['Fecha', 'Concepto del banco', 'Monto', 'Traspaso']) : '')
       + (noAp ? tablaDe('No aplica', 'Movimientos del banco que no corresponden a nada del CRM.', noAp, ['Fecha', 'Concepto', 'Monto', 'Motivo']) : '');
   }
 
@@ -107,7 +111,7 @@ const Conciliacion = (() => {
     boton.disabled = true;
     try {
       const r = await pedir('/conciliacion/cargar', { method: 'POST', body: JSON.stringify({ cuenta_id: CUENTA, crudo: ARCHIVO.filas, archivo: ARCHIVO.nombre }) });
-      toast(`${r.nuevos} movimiento(s) nuevo(s)${r.repetidos ? `, ${r.repetidos} ya estaban` : ''}; ${r.emparejados} emparejado(s) solos`);
+      toast(`${r.nuevos} movimiento(s) nuevo(s)${r.repetidos ? `, ${r.repetidos} ya estaban` : ''}; ${r.emparejados} emparejado(s) solos${r.traspasos ? `; ${r.traspasos} traspaso(s) entre cuentas ligado(s)` : ''}`);
       ARCHIVO = null; recargarAhora();
     } catch (err) { toast(err.message); boton.disabled = false; }
   }
@@ -142,7 +146,7 @@ const Conciliacion = (() => {
     boton.disabled = true;
     try {
       const r = await pedir('/conciliacion/cargar', { method: 'POST', body: JSON.stringify({ cuenta_id: CUENTA, filas, archivo: ARCHIVO.nombre, columnas: { ...col, desde } }) });
-      toast(`${r.nuevos} movimiento(s) nuevo(s)${r.repetidos ? `, ${r.repetidos} ya estaban` : ''}; ${r.emparejados} emparejado(s) solos`);
+      toast(`${r.nuevos} movimiento(s) nuevo(s)${r.repetidos ? `, ${r.repetidos} ya estaban` : ''}; ${r.emparejados} emparejado(s) solos${r.traspasos ? `; ${r.traspasos} traspaso(s) entre cuentas ligado(s)` : ''}`);
       ARCHIVO = null; recargarAhora();
     } catch (err) { toast(err.message + (err.datos?.errores ? ': ' + err.datos.errores.slice(0, 3).join(' · ') : '')); }
     finally { boton.disabled = false; }
@@ -175,7 +179,7 @@ const Conciliacion = (() => {
     if (a === 'clave-folio') return hacer(async () => {
       const clave = await solicitarDialogo({ titulo: 'Clave de folio', mensaje: 'Va en cada folio de esta cuenta, por ejemplo STD-E-0001. De 2 a 6 letras o números. Ya con folios, no se cambia.', aceptar: 'Guardar', campo: { tipo: 'text', etiqueta: 'Clave (STD, BNT, PAG, CAJ…)', requerido: 'Escribe la clave' } });
       if (!clave) throw new Error('No se cambió la clave'); await pedir('/cuentas-banco/' + Number(CUENTA) + '/clave', { method: 'POST', body: JSON.stringify({ clave }) }); }, 'Clave guardada');
-    if (a === 'emparejar') return hacer(async () => { const r = await pedir('/conciliacion/cuentas/' + CUENTA + '/emparejar', { method: 'POST', body: '{}' }); toast(`${r.emparejados} emparejado(s)`); });
+    if (a === 'emparejar') return hacer(async () => { const r = await pedir('/conciliacion/cuentas/' + CUENTA + '/emparejar', { method: 'POST', body: '{}' }); toast(`${r.emparejados} emparejado(s)${r.traspasos ? ` y ${r.traspasos} traspaso(s) entre cuentas` : ''}`); });
     if (a === 'subir') return subir(b);
     if (a === 'subir-crudo') return subirCrudo(b);
     if (a === 'cancelar-mapeo') { ARCHIVO = null; $('cc-mapeo').innerHTML = ''; return; }
@@ -195,16 +199,34 @@ const Conciliacion = (() => {
       } catch (err) { toast(err.message); }
       return;
     }
+    if (a === 'traspaso') {
+      if (abierto === 't' + id) { extra.innerHTML = ''; abierto = null; return; }
+      abierto = 't' + id;
+      try {
+        const r = await pedir('/conciliacion/movimientos/' + id + '/candidatos');
+        extra.innerHTML = `<div class="ant-form"><p class="ayuda">Un traspaso es dinero que pasó entre dos cuentas de la empresa. ¿Cuál es su otra parte?</p>
+          ${r.traspasos.length ? `<ul class="cc-cand">${r.traspasos.map(c => `<li><button type="button" class="btn btn-outline btn-chico" data-cc="elegir-traspaso" data-id="${id}" data-par="${Number(c.id)}">Es este</button> ${esc(fecha(c.fecha))} · <b>${esc(c.cuenta)}</b> · ${esc(c.concepto)}${c.mismo_rastreo ? ' · misma clave de rastreo' : ''}</li>`).join('')}</ul>`
+            : '<p class="ayuda">No hay en las otras cuentas un movimiento contrario por el mismo monto (5 días antes o después). Puede que falte subir el estado de cuenta de la otra cuenta.</p>'}
+          <button type="button" class="btn btn-outline btn-chico" data-cc="traspaso-solo" data-id="${id}">La otra cuenta no está aquí: marcar solo este lado</button></div>`;
+      } catch (err) { toast(err.message); }
+      return;
+    }
+    if (a === 'elegir-traspaso') return hacer(() => pedir('/conciliacion/movimientos/' + id + '/traspaso', { method: 'POST', body: JSON.stringify({ con: Number(b.dataset.par) }) }), 'Traspaso ligado en las dos cuentas');
+    if (a === 'traspaso-solo') return hacer(() => pedir('/conciliacion/movimientos/' + id + '/traspaso', { method: 'POST', body: JSON.stringify({ con: null }) }), 'Marcado como traspaso');
     if (a === 'elegir') return hacer(() => pedir('/conciliacion/movimientos/' + id + '/emparejar', { method: 'POST', body: JSON.stringify({ tipo: b.dataset.tipo, id: Number(b.dataset.crm) }) }), 'Emparejado');
     if (a === 'gasto') {
       if (abierto === 'g' + id) { extra.innerHTML = ''; abierto = null; return; }
       abierto = 'g' + id;
       let c; try { c = await catalogos(); } catch (err) { toast(err.message); return; }
       const mov = D.banco_sin_crm.find(x => x.id === id);
-      extra.innerHTML = `<div class="ant-form"><div class="form-grid-2">
-        <div class="campo"><label for="cc-g-prov-${id}">Proveedor (obligatorio)</label><select id="cc-g-prov-${id}"><option value="">Selecciona…</option>${c.prov.map(p => `<option value="${Number(p.id)}">${esc(p.nombre)}</option>`).join('')}</select></div>
-        <div class="campo"><label for="cc-g-cat-${id}">Categoría (obligatorio)</label><select id="cc-g-cat-${id}">${c.cat.map(x => `<option value="${esc(x.clave)}"${x.clave === 'comisiones_bancarias' ? ' selected' : ''}>${esc(x.nombre)}</option>`).join('')}</select></div>
-        <div class="campo"><label for="cc-g-con-${id}">Concepto (obligatorio)</label><input id="cc-g-con-${id}" maxlength="200" value="${esc(mov?.concepto || '')}"></div>
+      // Lo que se registró antes con el mismo movimiento (mismo RFC, nombre o concepto): viene elegido, se puede cambiar.
+      let pr = null; try { pr = (await pedir('/conciliacion/movimientos/' + id + '/candidatos')).propuesta; } catch { /* sin propuesta */ }
+      const catSel = pr?.categoria || 'comisiones_bancarias';
+      const prId = pr ? Number(pr.proveedor_id) : 0;
+      extra.innerHTML = `<div class="ant-form">${pr ? `<p class="ayuda">💡 Propuesta: <b>${esc(pr.proveedor)}</b>. ${esc(pr.por)}. Revísala antes de guardar.</p>` : ''}<div class="form-grid-2">
+        <div class="campo"><label for="cc-g-prov-${id}">Proveedor (obligatorio)</label><select id="cc-g-prov-${id}"><option value="">Selecciona…</option>${c.prov.map(p => `<option value="${Number(p.id)}"${p.id === prId ? ' selected' : ''}>${esc(p.nombre)}</option>`).join('')}</select></div>
+        <div class="campo"><label for="cc-g-cat-${id}">Categoría (obligatorio)</label><select id="cc-g-cat-${id}">${c.cat.map(x => `<option value="${esc(x.clave)}"${x.clave === catSel ? ' selected' : ''}>${esc(x.nombre)}</option>`).join('')}</select></div>
+        <div class="campo"><label for="cc-g-con-${id}">Concepto (obligatorio)</label><input id="cc-g-con-${id}" maxlength="200" value="${esc(pr?.concepto || mov?.concepto || '')}"></div>
         </div><button type="button" class="btn btn-primario btn-chico" data-cc="guardar-gasto" data-id="${id}">Registrar gasto de ${esc(dinero(mov?.cargo))}</button></div>`;
       return;
     }

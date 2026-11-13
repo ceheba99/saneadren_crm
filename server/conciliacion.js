@@ -58,7 +58,10 @@ module.exports = function conciliacion(app, db, h) {
   // 2026-11-13 (formatos reales de Santander y Banorte, server/formatos-banco.js): lo que el banco dice de cada movimiento
   // además del concepto —quién está del otro lado, su RFC, la clave de rastreo, la hora y el detalle largo—, para requisitar.
   { const hay = new Set(db.prepare('PRAGMA table_info(movimientos_banco)').all().map(c => c.name));
-    for (const c of ['hora', 'contraparte', 'contraparte_rfc', 'rastreo', 'detalle']) if (!hay.has(c)) db.exec(`ALTER TABLE movimientos_banco ADD COLUMN ${c} TEXT`); }
+    for (const c of ['hora', 'contraparte', 'contraparte_rfc', 'rastreo', 'detalle']) if (!hay.has(c)) db.exec(`ALTER TABLE movimientos_banco ADD COLUMN ${c} TEXT`);
+    // Traspasos entre cuentas propias (2026-11-13): el movimiento del banco queda ligado a su renglón del Flujo de banco
+    // (flujo_movimientos, categoría «traspaso») y, si la otra cuenta también está aquí, a su pareja del otro estado de cuenta.
+    for (const c of ['flujo_mov_id', 'traspaso_par_id']) if (!hay.has(c)) db.exec(`ALTER TABLE movimientos_banco ADD COLUMN ${c} INTEGER`); }
 
   const puede = req => P.direccion(req) || P.puede(req, 'contabilidad.ver');
   const negar = res => res.status(403).json({ error: 'La conciliación bancaria la hacen Dirección y quien tiene «Contabilidad del mes»' });
@@ -100,7 +103,7 @@ module.exports = function conciliacion(app, db, h) {
 
   // Empareja solos los movimientos sin conciliar de una cuenta (todo su historial). Devuelve cuántos.
   function emparejarSolos(cuenta) {
-    const pend = db.prepare('SELECT * FROM main.movimientos_banco WHERE cuenta_id = ? AND conciliado_id IS NULL AND no_aplica = 0 ORDER BY fecha, id').all(cuenta.id);
+    const pend = db.prepare('SELECT * FROM main.movimientos_banco WHERE cuenta_id = ? AND conciliado_id IS NULL AND flujo_mov_id IS NULL AND no_aplica = 0 ORDER BY fecha, id').all(cuenta.id);
     if (!pend.length) return 0;
     const desde = sumarDias(pend[0].fecha, -DIAS), hasta = sumarDias(pend[pend.length - 1].fecha, DIAS);
     const crm = movimientosCrm(cuenta.sucursal_id, desde, hasta).filter(m => !m.conciliado && deLaCuenta(cuenta, m));
@@ -117,10 +120,70 @@ module.exports = function conciliacion(app, db, h) {
     return n;
   }
 
+  // ---------- Traspasos entre cuentas propias (2026-11-13) ----------
+  // El mismo dinero sale en dos estados de cuenta: retiro en una cuenta y depósito en la otra. No es gasto ni ingreso. Al
+  // ligarlos, cada lado queda como un movimiento «Traspaso entre cuentas» en el Flujo de banco de su cuenta (con su folio)
+  // y los dos renglones del banco dejan de estar pendientes.
+  //  · Solos: solo cuando la clave de rastreo del SPEI es la misma en los dos lados (mismo monto, sentido contrario).
+  //  · A mano: la persona elige la pareja (mismo monto, hasta 5 días) o dice que la otra cuenta no está aquí.
+  const pendienteSql = 'b.conciliado_id IS NULL AND b.flujo_mov_id IS NULL AND b.no_aplica = 0';
+  const pendientesDeOtras = (m, dias) => db.prepare(`SELECT b.*, c.sucursal_id, c.nombre AS cuenta_nombre FROM main.movimientos_banco b JOIN main.cuentas_banco c ON c.id = b.cuenta_id
+      WHERE ${pendienteSql} AND c.activa = 1 AND en_alcance(c.sucursal_id) AND b.cuenta_id <> ? AND b.${m.cargo_cent ? 'abono_cent' : 'cargo_cent'} = ? AND b.fecha BETWEEN ? AND ? ORDER BY b.fecha, b.id`)
+    .all(m.cuenta_id, montoDe(m), sumarDias(m.fecha, -dias), sumarDias(m.fecha, dias));
+  const insMovFlujo = () => db.prepare(`INSERT INTO main.flujo_movimientos (sucursal_id, cuenta_id, fecha, tipo, monto_cent, categoria, concepto, referencia, observaciones, creado_por, creado_por_nombre)
+      VALUES (?, ?, ?, ?, ?, 'traspaso', ?, ?, ?, ?, ?)`);
+  // Un lado del traspaso al Flujo de banco; devuelve el id del movimiento del flujo.
+  const ladoAlFlujo = (req, m, otra) => Number(insMovFlujo().run(m.sucursal_id, m.cuenta_id, m.fecha, m.cargo_cent ? 'egreso' : 'ingreso', montoDe(m),
+    (m.cargo_cent ? 'Traspaso a ' : 'Traspaso de ') + (otra || 'otra cuenta propia'), texto(m.rastreo || m.referencia || 'Estado de cuenta', 120), texto(`Del estado de cuenta de ${m.cuenta_nombre}: ${m.concepto || ''}`, 300),
+    yo(req), req.usuarioSesion.nombre).lastInsertRowid);
+  const marcarTraspaso = db.prepare("UPDATE main.movimientos_banco SET flujo_mov_id = ?, traspaso_par_id = ?, conciliado_auto = ?, conciliado_por = ?, conciliado_at = datetime('now','localtime') WHERE id = ? AND conciliado_id IS NULL AND flujo_mov_id IS NULL");
+  function ligarPar(req, a, b, auto) {
+    db.transaction(() => {
+      marcarTraspaso.run(ladoAlFlujo(req, a, b.cuenta_nombre), b.id, auto ? 1 : 0, auto ? null : yo(req), a.id);
+      marcarTraspaso.run(ladoAlFlujo(req, b, a.cuenta_nombre), a.id, auto ? 1 : 0, auto ? null : yo(req), b.id);
+    })();
+    app.locals.auditoria?.registrar(req, 'conciliacion', a.cuenta_id, 'traspaso ligado', `${a.cuenta_nombre} ${a.cargo_cent ? '→' : '←'} ${b.cuenta_nombre} · ${dma(a.fecha)} · ${fmt(montoDe(a))}${auto ? ' · solo, por la clave de rastreo' : ' · a mano'}`);
+  }
+  // Liga solos los traspasos con la misma clave de rastreo entre las cuentas que ve quien pide. { ligados, omitidos }.
+  function ligarTraspasosSolos(req) {
+    const pend = db.prepare(`SELECT b.*, c.sucursal_id, c.nombre AS cuenta_nombre FROM main.movimientos_banco b JOIN main.cuentas_banco c ON c.id = b.cuenta_id
+      WHERE ${pendienteSql} AND c.activa = 1 AND en_alcance(c.sucursal_id) AND b.cargo_cent > 0 AND COALESCE(b.rastreo, '') <> '' ORDER BY b.fecha, b.id`).all();
+    let ligados = 0, omitidos = 0;
+    for (const a of pend) {
+      const cands = pendientesDeOtras(a, 3).filter(x => x.rastreo && x.rastreo === a.rastreo);
+      if (cands.length !== 1) continue;
+      // Un mes cerrado no lo toca quien no es Dirección: ese traspaso se queda pendiente, sin romper la subida.
+      try { ligarPar(req, a, cands[0], true); ligados++; } catch (err) { if (/MES_CERRADO/.test(err.message || '')) omitidos++; else throw err; }
+    }
+    return { ligados, omitidos };
+  }
+
+  // ---------- Propuesta para «Registrar gasto» (2026-11-13): lo que se registró antes con el mismo movimiento ----------
+  // Primero el proveedor con el mismo RFC; si no, lo que más veces se registró para quien cobra (RFC o nombre) o, cuando
+  // el banco no dice quién, para el mismo concepto (sin números). Es solo una propuesta: la persona la cambia.
+  const llaveConcepto = t => norm(t).split(/[^a-z]+/).filter(x => x.length > 2).join(' ');
+  const llaveDe = m => (m.contraparte_rfc ? 'rfc:' + m.contraparte_rfc : norm(m.contraparte) ? 'nom:' + norm(m.contraparte) : llaveConcepto(m.concepto).length >= 8 ? 'con:' + llaveConcepto(m.concepto) : '');
+  function propuestaGasto(m) {
+    const porRfc = m.contraparte_rfc ? db.prepare('SELECT id, nombre, categoria FROM main.proveedores WHERE activo = 1 AND upper(rfc) = ?').get(m.contraparte_rfc) : null;
+    const k = llaveDe(m), veces = new Map();
+    if (k) for (const x of db.prepare(`SELECT b.concepto, b.contraparte, b.contraparte_rfc, x.proveedor_id, x.categoria, x.concepto AS gasto, p.nombre AS proveedor FROM main.movimientos_banco b
+        JOIN main.pagos_proveedor g ON g.id = b.conciliado_id AND g.cancelado = 0 JOIN main.cuentas_por_pagar x ON x.id = g.cxp_id AND x.cancelada = 0 JOIN main.proveedores p ON p.id = x.proveedor_id AND p.activo = 1
+        JOIN main.cuentas_banco c ON c.id = b.cuenta_id WHERE b.conciliado_tipo = 'pago' AND b.id <> ? AND en_alcance(c.sucursal_id) ORDER BY b.id DESC LIMIT 3000`).all(m.id)) {
+      if (llaveDe(x) !== k) continue;
+      const kk = x.proveedor_id + '|' + x.categoria, v = veces.get(kk) || { proveedor_id: x.proveedor_id, proveedor: x.proveedor, categoria: x.categoria, concepto: x.gasto, veces: 0 };
+      v.veces++; veces.set(kk, v);
+    }
+    const mejor = [...veces.values()].sort((a, b) => b.veces - a.veces)[0];
+    if (mejor) return { ...mejor, por: `Como las ${mejor.veces} vez(es) anteriores` };
+    if (porRfc) return { proveedor_id: porRfc.id, proveedor: porRfc.nombre, categoria: porRfc.categoria, concepto: '', veces: 0, por: 'Por el RFC del proveedor' };
+    return null;
+  }
+
   const fila = (b, crmPorClave) => ({ id: b.id, fecha: b.fecha, concepto: b.concepto || '', referencia: b.referencia || '', cargo: pesos(b.cargo_cent), abono: pesos(b.abono_cent), saldo: b.saldo_cent == null ? null : pesos(b.saldo_cent),
     hora: b.hora || '', contraparte: b.contraparte || '', contraparte_rfc: b.contraparte_rfc || '', rastreo: b.rastreo || '', detalle: b.detalle || '',
     conciliado: b.conciliado_id ? { tipo: b.conciliado_tipo, id: b.conciliado_id, auto: !!b.conciliado_auto, texto: crmPorClave?.get(b.conciliado_tipo + ':' + b.conciliado_id)?.texto || `${b.conciliado_tipo} #${b.conciliado_id}`,
       fecha: crmPorClave?.get(b.conciliado_tipo + ':' + b.conciliado_id)?.fecha || '' } : null,
+    traspaso: b.flujo_mov_id ? { auto: !!b.conciliado_auto, texto: db.prepare('SELECT concepto FROM main.flujo_movimientos WHERE id = ?').get(b.flujo_mov_id)?.concepto || 'Traspaso entre cuentas', con_pareja: !!b.traspaso_par_id } : null,
     no_aplica: !!b.no_aplica, no_aplica_motivo: b.no_aplica_motivo || '' });
 
   // ---------- La conciliación de una cuenta y un mes ----------
@@ -140,11 +203,12 @@ module.exports = function conciliacion(app, db, h) {
     res.json({ cuentas: lista, mes, puede_gasto: P.direccion(req) || P.puede(req, 'dinero.mover'),
       cuenta: { id: c.id, nombre: c.nombre, banco: c.banco, terminacion: c.terminacion || '', clave_folio: c.clave_folio || '', columnas: c.columnas ? JSON.parse(c.columnas) : null },
       conciliados: banco.filter(b => b.conciliado_id).map(b => fila(b, porClave)),
-      banco_sin_crm: banco.filter(b => !b.conciliado_id && !b.no_aplica).map(b => fila(b)),
+      banco_sin_crm: banco.filter(b => !b.conciliado_id && !b.flujo_mov_id && !b.no_aplica).map(b => fila(b)),
+      traspasos: banco.filter(b => b.flujo_mov_id).map(b => fila(b)),
       no_aplica: banco.filter(b => b.no_aplica).map(b => fila(b)),
       crm_sin_banco: crmDelMes.map(m => ({ tipo: m.tipo, id: m.id, fecha: m.fecha, monto: pesos(m.monto), dir: m.dir, texto: m.texto, cuenta: m.cuenta, via: m.via })),
       totales: { movimientos: banco.length, abonos: pesos(sum(banco, 'abono_cent')), cargos: pesos(sum(banco, 'cargo_cent')), conciliados: banco.filter(b => b.conciliado_id).length,
-        sin_crm: banco.filter(b => !b.conciliado_id && !b.no_aplica).length, crm_sin_banco: crmDelMes.length, saldo_final_banco: ultimoSaldo ? pesos(ultimoSaldo.saldo_cent) : null,
+        sin_crm: banco.filter(b => !b.conciliado_id && !b.flujo_mov_id && !b.no_aplica).length, traspasos: banco.filter(b => b.flujo_mov_id).length, crm_sin_banco: crmDelMes.length, saldo_final_banco: ultimoSaldo ? pesos(ultimoSaldo.saldo_cent) : null,
         saldo_fecha: ultimoSaldo?.fecha || '' } });
   }));
 
@@ -234,16 +298,17 @@ module.exports = function conciliacion(app, db, h) {
       for (const f of listos) nuevos += ins.run(c.id, f.fecha, f.concepto, f.referencia, f.cargo, f.abono, f.saldo, f.huella, texto(b.archivo, 120), yo(req), f.hora, f.contraparte, f.contraparte_rfc, f.rastreo, f.detalle).changes;
       if (b.columnas && typeof b.columnas === 'object') db.prepare('UPDATE main.cuentas_banco SET columnas = ? WHERE id = ?').run(JSON.stringify(b.columnas).slice(0, 2000), c.id);
     })();
-    const emparejados = emparejarSolos(c);
-    app.locals.auditoria?.registrar(req, 'conciliacion', c.id, 'estado de cuenta', `${c.nombre}${formato ? ' (formato ' + formato.banco + ')' : ''}: ${nuevos} movimiento(s) nuevo(s) de ${listos.length}; ${emparejados} emparejado(s) solos`);
-    res.status(201).json({ leidos: listos.length, nuevos, repetidos: listos.length - nuevos, emparejados, formato });
+    const emparejados = emparejarSolos(c), tr = ligarTraspasosSolos(req);
+    app.locals.auditoria?.registrar(req, 'conciliacion', c.id, 'estado de cuenta', `${c.nombre}${formato ? ' (formato ' + formato.banco + ')' : ''}: ${nuevos} movimiento(s) nuevo(s) de ${listos.length}; ${emparejados} emparejado(s) solos${tr.ligados ? `; ${tr.ligados} traspaso(s) entre cuentas ligado(s)` : ''}`);
+    res.status(201).json({ leidos: listos.length, nuevos, repetidos: listos.length - nuevos, emparejados, traspasos: tr.ligados, traspasos_mes_cerrado: tr.omitidos, formato });
   }));
 
   // ---------- Emparejar solos (otra vez: p. ej. después de registrar un cobro que faltaba) ----------
   app.post('/api/conciliacion/cuentas/:id/emparejar', h((req, res) => {
     if (!puede(req)) return negar(res);
     const c = cuentaDe(req, req.params.id); if (!c) return res.status(404).json({ error: 'No se encontró la cuenta' });
-    res.json({ emparejados: emparejarSolos(c) });
+    const tr = ligarTraspasosSolos(req);
+    res.json({ emparejados: emparejarSolos(c), traspasos: tr.ligados, traspasos_mes_cerrado: tr.omitidos });
   }));
 
   const movDe = (req, id) => { const m = db.prepare('SELECT b.*, c.sucursal_id, c.nombre AS cuenta_nombre FROM main.movimientos_banco b JOIN main.cuentas_banco c ON c.id = b.cuenta_id WHERE b.id = ?').get(Number(id) || 0); return m && enAlcance(m.sucursal_id) ? m : null; };
@@ -254,12 +319,15 @@ module.exports = function conciliacion(app, db, h) {
     const m = movDe(req, req.params.id); if (!m) return res.status(404).json({ error: 'No se encontró el movimiento' });
     const crm = movimientosCrm(m.sucursal_id, sumarDias(m.fecha, -30), sumarDias(m.fecha, 30)).filter(x => !x.conciliado && x.dir === dirDe(m) && x.monto === montoDe(m))
       .sort((a, b) => diasEntre(a.fecha, m.fecha) - diasEntre(b.fecha, m.fecha));
-    res.json({ candidatos: crm.map(x => ({ tipo: x.tipo, id: x.id, fecha: x.fecha, monto: pesos(x.monto), texto: x.texto, cuenta: x.cuenta })) });
+    res.json({ candidatos: crm.map(x => ({ tipo: x.tipo, id: x.id, fecha: x.fecha, monto: pesos(x.monto), texto: x.texto, cuenta: x.cuenta })),
+      // Para «Traspaso»: lo pendiente de las otras cuentas, en sentido contrario y con el mismo monto (hasta 5 días).
+      traspasos: pendientesDeOtras(m, 5).map(x => ({ id: x.id, fecha: x.fecha, cuenta: x.cuenta_nombre, concepto: x.concepto || '', mismo_rastreo: !!m.rastreo && x.rastreo === m.rastreo })),
+      propuesta: m.cargo_cent ? propuestaGasto(m) : null });
   }));
   app.post('/api/conciliacion/movimientos/:id/emparejar', h((req, res) => {
     if (!puede(req)) return negar(res);
     const m = movDe(req, req.params.id); if (!m) return res.status(404).json({ error: 'No se encontró el movimiento' });
-    if (m.conciliado_id) return res.status(409).json({ error: 'Ese movimiento ya está conciliado' });
+    if (m.conciliado_id || m.flujo_mov_id) return res.status(409).json({ error: 'Ese movimiento ya está conciliado' });
     const b = req.body || {};
     const x = movimientosCrm(m.sucursal_id, sumarDias(m.fecha, -30), sumarDias(m.fecha, 30)).find(v => v.tipo === b.tipo && v.id === Number(b.id));
     if (!x) return res.status(404).json({ error: 'No se encontró ese movimiento del CRM (o no es de la misma sucursal o fecha)' });
@@ -273,16 +341,45 @@ module.exports = function conciliacion(app, db, h) {
   app.post('/api/conciliacion/movimientos/:id/soltar', h((req, res) => {
     if (!puede(req)) return negar(res);
     const m = movDe(req, req.params.id); if (!m) return res.status(404).json({ error: 'No se encontró el movimiento' });
+    // Un traspaso: se sueltan los dos lados y sus movimientos del Flujo de banco se cancelan (no se borran; el folio queda en gris).
+    if (m.flujo_mov_id) {
+      const par = m.traspaso_par_id ? db.prepare('SELECT * FROM main.movimientos_banco WHERE id = ?').get(m.traspaso_par_id) : null;
+      db.transaction(() => {
+        for (const x of [m, par]) { if (!x?.flujo_mov_id) continue;
+          db.prepare("UPDATE main.flujo_movimientos SET cancelado = 1, cancelado_por = ?, cancelado_at = datetime('now','localtime'), motivo_cancelacion = 'Se soltó el traspaso en la conciliación bancaria' WHERE id = ? AND cancelado = 0").run(yo(req), x.flujo_mov_id);
+          db.prepare('UPDATE main.movimientos_banco SET flujo_mov_id = NULL, traspaso_par_id = NULL, conciliado_auto = 0, conciliado_por = NULL, conciliado_at = NULL WHERE id = ?').run(x.id); }
+      })();
+      app.locals.auditoria?.registrar(req, 'conciliacion', m.cuenta_id, 'traspaso soltado', `${m.cuenta_nombre} ${dma(m.fecha)} ${fmt(montoDe(m))}${par ? ' (y su pareja)' : ''}`);
+      return res.json({ ok: true });
+    }
     if (!m.conciliado_id && !m.no_aplica) return res.status(409).json({ error: 'Ese movimiento no está conciliado' });
     db.prepare('UPDATE main.movimientos_banco SET conciliado_tipo = NULL, conciliado_id = NULL, conciliado_auto = 0, conciliado_por = NULL, conciliado_at = NULL, no_aplica = 0, no_aplica_motivo = NULL, no_aplica_por = NULL WHERE id = ?').run(m.id);
     app.locals.auditoria?.registrar(req, 'conciliacion', m.cuenta_id, 'soltado', `${m.cuenta_nombre} ${dma(m.fecha)} ${fmt(montoDe(m))}`);
     res.json({ ok: true });
   }));
+  // Traspaso entre cuentas propias, a mano: con su pareja del otro estado de cuenta ({ con: id }) o solo este lado cuando
+  // la otra cuenta no está dada de alta o todavía no se sube su estado de cuenta ({ con: null }).
+  app.post('/api/conciliacion/movimientos/:id/traspaso', h((req, res) => {
+    if (!puede(req)) return negar(res);
+    const m = movDe(req, req.params.id); if (!m) return res.status(404).json({ error: 'No se encontró el movimiento' });
+    if (m.conciliado_id || m.flujo_mov_id) return res.status(409).json({ error: 'Ese movimiento ya está conciliado: suéltalo primero' });
+    const con = req.body?.con;
+    if (con === undefined || con === null || con === '') {
+      const id = db.transaction(() => { const f = ladoAlFlujo(req, m, texto(req.body?.otra, 60)); marcarTraspaso.run(f, null, 0, yo(req), m.id); db.prepare('UPDATE main.movimientos_banco SET no_aplica = 0, no_aplica_motivo = NULL, no_aplica_por = NULL WHERE id = ?').run(m.id); return f; })();
+      app.locals.auditoria?.registrar(req, 'conciliacion', m.cuenta_id, 'traspaso ligado', `${m.cuenta_nombre} ${dma(m.fecha)} ${fmt(montoDe(m))} · solo este lado (la otra cuenta no está aquí)`);
+      return res.status(201).json({ ok: true, flujo_mov_id: id });
+    }
+    const b = pendientesDeOtras(m, 5).find(x => x.id === Number(con));
+    if (!b) return res.status(400).json({ error: 'Esa no es la otra parte del traspaso: debe ser de otra cuenta, en sentido contrario, por el mismo monto y con hasta 5 días de diferencia' });
+    ligarPar(req, m, b, false);
+    db.prepare('UPDATE main.movimientos_banco SET no_aplica = 0, no_aplica_motivo = NULL, no_aplica_por = NULL WHERE id IN (?, ?)').run(m.id, b.id);
+    res.status(201).json({ ok: true });
+  }));
   // «No aplica»: no corresponde a nada del CRM (p. ej. traspaso entre cuentas propias). Con motivo.
   app.post('/api/conciliacion/movimientos/:id/no-aplica', h((req, res) => {
     if (!puede(req)) return negar(res);
     const m = movDe(req, req.params.id); if (!m) return res.status(404).json({ error: 'No se encontró el movimiento' });
-    if (m.conciliado_id) return res.status(409).json({ error: 'Ese movimiento ya está conciliado: suéltalo primero' });
+    if (m.conciliado_id || m.flujo_mov_id) return res.status(409).json({ error: 'Ese movimiento ya está conciliado: suéltalo primero' });
     const motivo = texto(req.body?.motivo, 200);
     if (!motivo || !conSentido(motivo, 5)) return res.status(400).json({ error: 'Escribe por qué no aplica (por ejemplo: traspaso entre cuentas propias)' });
     db.prepare('UPDATE main.movimientos_banco SET no_aplica = 1, no_aplica_motivo = ?, no_aplica_por = ? WHERE id = ?').run(motivo, yo(req), m.id);
@@ -296,7 +393,7 @@ module.exports = function conciliacion(app, db, h) {
     if (!puede(req)) return negar(res);
     if (!P.direccion(req) && !P.puede(req, 'dinero.mover')) return res.status(403).json({ error: 'Registrar el gasto lo hace quien mueve dinero' });
     const m = movDe(req, req.params.id); if (!m) return res.status(404).json({ error: 'No se encontró el movimiento' });
-    if (m.conciliado_id) return res.status(409).json({ error: 'Ese movimiento ya está conciliado' });
+    if (m.conciliado_id || m.flujo_mov_id) return res.status(409).json({ error: 'Ese movimiento ya está conciliado' });
     if (!m.cargo_cent) return res.status(400).json({ error: 'Solo un cargo del banco se registra como gasto (un abono es un cobro: regístralo en la orden de servicio)' });
     const b = req.body || {}, prov = db.prepare('SELECT * FROM main.proveedores WHERE id = ? AND activo = 1').get(Number(b.proveedor_id) || 0);
     if (!prov) return res.status(400).json({ error: 'Elige el proveedor (por ejemplo, el banco)' });
