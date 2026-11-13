@@ -318,7 +318,7 @@ module.exports = function checador(app, db, h) {
   function avisarKiosco(tipo, k) {
     if (tipo === 'bateria' || tipo === 'camara' || tipo === 'pantalla') return avisarAtencion(tipo, k);
     const cayo = tipo === 'sin_respuesta';
-    app.locals.registro?.servicio(cayo ? 'kiosco_sin_respuesta' : 'kiosco_volvio', cayo ? `${textoKiosco(k)}: sin señal desde ${k.desde || 'hace más de 5 minutos'}` : `${textoKiosco(k)}: volvió a dar señal a las ${k.volvio}`);
+    app.locals.registro?.servicio(cayo ? 'kiosco_sin_respuesta' : 'kiosco_volvio', cayo ? `${textoKiosco(k)}: sin señal desde ${k.desde || 'hace más de 5 minutos'}${k.ultimo ? '; lo último que reportó: ' + k.ultimo : ''}` : `${textoKiosco(k)}: volvió a dar señal a las ${k.volvio}`);
     const correo = require('./correo');
     const para = correosDe(db.prepare("SELECT correo FROM main.usuarios WHERE rol = 'admin' AND activo = 1 AND correo IS NOT NULL AND trim(correo) <> ''").all().map(u => u.correo), process.env.CORREO_AVISOS_CHECADOR);
     const asunto = cayo ? `⚠️ El reloj checador no responde: ${k.nombre}` : `✅ El reloj checador ya responde: ${k.nombre}`;
@@ -846,7 +846,10 @@ module.exports = function checador(app, db, h) {
       const m = String(x?.m || '').replace(/\s+/g, ' ').replace(/[^\p{L}\p{N} .,:;()«»\-_/]/gu, '').slice(0, 160), cuando = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(String(x?.t || '')) ? String(x.t).slice(0, 16).replace('T', ' ') + ' UTC' : '';
       if (!m) continue;
       // «Velocidad…»: lo que tardó la tableta en abrir y en checar (2026-11-13), en su propio renglón de los Logs.
-      c.n++; app.locals.registro?.servicio(m.startsWith('Velocidad') ? 'kiosco_velocidad' : 'kiosco_recuperado', `Kiosco «${req.kiosco.nombre}»${req.kiosco.sucursal ? ' (' + req.kiosco.sucursal + ')' : ''}: ${m}${cuando ? ' · ' + cuando : ''}`);
+      // 2026-11-13: cada renglón dice además cómo estaba la tableta (app o navegador, batería, cámara, pantalla) y lleva
+      // la red y el equipo, para que se entienda solo (server/registro-guias.js arma la explicación al leerlo).
+      const tableta = [/SaneadrenChecador/.test(req.get('user-agent') || '') ? 'app propia' : 'navegador', vigiaKioscos.estadoTexto(req.kiosco.id)].filter(Boolean).join(', ');
+      c.n++; app.locals.registro?.anotar(req, m.startsWith('Velocidad') ? 'kiosco_velocidad' : 'kiosco_recuperado', { detalle: `Kiosco «${req.kiosco.nombre}»${req.kiosco.sucursal ? ' (' + req.kiosco.sucursal + ')' : ''}: ${m}${cuando ? ' · ' + cuando : ''} · tableta: ${tableta}` });
     }
     res.json({ ok: true });
   }));

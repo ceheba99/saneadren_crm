@@ -10,7 +10,25 @@
 // Los cambios a registros (clientes, usuarios, permisos…) siguen en la Bitácora (server/auditoria.js).
 // Nunca se guardan contraseñas ni llaves; de un intento fallido solo se guarda el usuario si existe en el sistema
 // (así, si alguien escribe su contraseña en la casilla del usuario, no queda en el registro). Se guarda 180 días.
+const { explicar } = require('./registro-guias');
 const DIAS_GUARDA = 180, MAX_FILAS = 100000;
+// Ficha del sistema para «Copiar para una IA»: qué es, qué versión corre y de qué commit (si se desplegó con Git).
+function fichaSistema() {
+  const fs = require('fs'), path = require('path'), raiz = path.join(__dirname, '..');
+  let commit = null;
+  try {
+    const head = fs.readFileSync(path.join(raiz, '.git', 'HEAD'), 'utf8').trim();
+    if (/^[0-9a-f]{40}$/.test(head)) commit = head;
+    else if (head.startsWith('ref: ')) {
+      const ref = head.slice(5);
+      try { commit = fs.readFileSync(path.join(raiz, '.git', ref), 'utf8').trim(); }
+      catch { commit = (fs.readFileSync(path.join(raiz, '.git', 'packed-refs'), 'utf8').split('\n').find(l => l.endsWith(' ' + ref)) || '').split(' ')[0] || null; }
+    }
+  } catch { commit = null; }
+  return { descripcion: 'CRM y ERP propio de Saneadren (desazolve y saneamiento de drenajes). Servidor: Node.js + Express + SQLite, en server/. Pantallas: HTML y JavaScript sin framework, en public/. Reloj checador: public/kiosco.html (tableta), public/checar.html (celular), server/checador.js y server/asistencia.js; app Android de la tableta en android-checador/. Repositorio: github.com/ceheba99/saneadren_crm.',
+    version: require('../package.json').version, commit: /^[0-9a-f]{40}$/.test(commit || '') ? commit.slice(0, 10) : null, node: process.versions.node };
+}
+const SISTEMA = fichaSistema();
 const TTL_SESION_MS = 12 * 60 * 60 * 1000; // el mismo de server/index.js: la sesión vence 12 h después de la última actividad
 
 const EVENTOS = {
@@ -161,7 +179,9 @@ module.exports = function registroSistema(app, db, h) {
       const u = db.prepare("SELECT ip, equipo FROM main.registro_sistema WHERE usuario_id = ? AND evento = 'entro' ORDER BY id DESC LIMIT 1").get(c.id);
       c.ip = u?.ip || null; c.equipo = u?.equipo || null;
     }
-    res.json({ filas: filas.slice(0, 200), hay_mas: filas.length > 200,
+    // Cada renglón con guía se explica solo (server/registro-guias.js).
+    for (const x of filas) { const g = explicar(x); if (g) x.guia = g; }
+    res.json({ filas: filas.slice(0, 200), hay_mas: filas.length > 200, sistema: { ...SISTEMA, iniciado: inicio },
       resumen: { entradas: r.entradas || 0, fallos: r.fallos || 0, bloqueos: r.bloqueos || 0, errores: r.errores || 0, servicios: r.servicios || 0, facturas_error: facturasError },
       respaldo, inicio, conectados, dias_guarda: DIAS_GUARDA });
   }));

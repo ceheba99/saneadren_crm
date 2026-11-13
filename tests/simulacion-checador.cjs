@@ -290,8 +290,18 @@ const archivosDe = d => fs.readdirSync(d, { withFileTypes: true }).flatMap(e => 
   revisa((await kio(KQ, 'POST', 'diagnostico', { eventos: [{ t: new Date().toISOString(), m: 'pantalla vacía <script>alert(1)</script>' }, { m: '' }] }))[0] === 200, 'El kiosco manda lo que su vigilante recuperó');
   const logK = ((await pedir('GET', '/registro-sistema?q=Kiosco', A))[1].filas || []).filter(f => f.evento === 'kiosco_recuperado');
   revisa(logK.length === 1 && /pantalla vacía/.test(JSON.stringify(logK[0])) && !/[<>]/.test(logK[0].detalle || ''), 'Dirección lo ve en los Logs del sistema (un renglón, sin símbolos raros)', logK);
+  // 2026-11-13: el renglón se explica solo (qué significa, qué hacer, dónde está en el código) y dice cómo estaba la tableta.
+  revisa(!!logK[0]?.guia && /en blanco|vac[ií]a/i.test(logK[0].guia.lectura.join(' ')) && logK[0].guia.hacer.length > 0 && logK[0].guia.codigo.some(c => /kiosco\.html/.test(c)), 'El renglón trae su explicación: qué pasó, qué hacer y dónde está en el código', logK[0]?.guia);
+  await pedir('GET', '/publico/kiosco/estado?cam=1&b=80&c=1&pan=1', null, undefined, { 'X-Kiosco': KQ });
+  await kio(KQ, 'POST', 'diagnostico', { eventos: [{ m: 'Velocidad (app, 8 nucleos, 4 GB): abrir 1.0 s; servidor 2500 ms; sin caras registradas; trabada 0.2 s (peor 0.1 s)' }] });
+  const logV = ((await pedir('GET', '/registro-sistema?q=Velocidad', A))[1]);
+  const fv = (logV.filas || []).find(x => x.evento === 'kiosco_velocidad');
+  revisa(!!fv && /tableta: .*bater[ií]a 80 %.*cargando.*c[aá]mara bien.*pantalla fija/.test(fv.detalle) && !!fv.ip, 'El renglón de velocidad dice cómo estaba la tableta (batería, cargador, cámara, pantalla) y desde qué red', fv);
+  revisa(!!fv?.guia && /servidor tard[oó] 2500 ms/i.test(fv.guia.lectura.join(' ')), 'Y la lectura dice qué número está fuera de lo normal', fv?.guia?.lectura);
+  revisa(!!logV.sistema && /Node\.js/.test(logV.sistema.descripcion) && !!logV.sistema.version, 'Los Logs traen la ficha del sistema (qué es y qué versión) para el reporte', logV.sistema);
+  revisa(!(logV.filas || []).some(x => x.evento === 'entro' && x.guia), 'Los renglones que aún no tienen guía no inventan una');
   for (let i = 0; i < 5; i++) await kio(KQ, 'POST', 'diagnostico', { eventos: Array.from({ length: 10 }, (_, k) => ({ m: 'prueba ' + i + '-' + k })) });
-  revisa(((await pedir('GET', '/registro-sistema?q=Kiosco', A))[1].filas || []).length <= 31, 'Tope de 30 diagnósticos por kiosco por hora');
+  revisa(((await pedir('GET', '/registro-sistema?q=Kiosco', A))[1].filas || []).length <= 32, 'Tope de 30 diagnósticos por kiosco por hora');
 
   // Blindaje (2026-11-12): red inestable al checar. La tableta repite la checada con el mismo permiso si no le llegó la
   // respuesta, y si sigue sin red la guarda «sin conexión»: en ningún caso debe quedar dos veces.

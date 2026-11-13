@@ -15,13 +15,40 @@ const Logs = (() => {
     const min = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 60000));
     return min < 1 ? 'ahora' : min < 60 ? 'hace ' + min + ' min' : 'hace ' + Math.floor(min / 60) + ' h ' + (min % 60) + ' min';
   };
-  let consulta = 0, filas = [], listo = false;
+  let consulta = 0, filas = [], listo = false, sistema = null;
+  // «¿Qué significa y qué hago?» (2026-11-13): la explicación del renglón, en simple, y dónde está en el código.
+  const lista = (titulo, l) => (l && l.length ? '<p class="logs-guia-titulo"><b>' + esc(titulo) + '</b></p><ul>' + l.map(x => '<li>' + esc(x) + '</li>').join('') + '</ul>' : '');
+  const guia = g => '<details class="logs-guia"><summary>¿Qué significa y qué hago?</summary><p>' + esc(g.que) + '</p>'
+    + lista('Lo que dicen los datos de este renglón', g.lectura) + lista('Causas probables', g.causas) + lista('Qué hacer', g.hacer) + lista('Dónde está en el código', g.codigo) + '</details>';
+  // «Copiar para una IA»: un reporte que se entiende sin conocer el sistema (qué es, qué pasó, qué significa, dónde está
+  // en el código y qué más pasó cerca). Para pegarlo en cualquier asistente o mandarlo a soporte.
+  function reporte(r) {
+    const [, texto] = EVENTO[r.evento] || ['', r.evento], g = r.guia, s = sistema || {};
+    const cerca = filas.filter(x => x.id !== r.id && Math.abs(new Date(x.fecha.replace(' ', 'T')) - new Date(r.fecha.replace(' ', 'T'))) <= 60 * 60000
+      && (x.nivel !== 'info' || String(x.evento).split('_')[0] === String(r.evento).split('_')[0])).slice(0, 12);
+    const bloque = (titulo, l) => (l && l.length ? ['', titulo + ':', ...l.map(x => '- ' + x)] : []);
+    return ['REPORTE DE UN LOG DEL SISTEMA DE SANEADREN', '(reporte de soporte: se entiende sin conocer el sistema)', '',
+      'EL SISTEMA', s.descripcion || '', 'Versión ' + (s.version || '?') + (s.commit ? ' · commit ' + s.commit : '') + (s.node ? ' · Node ' + s.node : '') + (s.iniciado ? ' · arrancó por última vez el ' + s.iniciado : ''), '',
+      'QUÉ PASÓ', 'Evento: ' + texto + ' (clave: ' + r.evento + ' · tipo: ' + r.tipo + ' · nivel: ' + r.nivel + ')', 'Cuándo: ' + r.fecha + ' (hora del centro de México)',
+      'Detalle tal como quedó registrado: ' + (r.detalle || '(sin detalle)'), ...(r.usuario ? ['Usuario: ' + r.usuario] : []), ...(r.equipo ? ['Equipo: ' + r.equipo] : []), ...(r.ip ? ['Red (IP): ' + r.ip] : []),
+      ...(g ? ['', 'QUÉ SIGNIFICA', g.que, ...bloque('Lo que dicen los datos de este renglón', g.lectura), ...bloque('Causas probables', g.causas), ...bloque('Qué se recomienda hacer', g.hacer), ...bloque('Dónde está en el código', g.codigo)]
+        : ['', '(Este tipo de evento todavía no tiene explicación automática: la clave del evento y el detalle son lo que hay.)']),
+      ...(cerca.length ? ['', 'OTROS RENGLONES DE LA MISMA HORA (del más reciente al más antiguo):', ...cerca.map(x => '- ' + x.fecha + ' · ' + ((EVENTO[x.evento] || ['', x.evento])[1]) + (x.detalle ? ' · ' + x.detalle : ''))] : []),
+      '', 'LO QUE NECESITO', 'Explica qué pasó, si es grave y qué hay que hacer. Si hace falta cambiar el código, dime en qué archivo y qué parte.'].join('\n');
+  }
+  async function copiar(id) {
+    const r = filas.find(x => String(x.id) === String(id) && x.tipo !== 'facturacion') || filas.find(x => String(x.id) === String(id));
+    if (!r) return;
+    try { await navigator.clipboard.writeText(reporte(r)); toast('Reporte copiado: pégalo en tu asistente de IA o mándalo a soporte'); }
+    catch { toast('No se pudo copiar en este navegador'); }
+  }
 
   const tarjeta = (n, texto, malo) => '<div class="logs-tarjeta' + (malo && n ? ' logs-alerta' : '') + '"><b>' + Number(n) + '</b><span>' + esc(texto) + '</span></div>';
   const renglon = r => {
     const [icono, texto] = EVENTO[r.evento] || ['•', r.evento];
     return '<tr class="logs-' + esc(r.nivel) + '"><td class="st-fecha">' + esc(fechaHora(r.fecha)) + '</td>'
-      + '<td><span aria-hidden="true">' + icono + '</span> <b>' + esc(texto) + '</b>' + (r.detalle ? '<div class="bit-detalle">' + esc(r.detalle) + '</div>' : '') + '</td>'
+      + '<td><span aria-hidden="true">' + icono + '</span> <b>' + esc(texto) + '</b>' + (r.detalle ? '<div class="bit-detalle">' + esc(r.detalle) + '</div>' : '') + (r.guia ? guia(r.guia) : '')
+      + '<div><button type="button" class="btn btn-outline btn-chico" data-logs-copiar="' + esc(r.id) + '">📋 Copiar para una IA</button></div></td>'
       + '<td>' + esc(r.usuario || '—') + '</td><td><code>' + esc(r.ip || '') + '</code></td><td>' + esc(r.equipo || '') + '</td></tr>';
   };
   function pintarLista(hayMas) {
@@ -44,7 +71,7 @@ const Logs = (() => {
     try { const r = await api('/registro-sistema?' + q); j = await r.json(); if (!r.ok) throw new Error(j.error); }
     catch (err) { if (turno === consulta) $('logs-lista').innerHTML = '<p class="aviso-error-carga">No se pudieron cargar los logs: ' + esc(err.message) + '</p>'; return; }
     if (turno !== consulta) return;
-    filas = mas ? filas.concat(j.filas) : j.filas;
+    filas = mas ? filas.concat(j.filas) : j.filas; sistema = j.sistema || sistema;
     const s = j.resumen;
     const resp = j.respaldo;
     $('logs-resumen').innerHTML = '<p class="ayuda">Últimas 24 horas</p><div class="logs-tarjetas">' + tarjeta(s.entradas, 'Entradas') + tarjeta(s.fallos, 'Contraseñas equivocadas', true)
@@ -66,7 +93,7 @@ const Logs = (() => {
     let espera;
     for (const id of ['logs-tipo', 'logs-desde', 'logs-hasta']) $(id).addEventListener('change', () => cargar());
     $('logs-buscar').addEventListener('input', () => { clearTimeout(espera); espera = setTimeout(() => cargar(), 350); });
-    $('logs-lista').addEventListener('click', e => { if (e.target.id === 'logs-mas') { e.target.disabled = true; cargar(true); } });
+    $('logs-lista').addEventListener('click', e => { if (e.target.id === 'logs-mas') { e.target.disabled = true; cargar(true); } else if (e.target.dataset?.logsCopiar) copiar(e.target.dataset.logsCopiar); });
     $('logs-ir-bitacora').addEventListener('click', () => cambiarVista('bitacora'));
   }
 
