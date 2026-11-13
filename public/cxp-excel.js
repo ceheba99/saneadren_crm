@@ -40,5 +40,58 @@
   // «capturo» como en el Excel: el primer nombre en mayúsculas (MARCO, LETTY).
   const capturoCorto = nombre => String(nombre || '').trim().split(/\s+/)[0].toLocaleUpperCase('es-MX');
 
-  return { TIPOS_GASTO, esTipoGasto, tipoGastoTexto, tipoGastoExcel, STATUS, statusDe, METODOS_EXCEL, metodoExcel, capturoCorto };
+  // FOLIO FACTURA sin folio: la palabra que el Excel pone según el comprobante (PAGADORA, RECIBO, CORRIDA…).
+  const FOLIO_POR_COMPROBANTE = { recibo: 'RECIBO', estado_cuenta: 'CORRIDA', linea_captura: 'LINEA CAPTURA', nomina: 'NOMINA', pagadora: 'PAGADORA',
+    sin_factura: 'SIN FACTURA', informativo: 'INFORMATIVO' };
+  const folioExcel = x => x?.factura_folio || (x?.tipo_comprobante && x.tipo_comprobante !== 'factura' ? FOLIO_POR_COMPROBANTE[x.tipo_comprobante] || '' : '');
+
+  // ---------- Descarga «CXP» (fase 3, 2026-11-12): la hoja igual al Excel ----------
+  // [título, ancho, color del encabezado, formato]; los mismos del archivo «CUENTAS POR PAGAR QRO 2026-2.xlsx».
+  const CONTABLE = '_-* #,##0.00_-;\\-* #,##0.00_-;_-* "-"??_-;_-@';
+  const COLUMNAS_CXP = [['FECHA VENCIMIENTO', 12, 'FFB4C6E7', 'd/m/yyyy'], ['TIPO DE GASTO', 15.29, 'FFF9CB9C'], ['PROVEEDOR', 21, 'FFB4C6E7'], ['BENEFICIARIO', 30.29, 'FFFF0000'],
+    ['DESCRIPCION', 44.86, 'FFF9CB9C'], ['FECHA FACTURA/SOLICITUD', 15.43, 'FFF9CB9C', 'd/m/yyyy'], ['capturo', 14.14, 'FFF9CB9C'], ['FOLIO FACTURA', 18.14, 'FFFF0000'],
+    ['METODO DE PAGO', 13.14, 'FFFF0000'], ['MONTO TOTAL FACTURA', 17.86, 'FFF9CB9C', CONTABLE], ['PENDIENTE', 15.71, 'FFF9CB9C', CONTABLE], ['ANTICIPO', 14.71, 'FF00FF00', CONTABLE],
+    ['PAGADO', 13, 'FFF9CB9C', CONTABLE], ['CUENTA BANCARIA', 15, 'FFB4C6E7'], ['BANCO', 11.14, 'FFB4C6E7'], ['DIAS DE CREDITO', 12.71, 'FFB4C6E7'], ['CONCEPTO DE GASTO ', 15.29, 'FFF4B084'],
+    ['STATUS', 12.57, 'FFF9CB9C'], ['FECHA DE PAGO', 21.29, 'FFF9CB9C', 'd/mm/yyyy'], ['OBSERVACIONES', 29.29, 'FFF9CB9C']];
+  const COL_FECHAS = [0, 5, 18]; // A, F y S: llevan fecha (en la hoja se convierten a fecha de Excel)
+  const cent = v => Math.round(Number(v || 0) * 100);
+  const sumarDias = (f, d) => { const [a, m, dd] = f.split('-').map(Number); return new Date(Date.UTC(a, m - 1, dd + d)).toISOString().slice(0, 10); };
+
+  // d: lo que manda /api/finanzas/cxp/formato-excel. Regresa los renglones de la hoja «CXP» (desde el renglón 3) en el
+  // orden del Excel. Una celda es un valor o { formula, result } (como ExcelJS); las fechas van como 'AAAA-MM-DD'.
+  // Las fórmulas son las del Excel: vencimiento =F+P, pendiente =J-M y, con varios pagos, PAGADO =a+b+c. STATUS también
+  // es fórmula de los montos, para que no contradiga lo pagado aunque se corrija un monto en el archivo.
+  function renglonesCxp(d, { conSucursal = false } = {}) {
+    const pagos = new Map();
+    for (const g of d.pagos || []) if (!g.cancelado) { if (!pagos.has(g.cxp_id)) pagos.set(g.cxp_id, []); pagos.get(g.cxp_id).push(g); }
+    return (d.cuentas || []).filter(x => !x.cancelada).map((x, i) => {
+      const n = i + 3, pg = (pagos.get(x.id) || []).slice().sort((a, b) => (a.fecha < b.fecha ? -1 : a.fecha > b.fecha ? 1 : a.id - b.id));
+      const totalC = cent(x.total), pagadoC = pg.reduce((t, g) => t + cent(g.monto), 0), anticipoC = pg.filter(g => g.fecha < x.fecha_documento).reduce((t, g) => t + cent(g.monto), 0);
+      const ultimo = pg.length ? pg[pg.length - 1] : null;
+      const dias = Number.isInteger(x.dias_credito) ? x.dias_credito : null;
+      const vence = dias !== null && x.fecha_documento && sumarDias(x.fecha_documento, dias) === x.fecha_vencimiento ? { formula: `F${n}+P${n}`, result: x.fecha_vencimiento } : x.fecha_vencimiento || null;
+      const pagado = pg.length > 1 ? { formula: pg.map(g => (cent(g.monto) / 100).toFixed(2).replace(/\.00$/, '')).join('+'), result: pagadoC / 100 } : pg.length ? pagadoC / 100 : null;
+      const obs = [x.notas, x.orden_folio ? 'Orden ' + x.orden_folio : '', x.tipo_comprobante === 'informativo' ? 'INFORMATIVO: no se suma' : '', x.es_gasto === false ? 'No cuenta como gasto' : ''].filter(Boolean).join(' · ');
+      const r = [vence, tipoGastoExcel(x.tipo_gasto), x.proveedor || '', x.beneficiario || x.proveedor || '', x.concepto || '', x.fecha_documento || null, capturoCorto(x.capturo),
+        folioExcel(x), metodoExcel(x, ultimo?.metodo), totalC / 100, { formula: `J${n}-M${n}`, result: (totalC - pagadoC) / 100 }, anticipoC ? anticipoC / 100 : null, pagado,
+        x.clabe || '', x.banco || '', dias ?? '', String(x.categoria || '').toLocaleUpperCase('es-MX'),
+        { formula: `IF(ROUND(M${n}-J${n},2)>=0,"PAGADO",IF(M${n}>0,"PARCIAL","PENDIENTE"))`, result: statusDe(totalC, pagadoC) },
+        ultimo ? ultimo.fecha : null, obs];
+      if (conSucursal) r.push(x.sucursal || '');
+      return r;
+    });
+  }
+  // Hoja LISTA con las mismas columnas que la del Excel (de ahí salen las listas desplegables).
+  function listasCxp(d, categorias) {
+    const unicos = a => [...new Set(a.filter(v => v !== null && v !== undefined && v !== ''))];
+    const cuentas = (d.cuentas || []).filter(x => !x.cancelada), orden = (a, b) => String(a).localeCompare(String(b), 'es');
+    return [['PROVEEDOR', unicos(cuentas.map(x => x.proveedor)).sort(orden)], ['BENEFICIARIO', unicos(cuentas.map(x => x.beneficiario || x.proveedor)).sort(orden)],
+      ['CONCEPTO DE GASTO ', unicos(categorias.map(c => String(c).toLocaleUpperCase('es-MX'))).sort(orden)], ['METODO DE PAGO', METODOS_EXCEL.slice()],
+      ['DIAS CREDITO', unicos(cuentas.map(x => x.dias_credito).filter(Number.isInteger)).sort((a, b) => a - b)], ['STATUS', STATUS.slice()], ['TIPO GASTO', TIPOS_GASTO.map(t => t[2])]];
+  }
+  // Listas desplegables de la hoja CXP, como en el Excel: columna → columna de LISTA. STATUS no: es fórmula.
+  const VALIDACIONES_CXP = [['B', 'G'], ['C', 'A'], ['D', 'B'], ['I', 'D'], ['Q', 'C']];
+
+  return { TIPOS_GASTO, esTipoGasto, tipoGastoTexto, tipoGastoExcel, STATUS, statusDe, METODOS_EXCEL, metodoExcel, capturoCorto, folioExcel,
+    COLUMNAS_CXP, COL_FECHAS, renglonesCxp, listasCxp, VALIDACIONES_CXP };
 });
