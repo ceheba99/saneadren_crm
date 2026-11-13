@@ -138,3 +138,13 @@ test('FOLIO FACTURA sin folio: la palabra del Excel según el comprobante', () =
   assert.strictEqual(X.folioExcel({ tipo_comprobante: 'pagadora' }), 'PAGADORA');
   assert.strictEqual(X.folioExcel({ tipo_comprobante: 'otro' }), '');
 });
+
+test('descarga CXP: celdas vacías en amarillo, como en el Excel', () => {
+  assert.strictEqual(X.COLOR_VACIA, 'FFFFD965');
+  const s = X.sombreadoVacias(3, 20);
+  assert.strictEqual(s.ref, 'A3:T5', 'de la A a la T, solo los renglones con datos');
+  assert.deepStrictEqual(s.rules[0].formulae, ['LEN(TRIM(A3))=0']);
+  assert.strictEqual(s.rules[0].style.fill.bgColor.argb, 'FFFFD965');
+  assert.strictEqual(X.sombreadoVacias(1, 21).ref, 'A3:U3', 'con la columna SUCURSAL llega a la U');
+  assert.strictEqual(X.sombreadoVacias(0, 20), null, 'sin renglones no hay sombreado');
+});

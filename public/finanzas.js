@@ -1151,6 +1151,9 @@ const Finanzas = (() => {
     });
     const ultima = filas.length + 2, hasta = ultima + 300; // listas desplegables también en renglones vacíos, para seguir capturando
     ws.autoFilter = { from: { row: 2, column: 1 }, to: { row: Math.max(ultima, 2), column: COLS.length } };
+    // Celdas vacías en amarillo, como en el Excel (se despintan solas al llenarlas).
+    const sombreado = CxpExcel.sombreadoVacias(filas.length, COLS.length);
+    if (sombreado) ws.addConditionalFormatting(sombreado);
     // Hoja LISTA con las columnas de la del Excel (proveedor, beneficiario, concepto, método, días, status, tipo de gasto).
     const lw = wb.addWorksheet('LISTA');
     const listas = CxpExcel.listasCxp(d, Object.values(d.categorias));

@@ -91,7 +91,16 @@
   }
   // Listas desplegables de la hoja CXP, como en el Excel: columna → columna de LISTA. STATUS no: es fórmula.
   const VALIDACIONES_CXP = [['B', 'G'], ['C', 'A'], ['D', 'B'], ['I', 'D'], ['Q', 'C']];
+  // Sombreado de celdas vacías, como en el Excel (formato condicional «LEN(TRIM(celda))=0», amarillo FFD965): se pinta
+  // mientras la celda está vacía y se quita sola al llenarla. Solo en los renglones con datos, de la A a la última columna.
+  const COLOR_VACIA = 'FFFFD965';
+  const letra = n => { let s = ''; for (; n > 0; n = Math.floor((n - 1) / 26)) s = String.fromCharCode(65 + ((n - 1) % 26)) + s; return s; };
+  function sombreadoVacias(renglones, columnas) {
+    if (!(renglones > 0)) return null;
+    return { ref: `A3:${letra(columnas)}${renglones + 2}`, rules: [{ type: 'expression', priority: 1, formulae: ['LEN(TRIM(A3))=0'],
+      style: { fill: { type: 'pattern', pattern: 'solid', bgColor: { argb: COLOR_VACIA } } } }] };
+  }
 
   return { TIPOS_GASTO, esTipoGasto, tipoGastoTexto, tipoGastoExcel, STATUS, statusDe, METODOS_EXCEL, metodoExcel, capturoCorto, folioExcel,
-    COLUMNAS_CXP, COL_FECHAS, renglonesCxp, listasCxp, VALIDACIONES_CXP };
+    COLUMNAS_CXP, COL_FECHAS, renglonesCxp, listasCxp, VALIDACIONES_CXP, COLOR_VACIA, sombreadoVacias };
 });
