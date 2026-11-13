@@ -338,6 +338,9 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
     ['cambiaSaldo', 'Contabilidad › Flujo de banco: guardar el saldo inicial del banco de un mes (queda para todos, con quién y cuándo)'],
     ['cierraMes', 'Contabilidad: cerrar un mes ya terminado (después solo Dirección cambia cobros, pagos y anticipos de ese mes)'],
     ['editaFlujo', 'Contabilidad › Flujo de banco: «Editar tabla» y guardar correcciones en las celdas (marcas, textos, monto CFDI, cuenta de banco)'],
+    ['veCuentasBanco', 'Elegir la cuenta de banco al pagar, cobrar o confirmar un cobro (con ella el movimiento recibe su folio)'],
+    ['poneClaveFolio', 'Poner la clave de folio de una cuenta de banco (STD, BNT, PAG, CAJ…)'],
+    ['asignaFolios', 'Contabilidad › Flujo de banco: «Asignar folios pendientes» a lo que ya tiene cuenta con clave'],
     ['agregaMovFlujo', 'Contabilidad › Flujo de banco: agregar un movimiento que no pasó por el sistema (traspaso, préstamo, comisión…) y desglosar un pago en varios renglones'],
   ];
   // Proyectos y tareas (2026-11-11): Dirección le asigna una tarea a Tito (técnico que no es observador de ningún rol).
@@ -351,6 +354,9 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
   const ok = r => r[0] === 200 || r[0] === 201;
   // Un renglón del flujo de banco para corregir (Editar Contabilidad parte 3, 2026-11-12): del mes en curso o, a inicio de mes, del anterior.
   const FLUJO_ED = await (async () => { for (const mes of [HOY.slice(0, 7), dia(-31).slice(0, 7)]) { const f = (await pedir('GET', '/contabilidad/flujo?mes=' + mes, A))[1].flujo?.[0]; if (f) return { mes, ref: f.ref }; } throw new Error('No hay renglones en el flujo de banco para la foto'); })();
+  // Folios de banco (parte 5, 2026-11-12): una cuenta SIN clave para probar quién la pone (con clave inválida, así no
+  // cambia nada: las demás pruebas pagan sin elegir cuenta).
+  const CUENTA_CLAVE = exigir(await pedir('POST', '/conciliacion/cuentas', A, { nombre: 'Cuenta foto clave', banco: 'Santander', sucursal_id: qro.id }), 'cuenta para la clave').id;
   for (const [rol] of ROLES) {
     const t = OBSERVA[rol];
     const editar = async lead => { const v = (await pedir('GET', '/leads/' + lead.id, A))[1].version; return ok(await pedir('PUT', '/leads/' + lead.id, t, { version: v, observaciones: 'Revisión ' + rol })); };
@@ -453,6 +459,9 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
     { const mesViejo = '2025-' + String(ROLES.findIndex(r => r[0] === rol) + 1).padStart(2, '0');
       VE[rol].cambiaSaldo = ok(await pedir('POST', '/contabilidad/saldo-inicial', t, { mes: mesViejo, sucursal: qro.id, cuenta: 0, saldo: '1000.00' }));
       VE[rol].cierraMes = ok(await pedir('POST', '/contabilidad/cierre', t, { mes: mesViejo, sucursal: qro.id })); }
+    VE[rol].veCuentasBanco = ok(await pedir('GET', '/cuentas-banco', t));
+    { const [sc] = await pedir('POST', `/cuentas-banco/${CUENTA_CLAVE}/clave`, t, { clave: '!!' }); VE[rol].poneClaveFolio = sc === 400; } // 400 = sí puede (la clave inválida no se guarda); 403 = no
+    VE[rol].asignaFolios = ok(await pedir('POST', '/contabilidad/flujo/folios-pendientes', t, {}));
     VE[rol].agregaMovFlujo = ok(await pedir('POST', '/contabilidad/flujo/movimientos', t, { sucursal: qro.id, fecha: dia(0), tipo: 'egreso', monto: '1.' + String(ROLES.findIndex(r => r[0] === rol) + 10), categoria: 'comision', concepto: 'Comisión foto ' + rol, cuenta: 0 }));
     VE[rol].editaFlujo = ok(await pedir('POST', '/contabilidad/flujo/correcciones', t, { mes: FLUJO_ED.mes, cambios: [{ ref: FLUJO_ED.ref, campo: 'observaciones_z', valor: 'Foto ' + rol }] }));
     VE[rol].editaMetas = ok(await pedir('PUT', '/tablero/metas', t, { mes: HOY.slice(0, 7), metas: { venta: 100000 } }));
@@ -652,6 +661,10 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
       admin: { editaMetas: 1, enviaReporte: 1 }, ...Object.fromEntries(['gerente', 'costos', 'ventas', 'atencion', 'tecnico', 'marketing', 'marketing_gerente'].map(r => [r, { editaMetas: 0, enviaReporte: 0 }])) }],
     ['2026-11-11', 'Análisis comercial: los indicadores nuevos (satisfacción, cobranza a tiempo, servicios en fecha, recompras) los ve quien ve el análisis comercial, cada quien con lo suyo; nada de cuentas por pagar ni dinero de la empresa (eso queda en el Panorama, para Dirección y el Gerente).', {
       admin: { veIndicadores: 1 }, gerente: { veIndicadores: 1 }, ventas: { veIndicadores: 1 }, atencion: { veIndicadores: 1 }, ...Object.fromEntries(['tecnico', 'costos', 'marketing', 'marketing_gerente'].map(r => [r, { veIndicadores: 0 }])) }],
+    ['2026-11-12', 'Folios de banco: cada movimiento recibe su folio al registrarse con su cuenta (STD-E-0001…). Eligen la cuenta quienes pagan, cobran ya confirmado o confirman cobros (Dirección, Gerente, Ventas, Atención y Compras); el técnico no. La clave de folio de una cuenta y «Asignar folios pendientes» los hacen Dirección, el Gerente y quien tiene «Contabilidad del mes» (el Contador). Los folios nunca se reusan ni se borran.', {
+      admin: { veCuentasBanco: 1, poneClaveFolio: 1, asignaFolios: 1 }, gerente: { veCuentasBanco: 1, poneClaveFolio: 1, asignaFolios: 1 },
+      ...Object.fromEntries(['ventas', 'atencion', 'costos'].map(r => [r, { veCuentasBanco: 1, poneClaveFolio: 0, asignaFolios: 0 }])),
+      ...Object.fromEntries(['tecnico', 'marketing', 'marketing_gerente'].map(r => [r, { veCuentasBanco: 0, poneClaveFolio: 0, asignaFolios: 0 }])) }],
     ['2026-11-12', 'Contabilidad › Flujo de banco: agregar movimientos que no pasaron por el sistema (traspasos, préstamos, comisiones, devoluciones) y desglosar un pago en varios renglones (varias facturas o una factura por unidad) lo hacen Dirección, el Gerente y quien tiene «Contabilidad del mes» (el Contador). Un movimiento no se borra: se cancela con motivo; un renglón del desglose se quita y queda en la bitácora. Un mes cerrado, solo Dirección. Los demás roles no.', {
       admin: { agregaMovFlujo: 1 }, gerente: { agregaMovFlujo: 1 }, ...Object.fromEntries(['costos', 'ventas', 'atencion', 'tecnico', 'marketing', 'marketing_gerente'].map(r => [r, { agregaMovFlujo: 0 }])) }],
     ['2026-11-12', 'Contabilidad › Flujo de banco: «Editar tabla» y guardar correcciones en las celdas (marcas S/FALTA/NA, textos, monto CFDI, cuenta de banco) lo hacen Dirección, el Gerente y quien tiene «Contabilidad del mes» (el Contador). Cada corrección queda con quién, cuándo y el valor anterior, y se puede regresar al dato del sistema. El saldo, X comprobar, los importes y las fechas no se corrigen ahí. Un mes cerrado lo corrige solo Dirección. Los demás roles no.', {

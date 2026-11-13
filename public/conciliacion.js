@@ -31,14 +31,16 @@ const Conciliacion = (() => {
     const d = D;
     const nueva = `<details class="cc-nueva"${d.cuentas.length ? '' : ' open'}><summary class="btn btn-outline">+ Nueva cuenta de banco</summary><div class="ant-form"><div class="form-grid-2">
       <div class="campo"><label for="cc-n-nombre">Nombre (como lo anotan al pagar; obligatorio)</label><input id="cc-n-nombre" maxlength="80" placeholder="Ej. Santander empresa"></div>
-      <div class="campo"><label for="cc-n-banco">Banco (obligatorio)</label><select id="cc-n-banco"><option>Santander</option><option>Banorte</option><option>BBVA</option><option>Otro</option></select></div>
+      <div class="campo"><label for="cc-n-banco">Banco (obligatorio)</label><select id="cc-n-banco"><option>Santander</option><option>Banorte</option><option>BBVA</option><option>Pagadora</option><option>Caja (efectivo)</option><option>Otro</option></select></div>
       <div class="campo"><label for="cc-n-term">Últimos 4 dígitos (opcional)</label><input id="cc-n-term" maxlength="4" inputmode="numeric"></div>
+      <div class="campo"><label for="cc-n-clave">Clave de folio (obligatoria; va en cada folio)</label><input id="cc-n-clave" maxlength="6" placeholder="Ej. STD, BNT, PAG, CAJ" autocapitalize="characters"></div>
       </div><button type="button" class="btn btn-primario" data-cc="crear-cuenta">Guardar cuenta</button></div></details>`;
     if (!d.cuenta) return `<p class="ayuda">Para conciliar, primero da de alta la cuenta de banco (Santander, Banorte…). Después subes cada mes el estado de cuenta que bajas del portal.</p>${nueva}`;
     const t = d.totales;
     const cab = `<div class="cc-cab"><label>Cuenta <select id="cc-cuenta">${d.cuentas.map(c => `<option value="${Number(c.id)}"${c.id === d.cuenta.id ? ' selected' : ''}>${esc(c.nombre)}${c.terminacion ? ' ••' + esc(c.terminacion) : ''}${c.sucursal ? ' · ' + esc(c.sucursal) : ''}</option>`).join('')}</select></label>
       <label class="btn btn-primario cc-subir">📤 Subir estado de cuenta<input type="file" id="cc-archivo" accept=".xlsx,.csv,.txt" hidden></label>
-      <button type="button" class="btn btn-outline" data-cc="emparejar">🔗 Emparejar solos</button></div>${nueva}<div id="cc-mapeo"></div>`;
+      <button type="button" class="btn btn-outline" data-cc="emparejar">🔗 Emparejar solos</button>
+      ${d.cuenta.clave_folio ? `<span class="ayuda">Folios: <b>${esc(d.cuenta.clave_folio)}</b>-I / -E</span>` : '<button type="button" class="btn btn-outline" data-cc="clave-folio">🏷️ Poner clave de folio</button>'}</div>${nueva}<div id="cc-mapeo"></div>`;
     const tarjetas = `<div class="logs-tarjetas">
       <div class="tarjeta-dinero"><small>Movimientos del banco en el mes</small><b>${Number(t.movimientos)}</b><span>abonos ${esc(dinero(t.abonos))} · cargos ${esc(dinero(t.cargos))}</span></div>
       <div class="tarjeta-dinero"><small>Conciliados</small><b>${Number(t.conciliados)}</b></div>
@@ -140,7 +142,13 @@ const Conciliacion = (() => {
     const b = e.target.closest('[data-cc]'); if (!b || !$('cc-cuerpo')?.contains(b)) return;
     const a = b.dataset.cc, id = Number(b.dataset.id) || 0, extra = $('cc-extra-' + id);
     const hacer = async (fn, ok) => { b.disabled = true; try { await fn(); if (ok) toast(ok); recargarAhora(); } catch (err) { toast(err.message); } finally { b.disabled = false; } };
-    if (a === 'crear-cuenta') return hacer(async () => { const r = await pedir('/conciliacion/cuentas', { method: 'POST', body: JSON.stringify({ nombre: $('cc-n-nombre').value, banco: $('cc-n-banco').value, terminacion: $('cc-n-term').value, sucursal_id: Number($('ct-sucursal')?.value) || undefined }) }); CUENTA = r.id; }, 'Cuenta guardada');
+    if (a === 'crear-cuenta') return hacer(async () => {
+      if (!$('cc-n-clave').value.trim()) throw new Error('Escribe la clave de folio de la cuenta (por ejemplo STD): con ella se folian sus movimientos');
+      const r = await pedir('/conciliacion/cuentas', { method: 'POST', body: JSON.stringify({ nombre: $('cc-n-nombre').value, banco: $('cc-n-banco').value, terminacion: $('cc-n-term').value, clave_folio: $('cc-n-clave').value, sucursal_id: Number($('ct-sucursal')?.value) || undefined }) }); CUENTA = r.id; }, 'Cuenta guardada');
+    // Poner la clave de folio a una cuenta que no la tiene (2026-11-12).
+    if (a === 'clave-folio') return hacer(async () => {
+      const clave = await solicitarDialogo({ titulo: 'Clave de folio', mensaje: 'Va en cada folio de esta cuenta, por ejemplo STD-E-0001. De 2 a 6 letras o números. Ya con folios, no se cambia.', aceptar: 'Guardar', campo: { tipo: 'text', etiqueta: 'Clave (STD, BNT, PAG, CAJ…)', requerido: 'Escribe la clave' } });
+      if (!clave) throw new Error('No se cambió la clave'); await pedir('/cuentas-banco/' + Number(CUENTA) + '/clave', { method: 'POST', body: JSON.stringify({ clave }) }); }, 'Clave guardada');
     if (a === 'emparejar') return hacer(async () => { const r = await pedir('/conciliacion/cuentas/' + CUENTA + '/emparejar', { method: 'POST', body: '{}' }); toast(`${r.emparejados} emparejado(s)`); });
     if (a === 'subir') return subir(b);
     if (a === 'cancelar-mapeo') { ARCHIVO = null; $('cc-mapeo').innerHTML = ''; return; }

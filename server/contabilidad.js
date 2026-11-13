@@ -113,7 +113,7 @@ module.exports = function contabilidad(app, db, h) {
   //  · Saldo inicial por cuenta y sucursal: el que se escribió en ese mes o, si no, el último escrito antes más lo que se movió
   //    desde entonces (como la hoja, que arranca del final del mes anterior); sin ninguno escrito, lo que acumuló el CRM.
   const clave = t => String(t ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
-  const cuentasBanco = () => (tabla('cuentas_banco') ? db.prepare('SELECT id, nombre, banco, terminacion, sucursal_id, activa FROM main.cuentas_banco ORDER BY id').all() : []);
+  const cuentasBanco = () => (tabla('cuentas_banco') ? db.prepare(`SELECT id, nombre, banco, terminacion, sucursal_id, activa${db.prepare('PRAGMA table_info(cuentas_banco)').all().some(c => c.name === 'clave_folio') ? ', clave_folio' : ''} FROM main.cuentas_banco ORDER BY id`).all() : []);
   // A qué cuenta de banco va un texto escrito a mano («Santander nómina», «BNT 4521», «Banorte»…), dentro de su sucursal.
   function cuentaDeTexto(texto, suc, cuentas) {
     const t = clave(texto); if (!t) return 0;
@@ -244,15 +244,38 @@ module.exports = function contabilidad(app, db, h) {
     }
     const todas = filas.flatMap(f => [f, ...(hijos.get(f.ref) || [])]);
     aplicarCorrecciones(todas);
+    // Folios (parte 5): el folio vigente de cada movimiento y su cuenta (el folio manda: nació con esa cuenta).
+    const folios = new Map(tabla('folios_banco') ? db.prepare("SELECT ref, folio, cuenta_id FROM main.folios_banco WHERE estado = 'vigente'").all().map(r => [r.ref, r]) : []);
+    for (const f of filas) { const fo = folios.get(f.ref); if (fo) { f.folio = fo.folio; f.cuenta_id = fo.cuenta_id; } }
     // El renglón de arriba: su monto CFDI y no deducible son la suma de los de abajo, y su concepto dice si ya cuadra
     // (DESGLOSADO) o falta (X DESGLOSAR), salvo que alguien lo haya corregido. Los de abajo van en su misma cuenta.
     for (const f of filas) {
       const hs = hijos.get(f.ref); if (!hs?.length) continue;
-      for (const h of hs) h.cuenta_id = f.cuenta_id;
+      for (const h of hs) { h.cuenta_id = f.cuenta_id; h.folio = f.folio; }
       if (f.anticipo) continue; // la entrega de un anticipo ya suma lo comprobado
       f.cfdi_monto = hs.reduce((t, h) => t + Number(h.cfdi_monto || 0), 0); f.no_deducible = hs.reduce((t, h) => t + Number(h.no_deducible || 0), 0);
       if (!f.corregido?.concepto) f.concepto = f.cfdi_monto + f.no_deducible === f.egreso + f.ingreso ? 'DESGLOSADO' : 'X DESGLOSAR';
       f.desglosado = true;
+    }
+    // Folios que ya no tienen movimiento vigente (se canceló) o cambiaron de cuenta: se quedan en su lugar, en gris y sin
+    // importe, para que la serie no tenga huecos escondidos.
+    if (tabla('folios_banco')) {
+      const activos = new Set(filas.map(f => f.ref)), cuentas = new Map(cuentasBanco().map(c => [c.id, c]));
+      const sucOk = s => (sucursal ? s === Number(sucursal) : true) && db.prepare('SELECT en_alcance(?) v').get(s).v;
+      for (const fo of db.prepare(`SELECT f.*, u.nombre AS usuario FROM main.folios_banco f LEFT JOIN main.usuarios u ON u.id = f.cambio_usuario_id
+          WHERE 1 = 1${rangoSql('f.fecha_mov')}`).all()) {
+        if (fo.estado === 'vigente' && activos.has(fo.ref)) continue;
+        const c = cuentas.get(fo.cuenta_id); if (!c || !sucOk(c.sucursal_id)) continue;
+        const leyenda = fo.estado === 'vigente' ? 'CANCELADO' : fo.estado === 'reasignado' ? 'CAMBIÓ A ' + fo.reasignado_a : 'SE QUITÓ LA CUENTA';
+        todas.push({ orden: fo.fecha_mov + '|9|' + fo.id, ref: 'folio:' + fo.id, fantasma: true, folio: fo.folio, sucursal_id: c.sucursal_id, cuenta_id: fo.cuenta_id, fecha: fo.fecha_mov,
+          marca_transf: '', marca_oc: '', marca_comp: '', concepto_banco: fo.concepto || '', clabe: '', beneficiario: '', egreso: 0, ingreso: 0, metodo: '', cfdi: '', complemento: '', tercero: '',
+          concepto: leyenda, observaciones: `Folio ${fo.folio} por ${pesos(fo.monto_cent || 0).toFixed(2)}` + (fo.usuario ? ` · cambió ${fo.usuario}` : ''), cfdi_monto: 0, no_deducible: 0,
+          cuenta_abono: '', proyecto: '', unidad: '', tipo_gasto: '', cuenta_tercero: '', via: '', cuenta_salida: '', por_comprobar_cent: 0, datos_sistema: leyenda });
+      }
+      // Cada fantasma en su lugar por fecha (los movimientos y su desglose no se separan).
+      const grupos = []; for (const f of todas) { if (f.es_desglose) grupos[grupos.length - 1].push(f); else grupos.push([f]); }
+      grupos.sort((a, b) => a[0].fecha.localeCompare(b[0].fecha) || 0);
+      return grupos.flat();
     }
     return todas;
   }
@@ -301,8 +324,8 @@ module.exports = function contabilidad(app, db, h) {
   // Cuentas que se muestran en el selector: las de las sucursales elegidas y «Sin cuenta» (0).
   function cuentasDe(sucursales) {
     const ids = new Set(sucursales);
-    return [...cuentasBanco().filter(c => ids.has(c.sucursal_id)).map(c => ({ id: c.id, nombre: c.nombre, banco: c.banco, terminacion: c.terminacion || '', sucursal_id: c.sucursal_id, activa: !!c.activa })),
-      { id: 0, nombre: 'Sin cuenta', banco: '', terminacion: '', sucursal_id: null, activa: true }];
+    return [...cuentasBanco().filter(c => ids.has(c.sucursal_id)).map(c => ({ id: c.id, nombre: c.nombre, banco: c.banco, terminacion: c.terminacion || '', clave_folio: c.clave_folio || '', sucursal_id: c.sucursal_id, activa: !!c.activa })),
+      { id: 0, nombre: 'Sin cuenta', banco: '', terminacion: '', clave_folio: '', sucursal_id: null, activa: true }];
   }
   // Saldo inicial del mes por cada sucursal y cuenta (cuenta = null: todas). Encadenado: el último escrito (de ese mes o de
   // antes) más lo que se movió desde ese mes; sin ninguno escrito, todo lo que acumuló el CRM antes del mes.
@@ -335,24 +358,27 @@ module.exports = function contabilidad(app, db, h) {
     const nombreCuenta = id => cuentas.find(c => c.id === id)?.nombre || 'Sin cuenta';
     let saldo = si.saldo_cent, n = 0; const kDe = new Map();
     return { saldo_inicial: pesos(si.saldo_cent), saldo_inicial_crm: pesos(si.crm_cent), saldos_iniciales: si.sucursales, cuenta: cuentaN,
-      cuentas: cuentas.map(c => ({ ...c, movimientos: todas.filter(f => f.cuenta_id === c.id && !f.es_desglose).length })),
+      cuentas: cuentas.map(c => ({ ...c, movimientos: todas.filter(f => f.cuenta_id === c.id && !f.es_desglose && !f.fantasma).length })),
+      sin_folio: todas.filter(f => !f.es_desglose && !f.fantasma && !f.folio).length,
       puede_editar: puede(req), es_direccion: P.direccion(req), editables: Object.keys(EDITABLES), editables_desglose: Object.keys(CAMPOS_DESGLOSE), categorias_mov: CATEG_MOV,
       filas: filas.map(({ orden, anticipo, por_comprobar_cent, sucursal_id, ...f }) => {
         saldo += f.ingreso - f.egreso;
         // Un renglón de un mes cerrado lo corrige solo Dirección.
         f.editable = !f.auto && puede(req) && (P.direccion(req) || !app.locals.contabilidadCierres.cerrado(f.fecha.slice(0, 7), sucursal_id));
         // Un renglón del desglose: lleva el número (K) de su pago, sin saldo ni X comprobar propios.
-        if (f.es_desglose) return { ...f, consecutivo: kDe.get(f.padre) || '', cuenta: '', saldo: null, egreso: 0, ingreso: 0, cfdi_monto: pesos(f.cfdi_monto), no_deducible: pesos(f.no_deducible), por_comprobar: null, revisar: '' };
+        if (f.es_desglose) return { ...f, consecutivo: f.folio || kDe.get(f.padre) || '—', cuenta: '', saldo: null, egreso: 0, ingreso: 0, cfdi_monto: pesos(f.cfdi_monto), no_deducible: pesos(f.no_deducible), por_comprobar: null, revisar: '' };
+        // Un folio cancelado o reasignado: en gris, sin importe, sin saldo y sin editar.
+        if (f.fantasma) return { ...f, editable: false, consecutivo: f.folio, cuenta: nombreCuenta(f.cuenta_id), saldo: null, egreso: 0, ingreso: 0, cfdi_monto: 0, no_deducible: 0, por_comprobar: null, revisar: '' };
         const porComprobar = por_comprobar_cent ?? f.egreso + f.ingreso - f.cfdi_monto - f.no_deducible;
         // Lo que decía el sistema en una columna de dinero corregida, en pesos como el resto del renglón.
         if (f.corregido) for (const c of Object.keys(f.corregido)) if (DINERO.has(c)) f.corregido[c] = { ...f.corregido[c], sistema: pesos(f.corregido[c].sistema) };
-        const k = f.egreso ? String(++n) : '.'; kDe.set(f.ref, k);
+        const k = f.folio || '—'; kDe.set(f.ref, k); n++;
         return { ...f, consecutivo: k, cuenta: f.cuenta_id ? nombreCuenta(f.cuenta_id) : f.cuenta_salida ? f.cuenta_salida + ' (sin ligar)' : 'Sin cuenta',
           egreso: pesos(f.egreso), ingreso: pesos(f.ingreso), saldo: pesos(saldo), cfdi_monto: pesos(f.cfdi_monto), no_deducible: pesos(f.no_deducible), por_comprobar: pesos(porComprobar),
-          revisar: [f.complemento === 'FALTA' ? 'Falta el complemento de pago' : '', f.comprobante === 'Factura sin XML' ? 'Falta el XML' : '', porComprobar > 0 && f.egreso ? (anticipo ? 'Se comprueba con los gastos del anticipo' : f.desglosado ? 'Falta desglosar' : 'Por comprobar') : ''].filter(Boolean).join(' · ') };
+          revisar: [!f.folio ? (f.cuenta_id ? 'Sin folio: la cuenta no tiene clave' : 'Sin folio: falta la cuenta') : '', f.complemento === 'FALTA' ? 'Falta el complemento de pago' : '', f.comprobante === 'Factura sin XML' ? 'Falta el XML' : '', porComprobar > 0 && f.egreso ? (anticipo ? 'Se comprueba con los gastos del anticipo' : f.desglosado ? 'Falta desglosar' : 'Por comprobar') : ''].filter(Boolean).join(' · ') };
       }) };
   }
-  app.locals.flujoBanco = { saldoInicial, cuentasDe };
+  app.locals.flujoBanco = { saldoInicial, cuentasDe, cuentaDeTexto: (texto, suc) => cuentaDeTexto(texto, suc, cuentasBanco()) };
 
   app.get('/api/contabilidad/resumen', h((req, res) => {
     if (!puede(req)) return negar(res);
@@ -377,6 +403,7 @@ module.exports = function contabilidad(app, db, h) {
       if (!f) return res.status(404).json({ error: 'Un renglón ya no existe en el flujo de este mes (¿se canceló?). Recarga la pantalla.' });
       if (app.locals.contabilidadCierres.cerrado(f.fecha.slice(0, 7), f.sucursal_id) && !P.direccion(req)) return res.status(409).json({ error: 'Ese mes ya está cerrado en Contabilidad: solo Dirección puede corregirlo.', codigo: 'MES_CERRADO' });
       if (f.auto) return res.status(400).json({ error: 'Ese renglón es un gasto del anticipo: se corrige en Cuentas por pagar' });
+      if (f.fantasma) return res.status(400).json({ error: 'Ese folio ya no tiene movimiento (se canceló o cambió de cuenta): no se corrige' });
       // Un renglón del desglose es de quien lo agregó: se cambia ahí mismo (con su rastro en la bitácora).
       if (f.ref.startsWith('desglose:')) {
         if (!(campo in CAMPOS_DESGLOSE)) return res.status(400).json({ error: `En un renglón del desglose no se cambia «${ETIQ[campo] || campo}»` });
@@ -411,6 +438,8 @@ module.exports = function contabilidad(app, db, h) {
         db.prepare('INSERT INTO main.flujo_correcciones (ref, campo, valor, valor_anterior, mes, sucursal_id, usuario_id, usuario) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
           .run(f.ref, campo, valor, antes == null ? null : String(antes), f.fecha.slice(0, 7), f.sucursal_id, req.usuarioSesion.id, req.usuarioSesion.nombre);
         const nuevo = valor === null ? (f.corregido?.[campo]?.sistema ?? '') : valorDe(campo, valor);
+        // Cambiar la cuenta cambia el folio: el viejo queda reasignado y el movimiento recibe el siguiente de la cuenta nueva.
+        if (campo === 'cuenta_id' && app.locals.folios) app.locals.folios.reasignar(req, f.ref, Number(nuevo) || 0, f.egreso ? 'E' : 'I', f.fecha, f.egreso || f.ingreso, f.concepto_banco);
         app.locals.auditoria?.registrar(req, 'contabilidad', f.sucursal_id, 'flujo corregido', `${f.fecha.split('-').reverse().join('/')} · ${f.concepto_banco} · ${ETIQ[campo]}: ${legible(campo, antes, cuentas)} → ${legible(campo, nuevo, cuentas)}${valor === null ? ' (el del sistema)' : ''}`);
       }
       for (const { f, campo, nuevo, antes } of desglose) {
@@ -476,6 +505,7 @@ module.exports = function contabilidad(app, db, h) {
     if (concepto.length < 3 || concepto.length > 200) return res.status(400).json({ error: 'Escribe el concepto como lo trae el banco (3 a 200 letras)' });
     const cuenta = Number(b.cuenta || 0);
     if (!Number.isInteger(cuenta) || !app.locals.flujoBanco.cuentasDe([suc]).some(c => c.id === cuenta)) return res.status(400).json({ error: 'Esa cuenta de banco no es de la sucursal' });
+    { const r = app.locals.folios?.resolver(suc, cuenta, { requerida: true }); if (r?.error) return res.status(400).json(r); } // con cuentas con folio, hay que decir cuál
     if (app.locals.contabilidadCierres.cerrado(fecha.slice(0, 7), suc) && !P.direccion(req)) return res.status(409).json({ error: 'Ese mes ya está cerrado en Contabilidad: solo Dirección puede agregarle movimientos.', codigo: 'MES_CERRADO' });
     const texto = (v, n) => { const t = String(v ?? '').trim().replace(/\s+/g, ' ').slice(0, n); return t || null; };
     const monto = Math.round(Number(x) * 100);
@@ -503,6 +533,17 @@ module.exports = function contabilidad(app, db, h) {
   }));
 
 
+  // Asignar folios pendientes (parte 5): a lo que ya tiene cuenta con clave y no tiene folio (cargas de Excel, lo registrado
+  // antes de poner las claves, una cuenta corregida), en orden de fecha. Lo de un mes cerrado, solo Dirección.
+  app.post('/api/contabilidad/flujo/folios-pendientes', h((req, res) => {
+    if (!puede(req)) return res.status(403).json({ error: 'Asignan folios Dirección, el Gerente y quien tenga «Contabilidad del mes»' });
+    const filas = filasFlujo(req, null, null, null).filter(f => !f.es_desglose && !f.fantasma && !f.folio && f.cuenta_id).sort((a, b) => a.fecha.localeCompare(b.fecha) || a.orden.localeCompare(b.orden));
+    const cerrado = (f) => app.locals.contabilidadCierres.cerrado(f.fecha.slice(0, 7), f.sucursal_id) && !P.direccion(req);
+    const asignados = db.transaction(() => filas.filter(f => !cerrado(f)).map(f => app.locals.folios.asignar(req, f.ref, f.cuenta_id, f.egreso ? 'E' : 'I', f.fecha, f.egreso || f.ingreso, f.concepto_banco)).filter(Boolean)).immediate();
+    if (asignados.length) app.locals.auditoria?.registrar(req, 'contabilidad', null, 'folios asignados', `${asignados.length} folio(s): ${asignados.slice(0, 20).join(', ')}${asignados.length > 20 ? '…' : ''}`);
+    res.json({ ok: true, asignados: asignados.length, omitidos: filas.length - asignados.length });
+  }));
+
   // Solo el flujo de banco de una cuenta (para el Excel: una hoja por cuenta, como la hoja «STD» de Dirección).
   app.get('/api/contabilidad/flujo', h((req, res) => {
     if (!puede(req)) return negar(res);
@@ -510,7 +551,7 @@ module.exports = function contabilidad(app, db, h) {
     const suc = req.query.sucursal ? Number(req.query.sucursal) : null;
     if (!app.locals.contabilidadCierres.sucursalesDe(req, suc)) return res.status(404).json({ error: 'No encontrado' });
     const f = flujoDelMes(req, mes, suc, req.query.cuenta);
-    res.json({ flujo: f.filas, saldo_inicial: f.saldo_inicial, saldo_inicial_crm: f.saldo_inicial_crm, saldos_iniciales: f.saldos_iniciales, flujo_cuenta: f.cuenta, cuentas: f.cuentas, puede_editar: f.puede_editar, es_direccion: f.es_direccion, editables: f.editables, editables_desglose: f.editables_desglose, categorias_mov: f.categorias_mov });
+    res.json({ flujo: f.filas, saldo_inicial: f.saldo_inicial, saldo_inicial_crm: f.saldo_inicial_crm, saldos_iniciales: f.saldos_iniciales, flujo_cuenta: f.cuenta, cuentas: f.cuentas, puede_editar: f.puede_editar, es_direccion: f.es_direccion, editables: f.editables, editables_desglose: f.editables_desglose, categorias_mov: f.categorias_mov, sin_folio: f.sin_folio });
   }));
 
   // Los renglones del Excel del mes (la pantalla arma el archivo).
@@ -522,7 +563,7 @@ module.exports = function contabilidad(app, db, h) {
     const claveSuc = id => app.locals.sucursales?.claveDe?.(id) || '';
     const flujo = flujoDelMes(req, mes, suc, req.query.cuenta);
     res.json({
-      flujo: flujo.filas, saldo_inicial: flujo.saldo_inicial, saldo_inicial_crm: flujo.saldo_inicial_crm, saldos_iniciales: flujo.saldos_iniciales, flujo_cuenta: flujo.cuenta, cuentas: flujo.cuentas, puede_editar: flujo.puede_editar, es_direccion: flujo.es_direccion, editables: flujo.editables, editables_desglose: flujo.editables_desglose, categorias_mov: flujo.categorias_mov,
+      flujo: flujo.filas, saldo_inicial: flujo.saldo_inicial, saldo_inicial_crm: flujo.saldo_inicial_crm, saldos_iniciales: flujo.saldos_iniciales, flujo_cuenta: flujo.cuenta, cuentas: flujo.cuentas, puede_editar: flujo.puede_editar, es_direccion: flujo.es_direccion, editables: flujo.editables, editables_desglose: flujo.editables_desglose, categorias_mov: flujo.categorias_mov, sin_folio: flujo.sin_folio,
       cierre: app.locals.contabilidadCierres.estadoCierre(req, mes, app.locals.contabilidadCierres.sucursalesDe(req, suc) || []),
       resumen: resumen(mes, suc),
       facturas: facturas.map(f => ({ tipo: f.tipo_documento === 'pago' ? 'Complemento de pago' : 'Factura', fecha: String(f.fecha_timbrado || '').slice(0, 10), folio: [f.serie, f.folio].filter(Boolean).join('-'), uuid: f.uuid || '',

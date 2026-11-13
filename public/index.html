@@ -1458,6 +1458,7 @@
       <div class="campo"><label for="cobro-monto">Monto (MXN, obligatorio)</label><input id="cobro-monto" type="text" inputmode="decimal" autocomplete="off"></div>
       <div class="campo"><span class="etiqueta-campo">¿Cómo pagó? (obligatorio)</span><div class="metodos" id="cobro-metodos"></div></div>
       <div class="campo"><label for="cobro-fecha">Fecha en que llegó el dinero (obligatorio)</label><input id="cobro-fecha" type="date"></div>
+      <div class="campo perm-cobros-directo"><label for="cobro-cuenta">¿A qué cuenta entró? (obligatorio; con ella recibe su folio)</label><select id="cobro-cuenta" data-cuentas-banco></select></div>
       <div class="campo perm-cobros-ajustes"><label for="cobro-tipo">Tipo (opcional)</label><select id="cobro-tipo"><option value="">Automático (anticipo o pago)</option><option value="anticipo">Anticipo</option><option value="pago">Pago</option><option value="ajuste">Ajuste o descuento</option></select></div>
       <details><summary>Más datos (referencia y nota)</summary>
         <div class="campo"><label for="cobro-referencia">Referencia (opcional: núm. de transferencia o cheque)</label><input id="cobro-referencia" maxlength="120"></div>
@@ -1508,6 +1509,7 @@
         <div class="form-grid-2">
           <div class="campo"><label for="gasto-fecha-pago">Fecha de pago (obligatorio)</label><input id="gasto-fecha-pago" type="date"></div>
           <div class="campo"><label for="gasto-referencia">Referencia / vía de pago (opcional)</label><input id="gasto-referencia" maxlength="120" placeholder="Ej. Nómina semana 40"></div>
+          <div class="campo perm-dinero-mover"><label for="gasto-cuenta">¿De qué cuenta salió? (obligatorio si hay cuentas; con ella recibe su folio)</label><select id="gasto-cuenta" data-cuentas-banco></select></div>
         </div>
       </div>
       <button type="button" class="btn btn-primario btn-ancho" id="gasto-guardar">Guardar</button>
@@ -1582,7 +1584,7 @@
       <div class="campo"><span class="etiqueta-campo">¿Cómo se pagó? (obligatorio)</span><div class="metodos" id="pagoprov-metodos"></div></div>
       <div class="campo"><label for="pagoprov-fecha">Fecha del pago (obligatorio)</label><input id="pagoprov-fecha" type="date"></div>
       <div class="campo"><label for="pagoprov-referencia">Referencia (opcional)</label><input id="pagoprov-referencia" maxlength="120"></div>
-      <div class="campo"><label for="pagoprov-cuenta">¿De qué cuenta salió? (opcional)</label><input id="pagoprov-cuenta" maxlength="80" list="pagoprov-cuentas" placeholder="Ej. Santander empresa, tarjeta de Luis Perea"><datalist id="pagoprov-cuentas"><option value="Santander empresa"></option><option value="Banamex"></option><option value="Banorte"></option><option value="Efectivo caja"></option></datalist></div>
+      <div class="campo" data-cb-ocultar="no"><label for="pagoprov-cuenta-id">¿De qué cuenta salió? (obligatorio si hay cuentas; con ella recibe su folio)</label><select id="pagoprov-cuenta-id" data-cuentas-banco></select><label for="pagoprov-cuenta" class="sr-only">Cuenta de salida escrita (opcional)</label><input data-cb-texto id="pagoprov-cuenta" maxlength="80" list="pagoprov-cuentas" placeholder="Ej. Santander empresa, tarjeta de Luis Perea"><datalist id="pagoprov-cuentas"><option value="Santander empresa"></option><option value="Banamex"></option><option value="Banorte"></option><option value="Efectivo caja"></option></datalist></div>
       <div id="pagoprov-xml"></div><input id="pagoprov-xml-archivo" type="file" accept=".xml,application/xml,text/xml" hidden>
       <div id="pagoprov-historial"></div>
       <button type="button" class="btn btn-primario btn-ancho" id="pagoprov-guardar">Guardar pago</button>
@@ -1932,7 +1934,8 @@
 <script src="servicios-tabla.js?v=pf1"></script>
 <script src="flujo.js?v=con1"></script>
 <script src="cuentas.js?v=rev1"></script>
-<script src="finanzas.js?v=ap2"></script>
+<script src="cuentas-banco.js?v=fb1"></script>
+<script src="finanzas.js?v=fb1"></script>
 <script src="calendario.js?v=esp1"></script>
 <script src="tareas.js?v=tg1"></script>
 <script src="tablero.js?v=dir1"></script>

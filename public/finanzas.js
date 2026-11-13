@@ -100,7 +100,7 @@ const Finanzas = (() => {
   $('cobro-guardar').addEventListener('click', e => conBoton(e.currentTarget, async () => {
     if (!COBRO) return;
     const cuerpo = { monto: $('cobro-monto').value.trim(), metodo: metodoElegido('cobro-metodos'), fecha: $('cobro-fecha').value,
-      referencia: $('cobro-referencia').value, notas: $('cobro-notas').value };
+      referencia: $('cobro-referencia').value, notas: $('cobro-notas').value, cuenta_id: CuentasBanco.valor('cobro-cuenta') };
     if (esAdmin() && $('cobro-tipo').value) cuerpo.tipo = $('cobro-tipo').value;
     const r = await enviar('/leads/' + COBRO.leadId + '/cobros', 'POST', cuerpo);
     if (!r) return;
@@ -148,7 +148,7 @@ const Finanzas = (() => {
     const pagos = r.cobros.length ? r.cobros.map(k => `
       <div class="pago-fila${k.cancelado ? ' cancelado' : ''}">
         <div><b>${formatoMoneda(k.monto)}</b> · ${esc(NOMBRE_METODO[k.metodo] || k.metodo)} · ${esc(fechaTxt(k.fecha))}${k.tipo !== 'pago' ? ' · ' + esc(k.tipo) : ''}
-          <small>Registró ${esc(k.registrado_por_nombre || '—')}${k.referencia ? ' · Ref. ' + esc(k.referencia) : ''}${k.notas ? ' · ' + esc(k.notas) : ''}</small>
+          <small>${k.folio ? '<b>Folio ' + esc(k.folio) + '</b> · ' : ''}Registró ${esc(k.registrado_por_nombre || '—')}${k.referencia ? ' · Ref. ' + esc(k.referencia) : ''}${k.notas ? ' · ' + esc(k.notas) : ''}</small>
           ${k.cancelado ? `<small class="motivo">Cancelado: ${esc(k.motivo_cancelacion || '')}</small>` : (!k.confirmado ? '<span class="estado-cxc por-confirmar">Por confirmar</span>' : '')}
         </div>
         ${r.puede_operar && !k.cancelado ? `<div class="btn-group">${!k.confirmado && (k.registrado_por !== USUARIO_ACTUAL?.id || cobroQuedaConfirmado()) ? `<button type="button" class="btn btn-outline" data-cobro-confirmar="${Number(k.id)}">Confirmar</button>` : ''}<button type="button" class="btn btn-outline perm-dinero-mover" data-cobro-cancelar="${Number(k.id)}">Cancelar</button></div>` : ''}
@@ -171,7 +171,7 @@ const Finanzas = (() => {
   }
   // Quien no ve las cuentas por cobrar (p. ej. el técnico): registra lo que cobró en campo y ve solo esos pagos, con su
   // estado. Sin total, cobrado, saldo ni vencimiento.
-  const detalleCobro = k => { const t = [k.referencia ? 'Ref. ' + k.referencia : '', k.notas || ''].filter(Boolean).join(' · '); return t ? '<small>' + esc(t) + '</small>' : ''; };
+  const detalleCobro = k => { const t = [k.folio ? 'Folio ' + k.folio : '', k.referencia ? 'Ref. ' + k.referencia : '', k.notas || ''].filter(Boolean).join(' · '); return t ? '<small>' + esc(t) + '</small>' : ''; };
   function cobranzaSoloPropios(r) {
     const pagos = r.cobros.length ? r.cobros.map(k => `
       <div class="pago-fila${k.cancelado ? ' cancelado' : ''}">
@@ -205,7 +205,9 @@ const Finanzas = (() => {
         factura_total: $('fact-total').value.trim() === '' ? null : $('fact-total').value.trim() }) }));
       toast('Crédito y factura guardados'); await recargar();
     });
-    if (btn.dataset.cobroConfirmar) return conBoton(btn, async () => { await json(await api('/finanzas/cobros/' + Number(btn.dataset.cobroConfirmar) + '/confirmar', { method: 'POST' })); toast('Pago confirmado'); await recargar(); });
+    // Al confirmar entra al flujo de banco: se elige a qué cuenta entró (folios de banco, 2026-11-12).
+    if (btn.dataset.cobroConfirmar) return conBoton(btn, async () => { const cuenta_id = await CuentasBanco.elegir('¿A qué cuenta entró este pago?'); if (cuenta_id === null) return;
+      await json(await api('/finanzas/cobros/' + Number(btn.dataset.cobroConfirmar) + '/confirmar', { method: 'POST', body: JSON.stringify({ cuenta_id: cuenta_id || undefined }) })); toast('Pago confirmado'); await recargar(); });
     if (btn.dataset.cobroCancelar) {
       const motivo = await pedirMotivo('Cancelar pago'); if (!motivo) return;
       return conBoton(btn, async () => { await json(await api('/finanzas/cobros/' + Number(btn.dataset.cobroCancelar) + '/cancelar', { method: 'POST', body: JSON.stringify({ motivo }) })); toast('Pago cancelado; el saldo se actualizó'); await recargar(); });
@@ -313,7 +315,8 @@ const Finanzas = (() => {
   }
   $('cuentas-por-confirmar').addEventListener('click', async e => {
     const btn = e.target.closest('button'); if (!btn) return;
-    if (btn.dataset.confirmar) conBoton(btn, async () => { await json(await api('/finanzas/cobros/' + Number(btn.dataset.confirmar) + '/confirmar', { method: 'POST' })); toast('Pago confirmado'); cargar(); });
+    if (btn.dataset.confirmar) conBoton(btn, async () => { const cuenta_id = await CuentasBanco.elegir('¿A qué cuenta entró este pago?'); if (cuenta_id === null) return;
+      await json(await api('/finanzas/cobros/' + Number(btn.dataset.confirmar) + '/confirmar', { method: 'POST', body: JSON.stringify({ cuenta_id: cuenta_id || undefined }) })); toast('Pago confirmado'); cargar(); });
     if (btn.dataset.cancelar) {
       const motivo = await pedirMotivo('Cancelar pago'); if (!motivo) return;
       conBoton(btn, async () => { await json(await api('/finanzas/cobros/' + Number(btn.dataset.cancelar) + '/cancelar', { method: 'POST', body: JSON.stringify({ motivo }) })); toast('Pago cancelado'); cargar(); });
@@ -778,7 +781,7 @@ const Finanzas = (() => {
     const pagos = await api('/finanzas/cxp/' + id + '/pagos').then(json).catch(() => []);
     $('pagoprov-historial').innerHTML = pagos.length ? '<div class="seccion-tit">Pagos registrados</div>' + pagos.map(g => `
       <div class="pago-fila${g.cancelado ? ' cancelado' : ''}"><div><b>${formatoMoneda(g.monto)}</b> · ${esc(NOMBRE_METODO[g.metodo] || g.metodo)} · ${esc(fechaTxt(g.fecha))}
-        <small>Registró ${esc(g.registrado_por_nombre || '—')}${g.referencia ? ' · Ref. ' + esc(g.referencia) : ''}</small>${g.cancelado ? `<small class="motivo">Cancelado: ${esc(g.motivo_cancelacion || '')}</small>` : ''}</div>
+        <small>${g.folio ? '<b>Folio ' + esc(g.folio) + '</b> · ' : ''}Registró ${esc(g.registrado_por_nombre || '—')}${g.referencia ? ' · Ref. ' + esc(g.referencia) : ''}</small>${g.cancelado ? `<small class="motivo">Cancelado: ${esc(g.motivo_cancelacion || '')}</small>` : ''}</div>
         ${!g.cancelado ? `<button type="button" class="btn btn-outline perm-dinero-mover" data-cancelar-pagoprov="${Number(g.id)}">Cancelar</button>` : ''}</div>`).join('') : '<p class="util-45">Sin pagos registrados.</p>';
   }
   // XML de la factura del gasto: sus datos y descargarlo; si no tiene, lo sube quien registró el gasto o quien paga.
@@ -831,7 +834,7 @@ const Finanzas = (() => {
   });
   $('pagoprov-guardar').addEventListener('click', e => conBoton(e.currentTarget, async () => {
     if (!PAGO_PROV) return;
-    const r = await enviar('/finanzas/cxp/' + PAGO_PROV.id + '/pagos', 'POST', { monto: $('pagoprov-monto').value.trim(), metodo: metodoElegido('pagoprov-metodos'), fecha: $('pagoprov-fecha').value, referencia: $('pagoprov-referencia').value, cuenta_origen: $('pagoprov-cuenta').value });
+    const r = await enviar('/finanzas/cxp/' + PAGO_PROV.id + '/pagos', 'POST', { monto: $('pagoprov-monto').value.trim(), metodo: metodoElegido('pagoprov-metodos'), fecha: $('pagoprov-fecha').value, referencia: $('pagoprov-referencia').value, cuenta_origen: $('pagoprov-cuenta').value, cuenta_id: CuentasBanco.valor('pagoprov-cuenta-id') });
     if (!r) return;
     $('overlay-pago-prov').classList.remove('mostrar'); toast('Pago a proveedor guardado'); cargar({ pestana: 'pagar' }); refrescarFichaProv();
   }));
@@ -1024,7 +1027,7 @@ const Finanzas = (() => {
       xml: GASTO_XML?.texto || null, xml_nombre: GASTO_XML?.nombre || null,
       factura_folio: $('gasto-folio').value, lead_id: leadId, equipo: $('gasto-equipo').value,
       ya_pagado: pagado, metodo: metodoElegido('gasto-metodos'), anticipo_id: GASTO_ANTICIPO?.id || null,
-      fecha_pago: pagado ? $('gasto-fecha-pago').value : null, referencia: pagado ? $('gasto-referencia').value : null });
+      fecha_pago: pagado ? $('gasto-fecha-pago').value : null, referencia: pagado ? $('gasto-referencia').value : null, cuenta_id: pagado ? CuentasBanco.valor('gasto-cuenta') : undefined });
     if (!r) return;
     $('overlay-gasto').classList.remove('mostrar');
     toast(r.anticipo ? (r.anticipo.por_reembolsar > 0 ? `Gasto comprobado: ${formatoMoneda(r.anticipo.usado)} con el anticipo y ${formatoMoneda(r.anticipo.por_reembolsar)} por reembolsar` : 'Gasto comprobado con el anticipo') : pagado ? 'Gasto registrado como pagado' : 'Cuenta por pagar registrada');

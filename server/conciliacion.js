@@ -122,7 +122,7 @@ module.exports = function conciliacion(app, db, h) {
     if (!puede(req)) return negar(res);
     const cuentas = db.prepare('SELECT * FROM main.cuentas_banco WHERE activa = 1 AND en_alcance(sucursal_id) ORDER BY nombre').all();
     const mes = MES.test(req.query.mes || '') ? req.query.mes : hoyMexico().slice(0, 7);
-    const lista = cuentas.map(c => ({ id: c.id, nombre: c.nombre, banco: c.banco, terminacion: c.terminacion || '', sucursal: app.locals.sucursales?.claveDe?.(c.sucursal_id) || '', columnas: c.columnas ? JSON.parse(c.columnas) : null }));
+    const lista = cuentas.map(c => ({ id: c.id, nombre: c.nombre, banco: c.banco, terminacion: c.terminacion || '', clave_folio: c.clave_folio || '', sucursal: app.locals.sucursales?.claveDe?.(c.sucursal_id) || '', columnas: c.columnas ? JSON.parse(c.columnas) : null }));
     const c = req.query.cuenta ? cuentaDe(req, req.query.cuenta) : cuentas[0];
     if (!c) return res.json({ cuentas: lista, mes, cuenta: null, puede_gasto: P.direccion(req) || P.puede(req, 'dinero.mover') });
     const d = mes + '-01', hst = mes + '-31';
@@ -132,7 +132,7 @@ module.exports = function conciliacion(app, db, h) {
     const sum = (a, k) => a.reduce((t, x) => t + x[k], 0);
     const ultimoSaldo = [...banco].reverse().find(b => b.saldo_cent != null);
     res.json({ cuentas: lista, mes, puede_gasto: P.direccion(req) || P.puede(req, 'dinero.mover'),
-      cuenta: { id: c.id, nombre: c.nombre, banco: c.banco, terminacion: c.terminacion || '', columnas: c.columnas ? JSON.parse(c.columnas) : null },
+      cuenta: { id: c.id, nombre: c.nombre, banco: c.banco, terminacion: c.terminacion || '', clave_folio: c.clave_folio || '', columnas: c.columnas ? JSON.parse(c.columnas) : null },
       conciliados: banco.filter(b => b.conciliado_id).map(b => fila(b, porClave)),
       banco_sin_crm: banco.filter(b => !b.conciliado_id && !b.no_aplica).map(b => fila(b)),
       no_aplica: banco.filter(b => b.no_aplica).map(b => fila(b)),
@@ -152,8 +152,13 @@ module.exports = function conciliacion(app, db, h) {
     const suc = Number(b.sucursal_id) || req.alcanceSuc?.permitidas?.[0];
     if (!suc || !(app.locals.sucursales?.lista?.() || []).some(s => s.id === suc) || !enAlcance(suc)) return res.status(400).json({ error: 'Elige la sucursal' });
     if (db.prepare('SELECT 1 FROM main.cuentas_banco WHERE sucursal_id = ? AND nombre = ? COLLATE NOCASE').get(suc, nombre)) return res.status(409).json({ error: 'Ya hay una cuenta con ese nombre en la sucursal' });
+    // Clave de folio (2026-11-12): va en cada folio de la cuenta (STD-E-0001). Única en todo el sistema.
+    const clave = b.clave_folio ? String(b.clave_folio).trim().toUpperCase() : null;
+    if (clave && !require('./folios-banco').CLAVE.test(clave)) return res.status(400).json({ error: 'La clave de folio va en cada folio: de 2 a 6 letras o números, sin espacios (por ejemplo STD, BNT, PAG o CAJ)' });
+    if (clave && db.prepare('SELECT 1 FROM main.cuentas_banco WHERE clave_folio = ?').get(clave)) return res.status(409).json({ error: `La clave ${clave} ya es de otra cuenta` });
     const id = Number(db.prepare('INSERT INTO main.cuentas_banco (nombre, banco, terminacion, sucursal_id, creada_por) VALUES (?, ?, ?, ?, ?)').run(nombre, banco, term, suc, yo(req)).lastInsertRowid);
-    app.locals.auditoria?.registrar(req, 'conciliacion', id, 'cuenta de banco', `${nombre} · ${banco}${term ? ' ••' + term : ''}`);
+    if (clave) db.prepare('UPDATE main.cuentas_banco SET clave_folio = ? WHERE id = ?').run(clave, id);
+    app.locals.auditoria?.registrar(req, 'conciliacion', id, 'cuenta de banco', `${nombre} · ${banco}${term ? ' ••' + term : ''}${clave ? ' · folios ' + clave : ''}`);
     res.status(201).json({ id });
   }));
 
@@ -274,8 +279,9 @@ module.exports = function conciliacion(app, db, h) {
       const id = Number(db.prepare(`INSERT INTO main.cuentas_por_pagar (proveedor_id, categoria, concepto, fecha_documento, fecha_vencimiento, total_cent, notas, registrado_por, dias_credito, tipo_comprobante)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?)`).run(prov.id, categoria, concepto, m.fecha, m.fecha, m.cargo_cent, `Registrado desde la conciliación de ${m.cuenta_nombre} (${dma(m.fecha)}${m.referencia ? ', ref. ' + m.referencia : ''})`, yo(req), comp).lastInsertRowid);
       app.locals.sucursales.asignar('cuentas_por_pagar', id, m.sucursal_id);
-      const pago = Number(db.prepare("INSERT INTO main.pagos_proveedor (cxp_id, fecha, monto_cent, metodo, referencia, registrado_por, cuenta_origen) VALUES (?, ?, ?, 'domiciliado', ?, ?, ?)")
-        .run(id, m.fecha, m.cargo_cent, texto(m.referencia, 120), yo(req), m.cuenta_nombre).lastInsertRowid);
+      // Con la cuenta del estado de cuenta: así recibe su folio de esa cuenta (2026-11-12).
+      const pago = Number(db.prepare("INSERT INTO main.pagos_proveedor (cxp_id, fecha, monto_cent, metodo, referencia, registrado_por, cuenta_origen, cuenta_id) VALUES (?, ?, ?, 'domiciliado', ?, ?, ?, ?)")
+        .run(id, m.fecha, m.cargo_cent, texto(m.referencia, 120), yo(req), m.cuenta_nombre, m.cuenta_id).lastInsertRowid);
       db.prepare("UPDATE main.movimientos_banco SET conciliado_tipo = 'pago', conciliado_id = ?, conciliado_auto = 0, conciliado_por = ?, conciliado_at = datetime('now','localtime') WHERE id = ?").run(pago, yo(req), m.id);
       return id;
     })();

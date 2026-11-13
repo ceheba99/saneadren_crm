@@ -92,7 +92,7 @@ const Nomina = (() => {
         <h3>Registrar el pago</h3>
         <div class="form-grid-2">
           <div class="campo"><label for="nm-p-via">¿Cómo se pagó? (obligatorio)</label><select id="nm-p-via">${VIAS.map(([v, x]) => `<option value="${v}">${esc(x)}</option>`).join('')}</select></div>
-          <div class="campo"><label for="nm-p-cuenta">Cuenta de salida (obligatorio)</label><input id="nm-p-cuenta" maxlength="80" list="nm-cuentas" placeholder="Ej. Santander nómina"><datalist id="nm-cuentas"><option value="Santander nómina"></option><option value="Banorte nómina"></option></datalist></div>
+          <div class="campo"><label for="nm-p-cuenta-id">Cuenta de salida (obligatorio; con ella recibe su folio)</label><select id="nm-p-cuenta-id" data-cuentas-banco></select><input data-cb-texto id="nm-p-cuenta" maxlength="80" list="nm-cuentas" placeholder="Ej. Santander nómina"><datalist id="nm-cuentas"><option value="Santander nómina"></option><option value="Banorte nómina"></option></datalist></div>
           <div class="campo"><label for="nm-p-fecha">Fecha de pago (obligatorio)</label><input id="nm-p-fecha" type="date" value="${esc(hoy())}" max="${esc(hoy())}"></div>
           <div class="campo"><label for="nm-p-ref">Referencia (opcional)</label><input id="nm-p-ref" maxlength="120" placeholder="Ej. Layout 15/11"></div>
         </div>
@@ -174,9 +174,10 @@ const Nomina = (() => {
       return conBoton(b, async () => { await pedir('/nomina/' + D.id + '/reabrir', { method: 'POST', body: JSON.stringify({ motivo }) }); toast('Nómina reabierta'); cargar(); });
     }
     if (a === 'pagar') return conBoton(b, async () => {
-      const cuerpo = { metodo: $('nm-p-via').value, cuenta_origen: $('nm-p-cuenta').value, fecha: $('nm-p-fecha').value, referencia: $('nm-p-ref').value };
-      if (!cuerpo.cuenta_origen.trim()) { toast('Escribe de qué cuenta salió'); $('nm-p-cuenta').focus(); return; }
-      if (!await solicitarDialogo({ titulo: 'Registrar pago', mensaje: `Se registra el pago de la nómina por ${dinero(D.totales.total)} desde «${cuerpo.cuenta_origen}». Queda como gasto de «Sueldos» ya pagado.`, aceptar: 'Registrar pago' })) return;
+      const cuerpo = { metodo: $('nm-p-via').value, cuenta_origen: $('nm-p-cuenta').value, cuenta_id: CuentasBanco.valor('nm-p-cuenta-id'), fecha: $('nm-p-fecha').value, referencia: $('nm-p-ref').value };
+      // Con cuentas dadas de alta se elige de la lista; sin cuentas, se escribe como antes.
+      if (!$('nm-p-cuenta-id').hidden ? !cuerpo.cuenta_id : !cuerpo.cuenta_origen.trim()) { toast('Elige de qué cuenta salió'); ($('nm-p-cuenta-id').hidden ? $('nm-p-cuenta') : $('nm-p-cuenta-id')).focus(); return; }
+      if (!await solicitarDialogo({ titulo: 'Registrar pago', mensaje: `Se registra el pago de la nómina por ${dinero(D.totales.total)} desde «${cuerpo.cuenta_origen || $('nm-p-cuenta-id').selectedOptions[0]?.textContent || ''}». Queda como gasto de «Sueldos» ya pagado.`, aceptar: 'Registrar pago' })) return;
       await pedir('/nomina/' + D.id + '/pagar', { method: 'POST', body: JSON.stringify(cuerpo) }); toast('Pago de nómina registrado'); cargar();
     });
     if (a === 'lista') return conBoton(b, async () => {
