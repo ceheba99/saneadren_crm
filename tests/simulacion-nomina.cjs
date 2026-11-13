@@ -148,6 +148,61 @@ const dia = k => { const x = new Date(HOY + 'T12:00:00Z'); x.setUTCDate(x.getUTC
     try { d.prepare('UPDATE nomina_lineas SET otros_cent = 1 WHERE nomina_id = ?').run(nom.id); } catch (e) { e2 = e.message; }
     d.close();
     revisa(/no se borran/.test(e1) && /no se cambia/.test(e2), 'La base no deja borrar ni cambiar una nómina pagada', [e1, e2]); }
+  // Auditoría de Finanzas (2026-11-13), falla A: quien cambia de sucursal con las dos nóminas ABIERTAS entraba en ambas
+  // y cobraba dos veces. Una persona solo está en UNA nómina por semana, sea cual sea el estado.
+  console.log('7. Una persona, una sola nómina por semana');
+  const cdmx = exigir(await pedir('POST', '/sucursales', A, { nombre: 'Ciudad de México', clave: 'CDMX' }), 'crear CDMX');
+  const diego = exigir(await pedir('POST', '/personal', A, { nombre: 'Diego Cambia', puesto: 'Operador', sucursal_id: qro.id, bono_semanal: 1000 }), 'ficha Diego');
+  { const d = new DatabaseSync(DB); d.prepare('UPDATE personal SET checa = 0 WHERE id = ?').run(diego.id); d.close(); } // solo sueldo: sin pendientes del checador
+  const S3 = dia(-21);
+  const nq = exigir(await pedir('POST', '/nomina/preparar', A, { desde: S3, sucursal_id: qro.id }), 'preparar QRO');
+  const lDq = nq.lineas.find(l => /Diego/.test(l.nombre));
+  revisa(!!lDq, 'Diego entra en la nómina de QRO (abierta)');
+  exigir(await pedir('PUT', '/nomina/lineas/' + lDq.id, A, { otros: 50, otros_nota: 'Viáticos de la semana' }), 'otros de Diego');
+  exigir(await pedir('PUT', '/personal/' + diego.id, A, { version: (await pedir('GET', '/personal/' + diego.id, A))[1].version, sucursal_id: cdmx.id }), 'Diego a CDMX');
+  const nc = exigir(await pedir('POST', '/nomina/preparar', A, { desde: S3, sucursal_id: cdmx.id }), 'preparar CDMX');
+  revisa(!nc.lineas.some(l => /Diego/.test(l.nombre)), 'Ya está en la nómina abierta de QRO: no entra en la de CDMX de la misma semana', nc.lineas.map(l => l.nombre));
+  revisa((nc.en_otra || []).some(x => /Diego/.test(x.nombre) && /QRO|Quer/i.test(x.sucursal)), 'La pantalla de CDMX dice que Diego está en la nómina de QRO', nc.en_otra);
+  revisa(exigir(await pedir('GET', '/nomina?desde=' + S3 + '&sucursal=' + qro.id, A), 'ver QRO').lineas.some(l => /Diego/.test(l.nombre)), 'Sigue en la de QRO (tiene datos capturados): una sola nómina');
+  // Datos que ya quedaron duplicados (de antes de la corrección): ninguna de las dos se cierra.
+  { const d = new DatabaseSync(DB);
+    d.prepare("INSERT INTO nomina_lineas (nomina_id, personal_id, nombre, puesto, bono_cent, otros_cent, otros_nota) VALUES (?, ?, 'Diego Cambia', 'Operador', 100000, 2000, 'Duplicada de antes') ON CONFLICT(nomina_id, personal_id) DO UPDATE SET otros_cent = 2000, otros_nota = 'Duplicada de antes'").run(nc.id, diego.id); d.close(); }
+  [s, r] = await pedir('POST', '/nomina/' + nc.id + '/cerrar', A, {});
+  revisa(s === 409 && r.codigo === 'EN_OTRA_NOMINA' && /Diego/.test(r.error) && /QRO/.test(r.error), 'Con Diego también en la de QRO, la de CDMX no se cierra y dice en cuál está', r);
+  [s, r] = await pedir('POST', '/nomina/' + nq.id + '/cerrar', A, {});
+  revisa(s === 409 && r.codigo === 'EN_OTRA_NOMINA' && /Diego/.test(r.error) && /CDMX/.test(r.error), 'Tampoco se cierra la de QRO', r);
+  { const lDc = exigir(await pedir('GET', '/nomina?desde=' + S3 + '&sucursal=' + cdmx.id, A), 'ver CDMX').lineas.find(l => /Diego/.test(l.nombre));
+    exigir(await pedir('PUT', '/nomina/lineas/' + lDc.id, A, { otros: '' }), 'quitar lo capturado en CDMX');
+    const rr = exigir(await pedir('POST', '/nomina/' + nc.id + '/actualizar', A, {}), 'actualizar CDMX');
+    revisa(!rr.lineas.some(l => /Diego/.test(l.nombre)), 'Quitado lo capturado en CDMX, «Actualizar» lo saca de ahí'); }
+  [s, r] = await pedir('POST', '/nomina/' + nq.id + '/cerrar', A, {});
+  revisa(r.codigo !== 'EN_OTRA_NOMINA', 'La de QRO ya no se detiene por Diego', r);
+
+  // Falla B: una línea podía quedar en negativo al cerrar (se valida al capturar, pero al cerrar se vuelve a leer la ficha).
+  console.log('8. Ninguna línea en negativo al cerrar ni al pagar');
+  const S2 = dia(-14);
+  const nb = exigir(await pedir('POST', '/nomina/preparar', A, { desde: S2, sucursal_id: cdmx.id }), 'preparar CDMX sem. 2');
+  const lDb = nb.lineas.find(l => /Diego/.test(l.nombre));
+  exigir(await pedir('PUT', '/nomina/lineas/' + lDb.id, A, { descuento: 900, descuento_nota: 'Préstamo que pidió' }), 'descuento de Diego');
+  exigir(await pedir('PUT', '/personal/' + diego.id, A, { version: (await pedir('GET', '/personal/' + diego.id, A))[1].version, bono_semanal: 500 }), 'bajar bono de Diego');
+  [s, r] = await pedir('POST', '/nomina/' + nb.id + '/cerrar', A, {});
+  revisa(s === 409 && r.codigo === 'NEGATIVO' && /Diego Cambia/.test(r.error) && /400\.00/.test(r.error), 'Con el bono bajado, Diego queda en −$400: no se cierra y dice quién y cuánto', r);
+  revisa(exigir(await pedir('GET', '/nomina?desde=' + S2 + '&sucursal=' + cdmx.id, A), 'ver').estado === 'abierta', 'La nómina sigue abierta');
+  exigir(await pedir('PUT', '/nomina/lineas/' + lDb.id, A, { descuento: 400, descuento_nota: 'Préstamo que pidió' }), 'descuento corregido');
+  revisa((await pedir('POST', '/nomina/' + nb.id + '/cerrar', A, {}))[0] === 200, 'Con el descuento corregido sí se cierra');
+  // Una cerrada que ya trae una línea negativa (datos de antes): no se paga.
+  { const d = new DatabaseSync(DB);
+    d.prepare("UPDATE nominas SET estado = 'abierta' WHERE id = ?").run(nb.id);
+    d.prepare('UPDATE nomina_lineas SET descuento_cent = 70000 WHERE id = ?').run(lDb.id);
+    d.prepare("UPDATE nominas SET estado = 'cerrada' WHERE id = ?").run(nb.id); d.close(); }
+  [s, r] = await pedir('POST', '/nomina/' + nb.id + '/pagar', A, { metodo: 'layout', cuenta_origen: 'Santander nómina', fecha: HOY });
+  revisa(s === 409 && r.codigo === 'NEGATIVO' && /Diego Cambia/.test(r.error) && /200\.00/.test(r.error), 'Una nómina cerrada con una línea en negativo no se paga', r);
+  revisa(exigir(await pedir('GET', '/nomina?desde=' + S2 + '&sucursal=' + cdmx.id, A), 'ver').estado === 'cerrada', 'Sigue cerrada, sin gasto registrado');
+  { const d = new DatabaseSync(DB); // se deja como estaba (la revisión de integridad de abajo también marca la línea negativa)
+    d.prepare("UPDATE nominas SET estado = 'abierta' WHERE id = ?").run(nb.id);
+    d.prepare('UPDATE nomina_lineas SET descuento_cent = 40000 WHERE id = ?').run(lDb.id);
+    d.prepare("UPDATE nominas SET estado = 'cerrada' WHERE id = ?").run(nb.id); d.close(); }
+
   const integ = (await pedir('GET', '/admin/integridad', A))[1];
   revisa(integ.errores === 0, 'La revisión de integridad sigue sin errores', (integ.resultados || []).filter(x => x.gravedad === 'error' && x.total).map(x => x.titulo));
   revisa(!/TypeError|SqliteError|Error no manejado/.test(salida), 'El servidor no registró errores internos', salida.split('\n').filter(x => /Error/.test(x)).slice(0, 5));

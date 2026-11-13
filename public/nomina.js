@@ -104,6 +104,7 @@ const Nomina = (() => {
         ${d.estado === 'sin_preparar' ? '<span class="ayuda">Es la propuesta con lo que hay hoy: al prepararla se guarda y ya se puede capturar.</span>' : ''}
         ${d.cerro ? `<span class="ayuda">Cerró ${esc(d.cerro)} el ${esc(fecha(d.cerrada_at))}${d.forzada_motivo ? ' · ' + esc(d.forzada_motivo) : ''}</span>` : ''}
         ${pagoTxt}</div>
+      ${(d.en_otra || []).length ? `<div class="alerta-duplicado mostrar" role="note"><b>Ya están en la nómina de otra sucursal esta semana</b> (una persona solo va en una nómina por semana, así que aquí no entran): ${d.en_otra.map(x => `${esc(x.nombre)} → nómina ${esc(x.sucursal)} (${esc(x.estado)})`).join(' · ')}</div>` : ''}
       <div class="logs-tarjetas">
         <div class="tarjeta-dinero"><small>Total a pagar</small><b>${esc(dinero(t.total))}</b><span>${Number(t.personas)} personas</span></div>
         <div class="tarjeta-dinero"><small>Sueldos IMSS (bruto)</small><b>${esc(dinero(t.sueldo_imss))}</b>${d.sin_neto ? `<span class="rojo">${Number(d.sin_neto)} sin neto del contador</span>` : ''}</div>

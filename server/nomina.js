@@ -103,9 +103,11 @@ module.exports = function nomina(app, db, h) {
     const sem = A.resumenSemana(desde, null, true), porPersona = new Map(sem.filas.map(f => [f.personal_id, f]));
     const ids = db.prepare(`SELECT id FROM main.personal WHERE sucursal_id = ? AND (activo = 1 OR fecha_baja >= ?) AND (fecha_ingreso IS NULL OR fecha_ingreso <= ?) ORDER BY nombre`).all(sucursalId, sem.desde, sem.hasta).map(r => r.id);
     const lineas = [];
-    // Auditoría del checador (2026-11-12): quien ya está en la nómina CERRADA o PAGADA de esta misma semana en otra
-    // sucursal (cambió de sucursal después) no entra otra vez aquí: se pagaba dos veces.
-    const yaEnOtra = db.prepare("SELECT 1 FROM main.nomina_lineas l JOIN main.nominas n ON n.id = l.nomina_id WHERE l.personal_id = ? AND n.desde = ? AND n.sucursal_id <> ? AND n.estado <> 'abierta'");
+    // Auditoría del checador (2026-11-12) y de Finanzas (2026-11-13): una persona está en UNA sola nómina por semana,
+    // sea cual sea su estado (abierta, cerrada o pagada). Quien ya está en la de otra sucursal (cambió de sucursal
+    // después) no entra aquí; la pantalla dice en cuál está (enOtrasDe). Antes solo se miraban las no abiertas y, con
+    // las dos abiertas, entraba en ambas y se pagaba dos veces.
+    const yaEnOtra = db.prepare('SELECT 1 FROM main.nomina_lineas l JOIN main.nominas n ON n.id = l.nomina_id WHERE l.personal_id = ? AND n.desde = ? AND n.sucursal_id <> ?');
     const vigencia = db.prepare('SELECT fecha_ingreso, fecha_baja FROM main.personal WHERE id = ?');
     for (const id of ids) {
       const p = Pe.fichaPago(id), a = porPersona.get(id);
@@ -150,6 +152,25 @@ module.exports = function nomina(app, db, h) {
       db.prepare("UPDATE main.nominas SET actualizada_at = datetime('now','localtime') WHERE id = ?").run(n.id);
     })();
   }
+  // Quien es hoy de esta sucursal pero ya está en la nómina de la misma semana de otra (no entra aquí).
+  const enOtrasDe = (sucursalId, desde) => !sucursalId || !desde ? [] : db.prepare(`SELECT p.id AS personal_id, p.nombre, n.id AS nomina_id, n.sucursal_id, n.estado
+      FROM main.personal p JOIN main.nomina_lineas l ON l.personal_id = p.id JOIN main.nominas n ON n.id = l.nomina_id
+      WHERE p.sucursal_id = ? AND n.desde = ? AND n.sucursal_id <> ? AND (p.activo = 1 OR p.fecha_baja >= ?) ORDER BY p.nombre`).all(sucursalId, desde, sucursalId, desde)
+    .map(x => ({ ...x, sucursal: sucursalTxt(x.sucursal_id) }));
+  // Las líneas de una nómina que también están en otra de la misma semana (datos de antes de la regla): no se cierra
+  // ni se paga hasta que la persona quede en una sola.
+  const duplicadasDe = n => db.prepare(`SELECT l.nombre, o.sucursal_id, o.estado FROM main.nomina_lineas l JOIN main.nomina_lineas x ON x.personal_id = l.personal_id AND x.nomina_id <> l.nomina_id
+      JOIN main.nominas o ON o.id = x.nomina_id WHERE l.nomina_id = ? AND o.desde = ? ORDER BY l.nombre`).all(n.id, n.desde);
+  const errorDuplicadas = (n, que) => {
+    const d = duplicadasDe(n); if (!d.length) return null;
+    return { error: `No se puede ${que}: ${d.map(x => `${x.nombre} también está en la nómina ${sucursalTxt(x.sucursal_id)} de esta semana (${x.estado})`).join(' · ')}. Una persona solo puede estar en una nómina por semana: en la que no le toca, borra lo capturado (neto, descuento, otros) y pulsa «Actualizar»${d.some(x => x.estado !== 'abierta') ? '; si esa otra ya está cerrada, Dirección la reabre primero' : ''}.`, codigo: 'EN_OTRA_NOMINA' };
+  };
+  // Ninguna línea en negativo (auditoría de Finanzas 2026-11-13): al cerrar se vuelve a leer la ficha y una línea podía
+  // quedar negativa; el gasto «Sueldos» la restaba y la lista del banco la omitía.
+  const errorNegativas = (lineas, que) => {
+    const neg = lineas.filter(l => totalDe(l) < 0); if (!neg.length) return null;
+    return { error: `No se puede ${que}: el total queda en negativo en ${neg.map(l => `${l.nombre} (−${fmt(-totalDe(l))})`).join(', ')}. Baja el descuento o revisa su sueldo en la ficha.`, codigo: 'NEGATIVO' };
+  };
   const leer = id => db.prepare('SELECT n.*, uc.nombre AS cerro, up.nombre AS pago FROM main.nominas n LEFT JOIN main.usuarios uc ON uc.id = n.cerrada_por LEFT JOIN main.usuarios up ON up.id = n.pagada_por WHERE n.id = ?').get(Number(id) || 0);
   function salida(req, n, propuesta) {
     const lineas = (propuesta || db.prepare('SELECT * FROM main.nomina_lineas WHERE nomina_id = ? ORDER BY nombre').all(n.id)).map(l => ({
@@ -163,7 +184,7 @@ module.exports = function nomina(app, db, h) {
     const suma = k => Math.round(lineas.reduce((t, l) => t + Math.round(l[k] * 100), 0)) / 100;
     return { id: n?.id || null, estado: n?.estado || 'sin_preparar', sucursal_id: n?.sucursal_id, sucursal: sucursalTxt(n?.sucursal_id), desde: n?.desde, hasta: n?.hasta,
       cerro: n?.cerro || '', cerrada_at: n?.cerrada_at || '', forzada_motivo: n?.forzada_motivo || '', pago: n?.pago || '', fecha_pago: n?.fecha_pago || '', metodo_pago: n?.metodo_pago || '', cuenta_origen: n?.cuenta_origen || '',
-      actualizada_at: n?.actualizada_at || '', lineas,
+      actualizada_at: n?.actualizada_at || '', lineas, en_otra: enOtrasDe(n?.sucursal_id, n?.desde),
       totales: { personas: lineas.length, sueldo_imss: suma('sueldo_imss'), bono: suma('bono'), extra: suma('extra'), puntualidad: suma('puntualidad'), descuento: suma('descuento'), otros: suma('otros'), total: suma('total'),
         faltas: lineas.reduce((t, l) => t + l.faltas, 0), retardos: lineas.reduce((t, l) => t + l.retardos, 0) },
       pendientes: lineas.filter(l => l.pendientes.length).length, sin_neto: lineas.filter(l => l.falta_neto).length,
@@ -265,6 +286,8 @@ module.exports = function nomina(app, db, h) {
     refrescar(n);
     const lineas = db.prepare('SELECT * FROM main.nomina_lineas WHERE nomina_id = ?').all(n.id);
     if (!lineas.length) return res.status(409).json({ error: 'No hay nadie en esta nómina (nadie checa ni tiene sueldo semanal en su ficha)' });
+    const dup = errorDuplicadas(n, 'cerrar'); if (dup) return res.status(409).json(dup);
+    const neg = errorNegativas(lineas, 'cerrar'); if (neg) return res.status(409).json(neg);
     const sinNeto = lineas.filter(l => l.sueldo_imss_cent > 0 && l.neto_imss_cent == null);
     if (sinNeto.length) return res.status(409).json({ error: `Falta el neto del IMSS (lo da el contador) de: ${sinNeto.map(l => l.nombre).join(', ')}`, codigo: 'FALTA_NETO' });
     const conPend = lineas.filter(l => l.pendientes);
@@ -309,6 +332,8 @@ module.exports = function nomina(app, db, h) {
     const cuenta = texto(x.cuenta_origen, 80) || cta.nombre;
     if (!cuenta) return res.status(400).json({ error: 'Escribe de qué cuenta salió (por ejemplo: Santander nómina, Banorte nómina)' });
     const lineas = db.prepare('SELECT * FROM main.nomina_lineas WHERE nomina_id = ?').all(n.id), total = lineas.reduce((t, l) => t + totalDe(l), 0);
+    const dup = errorDuplicadas(n, 'pagar'); if (dup) return res.status(409).json(dup);
+    const neg = errorNegativas(lineas, 'pagar'); if (neg) return res.status(409).json(neg);
     if (total <= 0) return res.status(409).json({ error: 'La nómina no tiene nada que pagar' });
     const cxpId = db.transaction(() => {
       let prov = db.prepare("SELECT id FROM main.proveedores WHERE nombre = 'Nómina (sueldos)'").get();
