@@ -236,30 +236,89 @@ module.exports = function asistencia(app, db, h) {
   // Checadas válidas de un día y el «Inicio de tiempo extra» que quedó abierto al final (para la madrugada siguiente).
   const validasDe = (pid, f) => db.prepare("SELECT id, tipo, hora, origen, foto_archivo IS NOT NULL AS tiene_foto, foto_borrada_at IS NOT NULL AS foto_borrada FROM main.checadas WHERE personal_id = ? AND fecha = ? AND estado = 'valida' ORDER BY momento_utc, id").all(pid, f);
   function abiertoAlFinal(l) { let a = null; for (const c of l) { if (c.tipo === 'extra_inicia') a = c; else if (c.tipo === 'extra_termina') a = null; } return a; }
-  const cierraLaNoche = l => (l[0]?.tipo === 'extra_termina' && min(l[0].hora.slice(0, 5)) < MEDIANOCHE_HASTA ? l[0] : null);
-  const salidaMadrugada = l => (l[0]?.tipo === 'salida' && min(l[0].hora.slice(0, 5)) < MADRUGADA_HASTA ? l[0] : null);
-  const jornadaAbierta = l => l.some(c => c.tipo === 'entrada') && !l.some(c => c.tipo === 'salida');
+  // ¿Esa hora de ese día es al menos 1 h antes de su hora de entrada? (o no le toca trabajar ese día)
+  const FIN_ANTES_DE_ENTRADA = 60;
+  const antesDeEntrada = (pid, f, hora) => { const d = horarioDe(pid, f)?.dias[diaSemana(f)]; return !d || !!festivoDe(f) || min(String(hora).slice(0, 5)) < min(d.entrada) - FIN_ANTES_DE_ENTRADA; };
+  // El «Fin de tiempo extra» con que empieza un día cierra el extra de anoche si es antes de las 12:00 y (auditoría 13-nov,
+  // G3) al menos 1 h antes de su hora de entrada: un «Fin» a la hora de llegar es que anoche olvidó marcarlo (el kiosco se
+  // lo sugería) y se contaba toda la noche como extra; ese tiempo extra queda «sin fin» para que RH ponga la hora real.
+  // Antes del «Fin» puede haber una «Salida» de madrugada (B3: marcó «Salida» y luego «Fin»): también es de anoche.
+  // También puede haber antes la comida de la noche. Y si después del «Fin» marcó su «Entrada», es un fin real aunque sea
+  // cerca de su hora de entrada (trabajó toda la noche y llegó a su jornada).
+  function cierraLaNoche(pid, f, l) {
+    let k = 0; while (l[k] && ((l[k].tipo === 'salida' && min(l[k].hora.slice(0, 5)) < MADRUGADA_HASTA) || l[k].tipo === 'comida_sale' || l[k].tipo === 'comida_regresa')) k++;
+    const c = l[k];
+    if (c?.tipo !== 'extra_termina' || min(c.hora.slice(0, 5)) >= MEDIANOCHE_HASTA) return null;
+    return antesDeEntrada(pid, f, c.hora) || l.slice(k + 1).some(x => x.tipo === 'entrada') ? c : null;
+  }
+  // La primera «Salida» del día, si es antes de las 06:00 y no hay una «Entrada» antes (puede haber antes un «Fin de tiempo
+  // extra» o la comida de la noche: marcó «Fin» y luego «Salida»).
+  const salidaMadrugada = l => { for (const c of l) { if (c.tipo === 'entrada') return null; if (c.tipo === 'salida') return min(c.hora.slice(0, 5)) < MADRUGADA_HASTA ? c : null; } return null; };
+  // Jornada abierta = su última «Entrada» no tiene «Salida» después (auditoría 13-nov: antes bastaba cualquier «Salida» en
+  // el día, y la «Salida» de madrugada que cerró la noche anterior hacía perder la 3ª noche seguida y la emergencia nocturna).
+  // (Se calcula con los mismos tramos del día: también cuenta el «Inicio de tiempo extra» que hizo de entrada.)
+  const jornadaAbierta = (pid, f) => { const hor = horarioDe(pid, f), dia = hor?.dias[diaSemana(f)] || null; armar(pid, f, validasDe(pid, f), { laboral: !!dia && !festivoDe(f), dia, sinAyer: true }); return armar.ultimo.abre !== null; };
+  // LOS TRAMOS DE UN DÍA (auditoría 13-nov): cada «Entrada» con la «Salida» que le sigue. Antes se tomaba la primera entrada
+  // y la última salida del día y todo lo de en medio contaba: quien regresaba por una emergencia o trabajaba dos ratos en
+  // su descanso cobraba como extra el tiempo que estuvo en su casa. Reglas:
+  //  · La «Salida» de madrugada que cierra la jornada de ayer, y el «Fin» que cierra el extra de anoche (con la «Salida» de
+  //    madrugada que marcó antes), no son de hoy («propias» = las de hoy).
+  //  · Una «Entrada» repetida sin salida en medio no abre otro tramo. Otra «Salida» sin «Entrada» en medio (RH agregó la
+  //    salida real, más tarde) alarga el tramo anterior.
+  //  · 2026-11-12 (Dirección: «marcó tiempo extra como entrada y su salida normal; que lo tome en cuenta»): en día laboral,
+  //    si lo PRIMERO que marcó fue «Inicio de tiempo extra» antes de su hora de salida y no hay «Entrada» antes de su primera
+  //    «Salida», esa checada es su entrada (aunque después regrese con «Entrada» por una emergencia). Igual con un «Fin de
+  //    tiempo extra» que ya no cierra lo de anoche (G3: lo marcó al llegar). En «armar.ultimo» queda el tramo abierto.
+  function armar(pid, f, validas, { laboral, dia, sinAyer = false }) {
+    const m = c => min(c.hora.slice(0, 5));
+    const sm = sinAyer ? null : salidaMadrugada(validas), deAyer = sm && jornadaAbierta(pid, sumar(f, -1)) ? sm : null;
+    // El «Fin» solo cierra anoche si anoche quedó abierto un «Inicio de tiempo extra».
+    const fa = cierraLaNoche(pid, f, validas), finAnoche = fa && abiertoAlFinal(validasDe(pid, sumar(f, -1))) ? fa : null;
+    // «noche» = lo que es de anoche: hasta la «Salida» o el «Fin» que la cierran (con la comida de la noche) y las «Salida»
+    // de madrugada pegadas después (marcó «Fin» y luego «Salida»).
+    let corte = Math.max(deAyer ? validas.indexOf(deAyer) : -1, finAnoche ? validas.indexOf(finAnoche) : -1);
+    if (corte >= 0) while (validas[corte + 1]?.tipo === 'salida' && m(validas[corte + 1]) < MADRUGADA_HASTA) corte++;
+    const noche = validas.slice(0, corte + 1), deAnocheL = noche.filter(c => c !== deAyer), propias = validas.slice(corte + 1);
+    // Una «Salida» de madrugada suelta al empezar el día no decide si el «Inicio» o el «Fin» que sigue es su entrada.
+    let k0 = 0; while (propias[k0]?.tipo === 'salida' && m(propias[k0]) < MADRUGADA_HASTA) k0++;
+    const resto = propias.slice(k0);
+    const iSal = resto.findIndex(c => c.tipo === 'salida'), sinEntradaAntes = !resto.slice(0, iSal < 0 ? resto.length : iSal).some(c => c.tipo === 'entrada');
+    const primera = resto[0];
+    const porExtra = laboral && sinEntradaAntes && primera?.tipo === 'extra_inicia' && m(primera) < min(dia.salida) ? primera : null;
+    const porFin = laboral && sinEntradaAntes && !porExtra && primera?.tipo === 'extra_termina' ? primera : null;
+    const finPropio = porExtra ? (() => { for (const c of resto.slice(1)) { if (c.tipo === 'extra_termina') return true; if (c.tipo === 'extra_inicia') return false; } return false; })() : false;
+    const tramos = [], tramoIds = []; let abre = null, abreId = null, entradaRepetida = false;
+    for (const c of propias) {
+      if (c.tipo === 'entrada' || c === porExtra || c === porFin) { if (abre === null) { abre = m(c); abreId = c.id; } else entradaRepetida = true; }
+      else if (c.tipo === 'salida' && abre !== null) { if (m(c) > abre) { tramos.push([abre, m(c)]); tramoIds.push([abreId, c.id]); } abre = null; }
+      else if (c.tipo === 'salida' && tramos.length && m(c) > tramos.at(-1)[1]) { tramos.at(-1)[1] = m(c); tramoIds.at(-1)[1] = c.id; }
+    }
+    armar.ultimo = { abre, abreId };
+    return { deAyer, finAnoche, deAnocheL, noche, propias, porExtra, porFin, finPropio, tramos, tramoIds, entradaRepetida };
+  }
+  // Minutos en que dos grupos de tramos se empalman (|A| + |B| − |A ∪ B|).
+  const empalme = (a, b) => unidos(a) + unidos(b) - unidos([...a, ...b]);
   function calcularDia(p, fecha, hoy = ahoraMexico().fecha) {
     const hor = horarioDe(p.id, fecha), dia = hor?.dias[diaSemana(fecha)] || null, festivo = festivoDe(fecha), rg = reglaDe(fecha);
     const laboral = !!dia && !festivo;
     const ch = db.prepare('SELECT id, tipo, hora, estado, origen, sin_conexion FROM main.checadas WHERE personal_id = ? AND fecha = ? AND estado <> \'anulada\' ORDER BY momento_utc, id').all(p.id, fecha);
     const validas = ch.filter(c => c.estado === 'valida'), m = c => min(c.hora.slice(0, 5));
-    // La «Salida» de madrugada que cierra la jornada de ayer no es de hoy.
-    const deAyer = salidaMadrugada(validas) && jornadaAbierta(validasDe(p.id, sumar(fecha, -1))) ? validas[0] : null;
-    const entradas = validas.filter(c => c.tipo === 'entrada'), salidas = validas.filter(c => c.tipo === 'salida' && c !== deAyer);
-    // Y al revés: hoy hubo entrada y no salida, y la primera checada de mañana es una «Salida» de madrugada.
-    const cierre = entradas.length && !salidas.length ? salidaMadrugada(validasDe(p.id, sumar(fecha, 1))) : null;
-    // 2026-11-12 (Dirección: «marcó tiempo extra como entrada y su salida normal; que lo tome en cuenta»): en un día
-    // laboral sin «Entrada», si lo PRIMERO que marcó fue «Inicio de tiempo extra» antes de su hora de salida, esa checada
-    // es su entrada. Si no marcó el «Fin», el tiempo extra va de esa hora a su hora de entrada (nunca dentro del horario).
-    const porExtra = laboral && !entradas.length && validas[0]?.tipo === 'extra_inicia' && m(validas[0]) < min(dia.salida) ? validas[0] : null;
-    const finPropio = porExtra ? (() => { for (const c of validas.slice(1)) { if (c.tipo === 'extra_termina') return true; if (c.tipo === 'extra_inicia') return false; } return false; })() : false;
-    const llegada = entradas[0] || porExtra;
-    const eId = llegada?.id, sId = cierre ? cierre.id : salidas.at(-1)?.id;
-    const entrada = llegada ? m(llegada) : null, salida = cierre ? 1440 + m(cierre) : salidas.length ? m(salidas[salidas.length - 1]) : null;
+    const { deAyer, finAnoche, noche, propias, porExtra, porFin, finPropio, tramos, tramoIds, entradaRepetida } = armar(p.id, fecha, validas, { laboral, dia });
+    let { abre, abreId } = armar.ultimo;
+    const entradas = propias.filter(c => c.tipo === 'entrada'), salidas = propias.filter(c => c.tipo === 'salida');
+    // Su último tramo quedó abierto y la primera checada de mañana es una «Salida» de madrugada: esa lo cierra.
+    const manana = validasDe(p.id, sumar(fecha, 1));
+    const cierre = abre !== null ? salidaMadrugada(manana) : null;
+    if (cierre) { tramos.push([abre, 1440 + m(cierre)]); tramoIds.push([abreId, cierre.id]); abre = null; }
+    const llegada = porExtra || porFin || entradas[0];
+    // Su salida es la que cierra su último tramo (una «Salida» de madrugada suelta, sin entrada antes, no es su salida).
+    const salidaC = cierre || (tramoIds.length ? propias.find(c => c.id === tramoIds.at(-1)[1]) : !llegada ? salidas.at(-1) : null) || null;
+    const eId = llegada?.id, sId = salidaC?.id;
+    const entrada = llegada ? m(llegada) : null, salida = tramos.length ? tramos.at(-1)[1] : salidaC ? m(salidaC) : null;
     // Comida: cada salida a comer con el regreso que le sigue.
-    let comida = 0, abierta = null;
-    for (const c of validas) { if (c.tipo === 'comida_sale') abierta = m(c); else if (c.tipo === 'comida_regresa' && abierta !== null) { comida += Math.max(0, m(c) - abierta); abierta = null; } }
+    let comida = 0, abierta = null, comidaEnExtra = 0; const comidas = [];
+    // (La comida que marcó al empezar el día dentro de la noche de ayer es de ayer: se suma abajo, con la de mañana.)
+    for (const c of validas) { if (noche.includes(c)) continue; if (c.tipo === 'comida_sale') abierta = m(c); else if (c.tipo === 'comida_regresa' && abierta !== null) { comida += Math.max(0, m(c) - abierta); comidas.push([abierta, m(c)]); abierta = null; } }
     // Bloques de tiempo extra marcados con los botones.
     // bloqueIds: las checadas de inicio y fin de cada bloque (su foto es la evidencia en el detalle del tiempo extra).
     const bloques = [], bloqueIds = []; let ini = null, iniId = null;
@@ -269,28 +328,42 @@ module.exports = function asistencia(app, db, h) {
     // Pasó de medianoche: el «Fin» es la primera checada del día siguiente (antes de las 12:00) y se cuenta hoy.
     let finOtroDia = null;
     if (ini !== null) {
-      const fin = cierraLaNoche(validasDe(p.id, sumar(fecha, 1)));
+      const fin = cierraLaNoche(p.id, sumar(fecha, 1), manana);
       if (fin) { bloques.push([ini, 1440 + m(fin)]); bloqueIds.push([iniId, fin.id]); finOtroDia = { ...fin, fecha: sumar(fecha, 1) }; ini = null; }
     }
+    // La comida de la noche (después de medianoche, antes de la «Salida» o el «Fin» que cierran esta jornada) es de hoy.
+    { const hasta = Math.max(cierre ? manana.findIndex(c => c.id === cierre.id) : -1, finOtroDia ? manana.findIndex(c => c.id === finOtroDia.id) : -1);
+      let ab = null; for (const c of manana.slice(0, Math.max(0, hasta))) { if (c.tipo === 'comida_sale') ab = 1440 + m(c); else if (c.tipo === 'comida_regresa' && ab !== null) { comida += Math.max(0, 1440 + m(c) - ab); comidas.push([ab, 1440 + m(c)]); ab = null; } } }
     // Y al revés: un «Fin» al empezar el día que cierra el tiempo extra de anoche ya se contó ayer.
-    const primera = validas[0], deAnoche = primera?.tipo === 'extra_termina' && cierraLaNoche(validas) ? abiertoAlFinal(validasDe(p.id, sumar(fecha, -1))) : null;
-    const trabajado = entrada !== null && salida !== null && salida > entrada ? salida - entrada - comida : null;
+    const primera = finAnoche || validas[0], deAnoche = finAnoche ? abiertoAlFinal(validasDe(p.id, sumar(fecha, -1))) : null;
+    const salidaSola = entrada === null && salidas.length > 0; // marcó «Salida» y no «Entrada» (olvidó la entrada)
+    // La comida se resta solo en lo que cae dentro de sus tramos (si cayó entre dos tramos, ya no estaba trabajando).
+    const trabajado = tramos.length ? Math.max(0, unidos(tramos) - empalme(tramos, comidas)) : null;
     // Detalle del tiempo extra (2026-11-11, Dirección: «ver el checado de su tiempo extra más a detalle»): cada tramo
     // con su hora de inicio y fin, por qué cuenta o por qué no, la regla que se usó, el traslape y el redondeo.
     const piezas = [], pieza = (a, b, motivo, cuenta = true, checadas = []) => { if (a !== null && b !== null && b > a) piezas.push({ desde: hhmm(a), hasta: hhmm(b), min: b - a, motivo, cuenta, checadas: checadas.filter(Boolean) }); };
     const r = { personal_id: p.id, nombre: p.nombre, fecha, dia: DIAS[diaSemana(fecha)], horario: hor?.nombre || null, programado: dia, festivo, laboral,
-      entrada: entrada === null ? null : llegada.hora.slice(0, 5), salida: salida === null ? null : (cierre || salidas[salidas.length - 1]).hora.slice(0, 5), salida_dia_siguiente: !!cierre,
+      entrada: entrada === null ? null : llegada.hora.slice(0, 5), salida: salidaC ? salidaC.hora.slice(0, 5) : null, salida_dia_siguiente: !!cierre,
       comida_min: comida, trabajado_min: trabajado, retardo_min: 0, exceso_comida_min: 0, salida_anticipada_min: 0, extra_min: 0,
       por_revisar: ch.filter(c => c.estado === 'por_revisar').length, incidencia: null, falta: false, notas: [] };
     const inc = db.prepare('SELECT tipo FROM main.incidencias_personal WHERE personal_id = ? AND cancelada = 0 AND fecha_inicio <= ? AND fecha_fin >= ? ORDER BY id DESC LIMIT 1').get(p.id, fecha, fecha);
     if (inc) r.incidencia = inc.tipo;
     if (laboral) {
-      if (entrada !== null && entrada > min(dia.entrada) + hor.tolerancia) r.retardo_min = entrada - min(dia.entrada);
-      if (salida !== null && salida < min(dia.salida)) r.salida_anticipada_min = min(dia.salida) - salida;
+      const desdeH = min(dia.entrada), hastaH = min(dia.salida);
+      // Retardo: contra el tramo que cubre su hora de entrada (o el primero después); salida anticipada: el fin del último
+      // tramo que empezó dentro de su horario (si salió temprano y regresó de noche, sí la tiene).
+      const tJ = tramos.find(([, b]) => b > desdeH), entradaJ = tJ ? tJ[0] : entrada;
+      if (entradaJ !== null && entradaJ > desdeH + hor.tolerancia) r.retardo_min = entradaJ - desdeH;
+      const enHorario = tramos.filter(([a]) => a < hastaH), finJ = enHorario.length ? Math.max(...enHorario.map(t => t[1])) : tramos.length ? null : salida;
+      if (finJ !== null && finJ < hastaH) {
+        r.salida_anticipada_min = hastaH - finJ;
+        const vuelta = tramos.find(([a]) => a >= hastaH);
+        if (vuelta) r.notas.push(`Salió a las ${hhmm(finJ)}, antes de su hora de salida (${dia.salida}), y regresó a las ${hhmm(vuelta[0])}`);
+      }
       if (hor.comida && comida > hor.comida) r.exceso_comida_min = comida - hor.comida;
       // Los bloques marcados con los botones solo cuentan FUERA del horario (auditoría 2026-11-05: apretar «Inicio» y
       // «Fin de tiempo extra» a media jornada convertía horas normales en extra).
-      const desdeH = min(dia.entrada), hastaH = min(dia.salida), fuera = bloques.flatMap(([a, b]) => [[a, Math.min(b, desdeH)], [Math.max(a, hastaH), b]]);
+      const fuera = bloques.flatMap(([a, b]) => [[a, Math.min(b, desdeH)], [Math.max(a, hastaH), b]]);
       // Automático (reglas del tiempo extra): llegar antes (si cuenta y pasa los minutos) y quedarse después de la
       // salida (si llega a los minutos: entonces cuenta todo desde la salida). Con «solo botones», solo los bloques.
       const partes = [...fuera];
@@ -300,19 +373,33 @@ module.exports = function asistencia(app, db, h) {
         pieza(Math.max(a, desdeH), Math.min(b, hastaH), 'Botones de tiempo extra dentro de su horario: no cuenta (son horas normales)', false, bloqueIds[k]);
       }
       if (porExtra) r.notas.push('Marcó «Inicio de tiempo extra» al llegar y no marcó «Entrada»: se tomó como su entrada');
+      if (porFin) r.notas.push('Marcó «Fin de tiempo extra» al llegar y no marcó «Entrada»: se tomó como su entrada (el tiempo extra de anoche quedó sin fin: RH pone la hora real)');
       if (rg.modo === 'auto') {
         if (porExtra) { /* lo de antes de su entrada ya es el bloque del botón */ }
-        else if (rg.antes_cuenta && entrada !== null && entrada < desdeH - rg.antes_min) { partes.push([entrada, desdeH]); pieza(entrada, desdeH, `Llegó antes de su entrada (${dia.entrada}): cuenta desde que llegó porque fue más de ${rg.antes_min} min antes`, true, [eId]); r.notas.push(`Llegó ${horas(desdeH - entrada)} antes de su entrada (cuenta como tiempo extra)`); }
-        else if (entrada !== null && entrada < desdeH) pieza(entrada, desdeH, rg.antes_cuenta ? `Llegó antes de su entrada (${dia.entrada}): no cuenta, solo cuenta si llega más de ${rg.antes_min} min antes` : `Llegó antes de su entrada (${dia.entrada}): no cuenta (regla: llegar antes no es tiempo extra)`, false, [eId]);
-        if (salida !== null && salida > hastaH) {
-          if (salida - hastaH >= Math.max(1, rg.despues_min)) { partes.push([hastaH, salida]); pieza(hastaH, salida, `Se quedó después de su salida (${dia.salida})${rg.despues_min ? `: cuenta todo porque pasó los ${rg.despues_min} min` : ''}`, true, [sId]); }
-          else { pieza(hastaH, salida, `Se quedó después de su salida (${dia.salida}): no cuenta, el tiempo extra empieza a los ${rg.despues_min} min`, false, [sId]); r.notas.push(`Se quedó ${horas(salida - hastaH)} después de su salida (no cuenta: el tiempo extra empieza a los ${rg.despues_min} min)`); }
+        // Llegar antes: lo de cada tramo que cae antes de su hora de entrada (sin salida todavía: desde que llegó).
+        else {
+          const antes = tramos.length ? tramos.map(([a, b], k) => [a, Math.min(b, desdeH), k]).filter(([a, b]) => b > a) : entrada !== null && entrada < desdeH ? [[entrada, desdeH, -1]] : [];
+          const a0 = antes.length ? antes[0][0] : null, minAntes = unidos(antes), ids = k => (k < 0 ? [eId] : [tramoIds[k][0]]);
+          if (rg.antes_cuenta && a0 !== null && a0 < desdeH - rg.antes_min) {
+            for (const [a, b, k] of antes) { partes.push([a, b]); pieza(a, b, `Llegó antes de su entrada (${dia.entrada}): cuenta desde que llegó porque fue más de ${rg.antes_min} min antes`, true, ids(k)); }
+            r.notas.push(minAntes === desdeH - a0 ? `Llegó ${horas(desdeH - a0)} antes de su entrada (cuenta como tiempo extra)` : `Llegó ${horas(desdeH - a0)} antes de su entrada (cuentan ${horas(minAntes)} como tiempo extra: salió un rato antes de su hora)`);
+          } else for (const [a, b, k] of antes) pieza(a, b, rg.antes_cuenta ? `Llegó antes de su entrada (${dia.entrada}): no cuenta, solo cuenta si llega más de ${rg.antes_min} min antes` : `Llegó antes de su entrada (${dia.entrada}): no cuenta (regla: llegar antes no es tiempo extra)`, false, ids(k));
         }
+        // Después de su salida: lo de cada tramo que cae después de la hora de salida (si entró ya pasada esa hora, desde que
+        // entró). Si en total llega a los minutos de la regla, cuenta todo.
+        // El umbral se mide sin la comida que tomó en ese rato.
+        const despues = tramos.map(([a, b], k) => [Math.max(a, hastaH), b, k]).filter(([a, b]) => b > a), minDespues = unidos(despues) - empalme(despues, comidas);
+        const evid = (a, k) => (a <= hastaH ? [tramoIds[k][1]] : tramoIds[k]);
+        const por = (a, k) => (a <= hastaH ? `Se quedó después de su salida (${dia.salida})` : k === 0 ? `Entró después de su hora de salida (${dia.salida}): cuenta de su entrada a su salida` : `Regresó a trabajar después de su salida (${dia.salida}): cuenta de su entrada a su salida`);
+        if (despues.length && minDespues >= Math.max(1, rg.despues_min)) for (const [a, b, k] of despues) { partes.push([a, b]); pieza(a, b, por(a, k) + (rg.despues_min && a <= hastaH ? `: cuenta todo porque pasó los ${rg.despues_min} min` : ''), true, evid(a, k)); }
+        else if (despues.length) { for (const [a, b, k] of despues) pieza(a, b, `${por(a, k)}: no cuenta, el tiempo extra empieza a los ${rg.despues_min} min`, false, evid(a, k)); r.notas.push(`Se quedó ${horas(minDespues)} después de su salida (no cuenta: el tiempo extra empieza a los ${rg.despues_min} min)`); }
       } else {
         if (!porExtra) pieza(entrada, salida === null ? desdeH : Math.min(desdeH, salida), `Llegó antes de su entrada (${dia.entrada}): no cuenta (regla: solo cuenta lo marcado con los botones)`, false, [eId]);
         pieza(entrada === null ? hastaH : Math.max(hastaH, entrada), salida, `Se quedó después de su salida (${dia.salida}): no cuenta (regla: solo cuenta lo marcado con los botones)`, false, [sId]);
       }
-      r.extra_min = unidos(partes);
+      // La comida que tomó dentro de su tiempo extra no se paga como extra (auditoría 13-nov, M4).
+      comidaEnExtra = empalme(partes, comidas);
+      r.extra_min = unidos(partes) - comidaEnExtra;
       // La comida siempre se marca: si trabajó 6 h o más sin marcarla, RH lo ve (no se descuenta sola).
       if (hor.comida && trabajado >= 360 && !validas.some(c => c.tipo === 'comida_sale')) r.notas.push('No marcó su comida');
       // Después de su baja ya no trabaja aquí: esos días no son falta (auditoría A-05).
@@ -322,17 +409,21 @@ module.exports = function asistencia(app, db, h) {
     } else if (trabajado !== null || bloques.length) {
       // Descanso o festivo trabajado: todo lo trabajado es tiempo extra (y se marca para pagarlo como tal).
       // Con la regla «en descanso o festivo todo es extra» apagada, solo cuentan los bloques marcados con los botones.
-      r.extra_min = rg.descanso_todo ? unidos([...(trabajado !== null ? [[entrada, salida]] : []), ...bloques]) - (trabajado !== null ? comida : 0) : unidos(bloques);
+      // Por tramos (auditoría 13-nov, G4): el rato entre dos tramos (estuvo en su casa) no cuenta.
+      const cuentan = rg.descanso_todo ? [...tramos, ...bloques] : bloques;
+      comidaEnExtra = empalme(cuentan, comidas);
+      r.extra_min = unidos(cuentan) - comidaEnExtra;
       const que = festivo ? 'festivo' : 'día de descanso';
-      if (trabajado !== null) pieza(entrada, salida, rg.descanso_todo ? `De su entrada a su salida: en ${que} todo lo trabajado es tiempo extra${comida ? ` (se le resta su comida de ${horas(comida)})` : ''}` : `De su entrada a su salida en ${que}: no cuenta (regla: solo cuenta lo marcado con los botones)`, !!rg.descanso_todo, [eId, sId]);
+      for (const [k, [a, b]] of tramos.entries()) pieza(a, b, rg.descanso_todo ? `De su entrada a su salida: en ${que} todo lo trabajado es tiempo extra` : `De su entrada a su salida en ${que}: no cuenta (regla: solo cuenta lo marcado con los botones)`, !!rg.descanso_todo, tramoIds[k]);
       for (const [k, [a, b]] of bloques.entries()) pieza(a, b, `Botones «Inicio / Fin de tiempo extra» en ${que}`, true, bloqueIds[k]);
       r.notas.push(festivo ? 'Festivo trabajado' : 'Descanso trabajado');
     }
     piezas.sort((x, y) => x.desde.localeCompare(y.desde) || x.hasta.localeCompare(y.hasta));
     if (deAnoche) piezas.unshift({ desde: hhmm(m(primera)), hasta: hhmm(m(primera)), min: 0, motivo: `Fin del tiempo extra que empezó ayer a las ${deAnoche.hora.slice(0, 5)}: se cuenta en el día anterior`, cuenta: false, checadas: [primera.id], ayer: true });
-    else if (primera?.tipo === 'extra_termina') piezas.unshift({ desde: hhmm(m(primera)), hasta: hhmm(m(primera)), min: 0, motivo: 'Fin de tiempo extra sin un inicio antes: no cuenta', cuenta: false, checadas: [primera.id] });
+    else if (primera?.tipo === 'extra_termina' && !porFin) piezas.unshift({ desde: hhmm(m(primera)), hasta: hhmm(m(primera)), min: 0, motivo: 'Fin de tiempo extra sin un inicio antes: no cuenta', cuenta: false, checadas: [primera.id] });
     const det = { piezas, regla: `${rg.modo === 'auto' ? 'Automático' : 'Solo botones'} · después de la salida ${rg.despues_min ? 'desde ' + rg.despues_min + ' min' : 'desde el primer minuto'} · llegar antes ${rg.antes_cuenta ? 'cuenta si son más de ' + rg.antes_min + ' min' : 'no cuenta'} · ${rg.bloque_min === 1 ? 'minuto a minuto' : 'redondeo a bloques de ' + rg.bloque_min + ' min'} · descanso/festivo ${rg.descanso_todo ? 'todo es extra' : 'solo botones'}`, sin_redondeo_min: r.extra_min, redondeo: null };
-    const sumaTramos = piezas.filter(x => x.cuenta).reduce((s, x) => s + x.min, 0) - (!laboral && rg.descanso_todo && trabajado !== null ? comida : 0);
+    if (comidaEnExtra && laboral) { r.notas.push(`Se le restó ${horas(comidaEnExtra)} de comida que tomó dentro de su tiempo extra`); det.comida_en_extra_min = comidaEnExtra; }
+    const sumaTramos = piezas.filter(x => x.cuenta).reduce((s, x) => s + x.min, 0) - comidaEnExtra;
     if (sumaTramos > r.extra_min) det.traslape_min = sumaTramos - r.extra_min;
     // Redondeo hacia abajo por día (reglas del tiempo extra).
     if (rg.bloque_min > 1 && r.extra_min > 0) {
@@ -344,7 +435,14 @@ module.exports = function asistencia(app, db, h) {
     if (diaSemana(fecha) === 7 && (trabajado !== null || bloques.length)) r.notas.push('Domingo trabajado (prima dominical)');
     if (!hor) r.notas.push('Sin horario asignado');
     if (abierta !== null) r.notas.push('Salió a comer y no registró regreso');
-    if (entrada !== null && salida === null && fecha < hoy) r.notas.push('Sin salida');
+    // Sin salida: su último tramo quedó abierto (también si ya había salido y regresó sin marcar la salida otra vez).
+    if (abre !== null && fecha < hoy) {
+      r.notas.push('Sin salida');
+      if (tramos.length) r.notas.push(`Marcó «Entrada» a las ${hhmm(abre)} después de salir y no volvió a marcar «Salida»: anúlala si fue por error o agrega la salida`);
+    }
+    // Marcó «Salida» y ninguna «Entrada»: no se inventa la entrada (no cuenta horas ni extra); RH agrega la real.
+    if (salidaSola && fecha < hoy) r.notas.push(`Marcó «Salida» (${salidaC.hora.slice(0, 5)}) sin «Entrada»: agrega su entrada real (con motivo) para contar el día`);
+    if (entradaRepetida) r.notas.push('Marcó «Entrada» dos veces sin «Salida» en medio: se tomó la primera');
     // «Inicio de tiempo extra» sin «Fin»: ese bloque no cuenta (no se inventa la hora); RH agrega el fin real con motivo.
     if (ini !== null && fecha < hoy) r.notas.push('Inició tiempo extra y no marcó el fin');
     if (ini !== null) { det.sin_fin = hhmm(ini); det.sin_fin_checada = iniId; }
@@ -398,7 +496,7 @@ module.exports = function asistencia(app, db, h) {
         vacaciones: dias.filter(d => d.incidencia === 'vacaciones').length, incapacidad: dias.filter(d => d.incidencia === 'incapacidad').length, permisos: dias.filter(d => d.incidencia === 'permiso').length,
         // Lo que hay que revisar antes de pagar: tiempo extra sin autorizar o sin fin, días sin salida o sin horario, checadas por revisar.
         extra_sin_autorizar_min: dias.reduce((s, d) => s + (d.extra_autorizado_min == null ? d.extra_min : 0), 0),
-        sin_salida: dias.filter(d => d.notas.includes('Sin salida')).length, extra_sin_fin: dias.filter(d => d.notas.includes('Inició tiempo extra y no marcó el fin')).length, sin_horario: dias.filter(d => d.notas.includes('Sin horario asignado') && (d.entrada || d.salida)).length,
+        sin_salida: dias.filter(d => d.notas.includes('Sin salida')).length, sin_entrada: dias.filter(d => d.notas.some(n => n.startsWith('Marcó «Salida» ('))).length, extra_sin_fin: dias.filter(d => d.notas.includes('Inició tiempo extra y no marcó el fin')).length, sin_horario: dias.filter(d => d.notas.includes('Sin horario asignado') && (d.entrada || d.salida)).length,
         por_revisar: t('por_revisar'),
         // Auditoría 13-nov (M1): días cuyo extra cambió después de autorizarlo (se pagaría lo autorizado sin avisar).
         extra_autorizacion_vieja: dias.filter(d => d.notas.includes('El tiempo extra cambió después de autorizarlo: revísalo')).length } };
@@ -618,7 +716,7 @@ module.exports = function asistencia(app, db, h) {
     res.json(db.prepare('SELECT * FROM main.dias_festivos WHERE fecha = ?').get(fecha));
   }));
 
-  return { calcularDia, horarioDe, asignarHorario, horarioPorNombre, semanaDe, resumenSemana };
+  return { calcularDia, horarioDe, asignarHorario, horarioPorNombre, semanaDe, resumenSemana, antesDeEntrada };
 };
 module.exports.festivosLey = festivosLey;
 module.exports.unidos = unidos;
