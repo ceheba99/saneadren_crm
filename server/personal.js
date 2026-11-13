@@ -322,7 +322,7 @@ module.exports = function personal(app, db, h) {
           texto: `No da señal desde ${k.desde || 'hace más de 5 minutos'}: revisa que la tableta esté prendida, desbloqueada, con internet y con el checador abierto` });
       for (const k of app.locals.checador?.kioscosAtencion?.() || []) if (mios.has(k.id))
         avisos.push({ tipo: 'kiosco_atencion', nivel: 'amarillo', nombre: k.nombre + (k.sucursal ? ' · ' + k.sucursal : ''), fecha: k.fecha,
-          texto: k.tipo === 'bateria' ? `Batería en ${k.bateria} % y sin cargador: conéctala para que no se apague` : 'La cámara no está funcionando: las checadas quedan sin foto y por revisar' });
+          texto: k.tipo === 'pantalla' ? 'No puede mantener la pantalla encendida: se va a apagar sola y pedirá el PIN de la tableta. Apaga el ahorro de energía y activa «Pantalla activa» en Opciones de desarrollador' : k.tipo === 'bateria' ? `Batería en ${k.bateria} % y sin cargador: conéctala para que no se apague` : 'La cámara no está funcionando: las checadas quedan sin foto y por revisar' });
     }
     // Baja en RH con su usuario del CRM todavía activo (Dirección, 2026-11-11, auditoría H11): pendiente obligatorio para
     // Dirección hasta que desactive o elimine el usuario (RH no administra usuarios). Se va solo al desactivarlo.
