@@ -365,7 +365,9 @@ module.exports = function finanzas(app, db, h, unicos) {
     return f ? describirCuenta(f, hoyMexico()) : null;
   }
   function cobrosDeOrden(leadId) {
-    return db.prepare(`SELECT k.*, u.nombre AS registrado_por_nombre, uc.nombre AS cancelado_por_nombre
+    // Con su folio de banco (2026-11-12), para anotarlo en el comprobante.
+    return db.prepare(`SELECT k.*, u.nombre AS registrado_por_nombre, uc.nombre AS cancelado_por_nombre,
+        (SELECT f.folio FROM main.folios_banco f WHERE f.ref = 'cobro:' || k.id AND f.estado = 'vigente') AS folio
       FROM cobros k LEFT JOIN usuarios u ON u.id = k.registrado_por LEFT JOIN usuarios uc ON uc.id = k.cancelado_por
       WHERE k.lead_id = ? ORDER BY k.fecha DESC, k.id DESC`).all(leadId)
       .map(k => ({ ...k, monto: aPesos(k.monto_cent) }));
@@ -487,6 +489,9 @@ module.exports = function finanzas(app, db, h, unicos) {
     if (tipo === 'ajuste' && !P.puede(req, 'cobros.ajustes')) return res.status(403).json({ error: 'Solo un administrador puede registrar ajustes o descuentos' });
 
     const confirmado = P.puede(req, 'cobros.directo') ? 1 : 0;
+    // Folios de banco (2026-11-12): un cobro que entra ya confirmado dice a qué cuenta entró (con ella recibe su folio).
+    const cta = app.locals.folios?.resolver(lead.sucursal_id, req.body.cuenta_id, { requerida: !!confirmado }) || {};
+    if (cta.error) return res.status(400).json(cta);
     // Revisar el saldo y guardar el cobro van juntos y con la base apartada (immediate): si el sistema corriera en dos
     // procesos, el segundo cobro espera a que termine el primero y ve el saldo ya descontado (auditoría ARQ-14 / H-001).
     const r = db.transaction(() => {
@@ -504,9 +509,9 @@ module.exports = function finanzas(app, db, h, unicos) {
           AND cancelado = 0 AND created_at >= datetime('now','localtime','-2 minutes')`).get(lead.id, monto, fecha, metodo, req.usuarioSesion.id);
         if (repetido) return { status: 409, error: { error: 'Ese mismo pago se acaba de registrar. ¿Es un pago distinto?', codigo: 'POSIBLE_DUPLICADO' } };
       }
-      const info = db.prepare(`INSERT INTO main.cobros (lead_id, fecha, monto_cent, tipo, metodo, referencia, notas, confirmado, confirmado_por, confirmado_at, registrado_por)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ${confirmado ? "datetime('now','localtime')" : 'NULL'}, ?)`)
-        .run(lead.id, fecha, monto, tipo, metodo, texto(req.body.referencia, 120), texto(req.body.notas, 500), confirmado, confirmado ? req.usuarioSesion.id : null, req.usuarioSesion.id);
+      const info = db.prepare(`INSERT INTO main.cobros (lead_id, fecha, monto_cent, tipo, metodo, referencia, notas, confirmado, confirmado_por, confirmado_at, registrado_por, cuenta_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ${confirmado ? "datetime('now','localtime')" : 'NULL'}, ?, ?)`)
+        .run(lead.id, fecha, monto, tipo, metodo, texto(req.body.referencia, 120), texto(req.body.notas, 500), confirmado, confirmado ? req.usuarioSesion.id : null, req.usuarioSesion.id, cta.id ?? null);
       if (lead.cobranza_por_revisar) db.prepare('UPDATE main.leads SET cobranza_por_revisar = 0 WHERE id = ?').run(lead.id);
       bitacora(lead.id, `${tipo === 'anticipo' ? 'Anticipo' : tipo === 'ajuste' ? 'Ajuste' : 'Pago'} registrado: ${fmt(monto)} por ${metodo} (${fecha})${confirmado ? '' : ' · por confirmar'}.`, req, 'cxc');
       return { id: info.lastInsertRowid };
@@ -523,8 +528,11 @@ module.exports = function finanzas(app, db, h, unicos) {
     if (c.confirmado) return res.json({ ok: true });
     // Confirmar es que OTRA persona revise el cobro: uno mismo solo si su rol deja que sus cobros entren ya confirmados.
     if (c.registrado_por === req.usuarioSesion.id && !P.puede(req, 'cobros.directo')) return res.status(403).json({ error: 'Tú registraste este pago: lo confirma otra persona' });
+    // Folios de banco (2026-11-12): al confirmarlo entra al flujo, así que se dice a qué cuenta entró (y recibe su folio).
+    const cta = app.locals.folios?.resolver(db.prepare('SELECT sucursal_id FROM main.leads WHERE id = ?').get(c.lead_id)?.sucursal_id, req.body?.cuenta_id ?? c.cuenta_id, { requerida: true }) || {};
+    if (cta.error) return res.status(400).json(cta);
     db.transaction(() => {
-      db.prepare("UPDATE main.cobros SET confirmado = 1, confirmado_por = ?, confirmado_at = datetime('now','localtime') WHERE id = ?").run(req.usuarioSesion.id, c.id);
+      db.prepare("UPDATE main.cobros SET confirmado = 1, confirmado_por = ?, confirmado_at = datetime('now','localtime'), cuenta_id = ? WHERE id = ?").run(req.usuarioSesion.id, cta.id ?? null, c.id);
       bitacora(c.lead_id, `Pago de ${fmt(c.monto_cent)} (${c.fecha}) confirmado por ${req.usuarioSesion.nombre}.`, req, 'cxc');
     })();
     res.json({ ok: true });
@@ -1239,6 +1247,9 @@ module.exports = function finanzas(app, db, h, unicos) {
       AND lower(trim(concepto)) = lower(trim(?)) AND lead_id IS ? AND cancelada = 0 AND created_at >= datetime('now','localtime','-2 minutes')`).get(prov.id, total, fecha, concepto, leadId)) {
       return res.status(409).json({ error: `Ese mismo gasto («${concepto}» de ${prov.nombre} por ${fmt(total)}) se acaba de registrar. ¿Es un gasto distinto?`, codigo: 'POSIBLE_DUPLICADO' });
     }
+    // Folios de banco (2026-11-12): pagado al registrarlo por quien mueve dinero → de qué cuenta salió.
+    const ctaPago = b.ya_pagado && !ant && P.puede(req, 'dinero.mover') ? (app.locals.folios?.resolver(leadId ? app.locals.sucursales.de('leads', leadId) : req.alcanceSuc?.alta, b.cuenta_id, { requerida: true }) || {}) : {};
+    if (ctaPago.error) return res.status(400).json(ctaPago);
     const id = db.transaction(() => {
       const info = db.prepare(`INSERT INTO main.cuentas_por_pagar (proveedor_id, categoria, concepto, factura_folio, fecha_documento, fecha_vencimiento, total_cent, lead_id, equipo, notas, registrado_por, dias_credito, beneficiario, tipo_comprobante, metodo_sat, iva_cent, iva_origen)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(prov.id, categoria, concepto, xml ? folioFactura : texto(b.factura_folio, 60), fecha, vence, total, leadId, texto(b.equipo, 200), texto(b.notas, 1000), req.usuarioSesion.id, dias,
@@ -1256,8 +1267,8 @@ module.exports = function finanzas(app, db, h, unicos) {
           .run('Reembolso a ' + a.persona, `Pasó del anticipo de ${a.persona} por ${fmt(falta)}: por reembolsar.`, info.lastInsertRowid);
         ant.usado = usado; ant.falta = falta;
       } else if (b.ya_pagado && P.puede(req, 'dinero.mover')) {
-        db.prepare('INSERT INTO main.pagos_proveedor (cxp_id, fecha, monto_cent, metodo, referencia, registrado_por, cuenta_origen) VALUES (?, ?, ?, ?, ?, ?, ?)')
-          .run(info.lastInsertRowid, fechaPagoGasto || (fecha > hoyMexico() ? hoyMexico() : fecha), total, b.metodo, texto(b.referencia, 120), req.usuarioSesion.id, texto(b.cuenta_origen, 80));
+        db.prepare('INSERT INTO main.pagos_proveedor (cxp_id, fecha, monto_cent, metodo, referencia, registrado_por, cuenta_origen, cuenta_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+          .run(info.lastInsertRowid, fechaPagoGasto || (fecha > hoyMexico() ? hoyMexico() : fecha), total, b.metodo, texto(b.referencia, 120), req.usuarioSesion.id, texto(b.cuenta_origen, 80) || ctaPago.nombre || null, ctaPago.id ?? null);
       } else if (b.ya_pagado) { // lo pagó quien lo registra: queda como reembolso para esa persona (auditoría H01)
         const r = reembolso(req, b.metodo, fechaPagoGasto || fecha);
         db.prepare('UPDATE main.cuentas_por_pagar SET beneficiario = ?, fecha_vencimiento = ?, notas = trim(COALESCE(notas, \'\') || \' \' || ?) WHERE id = ?').run(r.beneficiario, fecha, r.nota, info.lastInsertRowid);
@@ -1297,6 +1308,9 @@ module.exports = function finanzas(app, db, h, unicos) {
       const hoy = hoyMexico(), fecha = req.body.fecha || hoy;
       if (!fechaValida(fecha) || fecha > hoy) return { status: 400, error: { error: 'La fecha del pago no es válida o es futura' } };
       if (!METODOS_PROV.includes(req.body.metodo)) return { status: 400, error: { error: 'Elige cómo se pagó' } };
+      // Folios de banco (2026-11-12): la cuenta de la que salió el dinero (con ella recibe su folio).
+      const cta = app.locals.folios?.resolver(x.sucursal_id, req.body.cuenta_id, { requerida: true }) || {};
+      if (cta.error) return { status: 400, error: cta };
       // Pagar una orden de compra que todavía no llega (anticipo, contado): se permite con motivo (Dirección, 2026-11-05).
       const ocSinRecibir = db.prepare("SELECT id FROM main.ordenes_compra WHERE cxp_id = ? AND estado = 'autorizada' AND recibida_at IS NULL").get(x.id);
       const motivoAnticipo = texto(req.body.motivo, 300);
@@ -1305,8 +1319,8 @@ module.exports = function finanzas(app, db, h, unicos) {
         AND created_at >= datetime('now','localtime','-2 minutes')`).get(x.id, monto, fecha)) {
         return { status: 409, error: { error: 'Ese mismo pago se acaba de registrar. ¿Es un pago distinto?', codigo: 'POSIBLE_DUPLICADO' } };
       }
-      const info = db.prepare('INSERT INTO main.pagos_proveedor (cxp_id, fecha, monto_cent, metodo, referencia, registrado_por, cuenta_origen) VALUES (?, ?, ?, ?, ?, ?, ?)')
-        .run(x.id, fecha, monto, req.body.metodo, texto(req.body.referencia, 120), req.usuarioSesion.id, texto(req.body.cuenta_origen, 80));
+      const info = db.prepare('INSERT INTO main.pagos_proveedor (cxp_id, fecha, monto_cent, metodo, referencia, registrado_por, cuenta_origen, cuenta_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+        .run(x.id, fecha, monto, req.body.metodo, texto(req.body.referencia, 120), req.usuarioSesion.id, texto(req.body.cuenta_origen, 80) || cta.nombre || null, cta.id ?? null);
       if (x.lead_id) bitacora(x.lead_id, `Pago a tercero: ${fmt(monto)} a ${x.proveedor_nombre || 'proveedor'} por «${x.concepto}» (${req.body.metodo}, ${fecha}).`, req, 'cxp');
       app.locals.auditoria?.registrar(req, 'cuenta_por_pagar', x.id, 'pago', `${fmt(monto)} por ${req.body.metodo} el ${fecha}${texto(req.body.referencia, 120) ? ' · ref. ' + texto(req.body.referencia, 120) : ''}${ocSinRecibir ? ' · antes de recibir: ' + motivoAnticipo : ''}`);
       if (ocSinRecibir) app.locals.auditoria?.registrar(req, 'orden_compra', ocSinRecibir.id, 'pago antes de recibir', `${fmt(monto)} · ${motivoAnticipo}`);
@@ -1318,7 +1332,8 @@ module.exports = function finanzas(app, db, h, unicos) {
 
   app.get('/api/finanzas/cxp/:id/pagos', h((req, res) => {
     if (!permitido(req, res, 'cxp.ver')) return;
-    res.json(db.prepare(`SELECT g.*, u.nombre AS registrado_por_nombre FROM pagos_proveedor g LEFT JOIN usuarios u ON u.id = g.registrado_por
+    res.json(db.prepare(`SELECT g.*, u.nombre AS registrado_por_nombre, (SELECT f.folio FROM main.folios_banco f WHERE f.ref = 'pago:' || g.id AND f.estado = 'vigente') AS folio
+      FROM pagos_proveedor g LEFT JOIN usuarios u ON u.id = g.registrado_por
       WHERE g.cxp_id = ? ORDER BY g.fecha DESC, g.id DESC`).all(req.params.id).map(g => ({ ...g, monto: aPesos(g.monto_cent) })));
   }));
 

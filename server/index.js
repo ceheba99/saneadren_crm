@@ -224,7 +224,8 @@ app.locals.asistencia = require('./asistencia')(app, db, h);
 require('./anticipos')(app, db, h);
 require('./nomina')(app, db, h);
 require('./contabilidad-cierres')(app, db, h); // Editar Contabilidad (2026-11-12): mes cerrado y saldo inicial del banco; después de cobros, pagos y anticipos
-require('./conciliacion')(app, db, h); // Conciliación bancaria (módulo contable F4, 2026-11-11) // Nómina semanal (módulo contable F3, 2026-11-11): después de Personal, Asistencia y Cuentas por pagar // Anticipos por comprobar (módulo contable F2, 2026-11-11): después de Personal y Cuentas por pagar
+require('./conciliacion')(app, db, h);
+require('./folios-banco')(app, db, h); // Folios de banco (Editar Contabilidad parte 5, 2026-11-12): después de cuentas de banco, cobros, pagos, anticipos y movimientos propios // Conciliación bancaria (módulo contable F4, 2026-11-11) // Nómina semanal (módulo contable F3, 2026-11-11): después de Personal, Asistencia y Cuentas por pagar // Anticipos por comprobar (módulo contable F2, 2026-11-11): después de Personal y Cuentas por pagar
 app.locals.biometria = require('./biometria')(app, db, h); // biométrico facial del kiosco (2026-11-05)
 require('./whatsapp')(app, db, h); // Checar por WhatsApp para foráneos (F5b, 2026-11-05)
 require('./avisos')(app, db, h); // Avisos a personas elegidas: reloj checador, celular, Inicio, correo y WhatsApp (2026-11-11)

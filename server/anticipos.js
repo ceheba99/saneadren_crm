@@ -158,8 +158,11 @@ module.exports = function anticipos(app, db, h) {
     if (!b.forzar && db.prepare(`SELECT id FROM main.anticipos WHERE personal_id = ? AND monto_cent = ? AND fecha = ? AND estado <> 'cancelado' AND created_at >= datetime('now','localtime','-2 minutes')`).get(persona.id, monto, fecha))
       return res.status(409).json({ error: `Ese mismo anticipo a ${persona.nombre} se acaba de registrar. ¿Es otro anticipo?`, codigo: 'POSIBLE_DUPLICADO' });
     const sucursal = lead?.sucursal_id ?? persona.sucursal_id;
-    const id = Number(db.prepare(`INSERT INTO main.anticipos (personal_id, fecha, monto_cent, metodo, cuenta_origen, referencia, motivo, lead_id, sucursal_id, entregado_por)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(persona.id, fecha, monto, b.metodo, texto(b.cuenta_origen, 80), texto(b.referencia, 120), motivo, lead?.id ?? null, sucursal, yo(req)).lastInsertRowid);
+    // Folios de banco (2026-11-12): la cuenta de la que salió el anticipo (con ella recibe su folio).
+    const cta = app.locals.folios?.resolver(sucursal, b.cuenta_id, { requerida: true }) || {};
+    if (cta.error) return res.status(400).json(cta);
+    const id = Number(db.prepare(`INSERT INTO main.anticipos (personal_id, fecha, monto_cent, metodo, cuenta_origen, referencia, motivo, lead_id, sucursal_id, entregado_por, cuenta_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(persona.id, fecha, monto, b.metodo, texto(b.cuenta_origen, 80) || cta.nombre || null, texto(b.referencia, 120), motivo, lead?.id ?? null, sucursal, yo(req), cta.id ?? null).lastInsertRowid);
     if (lead) bitacora(lead.id, `Anticipo por comprobar entregado a ${persona.nombre}: ${fmt(monto)} (${b.metodo}, ${fechaTxt(fecha)}) · ${motivo}.`, req);
     app.locals.auditoria?.registrar(req, 'anticipo', id, 'entregado', `${persona.nombre} · ${fmt(monto)} por ${b.metodo} el ${fecha} · ${motivo}`);
     res.status(201).json({ id });
@@ -178,12 +181,15 @@ module.exports = function anticipos(app, db, h) {
       const fecha = b.fecha || hoy;
       if (!fechaValida(fecha) || fecha > hoy || fecha < a.fecha) return res.status(400).json({ error: 'La fecha en que regresó el dinero no es válida (no puede ser futura ni antes del anticipo)' });
       if (!METODOS_PROV.includes(b.metodo)) return res.status(400).json({ error: `Sobraron ${fmt(saldo)}: elige cómo los regresó ${a.persona} (efectivo, transferencia…)` });
-      reintegro = { fecha, metodo: b.metodo, cuenta: texto(b.cuenta, 80), referencia: texto(b.referencia, 120) };
+      // Folios de banco (2026-11-12): la cuenta a la que regresó el dinero (el reintegro recibe su folio de entrada).
+      const cta = app.locals.folios?.resolver(a.sucursal_id, b.cuenta_id, { requerida: true }) || {};
+      if (cta.error) return res.status(400).json(cta);
+      reintegro = { fecha, metodo: b.metodo, cuenta: texto(b.cuenta, 80) || cta.nombre || null, referencia: texto(b.referencia, 120), cuenta_id: cta.id ?? null };
     }
     const nota = texto(b.nota, 300);
     db.prepare(`UPDATE main.anticipos SET estado = 'cerrado', cerrado_por = ?, cerrado_at = datetime('now','localtime'), nota_cierre = ?,
-      reintegro_cent = ?, reintegro_fecha = ?, reintegro_metodo = ?, reintegro_cuenta = ?, reintegro_referencia = ? WHERE id = ? AND estado = 'abierto'`)
-      .run(yo(req), nota, reintegro ? saldo : 0, reintegro?.fecha ?? null, reintegro?.metodo ?? null, reintegro?.cuenta ?? null, reintegro?.referencia ?? null, a.id);
+      reintegro_cent = ?, reintegro_fecha = ?, reintegro_metodo = ?, reintegro_cuenta = ?, reintegro_referencia = ?, reintegro_cuenta_id = ? WHERE id = ? AND estado = 'abierto'`)
+      .run(yo(req), nota, reintegro ? saldo : 0, reintegro?.fecha ?? null, reintegro?.metodo ?? null, reintegro?.cuenta ?? null, reintegro?.referencia ?? null, reintegro?.cuenta_id ?? null, a.id);
     const txt = reintegro ? `regresó ${fmt(saldo)} (${reintegro.metodo}, ${fechaTxt(reintegro.fecha)})` : 'comprobado completo';
     if (a.lead_id) bitacora(a.lead_id, `Anticipo de ${a.persona} cerrado: ${txt}.`, req);
     app.locals.auditoria?.registrar(req, 'anticipo', a.id, 'cerrado', `${a.persona} · ${fmt(a.monto_cent)} · ${txt}${nota ? ' · ' + nota : ''}`);

@@ -62,14 +62,15 @@ const [ay, am] = MES.split('-').map(Number), MP = am === 1 ? `${ay - 1}-12` : `$
   const fl = r.flujo || [], por = t => fl.find(f => f.concepto === t || f.concepto_banco === t);
   const cIva = fl.find(f => f.ingreso === 580), cSin = fl.find(f => f.ingreso === 321.5), pFac = por('Diésel con factura'), pDom = por('Crédito de la camioneta'), pEfe = por('Casetas sin factura'), pNom = por('Nómina semana 45');
   revisa(s === 200 && fl.length === 6, 'Salen los 2 cobros y los 4 pagos', fl.map(f => [f.concepto, f.ingreso, f.egreso]));
-  revisa(cIva?.marca_transf === 'S' && cIva.marca_oc === 'NA' && cIva.marca_comp === 'FALTA' && cIva.consecutivo === '.', 'Cobro con referencia y con IVA sin factura: A = S, B = NA, C = FALTA, K = «.»', cIva);
+  revisa(cIva?.marca_transf === 'S' && cIva.marca_oc === 'NA' && cIva.marca_comp === 'FALTA', 'Cobro con referencia y con IVA sin factura: A = S, B = NA, C = FALTA', cIva);
   revisa(cSin?.marca_transf === 'S' && cSin.marca_comp === 'NA', 'Cobro sin referencia pero ya en el estado de cuenta: A = S; sin IVA, C = NA', cSin);
   revisa(pFac?.marca_transf === 'S' && pFac.marca_oc === 'FALTA' && pFac.marca_comp === 'FALTA' && pFac.metodo === 'PUE', 'Pago con factura sin XML ni orden de compra: A = S, B = FALTA, C = FALTA, PUE', pFac);
   revisa(pDom?.marca_transf === 'DOMICILIADO' && pDom.marca_oc === 'NA' && pDom.marca_comp === 'S' && pDom.metodo === 'NO APLICA', 'Pago domiciliado con recibo: A = DOMICILIADO, B = NA, C = S', pDom);
   revisa(pEfe?.marca_transf === 'FALTA' && pEfe.marca_comp === 'NA', 'Pago sin referencia y «sin factura»: A = FALTA, C = NA', pEfe);
   revisa(pNom?.metodo === 'CN01' && pNom.cfdi === 'ANEXO NOMINA CFDI' && pNom.cuenta_abono === 'NOMINA' && pNom.marca_oc === 'NA' && pNom.no_deducible === 0, 'Nómina: CN01, «ANEXO NOMINA CFDI», cuenta abono NOMINA, no cuenta como no deducible', pNom);
   const salidas = fl.filter(f => f.egreso > 0).map(f => f.consecutivo);
-  revisa(JSON.stringify(salidas) === JSON.stringify(['1', '2', '3', '4']), 'K: las salidas van numeradas 1, 2, 3, 4 en orden', salidas);
+  // K es el folio de banco (parte 5, ver simulacion-contabilidad-folios): aquí las cuentas no tienen clave, así que no hay folio y se avisa.
+  revisa(fl.every(f => f.consecutivo === '—' && /Sin folio/.test(f.revisar)), 'K: sin clave de folio en las cuentas, dice «—» y «revisar» avisa «Sin folio»', fl.map(f => [f.consecutivo, f.revisar]));
   revisa(fl.every(f => f.proyecto === qro.clave) && /ref\. R-1/.test(pFac.datos_sistema) && /Transferencia/.test(pFac.datos_sistema), 'Proyecto = sucursal cuando la orden no trae proyecto; la vía y la referencia van en «Datos del sistema»', [fl.map(f => f.proyecto), pFac?.datos_sistema]);
 
   console.log('2. Cada renglón en su cuenta');
@@ -79,7 +80,7 @@ const [ay, am] = MES.split('-').map(Number), MP = am === 1 ? `${ay - 1}-12` : `$
   const cs = Object.fromEntries((r.cuentas || []).map(c => [c.nombre, c.movimientos]));
   revisa(cs['Santander operación'] === 2 && cs['Banorte pagos'] === 2 && cs['Sin cuenta'] === 2, 'El selector dice cuántos movimientos tiene cada cuenta', r.cuentas);
   [s, r] = await pedir('GET', `/contabilidad/flujo?mes=${MES}&cuenta=${santander.id}`, C);
-  revisa(s === 200 && r.flujo.length === 2 && r.flujo.map(f => f.consecutivo).join() === '1,2', 'El flujo de Santander solo trae sus movimientos y los numera desde 1', r.flujo?.map(f => [f.concepto, f.consecutivo]));
+  revisa(s === 200 && r.flujo.length === 2, 'El flujo de Santander solo trae sus movimientos', r.flujo?.map(f => f.concepto));
   [s, r] = await pedir('GET', `/contabilidad/flujo?mes=${MES}&cuenta=0`, C);
   revisa(s === 200 && r.flujo.length === 2, '«Sin cuenta» trae lo que no tiene cuenta', r.flujo?.length);
   revisa((await pedir('GET', '/contabilidad/flujo?mes=' + MES, V))[0] === 403, 'Ventas no ve el flujo');

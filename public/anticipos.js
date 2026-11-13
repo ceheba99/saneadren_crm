@@ -35,7 +35,7 @@ const Anticipos = (() => {
           <div class="campo"><label for="ant-monto">Monto (obligatorio)</label><input id="ant-monto" inputmode="decimal" placeholder="Ej. 3000"></div>
           <div class="campo"><label for="ant-fecha">Fecha de entrega (obligatorio)</label><input id="ant-fecha" type="date" value="${esc(hoy())}" max="${esc(hoy())}"></div>
           <div class="campo"><label for="ant-via">¿Cómo se entregó? (obligatorio)</label><select id="ant-via">${VIAS.map(([v, t]) => `<option value="${v}">${esc(t)}</option>`).join('')}</select></div>
-          <div class="campo"><label for="ant-cuenta">Cuenta de salida (opcional)</label><input id="ant-cuenta" maxlength="80" placeholder="Ej. Caja chica, BBVA 1234"></div>
+          <div class="campo"><label for="ant-cuenta-id">Cuenta de salida (con ella recibe su folio)</label><select id="ant-cuenta-id" data-cuentas-banco></select><input data-cb-texto id="ant-cuenta" maxlength="80" placeholder="Ej. Caja chica, BBVA 1234"></div>
           <div class="campo"><label for="ant-referencia">Referencia (opcional)</label><input id="ant-referencia" maxlength="120" placeholder="Ej. SPEI 12345"></div>
         </div>
         <div class="campo"><label for="ant-motivo">¿Para qué es? (obligatorio)</label><input id="ant-motivo" maxlength="300" placeholder="Ej. Casetas y diésel de la ruta a San Juan del Río"></div>
@@ -54,7 +54,7 @@ const Anticipos = (() => {
         <div class="form-grid-2">
           <div class="campo"><label for="ant-r-via">¿Cómo los regresó? (obligatorio)</label><select id="ant-r-via">${VIAS.map(([v, t]) => `<option value="${v}">${esc(t)}</option>`).join('')}</select></div>
           <div class="campo"><label for="ant-r-fecha">Fecha (obligatorio)</label><input id="ant-r-fecha" type="date" value="${esc(hoy())}" max="${esc(hoy())}"></div>
-          <div class="campo"><label for="ant-r-cuenta">Cuenta (opcional)</label><input id="ant-r-cuenta" maxlength="80" placeholder="Ej. Caja chica"></div>
+          <div class="campo"><label for="ant-r-cuenta-id">¿A qué cuenta regresó? (con ella recibe su folio)</label><select id="ant-r-cuenta-id" data-cuentas-banco></select><input data-cb-texto id="ant-r-cuenta" maxlength="80" placeholder="Ej. Caja chica"></div>
           <div class="campo"><label for="ant-r-nota">Nota (opcional)</label><input id="ant-r-nota" maxlength="300"></div>
         </div>
         <button type="button" class="btn btn-primario" data-ant="cerrar-ok" data-id="${Number(a.id)}">Cerrar con reintegro de ${dinero(a.saldo)}</button>
@@ -109,7 +109,7 @@ const Anticipos = (() => {
     }
     if (accion === 'cerrar-no') { CERRANDO = null; return pintar(); }
     if (accion === 'cerrar-ok') return conBotonAnt(b, async () => {
-      const r = await pedir('/anticipos/' + id + '/cerrar', { method: 'POST', body: JSON.stringify({ metodo: $('ant-r-via').value, fecha: $('ant-r-fecha').value, cuenta: $('ant-r-cuenta').value, nota: $('ant-r-nota').value }) });
+      const r = await pedir('/anticipos/' + id + '/cerrar', { method: 'POST', body: JSON.stringify({ metodo: $('ant-r-via').value, fecha: $('ant-r-fecha').value, cuenta: $('ant-r-cuenta').value, cuenta_id: CuentasBanco.valor('ant-r-cuenta-id'), nota: $('ant-r-nota').value }) });
       toast(`Anticipo cerrado: regresó ${dinero(r.reintegro)}`); CERRANDO = null; cargar();
     });
     if (accion === 'cancelar' && a) {
@@ -119,7 +119,7 @@ const Anticipos = (() => {
     }
     if (accion === 'entregar') return conBotonAnt(b, async () => {
       const cuerpo = { personal_id: Number($('ant-persona').value) || null, monto: $('ant-monto').value.trim().replace(/[$,\s]/g, ''), fecha: $('ant-fecha').value, metodo: $('ant-via').value,
-        cuenta_origen: $('ant-cuenta').value, referencia: $('ant-referencia').value, motivo: $('ant-motivo').value };
+        cuenta_origen: $('ant-cuenta').value, cuenta_id: CuentasBanco.valor('ant-cuenta-id'), referencia: $('ant-referencia').value, motivo: $('ant-motivo').value };
       if (!cuerpo.personal_id) { toast('Elige a quién se le entrega'); $('ant-persona').focus(); return; }
       try { await pedir('/anticipos', { method: 'POST', body: JSON.stringify(cuerpo) }); }
       catch (err) {

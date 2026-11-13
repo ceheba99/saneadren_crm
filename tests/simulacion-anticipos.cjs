@@ -120,7 +120,7 @@ const dia = k => { const x = new Date(HOY + 'T12:00:00Z'); x.setUTCDate(x.getUTC
   revisa(filasAnt.every(f => !f.clabe && !f.cuenta_tercero) && !JSON.stringify(ex.flujo).includes('enc1:') && !JSON.stringify(ex.flujo).includes('2221'), 'Flujo de banco: no muestra la CLABE del personal (dato sensible)');
   { const tito = filasAnt.find(f => /Anticipo por comprobar a Tito/.test(f.concepto_banco)), pedro = filasAnt.find(f => /Anticipo por comprobar a Pedro/.test(f.concepto_banco));
     revisa(tito && tito.no_deducible === 150 && tito.por_comprobar === 250 && /comprueba con los gastos/.test(tito.revisar), 'Flujo de banco: el anticipo de Tito dice $150 comprobados (sin factura) y $250 por comprobar', tito);
-    revisa(!pedro || (pedro.por_comprobar === 0 && pedro.no_deducible === 200 && !pedro.revisar), 'Flujo de banco: el de Pedro (comprobó $200 y regresó $300) ya no tiene nada por comprobar', pedro); }
+    revisa(!pedro || (pedro.por_comprobar === 0 && pedro.no_deducible === 200 && !/comprobar/i.test(pedro.revisar || '')), 'Flujo de banco: el de Pedro (comprobó $200 y regresó $300) ya no tiene nada por comprobar', pedro); }
   revisa(!filasAnt.some(f => /Capturado por error/.test(f.concepto)), 'Flujo de banco: el anticipo cancelado no aparece');
   revisa(ex.pagos.some(p => p.metodo === 'anticipo' && p.monto === 300), 'Pagos a proveedores: el gasto aparece pagado con vía «anticipo»');
 

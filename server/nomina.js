@@ -303,7 +303,10 @@ module.exports = function nomina(app, db, h) {
     const x = b(req), hoy = hoyMexico(), fecha = x.fecha || hoy;
     if (!fechaValida(fecha) || fecha > hoy) return res.status(400).json({ error: 'La fecha de pago no es válida o es futura' });
     if (!METODOS_PROV.includes(x.metodo)) return res.status(400).json({ error: 'Elige cómo se pagó (layout del banco, transferencia, efectivo…)' });
-    const cuenta = texto(x.cuenta_origen, 80);
+    // Folios de banco (2026-11-12): la cuenta de la que salió la nómina (con ella recibe su folio).
+    const cta = app.locals.folios?.resolver(n.sucursal_id, x.cuenta_id, { requerida: true }) || {};
+    if (cta.error) return res.status(400).json(cta);
+    const cuenta = texto(x.cuenta_origen, 80) || cta.nombre;
     if (!cuenta) return res.status(400).json({ error: 'Escribe de qué cuenta salió (por ejemplo: Santander nómina, Banorte nómina)' });
     const lineas = db.prepare('SELECT * FROM main.nomina_lineas WHERE nomina_id = ?').all(n.id), total = lineas.reduce((t, l) => t + totalDe(l), 0);
     if (total <= 0) return res.status(409).json({ error: 'La nómina no tiene nada que pagar' });
@@ -315,8 +318,8 @@ module.exports = function nomina(app, db, h) {
         VALUES (?, 'sueldos', ?, ?, ?, ?, ?, ?, 0, 'nomina', 0, 'manual')`).run(prov.id, concepto, n.hasta, n.hasta > fecha ? n.hasta : fecha, total, `Nómina #${n.id}: sueldo IMSS neto, bono, tiempo extra y otros, menos descuentos`, req.usuarioSesion.id);
       const id = Number(info.lastInsertRowid);
       app.locals.sucursales.asignar('cuentas_por_pagar', id, n.sucursal_id);
-      db.prepare('INSERT INTO main.pagos_proveedor (cxp_id, fecha, monto_cent, metodo, referencia, registrado_por, cuenta_origen) VALUES (?, ?, ?, ?, ?, ?, ?)')
-        .run(id, fecha < n.hasta ? n.hasta : fecha, total, x.metodo, texto(x.referencia, 120) || `Nómina ${dma(n.desde)}–${dma(n.hasta)}`, req.usuarioSesion.id, cuenta);
+      db.prepare('INSERT INTO main.pagos_proveedor (cxp_id, fecha, monto_cent, metodo, referencia, registrado_por, cuenta_origen, cuenta_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+        .run(id, fecha < n.hasta ? n.hasta : fecha, total, x.metodo, texto(x.referencia, 120) || `Nómina ${dma(n.desde)}–${dma(n.hasta)}`, req.usuarioSesion.id, cuenta, cta.id ?? null);
       db.prepare("UPDATE main.nominas SET estado = 'pagada', pagada_por = ?, pagada_at = datetime('now','localtime'), fecha_pago = ?, metodo_pago = ?, cuenta_origen = ?, cxp_id = ? WHERE id = ? AND estado = 'cerrada'")
         .run(req.usuarioSesion.id, fecha < n.hasta ? n.hasta : fecha, x.metodo, cuenta, id, n.id);
       return id;

@@ -47,7 +47,7 @@ module.exports = {
     contabilidad: {
       nombre: 'Contabilidad del mes para el contador (módulo contable F1, 2026-11-11): resumen de ingresos, egresos e IVA, pendientes de comprobar y descarga de Excel y XML; desde 2026-11-12, cerrar el mes (solo Dirección cambia lo de un mes cerrado) y el saldo inicial del banco guardado en el sistema',
       vistas: ['contabilidad'],
-      tablas: ['contabilidad_cierres', 'flujo_saldos_iniciales', 'flujo_correcciones', 'flujo_movimientos', 'flujo_desglose'], // lo demás lo lee de facturas, cobros, cuentas por pagar y pagos
+      tablas: ['contabilidad_cierres', 'flujo_saldos_iniciales', 'flujo_correcciones', 'flujo_movimientos', 'flujo_desglose', 'folios_banco'], // lo demás lo lee de facturas, cobros, cuentas por pagar y pagos
       rutas: [/^\/api\/contabilidad\//],
       pendientes: null, pendientesRazon: 'los pendientes de comprobar se ven en su propia pantalla, al revisar el mes',
       inicio: [],
@@ -72,7 +72,7 @@ module.exports = {
       nombre: 'Conciliación bancaria (módulo contable F4, 2026-11-11): subir el estado de cuenta de cada banco, emparejarlo con cobros, pagos, anticipos y nómina, y ver lo que no cuadra',
       vistas: [], vistasRazon: 'es la pestaña «Conciliación» de Contabilidad (vista «contabilidad»)',
       tablas: ['cuentas_banco', 'movimientos_banco'],
-      rutas: [/^\/api\/conciliacion(\/|$)/],
+      rutas: [/^\/api\/conciliacion(\/|$)/, /^\/api\/cuentas-banco(\/|$)/],
       pendientes: null, pendientesRazon: 'se revisa al cerrar el mes con el contador, en su pestaña',
       inicio: [],
       demo: ['cuentas_banco', 'movimientos_banco'],

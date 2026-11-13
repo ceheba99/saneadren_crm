@@ -17,7 +17,7 @@ const Contabilidad = (() => {
     // marcas S / FALTA / NA; K es el número seguido de las salidas. Al final, 3 columnas del sistema.
     flujo: { titulo: 'Flujo de banco', hoja: 'Flujo de banco', cols: [['marca_transf', 'TRANSFERENCIA', 14, 's'], ['marca_oc', 'O.C O REQ', 10, 's'], ['marca_comp', 'COMPROBANTE', 13, 's'], ['fecha', 'FECHA', 11, 'f'],
       ['concepto_banco', 'CONCEPTO', 30], ['clabe', 'CLABE BENEFICIARIO', 20], ['beneficiario', 'NOMBRE BENEFICIARIO', 26], ['egreso', 'EGRESOS', 14, 'd'], ['ingreso', 'INGRESOS', 14, 'd'], ['saldo', 'SALDO', 15, 'S'],
-      ['consecutivo', '# TRANSFERENCIA', 10], ['metodo', 'MÉTODO DE PAGO', 12, 's'], ['cfdi', 'PPD/PUE COMPROBANTE FISCAL', 34], ['complemento', 'COMPLEMENTO PAGO COMPROBANTE', 30, 's'], ['tercero', 'PROVEEDOR/CLIENTE', 28],
+      ['consecutivo', '# TRANSFERENCIA (FOLIO)', 14], ['metodo', 'MÉTODO DE PAGO', 12, 's'], ['cfdi', 'PPD/PUE COMPROBANTE FISCAL', 34], ['complemento', 'COMPLEMENTO PAGO COMPROBANTE', 30, 's'], ['tercero', 'PROVEEDOR/CLIENTE', 28],
       ['concepto', 'CONCEPTO ', 28], ['observaciones', 'OBSERVACIONES', 28], ['cfdi_monto', 'MONTO REAL CFDI', 14, 'd'], ['no_deducible', 'NO DEDUCIBLES', 14, 'd'], ['por_comprobar', 'X COMPROBAR / EXCEDENTE', 14, 'd'],
       ['cuenta_abono', 'CUENTA ABONO', 13], ['proyecto', 'PROYECTO', 9], ['unidad', 'UNIDAD', 12], ['tipo_gasto', 'TIPO DE GASTO', 20], ['cuenta_tercero', 'CUENTA BANCARIA PROVEEDOR/CL', 26],
       ['observaciones_z', 'OBSERVACIONES', 24], ['revisar', 'REVISAR (SISTEMA)', 30, 's'], ['cuenta', 'CUENTA DE BANCO (SISTEMA)', 22], ['datos_sistema', 'DATOS DEL SISTEMA', 40]] },
@@ -148,7 +148,7 @@ const Contabilidad = (() => {
     if (m) return n >= Number(m[1]) && n <= Number(m[2]);
     return /^-?\d+(\.\d+)?$/.test(t) ? Math.abs(n - Number(t)) < 0.005 : textoDe(v, 'd').includes(filtro);
   }
-  const RAPIDOS = [['falta', 'Solo con FALTA', f => [f.marca_transf, f.marca_oc, f.marca_comp].includes('FALTA')], ['revisar', 'Solo por revisar', f => !!f.revisar], ['corregidos', 'Solo corregidos', f => !!f.corregido && Object.keys(f.corregido).length > 0]];
+  const RAPIDOS = [['falta', 'Solo con FALTA', f => [f.marca_transf, f.marca_oc, f.marca_comp].includes('FALTA')], ['revisar', 'Solo por revisar', f => !!f.revisar], ['corregidos', 'Solo corregidos', f => !!f.corregido && Object.keys(f.corregido).length > 0], ['sinfolio', 'Solo sin folio', f => !f.es_desglose && !f.fantasma && !f.folio]];
   // Filas de una tabla con el buscador, los filtros y el orden aplicados.
   function filasDe(k) {
     const t = TABLAS[k], e = estadoDe(k), q = sinAcentos(e.q.trim());
@@ -256,12 +256,14 @@ const Contabilidad = (() => {
     return ` title="${esc(`Corregido por ${k.usuario} el ${cuando(k.fecha)} · el sistema decía: ${sistema}`)}"`; };
   function barraEdicion() {
     if (!DATOS.puede_editar) return '';
-    if (!EDITANDO) return `<div class="filtros ct-barra-edicion"><button type="button" class="btn btn-outline btn-chico" id="ct-editar-flujo">✏️ Editar tabla</button>
+    // Folios (parte 5): lo que tiene cuenta con clave pero no folio (cargas de Excel, lo de antes de poner las claves).
+    const pend = Number(DATOS.sin_folio || 0) ? `<button type="button" class="btn btn-outline btn-chico" id="ct-folios-pendientes" title="Le da folio a lo que ya tiene cuenta con clave, en orden de fecha">🏷️ Asignar folios pendientes (${Number(DATOS.sin_folio)})</button>` : '';
+    if (!EDITANDO) return `<div class="filtros ct-barra-edicion"><button type="button" class="btn btn-outline btn-chico" id="ct-editar-flujo">✏️ Editar tabla</button>${pend}
       <small class="util-45">Las celdas corregidas se marcan con ✎ (pasa el cursor para ver quién, cuándo y qué decía el sistema).</small></div>`;
     return `<div class="filtros ct-barra-edicion ct-editando"><b>✏️ Editando</b>
       <button type="button" class="btn btn-chico" id="ct-guardar-flujo"${PEND.size ? '' : ' disabled'}>💾 Guardar cambios (${PEND.size})</button>
       <button type="button" class="btn btn-outline btn-chico" id="ct-bloquear-flujo">🔒 Bloquear edición</button>
-      <button type="button" class="btn btn-outline btn-chico" id="ct-mov-abrir">➕ Agregar movimiento</button>
+      <button type="button" class="btn btn-outline btn-chico" id="ct-mov-abrir">➕ Agregar movimiento</button>${pend}
       <small class="util-45">Corrige las celdas en blanco. Con «➕ Desglosar» repartes un pago en varias facturas o unidades. Si dejas una como decía el sistema, vuelve a la original. El saldo, X comprobar, los importes y las fechas no se cambian aquí: se corrigen en el cobro o pago.${DATOS.es_direccion ? '' : ' Lo de un mes cerrado lo corrige solo Dirección.'}</small></div>`;
   }
   async function guardarFlujo() {
@@ -302,7 +304,7 @@ const Contabilidad = (() => {
       ${hayFiltros ? '<button type="button" class="btn btn-outline btn-chico" id="ct-limpiar">✕ Limpiar filtros</button>' : ''}<span class="util-45">${Number(filas.length)} de ${Number(total)} renglón(es)</span></div>
       ${total ? `<div class="tabla-scroll ct-tabla-scroll"><table class="tabla-resumen ct-tabla"><thead><tr>${acciones ? '<th class="ct-acciones">Acciones</th>' : ''}${t.cols.map(([c, titulo]) => `<th><button type="button" class="ct-orden" data-ct-orden="${esc(c)}">${esc(titulo)}${e.k === c ? (e.dir > 0 ? ' ▲' : ' ▼') : ''}</button></th>`).join('')}</tr>
         <tr class="ct-fila-filtros">${acciones ? '<th></th>' : ''}${t.cols.map(col => filtroHtml(k, col)).join('')}</tr></thead>
-        <tbody>${filas.length ? filas.map(f => `<tr class="${f.es_desglose ? 'ct-hijo' : ''}${f.manual ? ' ct-manual' : ''}">${acciones ? `<td class="ct-acciones">${accionesHtml(f)}</td>` : ''}${t.cols.map(c => celda(f, c)).join('')}</tr>`).join('') : `<tr><td colspan="${t.cols.length + (acciones ? 1 : 0)}" class="util-45">Ningún renglón cumple los filtros.</td></tr>`}</tbody>
+        <tbody>${filas.length ? filas.map(f => `<tr class="${f.es_desglose ? 'ct-hijo' : ''}${f.manual ? ' ct-manual' : ''}${f.fantasma ? ' ct-fantasma' : ''}">${acciones ? `<td class="ct-acciones">${accionesHtml(f)}</td>` : ''}${t.cols.map(c => celda(f, c)).join('')}</tr>`).join('') : `<tr><td colspan="${t.cols.length + (acciones ? 1 : 0)}" class="util-45">Ningún renglón cumple los filtros.</td></tr>`}</tbody>
         <tfoot><tr>${acciones ? '<td></td>' : ''}${totales.map((v, i) => `<td class="ct-num">${i === 0 ? 'TOTAL' : esc(v)}</td>`).join('')}</tr></tfoot></table></div>`
       : '<p class="util-45">No hay renglones este mes.</p>'}`;
   }
@@ -411,6 +413,7 @@ const Contabilidad = (() => {
       const b = e.target.closest('button'); if (!b || !DATOS) return;
       if (b.dataset.ctPestana) { if (b.dataset.ctPestana === PESTANA) return; sePuedeDescartar().then(ok => { if (ok) { EDITANDO = false; PESTANA = b.dataset.ctPestana; pintar(); } }); }
       else if (b.id === 'ct-editar-flujo') { EDITANDO = true; repintar('flujo'); }
+      else if (b.id === 'ct-folios-pendientes') conBoton(b, async () => { if (!sinPendientes()) return; try { const r = await pedir('/contabilidad/flujo/folios-pendientes', { method: 'POST', body: '{}' }); toast(`${Number(r.asignados)} folio(s) asignado(s)` + (r.omitidos ? ` · ${Number(r.omitidos)} de un mes cerrado (solo Dirección)` : '')); await cargar(); } catch (e) { toast(e.message); } });
       else if (b.id === 'ct-mov-abrir') { MOV_ABIERTO = !MOV_ABIERTO; repintar('flujo'); if (MOV_ABIERTO) $('ct-mov-monto')?.focus(); }
       else if (b.id === 'ct-mov-cerrar') { MOV_ABIERTO = false; repintar('flujo'); }
       else if (b.dataset.ctDesglosar) conBoton(b, () => desglosar(b.dataset.ctDesglosar));
