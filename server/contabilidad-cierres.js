@@ -139,6 +139,15 @@ module.exports = function contabilidadCierres(app, db, h) {
     ['cierre_pagos_upd', 'BEFORE UPDATE ON main.pagos_proveedor', `(NEW.fecha IS NOT OLD.fecha OR NEW.monto_cent IS NOT OLD.monto_cent OR NEW.cancelado IS NOT OLD.cancelado OR NEW.metodo IS NOT OLD.metodo
       OR NEW.referencia IS NOT OLD.referencia OR NEW.cuenta_origen IS NOT OLD.cuenta_origen OR NEW.cxp_id IS NOT OLD.cxp_id)
       AND (mes_bloqueado(OLD.fecha, ${sucPago('OLD.cxp_id')}) OR mes_bloqueado(NEW.fecha, ${sucPago('NEW.cxp_id')}))`],
+    // Gastos (cuentas por pagar; 2026-11-13, auditoría del módulo contable): el gasto cuenta en el mes de su fecha de
+    // documento, así que registrarlo, cancelarlo o cambiarle fecha, importe, IVA, categoría, comprobante, proveedor o sucursal
+    // mueve «Gastos del mes» y el IVA de un mes cerrado. La sucursal se asigna justo después de insertar (por eso se revisa
+    // también al cambiarla). Pagarlo con fecha de un mes abierto, sus notas y su XML sin cambio de IVA sí se pueden.
+    ['cierre_cxp_ins', 'BEFORE INSERT ON main.cuentas_por_pagar', 'mes_bloqueado(NEW.fecha_documento, NEW.sucursal_id)'],
+    ['cierre_cxp_upd', 'BEFORE UPDATE ON main.cuentas_por_pagar', `(NEW.fecha_documento IS NOT OLD.fecha_documento OR NEW.total_cent IS NOT OLD.total_cent OR NEW.iva_cent IS NOT OLD.iva_cent
+      OR NEW.categoria IS NOT OLD.categoria OR NEW.cancelada IS NOT OLD.cancelada OR NEW.sucursal_id IS NOT OLD.sucursal_id OR NEW.tipo_comprobante IS NOT OLD.tipo_comprobante
+      OR NEW.proveedor_id IS NOT OLD.proveedor_id)
+      AND (mes_bloqueado(OLD.fecha_documento, OLD.sucursal_id) OR mes_bloqueado(NEW.fecha_documento, NEW.sucursal_id))`],
   ];
   // Correcciones a mano del flujo de un mes cerrado: solo Dirección (también en la base).
   disparadores.push(['cierre_flujo_corr_ins', 'BEFORE INSERT ON main.flujo_correcciones', "mes_bloqueado(NEW.mes || '-01', NEW.sucursal_id)"],

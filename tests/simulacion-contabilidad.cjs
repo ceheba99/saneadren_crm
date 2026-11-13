@@ -43,6 +43,8 @@ const HOY = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Mexico_City' }
   const prov = exigir(await pedir('POST', '/finanzas/proveedores', A, { nombre: 'Gasolinera Centro', categoria: 'combustible', dias_credito: 0, clabe: '012180001234567899', banco: 'BBVA' }), 'proveedor');
   const g1 = exigir(await pedir('POST', '/finanzas/cxp', A, { proveedor_id: prov.id, categoria: 'combustible', concepto: 'Diésel', total: 1160, iva: 160, fecha_documento: HOY, dias_credito: 0, tipo_comprobante: 'factura', factura_folio: 'G-1', ya_pagado: true, metodo: 'transferencia' }), 'gasto con IVA');
   exigir(await pedir('POST', '/finanzas/cxp', A, { proveedor_id: prov.id, categoria: 'combustible', concepto: 'Gasolina sin IVA capturado', total: 580, fecha_documento: HOY, dias_credito: 0, tipo_comprobante: 'factura', factura_folio: 'G-2' }), 'gasto IVA estimado');
+  // Un camión (categoría «activos»: inversión, no es gasto) con su IVA.
+  exigir(await pedir('POST', '/finanzas/cxp', A, { proveedor_id: prov.id, categoria: 'activos', concepto: 'Camión Vactor', total: 116000, iva: 16000, fecha_documento: HOY, dias_credito: 30, tipo_comprobante: 'factura', factura_folio: 'G-3' }), 'compra de un camión');
   // Una factura emitida en sandbox (timbrada, con su XML) y una cancelada.
   { const d = new DatabaseSync(DB);
     d.prepare("INSERT INTO facturas (lead_id, sucursal_id, num_order, tipo_documento, estatus, entorno, serie, folio, uuid, receptor_rfc, receptor_razon_social, subtotal_cent, iva_cent, total_cent, fecha_timbrado, xml) VALUES (?, ?, 'N-1', 'factura', 'timbrada', 'sandbox', 'F', '1', 'UUID-UNO', 'CCO010101AB1', 'CLIENTE CONTABLE', 100000, 16000, 116000, ?, '<cfdi:Comprobante Folio=\"1\"/>')").run(o.id, qro.id, HOY + ' 10:00:00');
@@ -59,13 +61,14 @@ const HOY = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Mexico_City' }
   console.log('2. Las cifras');
   revisa(r.ingresos.facturas === 1 && r.ingresos.facturado_subtotal === 1000 && r.ingresos.facturado_iva === 160 && r.ingresos.canceladas === 1, 'Facturado: solo la vigente; la cancelada aparte', r.ingresos);
   revisa(r.ingresos.cobrado === 580 && r.ingresos.por_confirmar === 100 && r.ingresos.cobrado_iva === 80, 'Cobrado solo lo confirmado (580, con IVA 80) y por confirmar aparte (100)', r.ingresos);
-  revisa(r.egresos.gastos === 2 && r.egresos.gastos_total === 1740 && r.egresos.gastos_iva === 240 && r.egresos.gastos_iva_estimado === 80 && r.egresos.pagado === 1160 && r.egresos.pagado_iva === 160, 'Gastos con su IVA (80 estimado) y lo pagado con su IVA', r.egresos);
-  revisa(r.iva.segun_facturas === 160 - 240 && r.iva.segun_flujo === 80 - 160, 'IVA según facturas (−80) y según el dinero (−80)', r.iva);
-  revisa(r.pendientes.gastos_sin_xml === 2 && r.pendientes.gastos_iva_estimado === 1 && r.pendientes.cobros_por_confirmar === 1 && r.pendientes.facturas_canceladas === 1, 'Pendientes de comprobar contados', r.pendientes);
+  revisa(r.egresos.gastos === 2 && r.egresos.gastos_total === 1740 && r.egresos.gastos_iva === 16240 && r.egresos.gastos_iva_estimado === 80 && r.egresos.pagado === 1160 && r.egresos.pagado_iva === 160, 'Gastos (sin el camión) con el IVA de gastos y compras (80 estimado) y lo pagado con su IVA', r.egresos);
+  revisa(r.egresos.no_gasto === 1 && r.egresos.no_gasto_total === 116000, 'La compra del camión va aparte: no es gasto del mes', r.egresos);
+  revisa(r.iva.segun_facturas === 160 - 16240 && r.iva.segun_flujo === 80 - 160, 'IVA según facturas (con el IVA del camión, que sí se acredita) y según el dinero (−80)', r.iva);
+  revisa(r.pendientes.gastos_sin_xml === 3 && r.pendientes.gastos_iva_estimado === 1 && r.pendientes.cobros_por_confirmar === 1 && r.pendientes.facturas_canceladas === 1, 'Pendientes de comprobar contados', r.pendientes);
 
   console.log('3. Descargas');
   [s, r] = await pedir('GET', '/contabilidad/excel?mes=' + MES, C);
-  revisa(s === 200 && r.facturas.length === 2 && r.cobros.length === 2 && r.gastos.length === 2 && r.pagos.length === 1 && r.gastos.find(x => x.folio === 'G-2').xml === 'Falta', 'El Excel trae facturas, cobros, gastos y pagos del mes', [r.facturas?.length, r.cobros?.length, r.gastos?.length, r.pagos?.length]);
+  revisa(s === 200 && r.facturas.length === 2 && r.cobros.length === 2 && r.gastos.length === 3 && r.pagos.length === 1 && r.gastos.find(x => x.folio === 'G-2').xml === 'Falta', 'El Excel trae facturas, cobros, gastos (también el camión) y pagos del mes', [r.facturas?.length, r.cobros?.length, r.gastos?.length, r.pagos?.length]);
   const d1 = r.gastos.find(x => x.folio === 'G-1'), d2 = r.gastos.find(x => x.folio === 'G-2');
   revisa(d1.status === 'PAGADO' && d1.pagado === 1160 && d1.pendiente === 0 && d1.fecha_pago === HOY && d1.via === 'transferencia' && d1.capturo === 'admin' && d1.categoria !== 'combustible'
     && d2.status === 'PENDIENTE' && d2.pendiente === 580 && d2.vence, 'Los gastos traen las columnas del Excel CXP (status, pagado, pendiente, fecha y vía de pago, capturó, categoría con nombre)', [d1, d2]);

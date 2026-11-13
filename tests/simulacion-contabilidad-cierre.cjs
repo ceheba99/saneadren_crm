@@ -80,6 +80,10 @@ const cerrada = (r) => r[0] === 409 && r[1].codigo === 'MES_CERRADO';
   revisa(cerrada(await pedir('POST', '/finanzas/pagos-proveedor/' + pago1.id + '/cancelar', G, { motivo: 'Pago equivocado' })), 'El Gerente no cancela un pago del mes cerrado');
   revisa(cerrada(await pedir('POST', '/finanzas/cxp', G, { proveedor_id: prov.id, categoria: 'combustible', concepto: 'Tubo pagado al registrar', total: 80, fecha_documento: DP2, dias_credito: 0, tipo_comprobante: 'recibo', ya_pagado: true, metodo: 'efectivo', fecha_pago: DP2 })), 'Un gasto «ya pagado» con fecha de pago del mes cerrado tampoco entra (y no queda el gasto a medias)');
   revisa(Array.isArray((await pedir('GET', '/finanzas/cxp?vista=todas', A))[1]) && !(await pedir('GET', '/finanzas/cxp?vista=todas', A))[1].some(x => x.concepto === 'Tubo pagado al registrar'), 'El gasto rechazado no quedó guardado sin su pago');
+  // Gastos (2026-11-13): el gasto cuenta en el mes de su fecha de documento, aunque no se haya pagado.
+  revisa(cerrada(await pedir('POST', '/finanzas/cxp', G, { proveedor_id: prov.id, categoria: 'combustible', concepto: 'Gasto atrasado por pagar', total: 70, fecha_documento: DP2, dias_credito: 0, tipo_comprobante: 'recibo' })), 'El Gerente no registra un gasto (aunque sea por pagar) con fecha del mes cerrado');
+  revisa(!(await pedir('GET', '/finanzas/cxp?vista=todas', A))[1].some(x => x.concepto === 'Gasto atrasado por pagar'), 'El gasto rechazado no quedó guardado');
+  revisa(cerrada(await pedir('POST', '/finanzas/cxp/' + g2.id + '/cancelar', G, { motivo: 'Se capturó dos veces' })), 'El Gerente no cancela un gasto del mes cerrado');
   revisa(cerrada(await pedir('POST', '/anticipos', G, { personal_id: persona.id, monto: 90, metodo: 'efectivo', motivo: 'Casetas atrasadas', fecha: DP2 })), 'El Gerente no entrega un anticipo con fecha del mes cerrado');
   revisa(cerrada(await pedir('POST', '/anticipos/' + an2.id + '/cancelar', G, { motivo: 'Se capturó mal' })), 'El Gerente no cancela un anticipo entregado en el mes cerrado');
   revisa(cerrada(await pedir('POST', '/contabilidad/saldo-inicial', C, { mes: MP, sucursal: qro.id, saldo: '1' })), 'El Contador ya no cambia el saldo inicial del mes cerrado');
@@ -91,6 +95,8 @@ const cerrada = (r) => r[0] === 409 && r[1].codigo === 'MES_CERRADO';
   console.log('   … y Dirección sí corrige');
   revisa((await pedir('POST', '/finanzas/pagos-proveedor/' + pago1.id + '/cancelar', A, { motivo: 'Pago equivocado' }))[0] === 200, 'Dirección cancela un pago del mes cerrado');
   revisa((await pedir('POST', '/leads/' + o.id + '/cobros', A, { monto: 20, metodo: 'efectivo', fecha: DP2 }))[0] === 201, 'Dirección registra un cobro con fecha del mes cerrado');
+  revisa((await pedir('POST', '/finanzas/cxp', A, { proveedor_id: prov.id, categoria: 'combustible', concepto: 'Gasto que faltaba', total: 70, fecha_documento: DP2, dias_credito: 0, tipo_comprobante: 'recibo' }))[0] === 201, 'Dirección registra un gasto con fecha del mes cerrado');
+  revisa((await pedir('POST', '/finanzas/cxp', G, { proveedor_id: prov.id, categoria: 'combustible', concepto: 'Gasto de hoy', total: 70, dias_credito: 0, tipo_comprobante: 'recibo' }))[0] === 201, 'El Gerente sí registra un gasto de hoy');
   [s, r] = await pedir('POST', '/contabilidad/saldo-inicial', A, { mes: MP, sucursal: qro.id, saldo: null });
   revisa(s === 200 && r.escrito === false && r.saldo === 0 && r.historial.length === 2 && r.historial[1].saldo === 10000.5 && r.historial[1].usuario === 'Carmen Contadora', 'Dirección regresa el saldo al del CRM; el historial guarda el anterior y quién lo puso', r);
 
