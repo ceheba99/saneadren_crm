@@ -517,14 +517,15 @@ let ETAPA_FILTRO = null;
 // ---------- Inicio (panel del día: alertas + cotizaciones estancadas + recompras) ----------
 // Muestra "Cargando…" y, si falla, un aviso con botón Reintentar en vez de dejar la lista vacía
 // (una lista vacía se confunde con "no hay pendientes").
-function estadoCarga(ids, estado, reintentar) {
+// Regla (ui.js, Repintado): «Cargando…» solo si está vacío; si ya había datos, se quedan, y si no se pueden actualizar se avisa arriba.
+function estadoCarga(ids, estado, reintentar, err) {
   ids.forEach(id => {
     const el = document.getElementById(id);
     if (!el) return;
-    if (estado === 'cargando') el.innerHTML = '<p class="util-45" role="status">Cargando…</p>';
+    if (estado === 'cargando') Repintado.cargando(el, '');
     else {
-      el.innerHTML = `<div class="aviso-error-carga" role="alert"><p>${escaparHtml(estado)}</p><button type="button" class="btn btn-outline">Reintentar</button></div>`;
-      el.querySelector('button').onclick = reintentar;
+      Repintado.falla(el, err || new Error(estado), reintentar, `<div class="aviso-error-carga" role="alert"><p>${escaparHtml(estado)}</p><button type="button" class="btn btn-outline">Reintentar</button></div>`, 'inicio');
+      const b = el.querySelector(':scope > .aviso-error-carga button'); if (b) b.onclick = reintentar;
     }
   });
 }
@@ -552,7 +553,7 @@ async function cargarInicio(silencioso = false) {
       api('/leads?estatus=ganado&solo_area=1&por_concluir=1').then(r => r.json())
     ]);
   } catch (err) {
-    if (err.status !== 401) estadoCarga(listas, 'No se pudo cargar: ' + err.message, cargarInicio);
+    if (err.status !== 401) estadoCarga(listas, 'No se pudo cargar: ' + err.message, cargarInicio, err);
     return;
   }
   const estancadas = abiertas
@@ -561,12 +562,12 @@ async function cargarInicio(silencioso = false) {
 
   const contCot = document.getElementById('inicio-cotizaciones');
   const filasCot = [...alertas.map(filaAlerta), ...estancadas.map(filaEstancada)];
-  contCot.innerHTML = filasCot.length ? filasCot.join('') : '<p class="util-45">No hay avisos ni cotizaciones pendientes por ahora. 🎉</p>';
+  Repintado.pintar(contCot, filasCot.length ? filasCot.join('') : '<p class="util-45">No hay avisos ni cotizaciones pendientes por ahora. 🎉</p>');
 
   // Órdenes con fecha ya pasada sin marcar como realizadas o no realizadas.
   const hoyTxt = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Mexico_City' }).format(new Date());
   const porConcluir = ordenes.filter(o => !o.ejecucion && o.fecha_servicio && o.fecha_servicio <= hoyTxt).sort((a, b) => a.fecha_servicio.localeCompare(b.fecha_servicio));
-  document.getElementById('inicio-concluir').innerHTML = porConcluir.length ? porConcluir.map(o => `
+  Repintado.pintar(document.getElementById('inicio-concluir'), porConcluir.length ? porConcluir.map(o => `
     <div class="fila-alerta tipo-estancada">
       <div class="info">
         <span class="tipo-tag estancada">🧾 Por concluir</span>
@@ -575,12 +576,12 @@ async function cargarInicio(silencioso = false) {
         <div class="fecha">Servicio del ${escaparHtml(o.fecha_servicio.split('-').reverse().join('/'))}</div>
       </div>
       <div class="util-46"><button class="btn btn-outline" onclick="abrirFicha(${Number(o.id)})">Abrir orden</button></div>
-    </div>`).join('') : '<p class="util-45">No hay servicios pendientes de concluir. 🎉</p>';
+    </div>`).join('') : '<p class="util-45">No hay servicios pendientes de concluir. 🎉</p>');
 
   const contRec = document.getElementById('inicio-recompras');
-  contRec.innerHTML = recompras.length
+  Repintado.pintar(contRec, recompras.length
     ? recompras.map(r => filaRecompra(r, r.dias_restantes <= 0)).join('')
-    : '<p class="util-45">No hay recompras próximas todavía.</p>';
+    : '<p class="util-45">No hay recompras próximas todavía.</p>');
   Finanzas.pintarInicio();
   if (typeof Personal !== 'undefined') Personal.pintarInicio(); // bloque «Personal» (licencias, contratos, ausencias, órdenes sin responsable)
   if (typeof Compras !== 'undefined') Compras.pintarInicio(); // bloque «Compras» (aprobar, cotizar, autorizar, recibir)
@@ -847,20 +848,20 @@ async function cargarGenerador() {
   resumen.textContent = 'Cargando…';
   const params = new URLSearchParams({ desde, hasta, q: document.getElementById('gen-buscar').value.trim() });
   let r;
-  try { r = await api('/generador?' + params).then(x => x.json()); } catch (err) { if (consulta === consultaGenerador) { resumen.textContent = 'No se pudo cargar el generador: ' + err.message; cuerpo.innerHTML = ''; } return; } // sin renglones viejos que parezcan al día
+  try { r = await api('/generador?' + params).then(x => x.json()); } catch (err) { if (consulta === consultaGenerador) { resumen.textContent = 'No se pudo cargar el generador: ' + err.message; if (!GENERADOR) cuerpo.innerHTML = ''; } return; } // si ya había renglones, se quedan (el resumen avisa) // sin renglones viejos que parezcan al día
   if (consulta !== consultaGenerador) return;
   GENERADOR = r;
   const m = v => v == null ? '—' : formatoMoneda(v), t = r.totales;
   resumen.textContent = `${r.filas.length} ${r.filas.length === 1 ? 'renglón' : 'renglones'} de ${t.ordenes} orden${t.ordenes === 1 ? '' : 'es'} · Subtotal ${formatoMoneda(t.subtotal)} · IVA ${formatoMoneda(t.iva)} · Total ${formatoMoneda(t.total)}${t.costo ? ` · Costo con terceros ${formatoMoneda(t.costo)}` : ''}`
     + (r.filas.some(f => f.iva_por_definir) ? ' · Las órdenes con IVA por definir se muestran como se capturaron.' : '')
     + (r.por_concluir ? ` · ${r.por_concluir} orden${r.por_concluir === 1 ? '' : 'es'} con fecha pasada aún sin marcar como realizada${r.por_concluir === 1 ? '' : 's'} (no aparecen aquí; ve a Inicio).` : '');
-  cuerpo.innerHTML = r.filas.length ? r.filas.map(f => `<tr data-gen-orden="${Number(f.lead_id)}">
+  Repintado.pintar(cuerpo, r.filas.length ? r.filas.map(f => `<tr data-gen-orden="${Number(f.lead_id)}">
       <td>${escaparHtml(f.mes)}</td><td class="st-fecha">${escaparHtml(f.fecha.split('-').reverse().join('/'))}</td><td class="st-folio">${escaparHtml(f.orden)}${f.orden_generador ? `<small class="celda-sub">orden ${escaparHtml(f.orden_generador)}</small>` : ''}</td><td>${escaparHtml(f.factura || '—')}</td>
       <td>${escaparHtml(f.cliente || '—')}</td><td>${escaparHtml(f.proyecto || '—')}</td><td>${escaparHtml(f.producto)}</td><td class="st-num">${Number(f.cantidad)}</td><td class="st-num">${m(f.precio_sin_iva)}</td><td class="st-num">${m(f.precio_con_iva)}</td>
       <td class="st-num">${m(f.subtotal)}</td><td class="st-num">${f.iva_por_definir ? '<small>Por definir</small>' : m(f.iva)}</td><td class="st-num"><b>${m(f.total)}</b></td>
       <td>${escaparHtml(f.canal || '—')}</td><td>${escaparHtml(f.unidad || '—')}</td><td>${escaparHtml(f.empleado || '—')}</td><td>${escaparHtml(f.manifiestos || '—')}</td><td>${escaparHtml(f.tiros || '—')}</td>
       <td class="gen-costo">${escaparHtml(f.proveedor || '')}</td><td class="gen-costo">${escaparHtml(f.concepto || '')}</td><td class="gen-costo st-num">${f.costo == null ? '' : formatoMoneda(f.costo)}</td><td class="gen-costo">${escaparHtml(f.estatus_pago || '')}</td><td class="gen-costo">${escaparHtml(f.via_pago || '')}</td>
-    </tr>`).join('') : '<tr><td colspan="23" class="servicios-vacio">No hay servicios realizados en este periodo.</td></tr>';
+    </tr>`).join('') : '<tr><td colspan="23" class="servicios-vacio">No hay servicios realizados en este periodo.</td></tr>');
 }
 on('gen-desde', 'change', cargarGenerador);
 on('gen-hasta', 'change', cargarGenerador);

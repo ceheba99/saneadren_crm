@@ -31,19 +31,19 @@ const Personal = (() => {
       if (turno !== consulta) return;
       filas = lista; pintar();
       cargarKioscos();
-    } catch (e) { $('pe-tabla').innerHTML = `<tr><td colspan="9"><p class="aviso-error-carga" role="alert">${esc(e.message)}</p></td></tr>`; }
+    } catch (e) { Repintado.falla($('pe-tabla'), e, cargar, `<tr><td colspan="9"><p class="aviso-error-carga" role="alert">${esc(e.message)}</p></td></tr>`, 'personal'); }
   }
   function pintar() {
     const avisos = filas.filter(p => p.alertas.length).length;
     $('pe-resumen').textContent = `${filas.length} persona${filas.length === 1 ? '' : 's'}` + (avisos ? ` · ${avisos} con avisos (licencias o contratos por vencer)` : '');
-    $('pe-tabla').innerHTML = filas.length ? filas.map(p => `<tr class="${p.activo ? '' : 'pe-baja'}">
+    Repintado.pintar($('pe-tabla'), filas.length ? filas.map(p => `<tr class="${p.activo ? '' : 'pe-baja'}">
         <td>${esc(p.numero_empleado || '')}</td><td><button type="button" class="pe-nombre" data-persona="${Number(p.id)}">${esc(p.nombre)}</button>${p.usuario_nombre ? '<small class="pe-cuenta">Cuenta: ' + esc(p.usuario_nombre) + '</small>' : ''}${p.activo ? '' : '<small class="pe-cuenta">Baja ' + esc(fecha(p.fecha_baja)) + '</small>'}</td>
         <td>${esc(p.puesto)}</td><td>${esc(p.telefono || '—')}</td><td>${esc(antiguedad(p.fecha_ingreso))}</td>
         <td>${p.vacaciones ? (p.vacaciones.anios ? `${p.vacaciones.disponibles} de ${p.vacaciones.corresponden}` : 'Aún no cumple 1 año') : '—'}</td>
         <td>${p.licencia_vence ? esc((p.licencia_tipo || '') + ' · vence ' + fecha(p.licencia_vence)) : '—'}</td>
         <td>${Number(p.ordenes_mes) || 0}</td>
         <td>${p.alertas.map(a => `<span class="chip alert-chip">${esc(a)}</span>`).join(' ') || ''}</td></tr>`).join('')
-      : '<tr><td colspan="9"><p class="ayuda">No hay personas con esos filtros. ' + (Permisos.puede('personal.editar') ? 'Da de alta a la primera con «+ Nueva persona».' : '') + '</p></td></tr>';
+      : '<tr><td colspan="9"><p class="ayuda">No hay personas con esos filtros. ' + (Permisos.puede('personal.editar') ? 'Da de alta a la primera con «+ Nueva persona».' : '') + '</p></td></tr>');
   }
 
   // ---------- Ficha ----------
@@ -134,7 +134,11 @@ const Personal = (() => {
         </div>` : ''}</div>
         <div class="modal-section"><h3 class="pe-sub">Órdenes donde participó</h3>${(p.ordenes || []).length ? '<ul class="pe-ordenes">' + p.ordenes.map(o => `<li><b>${esc(folioOrdenServicio(o))}</b> · ${esc(o.cliente || '')} · ${esc(fecha(o.fecha_realizado || o.fecha_servicio))} · ${esc(CAT.papeles[o.papel] || o.papel)}${o.ejecucion === 'realizado' ? ' ✔' : ''}</li>`).join('') + '</ul>' : '<p class="ayuda">Todavía no está en ninguna orden.</p>'}</div>`;
     }
-    if (!nuevo) h += '<div class="modal-section" id="pe-checador"><h3 class="pe-sub">🕒 Reloj checador</h3><p class="ayuda" role="status">Cargando…</p></div>';
+    // Al repintar la ficha (guardar, foto, etc.) la misma persona conserva lo que ya se veía del reloj, la foto y WhatsApp
+    // hasta que llega lo nuevo: con «Cargando…» la ventana se encogía y el scroll brincaba.
+    const antes = { checador: $('pe-checador'), foto: document.querySelector('#pe-foto-cred .pe-foto') };
+    const mismo = !nuevo && antes.checador && antes.checador.dataset.persona === String(p.id) && antes.checador.dataset.rpEstado === 'listo';
+    if (!nuevo) h += `<div class="modal-section" id="pe-checador" data-persona="${Number(p.id)}" data-rp-estado="${mismo ? 'listo' : 'cargando'}">${mismo ? antes.checador.innerHTML : '<h3 class="pe-sub">🕒 Reloj checador</h3><p class="ayuda" role="status">Cargando…</p>'}</div>`;
     if (!nuevo) h += `<div class="modal-section" id="pe-foto-cred"><h3 class="pe-sub">🪪 Foto para su credencial</h3><div class="pe-foto-cred">${p.tiene_foto ? '<p class="ayuda" role="status">Cargando…</p>' : '<p class="ayuda">Todavía no tiene foto. Que se ponga de frente, sin lentes oscuros ni gorra, con fondo claro.</p>'}</div>
       ${puedeEditar && p.activo ? `<label class="btn btn-secundario">📷 ${p.tiene_foto ? 'Cambiar foto' : 'Subir o tomar foto'}<input type="file" id="pe-foto-archivo" accept="image/jpeg,image/png" capture="user" hidden></label>` : ''}</div>`;
     h += `<div class="modal-section pe-pie"><p id="pe-aviso" role="status"></p><div class="btn-group">
@@ -143,7 +147,8 @@ const Personal = (() => {
       ${edita && !nuevo ? '<button type="button" class="btn btn-outline" id="pe-cancelar-edicion">Cancelar edición</button>' : ''}
       ${edita && !nuevo ? (p.activo ? '<button type="button" class="btn btn-peligro" id="pe-baja">Dar de baja</button>' : '<button type="button" class="btn btn-outline" id="pe-reactivar">Reactivar (reingreso)</button>') : ''}
       </div></div>`;
-    $('pe-cuerpo').innerHTML = h;
+    Repintado.pintar($('pe-cuerpo'), h);
+    if (mismo && p.tiene_foto && antes.foto) document.querySelector('#pe-foto-cred .pe-foto-cred')?.replaceChildren(antes.foto);
     base = JSON.stringify(datosFormulario());
     aviso();
     if (!nuevo) pintarChecador(p.id);
@@ -184,7 +189,7 @@ const Personal = (() => {
       e = await r.json().catch(() => ({})); if (!r.ok) throw new Error(e.error || 'No se pudo cargar el checador');
       if (rh.ok) hor = await rh.json().catch(() => null);
     }
-    catch (err) { if ($('pe-checador')) $('pe-checador').innerHTML = `<h3 class="pe-sub">🕒 Reloj checador</h3><p class="aviso-error-carga" role="alert">${esc(err.message)}</p>`; return; }
+    catch (err) { Repintado.falla($('pe-checador'), err, () => pintarChecador(id), `<h3 class="pe-sub">🕒 Reloj checador</h3><p class="aviso-error-carga" role="alert">${esc(err.message)}</p>`); return; }
     const cont = $('pe-checador');
     if (!cont || actual?.id !== Number(id)) return;
     let h = '<h3 class="pe-sub">🕒 Reloj checador</h3>';
@@ -212,20 +217,20 @@ const Personal = (() => {
       }
       // Checar por WhatsApp (foráneos, server/whatsapp.js): respaldo del celular; desde el número de su ficha, queda por revisar.
       h += `<p>💬 Checar por WhatsApp: <b>${esc(e.checa_whatsapp ? 'activado' : 'no')}</b>${e.checa_whatsapp ? ` <small>(desde el celular de su ficha: ${esc(actual.telefono || 'sin teléfono')})</small>` : ''}</p>`;
-      if (e.checa_whatsapp) h += `<div id="pe-wa-config"><p class="ayuda" role="status">Cargando…</p></div>`;
+      if (e.checa_whatsapp) { const waAntes = $('pe-wa-config'); h += `<div id="pe-wa-config" data-rp-estado="${waAntes?.dataset.rpEstado === 'listo' ? 'listo' : 'cargando'}">${waAntes?.dataset.rpEstado === 'listo' ? waAntes.innerHTML : '<p class="ayuda" role="status">Cargando…</p>'}</div>`; }
       if (e.puede?.editar && actual.activo) h += `<div class="btn-group"><button type="button" class="btn btn-outline" data-pe-whatsapp="${Number(id)}" data-activo="${e.checa_whatsapp ? '' : '1'}">${esc(e.checa_whatsapp ? 'Quitar WhatsApp' : 'Permitir checar por WhatsApp')}</button></div>`;
     }
     if (e.ultimas?.length) h += '<h4 class="pe-sub2">Últimas checadas</h4><ul class="pe-ordenes">' + e.ultimas.map(c => `<li>${esc(fecha(c.fecha))} ${esc(String(c.hora).slice(0, 5))} · ${esc(TIPOS_CHECADA[c.tipo] || c.tipo)}${esc(c.origen === 'manual' ? ' (a mano)' : c.origen === 'celular' ? ' (celular)' : '')}${esc(c.sin_conexion ? ' (sin conexión)' : '')}${esc(c.estado === 'anulada' ? ' (anulada)' : c.estado === 'por_revisar' ? ' (por revisar)' : '')}${c.tiene_foto && e.puede?.ver ? ` <button type="button" class="btn-link" data-pe-foto="${Number(c.id)}">📷 Ver foto</button>` : ''}${esc(c.foto_borrada ? ' (foto borrada a los ' + e.dias_fotos + ' días)' : '')}</li>`).join('') + '</ul><div id="pe-foto-checada"></div>';
     // Etapa 6 (FLW-H08): la primera alta, quien edita el personal; un PIN nuevo a quien ya tiene uno, quien corrige la asistencia.
     if (e.puede?.editar && actual.activo && (e.puede?.corregir || !e.tiene_pin || e.bloqueado)) h += `<div class="btn-group">${e.puede?.corregir || !e.tiene_pin ? `<button type="button" class="btn btn-secundario" data-pe-pin="${Number(id)}" data-pe-pin-hay="${e.codigo ? 1 : ''}">${e.codigo ? 'Dar un PIN temporal nuevo' : 'Dar de alta en el checador'}</button>` : ''}${e.bloqueado ? `<button type="button" class="btn btn-outline" data-pe-desbloquear="${Number(id)}">Desbloquear PIN</button>` : ''}</div>`;
-    cont.innerHTML = h;
+    Repintado.pintar(cont, h);
     if (e.checa_whatsapp) pintarWhatsapp(Number(id));
   }
   // Qué le pide el bot de WhatsApp (foto, ubicación) y en qué zonas puede checar (server/whatsapp.js, 2026-11-13).
   async function pintarWhatsapp(id) {
     let w;
     try { const r = await api('/asistencia/personal/' + Number(id) + '/whatsapp'); w = await r.json().catch(() => ({})); if (!r.ok) throw new Error(w.error || 'No se pudo cargar'); }
-    catch (err) { if ($('pe-wa-config')) $('pe-wa-config').innerHTML = `<p class="aviso-error-carga" role="alert">${esc(err.message)}</p>`; return; }
+    catch (err) { Repintado.falla($('pe-wa-config'), err, () => pintarWhatsapp(id), `<p class="aviso-error-carga" role="alert">${esc(err.message)}</p>`); return; }
     const cont = $('pe-wa-config');
     if (!cont || actual?.id !== Number(id)) return;
     const puede = w.editar && actual.activo, dis = puede ? '' : ' disabled';
@@ -237,7 +242,7 @@ const Personal = (() => {
       : '<p class="ayuda">Aún no hay zonas. Dalas de alta en <b>RH → Asistencia → Horarios → Zonas para checar por WhatsApp</b>.</p>';
     h += '</fieldset>';
     if (puede) h += `<div class="btn-group"><button type="button" class="btn btn-secundario" data-pe-wa-guardar="${Number(id)}">Guardar cómo checa por WhatsApp</button></div>`;
-    cont.innerHTML = h;
+    Repintado.pintar(cont, h);
   }
   async function guardarWhatsapp(id, b) {
     const zonas = [...document.querySelectorAll('[data-pe-wa-zona]')].filter(x => x.checked).map(x => Number(x.dataset.peWaZona));
@@ -329,9 +334,9 @@ const Personal = (() => {
       const r = await api('/asistencia/dispositivos'), lista = await r.json().catch(() => []);
       if (!r.ok) throw new Error(lista.error || 'No se pudieron cargar los kioscos');
       const aqui = kioscoAqui()?.id;
-      cont.innerHTML = lista.length ? '<ul class="pe-ordenes">' + lista.map(k => `<li><b>${esc(k.nombre)}</b> · ${esc(k.sucursal || '')}${k.id === aqui && k.activo ? ' · <b>este dispositivo</b> · <a href="/kiosco">Abrir el kiosco</a>' : ''} <small>${k.activo ? 'registrado por ' + esc(k.registrado_por_nombre || '') + (k.ultimo_uso ? ' · último uso ' + esc(k.ultimo_uso) : '') : 'dado de baja por ' + esc(k.revocado_por || '')}</small>${k.activo && k.red_cambiada ? ` <span class="as-rojo">⚠️ Su última checada llegó desde otra red.</span> <button type="button" class="btn btn-outline" data-pe-kiosco-red="${Number(k.id)}" title="Si cambió el internet de la oficina">Es la nueva red de la oficina</button>` : ''}${k.activo ? ` <button type="button" class="btn btn-outline" data-pe-kiosco-baja="${Number(k.id)}">Dar de baja</button>` : ''}${Permisos.direccion() ? ` <button type="button" class="btn btn-peligro" data-pe-kiosco-eliminar="${Number(k.id)}" data-nombre="${esc(k.nombre)}">Eliminar</button>` : ''}</li>`).join('') + '</ul>'
-        : '<p class="ayuda">Todavía no hay kioscos registrados.</p>';
-    } catch (err) { cont.innerHTML = `<p class="aviso-error-carga" role="alert">${esc(err.message)}</p>`; }
+      Repintado.pintar(cont, lista.length ? '<ul class="pe-ordenes">' + lista.map(k => `<li><b>${esc(k.nombre)}</b> · ${esc(k.sucursal || '')}${k.id === aqui && k.activo ? ' · <b>este dispositivo</b> · <a href="/kiosco">Abrir el kiosco</a>' : ''} <small>${k.activo ? 'registrado por ' + esc(k.registrado_por_nombre || '') + (k.ultimo_uso ? ' · último uso ' + esc(k.ultimo_uso) : '') : 'dado de baja por ' + esc(k.revocado_por || '')}</small>${k.activo && k.red_cambiada ? ` <span class="as-rojo">⚠️ Su última checada llegó desde otra red.</span> <button type="button" class="btn btn-outline" data-pe-kiosco-red="${Number(k.id)}" title="Si cambió el internet de la oficina">Es la nueva red de la oficina</button>` : ''}${k.activo ? ` <button type="button" class="btn btn-outline" data-pe-kiosco-baja="${Number(k.id)}">Dar de baja</button>` : ''}${Permisos.direccion() ? ` <button type="button" class="btn btn-peligro" data-pe-kiosco-eliminar="${Number(k.id)}" data-nombre="${esc(k.nombre)}">Eliminar</button>` : ''}</li>`).join('') + '</ul>'
+        : '<p class="ayuda">Todavía no hay kioscos registrados.</p>');
+    } catch (err) { Repintado.falla(cont, err, cargarKioscos, `<p class="aviso-error-carga" role="alert">${esc(err.message)}</p>`); }
   }
   async function registrarKiosco() {
     const nombre = $('pe-kiosco-nombre').value.trim();
@@ -445,7 +450,7 @@ const Personal = (() => {
   $('pe-cuerpo').addEventListener('click', e => {
     const t = e.target.closest('button'); if (!t) return;
     if (t.id === 'pe-guardar') guardar();
-    else if (t.id === 'pe-editar') { EDITANDO = true; pintarFicha(); $('pe-nombre')?.focus(); }
+    else if (t.id === 'pe-editar') { EDITANDO = true; pintarFicha(); $('pe-nombre')?.focus({ preventScroll: true }); }
     else if (t.id === 'pe-cancelar-edicion') { permitirSalida().then(ok => { if (ok) { EDITANDO = false; pintarFicha(); } }); }
     else if (t.id === 'pe-baja') baja();
     else if (t.id === 'pe-reactivar') reactivar();
@@ -526,17 +531,21 @@ const EquipoOrden = (() => {
       const cont = caja(); if (!cont) return;
       sucursal = lead.sucursal_id ?? null;
       const equipo = lead.equipo_personal || [];
-      inicial = JSON.stringify(equipo.map(x => ({ personal_id: x.personal_id, papel: x.papel })));
-      cont.innerHTML = '<p class="util-45" role="status">Cargando personal…</p>';
+      const inicialNuevo = JSON.stringify(equipo.map(x => ({ personal_id: x.personal_id, papel: x.papel })));
+      Repintado.cargando(cont, 'equipo|' + (lead.id ?? 'nuevo'), '<p class="util-45" role="status">Cargando personal…</p>');
       try { gente = await api('/personal/para-asignar').then(r => r.ok ? r.json() : Promise.reject(new Error('sin acceso'))); }
-      catch { gente = []; cont.innerHTML = '<p class="ayuda">No se pudo cargar el personal.</p>'; inicial = null; return; }
+      catch {
+        if (cont.querySelector('[data-eq-resp]')) { toast('No se pudo actualizar el personal del equipo.'); return; } // se queda lo que ya se veía (y lo que ya se había cargado)
+        gente = []; cont.innerHTML = '<p class="ayuda">No se pudo cargar el personal.</p>'; cont.dataset.rpEstado = 'error'; inicial = null; return;
+      }
+      inicial = inicialNuevo;
       // Quien ya está en la orden aunque ya no esté activo, sigue apareciendo.
       for (const x of equipo) if (!gente.some(p => p.id === x.personal_id)) gente.push({ id: x.personal_id, nombre: x.nombre + ' (baja)', puesto: x.puesto, sucursal_id: sucursal, con_cuenta: !!x.usuario_id });
       const resp = equipo.find(x => x.papel === 'responsable');
-      cont.innerHTML = `<div class="pe-eq"><label for="${contId}-resp" class="pe-eq-etq">Técnico responsable</label><select id="${contId}-resp" data-eq-resp>${opcionesGente(resp?.personal_id, 'Sin responsable')}</select>
+      Repintado.pintar(cont, `<div class="pe-eq"><label for="${contId}-resp" class="pe-eq-etq">Técnico responsable</label><select id="${contId}-resp" data-eq-resp>${opcionesGente(resp?.personal_id, 'Sin responsable')}</select>
         <div data-eq-otros>${equipo.filter(x => x.papel !== 'responsable').map(fila).join('')}</div>
         <button type="button" class="btn btn-outline btn-chico" data-eq-agregar>+ Operador o ayudante</button>
-        ${gente.some(deLaSucursal) ? '' : '<p class="ayuda">No hay personal dado de alta en esta sucursal (agrégalo en Personal).</p>'}</div>`;
+        ${gente.some(deLaSucursal) ? '' : '<p class="ayuda">No hay personal dado de alta en esta sucursal (agrégalo en Personal).</p>'}</div>`);
     }
     // Al editar solo se manda si cambió (así una lista que no cargó no borra el equipo).
     function payload() { if (inicial === null || !caja()?.querySelector('[data-eq-resp]')) return {}; const l = lista(); return JSON.stringify(l) === inicial ? {} : { equipo_personal: l }; }
