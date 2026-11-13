@@ -310,7 +310,7 @@
   const SESION = Math.random().toString(36).slice(2) + Date.now().toString(36); // para saber si la página se recargó
   // Los botones (los manda el servidor; estos sirven si el kiosco arranca sin conexión).
   let TIPOS = { entrada: 'Entrada', comida_sale: 'Salida a comer', comida_regresa: 'Regreso de comer', salida: 'Salida', extra_inicia: 'Inicio de tiempo extra', extra_termina: 'Fin de tiempo extra' };
-  let registro = null, desfase = 0, estado = {}, temporizador = null, sinConexion = false, conexionConfirmada = false, camaraLista = false, camaraMotivo = '', camaraFallo = false;
+  let registro = null, desfase = 0, estado = {}, temporizador = null, sinConexion = false, conexionConfirmada = false, camaraLista = false, camaraMotivo = '', camaraFallo = false, pantallaFija = null;
   try { registro = JSON.parse(localStorage.getItem(LLAVE) || 'null'); } catch { registro = null; }
 
   // ---------- Utilidades de pantalla (solo textContent: nada del servidor se interpreta como HTML) ----------
@@ -325,6 +325,7 @@
     if (sinConexion) a.push(['rojo', 'Sin conexión a internet: las checadas se guardan aquí y se suben al volver. Quedarán por revisar.']);
     // La cámara está apagada mientras nadie checa: el aviso solo sale si al pedirla falló.
     if (camaraFallo) a.push(['amarillo', `La cámara no está disponible${camaraMotivo ? ' (' + camaraMotivo + ')' : ''}: las checadas quedarán por revisar. Toca aquí para intentar de nuevo.`, async () => { await iniciarCamara(); if (estado.esCodigo) soltarCamara(); }]);
+    if (pantallaFija === false) a.push(['amarillo', 'Esta tableta puede apagar su pantalla sola (ahorro de energía o batería baja). Avisa al gerente: hay que conectarla y quitar el ahorro de energía.']);
     $('avisos').replaceChildren(...a.map(([c, t, accion]) => accion ? el('button', { type: 'button', className: 'aviso ' + c, textContent: t, onclick: accion }) : el('div', { className: 'aviso ' + c, textContent: t })));
   }
   function reiniciarEspera(ms = ESPERA_MS) { clearTimeout(temporizador); temporizador = setTimeout(inicio, ms); }
@@ -457,6 +458,7 @@
   // Con cada señal la tableta dice cómo está: batería, si tiene cargador y si su cámara sirve (server/kiosco-vigia.js).
   function estadoTableta() {
     const p = ['cam=' + (camaraFallo ? 0 : 1)], b = tabletaBateria;
+    if (pantallaFija !== null) p.push('pan=' + (pantallaFija ? 1 : 0));
     if (b && typeof b.level === 'number' && b.level >= 0 && b.level <= 1) p.push('b=' + Math.round(b.level * 100), 'c=' + (b.charging === true ? 1 : 0));
     return '?' + p.join('&');
   }
@@ -1349,11 +1351,19 @@
   try { navigator.serviceWorker?.register('/kiosco-sw.js', { scope: '/kiosco' }).catch(() => {}); } catch { /* no disponible */ }
   $('pantalla-completa').onclick = () => { (document.documentElement.requestFullscreen?.() || Promise.resolve()).catch(() => {}); };
   // La pantalla no se apaga sola: el permiso se pierde cada vez que la tableta se bloquea, así que se vuelve a pedir.
+  // 2026-11-13 (la tableta se bloqueó sola y pedía su PIN): si el sistema no deja mantener la pantalla encendida
+  // (ahorro de energía, batería baja), el checador lo dice en un aviso amarillo, lo reintenta cada 15 s y con cada
+  // toque, y se lo reporta al servidor para que avise a Dirección ANTES de que la pantalla se apague.
   let candado = null;
   const despierta = async () => {
     if (candado || document.visibilityState !== 'visible') return;
-    try { candado = await navigator.wakeLock?.request('screen') || null; candado?.addEventListener('release', () => { candado = null; setTimeout(despierta, 1000); }); } catch { candado = null; }
+    if (!navigator.wakeLock?.request) { if (pantallaFija !== null) { pantallaFija = null; avisos(); } return; }
+    let ok = false;
+    try { candado = await navigator.wakeLock.request('screen') || null; ok = !!candado; candado?.addEventListener('release', () => { candado = null; setTimeout(despierta, 1000); }); } catch { candado = null; }
+    if (pantallaFija !== ok) { pantallaFija = ok; avisos(); }
   };
+  setInterval(() => { if (!candado) despierta(); }, 15000);
+  document.addEventListener('pointerdown', () => { if (!candado) despierta(); }, { capture: true, passive: true });
   // ---------- Volver a la vida (2026-11-11) ----------
   // Al bloquear y desbloquear la tableta, entrar o salir del ahorro de energía o volver de otra app, el navegador
   // congela la página: los relojes internos se detienen, la cámara se suelta y la red tarda en volver. Al regresar se

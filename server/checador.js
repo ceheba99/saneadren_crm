@@ -316,7 +316,7 @@ module.exports = function checador(app, db, h) {
   // sucursales) y se manda por correo a Dirección (usuarios con rol admin) y a los correos de CORREO_AVISOS_CHECADOR.
   const textoKiosco = k => `Kiosco «${k.nombre}»${k.sucursal ? ' (' + k.sucursal + ')' : ''}`;
   function avisarKiosco(tipo, k) {
-    if (tipo === 'bateria' || tipo === 'camara') return avisarAtencion(tipo, k);
+    if (tipo === 'bateria' || tipo === 'camara' || tipo === 'pantalla') return avisarAtencion(tipo, k);
     const cayo = tipo === 'sin_respuesta';
     app.locals.registro?.servicio(cayo ? 'kiosco_sin_respuesta' : 'kiosco_volvio', cayo ? `${textoKiosco(k)}: sin señal desde ${k.desde || 'hace más de 5 minutos'}` : `${textoKiosco(k)}: volvió a dar señal a las ${k.volvio}`);
     const correo = require('./correo');
@@ -329,7 +329,7 @@ module.exports = function checador(app, db, h) {
       pie: 'Aviso automático del CRM de Saneadren: llega una vez cuando el checador deja de responder en horario de trabajo y otra cuando vuelve.' }).catch(e => console.error('[kiosco] correo:', e.message));
   }
   // «Necesita atención»: batería baja sin cargador o cámara que no funciona (para arreglarlo antes de que falle).
-  const textoAtencion = k => (k.tipo === 'bateria' ? `batería en ${k.bateria} % y sin cargador: conéctala para que no se apague` : 'la cámara no está funcionando: las checadas quedan sin foto y por revisar (toca el aviso amarillo de la tableta o cierra y abre el checador)');
+  const textoAtencion = k => (k.tipo === 'pantalla' ? 'no puede mantener la pantalla encendida: se va a apagar sola y pedirá el PIN de la tableta. En la tableta: apaga el ahorro de energía y activa «Pantalla activa» en Ajustes → Opciones de desarrollador (y déjala conectada al cargador)' : k.tipo === 'bateria' ? `batería en ${k.bateria} % y sin cargador: conéctala para que no se apague` : 'la cámara no está funcionando: las checadas quedan sin foto y por revisar (toca el aviso amarillo de la tableta o cierra y abre el checador)');
   function avisarAtencion(tipo, k) {
     app.locals.registro?.servicio('kiosco_atencion', `${textoKiosco(k)}: ${textoAtencion(k)}`);
     const correo = require('./correo');
@@ -469,7 +469,7 @@ module.exports = function checador(app, db, h) {
     db.prepare("UPDATE main.checador_dispositivos SET ultimo_uso = datetime('now','localtime') WHERE id = ?").run(req.kiosco.id);
     // La tableta dice cómo está (batería, cargador, cámara): el vigía avisa antes de que falle (kiosco-vigia.js).
     const q = req.query, b = /^\d{1,3}$/.test(String(q.b ?? '')) ? Number(q.b) : null, si = v => (v === '1' ? true : v === '0' ? false : null);
-    vigiaKioscos.reporte(req.kiosco.id, { bateria: b, cargando: si(q.c), camara: si(q.cam) });
+    vigiaKioscos.reporte(req.kiosco.id, { bateria: b, cargando: si(q.c), camara: si(q.cam), pantalla: si(q.pan) });
     res.json({ nombre: req.kiosco.nombre, sucursal: req.kiosco.sucursal, fecha: a.fecha, hora: a.hora.slice(0, 5), utc: a.utc, tipos: TIPOS, llave_cola: llaveColaPublica() });
   }));
   // Revisa código y PIN con todos los topes. Regresa { p } o { status, error } (el error ya va listo para la pantalla).

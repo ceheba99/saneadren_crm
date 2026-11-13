@@ -9,6 +9,8 @@
 //  · «Necesita atención» (2026-11-12, para prevenir la falla): la tableta manda con su señal cómo va de batería y si
 //    su cámara funciona. Batería en 20 % o menos y sin cargador, o cámara fallando 3 minutos seguidos → un aviso (en
 //    horario de trabajo). Se quita solo al conectarla (o pasar de 30 %) o cuando la cámara vuelve a funcionar.
+//    2026-11-13: también si la tableta dice 3 minutos seguidos que NO puede mantener la pantalla encendida (se va a
+//    apagar y a bloquear: pedirá el PIN de la tableta y nadie podrá checar).
 // Aquí solo va la regla; quién recibe el aviso y cómo se manda lo decide server/checador.js.
 const diaSemana = f => { const d = new Date(f + 'T12:00:00Z').getUTCDay(); return d === 0 ? 7 : d; };
 const HORA = /^([01]\d|2[0-3]):[0-5]\d$/;
@@ -41,10 +43,12 @@ function vigia({ kioscos, ventanaDe, ahoraMexico, avisar, ahora = Date.now, limi
   }
   // Lo que la tableta dice de sí misma con cada señal: batería (0 a 100 o null), si está cargando y si la cámara sirve.
   function reporte(id, r = {}) {
-    const e = estados.get(id) || { camMal: 0 };
+    const e = estados.get(id) || { camMal: 0, panMal: 0 };
     e.bateria = Number.isFinite(r.bateria) && r.bateria >= 0 && r.bateria <= 100 ? Math.round(r.bateria) : null;
     e.cargando = typeof r.cargando === 'boolean' ? r.cargando : null;
     e.camMal = r.camara === false ? e.camMal + 1 : 0;
+    // «pantalla»: false = la tableta pidió mantener la pantalla encendida y el sistema no la deja (ahorro de energía…).
+    e.panMal = r.pantalla === false ? (e.panMal || 0) + 1 : 0;
     estados.set(id, e);
   }
   function revisar() {
@@ -62,7 +66,8 @@ function vigia({ kioscos, ventanaDe, ahoraMexico, avisar, ahora = Date.now, limi
       const e = estados.get(k.id);
       for (const [tipo, mal, bien] of [
         ['bateria', !!e && e.bateria !== null && e.bateria <= 20 && e.cargando === false, !e || e.cargando === true || e.bateria === null || e.bateria >= 30],
-        ['camara', !!e && e.camMal >= 3, !e || e.camMal === 0]]) {
+        ['camara', !!e && e.camMal >= 3, !e || e.camMal === 0],
+        ['pantalla', !!e && e.panMal >= 3, !e || !e.panMal]]) {
         const llave = k.id + ':' + tipo;
         if (atencion.has(llave)) { if (bien) atencion.delete(llave); }
         else if (mal && enHorario && !caidos.has(k.id)) { const c = { ...base, tipo, bateria: e.bateria }; atencion.set(llave, c); avisa(tipo, c); }

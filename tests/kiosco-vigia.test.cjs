@@ -125,3 +125,15 @@ test('atención: si el kiosco además dejó de responder, manda ese aviso y no o
   const x = armar(); x.pasar(5, { bateria: 25, cargando: false, camara: true }); x.pasar(10);
   assert.deepEqual(x.avisos.map(y => y[0]), ['sin_respuesta']);
 });
+
+// 2026-11-13 (Dirección: la tableta se bloqueó sola y pedía su PIN): avisar cuando la tableta dice que NO puede
+// mantener la pantalla encendida (p. ej. ahorro de energía), antes de que se apague y se bloquee.
+test('atención: la tableta no puede mantener la pantalla encendida 3 minutos → un aviso; se quita cuando ya puede', () => {
+  const x = armar(); x.pasar(2, { camara: true, pantalla: false }); x.pasar(1, { camara: true, pantalla: true }); x.pasar(2, { camara: true, pantalla: false });
+  assert.deepEqual(x.avisos, [], 'un tropiezo de 2 minutos no avisa');
+  x.pasar(1, { camara: true, pantalla: false });
+  assert.deepEqual(x.avisos.map(a => a[0]), ['pantalla']); assert.equal(x.v.atencion()[0].tipo, 'pantalla');
+  x.pasar(20, { camara: true, pantalla: false }); assert.equal(x.avisos.length, 1, 'un solo aviso');
+  x.pasar(1, { camara: true, pantalla: true }); assert.deepEqual(x.v.atencion(), [], 'se quita cuando la pantalla ya queda fija');
+  const y = armar(); y.pasar(30, { camara: true, pantalla: null }); assert.deepEqual(y.avisos, [], 'si la tableta no sabe decirlo, no avisa');
+});
