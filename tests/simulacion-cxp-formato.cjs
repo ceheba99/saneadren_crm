@@ -140,6 +140,43 @@ const HOY = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Mexico_City' }
   revisa(X.statusDe(lay.total_cent, lay.pagado_cent) === 'PAGADO' && X.statusDe(ren.total_cent, ren.pagado_cent) === 'PENDIENTE' && X.statusDe(ppd.total_cent, ppd.pagado_cent) === 'PARCIAL', 'PAGADO, PENDIENTE y PARCIAL según lo pagado', [lay.pagado, ren.pagado, ppd.pagado]);
   revisa(X.metodoExcel(ppd, via(ppd)) === 'PPD' && X.metodoExcel(ren, via(ren)) === 'SIN FACTURA', 'factura PPD → PPD; recibo sin pagar → SIN FACTURA');
 
+  console.log('9. ¿A qué corresponde? Solicitud u orden de compra y centro de costos (2026-11-13)');
+  const taller = (await pedir('POST', '/compras/centros', A, { nombre: 'Taller de prueba' }))[1];
+  const oficina = (await pedir('POST', '/compras/centros', A, { nombre: 'Oficina de prueba' }))[1];
+  const sol = (await pedir('POST', '/compras/solicitudes', A, { que: '4 llantas 11R22.5', para_que: 'Al camión de vacío se le reventó una', centro_id: taller.id, equipo: 'C-22' }))[1];
+  let oc = (await pedir('POST', '/compras/ordenes', A, { forzar: true, proveedor_id: morlet.id, centro_id: taller.id, categoria: 'herramientas', fecha: HOY, iva_modo: 'sin_iva', partidas: [{ cantidad: 1, descripcion: 'Llantas', precio: 9000 }] }))[1];
+  [s, j] = await pedir('POST', '/compras/ordenes/' + oc.id + '/autorizar', A, { dias_credito: 0 }); revisa(s === 200 && j.cxp_id, 'la orden de compra autorizada crea su cuenta por pagar (como siempre)', [s, j.error]);
+  [s, j] = await pedir('GET', '/finanzas/compras-para-gasto', V); revisa(s === 403, 'ventas no recibe la lista de solicitudes y órdenes de compra');
+  [s, j] = await pedir('GET', '/finanzas/compras-para-gasto', C);
+  revisa(s === 200 && j.solicitudes.some(x => x.id === sol.id && /^SOL-/.test(x.folio) && x.centro_nombre === 'Taller de prueba') && j.ordenes.some(x => x.id === oc.id && /^OC-/.test(x.folio) && x.cxp_id && x.total === 9000) && j.centros.some(c => c.id === oficina.id),
+    'Compras recibe solicitudes, órdenes de compra (con folio, centro y si ya tienen cuenta por pagar) y centros', [s, j.error]);
+  const extra = { proveedor_id: morlet.id, categoria: 'herramientas', concepto: 'Flete de las llantas', total: 650, fecha_documento: HOY, dias_credito: 0, tipo_comprobante: 'recibo' };
+  [s, j] = await pedir('POST', '/finanzas/cxp', C, { ...extra, oc_id: oc.id });
+  revisa(s === 409 && j.codigo === 'POSIBLE_DUPLICADO' && /ya tiene su cuenta por pagar de \$9,000\.00/.test(j.error) && /EXTRA/.test(j.error), 'ligar a una OC que ya tiene su cuenta avisa antes de guardar (¿es un gasto extra?)', [s, j.error]);
+  [s, j] = await pedir('POST', '/finanzas/cxp', C, { ...extra, oc_id: oc.id, forzar: true }); const gExtra = j;
+  revisa(s === 201, 'confirmado, se guarda como gasto extra de esa compra', [s, j.error]);
+  [s, j] = await pedir('POST', '/finanzas/cxp', C, { ...extra, concepto: 'Desmontaje', solicitud_id: sol.id, oc_id: oc.id }); revisa(s === 400, 'no se liga a la solicitud y a la orden a la vez');
+  [s, j] = await pedir('POST', '/finanzas/cxp', C, { ...extra, concepto: 'Desmontaje', solicitud_id: 999999 }); revisa(s === 400, 'una solicitud que no existe no se acepta');
+  [s, j] = await pedir('POST', '/finanzas/cxp', C, { ...extra, concepto: 'Desmontaje', centro_id: 999999 }); revisa(s === 400, 'un centro de costos que no existe no se acepta');
+  [s, j] = await pedir('POST', '/finanzas/cxp', C, { ...extra, concepto: 'Desmontaje de llantas', solicitud_id: sol.id }); const gSol = j; revisa(s === 201, 'gasto ligado a la solicitud', [s, j.error]);
+  [s, j] = await pedir('POST', '/finanzas/cxp', C, { ...extra, concepto: 'Papelería', centro_id: oficina.id, categoria: 'otro' }); const gCen = j; revisa(s === 201, 'gasto solo con centro de costos', [s, j.error]);
+  [s, j] = await pedir('GET', '/finanzas/cxp?vista=todas', C);
+  const e1 = j.find(x => x.id === gExtra.id), e2 = j.find(x => x.id === gSol.id), e3 = j.find(x => x.id === gCen.id);
+  revisa(/^OC-/.test(e1?.compra_folio) && e1.centro_nombre === 'Taller de prueba', 'el gasto extra muestra el folio de la OC y toma su centro de costos', e1 && [e1.compra_folio, e1.centro_nombre]);
+  revisa(/^SOL-/.test(e2?.compra_folio) && e2.centro_nombre === 'Taller de prueba', 'el de la solicitud muestra su folio SOL y su centro', e2 && [e2.compra_folio, e2.centro_nombre]);
+  revisa(e3?.compra_folio === null && e3.centro_nombre === 'Oficina de prueba', 'el de solo centro muestra el centro elegido', e3 && [e3.compra_folio, e3.centro_nombre]);
+  revisa(j.filter(x => x.oc_id === oc.id || x.id === oc.cxp_id).length >= 1 && j.find(x => x.id === (j.find(y => y.concepto && y.total === 9000 && y.proveedor_id === morlet.id)?.id))?.total === 9000, 'la cuenta de la OC sigue igual ($9,000): el flete se suma aparte');
+  revisa(e1?.repetible === false && e2?.repetible === false && e3?.repetible === true, '«🔁 Repetir» no sale en gastos de compras (sí en uno solo con centro)', [e1?.repetible, e2?.repetible, e3?.repetible]);
+  [s, j] = await pedir('POST', '/finanzas/cxp/' + gExtra.id + '/repetir', C, {}); revisa(s === 409 && /compra/.test(j.error), 'y el servidor tampoco lo repite', [s, j.error]);
+  // Quien no paga (técnico) no liga compras.
+  const T2 = (await pedir('POST', '/login', null, { nombre: 'tito.fmt@saneadren.com.mx', password: 'Saneadren-Tecnico-Fmt-26' }))[1].token;
+  [s, j] = await pedir('POST', '/finanzas/cxp', T2, { ...extra, concepto: 'Flete', solicitud_id: sol.id }); revisa(s === 403, 'el técnico no liga gastos a compras', s);
+  [s, j] = await pedir('GET', '/finanzas/cxp/formato-excel', A);
+  const x9 = j.cuentas.find(x => x.id === gExtra.id);
+  revisa(/^OC-/.test(x9?.compra_folio) && x9.centro_nombre === 'Taller de prueba', 'la descarga «CXP» trae la compra y el centro (van en OBSERVACIONES)');
+  const obs = require('../public/cxp-excel.js').renglonesCxp({ cuentas: [x9], pagos: [] })[0][19];
+  revisa(/Compra OC-/.test(obs) && /Centro de costos: Taller de prueba/.test(obs), 'OBSERVACIONES dice «Compra OC-…» y el centro', obs);
+
   { const [si, ri] = await pedir('GET', '/admin/integridad', A); const m = (ri.resultados || []).filter(r => r.gravedad === 'error' && r.total); revisa(si === 200 && ri.errores === 0, 'al terminar, la revisión de integridad no encuentra errores en los datos', m.map(r => r.titulo)); }
   revisa(!/uncaughtException|Error no manejado|TypeError|SqliteError|RangeError|ReferenceError/.test(salida), 'el servidor no registró errores internos', salida.split('\n').filter(l => /Error/.test(l)).slice(0, 6));
   console.log(`\n${n - malos.length}/${n} correctas`);

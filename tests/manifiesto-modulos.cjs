@@ -133,7 +133,7 @@ module.exports = {
       vistas: [],
       vistasRazon: 'vive como pestaña dentro de «cuentas» (Finanzas)',
       tablas: ['cuentas_por_pagar', 'pagos_proveedor', 'proveedores', 'categorias_gasto', 'cfdi_gastos'],
-      rutas: [/^\/api\/finanzas\/(cxp|pagos-proveedor|proveedores|categorias|comprobantes|ordenes-para-gasto|importar\/cxp)(\/|$)/, /^\/api\/calendario(\/atrasados)?$/],
+      rutas: [/^\/api\/finanzas\/(cxp|pagos-proveedor|proveedores|categorias|comprobantes|ordenes-para-gasto|compras-para-gasto|importar\/cxp)(\/|$)/, /^\/api\/calendario(\/atrasados)?$/],
       pendientes: 'lo que hay que pagar esta semana y lo vencido con proveedores',
       inicio: ['inicio-dinero'],
       demo: ['cuentas_por_pagar', 'pagos_proveedor', 'proveedores'],
