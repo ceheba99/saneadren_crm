@@ -77,12 +77,15 @@ module.exports = function contabilidad(app, db, h) {
       return t + (g.cxp_total > 0 ? Math.round(g.monto_cent * i.iva_cent / g.cxp_total) : 0); }, 0);
     const ivaGastos = sum(gastos, 'iva'), ivaFacturado = sum(vigentes, 'iva_cent');
     const conFactura = gastos.filter(x => x.tipo_comprobante === 'factura' || x.factura_folio);
+    // Lo que no es gasto (compra de vehículos o maquinaria, préstamos, traspasos: categorías con «es_gasto» = 0) va aparte,
+    // como en Resultados; su IVA sí se queda en «IVA de gastos y compras» porque también se acredita (2026-11-13).
+    const NO_GASTO = require('./finanzas').CATEGORIAS_NO_GASTO, deGasto = gastos.filter(x => !NO_GASTO.has(x.categoria)), noGasto = gastos.filter(x => NO_GASTO.has(x.categoria));
     return {
       mes, entorno: entorno(),
       ingresos: { facturas: vigentes.length, facturado_subtotal: pesos(sum(vigentes, 'subtotal_cent')), facturado_iva: pesos(ivaFacturado), facturado_total: pesos(sum(vigentes, 'total_cent')),
         canceladas: facturas.filter(f => f.estatus === 'cancelada').length, complementos: facturas.filter(f => f.tipo_documento === 'pago' && f.estatus !== 'cancelada').length,
         cobrado: pesos(sum(cobros.filter(k => k.confirmado), 'monto_cent')), cobrado_iva: pesos(ivaCobrado), por_confirmar: pesos(sum(cobros.filter(k => !k.confirmado), 'monto_cent')) },
-      egresos: { gastos: gastos.length, gastos_total: pesos(sum(gastos, 'total_cent')), gastos_iva: pesos(ivaGastos), gastos_iva_estimado: pesos(sum(gastos.filter(x => x.estimado), 'iva')),
+      egresos: { gastos: deGasto.length, gastos_total: pesos(sum(deGasto, 'total_cent')), no_gasto: noGasto.length, no_gasto_total: pesos(sum(noGasto, 'total_cent')), gastos_iva: pesos(ivaGastos), gastos_iva_estimado: pesos(sum(gastos.filter(x => x.estimado), 'iva')),
         pagado: pesos(sum(pagos, 'monto_cent')), pagado_iva: pesos(ivaPagado),
         anticipos_entregados: pesos(ant.entregado), anticipos_reintegrados: pesos(ant.reintegrado) },
       iva: { segun_facturas: pesos(ivaFacturado - ivaGastos), segun_flujo: pesos(ivaCobrado - ivaPagado) },
