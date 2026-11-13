@@ -82,6 +82,44 @@ const dma = f => f.split('-').reverse().join('/');
   revisa(!enMes(dia(-2)) || v.crm_sin_banco.filter(m => m.monto === 800).length === 2, 'En el CRM y no en el banco: los dos cobros de 800');
   revisa(v.totales.saldo_final_banco === 3464.34, 'Saldo final del banco: el del último renglón', v.totales);
 
+  console.log('2b. Formatos del banco reconocidos solos (Santander y Banorte)');
+  { const d8 = n => dia(n).split('-').reverse().join(''), ap = t => `'${t}'`;
+    const std = [['Cuenta', 'Fecha', 'Hora', 'Sucursal', 'Descripcion', 'Cargo/Abono', ' Importe ', ' Saldo ', 'Referencia', 'Concepto', 'Banco Participante', 'Clabe Beneficiario', 'Nombre Beneficiario', 'Cta Ordenante', 'Nombre Ordenante', 'Codigo Devolucion', 'Causa Devolucion', 'RFC Beneficiario', 'RFC Ordenante', 'Clave de Rastreo', 'Descripcion Larga'],
+      ["'65500005678", ap(d8(-6)), '08:24', "'7465'", 'ABONO TRANSFERENCIA SPEI                ', '+', '9,512.00', '55,996.64', '2128454', 'PAGO FACTURA 10', 'BBVA MEXICO', "'BBVA 680655000000000'", '  ', "'012680000000000001   '", 'DEL CLIENTE EMPAQUES DE EJEMPLO SA DE CV', '', '', 'XAXX010101000', 'EEJ9410117P6', 'CIE-0100261001738653          ', 'ABONO TRANSFERENCIA SPEI'],
+      ["'65500005678", ap(d8(-6)), '14:14', "'0981'", 'PAGO TRANSFERENCIA SPEI                 ', '-', '718.4', '55,278.24', '6919813', 'PAPELERIA REF 0000000', 'BBVA MEXICO', "'012420000000000002   '", 'JUAN PEREZ EJEMPLO            ', "'00140327065500005678'", '  ', '', '', '', 'XAXX010101000', '20261001400140BET0000469198130', 'PAGO TRANSFERENCIA SPEI'],
+      ["'65500005678", ap(d8(-5)), '16:19', "'0970'", 'I V A  POR COMISION', '-', '139.2', '55,139.04', "'000000000179794", 'OPER ADIC BASIC', '', '', '', '', '', '', '', '', '', '', 'I V A  POR COMISION']];
+    const ctaS = exigir(await pedir('POST', '/conciliacion/cuentas', G, { nombre: 'Santander cheques', banco: 'Santander', terminacion: '5678', sucursal_id: qro.id }), 'cuenta Santander');
+    [s, r] = await pedir('POST', '/conciliacion/cargar', C, { cuenta_id: ctaS.id, crudo: std, archivo: 'MovimientosCheque.csv', previa: true });
+    revisa(s === 200 && r.previa && r.formato?.banco === 'Santander' && r.formato.cuenta === '••5678' && r.leidos === 3 && r.nuevos === 3 && r.abonos === 9512 && r.cargos === 857.6 && r.saldo_final === 55139.04 && r.desde === dia(-6) && r.hasta === dia(-5),
+      'Santander: se reconoce solo (fecha pegada, signo aparte) y la vista previa dice movimientos, abonos, cargos y saldo', r);
+    revisa((await pedir('GET', '/conciliacion?mes=' + MES + '&cuenta=' + ctaS.id, C))[1].totales.movimientos === 0 && (await pedir('GET', '/conciliacion?mes=' + dia(-6).slice(0, 7) + '&cuenta=' + ctaS.id, C))[1].totales.movimientos === 0, 'La vista previa no guarda nada');
+    [s, r] = await pedir('POST', '/conciliacion/cargar', C, { cuenta_id: cta.id, crudo: std, previa: true });
+    revisa(s === 400 && r.codigo === 'OTRA_CUENTA', 'El archivo de una cuenta no se sube en otra (se comparan los últimos 4 dígitos)', r);
+    [s, r] = await pedir('POST', '/conciliacion/cargar', C, { cuenta_id: ctaS.id, crudo: std, archivo: 'MovimientosCheque.csv' });
+    revisa(s === 201 && r.nuevos === 3, 'Santander: se suben los 3 movimientos', r);
+    r = exigir(await pedir('POST', '/conciliacion/cargar', C, { cuenta_id: ctaS.id, crudo: std }), 'subir otra vez Santander');
+    revisa(r.nuevos === 0 && r.repetidos === 3, 'Subirlo otra vez no duplica', r);
+    { const { DatabaseSync } = require('node:sqlite'), d = new DatabaseSync(DB), m = d.prepare('SELECT * FROM movimientos_banco WHERE cuenta_id = ? ORDER BY id').all(ctaS.id); d.close();
+      revisa(m[0].abono_cent === 951200 && m[0].contraparte === 'EMPAQUES DE EJEMPLO SA DE CV' && m[0].contraparte_rfc === 'EEJ9410117P6' && m[0].rastreo === 'CIE-0100261001738653' && m[0].hora === '08:24' && m[0].fecha === dia(-6),
+        'Un abono guarda quién pagó (sin «DEL CLIENTE»), su RFC, el rastreo y la hora', m[0]);
+      revisa(m[1].cargo_cent === 71840 && m[1].contraparte === 'JUAN PEREZ EJEMPLO' && m[1].contraparte_rfc === null && /PAPELERIA/.test(m[1].concepto), 'Un cargo guarda al beneficiario y el concepto que se escribió al pagar', m[1]); }
+    const bnt = [['CUENTA', 'FECHA DE OPERACIÓN', 'FECHA', 'REFERENCIA', 'DESCRIPCIÓN', 'COD. TRANSAC', 'SUCURSAL', 'DEPÓSITOS', 'RETIROS', 'SALDO', 'MONEDA', 'MOVIMIENTO', 'DESCRIPCIÓN DETALLADA', 'CHEQUE'],
+      ["'1300009765", dma(dia(-6)), dma(dia(-6)), '-', 'SPEI 01102026', '3', '5663', '$0.02', '-', '$35,966.97', 'MXP', '562', 'COMPENSACION DESFASE SPEI, RASTREO :, 8846APR1202609305833408513', '-'],
+      ["'1300009765", dma(dia(-5)), dma(dia(-5)), '0', '036INBU16102026305101570', '3', '5663', '$544,040.00', '-', '$580,006.97', 'MXP', '563', 'SPEI RECIBIDO, BCO:0036 INBURSA             HR LIQ: 13:44:19, DEL CLIENTE AGUAS DE EJEMPLO DEL VALLE, S.A., DE LA CLABE 036180500000000001   CON RFC AEV100104SUA, CONCEPTO: ODS MES 491, REFERENCIA: 0009770 CVE RAST: 036INBU16102026305101570', '-'],
+      ["'1300009765", dma(dia(-5)), dma(dia(-5)), '1610', 'COMPRA ORDEN DE PAGO SPEI', '511', '8846', '-', '$500,000.00', '$80,006.97', 'MXP', '564', '=REFERENCIA  CTA/CLABE: 014680655000000000, BEM SPEI, BCO:014 BENEF:SANEADREN QUERETAR (DATO NO VERIFICADO, POR ESTA INSTITUCION), TRASPASO, CVE RASTREO: 8846APR2202610165900007009 RFC: SAN1211168C3, IVA: 000000000000.00 SANTANDER           HORA LIQ: 16:23:24', '-'],
+      ["'1300009765", dma(dia(-4)), dma(dia(-4)), '0', 'INTERESES EXENTO TASA092039404', '3', '5663', '-', '$30,187.36', '$49,819.61', 'MXP', '565', '-', '-']];
+    const ctaB = exigir(await pedir('POST', '/conciliacion/cuentas', G, { nombre: 'Banorte cheques', banco: 'Banorte', terminacion: '9765', sucursal_id: qro.id }), 'cuenta Banorte');
+    [s, r] = await pedir('POST', '/conciliacion/cargar', C, { cuenta_id: ctaB.id, crudo: bnt, archivo: 'Cuentas de Cheques.csv' });
+    revisa(s === 201 && r.formato?.banco === 'Banorte' && r.nuevos === 4, 'Banorte: se reconoce solo y se suben los 4 movimientos', r);
+    { const { DatabaseSync } = require('node:sqlite'), d = new DatabaseSync(DB), m = d.prepare('SELECT * FROM movimientos_banco WHERE cuenta_id = ? ORDER BY id').all(ctaB.id); d.close();
+      revisa(m[0].abono_cent === 2 && m[0].referencia === null && m[0].rastreo === '8846APR1202609305833408513', 'Banorte: «-» es vacío y dos centavos son dos centavos', m[0]);
+      revisa(m[1].abono_cent === 54404000 && m[1].contraparte === 'AGUAS DE EJEMPLO DEL VALLE, S.A.' && m[1].contraparte_rfc === 'AEV100104SUA' && m[1].rastreo === '036INBU16102026305101570' && m[1].saldo_cent === 58000697, 'Banorte: del detalle salen el cliente, su RFC y el rastreo', m[1]);
+      revisa(m[2].cargo_cent === 50000000 && m[2].contraparte === 'SANEADREN QUERETAR' && m[2].contraparte_rfc === 'SAN1211168C3' && m[2].hora === '16:23', 'Banorte: un SPEI enviado guarda al beneficiario, su RFC y la hora', m[2]);
+      revisa(m[3].cargo_cent === 3018736 && !m[3].contraparte && !m[3].detalle, 'Banorte: un cargo sin detalle (intereses) entra con su concepto', m[3]); }
+    [s, r] = await pedir('POST', '/conciliacion/cargar', C, { cuenta_id: ctaB.id, crudo: [['Dia', 'Texto', 'Monto'], ['01/10/2026', 'algo', '5']], previa: true });
+    revisa(s === 422 && r.codigo === 'FORMATO_DESCONOCIDO', 'Un archivo de otro formato no se adivina: la pantalla pregunta las columnas', r);
+    revisa((await pedir('POST', '/conciliacion/cargar', V, { cuenta_id: ctaB.id, crudo: bnt }))[0] === 403, 'Ventas tampoco sube un archivo reconocido'); }
+
   console.log('3. A mano');
   if (dep) {
     const cand = exigir(await pedir('GET', '/conciliacion/movimientos/' + dep.id + '/candidatos', C), 'candidatos').candidatos;

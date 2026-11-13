@@ -11,3 +11,7 @@ archivos/
 # Clave de cifrado de datos sensibles (si no está en la variable CLAVE_CIFRADO): NUNCA al repositorio.
 clave-cifrado.key
 *.key
+# Estados de cuenta del banco (datos reales): nunca al repositorio.
+*MovimientosCheque*
+Cuentas de Cheques*
+*.csv.zip
