@@ -317,7 +317,8 @@ module.exports = function asistencia(app, db, h) {
       if (hor.comida && trabajado >= 360 && !validas.some(c => c.tipo === 'comida_sale')) r.notas.push('No marcó su comida');
       // Después de su baja ya no trabaja aquí: esos días no son falta (auditoría A-05).
       const yaDeBaja = !p.activo && p.fecha_baja && fecha > p.fecha_baja;
-      if (entrada === null && fecha < hoy && !AUSENCIAS.includes(r.incidencia) && !yaDeBaja) r.falta = true;
+      // Quien ya no checa (p.checa = 0) solo aparece por las checadas o el extra que sí tiene en esas fechas: sin falta.
+      if (entrada === null && fecha < hoy && !AUSENCIAS.includes(r.incidencia) && !yaDeBaja && p.checa !== 0) r.falta = true;
     } else if (trabajado !== null || bloques.length) {
       // Descanso o festivo trabajado: todo lo trabajado es tiempo extra (y se marca para pagarlo como tal).
       // Con la regla «en descanso o festivo todo es extra» apagada, solo cuentan los bloques marcados con los botones.
@@ -361,8 +362,14 @@ module.exports = function asistencia(app, db, h) {
   // Personas que checan, de las sucursales de quien pide (vista «personal»), activas en esa fecha.
   // «bajaDesde»: para la semana es su primer día (auditoría A-05, etapa 7): quien se dio de baja a media semana sigue en ella
   // con los días que trabajó; para un solo día es ese mismo día.
-  const gente = (fecha, personaId, bajaDesde = fecha) => db.prepare(`SELECT id, nombre, puesto, sucursal_id, activo, fecha_baja FROM personal WHERE checa = 1 AND (activo = 1 OR fecha_baja >= ?)
-    AND (fecha_ingreso IS NULL OR fecha_ingreso <= ?) ${personaId ? 'AND id = ?' : ''} ORDER BY nombre`).all(...[bajaDesde, fecha, ...(personaId ? [personaId] : [])]);
+  // Auditoría 13-nov (M2): también quien YA NO checa pero tiene checadas válidas o tiempo extra autorizado en esas fechas
+  // (RH le quitó «checa» después): antes desaparecía de la semana y su extra autorizado salía de la nómina en $0.
+  const gente = (fecha, personaId, bajaDesde = fecha) => db.prepare(`SELECT id, nombre, puesto, sucursal_id, activo, fecha_baja, checa FROM personal
+    WHERE (checa = 1 OR EXISTS (SELECT 1 FROM main.checadas c WHERE c.personal_id = personal.id AND c.fecha BETWEEN ? AND ? AND c.estado <> 'anulada')
+      OR EXISTS (SELECT 1 FROM main.extra_autorizaciones e WHERE e.personal_id = personal.id AND e.fecha BETWEEN ? AND ? AND e.minutos_autorizados > 0
+        AND e.id = (SELECT MAX(x.id) FROM main.extra_autorizaciones x WHERE x.personal_id = e.personal_id AND x.fecha = e.fecha)))
+    AND (activo = 1 OR fecha_baja >= ?) AND (fecha_ingreso IS NULL OR fecha_ingreso <= ?) ${personaId ? 'AND id = ?' : ''} ORDER BY nombre`)
+    .all(...[bajaDesde, fecha, bajaDesde, fecha, bajaDesde, fecha, ...(personaId ? [personaId] : [])]);
 
   // Qué puede hacer quien pide en la pantalla de asistencia (y la fecha de hoy del servidor).
   app.get('/api/asistencia', h((req, res) => {
@@ -383,7 +390,7 @@ module.exports = function asistencia(app, db, h) {
     const filas = gente(hasta, pid, desde).map(p => {
       const dias = fechas.map(f => calcularDia(p, f));
       const t = k => dias.reduce((s, d) => s + (d[k] || 0), 0), autorizado = dias.reduce((s, d) => s + (d.extra_autorizado_min || 0), 0);
-      return { personal_id: p.id, nombre: p.nombre, puesto: p.puesto, dias, totales: {
+      return { personal_id: p.id, nombre: p.nombre, puesto: p.puesto, checa: p.checa !== 0, dias, totales: {
         trabajado_min: t('trabajado_min'), retardos: dias.filter(d => d.retardo_min).length, retardo_min: t('retardo_min'), faltas: dias.filter(d => d.falta).length,
         extra_min: t('extra_min'), extra_autorizado_min: autorizado, extra_dobles_min: Math.min(autorizado, 540), extra_triples_min: Math.max(0, autorizado - 540),
         domingos: dias.filter(d => d.notas.some(n => n.startsWith('Domingo'))).length, festivos_trabajados: dias.filter(d => d.notas.includes('Festivo trabajado')).length,
@@ -392,7 +399,9 @@ module.exports = function asistencia(app, db, h) {
         // Lo que hay que revisar antes de pagar: tiempo extra sin autorizar o sin fin, días sin salida o sin horario, checadas por revisar.
         extra_sin_autorizar_min: dias.reduce((s, d) => s + (d.extra_autorizado_min == null ? d.extra_min : 0), 0),
         sin_salida: dias.filter(d => d.notas.includes('Sin salida')).length, extra_sin_fin: dias.filter(d => d.notas.includes('Inició tiempo extra y no marcó el fin')).length, sin_horario: dias.filter(d => d.notas.includes('Sin horario asignado') && (d.entrada || d.salida)).length,
-        por_revisar: t('por_revisar') } };
+        por_revisar: t('por_revisar'),
+        // Auditoría 13-nov (M1): días cuyo extra cambió después de autorizarlo (se pagaría lo autorizado sin avisar).
+        extra_autorizacion_vieja: dias.filter(d => d.notas.includes('El tiempo extra cambió después de autorizarlo: revísalo')).length } };
     });
     // Dinero del tiempo extra: solo para quien ve sueldos, con el precio del puesto vigente al cierre de la semana.
     if (conDinero) for (const f of filas) {
