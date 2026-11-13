@@ -843,9 +843,10 @@ module.exports = function checador(app, db, h) {
     const t = Date.now(); let c = diagKiosco.get(req.kiosco.id); if (!c || c.reinicia <= t) { c = { n: 0, reinicia: t + 3600000 }; diagKiosco.set(req.kiosco.id, c); }
     for (const x of l) {
       if (c.n >= 30) break;
-      const m = String(x?.m || '').replace(/\s+/g, ' ').replace(/[^\p{L}\p{N} .,:;()«»\-_/]/gu, '').slice(0, 160), cuando = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(String(x?.t || '')) ? String(x.t).slice(0, 16).replace('T', ' ') + ' UTC' : '';
+      const m = String(x?.m || '').replace(/\s+/g, ' ').replace(/[^\p{L}\p{N} .,:;()«»\-_/]/gu, '').slice(0, /^Velocidad/.test(String(x?.m || '')) ? 320 : 160), cuando = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(String(x?.t || '')) ? String(x.t).slice(0, 16).replace('T', ' ') + ' UTC' : '';
       if (!m) continue;
-      // «Velocidad…»: lo que tardó la tableta en abrir y en checar (2026-11-13), en su propio renglón de los Logs.
+      // «Velocidad…»: lo que tardó la tableta en abrir y en checar (2026-11-13), en su propio renglón de los Logs (hasta
+      // 320 letras: desde el 13-nov trae cuánto se trabó la pantalla en cada paso).
       // 2026-11-13: cada renglón dice además cómo estaba la tableta (app o navegador, batería, cámara, pantalla) y lleva
       // la red y el equipo, para que se entienda solo (server/registro-guias.js arma la explicación al leerlo).
       const tableta = [/SaneadrenChecador/.test(req.get('user-agent') || '') ? 'app propia' : 'navegador', vigiaKioscos.estadoTexto(req.kiosco.id)].filter(Boolean).join(', ');
