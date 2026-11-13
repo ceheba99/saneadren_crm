@@ -104,6 +104,18 @@ module.exports = {
       buscador: null, buscadorRazon: 'se buscan en su pestaña por persona; sus gastos ya salen en el buscador como cuentas por pagar',
       permisos: ['dinero.mover', 'contabilidad.ver'],
     },
+    gastos_programados: {
+      nombre: 'Gastos programados (Cuentas por pagar fase 4, 2026-11-13): luz, agua, renta… con los meses en que llegan; avisa cuando toca y se registran con su recibo',
+      vistas: [], vistasRazon: 'es la pestaña «Programados» de Cuentas por pagar (vista «pagar»)',
+      tablas: ['gastos_programados', 'gastos_programados_periodos'],
+      rutas: [/^\/api\/gastos-programados(\/|$)/],
+      pendientes: 'gastos programados que ya tocan y falta registrar (o marcar «no llegó»)',
+      inicio: ['inicio-programados'],
+      demo: ['gastos_programados', 'gastos_programados_periodos'],
+      integridad: ['gastos_programados'],
+      buscador: null, buscadorRazon: 'son pocos y se ven completos en su pestaña; el gasto ya registrado sale en el buscador como cuenta por pagar',
+      permisos: ['dinero.mover'],
+    },
     pagar: {
       nombre: 'Cuentas por pagar y proveedores',
       vistas: [],

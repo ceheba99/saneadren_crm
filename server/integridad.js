@@ -121,6 +121,19 @@ function revisar(db, { dirArchivos } = {}) {
       .map(a => ({ ref: refA(a), detalle: `${pesos(a.monto_cent - conAnt(a.id))} por comprobar: comprueba los gastos y ciérralo` })));
   }
 
+  // ---------- Gastos programados (Cuentas por pagar fase 4, 2026-11-13) ----------
+  if (existe(db, 'gastos_programados') && existe(db, 'gastos_programados_periodos')) {
+    const gp = db.prepare('SELECT g.*, p.nombre AS proveedor, p.activo AS prov_activo FROM gastos_programados g LEFT JOIN proveedores p ON p.id = g.proveedor_id').all();
+    const per = db.prepare('SELECT r.*, g.nombre FROM gastos_programados_periodos r JOIN gastos_programados g ON g.id = r.programado_id').all();
+    const refP = r => `${r.nombre} · ${r.periodo}`;
+    chequeo('Gastos programados', 'Mes registrado con una cuenta por pagar que no existe', 'error', () => per.filter(r => r.estado === 'registrado' && !cxp.some(x => x.id === r.cxp_id))
+      .map(r => ({ ref: refP(r), detalle: 'cuenta #' + r.cxp_id })));
+    chequeo('Gastos programados', 'La misma cuenta por pagar está ligada a dos meses', 'error', () => per.filter(r => r.estado === 'registrado' && per.some(o => o.id !== r.id && o.estado === 'registrado' && o.cxp_id === r.cxp_id))
+      .map(r => ({ ref: refP(r), detalle: 'cuenta #' + r.cxp_id })));
+    chequeo('Gastos programados', 'Gasto programado activo con el proveedor desactivado', 'aviso', () => gp.filter(g => g.activo && !g.prov_activo)
+      .map(g => ({ ref: g.nombre, detalle: `${g.proveedor || 'proveedor #' + g.proveedor_id} está desactivado: actívalo o cambia el proveedor del gasto programado` })));
+  }
+
   // ---------- Nómina semanal (módulo contable F3, 2026-11-11) ----------
   if (existe(db, 'nominas') && existe(db, 'nomina_lineas')) {
     const nom = db.prepare("SELECT * FROM nominas").all();

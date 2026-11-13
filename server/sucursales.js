@@ -20,7 +20,7 @@
 const alcance = require('./alcance');
 
 // Tablas con sucursal propia y tablas que la heredan de su registro (en orden: primero las de arriba).
-const CON_SUCURSAL = ['leads', 'cuentas_por_pagar', 'solicitudes_compra', 'ordenes_compra', 'establecimientos', 'historial_archivo', 'clientes', 'personal', 'facturas', 'checadas', 'checador_dispositivos', 'horarios', 'precios_hora_puesto', 'anticipos', 'nominas', 'reglas_puntualidad', 'cuentas_banco', 'proyectos_tareas', 'tareas', 'contabilidad_cierres', 'flujo_saldos_iniciales', 'flujo_correcciones', 'flujo_movimientos', 'flujo_desglose'];
+const CON_SUCURSAL = ['leads', 'cuentas_por_pagar', 'solicitudes_compra', 'ordenes_compra', 'establecimientos', 'historial_archivo', 'clientes', 'personal', 'facturas', 'checadas', 'checador_dispositivos', 'horarios', 'precios_hora_puesto', 'anticipos', 'nominas', 'reglas_puntualidad', 'cuentas_banco', 'proyectos_tareas', 'tareas', 'contabilidad_cierres', 'flujo_saldos_iniciales', 'flujo_correcciones', 'flujo_movimientos', 'flujo_desglose', 'gastos_programados'];
 const VISTAS = [
   ['leads', 've_lead(sucursal_id, responsable_id, tecnico_id, estatus, capturado_por)'],
   // Gastos: los de su sucursal o los que él registró; con «Ver los gastos de sus órdenes», también los de sus órdenes.
@@ -65,6 +65,8 @@ const VISTAS = [
   ['proyectos_tareas', 'en_alcance(sucursal_id)'],
   ['tareas', 'en_alcance(sucursal_id)'],
   ['tarea_comentarios', 'tarea_id IN (SELECT id FROM tareas)'], // bono de puntualidad: cada sucursal sus reglas
+  ['gastos_programados', 'en_alcance(sucursal_id)'], // gastos programados (luz, renta…; fase 4 de Cuentas por pagar): las rutas piden «dinero.mover»
+  ['gastos_programados_periodos', 'programado_id IN (SELECT id FROM gastos_programados)'],
   ['anticipos', 'en_alcance(sucursal_id)'], // anticipos por comprobar (F2): quién ve cuáles lo decide anticipos.js (permisos y «los suyos»)
   ['orden_personal', 'lead_id IN (SELECT id FROM leads)'],
   ['encuestas', 'lead_id IN (SELECT id FROM leads)'], // la encuesta, con su orden
@@ -100,7 +102,7 @@ const CLAVE = /^[A-Z0-9]{2,6}$/;
 const RUTAS_REGISTRO = [
   [/^\/leads\/(\d+)(?:\/|$)/, 'leads'], [/^\/historial\/(\d+)(?:\/|$)/, 'historial'],
   [/^\/finanzas\/cobros\/(\d+)(?:\/|$)/, 'cobros'], [/^\/finanzas\/cxp\/(\d+)(?:\/|$)/, 'cuentas_por_pagar'],
-  [/^\/finanzas\/pagos-proveedor\/(\d+)(?:\/|$)/, 'pagos_proveedor'], [/^\/compras\/ordenes\/(\d+)(?:\/|$)/, 'ordenes_compra'],
+  [/^\/finanzas\/pagos-proveedor\/(\d+)(?:\/|$)/, 'pagos_proveedor'], [/^\/gastos-programados\/(\d+)(?:\/|$)/, 'gastos_programados'], [/^\/compras\/ordenes\/(\d+)(?:\/|$)/, 'ordenes_compra'],
   [/^\/compras\/documentos\/(\d+)(?:\/|$)/, 'documentos_oc'], [/^\/compras\/solicitudes\/documentos\/(\d+)(?:\/|$)/, 'documentos_solicitud'],
   [/^\/compras\/solicitudes\/(\d+)(?:\/|$)/, 'solicitudes_compra'], [/^\/prospeccion\/(\d+)(?:\/|$)/, 'establecimientos'],
   [/^\/personal\/(\d+)(?:\/|$)/, 'personal'], [/^\/asistencia\/personal\/(\d+)(?:\/|$)/, 'personal'],
