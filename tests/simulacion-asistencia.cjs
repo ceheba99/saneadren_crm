@@ -329,7 +329,28 @@ const LUN = sumar(sumar(HOY, -7), -(dow(sumar(HOY, -7)) - 1)), D = k => sumar(LU
     revisa(d.salida_anticipada_min === 300 && d.extra_min === 120 && d.notas.some(x => /Salió a las 13:00/.test(x)), 'Salió a las 13:00 y regresó de 20:00 a 22:00: se marca la salida anticipada (5 h) y RH lo ve en la nota', d);
     await marca(sumar(L5, 4), [['salida', '20:00']]);
     d = await dt(sumar(L5, 4));
-    revisa(d.extra_min === 0 && d.falta && d.notas.some(x => /sin «Entrada»/.test(x)), 'Solo marcó «Salida» (olvidó la entrada): no se inventa nada, es falta y la nota le dice a RH qué agregar', d); }
+    revisa(d.extra_min === 0 && d.falta && d.notas.some(x => /sin «Entrada»/.test(x)), 'Solo marcó «Salida» (olvidó la entrada): no se inventa nada, es falta y la nota le dice a RH qué agregar', d);
+    // Casos de la segunda revisión (noches y madrugadas).
+    const Lm = sumar(L, -14), L0 = sumar(L, -7);
+    await marca(Lm, [['entrada', '09:00']]);
+    await marca(sumar(Lm, 1), [['salida', '02:00'], ['extra_inicia', '07:00']]);
+    await marca(sumar(Lm, 2), [['salida', '01:00']]);
+    const q2 = await dt(sumar(Lm, 1)), q3 = await dt(sumar(Lm, 2));
+    revisa(q2.extra_min === 90 + 420 && !q2.notas.includes('Sin salida'), 'Noche, luego «Inicio» como entrada y «Salida» a la 01:00: esa salida cierra el día del «Inicio»', q2);
+    revisa(q3.trabajado_min === null && !q3.notas.some(x => /sin «Entrada»/.test(x)) && q3.notas.some(x => /cierra la jornada de ayer/.test(x)), 'y al día siguiente no se cuenta otra vez ni pide una entrada', q3);
+    await marca(sumar(Lm, 3), [['entrada', '08:30'], ['salida', '18:00'], ['entrada', '22:00']]);
+    await marca(sumar(Lm, 4), [['comida_sale', '01:00'], ['comida_regresa', '01:30'], ['salida', '03:00'], ['entrada', '08:30'], ['comida_sale', '14:00'], ['comida_regresa', '15:00'], ['salida', '18:00']]);
+    const c1 = await dt(sumar(Lm, 3)), c2 = await dt(sumar(Lm, 4));
+    revisa(c1.extra_min === 300 - 30, 'Comida de la noche (01:00–01:30) en una emergencia de 22:00 a 03:00: se resta del extra de esa noche', c1);
+    revisa(c2.comida_min === 60 && c2.exceso_comida_min === 0 && c2.trabajado_min === 510, 'y no se suma a la comida del día siguiente', c2);
+    await marca(L0, [['entrada', '08:30'], ['salida', '18:00'], ['extra_inicia', '22:00']]);
+    await marca(sumar(L0, 1), [['extra_termina', '07:45'], ['entrada', '08:30'], ['salida', '18:00']]);
+    d = await dt(L0);
+    revisa(d.extra_min === 585 && !d.notas.includes('Inició tiempo extra y no marcó el fin'), 'Trabajó toda la noche hasta las 07:45 y luego marcó su «Entrada»: ese «Fin» sí cierra la noche (9 h 45 min)', d);
+    await marca(sumar(L0, 4), [['entrada', '08:30'], ['salida', '18:00'], ['extra_inicia', '20:00']]);
+    await marca(sumar(L0, 5), [['extra_termina', '04:00'], ['salida', '04:01']]);
+    const f1 = await dt(sumar(L0, 4)), f2 = await dt(sumar(L0, 5));
+    revisa(f1.extra_min === 480 && !f2.notas.some(x => /sin «Entrada»/.test(x)), '«Fin» 04:00 y luego «Salida» 04:01 en su sábado: la salida es de anoche, no pide una entrada', [f1.extra_min, f2.notas]); }
 
   console.log('9. Solo «Descargar la nómina» (2026-11-11)');
   const rolN = exigir(await pedir('POST', '/roles', A, { nombre: 'Solo nómina' }), 'crear rol');

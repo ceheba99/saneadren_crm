@@ -257,7 +257,7 @@ const Asistencia = (() => {
   const horas = m => (m == null ? null : m / 1440);
   async function excelNomina(boton) {
     const d = datos; if (!d?.filas?.length || boton.disabled) return;
-    const pend = d.filas.reduce((s, f) => s + f.totales.por_revisar + (f.totales.extra_sin_autorizar_min ? 1 : 0) + f.totales.sin_salida + (f.totales.extra_sin_fin || 0) + f.totales.sin_horario, 0);
+    const pend = d.filas.reduce((s, f) => s + f.totales.por_revisar + (f.totales.extra_sin_autorizar_min ? 1 : 0) + f.totales.sin_salida + (f.totales.sin_entrada || 0) + (f.totales.extra_sin_fin || 0) + f.totales.sin_horario, 0);
     if (pend && !await solicitarDialogo({ titulo: 'Hay pendientes en la semana', mensaje: 'Algunas personas tienen checadas por revisar, tiempo extra sin autorizar o sin fin, o días sin salida u horario. El Excel los marca en la hoja «Pendientes». ¿Descargarlo así?', aceptar: 'Descargar' })) return;
     boton.disabled = true;
     try {
@@ -282,6 +282,7 @@ const Asistencia = (() => {
         if (t.por_revisar) pendientes.push(`${t.por_revisar} checada(s) por revisar`);
         if (t.extra_sin_autorizar_min) pendientes.push(`${hm(t.extra_sin_autorizar_min)} de tiempo extra sin autorizar`);
         if (t.sin_salida) pendientes.push(`${t.sin_salida} día(s) sin salida`);
+        if (t.sin_entrada) pendientes.push(`${t.sin_entrada} día(s) con salida y sin entrada`);
         if (t.extra_sin_fin) pendientes.push(`${t.extra_sin_fin} día(s) con tiempo extra sin fin (ese bloque no cuenta)`);
         if (t.sin_horario) pendientes.push('sin horario asignado');
         if (d.dinero && t.extra_autorizado_min && f.dinero?.valor_hora_cent == null) pendientes.push(`su puesto (${f.puesto || 'sin puesto'}) no tiene precio de la hora: el tiempo extra no se pudo calcular en pesos`);
@@ -296,6 +297,7 @@ const Asistencia = (() => {
           if (x.por_revisar) q.push(`${x.por_revisar} checada(s) por revisar (Asistencia → Día)`);
           if (x.extra_min && x.extra_autorizado_min == null) q.push(`${hm(x.extra_min)} de tiempo extra sin autorizar`);
           if (x.notas.includes('Sin salida')) q.push('No registró salida');
+          if (x.notas.some(n => n.startsWith('Marcó «Salida» ('))) q.push('Registró salida pero no entrada: agrega su entrada real');
           if (x.notas.includes('Inició tiempo extra y no marcó el fin')) q.push('Inició tiempo extra y no marcó el fin: ese bloque no cuenta hasta que se agregue el fin');
           if (x.notas.includes('Sin horario asignado') && (x.entrada || x.salida)) q.push('No tiene horario asignado');
           if (x.notas.some(n => /cambió después/.test(n))) q.push('El tiempo extra cambió después de autorizarlo');

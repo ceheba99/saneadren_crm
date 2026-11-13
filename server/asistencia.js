@@ -243,10 +243,13 @@ module.exports = function asistencia(app, db, h) {
   // G3) al menos 1 h antes de su hora de entrada: un «Fin» a la hora de llegar es que anoche olvidó marcarlo (el kiosco se
   // lo sugería) y se contaba toda la noche como extra; ese tiempo extra queda «sin fin» para que RH ponga la hora real.
   // Antes del «Fin» puede haber una «Salida» de madrugada (B3: marcó «Salida» y luego «Fin»): también es de anoche.
+  // También puede haber antes la comida de la noche. Y si después del «Fin» marcó su «Entrada», es un fin real aunque sea
+  // cerca de su hora de entrada (trabajó toda la noche y llegó a su jornada).
   function cierraLaNoche(pid, f, l) {
-    let k = 0; while (l[k]?.tipo === 'salida' && min(l[k].hora.slice(0, 5)) < MADRUGADA_HASTA) k++;
+    let k = 0; while (l[k] && ((l[k].tipo === 'salida' && min(l[k].hora.slice(0, 5)) < MADRUGADA_HASTA) || l[k].tipo === 'comida_sale' || l[k].tipo === 'comida_regresa')) k++;
     const c = l[k];
-    return c?.tipo === 'extra_termina' && min(c.hora.slice(0, 5)) < MEDIANOCHE_HASTA && antesDeEntrada(pid, f, c.hora) ? c : null;
+    if (c?.tipo !== 'extra_termina' || min(c.hora.slice(0, 5)) >= MEDIANOCHE_HASTA) return null;
+    return antesDeEntrada(pid, f, c.hora) || l.slice(k + 1).some(x => x.tipo === 'entrada') ? c : null;
   }
   // La primera «Salida» del día, si es antes de las 06:00 y no hay una «Entrada» antes (puede haber antes un «Fin de tiempo
   // extra» o la comida de la noche: marcó «Fin» y luego «Salida»).
@@ -269,13 +272,21 @@ module.exports = function asistencia(app, db, h) {
   function armar(pid, f, validas, { laboral, dia, sinAyer = false }) {
     const m = c => min(c.hora.slice(0, 5));
     const sm = sinAyer ? null : salidaMadrugada(validas), deAyer = sm && jornadaAbierta(pid, sumar(f, -1)) ? sm : null;
-    const finAnoche = cierraLaNoche(pid, f, validas), deAnocheL = finAnoche ? validas.slice(0, validas.indexOf(finAnoche) + 1) : [];
-    const propias = validas.filter(c => c !== deAyer && !deAnocheL.includes(c));
-    const iSal = propias.findIndex(c => c.tipo === 'salida'), sinEntradaAntes = !propias.slice(0, iSal < 0 ? propias.length : iSal).some(c => c.tipo === 'entrada');
-    const primera = propias[0];
+    // El «Fin» solo cierra anoche si anoche quedó abierto un «Inicio de tiempo extra».
+    const fa = cierraLaNoche(pid, f, validas), finAnoche = fa && abiertoAlFinal(validasDe(pid, sumar(f, -1))) ? fa : null;
+    // «noche» = lo que es de anoche: hasta la «Salida» o el «Fin» que la cierran (con la comida de la noche) y las «Salida»
+    // de madrugada pegadas después (marcó «Fin» y luego «Salida»).
+    let corte = Math.max(deAyer ? validas.indexOf(deAyer) : -1, finAnoche ? validas.indexOf(finAnoche) : -1);
+    if (corte >= 0) while (validas[corte + 1]?.tipo === 'salida' && m(validas[corte + 1]) < MADRUGADA_HASTA) corte++;
+    const noche = validas.slice(0, corte + 1), deAnocheL = noche.filter(c => c !== deAyer), propias = validas.slice(corte + 1);
+    // Una «Salida» de madrugada suelta al empezar el día no decide si el «Inicio» o el «Fin» que sigue es su entrada.
+    let k0 = 0; while (propias[k0]?.tipo === 'salida' && m(propias[k0]) < MADRUGADA_HASTA) k0++;
+    const resto = propias.slice(k0);
+    const iSal = resto.findIndex(c => c.tipo === 'salida'), sinEntradaAntes = !resto.slice(0, iSal < 0 ? resto.length : iSal).some(c => c.tipo === 'entrada');
+    const primera = resto[0];
     const porExtra = laboral && sinEntradaAntes && primera?.tipo === 'extra_inicia' && m(primera) < min(dia.salida) ? primera : null;
     const porFin = laboral && sinEntradaAntes && !porExtra && primera?.tipo === 'extra_termina' ? primera : null;
-    const finPropio = porExtra ? (() => { for (const c of propias.slice(1)) { if (c.tipo === 'extra_termina') return true; if (c.tipo === 'extra_inicia') return false; } return false; })() : false;
+    const finPropio = porExtra ? (() => { for (const c of resto.slice(1)) { if (c.tipo === 'extra_termina') return true; if (c.tipo === 'extra_inicia') return false; } return false; })() : false;
     const tramos = [], tramoIds = []; let abre = null, abreId = null, entradaRepetida = false;
     for (const c of propias) {
       if (c.tipo === 'entrada' || c === porExtra || c === porFin) { if (abre === null) { abre = m(c); abreId = c.id; } else entradaRepetida = true; }
@@ -283,7 +294,7 @@ module.exports = function asistencia(app, db, h) {
       else if (c.tipo === 'salida' && tramos.length && m(c) > tramos.at(-1)[1]) { tramos.at(-1)[1] = m(c); tramoIds.at(-1)[1] = c.id; }
     }
     armar.ultimo = { abre, abreId };
-    return { deAyer, finAnoche, deAnocheL, propias, porExtra, porFin, finPropio, tramos, tramoIds, entradaRepetida };
+    return { deAyer, finAnoche, deAnocheL, noche, propias, porExtra, porFin, finPropio, tramos, tramoIds, entradaRepetida };
   }
   // Minutos en que dos grupos de tramos se empalman (|A| + |B| − |A ∪ B|).
   const empalme = (a, b) => unidos(a) + unidos(b) - unidos([...a, ...b]);
@@ -292,11 +303,12 @@ module.exports = function asistencia(app, db, h) {
     const laboral = !!dia && !festivo;
     const ch = db.prepare('SELECT id, tipo, hora, estado, origen, sin_conexion FROM main.checadas WHERE personal_id = ? AND fecha = ? AND estado <> \'anulada\' ORDER BY momento_utc, id').all(p.id, fecha);
     const validas = ch.filter(c => c.estado === 'valida'), m = c => min(c.hora.slice(0, 5));
-    const { deAyer, finAnoche, deAnocheL, propias, porExtra, porFin, finPropio, tramos, tramoIds, entradaRepetida } = armar(p.id, fecha, validas, { laboral, dia });
+    const { deAyer, finAnoche, noche, propias, porExtra, porFin, finPropio, tramos, tramoIds, entradaRepetida } = armar(p.id, fecha, validas, { laboral, dia });
     let { abre, abreId } = armar.ultimo;
     const entradas = propias.filter(c => c.tipo === 'entrada'), salidas = propias.filter(c => c.tipo === 'salida');
     // Su último tramo quedó abierto y la primera checada de mañana es una «Salida» de madrugada: esa lo cierra.
-    const cierre = abre !== null ? salidaMadrugada(validasDe(p.id, sumar(fecha, 1))) : null;
+    const manana = validasDe(p.id, sumar(fecha, 1));
+    const cierre = abre !== null ? salidaMadrugada(manana) : null;
     if (cierre) { tramos.push([abre, 1440 + m(cierre)]); tramoIds.push([abreId, cierre.id]); abre = null; }
     const llegada = porExtra || porFin || entradas[0];
     // Su salida es la que cierra su último tramo (una «Salida» de madrugada suelta, sin entrada antes, no es su salida).
@@ -305,7 +317,8 @@ module.exports = function asistencia(app, db, h) {
     const entrada = llegada ? m(llegada) : null, salida = tramos.length ? tramos.at(-1)[1] : salidaC ? m(salidaC) : null;
     // Comida: cada salida a comer con el regreso que le sigue.
     let comida = 0, abierta = null, comidaEnExtra = 0; const comidas = [];
-    for (const c of validas) { if (c.tipo === 'comida_sale') abierta = m(c); else if (c.tipo === 'comida_regresa' && abierta !== null) { comida += Math.max(0, m(c) - abierta); comidas.push([abierta, m(c)]); abierta = null; } }
+    // (La comida que marcó al empezar el día dentro de la noche de ayer es de ayer: se suma abajo, con la de mañana.)
+    for (const c of validas) { if (noche.includes(c)) continue; if (c.tipo === 'comida_sale') abierta = m(c); else if (c.tipo === 'comida_regresa' && abierta !== null) { comida += Math.max(0, m(c) - abierta); comidas.push([abierta, m(c)]); abierta = null; } }
     // Bloques de tiempo extra marcados con los botones.
     // bloqueIds: las checadas de inicio y fin de cada bloque (su foto es la evidencia en el detalle del tiempo extra).
     const bloques = [], bloqueIds = []; let ini = null, iniId = null;
@@ -315,9 +328,12 @@ module.exports = function asistencia(app, db, h) {
     // Pasó de medianoche: el «Fin» es la primera checada del día siguiente (antes de las 12:00) y se cuenta hoy.
     let finOtroDia = null;
     if (ini !== null) {
-      const fin = cierraLaNoche(p.id, sumar(fecha, 1), validasDe(p.id, sumar(fecha, 1)));
+      const fin = cierraLaNoche(p.id, sumar(fecha, 1), manana);
       if (fin) { bloques.push([ini, 1440 + m(fin)]); bloqueIds.push([iniId, fin.id]); finOtroDia = { ...fin, fecha: sumar(fecha, 1) }; ini = null; }
     }
+    // La comida de la noche (después de medianoche, antes de la «Salida» o el «Fin» que cierran esta jornada) es de hoy.
+    { const hasta = Math.max(cierre ? manana.findIndex(c => c.id === cierre.id) : -1, finOtroDia ? manana.findIndex(c => c.id === finOtroDia.id) : -1);
+      let ab = null; for (const c of manana.slice(0, Math.max(0, hasta))) { if (c.tipo === 'comida_sale') ab = 1440 + m(c); else if (c.tipo === 'comida_regresa' && ab !== null) { comida += Math.max(0, 1440 + m(c) - ab); comidas.push([ab, 1440 + m(c)]); ab = null; } } }
     // Y al revés: un «Fin» al empezar el día que cierra el tiempo extra de anoche ya se contó ayer.
     const primera = finAnoche || validas[0], deAnoche = finAnoche ? abiertoAlFinal(validasDe(p.id, sumar(fecha, -1))) : null;
     const salidaSola = entrada === null && salidas.length > 0; // marcó «Salida» y no «Entrada» (olvidó la entrada)
@@ -406,7 +422,7 @@ module.exports = function asistencia(app, db, h) {
     if (deAnoche) piezas.unshift({ desde: hhmm(m(primera)), hasta: hhmm(m(primera)), min: 0, motivo: `Fin del tiempo extra que empezó ayer a las ${deAnoche.hora.slice(0, 5)}: se cuenta en el día anterior`, cuenta: false, checadas: [primera.id], ayer: true });
     else if (primera?.tipo === 'extra_termina' && !porFin) piezas.unshift({ desde: hhmm(m(primera)), hasta: hhmm(m(primera)), min: 0, motivo: 'Fin de tiempo extra sin un inicio antes: no cuenta', cuenta: false, checadas: [primera.id] });
     const det = { piezas, regla: `${rg.modo === 'auto' ? 'Automático' : 'Solo botones'} · después de la salida ${rg.despues_min ? 'desde ' + rg.despues_min + ' min' : 'desde el primer minuto'} · llegar antes ${rg.antes_cuenta ? 'cuenta si son más de ' + rg.antes_min + ' min' : 'no cuenta'} · ${rg.bloque_min === 1 ? 'minuto a minuto' : 'redondeo a bloques de ' + rg.bloque_min + ' min'} · descanso/festivo ${rg.descanso_todo ? 'todo es extra' : 'solo botones'}`, sin_redondeo_min: r.extra_min, redondeo: null };
-    if (comidaEnExtra) { r.notas.push(`Se le restó ${horas(comidaEnExtra)} de comida que tomó dentro de su tiempo extra`); det.comida_en_extra_min = comidaEnExtra; }
+    if (comidaEnExtra && laboral) { r.notas.push(`Se le restó ${horas(comidaEnExtra)} de comida que tomó dentro de su tiempo extra`); det.comida_en_extra_min = comidaEnExtra; }
     const sumaTramos = piezas.filter(x => x.cuenta).reduce((s, x) => s + x.min, 0) - comidaEnExtra;
     if (sumaTramos > r.extra_min) det.traslape_min = sumaTramos - r.extra_min;
     // Redondeo hacia abajo por día (reglas del tiempo extra).
