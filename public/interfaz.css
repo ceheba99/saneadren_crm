@@ -1857,6 +1857,23 @@
 .logs-guia ul { margin: 2px 0 6px 18px; padding: 0; }
 .logs-guia-titulo { margin-top: 8px; }
 
+/* «Listas desplegables» (Ajustes, solo Dirección; public/listas.js) */
+.lst-grupo{margin-top:18px;}
+.lst-lista{border:1px solid var(--gris-200);border-radius:var(--radio);padding:10px 12px;margin:8px 0;background:var(--blanco);}
+.lst-lista summary{cursor:pointer;}
+.lst-solo{display:flex;flex-direction:column;gap:2px;}
+.lst-donde,.lst-razon,.lst-nota{display:block;color:var(--texto-sec);font-size:.85em;}
+.lst-razon{margin-top:2px;}
+.lst-filas{display:flex;flex-direction:column;gap:6px;margin:10px 0;}
+.lst-fila{display:flex;flex-wrap:wrap;align-items:center;gap:6px;}
+.lst-fila input[data-lst-nombre]{flex:1 1 200px;min-width:0;}
+.lst-fila .lst-nota{flex-basis:100%;margin-left:64px;}
+.lst-mover{display:inline-flex;gap:2px;}
+.lst-ocultar{display:inline-flex;align-items:center;gap:4px;white-space:nowrap;}
+.lst-oculta input[data-lst-nombre]{color:var(--texto-sec);text-decoration:line-through;}
+.lst-agregar,.lst-acciones{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px;}
+.lst-agregar input{flex:1 1 200px;min-width:0;}
+@media (max-width:600px){.lst-fila .lst-nota{margin-left:0;}}
 /* Tarjetas de cuentas (por cobrar / por pagar), 2026-11-13: la cifra nunca se parte en dos renglones
    (se achica con el ancho de la tarjeta), franja de color arriba según lo que significa y «Te deben» destacada. */
 @media screen {
