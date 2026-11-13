@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="nombre">Checador Saneadren</string>
+    <!-- Dirección del sistema. construir.sh la cambia con CHECADOR_URL (solo para pruebas). -->
+    <string name="direccion">https://sistema.saneadren.com.mx</string>
+    <!-- true solo en la app de pruebas (http sin candado, contra una computadora local). -->
+    <bool name="sin_candado">false</bool>
+    <style name="Tema" parent="@android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@android:color/white</item>
+    </style>
+</resources>
