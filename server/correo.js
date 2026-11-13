@@ -3,7 +3,7 @@
 // muestra en la consola del servidor (modo desarrollo), para poder probar el flujo completo.
 //
 //   SMTP_HOST, SMTP_PORT (465 = TLS directo; 587 = STARTTLS), SMTP_USER, SMTP_PASS
-//   CORREO_REMITENTE  p. ej. "Saneadren CRM <servicios@saneadren.com.mx>"
+//   CORREO_REMITENTE  p. ej. "Saneadren ERP <servicios@saneadren.com.mx>"
 const nodemailer = require('nodemailer');
 
 const configurado = !!process.env.SMTP_HOST;
@@ -22,7 +22,7 @@ function plantilla({ titulo, saludo, mensaje, boton, enlace, pie }) {
   const html = `<!doctype html><html lang="es"><body style="margin:0;background:#f3f4f6;font-family:Segoe UI,Arial,sans-serif;color:#1a1d23">
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td align="center" style="padding:24px 12px">
   <table role="presentation" width="100%" style="max-width:520px;background:#fff;border-radius:10px;overflow:hidden" cellpadding="0" cellspacing="0">
-    <tr><td style="background:#1a1d23;border-bottom:4px solid #f6b103;padding:18px 24px;color:#fff;font-weight:700;letter-spacing:1px">SANEADREN · CRM</td></tr>
+    <tr><td style="background:#1a1d23;border-bottom:4px solid #f6b103;padding:18px 24px;color:#fff;font-weight:700;letter-spacing:1px">SANEADREN · ERP</td></tr>
     <tr><td style="padding:24px">
       <h1 style="font-size:20px;margin:0 0 12px">${escapar(titulo)}</h1>
       <p style="margin:0 0 12px">${escapar(saludo)}</p>

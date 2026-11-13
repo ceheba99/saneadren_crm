@@ -254,7 +254,7 @@ module.exports = function reportes(app, db, h) {
     let enviados = 0;
     for (const d of para) {
       await correo.enviar(d.correo, rep.asunto, { titulo: rep.asunto, saludo: `Hola, ${d.nombre}:`, mensaje: `Este es el resumen del mes del ${dma(rep.desde)} al ${dma(rep.hasta)} (toda la empresa).\n\n${rep.mensaje}`,
-        enlace: (process.env.APP_URL || '').replace(/\/$/, '') + '/', boton: 'Abrir el Panorama', pie: 'Lo manda el CRM de Saneadren el día 1 de cada mes. Las cifras son de apoyo: lo fiscal lo decide el contador.' });
+        enlace: (process.env.APP_URL || '').replace(/\/$/, '') + '/', boton: 'Abrir el Panorama', pie: 'Lo manda el ERP de Saneadren el día 1 de cada mes. Las cifras son de apoyo: lo fiscal lo decide el contador.' });
       enviados++;
     }
     return { enviados };

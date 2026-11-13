@@ -149,9 +149,9 @@ module.exports = function cuentas(app, db, h, { sesiones, urlBase }) {
     const email = normalizarCorreo(req.body.correo);
     const usuario = correoPermitido(email) ? db.prepare('SELECT * FROM usuarios WHERE correo = ? AND activo = 1').get(email) : null;
     if (usuario) app.locals.registro?.anotar(req, 'olvido', { usuario });
-    if (usuario) enviarSinBloquear(email, 'Restablece tu contraseña · Saneadren CRM', {
+    if (usuario) enviarSinBloquear(email, 'Restablece tu contraseña · Saneadren ERP', {
       titulo: 'Restablecer contraseña', saludo: `Hola ${usuario.nombre}:`,
-      mensaje: 'Recibimos una solicitud para cambiar la contraseña de tu cuenta del CRM. El enlace sirve una sola vez y vence en 30 minutos. Al cambiarla se cerrarán todas tus sesiones abiertas.',
+      mensaje: 'Recibimos una solicitud para cambiar la contraseña de tu cuenta del ERP. El enlace sirve una sola vez y vence en 30 minutos. Al cambiarla se cerrarán todas tus sesiones abiertas.',
       boton: 'Crear contraseña nueva', enlace: enlace('restablecer', emitirToken(usuario.id, 'restablecer')),
       pie: 'Si no fuiste tú, ignora este mensaje: tu contraseña actual sigue funcionando.'
     });
@@ -172,9 +172,9 @@ module.exports = function cuentas(app, db, h, { sesiones, urlBase }) {
     })();
     app.locals.auditoria?.registrar({ usuarioSesion: { id: usuario.id, nombre: usuario.nombre } }, 'usuario', usuario.id, 'contraseña', 'Restableció su contraseña con el enlace del correo');
     app.locals.registro?.anotar(req, 'restablecio', { usuario });
-    if (usuario.correo) enviarSinBloquear(usuario.correo, 'Tu contraseña cambió · Saneadren CRM', {
+    if (usuario.correo) enviarSinBloquear(usuario.correo, 'Tu contraseña cambió · Saneadren ERP', {
       titulo: 'Tu contraseña cambió', saludo: `Hola ${usuario.nombre}:`,
-      mensaje: 'La contraseña de tu cuenta del CRM se cambió correctamente y se cerraron tus sesiones abiertas.',
+      mensaje: 'La contraseña de tu cuenta del ERP se cambió correctamente y se cerraron tus sesiones abiertas.',
       pie: 'Si no fuiste tú, avisa de inmediato al administrador del sistema.'
     });
     res.json({ ok: true, mensaje: 'Contraseña actualizada. Ya puedes iniciar sesión con la nueva.' });

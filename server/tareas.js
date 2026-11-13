@@ -87,7 +87,7 @@ module.exports = function tareas(app, db, h) {
 
   const enviarCorreo = async (uid, asunto, mensaje) => {
     const u = usuario(uid); if (!u?.correo || !correo.configurado) return false;
-    try { await correo.enviar(u.correo, asunto, { titulo: asunto, saludo: `Hola, ${u.nombre}:`, mensaje, enlace: (process.env.APP_URL || '').replace(/\/$/, '') + '/', boton: 'Abrir mis tareas', pie: 'Lo manda el CRM de Saneadren.' }); return true; }
+    try { await correo.enviar(u.correo, asunto, { titulo: asunto, saludo: `Hola, ${u.nombre}:`, mensaje, enlace: (process.env.APP_URL || '').replace(/\/$/, '') + '/', boton: 'Abrir mis tareas', pie: 'Lo manda el ERP de Saneadren.' }); return true; }
     catch { return false; }
   };
 

@@ -326,7 +326,7 @@ module.exports = function checador(app, db, h) {
       ? `${textoKiosco(k)} no da señal desde ${k.desde || 'hace más de 5 minutos'}. Revisa que la tableta esté prendida, desbloqueada, con internet y con el checador abierto. Mientras tanto, quien tenga su enlace puede checar desde su celular.`
       : `${textoKiosco(k)} volvió a dar señal a las ${k.volvio}. No había respondido desde ${k.desde || 'antes de las ' + k.hora}.`;
     for (const c of para) correo.enviar(c, asunto, { titulo: cayo ? 'El reloj checador no responde' : 'El reloj checador ya responde', saludo: 'Hola:', mensaje,
-      pie: 'Aviso automático del CRM de Saneadren: llega una vez cuando el checador deja de responder en horario de trabajo y otra cuando vuelve.' }).catch(e => console.error('[kiosco] correo:', e.message));
+      pie: 'Aviso automático del ERP de Saneadren: llega una vez cuando el checador deja de responder en horario de trabajo y otra cuando vuelve.' }).catch(e => console.error('[kiosco] correo:', e.message));
   }
   // «Necesita atención»: batería baja sin cargador o cámara que no funciona (para arreglarlo antes de que falle).
   const textoAtencion = k => (k.tipo === 'pantalla' ? 'no puede mantener la pantalla encendida: se va a apagar sola y pedirá el PIN de la tableta. En la tableta: apaga el ahorro de energía y activa «Pantalla activa» en Ajustes → Opciones de desarrollador (y déjala conectada al cargador)' : k.tipo === 'bateria' ? `batería en ${k.bateria} % y sin cargador: conéctala para que no se apague` : 'la cámara no está funcionando: las checadas quedan sin foto y por revisar (toca el aviso amarillo de la tableta o cierra y abre el checador)');
@@ -335,7 +335,7 @@ module.exports = function checador(app, db, h) {
     const correo = require('./correo');
     const para = correosDe(db.prepare("SELECT correo FROM main.usuarios WHERE rol = 'admin' AND activo = 1 AND correo IS NOT NULL AND trim(correo) <> ''").all().map(u => u.correo), process.env.CORREO_AVISOS_CHECADOR);
     for (const c of para) correo.enviar(c, `⚠️ El reloj checador necesita atención: ${k.nombre}`, { titulo: 'El reloj checador necesita atención', saludo: 'Hola:', mensaje: `${textoKiosco(k)}: ${textoAtencion(k)}.`,
-      pie: 'Aviso automático del CRM de Saneadren: llega una sola vez; en Inicio se quita solo cuando se arregla.' }).catch(e => console.error('[kiosco] correo:', e.message));
+      pie: 'Aviso automático del ERP de Saneadren: llega una sola vez; en Inicio se quita solo cuando se arregla.' }).catch(e => console.error('[kiosco] correo:', e.message));
   }
   const vigiaKioscos = vigia({ ahoraMexico, avisar: avisarKiosco, ventanaDe: (suc, fecha) => { try { return ventana(db, suc, fecha); } catch { return null; } },
     kioscos: () => db.prepare(`SELECT d.id, d.nombre, d.sucursal_id, s.nombre AS sucursal FROM main.checador_dispositivos d LEFT JOIN main.sucursales s ON s.id = d.sucursal_id

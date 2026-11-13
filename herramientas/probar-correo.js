@@ -8,9 +8,9 @@ const correo = require('../server/correo');
   try {
     await correo.verificarConexion();
     console.log('✔ Conexión y credenciales SMTP correctas');
-    await correo.enviar(para, 'Prueba de correo · Saneadren CRM', {
+    await correo.enviar(para, 'Prueba de correo · Saneadren ERP', {
       titulo: 'Correo de prueba', saludo: 'Hola:',
-      mensaje: 'Si recibes este mensaje, el CRM ya puede enviar los correos de confirmación de cuenta y de restablecimiento de contraseña.',
+      mensaje: 'Si recibes este mensaje, el ERP ya puede enviar los correos de confirmación de cuenta y de restablecimiento de contraseña.',
       pie: 'Mensaje generado con herramientas/probar-correo.js'
     });
     console.log('✔ Correo de prueba enviado a ' + para + ' (revisa también spam)');
