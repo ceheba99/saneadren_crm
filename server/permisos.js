@@ -37,6 +37,7 @@ const CATALOGO = [
   ['compras.gestionar', 'Compras', 'Gestionar compras', 'Aprobar solicitudes, elegir cotización, hacer y recibir órdenes de compra', ['gerente', 'costos']],
   ['compras.aprobar_propias', 'Compras', 'Aprobar sus propias solicitudes', 'Sin esto, una solicitud propia la aprueba otra persona', ['gerente']],
   ['compras.autorizar', 'Compras', 'Autorizar órdenes de compra', 'Autorizar (se vuelven deuda), cancelar autorizadas y quitar documentos', ['gerente']],
+  ['compras.modificar_autorizada', 'Compras', 'Modificar órdenes autorizadas', 'Cambiar cantidades, precios o partidas de una orden ya autorizada y sin pagos (su cuenta por pagar se cancela y se rehace con el total nuevo)', []],
   ['reportes.analisis', 'Reportes', 'Análisis comercial', 'Contactos nuevos, conversión, vendido y recurrentes de lo que ve', ['gerente', 'ventas', 'atencion']],
   ['reportes.panorama', 'Reportes', 'Panorama general', 'Ventas, cobranza, gastos y utilidad de la empresa', ['gerente']],
   // Módulo contable F1 (2026-11-11): para el rol «Contador» que crea Dirección. Solo consulta y descarga; no cambia nada.
@@ -130,6 +131,7 @@ const DEPENDE = {
   'compras.aprobar_propias': ['compras.gestionar'],
   'compras.gestionar': ['solicitudes.sucursal', 'ordenes_compra.sucursal', 'compras.importes'],
   'compras.autorizar': ['ordenes_compra.sucursal', 'compras.importes'],
+  'compras.modificar_autorizada': ['ordenes_compra.sucursal', 'compras.importes'],
   'ordenes.importe_ganada': ['ordenes.editar', 'ordenes.importes'],
   'ventas.editar_otros': ['ordenes.sucursal'],
   'generador.cargar': ['generador.sucursal', 'ordenes.editar', 'ordenes.importes'], // crea órdenes de cualquier cliente de la sucursal

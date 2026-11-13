@@ -90,7 +90,9 @@ const Compras = (() => {
     try { await catalogos(); ACTUAL = id ? await pedir('/compras/ordenes/' + Number(id)) : null; } catch (err) { toast(err.message); return; }
     DESDE_SOL = id ? null : sol;
     EDITANDO_OC = editar;
-    const o = ACTUAL, puedeEditar = (!o || o.estado === 'borrador') && esCostos(), editable = puedeEditar && (!o || EDITANDO_OC);
+    // Autorizada y sin pagos: solo Dirección la modifica (2026-11-13; su cuenta por pagar se ajusta sola).
+    const o = ACTUAL, modificable = !!o && o.estado === 'autorizada' && !(o.pagado > 0) && Permisos.puede('compras.modificar_autorizada');
+    const puedeEditar = ((!o || o.estado === 'borrador') && esCostos()) || modificable, editable = puedeEditar && (!o || EDITANDO_OC);
     $('oc-titulo').textContent = o ? o.folio + ' · ' + o.proveedor_nombre : 'Nueva orden de compra';
     $('oc-kicker').textContent = o ? 'ORDEN DE COMPRA · ' + ESTADOS[o.estado][0].toUpperCase() : 'ORDEN DE COMPRA · CM-F-03';
     pintarSelects(o);
@@ -133,12 +135,13 @@ const Compras = (() => {
     if (o?.estado === 'cancelada') est.innerHTML = '✖ Cancelada el ' + esc(fechaTxt(String(o.cancelada_at || '').slice(0, 10))) + '. Motivo: ' + esc(o.motivo_cancelacion || '—');
     $('oc-cuerpo').querySelectorAll('input,select,textarea').forEach(x => { x.disabled = !editable; });
     if ($('oc-proveedor').dataset.fijo) $('oc-proveedor').disabled = true; // el de la cotización elegida
+    if (modificable) $('oc-proveedor').disabled = true; // autorizada: el proveedor no cambia (se cancela y se hace otra)
     $('oc-agregar').hidden = !editable;
     document.querySelectorAll('#oc-filas .oc-quitar').forEach(b => { b.hidden = !editable; });
     if (!editable) document.querySelectorAll('#oc-filas .oc-con-clave').forEach(b => { b.hidden = true; });
     const bt = (id, txt, cl, extra = '') => '<button type="button" class="btn ' + cl + '" id="' + id + '"' + extra + '>' + txt + '</button>';
-    $('oc-acciones').innerHTML = (puedeEditar && !editable ? bt('oc-editar', '✏️ Editar', 'btn-secundario') : '')
-      + (editable ? bt('oc-guardar', 'Guardar borrador', 'btn-outline') + bt('oc-guardar-pdf', 'Guardar y descargar PDF', 'btn-primario') : bt('oc-pdf', 'Descargar PDF', 'btn-primario'))
+    $('oc-acciones').innerHTML = (puedeEditar && !editable ? bt('oc-editar', modificable ? '✏️ Modificar (sin pagos)' : '✏️ Editar', 'btn-secundario') : '')
+      + (editable ? bt('oc-guardar', modificable ? 'Guardar cambios' : 'Guardar borrador', 'btn-outline') + bt('oc-guardar-pdf', 'Guardar y descargar PDF', 'btn-primario') : bt('oc-pdf', 'Descargar PDF', 'btn-primario'))
       + (o ? bt('oc-excel', 'Excel', 'btn-outline perm-clientes-exportar') : '')
       + (o && o.estado === 'borrador' && esAdmin() ? bt('oc-autorizar', '✔ Autorizar y pasar a Cuentas por pagar', 'btn-verde') : '')
       + (o && o.estado === 'borrador' && !esAdmin() ? '<span class="ayuda">La autoriza un administrador.</span>' : '')
@@ -167,7 +170,13 @@ const Compras = (() => {
         d.motivo_diferencia = motivo; return fn(d);
       }
     };
-    if (ACTUAL) { o = await conMotivo(x => pedir('/compras/ordenes/' + ACTUAL.id, 'PUT', x)); if (!o) return; }
+    if (ACTUAL && ACTUAL.estado === 'autorizada') {
+      // Orden autorizada (Dirección, sin pagos): se pide el motivo; su cuenta por pagar se ajusta al nuevo total.
+      const motivo = await solicitarDialogo({ titulo: 'Modificar orden autorizada', mensaje: `Total actual ${formatoMoneda(ACTUAL.total)}. Su cuenta por pagar se ajusta al nuevo total y queda en el historial el antes y el después.`,
+        aceptar: 'Guardar cambios', campo: { tipo: 'text', etiqueta: 'Motivo', requerido: 'Escribe el motivo (ej. se cancelaron 5 pares)' } });
+      if (!motivo) return;
+      o = await conMotivo(x => pedir('/compras/ordenes/' + ACTUAL.id + '/modificar', 'POST', { ...x, motivo })); if (!o) return;
+    } else if (ACTUAL) { o = await conMotivo(x => pedir('/compras/ordenes/' + ACTUAL.id, 'PUT', x)); if (!o) return; }
     else {
       try { o = await conMotivo(x => pedir('/compras/ordenes', 'POST', x)); if (!o) return; }
       catch (err) {

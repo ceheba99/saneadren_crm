@@ -227,6 +227,7 @@ Dirección la revisa y la aprueba. Si un cambio altera lo que ve un rol, la prue
 | Dar de alta un gasto programado (p. ej. «Luz Cancún», en qué meses avisa) | ✔ | ✔ | — | — | — | ✔ | — | — |
 | Ver los créditos (bancos, financieras, automotriz) con sus mensualidades y saldo | ✔ | ✔ | — | — | — | ✔ | — | — |
 | Dar de alta un crédito y programar sus mensualidades | ✔ | ✔ | — | — | — | ✔ | — | — |
+| Modificar una orden de compra ya autorizada y sin pagos (ej. de 10 a 5 zapatos): su cuenta por pagar se ajusta | ✔ | — | — | — | — | — | — | — |
 | Agregar o quitar opciones en la lista de un servicio (p. ej. 4M3, 8M3 para [VOLUMEN]) | ✔ | — | — | — | — | — | — | — |
 | Ver y preparar la nómina semanal (los dos sueldos de cada persona, descuentos y neto del IMSS) | ✔ | ✔ | — | — | — | — | — | — |
 | Pagar la nómina y bajar la lista para el banco (con la CLABE de cada persona) | ✔ | ✔ | — | — | — | — | — | — |
@@ -269,6 +270,7 @@ Dirección la revisa y la aprueba. Si un cambio altera lo que ve un rol, la prue
 | Compras · Gestionar compras | ✔ | ✔ | — | — | — | ✔ | — | — |
 | Compras · Aprobar sus propias solicitudes | ✔ | ✔ | — | — | — | — | — | — |
 | Compras · Autorizar órdenes de compra | ✔ | ✔ | — | — | — | — | — | — |
+| Compras · Modificar órdenes autorizadas | ✔ | — | — | — | — | — | — | — |
 | Reportes · Análisis comercial | ✔ | ✔ | ✔ | ✔ | — | — | — | — |
 | Reportes · Panorama general | ✔ | ✔ | — | — | — | — | — | — |
 | Reportes · Contabilidad del mes | ✔ | ✔ | — | — | — | — | — | — |
@@ -334,6 +336,7 @@ Dirección la revisa y la aprueba. Si un cambio altera lo que ve un rol, la prue
 - **2026-11-03** · Nadie corrige su PROPIA asistencia (agregar, anular o aceptar sus checadas, autorizarse tiempo extra, cambiarse el horario, registrarse vacaciones o permisos), ni el Gerente: lo hace otra persona con permiso. Dirección sí, porque no tiene a quién pedírselo.
 - **2026-11-03** · Checar desde el celular: mandar el enlace o quitar el celular lo hacen Dirección y el Gerente (quien edita el personal); la ubicación de cada checada la ven solo Dirección y el Gerente (se toma solo al checar). Los demás roles no.
 - **2026-11-03** · Pestaña RH (junta Personal, asistencia, horarios, kioscos, nómina y aviso de privacidad): la ve quien ve el personal (Gerente y Dirección); cargar trabajadores en lote desde la plantilla, solo quien edita el personal (Gerente y Dirección). Los demás roles no.
+- **2026-11-13** · Modificar una orden de compra ya autorizada (cantidades, precios, quitar partidas) mientras no tenga pagos: solo Dirección (permiso «Modificar órdenes autorizadas», que ningún otro rol trae), con motivo; su cuenta por pagar se ajusta sola y queda el antes y después. El Gerente autoriza y cancela órdenes, pero no las modifica ya autorizadas. Los demás roles no.
 - **2026-11-13** · Créditos (bancos, financieras, automotriz, terreno): verlos, darlos de alta con todos sus datos, programar sus mensualidades (iguales o pegando la corrida del banco), registrar abonos, reprogramar y marcarlos liquidados, solo quien paga cuentas por pagar (Dirección, Gerente y Compras). Las mensualidades se pagan en Cuentas por pagar como cualquier gasto. Los demás roles no.
 - **2026-11-13** · Gastos programados (luz, agua, renta, internet…): verlos, darlos de alta y editarlos, marcar un mes como «no llegó» y registrar el gasto desde el aviso, solo quien paga cuentas por pagar (Dirección, Gerente y Compras). Los demás roles no.
 - **2026-11-12** · Cuentas por pagar como el Excel: cambiar después el «Tipo de gasto» y las «Observaciones» de un gasto ya registrado (sin tocar montos, proveedor ni fechas) lo hace solo quien paga cuentas por pagar (Dirección, Gerente y Compras), como el IVA. Los demás roles no.

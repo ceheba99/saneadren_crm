@@ -327,6 +327,7 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
     ['altaProgramado', 'Dar de alta un gasto programado (p. ej. «Luz Cancún», en qué meses avisa)'],
     ['veCreditos', 'Ver los créditos (bancos, financieras, automotriz) con sus mensualidades y saldo'],
     ['altaCredito', 'Dar de alta un crédito y programar sus mensualidades'],
+    ['modificaOC', 'Modificar una orden de compra ya autorizada y sin pagos (ej. de 10 a 5 zapatos): su cuenta por pagar se ajusta'],
     ['editaListaServ', 'Agregar o quitar opciones en la lista de un servicio (p. ej. 4M3, 8M3 para [VOLUMEN])'],
     ['preparaNomina', 'Ver y preparar la nómina semanal (los dos sueldos de cada persona, descuentos y neto del IMSS)'],
     ['pagaNomina', 'Pagar la nómina y bajar la lista para el banco (con la CLABE de cada persona)'],
@@ -511,6 +512,11 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
       VE[rol].veCreditos = sv === 200 && Array.isArray(jv.creditos);
       const rc = await pedir('POST', '/creditos', t, { nombre: 'Crédito ' + rol, proveedor_id: prov.id, tipo: 'pyme_simple', monto: 100000, plazo_meses: 12, mensualidad: 9000, fecha_primer_pago: HOY });
       VE[rol].altaCredito = ok(rc) && ok(await pedir('POST', '/creditos/' + rc[1].id + '/programar', t, { modo: 'iguales', cuantas: 2 })); }
+    { // Modificar una OC autorizada sin pagos (2026-11-13): Dirección la autoriza y cada rol intenta bajarla de 10 a 5.
+      const cen = exigir(await pedir('POST', '/compras/centros', A, { nombre: 'Centro foto ' + rol }), 'centro');
+      const oc = exigir(await pedir('POST', '/compras/ordenes', A, { forzar: true, proveedor_id: prov.id, centro_id: cen.id, categoria: 'otro', fecha: HOY, iva_modo: 'sin_iva', partidas: [{ cantidad: 10, descripcion: 'Zapatos ' + rol, precio: 100 }] }), 'orden de compra');
+      exigir(await pedir('POST', '/compras/ordenes/' + oc.id + '/autorizar', A, { dias_credito: 0 }), 'autorizar');
+      VE[rol].modificaOC = ok(await pedir('POST', '/compras/ordenes/' + oc.id + '/modificar', t, { partidas: [{ cantidad: 5, descripcion: 'Zapatos ' + rol, precio: 100 }], motivo: 'Se cancelaron 5 pares' })); }
     { // Listas de los servicios (2026-11-05): agregar una opción, o quitar una que agrega Dirección en cada vuelta.
       const base = '/servicios/' + SERV.id + '/listas', otra = exigir(await pedir('POST', base, A, { marca: 'VOLUMEN', valor: 'POR QUITAR ' + rol }), 'opción por quitar');
       VE[rol].editaListaServ = ok(await pedir('POST', base, t, { marca: 'VOLUMEN', valor: 'NUEVA ' + rol })) || ok(await pedir('POST', base + '/' + otra.id + '/desactivar', t, {})); }
@@ -610,6 +616,8 @@ const conIva = v => [...formas(v), ...formas(Math.round(v * 116) / 100)];
     ['2026-11-03', 'Pestaña RH (junta Personal, asistencia, horarios, kioscos, nómina y aviso de privacidad): la ve quien ve el personal (Gerente y Dirección); cargar trabajadores en lote desde la plantilla, solo quien edita el personal (Gerente y Dirección). Los demás roles no.', {
       admin: { veRH: 1, importaPersonal: 1 }, gerente: { veRH: 1, importaPersonal: 1 },
       ...Object.fromEntries(['ventas', 'atencion', 'tecnico', 'costos', 'marketing', 'marketing_gerente'].map(r => [r, { veRH: 0, importaPersonal: 0 }])) }],
+    ['2026-11-13', 'Modificar una orden de compra ya autorizada (cantidades, precios, quitar partidas) mientras no tenga pagos: solo Dirección (permiso «Modificar órdenes autorizadas», que ningún otro rol trae), con motivo; su cuenta por pagar se ajusta sola y queda el antes y después. El Gerente autoriza y cancela órdenes, pero no las modifica ya autorizadas. Los demás roles no.', {
+      admin: { modificaOC: 1 }, ...Object.fromEntries(['gerente', 'ventas', 'atencion', 'tecnico', 'costos', 'marketing', 'marketing_gerente'].map(r => [r, { modificaOC: 0 }])) }],
     ['2026-11-13', 'Créditos (bancos, financieras, automotriz, terreno): verlos, darlos de alta con todos sus datos, programar sus mensualidades (iguales o pegando la corrida del banco), registrar abonos, reprogramar y marcarlos liquidados, solo quien paga cuentas por pagar (Dirección, Gerente y Compras). Las mensualidades se pagan en Cuentas por pagar como cualquier gasto. Los demás roles no.', {
       admin: { veCreditos: 1, altaCredito: 1 }, gerente: { veCreditos: 1, altaCredito: 1 }, costos: { veCreditos: 1, altaCredito: 1 },
       ...Object.fromEntries(['ventas', 'atencion', 'tecnico', 'marketing', 'marketing_gerente'].map(r => [r, { veCreditos: 0, altaCredito: 0 }])) }],
