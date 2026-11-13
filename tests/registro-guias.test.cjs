@@ -1,4 +1,4 @@
-// Guías de los Logs (2026-11-13, pedido de Dirección: que el log se entienda solo, también para un asistente de IA sin
+// Guías de los Logs (2026-11-13, pedido de Dirección: que el log se entienda solo, también para soporte sin
 // contexto): cada renglón del reloj checador trae qué significa, causas probables, qué hacer y dónde está en el código.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
