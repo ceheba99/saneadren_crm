@@ -71,3 +71,13 @@ test('correo, WhatsApp y respaldo: la lectura reconoce la causa más común', ()
   assert.match(explicar(fila('whatsapp_fallo', 'Meta rechazó el envío (HTTP 401, código 190): Error validating access token')).lectura.join(' '), /token/i);
   assert.match(explicar(fila('respaldo_fallo', 'ENOSPC: no space left on device')).lectura.join(' '), /disco/i);
 });
+
+// 2026-11-13: el renglón «estuvo sin señal» dice la causa según lo que contó la tableta.
+test('hueco sin señal: la lectura dice la causa', () => {
+  const lee = d => explicar(fila('kiosco_hueco', 'Kiosco «App» (Querétaro): ' + d)).lectura.join(' ');
+  assert.match(lee('Hueco sin señal de 6 min (de 14:13 a 14:19); 6 intentos fallidos de dar señal; 6 sin internet en la tableta'), /Wi-Fi/);
+  assert.match(lee('Hueco sin señal de 6 min (de 14:13 a 14:19); 5 intentos fallidos de dar señal; 5 sin respuesta a tiempo'), /internet de la oficina|no contestó/i);
+  assert.match(lee('Hueco sin señal de 4 min (de 14:13 a 14:17); 3 intentos fallidos de dar señal; 3 con error del servidor (502)'), /reinici|actualiz/i);
+  assert.match(lee('Hueco sin señal de 6 min (de 14:13 a 14:19); 0 intentos fallidos de dar señal; la página estuvo detenida 6 min seguidos'), /detuvo|detenida|frenó/i);
+  assert.match(lee('Hueco sin señal de 6 min (de 14:13 a 14:19); 1 intentos fallidos de dar señal; 1 sin internet en la tableta; pantalla oculta 5 min'), /oculta|bloque/i);
+});

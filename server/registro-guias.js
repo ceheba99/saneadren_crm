@@ -74,23 +74,42 @@ function atencion(d) {
     codigo: [...codigo, 'public/kiosco.html → función despierta (pide mantener la pantalla encendida)', 'android-checador/src/mx/saneadren/checador/MainActivity.java → FLAG_KEEP_SCREEN_ON'], lectura: [] };
 }
 
+function hueco(d) {
+  const lectura = [], n = re => num(d, re) || 0;
+  const dur = String(d).match(/Hueco sin señal de (\d+ min) \(de ([\d:]+) a ([\d:]+)\)/);
+  if (dur) lectura.push(`La tableta estuvo sin comunicarse ${dur[1]}, de ${dur[2]} a ${dur[3]}.`);
+  const red = n(/(\d+) sin internet/), tiempo = n(/(\d+) sin respuesta a tiempo/), srv = n(/(\d+) con error del servidor/), ajena = n(/(\d+) con respuesta ajena/), intentos = n(/(\d+) intentos fallidos/);
+  const detenida = String(d).match(/página estuvo detenida (\d+ min)/), oculta = String(d).match(/pantalla oculta (\d+ min)/);
+  if (red) lectura.push(`En ${red} intento(s) la tableta no tenía internet: el Wi-Fi se desconectó o la señal no llega bien donde está la tableta.`);
+  if (tiempo) lectura.push(`En ${tiempo} intento(s) la tableta sí tenía Wi-Fi pero el sistema no contestó a tiempo: el internet de la oficina estaba caído o muy lento (o el servidor muy ocupado).`);
+  if (srv) lectura.push(`En ${srv} intento(s) el servidor contestó con error${(String(d).match(/error del servidor \(([^)]+)\)/) || [])[1] ? ' (' + String(d).match(/error del servidor \(([^)]+)\)/)[1] + ')' : ''}: casi siempre es porque el sistema se estaba reiniciando o actualizando (revisa si hay un «Sistema iniciado» a esa hora).`);
+  if (ajena) lectura.push(`En ${ajena} intento(s) contestó algo que no era el sistema: el Wi-Fi pedía iniciar sesión (portal) o la red bloqueó la conexión.`);
+  if (detenida) lectura.push(`La página del checador estuvo detenida ${detenida[1]} seguidos: Android o la tableta la frenó aunque se viera abierta (ahorro de energía o poca memoria). No fue el internet.`);
+  if (oculta) lectura.push(`La pantalla del checador estuvo oculta ${oculta[1]}: alguien salió del checador, abrió otra app o la tableta se bloqueó.`);
+  if (!intentos && !detenida && !oculta) lectura.push('No hubo intentos fallidos ni pausas registradas: puede que la tableta haya estado en otra pantalla del sistema dentro de la app.');
+  return { que: 'La tableta del reloj checador volvió a dar señal después de un rato callada, y explica qué pasó durante ese tiempo (lo midió ella misma). Las checadas de ese rato se guardaron en la tableta y se subieron solas al volver.',
+    causas: ['Wi-Fi desconectado o débil donde está la tableta.', 'Internet de la oficina caído o lento.', 'El sistema se estaba reiniciando o actualizando.', 'Android frenó la página (ahorro de energía).', 'Alguien salió del checador.'],
+    hacer: ['Mira la lectura de abajo: dice cuál fue la causa.', 'Si fue el Wi-Fi o el internet y se repite, acerca la tableta al módem o revisa el internet de la oficina.', 'Si fue «página detenida», apaga el ahorro de energía y deja la tableta conectada al cargador.', 'Si fue error del servidor a la hora de una actualización, no hay que hacer nada.'],
+    codigo: ['public/kiosco.html → bloque «Huecos sin señal» (objeto Hueco: cuenta los intentos fallidos y arma el renglón) y función conectar (cada señal)', 'server/checador.js → ruta POST /api/publico/kiosco/diagnostico (lo anota como kiosco_hueco)', 'server/kiosco-vigia.js → aviso «no responde» (más de 5 min sin señal)'], lectura };
+}
 function sinRespuesta(d) {
   const lectura = [];
   const u = String(d).match(/lo último que reportó: ([^.]+)/); if (u) lectura.push('Antes de callarse la tableta reportó: ' + u[1] + '.');
   if (/bater[ií]a (\d+) %[^,;.]*sin cargador/.test(d) && num(d, /bater[ií]a (\d+) %/) <= 25) lectura.push('Tenía poca batería y estaba sin cargador: lo más probable es que se apagó por batería.');
   return { que: 'La tableta del reloj checador lleva más de 5 minutos sin comunicarse con el sistema, en horario de trabajo. Mientras siga así, nadie puede checar en ella (quien tenga su enlace puede checar desde su celular).',
     causas: ['La tableta se apagó o se quedó sin batería.', 'Se bloqueó la pantalla (pide el PIN de la tableta).', 'Se quedó sin internet (Wi-Fi caído).', 'Alguien cerró la app del checador o abrió otra.'],
-    hacer: ['Ve a la tableta: ¿está prendida y en la pantalla del checador?', 'Si pide PIN, desbloquéala y abre «Checador Saneadren».', 'Si dice «Sin conexión», revisa el Wi-Fi.', 'Cuando vuelva, saldrá el renglón «El reloj checador ya responde». Las checadas que se hicieron sin internet se suben solas.'],
+    hacer: ['Ve a la tableta: ¿está prendida y en la pantalla del checador?', 'Si pide PIN, desbloquéala y abre «Checador Saneadren».', 'Si dice «Sin conexión», revisa el Wi-Fi.', 'Cuando vuelva, saldrán «El reloj checador ya responde» y «El reloj checador estuvo sin señal», que dice la causa. Las checadas que se hicieron sin internet se suben solas.'],
     codigo: ['server/kiosco-vigia.js → función revisar (más de 5 minutos sin señal dentro del horario de la sucursal) y ventana (horario vigilado)', 'server/checador.js → avisarKiosco (Logs, Inicio y correo) y el middleware kiosco (cada petición de la tableta es una señal)', 'public/kiosco.html → el intervalo de 60 s del arranque que llama a conectar()'], lectura };
 }
 
 const GUIAS = {
   kiosco_velocidad: f => velocidad(f.detalle || ''),
+  kiosco_hueco: f => hueco(f.detalle || ''),
   kiosco_recuperado: f => recuperado(f.detalle || ''),
   kiosco_atencion: f => atencion(f.detalle || ''),
   kiosco_sin_respuesta: f => sinRespuesta(f.detalle || ''),
   kiosco_volvio: () => ({ que: 'La tableta del reloj checador volvió a comunicarse con el sistema después de un rato sin dar señal. Ya se puede checar en ella.',
-    causas: ['Regresó el internet, alguien desbloqueó o prendió la tableta, o volvió a abrir la app.'], hacer: ['Nada. Si se cae seguido, revisa el renglón anterior «El reloj checador no responde» para ver la causa.'],
+    causas: ['Regresó el internet, alguien desbloqueó o prendió la tableta, o volvió a abrir la app.'], hacer: ['Nada. Si el silencio duró más de 3 minutos, justo después sale «El reloj checador estuvo sin señal» con la causa (sin internet, servidor, página detenida…).'],
     codigo: ['server/kiosco-vigia.js → función senal (la primera señal después de una caída)', 'server/checador.js → avisarKiosco'], lectura: [] }),
   whatsapp_rechazado: f => {
     const firma = /firma/i.test(f?.detalle || '');
