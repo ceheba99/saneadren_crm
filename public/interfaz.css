@@ -1856,3 +1856,56 @@
 .logs-guia p { margin: 6px 0; }
 .logs-guia ul { margin: 2px 0 6px 18px; padding: 0; }
 .logs-guia-titulo { margin-top: 8px; }
+
+/* «Listas desplegables» (Ajustes, solo Dirección; public/listas.js) */
+.lst-grupo{margin-top:18px;}
+.lst-lista{border:1px solid var(--gris-200);border-radius:var(--radio);padding:10px 12px;margin:8px 0;background:var(--blanco);}
+.lst-lista summary{cursor:pointer;}
+.lst-solo{display:flex;flex-direction:column;gap:2px;}
+.lst-donde,.lst-razon,.lst-nota{display:block;color:var(--texto-sec);font-size:.85em;}
+.lst-razon{margin-top:2px;}
+.lst-filas{display:flex;flex-direction:column;gap:6px;margin:10px 0;}
+.lst-fila{display:flex;flex-wrap:wrap;align-items:center;gap:6px;}
+.lst-fila input[data-lst-nombre]{flex:1 1 200px;min-width:0;}
+.lst-fila .lst-nota{flex-basis:100%;margin-left:64px;}
+.lst-mover{display:inline-flex;gap:2px;}
+.lst-ocultar{display:inline-flex;align-items:center;gap:4px;white-space:nowrap;}
+.lst-oculta input[data-lst-nombre]{color:var(--texto-sec);text-decoration:line-through;}
+.lst-agregar,.lst-acciones{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px;}
+.lst-agregar input{flex:1 1 200px;min-width:0;}
+@media (max-width:600px){.lst-fila .lst-nota{margin-left:0;}}
+/* Tarjetas de cuentas (por cobrar / por pagar), 2026-11-13: la cifra nunca se parte en dos renglones
+   (se achica con el ancho de la tarjeta), franja de color arriba según lo que significa y «Te deben» destacada. */
+@media screen {
+  #cuentas-tarjetas { grid-template-columns: repeat(auto-fit, minmax(205px, 1fr)); gap: 14px; }
+  #cuentas-tarjetas .tarjeta-dinero {
+    --acento: #c9d2d9;
+    position: relative; overflow: hidden; container-type: inline-size;
+    border: 1px solid #e1e6ea; border-radius: 12px; padding: 20px 18px 16px; gap: 6px;
+    background: #fff; box-shadow: 0 1px 2px rgb(20 38 48 / 4%), 0 4px 14px rgb(20 38 48 / 4%);
+  }
+  #cuentas-tarjetas .tarjeta-dinero::before { content: ""; position: absolute; inset: 0 0 auto 0; height: 4px; background: var(--acento); }
+  #cuentas-tarjetas .tarjeta-dinero small { min-height: 22px; color: #5d6b75; font-size: 11px; letter-spacing: .06em; }
+  #cuentas-tarjetas .tarjeta-dinero b {
+    font-size: 22px; font-size: clamp(17px, 11.5cqi, 30px);
+    white-space: nowrap; overflow-wrap: normal; line-height: 1.2; letter-spacing: -.02em;
+    font-variant-numeric: tabular-nums; color: var(--azul-950);
+  }
+  #cuentas-tarjetas .tarjeta-dinero span { color: #5d6b75; font-size: 12.5px; line-height: 1.45; }
+  #cuentas-tarjetas .tarjeta-dinero.principal { --acento: var(--azul-600); background: linear-gradient(180deg, #f2f7fa 0%, #fff 70%); border-color: #cfdde6; }
+  #cuentas-tarjetas .tarjeta-dinero.alerta { --acento: var(--rojo); }
+  #cuentas-tarjetas .tarjeta-dinero.alerta b { color: var(--rojo); }
+  #cuentas-tarjetas .tarjeta-dinero.aviso { --acento: var(--amarillo); }
+  #cuentas-tarjetas .tarjeta-dinero.bueno { --acento: var(--verde); }
+  #cuentas-tarjetas .tarjeta-dinero.bueno b { color: var(--verde); }
+  #cuentas-tarjetas .tarjeta-dinero.tranquila b { color: #8a969e; }
+  #cuentas-tarjetas .tarjeta-barra { display: block; height: 6px; border-radius: 3px; background: #f4dfdc; overflow: hidden; margin: 2px 0 2px; }
+  #cuentas-tarjetas .tarjeta-barra > i { display: block; height: 100%; border-radius: 3px; background: var(--rojo); }
+  @media (max-width: 600px) {
+    #cuentas-tarjetas { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+    #cuentas-tarjetas .tarjeta-dinero { padding: 16px 14px 14px; }
+    #cuentas-tarjetas .tarjeta-dinero.principal { grid-column: 1 / -1; }
+    #cuentas-tarjetas .tarjeta-dinero small { min-height: 30px; }
+  }
+  @media (max-width: 380px) { #cuentas-tarjetas { grid-template-columns: minmax(0, 1fr); } }
+}

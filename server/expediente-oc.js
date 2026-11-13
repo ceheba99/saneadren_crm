@@ -272,3 +272,5 @@ module.exports.tipoReal = tipoReal;
 module.exports.MAX_BYTES = MAX_BYTES;
 module.exports.MAX_XML_BYTES = MAX_XML_BYTES;
 module.exports.nombreSeguro = nombreSeguro;
+// Lista que Dirección edita en «Listas desplegables» (server/listas.js la cambia aquí mismo, sin copiarla).
+module.exports.TIPOS = TIPOS;

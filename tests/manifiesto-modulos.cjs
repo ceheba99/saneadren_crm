@@ -227,10 +227,10 @@ module.exports = {
       permisos: ['facturacion.fiscales', 'facturacion.timbrar'],
     },
     administracion: {
-      nombre: 'Usuarios, roles, sucursales, catálogos, bitácora, logs del sistema y respaldos',
+      nombre: 'Usuarios, roles, sucursales, catálogos, listas desplegables, bitácora, logs del sistema y respaldos',
       vistas: ['usuarios', 'catalogos', 'bitacora'],
-      tablas: ['usuarios', 'usuario_sucursales', 'roles', 'rol_permisos', 'rol_alcances', 'permisos_sembrados', 'sucursales', 'auditoria', 'registro_sistema'],
-      rutas: [/^\/api\/(usuarios|roles|permisos|sucursales|auditoria|registro-sistema|admin|cambiar-password|buscar)(\/|$)/],
+      tablas: ['usuarios', 'usuario_sucursales', 'roles', 'rol_permisos', 'rol_alcances', 'permisos_sembrados', 'sucursales', 'auditoria', 'registro_sistema', 'listas_editadas'],
+      rutas: [/^\/api\/(usuarios|roles|permisos|sucursales|auditoria|registro-sistema|admin|cambiar-password|buscar|listas)(\/|$)/],
       pendientes: null, pendientesRazon: 'la revisión de integridad y la bitácora se consultan a propósito; no generan pendientes diarios',
       inicio: [],
       demo: ['usuarios', 'roles', 'sucursales', 'auditoria'],

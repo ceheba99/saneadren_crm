@@ -916,3 +916,5 @@ module.exports = function marketing(app, db, h) {
 
   return { REDES, FORMATOS, ESTADOS, METRICAS, INTERACCIONES };
 };
+// Listas que Dirección edita en «Listas desplegables» (server/listas.js las cambia aquí mismo, sin copiarlas).
+Object.assign(module.exports, { FORMATOS, CARPETAS });
