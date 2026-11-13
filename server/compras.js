@@ -413,6 +413,61 @@ module.exports = function compras(app, db, h, finanzas) {
     if (cambios) audit(req, o.id, 'editada', cambios);
     res.json(despues);
   }));
+  // Modificar una orden YA AUTORIZADA mientras no tenga pagos (2026-11-13; ej. se pidieron 10 zapatos y al final se cancelan 5):
+  // solo Dirección, con motivo. Cambian partidas, cantidades, precios, IVA y datos de la orden; el proveedor no (para eso se
+  // cancela y se hace otra). Su cuenta por pagar se ajusta en la misma transacción (total, IVA y concepto). Con pagos no:
+  // eso será «saldo a favor» (paso siguiente).
+  app.post('/api/compras/ordenes/:id/modificar', h((req, res) => {
+    if (!P.puede(req, 'compras.modificar_autorizada')) return res.status(403).json({ error: 'Una orden de compra autorizada solo la modifica Dirección (o quien tenga «Modificar órdenes autorizadas»)' });
+    const o = leer(req.params.id);
+    if (!o) return res.status(404).json({ error: 'Orden de compra no encontrada' });
+    if (o.estado !== 'autorizada') return res.status(409).json({ error: o.estado === 'borrador' ? 'Esta orden está en borrador: edítala normalmente' : 'Esta orden está cancelada' });
+    if (o.pagado_cent > 0) return res.status(409).json({ error: `Esta orden ya tiene ${fmt(o.pagado_cent)} pagados: por ahora no se modifica. Cancela primero esos pagos en Cuentas por pagar.` });
+    if (req.body.version !== undefined && Number(req.body.version) !== o.version) return res.status(409).json({ error: 'Otra persona modificó esta orden. Ciérrala y vuelve a abrirla.' });
+    const motivo = texto(req.body.motivo, 300);
+    if (!motivo || !conSentido(motivo, 5)) return res.status(400).json({ error: 'Escribe por qué se modifica la orden (ej. se cancelaron 5 pares)' });
+    // Lo que no se manda se queda como está.
+    const actual = { proveedor_id: o.proveedor_id, centro_id: o.centro_id, categoria: o.categoria, lead_id: o.lead_id, fecha: o.fecha, fecha_requerida: o.fecha_requerida, entrega: o.entrega,
+      factura_a: o.factura_a, nota: o.nota, observaciones: o.observaciones, solicitante_nombre: o.solicitante_nombre, solicitante_cargo: o.solicitante_cargo, iva_modo: o.iva_modo, partidas: o.partidas };
+    const v = validar({ ...actual, ...req.body }, req.usuarioSesion);
+    if (v.error) return res.status(400).json({ error: v.error });
+    const d = v.datos;
+    if (d.proveedor_id !== o.proveedor_id) return res.status(400).json({ error: 'El proveedor de una orden autorizada no se cambia: cancélala y haz otra con el proveedor nuevo' });
+    if (d.partidas_json === o.partidas_json && d.total_cent === o.total_cent && d.iva_modo === o.iva_modo && d.centro_id === o.centro_id && d.nota === o.nota && d.observaciones === o.observaciones
+      && d.fecha === o.fecha && d.fecha_requerida === o.fecha_requerida) return res.status(400).json({ error: 'No cambiaste nada de la orden' });
+    // Con la factura (XML) ya cargada en su cuenta, el total no puede quedar distinto a la factura.
+    const xmlTotal = o.cxp_id && db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'cfdi_gastos'").get()
+      ? db.prepare('SELECT x.total_cent FROM main.cfdi_gastos c JOIN main.cuentas_por_pagar x ON x.id = c.cxp_id WHERE c.cxp_id = ? AND c.eliminado = 0 LIMIT 1').get(o.cxp_id) : null;
+    if (xmlTotal && d.total_cent !== o.total_cent) return res.status(409).json({ error: `Su cuenta por pagar ya tiene cargado el XML de la factura por ${fmt(xmlTotal.total_cent)}: el total no se cambia. Si el proveedor hizo otra factura, quita ese XML primero.` });
+    const resumen = d.partidas_json ? JSON.parse(d.partidas_json) : [];
+    const concepto = (o.folio + ' · ' + (resumen[0]?.descripcion || '') + (resumen.length > 1 ? ` y ${resumen.length - 1} más` : '')).slice(0, 200);
+    db.transaction(() => {
+      db.prepare(`UPDATE main.ordenes_compra SET centro_id = ?, categoria = ?, lead_id = ?, fecha = ?, fecha_requerida = ?, entrega = ?, factura_a = ?, nota = ?, observaciones = ?,
+          partidas_json = ?, iva_modo = ?, iva_tasa = ?, subtotal_cent = ?, iva_cent = ?, total_cent = ?, solicitante_nombre = ?, solicitante_cargo = ?,
+          updated_at = datetime('now','localtime'), version = version + 1 WHERE id = ?`).run(d.centro_id, d.categoria, d.lead_id, d.fecha, d.fecha_requerida, d.entrega, d.factura_a, d.nota, d.observaciones,
+        d.partidas_json, d.iva_modo, d.iva_tasa, d.subtotal_cent, d.iva_cent, d.total_cent, d.solicitante_nombre, d.solicitante_cargo, o.id);
+      // El importe de una cuenta por pagar no se modifica (regla de la base): la de la orden se CANCELA con el motivo y se
+      // captura otra igual con el total nuevo (sin pagos, no se pierde nada; queda el rastro de las dos).
+      const vieja = o.cxp_id ? db.prepare('SELECT * FROM main.cuentas_por_pagar WHERE id = ? AND cancelada = 0').get(o.cxp_id) : null;
+      if (vieja) {
+        db.prepare("UPDATE main.cuentas_por_pagar SET cancelada = 1, cancelada_por = ?, cancelada_at = datetime('now','localtime'), motivo_cancelacion = ? WHERE id = ?")
+          .run(req.usuarioSesion.id, ('Orden de compra ' + o.folio + ' modificada: ' + motivo).slice(0, 300), vieja.id);
+        const dias = vieja.dias_credito ?? 0, vence = d.fecha === vieja.fecha_documento ? vieja.fecha_vencimiento : sumarDias(d.fecha, dias);
+        const nueva = Number(db.prepare(`INSERT INTO main.cuentas_por_pagar (proveedor_id, categoria, concepto, fecha_documento, fecha_vencimiento, total_cent, lead_id, notas, registrado_por, dias_credito, iva_cent,
+            beneficiario, tipo_comprobante, metodo_sat, factura_folio, tipo_gasto, centro_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+          .run(vieja.proveedor_id, d.categoria, concepto, d.fecha, vence, d.total_cent, d.lead_id, vieja.notas, req.usuarioSesion.id, dias, d.iva_cent ?? null,
+            vieja.beneficiario, vieja.tipo_comprobante, vieja.metodo_sat, vieja.factura_folio, vieja.tipo_gasto ?? null, d.centro_id ?? vieja.centro_id ?? null).lastInsertRowid);
+        app.locals.sucursales.asignar('cuentas_por_pagar', nueva, vieja.sucursal_id ?? undefined);
+        db.prepare('UPDATE main.ordenes_compra SET cxp_id = ? WHERE id = ?').run(nueva, o.id);
+        app.locals.auditoria?.registrar(req, 'cuenta_por_pagar', vieja.id, 'cancelada', `${o.folio} modificada: se reemplaza por la cuenta #${nueva} · motivo: ${motivo}`);
+        app.locals.auditoria?.registrar(req, 'cuenta_por_pagar', nueva, 'creada', `${o.folio} modificada: total ${fmt(o.total_cent)} → ${fmt(d.total_cent)} (reemplaza la cuenta #${vieja.id}) · motivo: ${motivo}`);
+      }
+    })();
+    const despues = leer(o.id);
+    const lineas = x => x.partidas.map(p => `${p.cantidad} ${p.unidad || ''} ${p.descripcion} a ${fmt(Math.round(p.precio * 100))}`.replace(/\s+/g, ' ')).join('; ');
+    audit(req, o.id, 'modificada (autorizada)', `Motivo: ${motivo} · total ${fmt(o.total_cent)} → ${fmt(despues.total_cent)} · antes: ${lineas(o)} · después: ${lineas(despues)}`);
+    res.json(despues);
+  }));
   // Autorizar: la orden pasa a Cuentas por pagar (pendiente de pago; vence según el crédito del proveedor).
   app.post('/api/compras/ordenes/:id/autorizar', h((req, res) => {
     if (!esAdmin(req)) return res.status(403).json({ error: 'Solo un administrador puede autorizar órdenes de compra' });

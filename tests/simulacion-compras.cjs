@@ -163,6 +163,41 @@ const SEMANA_40 = [['REPARACION FLECHA CARDAN JOSE LUIS ACOSTA', 2000], ['PAGO R
   revisa(s === 200 && j.orden.estado === 'autorizada' && j.cxp_id, 'al autorizarla pasa a Cuentas por pagar', [s, j.error]);
   [s, j] = await pedir('GET', '/finanzas/cxp', A);
   revisa((Array.isArray(j) ? j : j.cuentas || []).length === antes + 1, 'aparece una cuenta por pagar nueva');
+  console.log('Modificar una orden autorizada sin pagos (2026-11-13): 10 zapatos → 5');
+  await pedir('POST', '/usuarios', A, { nombre: 'Gerente Sim', correo: 'gerente.sim@saneadren.com.mx', password: 'Gerente-Sim-2026', rol: 'gerente' });
+  const G = (await pedir('POST', '/login', null, { nombre: 'gerente.sim@saneadren.com.mx', password: 'Gerente-Sim-2026' }))[1].token;
+  const z = (await pedir('POST', '/compras/ordenes', V, { forzar: true, proveedor_id: prov.id, centro_id: operaciones.id, categoria: 'otro', fecha: '2026-10-10', iva_modo: 'mas_iva',
+    partidas: [{ cantidad: 10, descripcion: 'Zapatos de seguridad', precio: 500 }, { cantidad: 2, descripcion: 'Cascos', precio: 150 }] }))[1];
+  [s, j] = await pedir('POST', '/compras/ordenes/' + z.id + '/modificar', A, { partidas: [{ cantidad: 5, descripcion: 'Zapatos de seguridad', precio: 500 }], motivo: 'Se cancelaron 5 pares' });
+  revisa(s === 409 && /borrador/.test(j.error), 'una orden en borrador no usa «modificar» (se edita normal)', [s, j.error]);
+  [s, j] = await pedir('POST', '/compras/ordenes/' + z.id + '/autorizar', A, { dias_credito: 7 }); const cxpZ = j.cxp_id;
+  revisa(s === 200 && cxpZ, 'autorizada: pasa a Cuentas por pagar ($6,148 con IVA)', [s, j.error]);
+  const cinco = { partidas: [{ cantidad: 5, descripcion: 'Zapatos de seguridad', precio: 500 }, { cantidad: 2, descripcion: 'Cascos', precio: 150 }], motivo: 'Se cancelaron 5 pares de zapatos' };
+  [s, j] = await pedir('POST', '/compras/ordenes/' + z.id + '/modificar', V, cinco); revisa(s === 403, 'Compras no modifica una orden autorizada', s);
+  [s, j] = await pedir('POST', '/compras/ordenes/' + z.id + '/modificar', G, cinco); revisa(s === 403, 'el Gerente tampoco (solo Dirección)', s);
+  [s, j] = await pedir('POST', '/compras/ordenes/' + z.id + '/modificar', A, { ...cinco, motivo: 'x' }); revisa(s === 400, 'sin motivo no se modifica');
+  [s, j] = await pedir('POST', '/compras/ordenes/' + z.id + '/modificar', A, { ...cinco, proveedor_id: 999 }); revisa(s === 400, 'el proveedor no se cambia', [s, j.error]);
+  [s, j] = await pedir('POST', '/compras/ordenes/' + z.id + '/modificar', A, { motivo: 'Nada que cambiar aquí' }); revisa(s === 400 && /No cambiaste/.test(j.error), 'si no cambia nada, lo dice');
+  [s, j] = await pedir('POST', '/compras/ordenes/' + z.id + '/modificar', A, { ...cinco, version: 999 }); revisa(s === 409 && /Otra persona/.test(j.error), 'si otra persona la cambió, no se pisa');
+  [s, j] = await pedir('POST', '/compras/ordenes/' + z.id + '/modificar', A, cinco); const zMod = j;
+  revisa(s === 200 && j.estado === 'autorizada' && j.total_cent === 324800 && j.iva_cent === 44800 && j.partidas[0].cantidad === 5 && j.cxp_id && j.cxp_id !== cxpZ,
+    'Dirección la baja a 5 pares: total $3,248 ($2,800 + IVA), sigue autorizada, con su cuenta por pagar nueva', [s, j.error, j.total_cent, j.iva_cent, j.cxp_id]);
+  [s, j] = await pedir('GET', '/finanzas/cxp?vista=todas', A);
+  const cz = j.find(x => x.id === zMod.cxp_id), vieja = j.find(x => x.id === cxpZ);
+  revisa(cz && cz.total === 3248 && cz.iva === 448 && /Zapatos de seguridad y 1 más/.test(cz.concepto) && cz.fecha_vencimiento === '2026-10-17' && !vieja,
+    'la cuenta vieja ($6,148) se cancela y queda una nueva por $3,248 con IVA $448 y el mismo vencimiento', cz && [cz.total, cz.iva, cz.concepto, cz.fecha_vencimiento, !!vieja]);
+  [s, j] = await pedir('GET', '/auditoria?entidad=cuenta_por_pagar&id=' + cxpZ, A);
+  revisa((Array.isArray(j) ? j : []).some(f => f.accion === 'cancelada' && /modificada/.test(f.detalle) && /Se cancelaron 5 pares/.test(f.detalle)), 'la cuenta vieja queda cancelada con el motivo');
+  [s, j] = await pedir('GET', '/auditoria?entidad=orden_compra&id=' + z.id, A);
+  const hz = (Array.isArray(j) ? j : []).find(f => f.accion === 'modificada (autorizada)');
+  revisa(hz && /Se cancelaron 5 pares/.test(hz.detalle) && /antes: 10 Zapatos/.test(hz.detalle) && /después: 5 Zapatos/.test(hz.detalle), 'el historial de la orden guarda motivo, antes y después', hz?.detalle);
+  // Con un pago ya no se modifica (eso será «saldo a favor»).
+  [s, j] = await pedir('POST', '/finanzas/cxp/' + zMod.cxp_id + '/pagos', A, { monto: 1000, metodo: 'transferencia', fecha: '2026-10-12', cuenta_origen: 'Banco de prueba', motivo: 'Anticipo de la compra' });
+  revisa(s === 201, 'se registra un pago de $1,000 a la cuenta nueva', [s, j.error]);
+  [s, j] = await pedir('POST', '/compras/ordenes/' + z.id + '/modificar', A, { ...cinco, partidas: [{ cantidad: 4, descripcion: 'Zapatos de seguridad', precio: 500 }] });
+  revisa(s === 409 && /pagados/.test(j.error), 'con un pago ya no se modifica', [s, j.error]);
+  revisa(!/Error en POST \/api\/compras\/ordenes\/\d+\/modificar/.test(salida), 'modificar no dejó errores en el servidor', salida.split('\n').filter(l => /Error en/.test(l)).slice(0, 3));
+
   { const [si, ri] = await pedir('GET', '/admin/integridad', A); const malos = (ri.resultados || []).filter(r => r.gravedad === 'error' && r.total); revisa(si === 200 && ri.errores === 0, 'al terminar, la revisión de integridad no encuentra errores en los datos', malos.map(r => r.titulo + ': ' + JSON.stringify(r.casos.slice(0, 2)))); }
   revisa(!/uncaughtException|Error no manejado|TypeError|SqliteError|RangeError|ReferenceError/.test(salida), 'el servidor no registró errores internos', salida.split('\n').filter(l => /Error/.test(l)).slice(0, 6));
 

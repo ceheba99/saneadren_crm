@@ -152,7 +152,7 @@ module.exports = {
       integridad: ['ordenes_compra', 'solicitudes_compra', 'documentos_oc', 'documentos_solicitud'],
       buscador: ['ordenes_compra', 'solicitudes_compra'],
       permisos: ['compras.ver', 'solicitudes.ver', 'solicitudes.sucursal', 'solicitudes.empresa', 'solicitudes.editar', 'ordenes_compra.ver', 'ordenes_compra.sucursal', 'ordenes_compra.empresa',
-        'compras.importes', 'compras.gestionar', 'compras.aprobar_propias', 'compras.autorizar'],
+        'compras.importes', 'compras.gestionar', 'compras.aprobar_propias', 'compras.autorizar', 'compras.modificar_autorizada'],
     },
     personal: {
       nombre: 'Personal (RH)',
