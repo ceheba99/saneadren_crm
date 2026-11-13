@@ -203,6 +203,39 @@ const dia = k => { const x = new Date(HOY + 'T12:00:00Z'); x.setUTCDate(x.getUTC
     d.prepare('UPDATE nomina_lineas SET descuento_cent = 40000 WHERE id = ?').run(lDb.id);
     d.prepare("UPDATE nominas SET estado = 'cerrada' WHERE id = ?").run(nb.id); d.close(); }
 
+  console.log('9. Auditoría del checador 13-nov: extra sin precio, autorización vieja, quitar «checa», neto de más');
+  { const W = dia(-28);
+    const adm = (await pedir('GET', '/asistencia/horarios', A))[1].horarios.find(x => x.nombre === 'Administrativo' && x.sucursal_id === qro.id);
+    // Fede (Ayudante, sin precio de la hora) se queda 2 h después de su salida un día de esa semana y RH lo autoriza.
+    const fede = exigir(await pedir('POST', '/personal', A, { nombre: 'Fede Extra', puesto: 'Ayudante', sucursal_id: qro.id, bono_semanal: 600 }), 'ficha Fede');
+    exigir(await pedir('PUT', '/asistencia/personal/' + fede.id, A, { checa: true }), 'Fede checa');
+    exigir(await pedir('PUT', '/asistencia/personal/' + fede.id + '/horario', A, { horario_id: adm.id, desde: dia(-60) }), 'horario Fede');
+    const diaF = exigir(await pedir('GET', '/asistencia/semana?desde=' + W + '&personal_id=' + fede.id, A), 'semana Fede').filas[0].dias.find(x => x.laboral).fecha;
+    for (const [tipo, hora] of [['entrada', '08:30'], ['salida', '20:00']]) exigir(await pedir('POST', '/asistencia/checadas', A, { personal_id: fede.id, tipo, fecha: diaF, hora, motivo: 'Prueba de extra' }), 'checada Fede');
+    exigir(await pedir('POST', '/asistencia/extra', A, { personal_id: fede.id, fecha: diaF, minutos: 120 }), 'autorizar 120');
+    const SW = '/nomina?desde=' + W + '&sucursal=' + qro.id, linea = async nombre => exigir(await pedir('GET', SW, A), 'ver').lineas.find(l => l.nombre === nombre);
+    let lf = await linea('Fede Extra');
+    revisa(lf.extra === 0 && lf.pendientes.some(x => /no tiene precio de la hora/.test(x)), 'G7: extra autorizado y su puesto sin precio de la hora → pendiente (antes se pagaba $0 sin frenar el cierre)', lf);
+    { const d = new DatabaseSync(DB); d.prepare("INSERT INTO precios_hora_puesto (sucursal_id, puesto, valor_cent, desde, creado_por, creado_por_nombre) VALUES (?, 'Ayudante', 10000, ?, 1, 'prueba')").run(qro.id, dia(-60)); d.close(); }
+    lf = await linea('Fede Extra');
+    revisa(lf.extra === 400 && !lf.pendientes.some(x => /precio|autorizarlo/.test(x)), 'Con precio ($100/h): 2 h dobles = $400 y sin ese pendiente', lf);
+    exigir(await pedir('POST', '/asistencia/checadas', A, { personal_id: fede.id, tipo: 'salida', fecha: diaF, hora: '21:00', motivo: 'Salió más tarde' }), 'salida más tarde');
+    lf = await linea('Fede Extra');
+    revisa(lf.extra === 400 && lf.pendientes.some(x => /cambió después de autorizarlo/.test(x)), 'M1: el extra creció después de autorizarlo → pendiente (antes se cerraba pagando lo viejo sin aviso)', lf);
+    exigir(await pedir('POST', '/asistencia/extra', A, { personal_id: fede.id, fecha: diaF, minutos: 180 }), 'autorizar 180');
+    lf = await linea('Fede Extra');
+    revisa(lf.extra === 600 && !lf.pendientes.some(x => /autorizarlo/.test(x)), 'Autorizado otra vez (3 h): $600 y sin ese pendiente', lf);
+    exigir(await pedir('PUT', '/asistencia/personal/' + fede.id, A, { checa: false }), 'Fede ya no checa');
+    lf = await linea('Fede Extra');
+    revisa(lf && lf.extra === 600 && lf.extra_min === 180 && lf.faltas === 0 && !lf.checa && lf.puntualidad === 0 && !lf.pendientes.length, 'M2: le quitan «checa» después: su extra autorizado sigue ($600), sin faltas inventadas, sin pendientes ni bono de puntualidad (antes salía en $0)', lf);
+    // Neto del IMSS capturado y después le quitan el sueldo IMSS en la ficha: no se cierra pagando el neto viejo.
+    const yola = exigir(await pedir('POST', '/personal', A, { nombre: 'Yola Imss', puesto: 'Operador', sucursal_id: qro.id, sueldo_imss_semanal: 2000, bono_semanal: 500 }), 'ficha Yola');
+    const nw = exigir(await pedir('POST', '/nomina/preparar', A, { desde: W, sucursal_id: qro.id }), 'preparar semana 9');
+    for (const l of nw.lineas.filter(l => l.sueldo_imss > 0)) exigir(await pedir('PUT', '/nomina/lineas/' + l.id, A, { neto_imss: l.sueldo_imss - (l.nombre === 'Yola Imss' ? 200 : 0) }), 'neto ' + l.nombre);
+    exigir(await pedir('PUT', '/personal/' + yola.id, A, { version: (await pedir('GET', '/personal/' + yola.id, A))[1].version, sueldo_imss_semanal: '' }), 'quitar sueldo IMSS de Yola');
+    const [s9, r9] = await pedir('POST', '/nomina/' + nw.id + '/cerrar', A, { forzar: true, motivo: 'Prueba del neto' });
+    revisa(s9 === 409 && r9.codigo === 'NETO_DE_MAS' && /Yola/.test(r9.error), 'Neto del IMSS mayor que su sueldo IMSS (se lo quitaron después): no se cierra, ni forzando (antes se pagaban $2,300 en vez de $500)', r9); }
+
   const integ = (await pedir('GET', '/admin/integridad', A))[1];
   revisa(integ.errores === 0, 'La revisión de integridad sigue sin errores', (integ.resultados || []).filter(x => x.gravedad === 'error' && x.total).map(x => x.titulo));
   revisa(!/TypeError|SqliteError|Error no manejado/.test(salida), 'El servidor no registró errores internos', salida.split('\n').filter(x => /Error/.test(x)).slice(0, 5));

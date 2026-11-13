@@ -117,20 +117,25 @@ module.exports = function nomina(app, db, h) {
       if (!a && !imss && !bono) continue; // ni checa ni tiene sueldo semanal: no entra
       const t = a?.totales || {};
       const pend = a ? [t.extra_sin_autorizar_min ? `${t.extra_sin_autorizar_min} min de tiempo extra sin autorizar` : '', t.por_revisar ? `${t.por_revisar} checada(s) por revisar` : '',
-        t.sin_salida ? `${t.sin_salida} día(s) sin salida` : '', t.extra_sin_fin ? `${t.extra_sin_fin} tiempo extra sin fin` : ''].filter(Boolean) : [];
+        t.sin_salida ? `${t.sin_salida} día(s) sin salida` : '', t.extra_sin_fin ? `${t.extra_sin_fin} tiempo extra sin fin` : '',
+        // Auditoría del checador 13-nov: M1 (el extra cambió después de autorizarlo: se pagaría lo viejo sin aviso) y G7
+        // (extra autorizado y el puesto sin precio de la hora: salía en $0 y la nómina se cerraba igual).
+        t.extra_autorizacion_vieja ? `${t.extra_autorizacion_vieja} día(s) con tiempo extra que cambió después de autorizarlo (vuelve a autorizarlo en Asistencia)` : '',
+        t.extra_autorizado_min && a.dinero?.valor_hora_cent == null ? `${t.extra_autorizado_min} min de tiempo extra autorizado, pero su puesto (${p.puesto || 'sin puesto'}) no tiene precio de la hora en esta sucursal: el extra saldría en $0 (captúralo en Asistencia → Horarios → Precio de la hora)` : ''].filter(Boolean) : [];
       if (p.ilegibles.some(k => /sueldo|bono/.test(k))) pend.push('Su sueldo no se puede leer (clave de cifrado)');
       else if (!imss && !bono) pend.push('Sin sueldo semanal en su ficha (captúralo en Personal)');
       // Checa y no tiene horario asignado (2026-11-12): sin horario no hay faltas ni retardos que contar; antes ganaba la
       // puntualidad sin checar y nadie lo veía. Es un pendiente y no gana el bono hasta que se le asigne.
       const v = a ? vigencia.get(id) : null;
-      const sinHorario = a ? a.dias.filter(d => d.notas.includes('Sin horario asignado') && (!v?.fecha_ingreso || d.fecha >= v.fecha_ingreso) && (!v?.fecha_baja || d.fecha <= v.fecha_baja)).length : 0;
+      // Quien ya no checa (solo sale por sus checadas o su extra de esos días): solo cuentan los días que sí checó.
+      const sinHorario = a ? a.dias.filter(d => d.notas.includes('Sin horario asignado') && (a.checa || d.entrada || d.salida) && (!v?.fecha_ingreso || d.fecha >= v.fecha_ingreso) && (!v?.fecha_baja || d.fecha <= v.fecha_baja)).length : 0;
       if (sinHorario) pend.unshift(`Sin horario asignado ${sinHorario} día(s): no se pueden contar sus faltas ni retardos (asígnalo en Asistencia → Horarios)`);
-      const regla = a ? reglaDe(sucursalId, p.puesto, sem.hasta) : null;
-      const pu = !a ? { cent: 0, razon: null } : sinHorario && regla?.monto_cent ? { cent: 0, razon: 'No lo ganó: no tiene horario asignado (no se pueden contar sus faltas ni retardos)' } : puntualidad(regla, t);
+      const regla = a?.checa ? reglaDe(sucursalId, p.puesto, sem.hasta) : null; // el bono de puntualidad, solo para quien checa
+      const pu = !a?.checa ? { cent: 0, razon: null } : sinHorario && regla?.monto_cent ? { cent: 0, razon: 'No lo ganó: no tiene horario asignado (no se pueden contar sus faltas ni retardos)' } : puntualidad(regla, t);
       lineas.push({ personal_id: id, nombre: p.nombre, puesto: p.puesto, numero_empleado: p.numero_empleado || null, sueldo_imss_cent: imss, bono_cent: bono,
         puntualidad_cent: pu.cent, puntualidad_razon: pu.razon, retardo_min: t.retardo_min || 0,
         extra_cent: a?.dinero?.total_cent || 0, extra_min: t.extra_autorizado_min || 0, sin_precio_extra: a && t.extra_autorizado_min && a.dinero?.valor_hora_cent == null ? 1 : 0,
-        dias_trabajados: t.dias_trabajados || 0, faltas: t.faltas || 0, retardos: t.retardos || 0, checa: a ? 1 : 0, pendientes: pend.length ? JSON.stringify(pend) : null });
+        dias_trabajados: t.dias_trabajados || 0, faltas: t.faltas || 0, retardos: t.retardos || 0, checa: a?.checa ? 1 : 0, pendientes: pend.length ? JSON.stringify(pend) : null });
     }
     return { desde: sem.desde, hasta: sem.hasta, lineas };
   }
@@ -288,6 +293,9 @@ module.exports = function nomina(app, db, h) {
     if (!lineas.length) return res.status(409).json({ error: 'No hay nadie en esta nómina (nadie checa ni tiene sueldo semanal en su ficha)' });
     const dup = errorDuplicadas(n, 'cerrar'); if (dup) return res.status(409).json(dup);
     const neg = errorNegativas(lineas, 'cerrar'); if (neg) return res.status(409).json(neg);
+    // Le bajaron o quitaron el sueldo IMSS en la ficha después de capturar el neto (13-nov): se pagaba el neto viejo.
+    const netoDeMas = lineas.filter(l => l.neto_imss_cent != null && l.neto_imss_cent > l.sueldo_imss_cent);
+    if (netoDeMas.length) return res.status(409).json({ error: `El neto del IMSS es mayor que su sueldo IMSS en: ${netoDeMas.map(l => `${l.nombre} (neto ${fmt(l.neto_imss_cent)}, sueldo ${fmt(l.sueldo_imss_cent)})`).join(', ')}. Corrige el neto (o bórralo si ya no tiene sueldo IMSS).`, codigo: 'NETO_DE_MAS' });
     const sinNeto = lineas.filter(l => l.sueldo_imss_cent > 0 && l.neto_imss_cent == null);
     if (sinNeto.length) return res.status(409).json({ error: `Falta el neto del IMSS (lo da el contador) de: ${sinNeto.map(l => l.nombre).join(', ')}`, codigo: 'FALTA_NETO' });
     const conPend = lineas.filter(l => l.pendientes);
