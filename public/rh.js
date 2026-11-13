@@ -25,7 +25,8 @@ const RH = (() => {
   // ---------- Resumen y accesos ----------
   async function cargar() {
     const cont = $('rh-cuerpo');
-    try { resumen = await pedir('/resumen'); } catch (e) { cont.innerHTML = `<p class="aviso-error-carga" role="alert">${esc(e.message)}</p>`; return; }
+    Repintado.cargando(cont, ''); // solo la primera vez: al refrescar tras un cambio, lo de antes se queda hasta que llega lo nuevo
+    try { resumen = await pedir('/resumen'); } catch (e) { Repintado.falla(cont, e, cargar, `<p class="aviso-error-carga" role="alert">${esc(e.message)}</p>`, 'rh'); return; }
     const r = resumen, p = r.puede;
     const tarjeta = (num, texto, clase, accion) => `<button type="button" class="rc-card ${clase}" data-rh-ir="${esc(accion)}"><span class="rc-num">${esc(num)}</span><span class="rc-label">${esc(texto)}</span></button>`;
     let h = `<div class="rc-grid">${tarjeta(r.activos, 'Personas activas', 'cliente', 'personal')}${tarjeta(r.sin_checador, 'Sin alta en el checador', r.sin_checador ? 'pr-atrasado' : 'cliente', 'personal')}
@@ -46,8 +47,13 @@ const RH = (() => {
       ${acceso('🔒', 'Aviso de privacidad', 'Imprimir el aviso para que lo firme cada trabajador', 'aviso')}
       ${acceso('🪪', 'Credenciales', 'Con foto y QR: para checar y para identificarse con los clientes', 'credenciales', p.editar)}
     </div><div id="rh-importar"></div><div id="rh-credenciales"></div>`;
-    cont.innerHTML = h;
-    if (revisadas || creados) pintarImportar();
+    // «Cargar trabajadores» y «Credenciales» ya abiertos se quedan tal cual (con lo marcado y lo subido): solo se repinta el resto.
+    const importarAntes = $('rh-importar'), credAntes = $('rh-credenciales');
+    const conservaImp = !!importarAntes?.innerHTML.trim(), conservaCred = !!credAntes?.innerHTML.trim();
+    Repintado.pintar(cont, h);
+    if (conservaImp) $('rh-importar').replaceWith(importarAntes);
+    if (conservaCred) $('rh-credenciales').replaceWith(credAntes);
+    if (!conservaImp && (revisadas || creados)) pintarImportar();
   }
   function ir(accion) {
     if (accion === 'personal') cambiarVista('personal');
@@ -74,7 +80,7 @@ const RH = (() => {
         ${malas ? '' : `<div class="btn-group"><button type="button" class="btn btn-primario" id="rh-guardar">Guardar ${esc(revisadas.filas.length)} trabajador(es)</button></div>`}`;
     }
     if (creados) h += `<p class="pe-pin-nuevo" role="alert">✔ Se dieron de alta ${esc(creados.length)} trabajador(es). La hoja con número de empleado, código y PIN temporal se descargó; si no, <button type="button" class="btn-link" id="rh-hoja">descárgala aquí</button>. <b>Los PIN no se vuelven a mostrar</b>: entrégalos y guarda la hoja en un lugar seguro (o destrúyela al repartirlos).</p>`;
-    cont.innerHTML = h + '</div>';
+    Repintado.pintar(cont, h + '</div>');
   }
   async function plantilla() {
     let ExcelJS; try { ExcelJS = await Finanzas.cargarExcelJS(); } catch (e) { toast(e.message); return; }
@@ -145,18 +151,18 @@ const RH = (() => {
   const telEmpresa = () => { try { return localStorage.getItem('saneadren_tel_empresa') || ''; } catch { return ''; } };
   async function pintarCredenciales() {
     const cont = $('rh-credenciales'); if (!cont) return;
-    cont.innerHTML = '<p class="ayuda" role="status">Cargando…</p>';
+    Repintado.cargando(cont, '');
     try { const r = await api('/personal?estado=activos'), l = await r.json(); if (!r.ok) throw new Error(l.error || 'No se pudo cargar el personal'); conCodigo = (Array.isArray(l) ? l : []).filter(p => p.codigo_checador); }
-    catch (e) { cont.innerHTML = `<p class="aviso-error-carga" role="alert">${esc(e.message)}</p>`; return; }
+    catch (e) { Repintado.falla(cont, e, pintarCredenciales, `<p class="aviso-error-carga" role="alert">${esc(e.message)}</p>`); return; }
     const sinFoto = conCodigo.filter(p => !p.tiene_foto).length;
-    cont.innerHTML = `<div class="modal-section"><h3 class="pe-sub">🪪 Credenciales de empleado</h3>
+    Repintado.pintar(cont, `<div class="modal-section"><h3 class="pe-sub">🪪 Credenciales de empleado</h3>
       <p class="ayuda">Sirven para checar y para identificarse con los clientes. <b>Frente:</b> foto, nombre, puesto, número de empleado y vigencia. <b>Reverso:</b> QR del checador, QR de verificación (el guardia lo escanea y ve si la persona sigue trabajando con ustedes), contacto de emergencia y teléfono de la empresa.
       Se imprimen <b>a dos caras</b>, 8 por hoja carta: imprime con «dos caras / voltear por el lado largo», recórtalas y enmícalas. <b>Imprimir una credencial anula la anterior</b> de esa persona.</p>
       ${conCodigo.length ? `<div class="filtros"><label>Vigente hasta <input type="date" id="rh-cred-vig" value="${esc(unAnio())}"></label><label>Teléfono de la empresa <input id="rh-cred-tel" maxlength="25" value="${esc(telEmpresa())}" placeholder="442 000 0000"></label></div>
       ${sinFoto ? `<p class="as-rojo">⚠️ ${esc(sinFoto)} persona(s) sin foto: súbela desde su ficha (Personal → su nombre → «Foto para su credencial»). Sin foto, la credencial no sirve para identificarse.</p>` : ''}
       <div class="btn-group"><button type="button" class="btn btn-outline" id="rh-cred-todos">Marcar todos</button><button type="button" class="btn btn-outline" id="rh-cred-ninguno">Quitar todos</button><button type="button" class="btn btn-primario" id="rh-cred-pdf">📄 Imprimir credenciales (PDF)</button></div>
       <ul class="pe-ordenes">${conCodigo.map((p, i) => `<li><label><input type="checkbox" class="rh-cred" data-i="${i}" checked> <b>${esc(p.numero_empleado || '')}</b> · ${esc(p.nombre)} · ${esc(p.puesto || '')}${p.tiene_foto ? '' : ' <span class="as-rojo">(sin foto)</span>'}</label></li>`).join('')}</ul>`
-        : '<p class="ayuda">Todavía nadie tiene código del checador: dalos de alta primero (ficha de la persona o «Cargar trabajadores»).</p>'}</div>`;
+        : '<p class="ayuda">Todavía nadie tiene código del checador: dalos de alta primero (ficha de la persona o «Cargar trabajadores»).</p>'}</div>`);
   }
   // Imagen → JPEG achicado (el PDF pesa poco). «fondo»: color para lo transparente.
   const jpegDe = (src, maxLado, fondo = '#ffffff') => new Promise((ok, mal) => {

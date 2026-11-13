@@ -25,8 +25,10 @@ const Asistencia = (() => {
     if (!r.ok) throw new Error(j.error || 'No se pudo completar');
     return j;
   }
-  const cargando = () => { $('as-cuerpo').innerHTML = '<p class="ayuda" role="status">Cargando…</p>'; };
-  const fallo = e => { $('as-cuerpo').innerHTML = `<p class="aviso-error-carga" role="alert">${esc(e.message)}</p>`; };
+  // «Cargando…» solo si la pantalla está vacía o cambió lo que se ve (pestaña, día, semana o año); al refrescar lo mismo tras guardar,
+  // lo de antes se queda hasta que llega lo nuevo (ayudante Repintado de ui.js).
+  const cargando = () => { Repintado.cargando($('as-cuerpo'), [pestana, pestana === 'dia' ? fecha : pestana === 'semana' ? (semana || 'vencida') : pestana === 'festivos' ? anio : ''].join('|'), '<p class="ayuda" role="status">Cargando…</p>'); };
+  const fallo = e => Repintado.falla($('as-cuerpo'), e, cargar, `<p class="aviso-error-carga" role="alert">${esc(e.message)}</p>`, 'asistencia');
 
   // «Descargar la nómina» sin «Ver asistencia» (2026-11-11): solo la semana de nómina y su Excel, sin las demás
   // pestañas ni la ventana de checadas.
@@ -66,7 +68,7 @@ const Asistencia = (() => {
   function pintarDia() {
     const filas = datos.filas;
     let h = `<div class="filtros"><label>Día <input type="date" id="as-fecha" value="${esc(fecha)}" max="${esc(hoy())}"></label>${datos.festivo ? `<span class="as-festivo">🎉 ${esc(datos.festivo)}</span>` : ''}</div>`;
-    if (!filas.length) { $('as-cuerpo').innerHTML = h + '<p class="ayuda">No hay personas en el reloj checador. Dales de alta desde su ficha en Personal (bloque «Reloj checador»).</p>' + seccionIntentos(); return; }
+    if (!filas.length) { Repintado.pintar($('as-cuerpo'), h + '<p class="ayuda">No hay personas en el reloj checador. Dales de alta desde su ficha en Personal (bloque «Reloj checador»).</p>' + seccionIntentos()); return; }
     h += `<div class="tabla-scroll"><table class="tabla-resumen as-tabla"><thead><tr><th>Persona</th><th>Horario</th><th>Entrada</th><th>Comida</th><th>Salida</th><th>Trabajado</th><th>Retardo</th><th>Tiempo extra</th><th>Avisos</th></tr></thead><tbody>`;
     for (const d of filas) {
       const prog = d.programado ? `${d.programado.entrada}–${d.programado.salida}` : 'Descanso';
@@ -77,7 +79,7 @@ const Asistencia = (() => {
         <td>${d.extra_min ? `${esc(hm(d.extra_min))}<small class="pe-cuenta">${d.extra_autorizado_min == null ? 'sin autorizar' : 'autorizado ' + esc(hm(d.extra_autorizado_min))}</small>` : '—'}</td>
         <td>${estadoDia(d).map(t => `<span class="as-chip">${esc(t)}</span>`).join(' ')}</td></tr>`;
     }
-    $('as-cuerpo').innerHTML = h + '</tbody></table></div><p class="ayuda">Pulsa el nombre de una persona para ver sus checadas, fotos y su semana.</p>' + seccionIntentos();
+    Repintado.pintar($('as-cuerpo'), h + '</tbody></table></div><p class="ayuda">Pulsa el nombre de una persona para ver sus checadas, fotos y su semana.</p>' + seccionIntentos());
   }
   // Intentos fallidos en los kioscos (código o PIN malo, PIN bloqueado, cara que no coincidió), con su foto.
   // 2026-11-11 (Dirección: «mejor como tabla»): una fila por intento. «persona»: con la columna «Código / de quién»
@@ -119,7 +121,7 @@ const Asistencia = (() => {
   function verPersona(id, f) {
     pp = { id: Number(id), fecha: f && f <= hoy() ? f : hoy(), turno: 0 };
     $('ac-titulo').textContent = 'Checadas';
-    $('ac-cuerpo').innerHTML = '<p class="ayuda" role="status">Cargando…</p>';
+    Repintado.cargando($('ac-cuerpo'), '', '<p class="ayuda" role="status">Cargando…</p>', true); // ventana recién abierta: otra persona u otro día
     abrirVentana('overlay-checadas');
     pintarPersona();
   }
@@ -130,10 +132,10 @@ const Asistencia = (() => {
     try {
       if (!puedeAs) puedeAs = (await pedir('')).puede;
       [sem, ch, ints] = await Promise.all([pedir(`/semana?desde=${encodeURIComponent(f)}&personal_id=${id}`), pedir('/checadas?' + q), pedir('/intentos?' + q).catch(() => [])]);
-    } catch (e) { if (yo === pp?.turno) $('ac-cuerpo').innerHTML = `<p class="aviso-error-carga" role="alert">${esc(e.message)}</p>`; return; }
+    } catch (e) { if (yo === pp?.turno) Repintado.falla($('ac-cuerpo'), e, pintarPersona, `<p class="aviso-error-carga" role="alert">${esc(e.message)}</p>`); return; }
     if (yo !== pp?.turno) return;
     const fila = sem.filas[0];
-    if (!fila) { $('ac-cuerpo').innerHTML = '<p class="ayuda">Esta persona no está en el reloj checador ese día.</p>'; return; }
+    if (!fila) { Repintado.pintar($('ac-cuerpo'), '<p class="ayuda">Esta persona no está en el reloj checador ese día.</p>'); return; }
     const d = fila.dias.find(x => x.fecha === f) || {}, p = puedeAs || {};
     $('ac-titulo').textContent = `${fila.nombre}${fila.puesto ? ' · ' + fila.puesto : ''}`;
     let h = `<div class="filtros"><button type="button" class="btn btn-outline" data-ac-dia="-1">◀ Día anterior</button><label>Día <input type="date" id="ac-fecha" value="${esc(f)}" max="${esc(hoy())}"></label>
@@ -170,7 +172,7 @@ const Asistencia = (() => {
     if (p.extra && d.extra_min) h += `<div class="filtros as-form"><b>Tiempo extra:</b> registrado ${esc(hm(d.extra_min))}${d.extra_autorizado_por ? ` · autorizado ${esc(hm(d.extra_autorizado_min))} por ${esc(d.extra_autorizado_por)}` : ''}.
       Autorizar <input type="number" id="ac-x-min" min="0" max="${Number(d.extra_min)}" value="${Number(d.extra_autorizado_min ?? d.extra_min)}" aria-label="Minutos autorizados" class="as-num"> min
       <input id="ac-x-motivo" maxlength="300" placeholder="Motivo (si autorizas menos)" aria-label="Motivo"><button type="button" class="btn btn-secundario" id="ac-x-guardar">Autorizar</button></div>`;
-    $('ac-cuerpo').innerHTML = h;
+    Repintado.pintar($('ac-cuerpo'), h);
   }
   // Detalle del tiempo extra (2026-11-11): de dónde sale el del día (cada tramo, si cuenta o no y por qué, traslape,
   // redondeo y autorización) y el de toda su semana de nómina día por día, con dobles y triples.
@@ -237,7 +239,7 @@ const Asistencia = (() => {
     let h = `<div class="filtros"><button type="button" class="btn btn-outline" data-as-semana-ir="${esc(d.anterior)}">◀ Anterior</button><button type="button" class="btn btn-outline" data-as-semana-ir="${esc(d.vencida)}"${d.desde === d.vencida ? ' aria-pressed="true"' : ''}>Semana vencida</button><button type="button" class="btn btn-outline" data-as-semana-ir="${esc(d.en_curso)}"${d.desde === d.en_curso ? ' aria-pressed="true"' : ''}>En curso</button>${d.desde < d.en_curso ? `<button type="button" class="btn btn-outline" data-as-semana-ir="${esc(d.siguiente)}">Siguiente ▶</button>` : ''}
       <label>Semana del <input type="date" id="as-semana" value="${esc(d.desde)}"></label>${d.filas.length ? '<button type="button" class="btn btn-secundario" id="as-excel">📥 Excel de nómina</button>' : ''}</div>
       <p class="ayuda">${esc(fechaLarga(d.desde))} al ${esc(fechaLarga(d.hasta))}${cual}. Semana de nómina: ${esc(d.semana_texto || '')}${d.corta ? ' (esta semana es más corta porque cambió el día en que empieza la semana)' : ''}. Tiempo extra autorizado: las primeras 9 horas de la semana son dobles y lo demás triples (LFT).${abre ? ' Cuándo cuenta el tiempo extra: pestaña «Reglas del tiempo extra».' : ''}${d.dinero ? ` El pago usa el precio de la hora de cada puesto${abre ? ' (Horarios → Precio de la hora)' : ''}.` : ''}${abre ? ' Pulsa un nombre o un día para ver sus checadas.' : ''}</p>`;
-    if (!d.filas.length) { $('as-cuerpo').innerHTML = h + '<p class="ayuda">No hay personas en el reloj checador.</p>'; return; }
+    if (!d.filas.length) { Repintado.pintar($('as-cuerpo'), h + '<p class="ayuda">No hay personas en el reloj checador.</p>'); return; }
     h += `<div class="tabla-scroll"><table class="tabla-resumen as-tabla as-semana"><thead><tr><th>Persona</th>${d.fechas.map((f, i) => `<th>${esc(fechaLarga(f))}${d.festivos[i] ? '<small class="pe-cuenta">🎉 festivo</small>' : ''}</th>`).join('')}
       <th>Trabajado</th><th>Retardos</th><th>Faltas</th><th>Extra registrado</th><th>Extra autorizado</th><th>Dobles</th><th>Triples</th>${d.dinero ? '<th>Pago extra</th>' : ''}</tr></thead><tbody>`;
     for (const f of d.filas) {
@@ -247,7 +249,7 @@ const Asistencia = (() => {
         ${x.retardo_min ? `<small class="as-rojo">R ${esc(x.retardo_min)}′</small>` : ''}${x.extra_min ? `<small class="pe-cuenta">+${esc(hm(x.extra_min))}${x.extra_autorizado_min == null ? '' : ' ✔'}</small>` : ''}${x.por_revisar ? '<small class="as-rojo">⚠️ revisar</small>' : ''}</td>`).join('')}
         <td>${esc(hm(t.trabajado_min))}</td><td>${esc(t.retardos)}${t.retardo_min ? ` <small>(${esc(t.retardo_min)} min)</small>` : ''}</td><td>${esc(t.faltas)}</td><td>${esc(hm(t.extra_min))}</td><td>${esc(hm(t.extra_autorizado_min))}</td><td>${esc(hm(t.extra_dobles_min))}</td><td>${esc(hm(t.extra_triples_min))}</td>${d.dinero ? `<td>${esc(pagoExtra(f.dinero))}${f.dinero?.valor_hora_cent != null ? `<small class="pe-cuenta">hora ${esc(pesos(f.dinero.valor_hora_cent))}</small>` : ''}</td>` : ''}</tr>`;
     }
-    $('as-cuerpo').innerHTML = h + '</tbody></table></div>';
+    Repintado.pintar($('as-cuerpo'), h + '</tbody></table></div>');
   }
 
   // ---------- Excel de nómina (F4) ----------
@@ -325,9 +327,10 @@ const Asistencia = (() => {
       if (editando === x.id) h += formularioHorario(x, dias);
       h += '</div>';
     }
-    if (puede.precios) h += '<div class="modal-section" id="as-precios"><p class="ayuda" role="status">Cargando precios…</p></div>';
+    if (puede.precios) h += '<div class="modal-section" id="as-precios">' + (precios ? '' : '<p class="ayuda" role="status">Cargando precios…</p>') + '</div>'; // si ya estaban, se pintan de una vez (sin «Cargando…» ni brinco)
     h += seccionUbicaciones() + seccionZonas();
-    $('as-cuerpo').innerHTML = h;
+    // Todo se pinta antes de devolver el scroll (si los precios se pintaran después, la página quedaría más corta y el navegador la subiría).
+    Repintado.conservar($('as-cuerpo'), () => { $('as-cuerpo').innerHTML = h; if (puede.precios && precios) pintarPrecios(); });
     iniciarMapaZona();
     if (puede.precios) cargarPrecios();
   }
@@ -352,7 +355,7 @@ const Asistencia = (() => {
         <td>${esc(c == null ? '—' : pesos(c * 2))}</td><td>${esc(c == null ? '—' : pesos(c * 3))}</td>
         <td>${precios.editar ? `<button type="button" class="btn btn-secundario" data-as-precio="${Number(i)}">Guardar</button>` : ''}</td></tr>`;
     });
-    cont.innerHTML = h + '</tbody></table></div>';
+    Repintado.pintar(cont, h + '</tbody></table></div>');
   }
   function formularioHorario(x, dias) {
     const v = x?.proxima || x?.vigente || { dias: { 1: { entrada: '08:30', salida: '18:00' }, 2: { entrada: '08:30', salida: '18:00' }, 3: { entrada: '08:30', salida: '18:00' }, 4: { entrada: '08:30', salida: '18:00' }, 5: { entrada: '08:30', salida: '18:00' } }, tolerancia_min: 10, comida_min: 60 };
@@ -383,7 +386,7 @@ const Asistencia = (() => {
         <td>${puede.editar ? `<button type="button" class="btn-link" data-as-festivo="${esc(f.fecha)}" data-nombre="${esc(f.nombre)}" data-activo="${f.activo ? '' : '1'}">${f.activo ? 'Quitar' : 'Volver a poner'}</button>` : ''}</td></tr>`).join('')}
       </tbody></table></div>`;
     if (puede.editar) h += `<div class="filtros as-form"><b>Agregar:</b><input type="date" id="as-f-fecha" aria-label="Fecha"><input id="as-f-nombre" maxlength="80" placeholder="p. ej. Jornada electoral" aria-label="Qué día es"><button type="button" class="btn btn-secundario" id="as-f-guardar">Agregar</button></div>`;
-    $('as-cuerpo').innerHTML = h;
+    Repintado.pintar($('as-cuerpo'), h);
   }
 
   // ---------- Reglas del tiempo extra (2026-11-09) ----------
@@ -402,7 +405,7 @@ const Asistencia = (() => {
       <label><input type="checkbox" id="as-r-descanso"${v.descanso_todo ? ' checked' : ''}${dis}> En su día de descanso o en un festivo, todo lo que trabaje es tiempo extra <small class="pe-cuenta">(si no, solo lo que marque con los botones)</small></label>
       ${editar ? `<div class="filtros"><label>Vale desde <input type="date" id="as-r-desde" value="${esc(hoy())}"></label><button type="button" class="btn btn-primario" id="as-r-guardar">Guardar reglas</button></div>` : '<p class="ayuda">Las cambia Dirección o RH de la empresa.</p>'}</div>`;
     if (versiones.length > 1) h += `<div class="modal-section"><h3 class="pe-sub">Historial</h3><ul class="pe-ordenes">${versiones.map(x => `<li><b>Desde ${esc(x.desde === '2020-01-01' ? 'el inicio' : fechaLarga(x.desde))}</b>: semana ${esc(nombreDia(x.inicio_semana))} a ${esc(fin(x.inicio_semana))} · ${esc(x.modo === 'auto' ? 'automático' : 'solo botones')} · después de la salida desde ${esc(x.despues_min)} min · llegar antes ${x.antes_cuenta ? 'desde ' + esc(x.antes_min) + ' min' : 'no cuenta'} · ${esc(x.bloque_min === 1 ? 'minuto a minuto' : 'bloques de ' + x.bloque_min + ' min')} · descanso/festivo ${x.descanso_todo ? 'todo es extra' : 'solo botones'}${x.por ? ' <small class="pe-cuenta">' + esc(x.por) + '</small>' : ''}</li>`).join('')}</ul></div>`;
-    $('as-cuerpo').innerHTML = h;
+    Repintado.pintar($('as-cuerpo'), h);
   }
   async function guardarReglas(b) {
     const r = { inicio_semana: Number($('as-r-inicio').value), modo: $('as-r-modo').value, despues_min: Number($('as-r-despues').value), antes_cuenta: $('as-r-antes').checked, antes_min: Number($('as-r-antes-min').value), bloque_min: Number($('as-r-bloque').value), descanso_todo: $('as-r-descanso').checked, desde: $('as-r-desde').value };

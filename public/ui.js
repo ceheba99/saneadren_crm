@@ -1,4 +1,94 @@
 /* Comportamiento de presentación. No modifica datos ni sustituye reglas del CRM. */
+// ---------- Repintar sin que la pantalla «brinque» ----------
+// Regla de todo el frontend (2026-11-13, Dirección: «al guardar una zona la página me mandó hasta arriba»):
+//  1. «Cargando…» solo si el contenedor está vacío o cambió lo que se ve (otra pestaña, otra fecha, otro registro):
+//     Repintado.cargando(contenedor, clave). Al refrescar lo mismo tras guardar, lo de antes se queda hasta que llega lo nuevo.
+//  2. Al pintar lo nuevo: Repintado.pintar(contenedor, html) (o conservar(contenedor, fn) si el pintado es más largo)
+//     deja el scroll de la ventana, el de la ventana emergente, el horizontal de las tablas y los <details> abiertos como estaban.
+//  3. Si falla: Repintado.falla(...) no borra lo que se veía; avisa arriba (avisoCarga de app.js) o con un aviso corto.
+window.Repintado = (() => {
+  const SCROLLS = '.tabla-scroll, .bitacora-lista, .modal-body, .overlay';
+  const estado = c => c?.dataset.rpEstado || '';
+  // Ancla del scroll de la ventana: varios repintados seguidos (p. ej. todos los bloques de Inicio) comparten el mismo punto de
+  // partida, y un último ajuste en el siguiente cuadro corrige si algo (un bloque que se encogió y volvió a crecer) lo movió de
+  // pasada. Si la persona toca, rueda o teclea, el ancla se suelta: nunca se pelea con quien está desplazando la pantalla.
+  let ancla = null;
+  const soltar = () => { ancla = null; };
+  if (typeof window.addEventListener === 'function') for (const ev of ['wheel', 'touchstart', 'touchmove', 'keydown', 'pointerdown', 'mousedown']) window.addEventListener(ev, soltar, { passive: true, capture: true });
+  function anclar() {
+    const ahora = Date.now();
+    if (!ancla || ahora - ancla.t > 400) ancla = { x: window.scrollX, y: window.scrollY, t: ahora };
+    else ancla.t = ahora;
+    return ancla;
+  }
+  function capturar(raiz) {
+    const anc = anclar();
+    const est = { x: anc.x, y: anc.y, a: anc, fuera: [], dentro: [], abiertos: new Set(), enfocado: null };
+    const dentro = raiz ? [...raiz.querySelectorAll(SCROLLS)] : [];
+    document.querySelectorAll(SCROLLS).forEach(el => {
+      if (raiz && raiz !== el && raiz.contains(el)) return;      // los de adentro se guardan por posición
+      if (el.scrollTop || el.scrollLeft) est.fuera.push([el, el.scrollTop, el.scrollLeft]);
+    });
+    if (raiz && (raiz.scrollTop || raiz.scrollLeft) && !est.fuera.some(f => f[0] === raiz)) est.fuera.push([raiz, raiz.scrollTop, raiz.scrollLeft]);
+    dentro.forEach((el, i) => { if (el.scrollTop || el.scrollLeft) est.dentro.push([i, el.scrollTop, el.scrollLeft]); });
+    if (raiz) raiz.querySelectorAll('details').forEach((d, i) => { if (d.open) est.abiertos.add(d.id || ('#' + i)); });
+    const a = document.activeElement;
+    if (raiz && a && a.id && raiz.contains(a) && /^(INPUT|SELECT|TEXTAREA)$/.test(a.tagName)) est.enfocado = a.id;
+    return est;
+  }
+  function restaurar(raiz, est) {
+    if (!est) return;
+    if (raiz) {
+      raiz.querySelectorAll('details').forEach((d, i) => { if (est.abiertos.has(d.id || ('#' + i))) d.open = true; });
+      const dentro = [...raiz.querySelectorAll(SCROLLS)];
+      est.dentro.forEach(([i, t, l]) => { const el = dentro[i]; if (el) { el.scrollTop = t; el.scrollLeft = l; } });
+    }
+    est.fuera.forEach(([el, t, l]) => { if (el.isConnected) { el.scrollTop = t; el.scrollLeft = l; } });
+    if (window.scrollY !== est.y || window.scrollX !== est.x) window.scrollTo({ left: est.x, top: est.y, behavior: 'instant' });
+    if (est.a && typeof window.requestAnimationFrame === 'function') window.requestAnimationFrame(() => {
+      if (ancla === est.a && Math.abs(window.scrollY - est.a.y) > 1) window.scrollTo({ left: est.a.x, top: est.a.y, behavior: 'instant' });
+    });
+  }
+  // Pinta y deja todo donde estaba. «fn» puede ser síncrona o async (se restaura al terminar).
+  function conservar(raiz, fn) {
+    const est = capturar(raiz);
+    const fin = () => { restaurar(raiz, est); if (raiz) { raiz.dataset.rpEstado = 'listo'; quitarAviso(raiz); } };
+    const r = fn();
+    if (r && typeof r.then === 'function') return r.then(v => { fin(); return v; });
+    fin(); return r;
+  }
+  const pintar = (raiz, html) => conservar(raiz, () => { raiz.innerHTML = html; });
+  function quitarAviso(raiz) {
+    if (!raiz.dataset.rpAviso) return;           // solo quita el aviso que este mismo contenedor puso
+    delete raiz.dataset.rpAviso;
+    const sec = raiz.closest?.('section[id^="vista-"]');
+    if (sec && typeof avisoCarga === 'function') avisoCarga(sec.id.replace(/^vista-/, ''));
+  }
+  // «Cargando…» solo si está vacío, si venía de un error o si cambió lo que se ve (clave distinta).
+  function cargando(raiz, clave = '', html = '<p class="util-45" role="status">Cargando…</p>', forzar = false) {
+    if (!raiz) return false;
+    const k = String(clave);
+    const igual = raiz.dataset.rpClave === undefined || raiz.dataset.rpClave === k;
+    raiz.dataset.rpClave = k;
+    if (!forzar && raiz.innerHTML.trim() && estado(raiz) !== 'error' && igual) return false;
+    raiz.innerHTML = html; raiz.dataset.rpEstado = 'cargando';
+    return true;
+  }
+  // Si lo de antes sigue a la vista, NO se borra: se avisa arriba (vista) o con un aviso corto (ventana emergente).
+  function falla(raiz, err, reintentar, htmlError, vista) {
+    if (!raiz) return;
+    if (err && err.status === 401) return;
+    const conserva = raiz.innerHTML.trim() && !['cargando', 'error'].includes(estado(raiz));
+    if (conserva) {
+      const v = vista || raiz.closest?.('section[id^="vista-"]')?.id.replace(/^vista-/, '');
+      if (v && typeof avisoCarga === 'function') { raiz.dataset.rpAviso = '1'; avisoCarga(v, err, reintentar); }
+      else if (typeof toast === 'function') toast('No se pudo actualizar: ' + (err?.message || 'sin conexión'));
+      return;
+    }
+    raiz.innerHTML = htmlError; raiz.dataset.rpEstado = 'error';
+  }
+  return { capturar, restaurar, conservar, pintar, cargando, falla };
+})();
 // Mostrar / ocultar contraseña: cada campo de contraseña lleva un botón «Mostrar» que la deja ver mientras se
 // escribe. Al enviar el formulario vuelve a ocultarse (por si la pantalla queda a la vista de alguien).
 window.prepararOjo = input => {
