@@ -471,6 +471,7 @@
       if (!Number.isFinite(hora)) throw new Error('servidor'); // sin hora válida no es el servidor del checador
       conexionConfirmada = true;
       TIPOS = r.j.tipos || TIPOS; desfase = hora - Date.now();
+      if (typeof r.j.llave_cola === 'string' && r.j.llave_cola) { try { localStorage.setItem(LLAVE_COLA, r.j.llave_cola); } catch { /* sin almacenamiento */ } }
       $('kiosco-nombre').textContent = r.j.nombre + (r.j.sucursal ? ' · ' + r.j.sucursal : '');
       sinConexion = false; avisos();
       return true;
@@ -484,6 +485,7 @@
     $('conexion').dataset.estado = 'sin-registrar';
     $('conexion-texto').textContent = 'Sin registrar';
     clearTimeout(temporizador);
+    limpiarColaVieja();
     pintar(el('div', { className: 'error' }, el('h1', { textContent: 'Este dispositivo no es un kiosco' }),
       el('p', { className: 'ayuda', textContent: 'Pide al gerente que lo registre: en el sistema, RH → «Kioscos del checador», desde este mismo dispositivo. Si lo dieron de baja, hay que registrarlo de nuevo.' })));
   }
@@ -963,7 +965,8 @@
     estado.esCodigo = false; estado.teclado = null;
     iniciarCamara(); // se prende ya: lista para la cara o para la foto
     let bio = false;
-    try { const r = await Promise.race([api('rostro-previo', { codigo }), new Promise((_, mal) => setTimeout(() => mal(new Error('lento')), 4000))]); bio = r.ok && r.j.biometria; } catch { bio = false; }
+    try { const r = await Promise.race([api('rostro-previo', { codigo }), new Promise((_, mal) => setTimeout(() => mal(new Error('lento')), 4000))]); bio = r.ok && r.j.biometria; }
+    catch { bio = !!recordado(codigo)?.cara; } // sin internet: quien entra con la cara la sigue usando (se comprueba al subir)
     return bio ? caraPrimero(codigo) : pedirPin(codigo);
   }
   // Entrar con la cara (2026-11-09; con calma desde el 2026-11-11). Si coincide y es una cara real, se salta el PIN.
@@ -987,9 +990,17 @@
     const botones = [['Intentar otra vez', () => caraPrimero(codigo), true], ['Usar mi PIN', () => conPin('Escribe tu PIN. Se tomó tu foto y RH revisará tu checada.')]];
     if (!cap.preparado || !rostro.descriptor) return otraVezCara('No alcanzamos a ver bien tu cara', 'No pasa nada. Acomódate con calma y vuelve a intentarlo:', botones);
     aviso('Revisando…');
-    let r; try { r = await api('rostro-entrar', { codigo, rostro }); } catch { if (estado.cara === yo) pedirPin(codigo, rostro, 'Escribe tu PIN'); return; }
+    let r; try { r = await api('rostro-entrar', { codigo, rostro }); }
+    catch {
+      if (estado.cara !== yo) return;
+      // Sin internet (2026-11-12): quien entra con la cara ya no necesita acordarse de su PIN. Su cara se guarda cerrada
+      // con la checada y el servidor la compara al subir.
+      const x = recordado(codigo);
+      if (x?.cara && rostro.vivo) { sinConexion = true; avisos(); return elegirTipo({ nombre: x.n || null, sugerido: null, sinConexion: { codigo, rostro }, aviso: 'Sin conexión: tu checada se guardará aquí y tu cara se comprobará al volver internet. ¿Qué vas a registrar?' }); }
+      return pedirPin(codigo, rostro, 'Escribe tu PIN');
+    }
     if (estado.cara !== yo) return;
-    if (r.ok) { if (sinConexion) { sinConexion = false; avisos(); } return elegirTipo({ ...r.j, rostro, aviso: '✔ Te reconocimos. ¿Qué vas a registrar?' }); }
+    if (r.ok) { recordar(codigo, r.j.nombre, null, true); if (sinConexion) { sinConexion = false; avisos(); } return elegirTipo({ ...r.j, rostro, aviso: '✔ Te reconocimos. ¿Qué vas a registrar?' }); }
     // No pasó: foto del intento para RH (la persona sigue frente a la cámara).
     if (r.j.intento) { const imagen = foto(); if (imagen) api('intento-foto', { intento: r.j.intento, foto: imagen }).catch(() => {}); }
     const porque = r.j.resultado === 'no_vivo' ? 'No pudimos confirmar tu cara' : r.j.resultado === 'sin_rostro' ? 'No vimos tu cara' : 'Tu cara no coincidió';
@@ -1009,20 +1020,39 @@
     pintar(el('p', { className: 'ayuda', textContent: 'Revisando…' }));
     let r;
     try { r = await api('identificar', { codigo, pin }); }
-    catch { sinConexion = true; avisos(); return elegirTipo({ nombre: null, sugerido: null, sinConexion: { codigo, pin } }); }
+    catch { sinConexion = true; avisos(); return sinInternet(codigo, pin); }
     if (r.status === 401 && r.j.codigo === 'KIOSCO_NO_REGISTRADO') return noRegistrado();
+    // El servidor contestó con una falla suya (2026-11-12): la persona no se queda sin checar; se guarda aquí.
+    if (r.status >= 500) return sinInternet(codigo, pin);
     if (!r.ok) {
       // Intento fallido: el servidor lo registra y pide su foto (para ver quién prueba el código de otro).
       if (r.j.intento) { await camaraA(); const imagen = foto(); if (imagen) api('intento-foto', { intento: r.j.intento, foto: imagen }).catch(() => {}); }
       return error(r.j.error || 'No se pudo revisar tu código');
     }
     if (sinConexion) { sinConexion = false; avisos(); }
-    if (r.j.cambiar_pin) return nuevoPin(r.j);
+    if (r.j.cambiar_pin) return nuevoPin({ ...r.j, codigo });
+    recordar(codigo, r.j.nombre, pin, !!r.j.biometria);
     await camaraA(); // que la vista de la cámara ya esté prendida al elegir
     // respaldo: si la red se cae justo al checar, con esto la checada se guarda aquí en vez de perderse (ver checar()).
     const datos = { ...r.j, respaldo: { codigo, pin } };
     if (rostro) return elegirTipo({ ...datos, rostro }); // ya se intentó con la cara y no coincidió: por revisar
     continuar(datos);
+  }
+  // Sin internet (o con el servidor fallando): el PIN se comprueba con lo que la tableta recuerda de ese código.
+  // Si no coincide, se le dice en el momento; puede volver a escribirlo o, si se lo acaban de cambiar, guardarla así
+  // (el servidor decide al subir). Si la tableta no lo conoce, se guarda con el aviso de que no se pudo comprobar.
+  async function sinInternet(codigo, pin) {
+    const x = recordado(codigo), que = await pinRecordado(codigo, pin);
+    const seguir = comprobado => elegirTipo({ nombre: x?.n || null, sugerido: null, sinConexion: { codigo, pin }, comprobado,
+      ...(x?.n ? { aviso: 'Sin conexión: tu checada se guardará aquí y se subirá sola' + (comprobado ? '' : ' (no se pudo comprobar tu PIN)') + '. Mira a la cámara.' } : {}) });
+    if (que !== 'distinto') return seguir(que === 'igual');
+    Sonidos.sonar('error');
+    estado.teclado = null; estado.cara = null;
+    pintar(el('div', { className: 'reintento' }, el('div', { className: 'icono', textContent: '⚠️' }), el('h1', { textContent: 'Ese PIN no coincide' }),
+      el('p', { className: 'ayuda', textContent: 'No hay internet para revisarlo, pero no es el PIN que usaste la última vez en esta tableta. Vuelve a escribirlo con calma.' }),
+      el('div', { className: 'reintento-botones' }, el('button', { type: 'button', className: 'btn btn-principal', textContent: 'Escribir mi PIN otra vez', onclick: () => pedirPin(codigo) }),
+        el('button', { type: 'button', className: 'btn', textContent: 'Me lo acaban de cambiar: guardar así', onclick: () => seguir(false) }))));
+    reiniciarEspera(45000);
   }
   // Con biométrico pero sin haber pasado por la cara (p. ej. no se pudo preguntar), se comprueba antes de elegir.
   const continuar = datos => (datos.biometria ? verificarCara(datos) : elegirTipo(datos));
@@ -1033,6 +1063,7 @@
         if (otra !== nuevo) return error('Los dos PIN no coinciden. Vuelve a empezar.');
         let r; try { r = await api('cambiar-pin', { ticket: datos.ticket, nuevo }); } catch { return error('Sin conexión: el PIN nuevo se elige con internet. Intenta más tarde.'); }
         if (!r.ok) { if (r.j.ticket) { datos.ticket = r.j.ticket; return error(r.j.error, () => nuevoPin(datos)); } return error(r.j.error || 'No se pudo guardar tu PIN'); }
+        if (datos.codigo) recordar(datos.codigo, r.j.nombre, nuevo, !!r.j.biometria);
         await camaraA(); continuar({ ...r.j, aviso: 'Listo: ya tienes tu PIN. Ahora registra tu checada.' });
       }, () => nuevoPin(datos));
     });
@@ -1145,7 +1176,7 @@
     clearTimeout(temporizador);
     const imagen = foto();
     pintar(el('p', { className: 'ayuda', textContent: 'Registrando…' }));
-    if (datos.sinConexion) return guardarSinConexion({ ...datos.sinConexion, tipo, foto: imagen });
+    if (datos.sinConexion) return guardarSinConexion({ ...datos.sinConexion, tipo, foto: imagen, comprobado: !!datos.comprobado });
     // 2026-11-12 (blindaje): si la red falla justo al checar, antes había que empezar de nuevo y quien ya se había ido
     // se quedaba sin checada. Ahora se intenta otra vez (el servidor reconoce el mismo permiso: no duplica) y, si sigue
     // sin red o el servidor falla, la checada de quien entró con su PIN se guarda aquí como las de «sin conexión».
@@ -1199,6 +1230,59 @@
     reiniciarEspera(despues ? ESPERA_MS : 8000);
   }
 
+  // ---------- Memoria de la tableta y candado de la cola (2026-11-12, auditoría del checador) ----------
+  // Para que SIN INTERNET la tableta ya no acepte cualquier PIN ni guarde el PIN en claro:
+  //  · «Marca» del PIN: cuando alguien se identifica CON internet, la tableta guarda de su código solo una marca de
+  //    5 bits (1 de 32) de su PIN, su primer nombre y si entra con la cara. Sin internet, un PIN mal tecleado casi
+  //    siempre (31 de cada 32 veces) da otra marca y se le avisa en el momento. La marca NO alcanza para sacar el PIN:
+  //    unos 300 PIN distintos dan la misma, y el servidor sigue bloqueando a los 5 intentos.
+  //  · Candado: el PIN (o la cara) de una checada que espera a subir se cierra con la llave pública del servidor
+  //    (ECDH P-256 + AES-GCM). La tableta no la puede volver a abrir; solo el servidor (server/checador.js).
+  const MEMORIA = 'saneadren_kiosco_memoria', LLAVE_COLA = 'saneadren_kiosco_llave_cola', MEMORIA_MAX = 300;
+  const aB64 = buf => { const a = new Uint8Array(buf); let s = ''; for (let i = 0; i < a.length; i += 8192) s += String.fromCharCode.apply(null, a.subarray(i, i + 8192)); return btoa(s); };
+  const deB64 = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
+  function memoria() {
+    try { const m = JSON.parse(localStorage.getItem(MEMORIA) || 'null'); if (m && typeof m.sal === 'string' && m.codigos && typeof m.codigos === 'object') return m; } catch { /* se empieza de nuevo */ }
+    return { sal: aB64(crypto.getRandomValues(new Uint8Array(16))), codigos: {} };
+  }
+  function guardarMemoria(m) {
+    const ks = Object.keys(m.codigos);
+    if (ks.length > MEMORIA_MAX) ks.sort((a, b) => (m.codigos[a].f || 0) - (m.codigos[b].f || 0)).slice(0, ks.length - MEMORIA_MAX).forEach(k => delete m.codigos[k]);
+    try { localStorage.setItem(MEMORIA, JSON.stringify(m)); } catch { /* sin almacenamiento: se sigue sin memoria */ }
+  }
+  const marcaPin = async (m, codigo, pin) => new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(m.sal + ':' + codigo + ':' + pin)))[0] >> 3;
+  // Lo que se recuerda de un código tras identificarse con internet. «pin» y «cara» solo se tocan si se pasan.
+  async function recordar(codigo, nombre, pin = null, cara = null) {
+    try {
+      const m = memoria(), x = m.codigos[codigo] || {};
+      if (nombre) x.n = String(nombre).slice(0, 40);
+      if (pin) x.t = await marcaPin(m, codigo, pin);
+      if (cara !== null) x.cara = !!cara;
+      x.f = Date.now(); m.codigos[codigo] = x; guardarMemoria(m);
+    } catch { /* sin memoria: la tableta se porta como antes */ }
+  }
+  // 'igual' | 'distinto' | 'sin-memoria' (nunca se identificó aquí con internet, o no hay cómo comprobar).
+  async function pinRecordado(codigo, pin) {
+    try { const m = memoria(), x = m.codigos[codigo]; if (!x || typeof x.t !== 'number') return 'sin-memoria'; return (await marcaPin(m, codigo, pin)) === x.t ? 'igual' : 'distinto'; }
+    catch { return 'sin-memoria'; }
+  }
+  const recordado = codigo => { try { return memoria().codigos[codigo] || null; } catch { return null; } };
+  // Cierra { pin } o { rostro } para la checada «id». null si no hay llave o el navegador no puede (se guarda como antes).
+  async function sellar(id, secreto) {
+    try {
+      const publica = localStorage.getItem(LLAVE_COLA);
+      if (!publica || !crypto.subtle) return null;
+      const servidor = await crypto.subtle.importKey('raw', deB64(publica), { name: 'ECDH', namedCurve: 'P-256' }, false, []);
+      const par = await crypto.subtle.generateKey({ name: 'ECDH', namedCurve: 'P-256' }, true, ['deriveBits']);
+      const e = new Uint8Array(await crypto.subtle.exportKey('raw', par.publicKey));
+      const comun = new Uint8Array(await crypto.subtle.deriveBits({ name: 'ECDH', public: servidor }, par.privateKey, 256));
+      const junta = new Uint8Array(comun.length + e.length); junta.set(comun); junta.set(e, comun.length);
+      const llave = await crypto.subtle.importKey('raw', await crypto.subtle.digest('SHA-256', junta), 'AES-GCM', false, ['encrypt']);
+      const iv = crypto.getRandomValues(new Uint8Array(12));
+      const c = await crypto.subtle.encrypt({ name: 'AES-GCM', iv, additionalData: new TextEncoder().encode(id) }, llave, new TextEncoder().encode(JSON.stringify(secreto)));
+      return { e: aB64(e), iv: aB64(iv), c: aB64(c) };
+    } catch { return null; }
+  }
   // ---------- Sin conexión: cola en IndexedDB ----------
   const abrirDb = () => new Promise((ok, mal) => { const r = indexedDB.open('saneadren-kiosco', 1); r.onupgradeneeded = () => r.result.createObjectStore('pendientes', { keyPath: 'uid' }); r.onsuccess = () => ok(r.result); r.onerror = () => mal(r.error); });
   async function cola(modo, fn) { const db = await abrirDb(); return new Promise((ok, mal) => { const t = db.transaction('pendientes', modo), s = t.objectStore('pendientes'), r = fn(s); t.oncomplete = () => ok(r?.result); t.onerror = () => mal(t.error); }); }
@@ -1207,9 +1291,10 @@
     try {
       const n = await cola('readonly', s => s.count());
       if (n >= 500) return error('Este kiosco ya tiene 500 checadas sin subir. Avisa al gerente: hay que revisar el internet.');
-      await cola('readwrite', s => s.put({ uid: uid(), codigo: x.codigo, pin: x.pin, tipo: x.tipo, foto: x.foto, t0: Date.now(), p0: performance.now(), sesion: SESION }));
+      const id = uid(), privado = x.rostro && !x.pin ? { rostro: x.rostro } : { pin: x.pin }, secreto = await sellar(id, privado);
+      await cola('readwrite', s => s.put({ uid: id, codigo: x.codigo, ...(secreto ? { secreto } : privado), tipo: x.tipo, foto: x.foto, t0: Date.now(), p0: performance.now(), sesion: SESION }));
     } catch { return error('No se pudo guardar en este kiosco. Avisa al gerente.'); }
-    listo('guardada', (TIPOS[x.tipo] || 'Checada') + ' guardada', 'Sin conexión: se subirá sola al volver internet y tu gerente la revisará. Ahora no se pudo comprobar tu PIN: si lo tecleaste mal, no contará (avisa a tu gerente).');
+    listo('guardada', (TIPOS[x.tipo] || 'Checada') + ' guardada', 'Sin conexión: se subirá sola al volver internet y tu gerente la revisará.' + (x.rostro && !x.pin ? ' Tu cara se comprobará al subir.' : x.comprobado ? '' : ' Ahora no se pudo comprobar tu PIN: si lo tecleaste mal, no contará (avisa a tu gerente).'));
     contarPendientes();
   }
   let rechazadas = 0, subiendo = false;
@@ -1218,9 +1303,26 @@
     $('pendientes').dataset.pendientes = String(!!(n || rechazadas));
     $('pendientes').textContent = (n ? `${n} checada(s) por subir` : 'Sin checadas pendientes') + (rechazadas ? `${n ? ' · ' : ''}${rechazadas} no se aceptaron al subir: avisa al gerente (las ve en Asistencia, «Intentos fallidos»)` : '');
   }
+  // Lo que la versión anterior dejó en claro en la cola se cierra en cuanto hay llave.
+  async function protegerCola() {
+    try {
+      for (const x of await cola('readonly', s => s.getAll())) {
+        if (x.secreto || (!x.pin && !x.rostro)) continue;
+        const secreto = await sellar(x.uid, x.rostro && !x.pin ? { rostro: x.rostro } : { pin: x.pin });
+        if (!secreto) return;
+        const { pin, rostro, ...resto } = x; void pin; void rostro;
+        await cola('readwrite', s => s.put({ ...resto, secreto }));
+      }
+    } catch { /* sin IndexedDB */ }
+  }
+  // Kiosco dado de baja: lo que lleva más de 8 días sin subir ya no lo acepta el servidor (tope de 7): se borra de aquí.
+  async function limpiarColaVieja() {
+    try { for (const x of await cola('readonly', s => s.getAll())) if (Date.now() - x.t0 > 8 * 86400000) await cola('readwrite', s => s.delete(x.uid)); } catch { /* sin IndexedDB */ }
+  }
   async function subirPendientes() {
     if (subiendo || !registro?.token) return; subiendo = true;
     try {
+      await protegerCola();
       // 2026-11-12 (blindaje): una checada que el servidor no acepta por un error suyo ya no detiene a las que vienen
       // detrás. Se cuenta el intento, se sigue con las demás (primero las que menos intentos llevan) y se vuelve a
       // probar en la siguiente vuelta; tras 5 fallas seguidas se deja para después.
@@ -1230,7 +1332,7 @@
         const mismaSesion = x.sesion === SESION;
         const edad = Math.max(0, Math.round(mismaSesion ? performance.now() - x.p0 : Date.now() - x.t0));
         let r;
-        try { r = await api('sin-conexion', { uid: x.uid, codigo: x.codigo, pin: x.pin, tipo: x.tipo, foto: x.foto, edad_ms: edad, monotonica: mismaSesion, hora_dispositivo: new Date(x.t0).toISOString() }); }
+        try { r = await api('sin-conexion', { uid: x.uid, codigo: x.codigo, ...(x.secreto ? { secreto: x.secreto } : x.rostro && !x.pin ? { rostro: x.rostro } : { pin: x.pin }), tipo: x.tipo, foto: x.foto, edad_ms: edad, monotonica: mismaSesion, hora_dispositivo: new Date(x.t0).toISOString() }); }
         catch { sinConexion = true; avisos(); break; }
         if (r.status === 401 && r.j.codigo === 'KIOSCO_NO_REGISTRADO') break;
         if (r.ok || r.j.descartar) { await cola('readwrite', s => s.delete(x.uid)); if (!r.ok) rechazadas++; fallas = 0; continue; }
@@ -1262,7 +1364,7 @@
   // solo lo que Dirección hacía a mano: se reinicia. Abre al instante con la copia guardada («?copia=1», kiosco-sw.js),
   // así que no depende de que la red ya haya vuelto; por eso solo se hace cuando la caché está al mando de la página.
   const REINICIO_MS = 15000;
-  let ocultoDesde = 0, reviviendo = null, ultimaConexion = 0;
+  let ocultoDesde = 0, reviviendo = null, ultimaConexion = 0, camaraAntes = false;
   function revivir(motivo = '') {
     clearTimeout(reviviendo);
     reviviendo = setTimeout(() => {
@@ -1274,10 +1376,13 @@
       document.body.style.transform = 'translateZ(0)'; requestAnimationFrame(() => { document.body.style.transform = ''; });
       const p = $('pantalla'), vacia = !p.firstElementChild || !!$('arranque') || !p.innerText.trim();
       if (!deBaja && registro?.token && (vacia || motivo === 'vigilante' || (fuera > 15000 && !estado.esCodigo))) inicio();
+      // La cámara se soltó al ocultarse la pantalla (2026-11-12): si la persona sigue a media checada, se vuelve a
+      // prender (antes la siguiente checada salía «Sin foto» y la toma de la cara se quedaba congelada).
+      if (camaraAntes) { camaraAntes = false; if (!deBaja && !estado.esCodigo) iniciarCamara(); }
       if (!deBaja && Date.now() - ultimaConexion > 5000) { ultimaConexion = Date.now(); conectar().then(ok => { if (ok && !deBaja) { subirPendientes(); mandarDiagnostico(); } }); }
     }, 350);
   }
-  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') revivir(); else { ocultoDesde = ocultoDesde || Date.now(); soltarCamara(); } });
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') revivir(); else { ocultoDesde = ocultoDesde || Date.now(); camaraAntes = camaraAntes || camaraLista || !!pidiendo; soltarCamara(); } });
   window.addEventListener('pageshow', e => { if (e.persisted) revivir(); });
   document.addEventListener('resume', () => revivir());
   window.addEventListener('focus', () => revivir());
