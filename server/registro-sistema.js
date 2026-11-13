@@ -46,6 +46,7 @@ const EVENTOS = {
   respaldo_ok: ['servicio', 'info', 'Respaldo automático hecho'],
   respaldo_fallo: ['servicio', 'grave', 'Respaldo automático falló'],
   whatsapp_fallo: ['servicio', 'aviso', 'WhatsApp no se envió'],
+  whatsapp_rechazado: ['servicio', 'aviso', 'WhatsApp: mensaje de Meta no aceptado'],
   kiosco_recuperado: ['servicio', 'aviso', 'El reloj checador se recuperó solo'],
   kiosco_velocidad: ['servicio', 'info', 'Velocidad del reloj checador'],
   kiosco_sin_respuesta: ['servicio', 'grave', 'El reloj checador no responde'],
