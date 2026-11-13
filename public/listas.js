@@ -60,7 +60,7 @@ const Listas = (() => {
   function tarjetaEditable(e) {
     const clave = e.lista, l = DATOS.editables[clave], ops = EDITANDO[clave];
     return '<details class="lst-lista" data-lst="' + esc(clave) + '"' + (sinGuardar(clave) ? ' open' : '') + '><summary><b>' + esc(e.nombre) + '</b> · '
-      + Number(ops.filter(o => !o.oculta).length) + ' opciones' + (ops.some(o => o.oculta) ? ' (+' + Number(ops.filter(o => o.oculta).length) + ' ocultas)' : '')
+      + Number(ops.filter(o => !o.oculta).length) + ' opciones' + (ops.some(o => o.oculta) ? ((k) => ' (+' + k + (k === 1 ? ' oculta)' : ' ocultas)'))(Number(ops.filter(o => o.oculta).length)) : '')
       + '<small class="lst-donde">' + esc(e.aparece) + '</small></summary>'
       + (l.renombrar_cambia_guardado ? '<p class="ayuda">Al renombrar una opción también se cambia en lo que ya estaba guardado con ella.</p>' : '')
       + '<div class="lst-filas">' + ops.map((o, i) => filaOpcion(clave, o, i, ops.length)).join('') + '</div>'
@@ -72,7 +72,7 @@ const Listas = (() => {
 
   function tarjetaFija(e) {
     const n = e.cuantas;
-    return '<div class="lst-lista lst-solo"><b>' + esc(e.nombre) + '</b> · ' + Number(n) + (n === 1 ? ' lista' : ' listas')
+    return '<div class="lst-lista lst-solo"><span><b>' + esc(e.nombre) + '</b> · ' + Number(n) + (n === 1 ? ' lista' : ' listas') + '</span>'
       + '<small class="lst-donde">' + esc(e.aparece) + '</small>'
       + (e.donde ? '<small class="lst-razon">✏️ Dónde se edita: ' + esc(e.donde) + '</small>' : '')
       + (e.porque ? '<small class="lst-razon">🔒 ' + esc(e.porque) + '</small>' : '') + '</div>';
