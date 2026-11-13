@@ -176,8 +176,8 @@ function cambiarVista(v, opciones) {
   if (v === 'prospeccion' && !Permisos.puede('prospeccion.ver')) v = 'inicio';
   if (v === 'marketing' && !Permisos.puede('marketing.ver')) v = 'inicio';
   if (v === 'facturas' && !Permisos.puede('facturacion.timbrar')) v = 'inicio';
-  if ((v === 'cobrar' || (v === 'cuentas' && !['pagar', 'proveedores', 'anticipos', 'programados'].includes(opciones?.pestana))) && !Permisos.puede('cxc.ver')) v = 'inicio';
-  if ((v === 'pagar' || (v === 'cuentas' && ['pagar', 'proveedores', 'anticipos', 'programados'].includes(opciones?.pestana))) && !Permisos.puede('cxp.ver')) v = 'inicio';
+  if ((v === 'cobrar' || (v === 'cuentas' && !['pagar', 'proveedores', 'anticipos', 'programados', 'creditos'].includes(opciones?.pestana))) && !Permisos.puede('cxc.ver')) v = 'inicio';
+  if ((v === 'pagar' || (v === 'cuentas' && ['pagar', 'proveedores', 'anticipos', 'programados', 'creditos'].includes(opciones?.pestana))) && !Permisos.puede('cxp.ver')) v = 'inicio';
   if (v === 'contabilidad' && !Permisos.puede('contabilidad.ver') && !Permisos.direccion()) v = 'inicio';
   if (v === 'nomina' && !Permisos.puede('nomina.preparar') && !Permisos.direccion()) v = 'inicio';
   if (v === 'avisos' && !Permisos.puede('avisos.publicar') && !Permisos.direccion()) v = 'inicio';
@@ -185,7 +185,7 @@ function cambiarVista(v, opciones) {
   // «Proveedores» (menú Finanzas) es la pestaña de Cuentas por pagar.
   if (v === 'proveedores') { opciones = { ...opciones, pestana: 'proveedores' }; v = Permisos.puede('cxp.ver') ? 'pagar' : 'inicio'; }
   // Cuentas por cobrar y por pagar son dos secciones del menú Finanzas que usan la misma pantalla.
-  if (v === 'cuentas') v = ['pagar', 'proveedores', 'anticipos', 'programados'].includes(opciones?.pestana) ? 'pagar' : 'cobrar';
+  if (v === 'cuentas') v = ['pagar', 'proveedores', 'anticipos', 'programados', 'creditos'].includes(opciones?.pestana) ? 'pagar' : 'cobrar';
   const seccionCuentas = ['cobrar', 'pagar'].includes(v) ? v : null;
   document.querySelectorAll('.vista').forEach(s => s.classList.remove('activa'));
   document.getElementById('vista-' + (seccionCuentas ? 'cuentas' : v)).classList.add('activa');
