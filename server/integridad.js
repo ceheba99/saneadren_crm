@@ -134,6 +134,20 @@ function revisar(db, { dirArchivos } = {}) {
       .map(g => ({ ref: g.nombre, detalle: `${g.proveedor || 'proveedor #' + g.proveedor_id} está desactivado: actívalo o cambia el proveedor del gasto programado` })));
   }
 
+  // ---------- Créditos (Cuentas por pagar fase 5, 2026-11-13) ----------
+  if (existe(db, 'creditos')) {
+    const cr = db.prepare('SELECT * FROM creditos').all(), crPorId = new Map(cr.map(c => [c.id, c]));
+    const ligadas = cxp.filter(x => x.credito_id && !x.cancelada);
+    const refM = x => `${crPorId.get(x.credito_id)?.nombre || 'crédito #' + x.credito_id} · mensualidad ${x.credito_num}`;
+    chequeo('Créditos', 'Cuenta por pagar ligada a un crédito que no existe', 'error', () => ligadas.filter(x => !crPorId.has(x.credito_id)).map(x => ({ ref: refCxp(x), detalle: 'crédito #' + x.credito_id })));
+    chequeo('Créditos', 'Mensualidad repetida en el mismo crédito', 'error', () => ligadas.filter(x => x.credito_tipo === 'mensualidad' && ligadas.some(o => o.id !== x.id && o.credito_tipo === 'mensualidad' && o.credito_id === x.credito_id && o.credito_num === x.credito_num))
+      .map(x => ({ ref: refM(x), detalle: 'hay dos cuentas vigentes con ese número: cancela la que sobra' })));
+    chequeo('Créditos', 'Mensualidad con número mayor que el plazo', 'error', () => ligadas.filter(x => x.credito_tipo === 'mensualidad' && crPorId.has(x.credito_id) && x.credito_num > crPorId.get(x.credito_id).plazo_meses)
+      .map(x => ({ ref: refM(x), detalle: 'el plazo es de ' + crPorId.get(x.credito_id).plazo_meses + ' meses' })));
+    chequeo('Créditos', 'Crédito liquidado o cancelado con mensualidades por pagar', 'aviso', () => cr.filter(c => c.estado !== 'vigente' && ligadas.some(x => x.credito_id === c.id && pagadoCxp(x.id) < x.total_cent))
+      .map(c => ({ ref: c.nombre, detalle: 'márcalo vigente o reprograma sus mensualidades' })));
+  }
+
   // ---------- Nómina semanal (módulo contable F3, 2026-11-11) ----------
   if (existe(db, 'nominas') && existe(db, 'nomina_lineas')) {
     const nom = db.prepare("SELECT * FROM nominas").all();
