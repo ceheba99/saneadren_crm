@@ -77,6 +77,39 @@ const HOY = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Mexico_City' }
   revisa(Math.round(j.actual.no_gasto * 100) === 182500000 - Math.round(182500000 * 16 / 116) && j.actual.gasto < 100000, 'el tracto camión ($1,825,000 con IVA) va en «no es gasto» (sin IVA), no en gastos', [j.actual.gasto, j.actual.no_gasto]);
   revisa(j.gastos.find(g => g.categoria === 'activos')?.es_gasto === false, 'en la lista de gastos aparece marcado como inversión');
 
+  console.log('7. Tipo de gasto y observaciones (como el Excel, 2026-11-12)');
+  const fijo = { proveedor_id: morlet.id, categoria: 'renta_inmuebles', concepto: 'Renta casa Atotonilco noviembre', total: 8500, fecha_documento: HOY, dias_credito: 0, tipo_comprobante: 'recibo' };
+  [s, j] = await pedir('POST', '/finanzas/cxp', C, { ...fijo, tipo_gasto: 'cada rato' }); revisa(s === 400 && /tipo de gasto/.test(j.error), 'un tipo de gasto que no está en la lista no se acepta', [s, j.error]);
+  [s, j] = await pedir('POST', '/finanzas/cxp', C, { ...fijo, tipo_gasto: '12' }); revisa(s === 400, 'tampoco los números sueltos de la hoja LISTA');
+  [s, j] = await pedir('POST', '/finanzas/cxp', C, { ...fijo, tipo_gasto: 'mensual', notas: 'Se paga los días 5' });
+  const renta = j; revisa(s === 201, 'gasto MENSUAL con observaciones', [s, j.error]);
+  [s, j] = await pedir('POST', '/finanzas/cxp', C, { ...fijo, concepto: 'Caseta de vigilancia', categoria: 'otro' }); const sinTipo = j; revisa(s === 201, 'sin tipo de gasto también se puede (es opcional)', [s, j.error]);
+  [s, j] = await pedir('GET', '/finanzas/cxp?vista=todas', C);
+  let r1 = (j || []).find(x => x.id === renta.id), r2 = (j || []).find(x => x.id === sinTipo.id);
+  revisa(r1?.tipo_gasto === 'mensual' && r1?.tipo_gasto_nombre === 'Mensual' && r1?.notas === 'Se paga los días 5', 'la lista trae el tipo de gasto y las observaciones', r1);
+  revisa(r2 && r2.tipo_gasto === null && r2.tipo_gasto_nombre === '', 'sin tipo de gasto queda «sin indicar»', r2);
+  // Editar después: solo tipo de gasto y observaciones; los montos no se mueven aunque se manden.
+  [s] = await pedir('POST', '/finanzas/cxp/' + renta.id + '/datos', V, { tipo_gasto: 'unico' }); revisa(s === 403 || s === 404, 'ventas no cambia los datos de un gasto', s);
+  [s, j] = await pedir('POST', '/finanzas/cxp/' + renta.id + '/datos', C, { tipo_gasto: 'diario' }); revisa(s === 400, 'al editar tampoco se acepta un tipo que no está en la lista');
+  [s, j] = await pedir('POST', '/finanzas/cxp/' + renta.id + '/datos', C, { notas: 'x'.repeat(1001) }); revisa(s === 400, 'observaciones de más de 1000 letras no se aceptan (no se recortan a escondidas)');
+  [s, j] = await pedir('POST', '/finanzas/cxp/' + sinTipo.id + '/datos', C, { tipo_gasto: 'unico', notas: 'Construcción única', total: 1, total_cent: 100, fecha_documento: '2020-01-01', proveedor_id: camiones.id });
+  revisa(s === 200 && j.tipo_gasto === 'unico' && j.notas === 'Construcción única', 'quien paga cambia el tipo de gasto y las observaciones', [s, j]);
+  [s, j] = await pedir('GET', '/finanzas/cxp?vista=todas', C); r2 = (j || []).find(x => x.id === sinTipo.id);
+  revisa(r2?.total === 8500 && r2?.fecha_documento === HOY && r2?.proveedor_id === morlet.id && r2?.tipo_gasto_nombre === 'Único', 'el total, la fecha y el proveedor NO cambian aunque se manden', r2);
+  [s, j] = await pedir('POST', '/finanzas/cxp/' + sinTipo.id + '/datos', C, { tipo_gasto: 'unico', notas: 'Construcción única' }); revisa(s === 200 && j.sin_cambios, 'guardar lo mismo no deja un cambio en el historial');
+  [s, j] = await pedir('POST', '/finanzas/cxp/' + sinTipo.id + '/datos', A, { tipo_gasto: '' }); revisa(s === 200 && j.tipo_gasto === null && j.notas === 'Construcción única', 'se puede regresar a «sin indicar» sin borrar las observaciones', j);
+  [s, j] = await pedir('GET', '/auditoria?entidad=cuenta_por_pagar&id=' + sinTipo.id, A);
+  const hist = (j || []).filter(f => f.accion === 'datos').map(f => f.detalle);
+  revisa(s === 200 && hist.length === 2 && hist.some(d => /tipo de gasto: sin indicar → Único/.test(d) && /observaciones: «» → «Construcción única»/.test(d)) && hist.some(d => /tipo de gasto: Único → sin indicar/.test(d)), 'el historial guarda qué cambió (antes → después), una vez por cambio real', hist);
+  [s, j] = await pedir('POST', '/finanzas/cxp/' + renta.id + '/repetir', C, {});
+  [, j] = await pedir('GET', '/finanzas/cxp?vista=todas', C);
+  const copia = (j || []).find(x => x.concepto === fijo.concepto && x.id !== renta.id);
+  revisa(copia?.tipo_gasto === 'mensual', '«🔁 Repetir» copia también el tipo de gasto', copia);
+  [s, j] = await pedir('GET', '/finanzas/cxp/formato-excel', A);
+  revisa(j.cuentas?.find(c => c.id === renta.id)?.tipo_gasto === 'mensual' && j.cuentas?.find(c => c.id === cx1.id)?.tipo_gasto === null, 'la descarga trae el tipo de gasto de cada cuenta');
+  [s, j] = await pedir('POST', '/finanzas/cxp/' + renta.id + '/cancelar', A, { motivo: 'Prueba de cancelación de renta' });
+  [s] = await pedir('POST', '/finanzas/cxp/' + renta.id + '/datos', C, { tipo_gasto: 'unico' }); revisa(s === 404, 'una cuenta cancelada ya no se edita');
+
   { const [si, ri] = await pedir('GET', '/admin/integridad', A); const m = (ri.resultados || []).filter(r => r.gravedad === 'error' && r.total); revisa(si === 200 && ri.errores === 0, 'al terminar, la revisión de integridad no encuentra errores en los datos', m.map(r => r.titulo)); }
   revisa(!/uncaughtException|Error no manejado|TypeError|SqliteError|RangeError|ReferenceError/.test(salida), 'el servidor no registró errores internos', salida.split('\n').filter(l => /Error/.test(l)).slice(0, 6));
   console.log(`\n${n - malos.length}/${n} correctas`);
