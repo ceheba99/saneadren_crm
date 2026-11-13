@@ -132,7 +132,8 @@ function encabezadosSeguridad(req, res, next) {
     "default-src 'self'",
     "script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://unpkg.com",
     "style-src 'self' 'unsafe-inline'",
-    "img-src 'self' data: blob:",
+    // Mapa de las zonas del checador por WhatsApp (2026-11-13): las imágenes del mapa vienen de OpenStreetMap.
+    "img-src 'self' data: blob: https://tile.openstreetmap.org",
     "font-src 'self' data:",
     "connect-src 'self'",
     "object-src 'none'",

@@ -158,7 +158,7 @@ module.exports = {
       nombre: 'Personal (RH)',
       vistas: ['rh', 'personal', 'asistencia'],
       // Reloj checador (2026-11-03): checadas, sus correcciones y los kioscos; el kiosco entra sin sesión, con su token.
-      tablas: ['personal', 'documentos_personal', 'incidencias_personal', 'checadas', 'checadas_correcciones', 'checador_dispositivos', 'checador_intentos', 'checador_enlaces', 'credenciales', 'whatsapp_mensajes', 'rostros', 'rostro_codigos',
+      tablas: ['personal', 'documentos_personal', 'incidencias_personal', 'checadas', 'checadas_correcciones', 'checador_dispositivos', 'checador_intentos', 'checador_enlaces', 'credenciales', 'whatsapp_mensajes', 'whatsapp_pendientes', 'checador_zonas', 'checador_zonas_personal', 'rostros', 'rostro_codigos',
         'horarios', 'horario_versiones', 'personal_horario', 'dias_festivos', 'extra_autorizaciones', 'precios_hora_puesto', 'reglas_extra'],
       rutas: [/^\/api\/personal(\/|$)/, /^\/api\/(asistencia|rh|publico\/(kiosco|celular|whatsapp))(\/|$)/],
       pendientes: 'licencias y contratos por vencer, quién falta esta semana y órdenes sin técnico responsable',
