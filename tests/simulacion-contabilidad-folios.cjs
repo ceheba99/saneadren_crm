@@ -113,6 +113,18 @@ const [ay, am] = MES.split('-').map(Number), MP = am === 1 ? `${ay - 1}-12` : `$
   revisa(fl.flujo.find(f => f.consecutivo === 'STD-E-0002')?.concepto === 'CAMBIÓ A BNT-E-0003', 'Y en Santander el 0002 dice «CAMBIÓ A BNT-E-0003»', fl.flujo.map(f => [f.consecutivo, f.concepto]));
   revisa((await pedir('POST', `/cuentas-banco/${STD}/clave`, A, { clave: 'SAN' }))[0] === 409, 'Una cuenta con folios ya no cambia de clave');
 
+  console.log('6b. Una transferencia desglosada: todos sus renglones llevan el mismo folio (caso 9 del Excel)');
+  const cuantos = () => { const d = new DatabaseSync(DB); const x = d.prepare('SELECT COUNT(*) n FROM folios_banco').get().n; d.close(); return x; };
+  const antesD = cuantos();
+  for (let i = 0; i < 3; i++) exigir(await pedir('POST', '/contabilidad/flujo/desglose', C, { mes: MES, ref: 'pago:' + p5 }), 'desglosar ' + (i + 1));
+  fl = (await pedir('GET', `/contabilidad/flujo?mes=${MES}&cuenta=${STD}`, C))[1];
+  const grupo = fl.flujo.filter(f => f.consecutivo === 'STD-E-0004');
+  revisa(grupo.length === 4 && grupo.filter(f => f.es_desglose).length === 3 && grupo.filter(f => !f.es_desglose)[0]?.ref === 'pago:' + p5, 'Buscar STD-E-0004 trae la transferencia y sus 3 renglones de desglose', grupo.map(f => [f.ref, f.consecutivo]));
+  const iP = fl.flujo.findIndex(f => f.ref === 'pago:' + p5);
+  revisa(fl.flujo.slice(iP + 1, iP + 4).every(f => f.es_desglose && f.consecutivo === 'STD-E-0004'), 'Los renglones del desglose van justo debajo de su transferencia, con su folio', fl.flujo.slice(iP, iP + 4).map(f => f.consecutivo));
+  revisa(cuantos() === antesD, 'Desglosar no gasta folios: la serie de Santander no se brinca', [antesD, cuantos()]);
+  revisa(grupo.filter(f => f.es_desglose).every(f => f.egreso === 0 && f.saldo === null), 'Los renglones del desglose no vuelven a restar del saldo');
+
   console.log('7. Cuenta sin clave y folios pendientes');
   const BBV = await cuentaN('BBVA nueva', 'BBVA', null);
   const p7 = exigir(await pagar(A, g3, 70, BBV), 'pago a una cuenta sin clave').id;
