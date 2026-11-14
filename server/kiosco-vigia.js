@@ -1,6 +1,6 @@
 // VIGÍA DE LOS KIOSCOS DEL RELOJ CHECADOR (2026-11-12, Dirección: «quiero el aviso, y que también me avise a mi correo»).
-// La tableta del checador le habla al servidor cada minuto mientras está prendida, desbloqueada y con internet. Si en
-// horario de trabajo de su sucursal pasan más de 5 minutos sin señal, el checador «no responde»: queda en los Logs del
+// La tableta del checador le habla al servidor cada minuto mientras está prendida, desbloqueada y con internet. Si
+// pasan más de 5 minutos sin señal (las 24 horas desde el 2026-11-13; antes solo en horario de trabajo), el checador «no responde»: queda en los Logs del
 // sistema, sale un aviso en Inicio y se manda un correo. Cuando vuelve a dar señal se avisa otra vez («ya responde»).
 //  · Horario de trabajo: desde 15 min antes de la primera entrada hasta la última salida de los horarios activos de la
 //    sucursal ese día (los que RH tiene en Asistencia → Horarios). Día sin horario o festivo: no se vigila.
@@ -94,6 +94,12 @@ function correosDe(...listas) {
   }
   return r;
 }
+// Qué horas se vigilan (2026-11-13, Dirección: «que lo vigile siempre, todo el día»): las 24 horas, todos los días.
+// soloHorario = true (variable KIOSCO_VIGILAR_SOLO_HORARIO=1): como antes, solo en el horario de trabajo de la sucursal.
+const TODO_EL_DIA = { desde: '00:00', hasta: '23:59' };
+function ventanaVigilada(db, sucursalId, fecha, soloHorario) {
+  return soloHorario ? ventana(db, sucursalId, fecha) : TODO_EL_DIA;
+}
 // Avisos por WhatsApp (2026-11-13, Dirección): celulares de México de la variable WHATSAPP_AVISOS_CHECADOR (separados por
 // coma). Acepta «4421234567», «+52 442 123 4567» o «521…»; regresa los 10 dígitos, sin repetir. Otro país no.
 function telefonosDe(lista) {
@@ -114,4 +120,4 @@ function textoWhatsapp(tipo, k) {
     : ['Reloj checador: necesita atención', `El reloj ${reloj} no puede mantener la pantalla encendida y se va a bloquear. Conéctalo al cargador y apaga el ahorro de energía.`];
   return [r[0].slice(0, 120), r[1].replace(/[\r\n\t]+/g, ' ').slice(0, 900)];
 }
-module.exports = { vigia, ventana, correosDe, telefonosDe, textoWhatsapp };
+module.exports = { vigia, ventana, ventanaVigilada, correosDe, telefonosDe, textoWhatsapp };

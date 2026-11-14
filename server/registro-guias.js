@@ -103,10 +103,10 @@ function sinRespuesta(d) {
   const lectura = [];
   const u = String(d).match(/lo último que reportó: ([^.]+)/); if (u) lectura.push('Antes de callarse la tableta reportó: ' + u[1] + '.');
   if (/bater[ií]a (\d+) %[^,;.]*sin cargador/.test(d) && num(d, /bater[ií]a (\d+) %/) <= 25) lectura.push('Tenía poca batería y estaba sin cargador: lo más probable es que se apagó por batería.');
-  return { que: 'La tableta del reloj checador lleva más de 5 minutos sin comunicarse con el sistema, en horario de trabajo. Mientras siga así, nadie puede checar en ella (quien tenga su enlace puede checar desde su celular).',
+  return { que: 'La tableta del reloj checador lleva más de 5 minutos sin comunicarse con el sistema (se vigila las 24 horas, salvo que en Plesk esté KIOSCO_VIGILAR_SOLO_HORARIO=1). Mientras siga así, nadie puede checar en ella (quien tenga su enlace puede checar desde su celular).',
     causas: ['La tableta se apagó o se quedó sin batería.', 'Se bloqueó la pantalla (pide el PIN de la tableta).', 'Se quedó sin internet (Wi-Fi caído).', 'Alguien cerró la app del checador o abrió otra.'],
     hacer: ['Ve a la tableta: ¿está prendida y en la pantalla del checador?', 'Si pide PIN, desbloquéala y abre «Checador Saneadren».', 'Si dice «Sin conexión», revisa el Wi-Fi.', 'Cuando vuelva, saldrán «El reloj checador ya responde» y «El reloj checador estuvo sin señal», que dice la causa. Las checadas que se hicieron sin internet se suben solas.'],
-    codigo: ['server/kiosco-vigia.js → función revisar (más de 5 minutos sin señal dentro del horario de la sucursal) y ventana (horario vigilado)', 'server/checador.js → avisarKiosco (Logs, Inicio y correo) y el middleware kiosco (cada petición de la tableta es una señal)', 'public/kiosco.html → el intervalo de 60 s del arranque que llama a conectar()'], lectura };
+    codigo: ['server/kiosco-vigia.js → función revisar (más de 5 minutos sin señal) y ventanaVigilada (24 horas, o solo el horario de la sucursal con KIOSCO_VIGILAR_SOLO_HORARIO=1)', 'server/checador.js → avisarKiosco (Logs, Inicio y correo) y el middleware kiosco (cada petición de la tableta es una señal)', 'public/kiosco.html → el intervalo de 60 s del arranque que llama a conectar()'], lectura };
 }
 
 const GUIAS = {

@@ -44,7 +44,7 @@ const C = require('./cifrado');
 const { tipoReal } = require('./expediente-oc');
 const { hashToken, nuevoToken } = require('./seguridad');
 const { ahoraMexico } = require('./fechas');
-const { vigia, ventana, correosDe, telefonosDe, textoWhatsapp } = require('./kiosco-vigia');
+const { vigia, ventanaVigilada, correosDe, telefonosDe, textoWhatsapp } = require('./kiosco-vigia');
 
 const TIPOS = { entrada: 'Entrada', comida_sale: 'Salida a comer', comida_regresa: 'Regreso de comer', salida: 'Salida', extra_inicia: 'Inicio de tiempo extra', extra_termina: 'Fin de tiempo extra' };
 const SIGUIENTE = { '': 'entrada', entrada: 'comida_sale', comida_sale: 'comida_regresa', comida_regresa: 'salida', salida: 'extra_inicia', extra_inicia: 'extra_termina', extra_termina: 'extra_inicia' };
@@ -343,7 +343,7 @@ module.exports = function checador(app, db, h) {
       ? `${textoKiosco(k)} no da señal desde ${k.desde || 'hace más de 5 minutos'}. Revisa que la tableta esté prendida, desbloqueada, con internet y con el checador abierto. Mientras tanto, quien tenga su enlace puede checar desde su celular.`
       : `${textoKiosco(k)} volvió a dar señal a las ${k.volvio}. No había respondido desde ${k.desde || 'antes de las ' + k.hora}.`;
     for (const c of para) correo.enviar(c, asunto, { titulo: cayo ? 'El reloj checador no responde' : 'El reloj checador ya responde', saludo: 'Hola:', mensaje,
-      pie: 'Aviso automático del ERP de Saneadren: llega una vez cuando el checador deja de responder en horario de trabajo y otra cuando vuelve.' }).catch(e => console.error('[kiosco] correo:', e.message));
+      pie: 'Aviso automático del ERP de Saneadren: llega una vez cuando el checador deja de responder y otra cuando vuelve.' }).catch(e => console.error('[kiosco] correo:', e.message));
   }
   // «Necesita atención»: batería baja sin cargador o cámara que no funciona (para arreglarlo antes de que falle).
   const textoAtencion = k => (k.tipo === 'pantalla' ? 'no puede mantener la pantalla encendida: se va a apagar sola y pedirá el PIN de la tableta. En la tableta: apaga el ahorro de energía y activa «Pantalla activa» en Ajustes → Opciones de desarrollador (y déjala conectada al cargador)' : k.tipo === 'bateria' ? `batería en ${k.bateria} % y sin cargador: conéctala para que no se apague` : 'la cámara no está funcionando: las checadas quedan sin foto y por revisar (toca el aviso amarillo de la tableta o cierra y abre el checador)');
@@ -354,7 +354,7 @@ module.exports = function checador(app, db, h) {
     for (const c of para) correo.enviar(c, `⚠️ El reloj checador necesita atención: ${k.nombre}`, { titulo: 'El reloj checador necesita atención', saludo: 'Hola:', mensaje: `${textoKiosco(k)}: ${textoAtencion(k)}.`,
       pie: 'Aviso automático del ERP de Saneadren: llega una sola vez; en Inicio se quita solo cuando se arregla.' }).catch(e => console.error('[kiosco] correo:', e.message));
   }
-  const vigiaKioscos = vigia({ ahoraMexico, avisar: avisarKiosco, ventanaDe: (suc, fecha) => { try { return ventana(db, suc, fecha); } catch { return null; } },
+  const vigiaKioscos = vigia({ ahoraMexico, avisar: avisarKiosco, ventanaDe: (suc, fecha) => { try { return ventanaVigilada(db, suc, fecha, process.env.KIOSCO_VIGILAR_SOLO_HORARIO === '1'); } catch { return null; } },
     kioscos: () => db.prepare(`SELECT d.id, d.nombre, d.sucursal_id, s.nombre AS sucursal FROM main.checador_dispositivos d LEFT JOIN main.sucursales s ON s.id = d.sucursal_id
       WHERE d.tipo = 'kiosco' AND d.activo = 1 AND d.eliminado_at IS NULL AND d.ultimo_uso >= datetime('now', 'localtime', '-7 days')`).all() });
   if (process.env.MODO_DEMO !== '1') setInterval(() => { try { vigiaKioscos.revisar(); } catch (e) { console.error('[kiosco] vigía:', e.message); } }, 60000).unref();
