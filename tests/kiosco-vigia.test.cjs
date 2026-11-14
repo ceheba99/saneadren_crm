@@ -4,7 +4,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { DatabaseSync } = require('node:sqlite');
-const { vigia, ventana, correosDe, telefonosDe, textoWhatsapp } = require('../server/kiosco-vigia');
+const { vigia, ventana, ventanaVigilada, correosDe, telefonosDe, textoWhatsapp } = require('../server/kiosco-vigia');
 const { ahoraMexico } = require('../server/fechas');
 
 const MIN = 60000;
@@ -159,4 +159,24 @@ test('WhatsApp: el texto de cada aviso dice qué reloj, qué pasó y qué hacer'
   [t1, t2] = textoWhatsapp('bateria', { ...k, bateria: 12 }); assert.match(t1, /atención/); assert.match(t2, /12 %/);
   [t1, t2] = textoWhatsapp('pantalla', k); assert.match(t2, /pantalla/);
   assert.ok(t1.length <= 120 && t2.length <= 900 && !/[\r\n\t]/.test(t1 + t2), 'cabe en la plantilla y va en una línea');
+});
+
+// 2026-11-13 (Dirección): se vigila las 24 horas. Con KIOSCO_VIGILAR_SOLO_HORARIO=1, como antes (solo en horario de trabajo).
+test('vigilancia: 24 horas por omisión; solo en horario si se pide', () => {
+  const db = new DatabaseSync(':memory:');
+  db.exec(`CREATE TABLE horarios (id INTEGER PRIMARY KEY, sucursal_id INTEGER, activo INTEGER DEFAULT 1);
+    CREATE TABLE horario_versiones (id INTEGER PRIMARY KEY AUTOINCREMENT, horario_id INTEGER, desde TEXT, dias TEXT);
+    CREATE TABLE dias_festivos (fecha TEXT, nombre TEXT, activo INTEGER DEFAULT 1);
+    INSERT INTO horarios (id, sucursal_id) VALUES (1, 1);
+    INSERT INTO horario_versiones (horario_id, desde, dias) VALUES (1, '2020-01-01', '{"1":{"entrada":"08:30","salida":"18:00"}}');
+    INSERT INTO dias_festivos VALUES ('2026-11-16', 'Revolución', 1);`);
+  assert.deepEqual(ventanaVigilada(db, 1, '2026-11-15', false), { desde: '00:00', hasta: '23:59' }, 'domingo: también');
+  assert.deepEqual(ventanaVigilada(db, 1, '2026-11-16', false), { desde: '00:00', hasta: '23:59' }, 'festivo: también');
+  assert.deepEqual(ventanaVigilada(db, 1, '2026-11-09', true), { desde: '08:15', hasta: '18:00' }, 'solo horario: lunes de 8:15 a 18:00');
+  assert.equal(ventanaVigilada(db, 1, '2026-11-15', true), null, 'solo horario: domingo no');
+  // Con 24 horas, una tableta apagada de noche sí avisa.
+  let t = Date.parse('2026-11-13T09:00:00Z'); // 3:00 a. m. en México
+  const avisos = [], v = vigia({ kioscos: () => [{ id: 1, nombre: 'E', sucursal_id: 1 }], ventanaDe: () => ventanaVigilada(db, 1, '2026-11-13', false), ahoraMexico, avisar: (tipo) => avisos.push(tipo), ahora: () => t });
+  t += 6 * 60000; v.revisar();
+  assert.deepEqual(avisos, ['sin_respuesta']);
 });
